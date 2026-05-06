@@ -1,5 +1,10 @@
 export function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const message = (error as Record<string, unknown>).message;
+    if (typeof message === "string") return message;
+  }
+  return String(error);
 }
 
 export function formatUnknown(value: unknown): string {

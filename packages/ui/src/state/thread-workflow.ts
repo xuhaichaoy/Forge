@@ -66,16 +66,16 @@ export async function steerTurn(
 }
 
 export function threadTitle(thread: Thread): string {
-  return stringField(thread, "name") || stringField(thread, "preview") || shortId(thread.id);
+  return trimmedStringField(thread, "name") || trimmedStringField(thread, "preview") || shortId(thread.id);
 }
 
 export function threadStatusLabel(status: unknown): string {
   if (status === null || status === undefined) return "notLoaded";
-  if (typeof status === "string") return status;
+  if (typeof status === "string") return status.trim() || "notLoaded";
   if (typeof status === "number" || typeof status === "boolean") return String(status);
   if (typeof status === "object") {
     const record = status as Record<string, unknown>;
-    return stringField(record, "type") || stringField(record, "status") || formatUnknown(status);
+    return trimmedStringField(record, "type") || trimmedStringField(record, "status") || compactUnknown(status);
   }
   return String(status);
 }
@@ -91,4 +91,16 @@ export function isThreadNotMaterialized(error: unknown): boolean {
 
 function shortId(id: string) {
   return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+}
+
+function trimmedStringField(value: unknown, key: string): string {
+  return stringField(value, key).trim();
+}
+
+function compactUnknown(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return formatUnknown(value);
+  }
 }

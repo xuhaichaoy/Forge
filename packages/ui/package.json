@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit --pretty false"
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@hicodex/codex-protocol": "0.1.0",
