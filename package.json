@@ -1,0 +1,27 @@
+{
+  "name": "hicodex",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Codex-core desktop shell.",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @hicodex/desktop",
+    "build": "npm run build --workspace @hicodex/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && cargo test --workspace",
+    "sync:protocol": "node scripts/sync-codex-protocol.mjs",
+    "sidecar:prepare": "node scripts/prepare-codex-sidecar.mjs",
+    "tauri:dev": "npm run tauri:dev --workspace @hicodex/desktop",
+    "tauri:build": "npm run tauri:build --workspace @hicodex/desktop"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}
