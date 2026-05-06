@@ -241,7 +241,7 @@ function summarizeToolActivity(items: ThreadItem[]): ToolActivitySummary {
     } else if (type === "dynamic-tool-call") {
       counts.dynamicCalls += 1;
       details.push(`Called ${[stringField(record, "namespace"), stringField(record, "tool") || "tool"].filter(Boolean).join(".")}`);
-    } else if (type === "webSearch") {
+    } else if (type === "web-search") {
       counts.webSearches += 1;
       details.push(`Searched web${stringField(record, "query") ? ` for ${stringField(record, "query")}` : ""}`);
     } else if (type === "reasoning") {

@@ -1,33 +1,17 @@
-import {
-  Activity,
-  Bot,
-  ChevronRight,
-  CircleStop,
-  Loader2,
-  MessageSquarePlus,
-  RefreshCcw,
-  Settings,
-  Terminal,
-} from "lucide-react";
+import { Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { Dispatch } from "react";
-import type { ModelConfig, TeamSummary, Thread, UserInput } from "@hicodex/codex-protocol";
+import type { ModelConfig, Thread, UserInput } from "@hicodex/codex-protocol";
 import { Composer } from "./components/composer";
+import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import { ModelSettingsPanel } from "./components/model-settings-panel";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { RightRail } from "./components/right-rail";
+import { Sidebar } from "./components/sidebar";
 import { CodexJsonRpcClient } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
-import { writeLocalModelCatalog } from "./lib/tauri-host";
-import {
-  EMPTY_MODEL,
-  buildLocalModelCatalogEntry,
-  buildModelConfigEdits,
-  buildModelConfigsFromList,
-  normalizeModelConfig,
-  type ModelListEntry,
-} from "./model/model-settings";
+import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
+import { EMPTY_MODEL } from "./model/model-settings";
 import {
   codexUiReducer,
   initialCodexUiState,
@@ -47,13 +31,9 @@ import {
   startThread,
   startTurn,
   steerTurn,
-  threadStatusLabel,
   threadTitle,
 } from "./state/thread-workflow";
-
-const SEED_TEAMS: TeamSummary[] = [
-  { id: "local", name: "Local workspace", role: "owner", plan: "trial", active: true },
-];
+import { SEED_TEAMS } from "./state/team-config";
 
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
@@ -229,103 +209,44 @@ export function HiCodexApp() {
     }
   }, [client]);
 
-  const saveModelDraft = useCallback(async () => {
-    const nextModel = normalizeModelConfig(modelDraft);
-    dispatch({ type: "upsertModel", model: nextModel });
-    try {
-      const connected = state.connected || await connect();
-      if (connected && nextModel.model) {
-        const catalogPath = await writeLocalModelCatalog(
-          state.hostStatus?.codexHome,
-          buildLocalModelCatalogEntry(nextModel),
-        );
-        await client.request("config/batchWrite", {
-          edits: buildModelConfigEdits(nextModel, catalogPath),
-          reloadUserConfig: true,
-        });
-        dispatch({
-          type: "log",
-          text: `set Codex model to ${nextModel.model}; restart sidecar if this model was not in the previous catalog`,
-        });
-        await refreshModels(client, dispatch);
-      }
-    } catch (error) {
-      dispatch({ type: "log", text: `saved locally; Codex config write failed: ${formatError(error)}`, level: "warn" });
-    }
+  const applyModelDraft = useCallback(() => {
+    void saveModelDraftWorkflow({
+      client,
+      dispatch,
+      connect,
+      modelDraft,
+      connected: state.connected,
+      codexHome: state.hostStatus?.codexHome,
+    });
   }, [client, connect, modelDraft, state.connected, state.hostStatus?.codexHome]);
 
   const composerMode = activeThreadRunning && !input.trim() ? "stop" : activeThreadRunning ? "steer" : "send";
 
   return (
     <div className="hc-app">
-      <aside className="hc-sidebar">
-        <div className="hc-brand">
-          <div className="hc-brand-mark"><Bot size={18} /></div>
-          <div>
-            <div className="hc-brand-title">HiCodex</div>
-            <div className="hc-brand-subtitle">Codex core desktop</div>
-          </div>
-        </div>
-
-        <div className="hc-sidebar-actions">
-          <button className="hc-button hc-button-primary" onClick={state.connected ? createThread : connect} disabled={state.connecting}>
-            {state.connecting ? <Loader2 className="hc-spin" size={16} /> : <MessageSquarePlus size={16} />}
-            {state.connected ? "New thread" : "Connect"}
-          </button>
-          {state.connected && (
-            <button className="hc-icon-button" onClick={() => void refreshThreads(client, dispatch)} title="Refresh threads">
-              <RefreshCcw size={16} />
-            </button>
-          )}
-        </div>
-
-        <div className="hc-thread-list">
-          {state.threads.length === 0 && (
-            <div className="hc-empty-panel">No threads loaded</div>
-          )}
-          {state.threads.map((thread) => (
-            <button
-              key={thread.id}
-              className={`hc-thread-row ${thread.id === state.activeThreadId ? "is-active" : ""}`}
-              onClick={() => void selectThread(thread)}
-            >
-              <div className="hc-thread-name">{threadTitle(thread)}</div>
-              <div className="hc-thread-meta">
-                <span>{thread.id === state.activeThreadId && activeThreadRunning ? "running" : threadStatusLabel((thread as { status?: unknown }).status)}</span>
-                <ChevronRight size={14} />
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <div className="hc-sidebar-footer">
-          <button className="hc-link-button" onClick={() => setShowSettings(true)}>
-            <Settings size={15} /> Settings
-          </button>
-          {state.connected && (
-            <button className="hc-link-button danger" onClick={() => void disconnect()}>
-              <CircleStop size={15} /> Stop sidecar
-            </button>
-          )}
-        </div>
-      </aside>
+      <Sidebar
+        threads={state.threads}
+        activeThreadId={state.activeThreadId}
+        activeThreadRunning={activeThreadRunning}
+        connected={state.connected}
+        connecting={state.connecting}
+        onConnect={() => void connect()}
+        onCreateThread={createThread}
+        onRefreshThreads={() => refreshThreads(client, dispatch)}
+        onSelectThread={selectThread}
+        onOpenSettings={() => setShowSettings(true)}
+        onDisconnect={disconnect}
+      />
 
       <main className="hc-main">
-        <header className="hc-topbar">
-          <div>
-            <div className="hc-top-title">{activeThread ? threadTitle(activeThread) : "Codex conversation"}</div>
-            <div className="hc-top-meta">{state.hostStatus?.codexHome ?? "Sidecar not started"}</div>
-          </div>
-          <div className="hc-status-pill" data-running={state.connected}>
-            <Activity size={14} />
-            {state.connected ? `running${state.hostStatus?.pid ? `:${state.hostStatus.pid}` : ""}` : "offline"}
-          </div>
-        </header>
-
-        <section className="hc-workspace-bar">
-          <label>cwd</label>
-          <input value={workspace} onChange={(event) => setWorkspace(event.target.value)} />
-        </section>
+        <ConversationChrome
+          title={activeThread ? threadTitle(activeThread) : "Codex conversation"}
+          codexHome={state.hostStatus?.codexHome}
+          connected={state.connected}
+          pid={state.hostStatus?.pid ?? undefined}
+          workspace={workspace}
+          onWorkspaceChange={setWorkspace}
+        />
 
         <section className="hc-conversation">
           <ConversationView
@@ -374,23 +295,9 @@ export function HiCodexApp() {
           setModelDraft={setModelDraft}
           models={state.models}
           onClose={() => setShowSettings(false)}
-          onSave={saveModelDraft}
+          onSave={applyModelDraft}
         />
       )}
     </div>
   );
-}
-
-async function refreshModels(
-  client: CodexJsonRpcClient,
-  dispatch: Dispatch<Parameters<typeof codexUiReducer>[1]>,
-) {
-  try {
-    const result = await client.request<{ data?: ModelListEntry[] }>("model/list", {
-      includeHidden: false,
-    });
-    dispatch({ type: "setModels", models: buildModelConfigsFromList(result.data ?? []) });
-  } catch (error) {
-    dispatch({ type: "log", text: `model/list failed: ${formatError(error)}`, level: "warn" });
-  }
 }

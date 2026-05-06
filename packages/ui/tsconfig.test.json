@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": false,
+    "isolatedModules": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "noEmit": false,
+    "outDir": "../../.tmp/ui-tests",
+    "rootDir": "../..",
+    "sourceMap": false,
+    "types": []
+  },
+  "include": [
+    "src/lib/format.ts",
+    "src/lib/tauri-host.ts",
+    "src/model/**/*.ts",
+    "src/state/**/*.ts",
+    "test/**/*.ts",
+    "../codex-protocol/src/**/*.ts"
+  ]
+}
