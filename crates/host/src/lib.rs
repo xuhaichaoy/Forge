@@ -82,6 +82,8 @@ struct HostInner {
     codex_bin: Option<String>,
     codex_home: Option<String>,
     last_error: Option<String>,
+    next_event_stream_id: u64,
+    active_event_stream_id: Option<u64>,
 }
 
 pub struct AppServerHost {
@@ -217,7 +219,22 @@ impl AppServerHost {
             })
     }
 
-    pub fn drain_events(&self, max_events: usize) -> Vec<AppServerEvent> {
+    pub fn claim_event_stream(&self) -> u64 {
+        let mut inner = self.inner.lock().expect("host mutex poisoned");
+        inner.next_event_stream_id = inner.next_event_stream_id.saturating_add(1).max(1);
+        let stream_id = inner.next_event_stream_id;
+        inner.active_event_stream_id = Some(stream_id);
+        stream_id
+    }
+
+    pub fn drain_events(&self, max_events: usize, stream_id: Option<u64>) -> Vec<AppServerEvent> {
+        {
+            let inner = self.inner.lock().expect("host mutex poisoned");
+            if inner.active_event_stream_id.is_some() && inner.active_event_stream_id != stream_id {
+                return Vec::new();
+            }
+        }
+
         let max_events = max_events.clamp(1, 1024);
         let rx = self.events_rx.lock().expect("host event mutex poisoned");
         let mut events = Vec::new();
@@ -606,6 +623,21 @@ mod tests {
         let line = serde_json::to_string(&value).unwrap();
         let parsed: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(parsed["id"], 1);
+    }
+
+    #[test]
+    fn claimed_event_stream_blocks_legacy_drainers() {
+        let host = AppServerHost::new();
+        let stream_id = host.claim_event_stream();
+        host.events_tx
+            .send(AppServerEvent::Lifecycle {
+                message: "ready".to_string(),
+            })
+            .unwrap();
+
+        assert!(host.drain_events(10, None).is_empty());
+        let events = host.drain_events(10, Some(stream_id));
+        assert_eq!(events.len(), 1);
     }
 
     #[test]

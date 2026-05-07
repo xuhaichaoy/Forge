@@ -247,16 +247,23 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "item/plan/delta":
       return appendItemText(state, params, "plan", "text", "delta");
     case "item/reasoning/textDelta":
+      return appendReasoningText(state, params, "content", "contentIndex");
     case "item/reasoning/summaryTextDelta":
-      return appendReasoningText(state, params);
+      return appendReasoningText(state, params, "summary", "summaryIndex");
+    case "item/reasoning/summaryPartAdded":
+      return ensureReasoningPart(state, params, "summary", "summaryIndex");
     case "item/commandExecution/outputDelta":
       return appendItemText(state, params, "commandExecution", "aggregatedOutput", "delta");
+    case "item/commandExecution/terminalInteraction":
+      return appendCommandTerminalInteraction(state, params);
     case "item/fileChange/outputDelta":
       return appendItemText(state, params, "fileChange", "aggregatedOutput", "delta");
     case "item/fileChange/patchUpdated":
       return mergeItemFields(state, params, "fileChange", { changes: params.changes });
     case "item/mcpToolCall/progress":
       return appendItemText(state, params, "mcpToolCall", "progress", "message");
+    case "turn/plan/updated":
+      return upsertTurnPlan(state, params);
     case "turn/diff/updated": {
       const threadId = String(params.threadId ?? "");
       const diff = typeof params.diff === "string" ? params.diff : "";
@@ -269,23 +276,13 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
         },
       };
     }
-    case "turn/completed": {
-      const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string } | undefined;
-      const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
-      if (!threadId) return state;
-      const nextActiveTurns = { ...state.activeTurnIdsByThread };
-      if (!turn?.id || nextActiveTurns[threadId] === turn.id) {
-        delete nextActiveTurns[threadId];
-      }
-      return {
-        ...state,
-        activeTurnIdsByThread: nextActiveTurns,
-        itemsByThread: {
-          ...state.itemsByThread,
-          [threadId]: mergeItems(state.itemsByThread[threadId] ?? [], turn?.items ?? []),
-        },
-      };
-    }
+    case "turn/completed":
+      return finishTurn(state, params, "completed");
+    case "turn/failed":
+      return finishTurn(state, params, "failed");
+    case "turn/interrupted":
+    case "turn/cancelled":
+      return finishTurn(state, params, "interrupted");
     case "serverRequest/resolved":
       return {
         ...state,
@@ -404,7 +401,8 @@ function upsertItem(state: CodexUiState, threadId: string, item: ThreadItem): Co
 function mergeItems(current: ThreadItem[], incoming: ThreadItem[]): ThreadItem[] {
   const byId = new Map(current.map((item) => [item.id, item]));
   for (const item of incoming) {
-    byId.set(item.id, { ...(byId.get(item.id) ?? {}), ...item } as ThreadItem);
+    const existing = byId.get(item.id);
+    byId.set(item.id, existing?.type === "userMessage" ? existing : { ...(existing ?? {}), ...item } as ThreadItem);
   }
   return Array.from(byId.values());
 }
@@ -456,25 +454,162 @@ function mergeItemFields(
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
 }
 
-function appendReasoningText(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+function appendCommandTerminalInteraction(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
   const threadId = String(params.threadId ?? "");
   const itemId = String(params.itemId ?? "");
-  const delta = String(params.delta ?? "");
-  if (!threadId || !itemId || !delta) return state;
+  const stdin = String(params.stdin ?? "");
+  if (!threadId || !itemId || !stdin) return state;
   const items = state.itemsByThread[threadId] ?? [];
   let found = false;
   const next = items.map((item) => {
     if (item.id !== itemId) return item;
     found = true;
-    const content = Array.isArray((item as { content?: unknown }).content)
-      ? [...((item as { content?: string[] }).content ?? [])]
-      : [String((item as { content?: unknown }).content ?? "")];
-    const last = content.pop() ?? "";
-    content.push(last + delta);
-    return { ...item, type: "reasoning", content } as ThreadItem;
+    const terminalInteractions = (item as Record<string, unknown>).terminalInteractions;
+    const previous = Array.isArray(terminalInteractions)
+      ? terminalInteractions
+      : [];
+    return {
+      ...item,
+      type: item.type || "commandExecution",
+      terminalInteractions: [
+        ...previous,
+        {
+          processId: String(params.processId ?? ""),
+          stdin,
+        },
+      ],
+    } as ThreadItem;
   });
   if (!found) {
-    next.push({ id: itemId, type: "reasoning", content: [delta] } as ThreadItem);
+    next.push({
+      id: itemId,
+      type: "commandExecution",
+      command: "command",
+      terminalInteractions: [{ processId: String(params.processId ?? ""), stdin }],
+    } as ThreadItem);
   }
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
+}
+
+function appendReasoningText(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+  field: "content" | "summary",
+  indexField: "contentIndex" | "summaryIndex",
+): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  const itemId = String(params.itemId ?? "");
+  const delta = String(params.delta ?? "");
+  if (!threadId || !itemId || !delta) return state;
+  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), delta);
+}
+
+function ensureReasoningPart(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+  field: "content" | "summary",
+  indexField: "contentIndex" | "summaryIndex",
+): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  const itemId = String(params.itemId ?? "");
+  if (!threadId || !itemId) return state;
+  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), "");
+}
+
+function updateReasoningParts(
+  state: CodexUiState,
+  threadId: string,
+  itemId: string,
+  field: "content" | "summary",
+  index: number,
+  delta: string,
+): CodexUiState {
+  const items = state.itemsByThread[threadId] ?? [];
+  let found = false;
+  const next = items.map((item) => {
+    if (item.id !== itemId) return item;
+    found = true;
+    const parts = reasoningParts(item, field);
+    while (parts.length <= index) parts.push("");
+    parts[index] = `${parts[index] ?? ""}${delta}`;
+    return { ...item, type: "reasoning", [field]: parts } as ThreadItem;
+  });
+  if (!found) {
+    const parts: string[] = [];
+    while (parts.length <= index) parts.push("");
+    parts[index] = delta;
+    next.push({ id: itemId, type: "reasoning", [field]: parts } as ThreadItem);
+  }
+  return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
+}
+
+function reasoningParts(item: ThreadItem, field: "content" | "summary"): string[] {
+  const value = (item as Record<string, unknown>)[field];
+  if (Array.isArray(value)) return value.map((part) => typeof part === "string" ? part : formatUnknownForLog(part));
+  if (typeof value === "string") return [value];
+  return [];
+}
+
+function numberParam(params: Record<string, unknown>, key: string): number {
+  const value = params[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+}
+
+function upsertTurnPlan(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  const turnId = String(params.turnId ?? "");
+  const plan = Array.isArray(params.plan) ? params.plan : [];
+  if (!threadId || !turnId) return state;
+  return upsertItem(state, threadId, {
+    id: `todo-list:${turnId}`,
+    type: "todo-list",
+    turnId,
+    explanation: typeof params.explanation === "string" ? params.explanation : null,
+    plan,
+  } as ThreadItem);
+}
+
+function finishTurn(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+  fallbackStatus: "completed" | "failed" | "interrupted",
+): CodexUiState {
+  const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string; status?: unknown } | undefined;
+  const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
+  const turnId = String(params.turnId ?? turn?.id ?? "");
+  if (!threadId) return state;
+
+  const nextActiveTurns = { ...state.activeTurnIdsByThread };
+  if (!turnId || nextActiveTurns[threadId] === turnId) {
+    delete nextActiveTurns[threadId];
+  }
+
+  const turnStatus = turnStatusText(turn?.status) || fallbackStatus;
+  return {
+    ...state,
+    activeTurnIdsByThread: nextActiveTurns,
+    threads: state.threads.map((thread) =>
+      thread.id === threadId ? { ...thread, status: threadStatusToThreadStatus(turnStatus) } : thread,
+    ),
+    itemsByThread: {
+      ...state.itemsByThread,
+      [threadId]: mergeItems(state.itemsByThread[threadId] ?? [], turn?.items ?? []),
+    },
+  };
+}
+
+function turnStatusText(status: unknown): string {
+  if (typeof status === "string") return status;
+  if (!status || typeof status !== "object") return "";
+  const record = status as Record<string, unknown>;
+  const type = record.type;
+  if (typeof type === "string") return type;
+  const value = record.status;
+  return typeof value === "string" ? value : "";
+}
+
+function threadStatusToThreadStatus(turnStatus: string): unknown {
+  if (turnStatus === "failed") return "failed";
+  if (turnStatus === "interrupted") return "interrupted";
+  return "idle";
 }

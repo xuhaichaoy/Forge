@@ -1,6 +1,7 @@
 import { Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ModelConfig, Thread, UserInput } from "@hicodex/codex-protocol";
+import type { ModelConfig, Thread } from "@hicodex/codex-protocol";
+import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
@@ -20,9 +21,24 @@ import {
 import { buildApprovalResult } from "./state/approval-requests";
 import { projectBranchDetails } from "./state/branch-details";
 import {
+  applySlashCommand,
+  buildUserInputFromComposer,
+  type ComposerAttachment,
+  type SlashCommand,
+  type SlashCommandAction,
+} from "./state/composer-workflow";
+import {
+  createCommandPanelState,
+  type CommandPanelOptions,
+  type CommandPanelKind,
+  type CommandPanelState,
+} from "./state/command-panel";
+import {
   isThreadStatusInProgress,
   projectConversation,
 } from "./state/render-groups";
+import { projectRightRailSections } from "./state/right-rail";
+import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import {
   createAndSelectThreadForTurn,
   isThreadNotFound,
@@ -38,8 +54,10 @@ import { SEED_TEAMS } from "./state/team-config";
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
   const [input, setInput] = useState("");
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
   const [workspace, setWorkspace] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
   const workspaceInitialized = useRef(false);
@@ -71,6 +89,15 @@ export function HiCodexApp() {
       diff: activeDiff ? { diff: activeDiff } : null,
     }),
     [activeDiff, activeThread],
+  );
+  const rightRailSections = useMemo(
+    () => projectRightRailSections({
+      progress: conversation.progress,
+      branchDetails,
+      artifacts: conversation.artifacts,
+      sources: conversation.sources,
+    }),
+    [branchDetails, conversation],
   );
 
   const autoConnectStarted = useRef(false);
@@ -126,6 +153,18 @@ export function HiCodexApp() {
     }
   }, [client, state.threads, workspace]);
 
+  const ensureConnected = useCallback(async () => {
+    if (state.connected) return true;
+    return connect();
+  }, [connect, state.connected]);
+
+  const openCommandPanel = useCallback((
+    panel: CommandPanelKind,
+    options?: CommandPanelOptions,
+  ) => {
+    setCommandPanel(createCommandPanelState(panel, options));
+  }, []);
+
   const selectThread = useCallback(async (thread: Thread) => {
     dispatch({ type: "setActiveThread", threadId: thread.id });
     try {
@@ -153,20 +192,17 @@ export function HiCodexApp() {
   }, [client, state.threads]);
 
   const sendTurn = useCallback(async () => {
-    const text = input.trim();
-    if (!text) return;
+    const content = buildUserInputFromComposer(input, composerAttachments);
+    if (content.length === 0) return;
     try {
-      if (!state.connected) {
-        const connected = await connect();
-        if (!connected) return;
-      }
+      if (!(await ensureConnected())) return;
       let threadId = state.activeThreadId;
       if (!threadId) {
         threadId = await createAndSelectThreadForTurn(client, workspace, state.threads, dispatch);
       }
       if (!threadId) throw new Error("No active Codex thread");
       setInput("");
-      const content: UserInput[] = [{ type: "text", text, text_elements: [] }];
+      setComposerAttachments([]);
       try {
         if (activeTurnId && activeThreadRunning) {
           await steerTurn(client, threadId, content, activeTurnId);
@@ -183,7 +219,101 @@ export function HiCodexApp() {
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
     }
-  }, [activeThreadRunning, activeTurnId, client, connect, input, state.activeThreadId, state.connected, state.threads, workspace]);
+  }, [
+    activeThreadRunning,
+    activeTurnId,
+    client,
+    composerAttachments,
+    ensureConnected,
+    input,
+    state.activeThreadId,
+    state.threads,
+    workspace,
+  ]);
+
+  const runSlashRequest = useCallback((request: Parameters<typeof runSlashRequestWorkflow>[0], payload?: Record<string, unknown>) => (
+    runSlashRequestWorkflow(request, payload, {
+      client,
+      dispatch,
+      ensureConnected,
+      openCommandPanel,
+      workspace,
+      defaultCwd: state.hostStatus?.defaultCwd ?? undefined,
+      activeThread,
+      activeThreadId: state.activeThreadId,
+      activeTurnId,
+      connected: state.connected,
+      pid: state.hostStatus?.pid,
+      modelCount: state.models.length,
+      pendingRequestCount: state.pendingRequests.length,
+      threads: state.threads,
+    })
+  ), [
+    activeThread,
+    activeTurnId,
+    client,
+    ensureConnected,
+    openCommandPanel,
+    state.activeThreadId,
+    state.connected,
+    state.hostStatus?.defaultCwd,
+    state.hostStatus?.pid,
+    state.models.length,
+    state.pendingRequests.length,
+    state.threads,
+    workspace,
+  ]);
+
+  const handleSlashAction = useCallback(async (action: SlashCommandAction) => {
+    switch (action.action) {
+      case "openSettings":
+        setInput("");
+        setComposerAttachments([]);
+        if (action.panel === "models" || action.panel === "general") {
+          setShowSettings(true);
+        }
+        if (action.panel === "mcp") {
+          await runSlashRequest("listMcp");
+        } else if (action.panel === "skills") {
+          await runSlashRequest("listSkills");
+        } else if (action.panel === "hooks") {
+          await runSlashRequest("listHooks");
+        } else if (action.panel === "plugins") {
+          await runSlashRequest("listPlugins");
+        } else if (action.panel === "apps") {
+          await runSlashRequest("listApps");
+        } else if (action.panel === "experimental") {
+          await runSlashRequest("showExperimental");
+        } else if (action.panel !== "models" && action.panel !== "general") {
+          dispatch({ type: "log", text: `${action.panel} settings panel is registered but not visualized yet.`, level: "info" });
+        }
+        return;
+      case "createThread":
+        setInput("");
+        setComposerAttachments([]);
+        await createThread();
+        return;
+      case "clearInput":
+        setInput("");
+        setComposerAttachments([]);
+        return;
+      case "insertText":
+        setInput(action.text);
+        setComposerAttachments([]);
+        return;
+      case "request":
+        setInput("");
+        setComposerAttachments([]);
+        await runSlashRequest(action.request, action.payload);
+        return;
+      case "log":
+        dispatch({ type: "log", text: action.message, level: action.level });
+    }
+  }, [createThread, runSlashRequest]);
+
+  const executeSlashCommand = useCallback((command: SlashCommand) => {
+    void handleSlashAction(applySlashCommand(command.id, { input }));
+  }, [handleSlashAction, input]);
 
   const interruptActiveTurn = useCallback(async () => {
     if (!state.activeThreadId || !activeTurnId) return;
@@ -197,9 +327,13 @@ export function HiCodexApp() {
     }
   }, [activeTurnId, client, state.activeThreadId]);
 
-  const respondToRequest = useCallback(async (request: PendingServerRequest, accepted: boolean) => {
+  const respondToRequest = useCallback(async (
+    request: PendingServerRequest,
+    accepted: boolean,
+    answers?: Record<string, string[]>,
+  ) => {
     try {
-      const result = buildApprovalResult(request, accepted);
+      const result = buildApprovalResult(request, accepted, answers);
       result === null
         ? await client.reject(request.id, accepted ? "Unsupported HiCodex request" : "Rejected by HiCodex user")
         : await client.respond(request.id, result);
@@ -271,18 +405,20 @@ export function HiCodexApp() {
 
         <Composer
           input={input}
+          attachments={composerAttachments}
           onInputChange={setInput}
+          onAttachmentsChange={setComposerAttachments}
           mode={composerMode}
           connecting={state.connecting}
           activeTurnId={activeTurnId}
           onSend={() => void sendTurn()}
           onInterrupt={() => void interruptActiveTurn()}
+          onSlashCommand={executeSlashCommand}
         />
       </main>
 
       <RightRail
-        conversation={conversation}
-        branchDetails={branchDetails}
+        sections={rightRailSections}
         teams={state.teams}
         activeTeamId={state.activeTeamId}
         logs={state.logs}
@@ -296,6 +432,13 @@ export function HiCodexApp() {
           models={state.models}
           onClose={() => setShowSettings(false)}
           onSave={applyModelDraft}
+        />
+      )}
+
+      {commandPanel && (
+        <CommandPanel
+          panel={commandPanel}
+          onClose={() => setCommandPanel(null)}
         />
       )}
     </div>

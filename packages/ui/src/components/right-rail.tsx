@@ -4,13 +4,14 @@ import type { ReactNode } from "react";
 import type { TeamSummary } from "@hicodex/codex-protocol";
 import type { LogLine } from "../state/codex-reducer";
 import type { BranchDetailsViewModel } from "../state/branch-details";
-import type { ConversationProjection, RailEntry } from "../state/render-groups";
-
-export type RightRailConversationProps = Pick<ConversationProjection, "progress" | "artifacts" | "sources">;
+import type { RailEntry } from "../state/render-groups";
+import {
+  clipRailEntries,
+  type RightRailSection as RightRailSectionViewModel,
+} from "../state/right-rail";
 
 export interface RightRailProps {
-  conversation: RightRailConversationProps;
-  branchDetails: BranchDetailsViewModel;
+  sections: RightRailSectionViewModel[];
   teams: TeamSummary[];
   activeTeamId: string | null;
   logs: LogLine[];
@@ -28,8 +29,7 @@ export interface RailListProps {
 }
 
 export function RightRail({
-  conversation,
-  branchDetails,
+  sections,
   teams,
   activeTeamId,
   logs,
@@ -37,27 +37,13 @@ export function RightRail({
 }: RightRailProps) {
   return (
     <aside className="hc-right-rail">
-      {conversation.progress.length > 0 && (
-        <RailSection icon={<ListChecks size={15} />} title="Progress">
-          <RailList entries={conversation.progress} />
+      {sections.map((section) => (
+        <RailSection key={section.id} icon={sectionIcon(section.id)} title={section.title}>
+          {section.id === "branchDetails" && section.branchDetails
+            ? <BranchDetailsCard details={section.branchDetails} />
+            : <RailList entries={section.allEntries} />}
         </RailSection>
-      )}
-
-      <RailSection icon={<GitBranch size={15} />} title={branchDetails.title}>
-        <BranchDetailsCard details={branchDetails} />
-      </RailSection>
-
-      {conversation.artifacts.length > 0 && (
-        <RailSection icon={<FileText size={15} />} title="Artifacts">
-          <RailList entries={conversation.artifacts} />
-        </RailSection>
-      )}
-
-      {conversation.sources.length > 0 && (
-        <RailSection icon={<Network size={15} />} title="Sources">
-          <RailList entries={conversation.sources} />
-        </RailSection>
-      )}
+      ))}
 
       <RailSection icon={<Users size={15} />} title="Team">
         {teams.map((team) => (
@@ -84,6 +70,19 @@ export function RightRail({
       </RailSection>
     </aside>
   );
+}
+
+function sectionIcon(id: RightRailSectionViewModel["id"]): ReactNode {
+  switch (id) {
+    case "progress":
+      return <ListChecks size={15} />;
+    case "branchDetails":
+      return <GitBranch size={15} />;
+    case "artifacts":
+      return <FileText size={15} />;
+    case "sources":
+      return <Network size={15} />;
+  }
 }
 
 function BranchDetailsCard({ details }: { details: BranchDetailsViewModel }) {
@@ -129,19 +128,19 @@ export function RailSection({ icon, title, children }: RailSectionProps) {
 
 export function RailList({ entries }: RailListProps) {
   const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? entries : entries.slice(0, 6);
+  const clipped = clipRailEntries(entries, expanded);
   return (
     <div className="hc-rail-list">
-      {visible.map((entry) => (
+      {clipped.entries.map((entry) => (
         <div className="hc-rail-card" key={entry.id}>
           <div className="hc-rail-card-title">{entry.title}</div>
           {entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
           {entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
         </div>
       ))}
-      {entries.length > 6 && (
+      {clipped.canToggle && (
         <button className="hc-rail-more-button" type="button" onClick={() => setExpanded((value) => !value)}>
-          {expanded ? "Show less" : `Show ${entries.length - 6} more`}
+          {expanded ? "Show less" : `Show ${clipped.remainingCount} more`}
         </button>
       )}
     </div>

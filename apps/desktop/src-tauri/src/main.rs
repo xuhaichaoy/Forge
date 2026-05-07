@@ -43,8 +43,19 @@ fn host_send_raw(state: State<'_, AppState>, message: Value) -> Result<(), Strin
 }
 
 #[tauri::command]
-fn host_poll_events(state: State<'_, AppState>, max_events: Option<usize>) -> Vec<AppServerEvent> {
-    state.host.drain_events(max_events.unwrap_or(128))
+fn host_claim_event_stream(state: State<'_, AppState>) -> u64 {
+    state.host.claim_event_stream()
+}
+
+#[tauri::command]
+fn host_poll_events(
+    state: State<'_, AppState>,
+    max_events: Option<usize>,
+    stream_id: Option<u64>,
+) -> Vec<AppServerEvent> {
+    state
+        .host
+        .drain_events(max_events.unwrap_or(128), stream_id)
 }
 
 #[tauri::command]
@@ -68,6 +79,7 @@ fn main() {
             host_stop_app_server,
             host_status,
             host_send_raw,
+            host_claim_event_stream,
             host_poll_events,
             host_write_local_model_catalog
         ])

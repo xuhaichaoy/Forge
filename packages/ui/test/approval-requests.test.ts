@@ -80,6 +80,9 @@ export default function runApprovalRequestTests(): void {
   });
   const inputDetail = pendingRequestDetail(inputRequest);
   assertEqual(inputDetail.title, "Codex needs input", "user input title");
+  assertEqual(inputDetail.acceptLabel, "Submit", "user input accept label");
+  assertEqual(inputDetail.questions.length, 3, "user input question count");
+  assertEqual(inputDetail.questions[0]?.id, "question_1", "user input fallback id");
   assertIncludes(inputDetail.body, "1. Pick a profile", "user input uses prompt fallback");
   assertIncludes(inputDetail.body, "2. Fallback label", "user input uses label fallback");
   assertIncludes(inputDetail.body, "\"fallback\": true", "user input formats unknown question fallback");
@@ -87,6 +90,25 @@ export default function runApprovalRequestTests(): void {
     buildApprovalResult(inputRequest, true),
     { answers: {} },
     "user input accept result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(
+      request("item/tool/requestUserInput", {
+        questions: [
+          {
+            id: "profile",
+            header: "Profile",
+            question: "Pick a profile",
+            options: [{ label: "Local", description: "Use local gateway" }],
+          },
+          { id: "note", header: "Note", question: "Add a note" },
+        ],
+      }),
+      true,
+      { profile: ["Local"], note: ["  Ship it  "] },
+    ),
+    { answers: { profile: { answers: ["Local"] }, note: { answers: ["Ship it"] } } },
+    "user input answer payload",
   );
   assertEqual(buildApprovalResult(inputRequest, false), null, "user input decline result");
 
