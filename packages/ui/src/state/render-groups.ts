@@ -57,7 +57,7 @@ type ItemRecord = ThreadItem & Record<string, unknown>;
 
 export function projectConversation(items: ThreadItem[]): ConversationProjection {
   const units: ConversationRenderUnit[] = [];
-  const progress: RailEntry[] = [];
+  let progress: RailEntry[] = [];
   const artifacts = new Map<string, RailEntry>();
   const sources = new Map<string, RailEntry>();
   let activity: ThreadItem[] = [];
@@ -77,7 +77,10 @@ export function projectConversation(items: ThreadItem[]): ConversationProjection
   };
 
   for (const item of items) {
-    collectRailEntries(item, artifacts, sources, progress);
+    const nextProgress = collectRailEntries(item, artifacts, sources);
+    if (nextProgress) {
+      progress = nextProgress;
+    }
     if (isUserMessage(item)) {
       flushActivity();
       units.push({
@@ -279,11 +282,12 @@ function collectRailEntries(
   item: ThreadItem,
   artifacts: Map<string, RailEntry>,
   sources: Map<string, RailEntry>,
-  progress: RailEntry[],
-) {
+): RailEntry[] | null {
   const record = item as ItemRecord;
   const plan = itemType(item) === "todo-list" && Array.isArray(record.plan) ? record.plan : null;
+  let progress: RailEntry[] | null = null;
   if (plan) {
+    progress = [];
     for (const [index, raw] of plan.entries()) {
       const entry = raw as Record<string, unknown>;
       const title = stringField(entry, "step") || stringField(entry, "title") || stringField(entry, "text") || `Task ${index + 1}`;
@@ -296,7 +300,7 @@ function collectRailEntries(
   }
 
   for (const path of filePathsFromItem(item)) {
-    artifacts.set(path, {
+    setArtifact(artifacts, path, {
       id: path,
       title: path.split("/").filter(Boolean).pop() ?? path,
       meta: path,
@@ -306,21 +310,24 @@ function collectRailEntries(
 
   if (item.type === "agentMessage") {
     for (const artifact of artifactsFromText(itemText(item))) {
-      artifacts.set(artifact.id, artifact);
+      setArtifact(artifacts, artifactKey(artifact), artifact);
     }
   }
 
   if (item.type === "mcpToolCall") {
     const server = stringField(record, "server");
-    if (server === "node_repl") return;
-    const title = `${stringField(record, "server") || "mcp"}:${stringField(record, "tool") || "tool"}`;
-    sources.set(`mcp:${title}`, { id: `mcp:${title}`, title, meta: "MCP tool", status: statusText(item) });
+    if (server !== "node_repl") {
+      const title = `${stringField(record, "server") || "mcp"}:${stringField(record, "tool") || "tool"}`;
+      sources.set(`mcp:${title}`, { id: `mcp:${title}`, title, meta: "MCP tool", status: statusText(item) });
+    }
   }
 
   if (itemType(item) === "web-search") {
     const query = stringField(record, "query") || "web search";
     sources.set(`web:${query}`, { id: `web:${query}`, title: query, meta: "Web search", status: statusText(item) });
   }
+
+  return progress;
 }
 
 function isUserMessage(item: ThreadItem): boolean {
@@ -388,10 +395,12 @@ function filePathsFromItem(item: ThreadItem): string[] {
 
 function artifactsFromText(text: string): RailEntry[] {
   const entries: RailEntry[] = [];
-  const markdownLinks = Array.from(text.matchAll(/\[[^\]]+]\(([^)]+)\)/g)).map((match) => match[1] ?? "");
-  const plainUrls = Array.from(text.matchAll(/https?:\/\/[^\s)]+/g)).map((match) => match[0] ?? "");
-  const backtickPaths = Array.from(text.matchAll(/`([^`]+\.[A-Za-z0-9]{1,8})`/g)).map((match) => match[1] ?? "");
-  for (const target of dedupe([...markdownLinks, ...plainUrls, ...backtickPaths])) {
+  const targets = [
+    ...orderedMatches(text, /\[[^\]]+]\(([^)]+)\)/g, 1),
+    ...orderedMatches(text, /https?:\/\/[^\s)]+/g, 0),
+    ...orderedMatches(text, /`([^`]+\.[A-Za-z0-9]{1,8})`/g, 1),
+  ].sort((left, right) => left.index - right.index).map((match) => match.target);
+  for (const target of dedupe(targets)) {
     if (!target || target.startsWith("#")) continue;
     if (target.startsWith("http://") || target.startsWith("https://")) {
       entries.push({
@@ -404,7 +413,7 @@ function artifactsFromText(text: string): RailEntry[] {
     }
     if (looksLikeFilePath(target)) {
       entries.push({
-        id: `file:${target}`,
+        id: target,
         title: target.split("/").filter(Boolean).pop() ?? target,
         meta: target,
         status: "referenced",
@@ -412,6 +421,23 @@ function artifactsFromText(text: string): RailEntry[] {
     }
   }
   return entries;
+}
+
+function orderedMatches(text: string, pattern: RegExp, group: number): Array<{ index: number; target: string }> {
+  return Array.from(text.matchAll(pattern)).map((match) => ({
+    index: match.index ?? 0,
+    target: match[group] ?? "",
+  }));
+}
+
+function setArtifact(artifacts: Map<string, RailEntry>, key: string, entry: RailEntry): void {
+  if (artifacts.has(key)) return;
+  artifacts.set(key, entry);
+}
+
+function artifactKey(entry: RailEntry): string {
+  if (entry.status === "website") return `website:${entry.meta ?? entry.id}`;
+  return entry.meta ?? entry.id;
 }
 
 function looksLikeFilePath(value: string): boolean {

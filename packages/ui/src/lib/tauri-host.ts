@@ -47,8 +47,12 @@ export function sendRaw(message: unknown): Promise<void> {
   return invoke("host_send_raw", { message });
 }
 
-export function pollEvents(maxEvents = 128): Promise<HostEvent[]> {
-  return invoke("host_poll_events", { maxEvents });
+export function claimEventStream(): Promise<number> {
+  return invoke("host_claim_event_stream");
+}
+
+export function pollEvents(streamId: number | null | undefined, maxEvents = 128): Promise<HostEvent[]> {
+  return invoke("host_poll_events", { maxEvents, streamId });
 }
 
 export function writeLocalModelCatalog(
