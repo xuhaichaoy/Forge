@@ -102,6 +102,7 @@ export type SlashCommandAction =
   | { action: "clearInput" }
   | { action: "insertText"; text: string }
   | { action: "request"; request: SlashCommandRequest; clearInput: true; payload?: Record<string, unknown> }
+  | { action: "showCommands"; clearInput: true }
   | { action: "log"; level: "info" | "warn" | "error"; message: string };
 
 export interface SlashCommandContext {
@@ -126,10 +127,173 @@ export type AttachActionId =
 export type ComposerAttachment =
   | { type: "mention"; name: string; path: string }
   | { type: "localImage"; path: string }
-  | { type: "image"; url: string }
+  | { type: "image"; url: string; name?: string }
   | { type: "skill"; name: string; path: string }
   | { type: "plainText"; text: string }
   | { type: "filePath"; path: string };
+
+export interface ComposerTransferFileLike {
+  name?: string;
+  type?: string;
+  path?: string;
+  webkitRelativePath?: string;
+}
+
+export interface ComposerTransferFileSplit<T extends ComposerTransferFileLike> {
+  imageFiles: T[];
+  otherFiles: T[];
+}
+
+export type ComposerAttachmentPickerStatus = "closed" | "menu" | "input";
+
+export interface ComposerAttachmentPickerState {
+  status: ComposerAttachmentPickerStatus;
+  activeIndex: number;
+  inputMode: AttachActionId | null;
+  draft: string;
+  error: string | null;
+}
+
+export interface ComposerAttachmentConfirmResult {
+  state: ComposerAttachmentPickerState;
+  attachment: ComposerAttachment | null;
+}
+
+export const CLOSED_ATTACHMENT_PICKER_STATE: ComposerAttachmentPickerState = {
+  status: "closed",
+  activeIndex: 0,
+  inputMode: null,
+  draft: "",
+  error: null,
+};
+
+export type ComposerSubmitButtonMode = "send" | "queue" | "stop";
+
+export type ComposerThreadRuntimeStatus =
+  | "idle"
+  | "running"
+  | "waitingForRequest"
+  | "connecting";
+
+export interface ComposerSubmitStateInput {
+  input: string;
+  attachmentCount: number;
+  connecting: boolean;
+  threadRunning: boolean;
+  activeTurnId: string | null;
+  pendingRequestCount: number;
+}
+
+export interface ComposerSubmitState {
+  submitButtonMode: ComposerSubmitButtonMode;
+  threadRuntimeStatus: ComposerThreadRuntimeStatus;
+  hasContent: boolean;
+  disabled: boolean;
+  disabledReason?: string;
+  submitBlockReason?: "empty" | "connecting" | "pendingRequest" | "missingActiveTurn";
+  canStopFromEscape: boolean;
+  isQueueingEnabled: boolean;
+  requestCount: number;
+}
+
+export function projectComposerSubmitState(input: ComposerSubmitStateInput): ComposerSubmitState {
+  const hasContent = input.input.trim().length > 0 || input.attachmentCount > 0;
+  const hasActiveTurn = Boolean(input.activeTurnId);
+  const requestCount = Math.max(0, input.pendingRequestCount);
+  const threadRuntimeStatus = input.connecting
+    ? "connecting"
+    : requestCount > 0
+      ? "waitingForRequest"
+      : input.threadRunning
+        ? "running"
+        : "idle";
+
+  if (input.connecting) {
+    return {
+      submitButtonMode: "send",
+      threadRuntimeStatus,
+      hasContent,
+      disabled: true,
+      disabledReason: "Connecting to Codex app-server",
+      submitBlockReason: "connecting",
+      canStopFromEscape: false,
+      isQueueingEnabled: false,
+      requestCount,
+    };
+  }
+
+  if (input.threadRunning && !hasContent) {
+    return {
+      submitButtonMode: "stop",
+      threadRuntimeStatus,
+      hasContent,
+      disabled: !hasActiveTurn,
+      disabledReason: hasActiveTurn ? undefined : "Waiting for active turn before stopping",
+      submitBlockReason: hasActiveTurn ? undefined : "missingActiveTurn",
+      canStopFromEscape: hasActiveTurn,
+      isQueueingEnabled: false,
+      requestCount,
+    };
+  }
+
+  if (requestCount > 0) {
+    return {
+      submitButtonMode: input.threadRunning ? "queue" : "send",
+      threadRuntimeStatus,
+      hasContent,
+      disabled: true,
+      disabledReason: requestCount === 1
+        ? "Resolve the pending request before sending more input"
+        : `Resolve ${requestCount} pending requests before sending more input`,
+      submitBlockReason: "pendingRequest",
+      canStopFromEscape: false,
+      isQueueingEnabled: false,
+      requestCount,
+    };
+  }
+
+  if (input.threadRunning) {
+    return {
+      submitButtonMode: "queue",
+      threadRuntimeStatus,
+      hasContent,
+      disabled: !hasActiveTurn,
+      disabledReason: hasActiveTurn ? undefined : "Waiting for active turn before queueing a follow-up",
+      submitBlockReason: hasActiveTurn ? undefined : "missingActiveTurn",
+      canStopFromEscape: false,
+      isQueueingEnabled: hasActiveTurn,
+      requestCount,
+    };
+  }
+
+  return {
+    submitButtonMode: "send",
+    threadRuntimeStatus,
+    hasContent,
+    disabled: !hasContent,
+    disabledReason: hasContent ? undefined : "Enter a prompt or add context",
+    submitBlockReason: hasContent ? undefined : "empty",
+    canStopFromEscape: false,
+    isQueueingEnabled: false,
+    requestCount,
+  };
+}
+
+export function composerSubmitTooltip(state: ComposerSubmitState): string {
+  if (state.disabledReason) return state.disabledReason;
+
+  if (state.submitButtonMode === "stop") {
+    return state.canStopFromEscape ? "Stop response (Esc)" : "Stop response";
+  }
+
+  if (state.submitButtonMode === "queue") {
+    if (state.isQueueingEnabled) return "Queue follow-up (Enter)";
+    return "Queue follow-up";
+  }
+
+  if (state.hasContent) return "Send message (Enter)";
+  return "Send";
+}
 
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("model", "Model", "Choose the model and reasoning effort.", "model", "panel", ["provider", "engine"]),
@@ -228,6 +392,167 @@ export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
   },
 ];
 
+export function openAttachmentPicker(
+  state: ComposerAttachmentPickerState = CLOSED_ATTACHMENT_PICKER_STATE,
+): ComposerAttachmentPickerState {
+  return {
+    status: "menu",
+    activeIndex: clampAttachmentIndex(state.activeIndex),
+    inputMode: null,
+    draft: "",
+    error: null,
+  };
+}
+
+export function closeAttachmentPicker(): ComposerAttachmentPickerState {
+  return { ...CLOSED_ATTACHMENT_PICKER_STATE };
+}
+
+export function moveAttachmentPickerSelection(
+  state: ComposerAttachmentPickerState,
+  direction: 1 | -1,
+  actionCount = DEFAULT_ATTACH_ACTIONS.length,
+): ComposerAttachmentPickerState {
+  if (state.status !== "menu" || actionCount <= 0) return state;
+  return {
+    ...state,
+    activeIndex: (state.activeIndex + direction + actionCount) % actionCount,
+  };
+}
+
+export function selectAttachmentInputMode(
+  state: ComposerAttachmentPickerState,
+  mode: AttachActionId,
+): ComposerAttachmentPickerState {
+  const index = DEFAULT_ATTACH_ACTIONS.findIndex((action) => action.id === mode);
+  return {
+    status: "input",
+    activeIndex: index >= 0 ? index : state.activeIndex,
+    inputMode: mode,
+    draft: "",
+    error: null,
+  };
+}
+
+export function updateAttachmentInputDraft(
+  state: ComposerAttachmentPickerState,
+  draft: string,
+): ComposerAttachmentPickerState {
+  if (state.status !== "input") return state;
+  return {
+    ...state,
+    draft,
+    error: draft.trim() ? null : state.error,
+  };
+}
+
+export function confirmAttachmentInput(
+  state: ComposerAttachmentPickerState,
+): ComposerAttachmentConfirmResult {
+  if (state.status !== "input" || state.inputMode == null) {
+    return { state, attachment: null };
+  }
+
+  const attachment = createAttachmentFromInput(state.inputMode, state.draft);
+  if (!attachment) {
+    return {
+      state: {
+        ...state,
+        error: "Enter a value before adding context",
+      },
+      attachment: null,
+    };
+  }
+
+  return {
+    state: closeAttachmentPicker(),
+    attachment,
+  };
+}
+
+export function removeComposerAttachment(
+  attachments: ComposerAttachment[],
+  index: number,
+): ComposerAttachment[] {
+  if (index < 0 || index >= attachments.length) return attachments;
+  return attachments.filter((_, itemIndex) => itemIndex !== index);
+}
+
+export function mergeComposerAttachments(
+  current: ComposerAttachment[],
+  incoming: ComposerAttachment[],
+): ComposerAttachment[] {
+  if (incoming.length === 0) return current;
+  const seen = new Set(current.map(composerAttachmentKey));
+  const merged = [...current];
+  for (const attachment of incoming) {
+    const key = composerAttachmentKey(attachment);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(attachment);
+  }
+  return merged;
+}
+
+export function splitComposerTransferFiles<T extends ComposerTransferFileLike>(
+  files: ArrayLike<T> | null | undefined,
+): ComposerTransferFileSplit<T> {
+  const imageFiles: T[] = [];
+  const otherFiles: T[] = [];
+  for (const file of Array.from(files ?? [])) {
+    if (isImageFileLike(file)) imageFiles.push(file);
+    else otherFiles.push(file);
+  }
+  return { imageFiles, otherFiles };
+}
+
+export function composerAttachmentsFromPaths(paths: string[]): ComposerAttachment[] {
+  const attachments: ComposerAttachment[] = [];
+  for (const path of paths) {
+    const attachment = composerAttachmentFromPath(path);
+    if (attachment) attachments.push(attachment);
+  }
+  return mergeComposerAttachments([], attachments);
+}
+
+export function composerAttachmentFromPath(path: string): ComposerAttachment | null {
+  const trimmed = path.trim();
+  if (!trimmed) return null;
+  if (isImagePath(trimmed)) return { type: "localImage", path: trimmed };
+  return { type: "mention", name: inferNameFromPath(trimmed), path: trimmed };
+}
+
+export function composerFilePath(file: ComposerTransferFileLike): string | null {
+  for (const key of ["path", "webkitRelativePath"] as const) {
+    const value = file[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+export function composerAttachmentPreviewSrc(attachment: ComposerAttachment): string | null {
+  if (attachment.type === "image") return attachment.url.trim() || null;
+  if (attachment.type !== "localImage") return null;
+  const path = attachment.path.trim();
+  if (!path) return null;
+  if (/^(?:data|blob|https?|file):/i.test(path)) return path;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `file://${encodeURI(normalizedPath)}`;
+}
+
+export function compactAttachmentLabel(label: string, maxLength = 10): string {
+  const trimmed = label.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  if (maxLength <= 3) return trimmed.slice(0, maxLength);
+  return `${trimmed.slice(0, maxLength - 3)}...`;
+}
+
+export function isImageFileLike(file: ComposerTransferFileLike): boolean {
+  const mime = file.type?.trim().toLowerCase();
+  if (mime?.startsWith("image/")) return true;
+  return isImagePath(file.name ?? "");
+}
+
 export function composerEnterAction(input: string, event: ComposerKeyEventLike): ComposerEnterResult {
   if (event.key !== "Enter") return { action: "none", preventDefault: false };
   if (event.isComposing || event.nativeEvent?.isComposing) return { action: "none", preventDefault: false };
@@ -300,7 +625,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "status":
       return { action: "request", request: "showStatus", clearInput: true };
     case "help":
-      return { action: "log", level: "info", message: "Show available composer commands." };
+      return { action: "showCommands", clearInput: true };
     case "skills":
       return { action: "request", request: "listSkills", clearInput: true };
     case "hooks":
@@ -454,9 +779,13 @@ export function attachmentLabel(attachment: ComposerAttachment): string {
     case "mention":
       return `@ ${attachment.name || inferNameFromPath(attachment.path)}`;
     case "localImage":
-      return `image ${inferNameFromPath(attachment.path)}`;
+      return inferNameFromPath(attachment.path);
     case "image":
-      return `url ${attachment.url}`;
+      return attachment.name?.trim()
+        ? attachment.name.trim()
+        : attachment.url.startsWith("data:")
+          ? "pasted image"
+          : inferNameFromPath(attachment.url) || attachment.url;
     case "skill":
       return `skill ${attachment.name || inferNameFromPath(attachment.path)}`;
     case "plainText":
@@ -501,4 +830,30 @@ function inferNameFromPath(path: string): string {
 function firstLine(value: string): string {
   const line = value.trim().split(/\r?\n/, 1)[0] ?? "";
   return line.length > 42 ? `${line.slice(0, 39)}...` : line;
+}
+
+function clampAttachmentIndex(index: number): number {
+  return Math.max(0, Math.min(DEFAULT_ATTACH_ACTIONS.length - 1, index));
+}
+
+function isImagePath(path: string): boolean {
+  const normalized = path.trim().toLowerCase();
+  return /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|svg|tif|tiff|webp)$/.test(normalized);
+}
+
+function composerAttachmentKey(attachment: ComposerAttachment): string {
+  switch (attachment.type) {
+    case "mention":
+      return `mention:${attachment.path.trim()}`;
+    case "localImage":
+      return `localImage:${attachment.path.trim()}`;
+    case "image":
+      return `image:${attachment.url.trim()}`;
+    case "skill":
+      return `skill:${attachment.path.trim()}`;
+    case "plainText":
+      return `plainText:${attachment.text.trim()}`;
+    case "filePath":
+      return `filePath:${attachment.path.trim()}`;
+  }
 }

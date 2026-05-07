@@ -53,7 +53,7 @@ for (const file of testFiles) {
   }
 
   for (const [name, run] of runners) {
-    run();
+    await run();
     count += 1;
     console.log(`ok ${file} ${name}`);
   }

@@ -44,16 +44,19 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   const branchInput = input.branchDetails;
   const branchDetails = isBranchDetailsViewModel(branchInput) ? branchInput : undefined;
   const branchEntries = branchDetails ? branchDetailsEntries(branchDetails) : (branchInput as BranchDetailsEntryInput).entries;
-  sections.push({
-    id: "branchDetails",
-    title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Branch details",
-    count: branchEntries.length,
-    entries: branchEntries,
-    allEntries: branchEntries,
-    remainingCount: 0,
-    canToggle: false,
-    ...(branchDetails ? { branchDetails } : {}),
-  });
+  const hasBranchDetails = branchDetails ? branchDetails.hasData : branchEntries.length > 0;
+  if (hasBranchDetails) {
+    sections.push({
+      id: "branchDetails",
+      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Branch details",
+      count: branchEntries.length,
+      entries: branchEntries,
+      allEntries: branchEntries,
+      remainingCount: 0,
+      canToggle: false,
+      ...(branchDetails ? { branchDetails } : {}),
+    });
+  }
 
   if (input.artifacts.length > 0) {
     sections.push(projectEntrySection("artifacts", "Artifacts", input.artifacts));
@@ -120,6 +123,7 @@ function branchDetailsEntries(details: BranchDetailsViewModel): RailEntry[] {
       title: details.diff.title,
       meta: details.diff.summary,
       status: details.diff.files.length > 0 ? "changed" : undefined,
+      action: { kind: "diff" },
     },
   ];
 }

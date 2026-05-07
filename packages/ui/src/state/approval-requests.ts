@@ -5,20 +5,32 @@ export interface PendingRequestDetail {
   title: string;
   reason?: string;
   body: string;
+  metadata: PendingRequestMetadata[];
   questions: PendingRequestQuestion[];
   acceptLabel: string;
   declineLabel: string;
+  canAccept: boolean;
+  acceptDisabledReason?: string;
+}
+
+export interface PendingRequestMetadata {
+  label: string;
+  value: string;
 }
 
 export interface PendingRequestQuestion {
   id: string;
   header: string;
   question: string;
+  kind: "text" | "password" | "textarea" | "number" | "boolean" | "singleSelect" | "multiSelect";
   isSecret: boolean;
+  required: boolean;
+  defaultAnswers: string[];
   options: PendingRequestOption[];
 }
 
 export interface PendingRequestOption {
+  value: string;
   label: string;
   description: string;
 }
@@ -35,9 +47,11 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
           commandText(params),
           stringField(params, "cwd") ? `cwd: ${stringField(params, "cwd")}` : "",
         ].filter(Boolean).join("\n"),
+        metadata: [],
         questions: [],
         acceptLabel: "Allow",
         declineLabel: "Cancel",
+        canAccept: true,
       };
     case "item/fileChange/requestApproval":
     case "applyPatchApproval": {
@@ -51,9 +65,11 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         title: "Apply file changes",
         reason: stringField(params, "reason"),
         body: paths.length > 0 ? paths.join("\n") : formatUnknown(params),
+        metadata: [],
         questions: [],
         acceptLabel: "Allow",
         declineLabel: "Cancel",
+        canAccept: true,
       };
     }
     case "item/tool/requestUserInput": {
@@ -63,46 +79,74 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         body: questions.length > 0
           ? questions.map((question, index) => `${index + 1}. ${question.question}`).join("\n")
           : formatUnknown(params),
+        metadata: requestMetadata(params, ["threadId", "turnId", "itemId"]),
         questions,
         acceptLabel: "Submit",
         declineLabel: "Cancel",
+        canAccept: true,
       };
     }
-    case "mcpServer/elicitation/request":
+    case "mcpServer/elicitation/request": {
+      const questions = mcpElicitationQuestions(params);
       return {
         title: "MCP request",
         body: stringField(params, "message") || stringField(params, "title") || formatUnknown(params),
-        questions: [],
-        acceptLabel: "Allow",
+        metadata: mcpElicitationMetadata(params),
+        questions,
+        acceptLabel: questions.length > 0 ? "Submit" : "Allow",
         declineLabel: "Cancel",
+        canAccept: true,
       };
+    }
     case "item/permissions/requestApproval":
       return {
-        title: "Permission request",
+        title: permissionRequestTitle(params?.permissions),
         reason: stringField(params, "reason"),
-        body: [
-          stringField(params, "cwd") ? `cwd: ${stringField(params, "cwd")}` : "",
-          formatUnknown(params?.permissions),
-        ].filter(Boolean).join("\n"),
-        questions: [],
+        body: describePermissions(params?.permissions),
+        metadata: requestMetadata(params, ["cwd", "threadId", "turnId", "itemId"]),
+        questions: hasGrantablePermissions(params?.permissions) ? [permissionScopeQuestion()] : [],
         acceptLabel: "Allow",
         declineLabel: "Cancel",
+        canAccept: hasGrantablePermissions(params?.permissions),
+        acceptDisabledReason: hasGrantablePermissions(params?.permissions)
+          ? undefined
+          : "No additional permission profile was provided.",
       };
     case "item/tool/call":
       return {
         title: "Tool call",
-        body: `${stringField(params, "tool") || "tool"}\n${formatUnknown(params?.arguments ?? params)}`,
+        body: [
+          "HiCodex does not implement dynamic client-side tool execution yet.",
+          formatUnknown(params?.arguments ?? params),
+        ].join("\n"),
+        metadata: requestMetadata(params, ["namespace", "tool", "callId", "threadId", "turnId"]),
         questions: [],
-        acceptLabel: "Allow",
+        acceptLabel: "Unsupported",
         declineLabel: "Cancel",
+        canAccept: false,
+        acceptDisabledReason: "Dynamic tool execution requires a typed tool response.",
+      };
+    case "account/chatgptAuthTokens/refresh":
+      return {
+        title: "ChatGPT auth refresh",
+        body: "HiCodex does not manage ChatGPT auth tokens for app-server refresh requests.",
+        metadata: requestMetadata(params, ["threadId", "turnId", "accountId"]),
+        questions: [],
+        acceptLabel: "Unsupported",
+        declineLabel: "Cancel",
+        canAccept: false,
+        acceptDisabledReason: "Token refresh must be handled by a real ChatGPT auth provider.",
       };
     default:
       return {
         title: `Unsupported request: ${request.method}`,
         body: formatUnknown(params),
+        metadata: [],
         questions: [],
-        acceptLabel: "Allow",
+        acceptLabel: "Unsupported",
         declineLabel: "Cancel",
+        canAccept: false,
+        acceptDisabledReason: "Unknown app-server request type.",
       };
   }
 }
@@ -131,21 +175,27 @@ export function buildApprovalResult(
     case "item/tool/requestUserInput":
       return accepted ? { answers: buildUserInputAnswers(request, answers) } : null;
     case "mcpServer/elicitation/request":
-      return { action: accepted ? "accept" : "decline", content: null, _meta: null };
+      return {
+        action: accepted ? "accept" : "decline",
+        content: accepted ? buildMcpElicitationContent(request, answers) : null,
+        _meta: null,
+      };
     case "item/permissions/requestApproval": {
       if (!accepted) return null;
       const params = request.params as { permissions?: { network?: unknown; fileSystem?: unknown } } | undefined;
+      const scope = answers.scope?.[0] === "session" ? "session" : "turn";
       return {
         permissions: {
           network: params?.permissions?.network ?? undefined,
           fileSystem: params?.permissions?.fileSystem ?? undefined,
         },
-        scope: "turn",
+        scope,
         strictAutoReview: false,
       };
     }
     case "item/tool/call":
-      return accepted ? {} : null;
+    case "account/chatgptAuthTokens/refresh":
+      return null;
     default:
       return null;
   }
@@ -158,14 +208,26 @@ export function requestUserInputQuestions(params: unknown): PendingRequestQuesti
   return questions.map((question, index) => {
     const record = question && typeof question === "object" ? question as Record<string, unknown> : {};
     const text = questionText(question);
+    const options = requestUserInputOptions(record.options);
     return {
       id: stringField(record, "id") || `question_${index + 1}`,
       header: stringField(record, "header") || stringField(record, "label") || `Question ${index + 1}`,
       question: text,
+      kind: requestUserInputKind(record, options),
       isSecret: record.isSecret === true || record.is_secret === true,
-      options: requestUserInputOptions(record.options),
+      required: true,
+      defaultAnswers: [],
+      options,
     };
   });
+}
+
+function requestUserInputKind(
+  record: Record<string, unknown>,
+  options: PendingRequestOption[],
+): PendingRequestQuestion["kind"] {
+  if (options.length > 0) return "singleSelect";
+  return record.isSecret === true || record.is_secret === true ? "password" : "textarea";
 }
 
 function requestUserInputOptions(value: unknown): PendingRequestOption[] {
@@ -176,6 +238,7 @@ function requestUserInputOptions(value: unknown): PendingRequestOption[] {
     const label = stringField(record, "label");
     if (!label) return [];
     return [{
+      value: label,
       label,
       description: stringField(record, "description"),
     }];
@@ -197,6 +260,343 @@ function buildUserInputAnswers(
     }
   }
   return result;
+}
+
+function mcpElicitationQuestions(params: unknown): PendingRequestQuestion[] {
+  if (!params || typeof params !== "object") return [];
+  const record = params as Record<string, unknown>;
+  if (record.mode !== "form") return [];
+  const schema = record.requestedSchema;
+  if (!schema || typeof schema !== "object") return [];
+  const properties = (schema as Record<string, unknown>).properties;
+  if (!properties || typeof properties !== "object") return [];
+  const required = new Set(
+    Array.isArray((schema as Record<string, unknown>).required)
+      ? ((schema as Record<string, unknown>).required as unknown[]).filter((value): value is string => typeof value === "string")
+      : [],
+  );
+  return Object.entries(properties as Record<string, unknown>).flatMap(([id, field]) => {
+    const question = mcpFieldQuestion(id, field, required.has(id));
+    return question ? [question] : [];
+  });
+}
+
+function mcpFieldQuestion(id: string, field: unknown, required: boolean): PendingRequestQuestion | null {
+  if (!field || typeof field !== "object") return null;
+  const record = field as Record<string, unknown>;
+  const title = stringField(record, "title") || id;
+  const description = stringField(record, "description");
+  const type = stringField(record, "type");
+  const options = mcpEnumOptions(record);
+  const defaultAnswers = mcpDefaultAnswers(record);
+
+  if (type === "array") {
+    return {
+      id,
+      header: title,
+      question: description || title,
+      kind: "multiSelect",
+      isSecret: false,
+      required,
+      defaultAnswers,
+      options,
+    };
+  }
+  if (options.length > 0) {
+    return {
+      id,
+      header: title,
+      question: description || title,
+      kind: "singleSelect",
+      isSecret: false,
+      required,
+      defaultAnswers,
+      options,
+    };
+  }
+  if (type === "number" || type === "integer") {
+    return {
+      id,
+      header: title,
+      question: description || title,
+      kind: "number",
+      isSecret: false,
+      required,
+      defaultAnswers,
+      options: [],
+    };
+  }
+  if (type === "boolean") {
+    return {
+      id,
+      header: title,
+      question: description || title,
+      kind: "boolean",
+      isSecret: false,
+      required,
+      defaultAnswers,
+      options: [
+        { value: "true", label: "Yes", description: "" },
+        { value: "false", label: "No", description: "" },
+      ],
+    };
+  }
+  return {
+    id,
+    header: title,
+    question: description || title,
+    kind: stringField(record, "format") === "password" ? "password" : "text",
+    isSecret: stringField(record, "format") === "password",
+    required,
+    defaultAnswers,
+    options: [],
+  };
+}
+
+function mcpEnumOptions(record: Record<string, unknown>): PendingRequestOption[] {
+  const oneOf = Array.isArray(record.oneOf) ? record.oneOf : null;
+  if (oneOf) {
+    return oneOf.flatMap((option) => {
+      if (!option || typeof option !== "object") return [];
+      const value = stringField(option as Record<string, unknown>, "const");
+      if (!value) return [];
+      return [{
+        value,
+        label: stringField(option as Record<string, unknown>, "title") || value,
+        description: "",
+      }];
+    });
+  }
+
+  const items = record.items && typeof record.items === "object" ? record.items as Record<string, unknown> : null;
+  const anyOf = Array.isArray(items?.anyOf) ? items?.anyOf : null;
+  if (anyOf) {
+    return anyOf.flatMap((option) => {
+      if (!option || typeof option !== "object") return [];
+      const value = stringField(option as Record<string, unknown>, "const");
+      if (!value) return [];
+      return [{
+        value,
+        label: stringField(option as Record<string, unknown>, "title") || value,
+        description: "",
+      }];
+    });
+  }
+
+  const enumValues = Array.isArray(record.enum)
+    ? record.enum
+    : Array.isArray(items?.enum)
+      ? items?.enum
+      : [];
+  const enumNames = Array.isArray(record.enumNames) ? record.enumNames : [];
+  return enumValues.flatMap((value, index) => {
+    if (typeof value !== "string") return [];
+    const enumName = enumNames[index];
+    return [{
+      value,
+      label: typeof enumName === "string" && enumName ? enumName : value,
+      description: "",
+    }];
+  });
+}
+
+function mcpDefaultAnswers(record: Record<string, unknown>): string[] {
+  const value = record.default;
+  if (Array.isArray(value)) return value.map(String);
+  if (value === undefined || value === null) return [];
+  return [String(value)];
+}
+
+function buildMcpElicitationContent(
+  request: PendingServerRequest,
+  answers: Record<string, string[]>,
+): Record<string, unknown> | null {
+  const params = request.params as Record<string, unknown> | undefined;
+  if (params?.mode !== "form") return null;
+  const result: Record<string, unknown> = {};
+  for (const question of mcpElicitationQuestions(request.params)) {
+    const values = normalizeAnswers(answers[question.id] ?? question.defaultAnswers);
+    if (values.length === 0) continue;
+    if (question.kind === "multiSelect") {
+      result[question.id] = values;
+    } else if (question.kind === "number") {
+      const numericValue = Number(values[0]);
+      if (Number.isFinite(numericValue)) result[question.id] = numericValue;
+    } else if (question.kind === "boolean") {
+      result[question.id] = values[0] === "true";
+    } else {
+      result[question.id] = values[0];
+    }
+  }
+  return result;
+}
+
+function normalizeAnswers(values: string[]): string[] {
+  return values
+    .map((answer) => answer.trim())
+    .filter(Boolean);
+}
+
+function permissionScopeQuestion(): PendingRequestQuestion {
+  return {
+    id: "scope",
+    header: "Scope",
+    question: "How long should this permission apply?",
+    kind: "singleSelect",
+    isSecret: false,
+    required: true,
+    defaultAnswers: ["turn"],
+    options: [
+      { value: "turn", label: "This turn", description: "Allow for the current turn only." },
+      { value: "session", label: "This session", description: "Allow until this app-server session ends." },
+    ],
+  };
+}
+
+function permissionRequestTitle(value: unknown): string {
+  if (!value || typeof value !== "object") return "Allow additional access?";
+  const record = value as Record<string, unknown>;
+  const hasNetwork = hasNetworkPermission(record.network);
+  const fileAccess = fileSystemAccessSummary(record.fileSystem);
+  if (hasNetwork && !fileAccess) return "Allow network access?";
+  if (!hasNetwork && fileAccess) {
+    if (fileAccess.access === "read") return `Allow read access to ${fileAccess.target}?`;
+    if (fileAccess.access === "write") return `Allow write access to ${fileAccess.target}?`;
+    if (fileAccess.access === "read and write") return `Allow read and write access to ${fileAccess.target}?`;
+  }
+  return "Allow additional access?";
+}
+
+function hasGrantablePermissions(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return hasNetworkPermission(record.network) || hasFileSystemPermission(record.fileSystem);
+}
+
+function hasNetworkPermission(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  return (value as Record<string, unknown>).enabled !== false;
+}
+
+function hasFileSystemPermission(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return arrayOfStrings(record.read).length > 0
+    || arrayOfStrings(record.write).length > 0
+    || (Array.isArray(record.entries) && record.entries.length > 0);
+}
+
+function fileSystemAccessSummary(value: unknown): { access: "read" | "write" | "read and write"; target: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const read = arrayOfStrings(record.read);
+  const write = arrayOfStrings(record.write);
+  const entryTargets = Array.isArray(record.entries)
+    ? record.entries.flatMap((entry) => {
+      const summary = fileSystemEntrySummary(entry);
+      return summary ? [summary] : [];
+    })
+    : [];
+  const targets = [...read, ...write, ...entryTargets.map((entry) => entry.target)].filter(Boolean);
+  const uniqueTargets = Array.from(new Set(targets));
+  if (uniqueTargets.length !== 1) return null;
+  const hasRead = read.length > 0 || entryTargets.some((entry) => entry.access === "read");
+  const hasWrite = write.length > 0 || entryTargets.some((entry) => entry.access === "write");
+  return {
+    access: hasRead && hasWrite ? "read and write" : hasWrite ? "write" : "read",
+    target: uniqueTargets[0],
+  };
+}
+
+function fileSystemEntrySummary(value: unknown): { access: "read" | "write"; target: string } | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const access = stringField(record, "access");
+  if (access !== "read" && access !== "write") return null;
+  const path = record.path && typeof record.path === "object" ? record.path as Record<string, unknown> : null;
+  if (!path) return null;
+  if (path.type === "path") return { access, target: stringField(path, "path") };
+  if (path.type === "glob_pattern") return { access, target: stringField(path, "pattern") };
+  if (path.type === "special") return { access, target: stringField(path, "value") };
+  return null;
+}
+
+function mcpElicitationMetadata(params: unknown): PendingRequestMetadata[] {
+  const metadata = requestMetadata(params, ["serverName", "mode", "url", "elicitationId", "threadId", "turnId"]);
+  const labels: Record<string, string> = {
+    serverName: "Server",
+    mode: "Mode",
+    url: "URL",
+    elicitationId: "Request",
+    threadId: "Thread",
+    turnId: "Turn",
+  };
+  return metadata.map((item) => ({
+    label: labels[item.label] ?? item.label,
+    value: item.value,
+  }));
+}
+
+function requestMetadata(params: unknown, keys: string[]): PendingRequestMetadata[] {
+  if (!params || typeof params !== "object") return [];
+  const record = params as Record<string, unknown>;
+  return keys.flatMap((key) => {
+    const value = record[key];
+    if (value === undefined || value === null || value === "") return [];
+    return [{ label: key, value: String(value) }];
+  });
+}
+
+function describePermissions(value: unknown): string {
+  if (!value || typeof value !== "object") return "No additional permissions requested.";
+  const record = value as Record<string, unknown>;
+  const lines = [
+    ...describeNetworkPermissions(record.network),
+    ...describeFileSystemPermissions(record.fileSystem),
+  ];
+  return lines.length > 0 ? lines.join("\n") : "No additional permissions requested.";
+}
+
+function describeNetworkPermissions(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  if (record.enabled === true) return ["Network: enabled"];
+  if (record.enabled === false) return ["Network: disabled"];
+  return [`Network: ${formatUnknown(value)}`];
+}
+
+function describeFileSystemPermissions(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const lines: string[] = [];
+  const read = arrayOfStrings(record.read);
+  const write = arrayOfStrings(record.write);
+  if (read.length > 0) lines.push(`Read: ${read.join(", ")}`);
+  if (write.length > 0) lines.push(`Write: ${write.join(", ")}`);
+  if (Array.isArray(record.entries)) {
+    for (const entry of record.entries) {
+      const line = describeFileSystemEntry(entry);
+      if (line) lines.push(line);
+    }
+  }
+  if (typeof record.globScanMaxDepth === "number") lines.push(`Glob scan max depth: ${record.globScanMaxDepth}`);
+  return lines.length > 0 ? lines : [`File system: ${formatUnknown(value)}`];
+}
+
+function describeFileSystemEntry(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const access = stringField(record, "access") || "access";
+  const path = record.path && typeof record.path === "object" ? record.path as Record<string, unknown> : null;
+  if (!path) return null;
+  if (path.type === "path") return `${access}: ${stringField(path, "path")}`;
+  if (path.type === "glob_pattern") return `${access}: ${stringField(path, "pattern")}`;
+  if (path.type === "special") return `${access}: ${stringField(path, "value")}`;
+  return null;
+}
+
+function arrayOfStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
 function commandText(value: unknown): string {

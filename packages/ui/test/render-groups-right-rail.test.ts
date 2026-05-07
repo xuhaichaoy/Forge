@@ -1,9 +1,10 @@
-import type { ThreadItem } from "@hicodex/codex-protocol";
-import { projectConversation } from "../src/state/render-groups";
+import { projectConversation, type AccumulatedThreadItem as ThreadItem } from "../src/state/render-groups";
 
 export default function runRenderGroupsRightRailTests(): void {
   usesLatestTodoListPlanForProgress();
+  usesReducerPlanFactsForProgress();
   dedupesArtifactsAcrossFileChangesAndAssistantText();
+  projectsGeneratedImageSourcesIntoArtifacts();
   excludesNodeReplSourcesButKeepsMcpAndWebSearchSources();
 }
 
@@ -39,6 +40,27 @@ function usesLatestTodoListPlanForProgress(): void {
   );
 }
 
+function usesReducerPlanFactsForProgress(): void {
+  const projection = projectConversation([], {
+    progressPlan: {
+      id: "turn-plan:latest",
+      plan: [
+        { step: "Read Desktop bundle", status: "completed" },
+        { step: "Move plan out of ThreadItem", status: "inProgress" },
+      ],
+    },
+  });
+
+  assertDeepEqual(
+    projection.progress.map((entry) => ({ id: entry.id, title: entry.title, status: entry.status })),
+    [
+      { id: "turn-plan:latest:0", title: "Read Desktop bundle", status: "completed" },
+      { id: "turn-plan:latest:1", title: "Move plan out of ThreadItem", status: "inProgress" },
+    ],
+    "explicit plan facts should drive Progress without synthetic ThreadItems",
+  );
+}
+
 function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
   const projection = projectConversation([
     {
@@ -71,6 +93,56 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
       "http://localhost:5178/",
     ],
     "artifacts should dedupe fileChange paths, assistant file references, and repeated URLs",
+  );
+  assertDeepEqual(
+    projection.artifacts[0]?.reference,
+    { path: "packages/ui/src/state/render-groups.ts", lineStart: 1 },
+    "file artifacts should carry a reference target for the preview panel",
+  );
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.action),
+    [
+      { kind: "file", reference: { path: "packages/ui/src/state/render-groups.ts", lineStart: 1 } },
+      { kind: "file", reference: { path: "packages/ui/test/render-groups-right-rail.test.ts", lineStart: 1 } },
+      { kind: "url", url: "http://localhost:5178/" },
+    ],
+    "artifact entries should expose click targets from the projection layer",
+  );
+}
+
+function projectsGeneratedImageSourcesIntoArtifacts(): void {
+  const projection = projectConversation([
+    {
+      type: "generated-image",
+      id: "generated-image-1",
+      status: "completed",
+      src: "https://example.com/output/generated%20image.png",
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "generated-image-2",
+      status: "completed",
+      savedPath: "/tmp/local-render.png",
+    } as unknown as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => ({ title: entry.title, meta: entry.meta, status: entry.status, action: entry.action })),
+    [
+      {
+        title: "generated image.png",
+        meta: "https://example.com/output/generated%20image.png",
+        status: "completed",
+        action: { kind: "url", url: "https://example.com/output/generated%20image.png" },
+      },
+      {
+        title: "local-render.png",
+        meta: "/tmp/local-render.png",
+        status: "completed",
+        action: { kind: "file", reference: { path: "/tmp/local-render.png", lineStart: 1 } },
+      },
+    ],
+    "generated images should surface remote src and local saved paths as Artifacts",
   );
 }
 
@@ -113,6 +185,14 @@ function excludesNodeReplSourcesButKeepsMcpAndWebSearchSources(): void {
     projection.sources.map((entry) => entry.meta),
     ["MCP tool", "Web search"],
     "sources should preserve source kinds",
+  );
+  assertDeepEqual(
+    projection.sources.map((entry) => entry.action),
+    [
+      { kind: "source", itemId: "github-1" },
+      { kind: "source", itemId: "web-search-1" },
+    ],
+    "sources should carry source item targets for conversation navigation",
   );
 }
 

@@ -84,8 +84,14 @@ export default function runModelSettingsTests(): void {
       description: "Local OpenAI-compatible coding model via http://127.0.0.1:8890/v1.",
       contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
       autoCompactTokenLimit: DEFAULT_MODEL_AUTO_COMPACT_TOKEN_LIMIT,
+      inputModalities: ["text", "image"],
     },
     "buildLocalModelCatalogEntry uses normalized values and defaults",
+  );
+  assertDeepEqual(
+    buildLocalModelCatalogEntry(testModel({ supportsImageInput: false })).inputModalities,
+    ["text"],
+    "buildLocalModelCatalogEntry can write text-only model capability",
   );
 
   const edits = buildModelConfigEdits(

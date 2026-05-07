@@ -30,6 +30,7 @@ export function ModelSettingsPanel({
           <label>API Key<input type="password" value={modelDraft.apiKey} onChange={(event) => setModelDraft({ ...modelDraft, apiKey: event.target.value })} /></label>
           <label>Model<input value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })} /></label>
           <label>Temperature<input type="number" step="0.1" value={modelDraft.temperature} onChange={(event) => setModelDraft({ ...modelDraft, temperature: Number(event.target.value) })} /></label>
+          <label><input type="checkbox" checked={modelDraft.supportsImageInput !== false} onChange={(event) => setModelDraft({ ...modelDraft, supportsImageInput: event.target.checked })} /> Image input</label>
         </div>
         <div className="hc-settings-footer">
           <div className="hc-muted">{models.length} configured model profile(s)</div>

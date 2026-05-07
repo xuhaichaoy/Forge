@@ -59,7 +59,38 @@ pub struct LocalModelCatalogConfig {
     pub description: Option<String>,
     pub context_window: Option<u64>,
     pub auto_compact_token_limit: Option<u64>,
+    pub input_modalities: Option<Vec<String>>,
 }
+
+const HICODEX_PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
+const HICODEX_MODEL_INSTRUCTIONS_HEADER: &str = "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.";
+const HICODEX_BASE_INSTRUCTIONS: &str = r#"You are a coding agent running in Codex Desktop. You are expected to be precise, safe, and helpful.
+
+# How You Work
+
+- Inspect the workspace before making claims or changing code.
+- Use tool calls for shell commands, file reads, searches, patches, and plans.
+- Keep user-visible progress updates concise and factual.
+- Continue after tool results when more work is required.
+- Do not output raw hidden-reasoning markup such as <think> or </think>. If the model performs internal reasoning, keep it out of assistant messages. User-visible assistant messages should be progress updates, tool calls, or final answers.
+
+# Tool Use
+
+- Prefer `rg` or `rg --files` for search.
+- Use `apply_patch` for manual code edits.
+- Do not use destructive git or filesystem commands unless explicitly requested.
+- Preserve unrelated work in dirty worktrees.
+
+# Final Answers
+
+- Summarize what changed and what was verified.
+- Mention any tests or builds that could not be run.
+- Keep the answer concise unless the user asks for detail.
+"#;
+const HICODEX_PERSONALITY_DEFAULT: &str = "";
+const HICODEX_PERSONALITY_FRIENDLY: &str = "You are concise, direct, friendly, and collaborative.";
+const HICODEX_PERSONALITY_PRAGMATIC: &str =
+    "You are a deeply pragmatic, effective software engineer.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -452,6 +483,8 @@ fn ensure_default_hicodex_profile(codex_home: &Path) -> Result<(), std::io::Erro
     let models_path = codex_home.join("models.json");
     if !models_path.exists() {
         fs::write(&models_path, default_model_catalog_json())?;
+    } else {
+        ensure_local_model_catalog_messages(&models_path)?;
     }
 
     let config_path = codex_home.join("config.toml");
@@ -470,8 +503,60 @@ fn ensure_default_hicodex_profile(codex_home: &Path) -> Result<(), std::io::Erro
     Ok(())
 }
 
+fn ensure_local_model_catalog_messages(models_path: &Path) -> Result<(), std::io::Error> {
+    let config = fs::read_to_string(models_path)?;
+    let Ok(mut catalog) = serde_json::from_str::<Value>(&config) else {
+        return Ok(());
+    };
+    let Some(models) = catalog.get_mut("models").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+    for model in models {
+        if !matches!(model.get("slug"), Some(Value::String(_))) {
+            continue;
+        }
+        if model.get("model_messages").is_none()
+            || model.get("model_messages") == Some(&Value::Null)
+        {
+            model["model_messages"] = hicodex_model_messages_json();
+            changed = true;
+        }
+        if matches!(
+            model.get("base_instructions"),
+            Some(Value::String(value)) if value == "You are Codex, a coding agent. Help the user work in the local workspace."
+        ) {
+            model["base_instructions"] = Value::String(HICODEX_BASE_INSTRUCTIONS.to_string());
+            changed = true;
+        }
+        if is_legacy_default_text_only_model(model) {
+            model["input_modalities"] = json!(default_input_modalities_json());
+            changed = true;
+        }
+    }
+
+    if changed {
+        fs::write(
+            models_path,
+            serde_json::to_string_pretty(&catalog)
+                .expect("local model catalog should serialize after model message refresh"),
+        )?;
+    }
+    Ok(())
+}
+
 fn missing_top_level_model_config(config: &str, models_path: &Path) -> String {
     let mut lines = Vec::new();
+    if !has_top_level_toml_key(config, "instructions") {
+        lines.push(format!(
+            "instructions = {}",
+            toml_multiline_literal(HICODEX_BASE_INSTRUCTIONS)
+        ));
+    }
+    if !has_top_level_toml_key(config, "personality") {
+        lines.push("personality = \"pragmatic\"".to_string());
+    }
     if !config.contains("model_catalog_json") {
         lines.push(format!(
             "model_catalog_json = {}",
@@ -494,6 +579,25 @@ fn missing_top_level_model_config(config: &str, models_path: &Path) -> String {
     }
 }
 
+fn has_top_level_toml_key(config: &str, key: &str) -> bool {
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            return false;
+        }
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let Some((name, _value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        if name.trim() == key {
+            return true;
+        }
+    }
+    false
+}
+
 fn insert_top_level_toml(config: &str, addition: &str) -> String {
     if let Some(index) = config.find("\n[") {
         let (head, tail) = config.split_at(index + 1);
@@ -508,6 +612,8 @@ fn default_config_toml(models_path: &Path) -> String {
     format!(
         r#"model = "Qwen3.6-27B-mxfp4"
 model_provider = "hicodex_local"
+personality = "pragmatic"
+instructions = {instructions}
 model_catalog_json = {models_path}
 model_context_window = 262144
 model_auto_compact_token_limit = 235929
@@ -522,6 +628,7 @@ supports_websockets = false
 experimental_bearer_token = {api_key}
 "#,
         models_path = toml_string(&models_path.to_string_lossy()),
+        instructions = toml_multiline_literal(HICODEX_BASE_INSTRUCTIONS),
         api_key = toml_string(&api_key),
     )
 }
@@ -533,6 +640,7 @@ fn default_model_catalog_json() -> String {
         description: Some("Local OpenAI-compatible coding model via HiCodex gateway.".to_string()),
         context_window: Some(262144),
         auto_compact_token_limit: Some(235929),
+        input_modalities: Some(default_input_modalities_json()),
     })
 }
 
@@ -556,6 +664,7 @@ fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("Local OpenAI-compatible coding model via HiCodex gateway.");
+    let input_modalities = normalize_input_modalities(config.input_modalities.as_deref());
 
     serde_json::to_string_pretty(&json!({
         "models": [
@@ -573,7 +682,8 @@ fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
                 "service_tiers": [],
                 "availability_nux": null,
                 "upgrade": null,
-                "base_instructions": "You are Codex, a coding agent. Help the user work in the local workspace.",
+                "base_instructions": HICODEX_BASE_INSTRUCTIONS,
+                "model_messages": hicodex_model_messages_json(),
                 "supports_reasoning_summaries": false,
                 "default_reasoning_summary": "none",
                 "support_verbosity": false,
@@ -588,7 +698,7 @@ fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
                 "auto_compact_token_limit": auto_compact_token_limit,
                 "effective_context_window_percent": 95,
                 "experimental_supported_tools": [],
-                "input_modalities": ["text"],
+                "input_modalities": input_modalities,
                 "supports_search_tool": false
             }
         ]
@@ -596,8 +706,78 @@ fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
     .expect("default model catalog should serialize")
 }
 
+fn default_input_modalities_json() -> Vec<String> {
+    vec!["text".to_string(), "image".to_string()]
+}
+
+fn normalize_input_modalities(input_modalities: Option<&[String]>) -> Vec<String> {
+    let mut normalized = Vec::new();
+    let default_modalities;
+    let modalities = match input_modalities {
+        Some(input_modalities) => input_modalities,
+        None => {
+            default_modalities = default_input_modalities_json();
+            &default_modalities
+        }
+    };
+    for modality in modalities {
+        match modality.as_str() {
+            "text" if !normalized.iter().any(|value| value == "text") => {
+                normalized.push("text".to_string());
+            }
+            "image" if !normalized.iter().any(|value| value == "image") => {
+                normalized.push("image".to_string());
+            }
+            _ => {}
+        }
+    }
+    if !normalized.iter().any(|value| value == "text") {
+        normalized.insert(0, "text".to_string());
+    }
+    normalized
+}
+
+fn is_legacy_default_text_only_model(model: &Value) -> bool {
+    if model.get("slug").and_then(Value::as_str) != Some("Qwen3.6-27B-mxfp4") {
+        return false;
+    }
+    if model.get("description").and_then(Value::as_str)
+        != Some("Local OpenAI-compatible coding model via HiCodex gateway.")
+    {
+        return false;
+    }
+    let Some(input_modalities) = model.get("input_modalities").and_then(Value::as_array) else {
+        return false;
+    };
+    input_modalities.len() == 1
+        && input_modalities
+            .first()
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "text")
+}
+
+fn hicodex_model_messages_json() -> Value {
+    json!({
+        "instructions_template": format!(
+            "{}\n\n{}\n\n{}",
+            HICODEX_MODEL_INSTRUCTIONS_HEADER,
+            HICODEX_PERSONALITY_PLACEHOLDER,
+            HICODEX_BASE_INSTRUCTIONS,
+        ),
+        "instructions_variables": {
+            "personality_default": HICODEX_PERSONALITY_DEFAULT,
+            "personality_friendly": HICODEX_PERSONALITY_FRIENDLY,
+            "personality_pragmatic": HICODEX_PERSONALITY_PRAGMATIC,
+        }
+    })
+}
+
 fn toml_string(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+fn toml_multiline_literal(value: &str) -> String {
+    format!("'''\n{}\n'''", value.replace("'''", ""))
 }
 
 fn env_flag(name: &str) -> bool {
@@ -651,7 +831,43 @@ mod tests {
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert!(config.contains("model_catalog_json"));
         assert!(config.contains("Qwen3.6-27B-mxfp4"));
-        assert!(dir.join("models.json").exists());
+        assert!(config.contains("personality = \"pragmatic\""));
+        assert!(config.contains(HICODEX_BASE_INSTRUCTIONS));
+        let catalog = fs::read_to_string(dir.join("models.json")).unwrap();
+        assert!(catalog.contains("\"model_messages\""));
+        assert!(catalog.contains(HICODEX_PERSONALITY_PLACEHOLDER));
+        assert!(catalog.contains("\"image\""));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refreshes_legacy_model_catalog_messages() {
+        let dir = env::temp_dir().join(format!("hicodex-host-refresh-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let models_path = dir.join("models.json");
+        fs::write(
+            &models_path,
+            r#"{"models":[{"slug":"Qwen3.6-27B-mxfp4","display_name":"Qwen","description":"Local OpenAI-compatible coding model via HiCodex gateway.","base_instructions":"You are Codex, a coding agent. Help the user work in the local workspace.","input_modalities":["text"]}]}"#,
+        )
+        .unwrap();
+        fs::write(dir.join("config.toml"), default_config_toml(&models_path)).unwrap();
+
+        ensure_default_hicodex_profile(&dir).unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert_eq!(config.matches("instructions =").count(), 1);
+        let catalog = fs::read_to_string(models_path).unwrap();
+        let value: Value = serde_json::from_str(&catalog).unwrap();
+        let model = &value["models"][0];
+        assert!(model.get("model_messages").is_some());
+        assert_eq!(
+            model["base_instructions"].as_str(),
+            Some(HICODEX_BASE_INSTRUCTIONS)
+        );
+        assert_eq!(model["input_modalities"][0].as_str(), Some("text"));
+        assert_eq!(model["input_modalities"][1].as_str(), Some("image"));
 
         let _ = fs::remove_dir_all(&dir);
     }
