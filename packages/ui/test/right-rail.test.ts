@@ -6,9 +6,11 @@ import {
 
 export default function runRightRailTests(): void {
   keepsCodexDesktopSectionOrder();
-  hidesEmptyOptionalSectionsButKeepsBranchDetails();
+  hidesEmptySections();
+  keepsPopulatedBranchDetails();
   clipsRailEntriesByDefaultAndExpandsAllEntries();
   preservesSectionCountsAndEntryMeta();
+  projectsBranchDiffAction();
 }
 
 function keepsCodexDesktopSectionOrder(): void {
@@ -28,7 +30,7 @@ function keepsCodexDesktopSectionOrder(): void {
   );
 }
 
-function hidesEmptyOptionalSectionsButKeepsBranchDetails(): void {
+function hidesEmptySections(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
@@ -38,8 +40,27 @@ function hidesEmptyOptionalSectionsButKeepsBranchDetails(): void {
     sources: [],
   });
 
-  assertEqual(sections.length, 1, "only branch details should remain when optional sections are empty");
-  assertEqual(sections[0]?.title, "Branch details", "branch details section should be retained");
+  assertEqual(sections.length, 0, "right rail should not project empty sections");
+}
+
+function keepsPopulatedBranchDetails(): void {
+  const sections = projectRightRailSections({
+    progress: [],
+    branchDetails: {
+      title: "Branch details",
+      emptyText: "empty",
+      rows: [
+        { id: "branch", label: "Branch", value: "codex/right-rail" },
+      ],
+      hasData: true,
+      diff: null,
+    },
+    artifacts: [],
+    sources: [],
+  });
+
+  assertEqual(sections.length, 1, "populated branch details should be projected");
+  assertEqual(sections[0]?.title, "Branch details", "branch details section should keep its title");
 }
 
 function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
@@ -102,6 +123,32 @@ function preservesSectionCountsAndEntryMeta(): void {
   assertEqual(sourcesSection.count, sources.length, "sources count should match source entries");
   assertEqual(sourcesSection.entries[1]?.status, "running", "source status should be preserved");
   assertEqual(sourcesSection.entries[1]?.meta, "Web search", "source meta should be preserved");
+}
+
+function projectsBranchDiffAction(): void {
+  const sections = projectRightRailSections({
+    progress: [],
+    branchDetails: {
+      title: "Branch details",
+      emptyText: "empty",
+      rows: [],
+      hasData: true,
+      diff: {
+        title: "Diff",
+        summary: "1 changed file",
+        files: [{ path: "packages/ui/src/state/right-rail.ts" }],
+      },
+    },
+    artifacts: [],
+    sources: [],
+  });
+
+  const branchDetails = sectionById(sections, "branchDetails");
+  assertDeepEqual(
+    branchDetails.allEntries[0]?.action,
+    { kind: "diff" },
+    "branch diff rail entry should expose a diff action",
+  );
 }
 
 function railEntry(id: string, title: string, status: string, meta: string) {

@@ -1,4 +1,4 @@
-import type { JsonValue, ModelConfig } from "@hicodex/codex-protocol";
+import type { InputModality, JsonValue, ModelConfig } from "@hicodex/codex-protocol";
 
 export type { ModelConfig };
 
@@ -36,12 +36,14 @@ export interface LocalModelCatalogEntry {
   description: string;
   contextWindow: number;
   autoCompactTokenLimit: number;
+  inputModalities: InputModality[];
 }
 
 export interface ModelListEntry {
   id: string;
   displayName?: string;
   model: string;
+  inputModalities?: InputModality[];
 }
 
 export interface NormalizedModelConfig extends ModelConfig {
@@ -77,12 +79,16 @@ export function normalizeModelConfig(model: ModelConfig): NormalizedModelConfig 
 
 export function buildLocalModelCatalogEntry(model: ModelConfig): LocalModelCatalogEntry {
   const normalized = normalizeModelConfig(model);
+  const inputModalities: InputModality[] = normalized.supportsImageInput === false
+    ? ["text"]
+    : ["text", "image"];
   return {
     model: normalized.model,
     displayName: model.name || normalized.model,
     description: `Local OpenAI-compatible coding model via ${normalized.baseUrl}.`,
     contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
     autoCompactTokenLimit: DEFAULT_MODEL_AUTO_COMPACT_TOKEN_LIMIT,
+    inputModalities,
   };
 }
 
@@ -110,6 +116,7 @@ export function buildModelConfigFromListEntry(entry: ModelListEntry): ModelConfi
     model: entry.model,
     temperature: 0.2,
     maxTokens: null,
+    supportsImageInput: entry.inputModalities?.includes("image") ?? true,
   };
 }
 

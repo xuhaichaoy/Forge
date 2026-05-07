@@ -39,104 +39,17 @@ export type JsonRpcMessage =
   | JsonRpcResponse
   | JsonRpcError;
 
-export type TextElement = {
-  byteRange: unknown;
-  placeholder: string | null;
-  [key: string]: unknown;
-};
+export type { TextElement } from "./generated/v2/TextElement";
+export type { UserInput } from "./generated/v2/UserInput";
+export type { Thread } from "./generated/v2/Thread";
+export type { Turn } from "./generated/v2/Turn";
+export type { ThreadItem } from "./generated/v2/ThreadItem";
+export type { ThreadStartParams } from "./generated/v2/ThreadStartParams";
+export type { TurnStartParams } from "./generated/v2/TurnStartParams";
+export type { InputModality } from "./generated/InputModality";
 
-export type UserInput =
-  | { type: "text"; text: string; text_elements: TextElement[] }
-  | { type: "image"; url: string }
-  | { type: "localImage"; path: string }
-  | { type: "skill"; path: string; name?: string }
-  | { type: "mention"; path: string; name?: string };
-
-export interface Thread {
-  id: string;
-  name?: string | null;
-  status?: unknown;
-  path?: string | null;
-  cwd?: string | null;
-  turns?: Turn[];
-  createdAt?: number;
-  updatedAt?: number;
-  [key: string]: unknown;
-}
-
-export interface Turn {
-  id: string;
-  status?: unknown;
-  items?: ThreadItem[];
-  [key: string]: unknown;
-}
-
-export type ThreadItem =
-  | { type: "userMessage"; id: string; content: UserInput[] }
-  | { type: "agentMessage"; id: string; text: string; phase?: string | null; memoryCitation?: unknown }
-  | { type: "plan"; id: string; text: string }
-  | { type: "reasoning"; id: string; summary?: string[]; content?: string[] }
-  | {
-      type: "commandExecution";
-      id: string;
-      command: string;
-      cwd?: string;
-      status?: string;
-      aggregatedOutput?: string | null;
-      exitCode?: number | null;
-      durationMs?: number | null;
-    }
-  | {
-      type: "fileChange";
-      id: string;
-      status?: string;
-      changes?: Array<Record<string, unknown>>;
-    }
-  | {
-      type: "mcpToolCall";
-      id: string;
-      server?: string;
-      tool: string;
-      status?: string;
-      arguments?: JsonValue;
-      result?: unknown;
-      error?: unknown;
-      durationMs?: number | null;
-    }
-  | {
-      type: "dynamicToolCall";
-      id: string;
-      namespace?: string | null;
-      tool: string;
-      status?: string;
-      arguments?: JsonValue;
-      contentItems?: unknown[] | null;
-      success?: boolean | null;
-      durationMs?: number | null;
-    }
-  | { type: "webSearch"; id: string; query: string; action?: unknown }
-  | { type: "imageView"; id: string; path: string }
-  | { type: "contextCompaction"; id: string }
-  | { type: string; id: string; [key: string]: unknown };
-
-export interface ThreadStartParams {
-  cwd?: string | null;
-  model?: string | null;
-  modelProvider?: string | null;
-  approvalPolicy?: string | null;
-  sandbox?: string | null;
-  ephemeral?: boolean | null;
-}
-
-export interface TurnStartParams {
-  threadId: string;
-  input: UserInput[];
-  cwd?: string | null;
-  model?: string | null;
-  effort?: string | null;
-  approvalPolicy?: string | null;
-  sandboxPolicy?: unknown;
-}
+export type { ThreadStatus } from "./generated/v2/ThreadStatus";
+export type { ThreadActiveFlag } from "./generated/v2/ThreadActiveFlag";
 
 export interface InitializeResponse {
   userAgent?: string;

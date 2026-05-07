@@ -43,8 +43,13 @@ export interface BranchDetailsDiffFileInput {
 export function projectBranchDetails(input: BranchDetailsProjectionInput): BranchDetailsViewModel {
   const thread = input.thread ?? null;
   const rows: BranchDetailsRow[] = [];
+  const diff = projectDiff(input.diff ?? null);
 
-  if (thread?.cwd) {
+  const gitInfo = objectRecord(thread?.gitInfo);
+  const hasThreadGitContext = gitInfo !== null;
+  const shouldShowThreadContext = hasThreadGitContext || diff !== null;
+
+  if (shouldShowThreadContext && thread?.cwd) {
     rows.push({
       id: "cwd",
       label: "Working directory",
@@ -52,7 +57,6 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
     });
   }
 
-  const gitInfo = objectRecord(thread?.gitInfo);
   const branch = stringField(gitInfo, "branch");
   const sha = stringField(gitInfo, "sha");
   const originUrl = stringField(gitInfo, "originUrl");
@@ -80,7 +84,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   }
 
   const status = statusText(thread?.status);
-  if (status) {
+  if (shouldShowThreadContext && status) {
     rows.push({
       id: "status",
       label: "Thread status",
@@ -88,14 +92,12 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
     });
   }
 
-  const diff = projectDiff(input.diff ?? null);
-
   return {
     title: "Branch details",
     emptyText: "Branch details will appear when the app server provides thread Git or diff data.",
     rows,
     diff,
-    hasData: rows.length > 0 || diff !== null,
+    hasData: hasThreadGitContext || diff !== null,
   };
 }
 

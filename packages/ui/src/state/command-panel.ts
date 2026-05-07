@@ -30,6 +30,7 @@ export interface CommandPanelEntry {
   status?: string;
   meta?: string;
   details?: string[];
+  disabled?: boolean;
 }
 
 export interface CommandPanelState {

@@ -3,6 +3,7 @@ import { projectBranchDetails } from "../src/state/branch-details";
 
 export default function runBranchDetailsTests() {
   projectsThreadCwdGitInfoAndStatus();
+  ignoresPlainThreadContextWithoutGitOrDiffData();
   countsChangedFilesFromDiffText();
   dedupesFilesAndPreservesKind();
   returnsEmptyStateWithoutData();
@@ -10,7 +11,7 @@ export default function runBranchDetailsTests() {
 
 function projectsThreadCwdGitInfoAndStatus() {
   const view = projectBranchDetails({
-    thread: {
+    thread: threadFixture({
       id: "thread-branch-details",
       cwd: "/Users/haichao/Desktop/data/HiCodex",
       gitInfo: {
@@ -18,8 +19,8 @@ function projectsThreadCwdGitInfoAndStatus() {
         sha: "1234567890abcdef",
         originUrl: "git@example.com:hicodex/HiCodex.git",
       },
-      status: { type: "running" },
-    } satisfies Thread,
+      status: { type: "active", activeFlags: [] },
+    }),
   });
 
   assertEqual(view.hasData, true, "thread data should mark branch details as populated");
@@ -27,7 +28,46 @@ function projectsThreadCwdGitInfoAndStatus() {
   assertRow(view.rows, "branch", "Branch", "codex/branch-details-tests");
   assertRow(view.rows, "commit", "Commit", "1234567890ab");
   assertRow(view.rows, "origin", "Origin", "git@example.com:hicodex/HiCodex.git");
-  assertRow(view.rows, "status", "Thread status", "running");
+  assertRow(view.rows, "status", "Thread status", "active");
+}
+
+function ignoresPlainThreadContextWithoutGitOrDiffData() {
+  const view = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-no-branch-details",
+      cwd: "/Users/haichao/Desktop/data/HiCodex",
+      status: { type: "idle" },
+      gitInfo: null,
+    }),
+  });
+
+  assertEqual(view.hasData, false, "non-git thread context alone should not populate branch details");
+  assertEqual(view.rows.length, 0, "non-git thread context should not create branch detail rows");
+}
+
+function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
+  const { id, ...rest } = overrides;
+  return {
+    id,
+    forkedFromId: null,
+    preview: "",
+    ephemeral: false,
+    modelProvider: "openai",
+    createdAt: 0,
+    updatedAt: 0,
+    status: { type: "idle" },
+    path: null,
+    cwd: "",
+    cliVersion: "test",
+    source: "appServer",
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: null,
+    turns: [],
+    ...rest,
+  };
 }
 
 function countsChangedFilesFromDiffText() {

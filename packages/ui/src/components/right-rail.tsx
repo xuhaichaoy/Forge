@@ -1,10 +1,10 @@
-import { Activity, FileText, GitBranch, ListChecks, Network, Users } from "lucide-react";
+import { FileText, GitBranch, ListChecks, Network } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import type { TeamSummary } from "@hicodex/codex-protocol";
-import type { LogLine } from "../state/codex-reducer";
+import { FileReferencePanel } from "./file-reference-panel";
 import type { BranchDetailsViewModel } from "../state/branch-details";
-import type { RailEntry } from "../state/render-groups";
+import type { FileReferenceSelection } from "../state/file-references";
+import type { RailEntry, RailEntryAction, RailEntryReference } from "../state/render-groups";
 import {
   clipRailEntries,
   type RightRailSection as RightRailSectionViewModel,
@@ -12,10 +12,13 @@ import {
 
 export interface RightRailProps {
   sections: RightRailSectionViewModel[];
-  teams: TeamSummary[];
-  activeTeamId: string | null;
-  logs: LogLine[];
-  onTeamSelect: (teamId: string) => void;
+  fileReference?: FileReferenceSelection | null;
+  onCloseFileReference?: () => void;
+  onOpenFileReferenceExternal?: (reference: FileReferenceSelection) => void;
+  onOpenFileReference?: (reference: RailEntryReference) => void;
+  onOpenUrl?: (url: string) => void;
+  onOpenSource?: (itemId: string) => void;
+  onOpenDiff?: () => void;
 }
 
 export interface RailSectionProps {
@@ -30,44 +33,46 @@ export interface RailListProps {
 
 export function RightRail({
   sections,
-  teams,
-  activeTeamId,
-  logs,
-  onTeamSelect,
+  fileReference = null,
+  onCloseFileReference,
+  onOpenFileReferenceExternal,
+  onOpenFileReference,
+  onOpenUrl,
+  onOpenSource,
+  onOpenDiff,
 }: RightRailProps) {
+  const canOpenEntry = (entry: RailEntry) =>
+    isRailEntryActionAvailable(entry, {
+      onOpenFileReference,
+      onOpenUrl,
+      onOpenSource,
+      onOpenDiff,
+    });
+  const openEntry = (entry: RailEntry) => {
+    openRailEntry(entry, {
+      onOpenFileReference,
+      onOpenUrl,
+      onOpenSource,
+      onOpenDiff,
+    });
+  };
+
   return (
     <aside className="hc-right-rail">
+      {fileReference && onCloseFileReference && onOpenFileReferenceExternal && (
+        <FileReferencePanel
+          reference={fileReference}
+          onClose={onCloseFileReference}
+          onOpenExternal={onOpenFileReferenceExternal}
+        />
+      )}
       {sections.map((section) => (
         <RailSection key={section.id} icon={sectionIcon(section.id)} title={section.title}>
           {section.id === "branchDetails" && section.branchDetails
-            ? <BranchDetailsCard details={section.branchDetails} />
-            : <RailList entries={section.allEntries} />}
+            ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
+            : <RailList entries={section.allEntries} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />}
         </RailSection>
       ))}
-
-      <RailSection icon={<Users size={15} />} title="Team">
-        {teams.map((team) => (
-          <button
-            key={team.id}
-            className={`hc-team-row ${team.id === activeTeamId ? "is-active" : ""}`}
-            onClick={() => onTeamSelect(team.id)}
-          >
-            <Users size={14} />
-            <span>{team.name}</span>
-            <small>{team.plan}</small>
-          </button>
-        ))}
-      </RailSection>
-
-      <RailSection icon={<Activity size={15} />} title="Logs">
-        <div className="hc-log-list">
-          {logs.slice(0, 8).map((line) => (
-            <div key={line.id} className={`hc-log-line ${line.level}`}>
-              {line.text}
-            </div>
-          ))}
-        </div>
-      </RailSection>
     </aside>
   );
 }
@@ -85,7 +90,15 @@ function sectionIcon(id: RightRailSectionViewModel["id"]): ReactNode {
   }
 }
 
-function BranchDetailsCard({ details }: { details: BranchDetailsViewModel }) {
+function BranchDetailsCard({
+  details,
+  canOpenEntry,
+  onOpenEntry,
+}: {
+  details: BranchDetailsViewModel;
+  canOpenEntry: (entry: RailEntry) => boolean;
+  onOpenEntry: (entry: RailEntry) => void;
+}) {
   if (!details.hasData) {
     return (
       <div className="hc-rail-card">
@@ -103,15 +116,19 @@ function BranchDetailsCard({ details }: { details: BranchDetailsViewModel }) {
         </div>
       ))}
       {details.diff && (
-        <div className="hc-rail-card">
-          <div className="hc-rail-card-title">{details.diff.title}</div>
-          <div className="hc-rail-card-meta">{details.diff.summary}</div>
-          {details.diff.files.length > 0 && (
-            <div className="hc-rail-card-status">
-              {details.diff.files.slice(0, 3).map((file) => file.path).join(", ")}
-            </div>
-          )}
-        </div>
+        <RailEntryCard
+          entry={{
+            id: "diff",
+            title: details.diff.title,
+            meta: details.diff.summary,
+            status: details.diff.files.length > 0
+              ? details.diff.files.slice(0, 3).map((file) => file.path).join(", ")
+              : undefined,
+            action: { kind: "diff" },
+          }}
+          canOpen={canOpenEntry}
+          onOpen={onOpenEntry}
+        />
       )}
     </div>
   );
@@ -126,17 +143,25 @@ export function RailSection({ icon, title, children }: RailSectionProps) {
   );
 }
 
-export function RailList({ entries }: RailListProps) {
+export function RailList({
+  entries,
+  canOpenEntry,
+  onOpenEntry,
+}: RailListProps & {
+  canOpenEntry?: (entry: RailEntry) => boolean;
+  onOpenEntry?: (entry: RailEntry) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const clipped = clipRailEntries(entries, expanded);
   return (
     <div className="hc-rail-list">
       {clipped.entries.map((entry) => (
-        <div className="hc-rail-card" key={entry.id}>
-          <div className="hc-rail-card-title">{entry.title}</div>
-          {entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
-          {entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
-        </div>
+        <RailEntryCard
+          entry={entry}
+          key={entry.id}
+          canOpen={canOpenEntry}
+          onOpen={onOpenEntry}
+        />
       ))}
       {clipped.canToggle && (
         <button className="hc-rail-more-button" type="button" onClick={() => setExpanded((value) => !value)}>
@@ -145,4 +170,87 @@ export function RailList({ entries }: RailListProps) {
       )}
     </div>
   );
+}
+
+function RailEntryCard({
+  entry,
+  canOpen,
+  onOpen,
+}: {
+  entry: RailEntry;
+  canOpen?: (entry: RailEntry) => boolean;
+  onOpen?: (entry: RailEntry) => void;
+}) {
+  if (canOpen?.(entry) && onOpen) {
+    return (
+      <button
+        className="hc-rail-card hc-rail-card-button"
+        type="button"
+        onClick={() => onOpen(entry)}
+      >
+        <RailEntryContent entry={entry} />
+      </button>
+    );
+  }
+
+  return (
+    <div className="hc-rail-card">
+      <RailEntryContent entry={entry} />
+    </div>
+  );
+}
+
+function RailEntryContent({ entry }: { entry: RailEntry }) {
+  return (
+    <>
+      <div className="hc-rail-card-title">{entry.title}</div>
+      {entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
+      {entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
+    </>
+  );
+}
+
+interface RailEntryOpenHandlers {
+  onOpenFileReference?: (reference: RailEntryReference) => void;
+  onOpenUrl?: (url: string) => void;
+  onOpenSource?: (itemId: string) => void;
+  onOpenDiff?: () => void;
+}
+
+function isRailEntryActionAvailable(entry: RailEntry, handlers: RailEntryOpenHandlers): boolean {
+  const action = railEntryAction(entry);
+  if (!action) return false;
+  switch (action.kind) {
+    case "file":
+      return Boolean(handlers.onOpenFileReference);
+    case "url":
+      return Boolean(handlers.onOpenUrl);
+    case "source":
+      return Boolean(handlers.onOpenSource);
+    case "diff":
+      return Boolean(handlers.onOpenDiff);
+  }
+}
+
+function openRailEntry(entry: RailEntry, handlers: RailEntryOpenHandlers): void {
+  const action = railEntryAction(entry);
+  if (!action) return;
+  switch (action.kind) {
+    case "file":
+      handlers.onOpenFileReference?.(action.reference);
+      return;
+    case "url":
+      handlers.onOpenUrl?.(action.url);
+      return;
+    case "source":
+      handlers.onOpenSource?.(action.itemId);
+      return;
+    case "diff":
+      handlers.onOpenDiff?.();
+      return;
+  }
+}
+
+function railEntryAction(entry: RailEntry): RailEntryAction | undefined {
+  return entry.action ?? (entry.reference ? { kind: "file", reference: entry.reference } : undefined);
 }

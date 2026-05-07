@@ -2,6 +2,8 @@ use hicodex_host::{
     AppServerEvent, AppServerHost, AppServerStartConfig, HostStatus, LocalModelCatalogConfig,
 };
 use serde_json::Value;
+use std::path::Path;
+use std::process::Command;
 use tauri::State;
 
 struct AppState {
@@ -70,6 +72,42 @@ fn host_write_local_model_catalog(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn host_open_file_reference(path: String, line: Option<u32>) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("file path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    if !target.exists() {
+        return Err(format!("file does not exist: {trimmed}"));
+    }
+    let line_suffix = line
+        .filter(|value| *value > 0)
+        .map(|value| format!(":{value}"))
+        .unwrap_or_default();
+    let display_target = format!("{trimmed}{line_suffix}");
+    open_path(target).map_err(|error| format!("failed to open {display_target}: {error}"))
+}
+
+fn open_path(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(path).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", &path.to_string_lossy()])
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(path).spawn().map(|_| ())
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -81,7 +119,8 @@ fn main() {
             host_send_raw,
             host_claim_event_stream,
             host_poll_events,
-            host_write_local_model_catalog
+            host_write_local_model_catalog,
+            host_open_file_reference
         ])
         .run(tauri::generate_context!())
         .expect("error while running HiCodex desktop");

@@ -22,6 +22,7 @@ export interface LocalModelCatalogConfig {
   description?: string | null;
   contextWindow?: number | null;
   autoCompactTokenLimit?: number | null;
+  inputModalities?: Array<"text" | "image"> | null;
 }
 
 export type HostEvent =
@@ -60,4 +61,8 @@ export function writeLocalModelCatalog(
   config: LocalModelCatalogConfig,
 ): Promise<string> {
   return invoke("host_write_local_model_catalog", { codexHome, config });
+}
+
+export function openFileReference(path: string, line?: number | null): Promise<void> {
+  return invoke("host_open_file_reference", { path, line });
 }

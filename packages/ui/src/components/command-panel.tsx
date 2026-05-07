@@ -41,7 +41,7 @@ export function CommandPanel({ panel, onClose }: CommandPanelProps) {
 
 function CommandPanelRow({ entry }: { entry: CommandPanelEntry }) {
   return (
-    <article className="hc-command-panel-row">
+    <article className="hc-command-panel-row" data-disabled={entry.disabled ? "true" : "false"}>
       <div className="hc-command-panel-row-main">
         <div>
           <h3>{entry.title}</h3>

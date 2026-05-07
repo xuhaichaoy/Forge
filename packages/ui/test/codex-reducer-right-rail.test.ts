@@ -1,4 +1,4 @@
-import type { JsonRpcNotification, ThreadItem } from "@hicodex/codex-protocol";
+import type { JsonRpcNotification, Thread, ThreadItem } from "@hicodex/codex-protocol";
 import {
   codexUiReducer,
   initialCodexUiState,
@@ -7,13 +7,13 @@ import {
 import { projectConversation } from "../src/state/render-groups";
 
 export default function runCodexReducerRightRailTests(): void {
-  storesLatestTurnPlanAsTodoListForProgressProjection();
+  storesLatestTurnPlanAsProjectionFact();
   preservesArtifactFilePathFactsFromItemNotifications();
   storesTurnDiffsAndClearsThemWhenThreadsAreRemoved();
   ignoresUnknownNotifications();
 }
 
-function storesLatestTurnPlanAsTodoListForProgressProjection(): void {
+function storesLatestTurnPlanAsProjectionFact(): void {
   let state = stateWithThread("thread-plan");
 
   state = reduceNotification(state, {
@@ -45,18 +45,26 @@ function storesLatestTurnPlanAsTodoListForProgressProjection(): void {
   const items = state.itemsByThread["thread-plan"] ?? [];
   assertEqual(
     items.some((item) => item.type === "todo-list"),
-    true,
-    "turn/plan/updated should add a todo-list item to active thread items",
+    false,
+    "turn/plan/updated should not add synthetic todo-list items to server item facts",
+  );
+  assertDeepEqual(
+    state.turnPlansByThread["thread-plan"]?.plan,
+    [
+      { step: "Write right rail reducer tests", status: "inProgress" },
+      { step: "Hand production gaps to main thread", status: "pending" },
+    ],
+    "turn/plan/updated should store the latest plan as projection facts",
   );
 
-  const projection = projectConversation(items);
+  const projection = projectConversation(items, { progressPlan: state.turnPlansByThread["thread-plan"] });
   assertDeepEqual(
     projection.progress.map((entry) => ({ title: entry.title, status: entry.status })),
     [
       { title: "Write right rail reducer tests", status: "inProgress" },
       { title: "Hand production gaps to main thread", status: "pending" },
     ],
-    "progress should read the latest turn plan from reducer-managed thread items",
+    "progress should read the latest turn plan from reducer-managed projection facts",
   );
 }
 
@@ -75,7 +83,7 @@ function preservesArtifactFilePathFactsFromItemNotifications(): void {
         text:
           "Referenced `packages/ui/src/state/codex-reducer.ts` and " +
           "[right rail test](packages/ui/test/codex-reducer-right-rail.test.ts).",
-        phase: "final",
+        phase: null,
         memoryCitation: null,
       } satisfies ThreadItem,
     },
@@ -92,8 +100,8 @@ function preservesArtifactFilePathFactsFromItemNotifications(): void {
         id: "file-change-artifact",
         status: "completed",
         changes: [
-          { path: "packages/ui/src/state/codex-reducer.ts", kind: "update" },
-          { path: "packages/ui/test/codex-reducer-right-rail.test.ts", kind: "add" },
+          { path: "packages/ui/src/state/codex-reducer.ts", kind: { type: "update", move_path: null }, diff: "" },
+          { path: "packages/ui/test/codex-reducer-right-rail.test.ts", kind: { type: "add" }, diff: "" },
         ],
       } satisfies ThreadItem,
     },
@@ -112,6 +120,14 @@ function preservesArtifactFilePathFactsFromItemNotifications(): void {
 
 function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
   let state = stateWithThread("thread-diff", "thread-keep");
+  state = reduceNotification(state, {
+    method: "turn/plan/updated",
+    params: {
+      threadId: "thread-diff",
+      turnId: "turn-1",
+      plan: [{ step: "Plan before removal", status: "inProgress" }],
+    },
+  });
 
   state = reduceNotification(state, {
     method: "turn/diff/updated",
@@ -133,6 +149,11 @@ function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
     undefined,
     "removeThread should clear diff cache for that thread",
   );
+  assertEqual(
+    removed.turnPlansByThread["thread-diff"],
+    undefined,
+    "removeThread should clear turn plan cache for that thread",
+  );
 
   state = reduceNotification(state, {
     method: "thread/archived",
@@ -142,6 +163,11 @@ function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
     state.turnDiffsByThread["thread-diff"],
     undefined,
     "thread/archived should clear diff cache for that thread",
+  );
+  assertEqual(
+    state.turnPlansByThread["thread-diff"],
+    undefined,
+    "thread/archived should clear turn plan cache for that thread",
   );
 }
 
@@ -159,12 +185,36 @@ function ignoresUnknownNotifications(): void {
 }
 
 function stateWithThread(...threadIds: string[]): CodexUiState {
-  const threads = threadIds.map((id) => ({ id, status: "running" }));
+  const threads = threadIds.map((id) => threadFixture(id, { status: { type: "active", activeFlags: [] } }));
   return {
     ...initialCodexUiState,
     threads,
     activeThreadId: threadIds[0] ?? null,
     itemsByThread: Object.fromEntries(threadIds.map((id) => [id, []])),
+  };
+}
+
+function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
+  return {
+    id,
+    forkedFromId: null,
+    preview: "",
+    ephemeral: false,
+    modelProvider: "openai",
+    createdAt: 0,
+    updatedAt: 0,
+    status: { type: "idle" },
+    path: null,
+    cwd: "",
+    cliVersion: "test",
+    source: "appServer",
+    threadSource: null,
+    agentNickname: null,
+    agentRole: null,
+    gitInfo: null,
+    name: null,
+    turns: [],
+    ...overrides,
   };
 }
 

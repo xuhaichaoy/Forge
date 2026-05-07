@@ -18,11 +18,12 @@
         "minWidth": 960,
         "minHeight": 640,
         "resizable": true,
+        "dragDropEnabled": false,
         "center": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob: file:; style-src 'self' 'unsafe-inline';"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob: file: asset: http://asset.localhost https: http:; style-src 'self' 'unsafe-inline';"
     }
   },
   "bundle": {

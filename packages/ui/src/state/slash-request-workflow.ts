@@ -17,6 +17,7 @@ export interface SlashRequestWorkflowContext {
   dispatch: ThreadWorkflowDispatch;
   ensureConnected: () => Promise<boolean>;
   openCommandPanel: (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
+  openRenameThreadDialog?: (thread: Thread) => void;
   workspace: string;
   defaultCwd?: string;
   activeThread: Thread | null;
@@ -39,6 +40,7 @@ export async function runSlashRequestWorkflow(
     dispatch,
     ensureConnected,
     openCommandPanel,
+    openRenameThreadDialog,
     workspace,
     defaultCwd,
     activeThread,
@@ -149,8 +151,15 @@ export async function runSlashRequestWorkflow(
       case "renameThread": {
         const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
         if (!threadId) return;
-        const name = stringPayload(payload, "name") || window.prompt("Rename thread", activeThreadTitle(activeThread));
-        if (!name?.trim()) return;
+        const name = stringPayload(payload, "name");
+        if (!name.trim()) {
+          if (activeThread && openRenameThreadDialog) {
+            openRenameThreadDialog(activeThread);
+          } else {
+            dispatch({ type: "log", text: "Select a thread before renaming it.", level: "info" });
+          }
+          return;
+        }
         await client.request("thread/name/set", { threadId, name: name.trim() });
         dispatch({
           type: "setThreads",
@@ -226,24 +235,23 @@ export async function runSlashRequestWorkflow(
         return;
       }
       case "showCollaborationModes": {
-        openCommandPanel("collaboration", { status: "loading", entries: [] });
-        const result = await client.request<unknown>("collaborationMode/list", {}, 120_000);
-        openCommandPanel("collaboration", { status: "ready", entries: projectCommandPanelEntries({ collaboration: result }) });
+        openCommandPanel("collaboration", {
+          status: "empty",
+          message: "The current Codex app-server protocol does not expose collaborationMode/list. Use thread fork/resume for the supported thread flows.",
+          entries: [],
+        });
         return;
       }
       case "showGoal": {
         const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
         if (!threadId) return;
-        await handleGoalRequest(client, openCommandPanel, threadId, stringPayload(payload, "objective"));
+        handleGoalRequest(openCommandPanel, threadId, stringPayload(payload, "objective"));
         return;
       }
       case "cleanBackgroundTerminals": {
-        const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
-        if (!threadId) return;
-        await client.request("thread/backgroundTerminals/clean", { threadId }, 120_000);
         openCommandPanel("status", {
-          status: "ready",
-          message: "Background terminals cleaned for the active thread.",
+          status: "empty",
+          message: "The current Codex app-server protocol does not expose thread/backgroundTerminals/clean. Use turn interrupt for the active run.",
           entries: [],
         });
         return;
@@ -269,35 +277,43 @@ export async function runSlashRequestWorkflow(
   }
 }
 
-async function handleGoalRequest(
-  client: CodexJsonRpcClient,
+function handleGoalRequest(
   openCommandPanel: SlashRequestWorkflowContext["openCommandPanel"],
   threadId: string,
   objective: string,
 ) {
   if (objective.toLowerCase() === "clear") {
-    const result = await client.request<{ cleared?: boolean }>("thread/goal/clear", { threadId }, 120_000);
     openCommandPanel("status", {
-      status: "ready",
-      message: result.cleared ? "Thread goal cleared." : "No active goal was cleared.",
+      status: "empty",
+      message: "The current Codex app-server protocol publishes goal notifications but does not expose thread/goal/clear.",
       entries: [],
     });
     return;
   }
   if (objective) {
-    const result = await client.request<{ goal?: unknown }>("thread/goal/set", { threadId, objective }, 120_000);
     openCommandPanel("status", {
-      status: "ready",
-      message: "Thread goal updated.",
-      entries: result.goal ? [projectGoalEntry(result.goal)] : [],
+      status: "empty",
+      message: "The current Codex app-server protocol publishes goal notifications but does not expose thread/goal/set.",
+      entries: [{
+        id: "goal:unsupported",
+        title: objective,
+        kind: "status",
+        status: "not sent",
+        meta: `thread ${threadId}`,
+      }],
     });
     return;
   }
-  const result = await client.request<{ goal?: unknown | null }>("thread/goal/get", { threadId }, 120_000);
   openCommandPanel("status", {
-    status: "ready",
-    message: result.goal ? "Active thread goal." : "No active goal for this thread.",
-    entries: result.goal ? [projectGoalEntry(result.goal)] : [],
+    status: "empty",
+    message: "The current Codex app-server protocol publishes goal notifications but does not expose thread/goal/get.",
+    entries: [{
+      id: "goal:unsupported",
+      title: "Thread goal",
+      kind: "status",
+      status: "not queryable",
+      meta: `thread ${threadId}`,
+    }],
   });
 }
 
@@ -365,20 +381,4 @@ function stringPayload(payload: Record<string, unknown> | undefined, key: string
 
 function diffLineCount(value: string): number {
   return value.split("\n").filter((line) => line.startsWith("+") || line.startsWith("-")).length;
-}
-
-function projectGoalEntry(value: unknown): CommandPanelEntry {
-  const goal = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  const objective = typeof goal.objective === "string" ? goal.objective : "Goal";
-  return {
-    id: "goal:active",
-    title: objective,
-    kind: "status",
-    status: typeof goal.status === "string" ? goal.status : undefined,
-    meta: typeof goal.tokenBudget === "number" ? `budget ${goal.tokenBudget}` : undefined,
-    details: [
-      `Tokens used: ${typeof goal.tokensUsed === "number" ? goal.tokensUsed : "unknown"}`,
-      `Time used: ${typeof goal.timeUsedSeconds === "number" ? `${goal.timeUsedSeconds}s` : "unknown"}`,
-    ],
-  };
 }

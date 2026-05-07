@@ -22,7 +22,7 @@ import { formatError } from "./format";
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
-  timeout: number;
+  timeout: number | null;
 };
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
@@ -138,22 +138,33 @@ export class CodexJsonRpcClient {
     this.rejectPending("Codex JSON-RPC client was disposed");
   }
 
-  async request<T = unknown>(method: string, params?: unknown, timeoutMs = 60_000): Promise<T> {
+  request<T = unknown>(method: string, params?: unknown, timeoutMs: number | null = 60_000): Promise<T> {
     this.assertActive();
     const id = `${this.idPrefix}-${this.nextId++}`;
     const message = params === undefined ? { id, method } : { id, method, params };
-    await sendRaw(message);
-    this.assertActive();
     return new Promise<T>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
+      const timeout = timeoutMs === null
+        ? null
+        : window.setTimeout(() => {
+            this.pending.delete(id);
+            reject(new Error(`${method} timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
       this.pending.set(id, {
         resolve: (value) => resolve(value as T),
         reject,
         timeout,
       });
+      void sendRaw(message)
+        .then(() => {
+          try {
+            this.assertActive();
+          } catch (error) {
+            this.rejectPendingRequest(id, error);
+          }
+        })
+        .catch((error) => {
+          this.rejectPendingRequest(id, error);
+        });
     });
   }
 
@@ -234,7 +245,7 @@ export class CodexJsonRpcClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      window.clearTimeout(pending.timeout);
+      clearPendingTimeout(pending);
       pending.resolve(message.result);
       return;
     }
@@ -243,7 +254,7 @@ export class CodexJsonRpcClient {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
-      window.clearTimeout(pending.timeout);
+      clearPendingTimeout(pending);
       pending.reject(new Error(message.error.message));
       return;
     }
@@ -260,10 +271,18 @@ export class CodexJsonRpcClient {
 
   private rejectPending(message: string): void {
     for (const pending of this.pending.values()) {
-      window.clearTimeout(pending.timeout);
+      clearPendingTimeout(pending);
       pending.reject(new Error(message));
     }
     this.pending.clear();
+  }
+
+  private rejectPendingRequest(id: RequestId, error: unknown): void {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    clearPendingTimeout(pending);
+    pending.reject(error instanceof Error ? error : new Error(formatError(error)));
   }
 
   private assertActive(): void {
@@ -271,6 +290,10 @@ export class CodexJsonRpcClient {
       throw new Error("Codex JSON-RPC client was disposed");
     }
   }
+}
+
+function clearPendingTimeout(pending: PendingRequest): void {
+  if (pending.timeout !== null) window.clearTimeout(pending.timeout);
 }
 
 function isResponse(message: JsonRpcMessage): message is JsonRpcResponse {

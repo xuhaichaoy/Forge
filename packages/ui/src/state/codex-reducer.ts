@@ -5,9 +5,12 @@ import type {
   RequestId,
   TeamSummary,
   Thread,
+  ThreadActiveFlag,
+  ThreadStatus,
   ThreadItem,
 } from "@hicodex/codex-protocol";
 import type { HostStatus } from "../lib/tauri-host";
+import type { AccumulatedThreadItem } from "./render-groups";
 
 export interface PendingServerRequest {
   id: RequestId;
@@ -23,6 +26,28 @@ export interface LogLine {
   at: number;
 }
 
+export interface ThreadContextDefaults {
+  model?: string;
+  modelProvider?: string;
+  serviceTier?: unknown;
+  approvalPolicy?: unknown;
+  approvalsReviewer?: unknown;
+  sandbox?: unknown;
+  baseInstructions?: string;
+  developerInstructions?: string;
+  personality?: "none" | "friendly" | "pragmatic";
+  reasoningEffort?: unknown;
+  reasoningSummary?: unknown;
+}
+
+export interface TurnPlanSnapshot {
+  threadId: string;
+  turnId: string | null;
+  explanation: string | null;
+  plan: unknown[];
+  updatedAt: number;
+}
+
 export interface CodexUiState {
   connected: boolean;
   connecting: boolean;
@@ -30,13 +55,15 @@ export interface CodexUiState {
   threads: Thread[];
   activeThreadId: string | null;
   activeTurnIdsByThread: Record<string, string>;
-  itemsByThread: Record<string, ThreadItem[]>;
+  itemsByThread: Record<string, AccumulatedThreadItem[]>;
+  turnPlansByThread: Record<string, TurnPlanSnapshot>;
   turnDiffsByThread: Record<string, string>;
   pendingRequests: PendingServerRequest[];
   logs: LogLine[];
   models: ModelConfig[];
   teams: TeamSummary[];
   activeTeamId: string | null;
+  threadContextDefaults: ThreadContextDefaults | null;
 }
 
 export type CodexUiAction =
@@ -44,6 +71,7 @@ export type CodexUiAction =
   | { type: "connected"; value: boolean }
   | { type: "hostStatus"; status: HostStatus }
   | { type: "setThreads"; threads: Thread[] }
+  | { type: "upsertThread"; thread: Thread; select?: boolean }
   | { type: "setActiveThread"; threadId: string | null }
   | { type: "removeThread"; threadId: string }
   | { type: "notification"; message: JsonRpcNotification }
@@ -52,6 +80,7 @@ export type CodexUiAction =
   | { type: "log"; text: string; level?: "info" | "warn" | "error" }
   | { type: "setModels"; models: ModelConfig[] }
   | { type: "upsertModel"; model: ModelConfig }
+  | { type: "setThreadContextDefaults"; context: ThreadContextDefaults | null }
   | { type: "setTeams"; teams: TeamSummary[] }
   | { type: "setActiveTeam"; teamId: string | null };
 
@@ -63,12 +92,14 @@ export const initialCodexUiState: CodexUiState = {
   activeThreadId: null,
   activeTurnIdsByThread: {},
   itemsByThread: {},
+  turnPlansByThread: {},
   turnDiffsByThread: {},
   pendingRequests: [],
   logs: [],
   models: [],
   teams: [],
   activeTeamId: null,
+  threadContextDefaults: null,
 };
 
 export function codexUiReducer(state: CodexUiState, action: CodexUiAction): CodexUiState {
@@ -83,19 +114,23 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       return {
         ...state,
         threads: action.threads,
-        activeThreadId: state.activeThreadId ?? action.threads[0]?.id ?? null,
+        activeThreadId: nextActiveThreadId(state.activeThreadId, action.threads),
       };
+    case "upsertThread":
+      return upsertThreadState(state, action.thread, action.select === true);
     case "setActiveThread":
       return { ...state, activeThreadId: action.threadId };
     case "removeThread": {
       const nextThreads = state.threads.filter((thread) => thread.id !== action.threadId);
       const { [action.threadId]: _removed, ...itemsByThread } = state.itemsByThread;
       const { [action.threadId]: _removedTurn, ...activeTurnIdsByThread } = state.activeTurnIdsByThread;
+      const { [action.threadId]: _removedPlan, ...turnPlansByThread } = state.turnPlansByThread;
       const { [action.threadId]: _removedDiff, ...turnDiffsByThread } = state.turnDiffsByThread;
       return {
         ...state,
         threads: nextThreads,
         itemsByThread,
+        turnPlansByThread,
         activeTurnIdsByThread,
         turnDiffsByThread,
         activeThreadId: state.activeThreadId === action.threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
@@ -107,7 +142,7 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       return {
         ...state,
         pendingRequests: [
-          ...state.pendingRequests,
+          ...state.pendingRequests.filter((request) => request.id !== action.request.id),
           {
             id: action.request.id,
             method: action.request.method,
@@ -133,6 +168,8 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
           ...state.models.filter((model) => model.id !== action.model.id),
         ],
       };
+    case "setThreadContextDefaults":
+      return { ...state, threadContextDefaults: action.context };
     case "setTeams":
       return { ...state, teams: action.teams, activeTeamId: state.activeTeamId ?? action.teams[0]?.id ?? null };
     case "setActiveTeam":
@@ -164,13 +201,15 @@ function prependLog(
 function applyNotification(state: CodexUiState, message: JsonRpcNotification): CodexUiState {
   const params = (message.params ?? {}) as Record<string, unknown>;
   switch (message.method) {
+    case "error":
+      return applyErrorNotification(state, params);
     case "thread/started": {
       const thread = params.thread as Thread | undefined;
       if (!thread?.id) return state;
       return {
         ...state,
         threads: upsertThread(state.threads, thread),
-        activeThreadId: thread.id,
+        activeThreadId: state.activeThreadId ?? thread.id,
         activeTurnIdsByThread: {
           ...state.activeTurnIdsByThread,
           ...activeTurnsFromThread(thread),
@@ -187,17 +226,18 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return {
         ...state,
         threads: state.threads.map((thread) =>
-          thread.id === threadId ? { ...thread, status: params.status ?? thread.status } : thread,
+          thread.id === threadId ? { ...thread, status: normalizeThreadStatus(params.status, thread.status) } : thread,
         ),
       };
     }
     case "thread/name/updated": {
       const threadId = String(params.threadId ?? "");
       if (!threadId) return state;
+      const nextName = typeof params.threadName === "string" ? params.threadName : null;
       return {
         ...state,
         threads: state.threads.map((thread) =>
-          thread.id === threadId ? { ...thread, name: stringParam(params, "threadName") || thread.name } : thread,
+          thread.id === threadId ? { ...thread, name: nextName } : thread,
         ),
       };
     }
@@ -208,16 +248,25 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
       const { [threadId]: _removed, ...itemsByThread } = state.itemsByThread;
       const { [threadId]: _removedTurn, ...activeTurnIdsByThread } = state.activeTurnIdsByThread;
+      const { [threadId]: _removedPlan, ...turnPlansByThread } = state.turnPlansByThread;
       const { [threadId]: _removedDiff, ...turnDiffsByThread } = state.turnDiffsByThread;
       return {
         ...state,
         threads: nextThreads,
         itemsByThread,
+        turnPlansByThread,
         activeTurnIdsByThread,
         turnDiffsByThread,
         activeThreadId: state.activeThreadId === threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
       };
     }
+    case "thread/unarchived": {
+      const threadId = String(params.threadId ?? "");
+      if (!threadId) return state;
+      return prependLog(state, `thread unarchived: ${shortThreadId(threadId)}`);
+    }
+    case "thread/tokenUsage/updated":
+      return state;
     case "turn/started": {
       const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string } | undefined;
       const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
@@ -293,19 +342,75 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
   }
 }
 
+function applyErrorNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const error = recordParam(params.error);
+  const text = turnErrorMessage(error) || formatUnknownForLog(params);
+  const retryText = params.willRetry === true ? " (will retry)" : "";
+  const logged = text ? prependLog(state, `${text}${retryText}`, "error") : state;
+  if (params.willRetry === true) return logged;
+
+  const threadId = String(params.threadId ?? "");
+  if (!threadId || !text) return logged;
+  const turnId = String(params.turnId ?? "");
+  return {
+    ...logged,
+    threads: logged.threads.map((thread) =>
+      thread.id === threadId ? { ...thread, status: { type: "systemError" } } : thread,
+    ),
+    itemsByThread: {
+      ...logged.itemsByThread,
+      [threadId]: mergeItems(logged.itemsByThread[threadId] ?? [], [streamErrorItem(turnId, error, text)]),
+    },
+  };
+}
+
+function nextActiveThreadId(activeThreadId: string | null, threads: Thread[]): string | null {
+  if (activeThreadId === null) return null;
+  if (activeThreadId && threads.some((thread) => thread.id === activeThreadId)) return activeThreadId;
+  return threads[0]?.id ?? null;
+}
+
 function upsertThread(threads: Thread[], thread: Thread): Thread[] {
-  return [thread, ...threads.filter((item) => item.id !== thread.id)];
+  const index = threads.findIndex((item) => item.id === thread.id);
+  if (index === -1) return [thread, ...threads];
+  return threads.map((item, itemIndex) => itemIndex === index ? { ...item, ...thread } : item);
+}
+
+function upsertThreadState(
+  state: CodexUiState,
+  thread: Thread,
+  select: boolean,
+): CodexUiState {
+  const snapshotItems = collectThreadItems(thread);
+  const currentItems = state.itemsByThread[thread.id] ?? [];
+  const activeTurns = activeTurnsFromThread(thread);
+  const hasLiveTurn = Boolean(state.activeTurnIdsByThread[thread.id] ?? activeTurns[thread.id]);
+  return {
+    ...state,
+    threads: upsertThread(state.threads, thread),
+    activeThreadId: select ? thread.id : state.activeThreadId ?? thread.id,
+    activeTurnIdsByThread: {
+      ...state.activeTurnIdsByThread,
+      ...activeTurns,
+    },
+    itemsByThread: thread.turns
+      ? {
+          ...state.itemsByThread,
+          [thread.id]: hasLiveTurn
+            ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
+            : snapshotItems,
+        }
+      : state.itemsByThread,
+  };
+}
+
+function shortThreadId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
 }
 
 function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotification): CodexUiState {
   const params = (message.params ?? {}) as Record<string, unknown>;
   switch (message.method) {
-    case "error": {
-      const error = params.error as Record<string, unknown> | undefined;
-      const text = stringParam(error, "message") || formatUnknownForLog(params);
-      const retryText = params.willRetry === true ? " (will retry)" : "";
-      return prependLog(state, `${text}${retryText}`, "error");
-    }
     case "warning":
     case "guardianWarning":
       return prependLog(state, stringParam(params, "message") || formatUnknownForLog(params), "warn");
@@ -366,8 +471,43 @@ function formatUnknownForLog(value: unknown): string {
   }
 }
 
-function collectThreadItems(thread: Thread): ThreadItem[] {
+function recordParam(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function turnErrorMessage(error: Record<string, unknown> | null | undefined): string {
+  return stringParam(error, "message");
+}
+
+function streamErrorItem(
+  turnId: string,
+  error: Record<string, unknown> | null | undefined,
+  fallbackText: string,
+): AccumulatedThreadItem {
+  const id = turnId ? `stream-error:${turnId}` : `stream-error:${fallbackText}`;
+  return {
+    id,
+    type: "stream-error",
+    content: turnErrorMessage(error) || fallbackText,
+    additionalDetails: stringParam(error, "additionalDetails"),
+    completed: true,
+  };
+}
+
+function collectThreadItems(thread: Thread): AccumulatedThreadItem[] {
   return (thread.turns ?? []).flatMap((turn) => turn.items ?? []);
+}
+
+function mergeLiveThreadSnapshotItems(
+  current: AccumulatedThreadItem[],
+  snapshot: Array<AccumulatedThreadItem | ThreadItem>,
+): AccumulatedThreadItem[] {
+  const byId = new Map(snapshot.map((item) => [item.id, item as AccumulatedThreadItem]));
+  for (const item of current) {
+    const existing = byId.get(item.id);
+    byId.set(item.id, existing ? { ...existing, ...item } : item);
+  }
+  return Array.from(byId.values());
 }
 
 function activeTurnsFromThread(thread: Thread): Record<string, string> {
@@ -398,11 +538,14 @@ function upsertItem(state: CodexUiState, threadId: string, item: ThreadItem): Co
   };
 }
 
-function mergeItems(current: ThreadItem[], incoming: ThreadItem[]): ThreadItem[] {
+function mergeItems(
+  current: AccumulatedThreadItem[],
+  incoming: Array<AccumulatedThreadItem | ThreadItem>,
+): AccumulatedThreadItem[] {
   const byId = new Map(current.map((item) => [item.id, item]));
   for (const item of incoming) {
     const existing = byId.get(item.id);
-    byId.set(item.id, existing?.type === "userMessage" ? existing : { ...(existing ?? {}), ...item } as ThreadItem);
+    byId.set(item.id, existing?.type === "userMessage" ? existing : { ...(existing ?? {}), ...item });
   }
   return Array.from(byId.values());
 }
@@ -424,10 +567,10 @@ function appendItemText(
     if (item.id !== itemId) return item;
     found = true;
     const previous = String((item as Record<string, unknown>)[field] ?? "");
-    return { ...item, type: item.type || expectedType, [field]: previous + delta } as ThreadItem;
+    return { ...item, type: item.type || expectedType, [field]: previous + delta };
   });
   if (!found) {
-    next.push({ id: itemId, type: expectedType, [field]: delta } as ThreadItem);
+    next.push({ id: itemId, type: expectedType, [field]: delta });
   }
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
 }
@@ -446,10 +589,10 @@ function mergeItemFields(
   const next = items.map((item) => {
     if (item.id !== itemId) return item;
     found = true;
-    return { ...item, type: item.type || expectedType, ...fields } as ThreadItem;
+    return { ...item, type: item.type || expectedType, ...fields };
   });
   if (!found) {
-    next.push({ id: itemId, type: expectedType, ...fields } as ThreadItem);
+    next.push({ id: itemId, type: expectedType, ...fields });
   }
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
 }
@@ -478,7 +621,7 @@ function appendCommandTerminalInteraction(state: CodexUiState, params: Record<st
           stdin,
         },
       ],
-    } as ThreadItem;
+    };
   });
   if (!found) {
     next.push({
@@ -486,7 +629,7 @@ function appendCommandTerminalInteraction(state: CodexUiState, params: Record<st
       type: "commandExecution",
       command: "command",
       terminalInteractions: [{ processId: String(params.processId ?? ""), stdin }],
-    } as ThreadItem);
+    });
   }
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
 }
@@ -532,18 +675,18 @@ function updateReasoningParts(
     const parts = reasoningParts(item, field);
     while (parts.length <= index) parts.push("");
     parts[index] = `${parts[index] ?? ""}${delta}`;
-    return { ...item, type: "reasoning", [field]: parts } as ThreadItem;
+    return { ...item, type: "reasoning", [field]: parts };
   });
   if (!found) {
     const parts: string[] = [];
     while (parts.length <= index) parts.push("");
     parts[index] = delta;
-    next.push({ id: itemId, type: "reasoning", [field]: parts } as ThreadItem);
+    next.push({ id: itemId, type: "reasoning", [field]: parts });
   }
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
 }
 
-function reasoningParts(item: ThreadItem, field: "content" | "summary"): string[] {
+function reasoningParts(item: AccumulatedThreadItem, field: "content" | "summary"): string[] {
   const value = (item as Record<string, unknown>)[field];
   if (Array.isArray(value)) return value.map((part) => typeof part === "string" ? part : formatUnknownForLog(part));
   if (typeof value === "string") return [value];
@@ -557,16 +700,22 @@ function numberParam(params: Record<string, unknown>, key: string): number {
 
 function upsertTurnPlan(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
   const threadId = String(params.threadId ?? "");
-  const turnId = String(params.turnId ?? "");
+  const turnId = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
   const plan = Array.isArray(params.plan) ? params.plan : [];
-  if (!threadId || !turnId) return state;
-  return upsertItem(state, threadId, {
-    id: `todo-list:${turnId}`,
-    type: "todo-list",
-    turnId,
-    explanation: typeof params.explanation === "string" ? params.explanation : null,
-    plan,
-  } as ThreadItem);
+  if (!threadId) return state;
+  return {
+    ...state,
+    turnPlansByThread: {
+      ...state.turnPlansByThread,
+      [threadId]: {
+        threadId,
+        turnId,
+        explanation: typeof params.explanation === "string" ? params.explanation : null,
+        plan,
+        updatedAt: Date.now(),
+      },
+    },
+  };
 }
 
 function finishTurn(
@@ -574,7 +723,7 @@ function finishTurn(
   params: Record<string, unknown>,
   fallbackStatus: "completed" | "failed" | "interrupted",
 ): CodexUiState {
-  const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string; status?: unknown } | undefined;
+  const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string; status?: unknown; error?: unknown } | undefined;
   const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
   const turnId = String(params.turnId ?? turn?.id ?? "");
   if (!threadId) return state;
@@ -585,15 +734,20 @@ function finishTurn(
   }
 
   const turnStatus = turnStatusText(turn?.status) || fallbackStatus;
+  const turnError = recordParam(turn?.error);
+  const errorText = turnErrorMessage(turnError);
+  const terminalItems = errorText
+    ? mergeItems(turn?.items ?? [], [streamErrorItem(turnId, turnError, errorText)])
+    : turn?.items ?? [];
   return {
     ...state,
     activeTurnIdsByThread: nextActiveTurns,
     threads: state.threads.map((thread) =>
-      thread.id === threadId ? { ...thread, status: threadStatusToThreadStatus(turnStatus) } : thread,
+      thread.id === threadId ? { ...thread, status: terminalThreadStatusFromTurn(turnStatus, Boolean(errorText)) } : thread,
     ),
     itemsByThread: {
       ...state.itemsByThread,
-      [threadId]: mergeItems(state.itemsByThread[threadId] ?? [], turn?.items ?? []),
+      [threadId]: mergeItems(state.itemsByThread[threadId] ?? [], terminalItems),
     },
   };
 }
@@ -608,8 +762,45 @@ function turnStatusText(status: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function threadStatusToThreadStatus(turnStatus: string): unknown {
-  if (turnStatus === "failed") return "failed";
-  if (turnStatus === "interrupted") return "interrupted";
-  return "idle";
+function terminalThreadStatusFromTurn(turnStatus: string, hasTurnError = false): ThreadStatus {
+  if (turnStatus === "systemError" || hasTurnError) return { type: "systemError" };
+  return { type: "idle" };
+}
+
+function normalizeThreadStatus(value: unknown, fallback: unknown): ThreadStatus {
+  return threadStatusFromUnknown(value)
+    ?? threadStatusFromUnknown(fallback)
+    ?? { type: "idle" };
+}
+
+function threadStatusFromUnknown(value: unknown): ThreadStatus | null {
+  if (typeof value === "string") {
+    if (value === "active" || value === "running" || value === "inProgress") {
+      return { type: "active", activeFlags: [] };
+    }
+    if (value === "idle" || value === "completed" || value === "interrupted" || value === "failed") {
+      return { type: "idle" };
+    }
+    if (value === "systemError") return { type: "systemError" };
+    if (value === "notLoaded") return { type: "notLoaded" };
+    return null;
+  }
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const type = record.type;
+  if (type === "active") {
+    return {
+      type: "active",
+      activeFlags: normalizeThreadActiveFlags(record.activeFlags),
+    };
+  }
+  if (type === "idle" || type === "systemError" || type === "notLoaded") return { type };
+  return null;
+}
+
+function normalizeThreadActiveFlags(value: unknown): ThreadActiveFlag[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is ThreadActiveFlag =>
+    item === "waitingOnApproval" || item === "waitingOnUserInput"
+  );
 }
