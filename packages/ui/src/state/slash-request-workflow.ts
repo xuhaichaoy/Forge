@@ -1,4 +1,12 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type {
+  CollaborationModeListResponse,
+  Thread,
+  ThreadBackgroundTerminalsCleanResponse,
+  ThreadGoal,
+  ThreadGoalClearResponse,
+  ThreadGoalGetResponse,
+  ThreadGoalSetResponse,
+} from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
 import type { SlashCommandRequest } from "./composer-workflow";
@@ -235,24 +243,40 @@ export async function runSlashRequestWorkflow(
         return;
       }
       case "showCollaborationModes": {
+        openCommandPanel("collaboration", { status: "loading", entries: [] });
+        const result = await client.request<CollaborationModeListResponse>("collaborationMode/list", {}, 120_000);
         openCommandPanel("collaboration", {
-          status: "empty",
-          message: "The current Codex app-server protocol does not expose collaborationMode/list. Use thread fork/resume for the supported thread flows.",
-          entries: [],
+          status: "ready",
+          entries: projectCommandPanelEntries({ collaboration: result }),
         });
         return;
       }
       case "showGoal": {
         const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
         if (!threadId) return;
-        handleGoalRequest(openCommandPanel, threadId, stringPayload(payload, "objective"));
+        await handleGoalRequest(client, openCommandPanel, threadId, stringPayload(payload, "objective"));
         return;
       }
       case "cleanBackgroundTerminals": {
+        const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
+        if (!threadId) return;
+        openCommandPanel("status", { status: "loading", title: "Background terminals", entries: [] });
+        await client.request<ThreadBackgroundTerminalsCleanResponse>(
+          "thread/backgroundTerminals/clean",
+          { threadId },
+          120_000,
+        );
         openCommandPanel("status", {
-          status: "empty",
-          message: "The current Codex app-server protocol does not expose thread/backgroundTerminals/clean. Use turn interrupt for the active run.",
-          entries: [],
+          status: "ready",
+          title: "Background terminals",
+          message: "Background terminal cleanup requested.",
+          entries: [{
+            id: `background-terminals:${threadId}`,
+            title: "Background terminals",
+            kind: "status",
+            status: "cleanup requested",
+            meta: `thread ${threadId}`,
+          }],
         });
         return;
       }
@@ -277,44 +301,97 @@ export async function runSlashRequestWorkflow(
   }
 }
 
-function handleGoalRequest(
+async function handleGoalRequest(
+  client: SlashRequestWorkflowContext["client"],
   openCommandPanel: SlashRequestWorkflowContext["openCommandPanel"],
   threadId: string,
   objective: string,
 ) {
-  if (objective.toLowerCase() === "clear") {
+  const trimmedObjective = objective.trim();
+  openCommandPanel("status", { status: "loading", title: "Goal", entries: [] });
+
+  if (trimmedObjective.toLowerCase() === "clear") {
+    const result = await client.request<ThreadGoalClearResponse>("thread/goal/clear", { threadId }, 120_000);
     openCommandPanel("status", {
-      status: "empty",
-      message: "The current Codex app-server protocol publishes goal notifications but does not expose thread/goal/clear.",
-      entries: [],
-    });
-    return;
-  }
-  if (objective) {
-    openCommandPanel("status", {
-      status: "empty",
-      message: "The current Codex app-server protocol publishes goal notifications but does not expose thread/goal/set.",
+      status: "ready",
+      title: "Goal",
+      message: result.cleared ? "Cleared the current thread goal." : "No goal was set for this thread.",
       entries: [{
-        id: "goal:unsupported",
-        title: objective,
+        id: `goal:${threadId}:clear`,
+        title: result.cleared ? "Goal cleared" : "No goal to clear",
         kind: "status",
-        status: "not sent",
+        status: result.cleared ? "cleared" : "empty",
         meta: `thread ${threadId}`,
       }],
     });
     return;
   }
+
+  if (trimmedObjective) {
+    const result = await client.request<ThreadGoalSetResponse>(
+      "thread/goal/set",
+      { threadId, objective: trimmedObjective },
+      120_000,
+    );
+    openCommandPanel("status", {
+      status: "ready",
+      title: "Goal",
+      message: "Updated the current thread goal.",
+      entries: [goalPanelEntry(result.goal)],
+    });
+    return;
+  }
+
+  const result = await client.request<ThreadGoalGetResponse>("thread/goal/get", { threadId }, 120_000);
+  if (!result.goal) {
+    openCommandPanel("status", {
+      status: "empty",
+      title: "Goal",
+      message: "No goal is set for this thread.",
+      entries: [],
+    });
+    return;
+  }
   openCommandPanel("status", {
-    status: "empty",
-    message: "The current Codex app-server protocol publishes goal notifications but does not expose thread/goal/get.",
-    entries: [{
-      id: "goal:unsupported",
-      title: "Thread goal",
-      kind: "status",
-      status: "not queryable",
-      meta: `thread ${threadId}`,
-    }],
+    status: "ready",
+    title: "Goal",
+    entries: [goalPanelEntry(result.goal)],
   });
+}
+
+function goalPanelEntry(goal: ThreadGoal): CommandPanelEntry {
+  return {
+    id: `goal:${goal.threadId}`,
+    title: goal.objective,
+    kind: "status",
+    status: goal.status,
+    meta: goal.tokenBudget === null
+      ? `${goal.tokensUsed} tokens`
+      : `${goal.tokensUsed}/${goal.tokenBudget} tokens`,
+    details: cleanGoalDetails([
+      `Thread: ${goal.threadId}`,
+      `Time used: ${formatGoalDuration(goal.timeUsedSeconds)}`,
+      `Created: ${formatGoalTimestamp(goal.createdAt)}`,
+      `Updated: ${formatGoalTimestamp(goal.updatedAt)}`,
+    ]),
+  };
+}
+
+function cleanGoalDetails(values: string[]): string[] {
+  return values.map((value) => value.trim()).filter(Boolean);
+}
+
+function formatGoalDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0s";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.round(seconds % 60);
+  return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+}
+
+function formatGoalTimestamp(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "unknown";
+  return new Date(seconds * 1_000).toLocaleString();
 }
 
 async function handleMentionSearch(
@@ -326,7 +403,7 @@ async function handleMentionSearch(
   if (!query || !cwd) {
     openCommandPanel("generic", {
       status: "empty",
-      message: "Type /mention <query> to search workspace files, or use + Mention file to attach a known path.",
+      message: "Type /mention <query> to search workspace files, or use + Add photos & files to attach local files.",
       entries: [],
     });
     return;
@@ -344,12 +421,19 @@ async function handleMentionSearch(
     status: file.match_type,
     meta: file.path,
     details: [`score: ${file.score ?? "unknown"}`],
+    action: file.path
+      ? {
+          type: "attachMention",
+          name: file.file_name || file.path,
+          path: file.path,
+        }
+      : undefined,
   }));
   openCommandPanel("generic", {
     status: "ready",
     title: "Files",
     entries,
-    message: entries.length ? `${entries.length} matching file(s). Use + Mention file to attach a path.` : "No matching files found.",
+    message: entries.length ? `${entries.length} matching file(s). Select one to attach it.` : "No matching files found.",
   });
 }
 

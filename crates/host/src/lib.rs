@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -60,6 +61,20 @@ pub struct LocalModelCatalogConfig {
     pub context_window: Option<u64>,
     pub auto_compact_token_limit: Option<u64>,
     pub input_modalities: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadToolHistory {
+    pub thread_id: String,
+    pub turns: Vec<ThreadToolHistoryTurn>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadToolHistoryTurn {
+    pub turn_id: String,
+    pub items: Vec<Value>,
 }
 
 const HICODEX_PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
@@ -290,6 +305,15 @@ impl AppServerHost {
             .map_err(|error| HostError::Profile(error.to_string()))?;
         Ok(models_path.to_string_lossy().to_string())
     }
+
+    pub fn read_thread_tool_history(
+        &self,
+        codex_home: Option<String>,
+        thread_id: String,
+        thread_path: Option<String>,
+    ) -> Result<ThreadToolHistory, HostError> {
+        read_thread_tool_history(codex_home.as_deref(), &thread_id, thread_path.as_deref())
+    }
 }
 
 impl Drop for AppServerHost {
@@ -477,6 +501,732 @@ fn default_codex_cli_home() -> PathBuf {
 
 fn has_codex_profile(path: &Path) -> bool {
     path.join("auth.json").exists() || path.join("config.toml").exists()
+}
+
+fn read_thread_tool_history(
+    codex_home: Option<&str>,
+    thread_id: &str,
+    thread_path: Option<&str>,
+) -> Result<ThreadToolHistory, HostError> {
+    let thread_id = thread_id.trim();
+    let mut history = ThreadToolHistory {
+        thread_id: thread_id.to_string(),
+        turns: Vec::new(),
+    };
+    if thread_id.is_empty() {
+        return Ok(history);
+    }
+
+    let rollout_path = if let Some(path) = thread_path
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+    {
+        Some(path)
+    } else {
+        let sessions_root = resolve_codex_home(codex_home).join("sessions");
+        find_rollout_file_for_thread(&sessions_root, thread_id)?
+    };
+    let Some(rollout_path) = rollout_path else {
+        return Ok(history);
+    };
+
+    let file =
+        fs::File::open(&rollout_path).map_err(|error| HostError::Profile(error.to_string()))?;
+    let reader = BufReader::new(file);
+    let mut replay = RolloutToolReplay::default();
+    for (line_index, line) in reader.lines().enumerate() {
+        let line = line.map_err(|error| HostError::Profile(error.to_string()))?;
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        replay.handle_rollout_line(line_index, &value);
+    }
+    history.turns = replay.turns;
+    Ok(history)
+}
+
+fn find_rollout_file_for_thread(
+    sessions_root: &Path,
+    thread_id: &str,
+) -> Result<Option<PathBuf>, HostError> {
+    if !sessions_root.is_dir() {
+        return Ok(None);
+    }
+
+    let mut candidates = Vec::new();
+    collect_jsonl_files(sessions_root, thread_id, &mut candidates)?;
+    candidates.sort_by(|a, b| b.cmp(a));
+    if let Some(path) = candidates.iter().find(|path| {
+        path.file_name()
+            .is_some_and(|name| name.to_string_lossy().contains(thread_id))
+    }) {
+        return Ok(Some(path.clone()));
+    }
+
+    for path in candidates {
+        if rollout_file_matches_thread(&path, thread_id)? {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+fn collect_jsonl_files(
+    root: &Path,
+    thread_id: &str,
+    output: &mut Vec<PathBuf>,
+) -> Result<(), HostError> {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return Err(HostError::Profile(error.to_string()));
+        }
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| HostError::Profile(error.to_string()))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_jsonl_files(&path, thread_id, output)?;
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension.to_string_lossy().eq_ignore_ascii_case("jsonl"))
+        {
+            if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().contains(thread_id))
+            {
+                output.insert(0, path);
+            } else {
+                output.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rollout_file_matches_thread(path: &Path, thread_id: &str) -> Result<bool, HostError> {
+    let file = fs::File::open(path).map_err(|error| HostError::Profile(error.to_string()))?;
+    let reader = BufReader::new(file);
+    for line in reader.lines().take(12) {
+        let line = line.map_err(|error| HostError::Profile(error.to_string()))?;
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) != Some("session_meta") {
+            continue;
+        }
+        return Ok(value
+            .get("payload")
+            .and_then(|payload| payload.get("id"))
+            .and_then(Value::as_str)
+            == Some(thread_id));
+    }
+    Ok(false)
+}
+
+#[derive(Default)]
+struct RolloutToolReplay {
+    current_turn_id: Option<String>,
+    turn_indices: HashMap<String, usize>,
+    pending_exec_calls: HashMap<String, PendingExecCall>,
+    turns: Vec<ThreadToolHistoryTurn>,
+}
+
+#[derive(Debug, Clone)]
+struct PendingExecCall {
+    turn_index: usize,
+    item_index: usize,
+}
+
+impl RolloutToolReplay {
+    fn handle_rollout_line(&mut self, line_index: usize, line: &Value) {
+        match line.get("type").and_then(Value::as_str) {
+            Some("turn_context") => {
+                if let Some(turn_id) = line
+                    .get("payload")
+                    .and_then(|payload| payload.get("turn_id"))
+                    .and_then(Value::as_str)
+                {
+                    self.current_turn_id = Some(turn_id.to_string());
+                    self.ensure_turn(turn_id);
+                }
+            }
+            Some("event_msg") => self.handle_event_msg(line_index, line.get("payload")),
+            Some("response_item") => self.handle_response_item(line_index, line.get("payload")),
+            _ => {}
+        }
+    }
+
+    fn handle_event_msg(&mut self, line_index: usize, payload: Option<&Value>) {
+        let Some(payload) = payload else {
+            return;
+        };
+        match payload.get("type").and_then(Value::as_str) {
+            Some("task_started") | Some("turn_started") => {
+                if let Some(turn_id) = payload.get("turn_id").and_then(Value::as_str) {
+                    self.current_turn_id = Some(turn_id.to_string());
+                    self.ensure_turn(turn_id);
+                }
+            }
+            Some("user_message") => {
+                let Some(turn_id) = self.current_turn_id.clone() else {
+                    return;
+                };
+                let item = build_history_user_message_item(&turn_id, line_index, payload);
+                self.push_turn_item(&turn_id, item);
+            }
+            Some("agent_message") => {
+                let Some(text) = payload.get("message").and_then(Value::as_str) else {
+                    return;
+                };
+                if text.is_empty() {
+                    return;
+                }
+                let Some(turn_id) = self.current_turn_id.clone() else {
+                    return;
+                };
+                let item = json!({
+                    "type": "agentMessage",
+                    "id": format!("history-agent:{turn_id}:{line_index}"),
+                    "text": text,
+                    "phase": payload.get("phase").cloned().unwrap_or(Value::Null),
+                    "memoryCitation": payload.get("memory_citation").cloned().unwrap_or(Value::Null),
+                    "_historyReplay": true,
+                    "_rolloutIndex": line_index,
+                });
+                self.push_turn_item(&turn_id, item);
+            }
+            Some("agent_reasoning") | Some("agent_reasoning_raw_content") => {
+                let Some(text) = payload.get("text").and_then(Value::as_str) else {
+                    return;
+                };
+                if text.is_empty() {
+                    return;
+                }
+                let Some(turn_id) = self.current_turn_id.clone() else {
+                    return;
+                };
+                let is_summary =
+                    payload.get("type").and_then(Value::as_str) == Some("agent_reasoning");
+                let item = json!({
+                    "type": "reasoning",
+                    "id": format!("history-reasoning:{turn_id}:{line_index}"),
+                    "summary": if is_summary { json!([text]) } else { json!([]) },
+                    "content": if is_summary { json!([]) } else { json!([text]) },
+                    "_historyReplay": true,
+                    "_rolloutIndex": line_index,
+                });
+                self.push_turn_item(&turn_id, item);
+            }
+            Some("web_search_end") => {
+                let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+                    return;
+                };
+                let Some(turn_id) = self.current_turn_id.clone() else {
+                    return;
+                };
+                let item = json!({
+                    "type": "webSearch",
+                    "id": call_id,
+                    "query": payload.get("query").and_then(Value::as_str).unwrap_or_default(),
+                    "action": payload.get("action").cloned().unwrap_or(Value::Null),
+                    "_historyReplay": true,
+                    "_rolloutIndex": line_index,
+                });
+                self.push_turn_item(&turn_id, item);
+            }
+            Some("exec_command_begin") => self.handle_exec_command_begin(line_index, payload),
+            Some("exec_command_end") => self.handle_exec_command_end(line_index, payload),
+            _ => {}
+        }
+    }
+
+    fn handle_response_item(&mut self, line_index: usize, payload: Option<&Value>) {
+        let Some(payload) = payload else {
+            return;
+        };
+        match payload.get("type").and_then(Value::as_str) {
+            Some("function_call") => self.handle_function_call(line_index, payload),
+            Some("function_call_output") => self.handle_function_call_output(payload),
+            _ => {}
+        }
+    }
+
+    fn handle_function_call(&mut self, line_index: usize, payload: &Value) {
+        if payload.get("name").and_then(Value::as_str) != Some("exec_command") {
+            return;
+        }
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = self.current_turn_id.clone() else {
+            return;
+        };
+        let args = function_call_arguments(payload);
+        let command = string_value(args.get("cmd"))
+            .or_else(|| string_value(args.get("command")))
+            .unwrap_or_default();
+        if command.trim().is_empty() {
+            return;
+        }
+        let cwd = string_value(args.get("workdir"))
+            .or_else(|| string_value(args.get("cwd")))
+            .unwrap_or_default();
+        let item = json!({
+            "type": "commandExecution",
+            "id": call_id,
+            "command": command,
+            "cwd": cwd,
+            "processId": Value::Null,
+            "source": "agent",
+            "status": "inProgress",
+            "commandActions": [command_action_for_history(&command)],
+            "aggregatedOutput": Value::Null,
+            "exitCode": Value::Null,
+            "durationMs": Value::Null,
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        let (turn_index, item_index) =
+            self.push_or_replace_command_execution(&turn_id, call_id, item);
+        self.pending_exec_calls.insert(
+            call_id.to_string(),
+            PendingExecCall {
+                turn_index,
+                item_index,
+            },
+        );
+    }
+
+    fn handle_exec_command_begin(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = payload.get("turn_id").and_then(Value::as_str) else {
+            return;
+        };
+        let command = shell_join_json_array(payload.get("command")).unwrap_or_default();
+        if command.trim().is_empty() {
+            return;
+        }
+        let cwd = payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let item = json!({
+            "type": "commandExecution",
+            "id": call_id,
+            "command": command,
+            "cwd": cwd,
+            "processId": payload.get("process_id").and_then(Value::as_str),
+            "source": command_execution_source_from_core(payload.get("source")),
+            "status": "inProgress",
+            "commandActions": command_actions_from_parsed_cmd(payload.get("parsed_cmd"), cwd),
+            "aggregatedOutput": Value::Null,
+            "exitCode": Value::Null,
+            "durationMs": Value::Null,
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        let (turn_index, item_index) =
+            self.push_or_replace_command_execution(turn_id, call_id, item);
+        self.pending_exec_calls.insert(
+            call_id.to_string(),
+            PendingExecCall {
+                turn_index,
+                item_index,
+            },
+        );
+    }
+
+    fn handle_exec_command_end(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = payload.get("turn_id").and_then(Value::as_str) else {
+            return;
+        };
+        let command = shell_join_json_array(payload.get("command")).unwrap_or_default();
+        if command.trim().is_empty() {
+            return;
+        }
+        let cwd = payload
+            .get("cwd")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let aggregated_output = payload
+            .get("aggregated_output")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let item = json!({
+            "type": "commandExecution",
+            "id": call_id,
+            "command": command,
+            "cwd": cwd,
+            "processId": payload.get("process_id").and_then(Value::as_str),
+            "source": command_execution_source_from_core(payload.get("source")),
+            "status": command_execution_status_from_core(payload.get("status")),
+            "commandActions": command_actions_from_parsed_cmd(payload.get("parsed_cmd"), cwd),
+            "aggregatedOutput": if aggregated_output.is_empty() {
+                Value::Null
+            } else {
+                Value::String(aggregated_output.to_string())
+            },
+            "exitCode": payload.get("exit_code").and_then(Value::as_i64).map(Value::from).unwrap_or(Value::Null),
+            "durationMs": duration_ms_from_value(payload.get("duration")).map(Value::from).unwrap_or(Value::Null),
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        let (turn_index, item_index) =
+            self.push_or_replace_command_execution(turn_id, call_id, item);
+        self.pending_exec_calls.insert(
+            call_id.to_string(),
+            PendingExecCall {
+                turn_index,
+                item_index,
+            },
+        );
+    }
+
+    fn handle_function_call_output(&mut self, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(call) = self.pending_exec_calls.get(call_id).cloned() else {
+            return;
+        };
+        let Some(item) = self
+            .turns
+            .get_mut(call.turn_index)
+            .and_then(|turn| turn.items.get_mut(call.item_index))
+            .and_then(Value::as_object_mut)
+        else {
+            return;
+        };
+        let output = function_output_text(payload.get("output").unwrap_or(&Value::Null));
+        let exit_code = parse_exit_code(&output);
+        let success = function_output_success(payload.get("output").unwrap_or(&Value::Null))
+            .unwrap_or_else(|| exit_code.unwrap_or(0) == 0);
+        item.insert(
+            "status".to_string(),
+            Value::String(if success { "completed" } else { "failed" }.to_string()),
+        );
+        item.insert(
+            "aggregatedOutput".to_string(),
+            if output.is_empty() {
+                Value::Null
+            } else {
+                Value::String(output)
+            },
+        );
+        item.insert(
+            "exitCode".to_string(),
+            exit_code.map(Value::from).unwrap_or(Value::Null),
+        );
+    }
+
+    fn ensure_turn(&mut self, turn_id: &str) -> usize {
+        if let Some(index) = self.turn_indices.get(turn_id) {
+            return *index;
+        }
+        let index = self.turns.len();
+        self.turns.push(ThreadToolHistoryTurn {
+            turn_id: turn_id.to_string(),
+            items: Vec::new(),
+        });
+        self.turn_indices.insert(turn_id.to_string(), index);
+        index
+    }
+
+    fn push_turn_item(&mut self, turn_id: &str, item: Value) -> (usize, usize) {
+        let turn_index = self.ensure_turn(turn_id);
+        let turn = &mut self.turns[turn_index];
+        let item_index = turn.items.len();
+        turn.items.push(item);
+        (turn_index, item_index)
+    }
+
+    fn push_or_replace_command_execution(
+        &mut self,
+        turn_id: &str,
+        call_id: &str,
+        item: Value,
+    ) -> (usize, usize) {
+        let turn_index = self.ensure_turn(turn_id);
+        let turn = &mut self.turns[turn_index];
+        if let Some(item_index) = turn.items.iter().position(|candidate| {
+            candidate.get("type").and_then(Value::as_str) == Some("commandExecution")
+                && candidate.get("id").and_then(Value::as_str) == Some(call_id)
+        }) {
+            turn.items[item_index] = item;
+            return (turn_index, item_index);
+        }
+
+        let item_index = turn.items.len();
+        turn.items.push(item);
+        (turn_index, item_index)
+    }
+}
+
+fn build_history_user_message_item(turn_id: &str, line_index: usize, payload: &Value) -> Value {
+    let mut content = Vec::new();
+    if let Some(message) = payload.get("message").and_then(Value::as_str) {
+        if !message.is_empty() {
+            content.push(json!({
+                "type": "text",
+                "text": message,
+                "text_elements": payload.get("text_elements").cloned().unwrap_or_else(|| json!([])),
+            }));
+        }
+    }
+    if let Some(images) = payload.get("images").and_then(Value::as_array) {
+        for image in images {
+            if let Some(url) = image.as_str() {
+                content.push(json!({ "type": "image", "url": url }));
+            }
+        }
+    }
+    if let Some(local_images) = payload.get("local_images").and_then(Value::as_array) {
+        for image in local_images {
+            if let Some(path) = image.as_str() {
+                content.push(json!({ "type": "localImage", "path": path }));
+            }
+        }
+    }
+    json!({
+        "type": "userMessage",
+        "id": format!("history-user:{turn_id}:{line_index}"),
+        "content": content,
+        "_historyReplay": true,
+        "_rolloutIndex": line_index,
+    })
+}
+
+fn function_call_arguments(payload: &Value) -> Value {
+    match payload.get("arguments") {
+        Some(Value::String(value)) => serde_json::from_str(value).unwrap_or(Value::Null),
+        Some(value) => value.clone(),
+        None => Value::Null,
+    }
+}
+
+fn function_output_text(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Object(map) => {
+            if let Some(text) = map.get("body").and_then(Value::as_str) {
+                return text.to_string();
+            }
+            if let Some(text) = map.get("text").and_then(Value::as_str) {
+                return text.to_string();
+            }
+            if let Some(items) = map.get("body").and_then(Value::as_array) {
+                return content_items_text(items);
+            }
+            if let Some(items) = map.get("content").and_then(Value::as_array) {
+                return content_items_text(items);
+            }
+            serde_json::to_string(value).unwrap_or_default()
+        }
+        Value::Null => String::new(),
+        _ => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+
+fn content_items_text(items: &[Value]) -> String {
+    items
+        .iter()
+        .filter_map(|item| {
+            item.get("text")
+                .and_then(Value::as_str)
+                .or_else(|| item.get("input_text").and_then(Value::as_str))
+                .map(ToOwned::to_owned)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn function_output_success(value: &Value) -> Option<bool> {
+    value
+        .as_object()
+        .and_then(|map| map.get("success"))
+        .and_then(Value::as_bool)
+}
+
+fn parse_exit_code(output: &str) -> Option<i64> {
+    let marker = "Process exited with code ";
+    let start = output.find(marker)? + marker.len();
+    let digits = output[start..]
+        .chars()
+        .take_while(|value| value.is_ascii_digit() || *value == '-')
+        .collect::<String>();
+    digits.parse().ok()
+}
+
+fn shell_join_json_array(value: Option<&Value>) -> Option<String> {
+    let values = value?.as_array()?;
+    Some(
+        values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(shell_quote)
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | ':' | '='))
+    {
+        return value.to_string();
+    }
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn command_execution_source_from_core(value: Option<&Value>) -> &'static str {
+    match value.and_then(Value::as_str) {
+        Some("user_shell") | Some("userShell") => "userShell",
+        Some("unified_exec_startup") | Some("unifiedExecStartup") => "unifiedExecStartup",
+        Some("unified_exec_interaction") | Some("unifiedExecInteraction") => {
+            "unifiedExecInteraction"
+        }
+        _ => "agent",
+    }
+}
+
+fn command_execution_status_from_core(value: Option<&Value>) -> &'static str {
+    match value.and_then(Value::as_str) {
+        Some("failed") => "failed",
+        Some("declined") => "declined",
+        Some("in_progress") | Some("inProgress") => "inProgress",
+        _ => "completed",
+    }
+}
+
+fn command_actions_from_parsed_cmd(value: Option<&Value>, cwd: &str) -> Value {
+    let Some(parsed_cmd) = value.and_then(Value::as_array) else {
+        return json!([]);
+    };
+    Value::Array(
+        parsed_cmd
+            .iter()
+            .filter_map(|parsed| command_action_from_core_parsed(parsed, cwd))
+            .collect(),
+    )
+}
+
+fn command_action_from_core_parsed(parsed: &Value, cwd: &str) -> Option<Value> {
+    let command = parsed
+        .get("cmd")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Some(match parsed.get("type").and_then(Value::as_str) {
+        Some("read") => {
+            let path = parsed
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            json!({
+                "type": "read",
+                "command": command,
+                "name": parsed.get("name").and_then(Value::as_str).unwrap_or_default(),
+                "path": absolute_path_from_cwd(cwd, path),
+            })
+        }
+        Some("list_files") | Some("listFiles") => {
+            json!({
+                "type": "listFiles",
+                "command": command,
+                "path": parsed.get("path").cloned().unwrap_or(Value::Null),
+            })
+        }
+        Some("search") => {
+            json!({
+                "type": "search",
+                "command": command,
+                "query": parsed.get("query").cloned().unwrap_or(Value::Null),
+                "path": parsed.get("path").cloned().unwrap_or(Value::Null),
+            })
+        }
+        Some("unknown") => json!({ "type": "unknown", "command": command }),
+        _ => return None,
+    })
+}
+
+fn absolute_path_from_cwd(cwd: &str, path: &str) -> String {
+    let path_buf = Path::new(path);
+    if path_buf.is_absolute() {
+        return path.to_string();
+    }
+    Path::new(cwd).join(path_buf).to_string_lossy().to_string()
+}
+
+fn duration_ms_from_value(value: Option<&Value>) -> Option<i64> {
+    match value? {
+        Value::Number(number) => number.as_i64(),
+        Value::String(text) => duration_ms_from_string(text),
+        Value::Object(map) => {
+            let secs = map.get("secs").and_then(Value::as_i64).unwrap_or(0);
+            let nanos = map.get("nanos").and_then(Value::as_i64).unwrap_or(0);
+            Some(secs.saturating_mul(1000).saturating_add(nanos / 1_000_000))
+        }
+        _ => None,
+    }
+}
+
+fn duration_ms_from_string(text: &str) -> Option<i64> {
+    if let Some(stripped) = text.strip_suffix("ms") {
+        return stripped.trim().parse::<i64>().ok();
+    }
+    if let Some(stripped) = text.strip_suffix('s') {
+        let seconds = stripped.trim().parse::<f64>().ok()?;
+        return Some((seconds * 1000.0).round() as i64);
+    }
+    text.trim().parse::<i64>().ok()
+}
+
+fn command_action_for_history(command: &str) -> Value {
+    let lower = command.to_lowercase();
+    if lower.contains("rg --files") || lower.contains("find ") || lower.contains("ls ") {
+        return json!({ "type": "listFiles", "command": command, "path": Value::Null });
+    }
+    if lower.contains("rg ") || lower.contains("grep ") {
+        return json!({ "type": "search", "command": command, "query": Value::Null, "path": Value::Null });
+    }
+    if lower.contains("cat ") || lower.contains("sed ") || lower.contains("nl ") {
+        let path = extract_command_path(command).unwrap_or_default();
+        let name = Path::new(&path)
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| path.clone());
+        return json!({ "type": "read", "command": command, "name": name, "path": path });
+    }
+    json!({ "type": "unknown", "command": command })
+}
+
+fn extract_command_path(command: &str) -> Option<String> {
+    command
+        .split_whitespace()
+        .rev()
+        .map(|part| part.trim_matches(|ch| matches!(ch, '\'' | '"' | '`' | ';' | ',' | ')' | '(')))
+        .find(|part| {
+            !part.is_empty()
+                && !part.starts_with('-')
+                && (*part).chars().any(|ch| ch == '/' || ch == '.')
+        })
+        .map(ToOwned::to_owned)
+}
+
+fn string_value(value: Option<&Value>) -> Option<String> {
+    value.and_then(Value::as_str).map(ToOwned::to_owned)
 }
 
 fn ensure_default_hicodex_profile(codex_home: &Path) -> Result<(), std::io::Error> {
@@ -868,6 +1618,73 @@ mod tests {
         );
         assert_eq!(model["input_modalities"][0].as_str(), Some("text"));
         assert_eq!(model["input_modalities"][1].as_str(), Some("image"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reads_exec_command_end_history_from_rollout() {
+        let thread_id = "019e-test-thread";
+        let turn_id = "019e-test-turn";
+        let dir = env::temp_dir().join(format!("hicodex-host-history-test-{}", std::process::id()));
+        let sessions = dir.join("sessions").join("2026").join("05").join("08");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&sessions).unwrap();
+        let rollout = sessions.join(format!("rollout-2026-05-08T00-00-00-{thread_id}.jsonl"));
+        fs::write(
+            &rollout,
+            format!(
+                r#"{{"type":"session_meta","payload":{{"id":"{thread_id}"}}}}
+{{"type":"event_msg","payload":{{"type":"task_started","turn_id":"{turn_id}","started_at":1}}}}
+{{"type":"turn_context","payload":{{"turn_id":"{turn_id}","cwd":"/tmp/project"}}}}
+{{"type":"event_msg","payload":{{"type":"user_message","message":"read files","images":[],"local_images":[],"text_elements":[]}}}}
+{{"type":"event_msg","payload":{{"type":"agent_message","message":"I will read the file.","phase":"commentary","memory_citation":null}}}}
+{{"type":"event_msg","payload":{{"type":"exec_command_begin","call_id":"call_exec","process_id":"123","turn_id":"{turn_id}","started_at_ms":1,"command":["/bin/zsh","-lc","cat docs/DEVELOPMENT.md"],"cwd":"/tmp/project","parsed_cmd":[{{"type":"read","cmd":"cat docs/DEVELOPMENT.md","name":"DEVELOPMENT.md","path":"docs/DEVELOPMENT.md"}}],"source":"unified_exec_startup","interaction_input":null}}}}
+{{"type":"event_msg","payload":{{"type":"exec_command_end","call_id":"call_exec","process_id":"123","turn_id":"{turn_id}","completed_at_ms":2,"command":["/bin/zsh","-lc","cat docs/DEVELOPMENT.md"],"cwd":"/tmp/project","parsed_cmd":[{{"type":"read","cmd":"cat docs/DEVELOPMENT.md","name":"DEVELOPMENT.md","path":"docs/DEVELOPMENT.md"}}],"source":"unified_exec_startup","interaction_input":null,"stdout":"","stderr":"missing","aggregated_output":"missing","exit_code":1,"duration":{{"secs":0,"nanos":12000000}},"formatted_output":"missing","status":"failed"}}}}
+"#,
+            ),
+        )
+        .unwrap();
+
+        let history =
+            read_thread_tool_history(Some(dir.to_string_lossy().as_ref()), thread_id, None)
+                .unwrap();
+
+        assert_eq!(history.thread_id, thread_id);
+        assert_eq!(history.turns.len(), 1);
+        assert_eq!(history.turns[0].turn_id, turn_id);
+        assert_eq!(
+            history.turns[0]
+                .items
+                .iter()
+                .filter(|item| item.get("type").and_then(Value::as_str) == Some("commandExecution"))
+                .count(),
+            1
+        );
+        let command = history.turns[0]
+            .items
+            .iter()
+            .find(|item| item.get("type").and_then(Value::as_str) == Some("commandExecution"))
+            .expect("exec_command should be replayed as commandExecution");
+        assert_eq!(command["id"].as_str(), Some("call_exec"));
+        assert_eq!(command["status"].as_str(), Some("failed"));
+        assert_eq!(command["exitCode"].as_i64(), Some(1));
+        assert_eq!(command["cwd"].as_str(), Some("/tmp/project"));
+        assert_eq!(command["processId"].as_str(), Some("123"));
+        assert_eq!(command["source"].as_str(), Some("unifiedExecStartup"));
+        assert_eq!(command["durationMs"].as_i64(), Some(12));
+        assert_eq!(
+            command["command"].as_str(),
+            Some("/bin/zsh -lc 'cat docs/DEVELOPMENT.md'")
+        );
+        let action = &command["commandActions"][0];
+        assert_eq!(action["type"].as_str(), Some("read"));
+        assert_eq!(action["command"].as_str(), Some("cat docs/DEVELOPMENT.md"));
+        assert_eq!(action["name"].as_str(), Some("DEVELOPMENT.md"));
+        assert_eq!(
+            action["path"].as_str(),
+            Some("/tmp/project/docs/DEVELOPMENT.md")
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

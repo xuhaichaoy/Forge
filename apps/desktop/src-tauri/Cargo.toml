@@ -12,6 +12,7 @@ path = "src/main.rs"
 tauri-build = { workspace = true }
 
 [dependencies]
+base64 = { workspace = true }
 hicodex-host = { path = "../../../crates/host" }
 serde = { workspace = true }
 serde_json = { workspace = true }

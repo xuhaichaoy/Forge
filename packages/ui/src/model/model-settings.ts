@@ -5,7 +5,7 @@ export type { ModelConfig };
 export const DEFAULT_MODEL_PROVIDER_ID = "hicodex_local";
 export const DEFAULT_MODEL_PROVIDER_NAME = "HiCodex local gateway";
 export const DEFAULT_MODEL_BASE_URL = "http://127.0.0.1:8890/v1";
-export const DEFAULT_MODEL_NAME = "gpt-5.2";
+export const DEFAULT_MODEL_NAME = "Qwen3.6-27B-mxfp4";
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 262144;
 export const DEFAULT_MODEL_AUTO_COMPACT_TOKEN_LIMIT = 235929;
 export const DEFAULT_MODEL_REASONING_SUMMARY = "none";

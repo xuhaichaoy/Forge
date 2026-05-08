@@ -4,9 +4,10 @@ import type { CommandPanelEntry, CommandPanelState } from "../state/command-pane
 export interface CommandPanelProps {
   panel: CommandPanelState;
   onClose: () => void;
+  onSelectEntry?: (entry: CommandPanelEntry) => void;
 }
 
-export function CommandPanel({ panel, onClose }: CommandPanelProps) {
+export function CommandPanel({ panel, onClose, onSelectEntry }: CommandPanelProps) {
   return (
     <div className="hc-settings-backdrop">
       <section className="hc-command-panel">
@@ -30,7 +31,7 @@ export function CommandPanel({ panel, onClose }: CommandPanelProps) {
         {panel.entries.length > 0 && (
           <div className="hc-command-panel-list">
             {panel.entries.map((entry) => (
-              <CommandPanelRow entry={entry} key={entry.id} />
+              <CommandPanelRow entry={entry} key={entry.id} onSelectEntry={onSelectEntry} />
             ))}
           </div>
         )}
@@ -39,9 +40,16 @@ export function CommandPanel({ panel, onClose }: CommandPanelProps) {
   );
 }
 
-function CommandPanelRow({ entry }: { entry: CommandPanelEntry }) {
-  return (
-    <article className="hc-command-panel-row" data-disabled={entry.disabled ? "true" : "false"}>
+function CommandPanelRow({
+  entry,
+  onSelectEntry,
+}: {
+  entry: CommandPanelEntry;
+  onSelectEntry?: (entry: CommandPanelEntry) => void;
+}) {
+  const actionable = Boolean(entry.action && !entry.disabled && onSelectEntry);
+  const content = (
+    <>
       <div className="hc-command-panel-row-main">
         <div>
           <h3>{entry.title}</h3>
@@ -56,6 +64,30 @@ function CommandPanelRow({ entry }: { entry: CommandPanelEntry }) {
           ))}
         </ul>
       )}
+    </>
+  );
+  if (actionable) {
+    return (
+      <article
+        className="hc-command-panel-row"
+        data-actionable="true"
+        data-disabled="false"
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelectEntry?.(entry)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onSelectEntry?.(entry);
+        }}
+      >
+        {content}
+      </article>
+    );
+  }
+  return (
+    <article className="hc-command-panel-row" data-actionable="false" data-disabled={entry.disabled ? "true" : "false"}>
+      {content}
     </article>
   );
 }

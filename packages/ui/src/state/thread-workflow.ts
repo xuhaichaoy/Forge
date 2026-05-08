@@ -1,10 +1,75 @@
 import type { Dispatch } from "react";
-import type { Thread, UserInput } from "@hicodex/codex-protocol";
+import type { CollaborationMode, Thread, TurnStartParams, UserInput } from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError, formatUnknown, stringField } from "../lib/format";
-import { codexUiReducer, type ThreadContextDefaults } from "./codex-reducer";
+import { getHostStatus, isTauriRuntime, readThreadToolHistory } from "../lib/tauri-host";
+import { codexUiReducer, OPTIMISTIC_TURN_PLACEHOLDER_PREFIX, type ThreadContextDefaults } from "./codex-reducer";
+import { mergeThreadToolHistory } from "./thread-history-tools";
 
 export type ThreadWorkflowDispatch = Dispatch<Parameters<typeof codexUiReducer>[1]>;
+
+export interface OptimisticUserMessageHandle {
+  threadId: string;
+  localTurnId: string;
+  localId: string;
+}
+
+let optimisticIdCounter = 0;
+
+function nextOptimisticToken(): string {
+  optimisticIdCounter += 1;
+  const random = typeof globalThis !== "undefined" && typeof globalThis.crypto?.randomUUID === "function"
+    ? globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12)
+    : Math.random().toString(36).slice(2, 12);
+  return `${Date.now().toString(36)}-${optimisticIdCounter.toString(36)}-${random}`;
+}
+
+/**
+ * Insert an optimistic user message into the active turn segment so the UI
+ * shows the prompt immediately, mirroring how Codex Desktop pushes the user
+ * input into `turn.items` before the server echoes it back.
+ *
+ * `liveTurnId` is non-null when steering an already-running turn; in that case
+ * we attach the item directly to the real turn id so no later binding is
+ * required. When omitted, a placeholder turn id is used and bound to the next
+ * `turn/started` notification by the reducer.
+ */
+export function dispatchOptimisticUserMessage(
+  dispatch: ThreadWorkflowDispatch,
+  threadId: string,
+  content: UserInput[],
+  liveTurnId?: string | null,
+): OptimisticUserMessageHandle {
+  const token = nextOptimisticToken();
+  const localTurnId = liveTurnId && liveTurnId.length > 0
+    ? liveTurnId
+    : `${OPTIMISTIC_TURN_PLACEHOLDER_PREFIX}${token}`;
+  const localId = `optimistic-user:${token}`;
+  dispatch({
+    type: "optimisticUserMessage",
+    threadId,
+    localTurnId,
+    localId,
+    content,
+  });
+  return { threadId, localTurnId, localId };
+}
+
+export function dropOptimisticUserMessage(
+  dispatch: ThreadWorkflowDispatch,
+  handle: OptimisticUserMessageHandle | null,
+): void {
+  if (!handle) return;
+  dispatch({
+    type: "dropOptimisticUserMessage",
+    threadId: handle.threadId,
+    localId: handle.localId,
+  });
+}
+
+export interface TurnStartOptions {
+  collaborationMode?: CollaborationMode | null;
+}
 
 export const THREAD_LIST_PAGE_SIZE = 100;
 export const THREAD_LIST_MAX_PAGES = 20;
@@ -95,7 +160,7 @@ export async function readThreadForDisplay(
   const metadataThread = metadataResult.thread ?? thread;
   try {
     const result = await readThread(client, thread.id, true);
-    return result.thread ?? metadataThread;
+    return await hydrateThreadToolHistory(result.thread ?? metadataThread, dispatch);
   } catch (error) {
     if (!isThreadNotMaterialized(error)) throw error;
     dispatch({
@@ -104,6 +169,25 @@ export async function readThreadForDisplay(
       level: "info",
     });
     return metadataThread;
+  }
+}
+
+async function hydrateThreadToolHistory(
+  thread: Thread,
+  dispatch: ThreadWorkflowDispatch,
+): Promise<Thread> {
+  if (!isTauriRuntime() || !thread.turns?.length) return thread;
+  try {
+    const status = await getHostStatus();
+    const history = await readThreadToolHistory(status.codexHome, thread.id, thread.path);
+    return mergeThreadToolHistory(thread, history);
+  } catch (error) {
+    dispatch({
+      type: "log",
+      text: `failed to hydrate persisted tool calls: ${formatError(error)}`,
+      level: "warn",
+    });
+    return thread;
   }
 }
 
@@ -178,8 +262,9 @@ export async function startTurn(
   input: UserInput[],
   workspace: string,
   context?: ThreadContextDefaults | null,
+  options?: TurnStartOptions | null,
 ) {
-  return client.request("turn/start", buildTurnStartParams(threadId, input, workspace, context));
+  return client.request("turn/start", buildTurnStartParams(threadId, input, workspace, context, options));
 }
 
 export async function resumeSelectedThreadAndStartTurn(
@@ -189,12 +274,13 @@ export async function resumeSelectedThreadAndStartTurn(
   workspace: string,
   dispatch: ThreadWorkflowDispatch,
   context?: ThreadContextDefaults | null,
+  options?: TurnStartOptions | null,
 ): Promise<boolean> {
   try {
     await readThreadResumeMetadata(client, threadId);
     const result = await resumeThread(client, threadId, workspace, context);
     dispatch({ type: "upsertThread", thread: result.thread, select: true });
-    await startTurn(client, result.thread.id, input, workspace, context);
+    await startTurn(client, result.thread.id, input, workspace, context, options);
     return true;
   } catch (error) {
     if (isThreadNotFound(error)) return false;
@@ -337,7 +423,8 @@ export function buildTurnStartParams(
   input: UserInput[],
   workspace: string,
   context?: ThreadContextDefaults | null,
-): Record<string, unknown> {
+  options?: TurnStartOptions | null,
+): TurnStartParams {
   return {
     threadId,
     input,
@@ -351,8 +438,9 @@ export function buildTurnStartParams(
       effort: context?.reasoningEffort,
       summary: context?.reasoningSummary,
       personality: context?.personality,
+      collaborationMode: options?.collaborationMode,
     }),
-  };
+  } as TurnStartParams;
 }
 
 export function projectThreadContextDefaults(config: Record<string, unknown> | null | undefined): ThreadContextDefaults | null {

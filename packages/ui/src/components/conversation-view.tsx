@@ -1,3 +1,4 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Activity,
   AtSign,
@@ -6,6 +7,7 @@ import {
   ChevronRight,
   Clock3,
   Copy,
+  FileImage,
   FilePenLine,
   ListChecks,
   Loader2,
@@ -107,8 +109,11 @@ export function ConversationUnitView({
                   )
                 : (
                     <>
-                      <Markdownish text={unit.text} onOpenFileReference={onOpenFileReference} />
-                      {streaming && <span className="hc-assistant-streaming-cursor" aria-hidden="true" />}
+                      <Markdownish
+                        text={unit.text}
+                        onOpenFileReference={onOpenFileReference}
+                        trailingInline={streaming ? <StreamingCursor /> : null}
+                      />
                       {citation}
                     </>
                   )
@@ -200,6 +205,7 @@ function UserMessageImagePartView({
   part: Extract<UserMessageContentPart, { kind: "image" }>;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
   const src = userImageSrc(part);
   useEffect(() => {
     if (!previewOpen) return;
@@ -219,7 +225,21 @@ function UserMessageImagePartView({
         type="button"
         onClick={() => setPreviewOpen(true)}
       >
-        <img alt={part.label} referrerPolicy="no-referrer" src={src} />
+        {imageFailed
+          ? (
+              <span className="hc-user-image-fallback">
+                <FileImage size={18} />
+                <span>{part.label}</span>
+              </span>
+            )
+          : (
+              <img
+                alt={part.label}
+                referrerPolicy="no-referrer"
+                src={src}
+                onError={() => setImageFailed(true)}
+              />
+            )}
       </button>
       {previewOpen && (
         <div
@@ -251,9 +271,34 @@ function userContentPartKey(part: UserMessageContentPart, index: number): string
 
 export function userImageSrc(part: Extract<UserMessageContentPart, { kind: "image" }>): string {
   if (part.source !== "local") return part.src;
-  if (/^(?:data|blob|https?|file):/i.test(part.src)) return part.src;
+  if (/^file:/i.test(part.src)) {
+    const path = fileUrlToPath(part.src);
+    if (path && isTauriRuntime()) return convertFileSrc(path);
+    return part.src;
+  }
+  if (/^(?:data|blob|https?):/i.test(part.src)) return part.src;
+  if (isTauriRuntime()) return convertFileSrc(part.src);
   const normalizedPath = part.src.startsWith("/") ? part.src : `/${part.src}`;
   return `file://${encodeURI(normalizedPath)}`;
+}
+
+function fileUrlToPath(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "file:") return null;
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+}
+
+function isTauriRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  const runtimeWindow = window as Window & {
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI__?: unknown;
+  };
+  return Boolean(runtimeWindow.__TAURI_INTERNALS__ || runtimeWindow.__TAURI__);
 }
 
 export function ToolActivityView({
@@ -263,9 +308,16 @@ export function ToolActivityView({
   unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
   onOpenThreadId?: (threadId: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(initialToolActivityExpanded(unit));
+  const defaultExpanded = initialToolActivityExpanded(unit);
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const isWorkedFor = unit.summary.groupType === "worked-for";
+  const detailItems = toolActivityDetailItems(unit);
   const canExpand = isToolActivityExpandable(unit);
+  const summaryLabel = useToolActivitySummaryLabel(unit);
   const detail = unit.summary.details.find((value) => value !== unit.summary.label);
+  useEffect(() => {
+    setExpanded(defaultExpanded);
+  }, [defaultExpanded, unit.key]);
   return (
     <article
       className={`hc-tool-block activity ${unit.summary.inProgress ? "is-running" : ""}`}
@@ -279,14 +331,15 @@ export function ToolActivityView({
         type="button"
         onClick={() => setExpanded((value) => !value)}
       >
-        {activityIcon(unit.summary.icon)}
-        <span>{unit.summary.label}</span>
-        {unit.summary.inProgress && detail && <small>{detail}</small>}
+        {!isWorkedFor && activityIcon(unit.summary.icon)}
+        <span>{summaryLabel}</span>
+        {!isWorkedFor && unit.summary.inProgress && detail && <small>{detail}</small>}
         {canExpand && <ChevronRight className={expanded ? "is-open" : ""} size={14} />}
       </button>
+      {isWorkedFor && <div className="hc-worked-for-divider" />}
       {expanded && (
         <div className="hc-tool-details">
-          {unit.items.map((item) => (
+          {detailItems.map((item) => (
             <ToolActivityDetail item={item} key={item.id} onOpenThreadId={onOpenThreadId} />
           ))}
         </div>
@@ -295,7 +348,26 @@ export function ToolActivityView({
   );
 }
 
+function useToolActivitySummaryLabel(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): string {
+  const [now, setNow] = useState(() => Date.now());
+  const workedForItem = unit.summary.groupType === "worked-for" ? workedForActivityItem(unit.items) : undefined;
+  const status = typeof workedForItem?.status === "string" ? workedForItem.status : "";
+  const startedAtMs = numberField(workedForItem, "startedAtMs");
+  const completedAtMs = numberField(workedForItem, "completedAtMs");
+
+  useEffect(() => {
+    if (status !== "working" || startedAtMs === null || completedAtMs !== null) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [completedAtMs, startedAtMs, status]);
+
+  if (!workedForItem || startedAtMs === null || status !== "working") return unit.summary.label;
+  const elapsedMs = Math.max((completedAtMs ?? now) - startedAtMs, 0);
+  return elapsedMs >= 1_000 ? `Working for ${formatWorkedDuration(elapsedMs)}` : "Working";
+}
+
 export function initialToolActivityExpanded(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): boolean {
+  if (typeof unit.summary.defaultExpanded === "boolean") return unit.summary.defaultExpanded;
   if (unit.summary.groupType === "web-search-group") return !unit.summary.inProgress;
   return (
     unit.summary.inProgress
@@ -305,7 +377,29 @@ export function initialToolActivityExpanded(unit: Extract<ConversationRenderUnit
 
 export function isToolActivityExpandable(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): boolean {
   if (unit.summary.groupType === "web-search-group" && unit.summary.inProgress) return false;
-  return unit.summary.groupType !== "worked-for" && unit.items.length > 0;
+  return toolActivityDetailItems(unit).length > 0;
+}
+
+function numberField(record: Record<string, unknown> | undefined, field: string): number | null {
+  const value = record?.[field];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toolActivityDetailItems(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>) {
+  if (unit.summary.groupType !== "worked-for") return unit.items;
+  return unit.items.filter((item) => item.type !== "worked-for" && item.type !== "workedFor");
+}
+
+function workedForActivityItem(items: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"]) {
+  return items.find((item) => item.type === "worked-for" || item.type === "workedFor") as Record<string, unknown> | undefined;
+}
+
+function formatWorkedDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1_000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 function activityIcon(icon: ToolActivityIcon) {
@@ -364,17 +458,25 @@ export function ToolBlock({
 export function Markdownish({
   text,
   onOpenFileReference,
+  trailingInline = null,
 }: {
   text: string;
   onOpenFileReference?: (reference: FileReference) => void;
+  trailingInline?: ReactNode;
 }) {
   const blocks = parseMarkdownBlocks(text);
+  const trailingBlockIndex = trailingInline ? trailingInlineTargetBlockIndex(blocks) : -1;
   return (
     <div className="hc-markdown">
       {blocks.length === 0
-        ? <p>{"\u00a0"}</p>
+        ? <p>{"\u00a0"}{trailingInline}</p>
         : blocks.map((block, index) => (
-            <MarkdownBlockView block={block} key={index} onOpenFileReference={onOpenFileReference} />
+            <MarkdownBlockView
+              block={block}
+              key={index}
+              onOpenFileReference={onOpenFileReference}
+              trailingInline={index === trailingBlockIndex ? trailingInline : null}
+            />
           ))}
     </div>
   );
@@ -775,18 +877,20 @@ function normalizeFileCitationPath(value: string): string {
 function MarkdownBlockView({
   block,
   onOpenFileReference,
+  trailingInline = null,
 }: {
   block: MarkdownBlock;
   onOpenFileReference?: (reference: FileReference) => void;
+  trailingInline?: ReactNode;
 }) {
   switch (block.kind) {
     case "heading": {
-      return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference)}</Heading>;
+      return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference)}{trailingInline}</Heading>;
     }
     case "paragraph":
-      return <p>{renderInlineWithBreaks(block.text, onOpenFileReference)}</p>;
+      return <p>{renderInlineWithBreaks(block.text, onOpenFileReference)}{trailingInline}</p>;
     case "blockquote":
-      return <blockquote>{renderInlineWithBreaks(block.text, onOpenFileReference)}</blockquote>;
+      return <blockquote>{renderInlineWithBreaks(block.text, onOpenFileReference)}{trailingInline}</blockquote>;
     case "code":
       return <CodeSnippet language={block.language} text={block.text} />;
     case "list": {
@@ -794,7 +898,10 @@ function MarkdownBlockView({
       return (
         <Tag>
           {block.items.map((item, index) => (
-            <li key={index}>{renderInline(item, onOpenFileReference)}</li>
+            <li key={index}>
+              {renderInline(item, onOpenFileReference)}
+              {index === block.items.length - 1 ? trailingInline : null}
+            </li>
           ))}
         </Tag>
       );
@@ -805,7 +912,10 @@ function MarkdownBlockView({
           {block.items.map((item, index) => (
             <li key={index}>
               <input aria-label={item.checked ? "Completed task" : "Pending task"} checked={item.checked} readOnly type="checkbox" />
-              <span>{renderInline(item.text, onOpenFileReference)}</span>
+              <span>
+                {renderInline(item.text, onOpenFileReference)}
+                {index === block.items.length - 1 ? trailingInline : null}
+              </span>
             </li>
           ))}
         </ul>
@@ -986,6 +1096,20 @@ function handleFileReferenceClick(
   if (!onOpenFileReference) return;
   event.preventDefault();
   onOpenFileReference(reference);
+}
+
+function StreamingCursor() {
+  return <span className="hc-assistant-streaming-cursor" aria-hidden="true" />;
+}
+
+function trailingInlineTargetBlockIndex(blocks: MarkdownBlock[]): number {
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (!block) continue;
+    if (block.kind === "paragraph" || block.kind === "heading" || block.kind === "blockquote") return index;
+    if ((block.kind === "list" || block.kind === "taskList") && block.items.length > 0) return index;
+  }
+  return blocks.length - 1;
 }
 
 function selectedTextWithin(container: Element | null, selection: Selection | null): string {

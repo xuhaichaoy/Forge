@@ -1,6 +1,15 @@
 import type { ReactNode } from "react";
 import { formatUnknown, stringField } from "../lib/format";
-import { formatItemDetail, isItemInProgress, itemText, itemType, type AccumulatedThreadItem } from "../state/render-groups";
+import {
+  assistantMessageText,
+  commandOutputText,
+  commandText,
+  formatItemDetail,
+  isItemInProgress,
+  itemText,
+  itemType,
+  type AccumulatedThreadItem,
+} from "../state/render-groups";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
@@ -44,6 +53,12 @@ export type ToolActivityDetailViewModel =
       id: string;
       running: boolean;
       rows: MultiAgentRowViewModel[];
+    }
+  | {
+      kind: "assistant";
+      id: string;
+      running: boolean;
+      text: string;
     }
   | {
       kind: "text";
@@ -145,6 +160,9 @@ export function ToolActivityDetail({
       </>
     );
   }
+  if (detail.kind === "assistant") {
+    return <div className="hc-tool-detail-prose">{detail.text}</div>;
+  }
   if (detail.kind === "exec") {
     return (
       <section className={`hc-tool-detail-card exec ${detail.running ? "is-running" : ""}`}>
@@ -201,9 +219,9 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       kind: "exec",
       id: item.id,
       running,
-      command: stringField(record, "command") || "command",
+      command: commandText(item) || "command",
       cwd: stringField(record, "cwd"),
-      output: stringField(record, "aggregatedOutput") || stringField(record, "result") || stringField(record, "error"),
+      output: commandOutputText(item),
       status,
     };
   }
@@ -221,14 +239,15 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
     };
   }
   if (type === "mcp-tool-call") {
+    const invocation = recordObject(record.invocation);
     return {
       kind: "tool",
       id: item.id,
       running,
-      name: `${stringField(record, "server") || "mcp"}:${stringField(record, "tool") || "tool"}`,
+      name: `${stringField(record, "server") || stringField(invocation, "server") || "mcp"}:${stringField(record, "tool") || stringField(invocation, "tool") || "tool"}`,
       toolKind: "MCP",
-      argumentsText: formatUnknown(record.arguments),
-      resultText: formatUnknown(record.result),
+      argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
+      resultText: toolResultText(record.result),
       errorText: formatUnknown(record.error),
       status,
     };
@@ -261,6 +280,14 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       id: item.id,
       running,
       rows: multiAgentRows(record),
+    };
+  }
+  if (type === "assistant-message") {
+    return {
+      kind: "assistant",
+      id: item.id,
+      running,
+      text: assistantMessageText(item),
     };
   }
   return {
@@ -344,6 +371,35 @@ function webSearchActionDetail(action: unknown): string {
     return pattern ? `'${pattern}'` : url;
   }
   return "";
+}
+
+function toolResultText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const record = recordObject(value);
+  if (stringField(record, "type") === "error") return stringField(record, "error") || formatUnknown(value);
+  const content = Array.isArray(record.content)
+    ? record.content.map(toolResultContentText).filter(Boolean).join("\n\n")
+    : "";
+  const structured = record.structuredContent ?? record.structured_content;
+  const structuredText = structured === null || structured === undefined ? "" : formatUnknown(structured);
+  return [content, structuredText].filter(Boolean).join("\n\n") || formatUnknown(value);
+}
+
+function toolResultContentText(value: unknown): string {
+  if (!value || typeof value !== "object") return formatUnknown(value);
+  const record = value as Record<string, unknown>;
+  const type = stringField(record, "type");
+  if (type === "text") return stringField(record, "text");
+  if (type === "image") return `Image output: ${stringField(record, "mimeType") || stringField(record, "mime_type") || "image"}`;
+  if (type === "audio") return `Audio output: ${stringField(record, "mimeType") || stringField(record, "mime_type") || "audio"}`;
+  if (type === "resource_link") return `Resource: ${stringField(record, "title") || stringField(record, "name") || stringField(record, "uri")}`;
+  if (type === "embedded_resource") {
+    const resource = recordObject(record.resource);
+    const title = stringField(resource, "title") || stringField(resource, "name") || stringField(resource, "uri") || "resource";
+    const text = stringField(resource, "text");
+    return text ? `Resource: ${title}\n\n${text}` : `Resource: ${title}`;
+  }
+  return formatUnknown(value);
 }
 
 function multiAgentRows(record: ItemRecord): MultiAgentRowViewModel[] {
@@ -517,6 +573,10 @@ function multiAgentSendInputPromptVerb(status: string): string {
   return "Messaging";
 }
 
+function recordObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
 function objectField(value: unknown, key: string): string | null {
   if (!value || typeof value !== "object") return null;
   const field = (value as Record<string, unknown>)[key];
@@ -532,12 +592,21 @@ function shortId(id: string): string {
 }
 
 function patchChanges(record: ItemRecord): Record<string, unknown>[] {
-  return Array.isArray(record.changes)
-    ? record.changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object")
-    : [];
+  if (Array.isArray(record.changes)) {
+    return record.changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object");
+  }
+  if (!record.changes || typeof record.changes !== "object") return [];
+  return Object.entries(record.changes as Record<string, unknown>).flatMap(([path, value]) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const change = value as Record<string, unknown>;
+    return [{ ...change, path: stringField(change, "path") || path }];
+  });
 }
 
 function patchKind(change: Record<string, unknown>): "add" | "delete" | "update" {
+  const directType = stringField(change, "type");
+  if (directType === "add" || directType === "delete") return directType;
+  if (directType === "update") return "update";
   const kind = change.kind;
   if (typeof kind === "string") return kind === "add" || kind === "delete" ? kind : "update";
   if (kind && typeof kind === "object") {

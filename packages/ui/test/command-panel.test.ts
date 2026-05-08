@@ -18,6 +18,7 @@ export default function runCommandPanelTests(): void {
   projectsMcpServerNamesToolsAndAuthStatus();
   projectsSkillsHooksAppsAndPluginsAsCommandEntries();
   flattensPluginListMarketplaces();
+  projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
   keepsDetailsHumanReadableWithoutRawJson();
 }
@@ -143,6 +144,44 @@ function projectsSkillsHooksAppsAndPluginsAsCommandEntries(): void {
       { id: "plugin:computer-use", title: "Computer Use", kind: "plugin", meta: "OpenAI" },
     ],
     "command panel projection should combine skills, hooks, apps, and plugins in stable command order",
+  );
+}
+
+function projectsCollaborationModesAsCommandEntries(): void {
+  const entries: CommandPanelEntry[] = projectCommandPanelEntries({
+    collaboration: {
+      data: [
+        { name: "Plan", mode: "plan", model: null, reasoning_effort: "medium" },
+        { name: "Default", mode: "default", model: null, reasoning_effort: null },
+      ],
+    },
+  });
+
+  assertDeepEqual(
+    entries.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      kind: entry.kind,
+      meta: entry.meta,
+      details: entry.details,
+    })),
+    [
+      {
+        id: "collaboration:Plan",
+        title: "Plan",
+        kind: "collaborationMode",
+        meta: "plan",
+        details: ["Reasoning: medium"],
+      },
+      {
+        id: "collaboration:Default",
+        title: "Default",
+        kind: "collaborationMode",
+        meta: "default",
+        details: [],
+      },
+    ],
+    "collaborationMode/list projection should expose mode names and preset settings",
   );
 }
 

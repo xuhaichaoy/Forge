@@ -43,6 +43,7 @@ export interface ToolActivitySummary {
   icon: ToolActivityIcon;
   label: string;
   activeDetail: string | null;
+  defaultExpanded?: boolean;
   details: string[];
   inProgress: boolean;
   totalDurationMs: number | null;
@@ -158,14 +159,32 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
   const artifacts = new Map<string, RailEntry>();
   const sources = new Map<string, RailEntry>();
   const blockedMcpServers = blockedMcpServersFromItems(items);
+  const agentBodyAssistantIds = agentBodyAssistantMessageIds(items);
+  const workedForCollapsedByDefaultIds = workedForIdsWithTrailingAssistant(items);
   let activity: ThreadItem[] = [];
   let activityGroupType: ToolActivityGroupType | null = null;
   let activityGroupKey: string | null = null;
+
+  const pushActivityItem = (item: ThreadItem, forcedGroupType?: ToolActivityGroupType) => {
+    const nextGroupType = forcedGroupType ?? baseToolActivityGroupType(item);
+    const nextGroupKey = toolActivityGroupKey(item, nextGroupType);
+    if (nextGroupType === "worked-for" && activity.length > 0) {
+      activity.push(item);
+      return;
+    }
+    if (activity.length > 0 && (activityGroupType !== nextGroupType || activityGroupKey !== nextGroupKey)) {
+      flushActivity();
+    }
+    activityGroupType = nextGroupType;
+    activityGroupKey = nextGroupKey;
+    activity.push(item);
+  };
 
   const flushActivity = () => {
     if (activity.length === 0) return;
     const summary = summarizeToolActivity(activity, {
       conversationDetailLevel: options.conversationDetailLevel ?? "STEPS_COMMANDS",
+      workedForCollapsedByDefault: activity.some((item) => workedForCollapsedByDefaultIds.has(item.id)),
     });
     const renderIndex = units.length;
     units.push({
@@ -207,6 +226,10 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
       continue;
     }
     if (isAssistantMessage(item)) {
+      if (agentBodyAssistantIds.has(item.id)) {
+        pushActivityItem(item, "collapsed-tool-activity");
+        continue;
+      }
       const renderPlaceholder = shouldRenderAssistantPlaceholder(item);
       const text = assistantMessageText(item);
       if (!text.trim() && !renderPlaceholder) {
@@ -225,14 +248,7 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
       continue;
     }
     if (isToolActivityItem(item)) {
-      const nextGroupType = baseToolActivityGroupType(item);
-      const nextGroupKey = toolActivityGroupKey(item, nextGroupType);
-      if (activity.length > 0 && (activityGroupType !== nextGroupType || activityGroupKey !== nextGroupKey)) {
-        flushActivity();
-      }
-      activityGroupType = nextGroupType;
-      activityGroupKey = nextGroupKey;
-      activity.push(item);
+      pushActivityItem(item);
       continue;
     }
     flushActivity();
@@ -261,12 +277,61 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
   };
 }
 
+function agentBodyAssistantMessageIds(items: ThreadItem[]): Set<string> {
+  const ids = new Set<string>();
+  for (const segment of conversationSegments(items)) {
+    const workedForIndex = segment.findIndex((item) => itemType(item) === "worked-for");
+    if (workedForIndex < 0) continue;
+    const finalAssistantIndex = findLastIndex(segment, isAssistantMessage);
+    if (finalAssistantIndex < 0) continue;
+    for (let index = 0; index < finalAssistantIndex; index += 1) {
+      const item = segment[index];
+      if (item && isAssistantMessage(item)) ids.add(item.id);
+    }
+  }
+  return ids;
+}
+
+function workedForIdsWithTrailingAssistant(items: ThreadItem[]): Set<string> {
+  const ids = new Set<string>();
+  for (const segment of conversationSegments(items)) {
+    const finalAssistantIndex = findLastIndex(segment, isAssistantMessage);
+    if (finalAssistantIndex < 0) continue;
+    for (let index = 0; index < finalAssistantIndex; index += 1) {
+      const item = segment[index];
+      if (item && itemType(item) === "worked-for") ids.add(item.id);
+    }
+  }
+  return ids;
+}
+
+function conversationSegments(items: ThreadItem[]): ThreadItem[][] {
+  const segments: ThreadItem[][] = [];
+  let current: ThreadItem[] = [];
+  for (const item of items) {
+    if (isUserMessage(item) && current.length > 0) {
+      segments.push(current);
+      current = [];
+    }
+    current.push(item);
+  }
+  if (current.length > 0) segments.push(current);
+  return segments;
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index] as T)) return index;
+  }
+  return -1;
+}
+
 function withStreamingAssistantState(
   units: ConversationRenderUnit[],
   isThreadRunning: boolean,
 ): ConversationRenderUnit[] {
   if (!isThreadRunning) return units;
-  const lastAssistantIndex = lastAssistantMessageIndex(units);
+  const lastAssistantIndex = lastStreamingAssistantMessageIndex(units);
   if (lastAssistantIndex < 0) return units;
   return units.map((unit, index) =>
     index === lastAssistantIndex && unit.kind === "message" && unit.role === "assistant"
@@ -275,12 +340,23 @@ function withStreamingAssistantState(
   );
 }
 
-function lastAssistantMessageIndex(units: ConversationRenderUnit[]): number {
+function lastStreamingAssistantMessageIndex(units: ConversationRenderUnit[]): number {
   for (let index = units.length - 1; index >= 0; index -= 1) {
     const unit = units[index];
-    if (unit?.kind === "message" && unit.role === "assistant") return index;
+    if (unit?.kind === "toolActivity" && unit.summary.inProgress) return -1;
+    if (unit?.kind === "message" && unit.role === "assistant") {
+      return isAssistantMessageStreamingCandidate(unit.item) ? index : -1;
+    }
   }
   return -1;
+}
+
+function isAssistantMessageStreamingCandidate(item: ThreadItem): boolean {
+  const record = item as ItemRecord;
+  if (record.renderPlaceholderWhileStreaming === true && record.completed !== true) return true;
+  if (record.completed === false) return true;
+  const status = record.status;
+  return status === "inProgress" || status === "running" || status === "streaming";
 }
 
 export function userMessageText(item: ThreadItem): string {
@@ -306,6 +382,28 @@ export function itemText(item: ThreadItem): string {
   if (typeof record.result === "string") return record.result;
   if (typeof record.error === "string") return record.error;
   return "";
+}
+
+export function commandText(item: ThreadItem): string {
+  const record = item as ItemRecord;
+  const parsedCmd = recordObject(record.parsedCmd);
+  return shellCommandText(record.command)
+    || shellCommandText(record.cmd)
+    || shellCommandText(parsedCmd.cmd)
+    || shellCommandText(recordObject(record.summary).cmd);
+}
+
+export function commandOutputText(item: ThreadItem): string {
+  const record = item as ItemRecord;
+  const output = recordObject(record.output);
+  return stringField(record, "aggregatedOutput")
+    || stringField(output, "aggregatedOutput")
+    || stringField(output, "stdout")
+    || stringField(output, "stderr")
+    || stringField(output, "text")
+    || stringField(record, "output")
+    || stringField(record, "result")
+    || stringField(record, "error");
 }
 
 export function assistantMessageText(item: ThreadItem): string {
@@ -341,6 +439,8 @@ export function assistantMessagePhase(item: ThreadItem): AssistantMessagePhase {
 }
 
 export function itemType(item: ThreadItem): string {
+  const rawType = String((item as Record<string, unknown>).type ?? "");
+  if (rawType === "workedFor") return "worked-for";
   switch (item.type) {
     case "userMessage":
       return "user-message";
@@ -380,8 +480,17 @@ export function isItemInProgress(item: ThreadItem): boolean {
   const status = record.status;
   if (status === "inProgress" || status === "running" || status === "pending" || status === "streaming") return true;
   if (itemType(item) === "worked-for") return status === "working";
-  if (item.type === "commandExecution") return record.exitCode == null && status !== "completed" && status !== "failed" && status !== "declined";
-  if (item.type === "fileChange") return status === "pending" || status === "streaming";
+  if (itemType(item) === "exec") {
+    if (record.executionStatus === "interrupted") return false;
+    const parsedCmd = recordObject(record.parsedCmd);
+    if (typeof parsedCmd.isFinished === "boolean") return !parsedCmd.isFinished;
+    return execExitCode(item) === null && status !== "completed" && status !== "failed" && status !== "declined";
+  }
+  if (itemType(item) === "patch") {
+    if (record.success === null) return true;
+    if (typeof record.success === "boolean") return false;
+    return status === "pending" || status === "streaming" || status === "inProgress";
+  }
   if (itemType(item) === "web-search") return record.completed === false;
   if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
     return status !== "completed" && status !== "failed" && status !== "errored" && status !== "cancelled";
@@ -395,8 +504,8 @@ export function formatItemDetail(item: ThreadItem): string {
   if (type === "exec") {
     const exploration = explorationDetail(item);
     if (exploration) return exploration;
-    const command = stringField(record, "command") || "command";
-    const output = stringField(record, "aggregatedOutput");
+    const command = commandText(item) || "command";
+    const output = commandOutputText(item);
     return output ? `$ ${command}\n${output}` : `$ ${command}`;
   }
   if (type === "patch") {
@@ -416,7 +525,7 @@ export function formatItemDetail(item: ThreadItem): string {
 
 function summarizeToolActivity(
   items: ThreadItem[],
-  options: { conversationDetailLevel: ConversationDetailLevel },
+  options: { conversationDetailLevel: ConversationDetailLevel; workedForCollapsedByDefault?: boolean },
 ): ToolActivitySummary {
   const counts = {
     commands: 0,
@@ -438,6 +547,9 @@ function summarizeToolActivity(
   const activeDetails: string[] = [];
   let inProgress = false;
   let totalDurationMs = 0;
+  let workedForDurationMs = 0;
+  let workedForInProgress = false;
+  let hasWorkedFor = false;
 
   for (const item of items) {
     const itemInProgress = isItemInProgress(item);
@@ -490,8 +602,14 @@ function summarizeToolActivity(
       counts.reasoning += 1;
       details.push(itemInProgress ? "Thinking" : "Thought");
       if (itemInProgress) activeDetails.push("Thinking");
+    } else if (type === "assistant-message") {
+      counts.other += 1;
+      const text = assistantMessageText(item).trim();
+      details.push(text || "Assistant update");
     } else if (type === "worked-for") {
-      details.push(activityLabel("worked-for", counts, itemInProgress, durationMs(item)));
+      hasWorkedFor = true;
+      workedForInProgress = workedForInProgress || itemInProgress;
+      workedForDurationMs += durationMs(item);
     } else if (type === "plan") {
       counts.plans += 1;
       details.push("Updated plan");
@@ -504,7 +622,11 @@ function summarizeToolActivity(
     }
   }
 
-  const groupType = baseToolActivityGroupType(items[0] ?? ({ type: "contextCompaction", id: "unknown" } as ThreadItem));
+  const groupType = hasWorkedFor
+    ? "worked-for"
+    : baseToolActivityGroupType(items[0] ?? ({ type: "contextCompaction", id: "unknown" } as ThreadItem));
+  const groupDurationMs = hasWorkedFor ? workedForDurationMs : totalDurationMs;
+  const groupInProgress = hasWorkedFor ? workedForInProgress : inProgress;
   const itemLevelLabel = directItemActivityLabel(items, {
     conversationDetailLevel: options.conversationDetailLevel,
     groupType,
@@ -512,10 +634,12 @@ function summarizeToolActivity(
   });
   const groupLabel = groupType === "multi-agent-group"
     ? multiAgentGroupLabelForItems(items)
-    : activityLabel(groupType, counts, inProgress, totalDurationMs);
+    : activityLabel(groupType, counts, groupInProgress, groupDurationMs);
   const activeDetail = activeDetails.at(-1) ?? null;
   const label = groupType === "multi-agent-group"
     ? groupLabel
+    : groupType === "worked-for"
+      ? groupLabel
     : activeDetail ?? itemLevelLabel ?? groupLabel;
 
   return {
@@ -523,9 +647,10 @@ function summarizeToolActivity(
     icon: activityIcon(groupType, counts),
     label,
     activeDetail,
+    ...(groupType === "worked-for" ? { defaultExpanded: options.workedForCollapsedByDefault !== true } : {}),
     details: dedupe(details).slice(0, 8),
     inProgress,
-    totalDurationMs: totalDurationMs > 0 ? totalDurationMs : null,
+    totalDurationMs: groupDurationMs > 0 ? groupDurationMs : totalDurationMs > 0 ? totalDurationMs : null,
     counts,
   };
 }
@@ -627,10 +752,18 @@ function explorationDetail(item: ThreadItem): string {
 }
 
 function commandActions(item: ThreadItem): Record<string, unknown>[] {
-  const actions = (item as ItemRecord).commandActions;
-  return Array.isArray(actions)
+  const record = item as ItemRecord;
+  const actions = record.commandActions;
+  const normalizedActions = Array.isArray(actions)
     ? actions.filter((action): action is Record<string, unknown> => Boolean(action) && typeof action === "object")
     : [];
+  if (normalizedActions.length > 0) return normalizedActions;
+
+  const parsedCmd = record.parsedCmd;
+  if (Array.isArray(parsedCmd)) {
+    return parsedCmd.filter((action): action is Record<string, unknown> => Boolean(action) && typeof action === "object");
+  }
+  return parsedCmd && typeof parsedCmd === "object" ? [parsedCmd as Record<string, unknown>] : [];
 }
 
 type NormalizedCommandAction =
@@ -723,19 +856,28 @@ function patchDetail(item: ThreadItem): string {
   const inProgress = isItemInProgress(item);
   return patchChanges(item).map((change) => {
     const label = patchActionLabel(patchKind(change), patchPath(change), inProgress);
-    const diff = stringField(change, "diff");
+    const diff = stringField(change, "diff") || stringField(change, "unifiedDiff") || stringField(change, "patch");
     return diff ? `${label}\n${diff}` : label;
   }).join("\n\n");
 }
 
 function patchChanges(item: ThreadItem): Record<string, unknown>[] {
   const changes = (item as ItemRecord).changes;
-  return Array.isArray(changes)
-    ? changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object")
-    : [];
+  if (Array.isArray(changes)) {
+    return changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object");
+  }
+  if (!changes || typeof changes !== "object") return [];
+  return Object.entries(changes as Record<string, unknown>).flatMap(([path, value]) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const change = value as Record<string, unknown>;
+    return [{ ...change, path: stringField(change, "path") || path }];
+  });
 }
 
 function patchKind(change: Record<string, unknown>): "add" | "delete" | "update" {
+  const directType = stringField(change, "type");
+  if (directType === "add" || directType === "delete") return directType;
+  if (directType === "update") return "update";
   const kind = change.kind;
   if (typeof kind === "string") {
     return kind === "add" || kind === "delete" ? kind : "update";
@@ -1007,8 +1149,19 @@ function mcpElicitationServer(item: ThreadItem): string {
 function userInputPartText(part: unknown): string {
   if (!part || typeof part !== "object") return formatUnknown(part);
   const record = part as Record<string, unknown>;
-  if (record.type === "text") return stringField(record, "text");
-  if (record.type === "image" || record.type === "localImage") return "";
+  if (record.type === "text" || record.type === "input_text" || record.type === "inputText") {
+    return stringField(record, "text");
+  }
+  if (
+    record.type === "image"
+    || record.type === "image_url"
+    || record.type === "input_image"
+    || record.type === "inputImage"
+    || record.type === "localImage"
+    || record.type === "local_image"
+  ) {
+    return "";
+  }
   if (record.type === "mention") return `@${stringField(record, "name") || stringField(record, "path")}`;
   if (record.type === "skill") return `$${stringField(record, "name") || stringField(record, "path")}`;
   return `[${stringField(record, "type") || "input"}]`;
@@ -1021,15 +1174,21 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
   }
   const record = part as Record<string, unknown>;
   switch (record.type) {
-    case "text": {
+    case "text":
+    case "input_text":
+    case "inputText": {
       const text = stringField(record, "text");
       return text ? [{ kind: "text", text, textElements: textElements(record.text_elements) }] : [];
     }
-    case "image": {
-      const url = stringField(record, "url");
+    case "image":
+    case "image_url":
+    case "input_image":
+    case "inputImage": {
+      const url = imageUrlField(record);
       return url ? [{ kind: "image", source: "url", src: url, label: imageLabel(url) }] : [];
     }
-    case "localImage": {
+    case "localImage":
+    case "local_image": {
       const path = stringField(record, "path");
       return path ? [{ kind: "image", source: "local", src: path, label: imageLabel(path) }] : [];
     }
@@ -1048,6 +1207,16 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
       return text ? [{ kind: "text", text, textElements: [] }] : [];
     }
   }
+}
+
+function imageUrlField(record: Record<string, unknown>): string {
+  const direct = stringField(record, "url") || stringField(record, "image_url") || stringField(record, "imageUrl");
+  if (direct) return direct;
+  const nested = record.image_url ?? record.imageUrl;
+  if (nested && typeof nested === "object") {
+    return stringField(nested, "url");
+  }
+  return "";
 }
 
 function textElements(value: unknown): UserMessageTextElement[] {
@@ -1453,9 +1622,7 @@ function filePathsFromItem(item: ThreadItem): string[] {
   const paths: string[] = [];
   if (typeof record.path === "string") paths.push(record.path);
   if (typeof record.savedPath === "string") paths.push(record.savedPath);
-  const changes = Array.isArray(record.changes) ? record.changes : [];
-  for (const change of changes) {
-    if (!change || typeof change !== "object") continue;
+  for (const change of patchChanges(item)) {
     for (const key of ["path", "file", "filePath", "oldPath", "newPath"]) {
       const value = (change as Record<string, unknown>)[key];
       if (typeof value === "string" && value.length > 0) paths.push(value);
@@ -1542,20 +1709,38 @@ function urlTitle(value: string): string {
 }
 
 function commandLabel(item: ThreadItem): string {
-  const command = stringField(item, "command");
+  const command = commandText(item);
   if (!command) return isItemInProgress(item) ? "Running command" : "Ran command";
   return `${isItemInProgress(item) ? "Running" : "Ran"} ${command}`;
+}
+
+function shellCommandText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (!Array.isArray(value)) return "";
+  return value.map(shellArgText).filter(Boolean).join(" ").trim();
+}
+
+function shellArgText(value: unknown): string {
+  if (typeof value !== "string") return formatUnknown(value);
+  if (value.length === 0) return "''";
+  return /[\s"'\\$`]/.test(value) ? JSON.stringify(value) : value;
+}
+
+function execExitCode(item: ThreadItem): number | null {
+  const record = item as ItemRecord;
+  if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
+  const output = recordObject(record.output);
+  return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
 }
 
 function durationMs(item: ThreadItem): number {
   const record = item as ItemRecord;
   const value = record.durationMs;
-  if (itemType(item) === "worked-for") {
-    const started = typeof record.startedAtMs === "number" && Number.isFinite(record.startedAtMs) ? record.startedAtMs : null;
-    const completed = typeof record.completedAtMs === "number" && Number.isFinite(record.completedAtMs) ? record.completedAtMs : null;
-    if (started !== null && completed !== null && completed > started) return completed - started;
-  }
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  const started = typeof record.startedAtMs === "number" && Number.isFinite(record.startedAtMs) ? record.startedAtMs : null;
+  const completed = typeof record.completedAtMs === "number" && Number.isFinite(record.completedAtMs) ? record.completedAtMs : null;
+  if (started !== null && completed !== null && completed > started) return completed - started;
+  return 0;
 }
 
 function formatDuration(ms: number): string {
