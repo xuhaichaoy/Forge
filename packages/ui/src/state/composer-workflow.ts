@@ -101,13 +101,17 @@ export type SlashCommandAction =
   | { action: "createThread"; clearInput: true }
   | { action: "clearInput" }
   | { action: "insertText"; text: string }
+  | { action: "setComposerMode"; mode: ComposerMode; text?: string }
   | { action: "request"; request: SlashCommandRequest; clearInput: true; payload?: Record<string, unknown> }
   | { action: "showCommands"; clearInput: true }
   | { action: "log"; level: "info" | "warn" | "error"; message: string };
 
 export interface SlashCommandContext {
   input: string;
+  mode?: ComposerMode;
 }
+
+export type ComposerMode = "default" | "plan";
 
 export interface AttachAction {
   id: AttachActionId;
@@ -122,7 +126,9 @@ export type AttachActionId =
   | "imageUrl"
   | "skill"
   | "plainText"
-  | "filePath";
+  | "filePath"
+  | "plan"
+  | "plugins";
 
 export type ComposerAttachment =
   | { type: "mention"; name: string; path: string }
@@ -317,7 +323,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("fork", "Fork", "Fork the active thread.", "thread", "direct", ["branch"]),
   command("init", "Init", "Insert the Codex workspace initialization prompt.", "workspace", "prompt", ["agents", "bootstrap"]),
   command("compact", "Compact", "Compact the active thread context.", "thread", "direct", ["summarize", "ctx"]),
-  command("plan", "Plan", "Switch the next message into planning mode.", "thread", "prompt", ["planner"], "prompt"),
+  command("plan", "Plan mode", "Switch the composer into planning mode.", "thread", "direct", ["planner"], "prompt"),
   command("goal", "Goal", "Create, inspect, or clear the long-running goal.", "thread", "pending", ["objective"], "objective | clear"),
   command("collab", "Collaboration", "Choose the collaboration mode.", "team", "pending", ["mode"]),
   command("agent", "Agents", "Switch or manage agent threads.", "team", "pending", ["subagent", "multiagent"]),
@@ -355,40 +361,22 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
 
 export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
   {
-    id: "mention",
-    title: "Mention file",
-    description: "Reference a file or folder in the workspace.",
-    placeholder: "packages/ui/src/HiCodexApp.tsx",
-  },
-  {
-    id: "localImage",
-    title: "Local image",
-    description: "Attach an image from disk.",
-    placeholder: "/Users/haichao/Desktop/screenshot.png",
-  },
-  {
-    id: "imageUrl",
-    title: "Image URL",
-    description: "Attach an image from a URL.",
-    placeholder: "https://example.com/image.png",
-  },
-  {
-    id: "skill",
-    title: "Skill",
-    description: "Attach a Codex skill by path.",
-    placeholder: "/Users/haichao/.codex/skills/name/SKILL.md",
-  },
-  {
-    id: "plainText",
-    title: "Text context",
-    description: "Add pasted text as message context.",
-    placeholder: "Paste context",
-  },
-  {
     id: "filePath",
-    title: "File path",
-    description: "Add a path as text context.",
-    placeholder: "packages/ui/src/components/composer.tsx",
+    title: "Add photos & files",
+    description: "Attach local images or files.",
+    placeholder: "",
+  },
+  {
+    id: "plan",
+    title: "Plan mode",
+    description: "Create a plan before making changes.",
+    placeholder: "",
+  },
+  {
+    id: "plugins",
+    title: "Plugins",
+    description: "Browse available plugins.",
+    placeholder: "",
   },
 ];
 
@@ -516,10 +504,10 @@ export function composerAttachmentsFromPaths(paths: string[]): ComposerAttachmen
 }
 
 export function composerAttachmentFromPath(path: string): ComposerAttachment | null {
-  const trimmed = path.trim();
+  const trimmed = normalizeAttachmentPath(path);
   if (!trimmed) return null;
   if (isImagePath(trimmed)) return { type: "localImage", path: trimmed };
-  return { type: "mention", name: inferNameFromPath(trimmed), path: trimmed };
+  return { type: "filePath", path: trimmed };
 }
 
 export function composerFilePath(file: ComposerTransferFileLike): string | null {
@@ -533,7 +521,7 @@ export function composerFilePath(file: ComposerTransferFileLike): string | null 
 export function composerAttachmentPreviewSrc(attachment: ComposerAttachment): string | null {
   if (attachment.type === "image") return attachment.url.trim() || null;
   if (attachment.type !== "localImage") return null;
-  const path = attachment.path.trim();
+  const path = normalizeAttachmentPath(attachment.path);
   if (!path) return null;
   if (/^(?:data|blob|https?|file):/i.test(path)) return path;
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -551,6 +539,28 @@ export function isImageFileLike(file: ComposerTransferFileLike): boolean {
   const mime = file.type?.trim().toLowerCase();
   if (mime?.startsWith("image/")) return true;
   return isImagePath(file.name ?? "");
+}
+
+export function composerHasImageAttachments(attachments: ComposerAttachment[]): boolean {
+  return attachments.some((attachment) => attachment.type === "image" || attachment.type === "localImage");
+}
+
+export function imageAttachmentToUserInput(
+  attachment: Extract<ComposerAttachment, { type: "image" | "localImage" }>,
+): Extract<UserInput, { type: "image" | "localImage" }> | null {
+  const value = attachment.type === "image" ? attachment.url.trim() : normalizeAttachmentPath(attachment.path);
+  if (!value) return null;
+  if (/^file:/i.test(value)) {
+    const path = fileUrlToPath(value);
+    return path ? { type: "localImage", path } : null;
+  }
+  if (/^(?:data:image\/|blob:|https?:)/i.test(value)) return { type: "image", url: value };
+  return { type: "localImage", path: value };
+}
+
+export function normalizeAttachmentPath(value: string): string {
+  const trimmed = value.trim();
+  return /^file:/i.test(trimmed) ? fileUrlToPath(trimmed) || trimmed : trimmed;
 }
 
 export function composerEnterAction(input: string, event: ComposerKeyEventLike): ComposerEnterResult {
@@ -582,6 +592,32 @@ export function filterSlashCommands<T extends Pick<SlashCommand, "id" | "title">
       ...(command.aliases ?? []),
     ].join(" ").toLowerCase();
     return haystack.includes(normalized);
+  });
+}
+
+export function slashCommandsForComposerMode(
+  mode: ComposerMode,
+  commands: SlashCommand[] = DEFAULT_SLASH_COMMANDS,
+): SlashCommand[] {
+  return commands.map((command) => {
+    if (command.id !== "plan") return command;
+    return {
+      ...command,
+      description: mode === "plan" ? "Turn off planning mode." : "Turn on planning mode.",
+    };
+  });
+}
+
+export function attachActionsForComposerMode(
+  mode: ComposerMode,
+  actions: AttachAction[] = DEFAULT_ATTACH_ACTIONS,
+): AttachAction[] {
+  return actions.map((action) => {
+    if (action.id !== "plan") return action;
+    return {
+      ...action,
+      description: mode === "plan" ? "Turn off planning mode." : "Create a plan before making changes.",
+    };
   });
 }
 
@@ -656,9 +692,11 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "memories":
       return { action: "request", request: "showMemories", clearInput: true };
     case "plan":
-      return args
-        ? { action: "insertText", text: `Plan before making changes: ${args}` }
-        : { action: "request", request: "showPlanMode", clearInput: true };
+      return {
+        action: "setComposerMode",
+        mode: args || context.mode !== "plan" ? "plan" : "default",
+        ...(args ? { text: args } : {}),
+      };
     case "goal":
       return { action: "request", request: "showGoal", clearInput: true, payload: optionalPayload("objective", args) };
     case "collab":
@@ -719,20 +757,32 @@ export function buildUserInputFromComposer(
         if (attachment.text.trim()) textParts.push(attachment.text.trim());
         break;
       case "filePath":
-        if (attachment.path.trim()) textParts.push(attachment.path.trim());
+        if (attachment.path.trim()) {
+          structuredInputs.push({
+            type: "mention",
+            name: inferNameFromPath(attachment.path),
+            path: normalizeAttachmentPath(attachment.path),
+          });
+        }
         break;
       case "image":
-        if (attachment.url.trim()) structuredInputs.push({ type: "image", url: attachment.url.trim() });
+        {
+          const imageInput = imageAttachmentToUserInput(attachment);
+          if (imageInput) structuredInputs.push(imageInput);
+        }
         break;
       case "localImage":
-        if (attachment.path.trim()) structuredInputs.push({ type: "localImage", path: attachment.path.trim() });
+        {
+          const imageInput = imageAttachmentToUserInput(attachment);
+          if (imageInput) structuredInputs.push(imageInput);
+        }
         break;
       case "skill":
         if (attachment.path.trim()) {
           structuredInputs.push({
             type: "skill",
             name: attachment.name.trim() || inferNameFromPath(attachment.path),
-            path: attachment.path.trim(),
+            path: normalizeAttachmentPath(attachment.path),
           });
         }
         break;
@@ -741,7 +791,7 @@ export function buildUserInputFromComposer(
           structuredInputs.push({
             type: "mention",
             name: attachment.name.trim() || inferNameFromPath(attachment.path),
-            path: attachment.path.trim(),
+            path: normalizeAttachmentPath(attachment.path),
           });
         }
         break;
@@ -760,17 +810,20 @@ export function createAttachmentFromInput(actionId: AttachActionId, value: strin
   if (!trimmed) return null;
   switch (actionId) {
     case "mention":
-      return { type: "mention", name: inferNameFromPath(trimmed), path: trimmed };
+      return { type: "mention", name: inferNameFromPath(trimmed), path: normalizeAttachmentPath(trimmed) };
     case "localImage":
-      return { type: "localImage", path: trimmed };
+      return { type: "localImage", path: normalizeAttachmentPath(trimmed) };
     case "imageUrl":
       return { type: "image", url: trimmed };
     case "skill":
-      return { type: "skill", name: inferNameFromPath(trimmed).replace(/\.md$/i, ""), path: trimmed };
+      return { type: "skill", name: inferNameFromPath(trimmed).replace(/\.md$/i, ""), path: normalizeAttachmentPath(trimmed) };
     case "plainText":
       return { type: "plainText", text: trimmed };
     case "filePath":
-      return { type: "filePath", path: trimmed };
+      return { type: "filePath", path: normalizeAttachmentPath(trimmed) };
+    case "plan":
+    case "plugins":
+      return null;
   }
 }
 
@@ -791,7 +844,7 @@ export function attachmentLabel(attachment: ComposerAttachment): string {
     case "plainText":
       return `text ${firstLine(attachment.text)}`;
     case "filePath":
-      return `path ${attachment.path}`;
+      return inferNameFromPath(attachment.path);
   }
 }
 
@@ -823,7 +876,7 @@ function optionalPayload(key: string, value: string): Record<string, unknown> | 
 }
 
 function inferNameFromPath(path: string): string {
-  const normalized = path.trim().replace(/\/+$/, "");
+  const normalized = normalizeAttachmentPath(path).replace(/\/+$/, "");
   return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized;
 }
 
@@ -841,19 +894,29 @@ function isImagePath(path: string): boolean {
   return /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|svg|tif|tiff|webp)$/.test(normalized);
 }
 
+function fileUrlToPath(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "file:") return null;
+    return decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+}
+
 function composerAttachmentKey(attachment: ComposerAttachment): string {
   switch (attachment.type) {
     case "mention":
-      return `mention:${attachment.path.trim()}`;
+      return `mention:${normalizeAttachmentPath(attachment.path)}`;
     case "localImage":
-      return `localImage:${attachment.path.trim()}`;
+      return `localImage:${normalizeAttachmentPath(attachment.path)}`;
     case "image":
       return `image:${attachment.url.trim()}`;
     case "skill":
-      return `skill:${attachment.path.trim()}`;
+      return `skill:${normalizeAttachmentPath(attachment.path)}`;
     case "plainText":
       return `plainText:${attachment.text.trim()}`;
     case "filePath":
-      return `filePath:${attachment.path.trim()}`;
+      return `filePath:${normalizeAttachmentPath(attachment.path)}`;
   }
 }

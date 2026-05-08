@@ -25,6 +25,16 @@ export interface LocalModelCatalogConfig {
   inputModalities?: Array<"text" | "image"> | null;
 }
 
+export interface ThreadToolHistory {
+  threadId: string;
+  turns: ThreadToolHistoryTurn[];
+}
+
+export interface ThreadToolHistoryTurn {
+  turnId: string;
+  items: unknown[];
+}
+
 export type HostEvent =
   | { type: "json"; value: JsonRpcMessage }
   | { type: "stdout"; line: string }
@@ -65,4 +75,26 @@ export function writeLocalModelCatalog(
 
 export function openFileReference(path: string, line?: number | null): Promise<void> {
   return invoke("host_open_file_reference", { path, line });
+}
+
+export type HostFileReferenceKind = "file" | "image";
+
+export function pickFileReferences(kind: HostFileReferenceKind, multiple = true): Promise<string[]> {
+  return invoke("host_pick_file_references", { kind, multiple });
+}
+
+export function readImageDataUrl(path: string): Promise<string> {
+  return invoke("host_read_image_data_url", { path });
+}
+
+export function readThreadToolHistory(
+  codexHome: string | null | undefined,
+  threadId: string,
+  threadPath?: string | null,
+): Promise<ThreadToolHistory> {
+  return invoke("host_read_thread_tool_history", { codexHome, threadId, threadPath });
+}
+
+export function isTauriRuntime(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

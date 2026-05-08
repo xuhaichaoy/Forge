@@ -1,4 +1,4 @@
-import type { ComposerAttachment } from "./composer-workflow";
+import type { ComposerAttachment, ComposerMode } from "./composer-workflow";
 
 export type QueuedFollowUpStatus = "queued" | "sending" | "paused";
 
@@ -7,6 +7,7 @@ export interface QueuedFollowUp {
   text: string;
   attachments: ComposerAttachment[];
   cwd: string;
+  mode?: ComposerMode;
   createdAt: number;
   status: QueuedFollowUpStatus;
   error?: string;
@@ -16,6 +17,7 @@ export function createQueuedFollowUp(input: {
   text: string;
   attachments: ComposerAttachment[];
   cwd: string;
+  mode?: ComposerMode;
   now?: number;
   id?: string;
 }): QueuedFollowUp {
@@ -25,6 +27,7 @@ export function createQueuedFollowUp(input: {
     text: input.text,
     attachments: input.attachments,
     cwd: input.cwd,
+    ...(input.mode ? { mode: input.mode } : {}),
     createdAt: now,
     status: "queued",
   };

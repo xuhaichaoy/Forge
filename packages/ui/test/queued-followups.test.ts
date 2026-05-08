@@ -58,6 +58,20 @@ function removesAndUpdatesQueuedFollowUps(): void {
     },
     "status update should preserve message body and attach error",
   );
+
+  assertDeepEqual(
+    createQueuedFollowUp({ id: "plan", now: 3, text: "Plan first", attachments: [], cwd: "", mode: "plan" }),
+    {
+      id: "plan",
+      text: "Plan first",
+      attachments: [],
+      cwd: "",
+      mode: "plan",
+      createdAt: 3,
+      status: "queued",
+    },
+    "queued follow-up should preserve composer mode when provided",
+  );
 }
 
 function summarizesTextAndAttachmentOnlyMessages(): void {

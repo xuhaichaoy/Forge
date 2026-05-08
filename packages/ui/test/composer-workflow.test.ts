@@ -4,6 +4,7 @@ import {
   CLOSED_ATTACHMENT_PICKER_STATE,
   DEFAULT_SLASH_COMMANDS,
   applySlashCommand,
+  attachActionsForComposerMode,
   attachmentLabel,
   buildUserInputFromComposer,
   compactAttachmentLabel,
@@ -20,6 +21,7 @@ import {
   projectComposerSubmitState,
   removeComposerAttachment,
   selectAttachmentInputMode,
+  slashCommandsForComposerMode,
   splitComposerTransferFiles,
   updateAttachmentInputDraft,
 } from "../src/state/composer-workflow";
@@ -51,6 +53,7 @@ export default function runComposerWorkflowTests(): void {
   projectsCodexDesktopSubmitTooltips();
   exposesCodexCliSlashCommands();
   filtersSlashCommandsByIdTitleAndAliases();
+  updatesPlanCommandTextForComposerMode();
   appliesSlashCommandsAsDeclarativeActions();
   exposesAttachActions();
   drivesAttachmentPickerWithoutWindowPrompt();
@@ -444,6 +447,24 @@ function filtersSlashCommandsByIdTitleAndAliases(): void {
   );
 }
 
+function updatesPlanCommandTextForComposerMode(): void {
+  const defaultPlan = slashCommandsForComposerMode("default").find((command) => command.id === "plan");
+  const activePlan = slashCommandsForComposerMode("plan").find((command) => command.id === "plan");
+  const defaultAttachPlan = attachActionsForComposerMode("default").find((action) => action.id === "plan");
+  const activeAttachPlan = attachActionsForComposerMode("plan").find((action) => action.id === "plan");
+
+  assert(defaultPlan?.description.includes("Turn on") === true, "default slash plan command should enable plan mode");
+  assert(activePlan?.description.includes("Turn off") === true, "active slash plan command should disable plan mode");
+  assert(
+    defaultAttachPlan?.description.includes("Create a plan") === true,
+    "default attach plan action should describe creating a plan",
+  );
+  assert(
+    activeAttachPlan?.description.includes("Turn off") === true,
+    "active attach plan action should disable plan mode",
+  );
+}
+
 function appliesSlashCommandsAsDeclarativeActions(): void {
   assertDeepEqual(
     applySlashCommand("model", { input: "/model" }),
@@ -486,6 +507,16 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
     "compact should request app-server compaction",
   );
   assertDeepEqual(
+    applySlashCommand("plan", { input: "/plan inspect first" }),
+    { action: "setComposerMode", mode: "plan", text: "inspect first" },
+    "plan should enable Desktop-style plan mode instead of rewriting the prompt",
+  );
+  assertDeepEqual(
+    applySlashCommand("plan", { input: "/plan", mode: "plan" }),
+    { action: "setComposerMode", mode: "default" },
+    "plan should toggle off when planning mode is already active",
+  );
+  assertDeepEqual(
     applySlashCommand("review", { input: "/review" }),
     { action: "request", request: "startReview", clearInput: true },
     "review should request a review flow",
@@ -508,10 +539,10 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
 }
 
 function exposesAttachActions(): void {
-  assertHasIds(
-    DEFAULT_ATTACH_ACTIONS,
-    ["mention", "localImage", "imageUrl", "skill", "plainText", "filePath"],
-    "DEFAULT_ATTACH_ACTIONS should include supported + menu actions",
+  assertDeepEqual(
+    DEFAULT_ATTACH_ACTIONS.map((action) => action.title),
+    ["Add photos & files", "Plan mode", "Plugins"],
+    "DEFAULT_ATTACH_ACTIONS should match the Codex Desktop plus menu",
   );
 }
 
@@ -536,24 +567,24 @@ function drivesAttachmentPickerWithoutWindowPrompt(): void {
     "attachment picker should move selection by keyboard direction",
   );
 
-  const mentionInput = selectAttachmentInputMode(moved, "mention");
+  const filePathInput = selectAttachmentInputMode(moved, "filePath");
   assertDeepEqual(
-    mentionInput,
+    filePathInput,
     {
       status: "input",
       activeIndex: 0,
-      inputMode: "mention",
+      inputMode: "filePath",
       draft: "",
       error: null,
     },
-    "attachment picker should enter an explicit mention input mode",
+    "file path input mode should remain available as the picker fallback",
   );
 
   assertDeepEqual(
-    confirmAttachmentInput(mentionInput),
+    confirmAttachmentInput(filePathInput),
     {
       state: {
-        ...mentionInput,
+        ...filePathInput,
         error: "Enter a value before adding context",
       },
       attachment: null,
@@ -561,36 +592,23 @@ function drivesAttachmentPickerWithoutWindowPrompt(): void {
     "empty attachment input should stay open with a validation error",
   );
 
-  const filledMention = updateAttachmentInputDraft(mentionInput, "packages/ui/src/components/composer.tsx");
+  const filledFilePath = updateAttachmentInputDraft(filePathInput, "packages/ui/src/components/composer.tsx");
   assertDeepEqual(
-    confirmAttachmentInput(filledMention),
+    confirmAttachmentInput(filledFilePath),
     {
       state: CLOSED_ATTACHMENT_PICKER_STATE,
       attachment: {
-        type: "mention",
-        name: "composer.tsx",
+        type: "filePath",
         path: "packages/ui/src/components/composer.tsx",
       },
     },
-    "mention input should create a structured mention attachment",
+    "file path input should create a file attachment chip",
   );
 
   assertDeepEqual(
-    confirmAttachmentInput(updateAttachmentInputDraft(selectAttachmentInputMode(opened, "localImage"), "/tmp/image.png")).attachment,
-    { type: "localImage", path: "/tmp/image.png" },
-    "local image input should create a localImage attachment",
-  );
-
-  assertDeepEqual(
-    confirmAttachmentInput(updateAttachmentInputDraft(selectAttachmentInputMode(opened, "skill"), "/skills/review/SKILL.md")).attachment,
-    { type: "skill", name: "SKILL", path: "/skills/review/SKILL.md" },
-    "skill input should create a skill attachment with an inferred name",
-  );
-
-  assertDeepEqual(
-    confirmAttachmentInput(updateAttachmentInputDraft(selectAttachmentInputMode(opened, "filePath"), "packages/ui/src/styles.css")).attachment,
-    { type: "filePath", path: "packages/ui/src/styles.css" },
-    "file path input should create a text-folded path attachment",
+    confirmAttachmentInput(updateAttachmentInputDraft(selectAttachmentInputMode(opened, "plan"), "ignored")).attachment,
+    null,
+    "plan menu action should not create a manual attachment",
   );
 
   assertDeepEqual(
@@ -631,9 +649,17 @@ function projectsDroppedAndPastedFilesIntoAttachments(): void {
     composerAttachmentsFromPaths(["/tmp/screenshot.png", "/tmp/report.pdf", " /tmp/screenshot.png "]),
     [
       { type: "localImage", path: "/tmp/screenshot.png" },
-      { type: "mention", name: "report.pdf", path: "/tmp/report.pdf" },
+      { type: "filePath", path: "/tmp/report.pdf" },
     ],
-    "dropped paths should become local images or file mentions and dedupe repeated paths",
+    "dropped paths should become local image or file chips and dedupe repeated paths",
+  );
+  assertDeepEqual(
+    composerAttachmentsFromPaths(["file:///tmp/screen%20shot.png", "file:///tmp/report%20final.pdf"]),
+    [
+      { type: "localImage", path: "/tmp/screen shot.png" },
+      { type: "filePath", path: "/tmp/report final.pdf" },
+    ],
+    "file URLs should decode to local paths before becoming attachments",
   );
   assertDeepEqual(
     mergeComposerAttachments(
@@ -673,6 +699,11 @@ function projectsDroppedAndPastedFilesIntoAttachments(): void {
     attachmentLabel({ type: "localImage", path: "/tmp/screen.png" }),
     "screen.png",
     "local image labels should use the filename only",
+  );
+  assertDeepEqual(
+    attachmentLabel({ type: "filePath", path: "/tmp/report final.pdf" }),
+    "report final.pdf",
+    "document attachment labels should use the filename only",
   );
   assertDeepEqual(
     compactAttachmentLabel("very-long-image-name.png"),
@@ -719,10 +750,29 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
     [
       {
         type: "text",
-        text: "Use this pasted context.\npackages/ui/src/HiCodexApp.tsx",
+        text: "Use this pasted context.",
         text_elements: [],
       },
+      {
+        type: "mention",
+        name: "HiCodexApp.tsx",
+        path: "packages/ui/src/HiCodexApp.tsx",
+      },
     ] satisfies UserInput[],
-    "plain text and file path attachments should be folded into text input",
+    "plain text attachments should fold into text while file paths remain structured mentions",
+  );
+
+  assertDeepEqual(
+    buildUserInputFromComposer("", [
+      { type: "localImage", path: "file:///tmp/screen%20shot.png" },
+      { type: "image", url: "file:///tmp/diagram.png" },
+      { type: "image", url: "data:image/png;base64,AAA", name: "pasted.png" },
+    ]),
+    [
+      { type: "localImage", path: "/tmp/screen shot.png" },
+      { type: "localImage", path: "/tmp/diagram.png" },
+      { type: "image", url: "data:image/png;base64,AAA" },
+    ] satisfies UserInput[],
+    "image attachments should use Desktop-compatible localImage path or data URL user inputs",
   );
 }

@@ -9,8 +9,10 @@ import {
 
 export default function runRenderGroupsTests(): void {
   projectsUserAndAssistantMessagesAsStableMessageGroups();
+  projectsResponsesApiImagePartsAsUserImages();
   stripsRawThinkingMarkupFromAssistantMessages();
   marksLatestAssistantMessageAsStreamingDuringActiveTurn();
+  doesNotStreamCompletedAssistantWhileToolsAreRunning();
   rendersAssistantStreamingPlaceholderFromDesktopFlag();
   groupsReasoningSummaryAndContentIntoToolActivity();
   splitsReasoningFromCollapsedToolActivity();
@@ -20,7 +22,10 @@ export default function runRenderGroupsTests(): void {
   projectsDesktopLifecycleEventsSemantically();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
   keepsDurationBackedCommandsAsToolActivity();
+  usesLifecycleTimestampsAsToolActivityDuration();
   projectsExplicitWorkedForItemAsCompactActivity();
+  usesWorkedForAsAgentActivityHeaderBeforeAssistant();
+  keepsWorkedForExpandedUntilFinalAssistantStarts();
   keepsTodoListOutOfMainConversationButProjectsProgress();
   hidesPendingApprovalItemsFromOrdinaryActivity();
   groupsExplorationCommandActionsLikeCodexDesktop();
@@ -130,6 +135,41 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
   }
 }
 
+function projectsResponsesApiImagePartsAsUserImages(): void {
+  const userMessage: ThreadItem = {
+    type: "userMessage",
+    id: "user-images",
+    content: [
+      { type: "input_text", text: "识别一下图片内容" },
+      { type: "input_image", image_url: "data:image/png;base64,abc123" },
+      { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+      { type: "local_image", path: "/tmp/local screenshot.png" },
+    ],
+  };
+
+  const projection = projectConversation([userMessage]);
+  const unit = projection.units[0];
+  if (unit?.kind !== "message") {
+    throw new Error("input_image content should stay in the user message unit");
+  }
+
+  assertEqual(
+    unit.text,
+    "识别一下图片内容",
+    "Responses-style image parts should not leak image URLs or base64 into message text",
+  );
+  assertDeepEqual(
+    unit.userContent,
+    [
+      { kind: "text", text: "识别一下图片内容", textElements: [] },
+      { kind: "image", source: "url", src: "data:image/png;base64,abc123", label: "User attachment" },
+      { kind: "image", source: "url", src: "https://example.com/cat.png", label: "cat.png" },
+      { kind: "image", source: "local", src: "/tmp/local screenshot.png", label: "local screenshot.png" },
+    ],
+    "Responses-style image parts should project to Desktop-like image thumbnails",
+  );
+}
+
 function stripsRawThinkingMarkupFromAssistantMessages(): void {
   const projection = projectConversation([
     {
@@ -185,6 +225,7 @@ function marksLatestAssistantMessageAsStreamingDuringActiveTurn(): void {
       text: "Still writing",
       phase: "final_answer",
       memoryCitation: null,
+      completed: false,
     } as ThreadItem,
   ], { isThreadRunning: true });
 
@@ -202,6 +243,35 @@ function marksLatestAssistantMessageAsStreamingDuringActiveTurn(): void {
     assistantMessagePhase({ type: "agentMessage", id: "agent-unknown", text: "legacy", phase: null, memoryCitation: null } as ThreadItem),
     "unknown",
     "missing phase should remain unknown for legacy model output",
+  );
+}
+
+function doesNotStreamCompletedAssistantWhileToolsAreRunning(): void {
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "agent-1",
+      text: "I will inspect the renderer.",
+      phase: "commentary",
+      completed: true,
+      memoryCitation: null,
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "rg render-groups",
+      status: "inProgress",
+    } as ThreadItem,
+  ], { isThreadRunning: true });
+
+  const assistant = projection.units.find((unit) => unit.kind === "message" && unit.role === "assistant");
+  if (assistant?.kind !== "message") {
+    throw new Error("completed assistant message should still render");
+  }
+  assertEqual(
+    assistant.isStreaming ?? false,
+    false,
+    "a completed assistant message should not get a cursor while a later tool is running",
   );
 }
 
@@ -577,6 +647,28 @@ function keepsDurationBackedCommandsAsToolActivity(): void {
   }
 }
 
+function usesLifecycleTimestampsAsToolActivityDuration(): void {
+  const projection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "npm run build",
+      status: "completed",
+      aggregatedOutput: "built",
+      exitCode: 0,
+      startedAtMs: 1_000,
+      completedAtMs: 66_000,
+    } as ThreadItem,
+  ]);
+
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "toolActivity", "timestamp backed command should render as tool activity");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(unit.summary.totalDurationMs, 65_000, "duration should fall back to lifecycle timestamps");
+    assertEqual(unit.summary.label, "Ran npm run build", "timestamp backed command should keep command label");
+  }
+}
+
 function projectsExplicitWorkedForItemAsCompactActivity(): void {
   const projection = projectConversation([
     {
@@ -596,6 +688,89 @@ function projectsExplicitWorkedForItemAsCompactActivity(): void {
     assertEqual(unit.summary.groupType, "worked-for", "worked-for group type");
     assertEqual(unit.summary.label, "Worked for 1m 5s", "worked-for label should use item timestamps");
     assertEqual(unit.summary.totalDurationMs, 65_000, "worked-for duration should come from started/completed timestamps");
+  }
+}
+
+function usesWorkedForAsAgentActivityHeaderBeforeAssistant(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Inspect renderer" }],
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "rg latest-turn-preview",
+      status: "completed",
+      exitCode: 0,
+      aggregatedOutput: "no matches",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-commentary-1",
+      text: "I started by checking the source tree.",
+      phase: "commentary",
+      completed: true,
+    } as ThreadItem,
+    {
+      type: "worked-for",
+      id: "worked-for-1",
+      status: "completed",
+      startedAtMs: 1_000,
+      completedAtMs: 21_000,
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-1",
+      text: "I checked the renderer.",
+    } as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 3, "worked-for should not create an extra activity after assistant output");
+  assertEqual(projection.units[0]?.kind, "message", "user message should remain first");
+  const activity = projection.units[1];
+  assertEqual(activity?.kind, "toolActivity", "agent activity header should render before assistant");
+  if (activity?.kind === "toolActivity") {
+    assertEqual(activity.summary.groupType, "worked-for", "worked-for should become the agent activity header");
+    assertEqual(activity.summary.label, "Worked for 20s", "header label should use worked-for duration");
+    assertEqual(activity.summary.defaultExpanded, false, "worked-for header should collapse after final assistant output starts");
+    assertDeepEqual(
+      activity.items.map((item) => item.id),
+      ["command-1", "assistant-commentary-1", "worked-for-1"],
+      "tool and commentary details should stay attached to the worked-for header",
+    );
+  }
+  assertEqual(projection.units[2]?.kind, "message", "assistant message should render after worked-for header");
+}
+
+function keepsWorkedForExpandedUntilFinalAssistantStarts(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Inspect renderer" }],
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "rg render-groups",
+      status: "completed",
+      exitCode: 0,
+    } as ThreadItem,
+    {
+      type: "worked-for",
+      id: "worked-for-1",
+      status: "working",
+      startedAtMs: 1_000,
+    } as ThreadItem,
+  ]);
+
+  const activity = projection.units[1];
+  assertEqual(activity?.kind, "toolActivity", "running worked-for activity should render after the user");
+  if (activity?.kind === "toolActivity") {
+    assertEqual(activity.summary.groupType, "worked-for", "running worked-for should still be the activity header");
+    assertEqual(activity.summary.defaultExpanded, true, "worked-for should stay expanded until final assistant output starts");
   }
 }
 

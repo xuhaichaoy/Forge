@@ -1,6 +1,6 @@
 import { Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ModelConfig, Thread } from "@hicodex/codex-protocol";
+import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ConversationChrome } from "./components/conversation-chrome";
@@ -16,13 +16,18 @@ import {
 } from "./components/thread-action-dialog";
 import { CodexJsonRpcClient } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
-import { openFileReference } from "./lib/tauri-host";
+import { openFileReference, pickFileReferences, readImageDataUrl } from "./lib/tauri-host";
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
-import { EMPTY_MODEL } from "./model/model-settings";
+import {
+  DEFAULT_MODEL_REASONING_SUMMARY,
+  EMPTY_MODEL,
+  normalizeModelConfig,
+} from "./model/model-settings";
 import {
   codexUiReducer,
   initialCodexUiState,
   type PendingServerRequest,
+  type ThreadContextDefaults,
 } from "./state/codex-reducer";
 import { buildApprovalResult } from "./state/approval-requests";
 import { projectBranchDetails } from "./state/branch-details";
@@ -34,11 +39,22 @@ import {
   DEFAULT_SLASH_COMMANDS,
   applySlashCommand,
   buildUserInputFromComposer,
+  composerAttachmentsFromPaths,
+  composerHasImageAttachments,
+  mergeComposerAttachments,
   projectComposerSubmitState,
+  slashCommandsForComposerMode,
   type ComposerAttachment,
+  type ComposerMode,
   type SlashCommand,
   type SlashCommandAction,
 } from "./state/composer-workflow";
+import {
+  collaborationModeFromComposerMode,
+  composerModeFromCollaborationMode,
+  hasCollaborationModePreset,
+  listCollaborationModes,
+} from "./state/collaboration-modes";
 import {
   createCommandPanelState,
   type CommandPanelOptions,
@@ -66,6 +82,8 @@ import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import {
   archiveThread,
   createAndSelectThreadForTurn,
+  dispatchOptimisticUserMessage,
+  dropOptimisticUserMessage,
   ensureThreadReadyForTurn,
   forkThread as forkThreadWorkflow,
   isThreadNotFound,
@@ -81,6 +99,8 @@ import {
   startTurn,
   steerTurn,
   threadTitle,
+  type OptimisticUserMessageHandle,
+  type TurnStartOptions,
 } from "./state/thread-workflow";
 import { SEED_TEAMS } from "./state/team-config";
 
@@ -88,6 +108,9 @@ export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
   const [input, setInput] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
+  const [composerMode, setComposerMode] = useState<ComposerMode>("default");
+  const [composerModesByThread, setComposerModesByThread] = useState<Record<string, ComposerMode>>({});
+  const [collaborationModes, setCollaborationModes] = useState<CollaborationModeMask[]>([]);
   const [workspace, setWorkspace] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
@@ -97,7 +120,9 @@ export function HiCodexApp() {
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
   const sendingQueuedFollowUpId = useRef<string | null>(null);
+  const threadSelectionRequestId = useRef(0);
   const workspaceInitialized = useRef(false);
+  const activeThreadIdRef = useRef<string | null>(null);
 
   const client = useMemo(() => {
     const rpc = new CodexJsonRpcClient({
@@ -132,6 +157,14 @@ export function HiCodexApp() {
     [state.itemsByThread, state.pendingRequests],
   );
   const activeProgressPlan = state.activeThreadId ? state.turnPlansByThread[state.activeThreadId] ?? null : null;
+  const activeModelSupportsImageInput = useMemo(() => {
+    const providerId = state.threadContextDefaults?.modelProvider ?? "";
+    const modelSlug = state.threadContextDefaults?.model ?? "";
+    const model = state.models.find((item) => item.id === providerId)
+      ?? state.models.find((item) => item.model === modelSlug)
+      ?? null;
+    return model?.supportsImageInput !== false;
+  }, [state.models, state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
   const conversation = useMemo(
     () => projectConversation(activeItems, { isThreadRunning: activeThreadRunning, progressPlan: activeProgressPlan }),
     [activeItems, activeProgressPlan, activeThreadRunning],
@@ -190,6 +223,18 @@ export function HiCodexApp() {
     }
   }, [client]);
 
+  const loadCollaborationModes = useCallback(async (): Promise<CollaborationModeMask[]> => {
+    try {
+      const modes = await listCollaborationModes(client);
+      setCollaborationModes(modes);
+      return modes;
+    } catch (error) {
+      setCollaborationModes([]);
+      dispatch({ type: "log", text: `collaborationMode/list failed: ${formatError(error)}`, level: "warn" });
+      return [];
+    }
+  }, [client]);
+
   useEffect(() => {
     if (autoConnectStarted.current) return;
     autoConnectStarted.current = true;
@@ -213,6 +258,33 @@ export function HiCodexApp() {
     void refreshThreadContextDefaults(client, dispatch, workspace);
   }, [client, state.connected, workspace]);
 
+  useEffect(() => {
+    if (!state.connected) return;
+    void loadCollaborationModes();
+  }, [loadCollaborationModes, state.connected]);
+
+  useEffect(() => {
+    const previousThreadId = activeThreadIdRef.current;
+    const nextThreadId = state.activeThreadId;
+    if (previousThreadId === nextThreadId) return;
+    activeThreadIdRef.current = nextThreadId;
+    if (previousThreadId) {
+      const previousLatestCollaborationMode = state.latestCollaborationModesByThread[previousThreadId] ?? null;
+      const latestComposerMode = composerModeFromCollaborationMode(previousLatestCollaborationMode);
+      setComposerModesByThread((current) => {
+        if (composerMode !== latestComposerMode) return { ...current, [previousThreadId]: composerMode };
+        const { [previousThreadId]: _removed, ...rest } = current;
+        return rest;
+      });
+    }
+    const latestCollaborationMode = nextThreadId
+      ? state.latestCollaborationModesByThread[nextThreadId] ?? null
+      : null;
+    setComposerMode(nextThreadId
+      ? composerModesByThread[nextThreadId] ?? composerModeFromCollaborationMode(latestCollaborationMode)
+      : "default");
+  }, [composerMode, composerModesByThread, state.activeThreadId, state.latestCollaborationModesByThread]);
+
   const disconnect = useCallback(async () => {
     try {
       await client.disconnect();
@@ -223,6 +295,7 @@ export function HiCodexApp() {
   }, [client]);
 
   const createThread = useCallback(async () => {
+    threadSelectionRequestId.current += 1;
     setInput("");
     setComposerAttachments([]);
     dispatch({ type: "setActiveThread", threadId: null });
@@ -233,11 +306,23 @@ export function HiCodexApp() {
     return connect();
   }, [connect, state.connected]);
 
+  const collaborationModesForComposerMode = useCallback(async (mode: ComposerMode): Promise<CollaborationModeMask[]> => {
+    if (mode !== "plan" || hasCollaborationModePreset(collaborationModes, "plan")) return collaborationModes;
+    return loadCollaborationModes();
+  }, [collaborationModes, loadCollaborationModes]);
+
   const openCommandPanel = useCallback((
     panel: CommandPanelKind,
     options?: CommandPanelOptions,
   ) => {
     setCommandPanel(createCommandPanelState(panel, options));
+  }, []);
+
+  const setActiveComposerMode = useCallback((mode: ComposerMode) => {
+    setComposerMode(mode);
+    const threadId = activeThreadIdRef.current;
+    if (!threadId) return;
+    setComposerModesByThread((current) => ({ ...current, [threadId]: mode }));
   }, []);
 
   const openLocalSettingsPanel = useCallback((panel: "permissions" | "approvals") => {
@@ -262,13 +347,17 @@ export function HiCodexApp() {
   ]);
 
   const selectThread = useCallback(async (thread: Thread) => {
+    const requestId = threadSelectionRequestId.current + 1;
+    threadSelectionRequestId.current = requestId;
     dispatch({ type: "setActiveThread", threadId: thread.id });
     try {
       const displayThread = await readThreadForDisplay(client, thread, dispatch);
+      if (threadSelectionRequestId.current !== requestId) return;
       if (displayThread) {
         dispatch({ type: "upsertThread", thread: displayThread, select: true });
       }
     } catch (error) {
+      if (threadSelectionRequestId.current !== requestId) return;
       if (isThreadNotFound(error)) {
         dispatch({ type: "removeThread", threadId: thread.id });
       } else {
@@ -280,17 +369,22 @@ export function HiCodexApp() {
   const openThreadById = useCallback(async (threadId: string) => {
     const id = threadId.trim();
     if (!id) return;
+    const requestId = threadSelectionRequestId.current + 1;
+    threadSelectionRequestId.current = requestId;
     dispatch({ type: "setActiveThread", threadId: id });
     try {
       const metadata = await readThread(client, id, false);
+      if (threadSelectionRequestId.current !== requestId) return;
       const thread = metadata.thread;
       if (!thread) {
         dispatch({ type: "log", text: `thread not found: ${id}`, level: "error" });
         return;
       }
       const displayThread = await readThreadForDisplay(client, thread, dispatch);
+      if (threadSelectionRequestId.current !== requestId) return;
       dispatch({ type: "upsertThread", thread: displayThread ?? thread, select: true });
     } catch (error) {
+      if (threadSelectionRequestId.current !== requestId) return;
       if (isThreadNotFound(error)) {
         dispatch({ type: "removeThread", threadId: id });
       } else {
@@ -350,6 +444,10 @@ export function HiCodexApp() {
     setThreadActionDialog(null);
     dispatch({ type: "removeThread", threadId: thread.id });
     setQueuedFollowUpsByThread((current) => {
+      const { [thread.id]: _removed, ...rest } = current;
+      return rest;
+    });
+    setComposerModesByThread((current) => {
       const { [thread.id]: _removed, ...rest } = current;
       return rest;
     });
@@ -465,6 +563,22 @@ export function HiCodexApp() {
     });
   }, []);
 
+  const rememberLatestCollaborationMode = useCallback((
+    threadId: string,
+    options: TurnStartOptions | null | undefined,
+  ) => {
+    dispatch({
+      type: "setLatestCollaborationMode",
+      threadId,
+      collaborationMode: options?.collaborationMode ?? null,
+    });
+  }, []);
+
+  const resetComposerSelectionAfterCreatedThread = useCallback((threadId: string) => {
+    setComposerMode("default");
+    setComposerModesByThread((current) => ({ ...current, [threadId]: "default" }));
+  }, []);
+
   const sendQueuedFollowUp = useCallback(async (threadId: string, message: QueuedFollowUp) => {
     if (sendingQueuedFollowUpId.current === message.id) return;
     sendingQueuedFollowUpId.current = message.id;
@@ -476,18 +590,50 @@ export function HiCodexApp() {
         );
         return;
       }
-      const content = buildUserInputFromComposer(message.text, message.attachments);
+      if (composerHasImageAttachments(message.attachments) && !activeModelSupportsImageInput) {
+        const reason = "Current model does not declare image input support";
+        updateQueuedFollowUps(threadId, (queue) => updateQueuedFollowUpStatus(queue, message.id, "paused", reason));
+        dispatch({ type: "log", text: reason, level: "warn" });
+        return;
+      }
+      const sendAttachments = await attachmentsWithDataImagePreviews(message.attachments);
+      const content = buildUserInputFromComposer(message.text, sendAttachments);
       if (content.length === 0) {
         updateQueuedFollowUps(threadId, (queue) => removeQueuedFollowUp(queue, message.id));
         return;
       }
+      let optimistic: OptimisticUserMessageHandle | null = null;
       if (activeTurnId && activeThreadRunning && threadId === state.activeThreadId) {
-        await steerTurn(client, threadId, content, activeTurnId);
-      } else {
+        optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content, activeTurnId);
         try {
-          await startTurn(client, threadId, content, message.cwd, state.threadContextDefaults);
+          await steerTurn(client, threadId, content, activeTurnId);
         } catch (error) {
-          if (!isThreadNotFound(error) && !isThreadNeedsResume(error)) throw error;
+          dropOptimisticUserMessage(dispatch, optimistic);
+          throw error;
+        }
+      } else {
+        const messageMode = message.mode ?? "default";
+        const modes = await collaborationModesForComposerMode(messageMode);
+        const turnStartOptions = turnStartOptionsFromComposerMode(
+          messageMode,
+          modes,
+          state.threadContextDefaults,
+        );
+        if (messageMode === "plan" && !turnStartOptions?.collaborationMode) {
+          const reason = "Plan mode is unavailable until collaboration modes load from app-server";
+          updateQueuedFollowUps(threadId, (queue) => updateQueuedFollowUpStatus(queue, message.id, "paused", reason));
+          dispatch({ type: "log", text: reason, level: "warn" });
+          return;
+        }
+        optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
+        try {
+          await startTurn(client, threadId, content, message.cwd, state.threadContextDefaults, turnStartOptions);
+          rememberLatestCollaborationMode(threadId, turnStartOptions);
+        } catch (error) {
+          if (!isThreadNotFound(error) && !isThreadNeedsResume(error)) {
+            dropOptimisticUserMessage(dispatch, optimistic);
+            throw error;
+          }
           if (!(await resumeSelectedThreadAndStartTurn(
             client,
             threadId,
@@ -495,9 +641,12 @@ export function HiCodexApp() {
             message.cwd,
             dispatch,
             state.threadContextDefaults,
+            turnStartOptions,
           ))) {
+            dropOptimisticUserMessage(dispatch, optimistic);
             throw error;
           }
+          rememberLatestCollaborationMode(threadId, turnStartOptions);
         }
       }
       updateQueuedFollowUps(threadId, (queue) => removeQueuedFollowUp(queue, message.id));
@@ -512,8 +661,11 @@ export function HiCodexApp() {
   }, [
     activeThreadRunning,
     activeTurnId,
+    activeModelSupportsImageInput,
     client,
+    collaborationModesForComposerMode,
     ensureConnected,
+    rememberLatestCollaborationMode,
     state.activeThreadId,
     state.threadContextDefaults,
     updateQueuedFollowUps,
@@ -526,10 +678,34 @@ export function HiCodexApp() {
       }
       return;
     }
-    const content = buildUserInputFromComposer(input, composerAttachments);
+    if (composerHasImageAttachments(composerAttachments) && !activeModelSupportsImageInput) {
+      dispatch({ type: "log", text: "Current model does not declare image input support", level: "warn" });
+      return;
+    }
+    const sendAttachments = await attachmentsWithDataImagePreviews(composerAttachments);
+    const content = buildUserInputFromComposer(input, sendAttachments);
     if (content.length === 0) return;
     try {
       if (!(await ensureConnected())) return;
+      const shouldQueueFollowUp = Boolean(
+        activeTurnId &&
+        activeThreadRunning &&
+        composerSubmitState.submitButtonMode === "queue",
+      );
+      const modes = shouldQueueFollowUp
+        ? collaborationModes
+        : await collaborationModesForComposerMode(composerMode);
+      const turnStartOptions = shouldQueueFollowUp
+        ? null
+        : turnStartOptionsFromComposerMode(composerMode, modes, state.threadContextDefaults);
+      if (!shouldQueueFollowUp && composerMode === "plan" && !turnStartOptions?.collaborationMode) {
+        dispatch({
+          type: "log",
+          text: "Plan mode is unavailable until collaboration modes load from app-server",
+          level: "warn",
+        });
+        return;
+      }
       const selectedThreadId = state.activeThreadId;
       const readyThread = await ensureThreadReadyForTurn({
         client,
@@ -551,22 +727,34 @@ export function HiCodexApp() {
       ) {
         const queued = createQueuedFollowUp({
           text: input,
-          attachments: composerAttachments,
+          attachments: sendAttachments,
           cwd: workspace,
+          mode: composerMode,
         });
         updateQueuedFollowUps(threadId, (queue) => [...queue, queued]);
         return;
       }
+      let optimistic: OptimisticUserMessageHandle | null = null;
       try {
         if (activeTurnId && activeThreadRunning) {
+          optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content, activeTurnId);
           await steerTurn(client, threadId, content, activeTurnId);
         } else {
-          await startTurn(client, threadId, content, workspace, state.threadContextDefaults);
+          optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
+          await startTurn(client, threadId, content, workspace, state.threadContextDefaults, turnStartOptions);
+          rememberLatestCollaborationMode(threadId, turnStartOptions);
+          if (readyThread.source === "created") resetComposerSelectionAfterCreatedThread(threadId);
         }
       } catch (error) {
         const recoverableSelectedThreadError = isThreadNotFound(error) || isThreadNeedsResume(error);
-        if (!recoverableSelectedThreadError) throw error;
+        if (!recoverableSelectedThreadError) {
+          dropOptimisticUserMessage(dispatch, optimistic);
+          throw error;
+        }
+        dropOptimisticUserMessage(dispatch, optimistic);
+        optimistic = null;
         if (selectedThreadId && readyThread.source !== "resumed") {
+          optimistic = dispatchOptimisticUserMessage(dispatch, selectedThreadId, content);
           if (await resumeSelectedThreadAndStartTurn(
             client,
             selectedThreadId,
@@ -574,9 +762,13 @@ export function HiCodexApp() {
             workspace,
             dispatch,
             state.threadContextDefaults,
+            turnStartOptions,
           )) {
+            rememberLatestCollaborationMode(selectedThreadId, turnStartOptions);
             return;
           }
+          dropOptimisticUserMessage(dispatch, optimistic);
+          optimistic = null;
         }
         if (selectedThreadId) {
           dispatch({ type: "removeThread", threadId: selectedThreadId });
@@ -592,7 +784,15 @@ export function HiCodexApp() {
         dispatch({ type: "removeThread", threadId });
         const nextThreadId = await createAndSelectThreadForTurn(client, workspace, state.threads, dispatch, state.threadContextDefaults);
         if (!nextThreadId) throw error;
-        await startTurn(client, nextThreadId, content, workspace, state.threadContextDefaults);
+        optimistic = dispatchOptimisticUserMessage(dispatch, nextThreadId, content);
+        try {
+          await startTurn(client, nextThreadId, content, workspace, state.threadContextDefaults, turnStartOptions);
+        } catch (subError) {
+          dropOptimisticUserMessage(dispatch, optimistic);
+          throw subError;
+        }
+        rememberLatestCollaborationMode(nextThreadId, turnStartOptions);
+        resetComposerSelectionAfterCreatedThread(nextThreadId);
       }
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
@@ -601,14 +801,20 @@ export function HiCodexApp() {
     activeThread,
     activeThreadRunning,
     activeTurnId,
+    activeModelSupportsImageInput,
     client,
+    collaborationModes,
+    collaborationModesForComposerMode,
     composerAttachments,
+    composerMode,
     composerSubmitState.disabled,
     composerSubmitState.disabledReason,
     composerSubmitState.submitButtonMode,
     composerSubmitState.submitBlockReason,
     ensureConnected,
     input,
+    rememberLatestCollaborationMode,
+    resetComposerSelectionAfterCreatedThread,
     state.activeThreadId,
     state.threadContextDefaults,
     state.threads,
@@ -639,7 +845,8 @@ export function HiCodexApp() {
     updateQueuedFollowUps(state.activeThreadId, (queue) => removeQueuedFollowUp(queue, message.id));
     setInput(message.text);
     setComposerAttachments(message.attachments);
-  }, [state.activeThreadId, updateQueuedFollowUps]);
+    setActiveComposerMode(message.mode ?? "default");
+  }, [setActiveComposerMode, state.activeThreadId, updateQueuedFollowUps]);
 
   const deleteQueuedFollowUp = useCallback((message: QueuedFollowUp) => {
     if (!state.activeThreadId) return;
@@ -680,6 +887,20 @@ export function HiCodexApp() {
     state.threads,
     workspace,
   ]);
+
+  const enableComposerPlanMode = useCallback(async (): Promise<boolean> => {
+    const modes = await collaborationModesForComposerMode("plan");
+    if (!hasCollaborationModePreset(modes, "plan")) {
+      dispatch({
+        type: "log",
+        text: "Plan mode is unavailable until collaboration modes load from app-server",
+        level: "warn",
+      });
+      return false;
+    }
+    setActiveComposerMode("plan");
+    return true;
+  }, [collaborationModesForComposerMode, setActiveComposerMode]);
 
   const handleSlashAction = useCallback(async (action: SlashCommandAction) => {
     switch (action.action) {
@@ -725,6 +946,25 @@ export function HiCodexApp() {
         setInput(action.text);
         setComposerAttachments([]);
         return;
+      case "setComposerMode":
+        if (action.mode === "plan") {
+          if (action.text !== undefined) {
+            setInput(action.text);
+            setComposerAttachments([]);
+          } else {
+            setInput("");
+          }
+          void enableComposerPlanMode();
+          return;
+        }
+        setActiveComposerMode(action.mode);
+        if (action.text !== undefined) {
+          setInput(action.text);
+          setComposerAttachments([]);
+        } else {
+          setInput("");
+        }
+        return;
       case "request":
         setInput("");
         setComposerAttachments([]);
@@ -736,18 +976,57 @@ export function HiCodexApp() {
         openCommandPanel("generic", {
           status: "ready",
           title: "Commands",
-          entries: slashCommandEntries(),
+          entries: slashCommandEntries(composerMode),
           message: "",
         });
         return;
       case "log":
         dispatch({ type: "log", text: action.message, level: action.level });
     }
-  }, [createThread, openCommandPanel, openLocalSettingsPanel, runSlashRequest]);
+  }, [composerMode, createThread, enableComposerPlanMode, openCommandPanel, openLocalSettingsPanel, runSlashRequest, setActiveComposerMode]);
 
   const executeSlashCommand = useCallback((command: SlashCommand) => {
-    void handleSlashAction(applySlashCommand(command.id, { input }));
-  }, [handleSlashAction, input]);
+    void handleSlashAction(applySlashCommand(command.id, { input, mode: composerMode }));
+  }, [composerMode, handleSlashAction, input]);
+
+  const browseComposerFiles = useCallback(async (kind: "file" | "image"): Promise<ComposerAttachment[]> => {
+    const paths = await pickFileReferences(kind, true);
+    const attachments = composerAttachmentsFromPaths(paths);
+    const visibleAttachments = kind === "image"
+      ? attachments.filter((attachment) => attachment.type === "localImage")
+      : attachments;
+    return attachmentsWithDataImagePreviews(visibleAttachments);
+  }, []);
+
+  const selectComposerPlan = useCallback(() => {
+    if (composerMode === "plan") {
+      setActiveComposerMode("default");
+      return;
+    }
+    void enableComposerPlanMode();
+  }, [composerMode, enableComposerPlanMode, setActiveComposerMode]);
+
+  const selectCommandPanelEntry = useCallback((entry: CommandPanelEntry) => {
+    const action = entry.action;
+    if (!action) return;
+    if (action.type === "attachMention") {
+      setComposerAttachments((current) => mergeComposerAttachments(current, [{
+        type: "mention",
+        name: action.name,
+        path: action.path,
+      }]));
+      setCommandPanel(null);
+      return;
+    }
+    if (action.type === "attachSkill") {
+      setComposerAttachments((current) => mergeComposerAttachments(current, [{
+        type: "skill",
+        name: action.name,
+        path: action.path,
+      }]));
+      setCommandPanel(null);
+    }
+  }, []);
 
   const interruptActiveTurn = useCallback(async () => {
     if (!state.activeThreadId || !activeTurnId) return;
@@ -778,6 +1057,19 @@ export function HiCodexApp() {
   }, [client]);
 
   const applyModelDraft = useCallback(() => {
+    const nextModel = normalizeModelConfig(modelDraft);
+    if (nextModel.model) {
+      dispatch({
+        type: "setThreadContextDefaults",
+        context: {
+          ...(state.threadContextDefaults ?? {}),
+          model: nextModel.model,
+          modelProvider: nextModel.id,
+          reasoningSummary: state.threadContextDefaults?.reasoningSummary ?? DEFAULT_MODEL_REASONING_SUMMARY,
+          personality: state.threadContextDefaults?.personality ?? "pragmatic",
+        },
+      });
+    }
     void saveModelDraftWorkflow({
       client,
       dispatch,
@@ -786,7 +1078,15 @@ export function HiCodexApp() {
       connected: state.connected,
       codexHome: state.hostStatus?.codexHome,
     }).then(() => refreshThreadContextDefaults(client, dispatch, workspace));
-  }, [client, connect, modelDraft, state.connected, state.hostStatus?.codexHome, workspace]);
+  }, [
+    client,
+    connect,
+    modelDraft,
+    state.connected,
+    state.hostStatus?.codexHome,
+    state.threadContextDefaults,
+    workspace,
+  ]);
 
   return (
     <div className={showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app"}>
@@ -860,8 +1160,14 @@ export function HiCodexApp() {
         <Composer
           input={input}
           attachments={composerAttachments}
+          mode={composerMode}
           onInputChange={setInput}
           onAttachmentsChange={setComposerAttachments}
+          supportsImageInput={activeModelSupportsImageInput}
+          onAttachmentError={(message) => dispatch({ type: "log", text: message, level: "warn" })}
+          onBrowseFiles={browseComposerFiles}
+          onPlanSelected={selectComposerPlan}
+          onOpenPlugins={() => void runSlashRequest("listPlugins")}
           submitState={composerSubmitState}
           onSend={() => void sendTurn()}
           onInterrupt={() => void interruptActiveTurn()}
@@ -896,6 +1202,7 @@ export function HiCodexApp() {
         <CommandPanel
           panel={commandPanel}
           onClose={() => setCommandPanel(null)}
+          onSelectEntry={selectCommandPanelEntry}
         />
       )}
 
@@ -961,8 +1268,42 @@ function stringSetting(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
-function slashCommandEntries(): CommandPanelEntry[] {
-  return DEFAULT_SLASH_COMMANDS
+async function attachmentsWithDataImagePreviews(attachments: ComposerAttachment[]): Promise<ComposerAttachment[]> {
+  const resolved: ComposerAttachment[] = [];
+  for (const attachment of attachments) {
+    if (attachment.type !== "localImage") {
+      resolved.push(attachment);
+      continue;
+    }
+    try {
+      resolved.push({
+        type: "image",
+        url: await readImageDataUrl(attachment.path),
+        name: fileNameFromPath(attachment.path),
+      });
+    } catch {
+      resolved.push(attachment);
+    }
+  }
+  return resolved;
+}
+
+function fileNameFromPath(path: string): string {
+  const normalized = path.trim().replace(/\/+$/, "");
+  return normalized.split(/[\\/]/).filter(Boolean).pop() || "image";
+}
+
+function turnStartOptionsFromComposerMode(
+  mode: ComposerMode,
+  collaborationModes: CollaborationModeMask[],
+  context: ThreadContextDefaults | null | undefined,
+): TurnStartOptions | null {
+  const collaborationMode = collaborationModeFromComposerMode(mode, collaborationModes, context);
+  return collaborationMode ? { collaborationMode } : null;
+}
+
+function slashCommandEntries(mode: ComposerMode): CommandPanelEntry[] {
+  return slashCommandsForComposerMode(mode, DEFAULT_SLASH_COMMANDS)
     .filter((command) => !command.hidden)
     .map((command) => {
       const disabled = command.supported === "pending";

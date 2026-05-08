@@ -360,6 +360,44 @@ function projectsThreadContextFromCodexConfig(): void {
     },
     "turn context params should map to TurnStartParams fields only",
   );
+
+  assertDeepEqual(
+    buildTurnStartParams(
+      "thread-plan",
+      [],
+      "/workspace",
+      {
+        model: "gpt-5.2",
+        reasoningEffort: "high",
+      },
+      {
+        collaborationMode: {
+          mode: "plan",
+          settings: {
+            model: "gpt-5.2",
+            reasoning_effort: "high",
+            developer_instructions: null,
+          },
+        },
+      },
+    ),
+    {
+      threadId: "thread-plan",
+      input: [],
+      cwd: "/workspace",
+      model: "gpt-5.2",
+      effort: "high",
+      collaborationMode: {
+        mode: "plan",
+        settings: {
+          model: "gpt-5.2",
+          reasoning_effort: "high",
+          developer_instructions: null,
+        },
+      },
+    },
+    "plan mode should use app-server collaborationMode instead of prompt rewriting",
+  );
 }
 
 function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {

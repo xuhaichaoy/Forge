@@ -1,4 +1,5 @@
 import type {
+  CollaborationMode,
   JsonRpcNotification,
   JsonRpcRequest,
   ModelConfig,
@@ -8,6 +9,7 @@ import type {
   ThreadActiveFlag,
   ThreadStatus,
   ThreadItem,
+  UserInput,
 } from "@hicodex/codex-protocol";
 import type { HostStatus } from "../lib/tauri-host";
 import type { AccumulatedThreadItem } from "./render-groups";
@@ -56,6 +58,19 @@ export interface CodexUiState {
   activeThreadId: string | null;
   activeTurnIdsByThread: Record<string, string>;
   itemsByThread: Record<string, AccumulatedThreadItem[]>;
+  /**
+   * Per-thread ordered list of turn ids. Mirrors the per-turn `turn.items` model used
+   * by the shipped Codex Desktop webview (see asar `app-server-manager-signals` /
+   * `local-conversation-thread`). New items are placed inside their turn segment
+   * instead of being blindly appended to a flat array.
+   */
+  turnOrderByThread: Record<string, string[]>;
+  /**
+   * FIFO queue of optimistic local turn ids per thread. The head is bound to the
+   * real `turnId` reported by the next `turn/started` notification on that thread.
+   */
+  pendingOptimisticTurnsByThread: Record<string, string[]>;
+  latestCollaborationModesByThread: Record<string, CollaborationMode>;
   turnPlansByThread: Record<string, TurnPlanSnapshot>;
   turnDiffsByThread: Record<string, string>;
   pendingRequests: PendingServerRequest[];
@@ -74,6 +89,7 @@ export type CodexUiAction =
   | { type: "upsertThread"; thread: Thread; select?: boolean }
   | { type: "setActiveThread"; threadId: string | null }
   | { type: "removeThread"; threadId: string }
+  | { type: "setLatestCollaborationMode"; threadId: string; collaborationMode: CollaborationMode | null }
   | { type: "notification"; message: JsonRpcNotification }
   | { type: "serverRequest"; request: JsonRpcRequest }
   | { type: "resolveServerRequest"; id: RequestId }
@@ -82,7 +98,17 @@ export type CodexUiAction =
   | { type: "upsertModel"; model: ModelConfig }
   | { type: "setThreadContextDefaults"; context: ThreadContextDefaults | null }
   | { type: "setTeams"; teams: TeamSummary[] }
-  | { type: "setActiveTeam"; teamId: string | null };
+  | { type: "setActiveTeam"; teamId: string | null }
+  | {
+      type: "optimisticUserMessage";
+      threadId: string;
+      localTurnId: string;
+      localId: string;
+      content: UserInput[];
+      cwd?: string | null;
+    }
+  | { type: "bindOptimisticTurn"; threadId: string; localTurnId: string; turnId: string }
+  | { type: "dropOptimisticUserMessage"; threadId: string; localId: string };
 
 export const initialCodexUiState: CodexUiState = {
   connected: false,
@@ -92,6 +118,9 @@ export const initialCodexUiState: CodexUiState = {
   activeThreadId: null,
   activeTurnIdsByThread: {},
   itemsByThread: {},
+  turnOrderByThread: {},
+  pendingOptimisticTurnsByThread: {},
+  latestCollaborationModesByThread: {},
   turnPlansByThread: {},
   turnDiffsByThread: {},
   pendingRequests: [],
@@ -124,18 +153,27 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       const nextThreads = state.threads.filter((thread) => thread.id !== action.threadId);
       const { [action.threadId]: _removed, ...itemsByThread } = state.itemsByThread;
       const { [action.threadId]: _removedTurn, ...activeTurnIdsByThread } = state.activeTurnIdsByThread;
+      const { [action.threadId]: _removedOrder, ...turnOrderByThread } = state.turnOrderByThread;
+      const { [action.threadId]: _removedPending, ...pendingOptimisticTurnsByThread } = state.pendingOptimisticTurnsByThread;
+      const { [action.threadId]: _removedCollaborationMode, ...latestCollaborationModesByThread } =
+        state.latestCollaborationModesByThread;
       const { [action.threadId]: _removedPlan, ...turnPlansByThread } = state.turnPlansByThread;
       const { [action.threadId]: _removedDiff, ...turnDiffsByThread } = state.turnDiffsByThread;
       return {
         ...state,
         threads: nextThreads,
         itemsByThread,
+        turnOrderByThread,
+        pendingOptimisticTurnsByThread,
+        latestCollaborationModesByThread,
         turnPlansByThread,
         activeTurnIdsByThread,
         turnDiffsByThread,
         activeThreadId: state.activeThreadId === action.threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
       };
     }
+    case "setLatestCollaborationMode":
+      return setLatestCollaborationModeState(state, action.threadId, action.collaborationMode);
     case "notification":
       return applyNotification(state, action.message);
     case "serverRequest":
@@ -174,9 +212,182 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       return { ...state, teams: action.teams, activeTeamId: state.activeTeamId ?? action.teams[0]?.id ?? null };
     case "setActiveTeam":
       return { ...state, activeTeamId: action.teamId };
+    case "optimisticUserMessage":
+      return applyOptimisticUserMessage(state, action);
+    case "bindOptimisticTurn":
+      return applyBindOptimisticTurn(state, action);
+    case "dropOptimisticUserMessage":
+      return applyDropOptimisticUserMessage(state, action);
     default:
       return state;
   }
+}
+
+function applyOptimisticUserMessage(
+  state: CodexUiState,
+  action: Extract<CodexUiAction, { type: "optimisticUserMessage" }>,
+): CodexUiState {
+  const { threadId, localTurnId, localId, content } = action;
+  if (!threadId || !localTurnId || !localId) return state;
+
+  // Idempotency guard: don't add a second optimistic bubble for the same text
+  // when one is already pending in this thread. Protects against quick
+  // double-submits, retries, or redundant workflow paths re-dispatching.
+  const existingItems = state.itemsByThread[threadId] ?? [];
+  const incomingText = userInputContentText(content);
+  if (incomingText) {
+    for (const existing of existingItems) {
+      if (existing.type !== "userMessage") continue;
+      if (!localIdOf(existing)) continue;
+      const existingText = userInputContentText((existing as Record<string, unknown>).content);
+      if (existingText === incomingText) return state;
+    }
+  }
+
+  const order = ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], localTurnId);
+  const needsBinding = isOptimisticTurnPlaceholder(localTurnId);
+  const pending = state.pendingOptimisticTurnsByThread[threadId] ?? [];
+  const nextPending = needsBinding && !pending.includes(localTurnId)
+    ? [...pending, localTurnId]
+    : pending;
+  const item: AccumulatedThreadItem = {
+    id: localId,
+    type: "userMessage",
+    content,
+    createdAt: Date.now(),
+    completed: false,
+    _turnId: localTurnId,
+    _localId: localId,
+  };
+  const items = state.itemsByThread[threadId] ?? [];
+  return {
+    ...state,
+    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: order },
+    pendingOptimisticTurnsByThread: {
+      ...state.pendingOptimisticTurnsByThread,
+      [threadId]: nextPending,
+    },
+    itemsByThread: {
+      ...state.itemsByThread,
+      [threadId]: placeItemInTurn(items, item, order),
+    },
+  };
+}
+
+export const OPTIMISTIC_TURN_PLACEHOLDER_PREFIX = "optimistic-turn:";
+
+function isOptimisticTurnPlaceholder(turnId: string): boolean {
+  return turnId.startsWith(OPTIMISTIC_TURN_PLACEHOLDER_PREFIX);
+}
+
+function applyBindOptimisticTurn(
+  state: CodexUiState,
+  action: Extract<CodexUiAction, { type: "bindOptimisticTurn" }>,
+): CodexUiState {
+  return bindOptimisticTurn(state, action.threadId, action.localTurnId, action.turnId);
+}
+
+function bindNextOptimisticTurn(state: CodexUiState, threadId: string, turnId: string): CodexUiState {
+  const queue = state.pendingOptimisticTurnsByThread[threadId];
+  if (!queue || queue.length === 0) return state;
+  const head = queue[0];
+  if (!head || head === turnId) {
+    return {
+      ...state,
+      pendingOptimisticTurnsByThread: {
+        ...state.pendingOptimisticTurnsByThread,
+        [threadId]: queue.slice(1),
+      },
+    };
+  }
+  return bindOptimisticTurn(state, threadId, head, turnId);
+}
+
+function bindOptimisticTurn(
+  state: CodexUiState,
+  threadId: string,
+  localTurnId: string,
+  turnId: string,
+): CodexUiState {
+  if (!threadId || !localTurnId || !turnId || localTurnId === turnId) return state;
+  const order = state.turnOrderByThread[threadId];
+  if (!order || !order.includes(localTurnId)) {
+    const pendingQueue = (state.pendingOptimisticTurnsByThread[threadId] ?? []).filter((id) => id !== localTurnId);
+    return {
+      ...state,
+      pendingOptimisticTurnsByThread: {
+        ...state.pendingOptimisticTurnsByThread,
+        [threadId]: pendingQueue,
+      },
+    };
+  }
+  const rebound = order.map((id) => (id === localTurnId ? turnId : id));
+  const dedup: string[] = [];
+  for (const id of rebound) if (!dedup.includes(id)) dedup.push(id);
+  const items = state.itemsByThread[threadId] ?? [];
+  // If the target turn already has a confirmed userMessage with the same
+  // content, drop the placeholder instead of rebinding to avoid duplicate
+  // bubbles when the server echoed the user message before this binding ran.
+  const confirmedTextsInTurn = new Set<string>();
+  for (const item of items) {
+    if (item.type !== "userMessage") continue;
+    if (turnIdOf(item) !== turnId) continue;
+    if (localIdOf(item)) continue;
+    const text = userInputContentText((item as Record<string, unknown>).content);
+    if (text) confirmedTextsInTurn.add(text);
+  }
+  const next: AccumulatedThreadItem[] = [];
+  for (const item of items) {
+    if (turnIdOf(item) !== localTurnId) {
+      next.push(item);
+      continue;
+    }
+    if (item.type === "userMessage" && localIdOf(item)) {
+      const text = userInputContentText((item as Record<string, unknown>).content);
+      if (text && confirmedTextsInTurn.has(text)) continue;
+    }
+    next.push({ ...item, _turnId: turnId });
+  }
+  const pending = (state.pendingOptimisticTurnsByThread[threadId] ?? []).filter((id) => id !== localTurnId);
+  return {
+    ...state,
+    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: dedup },
+    pendingOptimisticTurnsByThread: {
+      ...state.pendingOptimisticTurnsByThread,
+      [threadId]: pending,
+    },
+    itemsByThread: { ...state.itemsByThread, [threadId]: next },
+  };
+}
+
+function applyDropOptimisticUserMessage(
+  state: CodexUiState,
+  action: Extract<CodexUiAction, { type: "dropOptimisticUserMessage" }>,
+): CodexUiState {
+  const { threadId, localId } = action;
+  if (!threadId || !localId) return state;
+  const items = state.itemsByThread[threadId] ?? [];
+  const target = items.find((item) => localIdOf(item) === localId);
+  if (!target) return state;
+  const filtered = items.filter((item) => item !== target);
+  const turnId = turnIdOf(target);
+  const order = state.turnOrderByThread[threadId] ?? [];
+  const stillUsesTurn = turnId
+    ? filtered.some((item) => turnIdOf(item) === turnId)
+    : false;
+  const nextOrder = turnId && !stillUsesTurn ? order.filter((id) => id !== turnId) : order;
+  const pending = turnId && !stillUsesTurn
+    ? (state.pendingOptimisticTurnsByThread[threadId] ?? []).filter((id) => id !== turnId)
+    : (state.pendingOptimisticTurnsByThread[threadId] ?? []);
+  return {
+    ...state,
+    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: nextOrder },
+    pendingOptimisticTurnsByThread: {
+      ...state.pendingOptimisticTurnsByThread,
+      [threadId]: pending,
+    },
+    itemsByThread: { ...state.itemsByThread, [threadId]: filtered },
+  };
 }
 
 function prependLog(
@@ -198,6 +409,25 @@ function prependLog(
   };
 }
 
+function setLatestCollaborationModeState(
+  state: CodexUiState,
+  threadId: string,
+  collaborationMode: CollaborationMode | null,
+): CodexUiState {
+  if (!threadId.trim()) return state;
+  if (!collaborationMode) {
+    const { [threadId]: _removed, ...latestCollaborationModesByThread } = state.latestCollaborationModesByThread;
+    return { ...state, latestCollaborationModesByThread };
+  }
+  return {
+    ...state,
+    latestCollaborationModesByThread: {
+      ...state.latestCollaborationModesByThread,
+      [threadId]: collaborationMode,
+    },
+  };
+}
+
 function applyNotification(state: CodexUiState, message: JsonRpcNotification): CodexUiState {
   const params = (message.params ?? {}) as Record<string, unknown>;
   switch (message.method) {
@@ -206,18 +436,30 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "thread/started": {
       const thread = params.thread as Thread | undefined;
       if (!thread?.id) return state;
+      const snapshotItems = collectThreadItems(thread);
+      const currentItems = state.itemsByThread[thread.id] ?? [];
+      const activeTurns = activeTurnsFromThread(thread);
+      const hasLiveTurn = Boolean(state.activeTurnIdsByThread[thread.id] ?? activeTurns[thread.id]);
       return {
         ...state,
         threads: upsertThread(state.threads, thread),
         activeThreadId: state.activeThreadId ?? thread.id,
         activeTurnIdsByThread: {
           ...state.activeTurnIdsByThread,
-          ...activeTurnsFromThread(thread),
+          ...activeTurns,
         },
-        itemsByThread: {
-          ...state.itemsByThread,
-          [thread.id]: collectThreadItems(thread),
+        turnOrderByThread: {
+          ...state.turnOrderByThread,
+          [thread.id]: turnOrderFromThread(thread, state.turnOrderByThread[thread.id]),
         },
+        itemsByThread: snapshotItems.length > 0
+          ? {
+              ...state.itemsByThread,
+              [thread.id]: hasLiveTurn
+                ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
+                : snapshotItems,
+            }
+          : state.itemsByThread,
       };
     }
     case "thread/status/changed": {
@@ -248,12 +490,19 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
       const { [threadId]: _removed, ...itemsByThread } = state.itemsByThread;
       const { [threadId]: _removedTurn, ...activeTurnIdsByThread } = state.activeTurnIdsByThread;
+      const { [threadId]: _removedOrder, ...turnOrderByThread } = state.turnOrderByThread;
+      const { [threadId]: _removedPending, ...pendingOptimisticTurnsByThread } = state.pendingOptimisticTurnsByThread;
+      const { [threadId]: _removedCollaborationMode, ...latestCollaborationModesByThread } =
+        state.latestCollaborationModesByThread;
       const { [threadId]: _removedPlan, ...turnPlansByThread } = state.turnPlansByThread;
       const { [threadId]: _removedDiff, ...turnDiffsByThread } = state.turnDiffsByThread;
       return {
         ...state,
         threads: nextThreads,
         itemsByThread,
+        turnOrderByThread,
+        pendingOptimisticTurnsByThread,
+        latestCollaborationModesByThread,
         turnPlansByThread,
         activeTurnIdsByThread,
         turnDiffsByThread,
@@ -268,28 +517,41 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "thread/tokenUsage/updated":
       return state;
     case "turn/started": {
-      const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string } | undefined;
+      const turn = params.turn as TurnLike | undefined;
       const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
       if (!threadId) return state;
+      const baseState: CodexUiState = turn?.id
+        ? bindNextOptimisticTurn(state, threadId, turn.id)
+        : state;
+      const order = ensureTurnInOrder(baseState.turnOrderByThread[threadId] ?? [], turn?.id ?? null);
       return {
-        ...state,
-        activeThreadId: state.activeThreadId ?? threadId,
+        ...baseState,
+        activeThreadId: baseState.activeThreadId ?? threadId,
         activeTurnIdsByThread: turn?.id ? {
-          ...state.activeTurnIdsByThread,
+          ...baseState.activeTurnIdsByThread,
           [threadId]: turn.id,
-        } : state.activeTurnIdsByThread,
+        } : baseState.activeTurnIdsByThread,
+        turnOrderByThread: { ...baseState.turnOrderByThread, [threadId]: order },
         itemsByThread: {
-          ...state.itemsByThread,
-          [threadId]: mergeItems(state.itemsByThread[threadId] ?? [], turn?.items ?? []),
+          ...baseState.itemsByThread,
+          [threadId]: mergeItems(baseState.itemsByThread[threadId] ?? [], turnItemsWithWorkedFor(turn), order),
         },
       };
     }
     case "item/started":
     case "item/completed": {
       const threadId = String(params.threadId ?? "");
+      const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
       const item = params.item as ThreadItem | undefined;
       if (!threadId || !item?.id) return state;
-      return upsertItem(state, threadId, item);
+      const itemWithStatus = message.method === "item/completed"
+        ? { ...item, completed: true }
+        : { ...item, completed: false };
+      const stampedItem = itemWithLifecycleTiming(itemWithStatus as ThreadItem, params);
+      const reconciled = item.type === "userMessage"
+        ? reconcileUserMessage(state, threadId, turnIdParam, stampedItem)
+        : state;
+      return upsertItem(reconciled, threadId, stampedItem, turnIdParam);
     }
     case "item/agentMessage/delta":
       return appendItemText(state, params, "agentMessage", "text", "delta");
@@ -352,14 +614,16 @@ function applyErrorNotification(state: CodexUiState, params: Record<string, unkn
   const threadId = String(params.threadId ?? "");
   if (!threadId || !text) return logged;
   const turnId = String(params.turnId ?? "");
+  const order = ensureTurnInOrder(logged.turnOrderByThread[threadId] ?? [], turnId || null);
   return {
     ...logged,
+    turnOrderByThread: { ...logged.turnOrderByThread, [threadId]: order },
     threads: logged.threads.map((thread) =>
       thread.id === threadId ? { ...thread, status: { type: "systemError" } } : thread,
     ),
     itemsByThread: {
       ...logged.itemsByThread,
-      [threadId]: mergeItems(logged.itemsByThread[threadId] ?? [], [streamErrorItem(turnId, error, text)]),
+      [threadId]: mergeItems(logged.itemsByThread[threadId] ?? [], [streamErrorItem(turnId, error, text)], order),
     },
   };
 }
@@ -385,6 +649,9 @@ function upsertThreadState(
   const currentItems = state.itemsByThread[thread.id] ?? [];
   const activeTurns = activeTurnsFromThread(thread);
   const hasLiveTurn = Boolean(state.activeTurnIdsByThread[thread.id] ?? activeTurns[thread.id]);
+  const nextTurnOrder = thread.turns
+    ? turnOrderFromThread(thread, state.turnOrderByThread[thread.id])
+    : state.turnOrderByThread[thread.id];
   return {
     ...state,
     threads: upsertThread(state.threads, thread),
@@ -393,6 +660,9 @@ function upsertThreadState(
       ...state.activeTurnIdsByThread,
       ...activeTurns,
     },
+    turnOrderByThread: nextTurnOrder
+      ? { ...state.turnOrderByThread, [thread.id]: nextTurnOrder }
+      : state.turnOrderByThread,
     itemsByThread: thread.turns
       ? {
           ...state.itemsByThread,
@@ -491,23 +761,138 @@ function streamErrorItem(
     content: turnErrorMessage(error) || fallbackText,
     additionalDetails: stringParam(error, "additionalDetails"),
     completed: true,
+    ...(turnId ? { _turnId: turnId } : {}),
   };
 }
 
+type TurnLike = {
+  id?: string;
+  items?: ThreadItem[];
+  threadId?: string;
+  status?: unknown;
+  error?: unknown;
+  startedAt?: number | null;
+  completedAt?: number | null;
+  durationMs?: number | null;
+};
+
 function collectThreadItems(thread: Thread): AccumulatedThreadItem[] {
-  return (thread.turns ?? []).flatMap((turn) => turn.items ?? []);
+  return (thread.turns ?? []).flatMap((turn) => turnItemsWithWorkedFor(turn));
+}
+
+function turnItemsWithWorkedFor(turn: TurnLike | undefined): AccumulatedThreadItem[] {
+  if (!turn) return [];
+  const items = turn.items ?? [];
+  const workedFor = workedForItemFromTurn(turn, items);
+  const normalized = normalizeWorkedForItems(items, workedFor);
+  return attachTurnIdToAll(normalized, turn.id);
+}
+
+function workedForItemFromTurn(
+  turn: TurnLike,
+  items: Array<AccumulatedThreadItem | ThreadItem>,
+): AccumulatedThreadItem | null {
+  if (!turn.id || items.some((item) => item.type === "worked-for")) return null;
+
+  const startedAtMs = secondsTimestampToMs(turn.startedAt);
+  const completedAtMs = secondsTimestampToMs(turn.completedAt);
+  const durationMs = typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs) && turn.durationMs > 0
+    ? turn.durationMs
+    : null;
+  const status = turnStatusText(turn.status);
+  const working = status === "inProgress" || status === "running" || status === "active";
+
+  if (startedAtMs === null && durationMs === null) return null;
+
+  return {
+    id: `worked-for:${turn.id}`,
+    type: "worked-for",
+    status: working ? "working" : "completed",
+    ...(startedAtMs !== null ? { startedAtMs } : {}),
+    ...(working ? { completedAtMs: null } : completedAtMs !== null ? { completedAtMs } : {}),
+    ...(durationMs !== null ? { durationMs } : {}),
+  };
+}
+
+function normalizeWorkedForItems(
+  items: ThreadItem[],
+  syntheticWorkedFor: AccumulatedThreadItem | null,
+): AccumulatedThreadItem[] {
+  const baseItems = items.filter((item) => !isWorkedForThreadItem(item));
+  const explicitWorkedFor = items.find(isWorkedForThreadItem) as AccumulatedThreadItem | undefined;
+  const workedFor = explicitWorkedFor ?? syntheticWorkedFor;
+  if (baseItems.length === 0 && workedFor?.status === "working") return baseItems as AccumulatedThreadItem[];
+  return insertWorkedForBeforeAssistant(baseItems, workedFor ?? null);
+}
+
+function insertWorkedForBeforeAssistant(
+  items: ThreadItem[],
+  workedFor: AccumulatedThreadItem | null,
+): AccumulatedThreadItem[] {
+  if (!workedFor) return items as AccumulatedThreadItem[];
+  const assistantIndex = findLastIndex(items, isAssistantThreadItem);
+  if (assistantIndex < 0) return [...items, workedFor] as AccumulatedThreadItem[];
+  return [
+    ...items.slice(0, assistantIndex),
+    workedFor,
+    ...items.slice(assistantIndex),
+  ] as AccumulatedThreadItem[];
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index] as T)) return index;
+  }
+  return -1;
+}
+
+function isAssistantThreadItem(item: ThreadItem | AccumulatedThreadItem): boolean {
+  const type = String((item as Record<string, unknown>).type ?? "");
+  return type === "agentMessage" || type === "assistant-message";
+}
+
+function isWorkedForThreadItem(item: ThreadItem | AccumulatedThreadItem): boolean {
+  const type = String((item as Record<string, unknown>).type ?? "");
+  return type === "worked-for" || type === "workedFor";
+}
+
+function secondsTimestampToMs(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value * 1_000) : null;
 }
 
 function mergeLiveThreadSnapshotItems(
   current: AccumulatedThreadItem[],
   snapshot: Array<AccumulatedThreadItem | ThreadItem>,
 ): AccumulatedThreadItem[] {
-  const byId = new Map(snapshot.map((item) => [item.id, item as AccumulatedThreadItem]));
-  for (const item of current) {
-    const existing = byId.get(item.id);
-    byId.set(item.id, existing ? { ...existing, ...item } : item);
+  const swept = dropConfirmedOptimisticPlaceholders(current, snapshot);
+  return mergeItemsInIncomingOrder(swept, snapshot);
+}
+
+/**
+ * Drop optimistic user placeholders whose content has already been confirmed by
+ * the server-side snapshot. Without this, every thread re-read (for example
+ * after switching threads and switching back) would leave the local
+ * placeholder around alongside the server-confirmed userMessage and the
+ * transcript would gain a duplicate bubble per round-trip.
+ */
+function dropConfirmedOptimisticPlaceholders(
+  current: AccumulatedThreadItem[],
+  snapshot: Array<AccumulatedThreadItem | ThreadItem>,
+): AccumulatedThreadItem[] {
+  const confirmedTexts = new Set<string>();
+  for (const item of snapshot) {
+    if ((item as Record<string, unknown>).type !== "userMessage") continue;
+    if (localIdOf(item)) continue;
+    const text = userInputContentText((item as Record<string, unknown>).content);
+    if (text) confirmedTexts.add(text);
   }
-  return Array.from(byId.values());
+  if (confirmedTexts.size === 0) return current;
+  return current.filter((item) => {
+    if (item.type !== "userMessage") return true;
+    if (!localIdOf(item)) return true;
+    const text = userInputContentText((item as Record<string, unknown>).content);
+    return !confirmedTexts.has(text);
+  });
 }
 
 function activeTurnsFromThread(thread: Thread): Record<string, string> {
@@ -527,27 +912,269 @@ function activeTurnsFromThread(thread: Thread): Record<string, string> {
   return activeTurn?.id ? { [thread.id]: activeTurn.id } : {};
 }
 
-function upsertItem(state: CodexUiState, threadId: string, item: ThreadItem): CodexUiState {
+function upsertItem(
+  state: CodexUiState,
+  threadId: string,
+  item: ThreadItem,
+  turnId?: string | null,
+): CodexUiState {
   const current = state.itemsByThread[threadId] ?? [];
+  const order = turnId
+    ? ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], turnId)
+    : (state.turnOrderByThread[threadId] ?? []);
+  const stamped = turnId ? attachTurnId(item, turnId) : item;
+  const next = mergeItems(current, [stamped], order);
   return {
     ...state,
-    itemsByThread: {
-      ...state.itemsByThread,
-      [threadId]: mergeItems(current, [item]),
-    },
+    turnOrderByThread: turnId
+      ? { ...state.turnOrderByThread, [threadId]: order }
+      : state.turnOrderByThread,
+    itemsByThread: { ...state.itemsByThread, [threadId]: next },
   };
+}
+
+/**
+ * Replace the optimistic placeholder for a freshly confirmed user message in
+ * the same turn segment. Replicates the asar `Jp(...)` lookup that swaps the
+ * lower-quality optimistic item for the server-confirmed one.
+ */
+function reconcileUserMessage(
+  state: CodexUiState,
+  threadId: string,
+  turnId: string | null,
+  incoming: ThreadItem,
+): CodexUiState {
+  const current = state.itemsByThread[threadId] ?? [];
+  const optimistic = findOptimisticUserMessage(current, turnId, (incoming as Record<string, unknown>).content);
+  if (!optimistic) return state;
+  const order = turnId
+    ? ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], turnId)
+    : (state.turnOrderByThread[threadId] ?? []);
+  const replacement: AccumulatedThreadItem = {
+    ...optimistic,
+    ...(incoming as AccumulatedThreadItem),
+    _turnId: turnId ?? turnIdOf(optimistic) ?? undefined,
+    _localId: undefined,
+  };
+  delete (replacement as Record<string, unknown>)._localId;
+  const next = current.map((item) => (item === optimistic ? replacement : item));
+  return {
+    ...state,
+    turnOrderByThread: turnId
+      ? { ...state.turnOrderByThread, [threadId]: order }
+      : state.turnOrderByThread,
+    itemsByThread: { ...state.itemsByThread, [threadId]: next },
+  };
+}
+
+function itemWithLifecycleTiming(item: ThreadItem, params: Record<string, unknown>): ThreadItem {
+  const startedAtMs = timestampParam(params, "startedAtMs");
+  const completedAtMs = timestampParam(params, "completedAtMs");
+  if (startedAtMs === null && completedAtMs === null) return item;
+  return {
+    ...item,
+    ...(startedAtMs !== null ? { startedAtMs } : {}),
+    ...(completedAtMs !== null ? { completedAtMs } : {}),
+  } as ThreadItem;
+}
+
+function timestampParam(params: Record<string, unknown>, key: string): number | null {
+  const value = params[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function mergeItems(
   current: AccumulatedThreadItem[],
   incoming: Array<AccumulatedThreadItem | ThreadItem>,
+  turnOrder: string[] = [],
 ): AccumulatedThreadItem[] {
-  const byId = new Map(current.map((item) => [item.id, item]));
+  let result = current;
   for (const item of incoming) {
-    const existing = byId.get(item.id);
-    byId.set(item.id, existing?.type === "userMessage" ? existing : { ...(existing ?? {}), ...item });
+    result = placeItemInTurn(result, item, turnOrder);
   }
-  return Array.from(byId.values());
+  return result;
+}
+
+function mergeItemsInIncomingOrder(
+  current: AccumulatedThreadItem[],
+  incoming: Array<AccumulatedThreadItem | ThreadItem>,
+): AccumulatedThreadItem[] {
+  const currentById = new Map(current.map((item) => [item.id, item]));
+  const used = new Set<string>();
+  const next = incoming.map((item) => {
+    used.add(item.id);
+    return mergeAccumulatedItem(currentById.get(item.id), item);
+  });
+  for (const item of current) {
+    if (!used.has(item.id)) next.push(item);
+  }
+  return next;
+}
+
+/**
+ * Place a single item into the existing list, preserving per-turn segment order.
+ * Mirrors how the shipped Codex Desktop webview keeps `n.items` partitioned by
+ * `turn.id` and only appends within the matching turn segment.
+ */
+function placeItemInTurn(
+  current: AccumulatedThreadItem[],
+  incoming: AccumulatedThreadItem | ThreadItem,
+  turnOrder: string[],
+): AccumulatedThreadItem[] {
+  const existingIndex = current.findIndex((item) => item.id === incoming.id);
+  if (existingIndex >= 0) {
+    const merged = mergeAccumulatedItem(current[existingIndex], incoming);
+    if (merged === current[existingIndex]) return current;
+    const next = current.slice();
+    next[existingIndex] = merged;
+    return next;
+  }
+
+  const incomingTurnId = turnIdOf(incoming);
+  if (!incomingTurnId) {
+    return [...current, incoming as AccumulatedThreadItem];
+  }
+  const incomingTurnIndex = turnOrder.indexOf(incomingTurnId);
+  if (incomingTurnIndex < 0) {
+    return [...current, incoming as AccumulatedThreadItem];
+  }
+  let insertAt = current.length;
+  for (let index = 0; index < current.length; index += 1) {
+    const candidateTurnId = turnIdOf(current[index] as AccumulatedThreadItem);
+    if (!candidateTurnId) continue;
+    const candidateTurnIndex = turnOrder.indexOf(candidateTurnId);
+    if (candidateTurnIndex > incomingTurnIndex) {
+      insertAt = index;
+      break;
+    }
+  }
+  return [
+    ...current.slice(0, insertAt),
+    incoming as AccumulatedThreadItem,
+    ...current.slice(insertAt),
+  ];
+}
+
+function turnIdOf(item: AccumulatedThreadItem | ThreadItem | undefined | null): string | null {
+  if (!item) return null;
+  const value = (item as Record<string, unknown>)._turnId;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function localIdOf(item: AccumulatedThreadItem | ThreadItem | undefined | null): string | null {
+  if (!item) return null;
+  const value = (item as Record<string, unknown>)._localId;
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function ensureTurnInOrder(order: string[], turnId: string | null | undefined): string[] {
+  if (!turnId) return order;
+  if (order.includes(turnId)) return order;
+  return [...order, turnId];
+}
+
+function turnOrderFromThread(thread: Thread, current: string[] = []): string[] {
+  const next = [...current];
+  for (const turn of thread.turns ?? []) {
+    if (typeof turn.id === "string" && turn.id && !next.includes(turn.id)) {
+      next.push(turn.id);
+    }
+  }
+  return next;
+}
+
+function attachTurnId(
+  item: AccumulatedThreadItem | ThreadItem,
+  turnId: string | undefined | null,
+): AccumulatedThreadItem {
+  if (!turnId) return item as AccumulatedThreadItem;
+  const current = turnIdOf(item);
+  if (current === turnId) return item as AccumulatedThreadItem;
+  return { ...(item as AccumulatedThreadItem), _turnId: turnId };
+}
+
+function attachTurnIdToAll(
+  items: Array<AccumulatedThreadItem | ThreadItem>,
+  turnId: string | undefined | null,
+): AccumulatedThreadItem[] {
+  if (!turnId) return items as AccumulatedThreadItem[];
+  return items.map((item) => attachTurnId(item, turnId));
+}
+
+/**
+ * Find an optimistic user message whose textual content matches the
+ * server-confirmed user message. First tries a strict same-turn match (the
+ * common path right after `bindOptimisticTurn`), then falls back to any
+ * optimistic placeholder in the thread — this covers the case where
+ * `item/started userMessage` lands before `turn/started` so the placeholder
+ * still carries an `optimistic-turn:*` id.
+ */
+function findOptimisticUserMessage(
+  items: AccumulatedThreadItem[],
+  turnId: string | null,
+  content: unknown,
+): AccumulatedThreadItem | null {
+  const incomingText = userInputContentText(content);
+  if (!incomingText) return null;
+  if (turnId) {
+    for (const item of items) {
+      if (item.type !== "userMessage") continue;
+      if (!localIdOf(item)) continue;
+      if (turnIdOf(item) !== turnId) continue;
+      const existingText = userInputContentText((item as Record<string, unknown>).content);
+      if (existingText === incomingText) return item;
+    }
+  }
+  for (const item of items) {
+    if (item.type !== "userMessage") continue;
+    if (!localIdOf(item)) continue;
+    const existingText = userInputContentText((item as Record<string, unknown>).content);
+    if (existingText === incomingText) return item;
+  }
+  return null;
+}
+
+function userInputContentText(value: unknown): string {
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      const record = part as Record<string, unknown>;
+      if (record.type === "text" && typeof record.text === "string") return record.text;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function mergeAccumulatedItem(
+  existing: AccumulatedThreadItem | undefined,
+  incoming: AccumulatedThreadItem | ThreadItem,
+): AccumulatedThreadItem {
+  if (!existing) return incoming as AccumulatedThreadItem;
+  if (existing.type === "userMessage") return existing;
+
+  const merged = { ...existing, ...incoming } as AccumulatedThreadItem;
+  preserveLongerAccumulatedText(merged, existing, incoming as Record<string, unknown>, "text");
+  preserveLongerAccumulatedText(merged, existing, incoming as Record<string, unknown>, "aggregatedOutput");
+  preserveLongerAccumulatedText(merged, existing, incoming as Record<string, unknown>, "progress");
+  return merged;
+}
+
+function preserveLongerAccumulatedText(
+  target: Record<string, unknown>,
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  field: string,
+): void {
+  const existingText = typeof existing[field] === "string" ? existing[field] : null;
+  const incomingText = typeof incoming[field] === "string" ? incoming[field] : null;
+  if (existingText === null || incomingText === null) return;
+  if (existingText.length <= incomingText.length) return;
+  if (incomingText.length === 0 || existingText.startsWith(incomingText)) {
+    target[field] = existingText;
+  }
 }
 
 function appendItemText(
@@ -567,10 +1194,20 @@ function appendItemText(
     if (item.id !== itemId) return item;
     found = true;
     const previous = String((item as Record<string, unknown>)[field] ?? "");
-    return { ...item, type: item.type || expectedType, [field]: previous + delta };
+    return {
+      ...item,
+      type: item.type || expectedType,
+      ...(expectedType === "agentMessage" && (item as Record<string, unknown>).completed !== true ? { completed: false } : {}),
+      [field]: previous + delta,
+    };
   });
   if (!found) {
-    next.push({ id: itemId, type: expectedType, [field]: delta });
+    next.push({
+      id: itemId,
+      type: expectedType,
+      ...(expectedType === "agentMessage" ? { completed: false } : {}),
+      [field]: delta,
+    });
   }
   return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
 }
@@ -723,7 +1360,7 @@ function finishTurn(
   params: Record<string, unknown>,
   fallbackStatus: "completed" | "failed" | "interrupted",
 ): CodexUiState {
-  const turn = params.turn as { id?: string; items?: ThreadItem[]; threadId?: string; status?: unknown; error?: unknown } | undefined;
+  const turn = params.turn as TurnLike | undefined;
   const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
   const turnId = String(params.turnId ?? turn?.id ?? "");
   if (!threadId) return state;
@@ -736,20 +1373,120 @@ function finishTurn(
   const turnStatus = turnStatusText(turn?.status) || fallbackStatus;
   const turnError = recordParam(turn?.error);
   const errorText = turnErrorMessage(turnError);
-  const terminalItems = errorText
-    ? mergeItems(turn?.items ?? [], [streamErrorItem(turnId, turnError, errorText)])
-    : turn?.items ?? [];
+  const order = ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], turnId || null);
+  const terminalSegment = errorText
+    ? mergeItems(turnItemsWithWorkedFor(turn), [streamErrorItem(turnId, turnError, errorText)], order)
+    : turnItemsWithWorkedFor(turn);
+  const currentItems = state.itemsByThread[threadId] ?? [];
+  const nextItems = turnId
+    ? replaceTurnSegment(currentItems, turnId, terminalSegment, order)
+    : mergeItemsInIncomingOrder(currentItems, terminalSegment);
   return {
     ...state,
     activeTurnIdsByThread: nextActiveTurns,
+    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: order },
     threads: state.threads.map((thread) =>
       thread.id === threadId ? { ...thread, status: terminalThreadStatusFromTurn(turnStatus, Boolean(errorText)) } : thread,
     ),
     itemsByThread: {
       ...state.itemsByThread,
-      [threadId]: mergeItems(state.itemsByThread[threadId] ?? [], terminalItems),
+      [threadId]: nextItems,
     },
   };
+}
+
+/**
+ * Replace the per-turn segment in-place: keep items from other turns at their
+ * original positions, merge the snapshot `segment` into the existing turn slice
+ * (preserving accumulated streaming text), and slot any new items from the
+ * snapshot at sensible positions inside the segment.
+ *
+ * Insertion rules for items the live stream has not seen yet:
+ *  - `worked-for`: insert right after the last user message in the segment so
+ *    "user prompt → thinking → assistant/error" reads naturally, mirroring how
+ *    Codex Desktop renders a finalized turn.
+ *  - `assistant`: insert at the end of the segment so server replays append.
+ *  - everything else: append at the end of the segment.
+ */
+function replaceTurnSegment(
+  current: AccumulatedThreadItem[],
+  turnId: string,
+  segment: AccumulatedThreadItem[],
+  turnOrder: string[],
+): AccumulatedThreadItem[] {
+  const before: AccumulatedThreadItem[] = [];
+  const after: AccumulatedThreadItem[] = [];
+  let inSegment: AccumulatedThreadItem[] = [];
+  const turnIndex = turnOrder.indexOf(turnId);
+
+  for (const item of current) {
+    const itemTurnId = turnIdOf(item);
+    if (itemTurnId === turnId) {
+      inSegment.push(item);
+      continue;
+    }
+    if (!itemTurnId) {
+      before.push(item);
+      continue;
+    }
+    const itemTurnIndex = turnOrder.indexOf(itemTurnId);
+    if (turnIndex < 0 || itemTurnIndex < 0 || itemTurnIndex < turnIndex) {
+      before.push(item);
+    } else {
+      after.push(item);
+    }
+  }
+
+  const stamped = segment.map((item) => attachTurnId(item, turnId));
+  const stampedById = new Map(stamped.map((item) => [item.id, item]));
+
+  inSegment = inSegment.map((item) => {
+    const incoming = stampedById.get(item.id);
+    return incoming ? mergeAccumulatedItem(item, incoming) : item;
+  });
+
+  // Drop optimistic user placeholders whose content was confirmed by the
+  // snapshot under a real id, otherwise both the placeholder and the real
+  // userMessage would coexist in the same turn segment.
+  const confirmedTexts = new Set<string>();
+  for (const item of stamped) {
+    if ((item as Record<string, unknown>).type !== "userMessage") continue;
+    if (localIdOf(item)) continue;
+    const text = userInputContentText((item as Record<string, unknown>).content);
+    if (text) confirmedTexts.add(text);
+  }
+  if (confirmedTexts.size > 0) {
+    inSegment = inSegment.filter((item) => {
+      if (item.type !== "userMessage") return true;
+      if (!localIdOf(item)) return true;
+      const text = userInputContentText((item as Record<string, unknown>).content);
+      return !confirmedTexts.has(text);
+    });
+  }
+
+  const inSegmentIds = new Set(inSegment.map((item) => item.id));
+  for (const item of stamped) {
+    if (inSegmentIds.has(item.id)) continue;
+    if (isWorkedForThreadItem(item)) {
+      const lastUserIndex = findLastIndex(inSegment, isUserMessageItem);
+      const insertAt = lastUserIndex + 1;
+      inSegment = [
+        ...inSegment.slice(0, insertAt),
+        item,
+        ...inSegment.slice(insertAt),
+      ];
+      inSegmentIds.add(item.id);
+      continue;
+    }
+    inSegment.push(item);
+    inSegmentIds.add(item.id);
+  }
+
+  return [...before, ...inSegment, ...after];
+}
+
+function isUserMessageItem(item: AccumulatedThreadItem | ThreadItem): boolean {
+  return String((item as Record<string, unknown>).type ?? "") === "userMessage";
 }
 
 function turnStatusText(status: unknown): string {

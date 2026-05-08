@@ -1,10 +1,10 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { AtSign, FileImage, FileText, Image, Loader2, Pause, Plus, Send, Sparkles, X } from "lucide-react";
+import { AtSign, FileText, ListChecks, Loader2, Paperclip, Pause, PlugZap, Plus, Send, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CLOSED_ATTACHMENT_PICKER_STATE,
-  DEFAULT_ATTACH_ACTIONS,
   DEFAULT_SLASH_COMMANDS,
+  attachActionsForComposerMode,
   composerAttachmentPreviewSrc,
   attachmentLabel,
   compactAttachmentLabel,
@@ -20,21 +20,31 @@ import {
   openAttachmentPicker,
   removeComposerAttachment,
   selectAttachmentInputMode,
+  slashCommandsForComposerMode,
   splitComposerTransferFiles,
   updateAttachmentInputDraft,
   type AttachActionId,
   type ComposerAttachmentPickerState,
   type ComposerAttachment,
+  type ComposerMode,
   type ComposerSubmitState,
   type SlashCommand,
 } from "../state/composer-workflow";
 
+export type ComposerBrowseKind = "file" | "image";
+
 export interface ComposerProps {
   input: string;
   attachments: ComposerAttachment[];
+  mode?: ComposerMode;
   onInputChange: (value: string) => void;
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
   submitState: ComposerSubmitState;
+  supportsImageInput?: boolean;
+  onAttachmentError?: (message: string) => void;
+  onBrowseFiles?: (kind: ComposerBrowseKind) => Promise<ComposerAttachment[]>;
+  onPlanSelected?: () => void;
+  onOpenPlugins?: () => void;
   onSend: () => void;
   onInterrupt: () => void;
   onSlashCommand: (command: SlashCommand) => void;
@@ -43,9 +53,15 @@ export interface ComposerProps {
 export function Composer({
   input,
   attachments,
+  mode = "default",
   onInputChange,
   onAttachmentsChange,
   submitState,
+  supportsImageInput = true,
+  onAttachmentError,
+  onBrowseFiles,
+  onPlanSelected,
+  onOpenPlugins,
   onSend,
   onInterrupt,
   onSlashCommand,
@@ -60,9 +76,11 @@ export function Composer({
   const [dropActive, setDropActive] = useState(false);
   const [imagePreview, setImagePreview] = useState<{ src: string; label: string } | null>(null);
   const slashQuery = useMemo(() => slashSearchText(input), [input]);
+  const attachActions = useMemo(() => attachActionsForComposerMode(mode), [mode]);
+  const availableSlashCommands = useMemo(() => slashCommandsForComposerMode(mode, DEFAULT_SLASH_COMMANDS), [mode]);
   const slashCommands = useMemo(
-    () => filterSlashCommands(slashQuery, DEFAULT_SLASH_COMMANDS).filter((command) => !command.hidden),
-    [slashQuery],
+    () => filterSlashCommands(slashQuery, availableSlashCommands).filter((command) => !command.hidden),
+    [availableSlashCommands, slashQuery],
   );
   const selectedSlashCommand = slashCommands[Math.min(slashIndex, Math.max(0, slashCommands.length - 1))] ?? null;
   const submitTitle = composerSubmitTooltip(submitState);
@@ -89,30 +107,38 @@ export function Composer({
 
   const addImageFilesAsDataUrls = useCallback((files: File[]) => {
     if (files.length === 0) return;
+    if (!supportsImageInput) {
+      onAttachmentError?.("Current model does not declare image input support");
+      return;
+    }
     void Promise.all(files.map(readImageFileAttachment)).then((items) => {
       addAttachments(items.filter((item): item is ComposerAttachment => item != null));
     });
-  }, [addAttachments]);
+  }, [addAttachments, onAttachmentError, supportsImageInput]);
 
   const addTransferFiles = useCallback((files: FileList | File[]) => {
     const { imageFiles, otherFiles } = splitComposerTransferFiles(files);
     const pathAttachments: ComposerAttachment[] = [];
     const imageFilesWithoutPath: File[] = [];
 
-    for (const file of imageFiles) {
-      const path = composerFilePath(file);
-      if (path) pathAttachments.push(...composerAttachmentsFromPaths([path]));
-      else imageFilesWithoutPath.push(file);
+    if (imageFiles.length > 0 && !supportsImageInput) {
+      onAttachmentError?.("Current model does not declare image input support");
+    } else {
+      for (const file of imageFiles) {
+        const path = composerFilePath(file);
+        if (path) pathAttachments.push(...composerAttachmentsFromPaths([path]));
+        else imageFilesWithoutPath.push(file);
+      }
     }
     for (const file of otherFiles) {
-      const path = composerFilePath(file);
+      const path = composerFilePath(file) || file.name?.trim();
       if (path) pathAttachments.push(...composerAttachmentsFromPaths([path]));
     }
 
     addAttachments(pathAttachments);
     addImageFilesAsDataUrls(imageFilesWithoutPath);
-    return pathAttachments.length > 0 || imageFilesWithoutPath.length > 0;
-  }, [addAttachments, addImageFilesAsDataUrls]);
+    return pathAttachments.length > 0 || imageFilesWithoutPath.length > 0 || imageFiles.length > 0;
+  }, [addAttachments, addImageFilesAsDataUrls, onAttachmentError, supportsImageInput]);
 
   useEffect(() => {
     if (!imagePreview) return;
@@ -148,7 +174,42 @@ export function Composer({
     setSlashOpen(false);
   }
 
-  function selectAttachmentMode(actionId: AttachActionId) {
+  async function selectAttachmentMode(actionId: AttachActionId) {
+    if (actionId === "plan") {
+      setAttachmentPicker(closeAttachmentPicker());
+      setSlashOpen(false);
+      onPlanSelected?.();
+      requestComposerFocus(textareaRef.current);
+      return;
+    }
+
+    if (actionId === "plugins") {
+      setAttachmentPicker(closeAttachmentPicker());
+      setSlashOpen(false);
+      onOpenPlugins?.();
+      requestComposerFocus(textareaRef.current);
+      return;
+    }
+
+    if ((actionId === "filePath" || actionId === "localImage") && onBrowseFiles) {
+      if (actionId === "localImage" && !supportsImageInput) {
+        onAttachmentError?.("Current model does not declare image input support");
+        setAttachmentPicker(closeAttachmentPicker());
+        requestComposerFocus(textareaRef.current);
+        return;
+      }
+      setAttachmentPicker(closeAttachmentPicker());
+      setSlashOpen(false);
+      try {
+        const picked = await onBrowseFiles(actionId === "localImage" ? "image" : "file");
+        addAttachments(picked);
+      } catch (error) {
+        onAttachmentError?.(attachmentBrowseError(error));
+      }
+      requestComposerFocus(textareaRef.current);
+      return;
+    }
+
     setAttachmentPicker((state) => selectAttachmentInputMode(state, actionId));
     requestAttachmentInputFocus(attachmentInputRef.current);
   }
@@ -157,6 +218,14 @@ export function Composer({
     setAttachmentPicker((state) => {
       const result = confirmAttachmentInput(state);
       if (result.attachment) {
+        if (isImageAttachment(result.attachment) && !supportsImageInput) {
+          onAttachmentError?.("Current model does not declare image input support");
+          requestAttachmentInputFocus(attachmentInputRef.current);
+          return {
+            ...state,
+            error: "Current model does not declare image input support",
+          };
+        }
         onAttachmentsChange([...attachments, result.attachment]);
         if (input.trim() === "+") onInputChange("");
         requestComposerFocus(textareaRef.current);
@@ -167,11 +236,11 @@ export function Composer({
     });
   }
 
-  const selectedAttachAction = DEFAULT_ATTACH_ACTIONS[Math.min(
+  const selectedAttachAction = attachActions[Math.min(
     attachmentPicker.activeIndex,
-    Math.max(0, DEFAULT_ATTACH_ACTIONS.length - 1),
+    Math.max(0, attachActions.length - 1),
   )];
-  const inputAttachAction = DEFAULT_ATTACH_ACTIONS.find((action) => action.id === attachmentPicker.inputMode) ?? null;
+  const inputAttachAction = attachActions.find((action) => action.id === attachmentPicker.inputMode) ?? null;
   const isTextAttachmentInput = attachmentPicker.inputMode === "plainText";
 
   return (
@@ -185,7 +254,7 @@ export function Composer({
         if (handled) event.preventDefault();
       }}
       onDragEnter={(event) => {
-        if (!hasTransferFiles(event.dataTransfer)) return;
+        if (!hasAttachmentTransfer(event.dataTransfer)) return;
         if (!isDomDropInsideElement(inputRowRef.current, event)) {
           setDropActive(false);
           return;
@@ -196,7 +265,7 @@ export function Composer({
         setDropActive(true);
       }}
       onDragOver={(event) => {
-        if (!hasTransferFiles(event.dataTransfer)) return;
+        if (!hasAttachmentTransfer(event.dataTransfer)) return;
         if (!isDomDropInsideElement(inputRowRef.current, event)) {
           setDropActive(false);
           return;
@@ -216,11 +285,16 @@ export function Composer({
           setDropActive(false);
           return;
         }
-        const handled = addTransferFiles(event.dataTransfer.files);
-        if (handled) {
-          event.preventDefault();
-          event.stopPropagation();
+        if (!hasAttachmentTransfer(event.dataTransfer)) {
+          setDropActive(false);
+          return;
         }
+        event.preventDefault();
+        event.stopPropagation();
+        const handled = addTransferFiles(event.dataTransfer.files);
+        const droppedPaths = droppedAttachmentPaths(event.dataTransfer);
+        if (droppedPaths.length > 0) addAttachmentPaths(droppedPaths);
+        if (!handled && droppedPaths.length === 0) requestComposerFocus(textareaRef.current);
         setDropActive(false);
       }}
       onSubmit={(event) => {
@@ -258,6 +332,7 @@ export function Composer({
                     </button>
                   ) : (
                     <span className="hc-attachment-chip-main static">
+                      <AttachmentStaticIcon attachment={attachment} />
                       <span>{displayLabel}</span>
                     </span>
                   )}
@@ -300,22 +375,34 @@ export function Composer({
 
         {attachmentPicker.status === "menu" && (
           <div className="hc-composer-menu attach" role="menu" aria-label="Attach context">
-            {DEFAULT_ATTACH_ACTIONS.map((action) => (
-              <button
-                className="hc-composer-menu-row"
-                data-active={action.id === selectedAttachAction?.id}
-                key={action.id}
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectAttachmentMode(action.id)}
-              >
-                {attachIcon(action.id)}
-                <span>
-                  <strong>{action.title}</strong>
-                  <small>{action.description}</small>
-                </span>
-              </button>
-            ))}
+            {attachActions.map((action) => {
+              const isPlanAction = action.id === "plan";
+              const checked = isPlanAction && mode === "plan";
+              return (
+                <button
+                  className="hc-composer-menu-row"
+                  data-active={action.id === selectedAttachAction?.id}
+                  data-checked={checked}
+                  key={action.id}
+                  type="button"
+                  role={isPlanAction ? "switch" : "menuitem"}
+                  aria-checked={isPlanAction ? checked : undefined}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => void selectAttachmentMode(action.id)}
+                >
+                  {attachIcon(action.id)}
+                  <span>
+                    <strong>{action.title}</strong>
+                    <small>{action.description}</small>
+                  </span>
+                  {isPlanAction && (
+                    <span className="hc-composer-menu-switch" aria-hidden="true">
+                      <span />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -430,6 +517,23 @@ export function Composer({
                 }
               }
 
+              if (
+                event.key === "Tab" &&
+                event.shiftKey &&
+                !event.metaKey &&
+                !event.ctrlKey &&
+                !event.altKey &&
+                !slashOpen &&
+                attachmentPicker.status === "closed"
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                setAttachmentPicker(closeAttachmentPicker());
+                setSlashOpen(false);
+                onPlanSelected?.();
+                return;
+              }
+
               if (slashOpen && slashCommands.length > 0) {
                 if (event.key === "ArrowDown") {
                   event.preventDefault();
@@ -461,7 +565,7 @@ export function Composer({
                 }
                 if (event.key === "Tab" || event.key === "Enter") {
                   event.preventDefault();
-                  selectAttachmentMode(selectedAttachAction?.id ?? DEFAULT_ATTACH_ACTIONS[0].id);
+                  void selectAttachmentMode(selectedAttachAction?.id ?? attachActions[0].id);
                   return;
                 }
               }
@@ -494,6 +598,20 @@ export function Composer({
             }}
           />
         </div>
+        {mode === "plan" && (
+          <div className="hc-composer-footer">
+            <button
+              type="button"
+              className="hc-composer-mode-pill"
+              title="Create a plan. Shift + Tab to toggle."
+              aria-label="Plan mode"
+              onClick={() => onPlanSelected?.()}
+            >
+              <ListChecks size={13} />
+              <span>Plan</span>
+            </button>
+          </div>
+        )}
       </div>
       <button
         className="hc-send-button"
@@ -530,16 +648,33 @@ export function Composer({
   );
 }
 
+function isImageAttachment(attachment: ComposerAttachment): boolean {
+  return attachment.type === "image" || attachment.type === "localImage";
+}
+
 function AttachmentPreview({ src }: { src: string }) {
   return <img className="hc-attachment-thumb" alt="" src={src} draggable={false} />;
+}
+
+function AttachmentStaticIcon({ attachment }: { attachment: ComposerAttachment }) {
+  const className = "hc-attachment-file-icon";
+  if (attachment.type === "mention") return <AtSign aria-hidden="true" className={className} size={14} />;
+  if (attachment.type === "skill") return <Sparkles aria-hidden="true" className={className} size={14} />;
+  return <FileText aria-hidden="true" className={className} size={14} />;
 }
 
 function resolveAttachmentPreviewSrc(attachment: ComposerAttachment): string | null {
   const src = composerAttachmentPreviewSrc(attachment);
   if (!src) return null;
-  if (attachment.type === "localImage" && isTauriRuntime()) {
+  if (attachment.type === "localImage") {
     const path = attachment.path.trim();
-    if (path && !/^(?:data|blob|https?|file):/i.test(path)) return convertFileSrc(path);
+    if (path && !/^(?:data|blob|https?|file):/i.test(path)) {
+      try {
+        return convertFileSrc(path);
+      } catch {
+        return src;
+      }
+    }
   }
   return src;
 }
@@ -556,17 +691,21 @@ function slashSearchText(value: string): string {
 
 function attachIcon(actionId: AttachActionId) {
   switch (actionId) {
+    case "filePath":
+      return <Paperclip size={15} />;
+    case "plan":
+      return <ListChecks size={15} />;
+    case "plugins":
+      return <PlugZap size={15} />;
     case "mention":
       return <AtSign size={15} />;
     case "localImage":
-      return <FileImage size={15} />;
+      return <Paperclip size={15} />;
     case "imageUrl":
-      return <Image size={15} />;
+      return <Paperclip size={15} />;
     case "skill":
       return <Sparkles size={15} />;
     case "plainText":
-      return <FileText size={15} />;
-    case "filePath":
       return <FileText size={15} />;
   }
 }
@@ -579,10 +718,37 @@ function requestAttachmentInputFocus(element: HTMLTextAreaElement | HTMLInputEle
   window.requestAnimationFrame(() => element?.focus());
 }
 
-function hasTransferFiles(dataTransfer: DataTransfer | null): boolean {
+function attachmentBrowseError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === "string" ? error : "Unable to attach selected files";
+}
+
+function hasAttachmentTransfer(dataTransfer: DataTransfer | null): boolean {
   if (!dataTransfer) return false;
   if (dataTransfer.files.length > 0) return true;
+  const types = Array.from(dataTransfer.types);
+  if (types.some((type) => type === "Files" || type === "public.file-url" || type === "text/uri-list")) return true;
   return Array.from(dataTransfer.items).some((item) => item.kind === "file");
+}
+
+function droppedAttachmentPaths(dataTransfer: DataTransfer): string[] {
+  const values = [
+    dataTransfer.getData("text/uri-list"),
+    dataTransfer.getData("text/plain"),
+  ];
+  const paths: string[] = [];
+  for (const value of values) {
+    for (const line of value.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      if (isLikelyDroppedFilePath(trimmed)) paths.push(trimmed);
+    }
+  }
+  return Array.from(new Set(paths));
+}
+
+function isLikelyDroppedFilePath(value: string): boolean {
+  return /^file:/i.test(value) || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 }
 
 function isDomDropInsideElement(
@@ -607,15 +773,6 @@ function readImageFileAttachment(file: File): Promise<ComposerAttachment | null>
     };
     reader.readAsDataURL(file);
   });
-}
-
-function isTauriRuntime(): boolean {
-  if (typeof window === "undefined") return false;
-  const runtimeWindow = window as Window & {
-    __TAURI_INTERNALS__?: unknown;
-    __TAURI__?: unknown;
-  };
-  return Boolean(runtimeWindow.__TAURI_INTERNALS__ || runtimeWindow.__TAURI__);
 }
 
 function isPointInsideRect(x: number, y: number, rect: DOMRect): boolean {

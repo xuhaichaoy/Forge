@@ -231,9 +231,24 @@ function keepsOnlyDesktopActiveRowsExpandedByDefault(): void {
 
 function keepsWorkedForRowsCompact(): void {
   assertEqual(
-    isToolActivityExpandable(toolActivity("worked-for", false, 1)),
+    initialToolActivityExpanded(toolActivity("worked-for", false, 2, "commandExecution", true)),
+    true,
+    "worked-for should start expanded before final assistant output",
+  );
+  assertEqual(
+    initialToolActivityExpanded(toolActivity("worked-for", false, 2, "commandExecution", false)),
     false,
-    "worked-for rows should stay compact like Codex Desktop",
+    "worked-for should start collapsed after final assistant output",
+  );
+  assertEqual(
+    isToolActivityExpandable(toolActivity("worked-for", false, 1, "worked-for")),
+    false,
+    "standalone worked-for rows should stay compact like Codex Desktop",
+  );
+  assertEqual(
+    isToolActivityExpandable(toolActivity("worked-for", false, 2, "commandExecution")),
+    true,
+    "worked-for headers should expand when they summarize tool details",
   );
   assertEqual(
     isToolActivityExpandable(toolActivity("collapsed-tool-activity", false, 1)),
@@ -258,16 +273,19 @@ function toolActivity(
     | "multi-agent-group",
   inProgress: boolean,
   itemCount = 0,
+  itemType = "commandExecution",
+  defaultExpanded?: boolean,
 ): Parameters<typeof initialToolActivityExpanded>[0] {
   return {
     kind: "toolActivity",
     key: `activity:${groupType}`,
-    items: Array.from({ length: itemCount }, (_, index) => ({ id: `item-${index}`, type: "commandExecution" })),
+    items: Array.from({ length: itemCount }, (_, index) => ({ id: `item-${index}`, type: itemType })),
     summary: {
       groupType,
       icon: groupType === "reasoning" ? "reasoning" : "activity",
       label: "Activity",
       activeDetail: null,
+      ...(typeof defaultExpanded === "boolean" ? { defaultExpanded } : {}),
       details: [],
       inProgress,
       totalDurationMs: null,

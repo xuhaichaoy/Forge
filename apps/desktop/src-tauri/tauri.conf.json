@@ -23,6 +23,10 @@
       }
     ],
     "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/**", "$TEMP/**", "/tmp/**", "/private/tmp/**", "/Volumes/**"]
+      },
       "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob: file: asset: http://asset.localhost https: http:; style-src 'self' 'unsafe-inline';"
     }
   },

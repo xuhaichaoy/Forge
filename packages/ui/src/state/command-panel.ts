@@ -21,6 +21,10 @@ export type CommandPanelEntryKind =
   | "status"
   | "diff";
 
+export type CommandPanelEntryAction =
+  | { type: "attachMention"; name: string; path: string }
+  | { type: "attachSkill"; name: string; path: string };
+
 export type CommandPanelStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
 export interface CommandPanelEntry {
@@ -31,6 +35,7 @@ export interface CommandPanelEntry {
   meta?: string;
   details?: string[];
   disabled?: boolean;
+  action?: CommandPanelEntryAction;
 }
 
 export interface CommandPanelState {
@@ -152,6 +157,7 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
       path && `Path: ${path}`,
       cwd && `CWD: ${cwd}`,
     ]),
+    action: path ? { type: "attachSkill", name, path } : undefined,
   };
 }
 
