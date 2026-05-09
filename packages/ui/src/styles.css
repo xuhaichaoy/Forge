@@ -514,13 +514,23 @@ select {
   padding: 10px 16px;
 }
 
+.hc-topbar-main {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .hc-top-title {
+  max-width: min(42ch, 100%);
+  overflow: hidden;
   font-size: 16px;
   font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hc-topbar-actions {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
 }
@@ -2973,6 +2983,28 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-composer-menu.attach {
   max-width: 430px;
+}
+
+.hc-composer-menu.mention {
+  max-width: 430px;
+}
+
+.hc-composer-menu-section-label {
+  color: #6f716b;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 16px;
+  padding: 3px 8px 5px;
+}
+
+.hc-composer-menu-empty {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  color: #6f716b;
+  font-size: 12px;
+  padding: 7px 8px;
 }
 
 .hc-composer-menu-row {

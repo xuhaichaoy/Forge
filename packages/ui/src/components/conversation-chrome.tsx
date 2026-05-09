@@ -2,6 +2,8 @@ import { Activity, Archive, Copy, GitFork, MoreHorizontal, Pencil } from "lucide
 import { useState } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
 
+const TOPBAR_TITLE_MAX_CHARS = 42;
+
 export interface ConversationChromeProps {
   title: string;
   codexHome?: string;
@@ -39,6 +41,7 @@ export function ConversationChrome({
   const hasThread = Boolean(activeThread);
   const currentWorkspace = activeThread?.cwd?.trim() || workspace.trim() || "";
   const meta = currentWorkspace || codexHome || "Sidecar not started";
+  const displayTitle = truncateTopbarTitle(title);
 
   function runThreadAction(action?: (thread: Thread) => void | Promise<void>) {
     if (!activeThread || !action) return;
@@ -55,8 +58,8 @@ export function ConversationChrome({
   return (
     <>
       <header className="hc-topbar">
-        <div>
-          <div className="hc-top-title">{title}</div>
+        <div className="hc-topbar-main">
+          <div className="hc-top-title" title={title}>{displayTitle}</div>
           <div className="hc-top-meta" title={meta}>{meta}</div>
         </div>
         <div className="hc-topbar-actions">
@@ -126,4 +129,11 @@ export function ConversationChrome({
       )}
     </>
   );
+}
+
+function truncateTopbarTitle(value: string, maxChars = TOPBAR_TITLE_MAX_CHARS): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  const chars = Array.from(normalized);
+  if (chars.length <= maxChars) return normalized;
+  return `${chars.slice(0, maxChars).join("")}...`;
 }
