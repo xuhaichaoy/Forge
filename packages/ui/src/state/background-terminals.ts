@@ -1,5 +1,5 @@
 import type { CommandPanelEntry } from "./command-panel";
-import type { ThreadItem } from "./render-groups";
+import type { RailEntry, ThreadItem } from "./render-groups";
 import {
   commandOutputText,
   commandText,
@@ -10,7 +10,19 @@ import { stringField } from "../lib/format";
 const MAX_RECENT_OUTPUT_LINES = 3;
 
 export function projectBackgroundTerminalEntries(items: ThreadItem[]): CommandPanelEntry[] {
+  return collectBackgroundTerminalEntries(items).map((entry) => entry.commandPanelEntry);
+}
+
+export function projectBackgroundTerminalRailEntries(items: ThreadItem[]): RailEntry[] {
+  return collectBackgroundTerminalEntries(items).map((entry) => entry.railEntry);
+}
+
+function collectBackgroundTerminalEntries(items: ThreadItem[]): Array<{
+  commandPanelEntry: CommandPanelEntry;
+  railEntry: RailEntry;
+}> {
   const entries = new Map<string, CommandPanelEntry>();
+  const railEntries = new Map<string, RailEntry>();
   for (const item of items) {
     if (!isBackgroundTerminalItem(item)) continue;
     const record = item as Record<string, unknown>;
@@ -18,16 +30,28 @@ export function projectBackgroundTerminalEntries(items: ThreadItem[]): CommandPa
     const key = processId || item.id;
     if (entries.has(key)) continue;
     const command = commandText(item) || "Background terminal";
+    const cwd = stringField(record, "cwd") || undefined;
+    const details = backgroundTerminalDetails(item, processId);
     entries.set(key, {
       id: `background-terminal:${key}`,
       title: command,
       kind: "status",
       status: "running",
-      meta: stringField(record, "cwd") || undefined,
-      details: backgroundTerminalDetails(item, processId),
+      meta: cwd,
+      details,
+    });
+    railEntries.set(key, {
+      id: `background-terminal:${key}`,
+      title: command,
+      status: "running",
+      meta: cwd,
+      details,
     });
   }
-  return Array.from(entries.values());
+  return Array.from(entries.entries()).map(([key, commandPanelEntry]) => ({
+    commandPanelEntry,
+    railEntry: railEntries.get(key) as RailEntry,
+  }));
 }
 
 function isBackgroundTerminalItem(item: ThreadItem): boolean {

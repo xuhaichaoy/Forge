@@ -39,6 +39,7 @@ import {
 } from "../state/composer-workflow";
 
 export type ComposerBrowseKind = "file" | "image";
+export type ComposerLayoutMode = "multiline" | "auto-single-line";
 
 type MentionPickerStatus = "closed" | "idle" | "loading" | "ready" | "error";
 
@@ -64,6 +65,7 @@ export interface ComposerProps {
   input: string;
   attachments: ComposerAttachment[];
   mode?: ComposerMode;
+  layoutMode?: ComposerLayoutMode;
   placeholder?: string;
   onInputChange: (value: string) => void;
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
@@ -84,6 +86,7 @@ export function Composer({
   input,
   attachments,
   mode = "default",
+  layoutMode = "multiline",
   placeholder: placeholderText,
   onInputChange,
   onAttachmentsChange,
@@ -421,7 +424,8 @@ export function Composer({
   )];
   const inputAttachAction = attachActions.find((action) => action.id === attachmentPicker.inputMode) ?? null;
   const isTextAttachmentInput = attachmentPicker.inputMode === "plainText";
-  const isSingleLineLayout = !pendingRequestContent
+  const isSingleLineLayout = layoutMode === "auto-single-line"
+    && !pendingRequestContent
     && mode === "default"
     && attachments.length === 0
     && !input.includes("\n")

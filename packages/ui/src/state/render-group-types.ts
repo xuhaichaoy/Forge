@@ -104,7 +104,8 @@ export type RailEntryAction =
   | { kind: "file"; reference: RailEntryReference }
   | { kind: "url"; url: string }
   | { kind: "source"; itemId: string }
-  | { kind: "diff" };
+  | { kind: "diff" }
+  | { kind: "thread"; threadId: string; displayName?: string | null; model?: string | null; role?: string | null };
 
 export type UserMessageContentPart =
   | {
@@ -137,6 +138,8 @@ export interface ConversationProjection {
   units: ConversationRenderUnit[];
   progress: RailEntry[];
   artifacts: RailEntry[];
+  backgroundAgents: RailEntry[];
+  backgroundTerminals: RailEntry[];
   sources: RailEntry[];
 }
 

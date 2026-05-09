@@ -1,4 +1,7 @@
-import { projectBackgroundTerminalEntries } from "../src/state/background-terminals";
+import {
+  projectBackgroundTerminalEntries,
+  projectBackgroundTerminalRailEntries,
+} from "../src/state/background-terminals";
 import type { AccumulatedThreadItem as ThreadItem } from "../src/state/render-groups";
 
 export default function runBackgroundTerminalTests(): void {
@@ -31,6 +34,29 @@ function projectsRunningUnifiedExecItemsAsBackgroundTerminals(): void {
       details: ["Process: proc-1", "Output: ready", "Output: listening", "Output: compiled"],
     }],
     "running unified exec command should become a /ps panel entry",
+  );
+
+  assertDeepEqual(
+    projectBackgroundTerminalRailEntries([
+      {
+        type: "commandExecution",
+        id: "cmd-1",
+        command: "/bin/zsh -lc npm run dev",
+        cwd: "/workspace",
+        processId: "proc-1",
+        source: "unifiedExecStartup",
+        status: "inProgress",
+        aggregatedOutput: "ready\nlistening\ncompiled",
+      } as ThreadItem,
+    ]),
+    [{
+      id: "background-terminal:proc-1",
+      title: "/bin/zsh -lc npm run dev",
+      status: "running",
+      meta: "/workspace",
+      details: ["Process: proc-1", "Output: ready", "Output: listening", "Output: compiled"],
+    }],
+    "running unified exec command should become a right rail terminal entry",
   );
 }
 

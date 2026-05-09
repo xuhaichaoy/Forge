@@ -5,6 +5,7 @@ import {
   rightRailContentShiftPx,
   rightRailDisplayMode,
   rightRailReservedInlineEndPx,
+  rightRailShouldRender,
 } from "../src/state/right-rail";
 
 export default function runRightRailTests(): void {
@@ -16,6 +17,7 @@ export default function runRightRailTests(): void {
   preservesSectionCountsAndEntryMeta();
   projectsBranchDiffAction();
   computesDesktopRightRailDisplayModeAndContentShift();
+  hidesRightRailBelowThirteenSeventyViewportEquivalent();
 }
 
 function keepsCodexDesktopSectionOrder(): void {
@@ -25,12 +27,14 @@ function keepsCodexDesktopSectionOrder(): void {
       entries: [railEntry("branch-1", "Branch", "completed", "codex/right-rail")],
     },
     artifacts: [railEntry("artifact-1", "right-rail.test.ts", "modified", "packages/ui/test/right-rail.test.ts")],
+    backgroundAgents: [railEntry("agent-1", "Explorer (explorer)", "active", "Uses gpt-5.4")],
+    backgroundTerminals: [railEntry("terminal-1", "npm run dev", "running", "/workspace/project")],
     sources: [railEntry("source-1", "github:list_prs", "completed", "MCP tool")],
   });
 
   assertDeepEqual(
     sections.map((section) => section.title),
-    ["Progress", "Branch details", "Artifacts", "Sources"],
+    ["Progress", "Branch details", "Artifacts", "Background agents", "Background terminals", "Sources"],
     "right rail section order should match Codex Desktop",
   );
 }
@@ -191,6 +195,11 @@ function computesDesktopRightRailDisplayModeAndContentShift(): void {
   assertEqual(rightRailReservedInlineEndPx(1_200, true, false), 0, "unpinned right rail should not reserve right rail space");
 }
 
+function hidesRightRailBelowThirteenSeventyViewportEquivalent(): void {
+  assertEqual(rightRailShouldRender(1_069), false, "right rail should not render below the 1370px app width breakpoint");
+  assertEqual(rightRailShouldRender(1_070), true, "right rail should render once the main content width reaches the 1370px breakpoint");
+}
+
 function railEntry(id: string, title: string, status: string, meta: string) {
   return { id, title, status, meta };
 }
@@ -203,7 +212,7 @@ function makeEntries(count: number, prefix: string) {
 
 function sectionById(
   sections: ReturnType<typeof projectRightRailSections>,
-  id: "progress" | "branchDetails" | "artifacts" | "sources",
+  id: "progress" | "branchDetails" | "artifacts" | "backgroundAgents" | "backgroundTerminals" | "sources",
 ) {
   const section = sections.find((candidate) => candidate.id === id);
   assertNotNull(section, `expected ${id} section`);

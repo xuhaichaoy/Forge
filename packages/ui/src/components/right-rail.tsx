@@ -1,4 +1,5 @@
 import {
+  Bot,
   CheckCircle2,
   ChevronRight,
   Circle,
@@ -9,6 +10,8 @@ import {
   ListChecks,
   LoaderCircle,
   Network,
+  Square,
+  Terminal,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -18,6 +21,7 @@ import { convertLocalFileSrc } from "../lib/tauri-host";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import type { BranchDetailsViewModel } from "../state/branch-details";
 import type { FileReferenceSelection } from "../state/file-references";
+import type { OpenThreadHandler } from "./open-thread";
 import type { RailEntry, RailEntryAction, RailEntryReference } from "../state/render-groups";
 import {
   clipRailEntries,
@@ -38,6 +42,9 @@ export interface RightRailProps {
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
+  onOpenThreadId?: OpenThreadHandler;
+  onCleanBackgroundTerminals?: () => void;
+  backgroundTerminalCleanupPending?: boolean;
 }
 
 export interface RailSectionProps {
@@ -46,6 +53,7 @@ export interface RailSectionProps {
   id: RightRailSectionViewModel["id"];
   title: string;
   children: ReactNode;
+  headerAction?: ReactNode;
 }
 
 export interface RailListProps {
@@ -66,18 +74,23 @@ export function RightRail({
   onOpenFileReference,
   onOpenUrl,
   onOpenDiff,
+  onOpenThreadId,
+  onCleanBackgroundTerminals,
+  backgroundTerminalCleanupPending = false,
 }: RightRailProps) {
   const canOpenEntry = (entry: RailEntry) =>
     isRailEntryActionAvailable(entry, {
       onOpenFileReference,
       onOpenUrl,
       onOpenDiff,
+      onOpenThreadId,
     });
   const openEntry = (entry: RailEntry) => {
     openRailEntry(entry, {
       onOpenFileReference,
       onOpenUrl,
       onOpenDiff,
+      onOpenThreadId,
     });
   };
   const canOpenArtifactEntry = (entry: RailEntry) =>
@@ -112,6 +125,18 @@ export function RightRail({
         <RailSection
           key={section.id}
           count={section.count}
+          headerAction={section.id === "backgroundTerminals" && onCleanBackgroundTerminals ? (
+            <button
+              aria-label="Stop background terminals"
+              className="hc-rail-section-action"
+              disabled={backgroundTerminalCleanupPending}
+              onClick={onCleanBackgroundTerminals}
+              title="Stop background terminals"
+              type="button"
+            >
+              <Square size={12} />
+            </button>
+          ) : null}
           icon={sectionIcon(section.id)}
           id={section.id}
           title={section.title}
@@ -144,6 +169,10 @@ function sectionIcon(id: RightRailSectionViewModel["id"]): ReactNode {
       return <GitBranch size={15} />;
     case "artifacts":
       return <FileText size={15} />;
+    case "backgroundAgents":
+      return <Bot size={15} />;
+    case "backgroundTerminals":
+      return <Terminal size={15} />;
     case "sources":
       return <Network size={15} />;
   }
@@ -194,22 +223,25 @@ function BranchDetailsCard({
   );
 }
 
-export function RailSection({ count, icon, id, title, children }: RailSectionProps) {
+export function RailSection({ count, icon, id, title, children, headerAction = null }: RailSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const contentId = `hc-rail-section-content-${id}`;
   return (
     <section className="hc-rail-section">
-      <button
-        aria-controls={contentId}
-        aria-expanded={expanded}
-        className="hc-rail-section-header"
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
-        <span className="hc-rail-section-title">{icon}{title}</span>
-        {!expanded && count > 0 && <span className="hc-rail-section-count">{count}</span>}
-      </button>
+      <div className="hc-rail-section-header">
+        <button
+          aria-controls={contentId}
+          aria-expanded={expanded}
+          className="hc-rail-section-toggle"
+          type="button"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
+          <span className="hc-rail-section-title">{icon}{title}</span>
+          {!expanded && count > 0 && <span className="hc-rail-section-count">{count}</span>}
+        </button>
+        {headerAction}
+      </div>
       {expanded && (
         <div className="hc-rail-section-content" id={contentId}>
           {children}
@@ -323,6 +355,12 @@ function RailEntryContent({
 function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "progress") return progressEntryIcon(entry.status);
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
+  if (sectionId === "backgroundAgents") {
+    return entry.status === "active"
+      ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
+      : <Bot size={14} />;
+  }
+  if (sectionId === "backgroundTerminals") return <Terminal size={14} />;
   if (sectionId === "sources") return <Network size={14} />;
   const imageSrc = railEntryImageSrc(entry);
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
@@ -354,6 +392,7 @@ interface RailEntryOpenHandlers {
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
+  onOpenThreadId?: OpenThreadHandler;
 }
 
 function isRailEntryActionAvailable(entry: RailEntry, handlers: RailEntryOpenHandlers): boolean {
@@ -368,6 +407,8 @@ function isRailEntryActionAvailable(entry: RailEntry, handlers: RailEntryOpenHan
       return false;
     case "diff":
       return Boolean(handlers.onOpenDiff);
+    case "thread":
+      return Boolean(handlers.onOpenThreadId);
   }
 }
 
@@ -385,6 +426,13 @@ function openRailEntry(entry: RailEntry, handlers: RailEntryOpenHandlers): void 
       return;
     case "diff":
       handlers.onOpenDiff?.();
+      return;
+    case "thread":
+      handlers.onOpenThreadId?.(action.threadId, {
+        displayName: action.displayName,
+        model: action.model,
+        role: action.role,
+      });
       return;
   }
 }
