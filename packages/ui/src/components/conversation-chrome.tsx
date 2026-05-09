@@ -60,12 +60,12 @@ export function ConversationChrome({
       <header className="hc-topbar">
         <div className="hc-topbar-main">
           <div className="hc-top-title" title={title}>{displayTitle}</div>
-          <div className="hc-top-meta" title={meta}>{meta}</div>
+          {!hasThread && <div className="hc-top-meta" title={meta}>{meta}</div>}
         </div>
         <div className="hc-topbar-actions">
-          <div className="hc-status-pill" data-running={connected}>
+          <div className="hc-status-pill" data-running={connected} title={connected && pid ? `running:${pid}` : undefined}>
             <Activity size={14} />
-            {connected ? `running${pid ? `:${pid}` : ""}` : "offline"}
+            {connected ? "running" : "offline"}
           </div>
           <div className="hc-thread-header-actions">
             <button

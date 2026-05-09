@@ -1,4 +1,6 @@
 import type { ConversationProjection, ConversationProjectionOptions, ConversationRenderUnit, ItemRecord, RailEntry, ThreadItem, ToolActivityGroupType } from "./render-group-types";
+import { projectBackgroundAgentRailEntries } from "./background-agents";
+import { projectBackgroundTerminalRailEntries } from "./background-terminals";
 import { eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
 import { collectRailEntries, progressEntriesFromPlan } from "./rail-projection";
 import {
@@ -184,6 +186,8 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     units: withStreamingAssistantState(units, options.isThreadRunning === true),
     progress: coalesceProgress(explicitProgress ?? progress),
     artifacts: Array.from(artifacts.values()),
+    backgroundAgents: projectBackgroundAgentRailEntries(items),
+    backgroundTerminals: projectBackgroundTerminalRailEntries(items),
     sources: Array.from(sources.values()),
   };
 }

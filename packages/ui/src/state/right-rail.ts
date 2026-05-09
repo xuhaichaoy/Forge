@@ -4,12 +4,21 @@ import type { RailEntry } from "./render-groups";
 export const RAIL_LIST_PREVIEW_LIMIT = 6;
 export const DESKTOP_RIGHT_RAIL_WIDTH_PX = 300;
 export const DESKTOP_RIGHT_RAIL_GAP_PX = 16;
+export const DESKTOP_LEFT_PANEL_WIDTH_PX = 300;
+export const RIGHT_RAIL_MIN_APP_WIDTH_PX = 1370;
+export const RIGHT_RAIL_MIN_MAIN_WIDTH_PX = RIGHT_RAIL_MIN_APP_WIDTH_PX - DESKTOP_LEFT_PANEL_WIDTH_PX;
 
 const DESKTOP_THREAD_LAYOUT_WIDTH_PX = 736;
 const DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX = 180;
 const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 360;
 
-export type RightRailSectionId = "progress" | "branchDetails" | "artifacts" | "sources";
+export type RightRailSectionId =
+  | "progress"
+  | "branchDetails"
+  | "artifacts"
+  | "backgroundAgents"
+  | "backgroundTerminals"
+  | "sources";
 export type RightRailDisplayMode = "overlay" | "shift" | "gutter";
 
 export interface RightRailSection {
@@ -27,6 +36,8 @@ export interface RightRailProjectionInput {
   progress: RailEntry[];
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
   artifacts: RailEntry[];
+  backgroundAgents?: RailEntry[];
+  backgroundTerminals?: RailEntry[];
   sources: RailEntry[];
 }
 
@@ -46,6 +57,10 @@ export function rightRailDisplayMode(contentWidthPx: number): RightRailDisplayMo
   if (sideSpace < DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX) return "overlay";
   if (sideSpace < DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX) return "shift";
   return "gutter";
+}
+
+export function rightRailShouldRender(contentWidthPx: number): boolean {
+  return contentWidthPx >= RIGHT_RAIL_MIN_MAIN_WIDTH_PX;
 }
 
 export function rightRailContentShiftPx(
@@ -96,6 +111,14 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
 
   if (input.artifacts.length > 0) {
     sections.push(projectEntrySection("artifacts", "Artifacts", input.artifacts, true));
+  }
+
+  if (input.backgroundAgents && input.backgroundAgents.length > 0) {
+    sections.push(projectEntrySection("backgroundAgents", "Background agents", input.backgroundAgents, false));
+  }
+
+  if (input.backgroundTerminals && input.backgroundTerminals.length > 0) {
+    sections.push(projectEntrySection("backgroundTerminals", "Background terminals", input.backgroundTerminals, false));
   }
 
   if (input.sources.length > 0) {

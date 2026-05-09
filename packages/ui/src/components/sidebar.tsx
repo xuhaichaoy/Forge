@@ -3,6 +3,7 @@ import {
   Bot,
   ChevronRight,
   CircleStop,
+  Dot,
   GitFork,
   Loader2,
   MessageSquarePlus,
@@ -68,20 +69,25 @@ export function Sidebar({
   return (
     <aside className="hc-sidebar">
       <div className="hc-brand">
-        <div className="hc-brand-mark"><Bot size={18} /></div>
-        <div>
-          <div className="hc-brand-title">HiCodex</div>
-          <div className="hc-brand-subtitle">Codex core desktop</div>
+        <div className="hc-brand-main">
+          <div className="hc-brand-mark"><Bot size={16} /></div>
+          <div>
+            <div className="hc-brand-title">HiCodex</div>
+            <div className="hc-brand-subtitle">{connected ? "Local Codex" : "Offline"}</div>
+          </div>
         </div>
+        <button className="hc-icon-button hc-sidebar-settings-button" onClick={onOpenSettings} title="Settings" type="button">
+          <Settings size={15} />
+        </button>
       </div>
 
       <div className="hc-sidebar-actions">
         <button className="hc-button hc-button-primary" onClick={() => void (connected ? onCreateThread() : onConnect())} disabled={connecting}>
           {connecting ? <Loader2 className="hc-spin" size={16} /> : <MessageSquarePlus size={16} />}
-          {connected ? "New thread" : "Connect"}
+          {connected ? "New chat" : "Connect"}
         </button>
         {connected && (
-          <button className="hc-icon-button" onClick={() => void onRefreshThreads()} title="Refresh threads">
+          <button className="hc-icon-button" onClick={() => void onRefreshThreads()} title="Refresh chats" type="button">
             <RefreshCcw size={16} />
           </button>
         )}
@@ -94,6 +100,12 @@ export function Sidebar({
         {threads.map((thread) => {
           const awaiting = pendingRequestAwaitingByThread[thread.id];
           const isRunning = thread.id === activeThreadId && activeThreadRunning;
+          const status = threadSidebarStatusLabel({
+            awaiting,
+            fallback: getThreadStatusLabel((thread as { status?: unknown }).status),
+            isRunning,
+          });
+          const projectLabel = threadProjectLabel(thread);
           return (
             <div
               key={thread.id}
@@ -112,11 +124,11 @@ export function Sidebar({
                 <ChevronRight className="hc-thread-chevron" size={14} />
               </div>
               <div className="hc-thread-meta">
-                <span>{threadSidebarStatusLabel({
-                  awaiting,
-                  fallback: getThreadStatusLabel((thread as { status?: unknown }).status),
-                  isRunning,
-                })}</span>
+                <span className="hc-thread-project">{projectLabel}</span>
+                <span className="hc-thread-status">
+                  <Dot className="hc-thread-status-dot" data-status={threadStatusTone(status)} size={16} />
+                  {status}
+                </span>
               </div>
             </button>
             <div className="hc-thread-actions" aria-label="Thread actions">
@@ -177,9 +189,6 @@ export function Sidebar({
       </div>
 
       <div className="hc-sidebar-footer">
-        <button className="hc-link-button" onClick={onOpenSettings}>
-          <Settings size={15} /> Settings
-        </button>
         {connected && (
           <button className="hc-link-button danger" onClick={() => void onDisconnect()}>
             <CircleStop size={15} /> Stop sidecar
@@ -205,4 +214,17 @@ function threadSidebarStatusLabel({
   if (awaiting?.awaitingRequest) return "awaiting request";
   if (isRunning) return "running";
   return fallback;
+}
+
+function threadStatusTone(status: string): "attention" | "muted" | "running" {
+  if (status === "running") return "running";
+  if (status.startsWith("awaiting")) return "attention";
+  return "muted";
+}
+
+function threadProjectLabel(thread: Thread): string {
+  const cwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
+  if (!cwd || cwd === "~" || cwd === "/") return "Local";
+  const normalized = cwd.replace(/[\\/]+$/, "");
+  return normalized.split(/[\\/]+/).filter(Boolean).pop() || cwd;
 }

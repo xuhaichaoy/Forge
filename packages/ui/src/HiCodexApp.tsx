@@ -1,9 +1,9 @@
-import { Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
+import { ComposerExternalFooter } from "./components/composer-external-footer";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
@@ -88,6 +88,7 @@ import {
   projectRightRailSections,
   rightRailDisplayMode,
   rightRailReservedInlineEndPx,
+  rightRailShouldRender,
 } from "./state/right-rail";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import {
@@ -133,6 +134,7 @@ export function HiCodexApp() {
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
   const [backgroundAgentPanel, setBackgroundAgentPanel] = useState<BackgroundAgentPanelState | null>(null);
+  const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
   const threadSelectionRequestId = useRef(0);
   const backgroundAgentRequestId = useRef(0);
@@ -237,13 +239,16 @@ export function HiCodexApp() {
       progress: conversation.progress,
       branchDetails,
       artifacts: conversation.artifacts,
+      backgroundAgents: conversation.backgroundAgents,
+      backgroundTerminals: conversation.backgroundTerminals,
       sources: conversation.sources,
     }),
     [branchDetails, conversation],
   );
-  const showRightRail = rightRailSections.length > 0
+  const hasRightRailContent = rightRailSections.length > 0
     || fileReference !== null
     || artifactPreview !== null;
+  const showRightRail = hasRightRailContent && rightRailShouldRender(mainWidth);
   const rightRailMode = rightRailDisplayMode(mainWidth);
   const threadInlineEndInset = rightRailReservedInlineEndPx(mainWidth, showRightRail);
   const composerSubmitState = useMemo(() => projectComposerSubmitState({
@@ -680,6 +685,21 @@ export function HiCodexApp() {
         : [],
     });
   }, [activeDiff, activeThread, openCommandPanel]);
+
+  const cleanBackgroundTerminals = useCallback(async () => {
+    const threadId = state.activeThreadId;
+    if (!threadId || backgroundTerminalCleanupPending) return;
+    setBackgroundTerminalCleanupPending(true);
+    try {
+      if (!(await ensureConnected())) return;
+      await client.request("thread/backgroundTerminals/clean", { threadId }, 120_000);
+      dispatch({ type: "log", text: "Background terminal cleanup requested.", level: "info" });
+    } catch (error) {
+      dispatch({ type: "log", text: formatError(error), level: "error" });
+    } finally {
+      setBackgroundTerminalCleanupPending(false);
+    }
+  }, [backgroundTerminalCleanupPending, client, ensureConnected, state.activeThreadId]);
 
   const rememberLatestCollaborationMode = useCallback((
     threadId: string,
@@ -1119,6 +1139,12 @@ export function HiCodexApp() {
                 onInterrupt={() => void interruptActiveTurn()}
                 onSlashCommand={executeSlashCommand}
               />
+              <ComposerExternalFooter
+                branch={threadGitBranch(activeThread)}
+                cwd={activeThread?.cwd || workspace}
+                model={state.threadContextDefaults?.model}
+                reasoningEffort={state.threadContextDefaults?.reasoningEffort}
+              />
             </div>
           )}
         >
@@ -1131,13 +1157,6 @@ export function HiCodexApp() {
               onForkTurn={forkActiveThreadFromTurn}
               onOpenFileReference={previewConversationFileReference}
               onOpenThreadId={openBackgroundAgentThread}
-              emptyState={(
-                <div className="hc-welcome">
-                  <Terminal size={28} />
-                  <h1>Ready for Codex app-server</h1>
-                  <p>Start a thread and send a prompt. Runtime facts will come from app-server ThreadItems.</p>
-                </div>
-              )}
             />
           </section>
         </ThreadScrollLayout>
@@ -1171,6 +1190,11 @@ export function HiCodexApp() {
             onOpenFileReference={previewRailFileReference}
             onOpenUrl={openRailUrl}
             onOpenDiff={openActiveDiffPanel}
+            onOpenThreadId={openBackgroundAgentThread}
+            onCleanBackgroundTerminals={conversation.backgroundTerminals.length > 0
+              ? () => void cleanBackgroundTerminals()
+              : undefined}
+            backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
           />
         )}
       </main>
@@ -1334,6 +1358,13 @@ function stringRecordValue(record: Record<string, unknown>, key: string): string
 function basename(path: string): string {
   const normalized = path.replace(/\/+$/, "");
   return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "file";
+}
+
+function threadGitBranch(thread: Thread | null): string | null {
+  const gitInfo = thread?.gitInfo;
+  if (!gitInfo || typeof gitInfo !== "object") return null;
+  const branch = (gitInfo as Record<string, unknown>).branch;
+  return typeof branch === "string" && branch.trim() ? branch.trim() : null;
 }
 
 function slashCommandEntries(mode: ComposerMode): CommandPanelEntry[] {

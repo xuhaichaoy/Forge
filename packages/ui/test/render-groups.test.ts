@@ -1611,6 +1611,7 @@ function returnsEmptyProjectionForEmptyItems(): void {
   assertEqual(projection.units.length, 0, "empty items should produce no render units");
   assertEqual(projection.progress.length, 0, "empty items should produce no progress entries");
   assertEqual(projection.artifacts.length, 0, "empty items should produce no artifacts");
+  assertEqual(projection.backgroundAgents.length, 0, "empty items should produce no background agents");
   assertEqual(projection.sources.length, 0, "empty items should produce no sources");
 }
 
