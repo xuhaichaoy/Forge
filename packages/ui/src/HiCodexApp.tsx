@@ -55,6 +55,7 @@ import {
   projectComposerSubmitState,
   slashCommandsForComposerMode,
   type ComposerAttachment,
+  type ComposerMentionOption,
   type ComposerMode,
   type SlashCommand,
   type SlashCommandAction,
@@ -874,6 +875,18 @@ export function HiCodexApp() {
     return attachmentsWithDataImagePreviews(visibleAttachments);
   }, []);
 
+  const searchComposerMentions = useCallback(async (query: string): Promise<ComposerMentionOption[]> => {
+    const cwd = workspace.trim();
+    if (!cwd || !query.trim()) return [];
+    if (!(await ensureConnected())) return [];
+    const result = await client.request<{ files?: Array<Record<string, unknown>> }>(
+      "fuzzyFileSearch",
+      { query, roots: [cwd], cancellationToken: null },
+      120_000,
+    );
+    return mentionOptionsFromFuzzyFiles(result.files ?? []);
+  }, [client, ensureConnected, workspace]);
+
   const selectComposerPlan = useCallback(() => {
     if (composerMode === "plan") {
       setActiveComposerMode("default");
@@ -1091,6 +1104,7 @@ export function HiCodexApp() {
                 supportsImageInput={activeModelSupportsImageInput}
                 onAttachmentError={(message) => dispatch({ type: "log", text: message, level: "warn" })}
                 onBrowseFiles={browseComposerFiles}
+                onMentionSearch={searchComposerMentions}
                 onPlanSelected={selectComposerPlan}
                 onOpenPlugins={() => void runSlashRequest("listPlugins")}
                 pendingRequestContent={activePendingRequests.length > 0 ? (
@@ -1284,6 +1298,42 @@ function localSettingsEntries(
 
 function stringSetting(value: unknown): string {
   return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function mentionOptionsFromFuzzyFiles(files: Array<Record<string, unknown>>): ComposerMentionOption[] {
+  const options: ComposerMentionOption[] = [];
+  const seen = new Set<string>();
+  for (const file of files) {
+    const path = stringRecordValue(file, "path")
+      || stringRecordValue(file, "fsPath")
+      || stringRecordValue(file, "file_path");
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    const name = stringRecordValue(file, "file_name")
+      || stringRecordValue(file, "label")
+      || basename(path);
+    const detail = stringRecordValue(file, "relativePathWithoutFileName")
+      || stringRecordValue(file, "relative_path_without_file_name")
+      || path;
+    const scoreValue = file.score;
+    options.push({
+      name,
+      path,
+      detail,
+      ...(typeof scoreValue === "number" ? { score: scoreValue } : {}),
+    });
+  }
+  return options.slice(0, 25);
+}
+
+function stringRecordValue(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function basename(path: string): string {
+  const normalized = path.replace(/\/+$/, "");
+  return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "file";
 }
 
 function slashCommandEntries(mode: ComposerMode): CommandPanelEntry[] {

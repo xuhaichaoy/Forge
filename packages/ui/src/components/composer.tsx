@@ -15,10 +15,12 @@ import {
   closeAttachmentPicker,
   composerSubmitTooltip,
   confirmAttachmentInput,
+  findActiveMentionTrigger,
   filterSlashCommands,
   mergeComposerAttachments,
   moveAttachmentPickerSelection,
   openAttachmentPicker,
+  removeMentionTriggerText,
   removeComposerAttachment,
   selectAttachmentInputMode,
   slashCommandsForComposerMode,
@@ -27,6 +29,8 @@ import {
   type AttachActionId,
   type ComposerAttachmentPickerState,
   type ComposerAttachment,
+  type ComposerMentionOption,
+  type ComposerMentionTrigger,
   type ComposerMode,
   type ComposerSendOptions,
   type ComposerSubmitState,
@@ -35,6 +39,26 @@ import {
 } from "../state/composer-workflow";
 
 export type ComposerBrowseKind = "file" | "image";
+
+type MentionPickerStatus = "closed" | "idle" | "loading" | "ready" | "error";
+
+interface MentionPickerState {
+  status: MentionPickerStatus;
+  trigger: ComposerMentionTrigger | null;
+  query: string;
+  options: ComposerMentionOption[];
+  activeIndex: number;
+  error: string | null;
+}
+
+const CLOSED_MENTION_PICKER_STATE: MentionPickerState = {
+  status: "closed",
+  trigger: null,
+  query: "",
+  options: [],
+  activeIndex: 0,
+  error: null,
+};
 
 export interface ComposerProps {
   input: string;
@@ -47,6 +71,7 @@ export interface ComposerProps {
   supportsImageInput?: boolean;
   onAttachmentError?: (message: string) => void;
   onBrowseFiles?: (kind: ComposerBrowseKind) => Promise<ComposerAttachment[]>;
+  onMentionSearch?: (query: string) => Promise<ComposerMentionOption[]>;
   onPlanSelected?: () => void;
   onOpenPlugins?: () => void;
   pendingRequestContent?: ReactNode;
@@ -66,6 +91,7 @@ export function Composer({
   supportsImageInput = true,
   onAttachmentError,
   onBrowseFiles,
+  onMentionSearch,
   onPlanSelected,
   onOpenPlugins,
   pendingRequestContent,
@@ -84,6 +110,7 @@ export function Composer({
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [attachmentPicker, setAttachmentPicker] = useState<ComposerAttachmentPickerState>(CLOSED_ATTACHMENT_PICKER_STATE);
+  const [mentionPicker, setMentionPicker] = useState<MentionPickerState>(CLOSED_MENTION_PICKER_STATE);
   const [dropActive, setDropActive] = useState(false);
   const [imagePreview, setImagePreview] = useState<{ src: string; label: string } | null>(null);
   const slashQuery = useMemo(() => slashSearchText(input), [input]);
@@ -96,6 +123,13 @@ export function Composer({
   const selectedSlashCommand = slashCommands[Math.min(slashIndex, Math.max(0, slashCommands.length - 1))] ?? null;
   const submitTitle = composerSubmitTooltip(submitState);
   const placeholder = placeholderText ?? "Ask Codex anything. @ to use plugins or mention files";
+  const mentionOpen = mentionPicker.status !== "closed";
+  const hasComposerPopover = slashOpen || attachmentPicker.status !== "closed" || mentionOpen;
+  const mentionOptions = mentionPicker.options.slice(0, 8);
+  const selectedMention = mentionOptions[Math.min(
+    mentionPicker.activeIndex,
+    Math.max(0, mentionOptions.length - 1),
+  )] ?? null;
   const setFooterRightMeasureElement = useCallback((element: HTMLElement | null) => {
     footerRightMeasureRef.current = element;
   }, []);
@@ -114,10 +148,11 @@ export function Composer({
   const closeComposerPopovers = useCallback(() => {
     setSlashOpen(false);
     setAttachmentPicker(closeAttachmentPicker());
+    setMentionPicker(CLOSED_MENTION_PICKER_STATE);
   }, []);
 
   useEffect(() => {
-    if (!slashOpen && attachmentPicker.status === "closed") return;
+    if (!hasComposerPopover) return;
     const closeOnPointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (target instanceof Node && composerRef.current?.contains(target)) return;
@@ -125,7 +160,7 @@ export function Composer({
     };
     document.addEventListener("pointerdown", closeOnPointerDown, true);
     return () => document.removeEventListener("pointerdown", closeOnPointerDown, true);
-  }, [attachmentPicker.status, closeComposerPopovers, slashOpen]);
+  }, [closeComposerPopovers, hasComposerPopover]);
 
   const addAttachments = useCallback((incoming: ComposerAttachment[]) => {
     if (incoming.length === 0) return;
@@ -136,6 +171,7 @@ export function Composer({
     if (input.trim() === "+") onInputChange("");
     setAttachmentPicker(closeAttachmentPicker());
     setSlashOpen(false);
+    setMentionPicker(CLOSED_MENTION_PICKER_STATE);
     requestComposerFocus(promptEditorRef.current);
   }, [input, onAttachmentsChange, onInputChange]);
 
@@ -187,6 +223,70 @@ export function Composer({
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [imagePreview]);
 
+  useEffect(() => {
+    const trigger = mentionPicker.trigger;
+    const query = mentionPicker.query;
+    if (!trigger) return;
+
+    const matchesActiveTrigger = (state: MentionPickerState) => (
+      state.trigger?.from === trigger.from
+      && state.trigger?.to === trigger.to
+      && state.query === query
+    );
+
+    if (!onMentionSearch) {
+      setMentionPicker((state) => matchesActiveTrigger(state)
+        ? { ...state, status: "error", error: "File mention search is unavailable", options: [] }
+        : state);
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      setMentionPicker((state) => matchesActiveTrigger(state)
+        ? { ...state, status: "idle", options: [], activeIndex: 0, error: null }
+        : state);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setMentionPicker((state) => matchesActiveTrigger(state)
+        ? { ...state, status: "loading", error: null }
+        : state);
+      void onMentionSearch(trimmedQuery)
+        .then((options) => {
+          if (cancelled) return;
+          setMentionPicker((state) => matchesActiveTrigger(state)
+            ? {
+                ...state,
+                status: "ready",
+                options,
+                activeIndex: Math.min(state.activeIndex, Math.max(0, options.length - 1)),
+                error: null,
+              }
+            : state);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setMentionPicker((state) => matchesActiveTrigger(state)
+            ? {
+                ...state,
+                status: "error",
+                options: [],
+                activeIndex: 0,
+                error: mentionSearchError(error),
+              }
+            : state);
+        });
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mentionPicker.query, mentionPicker.trigger?.from, mentionPicker.trigger?.to, onMentionSearch]);
+
   function updateInput(value: string) {
     onInputChange(value);
     const shouldOpenSlash = isSlashInput(value);
@@ -194,15 +294,35 @@ export function Composer({
     if (shouldOpenSlash) {
       setSlashIndex(0);
       setAttachmentPicker(closeAttachmentPicker());
+      setMentionPicker(CLOSED_MENTION_PICKER_STATE);
+      return;
     }
     if (value.trim() === "+") {
       setAttachmentPicker(openAttachmentPicker());
       setSlashOpen(false);
+      setMentionPicker(CLOSED_MENTION_PICKER_STATE);
+      return;
     }
+    const mentionTrigger = findActiveMentionTrigger(value);
+    if (mentionTrigger) {
+      setMentionPicker({
+        status: "idle",
+        trigger: mentionTrigger,
+        query: mentionTrigger.query,
+        options: [],
+        activeIndex: 0,
+        error: null,
+      });
+      setAttachmentPicker(closeAttachmentPicker());
+      setSlashOpen(false);
+      return;
+    }
+    setAttachmentPicker(closeAttachmentPicker());
+    setMentionPicker(CLOSED_MENTION_PICKER_STATE);
   }
 
   function selectSlashCommand(command: SlashCommand) {
-    setSlashOpen(false);
+    closeComposerPopovers();
     onSlashCommand(command);
     requestComposerFocus(promptEditorRef.current);
   }
@@ -210,20 +330,19 @@ export function Composer({
   function showAttachmentMenu() {
     setAttachmentPicker((state) => state.status === "menu" ? closeAttachmentPicker() : openAttachmentPicker(state));
     setSlashOpen(false);
+    setMentionPicker(CLOSED_MENTION_PICKER_STATE);
   }
 
   async function selectAttachmentMode(actionId: AttachActionId) {
     if (actionId === "plan") {
-      setAttachmentPicker(closeAttachmentPicker());
-      setSlashOpen(false);
+      closeComposerPopovers();
       onPlanSelected?.();
       requestComposerFocus(promptEditorRef.current);
       return;
     }
 
     if (actionId === "plugins") {
-      setAttachmentPicker(closeAttachmentPicker());
-      setSlashOpen(false);
+      closeComposerPopovers();
       onOpenPlugins?.();
       requestComposerFocus(promptEditorRef.current);
       return;
@@ -232,12 +351,13 @@ export function Composer({
     if ((actionId === "filePath" || actionId === "localImage") && onBrowseFiles) {
       if (actionId === "localImage" && !supportsImageInput) {
         onAttachmentError?.("Current model does not declare image input support");
-        setAttachmentPicker(closeAttachmentPicker());
+        closeComposerPopovers();
         requestComposerFocus(promptEditorRef.current);
         return;
       }
       setAttachmentPicker(closeAttachmentPicker());
       setSlashOpen(false);
+      setMentionPicker(CLOSED_MENTION_PICKER_STATE);
       try {
         const picked = await onBrowseFiles(actionId === "localImage" ? "image" : "file");
         addAttachments(picked);
@@ -249,6 +369,8 @@ export function Composer({
     }
 
     setAttachmentPicker((state) => selectAttachmentInputMode(state, actionId));
+    setSlashOpen(false);
+    setMentionPicker(CLOSED_MENTION_PICKER_STATE);
     requestAttachmentInputFocus(attachmentInputRef.current);
   }
 
@@ -264,14 +386,33 @@ export function Composer({
             error: "Current model does not declare image input support",
           };
         }
-        onAttachmentsChange([...attachments, result.attachment]);
+        const merged = mergeComposerAttachments(attachmentsRef.current, [result.attachment]);
+        attachmentsRef.current = merged;
+        onAttachmentsChange(merged);
         if (input.trim() === "+") onInputChange("");
+        setSlashOpen(false);
+        setMentionPicker(CLOSED_MENTION_PICKER_STATE);
         requestComposerFocus(promptEditorRef.current);
       } else {
         requestAttachmentInputFocus(attachmentInputRef.current);
       }
       return result.state;
     });
+  }
+
+  function selectMention(option: ComposerMentionOption) {
+    const trigger = mentionPicker.trigger ?? findActiveMentionTrigger(input);
+    const nextAttachment: ComposerAttachment = {
+      type: "mention",
+      name: option.name || mentionOptionName(option),
+      path: option.path,
+    };
+    const merged = mergeComposerAttachments(attachmentsRef.current, [nextAttachment]);
+    attachmentsRef.current = merged;
+    onAttachmentsChange(merged);
+    if (trigger) onInputChange(removeMentionTriggerText(input, trigger));
+    closeComposerPopovers();
+    requestComposerFocus(promptEditorRef.current);
   }
 
   const selectedAttachAction = attachActions[Math.min(
@@ -431,6 +572,46 @@ export function Composer({
               </div>
             )}
 
+            {mentionOpen && (
+              <div className="hc-composer-menu mention" role="listbox" aria-label="Mention files">
+                <div className="hc-composer-menu-section-label">Files</div>
+                {mentionOptions.map((option) => (
+                  <button
+                    className="hc-composer-menu-row"
+                    data-active={option.path === selectedMention?.path}
+                    key={option.path}
+                    type="button"
+                    role="option"
+                    aria-selected={option.path === selectedMention?.path}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectMention(option)}
+                  >
+                    <FileText size={15} />
+                    <span>
+                      <strong>{option.name || mentionOptionName(option)}</strong>
+                      <small>{option.detail || option.path}</small>
+                    </span>
+                    <em>@</em>
+                  </button>
+                ))}
+                {mentionPicker.status === "idle" && (
+                  <div className="hc-composer-menu-empty">Type to search for files</div>
+                )}
+                {mentionPicker.status === "loading" && mentionOptions.length === 0 && (
+                  <div className="hc-composer-menu-empty">
+                    <Loader2 className="hc-spin" size={13} />
+                    Searching files...
+                  </div>
+                )}
+                {mentionPicker.status === "ready" && mentionOptions.length === 0 && (
+                  <div className="hc-composer-menu-empty">No results</div>
+                )}
+                {mentionPicker.status === "error" && (
+                  <div className="hc-composer-menu-empty">{mentionPicker.error || "Unable to search files"}</div>
+                )}
+              </div>
+            )}
+
             {attachmentPicker.status === "menu" && (
               <div className="hc-composer-menu attach" role="menu" aria-label="Attach context">
                 {attachActions.map((action) => {
@@ -558,7 +739,7 @@ export function Composer({
                 <div
                   className="hc-composer-input-popover-dismiss-layer"
                   onMouseDown={() => {
-                    if (slashOpen || attachmentPicker.status !== "closed") closeComposerPopovers();
+                    if (hasComposerPopover) closeComposerPopovers();
                   }}
                 >
                   <PromptEditor
@@ -575,10 +756,9 @@ export function Composer({
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
-                        if (slashOpen || attachmentPicker.status !== "closed") {
+                        if (hasComposerPopover) {
                           event.preventDefault();
-                          setSlashOpen(false);
-                          setAttachmentPicker(closeAttachmentPicker());
+                          closeComposerPopovers();
                           return true;
                         }
                         if (submitState.canStopFromEscape) {
@@ -594,13 +774,11 @@ export function Composer({
                         !event.metaKey &&
                         !event.ctrlKey &&
                         !event.altKey &&
-                        !slashOpen &&
-                        attachmentPicker.status === "closed"
+                        !hasComposerPopover
                       ) {
                         event.preventDefault();
                         event.stopPropagation();
-                        setAttachmentPicker(closeAttachmentPicker());
-                        setSlashOpen(false);
+                        closeComposerPopovers();
                         onPlanSelected?.();
                         return true;
                       }
@@ -619,6 +797,34 @@ export function Composer({
                         if (event.key === "Tab" || event.key === "Enter") {
                           event.preventDefault();
                           if (selectedSlashCommand) selectSlashCommand(selectedSlashCommand);
+                          return true;
+                        }
+                      }
+
+                      if (mentionOpen) {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          if (mentionOptions.length > 0) {
+                            setMentionPicker((state) => ({
+                              ...state,
+                              activeIndex: (state.activeIndex + 1) % mentionOptions.length,
+                            }));
+                          }
+                          return true;
+                        }
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          if (mentionOptions.length > 0) {
+                            setMentionPicker((state) => ({
+                              ...state,
+                              activeIndex: (state.activeIndex - 1 + mentionOptions.length) % mentionOptions.length,
+                            }));
+                          }
+                          return true;
+                        }
+                        if (event.key === "Tab" || event.key === "Enter") {
+                          event.preventDefault();
+                          if (selectedMention) selectMention(selectedMention);
                           return true;
                         }
                       }
@@ -953,6 +1159,18 @@ function requestAttachmentInputFocus(element: HTMLTextAreaElement | HTMLInputEle
 function attachmentBrowseError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return typeof error === "string" ? error : "Unable to attach selected files";
+}
+
+function mentionSearchError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === "string" ? error : "Unable to search files";
+}
+
+function mentionOptionName(option: ComposerMentionOption): string {
+  const name = option.name.trim();
+  if (name) return name;
+  const normalized = option.path.replace(/\/+$/, "");
+  return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "file";
 }
 
 function hasAttachmentTransfer(dataTransfer: DataTransfer | null): boolean {

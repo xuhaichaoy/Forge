@@ -154,6 +154,19 @@ export type ComposerAttachment =
   | { type: "plainText"; text: string }
   | { type: "filePath"; path: string };
 
+export interface ComposerMentionOption {
+  name: string;
+  path: string;
+  detail?: string;
+  score?: number;
+}
+
+export interface ComposerMentionTrigger {
+  query: string;
+  from: number;
+  to: number;
+}
+
 export interface ComposerTransferFileLike {
   name?: string;
   type?: string;
@@ -579,6 +592,28 @@ export function imageAttachmentToUserInput(
 export function normalizeAttachmentPath(value: string): string {
   const trimmed = value.trim();
   return /^file:/i.test(trimmed) ? fileUrlToPath(trimmed) || trimmed : trimmed;
+}
+
+export function findActiveMentionTrigger(input: string): ComposerMentionTrigger | null {
+  const cursor = input.length;
+  const lineStart = input.lastIndexOf("\n", cursor - 1) + 1;
+  const linePrefix = input.slice(lineStart, cursor);
+  const match = linePrefix.match(/(?:^|[\s([{])@([^\s@]*)$/);
+  if (!match || match.index == null) return null;
+  const matchedText = match[0] ?? "";
+  const atOffset = matchedText.lastIndexOf("@");
+  if (atOffset < 0) return null;
+  const from = lineStart + match.index + atOffset;
+  const query = match[1] ?? "";
+  if (query.length > 120) return null;
+  return { query, from, to: cursor };
+}
+
+export function removeMentionTriggerText(input: string, trigger: ComposerMentionTrigger): string {
+  if (trigger.from < 0 || trigger.to < trigger.from || trigger.to > input.length) return input;
+  const prefix = input.slice(0, trigger.from);
+  const suffix = input.slice(trigger.to);
+  return suffix ? `${prefix}${suffix}` : prefix.trimEnd();
 }
 
 export function composerEnterAction(input: string, event: ComposerKeyEventLike): ComposerEnterResult {

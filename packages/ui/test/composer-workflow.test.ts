@@ -15,11 +15,13 @@ import {
   composerPlaceholderText,
   composerSubmitTooltip,
   confirmAttachmentInput,
+  findActiveMentionTrigger,
   filterSlashCommands,
   mergeComposerAttachments,
   moveAttachmentPickerSelection,
   openAttachmentPicker,
   projectComposerSubmitState,
+  removeMentionTriggerText,
   removeComposerAttachment,
   selectAttachmentInputMode,
   slashCommandsForComposerMode,
@@ -58,6 +60,7 @@ export default function runComposerWorkflowTests(): void {
   updatesPlanCommandTextForComposerMode();
   appliesSlashCommandsAsDeclarativeActions();
   exposesAttachActions();
+  detectsActiveMentionTriggers();
   drivesAttachmentPickerWithoutWindowPrompt();
   projectsDroppedAndPastedFilesIntoAttachments();
   buildsUserInputFromComposerTextAndAttachments();
@@ -611,6 +614,39 @@ function exposesAttachActions(): void {
     DEFAULT_ATTACH_ACTIONS.map((action) => action.title),
     ["Add photos & files", "Plan mode", "Plugins"],
     "DEFAULT_ATTACH_ACTIONS should match the Codex Desktop plus menu",
+  );
+}
+
+function detectsActiveMentionTriggers(): void {
+  assertDeepEqual(
+    findActiveMentionTrigger("@"),
+    { query: "", from: 0, to: 1 },
+    "bare @ should open the inline mention picker",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("inspect @packages/ui"),
+    { query: "packages/ui", from: 8, to: 20 },
+    "@ file query should be detected at the end of the draft",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("line one\n@composer"),
+    { query: "composer", from: 9, to: 18 },
+    "mention trigger should work on the active line",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("email a@b"),
+    null,
+    "email-like text should not open mention autocomplete",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("inspect @composer then continue"),
+    null,
+    "completed words after the mention query should close autocomplete",
+  );
+  assertDeepEqual(
+    removeMentionTriggerText("inspect @composer", { query: "composer", from: 8, to: 17 }),
+    "inspect",
+    "selecting a mention should remove the typed @ query from the prompt",
   );
 }
 
