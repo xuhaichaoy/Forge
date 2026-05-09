@@ -1,6 +1,8 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { AtSign, FileText, ListChecks, Loader2, Paperclip, Pause, PlugZap, Plus, Send, Sparkles, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, AtSign, FileText, ListChecks, Loader2, Paperclip, PlugZap, Plus, Sparkles, Square, X } from "lucide-react";
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, RefObject } from "react";
+import { convertLocalFileSrc } from "../lib/tauri-host";
+import { focusPromptEditorElement, PromptEditor } from "./prompt-editor";
 import {
   CLOSED_ATTACHMENT_PICKER_STATE,
   DEFAULT_SLASH_COMMANDS,
@@ -12,7 +14,6 @@ import {
   composerFilePath,
   closeAttachmentPicker,
   composerSubmitTooltip,
-  composerEnterAction,
   confirmAttachmentInput,
   filterSlashCommands,
   mergeComposerAttachments,
@@ -27,7 +28,9 @@ import {
   type ComposerAttachmentPickerState,
   type ComposerAttachment,
   type ComposerMode,
+  type ComposerSendOptions,
   type ComposerSubmitState,
+  type FollowUpSubmitAction,
   type SlashCommand,
 } from "../state/composer-workflow";
 
@@ -37,6 +40,7 @@ export interface ComposerProps {
   input: string;
   attachments: ComposerAttachment[];
   mode?: ComposerMode;
+  placeholder?: string;
   onInputChange: (value: string) => void;
   onAttachmentsChange: (value: ComposerAttachment[]) => void;
   submitState: ComposerSubmitState;
@@ -45,7 +49,8 @@ export interface ComposerProps {
   onBrowseFiles?: (kind: ComposerBrowseKind) => Promise<ComposerAttachment[]>;
   onPlanSelected?: () => void;
   onOpenPlugins?: () => void;
-  onSend: () => void;
+  pendingRequestContent?: ReactNode;
+  onSend: (options?: ComposerSendOptions) => void;
   onInterrupt: () => void;
   onSlashCommand: (command: SlashCommand) => void;
 }
@@ -54,6 +59,7 @@ export function Composer({
   input,
   attachments,
   mode = "default",
+  placeholder: placeholderText,
   onInputChange,
   onAttachmentsChange,
   submitState,
@@ -62,12 +68,17 @@ export function Composer({
   onBrowseFiles,
   onPlanSelected,
   onOpenPlugins,
+  pendingRequestContent,
   onSend,
   onInterrupt,
   onSlashCommand,
 }: ComposerProps) {
-  const inputRowRef = useRef<HTMLDivElement | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<HTMLFormElement | null>(null);
+  const composerFieldRef = useRef<HTMLDivElement | null>(null);
+  const footerLeftMeasureRef = useRef<HTMLDivElement | null>(null);
+  const footerRightMeasureRef = useRef<HTMLElement | null>(null);
+  const inputMeasureRef = useRef<HTMLSpanElement | null>(null);
+  const promptEditorRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>(attachments);
   const [slashOpen, setSlashOpen] = useState(false);
@@ -84,10 +95,37 @@ export function Composer({
   );
   const selectedSlashCommand = slashCommands[Math.min(slashIndex, Math.max(0, slashCommands.length - 1))] ?? null;
   const submitTitle = composerSubmitTooltip(submitState);
+  const placeholder = placeholderText ?? "Ask Codex anything. @ to use plugins or mention files";
+  const setFooterRightMeasureElement = useCallback((element: HTMLElement | null) => {
+    footerRightMeasureRef.current = element;
+  }, []);
+  const measuredSingleLine = useComposerSingleLineLayout({
+    fieldRef: composerFieldRef,
+    input,
+    leftControlsRef: footerLeftMeasureRef,
+    measureRef: inputMeasureRef,
+    rightControlsRef: footerRightMeasureRef,
+  });
 
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  const closeComposerPopovers = useCallback(() => {
+    setSlashOpen(false);
+    setAttachmentPicker(closeAttachmentPicker());
+  }, []);
+
+  useEffect(() => {
+    if (!slashOpen && attachmentPicker.status === "closed") return;
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && composerRef.current?.contains(target)) return;
+      closeComposerPopovers();
+    };
+    document.addEventListener("pointerdown", closeOnPointerDown, true);
+    return () => document.removeEventListener("pointerdown", closeOnPointerDown, true);
+  }, [attachmentPicker.status, closeComposerPopovers, slashOpen]);
 
   const addAttachments = useCallback((incoming: ComposerAttachment[]) => {
     if (incoming.length === 0) return;
@@ -98,7 +136,7 @@ export function Composer({
     if (input.trim() === "+") onInputChange("");
     setAttachmentPicker(closeAttachmentPicker());
     setSlashOpen(false);
-    requestComposerFocus(textareaRef.current);
+    requestComposerFocus(promptEditorRef.current);
   }, [input, onAttachmentsChange, onInputChange]);
 
   const addAttachmentPaths = useCallback((paths: string[]) => {
@@ -166,7 +204,7 @@ export function Composer({
   function selectSlashCommand(command: SlashCommand) {
     setSlashOpen(false);
     onSlashCommand(command);
-    requestComposerFocus(textareaRef.current);
+    requestComposerFocus(promptEditorRef.current);
   }
 
   function showAttachmentMenu() {
@@ -179,7 +217,7 @@ export function Composer({
       setAttachmentPicker(closeAttachmentPicker());
       setSlashOpen(false);
       onPlanSelected?.();
-      requestComposerFocus(textareaRef.current);
+      requestComposerFocus(promptEditorRef.current);
       return;
     }
 
@@ -187,7 +225,7 @@ export function Composer({
       setAttachmentPicker(closeAttachmentPicker());
       setSlashOpen(false);
       onOpenPlugins?.();
-      requestComposerFocus(textareaRef.current);
+      requestComposerFocus(promptEditorRef.current);
       return;
     }
 
@@ -195,7 +233,7 @@ export function Composer({
       if (actionId === "localImage" && !supportsImageInput) {
         onAttachmentError?.("Current model does not declare image input support");
         setAttachmentPicker(closeAttachmentPicker());
-        requestComposerFocus(textareaRef.current);
+        requestComposerFocus(promptEditorRef.current);
         return;
       }
       setAttachmentPicker(closeAttachmentPicker());
@@ -206,7 +244,7 @@ export function Composer({
       } catch (error) {
         onAttachmentError?.(attachmentBrowseError(error));
       }
-      requestComposerFocus(textareaRef.current);
+      requestComposerFocus(promptEditorRef.current);
       return;
     }
 
@@ -228,7 +266,7 @@ export function Composer({
         }
         onAttachmentsChange([...attachments, result.attachment]);
         if (input.trim() === "+") onInputChange("");
-        requestComposerFocus(textareaRef.current);
+        requestComposerFocus(promptEditorRef.current);
       } else {
         requestAttachmentInputFocus(attachmentInputRef.current);
       }
@@ -242,9 +280,15 @@ export function Composer({
   )];
   const inputAttachAction = attachActions.find((action) => action.id === attachmentPicker.inputMode) ?? null;
   const isTextAttachmentInput = attachmentPicker.inputMode === "plainText";
+  const isSingleLineLayout = !pendingRequestContent
+    && mode === "default"
+    && attachments.length === 0
+    && !input.includes("\n")
+    && measuredSingleLine;
 
   return (
     <form
+      ref={composerRef}
       className="hc-composer"
       data-runtime-status={submitState.threadRuntimeStatus}
       data-drop-active={dropActive}
@@ -255,7 +299,7 @@ export function Composer({
       }}
       onDragEnter={(event) => {
         if (!hasAttachmentTransfer(event.dataTransfer)) return;
-        if (!isDomDropInsideElement(inputRowRef.current, event)) {
+        if (!isDomDropInsideElement(composerFieldRef.current, event)) {
           setDropActive(false);
           return;
         }
@@ -266,7 +310,7 @@ export function Composer({
       }}
       onDragOver={(event) => {
         if (!hasAttachmentTransfer(event.dataTransfer)) return;
-        if (!isDomDropInsideElement(inputRowRef.current, event)) {
+        if (!isDomDropInsideElement(composerFieldRef.current, event)) {
           setDropActive(false);
           return;
         }
@@ -281,7 +325,7 @@ export function Composer({
         setDropActive(false);
       }}
       onDrop={(event) => {
-        if (!isDomDropInsideElement(inputRowRef.current, event)) {
+        if (!isDomDropInsideElement(composerFieldRef.current, event)) {
           setDropActive(false);
           return;
         }
@@ -294,7 +338,7 @@ export function Composer({
         const handled = addTransferFiles(event.dataTransfer.files);
         const droppedPaths = droppedAttachmentPaths(event.dataTransfer);
         if (droppedPaths.length > 0) addAttachmentPaths(droppedPaths);
-        if (!handled && droppedPaths.length === 0) requestComposerFocus(textareaRef.current);
+        if (!handled && droppedPaths.length === 0) requestComposerFocus(promptEditorRef.current);
         setDropActive(false);
       }}
       onSubmit={(event) => {
@@ -307,324 +351,348 @@ export function Composer({
         onSend();
       }}
     >
-      <div className="hc-composer-field">
-        {attachments.length > 0 && (
-          <div className="hc-attachment-strip">
-            {attachments.map((attachment, index) => {
-              const label = attachmentLabel(attachment);
-              const displayLabel = compactAttachmentLabel(label);
-              const previewSrc = resolveAttachmentPreviewSrc(attachment);
-              return (
-                <div
-                  className="hc-attachment-chip"
-                  key={`${attachment.type}-${index}-${label}`}
-                  title={label}
-                >
-                  {previewSrc ? (
-                    <button
-                      className="hc-attachment-chip-main"
-                      type="button"
-                      aria-label={`Preview ${label}`}
-                      onClick={() => setImagePreview({ src: previewSrc, label })}
+      <div
+        ref={composerFieldRef}
+        className="hc-composer-field"
+        data-layout={isSingleLineLayout ? "single" : "multiline"}
+        data-mode={pendingRequestContent ? "request" : "input"}
+      >
+        {pendingRequestContent ? (
+          <div className="hc-composer-request-region">
+            {pendingRequestContent}
+          </div>
+        ) : (
+          <>
+            {dropActive && (
+              <ComposerDropOverlay />
+            )}
+            {attachments.length > 0 && (
+              <div className="hc-attachment-strip">
+                {attachments.map((attachment, index) => {
+                  const label = attachmentLabel(attachment);
+                  const displayLabel = compactAttachmentLabel(label);
+                  const previewSrc = resolveAttachmentPreviewSrc(attachment);
+                  return (
+                    <div
+                      className="hc-attachment-chip"
+                      key={`${attachment.type}-${index}-${label}`}
+                      title={label}
                     >
-                      <AttachmentPreview src={previewSrc} />
-                      <span>{displayLabel}</span>
-                    </button>
-                  ) : (
-                    <span className="hc-attachment-chip-main static">
-                      <AttachmentStaticIcon attachment={attachment} />
-                      <span>{displayLabel}</span>
-                    </span>
-                  )}
+                      {previewSrc ? (
+                        <button
+                          className="hc-attachment-chip-main"
+                          type="button"
+                          aria-label={`Preview ${label}`}
+                          onClick={() => setImagePreview({ src: previewSrc, label })}
+                        >
+                          <AttachmentPreview src={previewSrc} />
+                          <span>{displayLabel}</span>
+                        </button>
+                      ) : (
+                        <span className="hc-attachment-chip-main static">
+                          <AttachmentStaticIcon attachment={attachment} />
+                          <span>{displayLabel}</span>
+                        </span>
+                      )}
+                      <button
+                        className="hc-attachment-remove"
+                        type="button"
+                        title="Remove attachment"
+                        aria-label={`Remove ${label}`}
+                        onClick={() => onAttachmentsChange(removeComposerAttachment(attachments, index))}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {slashOpen && slashCommands.length > 0 && (
+              <div className="hc-composer-menu" role="listbox" aria-label="Slash commands">
+                {slashCommands.slice(0, 12).map((command) => (
                   <button
-                    className="hc-attachment-remove"
+                    className="hc-composer-menu-row"
+                    data-active={command.id === selectedSlashCommand?.id}
+                    key={command.id}
                     type="button"
-                    title="Remove attachment"
-                    aria-label={`Remove ${label}`}
-                    onClick={() => onAttachmentsChange(removeComposerAttachment(attachments, index))}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => selectSlashCommand(command)}
                   >
-                    <X size={13} />
+                    <span className="hc-command-icon">/{command.id.slice(0, 1)}</span>
+                    <span>
+                      <strong>/{command.id}</strong>
+                      <small>{command.description}</small>
+                    </span>
+                    <em>{command.supported}</em>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {attachmentPicker.status === "menu" && (
+              <div className="hc-composer-menu attach" role="menu" aria-label="Attach context">
+                {attachActions.map((action) => {
+                  const isPlanAction = action.id === "plan";
+                  const checked = isPlanAction && mode === "plan";
+                  return (
+                    <button
+                      className="hc-composer-menu-row"
+                      data-active={action.id === selectedAttachAction?.id}
+                      data-checked={checked}
+                      key={action.id}
+                      type="button"
+                      role={isPlanAction ? "switch" : "menuitem"}
+                      aria-checked={isPlanAction ? checked : undefined}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => void selectAttachmentMode(action.id)}
+                    >
+                      {attachIcon(action.id)}
+                      <span>
+                        <strong>{action.title}</strong>
+                        <small>{action.description}</small>
+                      </span>
+                      {isPlanAction && (
+                        <span className="hc-composer-menu-switch" aria-hidden="true">
+                          <span />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {attachmentPicker.status === "input" && inputAttachAction && (
+              <div className="hc-attachment-input-panel" role="dialog" aria-label={inputAttachAction.title}>
+                <div className="hc-attachment-input-heading">
+                  {attachIcon(inputAttachAction.id)}
+                  <span>
+                    <strong>{inputAttachAction.title}</strong>
+                    <small>{inputAttachAction.description}</small>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Cancel attachment"
+                    title="Cancel"
+                    onClick={() => {
+                      setAttachmentPicker(closeAttachmentPicker());
+                      requestComposerFocus(promptEditorRef.current);
+                    }}
+                  >
+                    <X size={14} />
                   </button>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {slashOpen && slashCommands.length > 0 && (
-          <div className="hc-composer-menu" role="listbox" aria-label="Slash commands">
-            {slashCommands.slice(0, 12).map((command, index) => (
-              <button
-                className="hc-composer-menu-row"
-                data-active={command.id === selectedSlashCommand?.id}
-                key={command.id}
-                type="button"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => selectSlashCommand(command)}
-              >
-                <span className="hc-command-icon">/{command.id.slice(0, 1)}</span>
-                <span>
-                  <strong>/{command.id}</strong>
-                  <small>{command.description}</small>
-                </span>
-                <em>{command.supported}</em>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {attachmentPicker.status === "menu" && (
-          <div className="hc-composer-menu attach" role="menu" aria-label="Attach context">
-            {attachActions.map((action) => {
-              const isPlanAction = action.id === "plan";
-              const checked = isPlanAction && mode === "plan";
-              return (
-                <button
-                  className="hc-composer-menu-row"
-                  data-active={action.id === selectedAttachAction?.id}
-                  data-checked={checked}
-                  key={action.id}
-                  type="button"
-                  role={isPlanAction ? "switch" : "menuitem"}
-                  aria-checked={isPlanAction ? checked : undefined}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => void selectAttachmentMode(action.id)}
-                >
-                  {attachIcon(action.id)}
-                  <span>
-                    <strong>{action.title}</strong>
-                    <small>{action.description}</small>
-                  </span>
-                  {isPlanAction && (
-                    <span className="hc-composer-menu-switch" aria-hidden="true">
-                      <span />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {attachmentPicker.status === "input" && inputAttachAction && (
-          <div className="hc-attachment-input-panel" role="dialog" aria-label={inputAttachAction.title}>
-            <div className="hc-attachment-input-heading">
-              {attachIcon(inputAttachAction.id)}
-              <span>
-                <strong>{inputAttachAction.title}</strong>
-                <small>{inputAttachAction.description}</small>
-              </span>
-              <button
-                type="button"
-                aria-label="Cancel attachment"
-                title="Cancel"
-                onClick={() => {
-                  setAttachmentPicker(closeAttachmentPicker());
-                  requestComposerFocus(textareaRef.current);
-                }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            {isTextAttachmentInput ? (
-              <textarea
-                ref={(element) => {
-                  attachmentInputRef.current = element;
-                }}
-                value={attachmentPicker.draft}
-                placeholder={inputAttachAction.placeholder}
-                onChange={(event) => setAttachmentPicker((state) => updateAttachmentInputDraft(state, event.target.value))}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setAttachmentPicker(closeAttachmentPicker());
-                    requestComposerFocus(textareaRef.current);
-                  }
-                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                    event.preventDefault();
-                    confirmAttachment();
-                  }
-                }}
-              />
-            ) : (
-              <input
-                ref={(element) => {
-                  attachmentInputRef.current = element;
-                }}
-                value={attachmentPicker.draft}
-                placeholder={inputAttachAction.placeholder}
-                onChange={(event) => setAttachmentPicker((state) => updateAttachmentInputDraft(state, event.target.value))}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setAttachmentPicker(closeAttachmentPicker());
-                    requestComposerFocus(textareaRef.current);
-                  }
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    confirmAttachment();
-                  }
-                }}
-              />
+                {isTextAttachmentInput ? (
+                  <textarea
+                    ref={(element) => {
+                      attachmentInputRef.current = element;
+                    }}
+                    value={attachmentPicker.draft}
+                    placeholder={inputAttachAction.placeholder}
+                    onChange={(event) => setAttachmentPicker((state) => updateAttachmentInputDraft(state, event.target.value))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setAttachmentPicker(closeAttachmentPicker());
+                        requestComposerFocus(promptEditorRef.current);
+                      }
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault();
+                        confirmAttachment();
+                      }
+                    }}
+                  />
+                ) : (
+                  <input
+                    ref={(element) => {
+                      attachmentInputRef.current = element;
+                    }}
+                    value={attachmentPicker.draft}
+                    placeholder={inputAttachAction.placeholder}
+                    onChange={(event) => setAttachmentPicker((state) => updateAttachmentInputDraft(state, event.target.value))}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setAttachmentPicker(closeAttachmentPicker());
+                        requestComposerFocus(promptEditorRef.current);
+                      }
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        confirmAttachment();
+                      }
+                    }}
+                  />
+                )}
+                {attachmentPicker.error && <small className="hc-attachment-input-error">{attachmentPicker.error}</small>}
+                <div className="hc-attachment-input-actions">
+                  <button
+                    type="button"
+                    className="hc-mini-button"
+                    onClick={() => {
+                      setAttachmentPicker(openAttachmentPicker(attachmentPicker));
+                      requestComposerFocus(promptEditorRef.current);
+                    }}
+                  >
+                    Types
+                  </button>
+                  <button type="button" className="hc-mini-button accept" onClick={confirmAttachment}>
+                    Add
+                  </button>
+                </div>
+              </div>
             )}
-            {attachmentPicker.error && <small className="hc-attachment-input-error">{attachmentPicker.error}</small>}
-            <div className="hc-attachment-input-actions">
-              <button
-                type="button"
-                className="hc-mini-button"
-                onClick={() => {
-                  setAttachmentPicker(openAttachmentPicker(attachmentPicker));
-                  requestComposerFocus(textareaRef.current);
-                }}
-              >
-                Types
-              </button>
-              <button type="button" className="hc-mini-button accept" onClick={confirmAttachment}>
-                Add
-              </button>
+
+            <div className="hc-composer-editor-row">
+              {isSingleLineLayout && (
+                <ComposerFooterLeft
+                  ref={footerLeftMeasureRef}
+                  attachmentPickerOpen={attachmentPicker.status !== "closed"}
+                  mode={mode}
+                  onPlanSelected={onPlanSelected}
+                  onShowAttachmentMenu={showAttachmentMenu}
+                />
+              )}
+              <div className="hc-composer-input-row">
+                <div
+                  className="hc-composer-input-popover-dismiss-layer"
+                  onMouseDown={() => {
+                    if (slashOpen || attachmentPicker.status !== "closed") closeComposerPopovers();
+                  }}
+                >
+                  <PromptEditor
+                    ref={promptEditorRef}
+                    value={input}
+                    singleLine={isSingleLineLayout}
+                    placeholder={placeholder}
+                    ariaLabel={placeholder}
+                    onChange={updateInput}
+                    onPastedFiles={addTransferFiles}
+                    onPastedImages={addTransferFiles}
+                    onSubmit={() => {
+                      if (!submitState.disabled && submitState.submitButtonMode !== "stop") onSend();
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        if (slashOpen || attachmentPicker.status !== "closed") {
+                          event.preventDefault();
+                          setSlashOpen(false);
+                          setAttachmentPicker(closeAttachmentPicker());
+                          return true;
+                        }
+                        if (submitState.canStopFromEscape) {
+                          event.preventDefault();
+                          onInterrupt();
+                          return true;
+                        }
+                      }
+
+                      if (
+                        event.key === "Tab" &&
+                        event.shiftKey &&
+                        !event.metaKey &&
+                        !event.ctrlKey &&
+                        !event.altKey &&
+                        !slashOpen &&
+                        attachmentPicker.status === "closed"
+                      ) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setAttachmentPicker(closeAttachmentPicker());
+                        setSlashOpen(false);
+                        onPlanSelected?.();
+                        return true;
+                      }
+
+                      if (slashOpen && slashCommands.length > 0) {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setSlashIndex((current) => (current + 1) % slashCommands.length);
+                          return true;
+                        }
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setSlashIndex((current) => (current - 1 + slashCommands.length) % slashCommands.length);
+                          return true;
+                        }
+                        if (event.key === "Tab" || event.key === "Enter") {
+                          event.preventDefault();
+                          if (selectedSlashCommand) selectSlashCommand(selectedSlashCommand);
+                          return true;
+                        }
+                      }
+
+                      if (attachmentPicker.status === "menu") {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setAttachmentPicker((state) => moveAttachmentPickerSelection(state, 1));
+                          return true;
+                        }
+                        if (event.key === "ArrowUp") {
+                          event.preventDefault();
+                          setAttachmentPicker((state) => moveAttachmentPickerSelection(state, -1));
+                          return true;
+                        }
+                        if (event.key === "Tab" || event.key === "Enter") {
+                          event.preventDefault();
+                          void selectAttachmentMode(selectedAttachAction?.id ?? attachActions[0].id);
+                          return true;
+                        }
+                      }
+
+                      if (
+                        event.key === "Backspace" &&
+                        input.length === 0 &&
+                        attachments.length > 0
+                      ) {
+                        event.preventDefault();
+                        onAttachmentsChange(removeComposerAttachment(attachments, attachments.length - 1));
+                        return true;
+                      }
+
+                      const followUpSubmitAction = alternateFollowUpSubmitAction(submitState, event);
+                      if (followUpSubmitAction) {
+                        event.preventDefault();
+                        if (!submitState.disabled && submitState.submitButtonMode !== "stop") {
+                          onSend({ followUpSubmitAction });
+                        }
+                        return true;
+                      }
+                      return false;
+                    }}
+                  />
+                </div>
+              </div>
+              {isSingleLineLayout && (
+                <ComposerSubmitButton
+                  ref={setFooterRightMeasureElement}
+                  submitState={submitState}
+                  submitTitle={submitTitle}
+                />
+              )}
             </div>
-          </div>
-        )}
-
-        <div className="hc-composer-input-row" ref={inputRowRef}>
-          <button
-            className="hc-composer-plus"
-            type="button"
-            title="Add context"
-            aria-label="Add context"
-            aria-expanded={attachmentPicker.status !== "closed"}
-            onClick={showAttachmentMenu}
-          >
-            <Plus size={17} />
-          </button>
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(event) => updateInput(event.target.value)}
-            placeholder="Ask Codex to inspect, edit, run, or explain this workspace"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                if (slashOpen || attachmentPicker.status !== "closed") {
-                  event.preventDefault();
-                  setSlashOpen(false);
-                  setAttachmentPicker(closeAttachmentPicker());
-                  return;
-                }
-                if (submitState.canStopFromEscape) {
-                  event.preventDefault();
-                  onInterrupt();
-                  return;
-                }
-              }
-
-              if (
-                event.key === "Tab" &&
-                event.shiftKey &&
-                !event.metaKey &&
-                !event.ctrlKey &&
-                !event.altKey &&
-                !slashOpen &&
-                attachmentPicker.status === "closed"
-              ) {
-                event.preventDefault();
-                event.stopPropagation();
-                setAttachmentPicker(closeAttachmentPicker());
-                setSlashOpen(false);
-                onPlanSelected?.();
-                return;
-              }
-
-              if (slashOpen && slashCommands.length > 0) {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setSlashIndex((current) => (current + 1) % slashCommands.length);
-                  return;
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setSlashIndex((current) => (current - 1 + slashCommands.length) % slashCommands.length);
-                  return;
-                }
-                if (event.key === "Tab" || event.key === "Enter") {
-                  event.preventDefault();
-                  if (selectedSlashCommand) selectSlashCommand(selectedSlashCommand);
-                  return;
-                }
-              }
-
-              if (attachmentPicker.status === "menu") {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setAttachmentPicker((state) => moveAttachmentPickerSelection(state, 1));
-                  return;
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setAttachmentPicker((state) => moveAttachmentPickerSelection(state, -1));
-                  return;
-                }
-                if (event.key === "Tab" || event.key === "Enter") {
-                  event.preventDefault();
-                  void selectAttachmentMode(selectedAttachAction?.id ?? attachActions[0].id);
-                  return;
-                }
-              }
-
-              if (
-                event.key === "Backspace" &&
-                input.length === 0 &&
-                attachments.length > 0
-              ) {
-                event.preventDefault();
-                onAttachmentsChange(removeComposerAttachment(attachments, attachments.length - 1));
-                return;
-              }
-
-              const enterAction = composerEnterAction(input, event);
-              if (enterAction.action === "send") {
-                event.preventDefault();
-                if (!submitState.disabled && submitState.submitButtonMode !== "stop") onSend();
-                return;
-              }
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing &&
-                attachments.length > 0
-              ) {
-                event.preventDefault();
-                if (!submitState.disabled && submitState.submitButtonMode !== "stop") onSend();
-              }
-            }}
-          />
-        </div>
-        {mode === "plan" && (
-          <div className="hc-composer-footer">
-            <button
-              type="button"
-              className="hc-composer-mode-pill"
-              title="Create a plan. Shift + Tab to toggle."
-              aria-label="Plan mode"
-              onClick={() => onPlanSelected?.()}
-            >
-              <ListChecks size={13} />
-              <span>Plan</span>
-            </button>
-          </div>
+            {!isSingleLineLayout && (
+              <div className="hc-composer-footer">
+                <ComposerFooterLeft
+                  ref={footerLeftMeasureRef}
+                  attachmentPickerOpen={attachmentPicker.status !== "closed"}
+                  mode={mode}
+                  onPlanSelected={onPlanSelected}
+                  onShowAttachmentMenu={showAttachmentMenu}
+                />
+                <div className="hc-composer-footer-middle" />
+                <div className="hc-composer-footer-right" ref={setFooterRightMeasureElement}>
+                  <ComposerSubmitButton submitState={submitState} submitTitle={submitTitle} />
+                </div>
+              </div>
+            )}
+            <span className="hc-composer-input-measure" ref={inputMeasureRef} aria-hidden="true">
+              {input || placeholder}
+            </span>
+          </>
         )}
       </div>
-      <button
-        className="hc-send-button"
-        type="submit"
-        title={submitTitle}
-        aria-label={submitTitle}
-        disabled={submitState.disabled}
-        data-mode={submitState.submitButtonMode}
-      >
-        {submitState.threadRuntimeStatus === "connecting"
-          ? <Loader2 className="hc-spin" size={16} />
-          : submitState.submitButtonMode === "stop" ? <Pause size={16} /> : <Send size={16} />}
-      </button>
       {imagePreview && (
         <div
           className="hc-image-preview-backdrop"
@@ -646,6 +714,166 @@ export function Composer({
       )}
     </form>
   );
+}
+
+function alternateFollowUpSubmitAction(
+  submitState: ComposerSubmitState,
+  event: {
+    key: string;
+    metaKey: boolean;
+    ctrlKey: boolean;
+    shiftKey: boolean;
+    altKey: boolean;
+    isComposing?: boolean;
+    nativeEvent?: { isComposing?: boolean };
+  },
+): FollowUpSubmitAction | null {
+  if (event.key !== "Enter") return null;
+  if (event.isComposing || event.nativeEvent?.isComposing) return null;
+  if (event.shiftKey || event.altKey) return null;
+  if (!event.metaKey && !event.ctrlKey) return null;
+  if (submitState.submitButtonMode !== "queue") return null;
+  if (submitState.threadRuntimeStatus !== "running") return null;
+  return submitState.isQueueingEnabled ? "steer" : "queue";
+}
+
+interface ComposerFooterLeftProps {
+  attachmentPickerOpen: boolean;
+  mode: ComposerMode;
+  onPlanSelected?: () => void;
+  onShowAttachmentMenu: () => void;
+}
+
+const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftProps>(function ComposerFooterLeft({
+  attachmentPickerOpen,
+  mode,
+  onPlanSelected,
+  onShowAttachmentMenu,
+}, ref) {
+  return (
+    <div className="hc-composer-footer-left" ref={ref}>
+      <button
+        className="hc-composer-plus"
+        type="button"
+        title="Add context"
+        aria-label="Add context"
+        aria-expanded={attachmentPickerOpen}
+        onClick={onShowAttachmentMenu}
+      >
+        <Plus size={16} />
+      </button>
+      {mode === "plan" && (
+        <button
+          type="button"
+          className="hc-composer-mode-pill"
+          title="Create a plan. Shift + Tab to toggle."
+          aria-label="Plan mode"
+          onClick={() => onPlanSelected?.()}
+        >
+          <ListChecks size={13} />
+          <span className="composer-footer__label--sm">Plan</span>
+        </button>
+      )}
+    </div>
+  );
+});
+
+interface ComposerSubmitButtonProps {
+  submitState: ComposerSubmitState;
+  submitTitle: string;
+}
+
+const ComposerSubmitButton = forwardRef<HTMLButtonElement, ComposerSubmitButtonProps>(function ComposerSubmitButton({
+  submitState,
+  submitTitle,
+}, ref) {
+  return (
+    <button
+      ref={ref}
+      className="hc-send-button"
+      type="submit"
+      title={submitTitle}
+      aria-label={submitTitle}
+      disabled={submitState.disabled}
+      data-mode={submitState.submitButtonMode}
+    >
+      {submitState.threadRuntimeStatus === "connecting"
+        ? <Loader2 className="hc-spin" size={16} />
+        : submitState.submitButtonMode === "stop" ? <Square size={13} /> : <ArrowUp size={16} />}
+    </button>
+  );
+});
+
+function ComposerDropOverlay() {
+  return (
+    <div className="hc-composer-drop-overlay" aria-hidden="true">
+      <div className="hc-composer-drop-card">
+        <span className="hc-composer-drop-hold">
+          Hold
+          <span className="hc-composer-drop-key">Shift</span>
+          to drop
+        </span>
+        <span className="hc-composer-drop-action">Drop to attach</span>
+      </div>
+    </div>
+  );
+}
+
+function useComposerSingleLineLayout({
+  fieldRef,
+  input,
+  leftControlsRef,
+  measureRef,
+  rightControlsRef,
+}: {
+  fieldRef: RefObject<HTMLDivElement | null>;
+  input: string;
+  leftControlsRef: RefObject<HTMLElement | null>;
+  measureRef: RefObject<HTMLSpanElement | null>;
+  rightControlsRef: RefObject<HTMLElement | null>;
+}): boolean {
+  const [metrics, setMetrics] = useState({
+    fieldWidth: 0,
+    leftControlsWidth: 0,
+    rightControlsWidth: 0,
+    textWidth: 0,
+  });
+  useLayoutEffect(() => {
+    const field = fieldRef.current;
+    const measure = measureRef.current;
+    if (!field || !measure) return;
+    const update = () => {
+      const next = {
+        fieldWidth: field.clientWidth,
+        leftControlsWidth: leftControlsRef.current?.getBoundingClientRect().width ?? 0,
+        rightControlsWidth: rightControlsRef.current?.getBoundingClientRect().width ?? 0,
+        textWidth: measure.getBoundingClientRect().width,
+      };
+      setMetrics((current) => (
+        current.fieldWidth === next.fieldWidth
+        && current.leftControlsWidth === next.leftControlsWidth
+        && current.rightControlsWidth === next.rightControlsWidth
+        && current.textWidth === next.textWidth
+          ? current
+          : next
+      ));
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(field);
+    observer.observe(measure);
+    if (leftControlsRef.current) observer.observe(leftControlsRef.current);
+    if (rightControlsRef.current) observer.observe(rightControlsRef.current);
+    return () => observer.disconnect();
+  });
+
+  if (metrics.fieldWidth <= 0 || metrics.textWidth <= 0) return true;
+  const prospectiveInputWidth = Math.max(
+    0,
+    metrics.fieldWidth - metrics.leftControlsWidth - metrics.rightControlsWidth - 32,
+  );
+  return metrics.textWidth + 32 <= prospectiveInputWidth;
 }
 
 function isImageAttachment(attachment: ComposerAttachment): boolean {
@@ -670,7 +898,7 @@ function resolveAttachmentPreviewSrc(attachment: ComposerAttachment): string | n
     const path = attachment.path.trim();
     if (path && !/^(?:data|blob|https?|file):/i.test(path)) {
       try {
-        return convertFileSrc(path);
+        return convertLocalFileSrc(path);
       } catch {
         return src;
       }
@@ -710,12 +938,16 @@ function attachIcon(actionId: AttachActionId) {
   }
 }
 
-function requestComposerFocus(element: HTMLTextAreaElement | null) {
-  window.requestAnimationFrame(() => element?.focus());
+function requestComposerFocus(element: HTMLElement | null) {
+  window.requestAnimationFrame(() => {
+    focusPromptEditorElement(element);
+  });
 }
 
 function requestAttachmentInputFocus(element: HTMLTextAreaElement | HTMLInputElement | null) {
-  window.requestAnimationFrame(() => element?.focus());
+  window.requestAnimationFrame(() => {
+    if (element?.isConnected) element.focus();
+  });
 }
 
 function attachmentBrowseError(error: unknown): string {

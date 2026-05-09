@@ -2,12 +2,16 @@ import type { JsonRpcNotification, Thread, ThreadItem } from "@hicodex/codex-pro
 import {
   codexUiReducer,
   initialCodexUiState,
+  selectThreadRuntime,
   type CodexUiState,
 } from "../src/state/codex-reducer";
+import { projectBranchDetails } from "../src/state/branch-details";
 import { projectConversation } from "../src/state/render-groups";
+import { projectRightRailSections } from "../src/state/right-rail";
 
 export default function runCodexReducerRightRailTests(): void {
   storesLatestTurnPlanAsProjectionFact();
+  projectsBranchDetailsAfterFirstTurnMetadataRefresh();
   preservesArtifactFilePathFactsFromItemNotifications();
   storesTurnDiffsAndClearsThemWhenThreadsAreRemoved();
   ignoresUnknownNotifications();
@@ -42,14 +46,15 @@ function storesLatestTurnPlanAsProjectionFact(): void {
     },
   });
 
-  const items = state.itemsByThread["thread-plan"] ?? [];
+  const planRuntime = selectThreadRuntime(state, "thread-plan");
+  const items = planRuntime.items;
   assertEqual(
     items.some((item) => item.type === "todo-list"),
     false,
     "turn/plan/updated should not add synthetic todo-list items to server item facts",
   );
   assertDeepEqual(
-    state.turnPlansByThread["thread-plan"]?.plan,
+    planRuntime.turnPlan?.plan,
     [
       { step: "Write right rail reducer tests", status: "inProgress" },
       { step: "Hand production gaps to main thread", status: "pending" },
@@ -57,7 +62,7 @@ function storesLatestTurnPlanAsProjectionFact(): void {
     "turn/plan/updated should store the latest plan as projection facts",
   );
 
-  const projection = projectConversation(items, { progressPlan: state.turnPlansByThread["thread-plan"] });
+  const projection = projectConversation(items, { progressPlan: planRuntime.turnPlan });
   assertDeepEqual(
     projection.progress.map((entry) => ({ title: entry.title, status: entry.status })),
     [
@@ -107,7 +112,7 @@ function preservesArtifactFilePathFactsFromItemNotifications(): void {
     },
   });
 
-  const projection = projectConversation(state.itemsByThread["thread-artifacts"] ?? []);
+  const projection = projectConversation(selectThreadRuntime(state, "thread-artifacts").items);
   assertDeepEqual(
     projection.artifacts.map((entry) => entry.meta),
     [
@@ -115,6 +120,54 @@ function preservesArtifactFilePathFactsFromItemNotifications(): void {
       "packages/ui/test/codex-reducer-right-rail.test.ts",
     ],
     "artifact projection should keep referenced and edited file paths from reducer notifications",
+  );
+}
+
+function projectsBranchDetailsAfterFirstTurnMetadataRefresh(): void {
+  let state = codexUiReducer(stateWithThread("thread-first"), {
+    type: "optimisticUserMessage",
+    threadId: "thread-first",
+    localTurnId: "optimistic-turn:first",
+    localId: "optimistic-user:first",
+    content: [{ type: "text", text: "hello", text_elements: [] }],
+  });
+
+  state = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadFixture("thread-first", {
+      cwd: "/workspace/project",
+      gitInfo: {
+        branch: "main",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:hicodex/HiCodex.git",
+      },
+      turns: [],
+    }),
+  });
+
+  const activeThread = state.threads.find((thread) => thread.id === state.activeThreadId) ?? null;
+  const branchDetails = projectBranchDetails({ thread: activeThread });
+  const sections = projectRightRailSections({
+    progress: [],
+    branchDetails,
+    artifacts: [],
+    sources: [],
+  });
+
+  assertDeepEqual(
+    selectThreadRuntime(state, "thread-first").items.map((item) => item.id),
+    ["optimistic-user:first"],
+    "metadata refresh after first send should not erase the visible prompt",
+  );
+  assertDeepEqual(
+    sections.map((section) => section.id),
+    ["branchDetails"],
+    "metadata refresh after first send should make the right rail visible without switching threads",
+  );
+  assertEqual(
+    sections[0]?.branchDetails?.rows.find((row) => row.id === "branch")?.value,
+    "main",
+    "right rail branch details should use refreshed app-server metadata",
   );
 }
 
@@ -138,19 +191,19 @@ function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
     },
   });
   assertEqual(
-    state.turnDiffsByThread["thread-diff"],
+    selectThreadRuntime(state, "thread-diff").turnDiff,
     "diff --git a/packages/ui/src/state/codex-reducer.ts b/packages/ui/src/state/codex-reducer.ts",
     "turn/diff/updated should store the latest diff by thread",
   );
 
   const removed = codexUiReducer(state, { type: "removeThread", threadId: "thread-diff" });
   assertEqual(
-    removed.turnDiffsByThread["thread-diff"],
+    removed.threadsRuntime["thread-diff"],
     undefined,
     "removeThread should clear diff cache for that thread",
   );
   assertEqual(
-    removed.turnPlansByThread["thread-diff"],
+    removed.threadsRuntime["thread-diff"],
     undefined,
     "removeThread should clear turn plan cache for that thread",
   );
@@ -160,12 +213,12 @@ function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
     params: { threadId: "thread-diff" },
   });
   assertEqual(
-    state.turnDiffsByThread["thread-diff"],
+    state.threadsRuntime["thread-diff"],
     undefined,
     "thread/archived should clear diff cache for that thread",
   );
   assertEqual(
-    state.turnPlansByThread["thread-diff"],
+    state.threadsRuntime["thread-diff"],
     undefined,
     "thread/archived should clear turn plan cache for that thread",
   );
@@ -174,7 +227,12 @@ function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
 function ignoresUnknownNotifications(): void {
   const state = {
     ...stateWithThread("thread-unknown"),
-    turnDiffsByThread: { "thread-unknown": "existing diff" },
+    threadsRuntime: {
+      "thread-unknown": {
+        ...selectThreadRuntime(initialCodexUiState, null),
+        turnDiff: "existing diff",
+      },
+    },
   };
   const next = reduceNotification(state, {
     method: "rightRail/doesNotExist",
@@ -190,7 +248,13 @@ function stateWithThread(...threadIds: string[]): CodexUiState {
     ...initialCodexUiState,
     threads,
     activeThreadId: threadIds[0] ?? null,
-    itemsByThread: Object.fromEntries(threadIds.map((id) => [id, []])),
+    threadsRuntime: Object.fromEntries(threadIds.map((id) => [
+      id,
+      {
+        ...selectThreadRuntime(initialCodexUiState, null),
+        items: [],
+      },
+    ])),
   };
 }
 

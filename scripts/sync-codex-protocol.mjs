@@ -3,9 +3,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const defaultProtocolDir = resolve(root, "../codex/codex-rs/app-server-protocol/schema/typescript");
 const source =
   process.env.HICODEX_CODEX_PROTOCOL_DIR ||
-  "/Users/haichao/Desktop/data/codex/codex-rs/app-server-protocol/schema/typescript";
+  defaultProtocolDir;
 const target = resolve(root, "packages/codex-protocol/src/generated");
 
 if (!existsSync(source)) {

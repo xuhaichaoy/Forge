@@ -37,7 +37,7 @@ export default function runApprovalRequestTests(): void {
     reason: "Check UI types",
   });
   const commandDetail = pendingRequestDetail(commandRequest);
-  assertEqual(commandDetail.title, "Run command", "command approval title");
+  assertEqual(commandDetail.title, "Do you want to run this command?", "command approval title");
   assertEqual(commandDetail.reason, "Check UI types", "command approval reason");
   assertIncludes(commandDetail.body, "npm run typecheck", "command approval command text");
   assertIncludes(commandDetail.body, "cwd: /workspace/project", "command approval cwd");
@@ -52,6 +52,49 @@ export default function runApprovalRequestTests(): void {
     "command approval decline result",
   );
 
+  const sessionCommandRequest = request("item/commandExecution/requestApproval", {
+    command: "curl https://example.com",
+    networkApprovalContext: { host: "example.com", protocol: "https" },
+    availableDecisions: ["accept", "acceptForSession", "decline"],
+  });
+  const sessionCommandDetail = pendingRequestDetail(sessionCommandRequest);
+  assertEqual(
+    sessionCommandDetail.title,
+    "Do you want to approve network access to \"example.com\"?",
+    "network command approval title",
+  );
+  assertEqual(sessionCommandDetail.questions[0]?.id, "approvalDecision", "command session approval question id");
+  assertDeepEqual(
+    sessionCommandDetail.questions[0]?.options.map((option) => option.value),
+    ["accept", "acceptForSession"],
+    "command session approval options",
+  );
+  assertIncludes(
+    sessionCommandDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Network host: https://example.com",
+    "command network metadata",
+  );
+  assertDeepEqual(
+    buildApprovalResult(sessionCommandRequest, true, { approvalDecision: ["acceptForSession"] }),
+    { decision: "acceptForSession" },
+    "command session approval accept result",
+  );
+
+  const oneShotCommandRequest = request("item/commandExecution/requestApproval", {
+    command: "npm test",
+    availableDecisions: ["accept", "decline"],
+  });
+  assertEqual(
+    pendingRequestDetail(oneShotCommandRequest).questions.length,
+    0,
+    "command approval should not show session option when server does not offer it",
+  );
+  assertDeepEqual(
+    buildApprovalResult(oneShotCommandRequest, true, { approvalDecision: ["acceptForSession"] }),
+    { decision: "accept" },
+    "unsupported command session choice should fall back to one-shot accept",
+  );
+
   const fileChangeRequest = request("item/fileChange/requestApproval", {
     reason: "Apply generated changes",
     changes: [
@@ -61,7 +104,7 @@ export default function runApprovalRequestTests(): void {
     ],
   });
   const fileChangeDetail = pendingRequestDetail(fileChangeRequest);
-  assertEqual(fileChangeDetail.title, "Apply file changes", "file change approval title");
+  assertEqual(fileChangeDetail.title, "Do you want to make these changes?", "file change approval title");
   assertEqual(fileChangeDetail.reason, "Apply generated changes", "file change approval reason");
   assertIncludes(fileChangeDetail.body, "src/main.ts", "file change includes first path");
   assertIncludes(fileChangeDetail.body, "src/style.css", "file change includes second path");
@@ -69,6 +112,32 @@ export default function runApprovalRequestTests(): void {
     buildApprovalResult(fileChangeRequest, true),
     { decision: "accept" },
     "file change accept result",
+  );
+
+  const sessionFileChangeRequest = request("item/fileChange/requestApproval", {
+    reason: "Apply generated changes",
+    grantRoot: "/workspace/project",
+  });
+  const sessionFileChangeDetail = pendingRequestDetail(sessionFileChangeRequest);
+  assertEqual(sessionFileChangeDetail.questions[0]?.id, "approvalDecision", "file change session approval question id");
+  assertIncludes(
+    sessionFileChangeDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Grant root: /workspace/project",
+    "file change grant root metadata",
+  );
+  assertDeepEqual(
+    buildApprovalResult(sessionFileChangeRequest, true, { approvalDecision: ["acceptForSession"] }),
+    { decision: "acceptForSession" },
+    "file change session approval accept result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(
+      request("applyPatchApproval", { grantRoot: "/workspace/project" }),
+      true,
+      { approvalDecision: ["acceptForSession"] },
+    ),
+    { decision: "approved_for_session" },
+    "legacy file change session approval result",
   );
 
   const inputRequest = request("item/tool/requestUserInput", {

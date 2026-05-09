@@ -1,5 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { JsonRpcMessage } from "@hicodex/codex-protocol";
+
+const APP_SERVER_EVENT_NAME = "hicodex://app-server-event";
 
 export interface HostStatus {
   running: boolean;
@@ -58,12 +61,8 @@ export function sendRaw(message: unknown): Promise<void> {
   return invoke("host_send_raw", { message });
 }
 
-export function claimEventStream(): Promise<number> {
-  return invoke("host_claim_event_stream");
-}
-
-export function pollEvents(streamId: number | null | undefined, maxEvents = 128): Promise<HostEvent[]> {
-  return invoke("host_poll_events", { maxEvents, streamId });
+export function listenEvents(handler: (event: HostEvent) => void): Promise<UnlistenFn> {
+  return listen<HostEvent>(APP_SERVER_EVENT_NAME, (event) => handler(event.payload));
 }
 
 export function writeLocalModelCatalog(
@@ -79,12 +78,26 @@ export function openFileReference(path: string, line?: number | null): Promise<v
 
 export type HostFileReferenceKind = "file" | "image";
 
+export interface LocalFileMetadata {
+  isFile: boolean;
+  sizeBytes?: number | null;
+  mimeType?: string | null;
+}
+
 export function pickFileReferences(kind: HostFileReferenceKind, multiple = true): Promise<string[]> {
   return invoke("host_pick_file_references", { kind, multiple });
 }
 
 export function readImageDataUrl(path: string): Promise<string> {
   return invoke("host_read_image_data_url", { path });
+}
+
+export function readFileMetadata(path: string): Promise<LocalFileMetadata> {
+  return invoke("host_read_file_metadata", { path });
+}
+
+export function readTextFile(path: string, maxBytes?: number): Promise<string> {
+  return invoke("host_read_text_file", { path, maxBytes });
 }
 
 export function readThreadToolHistory(
@@ -96,5 +109,14 @@ export function readThreadToolHistory(
 }
 
 export function isTauriRuntime(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  if (typeof window === "undefined") return false;
+  const runtimeWindow = window as Window & {
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI__?: unknown;
+  };
+  return Boolean(runtimeWindow.__TAURI_INTERNALS__ || runtimeWindow.__TAURI__);
+}
+
+export function convertLocalFileSrc(path: string): string {
+  return convertFileSrc(path);
 }

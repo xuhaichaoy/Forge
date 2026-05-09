@@ -12,6 +12,7 @@ import {
   composerAttachmentsFromPaths,
   composerFilePath,
   composerEnterAction,
+  composerPlaceholderText,
   composerSubmitTooltip,
   confirmAttachmentInput,
   filterSlashCommands,
@@ -49,6 +50,7 @@ function assertHasIds(items: Array<{ id: string }>, ids: string[], message: stri
 
 export default function runComposerWorkflowTests(): void {
   detectsEnterComposerActions();
+  projectsCodexDesktopComposerPlaceholders();
   projectsCodexDesktopComposerSubmitState();
   projectsCodexDesktopSubmitTooltips();
   exposesCodexCliSlashCommands();
@@ -59,6 +61,22 @@ export default function runComposerWorkflowTests(): void {
   drivesAttachmentPickerWithoutWindowPrompt();
   projectsDroppedAndPastedFilesIntoAttachments();
   buildsUserInputFromComposerTextAndAttachments();
+}
+
+function projectsCodexDesktopComposerPlaceholders(): void {
+  assertDeepEqual(
+    [
+      composerPlaceholderText({ hasConversation: false }),
+      composerPlaceholderText({ hasConversation: true }),
+      composerPlaceholderText({ hasConversation: true, hasBackgroundAgentsPanel: true }),
+    ],
+    [
+      "Ask Codex anything. @ to use plugins or mention files",
+      "Ask for follow-up changes",
+      "Ask for follow-up changes or @ to tag an agent",
+    ],
+    "composer placeholders should follow Desktop new-task and local follow-up wording",
+  );
 }
 
 function projectsCodexDesktopSubmitTooltips(): void {
@@ -89,6 +107,15 @@ function projectsCodexDesktopSubmitTooltips(): void {
         pendingRequestCount: 0,
       })),
       composerSubmitTooltip(projectComposerSubmitState({
+        input: "follow up",
+        attachmentCount: 0,
+        connecting: false,
+        threadRunning: true,
+        activeTurnId: "turn-1",
+        pendingRequestCount: 0,
+        queueingEnabled: false,
+      })),
+      composerSubmitTooltip(projectComposerSubmitState({
         input: "blocked",
         attachmentCount: 0,
         connecting: false,
@@ -100,7 +127,8 @@ function projectsCodexDesktopSubmitTooltips(): void {
     [
       "Send message (Enter)",
       "Stop response (Esc)",
-      "Queue follow-up (Enter)",
+      "Queue (Enter)\nSteer (Cmd+Enter)",
+      "Steer (Enter)\nQueue (Cmd+Enter)",
       "Resolve the pending request before sending more input",
     ],
     "submit tooltip should distinguish send, stop, queue, and blocked states",
@@ -297,6 +325,11 @@ function detectsEnterComposerActions(): void {
     "Shift+Enter should keep multiline editing behavior",
   );
   assertDeepEqual(
+    composerEnterAction("line one", { key: "Enter", altKey: true }),
+    { action: "newline", preventDefault: false },
+    "Alt+Enter should keep multiline editing behavior",
+  );
+  assertDeepEqual(
     composerEnterAction("send shortcut", { key: "Enter", metaKey: true }),
     { action: "send", preventDefault: true },
     "Meta+Enter should send composer input",
@@ -406,6 +439,31 @@ function exposesCodexCliSlashCommands(): void {
     ],
     "DEFAULT_SLASH_COMMANDS should include common Codex CLI commands",
   );
+
+  const visibleCommands = slashCommandsForComposerMode("default").filter((command) => !command.hidden);
+  assertHasIds(
+    visibleCommands,
+    [
+      "model",
+      "permissions",
+      "experimental",
+      "review",
+      "resume",
+      "goal",
+      "collab",
+      "mention",
+      "ps",
+      "stop",
+    ],
+    "visible slash commands should keep wired commands available",
+  );
+  for (const command of visibleCommands) {
+    assert(command.supported !== "pending", `visible slash command /${command.id} should not be pending`);
+  }
+  const visibleIds = new Set(visibleCommands.map((command) => command.id));
+  for (const id of ["fast", "ide", "memories", "agent", "side", "debug-config", "personality"]) {
+    assert(!visibleIds.has(id), `unwired slash command /${id} should stay hidden by default`);
+  }
 }
 
 function filtersSlashCommandsByIdTitleAndAliases(): void {
@@ -477,6 +535,11 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
     "mcp should open MCP settings",
   );
   assertDeepEqual(
+    applySlashCommand("skills", { input: "/skills reload" }),
+    { action: "request", request: "listSkills", clearInput: true, payload: { detail: "reload" } },
+    "skills should pass reload through to the skills list request",
+  );
+  assertDeepEqual(
     applySlashCommand("approvals", { input: "/approvals" }),
     { action: "openSettings", panel: "approvals", clearInput: true },
     "approvals should open approval settings",
@@ -530,6 +593,11 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
     applySlashCommand("status", { input: "/status" }),
     { action: "request", request: "showStatus", clearInput: true },
     "status should request current workspace status",
+  );
+  assertDeepEqual(
+    applySlashCommand("ps", { input: "/ps" }),
+    { action: "request", request: "showProcesses", clearInput: true },
+    "ps should list background terminals instead of cleaning them",
   );
   assertDeepEqual(
     applySlashCommand("help", { input: "/help" }),

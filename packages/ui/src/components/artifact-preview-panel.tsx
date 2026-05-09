@@ -1,0 +1,314 @@
+import { ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { RailEntry, RailEntryReference } from "../state/render-groups";
+import {
+  ARTIFACT_PREVIEW_MAX_BYTES,
+  clipArtifactPreviewText,
+  formatArtifactFileSize,
+  isArtifactPreviewTooLarge,
+  projectArtifactPreview,
+} from "../state/artifact-preview";
+import {
+  convertLocalFileSrc,
+  readFileMetadata,
+  readTextFile,
+  type LocalFileMetadata,
+} from "../lib/tauri-host";
+
+export interface ArtifactPreviewPanelProps {
+  entry: RailEntry;
+  onClose: () => void;
+  onOpenFileReference?: (reference: RailEntryReference) => void;
+  onOpenFileExternal?: (reference: RailEntryReference) => void;
+  onOpenUrl?: (url: string) => void;
+}
+
+type TextPreviewState =
+  | { status: "idle"; text: string }
+  | { status: "loading"; text: string }
+  | { status: "ready"; text: string; truncatedLineCount: number; truncatedCharCount: number }
+  | { status: "error"; text: string };
+
+type MetadataPreviewState =
+  | { status: "idle"; metadata: null; message?: undefined }
+  | { status: "loading"; metadata: null; message?: undefined }
+  | { status: "ready"; metadata: LocalFileMetadata; message?: undefined }
+  | { status: "error"; metadata: null; message: string };
+
+export function ArtifactPreviewPanel({
+  entry,
+  onClose,
+  onOpenFileReference,
+  onOpenFileExternal,
+  onOpenUrl,
+}: ArtifactPreviewPanelProps) {
+  const preview = useMemo(() => projectArtifactPreview(entry), [entry]);
+  const [textPreview, setTextPreview] = useState<TextPreviewState>({ status: "idle", text: "" });
+  const [metadataPreview, setMetadataPreview] = useState<MetadataPreviewState>({ status: "idle", metadata: null });
+  const referencePath = preview.reference?.path ?? "";
+  const metadata = metadataPreview.status === "ready" ? metadataPreview.metadata : null;
+  const tooLarge = isArtifactPreviewTooLarge(metadata);
+  const metadataReadyForPreview = !preview.reference
+    || (metadataPreview.status === "ready" && metadataPreview.metadata.isFile && !tooLarge);
+  const imageSrc = preview.imageSource && (preview.imageSource.kind !== "file" || metadataReadyForPreview)
+    ? preview.imageSource.kind === "file" ? localFileSrc(preview.imageSource.src) : preview.imageSource.src
+    : "";
+  const pdfSrc = preview.pdfPath && metadataReadyForPreview ? localFileSrc(preview.pdfPath) : "";
+  const fileSizeText = metadata?.sizeBytes != null ? formatArtifactFileSize(metadata.sizeBytes) : "";
+
+  useEffect(() => {
+    if (!referencePath) {
+      setMetadataPreview({ status: "idle", metadata: null });
+      return;
+    }
+
+    let cancelled = false;
+    setMetadataPreview({ status: "loading", metadata: null });
+    readFileMetadata(referencePath)
+      .then((nextMetadata) => {
+        if (cancelled) return;
+        setMetadataPreview({ status: "ready", metadata: nextMetadata });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setMetadataPreview({
+          status: "error",
+          metadata: null,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [referencePath]);
+
+  useEffect(() => {
+    if (!preview.textPath || !metadataReadyForPreview) {
+      setTextPreview({ status: "idle", text: "" });
+      return;
+    }
+
+    let cancelled = false;
+    setTextPreview({ status: "loading", text: "" });
+    readTextFile(preview.textPath, 120_000)
+      .then((text) => {
+        if (cancelled) return;
+        const clipped = clipArtifactPreviewText(text);
+        setTextPreview({
+          status: "ready",
+          text: clipped.text,
+          truncatedLineCount: clipped.truncatedLineCount,
+          truncatedCharCount: clipped.truncatedCharCount,
+        });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setTextPreview({
+          status: "error",
+          text: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [metadataReadyForPreview, preview.textPath]);
+
+  const previewState = artifactPreviewState(metadataPreview, tooLarge, preview.reference != null);
+  const hasInlinePreview = Boolean(imageSrc || pdfSrc || preview.textPath);
+  const showUnavailablePreview = !previewState && !hasInlinePreview && preview.kind !== "url";
+
+  return (
+    <section className="hc-artifact-preview-panel" aria-label="Artifact preview">
+      <div className="hc-artifact-preview-header">
+        <div className="hc-artifact-preview-heading">
+          {artifactIcon(preview.kind)}
+          <div className="hc-artifact-preview-heading-text">
+            <h2 title={preview.title}>{preview.title}</h2>
+            <span>{preview.artifactTypeLabel}</span>
+          </div>
+        </div>
+        <div className="hc-artifact-preview-header-actions">
+          {preview.reference && onOpenFileReference && (
+            <button
+              aria-label="View source"
+              className="hc-artifact-preview-icon-button"
+              title="View source"
+              type="button"
+              onClick={() => onOpenFileReference(preview.reference!)}
+            >
+              <FileText size={14} />
+            </button>
+          )}
+          {preview.reference && onOpenFileExternal && (
+            <button
+              aria-label="Open"
+              className="hc-artifact-preview-open-button"
+              title="Open"
+              type="button"
+              onClick={() => onOpenFileExternal(preview.reference!)}
+            >
+              <FolderOpen size={14} />
+              <span>Open</span>
+            </button>
+          )}
+          {preview.url && /^https?:\/\//i.test(preview.url) && onOpenUrl && (
+            <button
+              aria-label="Open URL"
+              className="hc-artifact-preview-icon-button"
+              title="Open URL"
+              type="button"
+              onClick={() => onOpenUrl(preview.url!)}
+            >
+              <ExternalLink size={14} />
+            </button>
+          )}
+          <button
+            aria-label="Close artifact preview"
+            className="hc-artifact-preview-icon-button"
+            title="Close preview"
+            type="button"
+            onClick={onClose}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div className="hc-artifact-preview-body">
+        {preview.meta && <div className="hc-artifact-preview-meta" title={preview.meta}>{preview.meta}</div>}
+        {preview.status && <div className="hc-artifact-preview-status">{preview.status}</div>}
+        {fileSizeText && <div className="hc-artifact-preview-meta">{fileSizeText}</div>}
+      </div>
+
+      {previewState && <ArtifactPreviewStateView state={previewState} />}
+
+      {imageSrc && (
+        <figure className="hc-artifact-preview-image-frame">
+          <img alt={preview.title} className="hc-artifact-preview-image" src={imageSrc} />
+        </figure>
+      )}
+
+      {pdfSrc && <ArtifactPdfPreviewFrame src={pdfSrc} title={preview.title} />}
+
+      {preview.textPath && <ArtifactTextPreviewView preview={textPreview} />}
+
+      {showUnavailablePreview && (
+        <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />
+      )}
+
+      {preview.details.length > 0 && (
+        <ul className="hc-artifact-preview-details">
+          {preview.details.slice(0, 8).map((detail, index) => (
+            <li key={`${index}:${detail}`}>{detail}</li>
+          ))}
+          {preview.details.length > 8 && (
+            <li>{preview.details.length - 8} more detail(s)</li>
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function ArtifactPreviewStateView({
+  state,
+}: {
+  state:
+    | { status: "error"; message: string }
+    | { status: "loading"; message: string }
+    | { status: "too-large"; message: string };
+}) {
+  return (
+    <div className="hc-artifact-preview-state" data-status={state.status}>
+      {state.message}
+    </div>
+  );
+}
+
+function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    setStatus("loading");
+  }, [src]);
+
+  return (
+    <div className="hc-artifact-preview-pdf-frame">
+      {status === "loading" && (
+        <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />
+      )}
+      {status === "error" && (
+        <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />
+      )}
+      <iframe
+        className="hc-artifact-preview-pdf"
+        src={src}
+        title={title}
+        onError={() => setStatus("error")}
+        onLoad={() => setStatus("ready")}
+      />
+    </div>
+  );
+}
+
+function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
+  if (preview.status === "idle") return null;
+  if (preview.status === "loading") {
+    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />;
+  }
+  if (preview.status === "error") {
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+  }
+  return (
+    <div className="hc-artifact-preview-text-wrap">
+      <pre className="hc-artifact-preview-text">{preview.text}</pre>
+      {(preview.truncatedLineCount > 0 || preview.truncatedCharCount > 0) && (
+        <div className="hc-artifact-preview-truncation">
+          Preview truncated
+          {preview.truncatedLineCount > 0 ? ` by ${preview.truncatedLineCount} line(s)` : ""}
+          {preview.truncatedCharCount > 0 ? ` and ${preview.truncatedCharCount} character(s)` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function artifactPreviewState(
+  metadataPreview: MetadataPreviewState,
+  tooLarge: boolean,
+  hasReference: boolean,
+): { status: "error" | "loading" | "too-large"; message: string } | null {
+  if (!hasReference) return null;
+  if (metadataPreview.status === "idle" || metadataPreview.status === "loading") {
+    return { status: "loading", message: "Preparing preview..." };
+  }
+  if (metadataPreview.status === "error") {
+    return { status: "error", message: "Couldn't load this preview" };
+  }
+  if (metadataPreview.status === "ready" && !metadataPreview.metadata.isFile) {
+    return { status: "error", message: "Couldn't load this preview" };
+  }
+  if (tooLarge) {
+    return {
+      status: "too-large",
+      message: `This file is too large to preview in the side panel (${formatArtifactFileSize(ARTIFACT_PREVIEW_MAX_BYTES)} limit)`,
+    };
+  }
+  return null;
+}
+
+function artifactIcon(kind: ReturnType<typeof projectArtifactPreview>["kind"]) {
+  if (kind === "image") return <ImageIcon size={15} />;
+  if (kind === "url") return <LinkIcon size={15} />;
+  return <FileText size={15} />;
+}
+
+function localFileSrc(path: string): string {
+  try {
+    return convertLocalFileSrc(path);
+  } catch {
+    return `file://${encodeURI(path)}`;
+  }
+}

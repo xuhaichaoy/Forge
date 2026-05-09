@@ -4,6 +4,62 @@ import { mergeThreadToolHistory } from "../src/state/thread-history-tools";
 export default function runThreadHistoryToolTests(): void {
   restoresPersistedExecCommandBetweenCommentaryMessages();
   stampsRecoveredItemsWithTurnIdSoTheyStayInTurnSegment();
+  doesNotInjectSyntheticMessageReplayWhenServerSnapshotMissesStreamedMessages();
+}
+
+function doesNotInjectSyntheticMessageReplayWhenServerSnapshotMissesStreamedMessages(): void {
+  // Reproduces the live-streaming switch-away/switch-back duplicate: server's
+  // `thread/read.turn.items` for an in-progress turn does NOT yet include the
+  // streamed agentMessage / reasoning items, while the rollout file already
+  // captured them as `agent_message` events. Without the guard we would
+  // synthesize `history-agent:*` ThreadItems with `_historyReplay: true` that
+  // coexist with the live state's streamed agentMessages, doubling them in
+  // the conversation view above the user prompt.
+  const thread = threadWithTurn([
+    {
+      type: "commandExecution",
+      id: "call-exec",
+      command: "/bin/zsh -lc 'cat docs/DEVELOPMENT.md'",
+      cwd: "/workspace",
+      processId: "123",
+      source: "unifiedExecStartup",
+      status: "completed",
+      aggregatedOutput: "ok",
+      exitCode: 0,
+      durationMs: 12,
+    } as unknown as ThreadItem,
+  ]);
+
+  const merged = mergeThreadToolHistory(thread, {
+    threadId: "thread-1",
+    turns: [{
+      turnId: "turn-1",
+      items: [
+        replayUserMessage("read source"),
+        replayAgentMessage("I will inspect the file.", "commentary"),
+        {
+          type: "commandExecution",
+          id: "call-exec",
+          command: "/bin/zsh -lc 'cat docs/DEVELOPMENT.md'",
+          cwd: "/workspace",
+          processId: "123",
+          source: "unifiedExecStartup",
+          status: "completed",
+          aggregatedOutput: "ok",
+          exitCode: 0,
+          durationMs: 12,
+          _historyReplay: true,
+        } as unknown as ThreadItem,
+        replayAgentMessage("The file says done.", "final_answer"),
+      ],
+    }],
+  });
+
+  const items = merged.turns[0].items;
+  const messageItems = items.filter((item) => item.type === "userMessage" || item.type === "agentMessage" || item.type === "reasoning");
+  assertEqual(messageItems.length, 0, "rollout replay must not synthesize message ThreadItems when server lacks them");
+  assertEqual(items.length, 1, "only the recovered tool call should appear from rollout when server snapshot misses streamed messages");
+  assertEqual(items[0]?.id, "call-exec", "recovered tool call should still be injected");
 }
 
 function restoresPersistedExecCommandBetweenCommentaryMessages(): void {

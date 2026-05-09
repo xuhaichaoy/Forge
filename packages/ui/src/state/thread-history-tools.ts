@@ -33,7 +33,15 @@ function mergeReplayItems(existing: ThreadItem[], replayItems: ThreadItem[], tur
       continue;
     }
 
-    if (isRecoveredToolItem(replayItem) || isRenderableReplayMessage(replayItem)) {
+    // Only inject tool replay items when the server snapshot lacks them.
+    // userMessage / agentMessage / reasoning have authoritative protocol
+    // sources (`item/started`, `turn/started`, and `thread/read.turn.items`),
+    // so the rollout reader's synthesized `history-user:*` / `history-agent:*`
+    // / `history-reasoning:*` ids must never coexist alongside the streamed
+    // server-id versions during a live turn — that double-injection produced
+    // the visible "phantom prefix" duplicate of commentary + tool block above
+    // the user prompt when the user switched away mid-stream and back.
+    if (isRecoveredToolItem(replayItem)) {
       merged.push(replayItem);
     }
   }
@@ -119,12 +127,6 @@ function isRecoveredToolItem(item: ThreadItem): boolean {
     || item.type === "webSearch"
     || item.type === "imageView"
     || item.type === "imageGeneration";
-}
-
-function isRenderableReplayMessage(item: ThreadItem): boolean {
-  const record = item as ItemRecord;
-  if (record._historyReplay !== true) return false;
-  return item.type === "userMessage" || item.type === "agentMessage" || item.type === "reasoning";
 }
 
 function isThreadItemLike(value: unknown): value is ThreadItem {

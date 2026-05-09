@@ -79,7 +79,7 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
       text:
         "Updated [render groups](packages/ui/src/state/render-groups.ts), " +
         "`packages/ui/test/render-groups-right-rail.test.ts`, " +
-        "[local preview](http://localhost:5178/) and http://localhost:5178/",
+        "[local preview](http://localhost:5178/review?tab=files) and http://localhost:5178/review?tab=files",
       phase: "final",
       memoryCitation: null,
     } as ThreadItem,
@@ -90,7 +90,7 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
     [
       "packages/ui/src/state/render-groups.ts",
       "packages/ui/test/render-groups-right-rail.test.ts",
-      "http://localhost:5178/",
+      "http://localhost:5178/review?tab=files",
     ],
     "artifacts should dedupe fileChange paths, assistant file references, and repeated URLs",
   );
@@ -104,9 +104,18 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
     [
       { kind: "file", reference: { path: "packages/ui/src/state/render-groups.ts", lineStart: 1 } },
       { kind: "file", reference: { path: "packages/ui/test/render-groups-right-rail.test.ts", lineStart: 1 } },
-      { kind: "url", url: "http://localhost:5178/" },
+      { kind: "url", url: "http://localhost:5178/review?tab=files" },
     ],
     "artifact entries should expose click targets from the projection layer",
+  );
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.title),
+    [
+      "render-groups.ts",
+      "render-groups-right-rail.test.ts",
+      "localhost:5178/review?tab=files",
+    ],
+    "website artifact labels should match Codex Desktop host/path/search formatting",
   );
 }
 
@@ -169,6 +178,16 @@ function excludesNodeReplSourcesButKeepsMcpAndWebSearchSources(): void {
       error: null,
     } as ThreadItem,
     {
+      type: "mcpToolCall",
+      id: "github-2",
+      server: "github",
+      tool: "get_pr",
+      status: "completed",
+      arguments: { number: 1 },
+      result: { title: "Fix" },
+      error: null,
+    } as ThreadItem,
+    {
       type: "webSearch",
       id: "web-search-1",
       query: "Codex Desktop right rail sources",
@@ -177,22 +196,18 @@ function excludesNodeReplSourcesButKeepsMcpAndWebSearchSources(): void {
   ]);
 
   assertDeepEqual(
-    projection.sources.map((entry) => entry.id),
-    ["mcp:github:list_prs", "web:Codex Desktop right rail sources"],
-    "sources should exclude node_repl while keeping ordinary MCP and web search sources",
-  );
-  assertDeepEqual(
-    projection.sources.map((entry) => entry.meta),
-    ["MCP tool", "Web search"],
-    "sources should preserve source kinds",
-  );
-  assertDeepEqual(
-    projection.sources.map((entry) => entry.action),
+    projection.sources.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      meta: entry.meta ?? null,
+      status: entry.status ?? null,
+      action: entry.action ?? null,
+    })),
     [
-      { kind: "source", itemId: "github-1" },
-      { kind: "source", itemId: "web-search-1" },
+      { id: "mcp-server:github", title: "GitHub", meta: null, status: null, action: null },
+      { id: "webSearch", title: "Web search", meta: null, status: null, action: null },
     ],
-    "sources should carry source item targets for conversation navigation",
+    "sources should exclude node_repl and dedupe MCP/web sources like Codex Desktop",
   );
 }
 

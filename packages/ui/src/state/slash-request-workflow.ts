@@ -9,6 +9,7 @@ import type {
 } from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
+import { projectBackgroundTerminalEntries } from "./background-terminals";
 import type { SlashCommandRequest } from "./composer-workflow";
 import {
   projectCommandPanelEntries,
@@ -18,6 +19,7 @@ import {
   type CommandPanelKind,
   type CommandPanelOptions,
 } from "./command-panel";
+import type { AccumulatedThreadItem } from "./render-groups";
 import type { ThreadWorkflowDispatch } from "./thread-workflow";
 
 export interface SlashRequestWorkflowContext {
@@ -31,6 +33,7 @@ export interface SlashRequestWorkflowContext {
   activeThread: Thread | null;
   activeThreadId: string | null;
   activeTurnId: string | null;
+  activeItems?: AccumulatedThreadItem[];
   connected: boolean;
   pid?: number | null;
   modelCount: number;
@@ -54,6 +57,7 @@ export async function runSlashRequestWorkflow(
     activeThread,
     activeThreadId,
     activeTurnId,
+    activeItems = [],
     connected,
     pid,
     modelCount,
@@ -182,15 +186,28 @@ export async function runSlashRequestWorkflow(
         openCommandPanel("mcp", { status: "loading", entries: [] });
         await client.request("config/mcpServer/reload", undefined, 120_000);
         const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail }, 120_000);
-        openCommandPanel("mcp", { status: "ready", entries: projectMcpServerEntries(result) });
+        openCommandPanel("mcp", {
+          status: "ready",
+          entries: projectMcpServerEntries(result),
+          message: "Select a callable MCP tool to run it with empty arguments.",
+        });
         return;
       }
       case "listSkills": {
+        const detail = stringPayload(payload, "detail").toLowerCase();
+        const forceReload = detail === "reload" || detail === "refresh" || detail === "force";
         openCommandPanel("skills", { status: "loading", entries: [] });
         const result = await client.request<unknown>("skills/list", {
           cwds: workspace.trim() ? [workspace.trim()] : [],
+          forceReload,
         });
-        openCommandPanel("skills", { status: "ready", entries: projectCommandPanelEntries({ skills: result }) });
+        openCommandPanel("skills", {
+          status: "ready",
+          entries: projectCommandPanelEntries({ skills: result }),
+          message: forceReload
+            ? "Reloaded skills from disk. Select a skill to attach it to the next message."
+            : "Select a skill to attach it to the next message.",
+        });
         return;
       }
       case "listHooks": {
@@ -277,6 +294,18 @@ export async function runSlashRequestWorkflow(
             status: "cleanup requested",
             meta: `thread ${threadId}`,
           }],
+        });
+        return;
+      }
+      case "showProcesses": {
+        const entries = projectBackgroundTerminalEntries(activeItems);
+        openCommandPanel("status", {
+          status: entries.length > 0 ? "ready" : "empty",
+          title: "Background terminals",
+          message: entries.length > 0
+            ? `${entries.length} background terminal(s) running.`
+            : "No background terminals running.",
+          entries,
         });
         return;
       }

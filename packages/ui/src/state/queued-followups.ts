@@ -37,6 +37,22 @@ export function removeQueuedFollowUp(queue: QueuedFollowUp[], id: string): Queue
   return queue.filter((message) => message.id !== id);
 }
 
+export function reorderQueuedFollowUps(
+  queue: QueuedFollowUp[],
+  activeId: string,
+  overId: string,
+): QueuedFollowUp[] {
+  if (activeId === overId) return queue;
+  const fromIndex = queue.findIndex((message) => message.id === activeId);
+  const toIndex = queue.findIndex((message) => message.id === overId);
+  if (fromIndex < 0 || toIndex < 0) return queue;
+  const next = [...queue];
+  const [message] = next.splice(fromIndex, 1);
+  if (!message) return queue;
+  next.splice(toIndex, 0, message);
+  return next;
+}
+
 export function updateQueuedFollowUpStatus(
   queue: QueuedFollowUp[],
   id: string,
@@ -52,6 +68,51 @@ export function updateQueuedFollowUpStatus(
         }
       : message,
   );
+}
+
+/**
+ * Codex Desktop's `steeringUserMessage` queue de-dups follow-ups by canonical
+ * prompt text before pushing them onto the steering ring (see Desktop's `Jp`
+ * helper in `composer-D82P7v-B.js`). HiCodex mirrors that here so users can't
+ * accidentally enqueue the same follow-up twice while a turn is still
+ * streaming.
+ */
+export function isQueuedFollowUpDuplicate(
+  queue: QueuedFollowUp[],
+  candidate: Pick<QueuedFollowUp, "text" | "attachments">,
+): boolean {
+  const key = canonicalFollowUpKey(candidate);
+  if (!key) return false;
+  return queue.some((message) => canonicalFollowUpKey(message) === key);
+}
+
+function canonicalFollowUpKey(
+  message: Pick<QueuedFollowUp, "text" | "attachments">,
+): string {
+  const text = message.text.trim().replaceAll(/\s+/g, " ");
+  const attachmentKey = message.attachments
+    .map((attachment) => `${attachment.type}::${describeAttachmentTarget(attachment)}`)
+    .sort()
+    .join("\u001f");
+  if (!text && !attachmentKey) return "";
+  return `${text}\u001e${attachmentKey}`;
+}
+
+function describeAttachmentTarget(attachment: ComposerAttachment): string {
+  switch (attachment.type) {
+    case "mention":
+    case "skill":
+      return `${attachment.name}@${attachment.path}`;
+    case "localImage":
+    case "filePath":
+      return attachment.path;
+    case "image":
+      return `${attachment.name ?? ""}@${attachment.url}`;
+    case "plainText":
+      return attachment.text;
+    default:
+      return "";
+  }
 }
 
 export function queuedFollowUpSummary(message: Pick<QueuedFollowUp, "text" | "attachments">): string {

@@ -3,8 +3,73 @@ import type { CommandPanelKind, CommandPanelOptions } from "../src/state/command
 
 export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await listsCollaborationModesThroughAppServer();
+  await reloadsSkillsThroughAppServer();
   await setsReadsAndClearsThreadGoalsThroughAppServer();
+  await listsBackgroundTerminalsFromActiveItems();
   await cleansBackgroundTerminalsThroughAppServer();
+  await searchesMentionsThroughAppServer();
+}
+
+async function reloadsSkillsThroughAppServer(): Promise<void> {
+  const workflow = createWorkflowRecorder([
+    {
+      data: [
+        {
+          cwd: "/workspace",
+          skills: [
+            {
+              name: "review",
+              path: "/workspace/.codex/skills/review/SKILL.md",
+              scope: "repo",
+              enabled: true,
+              interface: { displayName: "Review", shortDescription: "Review local changes." },
+            },
+          ],
+          errors: [],
+        },
+      ],
+    },
+  ]);
+
+  await runSlashRequestWorkflow("listSkills", { detail: "reload" }, workflow.context);
+
+  assertDeepEqual(
+    workflow.requests,
+    [{
+      method: "skills/list",
+      params: { cwds: ["/workspace"], forceReload: true },
+      timeoutMs: undefined,
+    }],
+    "skills reload should force app-server to rescan skills from disk",
+  );
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "skills",
+      options: {
+        status: "ready",
+        entries: [{
+          id: "skill:review",
+          title: "Review",
+          kind: "skill",
+          status: "enabled",
+          meta: "Repo · /workspace/.codex/skills/review/SKILL.md",
+          details: [
+            "Review local changes.",
+            "Path: /workspace/.codex/skills/review/SKILL.md",
+            "CWD: /workspace",
+          ],
+          action: {
+            type: "attachSkill",
+            name: "review",
+            path: "/workspace/.codex/skills/review/SKILL.md",
+          },
+        }],
+        message: "Reloaded skills from disk. Select a skill to attach it to the next message.",
+      },
+    },
+    "skills reload should show Desktop-style skill metadata in the command panel",
+  );
 }
 
 async function listsCollaborationModesThroughAppServer(): Promise<void> {
@@ -94,6 +159,48 @@ async function setsReadsAndClearsThreadGoalsThroughAppServer(): Promise<void> {
   );
 }
 
+async function listsBackgroundTerminalsFromActiveItems(): Promise<void> {
+  const workflow = createWorkflowRecorder([]);
+
+  await runSlashRequestWorkflow("showProcesses", undefined, {
+    ...workflow.context,
+    activeItems: [
+      {
+        type: "commandExecution",
+        id: "cmd-1",
+        command: "npm run dev",
+        cwd: "/workspace",
+        processId: "proc-1",
+        source: "unifiedExecStartup",
+        status: "inProgress",
+        aggregatedOutput: "ready",
+      },
+    ],
+  });
+
+  assertDeepEqual(workflow.requests, [], "ps should use active ThreadItems without app-server polling");
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "status",
+      options: {
+        status: "ready",
+        title: "Background terminals",
+        message: "1 background terminal(s) running.",
+        entries: [{
+          id: "background-terminal:proc-1",
+          title: "npm run dev",
+          kind: "status",
+          status: "running",
+          meta: "/workspace",
+          details: ["Process: proc-1", "Output: ready"],
+        }],
+      },
+    },
+    "ps should show running background terminals in the command panel",
+  );
+}
+
 async function cleansBackgroundTerminalsThroughAppServer(): Promise<void> {
   const workflow = createWorkflowRecorder([{}]);
 
@@ -122,6 +229,58 @@ async function cleansBackgroundTerminalsThroughAppServer(): Promise<void> {
       },
     },
     "background terminal cleanup should report an accepted cleanup request",
+  );
+}
+
+async function searchesMentionsThroughAppServer(): Promise<void> {
+  const workflow = createWorkflowRecorder([
+    {
+      files: [
+        {
+          path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+          file_name: "HiCodexApp.tsx",
+          score: 91,
+          match_type: "fuzzy",
+        },
+      ],
+    },
+  ]);
+
+  await runSlashRequestWorkflow("showMentionPicker", { query: "app" }, workflow.context);
+
+  assertDeepEqual(
+    workflow.requests,
+    [{
+      method: "fuzzyFileSearch",
+      params: { query: "app", roots: ["/workspace"], cancellationToken: null },
+      timeoutMs: 120_000,
+    }],
+    "mention slash request should use app-server fuzzy file search",
+  );
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "generic",
+      options: {
+        status: "ready",
+        title: "Files",
+        entries: [{
+          id: "file:/workspace/packages/ui/src/HiCodexApp.tsx",
+          title: "HiCodexApp.tsx",
+          kind: "status",
+          status: "fuzzy",
+          meta: "/workspace/packages/ui/src/HiCodexApp.tsx",
+          details: ["score: 91"],
+          action: {
+            type: "attachMention",
+            name: "HiCodexApp.tsx",
+            path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+          },
+        }],
+        message: "1 matching file(s). Select one to attach it.",
+      },
+    },
+    "mention slash request should return attachable mention entries",
   );
 }
 

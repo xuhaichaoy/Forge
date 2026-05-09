@@ -1,25 +1,55 @@
 import {
   codeBlockTitle,
+  highlightCodeSegments,
   initialToolActivityExpanded,
   isToolActivityExpandable,
+  markdownLinkFaviconUrl,
+  mermaidDiagramKind,
+  mermaidFlowchartPreviewModel,
   memoryCitationEntries,
   parseMarkdownBlocks,
   parseMarkdownInline,
+  reasoningActivityBody,
+  sanitizeMermaidCode,
+  shouldRenderMermaidPreview,
+  shouldRenderSvgCodePreview,
+  stripReasoningActivityHeading,
+  svgCodePreviewDataUrl,
   userImageSrc,
+  virtualTurnRange,
+  virtualTurnRangeFromBottom,
+  workedForExpandedUnits,
+  initialToolActivityViewState,
+  toolActivityDetailItems,
 } from "../src/components/conversation-view";
 
 export default function runConversationViewTests(): void {
   parsesMarkdownBlocksForModelOutput();
+  preservesOrderedListStartLikeDesktopMarkdown();
   parsesInlineCodeAndLinks();
+  derivesMarkdownLinkFaviconsLikeDesktop();
   parsesInlineEmphasisLikeAssistantMarkdown();
+  parsesSanitizedBasicInlineHtmlLikeDesktopMarkdown();
+  parsesMathBlocksAndInlineMathLikeDesktopMarkdown();
+  parsesDetailsBlocksLikeDesktopMarkdown();
   parsesFileCitationMarkers();
   parsesPipeTablesLikeAssistantMarkdown();
   parsesGfmTaskListRuleAndImageBlocks();
+  groupsConsecutiveMarkdownImagesLikeDesktopMediaGrid();
   normalizesMemoryCitationEntries();
   normalizesLocalUserImageSources();
   formatsCodeBlockTitlesLikeCodexSnippetHeaders();
+  highlightsCodeBlocksWithDesktopScopes();
+  previewsSvgCodeBlocksLikeCodexDesktop();
+  previewsCommonMermaidFlowchartsLikeCodexDesktop();
   keepsOnlyDesktopActiveRowsExpandedByDefault();
+  keepsDesktopToolActivityViewStates();
+  projectsReasoningBodiesLikeCodexDesktop();
   keepsWorkedForRowsCompact();
+  omitsReasoningRowsFromExplorationDetailsLikeDesktop();
+  rendersWorkedForExpansionThroughNormalConversationUnits();
+  computesDesktopVirtualTurnRangeWithMeasuredHeights();
+  computesDesktopVirtualTurnRangeFromBottomDistance();
 }
 
 function parsesMarkdownBlocksForModelOutput(): void {
@@ -46,18 +76,48 @@ function parsesMarkdownBlocksForModelOutput(): void {
   assertDeepEqual(blocks[4], { kind: "blockquote", text: "quoted note" }, "blockquote block");
 }
 
+function preservesOrderedListStartLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks(["3. third", "4. fourth"].join("\n")),
+    [{ kind: "list", ordered: true, items: ["third", "fourth"], start: 3 }],
+    "ordered markdown lists should preserve non-default start numbers",
+  );
+  assertDeepEqual(
+    parseMarkdownBlocks(["1. first", "2. second"].join("\n")),
+    [{ kind: "list", ordered: true, items: ["first", "second"] }],
+    "ordered markdown lists starting at one should not need an explicit start",
+  );
+}
+
 function parsesInlineCodeAndLinks(): void {
   assertDeepEqual(
-    parseMarkdownInline("Open [file](</tmp/example file.ts:3>) and `run tests`."),
+    parseMarkdownInline("Open [file](</tmp/example file.ts:3>), <https://example.com/docs>, and `run tests`."),
     [
       { kind: "text", text: "Open " },
       { kind: "link", text: "file", href: "/tmp/example file.ts:3" },
-      { kind: "text", text: " and " },
+      { kind: "text", text: ", " },
+      { kind: "link", text: "https://example.com/docs", href: "https://example.com/docs" },
+      { kind: "text", text: ", and " },
       { kind: "code", text: "run tests" },
       { kind: "text", text: "." },
     ],
-    "inline markdown segments",
+    "inline markdown segments should include CommonMark autolinks like Desktop markdown",
   );
+  assertDeepEqual(
+    parseMarkdownInline("Mail <dev@example.com>, not <div>."),
+    [
+      { kind: "text", text: "Mail " },
+      { kind: "link", text: "dev@example.com", href: "mailto:dev@example.com" },
+      { kind: "text", text: ", not <div>." },
+    ],
+    "email autolinks should render while HTML tags stay plain text",
+  );
+}
+
+function derivesMarkdownLinkFaviconsLikeDesktop(): void {
+  assertEqual(markdownLinkFaviconUrl("https://docs.example.com/path?q=1"), "https://docs.example.com/favicon.ico", "external links should derive an origin favicon URL");
+  assertEqual(markdownLinkFaviconUrl("mailto:team@example.com"), null, "non-web links should not show website favicons");
+  assertEqual(markdownLinkFaviconUrl("not a url"), null, "invalid links should not show favicons");
 }
 
 function parsesInlineEmphasisLikeAssistantMarkdown(): void {
@@ -77,6 +137,76 @@ function parsesInlineEmphasisLikeAssistantMarkdown(): void {
       { kind: "text", text: ", and snake_case." },
     ],
     "inline emphasis segments",
+  );
+}
+
+function parsesSanitizedBasicInlineHtmlLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownInline("H<sub>2</sub>O<br><sup>*</sup> <u>under</u> <script>x</script>"),
+    [
+      { kind: "text", text: "H" },
+      { kind: "htmlSpan", tag: "sub", text: "2" },
+      { kind: "text", text: "O" },
+      { kind: "htmlBreak" },
+      { kind: "htmlSpan", tag: "sup", text: "*" },
+      { kind: "text", text: " " },
+      { kind: "htmlSpan", tag: "u", text: "under" },
+      { kind: "text", text: " <script>x</script>" },
+    ],
+    "basic sanitized inline HTML should render while unsupported tags remain text",
+  );
+}
+
+function parsesMathBlocksAndInlineMathLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "Before",
+      "",
+      "$$",
+      "E = mc^2",
+      "$$",
+      "",
+      "\\[a^2 + b^2 = c^2\\]",
+    ].join("\n")),
+    [
+      { kind: "paragraph", text: "Before" },
+      { kind: "math", text: "E = mc^2" },
+      { kind: "math", text: "a^2 + b^2 = c^2" },
+    ],
+    "display math should parse as its own block like Desktop markdown",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Use $E=mc^2$ and \\(a+b\\), but keep $5 text."),
+    [
+      { kind: "text", text: "Use " },
+      { kind: "math", text: "E=mc^2" },
+      { kind: "text", text: " and " },
+      { kind: "math", text: "a+b" },
+      { kind: "text", text: ", but keep $5 text." },
+    ],
+    "inline math should parse while unmatched currency-like text remains plain",
+  );
+}
+
+function parsesDetailsBlocksLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "<details open>",
+      "<summary>Evidence</summary>",
+      "",
+      "- Checked Desktop chunk",
+      "- Patched renderer",
+      "</details>",
+    ].join("\n")),
+    [
+      {
+        kind: "details",
+        open: true,
+        summary: "Evidence",
+        text: "- Checked Desktop chunk\n- Patched renderer",
+      },
+    ],
+    "HTML details blocks should render as Desktop-style expandable markdown blocks",
   );
 }
 
@@ -145,6 +275,27 @@ function parsesGfmTaskListRuleAndImageBlocks(): void {
   );
 }
 
+function groupsConsecutiveMarkdownImagesLikeDesktopMediaGrid(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "![One](https://example.com/one.png)",
+      "![Two](data:image/png;base64,aaaa)",
+      "![Clip](https://example.com/demo.mp4 \"Demo\")",
+    ].join("\n")),
+    [
+      {
+        kind: "imageGrid",
+        images: [
+          { kind: "image", alt: "One", src: "https://example.com/one.png", title: null },
+          { kind: "image", alt: "Two", src: "data:image/png;base64,aaaa", title: null },
+          { kind: "image", alt: "Clip", src: "https://example.com/demo.mp4", title: "Demo" },
+        ],
+      },
+    ],
+    "consecutive markdown image lines should become a Desktop-style media grid",
+  );
+}
+
 function normalizesMemoryCitationEntries(): void {
   assertDeepEqual(
     memoryCitationEntries({
@@ -191,11 +342,98 @@ function formatsCodeBlockTitlesLikeCodexSnippetHeaders(): void {
   assertEqual(codeBlockTitle(""), "text", "missing language should fall back to text");
 }
 
+function highlightsCodeBlocksWithDesktopScopes(): void {
+  assertDeepEqual(
+    highlightCodeSegments("ts", "const answer = JSON.stringify({ ok: true })")?.filter((segment) => segment.className),
+    [
+      { text: "const", className: "hljs-keyword" },
+      { text: "=", className: "hljs-operator" },
+      { text: "JSON", className: "hljs-built_in" },
+      { text: ".", className: "hljs-operator" },
+      { text: "stringify", className: "hljs-property" },
+      { text: "({", className: "hljs-operator" },
+      { text: ":", className: "hljs-operator" },
+      { text: "true", className: "hljs-literal" },
+      { text: "})", className: "hljs-operator" },
+    ],
+    "common code fences should use Desktop-compatible hljs scopes",
+  );
+  assertDeepEqual(
+    highlightCodeSegments("json", "{ \"status\": true, \"count\": 2 }")?.filter((segment) => segment.className),
+    [
+      { text: "{", className: "hljs-operator" },
+      { text: "\"status\"", className: "hljs-attr" },
+      { text: ":", className: "hljs-operator" },
+      { text: "true", className: "hljs-literal" },
+      { text: ",", className: "hljs-operator" },
+      { text: "\"count\"", className: "hljs-attr" },
+      { text: ":", className: "hljs-operator" },
+      { text: "2", className: "hljs-number" },
+      { text: "}", className: "hljs-operator" },
+    ],
+    "json code fences should distinguish keys, literals, and numbers",
+  );
+  assertEqual(highlightCodeSegments("", "plain text"), null, "plain code fences should not invent highlighting");
+}
+
+function previewsSvgCodeBlocksLikeCodexDesktop(): void {
+  const svg = "<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\" /></svg>";
+  assertEqual(shouldRenderSvgCodePreview("svg", "not actually svg"), true, "svg fences should use the image preview path");
+  assertEqual(shouldRenderSvgCodePreview("xml", `\n${svg}`), true, "xml fences with svg content should preview");
+  assertEqual(shouldRenderSvgCodePreview("html", "<div />"), false, "non-svg html fences should stay as code");
+  assertEqual(
+    svgCodePreviewDataUrl(svg),
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+    "svg preview should use a data URL so the raw code can still be copied",
+  );
+}
+
+function previewsCommonMermaidFlowchartsLikeCodexDesktop(): void {
+  const source = [
+    "flowchart LR",
+    "  A[Start] -->|ok| B{Done?}",
+    "  B -- no --> C((Retry))",
+  ].join("\n");
+  const preview = mermaidFlowchartPreviewModel("mermaid", source);
+  assertEqual(shouldRenderMermaidPreview("mermaid", source), true, "mermaid flowchart fences should render a diagram preview");
+  assertEqual(shouldRenderMermaidPreview("ts", source), false, "non-mermaid fences should stay as code");
+  assertEqual(mermaidDiagramKind(source), "flowchart", "graph and flowchart diagrams should be recognized");
+  assertEqual(mermaidDiagramKind("sequenceDiagram\nA->>B: hello"), "sequence", "Desktop mermaid kind aliases should be recognized");
+  assertEqual(
+    sanitizeMermaidCode("%%{init: {\"theme\":\"base\"}}%%\nflowchart LR\nclick A callback\nA-->B"),
+    "flowchart LR\nA-->B",
+    "safe Mermaid directives and click bindings should be stripped before rendering",
+  );
+  assertEqual(
+    sanitizeMermaidCode("%%{init: {securityLevel: 'loose'}}%%\nflowchart LR\nA-->B"),
+    null,
+    "Mermaid security-level overrides should not be rendered",
+  );
+  assertEqual(preview?.direction, "LR", "flowchart direction should be preserved");
+  assertDeepEqual(
+    preview?.nodes.map((node) => ({ id: node.id, label: node.label, shape: node.shape })),
+    [
+      { id: "A", label: "Start", shape: "rect" },
+      { id: "B", label: "Done?", shape: "diamond" },
+      { id: "C", label: "Retry", shape: "circle" },
+    ],
+    "common Mermaid node labels and shapes should project into the preview",
+  );
+  assertDeepEqual(
+    preview?.edges,
+    [
+      { from: "A", to: "B", label: "ok" },
+      { from: "B", to: "C", label: "no" },
+    ],
+    "common Mermaid edge labels should project into the preview",
+  );
+}
+
 function keepsOnlyDesktopActiveRowsExpandedByDefault(): void {
   assertEqual(
     initialToolActivityExpanded(toolActivity("reasoning", true)),
-    true,
-    "running reasoning should start expanded",
+    false,
+    "running reasoning should stay as a compact Desktop thought row",
   );
   assertEqual(
     initialToolActivityExpanded(toolActivity("reasoning", false)),
@@ -206,6 +444,16 @@ function keepsOnlyDesktopActiveRowsExpandedByDefault(): void {
     initialToolActivityExpanded(toolActivity("collapsed-tool-activity", true)),
     false,
     "running collapsed tool activity should still start collapsed",
+  );
+  assertEqual(
+    initialToolActivityExpanded(toolActivity("exploration", true)),
+    true,
+    "active exploration should show a preview like Codex Desktop",
+  );
+  assertEqual(
+    initialToolActivityExpanded(toolActivity("exploration", false)),
+    false,
+    "completed exploration should start collapsed like Codex Desktop",
   );
   assertEqual(
     initialToolActivityExpanded(toolActivity("pending-mcp-tool-calls", true)),
@@ -226,6 +474,125 @@ function keepsOnlyDesktopActiveRowsExpandedByDefault(): void {
     initialToolActivityExpanded(toolActivity("web-search-group", true)),
     false,
     "running web search groups should hide rows while active",
+  );
+}
+
+function keepsDesktopToolActivityViewStates(): void {
+  assertEqual(
+    initialToolActivityViewState(toolActivity("exploration", true)),
+    "preview",
+    "active exploration should start in Desktop preview state",
+  );
+  assertEqual(
+    initialToolActivityViewState(toolActivity("exploration", false)),
+    "collapsed",
+    "completed exploration should start collapsed",
+  );
+  assertEqual(
+    initialToolActivityViewState(toolActivity("web-search-group", false)),
+    "expanded",
+    "completed web search should start expanded",
+  );
+  assertEqual(
+    initialToolActivityViewState(toolActivity("multi-agent-group", true)),
+    "expanded",
+    "running multi-agent group should start expanded",
+  );
+}
+
+function projectsReasoningBodiesLikeCodexDesktop(): void {
+  assertEqual(
+    stripReasoningActivityHeading("**Checked renderer**\nThe body stays visible."),
+    "The body stays visible.",
+    "Desktop reasoning body should drop a leading bold heading before rendering details",
+  );
+  assertEqual(
+    stripReasoningActivityHeading("**"),
+    "",
+    "unterminated heading marker should not render stray markdown",
+  );
+  assertEqual(
+    reasoningActivityBody({
+      kind: "toolActivity",
+      key: "reasoning:1",
+      items: [
+        {
+          id: "reasoning-1",
+          type: "reasoning",
+          content: "**Checked renderer**\nThe body stays visible.",
+        },
+      ],
+      summary: {
+        groupType: "reasoning",
+        icon: "reasoning",
+        label: "Thought",
+        activeDetail: null,
+        details: [],
+        inProgress: false,
+        totalDurationMs: null,
+        counts: {
+          commands: 0,
+          exploredFiles: 0,
+          searches: 0,
+          lists: 0,
+          fileChanges: 0,
+          createdFiles: 0,
+          editedFiles: 0,
+          deletedFiles: 0,
+          mcpCalls: 0,
+          dynamicCalls: 0,
+          webSearches: 0,
+          reasoning: 1,
+          plans: 0,
+          other: 0,
+        },
+      },
+    }),
+    "The body stays visible.",
+    "reasoning activity should expose Desktop-style collapsible body text",
+  );
+}
+
+function omitsReasoningRowsFromExplorationDetailsLikeDesktop(): void {
+  const details = toolActivityDetailItems({
+    kind: "toolActivity",
+    key: "exploration:read-1:search-1",
+    items: [
+      { type: "commandExecution", id: "read-1" },
+      { type: "reasoning", id: "reasoning-1" },
+      { type: "commandExecution", id: "search-1" },
+    ],
+    summary: {
+      groupType: "exploration",
+      icon: "search",
+      label: "Explored 1 file, 1 search",
+      activeDetail: null,
+      details: [],
+      inProgress: false,
+      totalDurationMs: null,
+      counts: {
+        commands: 0,
+        exploredFiles: 1,
+        searches: 1,
+        lists: 0,
+        fileChanges: 0,
+        createdFiles: 0,
+        editedFiles: 0,
+        deletedFiles: 0,
+        mcpCalls: 0,
+        dynamicCalls: 0,
+        webSearches: 0,
+        reasoning: 1,
+        plans: 0,
+        other: 0,
+      },
+    },
+  });
+
+  assertDeepEqual(
+    details.map((item) => item.id),
+    ["read-1", "search-1"],
+    "exploration details should only render exec rows while retaining reasoning in the source group",
   );
 }
 
@@ -256,15 +623,157 @@ function keepsWorkedForRowsCompact(): void {
     "ordinary tool activity with details should still expand",
   );
   assertEqual(
+    isToolActivityExpandable(toolActivity("exploration", true, 1)),
+    false,
+    "running exploration previews should not expose an interactive expander",
+  );
+  assertEqual(
+    isToolActivityExpandable(toolActivity("exploration", false, 1)),
+    true,
+    "completed exploration groups should remain expandable",
+  );
+  assertEqual(
     isToolActivityExpandable(toolActivity("web-search-group", true, 1)),
     false,
     "active web search groups should not expose an interactive expander",
   );
 }
 
+function rendersWorkedForExpansionThroughNormalConversationUnits(): void {
+  const unit = {
+    kind: "toolActivity",
+    key: "worked-for:command-1:worked-for-1",
+    items: [
+      {
+        type: "commandExecution",
+        id: "command-1",
+        command: "rg render-groups",
+        status: "completed",
+        exitCode: 0,
+        commandActions: [{ type: "search", command: "rg render-groups", query: "render-groups", path: null }],
+      },
+      {
+        type: "agentMessage",
+        id: "assistant-commentary-1",
+        text: "I checked the renderer.",
+        phase: "commentary",
+        memoryCitation: null,
+      },
+      {
+        type: "worked-for",
+        id: "worked-for-1",
+        status: "completed",
+        startedAtMs: 1_000,
+        completedAtMs: 2_000,
+      },
+    ],
+    summary: {
+      groupType: "worked-for",
+      icon: "clock",
+      label: "Worked for 1s",
+      activeDetail: null,
+      details: [],
+      inProgress: false,
+      totalDurationMs: 1_000,
+      counts: {
+        commands: 0,
+        exploredFiles: 0,
+        searches: 1,
+        lists: 0,
+        fileChanges: 0,
+        createdFiles: 0,
+        editedFiles: 0,
+        deletedFiles: 0,
+        mcpCalls: 0,
+        dynamicCalls: 0,
+        webSearches: 0,
+        reasoning: 0,
+        plans: 0,
+        other: 0,
+      },
+    },
+  } as Parameters<typeof workedForExpandedUnits>[0];
+
+  const expanded = workedForExpandedUnits(unit);
+  assertDeepEqual(
+    expanded.map((item) => item.kind),
+    ["toolActivity", "message"],
+    "worked-for expansion should reuse normal conversation render units",
+  );
+  assertEqual(
+    expanded[0]?.kind === "toolActivity" ? expanded[0].summary.groupType : null,
+    "exploration",
+    "recovered exploration commands should keep Desktop's exploration group type",
+  );
+  assertEqual(
+    expanded[1]?.kind === "message" ? expanded[1].role : null,
+    "assistant",
+    "intermediate model output should render as a normal assistant message",
+  );
+}
+
+function computesDesktopVirtualTurnRangeWithMeasuredHeights(): void {
+  const range = virtualTurnRange({
+    count: 8,
+    heights: new Map([[0, 100], [1, 200], [2, 160]]),
+    scrollTop: 330,
+    viewportHeight: 220,
+    estimatedHeight: 280,
+    gap: 12,
+    overscan: 1,
+  });
+  assertDeepEqual(
+    range,
+    {
+      startIndex: 1,
+      endIndex: 5,
+      paddingTop: 112,
+      paddingBottom: 864,
+      totalHeight: 1944,
+    },
+    "virtualized turn range should use Desktop estimate, gap, overscan, and measured heights",
+  );
+}
+
+function computesDesktopVirtualTurnRangeFromBottomDistance(): void {
+  const heights = new Map<string, number>([
+    ["turn-a", 100],
+    ["turn-b", 200],
+    ["turn-c", 300],
+    ["turn-d", 400],
+  ]);
+  const range = virtualTurnRangeFromBottom({
+    turnKeys: ["turn-a", "turn-b", "turn-c", "turn-d"],
+    heights,
+    distanceFromBottom: 0,
+    viewportHeight: 420,
+    gap: 10,
+    overscan: 0,
+  });
+
+  assertEqual(range.startIndex, 2, "bottom-distance range should start at the first visible row near the bottom");
+  assertEqual(range.endIndex, 4, "bottom-distance range should include the latest row");
+  assertEqual(range.paddingTop, 320, "bottom-distance range should preserve top padding before rendered rows");
+  assertEqual(range.paddingBottom, 0, "bottom-distance range should have no bottom padding at scroll bottom");
+
+  const scrolled = virtualTurnRangeFromBottom({
+    turnKeys: ["turn-a", "turn-b", "turn-c", "turn-d"],
+    heights,
+    distanceFromBottom: 650,
+    viewportHeight: 260,
+    gap: 10,
+    overscan: 0,
+  });
+
+  assertEqual(scrolled.startIndex, 1, "scrolled bottom-distance range should move toward older rows");
+  assertEqual(scrolled.endIndex, 3, "scrolled bottom-distance range should exclude the latest row when it is below viewport");
+  assertEqual(scrolled.paddingBottom, 400, "scrolled bottom-distance range should preserve bottom padding below rendered rows");
+}
+
 function toolActivity(
   groupType:
     | "collapsed-tool-activity"
+    | "exploration"
     | "pending-mcp-tool-calls"
     | "worked-for"
     | "reasoning"

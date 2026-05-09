@@ -35,20 +35,22 @@ export interface PendingRequestOption {
   description: string;
 }
 
+const APPROVAL_DECISION_QUESTION_ID = "approvalDecision";
+
 export function pendingRequestDetail(request: PendingServerRequest): PendingRequestDetail {
   const params = request.params as Record<string, unknown> | undefined;
   switch (request.method) {
     case "item/commandExecution/requestApproval":
     case "execCommandApproval":
       return {
-        title: "Run command",
+        title: commandApprovalTitle(params),
         reason: stringField(params, "reason"),
         body: [
           commandText(params),
           stringField(params, "cwd") ? `cwd: ${stringField(params, "cwd")}` : "",
         ].filter(Boolean).join("\n"),
-        metadata: [],
-        questions: [],
+        metadata: commandApprovalMetadata(params),
+        questions: commandApprovalQuestions(params),
         acceptLabel: "Allow",
         declineLabel: "Cancel",
         canAccept: true,
@@ -62,11 +64,11 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         return typeof path === "string" ? [path] : [];
       });
       return {
-        title: "Apply file changes",
+        title: "Do you want to make these changes?",
         reason: stringField(params, "reason"),
         body: paths.length > 0 ? paths.join("\n") : formatUnknown(params),
-        metadata: [],
-        questions: [],
+        metadata: fileChangeApprovalMetadata(params),
+        questions: fileChangeApprovalQuestions(params),
         acceptLabel: "Allow",
         declineLabel: "Cancel",
         canAccept: true,
@@ -168,10 +170,13 @@ export function buildApprovalResult(
 ): unknown | null {
   switch (request.method) {
     case "item/commandExecution/requestApproval":
+      return { decision: accepted ? approvalDecisionFromAnswers(request, answers) : "decline" };
     case "execCommandApproval":
+      return { decision: accepted ? legacyApprovalDecisionFromAnswers(request, answers) : "denied" };
     case "item/fileChange/requestApproval":
+      return { decision: accepted ? approvalDecisionFromAnswers(request, answers) : "decline" };
     case "applyPatchApproval":
-      return { decision: accepted ? "accept" : "decline" };
+      return { decision: accepted ? legacyApprovalDecisionFromAnswers(request, answers) : "denied" };
     case "item/tool/requestUserInput":
       return accepted ? { answers: buildUserInputAnswers(request, answers) } : null;
     case "mcpServer/elicitation/request":
@@ -199,6 +204,121 @@ export function buildApprovalResult(
     default:
       return null;
   }
+}
+
+function commandApprovalQuestions(params: unknown): PendingRequestQuestion[] {
+  return requestAllowsSessionApproval({ method: "item/commandExecution/requestApproval", params, id: "", createdAt: 0 })
+    ? [approvalDecisionQuestion("Do you want to run this command?", {
+      once: "Yes",
+      session: "Yes, and don't ask again this session",
+    })]
+    : [];
+}
+
+function fileChangeApprovalQuestions(params: unknown): PendingRequestQuestion[] {
+  return requestAllowsSessionApproval({ method: "item/fileChange/requestApproval", params, id: "", createdAt: 0 })
+    ? [approvalDecisionQuestion("Do you want to make these changes?", {
+      once: "Yes",
+      session: "Yes, and don't ask again this session",
+    })]
+    : [];
+}
+
+function approvalDecisionQuestion(
+  question: string,
+  labels: { once: string; session: string },
+): PendingRequestQuestion {
+  return {
+    id: APPROVAL_DECISION_QUESTION_ID,
+    header: "Approval",
+    question,
+    kind: "singleSelect",
+    isSecret: false,
+    required: true,
+    defaultAnswers: ["accept"],
+    options: [
+      { value: "accept", label: labels.once, description: "Allow only this request." },
+      { value: "acceptForSession", label: labels.session, description: "Allow matching requests until app-server restarts." },
+    ],
+  };
+}
+
+function commandApprovalTitle(params: unknown): string {
+  if (!params || typeof params !== "object") return "Do you want to run this command?";
+  const network = (params as Record<string, unknown>).networkApprovalContext;
+  if (network && typeof network === "object") {
+    const host = stringField(network as Record<string, unknown>, "host");
+    return host ? `Do you want to approve network access to "${host}"?` : "Do you want to approve network access?";
+  }
+  return "Do you want to run this command?";
+}
+
+function approvalDecisionFromAnswers(
+  request: PendingServerRequest,
+  answers: Record<string, string[]>,
+): "accept" | "acceptForSession" {
+  const requested = answers[APPROVAL_DECISION_QUESTION_ID]?.[0];
+  return requested === "acceptForSession" && requestAllowsSessionApproval(request) ? "acceptForSession" : "accept";
+}
+
+function legacyApprovalDecisionFromAnswers(
+  request: PendingServerRequest,
+  answers: Record<string, string[]>,
+): "approved" | "approved_for_session" {
+  return approvalDecisionFromAnswers(request, answers) === "acceptForSession" ? "approved_for_session" : "approved";
+}
+
+function requestAllowsSessionApproval(request: PendingServerRequest): boolean {
+  switch (request.method) {
+    case "item/commandExecution/requestApproval":
+    case "execCommandApproval":
+      return commandAllowsSessionApproval(request.params);
+    case "item/fileChange/requestApproval":
+    case "applyPatchApproval":
+      return fileChangeAllowsSessionApproval(request.params);
+    default:
+      return false;
+  }
+}
+
+function commandAllowsSessionApproval(params: unknown): boolean {
+  const record = params && typeof params === "object" ? params as Record<string, unknown> : {};
+  const availableDecisions = availableDecisionStrings(record.availableDecisions);
+  if (availableDecisions.length > 0) return availableDecisions.includes("acceptForSession");
+  return Boolean(record.networkApprovalContext);
+}
+
+function fileChangeAllowsSessionApproval(params: unknown): boolean {
+  if (!params || typeof params !== "object") return false;
+  return Boolean(stringField(params as Record<string, unknown>, "grantRoot"));
+}
+
+function availableDecisionStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => typeof item === "string" ? [item] : [])
+    : [];
+}
+
+function commandApprovalMetadata(params: unknown): PendingRequestMetadata[] {
+  const metadata = requestMetadata(params, ["cwd", "threadId", "turnId", "itemId", "approvalId"]);
+  if (!params || typeof params !== "object") return metadata;
+  const record = params as Record<string, unknown>;
+  const network = record.networkApprovalContext && typeof record.networkApprovalContext === "object"
+    ? record.networkApprovalContext as Record<string, unknown>
+    : null;
+  if (!network) return metadata;
+  const host = stringField(network, "host");
+  const protocol = stringField(network, "protocol");
+  return [
+    ...metadata,
+    ...(host ? [{ label: "Network host", value: protocol ? `${protocol}://${host}` : host }] : []),
+  ];
+}
+
+function fileChangeApprovalMetadata(params: unknown): PendingRequestMetadata[] {
+  const metadata = requestMetadata(params, ["threadId", "turnId", "itemId"]);
+  const grantRoot = params && typeof params === "object" ? stringField(params as Record<string, unknown>, "grantRoot") : "";
+  return grantRoot ? [...metadata, { label: "Grant root", value: grantRoot }] : metadata;
 }
 
 export function requestUserInputQuestions(params: unknown): PendingRequestQuestion[] {

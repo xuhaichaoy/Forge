@@ -4,9 +4,10 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const defaultCodexSourceDir = resolve(root, "../codex/codex-rs");
 const codexSourceDir =
   process.env.HICODEX_CODEX_SOURCE_DIR ||
-  "/Users/haichao/Desktop/data/codex/codex-rs";
+  defaultCodexSourceDir;
 const providedBin = process.env.HICODEX_CODEX_BIN;
 const targetDir = resolve(root, "apps/desktop/src-tauri/binaries");
 const targetBin = resolve(targetDir, "codex");
