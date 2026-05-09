@@ -2,6 +2,9 @@ import {
   RAIL_LIST_PREVIEW_LIMIT,
   clipRailEntries,
   projectRightRailSections,
+  rightRailContentShiftPx,
+  rightRailDisplayMode,
+  rightRailReservedInlineEndPx,
 } from "../src/state/right-rail";
 
 export default function runRightRailTests(): void {
@@ -9,8 +12,10 @@ export default function runRightRailTests(): void {
   hidesEmptySections();
   keepsPopulatedBranchDetails();
   clipsRailEntriesByDefaultAndExpandsAllEntries();
+  keepsProgressEntriesUnclippedLikeCodexDesktop();
   preservesSectionCountsAndEntryMeta();
   projectsBranchDiffAction();
+  computesDesktopRightRailDisplayModeAndContentShift();
 }
 
 function keepsCodexDesktopSectionOrder(): void {
@@ -75,6 +80,25 @@ function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
   assertEqual(expanded.entries.length, entries.length, "expanded rail preview should show all entries");
   assertEqual(expanded.remainingCount, 0, "expanded rail preview should not report remaining entries");
   assertEqual(expanded.entries[entries.length - 1], entries[entries.length - 1], "expanded preview should keep last entry");
+}
+
+function keepsProgressEntriesUnclippedLikeCodexDesktop(): void {
+  const progressEntries = makeEntries(RAIL_LIST_PREVIEW_LIMIT + 3, "progress");
+
+  const sections = projectRightRailSections({
+    progress: progressEntries,
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    sources: [],
+  });
+
+  const progress = sectionById(sections, "progress");
+  assertEqual(progress.entries.length, progressEntries.length, "progress should project every plan item");
+  assertEqual(progress.allEntries.length, progressEntries.length, "progress should keep every source entry");
+  assertEqual(progress.canToggle, false, "progress should not use preview toggles");
+  assertEqual(progress.remainingCount, 0, "progress should not hide entries behind a remaining count");
 }
 
 function preservesSectionCountsAndEntryMeta(): void {
@@ -149,6 +173,22 @@ function projectsBranchDiffAction(): void {
     { kind: "diff" },
     "branch diff rail entry should expose a diff action",
   );
+}
+
+function computesDesktopRightRailDisplayModeAndContentShift(): void {
+  assertEqual(rightRailDisplayMode(1_000), "overlay", "narrow content should use overlay right rail mode");
+  assertEqual(rightRailDisplayMode(1_200), "shift", "medium content should use shift right rail mode");
+  assertEqual(rightRailDisplayMode(1_500), "gutter", "wide content should use gutter right rail mode");
+
+  assertEqual(rightRailContentShiftPx(1_200, true), -158, "shift mode should move content by half the rail plus gap");
+  assertEqual(rightRailContentShiftPx(1_200, false), 0, "missing content should not move the thread body");
+  assertEqual(rightRailContentShiftPx(1_200, true, false), 0, "unpinned right rail should not move the thread body");
+  assertEqual(rightRailContentShiftPx(1_500, true), 0, "gutter mode should keep the thread centered");
+  assertEqual(rightRailReservedInlineEndPx(1_000, true), 0, "overlay mode should not reserve layout space");
+  assertEqual(rightRailReservedInlineEndPx(1_200, true), 332, "shift mode should reserve the visible rail footprint");
+  assertEqual(rightRailReservedInlineEndPx(1_500, true), 332, "gutter mode should reserve the visible rail footprint");
+  assertEqual(rightRailReservedInlineEndPx(1_200, false), 0, "missing content should not reserve right rail space");
+  assertEqual(rightRailReservedInlineEndPx(1_200, true, false), 0, "unpinned right rail should not reserve right rail space");
 }
 
 function railEntry(id: string, title: string, status: string, meta: string) {

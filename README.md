@@ -36,9 +36,11 @@ The sidecar host looks for Codex in this order:
 1. `HICODEX_CODEX_BIN`
 2. bundled `binaries/codex` next to the app binary or under macOS `Contents/Resources`
 3. `apps/desktop/src-tauri/binaries/codex` during local development
-4. local Codex debug builds under `/Users/haichao/Desktop/data/codex`
-5. `/Applications/Codex.app/Contents/Resources/codex`
-6. `codex` on `PATH`
+4. `/Applications/Codex.app/Contents/Resources/codex`
+5. `codex` on `PATH`
+
+Use `HICODEX_CODEX_BIN=/path/to/codex npm run tauri:dev` to run against a
+local Codex debug binary.
 
 Set `HICODEX_CODEX_HOME` if you want to override the isolated Codex home.
 By default HiCodex uses `~/Library/Application Support/HiCodex/codex-home` on

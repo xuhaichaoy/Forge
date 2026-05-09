@@ -8,9 +8,8 @@ import type {
   RequestId,
 } from "@hicodex/codex-protocol";
 import {
-  claimEventStream,
   getHostStatus,
-  pollEvents,
+  listenEvents,
   sendRaw,
   startAppServer,
   stopAppServer,
@@ -37,8 +36,8 @@ export interface CodexRpcClientHandlers {
 export class CodexJsonRpcClient {
   private nextId = 1;
   private readonly idPrefix = `hicodex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-  private pollTimer: number | null = null;
-  private eventStreamId: number | null = null;
+  private eventUnlisten: (() => void) | null = null;
+  private eventListenPromise: Promise<void> | null = null;
   private connected = false;
   private disposed = false;
   private connectPromise: Promise<InitializeResponse> | null = null;
@@ -67,6 +66,7 @@ export class CodexJsonRpcClient {
   }
 
   private async connectFresh(): Promise<InitializeResponse> {
+    await this.startEvents();
     let attachedToExisting = false;
     let status: HostStatus;
     try {
@@ -84,7 +84,6 @@ export class CodexJsonRpcClient {
 
     this.assertActive();
     this.handlers.onHostStatus?.(status);
-    await this.startPolling();
     const initialized = await this.initializeServer(attachedToExisting);
     await this.notify("initialized");
     this.handlers.onLog?.(
@@ -122,7 +121,7 @@ export class CodexJsonRpcClient {
   }
 
   async disconnect(): Promise<void> {
-    this.stopPolling();
+    this.stopEvents();
     this.connected = false;
     this.connectPromise = null;
     this.rejectPending("Disconnected from Codex app-server");
@@ -132,7 +131,7 @@ export class CodexJsonRpcClient {
 
   dispose(): void {
     this.disposed = true;
-    this.stopPolling();
+    this.stopEvents();
     this.connected = false;
     this.connectPromise = null;
     this.rejectPending("Codex JSON-RPC client was disposed");
@@ -190,52 +189,48 @@ export class CodexJsonRpcClient {
     return status;
   }
 
-  private async startPolling(): Promise<void> {
+  private async startEvents(): Promise<void> {
     if (this.disposed) return;
-    if (this.eventStreamId === null) {
-      this.eventStreamId = await claimEventStream();
-      this.assertActive();
+    if (this.eventUnlisten) return;
+    if (!this.eventListenPromise) {
+      this.eventListenPromise = listenEvents((event) => this.handleHostEvent(event))
+        .then((unlisten) => {
+          if (this.disposed) {
+            unlisten();
+            return;
+          }
+          this.eventUnlisten = unlisten;
+        })
+        .finally(() => {
+          this.eventListenPromise = null;
+        });
     }
-    if (this.pollTimer !== null) return;
-    this.pollTimer = window.setInterval(() => {
-      void this.flushEvents();
-    }, 120);
-    void this.flushEvents();
+    await this.eventListenPromise;
+    this.assertActive();
   }
 
-  private stopPolling(): void {
-    if (this.pollTimer === null) return;
-    window.clearInterval(this.pollTimer);
-    this.pollTimer = null;
+  private stopEvents(): void {
+    if (!this.eventUnlisten) return;
+    this.eventUnlisten();
+    this.eventUnlisten = null;
   }
 
-  private async flushEvents(): Promise<void> {
+  private handleHostEvent(event: HostEvent): void {
     if (this.disposed) return;
-    let events: HostEvent[] = [];
-    try {
-      events = await pollEvents(this.eventStreamId);
-    } catch (error) {
-      this.handlers.onLog?.(`failed to poll app-server events: ${formatError(error)}`, "error");
-      return;
-    }
-
-    if (this.disposed) return;
-    for (const event of events) {
-      switch (event.type) {
-        case "json":
-          this.handleMessage(event.value);
-          break;
-        case "stderr":
-          this.handlers.onLog?.(event.line, "warn");
-          break;
-        case "stdout":
-        case "lifecycle":
-          this.handlers.onLog?.("line" in event ? event.line : event.message);
-          break;
-        case "error":
-          this.handlers.onLog?.(event.message, "error");
-          break;
-      }
+    switch (event.type) {
+      case "json":
+        this.handleMessage(event.value);
+        break;
+      case "stderr":
+        this.handlers.onLog?.(event.line, "warn");
+        break;
+      case "stdout":
+      case "lifecycle":
+        this.handlers.onLog?.("line" in event ? event.line : event.message);
+        break;
+      case "error":
+        this.handlers.onLog?.(event.message, "error");
+        break;
     }
   }
 

@@ -1,6 +1,8 @@
 import {
   createQueuedFollowUp,
+  isQueuedFollowUpDuplicate,
   queuedFollowUpSummary,
+  reorderQueuedFollowUps,
   removeQueuedFollowUp,
   updateQueuedFollowUpStatus,
 } from "../src/state/queued-followups";
@@ -8,7 +10,23 @@ import {
 export default function runQueuedFollowUpsTests(): void {
   createsStableQueuedFollowUpRecords();
   removesAndUpdatesQueuedFollowUps();
+  reordersQueuedFollowUps();
   summarizesTextAndAttachmentOnlyMessages();
+  detectsDuplicateFollowUpsByCanonicalKey();
+}
+
+function detectsDuplicateFollowUpsByCanonicalKey(): void {
+  const queue = [
+    createQueuedFollowUp({ id: "q1", now: 10, text: "Run again", attachments: [], cwd: "/w" }),
+  ];
+  const dupe = { text: "Run again", attachments: [] };
+  const fresh = { text: "Inspect more", attachments: [] };
+  if (!isQueuedFollowUpDuplicate(queue, dupe)) {
+    throw new Error("dedup helper should flag identical prompt as duplicate");
+  }
+  if (isQueuedFollowUpDuplicate(queue, fresh)) {
+    throw new Error("dedup helper must not flag a different prompt as duplicate");
+  }
 }
 
 function createsStableQueuedFollowUpRecords(): void {
@@ -71,6 +89,20 @@ function removesAndUpdatesQueuedFollowUps(): void {
       status: "queued",
     },
     "queued follow-up should preserve composer mode when provided",
+  );
+}
+
+function reordersQueuedFollowUps(): void {
+  const queue = [
+    createQueuedFollowUp({ id: "a", now: 1, text: "A", attachments: [], cwd: "" }),
+    createQueuedFollowUp({ id: "b", now: 2, text: "B", attachments: [], cwd: "" }),
+    createQueuedFollowUp({ id: "c", now: 3, text: "C", attachments: [], cwd: "" }),
+  ];
+
+  assertDeepEqual(
+    reorderQueuedFollowUps(queue, "c", "a").map((message) => message.id),
+    ["c", "a", "b"],
+    "reorder should move the dragged queued message before the target",
   );
 }
 

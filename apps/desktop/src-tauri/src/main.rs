@@ -1,16 +1,27 @@
 use base64::{engine::general_purpose, Engine as _};
 use hicodex_host::{
-    AppServerEvent, AppServerHost, AppServerStartConfig, HostStatus, LocalModelCatalogConfig,
-    ThreadToolHistory,
+    AppServerHost, AppServerStartConfig, HostStatus, LocalModelCatalogConfig, ThreadToolHistory,
 };
+use serde::Serialize;
 use serde_json::Value;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 use std::process::Command;
-use tauri::State;
+use tauri::{Emitter, Manager, State};
+
+const APP_SERVER_EVENT_NAME: &str = "hicodex://app-server-event";
 
 struct AppState {
     host: AppServerHost,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalFileMetadata {
+    is_file: bool,
+    size_bytes: Option<u64>,
+    mime_type: Option<String>,
 }
 
 impl Default for AppState {
@@ -45,22 +56,6 @@ fn host_send_raw(state: State<'_, AppState>, message: Value) -> Result<(), Strin
         .host
         .send_json(message)
         .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn host_claim_event_stream(state: State<'_, AppState>) -> u64 {
-    state.host.claim_event_stream()
-}
-
-#[tauri::command]
-fn host_poll_events(
-    state: State<'_, AppState>,
-    max_events: Option<usize>,
-    stream_id: Option<u64>,
-) -> Vec<AppServerEvent> {
-    state
-        .host
-        .drain_events(max_events.unwrap_or(128), stream_id)
 }
 
 #[tauri::command]
@@ -118,6 +113,54 @@ fn host_read_image_data_url(path: String) -> Result<String, String> {
         "data:{mime};base64,{}",
         general_purpose::STANDARD.encode(bytes)
     ))
+}
+
+#[tauri::command]
+fn host_read_file_metadata(path: String) -> Result<LocalFileMetadata, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("file path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    let metadata =
+        fs::metadata(target).map_err(|error| format!("failed to read file metadata: {error}"))?;
+    let is_file = metadata.is_file();
+    Ok(LocalFileMetadata {
+        is_file,
+        size_bytes: if is_file { Some(metadata.len()) } else { None },
+        mime_type: file_mime_type(target).map(ToOwned::to_owned),
+    })
+}
+
+#[tauri::command]
+fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("text file path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    if !target.is_file() {
+        return Err(format!("text file does not exist: {trimmed}"));
+    }
+
+    let max_bytes = max_bytes.unwrap_or(120_000).clamp(1, 240_000);
+    let mut file =
+        fs::File::open(target).map_err(|error| format!("failed to open text file: {error}"))?;
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read text file: {error}"))?;
+
+    let truncated = bytes.len() as u64 > max_bytes;
+    if truncated {
+        bytes.truncate(max_bytes as usize);
+    }
+    let mut text = String::from_utf8_lossy(&bytes).to_string();
+    if truncated {
+        text.push_str("\n\n[Preview truncated]");
+    }
+    Ok(text)
 }
 
 #[tauri::command]
@@ -217,6 +260,27 @@ fn image_mime_type(path: &Path) -> Option<&'static str> {
     }
 }
 
+fn file_mime_type(path: &Path) -> Option<&'static str> {
+    if let Some(mime) = image_mime_type(path) {
+        return Some(mime);
+    }
+    let extension = path.extension()?.to_string_lossy().to_lowercase();
+    match extension.as_str() {
+        "csv" => Some("text/csv"),
+        "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+        "html" | "htm" => Some("text/html"),
+        "ipynb" => Some("application/x-ipynb+json"),
+        "json" => Some("application/json"),
+        "md" | "markdown" | "mdx" => Some("text/markdown"),
+        "pdf" => Some("application/pdf"),
+        "pptx" => Some("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+        "tsv" => Some("text/tab-separated-values"),
+        "txt" => Some("text/plain"),
+        "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+        _ => None,
+    }
+}
+
 fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -239,17 +303,25 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::default())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            let state = app.state::<AppState>();
+            state.host.forward_events(move |event| {
+                let _ = handle.emit(APP_SERVER_EVENT_NAME, event);
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             host_start_app_server,
             host_stop_app_server,
             host_status,
             host_send_raw,
-            host_claim_event_stream,
-            host_poll_events,
             host_write_local_model_catalog,
             host_open_file_reference,
             host_pick_file_references,
             host_read_image_data_url,
+            host_read_file_metadata,
+            host_read_text_file,
             host_read_thread_tool_history
         ])
         .run(tauri::generate_context!())

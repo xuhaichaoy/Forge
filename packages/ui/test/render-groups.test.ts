@@ -3,9 +3,12 @@ import {
   formatItemDetail,
   itemText,
   projectConversation,
+  splitTurnItems,
   stripRawThinkingMarkup,
   type AccumulatedThreadItem as ThreadItem,
 } from "../src/state/render-groups";
+
+const TEST_SKILL_PATH = "/workspace/.codex/skills/code-review";
 
 export default function runRenderGroupsTests(): void {
   projectsUserAndAssistantMessagesAsStableMessageGroups();
@@ -21,22 +24,29 @@ export default function runRenderGroupsTests(): void {
   suppressesPendingMcpCallCoveredByElicitation();
   projectsDesktopLifecycleEventsSemantically();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
+  splitsTurnItemsIntoCodexDesktopBuckets();
+  projectsTurnBucketsInCodexDesktopOrder();
   keepsDurationBackedCommandsAsToolActivity();
   usesLifecycleTimestampsAsToolActivityDuration();
   projectsExplicitWorkedForItemAsCompactActivity();
-  usesWorkedForAsAgentActivityHeaderBeforeAssistant();
+  usesWorkedForAsTurnCollapseDividerBeforeAssistant();
   keepsWorkedForExpandedUntilFinalAssistantStarts();
   keepsTodoListOutOfMainConversationButProjectsProgress();
   hidesPendingApprovalItemsFromOrdinaryActivity();
   groupsExplorationCommandActionsLikeCodexDesktop();
+  dedupesExplorationReadCountsByCwdLikeCodexDesktop();
+  keepsReasoningInsideActiveExplorationLikeCodexDesktop();
   groupsToolActivityItemsAndPreservesSummaries();
   summarizesPatchChangeKinds();
   formatsExpandedToolDetailsSemantically();
   groupsWebSearchIntoActivityAndSources();
   groupsAdjacentWebSearchesLikeCodexDesktop();
   rendersActiveWebSearchLikeCodexDesktop();
+  cleansWebSearchSiteFiltersLikeCodexDesktop();
   rendersInProgressMultiAgentActionsAsDesktopActivity();
+  keepsInProgressMultiAgentActionsSeparateLikeCodexDesktop();
   groupsCompletedMultiAgentActionsLikeCodexDesktop();
+  hidesWaitMultiAgentActionsLikeCodexDesktop();
   returnsEmptyProjectionForEmptyItems();
 }
 
@@ -51,7 +61,7 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
         text_elements: [{ byteRange: { start: 23, end: 37 }, placeholder: "@render-groups" }],
       },
       { type: "mention", name: "render-groups.ts", path: "packages/ui/src/state/render-groups.ts" },
-      { type: "skill", name: "code-review", path: "/Users/haichao/.codex/skills/code-review" },
+      { type: "skill", name: "code-review", path: TEST_SKILL_PATH },
       { type: "image", url: "https://example.com/diagram.png" },
       { type: "image", url: "data:image/png;base64,mXlu4jLxTLYBhEGAQVwmLhOY52IAxAMI" },
       { type: "localImage", path: "/tmp/screenshot 1.png" },
@@ -101,7 +111,7 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
           kind: "chip",
           chipKind: "skill",
           label: "code-review",
-          path: "/Users/haichao/.codex/skills/code-review",
+          path: TEST_SKILL_PATH,
         },
         {
           kind: "image",
@@ -325,7 +335,7 @@ function groupsReasoningSummaryAndContentIntoToolActivity(): void {
     assertEqual(unit.summary.groupType, "reasoning", "reasoning activity should keep Codex Desktop group type");
     assertEqual(unit.summary.label, "Thought", "reasoning activity label");
     assertEqual(unit.summary.counts.reasoning, 1, "reasoning activity count");
-    assertDeepEqual(unit.summary.details, ["Thought"], "reasoning activity detail");
+    assertDeepEqual(unit.summary.details, [], "reasoning activity should not expose ordinary tool details");
     assertEqual(unit.items[0], reasoning, "reasoning item should stay attached to the activity group");
   }
   assertEqual(
@@ -625,6 +635,179 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
   assertTextIncludes(planImplementation.text, "Implement renderer parity", "plan implementation content");
 }
 
+function splitsTurnItemsIntoCodexDesktopBuckets(): void {
+  const split = splitTurnItems([
+    {
+      type: "hook",
+      id: "hook-before-user",
+      status: "completed",
+    } as unknown as ThreadItem,
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Inspect Desktop projection" }],
+    } as ThreadItem,
+    {
+      type: "model-changed",
+      id: "model-changed-1",
+      fromModel: "gpt-5.3",
+      toModel: "gpt-5.4",
+    } as unknown as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "rg VT local-conversation-thread",
+      status: "completed",
+      exitCode: 0,
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-1",
+      text: "Desktop order confirmed.",
+      completed: true,
+    } as ThreadItem,
+    {
+      type: "automatic-approval-review",
+      id: "auto-review-1",
+      status: "completed",
+    } as unknown as ThreadItem,
+    {
+      type: "generated-image",
+      id: "generated-image-1",
+      status: "completed",
+      src: "https://example.com/out.png",
+    } as unknown as ThreadItem,
+    {
+      type: "auto-review-interruption-warning",
+      id: "warning-1",
+    } as unknown as ThreadItem,
+    {
+      type: "proposed-plan",
+      id: "plan-1",
+      content: "Next patch",
+      completed: true,
+    } as unknown as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-1",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+    {
+      type: "remote-task-created",
+      id: "remote-1",
+      taskId: "task-1",
+    } as unknown as ThreadItem,
+    {
+      type: "personality-changed",
+      id: "personality-1",
+      personality: "pragmatic",
+    } as unknown as ThreadItem,
+    {
+      type: "forked-from-conversation",
+      id: "forked-1",
+      sourceConversationId: "parent-1",
+    } as unknown as ThreadItem,
+  ], "completed");
+
+  assertDeepEqual(split.preUserItems.map((item) => item.id), ["hook-before-user"], "pre-user hook bucket");
+  assertDeepEqual(split.userItems.map((item) => item.id), ["user-1"], "user bucket");
+  assertDeepEqual(split.modelChangedItems.map((item) => item.id), ["model-changed-1"], "model-changed bucket");
+  assertDeepEqual(split.agentItems.map((item) => item.id), ["command-1"], "agent bucket should exclude the final assistant");
+  assertEqual(split.assistantItem?.id ?? null, "assistant-1", "final assistant bucket");
+  assertDeepEqual(split.postAssistantItems.map((item) => item.id), ["warning-1", "auto-review-1"], "post-assistant bucket");
+  assertDeepEqual(split.toolOutputItems.map((item) => item.id), ["generated-image-1"], "tool output bucket");
+  assertEqual(split.proposedPlanItem?.id ?? null, "plan-1", "proposed plan bucket");
+  assertEqual(split.unifiedDiffItem?.id ?? null, "diff-1", "diff bucket");
+  assertDeepEqual(split.remoteTaskCreatedItems.map((item) => item.id), ["remote-1"], "remote task bucket");
+  assertDeepEqual(split.personalityChangedItems.map((item) => item.id), ["personality-1"], "personality bucket");
+  assertDeepEqual(split.forkedFromConversationItems.map((item) => item.id), ["forked-1"], "forked conversation bucket");
+}
+
+function projectsTurnBucketsInCodexDesktopOrder(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-1",
+      content: [{ type: "text", text: "Patch projection" }],
+    } as ThreadItem,
+    {
+      type: "model-changed",
+      id: "model-changed-1",
+      _turnId: "turn-1",
+      fromModel: "gpt-5.3",
+      toModel: "gpt-5.4",
+    } as unknown as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      _turnId: "turn-1",
+      command: "sed -n '1,80p' project-conversation.ts",
+      status: "completed",
+      exitCode: 0,
+    } as ThreadItem,
+    {
+      type: "automation-update",
+      id: "automation-1",
+      _turnId: "turn-1",
+      result: { mode: "recording", automationId: "automation-1" },
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-1",
+      _turnId: "turn-1",
+      text: "Projection patched.",
+      completed: true,
+    } as ThreadItem,
+    {
+      type: "generated-image",
+      id: "generated-image-1",
+      _turnId: "turn-1",
+      status: "completed",
+      src: "https://example.com/out.png",
+    } as unknown as ThreadItem,
+    {
+      type: "auto-review-interruption-warning",
+      id: "warning-1",
+      _turnId: "turn-1",
+    } as unknown as ThreadItem,
+    {
+      type: "proposed-plan",
+      id: "plan-1",
+      _turnId: "turn-1",
+      content: "Next patch",
+      completed: true,
+    } as unknown as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-1",
+      _turnId: "turn-1",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+    {
+      type: "remote-task-created",
+      id: "remote-1",
+      _turnId: "turn-1",
+      taskId: "task-1",
+    } as unknown as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.kind === "message" ? `${unit.role}:${unit.key}` : `${unit.kind}:${unit.key}`),
+    [
+      "event:model-changed-1",
+      "user:user-1",
+      "toolActivity:collapsed-tool-activity:command-1:command-1",
+      "assistant:assistant-1",
+      "event:generated-image-1",
+      "event:plan-1",
+      "event:diff-1",
+      "event:remote-1",
+    ],
+    "projectConversation should render split Desktop buckets in VT order",
+  );
+}
+
 function keepsDurationBackedCommandsAsToolActivity(): void {
   const projection = projectConversation([
     {
@@ -691,7 +874,7 @@ function projectsExplicitWorkedForItemAsCompactActivity(): void {
   }
 }
 
-function usesWorkedForAsAgentActivityHeaderBeforeAssistant(): void {
+function usesWorkedForAsTurnCollapseDividerBeforeAssistant(): void {
   const projection = projectConversation([
     {
       type: "userMessage",
@@ -727,21 +910,31 @@ function usesWorkedForAsAgentActivityHeaderBeforeAssistant(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 3, "worked-for should not create an extra activity after assistant output");
+  assertEqual(projection.units.length, 4, "worked-for should render as the divider between agent activity and assistant output");
   assertEqual(projection.units[0]?.kind, "message", "user message should remain first");
   const activity = projection.units[1];
-  assertEqual(activity?.kind, "toolActivity", "agent activity header should render before assistant");
+  assertEqual(activity?.kind, "toolActivity", "agent activity should render before the worked-for divider");
   if (activity?.kind === "toolActivity") {
-    assertEqual(activity.summary.groupType, "worked-for", "worked-for should become the agent activity header");
-    assertEqual(activity.summary.label, "Worked for 20s", "header label should use worked-for duration");
-    assertEqual(activity.summary.defaultExpanded, false, "worked-for header should collapse after final assistant output starts");
+    assertEqual(activity.summary.groupType, "collapsed-tool-activity", "tool and commentary should stay in the agent body");
     assertDeepEqual(
       activity.items.map((item) => item.id),
-      ["command-1", "assistant-commentary-1", "worked-for-1"],
-      "tool and commentary details should stay attached to the worked-for header",
+      ["command-1", "assistant-commentary-1"],
+      "tool and commentary details should stay in the expanded agent body",
     );
   }
-  assertEqual(projection.units[2]?.kind, "message", "assistant message should render after worked-for header");
+  const workedFor = projection.units[2];
+  assertEqual(workedFor?.kind, "toolActivity", "worked-for should render before assistant as a divider source");
+  if (workedFor?.kind === "toolActivity") {
+    assertEqual(workedFor.summary.groupType, "worked-for", "worked-for should keep its own semantic group");
+    assertEqual(workedFor.summary.label, "Worked for 20s", "divider label should use worked-for duration");
+    assertEqual(workedFor.summary.defaultExpanded, false, "worked-for divider should collapse after final assistant output starts");
+    assertDeepEqual(
+      workedFor.items.map((item) => item.id),
+      ["worked-for-1"],
+      "worked-for item should not swallow the expanded agent body",
+    );
+  }
+  assertEqual(projection.units[3]?.kind, "message", "assistant message should render after worked-for divider");
 }
 
 function keepsWorkedForExpandedUntilFinalAssistantStarts(): void {
@@ -766,11 +959,17 @@ function keepsWorkedForExpandedUntilFinalAssistantStarts(): void {
     } as ThreadItem,
   ]);
 
+  assertEqual(projection.units.length, 3, "running worked-for should stay separate from preceding activity");
   const activity = projection.units[1];
-  assertEqual(activity?.kind, "toolActivity", "running worked-for activity should render after the user");
+  assertEqual(activity?.kind, "toolActivity", "preceding command should render after the user");
   if (activity?.kind === "toolActivity") {
-    assertEqual(activity.summary.groupType, "worked-for", "running worked-for should still be the activity header");
-    assertEqual(activity.summary.defaultExpanded, true, "worked-for should stay expanded until final assistant output starts");
+    assertEqual(activity.summary.groupType, "collapsed-tool-activity", "preceding command should remain normal activity");
+  }
+  const workedFor = projection.units[2];
+  assertEqual(workedFor?.kind, "toolActivity", "running worked-for activity should render after the command");
+  if (workedFor?.kind === "toolActivity") {
+    assertEqual(workedFor.summary.groupType, "worked-for", "running worked-for should keep its own group");
+    assertEqual(workedFor.summary.defaultExpanded, true, "worked-for should stay expanded until final assistant output starts");
   }
 }
 
@@ -875,6 +1074,7 @@ function groupsExplorationCommandActionsLikeCodexDesktop(): void {
   assertEqual(projection.units.length, 1, "adjacent exploration command actions should collapse together");
   assertEqual(unit?.kind, "toolActivity", "exploration actions should render as tool activity");
   if (unit?.kind === "toolActivity") {
+    assertEqual(unit.summary.groupType, "exploration", "exploration actions should keep Desktop's exploration group type");
     assertEqual(unit.summary.icon, "search", "exploration activity icon");
     assertEqual(unit.summary.label, "Explored 1 file, 1 search, 1 list", "exploration summary label");
     assertEqual(unit.summary.counts.commands, 0, "exploration actions should not count as shell commands");
@@ -885,6 +1085,89 @@ function groupsExplorationCommandActionsLikeCodexDesktop(): void {
     assertIncludes(unit.summary.details, "Explored 1 search", "search detail should use exploration wording");
     assertIncludes(unit.summary.details, "Listed files", "list-only detail should use list wording");
   }
+}
+
+function dedupesExplorationReadCountsByCwdLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "read-relative",
+      command: "sed -n '1,20p' src/app.ts",
+      cwd: "/workspace/project",
+      status: "completed",
+      commandActions: [
+        { type: "read", command: "sed -n '1,20p' src/app.ts", path: "./src/app.ts" },
+      ],
+      exitCode: 0,
+    } as unknown as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "read-absolute",
+      command: "sed -n '1,20p' /workspace/project/src/app.ts",
+      cwd: "/workspace/project",
+      status: "completed",
+      commandActions: [
+        { type: "read", command: "sed -n '1,20p' /workspace/project/src/app.ts", path: "/workspace/project/src/app.ts" },
+      ],
+      exitCode: 0,
+    } as unknown as ThreadItem,
+  ]);
+  const unit = projection.units[0];
+
+  assertEqual(projection.units.length, 1, "duplicate read paths should stay in one exploration group");
+  if (unit?.kind !== "toolActivity") {
+    throw new Error("duplicate exploration reads should render as tool activity");
+  }
+  assertEqual(unit.summary.groupType, "exploration", "duplicate reads should keep exploration group");
+  assertEqual(unit.summary.counts.exploredFiles, 1, "cwd-normalized duplicate reads should count once");
+  assertEqual(unit.summary.label, "Explored 1 file", "exploration label should use deduped read count");
+}
+
+function keepsReasoningInsideActiveExplorationLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "read-1",
+      command: "sed -n '1,20p' src/app.ts",
+      status: "completed",
+      commandActions: [
+        { type: "read", command: "sed -n '1,20p' src/app.ts", name: "app.ts", path: "src/app.ts" },
+      ],
+      aggregatedOutput: "export {}",
+      exitCode: 0,
+    } as unknown as ThreadItem,
+    {
+      type: "reasoning",
+      id: "reasoning-1",
+      summary: ["Need another file"],
+      content: [],
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "search-1",
+      command: "rg Button packages/ui",
+      status: "completed",
+      commandActions: [
+        { type: "search", command: "rg Button packages/ui", query: "Button", path: "packages/ui" },
+      ],
+      aggregatedOutput: "packages/ui/src/button.tsx",
+      exitCode: 0,
+    } as unknown as ThreadItem,
+  ]);
+
+  const unit = projection.units[0];
+  assertEqual(projection.units.length, 1, "reasoning between exploration entries should not split the exploration accordion");
+  if (unit?.kind !== "toolActivity") {
+    throw new Error("exploration with reasoning should still render as tool activity");
+  }
+  assertEqual(unit.summary.groupType, "exploration", "reasoning should inherit the open exploration group");
+  assertDeepEqual(
+    unit.items.map((item) => item.id),
+    ["read-1", "reasoning-1", "search-1"],
+    "exploration group should retain reasoning between read/search entries",
+  );
+  assertEqual(unit.summary.counts.exploredFiles, 1, "read count should remain stable");
+  assertEqual(unit.summary.counts.searches, 1, "search count should remain stable");
 }
 
 function groupsToolActivityItemsAndPreservesSummaries(): void {
@@ -960,8 +1243,9 @@ function groupsToolActivityItemsAndPreservesSummaries(): void {
   assertEqual(projection.artifacts[1]?.title, "render-groups.test.ts", "second artifact title");
   assertEqual(projection.artifacts[1]?.status, "completed", "second artifact status");
   assertEqual(projection.sources.length, 1, "non-node MCP calls should project source entries");
-  assertEqual(projection.sources[0]?.title, "github:list_prs", "mcp source title");
-  assertEqual(projection.sources[0]?.status, "completed", "mcp source status");
+  assertEqual(projection.sources[0]?.id, "mcp-server:github", "mcp source id");
+  assertEqual(projection.sources[0]?.title, "GitHub", "mcp source title");
+  assertEqual(projection.sources[0]?.status ?? null, null, "mcp source status should stay empty like Desktop");
 }
 
 function summarizesPatchChangeKinds(): void {
@@ -1045,8 +1329,9 @@ function groupsWebSearchIntoActivityAndSources(): void {
     );
   }
   assertEqual(projection.sources.length, 1, "web search should project one source");
-  assertEqual(projection.sources[0]?.id, "web:Codex app-server protocol", "web source id");
-  assertEqual(projection.sources[0]?.meta, "Web search", "web source meta");
+  assertEqual(projection.sources[0]?.id, "webSearch", "web source id");
+  assertEqual(projection.sources[0]?.title, "Web search", "web source title");
+  assertEqual(projection.sources[0]?.meta ?? null, null, "web source meta should stay empty like Desktop");
 }
 
 function groupsAdjacentWebSearchesLikeCodexDesktop(): void {
@@ -1117,6 +1402,27 @@ function rendersActiveWebSearchLikeCodexDesktop(): void {
   }
 }
 
+function cleansWebSearchSiteFiltersLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "webSearch",
+      id: "web-search-site",
+      query: "fallback",
+      action: { type: "search", query: "Codex OR HiCodex site:openai.com site:www.github.com" },
+      completed: false,
+    } as unknown as ThreadItem,
+  ]);
+  const unit = projection.units[0];
+  if (unit?.kind !== "toolActivity") {
+    throw new Error("site-filtered web search should render as tool activity");
+  }
+  assertEqual(
+    unit.summary.label,
+    "Searching the web for Codex HiCodex | openai.com · github.com",
+    "web search label should strip site filters into Desktop-style domain suffix",
+  );
+}
+
 function rendersInProgressMultiAgentActionsAsDesktopActivity(): void {
   const projection = projectConversation([
     {
@@ -1145,6 +1451,68 @@ function rendersInProgressMultiAgentActionsAsDesktopActivity(): void {
       ["Spawning agent-ac...3456"],
       "in-progress multi-agent rows should use Desktop row verbs",
     );
+  }
+}
+
+function keepsInProgressMultiAgentActionsSeparateLikeCodexDesktop(): void {
+  // Codex Desktop's `K` rollup does not group in-progress multi-agent rows;
+  // it only groups terminal completed/failed rows.
+  const projection = projectConversation([
+    {
+      type: "collabAgentToolCall",
+      id: "spawn-a",
+      tool: "spawnAgent",
+      status: "inProgress",
+      senderThreadId: "parent",
+      receiverThreadIds: [],
+      prompt: "first",
+      model: null,
+      reasoningEffort: null,
+      agentsStates: {},
+    } as ThreadItem,
+    {
+      type: "collabAgentToolCall",
+      id: "spawn-b",
+      tool: "spawnAgent",
+      status: "inProgress",
+      senderThreadId: "parent",
+      receiverThreadIds: [],
+      prompt: "second",
+      model: null,
+      reasoningEffort: null,
+      agentsStates: {},
+    } as ThreadItem,
+    {
+      type: "collabAgentToolCall",
+      id: "spawn-c",
+      tool: "spawnAgent",
+      status: "inProgress",
+      senderThreadId: "parent",
+      receiverThreadIds: [],
+      prompt: "third",
+      model: null,
+      reasoningEffort: null,
+      agentsStates: {},
+    } as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 3, "in-progress multi-agent rows should remain item-scoped");
+  const keys = projection.units.map((unit) => unit.key);
+  assertDeepEqual(
+    keys,
+    [
+      "multi-agent-group:spawnAgent:inProgress:spawn-a",
+      "multi-agent-group:spawnAgent:inProgress:spawn-b",
+      "multi-agent-group:spawnAgent:inProgress:spawn-c",
+    ],
+    "in-progress multi-agent keys should include the item id",
+  );
+  for (const unit of projection.units) {
+    if (unit.kind !== "toolActivity" || unit.summary.groupType !== "multi-agent-group") {
+      throw new Error("in-progress multi-agent rows must surface as individual multi-agent toolActivity units");
+    }
+    assertEqual(unit.summary.label, "Spawning 1 agent", "each in-progress row should keep its own header");
+    assertEqual(unit.items.length, 1, "each in-progress unit should retain one source item");
   }
 }
 
@@ -1214,6 +1582,27 @@ function groupsCompletedMultiAgentActionsLikeCodexDesktop(): void {
       "sendInput group should include the prompt row",
     );
   }
+}
+
+function hidesWaitMultiAgentActionsLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "collabAgentToolCall",
+      id: "wait-1",
+      tool: "wait",
+      status: "completed",
+      senderThreadId: "parent",
+      receiverThreadIds: ["agent-1234567890abcdef"],
+      prompt: null,
+      model: null,
+      reasoningEffort: null,
+      agentsStates: {
+        "agent-1234567890abcdef": { status: "completed", message: null },
+      },
+    } as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 0, "wait collab tool calls should not render in the conversation");
 }
 
 function returnsEmptyProjectionForEmptyItems(): void {

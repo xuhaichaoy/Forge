@@ -7,14 +7,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use thiserror::Error;
 
-const LOCAL_CODEX_DEBUG_BINS: &[&str] = &[
-    "/Users/haichao/Desktop/data/codex/codex-rs/target/debug/codex",
-    "/Users/haichao/Desktop/data/codex/target/debug/codex",
-];
 const INSTALLED_CODEX_BIN: &str = "/Applications/Codex.app/Contents/Resources/codex";
 
 #[derive(Debug, Error)]
@@ -78,34 +75,13 @@ pub struct ThreadToolHistoryTurn {
 }
 
 const HICODEX_PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
-const HICODEX_MODEL_INSTRUCTIONS_HEADER: &str = "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.";
-const HICODEX_BASE_INSTRUCTIONS: &str = r#"You are a coding agent running in Codex Desktop. You are expected to be precise, safe, and helpful.
-
-# How You Work
-
-- Inspect the workspace before making claims or changing code.
-- Use tool calls for shell commands, file reads, searches, patches, and plans.
-- Keep user-visible progress updates concise and factual.
-- Continue after tool results when more work is required.
-- Do not output raw hidden-reasoning markup such as <think> or </think>. If the model performs internal reasoning, keep it out of assistant messages. User-visible assistant messages should be progress updates, tool calls, or final answers.
-
-# Tool Use
-
-- Prefer `rg` or `rg --files` for search.
-- Use `apply_patch` for manual code edits.
-- Do not use destructive git or filesystem commands unless explicitly requested.
-- Preserve unrelated work in dirty worktrees.
-
-# Final Answers
-
-- Summarize what changed and what was verified.
-- Mention any tests or builds that could not be run.
-- Keep the answer concise unless the user asks for detail.
-"#;
+const HICODEX_MODEL_INSTRUCTIONS_HEADER: &str = include_str!("../assets/instructions/header.md");
+const HICODEX_BASE_INSTRUCTIONS: &str = include_str!("../assets/instructions/base.md");
 const HICODEX_PERSONALITY_DEFAULT: &str = "";
-const HICODEX_PERSONALITY_FRIENDLY: &str = "You are concise, direct, friendly, and collaborative.";
+const HICODEX_PERSONALITY_FRIENDLY: &str =
+    include_str!("../assets/instructions/personality-friendly.md");
 const HICODEX_PERSONALITY_PRAGMATIC: &str =
-    "You are a deeply pragmatic, effective software engineer.";
+    include_str!("../assets/instructions/personality-pragmatic.md");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -128,14 +104,13 @@ struct HostInner {
     codex_bin: Option<String>,
     codex_home: Option<String>,
     last_error: Option<String>,
-    next_event_stream_id: u64,
-    active_event_stream_id: Option<u64>,
+    event_forwarder_started: bool,
 }
 
 pub struct AppServerHost {
     inner: Mutex<HostInner>,
     events_tx: Sender<AppServerEvent>,
-    events_rx: Mutex<Receiver<AppServerEvent>>,
+    events_rx: Arc<Mutex<Receiver<AppServerEvent>>>,
 }
 
 impl Default for AppServerHost {
@@ -150,7 +125,7 @@ impl AppServerHost {
         Self {
             inner: Mutex::new(HostInner::default()),
             events_tx,
-            events_rx: Mutex::new(events_rx),
+            events_rx: Arc::new(Mutex::new(events_rx)),
         }
     }
 
@@ -265,32 +240,30 @@ impl AppServerHost {
             })
     }
 
-    pub fn claim_event_stream(&self) -> u64 {
-        let mut inner = self.inner.lock().expect("host mutex poisoned");
-        inner.next_event_stream_id = inner.next_event_stream_id.saturating_add(1).max(1);
-        let stream_id = inner.next_event_stream_id;
-        inner.active_event_stream_id = Some(stream_id);
-        stream_id
-    }
-
-    pub fn drain_events(&self, max_events: usize, stream_id: Option<u64>) -> Vec<AppServerEvent> {
+    pub fn forward_events<F>(&self, forward: F) -> bool
+    where
+        F: Fn(AppServerEvent) + Send + 'static,
+    {
         {
-            let inner = self.inner.lock().expect("host mutex poisoned");
-            if inner.active_event_stream_id.is_some() && inner.active_event_stream_id != stream_id {
-                return Vec::new();
+            let mut inner = self.inner.lock().expect("host mutex poisoned");
+            if inner.event_forwarder_started {
+                return false;
             }
+            inner.event_forwarder_started = true;
         }
 
-        let max_events = max_events.clamp(1, 1024);
-        let rx = self.events_rx.lock().expect("host event mutex poisoned");
-        let mut events = Vec::new();
-        for _ in 0..max_events {
-            match rx.try_recv() {
-                Ok(event) => events.push(event),
+        let rx = Arc::clone(&self.events_rx);
+        thread::spawn(move || loop {
+            let event = {
+                let receiver = rx.lock().expect("host event mutex poisoned");
+                receiver.recv()
+            };
+            match event {
+                Ok(event) => forward(event),
                 Err(_) => break,
             }
-        }
-        events
+        });
+        true
     }
 
     pub fn write_local_model_catalog(
@@ -414,12 +387,6 @@ fn resolve_codex_bin(config: &AppServerStartConfig) -> PathBuf {
     for candidate in bundled_codex_candidates() {
         if candidate.exists() {
             return candidate;
-        }
-    }
-
-    for debug_bin in LOCAL_CODEX_DEBUG_BINS.iter().map(PathBuf::from) {
-        if debug_bin.exists() {
-            return debug_bin;
         }
     }
 
@@ -739,8 +706,259 @@ impl RolloutToolReplay {
             }
             Some("exec_command_begin") => self.handle_exec_command_begin(line_index, payload),
             Some("exec_command_end") => self.handle_exec_command_end(line_index, payload),
+            Some("collab_agent_spawn_end") => {
+                self.handle_collab_agent_spawn_end(line_index, payload);
+            }
+            Some("collab_agent_interaction_end") => {
+                self.handle_collab_agent_interaction_end(line_index, payload);
+            }
+            Some("collab_waiting_end") => {
+                self.handle_collab_waiting_end(line_index, payload);
+            }
+            Some("collab_close_end") => {
+                self.handle_collab_close_end(line_index, payload);
+            }
+            Some("collab_resume_end") => {
+                self.handle_collab_resume_end(line_index, payload);
+            }
             _ => {}
         }
+    }
+
+    /// Replay a `collab_agent_spawn_end` event back into a `collabAgentToolCall`
+    /// thread item. Mirrors the live event mapping in
+    /// `app-server-protocol/src/protocol/event_mapping.rs::CollabAgentSpawnEnd`.
+    fn handle_collab_agent_spawn_end(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = self.current_turn_id.clone() else {
+            return;
+        };
+        let sender = payload
+            .get("sender_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let new_thread_id = payload
+            .get("new_thread_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty());
+        let agent_status = payload.get("status").cloned().unwrap_or(Value::Null);
+        let failed = collab_agent_status_failed(&agent_status);
+        let status = if failed || new_thread_id.is_none() {
+            "failed"
+        } else {
+            "completed"
+        };
+        let (receiver_thread_ids, agents_states) = match new_thread_id {
+            Some(id) => {
+                let state = collab_agent_state_label(&agent_status);
+                (json!([id]), json!({ id: state }))
+            }
+            None => (json!([]), json!({})),
+        };
+        let item = json!({
+            "type": "collabAgentToolCall",
+            "id": call_id,
+            "tool": "spawnAgent",
+            "status": status,
+            "senderThreadId": sender,
+            "receiverThreadIds": receiver_thread_ids,
+            "prompt": payload.get("prompt").cloned().unwrap_or(Value::Null),
+            "model": payload.get("model").cloned().unwrap_or(Value::Null),
+            "reasoningEffort": payload
+                .get("reasoning_effort")
+                .cloned()
+                .unwrap_or(Value::Null),
+            "agentsStates": agents_states,
+            "completedAtMs": payload
+                .get("completed_at_ms")
+                .and_then(Value::as_i64)
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        self.upsert_collab_tool_call(&turn_id, call_id, item);
+    }
+
+    fn handle_collab_agent_interaction_end(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = self.current_turn_id.clone() else {
+            return;
+        };
+        let sender = payload
+            .get("sender_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let receiver = payload
+            .get("receiver_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let agent_status = payload.get("status").cloned().unwrap_or(Value::Null);
+        let failed = collab_agent_status_failed(&agent_status);
+        let status = if failed { "failed" } else { "completed" };
+        let item = json!({
+            "type": "collabAgentToolCall",
+            "id": call_id,
+            "tool": "sendInput",
+            "status": status,
+            "senderThreadId": sender,
+            "receiverThreadIds": json!([receiver]),
+            "prompt": payload.get("prompt").cloned().unwrap_or(Value::Null),
+            "model": Value::Null,
+            "reasoningEffort": Value::Null,
+            "agentsStates": json!({ receiver: collab_agent_state_label(&agent_status) }),
+            "completedAtMs": payload
+                .get("completed_at_ms")
+                .and_then(Value::as_i64)
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        self.upsert_collab_tool_call(&turn_id, call_id, item);
+    }
+
+    fn handle_collab_waiting_end(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = self.current_turn_id.clone() else {
+            return;
+        };
+        let sender = payload
+            .get("sender_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let statuses = payload
+            .get("statuses")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let mut receiver_ids: Vec<Value> = Vec::with_capacity(statuses.len());
+        let mut agents_states = serde_json::Map::with_capacity(statuses.len());
+        let mut any_failed = false;
+        for (id, agent_status) in statuses.iter() {
+            receiver_ids.push(Value::String(id.clone()));
+            if collab_agent_status_failed(agent_status) {
+                any_failed = true;
+            }
+            agents_states.insert(id.clone(), collab_agent_state_label(agent_status));
+        }
+        let status = if any_failed { "failed" } else { "completed" };
+        let item = json!({
+            "type": "collabAgentToolCall",
+            "id": call_id,
+            "tool": "wait",
+            "status": status,
+            "senderThreadId": sender,
+            "receiverThreadIds": Value::Array(receiver_ids),
+            "prompt": Value::Null,
+            "model": Value::Null,
+            "reasoningEffort": Value::Null,
+            "agentsStates": Value::Object(agents_states),
+            "completedAtMs": payload
+                .get("completed_at_ms")
+                .and_then(Value::as_i64)
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        self.upsert_collab_tool_call(&turn_id, call_id, item);
+    }
+
+    fn handle_collab_close_end(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = self.current_turn_id.clone() else {
+            return;
+        };
+        let sender = payload
+            .get("sender_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let receiver = payload
+            .get("receiver_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let agent_status = payload.get("status").cloned().unwrap_or(Value::Null);
+        let failed = collab_agent_status_failed(&agent_status);
+        let status = if failed { "failed" } else { "completed" };
+        let item = json!({
+            "type": "collabAgentToolCall",
+            "id": call_id,
+            "tool": "closeAgent",
+            "status": status,
+            "senderThreadId": sender,
+            "receiverThreadIds": json!([receiver]),
+            "prompt": Value::Null,
+            "model": Value::Null,
+            "reasoningEffort": Value::Null,
+            "agentsStates": json!({ receiver: collab_agent_state_label(&agent_status) }),
+            "completedAtMs": payload
+                .get("completed_at_ms")
+                .and_then(Value::as_i64)
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        self.upsert_collab_tool_call(&turn_id, call_id, item);
+    }
+
+    fn handle_collab_resume_end(&mut self, line_index: usize, payload: &Value) {
+        let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(turn_id) = self.current_turn_id.clone() else {
+            return;
+        };
+        let sender = payload
+            .get("sender_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let receiver = payload
+            .get("receiver_thread_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let item = json!({
+            "type": "collabAgentToolCall",
+            "id": call_id,
+            "tool": "resumeAgent",
+            "status": "completed",
+            "senderThreadId": sender,
+            "receiverThreadIds": json!([receiver]),
+            "prompt": Value::Null,
+            "model": Value::Null,
+            "reasoningEffort": Value::Null,
+            "agentsStates": json!({}),
+            "completedAtMs": payload
+                .get("completed_at_ms")
+                .and_then(Value::as_i64)
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+            "_historyReplay": true,
+            "_rolloutIndex": line_index,
+        });
+        self.upsert_collab_tool_call(&turn_id, call_id, item);
+    }
+
+    fn upsert_collab_tool_call(&mut self, turn_id: &str, call_id: &str, item: Value) {
+        let turn_index = self.ensure_turn(turn_id);
+        let turn = &mut self.turns[turn_index];
+        if let Some(existing) = turn.items.iter_mut().find(|candidate| {
+            candidate.get("type").and_then(Value::as_str) == Some("collabAgentToolCall")
+                && candidate.get("id").and_then(Value::as_str) == Some(call_id)
+        }) {
+            *existing = item;
+            return;
+        }
+        turn.items.push(item);
     }
 
     fn handle_response_item(&mut self, line_index: usize, payload: Option<&Value>) {
@@ -967,6 +1185,64 @@ impl RolloutToolReplay {
         let item_index = turn.items.len();
         turn.items.push(item);
         (turn_index, item_index)
+    }
+}
+
+/// Convert a Codex core `AgentStatus` payload (rollout JSONL) to the
+/// camelCase `CollabAgentState` shape that the UI expects on
+/// `collabAgentToolCall.agentsStates`.
+///
+/// Core serialization is `#[serde(rename_all = "snake_case")]` with default
+/// (external) tagging:
+///   - Unit variants -> bare strings, e.g. `"running"` / `"pending_init"`.
+///   - Tuple variants -> `{"completed": null|"text"}` or `{"errored": "msg"}`.
+fn collab_agent_state_label(status: &Value) -> Value {
+    match status {
+        Value::String(label) => json!({
+            "status": collab_agent_status_label(label),
+            "message": Value::Null,
+        }),
+        Value::Object(map) => {
+            let (key, payload) = match map.iter().next() {
+                Some((key, payload)) => (key.as_str(), payload),
+                None => return json!({ "status": "pendingInit", "message": Value::Null }),
+            };
+            let message = match payload {
+                Value::String(text) => Value::String(text.clone()),
+                Value::Null => Value::Null,
+                other => Value::String(other.to_string()),
+            };
+            json!({
+                "status": collab_agent_status_label(key),
+                "message": message,
+            })
+        }
+        _ => json!({ "status": "pendingInit", "message": Value::Null }),
+    }
+}
+
+fn collab_agent_status_label(snake_case: &str) -> &'static str {
+    match snake_case {
+        "pending_init" => "pendingInit",
+        "running" => "running",
+        "interrupted" => "interrupted",
+        "completed" => "completed",
+        "errored" => "errored",
+        "shutdown" => "shutdown",
+        "not_found" => "notFound",
+        _ => "pendingInit",
+    }
+}
+
+fn collab_agent_status_failed(status: &Value) -> bool {
+    match status {
+        Value::String(label) => label == "errored" || label == "not_found",
+        Value::Object(map) => map
+            .keys()
+            .next()
+            .map(|key| key == "errored" || key == "not_found")
+            .unwrap_or(false),
+        _ => false,
     }
 }
 
@@ -1556,21 +1832,6 @@ mod tests {
     }
 
     #[test]
-    fn claimed_event_stream_blocks_legacy_drainers() {
-        let host = AppServerHost::new();
-        let stream_id = host.claim_event_stream();
-        host.events_tx
-            .send(AppServerEvent::Lifecycle {
-                message: "ready".to_string(),
-            })
-            .unwrap();
-
-        assert!(host.drain_events(10, None).is_empty());
-        let events = host.drain_events(10, Some(stream_id));
-        assert_eq!(events.len(), 1);
-    }
-
-    #[test]
     fn bootstraps_model_catalog_config() {
         let dir = env::temp_dir().join(format!("hicodex-host-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -1684,6 +1945,80 @@ mod tests {
         assert_eq!(
             action["path"].as_str(),
             Some("/tmp/project/docs/DEVELOPMENT.md")
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn replays_collab_agent_spawn_end_into_collab_tool_call() {
+        // Without this, refreshing a thread that used multi-agent spawning would
+        // lose all "Spawned N agents" rows because the rollout reader skipped
+        // the collab event family entirely.
+        let thread_id = "019e-collab-thread";
+        let turn_id = "019e-collab-turn";
+        let dir = env::temp_dir().join(format!(
+            "hicodex-host-collab-spawn-test-{}",
+            std::process::id()
+        ));
+        let sessions = dir.join("sessions").join("2026").join("05").join("08");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&sessions).unwrap();
+        let rollout = sessions.join(format!("rollout-2026-05-08T00-00-00-{thread_id}.jsonl"));
+        let line = format!(
+            r#"{{"type":"session_meta","payload":{{"id":"{thread_id}"}}}}
+{{"type":"event_msg","payload":{{"type":"task_started","turn_id":"{turn_id}","started_at":1}}}}
+{{"type":"turn_context","payload":{{"turn_id":"{turn_id}","cwd":"/tmp/project"}}}}
+{{"type":"event_msg","payload":{{"type":"collab_agent_spawn_end","call_id":"call_spawn_1","completed_at_ms":12,"sender_thread_id":"{thread_id}","new_thread_id":"019e-child-1","prompt":"Inspect render groups","model":"gpt-5.5","reasoning_effort":"medium","status":"running"}}}}
+{{"type":"event_msg","payload":{{"type":"collab_agent_interaction_end","call_id":"call_msg_1","completed_at_ms":14,"sender_thread_id":"{thread_id}","receiver_thread_id":"019e-child-1","prompt":"Continue","status":{{"completed":"done"}}}}}}
+{{"type":"event_msg","payload":{{"type":"collab_waiting_end","call_id":"call_wait_1","completed_at_ms":16,"sender_thread_id":"{thread_id}","statuses":{{"019e-child-1":{{"completed":"done"}},"019e-child-2":{{"errored":"boom"}}}}}}}}
+"#,
+        );
+        fs::write(&rollout, line).unwrap();
+
+        let history =
+            read_thread_tool_history(Some(dir.to_string_lossy().as_ref()), thread_id, None)
+                .unwrap();
+        assert_eq!(history.turns.len(), 1);
+        let collab_items: Vec<&Value> = history.turns[0]
+            .items
+            .iter()
+            .filter(|item| item.get("type").and_then(Value::as_str) == Some("collabAgentToolCall"))
+            .collect();
+        assert_eq!(
+            collab_items.len(),
+            3,
+            "expected three collab tool call items"
+        );
+
+        let spawn = collab_items[0];
+        assert_eq!(spawn["tool"].as_str(), Some("spawnAgent"));
+        assert_eq!(spawn["status"].as_str(), Some("completed"));
+        assert_eq!(spawn["receiverThreadIds"][0].as_str(), Some("019e-child-1"));
+        assert_eq!(
+            spawn["agentsStates"]["019e-child-1"]["status"].as_str(),
+            Some("running")
+        );
+        assert_eq!(spawn["prompt"].as_str(), Some("Inspect render groups"));
+
+        let send = collab_items[1];
+        assert_eq!(send["tool"].as_str(), Some("sendInput"));
+        assert_eq!(send["status"].as_str(), Some("completed"));
+        assert_eq!(
+            send["agentsStates"]["019e-child-1"]["status"].as_str(),
+            Some("completed")
+        );
+
+        let wait = collab_items[2];
+        assert_eq!(wait["tool"].as_str(), Some("wait"));
+        assert_eq!(
+            wait["status"].as_str(),
+            Some("failed"),
+            "any errored child should propagate to wait status",
+        );
+        assert_eq!(
+            wait["agentsStates"]["019e-child-2"]["status"].as_str(),
+            Some("errored")
         );
 
         let _ = fs::remove_dir_all(&dir);

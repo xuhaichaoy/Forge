@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { formatUnknown, stringField } from "../lib/format";
 import {
   assistantMessageText,
@@ -8,13 +8,23 @@ import {
   isItemInProgress,
   itemText,
   itemType,
+  mcpServerName,
+  mcpSourceTitle,
+  mcpToolName,
   type AccumulatedThreadItem,
 } from "../state/render-groups";
+import type { OpenThreadHandler } from "./open-thread";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
 
 export type ToolActivityDetailViewModel =
+  | {
+      kind: "execSummary";
+      id: string;
+      running: boolean;
+      label: string;
+    }
   | {
       kind: "exec";
       id: string;
@@ -23,6 +33,7 @@ export type ToolActivityDetailViewModel =
       cwd: string;
       output: string;
       status: string;
+      footer: string;
     }
   | {
       kind: "patch";
@@ -43,10 +54,20 @@ export type ToolActivityDetailViewModel =
       status: string;
     }
   | {
+      kind: "pendingTool";
+      id: string;
+      running: boolean;
+      name: string;
+      source: string;
+      label: string;
+      status: string;
+    }
+  | {
       kind: "webSearch";
       id: string;
       running: boolean;
       detail: string;
+      faviconUrl: string | null;
     }
   | {
       kind: "multiAgent";
@@ -76,12 +97,15 @@ export interface MultiAgentRowViewModel {
 
 export type MultiAgentRowPart =
   | { kind: "text"; text: string }
+  | { kind: "prompt"; text: string }
   | {
       kind: "agent";
       color: string;
       label: string;
       threadId: string;
       title: string | null;
+      model: string | null;
+      role: string | null;
     };
 
 export function multiAgentRowText(parts: MultiAgentRowPart[]): string {
@@ -117,11 +141,25 @@ export function ToolActivityDetail({
   onOpenThreadId,
 }: {
   item: ThreadItem;
-  onOpenThreadId?: (threadId: string) => void;
+  onOpenThreadId?: OpenThreadHandler;
 }) {
   const detail = toolActivityDetailViewModel(item);
   if (detail.kind === "webSearch") {
-    return <div className="hc-tool-detail-row">{detail.detail}</div>;
+    return (
+      <div className="hc-tool-detail-row hc-tool-detail-web-search-row">
+        {detail.faviconUrl && (
+          <img
+            alt=""
+            className="hc-tool-detail-web-search-favicon"
+            decoding="async"
+            draggable={false}
+            referrerPolicy="no-referrer"
+            src={detail.faviconUrl}
+          />
+        )}
+        <span>{detail.detail}</span>
+      </div>
+    );
   }
   if (detail.kind === "multiAgent") {
     return (
@@ -130,6 +168,7 @@ export function ToolActivityDetail({
           <div className="hc-tool-detail-row" key={row.key}>
             {row.parts.map((part, index) => {
               if (part.kind === "text") return <span key={`${row.key}:text:${index}`}>{part.text}</span>;
+              if (part.kind === "prompt") return <MultiAgentPrompt key={`${row.key}:prompt:${index}`} text={part.text} />;
               if (!onOpenThreadId) {
                 return (
                   <span
@@ -149,7 +188,11 @@ export function ToolActivityDetail({
                   style={{ color: part.color }}
                   title={part.title ?? undefined}
                   type="button"
-                  onClick={() => onOpenThreadId(part.threadId)}
+                  onClick={() => onOpenThreadId(part.threadId, {
+                    displayName: part.label,
+                    model: part.model,
+                    role: part.role,
+                  })}
                 >
                   {part.label}
                 </button>
@@ -163,20 +206,33 @@ export function ToolActivityDetail({
   if (detail.kind === "assistant") {
     return <div className="hc-tool-detail-prose">{detail.text}</div>;
   }
+  if (detail.kind === "execSummary") {
+    return (
+      <div className={`hc-tool-detail-row hc-tool-detail-command-row ${detail.running ? "is-running" : ""}`}>
+        {detail.label}
+      </div>
+    );
+  }
   if (detail.kind === "exec") {
     return (
-      <section className={`hc-tool-detail-card exec ${detail.running ? "is-running" : ""}`}>
-        <Header title="Command" meta={detail.status} />
-        <code className="hc-tool-detail-command">{detail.command}</code>
-        {detail.cwd && <div className="hc-tool-detail-meta">cwd: {detail.cwd}</div>}
-        {detail.output && <CodeBlock text={detail.output} />}
+      <section className={`hc-exec-shell ${detail.running ? "is-running" : ""}`}>
+        <div className="hc-exec-shell-command">
+          <span>$</span>
+          <code>{detail.command}</code>
+        </div>
+        {detail.cwd && <div className="hc-exec-shell-cwd">{detail.cwd}</div>}
+        {detail.output && (
+          <pre className="hc-exec-shell-output">
+            <code>{detail.output}</code>
+          </pre>
+        )}
+        {detail.footer && <div className="hc-exec-shell-footer">{detail.footer}</div>}
       </section>
     );
   }
   if (detail.kind === "patch") {
     return (
-      <section className={`hc-tool-detail-card patch ${detail.running ? "is-running" : ""}`}>
-        <Header title="File changes" meta={detail.status} />
+      <section className={`hc-tool-detail-stack patch ${detail.running ? "is-running" : ""}`}>
         {detail.changes.length > 0
           ? detail.changes.map((change, index) => (
               <div className="hc-tool-detail-change" key={`${change.path}:${index}`}>
@@ -187,25 +243,54 @@ export function ToolActivityDetail({
                 {change.diff && <CodeBlock diff text={change.diff} />}
               </div>
             ))
-          : <CodeBlock text="No file changes were provided." />}
+          : <div className="hc-tool-detail-row">No file changes were provided.</div>}
       </section>
     );
   }
   if (detail.kind === "tool") {
     return (
-      <section className={`hc-tool-detail-card tool ${detail.running ? "is-running" : ""}`}>
-        <Header title={detail.name} meta={`${detail.toolKind}${detail.status ? ` · ${detail.status}` : ""}`} />
+      <section className={`hc-tool-detail-stack tool ${detail.running ? "is-running" : ""}`}>
+        <div className="hc-tool-detail-line">
+          <span className="hc-tool-detail-title">{detail.name}</span>
+          <small>{detail.toolKind}{detail.status ? ` · ${detail.status}` : ""}</small>
+        </div>
         {detail.argumentsText && <LabeledCode label="Parameters" text={detail.argumentsText} />}
         {detail.resultText && <LabeledCode label="Result" text={detail.resultText} />}
         {detail.errorText && <LabeledCode label="Error" text={detail.errorText} />}
       </section>
     );
   }
+  if (detail.kind === "pendingTool") {
+    return (
+      <div
+        className={`hc-tool-detail-row hc-tool-detail-tool-row ${detail.running ? "is-running" : ""}`}
+        title={detail.name}
+      >
+        <span className="hc-tool-detail-source">{detail.source}</span>
+        <span className="hc-tool-detail-tool-label">{detail.label}</span>
+      </div>
+    );
+  }
   return (
-    <section className={`hc-tool-detail-card text ${detail.running ? "is-running" : ""}`}>
-      <Header title={detail.title} />
+    <section className={`hc-tool-detail-stack text ${detail.running ? "is-running" : ""}`}>
+      <div className="hc-tool-detail-line">
+        <span className="hc-tool-detail-title">{detail.title}</span>
+      </div>
       <CodeBlock text={detail.text || "..."} />
     </section>
+  );
+}
+
+function MultiAgentPrompt({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <button
+      className={`hc-tool-detail-prompt ${expanded ? "is-expanded" : ""}`}
+      type="button"
+      onClick={() => setExpanded((value) => !value)}
+    >
+      {text}
+    </button>
   );
 }
 
@@ -215,6 +300,15 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
   const running = isItemInProgress(item);
   const status = statusLabel(record.status);
   if (type === "exec") {
+    const summary = execSummaryLabel(record, running);
+    if (summary) {
+      return {
+        kind: "execSummary",
+        id: item.id,
+        running,
+        label: summary,
+      };
+    }
     return {
       kind: "exec",
       id: item.id,
@@ -223,6 +317,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       cwd: stringField(record, "cwd"),
       output: commandOutputText(item),
       status,
+      footer: execFooter(record, running),
     };
   }
   if (type === "patch") {
@@ -239,12 +334,26 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
     };
   }
   if (type === "mcp-tool-call") {
+    const server = mcpServerName(item) || "mcp";
+    const tool = mcpToolName(item) || "tool";
+    const name = `${server}:${tool}`;
+    if (running) {
+      return {
+        kind: "pendingTool",
+        id: item.id,
+        running,
+        name,
+        source: mcpSourceTitle(server),
+        label: `Calling ${tool}`,
+        status: status || "pending",
+      };
+    }
     const invocation = recordObject(record.invocation);
     return {
       kind: "tool",
       id: item.id,
       running,
-      name: `${stringField(record, "server") || stringField(invocation, "server") || "mcp"}:${stringField(record, "tool") || stringField(invocation, "tool") || "tool"}`,
+      name,
       toolKind: "MCP",
       argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
       resultText: toolResultText(record.result),
@@ -272,6 +381,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       id: item.id,
       running,
       detail: webSearchDetail(record),
+      faviconUrl: webSearchFaviconUrl(record),
     };
   }
   if (type === "multi-agent-action") {
@@ -297,15 +407,6 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
     title: itemType(item),
     text: formatItemDetail(item) || itemText(item) || formatUnknown(item),
   };
-}
-
-function Header({ title, meta }: { title: string; meta?: string }) {
-  return (
-    <div className="hc-tool-detail-header">
-      <span>{title}</span>
-      {meta && <small>{meta}</small>}
-    </div>
-  );
 }
 
 function LabeledCode({ label, text }: { label: string; text: string }) {
@@ -344,6 +445,93 @@ function statusLabel(status: unknown): string {
   return formatUnknown(status);
 }
 
+function execFooter(record: ItemRecord, running: boolean): string {
+  if (running) return "";
+  if (record.executionStatus === "interrupted") return "Stopped";
+  const exitCode = execExitCode(record);
+  if (exitCode === 0) return "";
+  if (exitCode !== null) return `Exit code ${exitCode}`;
+  return statusLabel(record.status);
+}
+
+function execSummaryLabel(record: ItemRecord, running: boolean): string {
+  const action = execSummaryAction(record);
+  if (!action) return "";
+  if (action.type === "read") {
+    if (running && !action.finished) return "";
+    return `${action.finished === false ? "Reading" : "Read"} ${displayPath(action.path)}`;
+  }
+  if (action.type === "search") {
+    const verb = running || action.finished === false ? "Searching" : "Searched";
+    const query = action.query.trim();
+    const path = action.path.trim();
+    if (query && path) return `${verb} for ${query} in ${displayPath(path)}`;
+    if (query) return `${verb} for ${query}`;
+    if (path) return `${verb} ${displayPath(path)}`;
+    return `${verb} files`;
+  }
+  if (action.type === "list_files") {
+    const verb = running || action.finished === false ? "Listing" : "Listed";
+    return action.path.trim() ? `${verb} files in ${displayPath(action.path)}` : `${verb} files`;
+  }
+  return "";
+}
+
+type ExecSummaryAction =
+  | { type: "read"; path: string; finished: boolean | null }
+  | { type: "search"; path: string; query: string; finished: boolean | null }
+  | { type: "list_files"; path: string; finished: boolean | null };
+
+function execSummaryAction(record: ItemRecord): ExecSummaryAction | null {
+  const direct = normalizeExecSummaryAction(recordObject(record.parsedCmd));
+  if (direct) return direct;
+  const actions = Array.isArray(record.commandActions)
+    ? record.commandActions
+    : Array.isArray(record.parsedCmd) ? record.parsedCmd : [];
+  for (const raw of actions) {
+    const action = normalizeExecSummaryAction(recordObject(raw));
+    if (action) return action;
+  }
+  return null;
+}
+
+function normalizeExecSummaryAction(record: Record<string, unknown>): ExecSummaryAction | null {
+  const type = stringField(record, "type");
+  const finished = typeof record.isFinished === "boolean" ? record.isFinished : null;
+  if (type === "read") {
+    const path = stringField(record, "path") || stringField(record, "name");
+    return path ? { type, path, finished } : null;
+  }
+  if (type === "search") {
+    return {
+      type,
+      path: stringField(record, "path"),
+      query: stringField(record, "query"),
+      finished,
+    };
+  }
+  if (type === "list_files" || type === "listFiles") {
+    return {
+      type: "list_files",
+      path: stringField(record, "path"),
+      finished,
+    };
+  }
+  return null;
+}
+
+function displayPath(path: string): string {
+  const trimmed = path.trim().replace(/^\.\//, "");
+  if (!trimmed) return "file";
+  return trimmed.length > 80 ? `...${trimmed.slice(-77)}` : trimmed;
+}
+
+function execExitCode(record: ItemRecord): number | null {
+  if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
+  const output = recordObject(record.output);
+  return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
+}
+
 function webSearchDetail(record: ItemRecord): string {
   const action = webSearchActionDetail(record.action);
   const query = stringField(record, "query").trim();
@@ -356,12 +544,12 @@ function webSearchActionDetail(action: unknown): string {
   const type = stringField(record, "type");
   if (type === "search") {
     const query = stringField(record, "query").trim();
-    if (query) return query;
+    if (query) return cleanWebSearchQuery(query);
     const queries = Array.isArray(record.queries)
       ? record.queries.flatMap((value) => typeof value === "string" && value.trim() ? [value.trim()] : [])
       : [];
-    if (queries.length > 1) return `${queries[0]} ...`;
-    return queries[0] ?? "";
+    if (queries.length > 1) return `${cleanWebSearchQuery(queries[0] ?? "")} ...`;
+    return cleanWebSearchQuery(queries[0] ?? "");
   }
   if (type === "openPage") return stringField(record, "url").trim();
   if (type === "findInPage") {
@@ -371,6 +559,104 @@ function webSearchActionDetail(action: unknown): string {
     return pattern ? `'${pattern}'` : url;
   }
   return "";
+}
+
+const WEB_SEARCH_SITE_RE = /\bsite:([^\s]+)/giu;
+const WEB_SEARCH_OR_RE = /\bOR\b/gu;
+
+function cleanWebSearchQuery(query: string): string {
+  const domains: string[] = [];
+  const withoutSites = query.replace(WEB_SEARCH_SITE_RE, (match, domain: string) => {
+    const normalized = normalizedSearchDomain(domain);
+    if (!normalized) return match;
+    if (!domains.includes(normalized)) domains.push(normalized);
+    return "";
+  });
+  if (domains.length === 0) return query;
+  const terms = withoutSites.replace(WEB_SEARCH_OR_RE, " ").replace(/\s+/gu, " ").trim();
+  return terms ? `${terms} | ${domains.join(" · ")}` : query;
+}
+
+function normalizedSearchDomain(domain: string): string | null {
+  try {
+    return new URL(`https://${domain}`).hostname.replace(/^www\./u, "");
+  } catch {
+    return null;
+  }
+}
+
+const WEB_SEARCH_URL_RE = /\bhttps?:\/\/[^\s"'<>]+/iu;
+const WEB_SEARCH_SITE_SINGLE_RE = /\bsite:([^\s]+)/iu;
+
+export function webSearchFaviconUrl(record: ItemRecord): string | null {
+  const actionUrl = webSearchActionUrl(record.action);
+  if (actionUrl) return webSearchFaviconGoogleUrl(actionUrl);
+  for (const query of webSearchFaviconQueryCandidates(record)) {
+    const url = webSearchQueryUrl(query);
+    if (url) return webSearchFaviconGoogleUrl(url);
+  }
+  return null;
+}
+
+function webSearchActionUrl(action: unknown): URL | null {
+  if (!action || typeof action !== "object") return null;
+  const record = action as Record<string, unknown>;
+  const type = stringField(record, "type");
+  if (type !== "openPage" && type !== "findInPage") return null;
+  return parseWebSearchUrl(stringField(record, "url"));
+}
+
+function webSearchFaviconQueryCandidates(record: ItemRecord): string[] {
+  const action = recordObject(record.action);
+  if (stringField(action, "type") === "search") {
+    return [
+      stringField(action, "query"),
+      ...arrayStringItems(action.queries),
+      stringField(record, "query"),
+    ].filter((value) => value.trim().length > 0);
+  }
+  const query = stringField(record, "query");
+  return query.trim() ? [query] : [];
+}
+
+function webSearchQueryUrl(query: string): URL | null {
+  const siteMatch = WEB_SEARCH_SITE_SINGLE_RE.exec(query);
+  const candidate = siteMatch?.[1] ?? WEB_SEARCH_URL_RE.exec(query)?.[0] ?? "";
+  return parseWebSearchUrl(candidate);
+}
+
+function parseWebSearchUrl(value: string): URL | null {
+  const cleaned = trimSearchUrlCandidate(value);
+  if (!cleaned) return null;
+  try {
+    const url = new URL(/^[a-z][a-z\d+\-.]*:\/\//iu.test(cleaned) ? cleaned : `https://${cleaned}`);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function trimSearchUrlCandidate(value: string): string {
+  return value.trim().replace(/^[("'`]+|[)"'`,.;!?]+$/gu, "");
+}
+
+function webSearchFaviconGoogleUrl(url: URL): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(webSearchFaviconDomain(url.hostname))}&sz=32`;
+}
+
+function webSearchFaviconDomain(hostname: string): string {
+  const parts = hostname.split(".");
+  if (parts.length <= 2) return hostname;
+  const secondLevel = parts.at(-2);
+  const topLevel = parts.at(-1);
+  if (topLevel?.length === 2 && secondLevel != null && secondLevel.length <= 3 && parts.length >= 3) {
+    return parts.slice(-3).join(".");
+  }
+  return parts.slice(-2).join(".");
+}
+
+function arrayStringItems(value: unknown): string[] {
+  return Array.isArray(value) ? value.flatMap((item) => typeof item === "string" ? [item] : []) : [];
 }
 
 function toolResultText(value: unknown): string {
@@ -415,13 +701,19 @@ function multiAgentRows(record: ItemRecord): MultiAgentRowViewModel[] {
     const agent = multiAgentAgentPart(record, threadId);
     const stateSuffix = multiAgentStateSuffix(record, threadId);
     if (action === "spawnAgent" && status === "completed" && prompt) {
-      return agentMultiAgentRow(`row-${record.id}-${threadId}`, ["Created ", agent, ` with the instructions: ${prompt}`]);
+      return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
+        "Created ",
+        agent,
+        " with the instructions: ",
+        { kind: "prompt", text: prompt },
+      ]);
     }
     if (action === "sendInput" && prompt) {
       return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
         `${multiAgentSendInputPromptVerb(status)} `,
         agent,
-        `: ${prompt}`,
+        ": ",
+        { kind: "prompt", text: prompt },
       ]);
     }
     return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
@@ -432,7 +724,7 @@ function multiAgentRows(record: ItemRecord): MultiAgentRowViewModel[] {
   });
 
   if (action !== "spawnAgent" && action !== "sendInput" && prompt) {
-    rows.push(textMultiAgentRow(`meta-prompt-${record.id}`, `Input: ${prompt}`));
+    rows.push(agentMultiAgentRow(`meta-prompt-${record.id}`, ["Input: ", { kind: "prompt", text: prompt }]));
   }
   return rows;
 }
@@ -451,12 +743,24 @@ function agentMultiAgentRow(key: string, rawParts: Array<string | MultiAgentRowP
 }
 
 function multiAgentReceiverThreadIds(record: ItemRecord): string[] {
-  const direct = Array.isArray(record.receiverThreadIds)
-    ? record.receiverThreadIds
-    : Array.isArray(record.receiverThreads)
-      ? record.receiverThreads.map((thread) => objectField(thread, "threadId") ?? objectField(thread, "id"))
-      : [];
-  return direct.flatMap((value) => typeof value === "string" && value.trim() ? [value.trim()] : []);
+  const ids = new Set<string>();
+  const direct = Array.isArray(record.receiverThreadIds) ? record.receiverThreadIds : [];
+  for (const value of direct) {
+    if (typeof value === "string" && value.trim()) ids.add(value.trim());
+  }
+  if (Array.isArray(record.receiverThreads)) {
+    for (const thread of record.receiverThreads) {
+      const id = objectField(thread, "threadId") ?? objectField(thread, "id");
+      if (id) ids.add(id);
+    }
+  }
+  const states = record.agentsStates;
+  if (states && typeof states === "object") {
+    for (const id of Object.keys(states)) {
+      if (id.trim()) ids.add(id.trim());
+    }
+  }
+  return Array.from(ids).sort();
 }
 
 function multiAgentAction(record: ItemRecord): string {
@@ -478,6 +782,8 @@ function multiAgentAgentPart(record: ItemRecord, threadId: string): MultiAgentRo
     label: roleLabel,
     threadId,
     title: model ? `Uses ${model}` : null,
+    model: model || null,
+    role: receiver.role || null,
   };
 }
 

@@ -1,6 +1,8 @@
 import type { Thread } from "@hicodex/codex-protocol";
 import { projectBranchDetails } from "../src/state/branch-details";
 
+const TEST_WORKSPACE = "/workspace/HiCodex";
+
 export default function runBranchDetailsTests() {
   projectsThreadCwdGitInfoAndStatus();
   ignoresPlainThreadContextWithoutGitOrDiffData();
@@ -13,7 +15,7 @@ function projectsThreadCwdGitInfoAndStatus() {
   const view = projectBranchDetails({
     thread: threadFixture({
       id: "thread-branch-details",
-      cwd: "/Users/haichao/Desktop/data/HiCodex",
+      cwd: TEST_WORKSPACE,
       gitInfo: {
         branch: "codex/branch-details-tests",
         sha: "1234567890abcdef",
@@ -24,7 +26,7 @@ function projectsThreadCwdGitInfoAndStatus() {
   });
 
   assertEqual(view.hasData, true, "thread data should mark branch details as populated");
-  assertRow(view.rows, "cwd", "Working directory", "/Users/haichao/Desktop/data/HiCodex");
+  assertRow(view.rows, "cwd", "Working directory", TEST_WORKSPACE);
   assertRow(view.rows, "branch", "Branch", "codex/branch-details-tests");
   assertRow(view.rows, "commit", "Commit", "1234567890ab");
   assertRow(view.rows, "origin", "Origin", "git@example.com:hicodex/HiCodex.git");
@@ -35,7 +37,7 @@ function ignoresPlainThreadContextWithoutGitOrDiffData() {
   const view = projectBranchDetails({
     thread: threadFixture({
       id: "thread-no-branch-details",
-      cwd: "/Users/haichao/Desktop/data/HiCodex",
+      cwd: TEST_WORKSPACE,
       status: { type: "idle" },
       gitInfo: null,
     }),

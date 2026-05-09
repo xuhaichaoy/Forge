@@ -2,7 +2,10 @@ import type { JsonRpcNotification, Thread, ThreadItem, UserInput } from "@hicode
 import {
   codexUiReducer,
   initialCodexUiState,
+  selectThreadComposerMode,
+  selectThreadRuntime,
   type CodexUiState,
+  type ThreadRuntimeSlice,
 } from "../src/state/codex-reducer";
 import type { AccumulatedThreadItem } from "../src/state/render-groups";
 
@@ -11,7 +14,9 @@ export default function runCodexReducerTurnsTests(): void {
   refreshThreadListDoesNotKeepMissingActiveThread();
   dedupesServerRequestsByRequestId();
   tracksLatestCollaborationModeByThread();
+  tracksComposerModeDraftsInReducer();
   startsThreadWithCollectedTurnItemsAndActiveTurn();
+  startsThreadWithRunningOrActiveTurnStatuses();
   threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt();
   projectsTurnTimingAsWorkedForItems();
   delaysWorkedForProjectionUntilTurnItemsExist();
@@ -31,9 +36,18 @@ export default function runCodexReducerTurnsTests(): void {
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
   keepsLateUserMessageInsideItsOriginatingTurnSegment();
   optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted();
+  itemCompletedReconcilesSameTurnOptimisticUserMessageWhenContentShapeDiffers();
   bindOptimisticTurnRewritesItemsAndDropsPendingPlaceholder();
   optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder();
+  completingTurnDropsSameTurnOptimisticUserMessageWhenContentShapeDiffers();
+  upsertingMetadataOnlyThreadPreservesOptimisticPrompt();
   upsertingThreadSnapshotDropsDuplicateOptimisticUserMessage();
+  upsertingLiveSnapshotAfterSwitchDropsBoundOptimisticUserMessage();
+  upsertingLiveSnapshotWithRolloutReplayUserMessageDoesNotDuplicateConfirmed();
+  upsertingLiveSnapshotWithRolloutReplayAgentMessageDoesNotDuplicateConfirmed();
+  upsertingLiveSnapshotWithRolloutReplayReasoningDoesNotDuplicateConfirmed();
+  upsertingLiveSnapshotWithCompletedCollabToolCallReplacesStartedTwin();
+  finishingTurnWithRolloutReplayUserMessageDoesNotDuplicateConfirmed();
   redispatchingTheSameOptimisticUserMessageIsIdempotent();
 }
 
@@ -126,15 +140,15 @@ function tracksLatestCollaborationModeByThread(): void {
   );
 
   assertDeepEqual(
-    state.latestCollaborationModesByThread,
-    { "thread-1": planMode },
+    runtime(state, "thread-1").latestCollaborationMode,
+    planMode,
     "latest collaboration mode should be stored per thread",
   );
 
   const removedThread = codexUiReducer(state, { type: "removeThread", threadId: "thread-1" });
   assertDeepEqual(
-    removedThread.latestCollaborationModesByThread,
-    {},
+    removedThread.threadsRuntime["thread-1"],
+    undefined,
     "removing a thread should clear its latest collaboration mode",
   );
 
@@ -144,9 +158,67 @@ function tracksLatestCollaborationModeByThread(): void {
     collaborationMode: null,
   });
   assertDeepEqual(
-    cleared.latestCollaborationModesByThread,
-    {},
+    runtime(cleared, "thread-1").latestCollaborationMode,
+    null,
     "default collaboration mode should clear the per-thread latest override",
+  );
+}
+
+function tracksComposerModeDraftsInReducer(): void {
+  const planMode = {
+    mode: "plan",
+    settings: {
+      model: "gpt-5.4",
+      reasoning_effort: "medium",
+      developer_instructions: null,
+    },
+  } as const;
+  let state = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-a", []), threadWithTurns("thread-b", [])],
+      activeThreadId: "thread-a",
+    },
+    { type: "setActiveComposerMode", mode: "plan" },
+  );
+
+  assertEqual(state.composerMode, "plan", "active composer mode should update in reducer state");
+  assertEqual(runtime(state, "thread-a").composerMode, "plan", "active thread draft composer mode should be stored");
+
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-b" });
+  assertEqual(state.composerMode, "default", "switching to a thread without draft should use default mode");
+
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-a" });
+  assertEqual(state.composerMode, "plan", "switching back should restore thread draft composer mode");
+
+  state = codexUiReducer(state, {
+    type: "resetThreadComposerMode",
+    threadId: "thread-a",
+  });
+  assertEqual(state.composerMode, "default", "reset should update active composer mode");
+  assertEqual(runtime(state, "thread-a").composerMode, "default", "reset should store a default override");
+
+  const latestOnly = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-latest", [])],
+      activeThreadId: "thread-latest",
+    },
+    {
+      type: "setLatestCollaborationMode",
+      threadId: "thread-latest",
+      collaborationMode: planMode,
+    },
+  );
+  assertEqual(
+    selectThreadComposerMode(latestOnly, "thread-latest"),
+    "plan",
+    "composer selector should fall back to latest collaboration mode when no draft exists",
+  );
+  assertEqual(
+    latestOnly.composerMode,
+    "plan",
+    "active composer mode should follow latest collaboration mode when no draft exists",
   );
 }
 
@@ -184,9 +256,11 @@ function upsertingRunningThreadSnapshotPreservesStreamingItems(): void {
       threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }]),
     ],
     activeThreadId: "thread-other",
-    activeTurnIdsByThread: { "thread-1": "turn-1" },
-    itemsByThread: {
-      "thread-1": [localUser, streamedAgent],
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        activeTurnId: "turn-1",
+        items: [localUser, streamedAgent],
+      }),
     },
   };
 
@@ -219,7 +293,7 @@ function upsertingRunningThreadSnapshotPreservesStreamingItems(): void {
     "reading a running thread snapshot should preserve local user message content",
   );
   assertDeepEqual(
-    (next.itemsByThread["thread-1"] ?? []).map((item) => item.id),
+    items(next, "thread-1").map((item) => item.id),
     ["user-1", "worked-for:turn-1", "agent-1"],
     "reading a running thread snapshot should keep worked-for before the assistant message like Codex Desktop",
   );
@@ -246,15 +320,35 @@ function startsThreadWithCollectedTurnItemsAndActiveTurn(): void {
 
   assertEqual(state.activeThreadId, "thread-1", "thread/started should select the started thread");
   assertEqual(
-    state.activeTurnIdsByThread["thread-1"],
+    runtime(state, "thread-1").activeTurnId,
     "turn-2",
     "thread/started should track the in-progress turn id",
   );
   assertDeepEqual(
-    state.itemsByThread["thread-1"]?.map((item) => item.id),
+    items(state, "thread-1").map((item) => item.id),
     ["user-1", "agent-1", "reasoning-1"],
     "thread/started should collect items from all thread turns in order",
   );
+}
+
+function startsThreadWithRunningOrActiveTurnStatuses(): void {
+  for (const status of ["running", "active", { type: "running" }, { status: "active" }]) {
+    const state = reduceNotification(initialCodexUiState, {
+      method: "thread/started",
+      params: {
+        thread: threadWithTurns("thread-1", [
+          { id: "turn-1", status: "completed", items: [userMessage("user-1", "Done")] },
+          { id: "turn-2", status, items: [agentMessage("agent-1", "Still working")] },
+        ]),
+      },
+    });
+
+    assertEqual(
+      runtime(state, "thread-1").activeTurnId,
+      "turn-2",
+      `thread/started should treat ${JSON.stringify(status)} turn status as active`,
+    );
+  }
 }
 
 function threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt(): void {
@@ -278,7 +372,7 @@ function threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt(): void 
   });
 
   assertDeepEqual(
-    state.itemsByThread["thread-1"]?.map((item) => item.id),
+    items(state, "thread-1").map((item) => item.id),
     ["optimistic-user:first"],
     "an empty thread/started snapshot for a new thread must not erase the first optimistic prompt",
   );
@@ -298,12 +392,12 @@ function threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt(): void 
   });
 
   assertDeepEqual(
-    started.itemsByThread["thread-1"]?.map((item) => item.id),
+    items(started, "thread-1").map((item) => item.id),
     ["optimistic-user:first"],
     "the first optimistic prompt should remain visible after the real turn starts",
   );
   assertEqual(
-    (started.itemsByThread["thread-1"]?.[0] as Record<string, unknown>)?._turnId,
+    (items(started, "thread-1")[0] as Record<string, unknown>)?._turnId,
     "turn-1",
     "the preserved optimistic prompt should bind to the real first turn",
   );
@@ -356,7 +450,7 @@ function delaysWorkedForProjectionUntilTurnItemsExist(): void {
   });
 
   assertDeepEqual(
-    started.itemsByThread["thread-1"]?.map((item) => item.id),
+    items(started, "thread-1").map((item) => item.id),
     [],
     "turn/started should not put an empty worked-for row before user and assistant items",
   );
@@ -386,7 +480,7 @@ function delaysWorkedForProjectionUntilTurnItemsExist(): void {
   });
 
   assertDeepEqual(
-    completed.itemsByThread["thread-1"]?.map((item) => item.id),
+    items(completed, "thread-1").map((item) => item.id),
     ["user-1", "worked-for:turn-1", "agent-1"],
     "terminal turn snapshot should place worked-for between the user and assistant items",
   );
@@ -417,7 +511,7 @@ function repositionsExplicitWorkedForItemsFromThreadSnapshots(): void {
   });
 
   assertDeepEqual(
-    state.itemsByThread["thread-1"]?.map((item) => item.id),
+    items(state, "thread-1").map((item) => item.id),
     ["user-1", "worked-for-1", "agent-1"],
     "thread snapshots should move explicit worked-for between the user and assistant message",
   );
@@ -431,7 +525,9 @@ function startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage():
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [])],
     activeThreadId: "thread-1",
-    itemsByThread: { "thread-1": [existingUser] },
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ items: [existingUser] }),
+    },
   };
 
   const next = reduceNotification(state, {
@@ -457,7 +553,7 @@ function startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage():
     "turn/started should merge new initial assistant items",
   );
   assertEqual(
-    next.activeTurnIdsByThread["thread-1"],
+    runtime(next, "thread-1").activeTurnId,
     "turn-1",
     "turn/started should set the active turn id",
   );
@@ -467,8 +563,9 @@ function appendsStreamingDeltasToAgentReasoningAndCommandItems(): void {
   const baseState = {
     ...initialCodexUiState,
     activeThreadId: "thread-1",
-    itemsByThread: {
-      "thread-1": [
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        items: [
         agentMessage("agent-1", "Hello"),
         { type: "reasoning", id: "reasoning-1", summary: [], content: ["Think"] },
         {
@@ -478,6 +575,7 @@ function appendsStreamingDeltasToAgentReasoningAndCommandItems(): void {
           aggregatedOutput: "first",
         },
       ] satisfies AccumulatedThreadItem[],
+      }),
     },
   };
 
@@ -549,7 +647,9 @@ function completingTurnProjectsTurnTimingAsWorkedForItem(): void {
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
     activeThreadId: "thread-1",
-    activeTurnIdsByThread: { "thread-1": "turn-1" },
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ activeTurnId: "turn-1" }),
+    },
   };
 
   const next = reduceNotification(state, {
@@ -580,9 +680,11 @@ function completingTurnPreservesLongerAccumulatedAgentText(): void {
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
     activeThreadId: "thread-1",
-    activeTurnIdsByThread: { "thread-1": "turn-1" },
-    itemsByThread: {
-      "thread-1": [agentMessage("agent-1", accumulatedText)],
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        activeTurnId: "turn-1",
+        items: [agentMessage("agent-1", accumulatedText)],
+      }),
     },
   };
 
@@ -604,7 +706,7 @@ function completingTurnPreservesLongerAccumulatedAgentText(): void {
     accumulatedText,
     "turn/completed should not replace accumulated streaming text with a shorter terminal snapshot",
   );
-  assertEqual(next.activeTurnIdsByThread["thread-1"], undefined, "turn/completed should still clear the active turn");
+  assertEqual(runtime(next, "thread-1").activeTurnId, null, "turn/completed should still clear the active turn");
 }
 
 function normalizesThreadStatusChangedNotifications(): void {
@@ -648,7 +750,9 @@ function surfacesTerminalErrorNotificationsInTheTranscript(): void {
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
     activeThreadId: "thread-1",
-    activeTurnIdsByThread: { "thread-1": "turn-1" },
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ activeTurnId: "turn-1" }),
+    },
   };
 
   const next = reduceNotification(state, {
@@ -695,7 +799,9 @@ function turnsFailedTurnErrorsIntoStreamErrorItems(): void {
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
     activeThreadId: "thread-1",
-    activeTurnIdsByThread: { "thread-1": "turn-1" },
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ activeTurnId: "turn-1" }),
+    },
   };
 
   const next = reduceNotification(state, {
@@ -716,7 +822,7 @@ function turnsFailedTurnErrorsIntoStreamErrorItems(): void {
     },
   });
 
-  assertEqual(next.activeTurnIdsByThread["thread-1"], undefined, "failed error turn should clear active turn");
+  assertEqual(runtime(next, "thread-1").activeTurnId, null, "failed error turn should clear active turn");
   assertEqual(threadStatus(next, "thread-1"), "systemError", "failed turn error should mark systemError");
   assertEqual(
     eventContent(next, "thread-1", "stream-error:turn-1"),
@@ -791,7 +897,7 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
   // Without an optimistic insert, the user item arrives last from the server,
   // so within each turn it sits after wf/error. The regression we are fixing
   // is that user-N must NOT spill out of its turn segment into the global tail.
-  const ids = (state.itemsByThread["thread-1"] ?? []).map((item) => item.id);
+  const ids = items(state, "thread-1").map((item) => item.id);
   assertDeepEqual(
     ids,
     [
@@ -838,12 +944,12 @@ function optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted(): v
   });
 
   assertDeepEqual(
-    (optimistic.itemsByThread["thread-1"] ?? []).map((item) => item.id),
+    items(optimistic, "thread-1").map((item) => item.id),
     ["optimistic-user:abc"],
     "optimisticUserMessage should insert a placeholder item immediately",
   );
   assertDeepEqual(
-    optimistic.pendingOptimisticTurnsByThread["thread-1"] ?? [],
+    runtime(optimistic, "thread-1").pendingOptimisticTurns,
     ["optimistic-turn:abc"],
     "optimisticUserMessage should queue the placeholder turn id for binding",
   );
@@ -857,18 +963,18 @@ function optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted(): v
   });
 
   assertDeepEqual(
-    turnStarted.turnOrderByThread["thread-1"] ?? [],
+    runtime(turnStarted, "thread-1").turnOrder,
     ["turn-1"],
     "turn/started should rewrite the placeholder turn id to the real turn id",
   );
-  const placeholderTurnId = (turnStarted.itemsByThread["thread-1"]?.[0] as Record<string, unknown>)?._turnId;
+  const placeholderTurnId = (items(turnStarted, "thread-1")[0] as Record<string, unknown>)?._turnId;
   assertEqual(
     placeholderTurnId,
     "turn-1",
     "after binding, the optimistic item should now reference the real turn id",
   );
   assertDeepEqual(
-    turnStarted.pendingOptimisticTurnsByThread["thread-1"] ?? [],
+    runtime(turnStarted, "thread-1").pendingOptimisticTurns,
     [],
     "binding should drain the pending optimistic turn queue",
   );
@@ -883,7 +989,7 @@ function optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted(): v
     },
   });
   assertDeepEqual(
-    (errored.itemsByThread["thread-1"] ?? []).map((item) => item.id),
+    items(errored, "thread-1").map((item) => item.id),
     ["optimistic-user:abc", "stream-error:turn-1"],
     "stream-error should land after the optimistic user message in the same turn segment",
   );
@@ -896,17 +1002,55 @@ function optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted(): v
       item: userMessage("real-user-1", "Hi there"),
     },
   });
-  const finalIds = (completed.itemsByThread["thread-1"] ?? []).map((item) => item.id);
+  const finalIds = items(completed, "thread-1").map((item) => item.id);
   assertDeepEqual(
     finalIds,
     ["real-user-1", "stream-error:turn-1"],
     "item/completed userMessage should replace the optimistic placeholder by content match",
   );
-  const reconciledItem = completed.itemsByThread["thread-1"]?.[0] as Record<string, unknown> | undefined;
+  const reconciledItem = items(completed, "thread-1")[0] as Record<string, unknown> | undefined;
   assertEqual(
     reconciledItem?._localId,
     undefined,
     "reconciliation should clear the _localId placeholder marker",
+  );
+}
+
+function itemCompletedReconcilesSameTurnOptimisticUserMessageWhenContentShapeDiffers(): void {
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+  };
+
+  state = codexUiReducer(state, {
+    type: "optimisticUserMessage",
+    threadId: "thread-1",
+    localTurnId: "optimistic-turn:shape",
+    localId: "optimistic-user:shape",
+    content: [textInput("same visible prompt"), skillInput("Review", "/workspace/.codex/skills/review")],
+  });
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-shape", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+
+  const completed = reduceNotification(state, {
+    method: "item/completed",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-shape",
+      item: userMessage("real-user-shape", "same visible prompt"),
+    },
+  });
+
+  assertDeepEqual(
+    items(completed, "thread-1").map((item) => item.id),
+    ["real-user-shape"],
+    "same-turn userMessage completion should replace the optimistic bubble even when structured content differs",
   );
 }
 
@@ -969,7 +1113,7 @@ function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
     });
   }
 
-  const ids = (state.itemsByThread["thread-1"] ?? []).map((item) => item.id);
+  const ids = items(state, "thread-1").map((item) => item.id);
   assertDeepEqual(
     ids,
     [
@@ -986,7 +1130,7 @@ function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
     "with optimistic insert each user bubble must lead its turn segment, matching Codex Desktop",
   );
   assertDeepEqual(
-    state.pendingOptimisticTurnsByThread["thread-1"] ?? [],
+    runtime(state, "thread-1").pendingOptimisticTurns,
     [],
     "all placeholder turn ids must have been bound by the time the third turn finishes",
   );
@@ -1015,20 +1159,82 @@ function bindOptimisticTurnRewritesItemsAndDropsPendingPlaceholder(): void {
   });
 
   assertDeepEqual(
-    bound.turnOrderByThread["thread-1"] ?? [],
+    runtime(bound, "thread-1").turnOrder,
     ["turn-real"],
     "bindOptimisticTurn should replace the local turn id in the order list",
   );
-  const reboundTurnId = (bound.itemsByThread["thread-1"]?.[0] as Record<string, unknown>)?._turnId;
+  const reboundTurnId = (items(bound, "thread-1")[0] as Record<string, unknown>)?._turnId;
   assertEqual(
     reboundTurnId,
     "turn-real",
     "bindOptimisticTurn should rewrite items _turnId from local to real",
   );
   assertDeepEqual(
-    bound.pendingOptimisticTurnsByThread["thread-1"] ?? [],
+    runtime(bound, "thread-1").pendingOptimisticTurns,
     [],
     "bindOptimisticTurn should drain the pending queue",
+  );
+}
+
+function completingTurnDropsSameTurnOptimisticUserMessageWhenContentShapeDiffers(): void {
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:terminal-shape",
+      localId: "optimistic-user:terminal-shape",
+      content: [textInput("terminal prompt"), skillInput("Review", "/workspace/.codex/skills/review")],
+    },
+  );
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-terminal-shape", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-terminal-shape",
+      item: agentMessage("agent-terminal-shape", "streamed terminal answer"),
+    },
+  });
+
+  const completed = reduceNotification(state, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-terminal-shape",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("real-user-terminal-shape", "terminal prompt"),
+          agentMessage("agent-terminal-shape", "streamed"),
+        ],
+      },
+    },
+  });
+
+  assertDeepEqual(
+    items(completed, "thread-1")
+      .filter((item) => item.type === "userMessage")
+      .map((item) => item.id),
+    ["real-user-terminal-shape"],
+    "turn/completed should remove the same-turn optimistic user bubble even when the final content shape differs",
+  );
+  assertEqual(
+    agentText(completed, "thread-1", "agent-terminal-shape"),
+    "streamed terminal answer",
+    "turn/completed should keep the longer accumulated assistant text",
   );
 }
 
@@ -1037,7 +1243,9 @@ function assertTerminalTurnStatus(method: string, turnStatusValue: string, expec
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
     activeThreadId: "thread-1",
-    activeTurnIdsByThread: { "thread-1": "turn-1" },
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ activeTurnId: "turn-1" }),
+    },
   };
 
   const next = reduceNotification(state, {
@@ -1054,8 +1262,8 @@ function assertTerminalTurnStatus(method: string, turnStatusValue: string, expec
   });
 
   assertEqual(
-    next.activeTurnIdsByThread["thread-1"],
-    undefined,
+    runtime(next, "thread-1").activeTurnId,
+    null,
     `${method} should clear the active turn id for the thread`,
   );
   assertEqual(
@@ -1105,11 +1313,11 @@ function upsertingThreadSnapshotDropsDuplicateOptimisticUserMessage(): void {
   ]);
   // upsertThread is dispatched from `readThreadForDisplay` after a thread switch.
   const refreshed = codexUiReducer(
-    { ...optimistic, activeTurnIdsByThread: { "thread-1": "turn-1" } },
+    stateWithRuntime(optimistic, "thread-1", { activeTurnId: "turn-1" }),
     { type: "upsertThread", thread: snapshotThread, select: true },
   );
 
-  const ids = (refreshed.itemsByThread["thread-1"] ?? []).map((item) => item.id);
+  const ids = items(refreshed, "thread-1").map((item) => item.id);
   if (ids.includes("optimistic-user:dup")) {
     throw new Error(
       `thread snapshot merge must drop the optimistic placeholder when the server-confirmed userMessage carries the same text: got ${JSON.stringify(ids)}`,
@@ -1118,6 +1326,489 @@ function upsertingThreadSnapshotDropsDuplicateOptimisticUserMessage(): void {
   if (!ids.includes("real-user-1")) {
     throw new Error(`expected the snapshot's real userMessage to be present: got ${JSON.stringify(ids)}`);
   }
+}
+
+function upsertingLiveSnapshotAfterSwitchDropsBoundOptimisticUserMessage(): void {
+  // Replays the user-visible switch-away/switch-back case: the local prompt
+  // has already been bound to the real running turn, then `thread/read`
+  // returns a live snapshot with the server-confirmed userMessage under a real
+  // id. The transcript must not show both bubbles while the assistant is still
+  // streaming.
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:switch",
+      localId: "optimistic-user:switch",
+      content: [textInput("keep this single"), skillInput("Review", "/workspace/.codex/skills/review")],
+    },
+  );
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-live", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-live",
+      item: agentMessage("agent-live", "Live streamed answer so far"),
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-live",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          userMessage("real-user-live", "keep this single"),
+          agentMessage("agent-live", "Live"),
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  assertDeepEqual(
+    items(refreshed, "thread-1")
+      .filter((item) => item.type === "userMessage")
+      .map((item) => item.id),
+    ["real-user-live"],
+    "switching back to a running thread should drop the bound optimistic user bubble immediately",
+  );
+  assertEqual(
+    agentText(refreshed, "thread-1", "agent-live"),
+    "Live streamed answer so far",
+    "live snapshot merge should still preserve the longer accumulated assistant stream",
+  );
+  assertDeepEqual(
+    runtime(refreshed, "thread-1").turnOrder,
+    ["turn-live"],
+    "confirmed live snapshot should remove the unused optimistic turn placeholder from order",
+  );
+  assertDeepEqual(
+    runtime(refreshed, "thread-1").pendingOptimisticTurns,
+    [],
+    "confirmed live snapshot should remove the unused optimistic turn placeholder from pending queue",
+  );
+}
+
+function upsertingLiveSnapshotWithRolloutReplayUserMessageDoesNotDuplicateConfirmed(): void {
+  // Replays the real-world bug: the streamed `item/started userMessage` has
+  // already reconciled the optimistic placeholder into a confirmed item with
+  // the authoritative server id. Then the user switches threads and back, so
+  // `readThreadForDisplay` re-fetches the thread. The host crate's rollout
+  // reader injects an extra synthesized `history-user:turn:line` userMessage
+  // because the server's mid-stream `thread/read` did not yet include the
+  // user prompt in `turn.items`. The reducer must not render two bubbles for
+  // the same prompt just because the snapshot now carries a different id.
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:rollout",
+      localId: "optimistic-user:rollout",
+      content: [textInput("read DEVELOPMENT.md")],
+    },
+  );
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-rollout", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-rollout",
+      item: userMessage("server-user-rollout", "read DEVELOPMENT.md"),
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-rollout",
+      item: agentMessage("agent-rollout", "Reading the file..."),
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-rollout",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          // Mid-stream thread/read returns the assistant + tool item but the
+          // user prompt is not materialized yet — only the rollout-replay
+          // synthesized one (different id) is present.
+          userMessage("history-user:turn-rollout:0", "read DEVELOPMENT.md"),
+          agentMessage("agent-rollout", "Reading"),
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  assertDeepEqual(
+    items(refreshed, "thread-1")
+      .filter((item) => item.type === "userMessage")
+      .map((item) => item.id),
+    ["server-user-rollout"],
+    "live snapshot merge must dedupe rollout-replay userMessage against the streamed confirmed one",
+  );
+  assertEqual(
+    agentText(refreshed, "thread-1", "agent-rollout"),
+    "Reading the file...",
+    "live snapshot merge must keep the longer streamed assistant text",
+  );
+}
+
+function upsertingLiveSnapshotWithRolloutReplayAgentMessageDoesNotDuplicateConfirmed(): void {
+  // Mirrors the visible bug where the conversation showed a phantom assistant
+  // commentary block above the user prompt: the rollout reader synthesized
+  // `history-agent:turn:line` items because the server's mid-stream
+  // `thread/read` returned `turn.items` that lacked the assistant commentary
+  // already streamed via `item/started agentMessage`.
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:agent-replay",
+      localId: "optimistic-user:agent-replay",
+      content: [textInput("hi there")],
+    },
+  );
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-agent-replay", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-agent-replay",
+      item: userMessage("server-user-agent-replay", "hi there"),
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-agent-replay",
+      item: agentMessage("server-agent-commentary", "Sure, taking a look."),
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-agent-replay",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          // Replay duplicate (different id, same text) injected by rollout merge.
+          {
+            ...agentMessage("history-agent:turn-agent-replay:5", "Sure, taking a look."),
+            _historyReplay: true,
+          } as unknown as ThreadItem,
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  const refreshedItems = items(refreshed, "thread-1");
+  assertDeepEqual(
+    refreshedItems.filter((item) => item.type === "agentMessage").map((item) => item.id),
+    ["server-agent-commentary"],
+    "live snapshot merge must drop rollout-replay agentMessage when streamed text is already in state",
+  );
+  assertEqual(
+    refreshedItems.filter((item) => item.type === "userMessage").length,
+    1,
+    "user prompt must remain a single bubble after rollout-replay merge",
+  );
+}
+
+function upsertingLiveSnapshotWithRolloutReplayReasoningDoesNotDuplicateConfirmed(): void {
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:reason",
+      localId: "optimistic-user:reason",
+      content: [textInput("plan it")],
+    },
+  );
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-reason", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-reason",
+      item: userMessage("server-user-reason", "plan it"),
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-reason",
+      item: {
+        type: "reasoning",
+        id: "server-reasoning-1",
+        summary: ["Inspect the workspace"],
+        content: ["Reading docs/DEVELOPMENT.md first"],
+      } as ThreadItem,
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-reason",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          {
+            type: "reasoning",
+            id: "history-reasoning:turn-reason:7",
+            summary: ["Inspect the workspace"],
+            content: ["Reading docs/DEVELOPMENT.md first"],
+            _historyReplay: true,
+          } as unknown as ThreadItem,
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  assertDeepEqual(
+    items(refreshed, "thread-1")
+      .filter((item) => item.type === "reasoning")
+      .map((item) => item.id),
+    ["server-reasoning-1"],
+    "live snapshot merge must drop rollout-replay reasoning when streamed summary/content is already in state",
+  );
+}
+
+function upsertingLiveSnapshotWithCompletedCollabToolCallReplacesStartedTwin(): void {
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+  };
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-collab", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-collab",
+      item: collabToolCall("live-spawn", "inProgress", [], "Inspect render groups"),
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-collab",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          collabToolCall(
+            "history-spawn",
+            "completed",
+            ["agent-1234567890abcdef"],
+            "Inspect render groups",
+            { "agent-1234567890abcdef": { status: "running", message: null } },
+          ),
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  const collabItems = items(refreshed, "thread-1").filter((item) => item.type === "collabAgentToolCall");
+  assertEqual(collabItems.length, 1, "completed collab snapshot should replace the streamed started twin");
+  assertEqual(collabItems[0]?.id, "live-spawn", "snapshot should be realigned to the live item id before merge");
+  assertEqual(String((collabItems[0] as Record<string, unknown> | undefined)?.status ?? ""), "completed", "completed status should win after refresh");
+  assertDeepEqual(
+    (collabItems[0] as Record<string, unknown> | undefined)?.receiverThreadIds,
+    ["agent-1234567890abcdef"],
+    "completed collab snapshot should carry receiver thread ids after merge",
+  );
+}
+
+function finishingTurnWithRolloutReplayUserMessageDoesNotDuplicateConfirmed(): void {
+  // Same hazard, but at `turn/completed`. After the live merge above, if the
+  // duplicate ever crept in, `replaceTurnSegment` must collapse the segment
+  // by content key so the user does not need to refresh the page to recover.
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:done",
+      localId: "optimistic-user:done",
+      content: [textInput("read DEVELOPMENT.md")],
+    },
+  );
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-done", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-done",
+      item: userMessage("server-user-done", "read DEVELOPMENT.md"),
+    },
+  });
+  // Simulate a stale rollout-replay userMessage already leaked into state.
+  state = {
+    ...state,
+    threadsRuntime: {
+      ...state.threadsRuntime,
+      "thread-1": {
+        ...runtime(state, "thread-1"),
+        items: [
+          ...items(state, "thread-1"),
+        {
+          id: "history-user:turn-done:0",
+          type: "userMessage",
+          content: [textInput("read DEVELOPMENT.md")],
+          _turnId: "turn-done",
+        } as AccumulatedThreadItem,
+        ],
+      },
+    },
+  };
+
+  const completed = reduceNotification(state, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-done",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("server-user-done", "read DEVELOPMENT.md"),
+          agentMessage("agent-done", "Done"),
+        ],
+      },
+    },
+  });
+
+  assertDeepEqual(
+    items(completed, "thread-1")
+      .filter((item) => item.type === "userMessage")
+      .map((item) => item.id),
+    ["server-user-done"],
+    "turn/completed segment replace must dedupe rollout-replay userMessage by content",
+  );
+}
+
+function upsertingMetadataOnlyThreadPreservesOptimisticPrompt(): void {
+  const optimistic = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:first",
+      localId: "optimistic-user:first",
+      content: [textInput("First prompt")],
+    },
+  );
+
+  const metadataOnlyThread: Thread = {
+    ...threadWithTurns("thread-1", []),
+    cwd: "/workspace/project",
+    gitInfo: {
+      branch: "main",
+      sha: "abcdef1234567890",
+      originUrl: "git@example.com:hicodex/HiCodex.git",
+    },
+  };
+  const refreshed = codexUiReducer(optimistic, {
+    type: "upsertThread",
+    thread: metadataOnlyThread,
+  });
+
+  assertDeepEqual(
+    items(refreshed, "thread-1").map((item) => item.id),
+    ["optimistic-user:first"],
+    "metadata-only thread refresh must not erase the first optimistic prompt",
+  );
+  assertEqual(
+    refreshed.threads.find((thread) => thread.id === "thread-1")?.gitInfo?.branch,
+    "main",
+    "metadata-only thread refresh should still merge branch details",
+  );
 }
 
 function redispatchingTheSameOptimisticUserMessageIsIdempotent(): void {
@@ -1141,7 +1832,7 @@ function redispatchingTheSameOptimisticUserMessageIsIdempotent(): void {
     content: [textInput("hello world")],
   });
 
-  const ids = (state.itemsByThread["thread-1"] ?? []).map((item) => item.id);
+  const ids = items(state, "thread-1").map((item) => item.id);
   assertDeepEqual(
     ids,
     ["optimistic-user:once"],
@@ -1173,7 +1864,7 @@ function threadWithTurns(
     modelProvider: "openai",
     createdAt: 0,
     updatedAt: 0,
-    status: turns.some((turn) => turn.status === "inProgress")
+    status: turns.some((turn) => isActiveTurnFixtureStatus(turn.status))
       ? { type: "active", activeFlags: [] }
       : { type: "idle" },
     path: null,
@@ -1210,9 +1901,27 @@ function turnFixture(turn: {
 }
 
 function turnStatusFixture(status: unknown): Thread["turns"][number]["status"] {
-  return status === "completed" || status === "interrupted" || status === "failed" || status === "inProgress"
-    ? status
+  return status === "completed"
+    || status === "interrupted"
+    || status === "failed"
+    || status === "inProgress"
+    || status === "running"
+    || status === "active"
+    || (Boolean(status) && typeof status === "object")
+    ? status as Thread["turns"][number]["status"]
     : "completed";
+}
+
+function isActiveTurnFixtureStatus(status: unknown): boolean {
+  if (status === "inProgress" || status === "running" || status === "active") return true;
+  if (!status || typeof status !== "object") return false;
+  const record = status as Record<string, unknown>;
+  return record.type === "inProgress"
+    || record.type === "running"
+    || record.type === "active"
+    || record.status === "inProgress"
+    || record.status === "running"
+    || record.status === "active";
 }
 
 function userMessage(id: string, text: string): ThreadItem {
@@ -1231,6 +1940,14 @@ function textInput(text: string): UserInput {
   };
 }
 
+function skillInput(name: string, path: string): UserInput {
+  return {
+    type: "skill",
+    name,
+    path,
+  };
+}
+
 function agentMessage(id: string, text: string): ThreadItem {
   return {
     type: "agentMessage",
@@ -1241,10 +1958,63 @@ function agentMessage(id: string, text: string): ThreadItem {
   };
 }
 
+function collabToolCall(
+  id: string,
+  status: "inProgress" | "completed" | "failed",
+  receiverThreadIds: string[],
+  prompt: string,
+  agentsStates: Record<string, unknown> = {},
+): ThreadItem {
+  return {
+    type: "collabAgentToolCall",
+    id,
+    tool: "spawnAgent",
+    status,
+    senderThreadId: "thread-1",
+    receiverThreadIds,
+    prompt,
+    model: "gpt-5.5",
+    reasoningEffort: "medium",
+    agentsStates,
+  } as unknown as ThreadItem;
+}
+
 function itemById(state: CodexUiState, threadId: string, itemId: string): AccumulatedThreadItem {
-  const item = state.itemsByThread[threadId]?.find((candidate) => candidate.id === itemId);
+  const item = items(state, threadId).find((candidate) => candidate.id === itemId);
   assertNotNull(item, `expected item ${itemId}`);
   return item;
+}
+
+function runtime(state: CodexUiState, threadId: string): ThreadRuntimeSlice {
+  return selectThreadRuntime(state, threadId);
+}
+
+function items(state: CodexUiState, threadId: string): AccumulatedThreadItem[] {
+  return runtime(state, threadId).items;
+}
+
+function stateWithRuntime(
+  state: CodexUiState,
+  threadId: string,
+  patch: Partial<ThreadRuntimeSlice>,
+): CodexUiState {
+  return {
+    ...state,
+    threadsRuntime: {
+      ...state.threadsRuntime,
+      [threadId]: {
+        ...runtime(state, threadId),
+        ...patch,
+      },
+    },
+  };
+}
+
+function runtimeSlice(patch: Partial<ThreadRuntimeSlice>): ThreadRuntimeSlice {
+  return {
+    ...selectThreadRuntime(initialCodexUiState, null),
+    ...patch,
+  };
 }
 
 function agentText(state: CodexUiState, threadId: string, itemId: string): string {

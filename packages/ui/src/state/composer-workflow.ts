@@ -10,6 +10,7 @@ export interface ComposerKeyEventLike {
   shiftKey?: boolean;
   metaKey?: boolean;
   ctrlKey?: boolean;
+  altKey?: boolean;
   isComposing?: boolean;
   nativeEvent?: {
     isComposing?: boolean;
@@ -112,6 +113,21 @@ export interface SlashCommandContext {
 }
 
 export type ComposerMode = "default" | "plan";
+export type FollowUpSubmitAction = "queue" | "steer";
+
+export interface ComposerSendOptions {
+  followUpSubmitAction?: FollowUpSubmitAction;
+}
+
+export function composerPlaceholderText(input: {
+  hasConversation: boolean;
+  hasBackgroundAgentsPanel?: boolean;
+}): string {
+  if (!input.hasConversation) return "Ask Codex anything. @ to use plugins or mention files";
+  return input.hasBackgroundAgentsPanel
+    ? "Ask for follow-up changes or @ to tag an agent"
+    : "Ask for follow-up changes";
+}
 
 export interface AttachAction {
   id: AttachActionId;
@@ -188,6 +204,7 @@ export interface ComposerSubmitStateInput {
   threadRunning: boolean;
   activeTurnId: string | null;
   pendingRequestCount: number;
+  queueingEnabled?: boolean;
 }
 
 export interface ComposerSubmitState {
@@ -259,6 +276,7 @@ export function projectComposerSubmitState(input: ComposerSubmitStateInput): Com
   }
 
   if (input.threadRunning) {
+    const isQueueingEnabled = hasActiveTurn && input.queueingEnabled !== false;
     return {
       submitButtonMode: "queue",
       threadRuntimeStatus,
@@ -267,7 +285,7 @@ export function projectComposerSubmitState(input: ComposerSubmitStateInput): Com
       disabledReason: hasActiveTurn ? undefined : "Waiting for active turn before queueing a follow-up",
       submitBlockReason: hasActiveTurn ? undefined : "missingActiveTurn",
       canStopFromEscape: false,
-      isQueueingEnabled: hasActiveTurn,
+      isQueueingEnabled,
       requestCount,
     };
   }
@@ -293,8 +311,8 @@ export function composerSubmitTooltip(state: ComposerSubmitState): string {
   }
 
   if (state.submitButtonMode === "queue") {
-    if (state.isQueueingEnabled) return "Queue follow-up (Enter)";
-    return "Queue follow-up";
+    if (state.isQueueingEnabled) return "Queue (Enter)\nSteer (Cmd+Enter)";
+    return "Steer (Enter)\nQueue (Cmd+Enter)";
   }
 
   if (state.hasContent) return "Send message (Enter)";
@@ -303,57 +321,57 @@ export function composerSubmitTooltip(state: ComposerSubmitState): string {
 
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("model", "Model", "Choose the model and reasoning effort.", "model", "panel", ["provider", "engine"]),
-  command("fast", "Fast mode", "Toggle or inspect fast response mode.", "model", "pending", ["service-tier"], "on | off | status"),
-  command("ide", "IDE context", "Attach IDE context to this conversation.", "workspace", "pending", ["editor"]),
+  command("fast", "Fast mode", "Toggle or inspect fast response mode.", "model", "pending", ["service-tier"], "on | off | status", true),
+  command("ide", "IDE context", "Attach IDE context to this conversation.", "workspace", "pending", ["editor"], undefined, true),
   command("permissions", "Permissions", "Choose the approval and sandbox profile.", "settings", "panel", ["approvals", "sandbox"]),
-  command("keymap", "Keymap", "Inspect keyboard shortcuts.", "settings", "pending", ["shortcuts"], "debug"),
-  command("vim", "Vim mode", "Toggle Vim-style composer editing.", "settings", "pending", ["modal"]),
-  command("setup-default-sandbox", "Setup sandbox", "Configure the default sandbox on supported platforms.", "settings", "pending", ["sandbox"]),
-  command("sandbox-add-read-dir", "Add sandbox read dir", "Allow Codex to read another directory.", "settings", "pending", ["read-dir"], "path"),
+  command("keymap", "Keymap", "Inspect keyboard shortcuts.", "settings", "pending", ["shortcuts"], "debug", true),
+  command("vim", "Vim mode", "Toggle Vim-style composer editing.", "settings", "pending", ["modal"], undefined, true),
+  command("setup-default-sandbox", "Setup sandbox", "Configure the default sandbox on supported platforms.", "settings", "pending", ["sandbox"], undefined, true),
+  command("sandbox-add-read-dir", "Add sandbox read dir", "Allow Codex to read another directory.", "settings", "pending", ["read-dir"], "path", true),
   command("experimental", "Experimental", "Open experimental feature toggles.", "settings", "panel", ["features", "labs"]),
   command("approve", "Approve retry", "Approve a blocked auto-review retry for this thread.", "tools", "direct", ["auto-review"]),
   command("approvals", "Approvals", "Open pending approval and permission controls.", "settings", "panel", ["permission", "requests"]),
-  command("memories", "Memories", "Inspect or configure memory behavior.", "tools", "pending", ["memory"]),
-  command("skills", "Skills", "List available Codex skills.", "tools", "direct", ["skill"]),
+  command("memories", "Memories", "Inspect or configure memory behavior.", "tools", "pending", ["memory"], undefined, true),
+  command("skills", "Skills", "List available Codex skills.", "tools", "direct", ["skill"], "reload"),
   command("hooks", "Hooks", "List configured lifecycle hooks.", "tools", "direct", ["hook"]),
   command("review", "Review", "Review the current working tree or custom instructions.", "workspace", "direct", ["inspect", "code review"], "instructions"),
   command("rename", "Rename", "Rename the active thread.", "thread", "direct", ["title"], "name"),
   command("new", "New thread", "Start a new thread.", "thread", "direct", ["chat"]),
-  command("resume", "Resume", "Resume an existing thread.", "thread", "pending", ["history", "open"], "thread id"),
+  command("resume", "Resume", "Resume an existing thread.", "thread", "direct", ["history", "open"], "thread id"),
   command("fork", "Fork", "Fork the active thread.", "thread", "direct", ["branch"]),
   command("init", "Init", "Insert the Codex workspace initialization prompt.", "workspace", "prompt", ["agents", "bootstrap"]),
   command("compact", "Compact", "Compact the active thread context.", "thread", "direct", ["summarize", "ctx"]),
   command("plan", "Plan mode", "Switch the composer into planning mode.", "thread", "direct", ["planner"], "prompt"),
-  command("goal", "Goal", "Create, inspect, or clear the long-running goal.", "thread", "pending", ["objective"], "objective | clear"),
-  command("collab", "Collaboration", "Choose the collaboration mode.", "team", "pending", ["mode"]),
-  command("agent", "Agents", "Switch or manage agent threads.", "team", "pending", ["subagent", "multiagent"]),
-  command("subagents", "Subagents", "Open multi-agent controls.", "team", "pending", ["agent", "multiagents"]),
-  command("side", "Side conversation", "Start an ephemeral side conversation.", "thread", "pending", ["sidecar"], "prompt"),
+  command("goal", "Goal", "Create, inspect, or clear the long-running goal.", "thread", "direct", ["objective"], "objective | clear"),
+  command("collab", "Collaboration", "Choose the collaboration mode.", "team", "direct", ["mode"]),
+  command("agent", "Agents", "Switch or manage agent threads.", "team", "pending", ["subagent", "multiagent"], undefined, true),
+  command("subagents", "Subagents", "Open multi-agent controls.", "team", "pending", ["agent", "multiagents"], undefined, true),
+  command("side", "Side conversation", "Start an ephemeral side conversation.", "thread", "pending", ["sidecar"], "prompt", true),
   command("copy", "Copy answer", "Copy the last assistant answer as markdown.", "thread", "desktop", ["clipboard"]),
-  command("raw", "Raw mode", "Toggle raw transcript mode.", "debug", "pending", ["scrollback"], "on | off"),
+  command("raw", "Raw mode", "Toggle raw transcript mode.", "debug", "pending", ["scrollback"], "on | off", true),
   command("diff", "Diff", "Show the current git diff.", "workspace", "direct", ["changes"]),
-  command("mention", "Mention", "Add a file mention to the composer.", "workspace", "pending", ["file", "@"]),
+  command("mention", "Mention", "Add a file mention to the composer.", "workspace", "direct", ["file", "@"]),
   command("status", "Status", "Show active thread, workspace, model, and sidecar status.", "workspace", "direct", ["session"]),
-  command("debug-config", "Debug config", "Inspect effective Codex config layers.", "debug", "pending", ["config"]),
-  command("title", "Terminal title", "Configure terminal title behavior.", "settings", "pending", ["terminal"]),
-  command("statusline", "Status line", "Configure status-line behavior.", "settings", "pending", ["status"]),
-  command("theme", "Theme", "Choose the UI or syntax theme.", "settings", "pending", ["appearance"]),
+  command("debug-config", "Debug config", "Inspect effective Codex config layers.", "debug", "pending", ["config"], undefined, true),
+  command("title", "Terminal title", "Configure terminal title behavior.", "settings", "pending", ["terminal"], undefined, true),
+  command("statusline", "Status line", "Configure status-line behavior.", "settings", "pending", ["status"], undefined, true),
+  command("theme", "Theme", "Choose the UI or syntax theme.", "settings", "pending", ["appearance"], undefined, true),
   command("mcp", "MCP", "Reload and list MCP servers and tools.", "mcp", "direct", ["tools", "server"], "verbose"),
   command("apps", "Apps", "List connected apps and connectors.", "tools", "direct", ["connectors"]),
   command("plugins", "Plugins", "List installed and marketplace plugins.", "tools", "direct", ["plugin"]),
   command("logout", "Logout", "Sign out from the current Codex account.", "settings", "direct", ["account"]),
   command("quit", "Quit", "Quit HiCodex.", "settings", "desktop", ["exit"], undefined, true),
   command("exit", "Exit", "Quit HiCodex.", "settings", "desktop", ["quit"]),
-  command("feedback", "Feedback", "Prepare a feedback upload.", "tools", "pending", ["logs"]),
-  command("rollout", "Rollout path", "Show the current rollout path when available.", "debug", "pending", ["debug"]),
-  command("ps", "Background terminals", "List background terminal processes.", "tools", "pending", ["processes"]),
-  command("stop", "Stop terminals", "Stop all background terminals for this thread.", "tools", "pending", ["clean"]),
-  command("clean", "Clean terminals", "Stop all background terminals for this thread.", "tools", "pending", ["stop"], undefined, true),
+  command("feedback", "Feedback", "Prepare a feedback upload.", "tools", "pending", ["logs"], undefined, true),
+  command("rollout", "Rollout path", "Show the current rollout path when available.", "debug", "pending", ["debug"], undefined, true),
+  command("ps", "Background terminals", "List background terminal processes.", "tools", "direct", ["processes"]),
+  command("stop", "Stop terminals", "Stop all background terminals for this thread.", "tools", "direct", ["clean"]),
+  command("clean", "Clean terminals", "Stop all background terminals for this thread.", "tools", "direct", ["stop"], undefined, true),
   command("clear", "Clear", "Clear composer input.", "thread", "direct", ["reset"]),
-  command("personality", "Personality", "Choose assistant communication style.", "settings", "pending", ["style"]),
-  command("realtime", "Realtime", "Start or configure realtime voice.", "tools", "pending", ["voice", "audio"]),
+  command("personality", "Personality", "Choose assistant communication style.", "settings", "pending", ["style"], undefined, true),
+  command("realtime", "Realtime", "Start or configure realtime voice.", "tools", "pending", ["voice", "audio"], undefined, true),
   command("settings", "Settings", "Open settings.", "settings", "panel", ["config", "preferences"]),
-  command("test-approval", "Test approval", "Trigger a development approval request.", "debug", "pending", ["debug"]),
+  command("test-approval", "Test approval", "Trigger a development approval request.", "debug", "pending", ["debug"], undefined, true),
   command("debug-m-drop", "Memory debug drop", "Debug memory maintenance drop flow.", "debug", "pending", ["memory"], undefined, true),
   command("debug-m-update", "Memory debug update", "Debug memory maintenance update flow.", "debug", "pending", ["memory"], undefined, true),
   command("help", "Help", "Show available composer commands.", "settings", "desktop", ["commands", "?"]),
@@ -566,7 +584,7 @@ export function normalizeAttachmentPath(value: string): string {
 export function composerEnterAction(input: string, event: ComposerKeyEventLike): ComposerEnterResult {
   if (event.key !== "Enter") return { action: "none", preventDefault: false };
   if (event.isComposing || event.nativeEvent?.isComposing) return { action: "none", preventDefault: false };
-  if (event.shiftKey) return { action: "newline", preventDefault: false };
+  if (event.shiftKey || event.altKey) return { action: "newline", preventDefault: false };
   if (!input.trim()) return { action: "none", preventDefault: false };
   return { action: "send", preventDefault: true };
 }
@@ -663,7 +681,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "help":
       return { action: "showCommands", clearInput: true };
     case "skills":
-      return { action: "request", request: "listSkills", clearInput: true };
+      return { action: "request", request: "listSkills", clearInput: true, payload: optionalPayload("detail", args) };
     case "hooks":
       return { action: "request", request: "listHooks", clearInput: true };
     case "apps":

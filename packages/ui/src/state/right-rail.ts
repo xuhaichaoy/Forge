@@ -2,8 +2,15 @@ import type { BranchDetailsViewModel } from "./branch-details";
 import type { RailEntry } from "./render-groups";
 
 export const RAIL_LIST_PREVIEW_LIMIT = 6;
+export const DESKTOP_RIGHT_RAIL_WIDTH_PX = 300;
+export const DESKTOP_RIGHT_RAIL_GAP_PX = 16;
+
+const DESKTOP_THREAD_LAYOUT_WIDTH_PX = 736;
+const DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX = 180;
+const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 360;
 
 export type RightRailSectionId = "progress" | "branchDetails" | "artifacts" | "sources";
+export type RightRailDisplayMode = "overlay" | "shift" | "gutter";
 
 export interface RightRailSection {
   id: RightRailSectionId;
@@ -34,11 +41,40 @@ export interface ClippedRailEntries {
   canToggle: boolean;
 }
 
+export function rightRailDisplayMode(contentWidthPx: number): RightRailDisplayMode {
+  const sideSpace = rightRailSideSpace(contentWidthPx);
+  if (sideSpace < DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX) return "overlay";
+  if (sideSpace < DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX) return "shift";
+  return "gutter";
+}
+
+export function rightRailContentShiftPx(
+  contentWidthPx: number,
+  hasContent: boolean,
+  isPinned = true,
+): number {
+  if (!hasContent || !isPinned || contentWidthPx <= 0 || rightRailDisplayMode(contentWidthPx) !== "shift") {
+    return 0;
+  }
+  return -(DESKTOP_RIGHT_RAIL_WIDTH_PX + DESKTOP_RIGHT_RAIL_GAP_PX) / 2;
+}
+
+export function rightRailReservedInlineEndPx(
+  contentWidthPx: number,
+  hasContent: boolean,
+  isPinned = true,
+): number {
+  if (!hasContent || !isPinned || contentWidthPx <= 0 || rightRailDisplayMode(contentWidthPx) === "overlay") {
+    return 0;
+  }
+  return DESKTOP_RIGHT_RAIL_WIDTH_PX + (DESKTOP_RIGHT_RAIL_GAP_PX * 2);
+}
+
 export function projectRightRailSections(input: RightRailProjectionInput): RightRailSection[] {
   const sections: RightRailSection[] = [];
 
   if (input.progress.length > 0) {
-    sections.push(projectEntrySection("progress", "Progress", input.progress));
+    sections.push(projectEntrySection("progress", "Progress", input.progress, false));
   }
 
   const branchInput = input.branchDetails;
@@ -59,11 +95,11 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   }
 
   if (input.artifacts.length > 0) {
-    sections.push(projectEntrySection("artifacts", "Artifacts", input.artifacts));
+    sections.push(projectEntrySection("artifacts", "Artifacts", input.artifacts, true));
   }
 
   if (input.sources.length > 0) {
-    sections.push(projectEntrySection("sources", "Sources", input.sources));
+    sections.push(projectEntrySection("sources", "Sources", input.sources, true));
   }
 
   return sections;
@@ -91,8 +127,15 @@ function projectEntrySection(
   id: Exclude<RightRailSectionId, "branchDetails">,
   title: string,
   entries: RailEntry[],
+  clippedByDefault: boolean,
 ): RightRailSection {
-  const clipped = clipRailEntries(entries);
+  const clipped = clippedByDefault
+    ? clipRailEntries(entries)
+    : {
+        entries,
+        remainingCount: 0,
+        canToggle: false,
+      };
   return {
     id,
     title,
@@ -126,4 +169,8 @@ function branchDetailsEntries(details: BranchDetailsViewModel): RailEntry[] {
       action: { kind: "diff" },
     },
   ];
+}
+
+function rightRailSideSpace(contentWidthPx: number): number {
+  return (Math.max(0, contentWidthPx) - DESKTOP_THREAD_LAYOUT_WIDTH_PX) / 2;
 }

@@ -194,17 +194,31 @@ async function hydrateThreadToolHistory(
 export async function createAndSelectThreadForTurn(
   client: CodexJsonRpcClient,
   workspace: string,
-  threads: Thread[],
   dispatch: ThreadWorkflowDispatch,
   context?: ThreadContextDefaults | null,
 ): Promise<string | null> {
   const result = await startThread(client, workspace, context);
-  const threadId = result.thread?.id ?? null;
-  if (result.thread) {
-    dispatch({ type: "setThreads", threads: [result.thread, ...threads] });
-    dispatch({ type: "setActiveThread", threadId });
+  const thread = result.thread
+    ? await hydrateStartedThreadMetadata(client, result.thread)
+    : null;
+  const threadId = thread?.id ?? null;
+  if (thread) {
+    dispatch({ type: "upsertThread", thread, select: true });
   }
   return threadId;
+}
+
+async function hydrateStartedThreadMetadata(
+  client: CodexJsonRpcClient,
+  thread: Thread,
+): Promise<Thread> {
+  if (thread.gitInfo !== null) return thread;
+  try {
+    const result = await readThread(client, thread.id, false);
+    return result.thread ?? thread;
+  } catch {
+    return thread;
+  }
 }
 
 export type ReadyThreadForTurnSource = "selected" | "created" | "resumed";
@@ -214,7 +228,6 @@ export interface EnsureThreadReadyForTurnInput {
   activeThread: Thread | null | undefined;
   activeThreadId: string | null;
   workspace: string;
-  threads: Thread[];
   dispatch: ThreadWorkflowDispatch;
   context?: ThreadContextDefaults | null;
 }
@@ -229,13 +242,12 @@ export async function ensureThreadReadyForTurn({
   activeThread,
   activeThreadId,
   workspace,
-  threads,
   dispatch,
   context,
 }: EnsureThreadReadyForTurnInput): Promise<ReadyThreadForTurn> {
   if (!activeThreadId) {
     return {
-      threadId: await createAndSelectThreadForTurn(client, workspace, threads, dispatch, context),
+      threadId: await createAndSelectThreadForTurn(client, workspace, dispatch, context),
       source: "created",
     };
   }
@@ -265,6 +277,22 @@ export async function startTurn(
   options?: TurnStartOptions | null,
 ) {
   return client.request("turn/start", buildTurnStartParams(threadId, input, workspace, context, options));
+}
+
+export async function refreshThreadMetadata(
+  client: CodexJsonRpcClient,
+  threadId: string,
+  dispatch: ThreadWorkflowDispatch,
+): Promise<void> {
+  const id = threadId.trim();
+  if (!id) return;
+  try {
+    const result = await readThread(client, id, false);
+    if (result.thread) dispatch({ type: "upsertThread", thread: result.thread });
+  } catch {
+    // Metadata refresh is a best-effort UI projection update; turn streaming
+    // continues from notifications even when this read is unavailable.
+  }
 }
 
 export async function resumeSelectedThreadAndStartTurn(
@@ -342,6 +370,65 @@ export async function forkThread(
   }, 120_000);
 }
 
+export async function forkThreadFromTurn(
+  client: CodexJsonRpcClient,
+  sourceThreadId: string,
+  targetTurnId: string,
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+) {
+  const sourceResult = await readThread(client, sourceThreadId, true);
+  const sourceThread = sourceResult.thread;
+  if (!sourceThread) throw new Error("Source thread not found.");
+  const targetTurnIndex = sourceThread.turns.findIndex((turn) => turn.id === targetTurnId);
+  if (targetTurnIndex < 0) throw new Error("Target turn not found.");
+  const rollbackTurns = sourceThread.turns.length - targetTurnIndex - 1;
+  const forkResult = await client.request<{ thread: Thread }>("thread/fork", {
+    threadId: sourceThreadId,
+    path: null,
+    persistExtendedHistory: false,
+    ...buildThreadContextParams(workspace, context),
+  }, 120_000);
+  if (rollbackTurns <= 0) return forkResult;
+  return client.request<{ thread: Thread }>("thread/rollback", {
+    threadId: forkResult.thread.id,
+    numTurns: rollbackTurns,
+  }, 120_000);
+}
+
+export async function editLastUserTurn(
+  client: CodexJsonRpcClient,
+  threadId: string,
+  targetTurnId: string,
+  message: string,
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+  onRollback?: (thread: Thread) => void,
+) {
+  const sourceResult = await readThread(client, threadId, true);
+  const sourceThread = sourceResult.thread;
+  if (!sourceThread) throw new Error("Conversation state not found.");
+  const latestTurn = sourceThread.turns.at(-1) ?? null;
+  if (!latestTurn || latestTurn.id !== targetTurnId) {
+    throw new Error("Only the most recent message can be edited.");
+  }
+  if (latestTurn.status === "inProgress") {
+    throw new Error("Cannot edit a message while a turn is in progress.");
+  }
+  const userMessage = latestTurn.items.find(isProtocolUserMessage);
+  if (!userMessage) throw new Error("User message not found for edit.");
+
+  const input = replaceFirstTextInput(userMessage.content, message.trim());
+  const rollback = await client.request<{ thread: Thread }>("thread/rollback", {
+    threadId,
+    numTurns: 1,
+  }, 120_000);
+  onRollback?.(rollback.thread);
+  const cwd = rollback.thread.cwd || sourceThread.cwd || workspace;
+  const turnResult = await startTurn(client, threadId, input, cwd, context);
+  return { thread: rollback.thread, turnResult };
+}
+
 export async function refreshThreadContextDefaults(
   client: CodexJsonRpcClient,
   dispatch: ThreadWorkflowDispatch,
@@ -374,8 +461,57 @@ export async function renameThread(
   return client.request("thread/name/set", { threadId, name: name.trim() });
 }
 
-export function threadTitle(thread: Thread): string {
-  return trimmedStringField(thread, "name") || trimmedStringField(thread, "preview") || shortId(thread.id);
+export function threadTitle(thread: Thread, items?: ReadonlyArray<unknown> | null): string {
+  const explicit = trimmedStringField(thread, "name") || trimmedStringField(thread, "preview");
+  if (explicit) return explicit;
+  // Codex Desktop's `local-conversation-thread-*.js` derives an unnamed thread's
+  // header label from the first user message in the turn — `Wd` walks
+  // `thread.turns[0].items` and takes the first `userMessage` text. Falling back
+  // straight to `shortId(thread.id)` (e.g. "019e072a...f40e") looks like a debug
+  // string compared with Desktop, so do the same first-prompt projection here.
+  const fromItems = firstUserMessagePreviewFromItems(items ?? null);
+  if (fromItems) return fromItems;
+  const fromTurns = firstUserMessagePreviewFromTurns(thread);
+  if (fromTurns) return fromTurns;
+  return shortId(thread.id);
+}
+
+function firstUserMessagePreviewFromItems(items: ReadonlyArray<unknown> | null): string {
+  if (!items) return "";
+  for (const candidate of items) {
+    const preview = userMessagePreview(candidate);
+    if (preview) return preview;
+  }
+  return "";
+}
+
+function firstUserMessagePreviewFromTurns(thread: Thread): string {
+  const turns = (thread as { turns?: ReadonlyArray<{ items?: unknown[] }> }).turns;
+  if (!Array.isArray(turns)) return "";
+  for (const turn of turns) {
+    const turnItems = Array.isArray(turn?.items) ? turn.items : [];
+    const preview = firstUserMessagePreviewFromItems(turnItems);
+    if (preview) return preview;
+  }
+  return "";
+}
+
+function userMessagePreview(candidate: unknown): string {
+  if (!candidate || typeof candidate !== "object") return "";
+  const record = candidate as Record<string, unknown>;
+  if (record.type !== "userMessage") return "";
+  const content = Array.isArray(record.content) ? record.content : [];
+  const buffer: string[] = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const partRecord = part as Record<string, unknown>;
+    if (partRecord.type === "text" && typeof partRecord.text === "string") {
+      buffer.push(partRecord.text);
+    }
+  }
+  const merged = buffer.join("\n").replace(/\s+/g, " ").trim();
+  if (!merged) return "";
+  return merged.length > 60 ? `${merged.slice(0, 60).trimEnd()}…` : merged;
 }
 
 export function threadStatusLabel(status: unknown): string {
@@ -499,6 +635,38 @@ function compactParams(params: Record<string, unknown>): Record<string, unknown>
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
   );
+}
+
+function isProtocolUserMessage(
+  item: Thread["turns"][number]["items"][number],
+): item is Extract<Thread["turns"][number]["items"][number], { type: "userMessage" }> {
+  return item.type === "userMessage";
+}
+
+function replaceFirstTextInput(input: UserInput[], message: string): UserInput[] {
+  const firstTextIndex = input.findIndex((item) => item.type === "text");
+  if (firstTextIndex < 0) return input.map(cloneUserInput);
+  return input.map((item, index) => {
+    if (index !== firstTextIndex || item.type !== "text") return cloneUserInput(item);
+    return {
+      ...item,
+      text: message,
+      text_elements: [],
+    };
+  });
+}
+
+function cloneUserInput(input: UserInput): UserInput {
+  if (input.type === "text") {
+    return {
+      ...input,
+      text_elements: input.text_elements.map((element) => ({
+        ...element,
+        byteRange: { ...element.byteRange },
+      })),
+    };
+  }
+  return { ...input } as UserInput;
 }
 
 function stringOverride(value: unknown): string | undefined {

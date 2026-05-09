@@ -4,8 +4,10 @@ import {
   archiveThread,
   buildThreadListParams,
   buildThreadContextParams,
+  editLastUserTurn,
   ensureThreadReadyForTurn,
   forkThread,
+  forkThreadFromTurn,
   isThreadNotFound,
   isThreadNotMaterialized,
   isThreadNeedsResume,
@@ -14,6 +16,7 @@ import {
   projectThreadContextDefaults,
   readThread,
   readThreadForDisplay,
+  refreshThreadMetadata,
   renameThread,
   resumeSelectedThreadAndStartTurn,
   resumeThread,
@@ -101,7 +104,10 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   buildsThreadLifecycleRequests();
   await readsThreadDisplayMetadataBeforeHydratingTurns();
   await resumesThreadAfterMetadataRead();
+  await forksThreadFromTurnUsingDesktopSequence();
+  await editsLastUserTurnUsingDesktopRollbackThenStartSequence();
   await buildsReadyThreadRequestsForTurns();
+  await refreshesThreadMetadataWithoutChangingSelection();
   await resumesSelectedHistoricalThreadBeforeRetryingTurn();
   buildsTurnStartAndSteerRequests();
 }
@@ -183,6 +189,20 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
     name: null,
     turns: [],
     ...rest,
+  };
+}
+
+function turnFixture(id: string, overrides: Partial<Thread["turns"][number]> = {}): Thread["turns"][number] {
+  return {
+    id,
+    items: [],
+    itemsView: "full",
+    status: "completed",
+    error: null,
+    startedAt: 0,
+    completedAt: 1,
+    durationMs: 1000,
+    ...overrides,
   };
 }
 
@@ -617,22 +637,48 @@ async function readsThreadDisplayMetadataBeforeHydratingTurns(): Promise<void> {
 }
 
 async function buildsReadyThreadRequestsForTurns(): Promise<void> {
-  const created = createClientRecorder({ thread: threadFixture({ id: "created-thread" }) });
-  await ensureThreadReadyForTurn({
+  const createdThread = threadFixture({ id: "created-thread", cwd: "/workspace/project", gitInfo: null });
+  const createdHydratedThread = threadFixture({
+    id: "created-thread",
+    cwd: "/workspace/project",
+    gitInfo: {
+      branch: "main",
+      sha: "abcdef1234567890",
+      originUrl: "git@example.com:hicodex/HiCodex.git",
+    },
+  });
+  const created = createClientSequenceRecorder([{ thread: createdThread }, { thread: createdHydratedThread }]);
+  const createdActions: unknown[] = [];
+  const createdReady = await ensureThreadReadyForTurn({
     client: created.client,
     activeThread: null,
     activeThreadId: null,
     workspace: " /workspace/project ",
-    threads: [],
-    dispatch: () => {},
+    dispatch: (action: unknown) => {
+      createdActions.push(action);
+    },
     context: { model: "gpt-5.2" },
   });
+  assertEqual(createdReady.threadId, "created-thread", "missing active thread should return the created thread id");
+  assertEqual(createdReady.source, "created", "missing active thread should report a created source");
   assertRequest(
     created.requests,
     0,
     "thread/start",
     { cwd: "/workspace/project", model: "gpt-5.2" },
     "missing active thread should create a new thread for the first turn",
+  );
+  assertRequest(
+    created.requests,
+    1,
+    "thread/read",
+    { threadId: "created-thread", includeTurns: false },
+    "newly created thread should hydrate metadata before the first turn starts",
+  );
+  assertDeepEqual(
+    createdActions,
+    [{ type: "upsertThread", thread: createdHydratedThread, select: true }],
+    "newly created thread should select the hydrated app-server metadata snapshot",
   );
 
   const resumed = createClientRecorder({ thread: threadFixture({ id: "thread-1", status: { type: "idle" } }) });
@@ -641,7 +687,6 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     activeThread: threadFixture({ id: "thread-1", status: { type: "notLoaded" } }),
     activeThreadId: "thread-1",
     workspace: " /workspace/project ",
-    threads: [],
     dispatch: () => {},
     context: { sandbox: "workspace-write" },
   });
@@ -666,7 +711,6 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     activeThread: threadFixture({ id: "thread-1", status: { type: "idle" } }),
     activeThreadId: "thread-1",
     workspace: " /workspace/project ",
-    threads: [],
     dispatch: () => {},
   });
   assertEqual(selected.requests.length, 0, "loaded selected thread should be reused without lifecycle RPCs");
@@ -747,6 +791,169 @@ async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void
     "missing selected thread should stop at metadata read",
   );
   assertEqual(missingActions.length, 0, "missing selected thread should not dispatch a fake resumed thread");
+}
+
+async function refreshesThreadMetadataWithoutChangingSelection(): Promise<void> {
+  const thread = threadFixture({
+    id: "thread-metadata",
+    cwd: "/workspace/project",
+    gitInfo: {
+      branch: "main",
+      sha: "abcdef1234567890",
+      originUrl: "git@example.com:hicodex/HiCodex.git",
+    },
+  });
+  const refreshed = createClientRecorder({ thread });
+  const actions: unknown[] = [];
+
+  await refreshThreadMetadata(refreshed.client, " thread-metadata ", (action: unknown) => {
+    actions.push(action);
+  });
+
+  assertRequest(
+    refreshed.requests,
+    0,
+    "thread/read",
+    { threadId: "thread-metadata", includeTurns: false },
+    "thread metadata refresh should read metadata without turn hydration",
+  );
+  assertDeepEqual(
+    actions,
+    [{ type: "upsertThread", thread }],
+    "thread metadata refresh should merge metadata without selecting the thread",
+  );
+}
+
+async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
+  const sourceThread = threadFixture({
+    id: "source-thread",
+    turns: [
+      turnFixture("turn-1"),
+      turnFixture("turn-2"),
+      turnFixture("turn-3"),
+    ],
+  });
+  const forkedThread = threadFixture({ id: "forked-thread", turns: sourceThread.turns });
+  const rolledBackThread = threadFixture({
+    id: "forked-thread",
+    turns: [
+      turnFixture("turn-1"),
+      turnFixture("turn-2"),
+    ],
+  });
+  const forked = createClientSequenceRecorder([
+    { thread: sourceThread },
+    { thread: forkedThread },
+    { thread: rolledBackThread },
+  ]);
+
+  const result = await forkThreadFromTurn(forked.client, "source-thread", "turn-2", " /workspace ", {
+    model: "gpt-5.2",
+  });
+
+  assertEqual(result.thread, rolledBackThread, "fork from turn should return the rolled back fork");
+  assertRequest(
+    forked.requests,
+    0,
+    "thread/read",
+    { threadId: "source-thread", includeTurns: true },
+    "fork from turn should read the source turns first",
+  );
+  assertRequest(
+    forked.requests,
+    1,
+    "thread/fork",
+    {
+      threadId: "source-thread",
+      path: null,
+      persistExtendedHistory: false,
+      cwd: "/workspace",
+      model: "gpt-5.2",
+    },
+    "fork from turn should fork the complete source thread first",
+  );
+  assertRequest(
+    forked.requests,
+    2,
+    "thread/rollback",
+    { threadId: "forked-thread", numTurns: 1 },
+    "fork from turn should roll back later turns on the fork",
+  );
+}
+
+async function editsLastUserTurnUsingDesktopRollbackThenStartSequence(): Promise<void> {
+  const latestTurn = turnFixture("turn-2", {
+    items: [
+      {
+        type: "userMessage",
+        id: "user-2",
+        content: [
+          { type: "skill", name: "review", path: "skills/review" },
+          { type: "text", text: "old prompt", text_elements: [{ byteRange: { start: 0, end: 3 }, placeholder: "old" }] },
+          { type: "localImage", path: "/tmp/screenshot.png" },
+        ],
+      },
+      { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
+    ],
+  });
+  const sourceThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1"), latestTurn],
+  });
+  const rolledBackThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1")],
+  });
+  const edited = createClientSequenceRecorder([
+    { thread: sourceThread },
+    { thread: rolledBackThread },
+    { turn: { id: "turn-edited" } },
+  ]);
+  const rollbacks: Thread[] = [];
+
+  await editLastUserTurn(
+    edited.client,
+    "thread-edit",
+    "turn-2",
+    "new prompt",
+    "/workspace/ui",
+    { model: "gpt-5.2" },
+    (thread) => rollbacks.push(thread),
+  );
+
+  assertRequest(
+    edited.requests,
+    0,
+    "thread/read",
+    { threadId: "thread-edit", includeTurns: true },
+    "edit last turn should first read the source turn input",
+  );
+  assertRequest(
+    edited.requests,
+    1,
+    "thread/rollback",
+    { threadId: "thread-edit", numTurns: 1 },
+    "edit last turn should roll back exactly the latest turn",
+  );
+  assertRequest(
+    edited.requests,
+    2,
+    "turn/start",
+    {
+      threadId: "thread-edit",
+      input: [
+        { type: "skill", name: "review", path: "skills/review" },
+        { type: "text", text: "new prompt", text_elements: [] },
+        { type: "localImage", path: "/tmp/screenshot.png" },
+      ],
+      cwd: "/workspace/source",
+      model: "gpt-5.2",
+    },
+    "edit last turn should preserve structured inputs and replace the first text part",
+  );
+  assertDeepEqual(rollbacks, [rolledBackThread], "edit last turn should expose the rollback thread snapshot before restarting");
 }
 
 function buildsTurnStartAndSteerRequests(): void {

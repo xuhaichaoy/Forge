@@ -2,6 +2,7 @@ import {
   createCommandPanelState,
   projectCommandPanelEntries,
   projectMcpServerEntries,
+  projectMcpToolCallResultEntries,
   projectPluginEntries,
 } from "../src/state/command-panel";
 
@@ -12,15 +13,80 @@ type CommandPanelEntry = {
   status?: string;
   meta?: string;
   details?: string[];
+  disabled?: boolean;
+  action?: unknown;
 };
 
 export default function runCommandPanelTests(): void {
   projectsMcpServerNamesToolsAndAuthStatus();
   projectsSkillsHooksAppsAndPluginsAsCommandEntries();
+  projectsDesktopSkillMetadataAndErrors();
   flattensPluginListMarketplaces();
   projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
   keepsDetailsHumanReadableWithoutRawJson();
+}
+
+function projectsDesktopSkillMetadataAndErrors(): void {
+  const entries: CommandPanelEntry[] = projectCommandPanelEntries({
+    skills: {
+      data: [{
+        cwd: "/workspace",
+        skills: [{
+          name: "team:review",
+          description: "Fallback description",
+          shortDescription: "Fallback short description",
+          path: "/workspace/.codex/skills/review/SKILL.md",
+          scope: "repo",
+          enabled: false,
+          interface: {
+            displayName: "Review",
+            shortDescription: "Review local changes.",
+            defaultPrompt: "Review the current diff and report bugs.\nUse concise findings.",
+          },
+          dependencies: {
+            tools: [{ type: "mcp", value: "github" }],
+          },
+        }],
+        errors: [{ path: "/workspace/.codex/skills/bad/SKILL.md", message: "Invalid frontmatter" }],
+      }],
+    },
+  });
+
+  assertDeepEqual(
+    entries,
+    [
+      {
+        id: "skill:team:review",
+        title: "Review",
+        kind: "skill",
+        status: "disabled",
+        meta: "Repo · /workspace/.codex/skills/review/SKILL.md",
+        details: [
+          "Review local changes.",
+          "Default prompt: Review the current diff and report bugs.",
+          "Tools: github",
+          "Path: /workspace/.codex/skills/review/SKILL.md",
+          "CWD: /workspace",
+        ],
+        action: {
+          type: "attachSkill",
+          name: "team:review",
+          path: "/workspace/.codex/skills/review/SKILL.md",
+        },
+      },
+      {
+        id: "skill-error:/workspace/.codex/skills/bad/SKILL.md",
+        title: "SKILL.md",
+        kind: "skill",
+        status: "error",
+        meta: "/workspace/.codex/skills/bad/SKILL.md",
+        details: ["Invalid frontmatter"],
+        disabled: true,
+      },
+    ],
+    "skill projection should follow Desktop displayName, scope, default prompt, dependencies, and load errors",
+  );
 }
 
 function projectsMcpServerNamesToolsAndAuthStatus(): void {
@@ -68,12 +134,36 @@ function projectsMcpServerNamesToolsAndAuthStatus(): void {
         details: ["list_prs - List pull requests", "get_issue - Read issue details"],
       },
       {
+        id: "mcp-tool:github:list_prs",
+        title: "list_prs",
+        kind: "mcpTool",
+        status: "callable",
+        meta: "github:list_prs",
+        details: ["List pull requests", "Click to call with empty arguments."],
+      },
+      {
+        id: "mcp-tool:github:get_issue",
+        title: "get_issue",
+        kind: "mcpTool",
+        status: "callable",
+        meta: "github:get_issue",
+        details: ["Read issue details", "Click to call with empty arguments."],
+      },
+      {
         id: "mcp:filesystem",
         title: "filesystem",
         kind: "mcpServer",
         status: "unauthenticated",
         meta: "1 tool",
         details: ["read_file"],
+      },
+      {
+        id: "mcp-tool:filesystem:read_file",
+        title: "read_file",
+        kind: "mcpTool",
+        status: "callable",
+        meta: "filesystem:read_file",
+        details: ["Click to call with empty arguments."],
       },
       {
         id: "mcp:memory",
@@ -85,6 +175,62 @@ function projectsMcpServerNamesToolsAndAuthStatus(): void {
       },
     ],
     "MCP server projection should expose server names, tool counts, tool details, and auth status",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "mcp-tool:github:list_prs")?.action,
+    { type: "callMcpTool", server: "github", tool: "list_prs", arguments: {} },
+    "MCP tool rows without required arguments should be directly callable",
+  );
+  const requiredEntries: CommandPanelEntry[] = projectMcpServerEntries({
+    data: [{
+      name: "github",
+      tools: {
+        get_issue: {
+          description: "Read issue details",
+          inputSchema: { type: "object", required: ["owner", "repo"] },
+        },
+      },
+      authStatus: "authenticated",
+    }],
+  });
+  assertDeepEqual(
+    requiredEntries.find((entry) => entry.id === "mcp-tool:github:get_issue"),
+    {
+      id: "mcp-tool:github:get_issue",
+      title: "get_issue",
+      kind: "mcpTool",
+      status: "needs input",
+      meta: "github:get_issue",
+      details: ["Read issue details", "Required: owner, repo"],
+      disabled: true,
+      action: undefined,
+    },
+    "MCP tools with required arguments should not auto-call with empty arguments",
+  );
+  assertDeepEqual(
+    projectMcpToolCallResultEntries("github", "list_prs", {
+      content: [{ type: "text", text: "PR #1\nPR #2" }],
+      structuredContent: { count: 2 },
+    }),
+    [
+      {
+        id: "mcp-result:github:list_prs:content:0",
+        title: "Text result 1",
+        kind: "status",
+        status: "completed",
+        meta: "github:list_prs",
+        details: ["PR #1", "PR #2"],
+      },
+      {
+        id: "mcp-result:github:list_prs:structured",
+        title: "Structured content",
+        kind: "status",
+        status: "completed",
+        meta: "github:list_prs",
+        details: ["{", "  \"count\": 2", "}"],
+      },
+    ],
+    "MCP tool call results should be projected into readable command panel rows",
   );
 }
 
@@ -144,6 +290,15 @@ function projectsSkillsHooksAppsAndPluginsAsCommandEntries(): void {
       { id: "plugin:computer-use", title: "Computer Use", kind: "plugin", meta: "OpenAI" },
     ],
     "command panel projection should combine skills, hooks, apps, and plugins in stable command order",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "skill:code-review")?.action,
+    {
+      type: "attachSkill",
+      name: "code-review",
+      path: "/Users/example/.codex/skills/code-review/SKILL.md",
+    },
+    "skill entries should attach the selected skill to the next message",
   );
 }
 

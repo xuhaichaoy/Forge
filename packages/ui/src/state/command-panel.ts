@@ -1,3 +1,5 @@
+import { formatUnknown } from "../lib/format";
+
 export type CommandPanelKind =
   | "mcp"
   | "skills"
@@ -12,6 +14,7 @@ export type CommandPanelKind =
 
 export type CommandPanelEntryKind =
   | "mcpServer"
+  | "mcpTool"
   | "skill"
   | "hook"
   | "app"
@@ -23,7 +26,8 @@ export type CommandPanelEntryKind =
 
 export type CommandPanelEntryAction =
   | { type: "attachMention"; name: string; path: string }
-  | { type: "attachSkill"; name: string; path: string };
+  | { type: "attachSkill"; name: string; path: string }
+  | { type: "callMcpTool"; server: string; tool: string; arguments: Record<string, never> };
 
 export type CommandPanelStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -91,7 +95,7 @@ export function projectCommandPanelEntries(value: {
 }
 
 export function projectMcpServerEntries(value: unknown): CommandPanelEntry[] {
-  return responseItems(value).map((server, index) => {
+  return responseItems(value).flatMap((server, index) => {
     const name = fieldText(server, "name") || `server-${index + 1}`;
     const tools = recordField(server, "tools");
     const toolDetails = Object.entries(tools)
@@ -100,7 +104,7 @@ export function projectMcpServerEntries(value: unknown): CommandPanelEntry[] {
         return description ? `${toolName} - ${description}` : toolName;
       });
 
-    return {
+    const serverEntry: CommandPanelEntry = {
       id: `mcp:${name}`,
       title: name,
       kind: "mcpServer",
@@ -108,7 +112,71 @@ export function projectMcpServerEntries(value: unknown): CommandPanelEntry[] {
       meta: countLabel(toolDetails.length, "tool", "No tools"),
       details: toolDetails,
     };
+    return [
+      serverEntry,
+      ...Object.entries(tools).map(([toolName, tool]) => mcpToolEntry(name, toolName, tool)),
+    ];
   });
+}
+
+export function projectMcpToolCallResultEntries(
+  server: string,
+  tool: string,
+  value: unknown,
+): CommandPanelEntry[] {
+  const record = isRecord(value) ? value : {};
+  const content = Array.isArray(record.content) ? record.content : [];
+  const structuredContent = record.structuredContent ?? record.structured_content;
+  const isError = record.isError === true || record.is_error === true;
+  const entries = content.map((item, index) => ({
+    id: `mcp-result:${server}:${tool}:content:${index}`,
+    title: mcpResultTitle(item, index),
+    kind: "status" as const,
+    status: isError ? "error" : "completed",
+    meta: `${server}:${tool}`,
+    details: textDetails(mcpResultText(item)),
+  }));
+
+  if (structuredContent !== undefined && structuredContent !== null) {
+    entries.push({
+      id: `mcp-result:${server}:${tool}:structured`,
+      title: "Structured content",
+      kind: "status",
+      status: isError ? "error" : "completed",
+      meta: `${server}:${tool}`,
+      details: textDetails(formatUnknown(structuredContent)),
+    });
+  }
+
+  if (entries.length > 0) return entries;
+  return [{
+    id: `mcp-result:${server}:${tool}:empty`,
+    title: isError ? "Tool returned an error" : "Tool completed",
+    kind: "status",
+    status: isError ? "error" : "completed",
+    meta: `${server}:${tool}`,
+    details: textDetails(formatUnknown(value)),
+  }];
+}
+
+function mcpToolEntry(serverName: string, toolName: string, tool: unknown): CommandPanelEntry {
+  const title = fieldText(tool, "title") || toolName;
+  const description = fieldText(tool, "description");
+  const required = mcpToolRequiredArguments(tool);
+  const canCallWithoutArguments = required.length === 0;
+  return {
+    id: `mcp-tool:${serverName}:${toolName}`,
+    title,
+    kind: "mcpTool",
+    status: canCallWithoutArguments ? "callable" : "needs input",
+    meta: `${serverName}:${toolName}`,
+    details: cleanList([
+      description,
+      required.length > 0 ? `Required: ${required.join(", ")}` : "Click to call with empty arguments.",
+    ]),
+    disabled: !canCallWithoutArguments,
+    action: canCallWithoutArguments ? { type: "callMcpTool", server: serverName, tool: toolName, arguments: {} } : undefined,
+  };
 }
 
 export function projectPluginEntries(value: unknown): CommandPanelEntry[] {
@@ -137,27 +205,90 @@ function projectSkillEntries(value: unknown): CommandPanelEntry[] {
   return responseItems(value).flatMap((item) => {
     if (Array.isArray(item.skills)) {
       const cwd = fieldText(item, "cwd");
-      return arrayField(item, "skills").map((skill) => skillEntry(skill, cwd));
+      return [
+        ...arrayField(item, "skills").map((skill) => skillEntry(skill, cwd)),
+        ...arrayField(item, "errors").map((error) => skillErrorEntry(error, cwd)),
+      ];
     }
     return [skillEntry(item)];
   });
 }
 
+function mcpToolRequiredArguments(tool: unknown): string[] {
+  const schema = recordField(tool, "inputSchema");
+  const required = schema.required;
+  return Array.isArray(required)
+    ? required.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function mcpResultTitle(value: unknown, index: number): string {
+  if (!isRecord(value)) return `Result ${index + 1}`;
+  const type = fieldText(value, "type");
+  if (type === "text") return `Text result ${index + 1}`;
+  if (type === "image") return `Image result ${index + 1}`;
+  if (type === "resource") return `Resource result ${index + 1}`;
+  return `Result ${index + 1}`;
+}
+
+function mcpResultText(value: unknown): string {
+  if (!isRecord(value)) return formatUnknown(value);
+  const text = fieldText(value, "text");
+  if (text) return text;
+  const data = fieldText(value, "data");
+  if (data) return data;
+  const uri = fieldText(value, "uri");
+  if (uri) return uri;
+  return formatUnknown(value);
+}
+
+function textDetails(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry {
   const name = fieldText(skill, "name") || fieldText(skill, "path") || "skill";
+  const interfaceInfo = recordField(skill, "interface");
   const path = fieldText(skill, "path");
+  const scope = fieldText(skill, "scope");
+  const defaultPrompt = fieldText(interfaceInfo, "defaultPrompt");
+  const dependencies = arrayField(recordField(skill, "dependencies"), "tools")
+    .map((dependency) => fieldText(dependency, "value") || fieldText(dependency, "type"))
+    .filter(Boolean);
+  const hasEnabled = Object.prototype.hasOwnProperty.call(skill, "enabled");
   return {
     id: `skill:${name}`,
-    title: name,
+    title: fieldText(interfaceInfo, "displayName") || name,
     kind: "skill",
-    status: booleanField(skill, "enabled") ? "enabled" : undefined,
-    meta: path || cwd || undefined,
+    status: hasEnabled ? booleanField(skill, "enabled") ? "enabled" : "disabled" : undefined,
+    meta: cleanList([skillScopeLabel(scope), path || cwd]).join(" · ") || undefined,
     details: cleanList([
-      fieldText(skill, "description"),
+      fieldText(interfaceInfo, "shortDescription")
+        || fieldText(skill, "shortDescription")
+        || fieldText(skill, "description"),
+      defaultPrompt && `Default prompt: ${firstLine(defaultPrompt)}`,
+      dependencies.length > 0 && `Tools: ${dependencies.join(", ")}`,
       path && `Path: ${path}`,
       cwd && `CWD: ${cwd}`,
     ]),
     action: path ? { type: "attachSkill", name, path } : undefined,
+  };
+}
+
+function skillErrorEntry(error: Record<string, unknown>, cwd = ""): CommandPanelEntry {
+  const path = fieldText(error, "path");
+  return {
+    id: `skill-error:${path || cwd || "unknown"}`,
+    title: path ? inferNameFromPath(path) : "Skill load error",
+    kind: "skill",
+    status: "error",
+    meta: path || cwd || undefined,
+    details: cleanList([fieldText(error, "message")]),
+    disabled: true,
   };
 }
 
@@ -291,6 +422,31 @@ function booleanField(value: unknown, key: string): boolean {
 
 function cleanList(values: Array<string | false | null | undefined>): string[] {
   return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function firstLine(value: string): string {
+  const line = value.trim().split(/\r?\n/, 1)[0] ?? "";
+  return line.length > 72 ? `${line.slice(0, 69)}...` : line;
+}
+
+function inferNameFromPath(path: string): string {
+  const trimmed = path.trim().replace(/\/+$/, "");
+  return trimmed.split(/[\\/]/).filter(Boolean).pop() || trimmed || "skill";
+}
+
+function skillScopeLabel(scope: string): string {
+  switch (scope) {
+    case "system":
+      return "System";
+    case "repo":
+      return "Repo";
+    case "user":
+      return "User";
+    case "admin":
+      return "Admin";
+    default:
+      return "";
+  }
 }
 
 function countLabel(count: number, singular: string, empty: string): string {

@@ -1,0 +1,946 @@
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { chainCommands, deleteSelection, selectAll, splitBlock } from "prosemirror-commands";
+import { history, redo, undo } from "prosemirror-history";
+import { keymap } from "prosemirror-keymap";
+import { Fragment, Schema, Slice } from "prosemirror-model";
+import type { Node as ProseMirrorNode, NodeSpec } from "prosemirror-model";
+import { EditorState, Plugin, PluginKey, TextSelection } from "prosemirror-state";
+import { Decoration, DecorationSet, EditorView } from "prosemirror-view";
+
+export type PromptEditorEnterBehavior = "enter" | "newline" | "cmdIfMultiline";
+
+export interface PromptEditorProps {
+  value: string;
+  placeholder: string;
+  singleLine?: boolean;
+  ariaLabel?: string;
+  className?: string;
+  minHeight?: string;
+  enterBehavior?: PromptEditorEnterBehavior;
+  onChange: (value: string) => void;
+  onKeyDown?: (event: KeyboardEvent) => boolean | void;
+  onSubmit?: () => void;
+  onPastedFiles?: (files: File[]) => void;
+  onPastedImages?: (files: File[]) => void;
+}
+
+type PromptEditorEventName = "submit" | "change" | "pasted-files" | "pasted-images";
+type PromptEditorEventListener = (() => void) | ((files: File[]) => void);
+
+export interface PromptEditorPasteFileLike {
+  readonly name?: string;
+  readonly type?: string;
+}
+
+class PromptEditorEmitter {
+  private readonly listeners = new Map<PromptEditorEventName, Set<PromptEditorEventListener>>();
+
+  emit(name: PromptEditorEventName, payload?: File[]): void {
+    this.listeners.get(name)?.forEach((listener) => {
+      if (payload) (listener as (files: File[]) => void)(payload);
+      else (listener as () => void)();
+    });
+  }
+
+  addListener(name: PromptEditorEventName, listener: PromptEditorEventListener): void {
+    const listeners = this.listeners.get(name) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(name, listeners);
+  }
+
+  removeListener(name: PromptEditorEventName, listener: PromptEditorEventListener): void {
+    this.listeners.get(name)?.delete(listener);
+  }
+
+  clear(): void {
+    this.listeners.clear();
+  }
+}
+
+export class PromptEditorController {
+  readonly eventEmitter: PromptEditorEmitter;
+  readonly view: EditorView;
+  private enterBehavior: PromptEditorEnterBehavior;
+  private destroyed = false;
+  private suspended = false;
+
+  constructor({
+    defaultText,
+    defaultTextKind,
+    enterBehavior = "enter",
+    onBeforeKeyDown,
+    onChange,
+  }: {
+    defaultText: string;
+    defaultTextKind: "plain" | "prompt";
+    enterBehavior?: PromptEditorEnterBehavior;
+    onBeforeKeyDown?: (event: KeyboardEvent) => boolean | void;
+    onChange?: (value: string) => void;
+  }) {
+    this.eventEmitter = new PromptEditorEmitter();
+    this.enterBehavior = enterBehavior;
+    const schema = promptEditorSchema;
+    let view!: EditorView;
+    const emitSubmit = () => {
+      this.eventEmitter.emit("submit");
+      return true;
+    };
+    const insertLineBreak = (state: EditorState, dispatch?: (tr: EditorState["tr"]) => void, editorView?: EditorView) =>
+      chainCommands(splitBlock, (nextState, nextDispatch) => {
+        nextDispatch?.(nextState.tr.insertText("\n"));
+        return true;
+      })(state, dispatch, editorView);
+
+    view = new EditorView(null, {
+      state: EditorState.create({
+        schema,
+        doc: defaultTextKind === "prompt"
+          ? promptTextToDoc({ schema, text: defaultText })
+          : plainTextToDoc({ schema, text: defaultText }),
+        plugins: [
+          history(),
+          placeholderPlugin(""),
+          keymap({
+            ArrowDown: (state) => {
+              const first = state.doc.firstChild;
+              return state.doc.childCount === 1 && Boolean(first?.isTextblock) && first?.content.size === 0;
+            },
+            "Shift-Enter": insertLineBreak,
+            "Alt-Enter": insertLineBreak,
+            Enter: (state, dispatch, editorView) => {
+              if (this.enterBehavior === "newline") return insertLineBreak(state, dispatch, editorView);
+              if (this.enterBehavior === "cmdIfMultiline" && state.doc.childCount > 1) {
+                return insertLineBreak(state, dispatch, editorView);
+              }
+              return emitSubmit();
+            },
+            "Mod-Enter": emitSubmit,
+            "Mod-a": selectAll,
+            Backspace: deleteSelection,
+            Delete: deleteSelection,
+            "Mod-z": undo,
+            "Mod-y": redo,
+            "Mod-Shift-z": redo,
+          }),
+        ],
+      }),
+      dispatchTransaction: (transaction) => {
+        if (!this.isLiveView()) return;
+        const nextState = view.state.apply(transaction);
+        if (!this.isLiveView()) return;
+        if (!safeUpdateEditorState(view, nextState)) return;
+        onChange?.(docToPromptText(nextState.doc).content);
+        this.eventEmitter.emit("change");
+      },
+      handleKeyDown: (_view, event) => onBeforeKeyDown?.(event) === true,
+      handlePaste: (editorView, event) => {
+        if (event.defaultPrevented) return true;
+        const pastedFiles = splitPromptEditorPasteFiles(event.clipboardData?.files);
+        if (pastedFiles.imageFiles.length > 0) this.eventEmitter.emit("pasted-images", pastedFiles.imageFiles);
+        if (pastedFiles.otherFiles.length > 0) this.eventEmitter.emit("pasted-files", pastedFiles.otherFiles);
+        if (pastedFiles.imageFiles.length > 0 || pastedFiles.otherFiles.length > 0) return true;
+        const text = event.clipboardData?.getData("text/plain");
+        if (text == null || text.length === 0) return false;
+        insertPlainTextAtSelection(editorView, text);
+        return true;
+      },
+      handleDrop: (_view, event) => {
+        const transfer = event.dataTransfer;
+        return Boolean(transfer?.files.length || Array.from(transfer?.items ?? []).some((item) => item.kind === "file"));
+      },
+      clipboardTextSerializer: (slice) => docFragmentToPromptText(slice.content).content,
+    });
+    installEditorViewStaleGuards(view);
+    this.view = view;
+    if (defaultText.length > 0) this.moveCursorToEnd();
+  }
+
+  get isDestroyed(): boolean {
+    return this.destroyed || isEditorViewDestroyed(this.view);
+  }
+
+  getText(): string {
+    if (this.isDestroyed) return "";
+    return docToPromptText(this.view.state.doc).content;
+  }
+
+  hasText(): boolean {
+    return this.getText().trim() !== "";
+  }
+
+  setText(value: string): void {
+    if (this.isDestroyed) return;
+    const doc = plainTextToDoc({ schema: this.view.state.schema, text: value });
+    this.replaceDocument(doc);
+  }
+
+  setPromptText(value: string): void {
+    if (this.isDestroyed) return;
+    const doc = promptTextToDoc({ schema: this.view.state.schema, text: value });
+    this.replaceDocument(doc);
+  }
+
+  appendText(value: string): void {
+    if (this.isDestroyed) return;
+    const text = value.trim();
+    if (!text) return;
+    const existing = this.getText();
+    const inserted = existing.length > 0 && !/\s$/.test(existing) ? ` ${text}` : text;
+    const { state } = this.view;
+    const transaction = state.tr.setSelection(TextSelection.atEnd(state.doc)).insertText(inserted);
+    transaction.setSelection(TextSelection.atEnd(transaction.doc));
+    safeDispatchEditorTransaction(this.view, transaction);
+    this.focus();
+  }
+
+  insertTextAtSelection(value: string): void {
+    if (this.isDestroyed) return;
+    if (!value) return;
+    const { state } = this.view;
+    const { from, to } = state.selection;
+    const transaction = state.tr.insertText(value, from, to);
+    transaction.setSelection(TextSelection.create(transaction.doc, from + value.length));
+    safeDispatchEditorTransaction(this.view, transaction);
+    this.focus();
+  }
+
+  setPlaceholder(value: string): void {
+    if (this.isDestroyed) return;
+    safeDispatchEditorTransaction(this.view, this.view.state.tr.setMeta(placeholderPluginKey, { placeholder: value }));
+  }
+
+  setEnterBehavior(value: PromptEditorEnterBehavior): void {
+    this.enterBehavior = value;
+  }
+
+  addSubmitHandler(listener: () => void): void {
+    this.eventEmitter.addListener("submit", listener);
+  }
+
+  removeSubmitHandler(listener: () => void): void {
+    this.eventEmitter.removeListener("submit", listener);
+  }
+
+  addPastedFilesHandler(listener: (files: File[]) => void): void {
+    this.eventEmitter.addListener("pasted-files", listener);
+  }
+
+  removePastedFilesHandler(listener: (files: File[]) => void): void {
+    this.eventEmitter.removeListener("pasted-files", listener);
+  }
+
+  addPastedImagesHandler(listener: (files: File[]) => void): void {
+    this.eventEmitter.addListener("pasted-images", listener);
+  }
+
+  removePastedImagesHandler(listener: (files: File[]) => void): void {
+    this.eventEmitter.removeListener("pasted-images", listener);
+  }
+
+  focus(): void {
+    safeFocusEditorView(this.view);
+  }
+
+  suspend(): void {
+    if (this.isDestroyed || this.suspended) return;
+    this.suspended = true;
+    stopEditorDomObserver(this.view);
+    markEditorViewDetached(this.view, true);
+  }
+
+  resume(): void {
+    if (this.isDestroyed || !this.suspended) return;
+    this.suspended = false;
+    markEditorViewDetached(this.view, false);
+    startEditorDomObserver(this.view);
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.suspended = false;
+    markEditorViewDetached(this.view, false);
+    this.eventEmitter.clear();
+    if (!isEditorViewDestroyed(this.view)) this.view.destroy();
+  }
+
+  private replaceDocument(doc: ProseMirrorNode): void {
+    if (this.isDestroyed) return;
+    const transaction = this.view.state.tr.replaceWith(0, this.view.state.doc.content.size, doc.content);
+    transaction.setSelection(TextSelection.atEnd(transaction.doc));
+    safeDispatchEditorTransaction(this.view, transaction);
+  }
+
+  private moveCursorToEnd(): void {
+    if (this.isDestroyed) return;
+    safeDispatchEditorTransaction(this.view, this.view.state.tr.setSelection(TextSelection.atEnd(this.view.state.doc)));
+  }
+
+  private isLiveView(): boolean {
+    return !this.destroyed && !this.suspended && !isEditorViewUnavailable(this.view);
+  }
+}
+
+export const PromptEditor = forwardRef<HTMLDivElement, PromptEditorProps>(function PromptEditor({
+  value,
+  placeholder,
+  singleLine = false,
+  ariaLabel = "Prompt",
+  className,
+  minHeight,
+  enterBehavior = "enter",
+  onChange,
+  onKeyDown,
+  onSubmit,
+  onPastedFiles,
+  onPastedImages,
+}, forwardedRef) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const syncingRef = useRef(false);
+  const latestOnChangeRef = useRef(onChange);
+  const latestOnKeyDownRef = useRef(onKeyDown);
+  const latestOnSubmitRef = useRef(onSubmit);
+  const latestOnPastedFilesRef = useRef(onPastedFiles);
+  const latestOnPastedImagesRef = useRef(onPastedImages);
+  latestOnChangeRef.current = onChange;
+  latestOnKeyDownRef.current = onKeyDown;
+  latestOnSubmitRef.current = onSubmit;
+  latestOnPastedFilesRef.current = onPastedFiles;
+  latestOnPastedImagesRef.current = onPastedImages;
+
+  const controllerRef = useRef<PromptEditorController | null>(null);
+  const destroyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  if ((controllerRef.current == null || controllerRef.current.isDestroyed) && typeof document !== "undefined") {
+    controllerRef.current = new PromptEditorController({
+      defaultText: value,
+      defaultTextKind: isPromptText(value) ? "prompt" : "plain",
+      enterBehavior,
+      onBeforeKeyDown: (event) => latestOnKeyDownRef.current?.(event),
+      onChange: (nextValue) => {
+        if (!syncingRef.current) latestOnChangeRef.current(nextValue);
+      },
+    });
+  }
+  const controller = controllerRef.current;
+
+  useImperativeHandle(forwardedRef, () => {
+    if (!controller) throw new Error("Prompt editor is not mounted");
+    return controller.view.dom as HTMLDivElement;
+  }, [controller]);
+
+  useLayoutEffect(() => {
+    if (!controller) return;
+    if (destroyTimerRef.current !== null) {
+      clearTimeout(destroyTimerRef.current);
+      destroyTimerRef.current = null;
+    }
+    if (controller.isDestroyed) return;
+    controller.resume();
+    const root = rootRef.current;
+    if (!root) throw new Error("Prompt editor root is not mounted");
+    const dom = controller.view.dom as HTMLDivElement;
+    if (dom.parentElement !== root) root.appendChild(dom);
+    dom.dataset.virtualkeyboard = "true";
+    dom.dataset.codexComposer = "true";
+    dom.style.fontSize = "var(--codex-chat-font-size, 14px)";
+    dom.style.height = "auto";
+    dom.style.resize = "none";
+    return () => {
+      if (!controller.isDestroyed) dom.blur();
+      controller.suspend();
+      if (dom.parentElement === root) root.removeChild(dom);
+      destroyTimerRef.current = setTimeout(() => {
+        controller.destroy();
+        if (controllerRef.current === controller) controllerRef.current = null;
+        destroyTimerRef.current = null;
+      }, 0);
+    };
+  }, [controller]);
+
+  useEffect(() => {
+    if (!controller) return;
+    const submit = () => latestOnSubmitRef.current?.();
+    controller.addSubmitHandler(submit);
+    return () => controller.removeSubmitHandler(submit);
+  }, [controller]);
+
+  useEffect(() => {
+    if (!controller) return;
+    const pastedFiles = (files: File[]) => latestOnPastedFilesRef.current?.(files);
+    const pastedImages = (files: File[]) => latestOnPastedImagesRef.current?.(files);
+    controller.addPastedFilesHandler(pastedFiles);
+    controller.addPastedImagesHandler(pastedImages);
+    return () => {
+      controller.removePastedFilesHandler(pastedFiles);
+      controller.removePastedImagesHandler(pastedImages);
+    };
+  }, [controller]);
+
+  useLayoutEffect(() => {
+    controller?.setEnterBehavior(enterBehavior);
+  }, [controller, enterBehavior]);
+
+  useLayoutEffect(() => {
+    if (!controller) return;
+    const current = controller.getText();
+    if (current === value) return;
+    syncingRef.current = true;
+    if (isPromptText(value)) controller.setPromptText(value);
+    else controller.setText(value);
+    syncingRef.current = false;
+  }, [controller, value]);
+
+  useLayoutEffect(() => {
+    controller?.setPlaceholder(placeholder);
+  }, [controller, placeholder]);
+
+  useLayoutEffect(() => {
+    if (!controller || controller.isDestroyed) return;
+    const dom = controller.view.dom;
+    if (ariaLabel) dom.setAttribute("aria-label", ariaLabel);
+    else dom.removeAttribute("aria-label");
+    dom.setAttribute("role", "textbox");
+    dom.setAttribute("aria-multiline", singleLine ? "false" : "true");
+    dom.style.minHeight = minHeight ?? (singleLine ? "1.25rem" : "2.75rem");
+  }, [ariaLabel, controller, minHeight, singleLine]);
+
+  return (
+    <div
+      ref={rootRef}
+      className={["hc-prompt-editor", className].filter(Boolean).join(" ")}
+      data-single-line={singleLine}
+      onMouseDown={(event) => {
+        if (controller?.isDestroyed) return;
+        const editor = controller?.view.dom;
+        if (!editor) return;
+        if (event.target instanceof Node && editor.contains(event.target)) return;
+        event.preventDefault();
+        safeFocusEditorView(controller.view);
+      }}
+    />
+  );
+});
+
+export function focusPromptEditorElement(element: HTMLElement | null): void {
+  const view = promptEditorViewFromElement(element);
+  if (view) {
+    safeFocusEditorView(view);
+    return;
+  }
+  safeFocusElement(element);
+}
+
+export function readPromptEditorText(element: HTMLElement | null): string {
+  const view = promptEditorViewFromElement(element);
+  if (view) return docToPromptText(view.state.doc).content;
+  return (element?.textContent ?? "").replace(/\u00a0/g, " ");
+}
+
+export function insertPromptEditorText(element: HTMLElement | null, text: string): void {
+  const view = promptEditorViewFromElement(element);
+  if (view) {
+    insertPlainTextAtSelection(view, text);
+    safeFocusEditorView(view);
+    return;
+  }
+  if (!element || !element.isConnected || text.length === 0) return;
+  safeFocusElement(element);
+  const selection = element.ownerDocument.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selectionInside(element, selection)) {
+    element.appendChild(element.ownerDocument.createTextNode(text));
+    movePromptEditorCursorToEnd(element);
+    return;
+  }
+
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const textNode = element.ownerDocument.createTextNode(text);
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+export function movePromptEditorCursorToEnd(element: HTMLElement | null): void {
+  const view = promptEditorViewFromElement(element);
+  if (view) {
+    safeDispatchEditorTransaction(view, view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+    safeFocusEditorView(view);
+    return;
+  }
+  if (!element || !element.isConnected) return;
+  const document = element.ownerDocument;
+  const selection = document.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+const mentionNodeSpec: NodeSpec = {
+  inline: true,
+  group: "inline",
+  atom: true,
+  selectable: false,
+  attrs: {
+    label: { default: "" },
+    name: { default: "" },
+    displayName: { default: "" },
+    path: { default: "" },
+  },
+  parseDOM: [{
+    tag: "span[data-prompt-mention]",
+    getAttrs: (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      return {
+        label: node.getAttribute("data-label") ?? "",
+        name: node.getAttribute("data-name") ?? "",
+        displayName: node.getAttribute("data-display-name") ?? "",
+        path: node.getAttribute("data-path") ?? "",
+      };
+    },
+  }],
+  toDOM: (node) => [
+    "span",
+    {
+      "data-prompt-mention": "true",
+      "data-label": node.attrs.label,
+      "data-name": node.attrs.name,
+      "data-display-name": node.attrs.displayName,
+      "data-path": node.attrs.path,
+      class: "hc-prompt-mention",
+    },
+    node.attrs.label || node.attrs.displayName || node.attrs.name,
+  ],
+};
+
+const promptEditorSchema = new Schema({
+  nodes: {
+    doc: { content: "paragraph+" },
+    paragraph: {
+      content: "inline*",
+      group: "block",
+      parseDOM: [{ tag: "p" }],
+      toDOM: () => ["p", 0],
+    },
+    text: { group: "inline" },
+    atMention: mentionNodeSpec,
+    agentMention: mentionNodeSpec,
+    skillMention: mentionNodeSpec,
+    appMention: mentionNodeSpec,
+    pluginMention: mentionNodeSpec,
+  },
+  marks: {},
+});
+
+const placeholderPluginKey = new PluginKey<{ placeholder: string }>("prompt-placeholder");
+
+function placeholderPlugin(placeholder: string): Plugin<{ placeholder: string }> {
+  return new Plugin({
+    key: placeholderPluginKey,
+    state: {
+      init: () => ({ placeholder }),
+      apply: (transaction, state) => transaction.getMeta(placeholderPluginKey) ?? state,
+    },
+    props: {
+      decorations(state) {
+        const { doc } = state;
+        if (doc.childCount !== 1 || doc.firstChild?.isTextblock !== true || doc.firstChild.content.size !== 0) {
+          return null;
+        }
+        const { placeholder: currentPlaceholder } = placeholderPluginKey.getState(state) ?? { placeholder: "" };
+        const decorations: Decoration[] = [];
+        doc.descendants((node, pos) => {
+          if (node.isTextblock) {
+            decorations.push(Decoration.node(pos, pos + node.nodeSize, {
+              class: "placeholder",
+              "data-placeholder": currentPlaceholder,
+            }));
+          }
+        });
+        return DecorationSet.create(doc, decorations);
+      },
+    },
+  });
+}
+
+function plainTextToDoc({ schema, text }: { schema: Schema; text: string }): ProseMirrorNode {
+  const paragraph = schema.nodes.paragraph;
+  const lines = text.split("\n");
+  return schema.nodes.doc.create(null, lines.length
+    ? lines.map((line) => paragraph.create(null, line ? schema.text(line) : null))
+    : [paragraph.create()]);
+}
+
+function promptTextToDoc({ schema, text }: { schema: Schema; text: string }): ProseMirrorNode {
+  const paragraph = schema.nodes.paragraph;
+  const lines = text.split("\n");
+  return schema.nodes.doc.create(null, lines.length
+    ? lines.map((line) => paragraph.create(null, promptInlineNodes(schema, line)))
+    : [paragraph.create()]);
+}
+
+function promptInlineNodes(schema: Schema, line: string): Fragment | null {
+  const nodes: ProseMirrorNode[] = [];
+  const markdownLink = /\[([^\]]+)\]\(((?:\\.|[^)])+)\)/g;
+  let cursor = 0;
+  for (let match = markdownLink.exec(line); match != null; match = markdownLink.exec(line)) {
+    const [fullMatch, label, rawPath] = match;
+    if (match.index > cursor) nodes.push(schema.text(line.slice(cursor, match.index)));
+    const path = unescapePromptPath(rawPath);
+    const mention = promptMentionNode(schema, label, path);
+    nodes.push(mention ?? schema.text(fullMatch));
+    cursor = match.index + fullMatch.length;
+  }
+  if (cursor < line.length) nodes.push(schema.text(line.slice(cursor)));
+  return nodes.length > 0 ? Fragment.fromArray(nodes) : null;
+}
+
+function promptMentionNode(schema: Schema, label: string, path: string): ProseMirrorNode | null {
+  const name = label.replace(/^[@$]/, "");
+  if (path.startsWith("plugin://")) {
+    return schema.nodes.pluginMention.create({ label, name, displayName: name, path });
+  }
+  if (path.startsWith("app://")) {
+    return schema.nodes.appMention.create({ label, name, displayName: name, path });
+  }
+  if (path.startsWith("skill://") || label.startsWith("$")) {
+    return schema.nodes.skillMention.create({ label, name, displayName: name, path });
+  }
+  if (path.startsWith("agent://") || label.startsWith("@")) {
+    return schema.nodes.agentMention.create({ label, name, displayName: name, path });
+  }
+  if (/^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.|mailto:|tel:)/.test(path)) return null;
+  return schema.nodes.atMention.create({ label, name: label, displayName: label, path });
+}
+
+function docToPromptText(doc: ProseMirrorNode): { content: string; metadata: Record<string, never> } {
+  return docFragmentToPromptText(doc.content);
+}
+
+function docFragmentToPromptText(fragment: Fragment): { content: string; metadata: Record<string, never> } {
+  let text = "";
+  let endedWithParagraph = false;
+  fragment.descendants((node) => {
+    endedWithParagraph = false;
+    if (node.type.name === "paragraph") {
+      node.descendants((child) => serializeNode(child));
+      text += "\n";
+      endedWithParagraph = true;
+      return false;
+    }
+    serializeNode(node);
+    return true;
+  });
+  if (endedWithParagraph && text.endsWith("\n")) text = text.slice(0, -1);
+  return { content: text, metadata: {} };
+
+  function serializeNode(node: ProseMirrorNode): void {
+    if (node.isText && node.text) {
+      text += node.text;
+      return;
+    }
+    if (isMentionNode(node)) {
+      const label = String(node.attrs.label || node.attrs.displayName || node.attrs.name || "");
+      const path = String(node.attrs.path || "");
+      text += `[${label}](${escapePromptPath(path)})`;
+    }
+  }
+}
+
+function insertPlainTextAtSelection(view: EditorView, text: string): void {
+  if (isEditorViewDestroyed(view)) return;
+  if (!text) return;
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  if (lines.length === 1) {
+    safeDispatchEditorTransaction(view, view.state.tr.insertText(lines[0]).scrollIntoView());
+    return;
+  }
+  const { schema } = view.state;
+  if (!safeDispatchEditorTransaction(view, view.state.tr.deleteSelection().insertText(lines[0]))) return;
+  if (isEditorViewDestroyed(view)) return;
+  splitBlock(view.state, (transaction) => {
+    safeDispatchEditorTransaction(view, transaction);
+  }, view);
+  if (isEditorViewDestroyed(view)) return;
+  const nodes = lines.slice(1).map((line) => schema.nodes.paragraph.create(null, line ? schema.text(line) : null));
+  safeDispatchEditorTransaction(view, view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)).scrollIntoView());
+}
+
+export function splitPromptEditorPasteFiles<T extends PromptEditorPasteFileLike>(
+  files: ArrayLike<T> | null | undefined,
+): { imageFiles: T[]; otherFiles: T[] } {
+  const imageFiles: T[] = [];
+  const otherFiles: T[] = [];
+  for (const file of Array.from(files ?? [])) {
+    if (isPromptEditorImageFile(file)) imageFiles.push(file);
+    else otherFiles.push(file);
+  }
+  return { imageFiles, otherFiles };
+}
+
+function isPromptEditorImageFile(file: PromptEditorPasteFileLike): boolean {
+  const mime = file.type?.trim().toLowerCase();
+  if (mime?.startsWith("image/")) return true;
+  return /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i.test(file.name ?? "");
+}
+
+function isPromptText(value: string): boolean {
+  return /\[(?:\$|@)?[^\]]+\]\((?:\\.|[^)])+\)/.test(value);
+}
+
+function isMentionNode(node: ProseMirrorNode): boolean {
+  return node.type.name === "atMention"
+    || node.type.name === "agentMention"
+    || node.type.name === "skillMention"
+    || node.type.name === "appMention"
+    || node.type.name === "pluginMention";
+}
+
+function unescapePromptPath(value: string): string {
+  return value.replace(/\\([\\)])/g, "$1");
+}
+
+function escapePromptPath(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function promptEditorViewFromElement(element: HTMLElement | null): EditorView | null {
+  if (!element || !element.isConnected) return null;
+  const view = (element as HTMLElement & { pmViewDesc?: { editorView?: EditorView } }).pmViewDesc?.editorView;
+  if (!view || isEditorViewUnavailable(view)) return null;
+  return view;
+}
+
+function isEditorViewDestroyed(view: EditorView): boolean {
+  return view.isDestroyed || (view as EditorView & { docView?: unknown }).docView == null;
+}
+
+function isEditorViewDetached(view: EditorView): boolean {
+  return (view as unknown as GuardedEditorView)[promptEditorDetachedSymbol] === true;
+}
+
+function isEditorViewUnavailable(view: EditorView): boolean {
+  return isEditorViewDestroyed(view) || isEditorViewDetached(view);
+}
+
+function safeUpdateEditorState(view: EditorView, state: EditorState): boolean {
+  if (isEditorViewUnavailable(view)) return false;
+  try {
+    view.updateState(state);
+    return !isEditorViewUnavailable(view);
+  } catch (error) {
+    if (isStaleEditorViewError(error)) {
+      markEditorViewDestroyed(view);
+      return false;
+    }
+    throw error;
+  }
+}
+
+function safeDispatchEditorTransaction(view: EditorView, transaction: EditorState["tr"]): boolean {
+  if (isEditorViewUnavailable(view)) return false;
+  try {
+    view.dispatch(transaction);
+    return !isEditorViewUnavailable(view);
+  } catch (error) {
+    if (isStaleEditorViewError(error)) {
+      markEditorViewDestroyed(view);
+      return false;
+    }
+    throw error;
+  }
+}
+
+function safeFocusEditorView(view: EditorView): void {
+  if (isEditorViewUnavailable(view) || !view.dom.isConnected) return;
+  try {
+    view.focus();
+  } catch (error) {
+    if (isStaleEditorViewError(error)) {
+      markEditorViewDestroyed(view);
+      return;
+    }
+    throw error;
+  }
+}
+
+function installEditorViewStaleGuards(view: EditorView): void {
+  const guardedView = view as unknown as GuardedEditorView;
+  if (guardedView[promptEditorStaleGuardSymbol]) return;
+  guardedView[promptEditorStaleGuardSymbol] = true;
+
+  if (typeof guardedView.updateStateInner === "function") {
+    const updateStateInner = guardedView.updateStateInner.bind(view);
+    guardedView.updateStateInner = (state, prevProps) => {
+      runEditorViewOperation(view, () => updateStateInner(state, prevProps));
+    };
+  }
+
+  const update = view.update.bind(view);
+  view.update = (props) => {
+    runEditorViewOperation(view, () => update(props));
+  };
+
+  const setProps = view.setProps.bind(view);
+  view.setProps = (props) => {
+    runEditorViewOperation(view, () => setProps(props));
+  };
+
+  const updateState = view.updateState.bind(view);
+  view.updateState = (state) => {
+    runEditorViewOperation(view, () => updateState(state));
+  };
+
+  const dispatch = view.dispatch.bind(view);
+  view.dispatch = (transaction) => {
+    runEditorViewOperation(view, () => dispatch(transaction));
+  };
+
+  const focus = view.focus.bind(view);
+  view.focus = () => {
+    if (!view.dom.isConnected) return;
+    runEditorViewOperation(view, () => focus());
+  };
+
+  const destroy = view.destroy.bind(view);
+  view.destroy = () => {
+    if (isEditorViewDestroyed(view)) return;
+    try {
+      destroy();
+    } catch (error) {
+      if (!isStaleEditorViewError(error)) throw error;
+      markEditorViewDestroyed(view);
+    }
+  };
+
+  installDomObserverStaleGuards(view);
+}
+
+function safeFocusElement(element: HTMLElement | null): void {
+  if (!element || !element.isConnected) return;
+  try {
+    element.focus();
+  } catch (error) {
+    if (isStaleEditorViewError(error)) return;
+    throw error;
+  }
+}
+
+export function isStalePromptEditorViewError(error: unknown): boolean {
+  return isStaleEditorViewError(error);
+}
+
+export function installPromptEditorViewStaleGuardsForTest(view: EditorView): void {
+  installEditorViewStaleGuards(view);
+}
+
+export function setPromptEditorViewDetachedForTest(view: EditorView, detached: boolean): void {
+  markEditorViewDetached(view, detached);
+}
+
+function isStaleEditorViewError(error: unknown): boolean {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === "object" && error != null && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : typeof error === "string" ? error : "";
+  return /docView|matchesNode/i.test(message);
+}
+
+const promptEditorStaleGuardSymbol = Symbol("hicodex.promptEditor.staleGuard");
+const promptEditorDetachedSymbol = Symbol("hicodex.promptEditor.detached");
+
+type GuardedEditorView = {
+  [promptEditorStaleGuardSymbol]?: true;
+  [promptEditorDetachedSymbol]?: true;
+  docView?: unknown;
+  updateStateInner?: (state: EditorState, prevProps: unknown) => void;
+  domObserver?: {
+    flush?: () => void;
+    flushSoon?: () => void;
+    forceFlush?: () => void;
+    start?: () => void;
+    stop?: () => void;
+  };
+};
+
+function runEditorViewOperation<T>(view: EditorView, operation: () => T): T | undefined {
+  if (isEditorViewUnavailable(view)) return undefined;
+  try {
+    return operation();
+  } catch (error) {
+    if (isStaleEditorViewError(error)) {
+      markEditorViewDestroyed(view);
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function markEditorViewDestroyed(view: EditorView): void {
+  (view as EditorView & { docView?: unknown }).docView = null;
+}
+
+function markEditorViewDetached(view: EditorView, detached: boolean): void {
+  const guardedView = view as unknown as GuardedEditorView;
+  if (detached) guardedView[promptEditorDetachedSymbol] = true;
+  else delete guardedView[promptEditorDetachedSymbol];
+}
+
+function stopEditorDomObserver(view: EditorView): void {
+  const observer = (view as unknown as GuardedEditorView).domObserver;
+  if (!observer || typeof observer.stop !== "function") return;
+  try {
+    observer.stop();
+  } catch (error) {
+    if (!isStaleEditorViewError(error)) throw error;
+    markEditorViewDestroyed(view);
+  }
+}
+
+function startEditorDomObserver(view: EditorView): void {
+  const observer = (view as unknown as GuardedEditorView).domObserver;
+  if (!observer || typeof observer.start !== "function") return;
+  try {
+    observer.start();
+  } catch (error) {
+    if (!isStaleEditorViewError(error)) throw error;
+    markEditorViewDestroyed(view);
+  }
+}
+
+function installDomObserverStaleGuards(view: EditorView): void {
+  const observer = (view as unknown as GuardedEditorView).domObserver;
+  if (!observer) return;
+
+  if (typeof observer.flush === "function") {
+    const flush = observer.flush.bind(observer);
+    observer.flush = () => {
+      runEditorViewOperation(view, () => flush());
+    };
+  }
+
+  if (typeof observer.flushSoon === "function") {
+    const flushSoon = observer.flushSoon.bind(observer);
+    observer.flushSoon = () => {
+      runEditorViewOperation(view, () => flushSoon());
+    };
+  }
+
+  if (typeof observer.forceFlush === "function") {
+    const forceFlush = observer.forceFlush.bind(observer);
+    observer.forceFlush = () => {
+      runEditorViewOperation(view, () => forceFlush());
+    };
+  }
+}
+
+function selectionInside(element: HTMLElement, selection: Selection): boolean {
+  const anchor = selection.anchorNode;
+  const focus = selection.focusNode;
+  return Boolean(anchor && focus && element.contains(anchor) && element.contains(focus));
+}

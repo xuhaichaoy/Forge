@@ -4,14 +4,16 @@ import type {
   JsonRpcRequest,
   ModelConfig,
   RequestId,
-  TeamSummary,
   Thread,
   ThreadActiveFlag,
   ThreadStatus,
   ThreadItem,
   UserInput,
 } from "@hicodex/codex-protocol";
+import { stringField } from "../lib/format";
 import type { HostStatus } from "../lib/tauri-host";
+import { composerModeFromCollaborationMode } from "./collaboration-modes";
+import type { ComposerMode } from "./composer-workflow";
 import type { AccumulatedThreadItem } from "./render-groups";
 
 export interface PendingServerRequest {
@@ -50,34 +52,36 @@ export interface TurnPlanSnapshot {
   updatedAt: number;
 }
 
+export interface ThreadRuntimeSlice {
+  activeTurnId: string | null;
+  items: AccumulatedThreadItem[];
+  /**
+   * Ordered list of turn ids. Mirrors the per-turn `turn.items` model used by
+   * Codex Desktop; new items are placed inside their turn segment.
+   */
+  turnOrder: string[];
+  /**
+   * FIFO queue of optimistic local turn ids. The head is bound to the real
+   * `turnId` reported by the next `turn/started` notification on that thread.
+   */
+  pendingOptimisticTurns: string[];
+  latestCollaborationMode: CollaborationMode | null;
+  turnPlan: TurnPlanSnapshot | null;
+  turnDiff: string;
+  composerMode: ComposerMode | null;
+}
+
 export interface CodexUiState {
   connected: boolean;
   connecting: boolean;
   hostStatus: HostStatus | null;
   threads: Thread[];
   activeThreadId: string | null;
-  activeTurnIdsByThread: Record<string, string>;
-  itemsByThread: Record<string, AccumulatedThreadItem[]>;
-  /**
-   * Per-thread ordered list of turn ids. Mirrors the per-turn `turn.items` model used
-   * by the shipped Codex Desktop webview (see asar `app-server-manager-signals` /
-   * `local-conversation-thread`). New items are placed inside their turn segment
-   * instead of being blindly appended to a flat array.
-   */
-  turnOrderByThread: Record<string, string[]>;
-  /**
-   * FIFO queue of optimistic local turn ids per thread. The head is bound to the
-   * real `turnId` reported by the next `turn/started` notification on that thread.
-   */
-  pendingOptimisticTurnsByThread: Record<string, string[]>;
-  latestCollaborationModesByThread: Record<string, CollaborationMode>;
-  turnPlansByThread: Record<string, TurnPlanSnapshot>;
-  turnDiffsByThread: Record<string, string>;
+  threadsRuntime: Record<string, ThreadRuntimeSlice>;
+  composerMode: ComposerMode;
   pendingRequests: PendingServerRequest[];
   logs: LogLine[];
   models: ModelConfig[];
-  teams: TeamSummary[];
-  activeTeamId: string | null;
   threadContextDefaults: ThreadContextDefaults | null;
 }
 
@@ -90,6 +94,8 @@ export type CodexUiAction =
   | { type: "setActiveThread"; threadId: string | null }
   | { type: "removeThread"; threadId: string }
   | { type: "setLatestCollaborationMode"; threadId: string; collaborationMode: CollaborationMode | null }
+  | { type: "setActiveComposerMode"; mode: ComposerMode }
+  | { type: "resetThreadComposerMode"; threadId: string }
   | { type: "notification"; message: JsonRpcNotification }
   | { type: "serverRequest"; request: JsonRpcRequest }
   | { type: "resolveServerRequest"; id: RequestId }
@@ -97,8 +103,6 @@ export type CodexUiAction =
   | { type: "setModels"; models: ModelConfig[] }
   | { type: "upsertModel"; model: ModelConfig }
   | { type: "setThreadContextDefaults"; context: ThreadContextDefaults | null }
-  | { type: "setTeams"; teams: TeamSummary[] }
-  | { type: "setActiveTeam"; teamId: string | null }
   | {
       type: "optimisticUserMessage";
       threadId: string;
@@ -116,20 +120,72 @@ export const initialCodexUiState: CodexUiState = {
   hostStatus: null,
   threads: [],
   activeThreadId: null,
-  activeTurnIdsByThread: {},
-  itemsByThread: {},
-  turnOrderByThread: {},
-  pendingOptimisticTurnsByThread: {},
-  latestCollaborationModesByThread: {},
-  turnPlansByThread: {},
-  turnDiffsByThread: {},
+  threadsRuntime: {},
+  composerMode: "default",
   pendingRequests: [],
   logs: [],
   models: [],
-  teams: [],
-  activeTeamId: null,
   threadContextDefaults: null,
 };
+
+const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
+  activeTurnId: null,
+  items: [],
+  turnOrder: [],
+  pendingOptimisticTurns: [],
+  latestCollaborationMode: null,
+  turnPlan: null,
+  turnDiff: "",
+  composerMode: null,
+});
+
+export function selectThreadRuntime(
+  state: CodexUiState,
+  threadId: string | null | undefined,
+): ThreadRuntimeSlice {
+  if (!threadId) return EMPTY_THREAD_RUNTIME;
+  return state.threadsRuntime[threadId] ?? EMPTY_THREAD_RUNTIME;
+}
+
+export function selectActiveThreadRuntime(state: CodexUiState): ThreadRuntimeSlice {
+  return selectThreadRuntime(state, state.activeThreadId);
+}
+
+export function selectThreadItems(
+  state: CodexUiState,
+  threadId: string | null | undefined,
+): AccumulatedThreadItem[] {
+  return selectThreadRuntime(state, threadId).items;
+}
+
+export function selectActiveTurnId(
+  state: CodexUiState,
+  threadId: string | null | undefined,
+): string | null {
+  return selectThreadRuntime(state, threadId).activeTurnId;
+}
+
+export function selectLatestCollaborationMode(
+  state: CodexUiState,
+  threadId: string | null | undefined,
+): CollaborationMode | null {
+  return selectThreadRuntime(state, threadId).latestCollaborationMode;
+}
+
+export function selectThreadComposerMode(
+  state: CodexUiState,
+  threadId: string | null | undefined,
+): ComposerMode {
+  if (!threadId) return "default";
+  const runtime = selectThreadRuntime(state, threadId);
+  return runtime.composerMode ?? composerModeFromCollaborationMode(runtime.latestCollaborationMode);
+}
+
+export function selectItemsByThread(state: CodexUiState): Record<string, AccumulatedThreadItem[]> {
+  return Object.fromEntries(
+    Object.entries(state.threadsRuntime).map(([threadId, runtime]) => [threadId, runtime.items]),
+  );
+}
 
 export function codexUiReducer(state: CodexUiState, action: CodexUiAction): CodexUiState {
   switch (action.type) {
@@ -140,40 +196,31 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
     case "hostStatus":
       return { ...state, hostStatus: action.status, connected: action.status.running };
     case "setThreads":
-      return {
+      return withActiveComposerMode({
         ...state,
         threads: action.threads,
         activeThreadId: nextActiveThreadId(state.activeThreadId, action.threads),
-      };
+      });
     case "upsertThread":
       return upsertThreadState(state, action.thread, action.select === true);
     case "setActiveThread":
-      return { ...state, activeThreadId: action.threadId };
+      return withActiveComposerMode({ ...state, activeThreadId: action.threadId });
     case "removeThread": {
       const nextThreads = state.threads.filter((thread) => thread.id !== action.threadId);
-      const { [action.threadId]: _removed, ...itemsByThread } = state.itemsByThread;
-      const { [action.threadId]: _removedTurn, ...activeTurnIdsByThread } = state.activeTurnIdsByThread;
-      const { [action.threadId]: _removedOrder, ...turnOrderByThread } = state.turnOrderByThread;
-      const { [action.threadId]: _removedPending, ...pendingOptimisticTurnsByThread } = state.pendingOptimisticTurnsByThread;
-      const { [action.threadId]: _removedCollaborationMode, ...latestCollaborationModesByThread } =
-        state.latestCollaborationModesByThread;
-      const { [action.threadId]: _removedPlan, ...turnPlansByThread } = state.turnPlansByThread;
-      const { [action.threadId]: _removedDiff, ...turnDiffsByThread } = state.turnDiffsByThread;
-      return {
+      const { [action.threadId]: _removed, ...threadsRuntime } = state.threadsRuntime;
+      return withActiveComposerMode({
         ...state,
         threads: nextThreads,
-        itemsByThread,
-        turnOrderByThread,
-        pendingOptimisticTurnsByThread,
-        latestCollaborationModesByThread,
-        turnPlansByThread,
-        activeTurnIdsByThread,
-        turnDiffsByThread,
+        threadsRuntime,
         activeThreadId: state.activeThreadId === action.threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
-      };
+      });
     }
     case "setLatestCollaborationMode":
       return setLatestCollaborationModeState(state, action.threadId, action.collaborationMode);
+    case "setActiveComposerMode":
+      return setActiveComposerModeState(state, action.mode);
+    case "resetThreadComposerMode":
+      return resetThreadComposerModeState(state, action.threadId);
     case "notification":
       return applyNotification(state, action.message);
     case "serverRequest":
@@ -208,10 +255,6 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       };
     case "setThreadContextDefaults":
       return { ...state, threadContextDefaults: action.context };
-    case "setTeams":
-      return { ...state, teams: action.teams, activeTeamId: state.activeTeamId ?? action.teams[0]?.id ?? null };
-    case "setActiveTeam":
-      return { ...state, activeTeamId: action.teamId };
     case "optimisticUserMessage":
       return applyOptimisticUserMessage(state, action);
     case "bindOptimisticTurn":
@@ -221,6 +264,48 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
     default:
       return state;
   }
+}
+
+function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined): ThreadRuntimeSlice {
+  return {
+    activeTurnId: runtime?.activeTurnId ?? null,
+    items: runtime?.items ?? [],
+    turnOrder: runtime?.turnOrder ?? [],
+    pendingOptimisticTurns: runtime?.pendingOptimisticTurns ?? [],
+    latestCollaborationMode: runtime?.latestCollaborationMode ?? null,
+    turnPlan: runtime?.turnPlan ?? null,
+    turnDiff: runtime?.turnDiff ?? "",
+    composerMode: runtime?.composerMode ?? null,
+  };
+}
+
+function updateThreadRuntime(
+  state: CodexUiState,
+  threadId: string,
+  updater: (runtime: ThreadRuntimeSlice) => ThreadRuntimeSlice,
+): CodexUiState {
+  return {
+    ...state,
+    threadsRuntime: {
+      ...state.threadsRuntime,
+      [threadId]: updater(selectThreadRuntime(state, threadId)),
+    },
+  };
+}
+
+function threadRuntimePatch(
+  state: CodexUiState,
+  threadId: string,
+  patch: Partial<ThreadRuntimeSlice>,
+): CodexUiState {
+  return updateThreadRuntime(state, threadId, (runtime) => normalizeThreadRuntime({ ...runtime, ...patch }));
+}
+
+function withActiveComposerMode(state: CodexUiState): CodexUiState {
+  return {
+    ...state,
+    composerMode: selectThreadComposerMode(state, state.activeThreadId),
+  };
 }
 
 function applyOptimisticUserMessage(
@@ -233,20 +318,21 @@ function applyOptimisticUserMessage(
   // Idempotency guard: don't add a second optimistic bubble for the same text
   // when one is already pending in this thread. Protects against quick
   // double-submits, retries, or redundant workflow paths re-dispatching.
-  const existingItems = state.itemsByThread[threadId] ?? [];
-  const incomingText = userInputContentText(content);
-  if (incomingText) {
+  const runtime = selectThreadRuntime(state, threadId);
+  const existingItems = runtime.items;
+  const incomingContentKey = userInputContentKey(content);
+  if (incomingContentKey) {
     for (const existing of existingItems) {
       if (existing.type !== "userMessage") continue;
       if (!localIdOf(existing)) continue;
-      const existingText = userInputContentText((existing as Record<string, unknown>).content);
-      if (existingText === incomingText) return state;
+      const existingContentKey = userInputContentKey((existing as Record<string, unknown>).content);
+      if (existingContentKey === incomingContentKey) return state;
     }
   }
 
-  const order = ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], localTurnId);
+  const order = ensureTurnInOrder(runtime.turnOrder, localTurnId);
   const needsBinding = isOptimisticTurnPlaceholder(localTurnId);
-  const pending = state.pendingOptimisticTurnsByThread[threadId] ?? [];
+  const pending = runtime.pendingOptimisticTurns;
   const nextPending = needsBinding && !pending.includes(localTurnId)
     ? [...pending, localTurnId]
     : pending;
@@ -259,19 +345,11 @@ function applyOptimisticUserMessage(
     _turnId: localTurnId,
     _localId: localId,
   };
-  const items = state.itemsByThread[threadId] ?? [];
-  return {
-    ...state,
-    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: order },
-    pendingOptimisticTurnsByThread: {
-      ...state.pendingOptimisticTurnsByThread,
-      [threadId]: nextPending,
-    },
-    itemsByThread: {
-      ...state.itemsByThread,
-      [threadId]: placeItemInTurn(items, item, order),
-    },
-  };
+  return threadRuntimePatch(state, threadId, {
+    turnOrder: order,
+    pendingOptimisticTurns: nextPending,
+    items: placeItemInTurn(runtime.items, item, order),
+  });
 }
 
 export const OPTIMISTIC_TURN_PLACEHOLDER_PREFIX = "optimistic-turn:";
@@ -288,17 +366,11 @@ function applyBindOptimisticTurn(
 }
 
 function bindNextOptimisticTurn(state: CodexUiState, threadId: string, turnId: string): CodexUiState {
-  const queue = state.pendingOptimisticTurnsByThread[threadId];
+  const queue = selectThreadRuntime(state, threadId).pendingOptimisticTurns;
   if (!queue || queue.length === 0) return state;
   const head = queue[0];
   if (!head || head === turnId) {
-    return {
-      ...state,
-      pendingOptimisticTurnsByThread: {
-        ...state.pendingOptimisticTurnsByThread,
-        [threadId]: queue.slice(1),
-      },
-    };
+    return threadRuntimePatch(state, threadId, { pendingOptimisticTurns: queue.slice(1) });
   }
   return bindOptimisticTurn(state, threadId, head, turnId);
 }
@@ -310,32 +382,22 @@ function bindOptimisticTurn(
   turnId: string,
 ): CodexUiState {
   if (!threadId || !localTurnId || !turnId || localTurnId === turnId) return state;
-  const order = state.turnOrderByThread[threadId];
+  const runtime = selectThreadRuntime(state, threadId);
+  const order = runtime.turnOrder;
   if (!order || !order.includes(localTurnId)) {
-    const pendingQueue = (state.pendingOptimisticTurnsByThread[threadId] ?? []).filter((id) => id !== localTurnId);
-    return {
-      ...state,
-      pendingOptimisticTurnsByThread: {
-        ...state.pendingOptimisticTurnsByThread,
-        [threadId]: pendingQueue,
-      },
-    };
+    const pendingQueue = runtime.pendingOptimisticTurns.filter((id) => id !== localTurnId);
+    return threadRuntimePatch(state, threadId, { pendingOptimisticTurns: pendingQueue });
   }
   const rebound = order.map((id) => (id === localTurnId ? turnId : id));
   const dedup: string[] = [];
   for (const id of rebound) if (!dedup.includes(id)) dedup.push(id);
-  const items = state.itemsByThread[threadId] ?? [];
-  // If the target turn already has a confirmed userMessage with the same
-  // content, drop the placeholder instead of rebinding to avoid duplicate
-  // bubbles when the server echoed the user message before this binding ran.
-  const confirmedTextsInTurn = new Set<string>();
-  for (const item of items) {
-    if (item.type !== "userMessage") continue;
-    if (turnIdOf(item) !== turnId) continue;
-    if (localIdOf(item)) continue;
-    const text = userInputContentText((item as Record<string, unknown>).content);
-    if (text) confirmedTextsInTurn.add(text);
-  }
+  const items = runtime.items;
+  // If the target turn already has a confirmed userMessage, drop the local
+  // placeholder instead of rebinding. The server may normalize structured
+  // input differently, so same-turn confirmation is stronger than text equality.
+  const confirmedUserMessagesInTurn = items.filter((item) =>
+    isConfirmedUserMessage(item) && turnIdOf(item) === turnId
+  );
   const next: AccumulatedThreadItem[] = [];
   for (const item of items) {
     if (turnIdOf(item) !== localTurnId) {
@@ -343,21 +405,17 @@ function bindOptimisticTurn(
       continue;
     }
     if (item.type === "userMessage" && localIdOf(item)) {
-      const text = userInputContentText((item as Record<string, unknown>).content);
-      if (text && confirmedTextsInTurn.has(text)) continue;
+      if (confirmedUserMessagesInTurn.some((confirmed) => userMessagesHaveSameContent(item, confirmed))) continue;
+      if (confirmedUserMessagesInTurn.length > 0) continue;
     }
     next.push({ ...item, _turnId: turnId });
   }
-  const pending = (state.pendingOptimisticTurnsByThread[threadId] ?? []).filter((id) => id !== localTurnId);
-  return {
-    ...state,
-    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: dedup },
-    pendingOptimisticTurnsByThread: {
-      ...state.pendingOptimisticTurnsByThread,
-      [threadId]: pending,
-    },
-    itemsByThread: { ...state.itemsByThread, [threadId]: next },
-  };
+  const pending = runtime.pendingOptimisticTurns.filter((id) => id !== localTurnId);
+  return threadRuntimePatch(state, threadId, {
+    turnOrder: dedup,
+    pendingOptimisticTurns: pending,
+    items: next,
+  });
 }
 
 function applyDropOptimisticUserMessage(
@@ -366,28 +424,25 @@ function applyDropOptimisticUserMessage(
 ): CodexUiState {
   const { threadId, localId } = action;
   if (!threadId || !localId) return state;
-  const items = state.itemsByThread[threadId] ?? [];
+  const runtime = selectThreadRuntime(state, threadId);
+  const items = runtime.items;
   const target = items.find((item) => localIdOf(item) === localId);
   if (!target) return state;
   const filtered = items.filter((item) => item !== target);
   const turnId = turnIdOf(target);
-  const order = state.turnOrderByThread[threadId] ?? [];
+  const order = runtime.turnOrder;
   const stillUsesTurn = turnId
     ? filtered.some((item) => turnIdOf(item) === turnId)
     : false;
   const nextOrder = turnId && !stillUsesTurn ? order.filter((id) => id !== turnId) : order;
   const pending = turnId && !stillUsesTurn
-    ? (state.pendingOptimisticTurnsByThread[threadId] ?? []).filter((id) => id !== turnId)
-    : (state.pendingOptimisticTurnsByThread[threadId] ?? []);
-  return {
-    ...state,
-    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: nextOrder },
-    pendingOptimisticTurnsByThread: {
-      ...state.pendingOptimisticTurnsByThread,
-      [threadId]: pending,
-    },
-    itemsByThread: { ...state.itemsByThread, [threadId]: filtered },
-  };
+    ? runtime.pendingOptimisticTurns.filter((id) => id !== turnId)
+    : runtime.pendingOptimisticTurns;
+  return threadRuntimePatch(state, threadId, {
+    turnOrder: nextOrder,
+    pendingOptimisticTurns: pending,
+    items: filtered,
+  });
 }
 
 function prependLog(
@@ -415,17 +470,31 @@ function setLatestCollaborationModeState(
   collaborationMode: CollaborationMode | null,
 ): CodexUiState {
   if (!threadId.trim()) return state;
+  const currentRuntime = selectThreadRuntime(state, threadId);
   if (!collaborationMode) {
-    const { [threadId]: _removed, ...latestCollaborationModesByThread } = state.latestCollaborationModesByThread;
-    return { ...state, latestCollaborationModesByThread };
+    const next = threadRuntimePatch(state, threadId, { latestCollaborationMode: null });
+    return state.activeThreadId === threadId && currentRuntime.composerMode === null
+      ? withActiveComposerMode(next)
+      : next;
   }
+  const next = threadRuntimePatch(state, threadId, { latestCollaborationMode: collaborationMode });
+  return state.activeThreadId === threadId && currentRuntime.composerMode === null
+    ? withActiveComposerMode(next)
+    : next;
+}
+
+function setActiveComposerModeState(state: CodexUiState, mode: ComposerMode): CodexUiState {
+  if (!state.activeThreadId) return { ...state, composerMode: mode };
   return {
-    ...state,
-    latestCollaborationModesByThread: {
-      ...state.latestCollaborationModesByThread,
-      [threadId]: collaborationMode,
-    },
+    ...threadRuntimePatch(state, state.activeThreadId, { composerMode: mode }),
+    composerMode: mode,
   };
+}
+
+function resetThreadComposerModeState(state: CodexUiState, threadId: string): CodexUiState {
+  if (!threadId.trim()) return state;
+  const next = threadRuntimePatch(state, threadId, { composerMode: "default" });
+  return state.activeThreadId === threadId ? { ...next, composerMode: "default" } : next;
 }
 
 function applyNotification(state: CodexUiState, message: JsonRpcNotification): CodexUiState {
@@ -437,30 +506,42 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const thread = params.thread as Thread | undefined;
       if (!thread?.id) return state;
       const snapshotItems = collectThreadItems(thread);
-      const currentItems = state.itemsByThread[thread.id] ?? [];
+      const runtime = selectThreadRuntime(state, thread.id);
+      const currentItems = runtime.items;
       const activeTurns = activeTurnsFromThread(thread);
-      const hasLiveTurn = Boolean(state.activeTurnIdsByThread[thread.id] ?? activeTurns[thread.id]);
-      return {
+      const nextActiveTurnId = activeTurns[thread.id] ?? runtime.activeTurnId;
+      const hasLiveTurn = Boolean(nextActiveTurnId);
+      const nextTurnOrder = turnOrderFromThread(thread, runtime.turnOrder);
+      const nextItems = snapshotItems.length > 0
+        ? hasLiveTurn
+          ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
+          : snapshotItems
+        : runtime.items;
+      const optimisticTurnState = snapshotItems.length > 0
+        ? pruneUnusedOptimisticTurnState(
+            nextTurnOrder,
+            runtime.pendingOptimisticTurns,
+            nextItems ?? [],
+          )
+        : {
+            turnOrder: nextTurnOrder,
+            pending: runtime.pendingOptimisticTurns,
+          };
+      return withActiveComposerMode({
         ...state,
         threads: upsertThread(state.threads, thread),
         activeThreadId: state.activeThreadId ?? thread.id,
-        activeTurnIdsByThread: {
-          ...state.activeTurnIdsByThread,
-          ...activeTurns,
+        threadsRuntime: {
+          ...state.threadsRuntime,
+          [thread.id]: normalizeThreadRuntime({
+            ...runtime,
+            activeTurnId: nextActiveTurnId ?? null,
+            turnOrder: optimisticTurnState.turnOrder,
+            pendingOptimisticTurns: optimisticTurnState.pending,
+            items: snapshotItems.length > 0 ? nextItems ?? [] : runtime.items,
+          }),
         },
-        turnOrderByThread: {
-          ...state.turnOrderByThread,
-          [thread.id]: turnOrderFromThread(thread, state.turnOrderByThread[thread.id]),
-        },
-        itemsByThread: snapshotItems.length > 0
-          ? {
-              ...state.itemsByThread,
-              [thread.id]: hasLiveTurn
-                ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
-                : snapshotItems,
-            }
-          : state.itemsByThread,
-      };
+      });
     }
     case "thread/status/changed": {
       const threadId = String(params.threadId ?? "");
@@ -488,26 +569,13 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const threadId = String(params.threadId ?? "");
       if (!threadId) return state;
       const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
-      const { [threadId]: _removed, ...itemsByThread } = state.itemsByThread;
-      const { [threadId]: _removedTurn, ...activeTurnIdsByThread } = state.activeTurnIdsByThread;
-      const { [threadId]: _removedOrder, ...turnOrderByThread } = state.turnOrderByThread;
-      const { [threadId]: _removedPending, ...pendingOptimisticTurnsByThread } = state.pendingOptimisticTurnsByThread;
-      const { [threadId]: _removedCollaborationMode, ...latestCollaborationModesByThread } =
-        state.latestCollaborationModesByThread;
-      const { [threadId]: _removedPlan, ...turnPlansByThread } = state.turnPlansByThread;
-      const { [threadId]: _removedDiff, ...turnDiffsByThread } = state.turnDiffsByThread;
-      return {
+      const { [threadId]: _removed, ...threadsRuntime } = state.threadsRuntime;
+      return withActiveComposerMode({
         ...state,
         threads: nextThreads,
-        itemsByThread,
-        turnOrderByThread,
-        pendingOptimisticTurnsByThread,
-        latestCollaborationModesByThread,
-        turnPlansByThread,
-        activeTurnIdsByThread,
-        turnDiffsByThread,
+        threadsRuntime,
         activeThreadId: state.activeThreadId === threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
-      };
+      });
     }
     case "thread/unarchived": {
       const threadId = String(params.threadId ?? "");
@@ -516,6 +584,9 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     }
     case "thread/tokenUsage/updated":
       return state;
+    case "thread/goal/updated":
+    case "thread/goal/cleared":
+      return state;
     case "turn/started": {
       const turn = params.turn as TurnLike | undefined;
       const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
@@ -523,28 +594,41 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const baseState: CodexUiState = turn?.id
         ? bindNextOptimisticTurn(state, threadId, turn.id)
         : state;
-      const order = ensureTurnInOrder(baseState.turnOrderByThread[threadId] ?? [], turn?.id ?? null);
-      return {
+      const runtime = selectThreadRuntime(baseState, threadId);
+      const order = ensureTurnInOrder(runtime.turnOrder, turn?.id ?? null);
+      return withActiveComposerMode({
         ...baseState,
         activeThreadId: baseState.activeThreadId ?? threadId,
-        activeTurnIdsByThread: turn?.id ? {
-          ...baseState.activeTurnIdsByThread,
-          [threadId]: turn.id,
-        } : baseState.activeTurnIdsByThread,
-        turnOrderByThread: { ...baseState.turnOrderByThread, [threadId]: order },
-        itemsByThread: {
-          ...baseState.itemsByThread,
-          [threadId]: mergeItems(baseState.itemsByThread[threadId] ?? [], turnItemsWithWorkedFor(turn), order),
+        threadsRuntime: {
+          ...baseState.threadsRuntime,
+          [threadId]: normalizeThreadRuntime({
+            ...runtime,
+            activeTurnId: turn?.id ?? runtime.activeTurnId,
+            turnOrder: order,
+            items: mergeItems(runtime.items, turnItemsWithWorkedFor(turn), order),
+          }),
         },
-      };
+      });
     }
     case "item/started":
-    case "item/completed": {
+    case "item/completed":
+    case "item/autoApprovalReview/started":
+    case "item/autoApprovalReview/completed":
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+    case "item/permissions/requestApproval":
+    case "item/tool/call":
+    case "item/tool/requestUserInput": {
       const threadId = String(params.threadId ?? "");
       const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
       const item = params.item as ThreadItem | undefined;
       if (!threadId || !item?.id) return state;
-      const itemWithStatus = message.method === "item/completed"
+      // Codex Desktop's app-server-manager-signals carries a per-event
+      // completion bias on these item-level cases; treat any "/completed"
+      // suffix as terminal and everything else as in-progress so the merger
+      // can fold deltas into the same row.
+      const isCompletedEvent = message.method.endsWith("/completed");
+      const itemWithStatus = isCompletedEvent
         ? { ...item, completed: true }
         : { ...item, completed: false };
       const stampedItem = itemWithLifecycleTiming(itemWithStatus as ThreadItem, params);
@@ -579,13 +663,7 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const threadId = String(params.threadId ?? "");
       const diff = typeof params.diff === "string" ? params.diff : "";
       if (!threadId) return state;
-      return {
-        ...state,
-        turnDiffsByThread: {
-          ...state.turnDiffsByThread,
-          [threadId]: diff,
-        },
-      };
+      return threadRuntimePatch(state, threadId, { turnDiff: diff });
     }
     case "turn/completed":
       return finishTurn(state, params, "completed");
@@ -614,16 +692,20 @@ function applyErrorNotification(state: CodexUiState, params: Record<string, unkn
   const threadId = String(params.threadId ?? "");
   if (!threadId || !text) return logged;
   const turnId = String(params.turnId ?? "");
-  const order = ensureTurnInOrder(logged.turnOrderByThread[threadId] ?? [], turnId || null);
+  const runtime = selectThreadRuntime(logged, threadId);
+  const order = ensureTurnInOrder(runtime.turnOrder, turnId || null);
   return {
     ...logged,
-    turnOrderByThread: { ...logged.turnOrderByThread, [threadId]: order },
     threads: logged.threads.map((thread) =>
       thread.id === threadId ? { ...thread, status: { type: "systemError" } } : thread,
     ),
-    itemsByThread: {
-      ...logged.itemsByThread,
-      [threadId]: mergeItems(logged.itemsByThread[threadId] ?? [], [streamErrorItem(turnId, error, text)], order),
+    threadsRuntime: {
+      ...logged.threadsRuntime,
+      [threadId]: normalizeThreadRuntime({
+        ...runtime,
+        turnOrder: order,
+        items: mergeItems(runtime.items, [streamErrorItem(turnId, error, text)], order),
+      }),
     },
   };
 }
@@ -646,32 +728,45 @@ function upsertThreadState(
   select: boolean,
 ): CodexUiState {
   const snapshotItems = collectThreadItems(thread);
-  const currentItems = state.itemsByThread[thread.id] ?? [];
+  const runtime = selectThreadRuntime(state, thread.id);
+  const currentItems = runtime.items;
   const activeTurns = activeTurnsFromThread(thread);
-  const hasLiveTurn = Boolean(state.activeTurnIdsByThread[thread.id] ?? activeTurns[thread.id]);
-  const nextTurnOrder = thread.turns
-    ? turnOrderFromThread(thread, state.turnOrderByThread[thread.id])
-    : state.turnOrderByThread[thread.id];
-  return {
+  const nextActiveTurnId = activeTurns[thread.id] ?? runtime.activeTurnId;
+  const hasLiveTurn = Boolean(nextActiveTurnId);
+  const hasSnapshotItems = snapshotItems.length > 0;
+  const baseTurnOrder = thread.turns
+    ? turnOrderFromThread(thread, runtime.turnOrder)
+    : runtime.turnOrder;
+  const nextItems = hasSnapshotItems
+    ? hasLiveTurn
+      ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
+      : snapshotItems
+    : undefined;
+  const optimisticTurnState = hasSnapshotItems
+    ? pruneUnusedOptimisticTurnState(
+        baseTurnOrder ?? [],
+        runtime.pendingOptimisticTurns,
+        nextItems ?? [],
+      )
+    : {
+        turnOrder: baseTurnOrder ?? [],
+        pending: runtime.pendingOptimisticTurns,
+      };
+  return withActiveComposerMode({
     ...state,
     threads: upsertThread(state.threads, thread),
     activeThreadId: select ? thread.id : state.activeThreadId ?? thread.id,
-    activeTurnIdsByThread: {
-      ...state.activeTurnIdsByThread,
-      ...activeTurns,
+    threadsRuntime: {
+      ...state.threadsRuntime,
+      [thread.id]: normalizeThreadRuntime({
+        ...runtime,
+        activeTurnId: nextActiveTurnId ?? null,
+        turnOrder: baseTurnOrder ? optimisticTurnState.turnOrder : runtime.turnOrder,
+        pendingOptimisticTurns: hasSnapshotItems ? optimisticTurnState.pending : runtime.pendingOptimisticTurns,
+        items: hasSnapshotItems ? nextItems ?? [] : runtime.items,
+      }),
     },
-    turnOrderByThread: nextTurnOrder
-      ? { ...state.turnOrderByThread, [thread.id]: nextTurnOrder }
-      : state.turnOrderByThread,
-    itemsByThread: thread.turns
-      ? {
-          ...state.itemsByThread,
-          [thread.id]: hasLiveTurn
-            ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
-            : snapshotItems,
-        }
-      : state.itemsByThread,
-  };
+  });
 }
 
 function shortThreadId(id: string): string {
@@ -785,7 +880,7 @@ function turnItemsWithWorkedFor(turn: TurnLike | undefined): AccumulatedThreadIt
   const items = turn.items ?? [];
   const workedFor = workedForItemFromTurn(turn, items);
   const normalized = normalizeWorkedForItems(items, workedFor);
-  return attachTurnIdToAll(normalized, turn.id);
+  return attachTurnMetadataToAll(normalized, turn.id, turnStatusText(turn.status));
 }
 
 function workedForItemFromTurn(
@@ -865,51 +960,242 @@ function mergeLiveThreadSnapshotItems(
   snapshot: Array<AccumulatedThreadItem | ThreadItem>,
 ): AccumulatedThreadItem[] {
   const swept = dropConfirmedOptimisticPlaceholders(current, snapshot);
-  return mergeItemsInIncomingOrder(swept, snapshot);
+  const aligned = realignSnapshotIdsToStreamedTwins(swept, snapshot);
+  return dedupeConfirmedUserMessagesByContent(mergeItemsInIncomingOrder(swept, aligned));
 }
 
 /**
- * Drop optimistic user placeholders whose content has already been confirmed by
- * the server-side snapshot. Without this, every thread re-read (for example
- * after switching threads and switching back) would leave the local
- * placeholder around alongside the server-confirmed userMessage and the
- * transcript would gain a duplicate bubble per round-trip.
+ * Drop snapshot items that are rollout-replay duplicates of items already
+ * present in the in-memory streamed state under their authoritative server
+ * ids. The host crate's rollout reader synthesizes new ids
+ * (`history-user:*`, `history-agent:*`, `history-reasoning:*`) for messages
+ * it reconstructs from the rollout JSONL file. When the user switches threads
+ * mid-stream and switches back, `thread/read` may not have materialized those
+ * messages in `turn.items` yet, so `mergeThreadToolHistory` injects the
+ * replay versions alongside whatever the server returned. Without this guard
+ * the id-keyed merge would produce two bubbles (replay + streamed) for the
+ * same user prompt, assistant commentary, or reasoning block — the streamed
+ * one with the real server id, the replay one with the synthetic history id.
+ *
+ * We always trust the in-memory streamed item over the rollout synthesized
+ * one because the streamed id is the authoritative server item id, while the
+ * replay id is local to the host crate's rollout reader.
+ */
+/**
+ * Rewrite snapshot rows so any duplicate of an already-streamed
+ * userMessage / agentMessage / reasoning / collabAgentToolCall is renamed to
+ * its streamed twin's server id. The id-keyed merge in
+ * `mergeItemsInIncomingOrder` then folds
+ * snapshot+streamed into a single ThreadItem at the snapshot row's position,
+ * so we keep the canonical ordering carried by `thread/read.turn.items`
+ * without leaving the streamed row stranded at the tail (which would render
+ * "working / Explored …" above the user prompt instead of below it).
+ *
+ * Two duplicate sources are handled here:
+ *   1. The host crate's rollout reader synthesizes `history-user:*` /
+ *      `history-agent:*` / `history-reasoning:*` ids when reconstructing
+ *      messages from the rollout JSONL. These rows carry `_historyReplay`.
+ *   2. The app-server's own `thread/read.turn.items` for an in-progress
+ *      turn may return message rows under provisional ids that don't match
+ *      the ids already received via `item/started` / `item/completed`. These
+ *      rows do NOT carry `_historyReplay` — content keying is required.
+ *   3. Collab agent started/completed lifecycle rows can disagree on ids
+ *      after rollout hydration; align by the tool call's stable semantic
+ *      inputs so completed snapshots replace the live started placeholder.
+ *
+ * If a snapshot row has the SAME id as an in-state row, no rewrite happens
+ * (id-merge already handles it). Items with no content-key match are passed
+ * through untouched so genuinely-new snapshot rows still appear.
+ */
+function realignSnapshotIdsToStreamedTwins(
+  current: AccumulatedThreadItem[],
+  snapshot: Array<AccumulatedThreadItem | ThreadItem>,
+): Array<AccumulatedThreadItem | ThreadItem> {
+  const userIdsByKey = new Map<string, string[]>();
+  const agentIdsByText = new Map<string, string[]>();
+  const reasoningIdsByKey = new Map<string, string[]>();
+  const collabIdsByKey = new Map<string, string[]>();
+  for (const item of current) {
+    if (isReplayItem(item)) continue;
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id : "";
+    if (!id) continue;
+    if (isConfirmedUserMessage(item)) {
+      const key = userInputContentKey(record.content);
+      if (key) pushToList(userIdsByKey, key, id);
+      continue;
+    }
+    const itemType = String(record.type ?? "");
+    if (itemType === "agentMessage") {
+      const text = stringField(item, "text").trim();
+      if (text) pushToList(agentIdsByText, text, id);
+      continue;
+    }
+    if (itemType === "reasoning") {
+      const key = reasoningContentKey(item);
+      if (key) pushToList(reasoningIdsByKey, key, id);
+      continue;
+    }
+    if (itemType === "collabAgentToolCall") {
+      const key = collabToolCallLifecycleKey(item);
+      if (key) pushToList(collabIdsByKey, key, id);
+    }
+  }
+  if (
+    userIdsByKey.size === 0
+    && agentIdsByText.size === 0
+    && reasoningIdsByKey.size === 0
+    && collabIdsByKey.size === 0
+  ) {
+    return snapshot;
+  }
+  return snapshot.map((item) => {
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id : "";
+    if (isConfirmedUserMessage(item)) {
+      const key = userInputContentKey(record.content);
+      const replacement = consumeMatchingStreamedId(userIdsByKey, key, id);
+      return rewriteIdIfNeeded(item, id, replacement);
+    }
+    const itemType = String(record.type ?? "");
+    if (itemType === "agentMessage") {
+      const text = stringField(item, "text").trim();
+      const replacement = consumeMatchingStreamedId(agentIdsByText, text, id);
+      return rewriteIdIfNeeded(item, id, replacement);
+    }
+    if (itemType === "reasoning") {
+      const key = reasoningContentKey(item);
+      const replacement = consumeMatchingStreamedId(reasoningIdsByKey, key, id);
+      return rewriteIdIfNeeded(item, id, replacement);
+    }
+    if (itemType === "collabAgentToolCall") {
+      const key = collabToolCallLifecycleKey(item);
+      const replacement = consumeMatchingStreamedId(collabIdsByKey, key, id);
+      return rewriteIdIfNeeded(item, id, replacement);
+    }
+    return item;
+  });
+}
+
+function pushToList(index: Map<string, string[]>, key: string, value: string): void {
+  let bucket = index.get(key);
+  if (!bucket) {
+    bucket = [];
+    index.set(key, bucket);
+  }
+  bucket.push(value);
+}
+
+function consumeMatchingStreamedId(
+  index: Map<string, string[]>,
+  key: string,
+  currentId: string,
+): string | null {
+  if (!key) return null;
+  const list = index.get(key);
+  if (!list || list.length === 0) return null;
+  // Prefer the same-id slot when the snapshot row already lines up with one
+  // of the streamed twins. This keeps regular id-merge fast and means we
+  // only rewrite when the ids genuinely diverge.
+  const sameIdSlot = list.indexOf(currentId);
+  if (sameIdSlot >= 0) {
+    list.splice(sameIdSlot, 1);
+    return currentId;
+  }
+  return list.shift() ?? null;
+}
+
+function rewriteIdIfNeeded(
+  item: AccumulatedThreadItem | ThreadItem,
+  currentId: string,
+  replacement: string | null,
+): AccumulatedThreadItem | ThreadItem {
+  if (!replacement || replacement === currentId) return item;
+  return { ...(item as object), id: replacement } as AccumulatedThreadItem | ThreadItem;
+}
+
+
+function isReplayItem(item: AccumulatedThreadItem | ThreadItem): boolean {
+  return (item as Record<string, unknown>)._historyReplay === true;
+}
+
+function reasoningContentKey(item: AccumulatedThreadItem | ThreadItem): string {
+  const record = item as Record<string, unknown>;
+  const summary = Array.isArray(record.summary) ? record.summary.join("\n") : "";
+  const content = Array.isArray(record.content) ? record.content.join("\n") : "";
+  const trimmed = `${summary.trim()}\u001f${content.trim()}`;
+  return trimmed === "\u001f" ? "" : trimmed;
+}
+
+function collabToolCallLifecycleKey(item: AccumulatedThreadItem | ThreadItem): string {
+  const record = item as Record<string, unknown>;
+  if (String(record.type ?? "") !== "collabAgentToolCall") return "";
+  const tool = stringField(record, "tool") || stringField(record, "action");
+  if (!tool || tool === "wait") return "";
+  return [
+    tool,
+    stringField(record, "senderThreadId"),
+    normalizeUserInputText(stringField(record, "prompt")),
+    stringField(record, "model"),
+    stringField(record, "reasoningEffort"),
+  ].join("\u001f");
+}
+
+/**
+ * Drop optimistic user placeholders that have already been confirmed by the
+ * server-side snapshot. Without this, every thread re-read (for example after
+ * switching threads and switching back) would leave the local placeholder
+ * around alongside the server-confirmed userMessage and the transcript would
+ * gain a duplicate bubble per round-trip.
  */
 function dropConfirmedOptimisticPlaceholders(
   current: AccumulatedThreadItem[],
   snapshot: Array<AccumulatedThreadItem | ThreadItem>,
 ): AccumulatedThreadItem[] {
-  const confirmedTexts = new Set<string>();
-  for (const item of snapshot) {
-    if ((item as Record<string, unknown>).type !== "userMessage") continue;
-    if (localIdOf(item)) continue;
-    const text = userInputContentText((item as Record<string, unknown>).content);
-    if (text) confirmedTexts.add(text);
-  }
-  if (confirmedTexts.size === 0) return current;
+  const confirmedUserMessages = snapshot.filter(isConfirmedUserMessage);
+  if (confirmedUserMessages.length === 0) return current;
   return current.filter((item) => {
-    if (item.type !== "userMessage") return true;
-    if (!localIdOf(item)) return true;
-    const text = userInputContentText((item as Record<string, unknown>).content);
-    return !confirmedTexts.has(text);
+    if (!isLocalUserMessage(item)) return true;
+    return !confirmedUserMessages.some((confirmed) => optimisticUserMessageConfirmedBy(item, confirmed));
   });
+}
+
+function pruneUnusedOptimisticTurnState(
+  turnOrder: string[],
+  pending: string[] | undefined,
+  items: AccumulatedThreadItem[],
+): { turnOrder: string[]; pending: string[] } {
+  const usedTurnIds = new Set<string>();
+  for (const item of items) {
+    const turnId = turnIdOf(item);
+    if (turnId) usedTurnIds.add(turnId);
+  }
+  const unusedOptimisticTurnIds = new Set(
+    turnOrder.filter((turnId) => isOptimisticTurnPlaceholder(turnId) && !usedTurnIds.has(turnId)),
+  );
+  const currentPending = pending ?? [];
+  if (unusedOptimisticTurnIds.size === 0) {
+    return { turnOrder, pending: currentPending };
+  }
+  return {
+    turnOrder: turnOrder.filter((turnId) => !unusedOptimisticTurnIds.has(turnId)),
+    pending: currentPending.filter((turnId) => !unusedOptimisticTurnIds.has(turnId)),
+  };
 }
 
 function activeTurnsFromThread(thread: Thread): Record<string, string> {
   let activeTurn: { id?: string } | null = null;
   for (const turn of thread.turns ?? []) {
-    const status = turn.status;
-    if (typeof status === "string" && status === "inProgress") {
-      activeTurn = turn;
-      continue;
-    }
-    if (!status || typeof status !== "object") continue;
-    const record = status as Record<string, unknown>;
-    if (record.type === "inProgress" || record.status === "inProgress") {
+    if (isTurnStatusInProgress(turn.status)) {
       activeTurn = turn;
     }
   }
   return activeTurn?.id ? { [thread.id]: activeTurn.id } : {};
+}
+
+function isTurnStatusInProgress(status: unknown): boolean {
+  const value = turnStatusText(status);
+  return value === "inProgress" || value === "running" || value === "active";
 }
 
 function upsertItem(
@@ -918,19 +1204,17 @@ function upsertItem(
   item: ThreadItem,
   turnId?: string | null,
 ): CodexUiState {
-  const current = state.itemsByThread[threadId] ?? [];
+  const runtime = selectThreadRuntime(state, threadId);
+  const current = runtime.items;
   const order = turnId
-    ? ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], turnId)
-    : (state.turnOrderByThread[threadId] ?? []);
+    ? ensureTurnInOrder(runtime.turnOrder, turnId)
+    : runtime.turnOrder;
   const stamped = turnId ? attachTurnId(item, turnId) : item;
   const next = mergeItems(current, [stamped], order);
-  return {
-    ...state,
-    turnOrderByThread: turnId
-      ? { ...state.turnOrderByThread, [threadId]: order }
-      : state.turnOrderByThread,
-    itemsByThread: { ...state.itemsByThread, [threadId]: next },
-  };
+  return threadRuntimePatch(state, threadId, {
+    turnOrder: turnId ? order : runtime.turnOrder,
+    items: next,
+  });
 }
 
 /**
@@ -944,12 +1228,13 @@ function reconcileUserMessage(
   turnId: string | null,
   incoming: ThreadItem,
 ): CodexUiState {
-  const current = state.itemsByThread[threadId] ?? [];
+  const runtime = selectThreadRuntime(state, threadId);
+  const current = runtime.items;
   const optimistic = findOptimisticUserMessage(current, turnId, (incoming as Record<string, unknown>).content);
   if (!optimistic) return state;
   const order = turnId
-    ? ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], turnId)
-    : (state.turnOrderByThread[threadId] ?? []);
+    ? ensureTurnInOrder(runtime.turnOrder, turnId)
+    : runtime.turnOrder;
   const replacement: AccumulatedThreadItem = {
     ...optimistic,
     ...(incoming as AccumulatedThreadItem),
@@ -958,13 +1243,10 @@ function reconcileUserMessage(
   };
   delete (replacement as Record<string, unknown>)._localId;
   const next = current.map((item) => (item === optimistic ? replacement : item));
-  return {
-    ...state,
-    turnOrderByThread: turnId
-      ? { ...state.turnOrderByThread, [threadId]: order }
-      : state.turnOrderByThread,
-    itemsByThread: { ...state.itemsByThread, [threadId]: next },
-  };
+  return threadRuntimePatch(state, threadId, {
+    turnOrder: turnId ? order : runtime.turnOrder,
+    items: next,
+  });
 }
 
 function itemWithLifecycleTiming(item: ThreadItem, params: Record<string, unknown>): ThreadItem {
@@ -1101,6 +1383,20 @@ function attachTurnIdToAll(
   return items.map((item) => attachTurnId(item, turnId));
 }
 
+function attachTurnMetadataToAll(
+  items: Array<AccumulatedThreadItem | ThreadItem>,
+  turnId: string | undefined | null,
+  turnStatus: string,
+): AccumulatedThreadItem[] {
+  const withTurnId = attachTurnIdToAll(items, turnId);
+  if (!turnStatus) return withTurnId;
+  return withTurnId.map((item) =>
+    (item as Record<string, unknown>)._turnStatus === turnStatus
+      ? item
+      : { ...item, _turnStatus: turnStatus }
+  );
+}
+
 /**
  * Find an optimistic user message whose textual content matches the
  * server-confirmed user message. First tries a strict same-turn match (the
@@ -1114,30 +1410,105 @@ function findOptimisticUserMessage(
   turnId: string | null,
   content: unknown,
 ): AccumulatedThreadItem | null {
-  const incomingText = userInputContentText(content);
-  if (!incomingText) return null;
+  const incomingContentKey = userInputContentKey(content);
+  if (!incomingContentKey) return null;
   if (turnId) {
     for (const item of items) {
       if (item.type !== "userMessage") continue;
       if (!localIdOf(item)) continue;
       if (turnIdOf(item) !== turnId) continue;
-      const existingText = userInputContentText((item as Record<string, unknown>).content);
-      if (existingText === incomingText) return item;
+      const existingContentKey = userInputContentKey((item as Record<string, unknown>).content);
+      if (existingContentKey === incomingContentKey) return item;
     }
   }
   for (const item of items) {
     if (item.type !== "userMessage") continue;
     if (!localIdOf(item)) continue;
-    const existingText = userInputContentText((item as Record<string, unknown>).content);
-    if (existingText === incomingText) return item;
+    const existingContentKey = userInputContentKey((item as Record<string, unknown>).content);
+    if (existingContentKey === incomingContentKey) return item;
+  }
+  if (turnId) {
+    const sameTurnOptimistic = items.filter((item) =>
+      isLocalUserMessage(item) && turnIdOf(item) === turnId
+    );
+    if (sameTurnOptimistic.length === 1) return sameTurnOptimistic[0] ?? null;
   }
   return null;
 }
 
+function isLocalUserMessage(item: AccumulatedThreadItem | ThreadItem): item is AccumulatedThreadItem {
+  return String((item as Record<string, unknown>).type ?? "") === "userMessage" && Boolean(localIdOf(item));
+}
+
+function isConfirmedUserMessage(item: AccumulatedThreadItem | ThreadItem): item is AccumulatedThreadItem {
+  return String((item as Record<string, unknown>).type ?? "") === "userMessage" && !localIdOf(item);
+}
+
+function optimisticUserMessageConfirmedBy(
+  optimistic: AccumulatedThreadItem | ThreadItem,
+  confirmed: AccumulatedThreadItem | ThreadItem,
+): boolean {
+  if (userMessagesHaveSameContent(optimistic, confirmed)) return true;
+  const optimisticTurnId = turnIdOf(optimistic);
+  const confirmedTurnId = turnIdOf(confirmed);
+  return Boolean(
+    optimisticTurnId
+      && confirmedTurnId
+      && optimisticTurnId === confirmedTurnId
+      && !isOptimisticTurnPlaceholder(optimisticTurnId),
+  );
+}
+
+function userMessagesHaveSameContent(
+  left: AccumulatedThreadItem | ThreadItem,
+  right: AccumulatedThreadItem | ThreadItem,
+): boolean {
+  const leftKey = userInputContentKey((left as Record<string, unknown>).content);
+  const rightKey = userInputContentKey((right as Record<string, unknown>).content);
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
+}
+
+function userInputContentKey(value: unknown): string {
+  if (typeof value === "string") return userInputPartKey({ type: "text", text: value });
+  if (!Array.isArray(value)) return "";
+  return value.map(userInputPartKey).filter(Boolean).join("\u001f");
+}
+
+function userInputPartKey(value: unknown): string {
+  if (typeof value === "string") return `text:${normalizeUserInputText(value)}`;
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : "";
+  if (type === "text" || typeof record.text === "string") {
+    const text = typeof record.text === "string" ? record.text : "";
+    return text ? `text:${normalizeUserInputText(text)}` : "";
+  }
+  if (type === "image") {
+    const url = typeof record.url === "string" ? record.url.trim() : "";
+    return url ? `image:${url}` : "";
+  }
+  if (type === "localImage") {
+    const path = typeof record.path === "string" ? record.path.trim() : "";
+    return path ? `localImage:${path}` : "";
+  }
+  if (type === "skill" || type === "mention") {
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const path = typeof record.path === "string" ? record.path.trim() : "";
+    return name || path ? `${type}:${name}\u001e${path}` : "";
+  }
+  return "";
+}
+
+function normalizeUserInputText(value: string): string {
+  return value.replace(/\r\n?/g, "\n").trim();
+}
+
 function userInputContentText(value: unknown): string {
+  if (typeof value === "string") return normalizeUserInputText(value);
   if (!Array.isArray(value)) return "";
   return value
     .map((part) => {
+      if (typeof part === "string") return part;
       if (!part || typeof part !== "object") return "";
       const record = part as Record<string, unknown>;
       if (record.type === "text" && typeof record.text === "string") return record.text;
@@ -1188,7 +1559,7 @@ function appendItemText(
   const itemId = String(params.itemId ?? "");
   const delta = String(params[deltaField] ?? "");
   if (!threadId || !itemId || !delta) return state;
-  const items = state.itemsByThread[threadId] ?? [];
+  const items = selectThreadRuntime(state, threadId).items;
   let found = false;
   const next = items.map((item) => {
     if (item.id !== itemId) return item;
@@ -1209,7 +1580,7 @@ function appendItemText(
       [field]: delta,
     });
   }
-  return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
+  return threadRuntimePatch(state, threadId, { items: next });
 }
 
 function mergeItemFields(
@@ -1221,7 +1592,7 @@ function mergeItemFields(
   const threadId = String(params.threadId ?? "");
   const itemId = String(params.itemId ?? "");
   if (!threadId || !itemId) return state;
-  const items = state.itemsByThread[threadId] ?? [];
+  const items = selectThreadRuntime(state, threadId).items;
   let found = false;
   const next = items.map((item) => {
     if (item.id !== itemId) return item;
@@ -1231,7 +1602,7 @@ function mergeItemFields(
   if (!found) {
     next.push({ id: itemId, type: expectedType, ...fields });
   }
-  return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
+  return threadRuntimePatch(state, threadId, { items: next });
 }
 
 function appendCommandTerminalInteraction(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
@@ -1239,7 +1610,7 @@ function appendCommandTerminalInteraction(state: CodexUiState, params: Record<st
   const itemId = String(params.itemId ?? "");
   const stdin = String(params.stdin ?? "");
   if (!threadId || !itemId || !stdin) return state;
-  const items = state.itemsByThread[threadId] ?? [];
+  const items = selectThreadRuntime(state, threadId).items;
   let found = false;
   const next = items.map((item) => {
     if (item.id !== itemId) return item;
@@ -1268,7 +1639,7 @@ function appendCommandTerminalInteraction(state: CodexUiState, params: Record<st
       terminalInteractions: [{ processId: String(params.processId ?? ""), stdin }],
     });
   }
-  return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
+  return threadRuntimePatch(state, threadId, { items: next });
 }
 
 function appendReasoningText(
@@ -1304,7 +1675,7 @@ function updateReasoningParts(
   index: number,
   delta: string,
 ): CodexUiState {
-  const items = state.itemsByThread[threadId] ?? [];
+  const items = selectThreadRuntime(state, threadId).items;
   let found = false;
   const next = items.map((item) => {
     if (item.id !== itemId) return item;
@@ -1320,7 +1691,7 @@ function updateReasoningParts(
     parts[index] = delta;
     next.push({ id: itemId, type: "reasoning", [field]: parts });
   }
-  return { ...state, itemsByThread: { ...state.itemsByThread, [threadId]: next } };
+  return threadRuntimePatch(state, threadId, { items: next });
 }
 
 function reasoningParts(item: AccumulatedThreadItem, field: "content" | "summary"): string[] {
@@ -1340,19 +1711,15 @@ function upsertTurnPlan(state: CodexUiState, params: Record<string, unknown>): C
   const turnId = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
   const plan = Array.isArray(params.plan) ? params.plan : [];
   if (!threadId) return state;
-  return {
-    ...state,
-    turnPlansByThread: {
-      ...state.turnPlansByThread,
-      [threadId]: {
-        threadId,
-        turnId,
-        explanation: typeof params.explanation === "string" ? params.explanation : null,
-        plan,
-        updatedAt: Date.now(),
-      },
+  return threadRuntimePatch(state, threadId, {
+    turnPlan: {
+      threadId,
+      turnId,
+      explanation: typeof params.explanation === "string" ? params.explanation : null,
+      plan,
+      updatedAt: Date.now(),
     },
-  };
+  });
 }
 
 function finishTurn(
@@ -1365,32 +1732,33 @@ function finishTurn(
   const turnId = String(params.turnId ?? turn?.id ?? "");
   if (!threadId) return state;
 
-  const nextActiveTurns = { ...state.activeTurnIdsByThread };
-  if (!turnId || nextActiveTurns[threadId] === turnId) {
-    delete nextActiveTurns[threadId];
-  }
+  const runtime = selectThreadRuntime(state, threadId);
+  const nextActiveTurnId = !turnId || runtime.activeTurnId === turnId ? null : runtime.activeTurnId;
 
   const turnStatus = turnStatusText(turn?.status) || fallbackStatus;
   const turnError = recordParam(turn?.error);
   const errorText = turnErrorMessage(turnError);
-  const order = ensureTurnInOrder(state.turnOrderByThread[threadId] ?? [], turnId || null);
+  const order = ensureTurnInOrder(runtime.turnOrder, turnId || null);
   const terminalSegment = errorText
     ? mergeItems(turnItemsWithWorkedFor(turn), [streamErrorItem(turnId, turnError, errorText)], order)
     : turnItemsWithWorkedFor(turn);
-  const currentItems = state.itemsByThread[threadId] ?? [];
+  const currentItems = runtime.items;
   const nextItems = turnId
     ? replaceTurnSegment(currentItems, turnId, terminalSegment, order)
     : mergeItemsInIncomingOrder(currentItems, terminalSegment);
   return {
     ...state,
-    activeTurnIdsByThread: nextActiveTurns,
-    turnOrderByThread: { ...state.turnOrderByThread, [threadId]: order },
     threads: state.threads.map((thread) =>
       thread.id === threadId ? { ...thread, status: terminalThreadStatusFromTurn(turnStatus, Boolean(errorText)) } : thread,
     ),
-    itemsByThread: {
-      ...state.itemsByThread,
-      [threadId]: nextItems,
+    threadsRuntime: {
+      ...state.threadsRuntime,
+      [threadId]: normalizeThreadRuntime({
+        ...runtime,
+        activeTurnId: nextActiveTurnId,
+        turnOrder: order,
+        items: nextItems,
+      }),
     },
   };
 }
@@ -1445,28 +1813,45 @@ function replaceTurnSegment(
     return incoming ? mergeAccumulatedItem(item, incoming) : item;
   });
 
-  // Drop optimistic user placeholders whose content was confirmed by the
-  // snapshot under a real id, otherwise both the placeholder and the real
-  // userMessage would coexist in the same turn segment.
-  const confirmedTexts = new Set<string>();
-  for (const item of stamped) {
-    if ((item as Record<string, unknown>).type !== "userMessage") continue;
-    if (localIdOf(item)) continue;
-    const text = userInputContentText((item as Record<string, unknown>).content);
-    if (text) confirmedTexts.add(text);
-  }
-  if (confirmedTexts.size > 0) {
+  // Drop optimistic user placeholders confirmed by the terminal snapshot under
+  // real ids. Content can differ after protocol normalization, so fall back to
+  // same-turn user-message order when exact content matching is unavailable.
+  const confirmedUserMessages = stamped.filter(isConfirmedUserMessage);
+  if (confirmedUserMessages.length > 0) {
+    const unmatchedConfirmed = [...confirmedUserMessages];
     inSegment = inSegment.filter((item) => {
-      if (item.type !== "userMessage") return true;
-      if (!localIdOf(item)) return true;
-      const text = userInputContentText((item as Record<string, unknown>).content);
-      return !confirmedTexts.has(text);
+      if (!isLocalUserMessage(item)) return true;
+      const contentMatchIndex = unmatchedConfirmed.findIndex((confirmed) => userMessagesHaveSameContent(item, confirmed));
+      if (contentMatchIndex >= 0) {
+        unmatchedConfirmed.splice(contentMatchIndex, 1);
+        return false;
+      }
+      if (unmatchedConfirmed.length === 0) return true;
+      unmatchedConfirmed.shift();
+      return false;
     });
   }
 
   const inSegmentIds = new Set(inSegment.map((item) => item.id));
   for (const item of stamped) {
     if (inSegmentIds.has(item.id)) continue;
+    // Skip snapshot userMessages whose content is already confirmed in this
+    // segment under a different id. Mirrors the rollout-replay protection
+    // applied during live snapshot merging — without it, a `history-user:*`
+    // synthesized from the rollout file would coexist with the streamed
+    // server-id userMessage after `turn/completed`.
+    if (isConfirmedUserMessage(item)) {
+      const incomingKey = userInputContentKey((item as Record<string, unknown>).content);
+      if (
+        incomingKey
+        && inSegment.some((existing) =>
+          isConfirmedUserMessage(existing)
+          && userInputContentKey((existing as Record<string, unknown>).content) === incomingKey,
+        )
+      ) {
+        continue;
+      }
+    }
     if (isWorkedForThreadItem(item)) {
       const lastUserIndex = findLastIndex(inSegment, isUserMessageItem);
       const insertAt = lastUserIndex + 1;
@@ -1482,7 +1867,36 @@ function replaceTurnSegment(
     inSegmentIds.add(item.id);
   }
 
+  // Final guard: collapse duplicate confirmed userMessages by content key.
+  // Keeps the first occurrence (closest to streaming order) so the in-memory
+  // streamed item with the authoritative server id wins over any
+  // rollout-replay synthesized duplicate that might have leaked into the
+  // segment via earlier merges.
+  inSegment = dedupeConfirmedUserMessagesByContent(inSegment);
+
   return [...before, ...inSegment, ...after];
+}
+
+function dedupeConfirmedUserMessagesByContent(
+  items: AccumulatedThreadItem[],
+): AccumulatedThreadItem[] {
+  const seenKeys = new Set<string>();
+  const next: AccumulatedThreadItem[] = [];
+  for (const item of items) {
+    if (!isConfirmedUserMessage(item)) {
+      next.push(item);
+      continue;
+    }
+    const key = userInputContentKey((item as Record<string, unknown>).content);
+    if (!key) {
+      next.push(item);
+      continue;
+    }
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    next.push(item);
+  }
+  return next;
 }
 
 function isUserMessageItem(item: AccumulatedThreadItem | ThreadItem): boolean {
