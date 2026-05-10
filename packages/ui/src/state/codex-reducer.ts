@@ -584,6 +584,8 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     }
     case "thread/tokenUsage/updated":
       return state;
+    case "thread/compacted":
+      return applyThreadCompactedNotification(state, params);
     case "thread/goal/updated":
     case "thread/goal/cleared":
       return state;
@@ -708,6 +710,23 @@ function applyErrorNotification(state: CodexUiState, params: Record<string, unkn
       }),
     },
   };
+}
+
+function applyThreadCompactedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = stringParam(params, "threadId");
+  const turnId = stringParam(params, "turnId");
+  if (!threadId) return state;
+
+  const id = stringParam(params, "itemId")
+    || stringParam(params, "id")
+    || `context-compaction:${turnId || threadId}`;
+  const item = {
+    type: "contextCompaction",
+    id,
+    completed: true,
+    source: "automatic",
+  } as unknown as ThreadItem;
+  return upsertItem(state, threadId, item, turnId || null);
 }
 
 function nextActiveThreadId(activeThreadId: string | null, threads: Thread[]): string | null {

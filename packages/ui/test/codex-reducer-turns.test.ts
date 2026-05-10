@@ -29,6 +29,7 @@ export default function runCodexReducerTurnsTests(): void {
   completingTurnProjectsTurnTimingAsWorkedForItem();
   completingTurnPreservesLongerAccumulatedAgentText();
   normalizesThreadStatusChangedNotifications();
+  threadCompactedNotificationAddsCompletedContextCompactionEvent();
   surfacesTerminalErrorNotificationsInTheTranscript();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
@@ -783,6 +784,43 @@ function surfacesTerminalErrorNotificationsInTheTranscript(): void {
     eventAdditionalDetails(next, "thread-1", "stream-error:turn-1"),
     "Start a shorter thread.",
     "stream-error items should preserve additional details",
+  );
+}
+
+function threadCompactedNotificationAddsCompletedContextCompactionEvent(): void {
+  const state = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ activeTurnId: "turn-1", turnOrder: ["turn-1"] }),
+    },
+  };
+
+  const next = reduceNotification(state, {
+    method: "thread/compacted",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+    },
+  });
+  const replayed = itemById(next, "thread-1", "context-compaction:turn-1") as Record<string, unknown>;
+
+  assertEqual(replayed.type, "contextCompaction", "thread/compacted should create a contextCompaction transcript item");
+  assertEqual(replayed.completed, true, "thread/compacted fallback should mark the context compaction completed");
+  assertEqual(replayed._turnId, "turn-1", "thread/compacted fallback should stay inside the compact turn");
+
+  const repeated = reduceNotification(next, {
+    method: "thread/compacted",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+    },
+  });
+  assertEqual(
+    items(repeated, "thread-1").filter((item) => item.id === "context-compaction:turn-1").length,
+    1,
+    "repeated thread/compacted notifications should replace the same fallback item",
   );
 }
 
