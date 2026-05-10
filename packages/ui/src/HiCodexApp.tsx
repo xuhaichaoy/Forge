@@ -7,6 +7,7 @@ import { ComposerExternalFooter } from "./components/composer-external-footer";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
+import { McpToolCallForm } from "./components/mcp-tool-call-form";
 import { ModelSettingsPanel } from "./components/model-settings-panel";
 import type { OpenThreadOptions } from "./components/open-thread";
 import { PendingRequestStack } from "./components/pending-request-stack";
@@ -66,13 +67,23 @@ import {
 } from "./state/collaboration-modes";
 import {
   createCommandPanelState,
+  projectCommandPanelEntries,
   projectMcpToolCallResultEntries,
   type CommandPanelOptions,
   type CommandPanelEntry,
+  type CommandPanelEntryAction,
   type CommandPanelKind,
   type CommandPanelState,
 } from "./state/command-panel";
 import { buildConversationMarkdown } from "./state/conversation-markdown";
+import {
+  dedupeComposerMentionOptions,
+  mentionOptionsFromAppsResponse,
+  mentionOptionsFromFuzzyFiles,
+  mentionOptionsFromPluginsResponse,
+  mentionOptionsFromSkillsResponse,
+} from "./state/mention-options";
+import { projectPermissionModeCommandEntries } from "./state/permissions-mode";
 import {
   isThreadStatusInProgress,
   projectConversation,
@@ -104,6 +115,7 @@ import {
   refreshThreadContextDefaults,
   renameThread as renameThreadWorkflow,
   resumeThreadWithMetadataRead,
+  startSideConversation as startSideConversationWorkflow,
   threadTitle,
   threadStatusLabel,
   type TurnStartOptions,
@@ -114,6 +126,7 @@ const EMPTY_THREAD_ITEMS: ThreadItem[] = [];
 interface BackgroundAgentPanelState {
   threadId: string;
   displayName: string | null;
+  kind: "backgroundAgent" | "sideChat";
   model: string | null;
   role: string | null;
   loading: boolean;
@@ -129,15 +142,20 @@ export function HiCodexApp() {
   const [workspace, setWorkspace] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
+  const [mcpToolForm, setMcpToolForm] = useState<
+    Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpToolForm" }> | null
+  >(null);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
   const [artifactPreview, setArtifactPreview] = useState<RailEntry | null>(null);
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
   const [backgroundAgentPanel, setBackgroundAgentPanel] = useState<BackgroundAgentPanelState | null>(null);
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
+  const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
   const threadSelectionRequestId = useRef(0);
   const backgroundAgentRequestId = useRef(0);
+  const skillsChangedHandledRef = useRef(0);
   const workspaceInitialized = useRef(false);
   const threadScrollOffsetsRef = useRef(new Map<string, number>());
   const mainRef = useRef<HTMLElement | null>(null);
@@ -146,7 +164,12 @@ export function HiCodexApp() {
   const client = useMemo(() => {
     const rpc = new CodexJsonRpcClient({
       onHostStatus: (status) => dispatch({ type: "hostStatus", status }),
-      onNotification: (message) => dispatch({ type: "notification", message }),
+      onNotification: (message) => {
+        dispatch({ type: "notification", message });
+        if (message.method === "skills/changed") {
+          setSkillsChangedNonce((current) => current + 1);
+        }
+      },
       onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
       onLog: (text, level) => dispatch({ type: "log", text, level }),
     });
@@ -212,7 +235,7 @@ export function HiCodexApp() {
   const backgroundAgentTitle = backgroundAgentThread
     ? backgroundAgentPanel?.displayName
       || threadTitle(backgroundAgentThread, backgroundAgentItems)
-    : backgroundAgentPanel?.displayName || "Background agent";
+    : backgroundAgentPanel?.displayName || (backgroundAgentPanel?.kind === "sideChat" ? "Side chat" : "Background agent");
   const backgroundAgentStatus = backgroundAgentPanel?.loading
     ? "loading"
     : backgroundAgentPanel?.error
@@ -366,6 +389,65 @@ export function HiCodexApp() {
     setCommandPanel(createCommandPanelState(panel, options));
   }, []);
 
+  useEffect(() => {
+    if (skillsChangedNonce === 0 || commandPanel?.panel !== "skills") return;
+    if (skillsChangedHandledRef.current === skillsChangedNonce) return;
+    skillsChangedHandledRef.current = skillsChangedNonce;
+    let disposed = false;
+    setCommandPanel((current) => current?.panel === "skills"
+      ? {
+          ...current,
+          status: "loading",
+          message: "Skills changed on disk. Refreshing...",
+        }
+      : current);
+
+    async function refreshSkillsPanel() {
+      if (!(await ensureConnected())) {
+        if (disposed) return;
+        setCommandPanel((current) => current?.panel === "skills"
+          ? createCommandPanelState("skills", {
+              status: "error",
+              title: current.title,
+              error: "Runtime is offline.",
+              entries: current.entries,
+            })
+          : current);
+        return;
+      }
+      try {
+        const skills = await client.request<unknown>("skills/list", {
+          cwds: workspace.trim() ? [workspace.trim()] : [],
+          forceReload: true,
+        }, 120_000);
+        if (disposed) return;
+        setCommandPanel((current) => current?.panel === "skills"
+          ? createCommandPanelState("skills", {
+              status: "ready",
+              title: current.title,
+              message: "Skills changed on disk. Refreshed skills from app-server.",
+              entries: projectCommandPanelEntries({ skills }),
+            })
+          : current);
+      } catch (error) {
+        if (disposed) return;
+        setCommandPanel((current) => current?.panel === "skills"
+          ? createCommandPanelState("skills", {
+              status: "error",
+              title: current.title,
+              error: formatError(error),
+              entries: current.entries,
+            })
+          : current);
+      }
+    }
+
+    void refreshSkillsPanel();
+    return () => {
+      disposed = true;
+    };
+  }, [client, commandPanel?.panel, ensureConnected, skillsChangedNonce, workspace]);
+
   const setActiveComposerMode = useCallback((mode: ComposerMode) => {
     dispatch({ type: "setActiveComposerMode", mode });
   }, []);
@@ -373,8 +455,7 @@ export function HiCodexApp() {
   const openLocalSettingsPanel = useCallback((panel: "permissions" | "approvals") => {
     const entries = localSettingsEntries(panel, {
       pendingRequestCount: state.pendingRequests.length,
-      approvalPolicy: state.threadContextDefaults?.approvalPolicy,
-      sandbox: state.threadContextDefaults?.sandbox,
+      threadContextDefaults: state.threadContextDefaults,
       connected: state.connected,
     });
     openCommandPanel("generic", {
@@ -387,8 +468,7 @@ export function HiCodexApp() {
     openCommandPanel,
     state.connected,
     state.pendingRequests.length,
-    state.threadContextDefaults?.approvalPolicy,
-    state.threadContextDefaults?.sandbox,
+    state.threadContextDefaults,
   ]);
 
   const selectThread = useCallback(async (thread: Thread) => {
@@ -422,11 +502,13 @@ export function HiCodexApp() {
     const requestId = backgroundAgentRequestId.current + 1;
     backgroundAgentRequestId.current = requestId;
     const displayName = normalizedOption(options.displayName);
+    const kind = options.panelKind ?? "backgroundAgent";
     const model = normalizedOption(options.model);
     const role = normalizedAgentRole(options.role);
     const nextPanel = {
       threadId: id,
       displayName,
+      kind,
       model,
       role,
       loading: true,
@@ -471,6 +553,39 @@ export function HiCodexApp() {
       dispatch({ type: "log", text: message, level: isThreadNotFound(error) ? "warn" : "error" });
     }
   }, [client, ensureConnected]);
+
+  const openSideConversationPanel = useCallback((thread: Thread) => {
+    dispatch({ type: "upsertThread", thread, select: false });
+    void openBackgroundAgentThread(thread.id, {
+      displayName: "Side chat",
+      panelKind: "sideChat",
+      model: state.threadContextDefaults?.model ?? null,
+    });
+  }, [openBackgroundAgentThread, state.threadContextDefaults?.model]);
+
+  const openSideChatFromThread = useCallback(async (thread: Thread) => {
+    try {
+      if (!(await ensureConnected())) return;
+      const cwd = thread.cwd || workspace.trim() || state.hostStatus?.defaultCwd || "";
+      const result = await startSideConversationWorkflow(
+        client,
+        thread.id,
+        cwd,
+        state.threadContextDefaults,
+      );
+      dispatch({ type: "upsertThread", thread: result.thread, select: false });
+      openSideConversationPanel(result.thread);
+    } catch (error) {
+      dispatch({ type: "log", text: `Failed to open side chat: ${formatError(error)}`, level: "error" });
+    }
+  }, [
+    client,
+    ensureConnected,
+    openSideConversationPanel,
+    state.hostStatus?.defaultCwd,
+    state.threadContextDefaults,
+    workspace,
+  ]);
 
   const resumeSelectedThread = useCallback(async (thread: Thread) => {
     try {
@@ -767,6 +882,8 @@ export function HiCodexApp() {
       modelCount: state.models.length,
       pendingRequestCount: state.pendingRequests.length,
       threads: state.threads,
+      threadContextDefaults: state.threadContextDefaults,
+      openSideConversationPanel,
     })
   ), [
     activeThread,
@@ -775,12 +892,14 @@ export function HiCodexApp() {
     ensureConnected,
     openCommandPanel,
     openRenameThreadDialog,
+    openSideConversationPanel,
     state.activeThreadId,
     state.connected,
     state.hostStatus?.defaultCwd,
     state.hostStatus?.pid,
     state.models.length,
     state.pendingRequests.length,
+    state.threadContextDefaults,
     state.threads,
     workspace,
   ]);
@@ -897,15 +1016,41 @@ export function HiCodexApp() {
 
   const searchComposerMentions = useCallback(async (query: string): Promise<ComposerMentionOption[]> => {
     const cwd = workspace.trim();
-    if (!cwd || !query.trim()) return [];
+    if (!query.trim()) return [];
     if (!(await ensureConnected())) return [];
-    const result = await client.request<{ files?: Array<Record<string, unknown>> }>(
-      "fuzzyFileSearch",
-      { query, roots: [cwd], cancellationToken: null },
-      120_000,
-    );
-    return mentionOptionsFromFuzzyFiles(result.files ?? []);
-  }, [client, ensureConnected, workspace]);
+    const [fileResult, skillResult, appResult, pluginResult] = await Promise.allSettled([
+      cwd
+        ? client.request<{ files?: Array<Record<string, unknown>> }>(
+            "fuzzyFileSearch",
+            { query, roots: [cwd], cancellationToken: null },
+            120_000,
+          )
+        : Promise.resolve({ files: [] }),
+      client.request<unknown>("skills/list", {
+        cwds: cwd ? [cwd] : [],
+        forceReload: false,
+      }),
+      client.request<unknown>("app/list", {
+        limit: 50,
+        threadId: state.activeThreadId,
+      }),
+      client.request<unknown>("plugin/list", {
+        cwds: cwd ? [cwd] : null,
+      }),
+    ]);
+    if (
+      fileResult.status === "rejected"
+      && skillResult.status === "rejected"
+      && appResult.status === "rejected"
+      && pluginResult.status === "rejected"
+    ) throw fileResult.reason;
+    return dedupeComposerMentionOptions([
+      ...(skillResult.status === "fulfilled" ? mentionOptionsFromSkillsResponse(skillResult.value, query) : []),
+      ...(appResult.status === "fulfilled" ? mentionOptionsFromAppsResponse(appResult.value, query) : []),
+      ...(pluginResult.status === "fulfilled" ? mentionOptionsFromPluginsResponse(pluginResult.value, query) : []),
+      ...(fileResult.status === "fulfilled" ? mentionOptionsFromFuzzyFiles(fileResult.value.files ?? []) : []),
+    ]).slice(0, 25);
+  }, [client, ensureConnected, state.activeThreadId, workspace]);
 
   const selectComposerPlan = useCallback(() => {
     if (composerMode === "plan") {
@@ -951,9 +1096,125 @@ export function HiCodexApp() {
     }
   }, [client, ensureConnected, openCommandPanel, state.activeThreadId]);
 
-  const selectCommandPanelEntry = useCallback((entry: CommandPanelEntry) => {
-    const action = entry.action;
-    if (!action) return;
+  const writeConfigFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeConfig" }>,
+  ) => {
+    openCommandPanel("generic", {
+      status: "loading",
+      title: action.title,
+      message: "Saving configuration...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      openCommandPanel("generic", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      await client.request("config/batchWrite", {
+        edits: action.edits,
+        reloadUserConfig: action.reloadUserConfig ?? true,
+      }, 120_000);
+      await refreshThreadContextDefaults(client, dispatch, workspace);
+      if (action.afterWrite?.type === "addPersonalityChangeSyntheticItem" && state.activeThreadId) {
+        dispatch({
+          type: "notification",
+          message: {
+            method: "item/completed",
+            params: {
+              threadId: state.activeThreadId,
+              turnId: activeTurnId,
+              item: {
+                id: `personality-changed:${Date.now()}`,
+                type: "personality-changed",
+                personality: action.afterWrite.personality,
+                completed: true,
+              },
+            },
+          },
+        });
+      }
+      openCommandPanel("generic", {
+        status: "ready",
+        title: action.title,
+        message: action.message,
+        entries: [{
+          id: "config:write:success",
+          title: "Config updated",
+          kind: "status",
+          status: "saved",
+          meta: action.message,
+          details: action.edits.map((edit) => edit.keyPath),
+        }],
+      });
+    } catch (error) {
+      openCommandPanel("generic", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [activeTurnId, client, ensureConnected, openCommandPanel, state.activeThreadId, workspace]);
+
+  const writeSkillConfigFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeSkillConfig" }>,
+  ) => {
+    const path = action.path?.trim();
+    const name = action.name.trim();
+    if (!path && !name) {
+      const message = "Skill config write requires a skill path or name.";
+      dispatch({ type: "log", text: message, level: "warn" });
+      openCommandPanel("skills", { status: "error", title: action.title, error: message, entries: [] });
+      return;
+    }
+    openCommandPanel("skills", {
+      status: "loading",
+      title: action.title,
+      message: action.enabled ? "Enabling skill..." : "Disabling skill...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      openCommandPanel("skills", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      const result = await client.request<{ effectiveEnabled?: boolean }>("skills/config/write", {
+        path: path || null,
+        name: path ? null : name,
+        enabled: action.enabled,
+      }, 120_000);
+      const skills = await client.request<unknown>("skills/list", {
+        cwds: workspace.trim() ? [workspace.trim()] : [],
+        forceReload: true,
+      }, 120_000);
+      const effectiveEnabled = result.effectiveEnabled ?? action.enabled;
+      openCommandPanel("skills", {
+        status: "ready",
+        title: "Skills",
+        message: `${action.name} ${effectiveEnabled ? "enabled" : "disabled"}.`,
+        entries: projectCommandPanelEntries({ skills }),
+      });
+    } catch (error) {
+      openCommandPanel("skills", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, ensureConnected, openCommandPanel, workspace]);
+
+  const selectCommandPanelAction = useCallback((action: CommandPanelEntryAction) => {
     if (action.type === "attachMention") {
       setComposerAttachments((current) => mergeComposerAttachments(current, [{
         type: "mention",
@@ -969,13 +1230,45 @@ export function HiCodexApp() {
         name: action.name,
         path: action.path,
       }]));
+      const promptText = action.promptText;
+      if (promptText) {
+        setInput((current) => appendSkillPromptText(current, promptText));
+      }
       setCommandPanel(null);
+      return;
+    }
+    if (action.type === "attachApp") {
+      setInput((current) => appendSkillPromptText(current, action.promptText));
+      setCommandPanel(null);
+      return;
+    }
+    if (action.type === "attachPlugin") {
+      setInput((current) => appendSkillPromptText(current, action.promptText));
+      setCommandPanel(null);
+      return;
+    }
+    if (action.type === "writeConfig") {
+      void writeConfigFromPanel(action);
+      return;
+    }
+    if (action.type === "writeSkillConfig") {
+      void writeSkillConfigFromPanel(action);
       return;
     }
     if (action.type === "callMcpTool") {
       void callMcpToolFromPanel(action);
+      return;
     }
-  }, [callMcpToolFromPanel]);
+    if (action.type === "openMcpToolForm") {
+      setCommandPanel(null);
+      setMcpToolForm(action);
+    }
+  }, [callMcpToolFromPanel, writeConfigFromPanel, writeSkillConfigFromPanel]);
+
+  const selectCommandPanelEntry = useCallback((entry: CommandPanelEntry) => {
+    if (entry.disabled || !entry.action) return;
+    selectCommandPanelAction(entry.action);
+  }, [selectCommandPanelAction]);
 
   const interruptActiveTurn = useCallback(async () => {
     if (!state.activeThreadId || !activeTurnId) return;
@@ -1015,7 +1308,7 @@ export function HiCodexApp() {
           model: nextModel.model,
           modelProvider: nextModel.id,
           reasoningSummary: state.threadContextDefaults?.reasoningSummary ?? DEFAULT_MODEL_REASONING_SUMMARY,
-          personality: state.threadContextDefaults?.personality ?? "pragmatic",
+          personality: state.threadContextDefaults?.personality ?? "friendly",
         },
       });
     }
@@ -1076,6 +1369,7 @@ export function HiCodexApp() {
           onForkThread={forkSelectedThread}
           onRenameThread={openRenameThreadDialog}
           onArchiveThread={openArchiveThreadDialog}
+          onOpenSideChat={openSideChatFromThread}
           onCopyWorkingDirectory={copyWorkingDirectory}
           onCopySessionId={copySessionId}
           onCopyConversationMarkdown={copyConversationMarkdown}
@@ -1164,6 +1458,7 @@ export function HiCodexApp() {
         {backgroundAgentPanel && (
           <BackgroundAgentPanel
             error={backgroundAgentPanel.error}
+            kind={backgroundAgentPanel.kind}
             loading={backgroundAgentPanel.loading}
             status={backgroundAgentStatus}
             subtitle={backgroundAgentSubtitle}
@@ -1213,7 +1508,25 @@ export function HiCodexApp() {
         <CommandPanel
           panel={commandPanel}
           onClose={() => setCommandPanel(null)}
+          onSelectAction={selectCommandPanelAction}
           onSelectEntry={selectCommandPanelEntry}
+        />
+      )}
+
+      {mcpToolForm && (
+        <McpToolCallForm
+          action={mcpToolForm}
+          onClose={() => setMcpToolForm(null)}
+          onSubmit={(argumentsValue) => {
+            const action = mcpToolForm;
+            setMcpToolForm(null);
+            void callMcpToolFromPanel({
+              type: "callMcpTool",
+              server: action.server,
+              tool: action.tool,
+              arguments: argumentsValue,
+            });
+          }}
         />
       )}
 
@@ -1278,20 +1591,13 @@ function localSettingsEntries(
   panel: "permissions" | "approvals",
   context: {
     pendingRequestCount: number;
-    approvalPolicy?: unknown;
-    sandbox?: unknown;
+    threadContextDefaults: Parameters<typeof projectPermissionModeCommandEntries>[0];
     connected: boolean;
   },
 ): CommandPanelEntry[] {
   if (panel === "permissions") {
     return [
-      {
-        id: "permissions:sandbox",
-        title: "Sandbox",
-        kind: "status",
-        status: stringSetting(context.sandbox) || "default",
-        meta: "Current app-server workspace policy",
-      },
+      ...projectPermissionModeCommandEntries(context.threadContextDefaults),
       {
         id: "permissions:connection",
         title: "Runtime connection",
@@ -1307,7 +1613,7 @@ function localSettingsEntries(
       id: "approvals:policy",
       title: "Approval policy",
       kind: "status",
-      status: stringSetting(context.approvalPolicy) || "default",
+      status: approvalPolicySetting(context.threadContextDefaults?.approvalPolicy) || "default",
       meta: "Configured for new thread requests",
     },
     {
@@ -1320,44 +1626,16 @@ function localSettingsEntries(
   ];
 }
 
-function stringSetting(value: unknown): string {
-  return typeof value === "string" && value.trim() ? value.trim() : "";
+function approvalPolicySetting(value: unknown): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  return "custom";
 }
 
-function mentionOptionsFromFuzzyFiles(files: Array<Record<string, unknown>>): ComposerMentionOption[] {
-  const options: ComposerMentionOption[] = [];
-  const seen = new Set<string>();
-  for (const file of files) {
-    const path = stringRecordValue(file, "path")
-      || stringRecordValue(file, "fsPath")
-      || stringRecordValue(file, "file_path");
-    if (!path || seen.has(path)) continue;
-    seen.add(path);
-    const name = stringRecordValue(file, "file_name")
-      || stringRecordValue(file, "label")
-      || basename(path);
-    const detail = stringRecordValue(file, "relativePathWithoutFileName")
-      || stringRecordValue(file, "relative_path_without_file_name")
-      || path;
-    const scoreValue = file.score;
-    options.push({
-      name,
-      path,
-      detail,
-      ...(typeof scoreValue === "number" ? { score: scoreValue } : {}),
-    });
-  }
-  return options.slice(0, 25);
-}
-
-function stringRecordValue(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  return typeof value === "string" && value.trim() ? value.trim() : "";
-}
-
-function basename(path: string): string {
-  const normalized = path.replace(/\/+$/, "");
-  return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "file";
+function appendSkillPromptText(current: string, promptText: string): string {
+  if (!promptText.trim()) return current;
+  if (!current.trim()) return promptText;
+  return `${current.trimEnd()}\n${promptText}`;
 }
 
 function threadGitBranch(thread: Thread | null): string | null {

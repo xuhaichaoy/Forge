@@ -70,6 +70,11 @@ export default function runApprovalRequestTests(): void {
     "command session approval options",
   );
   assertIncludes(
+    sessionCommandDetail.body,
+    "Reason: example.com isn't on the current network allowlist",
+    "network command approval body should follow Desktop reason text",
+  );
+  assertIncludes(
     sessionCommandDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
     "Network host: https://example.com",
     "command network metadata",
@@ -84,15 +89,46 @@ export default function runApprovalRequestTests(): void {
     command: "npm test",
     availableDecisions: ["accept", "decline"],
   });
-  assertEqual(
-    pendingRequestDetail(oneShotCommandRequest).questions.length,
-    0,
-    "command approval should not show session option when server does not offer it",
+  assertDeepEqual(
+    pendingRequestDetail(oneShotCommandRequest).questions[0]?.options.map((option) => option.value),
+    ["accept", "acceptForSession"],
+    "command approval should follow Desktop's run once / session option shape",
   );
   assertDeepEqual(
     buildApprovalResult(oneShotCommandRequest, true, { approvalDecision: ["acceptForSession"] }),
-    { decision: "accept" },
-    "unsupported command session choice should fall back to one-shot accept",
+    { decision: "acceptForSession" },
+    "command session choice should map to app-server acceptForSession",
+  );
+
+  const execPolicyCommandRequest = request("item/commandExecution/requestApproval", {
+    command: "npm test",
+    proposedExecpolicyAmendment: ["npm", "test"],
+  });
+  assertDeepEqual(
+    pendingRequestDetail(execPolicyCommandRequest).questions[0]?.options.map((option) => option.value),
+    ["accept", "acceptWithExecpolicyAmendment"],
+    "command approval should expose Desktop's execpolicy amendment option when proposed",
+  );
+  assertDeepEqual(
+    buildApprovalResult(execPolicyCommandRequest, true, { approvalDecision: ["acceptWithExecpolicyAmendment"] }),
+    { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["npm", "test"] } } },
+    "command execpolicy choice should return the proposed app-server decision object",
+  );
+
+  const futureNetworkRequest = request("item/commandExecution/requestApproval", {
+    command: "curl https://example.com",
+    networkApprovalContext: { host: "example.com", protocol: "https" },
+    proposedNetworkPolicyAmendments: [{ host: "example.com", action: "allow" }],
+  });
+  assertDeepEqual(
+    pendingRequestDetail(futureNetworkRequest).questions[0]?.options.map((option) => option.value),
+    ["accept", "acceptForSession", "applyNetworkPolicyAmendment"],
+    "network approval should expose Desktop's one-time, conversation, and future allowlist options",
+  );
+  assertDeepEqual(
+    buildApprovalResult(futureNetworkRequest, true, { approvalDecision: ["applyNetworkPolicyAmendment"] }),
+    { decision: { applyNetworkPolicyAmendment: { network_policy_amendment: { host: "example.com", action: "allow" } } } },
+    "network allowlist choice should return the proposed app-server decision object",
   );
 
   const fileChangeRequest = request("item/fileChange/requestApproval", {
@@ -106,6 +142,11 @@ export default function runApprovalRequestTests(): void {
   const fileChangeDetail = pendingRequestDetail(fileChangeRequest);
   assertEqual(fileChangeDetail.title, "Do you want to make these changes?", "file change approval title");
   assertEqual(fileChangeDetail.reason, "Apply generated changes", "file change approval reason");
+  assertDeepEqual(
+    fileChangeDetail.questions[0]?.options.map((option) => option.value),
+    ["accept", "acceptForSession"],
+    "file change approval should expose Desktop's allow once / session option shape",
+  );
   assertIncludes(fileChangeDetail.body, "src/main.ts", "file change includes first path");
   assertIncludes(fileChangeDetail.body, "src/style.css", "file change includes second path");
   assertDeepEqual(

@@ -338,17 +338,30 @@ function RailEntryContent({
   const title = displayTitle ?? entry.title;
   const showSecondary = sectionId === "branchDetails";
   const tooltip = entry.meta ?? title;
+  const diffStats = sectionId === "backgroundAgents" ? entry.diffStats ?? null : null;
   return (
     <div className="hc-rail-card-main">
       <span className="hc-rail-card-icon" aria-hidden="true">
         {railEntryIcon(entry, sectionId)}
       </span>
       <div className="hc-rail-card-copy">
-        <div className="hc-rail-card-title" title={tooltip}>{title}</div>
+        <div className="hc-rail-card-title-row">
+          <div className="hc-rail-card-title" title={tooltip}>{title}</div>
+          {diffStats && <RailDiffStats stats={diffStats} />}
+        </div>
         {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
         {showSecondary && entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
       </div>
     </div>
+  );
+}
+
+function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }) {
+  return (
+    <span className="hc-rail-diff-stats" aria-label={`${stats.linesAdded} lines added, ${stats.linesRemoved} lines removed`}>
+      <span className="hc-rail-diff-added">+{stats.linesAdded}</span>
+      <span className="hc-rail-diff-removed">-{stats.linesRemoved}</span>
+    </span>
   );
 }
 

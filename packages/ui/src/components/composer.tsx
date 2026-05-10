@@ -405,15 +405,36 @@ export function Composer({
 
   function selectMention(option: ComposerMentionOption) {
     const trigger = mentionPicker.trigger ?? findActiveMentionTrigger(input);
-    const nextAttachment: ComposerAttachment = {
-      type: "mention",
-      name: option.name || mentionOptionName(option),
-      path: option.path,
-    };
+    const isSkill = option.kind === "skill";
+    const isApp = option.kind === "app";
+    const isPlugin = option.kind === "plugin";
+    if (isApp || isPlugin) {
+      if (trigger) {
+        const nextInput = removeMentionTriggerText(input, trigger);
+        onInputChange(appendMentionPromptText(nextInput, option.promptText ?? mentionPromptReference(option)));
+      }
+      closeComposerPopovers();
+      requestComposerFocus(promptEditorRef.current);
+      return;
+    }
+    const nextAttachment: ComposerAttachment = isSkill
+      ? {
+          type: "skill",
+          name: option.name || mentionOptionName(option),
+          path: option.path,
+        }
+      : {
+          type: "mention",
+          name: option.name || mentionOptionName(option),
+          path: option.path,
+        };
     const merged = mergeComposerAttachments(attachmentsRef.current, [nextAttachment]);
     attachmentsRef.current = merged;
     onAttachmentsChange(merged);
-    if (trigger) onInputChange(removeMentionTriggerText(input, trigger));
+    if (trigger) {
+      const nextInput = removeMentionTriggerText(input, trigger);
+      onInputChange(isSkill ? appendMentionPromptText(nextInput, option.promptText ?? "") : nextInput);
+    }
     closeComposerPopovers();
     requestComposerFocus(promptEditorRef.current);
   }
@@ -577,41 +598,41 @@ export function Composer({
             )}
 
             {mentionOpen && (
-              <div className="hc-composer-menu mention" role="listbox" aria-label="Mention files">
-                <div className="hc-composer-menu-section-label">Files</div>
+              <div className="hc-composer-menu mention" role="listbox" aria-label="Mentions">
+                <div className="hc-composer-menu-section-label">Mentions</div>
                 {mentionOptions.map((option) => (
                   <button
                     className="hc-composer-menu-row"
-                    data-active={option.path === selectedMention?.path}
-                    key={option.path}
+                    data-active={mentionOptionKey(option) === (selectedMention ? mentionOptionKey(selectedMention) : "")}
+                    key={mentionOptionKey(option)}
                     type="button"
                     role="option"
-                    aria-selected={option.path === selectedMention?.path}
+                    aria-selected={mentionOptionKey(option) === (selectedMention ? mentionOptionKey(selectedMention) : "")}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectMention(option)}
                   >
-                    <FileText size={15} />
+                    {mentionOptionIcon(option)}
                     <span>
                       <strong>{option.name || mentionOptionName(option)}</strong>
                       <small>{option.detail || option.path}</small>
                     </span>
-                    <em>@</em>
+                    <em>{mentionOptionPrefix(option)}</em>
                   </button>
                 ))}
                 {mentionPicker.status === "idle" && (
-                  <div className="hc-composer-menu-empty">Type to search for files</div>
+                  <div className="hc-composer-menu-empty">Type to search mentions</div>
                 )}
                 {mentionPicker.status === "loading" && mentionOptions.length === 0 && (
                   <div className="hc-composer-menu-empty">
                     <Loader2 className="hc-spin" size={13} />
-                    Searching files...
+                    Searching mentions...
                   </div>
                 )}
                 {mentionPicker.status === "ready" && mentionOptions.length === 0 && (
-                  <div className="hc-composer-menu-empty">No results</div>
+                  <div className="hc-composer-menu-empty">No files, skills, apps, or plugins found</div>
                 )}
                 {mentionPicker.status === "error" && (
-                  <div className="hc-composer-menu-empty">{mentionPicker.error || "Unable to search files"}</div>
+                  <div className="hc-composer-menu-empty">{mentionPicker.error || "Unable to search mentions"}</div>
                 )}
               </div>
             )}
@@ -1167,7 +1188,7 @@ function attachmentBrowseError(error: unknown): string {
 
 function mentionSearchError(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return typeof error === "string" ? error : "Unable to search files";
+  return typeof error === "string" ? error : "Unable to search mentions";
 }
 
 function mentionOptionName(option: ComposerMentionOption): string {
@@ -1175,6 +1196,37 @@ function mentionOptionName(option: ComposerMentionOption): string {
   if (name) return name;
   const normalized = option.path.replace(/\/+$/, "");
   return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "file";
+}
+
+function mentionOptionKey(option: ComposerMentionOption): string {
+  return `${option.kind ?? "file"}:${option.path}`;
+}
+
+function mentionOptionIcon(option: ComposerMentionOption) {
+  if (option.kind === "skill") return <Sparkles size={15} />;
+  if (option.kind === "app") return <PlugZap size={15} />;
+  if (option.kind === "plugin") return <PlugZap size={15} />;
+  return <FileText size={15} />;
+}
+
+function mentionOptionPrefix(option: ComposerMentionOption): string {
+  return option.kind === "skill" || option.kind === "app" ? "$" : "@";
+}
+
+function mentionPromptReference(option: ComposerMentionOption): string {
+  const name = option.name || mentionOptionName(option);
+  const prefix = option.kind === "plugin" ? "@" : "$";
+  return `[${prefix}${name}](${escapePromptPath(option.path)}) `;
+}
+
+function escapePromptPath(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function appendMentionPromptText(current: string, promptText: string): string {
+  if (!promptText.trim()) return current;
+  if (!current.trim()) return promptText;
+  return `${current.trimEnd()}\n${promptText}`;
 }
 
 function hasAttachmentTransfer(dataTransfer: DataTransfer | null): boolean {

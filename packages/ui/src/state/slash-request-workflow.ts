@@ -19,8 +19,10 @@ import {
   type CommandPanelKind,
   type CommandPanelOptions,
 } from "./command-panel";
+import type { ThreadContextDefaults } from "./codex-reducer";
+import { projectPersonalityCommandEntries } from "./personality";
 import type { AccumulatedThreadItem } from "./render-groups";
-import type { ThreadWorkflowDispatch } from "./thread-workflow";
+import { startSideConversation, type ThreadWorkflowDispatch } from "./thread-workflow";
 
 export interface SlashRequestWorkflowContext {
   client: CodexJsonRpcClient;
@@ -39,6 +41,8 @@ export interface SlashRequestWorkflowContext {
   modelCount: number;
   pendingRequestCount: number;
   threads: Thread[];
+  threadContextDefaults?: ThreadContextDefaults | null;
+  openSideConversationPanel?: (thread: Thread) => void;
 }
 
 export async function runSlashRequestWorkflow(
@@ -63,6 +67,8 @@ export async function runSlashRequestWorkflow(
     modelCount,
     pendingRequestCount,
     threads,
+    threadContextDefaults = null,
+    openSideConversationPanel,
   } = context;
 
   try {
@@ -246,6 +252,22 @@ export async function runSlashRequestWorkflow(
       case "copyLastAnswer":
         dispatch({ type: "log", text: "Copy last answer is queued for the transcript action toolbar.", level: "info" });
         return;
+      case "showSideConversation": {
+        const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
+        if (!threadId) return;
+        const cwd = activeThread?.cwd || workspace.trim() || defaultCwd || "";
+        const result = await startSideConversation(
+          client,
+          threadId,
+          cwd,
+          threadContextDefaults,
+          stringPayload(payload, "prompt"),
+        );
+        dispatch({ type: "upsertThread", thread: result.thread, select: false });
+        openSideConversationPanel?.(result.thread);
+        dispatch({ type: "log", text: `Opened side chat ${shortThreadId(result.thread.id)}.`, level: "info" });
+        return;
+      }
       case "approveGuardianDeniedAction":
         dispatch({
           type: "log",
@@ -306,6 +328,15 @@ export async function runSlashRequestWorkflow(
             ? `${entries.length} background terminal(s) running.`
             : "No background terminals running.",
           entries,
+        });
+        return;
+      }
+      case "showPersonality": {
+        openCommandPanel("generic", {
+          status: "ready",
+          title: "Personality",
+          message: "Choose a default tone for Codex responses.",
+          entries: projectPersonalityCommandEntries(threadContextDefaults),
         });
         return;
       }
@@ -485,6 +516,10 @@ function activeThreadTitle(thread: Thread | null): string {
   const name = typeof thread.name === "string" ? thread.name.trim() : "";
   const preview = typeof thread.preview === "string" ? thread.preview.trim() : "";
   return name || preview || thread.id;
+}
+
+function shortThreadId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
 }
 
 function stringPayload(payload: Record<string, unknown> | undefined, key: string): string {

@@ -73,8 +73,9 @@ export interface TurnStartOptions {
 
 export const THREAD_LIST_PAGE_SIZE = 100;
 export const THREAD_LIST_MAX_PAGES = 20;
-const DEFAULT_THREAD_PERSONALITY = "pragmatic";
+const DEFAULT_THREAD_PERSONALITY = "friendly";
 const TURN_STEER_TIMEOUT_MS: number | null = null;
+const SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS = "Do not modify files, source, git state, permissions, configuration, or any other workspace state unless the user explicitly requests that mutation in this side conversation. Do not request escalated permissions or broader sandbox access unless the user explicitly requests a mutation that requires it. If the user explicitly requests a mutation, keep it minimal, local to the request, and avoid disrupting the main thread.";
 
 interface ThreadListResponse {
   data?: Thread[];
@@ -394,6 +395,42 @@ export async function forkThreadFromTurn(
     threadId: forkResult.thread.id,
     numTurns: rollbackTurns,
   }, 120_000);
+}
+
+export async function startSideConversation(
+  client: CodexJsonRpcClient,
+  sourceThreadId: string,
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+  prompt?: string,
+) {
+  const sideContext = {
+    ...(context ?? {}),
+    developerInstructions: sideConversationDeveloperInstructions(context?.developerInstructions),
+  };
+  const forkResult = await client.request<{ thread: Thread }>("thread/fork", {
+    threadId: sourceThreadId,
+    path: null,
+    persistExtendedHistory: false,
+    ...buildThreadContextParams(workspace, sideContext),
+    ephemeral: true,
+  }, 120_000);
+  const sidePrompt = prompt?.trim() ?? "";
+  if (sidePrompt) {
+    await startTurn(
+      client,
+      forkResult.thread.id,
+      [{ type: "text", text: sidePrompt, text_elements: [] }],
+      forkResult.thread.cwd || workspace,
+      sideContext,
+    );
+  }
+  return forkResult;
+}
+
+export function sideConversationDeveloperInstructions(value: string | null | undefined): string {
+  const existing = typeof value === "string" ? value.trim() : "";
+  return existing ? `${existing}\n\n${SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS}` : SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS;
 }
 
 export async function editLastUserTurn(
