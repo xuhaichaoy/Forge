@@ -96,7 +96,7 @@ export function eventText(item: ThreadItem): string {
   }
   if (type === "context-compaction") {
     return eventLines([
-      keyValueLine("Source", record.source),
+      keyValueLine("Source", record.source ?? "automatic"),
       `Status: ${completedStatus(item, "running")}`,
     ]);
   }
@@ -178,6 +178,10 @@ function questionAnswerLines(value: unknown): string[] {
 
 function completedStatus(item: ThreadItem, incompleteStatus: string): string {
   if (isCompletedRecord(item)) return "completed";
+  const turnStatus = stringField(item as ItemRecord, "_turnStatus");
+  if (turnStatus === "completed" || turnStatus === "failed" || turnStatus === "interrupted" || turnStatus === "cancelled") {
+    return turnStatus;
+  }
   return stringField(item, "status") || incompleteStatus;
 }
 

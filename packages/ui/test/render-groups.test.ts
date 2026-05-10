@@ -23,6 +23,7 @@ export default function runRenderGroupsTests(): void {
   keepsDesktopInlineMcpToolsOutOfPendingMcpGroups();
   suppressesPendingMcpCallCoveredByElicitation();
   projectsDesktopLifecycleEventsSemantically();
+  projectsContextCompactionSnapshotStatusFromTurnState();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
@@ -580,6 +581,20 @@ function projectsDesktopLifecycleEventsSemantically(): void {
   assertTextIncludes(eventByKey(projection, "remote-task-1").text, "Task ID: task-123", "remote task id");
   assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "gpt-5.3 -> gpt-5.4", "model reroute transition");
   assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "Reason: capacity", "model reroute reason");
+}
+
+function projectsContextCompactionSnapshotStatusFromTurnState(): void {
+  const projection = projectConversation([
+    {
+      type: "contextCompaction",
+      id: "context-snapshot",
+      _turnStatus: "completed",
+    } as unknown as ThreadItem,
+  ]);
+
+  const context = eventByKey(projection, "context-snapshot");
+  assertTextIncludes(context.text, "Source: automatic", "context compaction snapshots should use Desktop's default source");
+  assertTextIncludes(context.text, "Status: completed", "context compaction snapshots should inherit completed turn status");
 }
 
 function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
