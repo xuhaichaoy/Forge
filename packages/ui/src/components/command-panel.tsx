@@ -1,13 +1,14 @@
-import { Boxes, CheckCircle2, Loader2, Server, TerminalSquare, X } from "lucide-react";
-import type { CommandPanelEntry, CommandPanelState } from "../state/command-panel";
+import { Boxes, CheckCircle2, Loader2, Power, PowerOff, Server, TerminalSquare, X } from "lucide-react";
+import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 
 export interface CommandPanelProps {
   panel: CommandPanelState;
   onClose: () => void;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
+  onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }
 
-export function CommandPanel({ panel, onClose, onSelectEntry }: CommandPanelProps) {
+export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction }: CommandPanelProps) {
   return (
     <div className="hc-settings-backdrop">
       <section className="hc-command-panel">
@@ -31,7 +32,12 @@ export function CommandPanel({ panel, onClose, onSelectEntry }: CommandPanelProp
         {panel.entries.length > 0 && (
           <div className="hc-command-panel-list">
             {panel.entries.map((entry) => (
-              <CommandPanelRow entry={entry} key={entry.id} onSelectEntry={onSelectEntry} />
+              <CommandPanelRow
+                entry={entry}
+                key={entry.id}
+                onSelectAction={onSelectAction}
+                onSelectEntry={onSelectEntry}
+              />
             ))}
           </div>
         )}
@@ -43,9 +49,11 @@ export function CommandPanel({ panel, onClose, onSelectEntry }: CommandPanelProp
 function CommandPanelRow({
   entry,
   onSelectEntry,
+  onSelectAction,
 }: {
   entry: CommandPanelEntry;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
+  onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
   const actionable = Boolean(entry.action && !entry.disabled && onSelectEntry);
   const content = (
@@ -55,7 +63,31 @@ function CommandPanelRow({
           <h3>{entry.title}</h3>
           {entry.meta && <p>{entry.meta}</p>}
         </div>
-        {entry.status && <span className="hc-command-status">{entry.status}</span>}
+        <div className="hc-command-panel-row-trailing">
+          {entry.status && <span className="hc-command-status">{entry.status}</span>}
+          {entry.secondaryActions && entry.secondaryActions.length > 0 && (
+            <div className="hc-command-secondary-actions">
+              {entry.secondaryActions.map((secondary) => (
+                <button
+                  aria-label={secondary.title ?? secondary.label}
+                  className="hc-command-secondary-action"
+                  data-tone={secondary.tone ?? "default"}
+                  key={secondary.id}
+                  title={secondary.title}
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectAction?.(secondary.action, entry);
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  {secondaryActionIcon(secondary.action)}
+                  <span>{secondary.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {entry.details && entry.details.length > 0 && (
         <ul className="hc-command-details">
@@ -90,6 +122,13 @@ function CommandPanelRow({
       {content}
     </article>
   );
+}
+
+function secondaryActionIcon(action: CommandPanelEntryAction) {
+  if (action.type === "writeSkillConfig") {
+    return action.enabled ? <Power size={13} /> : <PowerOff size={13} />;
+  }
+  return null;
 }
 
 function panelIcon(panel: CommandPanelState["panel"]) {

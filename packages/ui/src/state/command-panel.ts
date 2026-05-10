@@ -1,4 +1,15 @@
 import { formatUnknown } from "../lib/format";
+import {
+  mcpToolRequiredArguments,
+  projectMcpToolArgumentFields,
+  type McpToolArgumentField,
+} from "./mcp-tool-arguments";
+
+export interface ConfigWriteActionEdit {
+  keyPath: string;
+  value: unknown;
+  mergeStrategy: "replace" | "upsert";
+}
 
 export type CommandPanelKind =
   | "mcp"
@@ -26,10 +37,43 @@ export type CommandPanelEntryKind =
 
 export type CommandPanelEntryAction =
   | { type: "attachMention"; name: string; path: string }
-  | { type: "attachSkill"; name: string; path: string }
-  | { type: "callMcpTool"; server: string; tool: string; arguments: Record<string, never> };
+  | { type: "attachSkill"; name: string; path: string; promptText?: string }
+  | { type: "attachApp"; name: string; path: string; promptText: string }
+  | { type: "attachPlugin"; name: string; path: string; promptText: string }
+  | {
+      type: "writeConfig";
+      title: string;
+      message: string;
+      edits: ConfigWriteActionEdit[];
+      reloadUserConfig?: boolean;
+      afterWrite?: { type: "addPersonalityChangeSyntheticItem"; personality: "friendly" | "pragmatic" };
+    }
+  | { type: "callMcpTool"; server: string; tool: string; arguments: Record<string, unknown> }
+  | {
+      type: "openMcpToolForm";
+      server: string;
+      tool: string;
+      title: string;
+      description?: string;
+      fields: McpToolArgumentField[];
+    }
+  | {
+      type: "writeSkillConfig";
+      title: string;
+      name: string;
+      path?: string;
+      enabled: boolean;
+    };
 
 export type CommandPanelStatus = "idle" | "loading" | "ready" | "empty" | "error";
+
+export interface CommandPanelSecondaryAction {
+  id: string;
+  label: string;
+  title?: string;
+  tone?: "default" | "success" | "danger";
+  action: CommandPanelEntryAction;
+}
 
 export interface CommandPanelEntry {
   id: string;
@@ -40,6 +84,7 @@ export interface CommandPanelEntry {
   details?: string[];
   disabled?: boolean;
   action?: CommandPanelEntryAction;
+  secondaryActions?: CommandPanelSecondaryAction[];
 }
 
 export interface CommandPanelState {
@@ -162,20 +207,25 @@ export function projectMcpToolCallResultEntries(
 function mcpToolEntry(serverName: string, toolName: string, tool: unknown): CommandPanelEntry {
   const title = fieldText(tool, "title") || toolName;
   const description = fieldText(tool, "description");
+  const fields = projectMcpToolArgumentFields(tool);
   const required = mcpToolRequiredArguments(tool);
-  const canCallWithoutArguments = required.length === 0;
+  const optional = fields.filter((field) => !field.required).map((field) => field.name);
+  const canCallWithoutArguments = fields.length === 0;
   return {
     id: `mcp-tool:${serverName}:${toolName}`,
     title,
     kind: "mcpTool",
-    status: canCallWithoutArguments ? "callable" : "needs input",
+    status: canCallWithoutArguments ? "callable" : required.length > 0 ? "needs input" : "configure",
     meta: `${serverName}:${toolName}`,
     details: cleanList([
       description,
-      required.length > 0 ? `Required: ${required.join(", ")}` : "Click to call with empty arguments.",
+      required.length > 0 ? `Required: ${required.join(", ")}` : undefined,
+      optional.length > 0 ? `Optional: ${optional.join(", ")}` : undefined,
+      canCallWithoutArguments ? "Click to call with empty arguments." : "Click to enter arguments.",
     ]),
-    disabled: !canCallWithoutArguments,
-    action: canCallWithoutArguments ? { type: "callMcpTool", server: serverName, tool: toolName, arguments: {} } : undefined,
+    action: canCallWithoutArguments
+      ? { type: "callMcpTool", server: serverName, tool: toolName, arguments: {} }
+      : { type: "openMcpToolForm", server: serverName, tool: toolName, title, description, fields },
   };
 }
 
@@ -184,7 +234,14 @@ export function projectPluginEntries(value: unknown): CommandPanelEntry[] {
     const marketplaceName = fieldText(marketplace, "name") || "Unknown marketplace";
     return arrayField(marketplace, "plugins").map((plugin, index) => {
       const pluginId = fieldText(plugin, "id") || fieldText(plugin, "name") || `plugin-${index + 1}`;
-      const title = fieldText(plugin, "name") || pluginId;
+      const interfaceInfo = recordField(plugin, "interface");
+      const title = fieldText(interfaceInfo, "displayName") || fieldText(plugin, "name") || pluginId;
+      const description = fieldText(interfaceInfo, "shortDescription")
+        || fieldText(interfaceInfo, "longDescription")
+        || fieldText(plugin, "description");
+      const promptPath = pluginPromptPath(pluginId);
+      const mentionName = pluginMentionName(pluginId, fieldText(plugin, "name") || title);
+      const mentionable = isPluginMentionable(plugin);
       return {
         id: `plugin:${pluginId}`,
         title,
@@ -192,13 +249,63 @@ export function projectPluginEntries(value: unknown): CommandPanelEntry[] {
         status: pluginStatus(plugin),
         meta: marketplaceName,
         details: cleanList([
+          description,
+          pluginDefaultPrompt(plugin) && `Default prompt: ${firstLine(pluginDefaultPrompt(plugin))}`,
           fieldText(plugin, "availability") && `Availability: ${fieldText(plugin, "availability")}`,
           fieldText(plugin, "installPolicy") && `Install: ${fieldText(plugin, "installPolicy")}`,
           fieldText(plugin, "authPolicy") && `Auth: ${fieldText(plugin, "authPolicy")}`,
         ]),
+        disabled: mentionable ? undefined : true,
+        action: mentionable ? {
+          type: "attachPlugin",
+          name: mentionName,
+          path: promptPath,
+          promptText: pluginPromptText(mentionName, promptPath, pluginDefaultPrompt(plugin)),
+        } : undefined,
       };
     });
   });
+}
+
+function pluginPromptText(name: string, path: string, defaultPrompt: string): string {
+  const reference = pluginPromptReference(name, path);
+  const prompt = defaultPrompt.trim();
+  if (!prompt) return ensureTrailingSpace(reference);
+  if (prompt.toLowerCase().includes(reference.toLowerCase().trim())) return ensureTrailingSpace(prompt);
+  return ensureTrailingSpace(`${prompt} ${reference}`);
+}
+
+function pluginPromptReference(name: string, path: string): string {
+  return `[@${name}](${escapePromptPath(path)})`;
+}
+
+function pluginPromptPath(pluginId: string): string {
+  return pluginId.startsWith("plugin://") ? pluginId : `plugin://${pluginId}`;
+}
+
+function pluginMentionName(pluginId: string, name: string): string {
+  if (pluginId === "browser-use" || name === "browser-use") return "Browser";
+  if (pluginId === "computer-use" || name === "computer-use") return "Computer";
+  return name || pluginId;
+}
+
+function pluginDefaultPrompt(plugin: Record<string, unknown>): string {
+  const interfaceInfo = recordField(plugin, "interface");
+  const defaultPrompt = interfaceInfo.defaultPrompt;
+  if (Array.isArray(defaultPrompt)) {
+    return defaultPrompt.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean)[0] ?? "";
+  }
+  return fieldText(interfaceInfo, "defaultPrompt");
+}
+
+function isPluginMentionable(plugin: Record<string, unknown>): boolean {
+  const hasInstalled = Object.prototype.hasOwnProperty.call(plugin, "installed");
+  const hasEnabled = Object.prototype.hasOwnProperty.call(plugin, "enabled");
+  const installed = !hasInstalled || booleanField(plugin, "installed");
+  const enabled = !hasEnabled || booleanField(plugin, "enabled");
+  const availability = fieldText(plugin, "availability");
+  const installPolicy = fieldText(plugin, "installPolicy");
+  return installed && enabled && availability !== "DISABLED_BY_ADMIN" && installPolicy !== "NOT_AVAILABLE";
 }
 
 function projectSkillEntries(value: unknown): CommandPanelEntry[] {
@@ -212,14 +319,6 @@ function projectSkillEntries(value: unknown): CommandPanelEntry[] {
     }
     return [skillEntry(item)];
   });
-}
-
-function mcpToolRequiredArguments(tool: unknown): string[] {
-  const schema = recordField(tool, "inputSchema");
-  const required = schema.required;
-  return Array.isArray(required)
-    ? required.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    : [];
 }
 
 function mcpResultTitle(value: unknown, index: number): string {
@@ -253,6 +352,7 @@ function textDetails(value: string): string[] {
 function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry {
   const name = fieldText(skill, "name") || fieldText(skill, "path") || "skill";
   const interfaceInfo = recordField(skill, "interface");
+  const displayName = fieldText(interfaceInfo, "displayName") || name;
   const path = fieldText(skill, "path");
   const scope = fieldText(skill, "scope");
   const defaultPrompt = fieldText(interfaceInfo, "defaultPrompt");
@@ -260,11 +360,12 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
     .map((dependency) => fieldText(dependency, "value") || fieldText(dependency, "type"))
     .filter(Boolean);
   const hasEnabled = Object.prototype.hasOwnProperty.call(skill, "enabled");
+  const enabled = booleanField(skill, "enabled");
   return {
     id: `skill:${name}`,
-    title: fieldText(interfaceInfo, "displayName") || name,
+    title: displayName,
     kind: "skill",
-    status: hasEnabled ? booleanField(skill, "enabled") ? "enabled" : "disabled" : undefined,
+    status: hasEnabled ? enabled ? "enabled" : "disabled" : undefined,
     meta: cleanList([skillScopeLabel(scope), path || cwd]).join(" · ") || undefined,
     details: cleanList([
       fieldText(interfaceInfo, "shortDescription")
@@ -275,8 +376,57 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
       path && `Path: ${path}`,
       cwd && `CWD: ${cwd}`,
     ]),
-    action: path ? { type: "attachSkill", name, path } : undefined,
+    disabled: hasEnabled && !enabled ? true : undefined,
+    action: path ? { type: "attachSkill", name, path, promptText: skillPromptText({ name, path, defaultPrompt }) } : undefined,
+    secondaryActions: hasEnabled ? [skillConfigToggleAction({ name, displayName, path, enabled })] : undefined,
   };
+}
+
+function skillConfigToggleAction(skill: {
+  name: string;
+  displayName: string;
+  path: string;
+  enabled: boolean;
+}): CommandPanelSecondaryAction {
+  const nextEnabled = !skill.enabled;
+  const label = nextEnabled ? "Enable" : "Disable";
+  return {
+    id: `skill:${skill.name}:${nextEnabled ? "enable" : "disable"}`,
+    label,
+    title: `${label} ${skill.displayName}`,
+    tone: nextEnabled ? "success" : "danger",
+    action: {
+      type: "writeSkillConfig",
+      title: `${label} ${skill.displayName}`,
+      name: skill.name,
+      path: skill.path || undefined,
+      enabled: nextEnabled,
+    },
+  };
+}
+
+function skillPromptText(skill: { name: string; path: string; defaultPrompt: string }): string {
+  const prompt = skill.defaultPrompt.trim();
+  const reference = skillPromptReference(skill.name, skill.path);
+  if (!prompt) return ensureTrailingSpace(reference);
+
+  const lowerPrompt = prompt.toLowerCase();
+  const lowerName = skill.name.toLowerCase();
+  if (lowerPrompt.includes(`[$${lowerName}](`)) return ensureTrailingSpace(prompt);
+  if (!skill.path && lowerPrompt.includes(`$${lowerName}`)) return ensureTrailingSpace(prompt);
+  return ensureTrailingSpace(`${prompt} ${reference}`);
+}
+
+function skillPromptReference(name: string, path: string): string {
+  return path ? `[$${name}](${escapePromptPath(path)})` : `$${name}`;
+}
+
+function ensureTrailingSpace(value: string): string {
+  return value.endsWith(" ") ? value : `${value} `;
+}
+
+function escapePromptPath(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }
 
 function skillErrorEntry(error: Record<string, unknown>, cwd = ""): CommandPanelEntry {
@@ -320,11 +470,15 @@ function hookEntry(hook: Record<string, unknown>, cwd = ""): CommandPanelEntry {
 
 function projectAppEntries(value: unknown): CommandPanelEntry[] {
   return responseItems(value).map((app, index) => {
-    const name = fieldText(app, "name") || fieldText(app, "id") || `app-${index + 1}`;
-    const title = fieldText(app, "title") || name;
+    const appId = fieldText(app, "id") || fieldText(app, "name") || `app-${index + 1}`;
+    const name = fieldText(app, "name") || appId;
+    const title = fieldText(app, "title") || fieldText(app, "displayName") || name;
     const plugins = stringArrayField(app, "pluginDisplayNames");
+    const hasAccessibleField = Object.prototype.hasOwnProperty.call(app, "isAccessible");
+    const accessible = !hasAccessibleField || booleanField(app, "isAccessible");
+    const promptPath = appPromptPath(appId);
     return {
-      id: `app:${name}`,
+      id: `app:${appId}`,
       title,
       kind: "app",
       status: booleanField(app, "isEnabled") ? "enabled" : undefined,
@@ -333,8 +487,18 @@ function projectAppEntries(value: unknown): CommandPanelEntry[] {
         fieldText(app, "description"),
         plugins.length ? `Plugins: ${plugins.join(", ")}` : "",
       ]),
+      disabled: accessible ? undefined : true,
+      action: accessible ? { type: "attachApp", name, path: promptPath, promptText: appPromptText(name, promptPath) } : undefined,
     };
   });
+}
+
+function appPromptText(name: string, path: string): string {
+  return ensureTrailingSpace(`[$${name}](${escapePromptPath(path)})`);
+}
+
+function appPromptPath(appId: string): string {
+  return appId.startsWith("app://") ? appId : `app://${appId}`;
 }
 
 function projectExperimentalFeatureEntries(value: unknown): CommandPanelEntry[] {

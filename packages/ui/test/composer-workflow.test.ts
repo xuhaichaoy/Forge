@@ -454,7 +454,9 @@ function exposesCodexCliSlashCommands(): void {
       "resume",
       "goal",
       "collab",
+      "side",
       "mention",
+      "personality",
       "ps",
       "stop",
     ],
@@ -464,7 +466,7 @@ function exposesCodexCliSlashCommands(): void {
     assert(command.supported !== "pending", `visible slash command /${command.id} should not be pending`);
   }
   const visibleIds = new Set(visibleCommands.map((command) => command.id));
-  for (const id of ["fast", "ide", "memories", "agent", "side", "debug-config", "personality"]) {
+  for (const id of ["fast", "ide", "memories", "agent", "debug-config"]) {
     assert(!visibleIds.has(id), `unwired slash command /${id} should stay hidden by default`);
   }
 }

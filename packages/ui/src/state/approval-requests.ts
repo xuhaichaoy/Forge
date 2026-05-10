@@ -45,10 +45,7 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
       return {
         title: commandApprovalTitle(params),
         reason: stringField(params, "reason"),
-        body: [
-          commandText(params),
-          stringField(params, "cwd") ? `cwd: ${stringField(params, "cwd")}` : "",
-        ].filter(Boolean).join("\n"),
+        body: commandApprovalBody(params),
         metadata: commandApprovalMetadata(params),
         questions: commandApprovalQuestions(params),
         acceptLabel: "Allow",
@@ -170,13 +167,13 @@ export function buildApprovalResult(
 ): unknown | null {
   switch (request.method) {
     case "item/commandExecution/requestApproval":
-      return { decision: accepted ? approvalDecisionFromAnswers(request, answers) : "decline" };
+      return { decision: accepted ? commandApprovalDecisionFromAnswers(request, answers) : "decline" };
     case "execCommandApproval":
-      return { decision: accepted ? legacyApprovalDecisionFromAnswers(request, answers) : "denied" };
+      return { decision: accepted ? legacyApprovalDecisionFromAnswers(answers) : "denied" };
     case "item/fileChange/requestApproval":
-      return { decision: accepted ? approvalDecisionFromAnswers(request, answers) : "decline" };
+      return { decision: accepted ? fileChangeApprovalDecisionFromAnswers(answers) : "decline" };
     case "applyPatchApproval":
-      return { decision: accepted ? legacyApprovalDecisionFromAnswers(request, answers) : "denied" };
+      return { decision: accepted ? legacyApprovalDecisionFromAnswers(answers) : "denied" };
     case "item/tool/requestUserInput":
       return accepted ? { answers: buildUserInputAnswers(request, answers) } : null;
     case "mcpServer/elicitation/request":
@@ -207,26 +204,19 @@ export function buildApprovalResult(
 }
 
 function commandApprovalQuestions(params: unknown): PendingRequestQuestion[] {
-  return requestAllowsSessionApproval({ method: "item/commandExecution/requestApproval", params, id: "", createdAt: 0 })
-    ? [approvalDecisionQuestion("Do you want to run this command?", {
-      once: "Yes",
-      session: "Yes, and don't ask again this session",
-    })]
-    : [];
+  return [approvalDecisionQuestion(commandApprovalTitle(params), commandApprovalOptions(params))];
 }
 
-function fileChangeApprovalQuestions(params: unknown): PendingRequestQuestion[] {
-  return requestAllowsSessionApproval({ method: "item/fileChange/requestApproval", params, id: "", createdAt: 0 })
-    ? [approvalDecisionQuestion("Do you want to make these changes?", {
-      once: "Yes",
-      session: "Yes, and don't ask again this session",
-    })]
-    : [];
+function fileChangeApprovalQuestions(_params: unknown): PendingRequestQuestion[] {
+  return [approvalDecisionQuestion("Do you want to make these changes?", [
+    { value: "accept", label: "Yes", description: "Approve this patch application." },
+    { value: "acceptForSession", label: "Yes, and don't ask again this session", description: "Approve patch applications until app-server restarts." },
+  ])];
 }
 
 function approvalDecisionQuestion(
   question: string,
-  labels: { once: string; session: string },
+  options: PendingRequestOption[],
 ): PendingRequestQuestion {
   return {
     id: APPROVAL_DECISION_QUESTION_ID,
@@ -236,67 +226,126 @@ function approvalDecisionQuestion(
     isSecret: false,
     required: true,
     defaultAnswers: ["accept"],
-    options: [
-      { value: "accept", label: labels.once, description: "Allow only this request." },
-      { value: "acceptForSession", label: labels.session, description: "Allow matching requests until app-server restarts." },
-    ],
+    options,
   };
 }
 
+function commandApprovalOptions(params: unknown): PendingRequestOption[] {
+  if (networkApprovalContext(params)) {
+    return [
+      { value: "accept", label: "Yes, just this once", description: "Approve only the current network attempt." },
+      { value: "acceptForSession", label: "Yes, and allow this host for this conversation", description: "Approve this host for the current conversation." },
+      ...(allowNetworkPolicyAmendment(params)
+        ? [{
+            value: "applyNetworkPolicyAmendment",
+            label: "Yes, and allow this host in the future",
+            description: "Save a host allowlist rule for future requests.",
+          }]
+        : []),
+    ];
+  }
+
+  const amendment = execPolicyAmendment(params);
+  return [
+    { value: "accept", label: "Yes", description: "Approve this command execution." },
+    amendment
+      ? {
+          value: "acceptWithExecpolicyAmendment",
+          label: `Yes, and don't ask again for commands that start with ${execPolicyAmendmentText(amendment)}`,
+          description: "Approve commands with the same prefix.",
+        }
+      : {
+          value: "acceptForSession",
+          label: "Yes, and don't ask again this session",
+          description: "Approve command executions until app-server restarts.",
+        },
+  ];
+}
+
 function commandApprovalTitle(params: unknown): string {
-  if (!params || typeof params !== "object") return "Do you want to run this command?";
-  const network = (params as Record<string, unknown>).networkApprovalContext;
-  if (network && typeof network === "object") {
-    const host = stringField(network as Record<string, unknown>, "host");
+  const network = networkApprovalContext(params);
+  if (network) {
+    const host = stringField(network, "host");
     return host ? `Do you want to approve network access to "${host}"?` : "Do you want to approve network access?";
   }
   return "Do you want to run this command?";
 }
 
-function approvalDecisionFromAnswers(
+function commandApprovalBody(params: unknown): string {
+  const network = networkApprovalContext(params);
+  if (network) {
+    const host = stringField(network, "host");
+    return host ? `Reason: ${host} isn't on the current network allowlist` : "Reason: host isn't on the current network allowlist";
+  }
+  return [
+    commandText(params),
+    stringField(params, "cwd") ? `cwd: ${stringField(params, "cwd")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function commandApprovalDecisionFromAnswers(
   request: PendingServerRequest,
   answers: Record<string, string[]>,
-): "accept" | "acceptForSession" {
+): unknown {
   const requested = answers[APPROVAL_DECISION_QUESTION_ID]?.[0];
-  return requested === "acceptForSession" && requestAllowsSessionApproval(request) ? "acceptForSession" : "accept";
+  if (requested === "acceptForSession") return "acceptForSession";
+  if (requested === "acceptWithExecpolicyAmendment") {
+    const amendment = execPolicyAmendment(request.params);
+    return amendment
+      ? { acceptWithExecpolicyAmendment: { execpolicy_amendment: amendment } }
+      : "acceptForSession";
+  }
+  if (requested === "applyNetworkPolicyAmendment") {
+    const amendment = allowNetworkPolicyAmendment(request.params);
+    return amendment
+      ? { applyNetworkPolicyAmendment: { network_policy_amendment: amendment } }
+      : "acceptForSession";
+  }
+  return "accept";
+}
+
+function fileChangeApprovalDecisionFromAnswers(
+  answers: Record<string, string[]>,
+): "accept" | "acceptForSession" {
+  return answers[APPROVAL_DECISION_QUESTION_ID]?.[0] === "acceptForSession" ? "acceptForSession" : "accept";
 }
 
 function legacyApprovalDecisionFromAnswers(
-  request: PendingServerRequest,
   answers: Record<string, string[]>,
 ): "approved" | "approved_for_session" {
-  return approvalDecisionFromAnswers(request, answers) === "acceptForSession" ? "approved_for_session" : "approved";
+  return answers[APPROVAL_DECISION_QUESTION_ID]?.[0] === "acceptForSession" ? "approved_for_session" : "approved";
 }
 
-function requestAllowsSessionApproval(request: PendingServerRequest): boolean {
-  switch (request.method) {
-    case "item/commandExecution/requestApproval":
-    case "execCommandApproval":
-      return commandAllowsSessionApproval(request.params);
-    case "item/fileChange/requestApproval":
-    case "applyPatchApproval":
-      return fileChangeAllowsSessionApproval(request.params);
-    default:
-      return false;
+function networkApprovalContext(params: unknown): Record<string, unknown> | null {
+  const record = objectRecord(params);
+  const network = record?.networkApprovalContext;
+  return objectRecord(network);
+}
+
+function execPolicyAmendment(params: unknown): string[] | null {
+  const record = objectRecord(params);
+  const amendment = record?.proposedExecpolicyAmendment;
+  if (!Array.isArray(amendment)) return null;
+  if (!amendment.every((item): item is string => typeof item === "string")) return null;
+  return execPolicyAmendmentText(amendment).includes("\n") || execPolicyAmendmentText(amendment).includes("\r")
+    ? null
+    : amendment;
+}
+
+function execPolicyAmendmentText(amendment: string[]): string {
+  return amendment.join(" ");
+}
+
+function allowNetworkPolicyAmendment(params: unknown): Record<string, unknown> | null {
+  const record = objectRecord(params);
+  const amendments = record?.proposedNetworkPolicyAmendments;
+  if (!Array.isArray(amendments)) return null;
+  for (const amendment of amendments) {
+    const item = objectRecord(amendment);
+    if (!item || item.action !== "allow" || !stringField(item, "host")) continue;
+    return item;
   }
-}
-
-function commandAllowsSessionApproval(params: unknown): boolean {
-  const record = params && typeof params === "object" ? params as Record<string, unknown> : {};
-  const availableDecisions = availableDecisionStrings(record.availableDecisions);
-  if (availableDecisions.length > 0) return availableDecisions.includes("acceptForSession");
-  return Boolean(record.networkApprovalContext);
-}
-
-function fileChangeAllowsSessionApproval(params: unknown): boolean {
-  if (!params || typeof params !== "object") return false;
-  return Boolean(stringField(params as Record<string, unknown>, "grantRoot"));
-}
-
-function availableDecisionStrings(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.flatMap((item) => typeof item === "string" ? [item] : [])
-    : [];
+  return null;
 }
 
 function commandApprovalMetadata(params: unknown): PendingRequestMetadata[] {
@@ -313,6 +362,10 @@ function commandApprovalMetadata(params: unknown): PendingRequestMetadata[] {
     ...metadata,
     ...(host ? [{ label: "Network host", value: protocol ? `${protocol}://${host}` : host }] : []),
   ];
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function fileChangeApprovalMetadata(params: unknown): PendingRequestMetadata[] {

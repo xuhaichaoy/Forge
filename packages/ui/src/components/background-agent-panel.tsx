@@ -1,6 +1,7 @@
 import {
   Bot,
   LoaderCircle,
+  MessageSquareText,
   X,
 } from "lucide-react";
 import type { ConversationRenderUnit } from "../state/render-groups";
@@ -10,6 +11,7 @@ import type { OpenThreadHandler } from "./open-thread";
 
 export interface BackgroundAgentPanelProps {
   error?: string | null;
+  kind?: "backgroundAgent" | "sideChat";
   loading?: boolean;
   onClose: () => void;
   onOpenFileReference?: (reference: FileReference) => void;
@@ -23,6 +25,7 @@ export interface BackgroundAgentPanelProps {
 
 export function BackgroundAgentPanel({
   error = null,
+  kind = "backgroundAgent",
   loading = false,
   onClose,
   onOpenFileReference,
@@ -33,22 +36,26 @@ export function BackgroundAgentPanel({
   title,
   units,
 }: BackgroundAgentPanelProps) {
+  const isSideChat = kind === "sideChat";
+  const label = isSideChat ? "Side chat" : "Background agent";
+  const Icon = isSideChat ? MessageSquareText : Bot;
   return (
     <aside
-      aria-label="Background agent"
+      aria-label={label}
       className="hc-background-agent-panel"
+      data-panel-kind={kind}
       data-status={status}
     >
       <header className="hc-background-agent-header">
         <div className="hc-background-agent-title">
-          <Bot size={16} />
+          <Icon size={16} />
           <div>
             <strong>{title}</strong>
             <small>{subtitle || `${shortThreadId(threadId)} · ${status}`}</small>
           </div>
         </div>
         <button
-          aria-label="Close background agent"
+          aria-label={`Close ${isSideChat ? "side chat" : "background agent"}`}
           className="hc-icon-button"
           type="button"
           onClick={onClose}
@@ -61,7 +68,7 @@ export function BackgroundAgentPanel({
         {loading && (
           <div className="hc-background-agent-state">
             <LoaderCircle className="hc-background-agent-spinner" size={16} />
-            <span>Loading agent thread</span>
+            <span>{isSideChat ? "Loading side chat" : "Loading agent thread"}</span>
           </div>
         )}
         {!loading && error && (
@@ -77,7 +84,7 @@ export function BackgroundAgentPanel({
             onOpenThreadId={onOpenThreadId}
             emptyState={(
               <div className="hc-background-agent-empty">
-                No visible messages yet.
+                {isSideChat ? "No side chat messages yet." : "No visible messages yet."}
               </div>
             )}
           />

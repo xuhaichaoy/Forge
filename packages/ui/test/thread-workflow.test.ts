@@ -21,7 +21,9 @@ import {
   resumeSelectedThreadAndStartTurn,
   resumeThread,
   resumeThreadWithMetadataRead,
+  sideConversationDeveloperInstructions,
   startThread,
+  startSideConversation,
   startTurn,
   steerTurn,
   threadStatusLabel,
@@ -105,6 +107,7 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await readsThreadDisplayMetadataBeforeHydratingTurns();
   await resumesThreadAfterMetadataRead();
   await forksThreadFromTurnUsingDesktopSequence();
+  await startsEphemeralSideConversationFromForkedThread();
   await editsLastUserTurnUsingDesktopRollbackThenStartSequence();
   await buildsReadyThreadRequestsForTurns();
   await refreshesThreadMetadataWithoutChangingSelection();
@@ -319,8 +322,8 @@ function projectsThreadContextFromCodexConfig(): void {
   );
   assertDeepEqual(
     projectThreadContextDefaults({ model: " gpt-local " }),
-    { model: "gpt-local", personality: "pragmatic" },
-    "thread context should default to Codex pragmatic personality when config/read omits it",
+    { model: "gpt-local", personality: "friendly" },
+    "thread context should default to Desktop's friendly personality when config/read omits it",
   );
 
   assertDeepEqual(
@@ -879,6 +882,58 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
     { threadId: "forked-thread", numTurns: 1 },
     "fork from turn should roll back later turns on the fork",
   );
+}
+
+async function startsEphemeralSideConversationFromForkedThread(): Promise<void> {
+  const sideThread = threadFixture({ id: "side-thread", cwd: "/workspace" });
+  const side = createClientSequenceRecorder([
+    { thread: sideThread },
+    { turn: { id: "side-turn" } },
+  ]);
+
+  const result = await startSideConversation(
+    side.client,
+    "source-thread",
+    " /workspace ",
+    {
+      model: "gpt-5.2",
+      developerInstructions: "Existing developer rule.",
+      personality: "friendly",
+    },
+    " inspect this in parallel ",
+  );
+
+  assertEqual(result.thread, sideThread, "side conversation should return the ephemeral fork thread");
+  assertRequest(
+    side.requests,
+    0,
+    "thread/fork",
+    {
+      threadId: "source-thread",
+      path: null,
+      persistExtendedHistory: false,
+      cwd: "/workspace",
+      model: "gpt-5.2",
+      developerInstructions: sideConversationDeveloperInstructions("Existing developer rule."),
+      personality: "friendly",
+      ephemeral: true,
+    },
+    "side conversation should fork the source thread as an ephemeral right-panel thread",
+  );
+  assertRequest(
+    side.requests,
+    1,
+    "turn/start",
+    {
+      threadId: "side-thread",
+      input: [{ type: "text", text: "inspect this in parallel", text_elements: [] }],
+      cwd: "/workspace",
+      model: "gpt-5.2",
+      personality: "friendly",
+    },
+    "side conversation prompt should start inside the fork without selecting the main thread",
+  );
+  assertEqual(side.requests[0]?.timeout, 120_000, "side conversation fork should use a long timeout");
 }
 
 async function editsLastUserTurnUsingDesktopRollbackThenStartSequence(): Promise<void> {

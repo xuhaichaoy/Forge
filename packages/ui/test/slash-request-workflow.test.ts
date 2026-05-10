@@ -7,6 +7,7 @@ export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await setsReadsAndClearsThreadGoalsThroughAppServer();
   await listsBackgroundTerminalsFromActiveItems();
   await cleansBackgroundTerminalsThroughAppServer();
+  await showsPersonalityOptionsFromThreadContext();
   await searchesMentionsThroughAppServer();
 }
 
@@ -63,7 +64,21 @@ async function reloadsSkillsThroughAppServer(): Promise<void> {
             type: "attachSkill",
             name: "review",
             path: "/workspace/.codex/skills/review/SKILL.md",
+            promptText: "[$review](/workspace/.codex/skills/review/SKILL.md) ",
           },
+          secondaryActions: [{
+            id: "skill:review:disable",
+            label: "Disable",
+            title: "Disable Review",
+            tone: "danger",
+            action: {
+              type: "writeSkillConfig",
+              title: "Disable Review",
+              name: "review",
+              path: "/workspace/.codex/skills/review/SKILL.md",
+              enabled: false,
+            },
+          }],
         }],
         message: "Reloaded skills from disk. Select a skill to attach it to the next message.",
       },
@@ -229,6 +244,66 @@ async function cleansBackgroundTerminalsThroughAppServer(): Promise<void> {
       },
     },
     "background terminal cleanup should report an accepted cleanup request",
+  );
+}
+
+async function showsPersonalityOptionsFromThreadContext(): Promise<void> {
+  const workflow = createWorkflowRecorder([]);
+
+  await runSlashRequestWorkflow("showPersonality", undefined, {
+    ...workflow.context,
+    threadContextDefaults: { personality: "friendly", model: "gpt-5.2" },
+  });
+
+  assertDeepEqual(workflow.requests, [], "personality slash request should use local config projection without polling app-server");
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "generic",
+      options: {
+        status: "ready",
+        title: "Personality",
+        message: "Choose a default tone for Codex responses.",
+        entries: [
+          {
+            id: "personality:friendly",
+            title: "Friendly",
+            kind: "status",
+            status: "current",
+            meta: "Warm, collaborative, and helpful",
+            disabled: true,
+          },
+          {
+            id: "personality:pragmatic",
+            title: "Pragmatic",
+            kind: "status",
+            status: "select",
+            meta: "Concise, task-focused, and direct",
+            disabled: false,
+            action: {
+              type: "writeConfig",
+              title: "Personality",
+              message: "Set personality to Pragmatic.",
+              edits: [
+                { keyPath: "personality", value: "pragmatic", mergeStrategy: "upsert" },
+                { keyPath: "model_personality", value: null, mergeStrategy: "replace" },
+              ],
+              reloadUserConfig: true,
+              afterWrite: { type: "addPersonalityChangeSyntheticItem", personality: "pragmatic" },
+            },
+          },
+          {
+            id: "personality:current",
+            title: "Current personality",
+            kind: "status",
+            status: "friendly",
+            meta: "(Does not apply to current model)",
+            details: ["personality: friendly", "model: gpt-5.2"],
+          },
+        ],
+      },
+    },
+    "personality slash request should expose Desktop-style personality options",
   );
 }
 

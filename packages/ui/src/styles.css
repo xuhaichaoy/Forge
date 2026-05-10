@@ -4162,6 +4162,14 @@ button.hc-tool-summary:hover svg:last-child,
   gap: 2px;
 }
 
+.hc-rail-card-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .hc-rail-card-title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4186,6 +4194,24 @@ button.hc-tool-summary:hover svg:last-child,
 .hc-rail-card-status {
   color: #2d5562;
   font-size: 11px;
+}
+
+.hc-rail-diff-stats {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  color: #6f716b;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.hc-rail-diff-added {
+  color: #1f7a43;
+}
+
+.hc-rail-diff-removed {
+  color: #b23a37;
 }
 
 .hc-rail-more-button {
@@ -4452,6 +4478,14 @@ button.hc-tool-summary:hover svg:last-child,
   gap: 12px;
 }
 
+.hc-command-panel-row-trailing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .hc-command-panel-row h3 {
   margin: 0;
   color: #222823;
@@ -4477,6 +4511,44 @@ button.hc-tool-summary:hover svg:last-child,
   text-transform: uppercase;
 }
 
+.hc-command-secondary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-command-secondary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid #d0ccc0;
+  border-radius: 6px;
+  background: #fffdfa;
+  color: #4b5651;
+  padding: 0 7px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.hc-command-secondary-action:hover,
+.hc-command-secondary-action:focus-visible {
+  background: #ece9df;
+  outline: none;
+}
+
+.hc-command-secondary-action[data-tone="success"] {
+  border-color: #9fb29f;
+  color: #16452f;
+}
+
+.hc-command-secondary-action[data-tone="danger"] {
+  border-color: #d6a79d;
+  color: #963d2f;
+}
+
 .hc-command-details {
   display: grid;
   gap: 4px;
@@ -4486,6 +4558,148 @@ button.hc-tool-summary:hover svg:last-child,
   font-size: 11px;
   line-height: 1.4;
   word-break: break-word;
+}
+
+.hc-mcp-tool-form form {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.hc-mcp-tool-form-body {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px 14px;
+}
+
+.hc-mcp-tool-form-summary {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #ddd8cc;
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 10px;
+}
+
+.hc-mcp-tool-form-summary strong {
+  color: #222823;
+  font-size: 13px;
+}
+
+.hc-mcp-tool-form-summary span {
+  color: #5f625d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hc-mcp-tool-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.hc-mcp-tool-field {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #ddd8cc;
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 10px;
+}
+
+.hc-mcp-tool-field[data-error="true"] {
+  border-color: #d6a79d;
+}
+
+.hc-mcp-tool-field-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #222823;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.hc-mcp-tool-field-header em {
+  border-radius: 999px;
+  background: #ece9df;
+  color: #4b5651;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.hc-mcp-tool-field small {
+  color: #6f716b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hc-mcp-tool-control {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cfcabe;
+  border-radius: 7px;
+  background: #f6f3ec;
+  color: #222823;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 9px;
+}
+
+textarea.hc-mcp-tool-control {
+  min-height: 92px;
+  resize: vertical;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.hc-mcp-tool-control:focus {
+  border-color: #b7a98f;
+  outline: none;
+  box-shadow: 0 0 0 2px rgb(183 169 143 / 20%);
+}
+
+.hc-mcp-tool-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  border: 1px solid #cfcabe;
+  border-radius: 7px;
+  background: #f6f3ec;
+  color: #222823;
+  padding: 7px 9px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hc-mcp-tool-checkbox input {
+  width: 15px;
+  height: 15px;
+}
+
+.hc-mcp-tool-field-error {
+  color: #963d2f !important;
+  font-weight: 650;
+}
+
+.hc-mcp-tool-form-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid #dedbd1;
+}
+
+.hc-mcp-tool-submit {
+  border-color: #9fb29f;
+  background: #f0f6ef;
+  color: #16452f;
 }
 
 .hc-spin {

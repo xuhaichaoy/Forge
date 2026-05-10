@@ -1,4 +1,4 @@
-import { Activity, Archive, Copy, GitFork, MoreHorizontal, Pencil } from "lucide-react";
+import { Activity, Archive, Copy, GitFork, MessageSquareText, MoreHorizontal, Pencil } from "lucide-react";
 import { useState } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
 
@@ -16,6 +16,7 @@ export interface ConversationChromeProps {
   onForkThread?: (thread: Thread) => void | Promise<void>;
   onRenameThread?: (thread: Thread) => void | Promise<void>;
   onArchiveThread?: (thread: Thread) => void | Promise<void>;
+  onOpenSideChat?: (thread: Thread) => void | Promise<void>;
   onCopyWorkingDirectory?: () => void | Promise<void>;
   onCopySessionId?: () => void | Promise<void>;
   onCopyConversationMarkdown?: () => void | Promise<void>;
@@ -33,6 +34,7 @@ export function ConversationChrome({
   onForkThread,
   onRenameThread,
   onArchiveThread,
+  onOpenSideChat,
   onCopyWorkingDirectory,
   onCopySessionId,
   onCopyConversationMarkdown,
@@ -104,6 +106,10 @@ export function ConversationChrome({
                   Copy conversation markdown
                 </button>
                 <div className="hc-thread-menu-separator" />
+                <button type="button" className="hc-thread-menu-item" role="menuitem" onClick={() => runThreadAction(onOpenSideChat)}>
+                  <MessageSquareText size={13} />
+                  Open side chat
+                </button>
                 <button
                   type="button"
                   className="hc-thread-menu-item"

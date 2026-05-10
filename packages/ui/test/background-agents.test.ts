@@ -3,6 +3,7 @@ import type { AccumulatedThreadItem as ThreadItem } from "../src/state/render-gr
 
 export default function runBackgroundAgentTests(): void {
   projectsReceiverThreadsAsClickableRailEntries();
+  projectsDiffStatsFromReceiverThreadLatestTurn();
   updatesExistingAgentStatusFromLaterActions();
   ignoresNonCollabItemsAndRowsWithoutReceivers();
 }
@@ -49,6 +50,49 @@ function projectsReceiverThreadsAsClickableRailEntries(): void {
       },
     }],
     "receiver thread metadata should become a clickable Background agents rail row",
+  );
+}
+
+function projectsDiffStatsFromReceiverThreadLatestTurn(): void {
+  const entries = projectBackgroundAgentRailEntries([
+    {
+      type: "collabAgentToolCall",
+      id: "spawn-with-diff",
+      tool: "spawnAgent",
+      status: "completed",
+      receiverThreadIds: ["agent-diff-123"],
+      receiverThreads: [
+        {
+          threadId: "agent-diff-123",
+          thread: {
+            agentNickname: "Builder",
+            turns: [
+              {
+                id: "turn-1",
+                diff: [
+                  "diff --git a/src/app.ts b/src/app.ts",
+                  "--- a/src/app.ts",
+                  "+++ b/src/app.ts",
+                  "@@ -1,2 +1,3 @@",
+                  "-old",
+                  "+new",
+                  "+next",
+                ].join("\n"),
+              },
+            ],
+          },
+        },
+      ],
+      agentsStates: {
+        "agent-diff-123": { status: "completed", message: null },
+      },
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    entries[0]?.diffStats,
+    { linesAdded: 2, linesRemoved: 1 },
+    "receiver thread latest diff should project Desktop-style background agent diff stats",
   );
 }
 

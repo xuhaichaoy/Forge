@@ -90,8 +90,14 @@ export interface RailEntry {
   meta?: string;
   status?: string;
   details?: string[];
+  diffStats?: RailDiffStats;
   reference?: RailEntryReference;
   action?: RailEntryAction;
+}
+
+export interface RailDiffStats {
+  linesAdded: number;
+  linesRemoved: number;
 }
 
 export interface RailEntryReference {

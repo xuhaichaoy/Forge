@@ -155,9 +155,11 @@ export type ComposerAttachment =
   | { type: "filePath"; path: string };
 
 export interface ComposerMentionOption {
+  kind?: "file" | "skill" | "app" | "plugin";
   name: string;
   path: string;
   detail?: string;
+  promptText?: string;
   score?: number;
 }
 
@@ -359,7 +361,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("collab", "Collaboration", "Choose the collaboration mode.", "team", "direct", ["mode"]),
   command("agent", "Agents", "Switch or manage agent threads.", "team", "pending", ["subagent", "multiagent"], undefined, true),
   command("subagents", "Subagents", "Open multi-agent controls.", "team", "pending", ["agent", "multiagents"], undefined, true),
-  command("side", "Side conversation", "Start an ephemeral side conversation.", "thread", "pending", ["sidecar"], "prompt", true),
+  command("side", "Side conversation", "Start an ephemeral side conversation.", "thread", "direct", ["sidecar"], "prompt"),
   command("copy", "Copy answer", "Copy the last assistant answer as markdown.", "thread", "desktop", ["clipboard"]),
   command("raw", "Raw mode", "Toggle raw transcript mode.", "debug", "pending", ["scrollback"], "on | off", true),
   command("diff", "Diff", "Show the current git diff.", "workspace", "direct", ["changes"]),
@@ -381,7 +383,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("stop", "Stop terminals", "Stop all background terminals for this thread.", "tools", "direct", ["clean"]),
   command("clean", "Clean terminals", "Stop all background terminals for this thread.", "tools", "direct", ["stop"], undefined, true),
   command("clear", "Clear", "Clear composer input.", "thread", "direct", ["reset"]),
-  command("personality", "Personality", "Choose assistant communication style.", "settings", "pending", ["style"], undefined, true),
+  command("personality", "Personality", "Choose assistant communication style.", "settings", "direct", ["style"]),
   command("realtime", "Realtime", "Start or configure realtime voice.", "tools", "pending", ["voice", "audio"], undefined, true),
   command("settings", "Settings", "Open settings.", "settings", "panel", ["config", "preferences"]),
   command("test-approval", "Test approval", "Trigger a development approval request.", "debug", "pending", ["debug"], undefined, true),
