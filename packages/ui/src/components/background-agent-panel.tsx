@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { ConversationView } from "./conversation-view";
-import type { FileReference } from "./message-unit";
+import type { FileReference } from "./file-reference-types";
 import type { OpenThreadHandler } from "./open-thread";
 
 export interface BackgroundAgentPanelProps {

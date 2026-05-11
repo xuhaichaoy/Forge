@@ -23,8 +23,8 @@ import {
   itemText,
 } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
+import type { FileReference } from "./file-reference-types";
 import { CodeSnippet, Markdownish } from "./message-unit";
-import type { FileReference } from "./message-unit";
 import { ToolActivityDetail } from "./tool-activity-detail";
 import type { OpenThreadHandler } from "./open-thread";
 
