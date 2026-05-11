@@ -60,6 +60,7 @@ export interface UseTurnSubmissionInput {
   composerSubmitState: ComposerSubmitState;
   dispatch: ThreadWorkflowDispatch;
   ensureConnected: () => Promise<boolean>;
+  includeImageDynamicTool: boolean;
   input: string;
   rememberLatestCollaborationMode: (threadId: string, options: TurnStartOptions | null | undefined) => void;
   resetComposerSelectionAfterCreatedThread: (threadId: string) => void;
@@ -95,6 +96,7 @@ export function useTurnSubmission({
   composerSubmitState,
   dispatch,
   ensureConnected,
+  includeImageDynamicTool,
   input,
   rememberLatestCollaborationMode,
   resetComposerSelectionAfterCreatedThread,
@@ -268,6 +270,7 @@ export function useTurnSubmission({
         workspace,
         dispatch,
         context: threadContextDefaults,
+        threadCreationOptions: { includeDynamicTools: includeImageDynamicTool },
       });
       const threadId = readyThread.threadId;
       if (!threadId) throw new Error("No active Codex thread");
@@ -335,7 +338,13 @@ export function useTurnSubmission({
           return;
         }
         dispatch({ type: "removeThread", threadId });
-        const nextThreadId = await createAndSelectThreadForTurn(client, workspace, dispatch, threadContextDefaults);
+        const nextThreadId = await createAndSelectThreadForTurn(
+          client,
+          workspace,
+          dispatch,
+          threadContextDefaults,
+          { includeDynamicTools: includeImageDynamicTool },
+        );
         if (!nextThreadId) throw error;
         optimistic = dispatchOptimisticUserMessage(dispatch, nextThreadId, content);
         try {
@@ -369,6 +378,7 @@ export function useTurnSubmission({
     composerSubmitState.submitButtonMode,
     dispatch,
     ensureConnected,
+    includeImageDynamicTool,
     input,
     queuedFollowUpsByThread,
     rememberLatestCollaborationMode,

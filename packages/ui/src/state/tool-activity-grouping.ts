@@ -51,8 +51,16 @@ export function summarizeToolActivity(
   items: ThreadItem[],
   options: { conversationDetailLevel: ConversationDetailLevel; workedForCollapsedByDefault?: boolean },
 ): ToolActivitySummary {
+  const activityCounts = {
+    approvedRequests: 0,
+    deniedRequests: 0,
+    hooks: 0,
+  };
   const counts = {
     commands: 0,
+    webSearchCommands: 0,
+    runningWebSearchCommands: 0,
+    runningFolderCreationCommands: 0,
     exploredFiles: 0,
     searches: 0,
     lists: 0,
@@ -93,8 +101,15 @@ export function summarizeToolActivity(
         if (itemInProgress) activeDetails.push(exploration.activeLabel);
       } else {
         counts.commands += 1;
+        if (commandSearchesWebLikeCodexDesktop(item)) counts.webSearchCommands += 1;
+        if (itemInProgress && commandCreatesFolderLikeCodexDesktop(item)) counts.runningFolderCreationCommands += 1;
+        if (itemInProgress && commandSearchesWebLikeCodexDesktop(item)) counts.runningWebSearchCommands += 1;
         details.push(commandLabel(item));
-        if (itemInProgress) activeDetails.push(commandLabel(item));
+        if (itemInProgress) {
+          if (commandSearchesWebLikeCodexDesktop(item)) activeDetails.push("Searching the web");
+          else if (commandCreatesFolderLikeCodexDesktop(item)) activeDetails.push("Creating folder");
+          else activeDetails.push(commandLabel(item));
+        }
       }
     } else if (type === "patch") {
       counts.fileChanges += 1;
@@ -124,6 +139,23 @@ export function summarizeToolActivity(
       const label = multiAgentActionRowLabel(item);
       details.push(label);
       if (itemInProgress) activeDetails.push(label);
+    } else if (type === "automatic-approval-review") {
+      const status = stringField(record, "status");
+      if (status === "approved") {
+        activityCounts.approvedRequests += 1;
+        details.push("Approved request");
+      } else if (status === "denied") {
+        activityCounts.deniedRequests += 1;
+        details.push("Denied request");
+      } else {
+        counts.other += 1;
+        details.push(eventLabel(item));
+      }
+    } else if (type === "hook") {
+      activityCounts.hooks += 1;
+      const label = "Ran hook";
+      details.push(label);
+      if (itemInProgress) activeDetails.push("Running hook");
     } else if (type === "reasoning") {
       counts.reasoning += 1;
       if (itemInProgress) activeDetails.push("Thinking");
@@ -159,7 +191,7 @@ export function summarizeToolActivity(
   });
   const groupLabel = groupType === "multi-agent-group"
     ? multiAgentGroupLabelForItems(items)
-    : activityLabel(groupType, counts, groupInProgress, groupDurationMs);
+    : activityLabel(groupType, counts, groupInProgress, groupDurationMs, activityCounts);
   const activeDetail = activeDetails.at(-1) ?? null;
   const label = groupType === "multi-agent-group"
     ? groupLabel
@@ -197,6 +229,7 @@ function directItemActivityLabel(
   }
   const item = items[0];
   if (!item || itemType(item) !== "exec" || explorationSummary(item)) return null;
+  if (commandSearchesWebLikeCodexDesktop(item)) return null;
   return commandLabel(item);
 }
 
@@ -207,7 +240,7 @@ function activityIcon(groupType: ToolActivityGroupType, counts: ToolActivitySumm
   if (groupType === "pending-mcp-tool-calls") return "mcp";
   if (groupType === "todo-list" || counts.plans > 0) return "plan";
   if (groupType === "web-search-group") return "web-search";
-  if (counts.webSearches > 0) return "web-search";
+  if (counts.webSearches > 0 || counts.webSearchCommands > 0 || counts.runningWebSearchCommands > 0) return "web-search";
   if (counts.exploredFiles > 0 || counts.searches > 0 || counts.lists > 0) return "search";
   if (counts.fileChanges > 0) return "edit";
   if (counts.commands > 0 || counts.dynamicCalls > 0) return "terminal";
@@ -220,6 +253,7 @@ function activityLabel(
   counts: ToolActivitySummary["counts"],
   inProgress: boolean,
   totalDurationMs: number,
+  activityCounts: { approvedRequests: number; deniedRequests: number; hooks?: number } = { approvedRequests: 0, deniedRequests: 0 },
 ): string {
   if (groupType === "reasoning") return inProgress ? "Thinking" : totalDurationMs > 0 ? `Thought for ${formatDuration(totalDurationMs)}` : "Thought";
   if (groupType === "exploration") return explorationSummaryLabel(counts, inProgress) ?? (inProgress ? "Exploring" : "Explored");
@@ -232,16 +266,44 @@ function activityLabel(
     return inProgress ? "Working" : "Worked";
   }
   if (inProgress) return "Working";
-  const fileChangeLabel = fileChangeSummaryLabel(counts, false);
-  if (fileChangeLabel) return fileChangeLabel;
-  const explorationLabel = explorationSummaryLabel(counts, false);
-  if (explorationLabel) return explorationLabel;
-  if (counts.commands > 0) return `Ran ${formatCount(counts.commands, "command")}`;
-  if (counts.mcpCalls + counts.dynamicCalls > 0) return `Called ${formatCount(counts.mcpCalls + counts.dynamicCalls, "tool")}`;
-  if (counts.webSearches > 0) return `Searched web ${formatCount(counts.webSearches, "time")}`;
+  const completedLabel = completedActivitySummaryLabel(counts, activityCounts);
+  if (completedLabel) return completedLabel;
   if (counts.plans > 0) return "Updated plan";
   if (counts.reasoning > 0) return "Thought";
   return "Worked";
+}
+
+function completedActivitySummaryLabel(
+  counts: ToolActivitySummary["counts"],
+  activityCounts: { approvedRequests: number; deniedRequests: number; hooks?: number },
+): string | null {
+  const segments = [
+    fileChangeSummaryLabel(counts, false),
+    explorationSummaryLabel(counts, false),
+    requestSummarySegment("Approved", activityCounts.approvedRequests),
+    requestSummarySegment("Denied", activityCounts.deniedRequests),
+    activityCounts.hooks && activityCounts.hooks > 0 ? `Ran ${formatCount(activityCounts.hooks, "hook")}` : "",
+    webSearchCommandSummarySegment(counts.webSearchCommands),
+    ordinaryCommandSummarySegment(counts),
+    counts.mcpCalls + counts.dynamicCalls > 0 ? `Called ${formatCount(counts.mcpCalls + counts.dynamicCalls, "tool")}` : "",
+    counts.webSearches > 0 ? `Searched web ${formatCount(counts.webSearches, "time")}` : "",
+  ].filter((value): value is string => Boolean(value));
+  if (segments.length === 0) return null;
+  return segments.map((segment, index) => index === 0 ? segment : lowerInitial(segment)).join(", ");
+}
+
+function webSearchCommandSummarySegment(count: number): string {
+  if (count <= 0) return "";
+  return count === 1 ? "Searched web" : `Searched web ${count} times`;
+}
+
+function ordinaryCommandSummarySegment(counts: ToolActivitySummary["counts"]): string {
+  const ordinaryCommands = Math.max(0, counts.commands - counts.webSearchCommands);
+  return ordinaryCommands > 0 ? `Ran ${formatCount(ordinaryCommands, "command")}` : "";
+}
+
+function requestSummarySegment(verb: "Approved" | "Denied", count: number): string {
+  return count > 0 ? `${verb} ${formatCount(count, "request")}` : "";
 }
 
 interface ExplorationSummary {
@@ -487,6 +549,8 @@ function lowerInitial(value: string): string {
 }
 export function isToolActivityItem(item: ThreadItem): boolean {
   if (itemType(item) === "multi-agent-action") return true;
+  if (itemType(item) === "automatic-approval-review") return isCompletedApprovalReviewActivity(item);
+  if (itemType(item) === "hook") return true;
   return [
     "reasoning",
     "worked-for",
@@ -494,9 +558,13 @@ export function isToolActivityItem(item: ThreadItem): boolean {
     "exec",
     "patch",
     "mcp-tool-call",
-    "dynamic-tool-call",
     "web-search",
   ].includes(itemType(item));
+}
+
+function isCompletedApprovalReviewActivity(item: ThreadItem): boolean {
+  const status = stringField(item as ItemRecord, "status");
+  return status === "approved" || status === "denied";
 }
 
 export function baseToolActivityGroupType(item: ThreadItem): ToolActivityGroupType {
@@ -508,6 +576,47 @@ export function baseToolActivityGroupType(item: ThreadItem): ToolActivityGroupTy
   if (shouldUsePendingMcpToolGroup(item)) return "pending-mcp-tool-calls";
   if (type === "exec" && explorationSummary(item)) return "exploration";
   return "collapsed-tool-activity";
+}
+
+const CURL_MUTATING_REQUEST_FLAG_RE = /(?:^|\s)(?:-X\s*|--request(?:=|\s+))(?:POST|PUT|PATCH|DELETE)\b/iu;
+const CURL_MUTATING_BODY_LONG_FLAG_RE = /(?:^|\s)(?:--data(?:-[^\s=]+)?|--json|--form|--upload-file)(?:=|\s|$)/u;
+const CURL_MUTATING_BODY_SHORT_FLAG_RE = /(?:^|\s)-(?:d|F|T)(?:=|\s|$)/u;
+
+function commandSearchesWebLikeCodexDesktop(item: ThreadItem): boolean {
+  const command = commandText(item);
+  if (!/^\s*curl(?:\s|$)/u.test(command)) return false;
+  if (
+    CURL_MUTATING_REQUEST_FLAG_RE.test(command)
+    || CURL_MUTATING_BODY_LONG_FLAG_RE.test(command)
+    || CURL_MUTATING_BODY_SHORT_FLAG_RE.test(command)
+  ) {
+    return false;
+  }
+  const urls = command.match(/\bhttps?:\/\/[^\s'"<>]+/giu);
+  if (!urls) return false;
+  const hasExternalUrl = urls.some(isExternalWebUrlLikeCodexDesktop);
+  if (!hasExternalUrl) return false;
+  return isItemInProgress(item) || execExitCode(item) === 0;
+}
+
+function isExternalWebUrlLikeCodexDesktop(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname !== "localhost" && !hostname.startsWith("127.");
+  } catch {
+    return false;
+  }
+}
+
+function commandCreatesFolderLikeCodexDesktop(item: ThreadItem): boolean {
+  return /^\s*mkdir(?:\s|$)/u.test(commandText(item));
+}
+
+function execExitCode(item: ThreadItem): number | null {
+  const record = item as ItemRecord;
+  if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
+  const output = recordObject(record.output);
+  return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
 }
 
 export function toolActivityGroupKey(item: ThreadItem, groupType: ToolActivityGroupType): string {

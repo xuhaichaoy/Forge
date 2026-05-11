@@ -5,6 +5,7 @@ import {
   DEFAULT_MODEL_PROVIDER_ID,
   DEFAULT_MODEL_PROVIDER_NAME,
   DEFAULT_MODEL_REASONING_SUMMARY,
+  buildModelConfigFromConfig,
   buildLocalModelCatalogEntry,
   buildModelConfigEdits,
   normalizeBaseUrl,
@@ -148,5 +149,50 @@ export default function runModelSettingsTests(): void {
     defaultNameProvider?.name,
     DEFAULT_MODEL_PROVIDER_NAME,
     "buildModelConfigEdits provider falls back to the default provider name",
+  );
+
+  assertDeepEqual(
+    buildModelConfigFromConfig({
+      model: " gpt-team ",
+      model_provider: " team_provider ",
+      model_providers: {
+        team_provider: {
+          name: " Team Gateway ",
+          base_url: " https://gateway.example.test/v1/// ",
+          experimental_bearer_token: " bearer-token ",
+        },
+      },
+    }),
+    {
+      id: "team_provider",
+      name: "Team Gateway",
+      protocol: "openai",
+      baseUrl: "https://gateway.example.test/v1",
+      apiKey: "bearer-token",
+      model: "gpt-team",
+      temperature: 0.2,
+      maxTokens: null,
+      supportsImageInput: true,
+    },
+    "buildModelConfigFromConfig derives the active provider endpoint from config/read",
+  );
+  assertDeepEqual(
+    buildModelConfigFromConfig({
+      model: "",
+      model_provider: "",
+      model_providers: {},
+    }),
+    {
+      id: DEFAULT_MODEL_PROVIDER_ID,
+      name: DEFAULT_MODEL_PROVIDER_NAME,
+      protocol: "openai",
+      baseUrl: DEFAULT_MODEL_BASE_URL,
+      apiKey: "",
+      model: "Qwen3.6-27B-mxfp4",
+      temperature: 0.2,
+      maxTokens: null,
+      supportsImageInput: true,
+    },
+    "buildModelConfigFromConfig falls back to HiCodex defaults when config/read omits provider details",
   );
 }

@@ -124,6 +124,29 @@ export function buildModelConfigsFromList(entries: ModelListEntry[]): ModelConfi
   return entries.map(buildModelConfigFromListEntry);
 }
 
+export function buildModelConfigFromConfig(config: Record<string, unknown> | null | undefined): ModelConfig {
+  const activeModel = stringConfigValue(config?.model) || DEFAULT_MODEL_NAME;
+  const activeProviderId = stringConfigValue(config?.model_provider) || DEFAULT_MODEL_PROVIDER_ID;
+  const provider = configRecord(config?.model_providers)?.[activeProviderId];
+  const providerRecord = configRecord(provider);
+  const providerName = stringConfigValue(providerRecord?.name)
+    || (activeProviderId === DEFAULT_MODEL_PROVIDER_ID ? DEFAULT_MODEL_PROVIDER_NAME : activeProviderId);
+  const providerBaseUrl = stringConfigValue(providerRecord?.base_url)
+    || stringConfigValue(providerRecord?.baseUrl)
+    || DEFAULT_MODEL_BASE_URL;
+  return normalizeModelConfig({
+    id: activeProviderId,
+    name: providerName,
+    protocol: "openai",
+    baseUrl: providerBaseUrl,
+    apiKey: stringConfigValue(providerRecord?.experimental_bearer_token),
+    model: activeModel,
+    temperature: 0.2,
+    maxTokens: null,
+    supportsImageInput: true,
+  });
+}
+
 export function buildModelConfigEdits(model: ModelConfig, catalogPath: string): ModelConfigEdit[] {
   const normalized = normalizeModelConfig(model);
   return [
@@ -135,4 +158,14 @@ export function buildModelConfigEdits(model: ModelConfig, catalogPath: string): 
     { keyPath: "model_auto_compact_token_limit", value: DEFAULT_MODEL_AUTO_COMPACT_TOKEN_LIMIT, mergeStrategy: "replace" },
     { keyPath: "model_reasoning_summary", value: DEFAULT_MODEL_REASONING_SUMMARY, mergeStrategy: "replace" },
   ];
+}
+
+function stringConfigValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function configRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }

@@ -84,6 +84,12 @@ export interface LocalFileMetadata {
   mimeType?: string | null;
 }
 
+export interface ImageGenerationRequest {
+  baseUrl: string;
+  apiKey?: string | null;
+  payload: unknown;
+}
+
 export function pickFileReferences(kind: HostFileReferenceKind, multiple = true): Promise<string[]> {
   return invoke("host_pick_file_references", { kind, multiple });
 }
@@ -106,6 +112,10 @@ export function readThreadToolHistory(
   threadPath?: string | null,
 ): Promise<ThreadToolHistory> {
   return invoke("host_read_thread_tool_history", { codexHome, threadId, threadPath });
+}
+
+export function generateImageWithHost(request: ImageGenerationRequest): Promise<unknown> {
+  return invoke("host_generate_image", { request });
 }
 
 export function isTauriRuntime(): boolean {

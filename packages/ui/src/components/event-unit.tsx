@@ -19,7 +19,9 @@ import {
   type ToolActivityIcon,
   projectConversation,
 } from "../state/render-groups";
-import { itemText } from "../state/thread-item-fields";
+import {
+  itemText,
+} from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import { CodeSnippet, Markdownish } from "./message-unit";
 import type { FileReference } from "./message-unit";

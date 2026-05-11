@@ -30,6 +30,7 @@ import {
   threadTitle,
   unarchiveThread,
 } from "../src/state/thread-workflow";
+import { HICODEX_IMAGE_DYNAMIC_TOOL_SPEC } from "../src/state/image-generation-tool";
 
 interface RecordedRequest {
   method: string;
@@ -347,6 +348,14 @@ function projectsThreadContextFromCodexConfig(): void {
     },
     "thread context params should keep thread-level overrides and drop turn-only values",
   );
+  assertDeepEqual(
+    buildThreadContextParams(" /workspace ", null, { includeDynamicTools: true }),
+    {
+      cwd: "/workspace",
+      dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC],
+    },
+    "thread start context params should opt into dynamic tools",
+  );
 
   assertDeepEqual(
     buildTurnStartParams("thread-ctx", [], " /workspace ", {
@@ -432,6 +441,16 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     "thread/start",
     { cwd: "/workspace/project" },
     "startThread should trim workspace cwd",
+  );
+
+  const withDynamicTool = createClientRecorder();
+  void startThread(withDynamicTool.client, " /workspace/project ", null, { includeDynamicTools: true });
+  assertRequest(
+    withDynamicTool.requests,
+    0,
+    "thread/start",
+    { cwd: "/workspace/project", dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] },
+    "startThread should opt into the HiCodex image dynamic tool",
   );
 
   const second = createClientRecorder();
@@ -558,7 +577,11 @@ async function resumesThreadAfterMetadataRead(): Promise<void> {
     resume.requests,
     1,
     "thread/resume",
-    { threadId: "thread-1", cwd: "/workspace", model: "gpt-5.2" },
+    {
+      threadId: "thread-1",
+      cwd: "/workspace",
+      model: "gpt-5.2",
+    },
     "resume with metadata read should then call thread/resume",
   );
   assertEqual(resume.requests[1]?.timeout, 120_000, "resume with metadata read should preserve resume timeout");
@@ -668,7 +691,10 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     created.requests,
     0,
     "thread/start",
-    { cwd: "/workspace/project", model: "gpt-5.2" },
+    {
+      cwd: "/workspace/project",
+      model: "gpt-5.2",
+    },
     "missing active thread should create a new thread for the first turn",
   );
   assertRequest(
@@ -704,7 +730,11 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     resumed.requests,
     1,
     "thread/resume",
-    { threadId: "thread-1", cwd: "/workspace/project", sandbox: "workspace-write" },
+    {
+      threadId: "thread-1",
+      cwd: "/workspace/project",
+      sandbox: "workspace-write",
+    },
     "notLoaded historical thread should resume before starting a turn",
   );
 
@@ -752,7 +782,11 @@ async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void
     sent.requests,
     1,
     "thread/resume",
-    { threadId: "thread-history", cwd: "/workspace/project", model: "gpt-5.2" },
+    {
+      threadId: "thread-history",
+      cwd: "/workspace/project",
+      model: "gpt-5.2",
+    },
     "selected historical thread recovery should resume the same thread",
   );
   assertRequest(

@@ -532,6 +532,9 @@ function projectsReasoningBodiesLikeCodexDesktop(): void {
         totalDurationMs: null,
         counts: {
           commands: 0,
+          webSearchCommands: 0,
+          runningWebSearchCommands: 0,
+          runningFolderCreationCommands: 0,
           exploredFiles: 0,
           searches: 0,
           lists: 0,
@@ -572,6 +575,9 @@ function omitsReasoningRowsFromExplorationDetailsLikeDesktop(): void {
       totalDurationMs: null,
       counts: {
         commands: 0,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
         exploredFiles: 1,
         searches: 1,
         lists: 0,
@@ -677,6 +683,9 @@ function rendersWorkedForExpansionThroughNormalConversationUnits(): void {
       totalDurationMs: 1_000,
       counts: {
         commands: 0,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
         exploredFiles: 0,
         searches: 1,
         lists: 0,
@@ -697,13 +706,13 @@ function rendersWorkedForExpansionThroughNormalConversationUnits(): void {
   const expanded = workedForExpandedUnits(unit);
   assertDeepEqual(
     expanded.map((item) => item.kind),
-    ["toolActivity", "message"],
+    ["threadItem", "message"],
     "worked-for expansion should reuse normal conversation render units",
   );
   assertEqual(
-    expanded[0]?.kind === "toolActivity" ? expanded[0].summary.groupType : null,
-    "exploration",
-    "recovered exploration commands should keep Desktop's exploration group type",
+    expanded[0]?.kind === "threadItem" ? expanded[0].item.id : null,
+    "command-1",
+    "single recovered exec rows should stay standalone like Codex Desktop",
   );
   assertEqual(
     expanded[1]?.kind === "message" ? expanded[1].role : null,
@@ -800,6 +809,9 @@ function toolActivity(
       totalDurationMs: null,
       counts: {
         commands: 0,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
         exploredFiles: 0,
         searches: 0,
         lists: 0,

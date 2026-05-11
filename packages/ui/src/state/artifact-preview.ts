@@ -189,15 +189,18 @@ function artifactPreviewKind(input: {
   url?: string;
 }): ArtifactPreviewKind {
   if (input.imageSource) return "image";
-  if (input.reference && PDF_EXTENSIONS.has(pathExtension(input.reference.path))) return "pdf";
-  if (input.textPath && isMarkdownPath(input.textPath)) return "markdown";
-  if (input.textPath) return "text";
   if (input.reference) {
     const extension = pathExtension(input.reference.path);
+    if (PDF_EXTENSIONS.has(extension)) return "pdf";
+    if (MARKDOWN_EXTENSIONS.has(extension)) return "markdown";
     if (NOTEBOOK_EXTENSIONS.has(extension)) return "notebook";
     if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
     if (PRESENTATION_EXTENSIONS.has(extension)) return "presentation";
     if (SPREADSHEET_EXTENSIONS.has(extension)) return "spreadsheet";
+  }
+  if (input.textPath && isMarkdownPath(input.textPath)) return "markdown";
+  if (input.textPath) return "text";
+  if (input.reference) {
     return "file";
   }
   return input.url ? "url" : "file";

@@ -1,4 +1,15 @@
-import { Boxes, CheckCircle2, Loader2, Power, PowerOff, Server, TerminalSquare, X } from "lucide-react";
+import {
+  Boxes,
+  CheckCircle2,
+  FileText,
+  Loader2,
+  Power,
+  PowerOff,
+  RefreshCw,
+  Server,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 
 export interface CommandPanelProps {
@@ -29,19 +40,36 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction }: 
           </div>
         )}
 
-        {panel.entries.length > 0 && (
-          <div className="hc-command-panel-list">
-            {panel.entries.map((entry) => (
-              <CommandPanelRow
-                entry={entry}
-                key={entry.id}
-                onSelectAction={onSelectAction}
-                onSelectEntry={onSelectEntry}
-              />
-            ))}
-          </div>
-        )}
+        <CommandPanelEntryList
+          entries={panel.entries}
+          onSelectAction={onSelectAction}
+          onSelectEntry={onSelectEntry}
+        />
       </section>
+    </div>
+  );
+}
+
+export function CommandPanelEntryList({
+  entries,
+  onSelectEntry,
+  onSelectAction,
+}: {
+  entries: CommandPanelEntry[];
+  onSelectEntry?: (entry: CommandPanelEntry) => void;
+  onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="hc-command-panel-list">
+      {entries.map((entry) => (
+        <CommandPanelRow
+          entry={entry}
+          key={entry.id}
+          onSelectAction={onSelectAction}
+          onSelectEntry={onSelectEntry}
+        />
+      ))}
     </div>
   );
 }
@@ -127,6 +155,12 @@ function CommandPanelRow({
 function secondaryActionIcon(action: CommandPanelEntryAction) {
   if (action.type === "writeSkillConfig") {
     return action.enabled ? <Power size={13} /> : <PowerOff size={13} />;
+  }
+  if (action.type === "readSkillFile") {
+    return <FileText size={13} />;
+  }
+  if (action.type === "reloadMcpServers") {
+    return <RefreshCw size={13} />;
   }
   return null;
 }

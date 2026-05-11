@@ -1,5 +1,6 @@
 import { formatUnknown, stringField } from "../lib/format";
 
+import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import type { EventFormat, EventTone, ItemRecord, ThreadItem } from "./render-group-types";
 import {
   formatCount,
@@ -11,6 +12,7 @@ import {
 } from "./thread-item-fields";
 
 export function eventLabel(item: ThreadItem): string {
+  if (hiCodexImageToolOutputUrl(item)) return "Generated image";
   const type = itemType(item);
   if (type === "userInput" || type === "user-input") return isCompletedRecord(item) ? "User input request" : "User input requested";
   if (type === "user-input-response") return "User input response";
@@ -29,6 +31,7 @@ export function eventLabel(item: ThreadItem): string {
   if (type === "model-rerouted") return "Model rerouted";
   if (type === "system-error") return "System error";
   if (type === "stream-error") return "Stream error";
+  if (type === "dynamic-tool-call") return "Tool call";
   if (type === "imageView") return "Viewed image";
   if (type === "imageGeneration" || type === "generated-image") return "Generated image";
   if (type === "enteredReviewMode") return "Entered review";
@@ -38,6 +41,8 @@ export function eventLabel(item: ThreadItem): string {
 }
 
 export function eventText(item: ThreadItem): string {
+  const hiCodexImageUrl = hiCodexImageToolOutputUrl(item);
+  if (hiCodexImageUrl) return `![Generated image](${markdownImageTarget(hiCodexImageUrl)})`;
   const type = itemType(item);
   const record = item as ItemRecord;
   if (type === "userInput" || type === "user-input") {
@@ -124,6 +129,12 @@ export function eventText(item: ThreadItem): string {
       scalarText(record.additionalDetails) || scalarText(record.additional_details),
     ]) || formatUnknown(item);
   }
+  if (type === "dynamic-tool-call") {
+    return eventLines([
+      keyValueLine("Tool", dynamicToolName(record)),
+      `Status: ${isCompletedRecord(item) ? "completed" : "running"}`,
+    ]);
+  }
   if (type === "generated-image" || type === "imageGeneration") {
     const src = imageEventSource(record);
     if (src) return `![Generated image](${markdownImageTarget(src)})`;
@@ -149,6 +160,7 @@ export function eventTone(item: ThreadItem): EventTone | undefined {
 }
 
 export function eventFormat(item: ThreadItem): EventFormat | undefined {
+  if (hiCodexImageToolOutputUrl(item)) return "markdown";
   const type = itemType(item);
   if (type === "turn-diff") return "diff";
   if ((type === "generated-image" || type === "imageGeneration") && imageEventSource(item as ItemRecord)) {
@@ -198,6 +210,12 @@ function modelTransitionText(record: ItemRecord): string {
   return `${from || "unknown"} -> ${to || "unknown"}`;
 }
 
+function dynamicToolName(record: ItemRecord): string {
+  return [stringField(record, "namespace"), stringField(record, "tool") || "tool"]
+    .filter(Boolean)
+    .join(".");
+}
+
 function multiAgentReceiverThreadIds(item: ThreadItem): string[] {
   const record = item as ItemRecord;
   const raw = Array.isArray(record.receiverThreadIds)
@@ -219,7 +237,10 @@ function multiAgentStatus(item: ThreadItem): string {
 
 function imageEventSource(record: ItemRecord): string {
   const src = stringField(record, "src") || stringField(record, "url") || stringField(record, "path") || stringField(record, "savedPath");
-  if (!src) return "";
+  if (!src) {
+    const result = stringField(record, "result").trim();
+    return result ? `data:image/png;base64,${result}` : "";
+  }
   if (/^(?:data|blob|https?|file):/i.test(src)) return src;
   if (src.startsWith("/")) return `file://${encodeURI(src)}`;
   return src;

@@ -1,9 +1,11 @@
 import {
   createCommandPanelState,
   projectCommandPanelEntries,
+  projectMcpResourceReadResultEntries,
   projectMcpServerEntries,
   projectMcpToolCallResultEntries,
   projectPluginEntries,
+  projectSkillFileReadResultEntries,
 } from "../src/state/command-panel";
 import {
   buildMcpToolArguments,
@@ -24,8 +26,10 @@ type CommandPanelEntry = {
 
 export default function runCommandPanelTests(): void {
   projectsMcpServerNamesToolsAndAuthStatus();
+  projectsMcpResourcesTemplatesAndReadResults();
   projectsSkillsHooksAppsAndPluginsAsCommandEntries();
   projectsDesktopSkillMetadataAndErrors();
+  projectsSkillSourceReadResults();
   avoidsDuplicatingDesktopSkillPromptReferences();
   flattensPluginListMarketplaces();
   projectsAndBuildsMcpToolArguments();
@@ -83,19 +87,31 @@ function projectsDesktopSkillMetadataAndErrors(): void {
           path: "/workspace/.codex/skills/review/SKILL.md",
           promptText: "Review the current diff and report bugs.\nUse concise findings. [$team:review](/workspace/.codex/skills/review/SKILL.md) ",
         },
-        secondaryActions: [{
-          id: "skill:team:review:enable",
-          label: "Enable",
-          title: "Enable Review",
-          tone: "success",
-          action: {
-            type: "writeSkillConfig",
-            title: "Enable Review",
-            name: "team:review",
-            path: "/workspace/.codex/skills/review/SKILL.md",
-            enabled: true,
+        secondaryActions: [
+          {
+            id: "skill:/workspace/.codex/skills/review/SKILL.md:read",
+            label: "View",
+            title: "View Review source",
+            action: {
+              type: "readSkillFile",
+              title: "View Review",
+              path: "/workspace/.codex/skills/review/SKILL.md",
+            },
           },
-        }],
+          {
+            id: "skill:team:review:enable",
+            label: "Enable",
+            title: "Enable Review",
+            tone: "success",
+            action: {
+              type: "writeSkillConfig",
+              title: "Enable Review",
+              name: "team:review",
+              path: "/workspace/.codex/skills/review/SKILL.md",
+              enabled: true,
+            },
+          },
+        ],
       },
       {
         id: "skill-error:/workspace/.codex/skills/bad/SKILL.md",
@@ -108,6 +124,23 @@ function projectsDesktopSkillMetadataAndErrors(): void {
       },
     ],
     "skill projection should follow Desktop displayName, scope, default prompt, dependencies, and load errors",
+  );
+}
+
+function projectsSkillSourceReadResults(): void {
+  assertDeepEqual(
+    projectSkillFileReadResultEntries("/workspace/.codex/skills/review/SKILL.md", "# Review\nUse concise findings."),
+    [
+      {
+        id: "skill-file:/workspace/.codex/skills/review/SKILL.md",
+        title: "SKILL.md",
+        kind: "status",
+        status: "read",
+        meta: "/workspace/.codex/skills/review/SKILL.md",
+        details: ["# Review", "Use concise findings."],
+      },
+    ],
+    "skill source reads should be projected as readable command panel rows",
   );
 }
 
@@ -308,6 +341,104 @@ function projectsMcpServerNamesToolsAndAuthStatus(): void {
       },
     ],
     "MCP tool call results should be projected into readable command panel rows",
+  );
+}
+
+function projectsMcpResourcesTemplatesAndReadResults(): void {
+  const entries: CommandPanelEntry[] = projectMcpServerEntries({
+    data: [{
+      name: "filesystem",
+      tools: {},
+      resources: [{
+        name: "README",
+        uri: "file:///workspace/README.md",
+        mimeType: "text/markdown",
+        size: 42,
+        description: "Project readme",
+      }],
+      resourceTemplates: [{
+        name: "File",
+        uriTemplate: "file:///{path}",
+        mimeType: "text/plain",
+        description: "Read a file by path",
+      }],
+      authStatus: "authenticated",
+    }],
+  });
+
+  assertDeepEqual(
+    entries.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      kind: entry.kind,
+      status: entry.status,
+      meta: entry.meta,
+      details: entry.details,
+      disabled: entry.disabled,
+      action: entry.action,
+    })),
+    [
+      {
+        id: "mcp:filesystem",
+        title: "filesystem",
+        kind: "mcpServer",
+        status: "authenticated",
+        meta: "No tools · 1 resource · 1 template",
+        details: [
+          "Resource: README - file:///workspace/README.md",
+          "Template: File - file:///{path}",
+        ],
+        disabled: undefined,
+        action: undefined,
+      },
+      {
+        id: "mcp-resource:filesystem:file:///workspace/README.md",
+        title: "README",
+        kind: "mcpResource",
+        status: "resource",
+        meta: "filesystem · text/markdown",
+        details: ["Project readme", "URI: file:///workspace/README.md", "Size: 42 bytes"],
+        disabled: undefined,
+        action: {
+          type: "readMcpResource",
+          server: "filesystem",
+          uri: "file:///workspace/README.md",
+          title: "README",
+        },
+      },
+      {
+        id: "mcp-resource-template:filesystem:file:///{path}",
+        title: "File",
+        kind: "mcpResourceTemplate",
+        status: "template",
+        meta: "filesystem · text/plain",
+        details: ["Read a file by path", "Template: file:///{path}"],
+        disabled: true,
+        action: undefined,
+      },
+    ],
+    "MCP full detail projection should expose resources and resource templates",
+  );
+
+  assertDeepEqual(
+    projectMcpResourceReadResultEntries("filesystem", "file:///workspace/README.md", {
+      contents: [{
+        uri: "file:///workspace/README.md",
+        mimeType: "text/markdown",
+        text: "# README\nHello",
+      }],
+    }),
+    [
+      {
+        id: "mcp-resource-result:filesystem:file:///workspace/README.md:0",
+        title: "Resource content 1",
+        kind: "status",
+        status: "read",
+        meta: "filesystem · text/markdown",
+        details: ["URI: file:///workspace/README.md", "MIME: text/markdown", "# README", "Hello"],
+      },
+    ],
+    "MCP resource read results should render text content without raw JSON",
   );
 }
 

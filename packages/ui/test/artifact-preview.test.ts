@@ -12,6 +12,7 @@ export default function runArtifactPreviewTests(): void {
   projectsMarkdownFilesForTextPreview();
   projectsPdfFilesForPdfPreview();
   projectsOfficeArtifactsAsTypedFilePreviews();
+  keepsSpreadsheetArtifactsTypedWhilePreservingTextPreview();
   projectsOrdinaryUrlsWithoutImagePreview();
   separatesPreviewArtifactsFromBrowserUrls();
   clipsLongPreviewText();
@@ -116,6 +117,29 @@ function projectsOfficeArtifactsAsTypedFilePreviews(): void {
       shouldPreview: true,
     },
     "Office artifacts should be classified as artifact-tab files, not browser URLs",
+  );
+}
+
+function keepsSpreadsheetArtifactsTypedWhilePreservingTextPreview(): void {
+  const preview = projectArtifactPreview({
+    id: "weather.csv",
+    title: "weather.csv",
+    meta: "weather.csv",
+    reference: { path: "weather.csv", lineStart: 1 },
+  });
+
+  assertDeepEqual(
+    {
+      kind: preview.kind,
+      artifactTypeLabel: preview.artifactTypeLabel,
+      textPath: preview.textPath,
+    },
+    {
+      kind: "spreadsheet",
+      artifactTypeLabel: "Spreadsheet",
+      textPath: "weather.csv",
+    },
+    "CSV artifacts should keep spreadsheet typing while still exposing a text preview target",
   );
 }
 

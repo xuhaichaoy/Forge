@@ -40,6 +40,7 @@ export type SlashCommandCategory =
 
 export type SettingsPanelId =
   | "models"
+  | "images"
   | "mcp"
   | "approvals"
   | "permissions"
