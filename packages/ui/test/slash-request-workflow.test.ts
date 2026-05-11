@@ -66,19 +66,31 @@ async function reloadsSkillsThroughAppServer(): Promise<void> {
             path: "/workspace/.codex/skills/review/SKILL.md",
             promptText: "[$review](/workspace/.codex/skills/review/SKILL.md) ",
           },
-          secondaryActions: [{
-            id: "skill:review:disable",
-            label: "Disable",
-            title: "Disable Review",
-            tone: "danger",
-            action: {
-              type: "writeSkillConfig",
-              title: "Disable Review",
-              name: "review",
-              path: "/workspace/.codex/skills/review/SKILL.md",
-              enabled: false,
+          secondaryActions: [
+            {
+              id: "skill:/workspace/.codex/skills/review/SKILL.md:read",
+              label: "View",
+              title: "View Review source",
+              action: {
+                type: "readSkillFile",
+                title: "View Review",
+                path: "/workspace/.codex/skills/review/SKILL.md",
+              },
             },
-          }],
+            {
+              id: "skill:review:disable",
+              label: "Disable",
+              title: "Disable Review",
+              tone: "danger",
+              action: {
+                type: "writeSkillConfig",
+                title: "Disable Review",
+                name: "review",
+                path: "/workspace/.codex/skills/review/SKILL.md",
+                enabled: false,
+              },
+            },
+          ],
         }],
         message: "Reloaded skills from disk. Select a skill to attach it to the next message.",
       },

@@ -6,6 +6,8 @@ export default function runToolActivityDetailTests(): void {
   buildsPatchDetails();
   buildsMcpDetails();
   buildsDynamicToolDetails();
+  buildsAutoReviewDetails();
+  buildsHookDetails();
   buildsWebSearchDetails();
   buildsMultiAgentDetails();
 }
@@ -182,6 +184,45 @@ function buildsDynamicToolDetails(): void {
       status: "running",
     },
     "dynamic tool detail should expose namespaced name and content result",
+  );
+}
+
+function buildsAutoReviewDetails(): void {
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "automatic-approval-review",
+      id: "auto-review-1",
+      status: "approved",
+      riskLevel: "low",
+      rationale: "Command matches policy",
+    }),
+    {
+      kind: "text",
+      id: "auto-review-1",
+      running: false,
+      title: "Auto-review",
+      text: "Status: approved\nRisk: low\nRationale: Command matches policy",
+    },
+    "auto-review detail should preserve status, risk, and rationale",
+  );
+}
+
+function buildsHookDetails(): void {
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "hook",
+      id: "hook-1",
+      key: "post-command",
+      run: { status: "completed", command: "echo ok" },
+    }),
+    {
+      kind: "text",
+      id: "hook-1",
+      running: false,
+      title: "Hook",
+      text: "Status: completed\nKey: post-command\nCommand: echo ok",
+    },
+    "hook detail should preserve run status, key, and command",
   );
 }
 

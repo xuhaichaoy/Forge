@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import type { ConversationRenderUnit } from "../state/render-groups";
+import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import {
   ToolActivityView,
   ToolBlock,
@@ -15,6 +15,7 @@ import {
 import { MessageUnitView } from "./message-unit";
 import type { FileReference } from "./message-unit";
 import type { OpenThreadHandler } from "./open-thread";
+import { ThreadItemView } from "./thread-item-view";
 import {
   setThreadScrollDistanceFromBottom,
   threadScrollDistanceFromBottom,
@@ -72,7 +73,7 @@ export interface ConversationViewProps {
    */
   threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
-  onOpenAssistantArtifacts?: (item: Record<string, unknown>) => void;
+  onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
@@ -83,7 +84,7 @@ export function ConversationView({
   emptyState = null,
   threadId = null,
   onEditLastUserMessage,
-  onOpenAssistantArtifacts,
+  onOpenAssistantArtifact,
   onForkTurn,
   onOpenFileReference,
   onOpenThreadId,
@@ -104,7 +105,7 @@ export function ConversationView({
       unit={unit}
       isMostRecentTurn={context?.isMostRecentTurn === true}
       onEditLastUserMessage={onEditLastUserMessage}
-      onOpenAssistantArtifacts={onOpenAssistantArtifacts}
+      onOpenAssistantArtifact={onOpenAssistantArtifact}
       onForkTurn={onForkTurn}
       onOpenFileReference={onOpenFileReference}
       onOpenThreadId={onOpenThreadId}
@@ -477,7 +478,7 @@ export function ConversationUnitView({
   onOpenFileReference,
   onOpenThreadId,
   onEditLastUserMessage,
-  onOpenAssistantArtifacts,
+  onOpenAssistantArtifact,
   onForkTurn,
 }: {
   unit: ConversationRenderUnit;
@@ -485,7 +486,7 @@ export function ConversationUnitView({
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
-  onOpenAssistantArtifacts?: (item: Record<string, unknown>) => void;
+  onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
 }) {
   if (unit.kind === "message") {
@@ -494,11 +495,14 @@ export function ConversationUnitView({
         unit={unit}
         isMostRecentTurn={isMostRecentTurn}
         onEditLastUserMessage={onEditLastUserMessage}
-        onOpenAssistantArtifacts={onOpenAssistantArtifacts}
+        onOpenAssistantArtifact={onOpenAssistantArtifact}
         onForkTurn={onForkTurn}
         onOpenFileReference={onOpenFileReference}
       />
     );
+  }
+  if (unit.kind === "threadItem") {
+    return <ThreadItemView unit={unit} />;
   }
   if (unit.kind === "toolActivity") {
     return (
@@ -512,7 +516,7 @@ export function ConversationUnitView({
             unit={detailUnit}
             isMostRecentTurn={isMostRecentTurn}
             onEditLastUserMessage={onEditLastUserMessage}
-            onOpenAssistantArtifacts={onOpenAssistantArtifacts}
+            onOpenAssistantArtifact={onOpenAssistantArtifact}
             onForkTurn={onForkTurn}
             onOpenFileReference={onOpenFileReference}
             onOpenThreadId={onOpenThreadId}

@@ -188,14 +188,15 @@ export async function runSlashRequestWorkflow(
       }
       case "reloadMcp":
       case "listMcp": {
-        const detail = stringPayload(payload, "detail").toLowerCase() === "verbose" ? "full" : "toolsAndAuthOnly";
+        const requestedDetail = stringPayload(payload, "detail").toLowerCase();
+        const detail = requestedDetail === "tools" || requestedDetail === "toolsandauthonly" ? "toolsAndAuthOnly" : "full";
         openCommandPanel("mcp", { status: "loading", entries: [] });
         await client.request("config/mcpServer/reload", undefined, 120_000);
         const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail }, 120_000);
         openCommandPanel("mcp", {
           status: "ready",
           entries: projectMcpServerEntries(result),
-          message: "Select a callable MCP tool to run it with empty arguments.",
+          message: "Select a callable MCP tool to run it, or a resource to read it.",
         });
         return;
       }

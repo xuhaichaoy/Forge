@@ -26,6 +26,8 @@ export type CommandPanelKind =
 export type CommandPanelEntryKind =
   | "mcpServer"
   | "mcpTool"
+  | "mcpResource"
+  | "mcpResourceTemplate"
   | "skill"
   | "hook"
   | "app"
@@ -49,6 +51,8 @@ export type CommandPanelEntryAction =
       afterWrite?: { type: "addPersonalityChangeSyntheticItem"; personality: "friendly" | "pragmatic" };
     }
   | { type: "callMcpTool"; server: string; tool: string; arguments: Record<string, unknown> }
+  | { type: "readMcpResource"; server: string; uri: string; title: string }
+  | { type: "reloadMcpServers"; title: string }
   | {
       type: "openMcpToolForm";
       server: string;
@@ -63,7 +67,8 @@ export type CommandPanelEntryAction =
       name: string;
       path?: string;
       enabled: boolean;
-    };
+    }
+  | { type: "readSkillFile"; title: string; path: string };
 
 export type CommandPanelStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -143,23 +148,47 @@ export function projectMcpServerEntries(value: unknown): CommandPanelEntry[] {
   return responseItems(value).flatMap((server, index) => {
     const name = fieldText(server, "name") || `server-${index + 1}`;
     const tools = recordField(server, "tools");
+    const resources = arrayField(server, "resources");
+    const templates = arrayField(server, "resourceTemplates");
     const toolDetails = Object.entries(tools)
       .map(([toolName, tool]) => {
         const description = fieldText(tool, "description");
         return description ? `${toolName} - ${description}` : toolName;
       });
+    const resourceDetails = resources.map((resource) => {
+      const title = fieldText(resource, "title") || fieldText(resource, "name") || fieldText(resource, "uri");
+      const uri = fieldText(resource, "uri");
+      return title && uri && title !== uri ? `${title} - ${uri}` : title || uri;
+    }).filter(Boolean);
+    const templateDetails = templates.map((template) => {
+      const title = fieldText(template, "title") || fieldText(template, "name") || fieldText(template, "uriTemplate");
+      const uriTemplate = fieldText(template, "uriTemplate");
+      return title && uriTemplate && title !== uriTemplate ? `${title} - ${uriTemplate}` : title || uriTemplate;
+    }).filter(Boolean);
 
     const serverEntry: CommandPanelEntry = {
       id: `mcp:${name}`,
       title: name,
       kind: "mcpServer",
       status: mcpAuthStatus(server),
-      meta: countLabel(toolDetails.length, "tool", "No tools"),
-      details: toolDetails,
+      meta: mcpServerMeta(toolDetails.length, resourceDetails.length, templateDetails.length),
+      details: [
+        ...toolDetails,
+        ...resourceDetails.map((detail) => `Resource: ${detail}`),
+        ...templateDetails.map((detail) => `Template: ${detail}`),
+      ],
+      secondaryActions: [{
+        id: `mcp:${name}:reload`,
+        label: "Reload",
+        title: "Reload MCP config",
+        action: { type: "reloadMcpServers", title: "Reload MCP config" },
+      }],
     };
     return [
       serverEntry,
       ...Object.entries(tools).map(([toolName, tool]) => mcpToolEntry(name, toolName, tool)),
+      ...resources.map((resource, resourceIndex) => mcpResourceEntry(name, resource, resourceIndex)),
+      ...templates.map((template, templateIndex) => mcpResourceTemplateEntry(name, template, templateIndex)),
     ];
   });
 }
@@ -204,6 +233,43 @@ export function projectMcpToolCallResultEntries(
   }];
 }
 
+export function projectMcpResourceReadResultEntries(
+  server: string,
+  uri: string,
+  value: unknown,
+): CommandPanelEntry[] {
+  const contents = arrayField(value, "contents");
+  if (contents.length === 0) {
+    return [{
+      id: `mcp-resource-result:${server}:${uri}:empty`,
+      title: "Resource returned no content",
+      kind: "status",
+      status: "empty",
+      meta: `${server} · ${uri}`,
+      details: textDetails(formatUnknown(value)),
+    }];
+  }
+  return contents.map((content, index) => ({
+    id: `mcp-resource-result:${server}:${uri}:${index}`,
+    title: mcpResourceContentTitle(content, index),
+    kind: "status" as const,
+    status: "read",
+    meta: cleanList([server, fieldText(content, "mimeType") || fieldText(content, "mime_type")]).join(" · "),
+    details: mcpResourceContentDetails(content),
+  }));
+}
+
+export function projectSkillFileReadResultEntries(path: string, contents: string): CommandPanelEntry[] {
+  return [{
+    id: `skill-file:${path}`,
+    title: inferNameFromPath(path),
+    kind: "status",
+    status: "read",
+    meta: path,
+    details: textDetails(contents),
+  }];
+}
+
 function mcpToolEntry(serverName: string, toolName: string, tool: unknown): CommandPanelEntry {
   const title = fieldText(tool, "title") || toolName;
   const description = fieldText(tool, "description");
@@ -226,6 +292,48 @@ function mcpToolEntry(serverName: string, toolName: string, tool: unknown): Comm
     action: canCallWithoutArguments
       ? { type: "callMcpTool", server: serverName, tool: toolName, arguments: {} }
       : { type: "openMcpToolForm", server: serverName, tool: toolName, title, description, fields },
+  };
+}
+
+function mcpResourceEntry(serverName: string, resource: Record<string, unknown>, index: number): CommandPanelEntry {
+  const uri = fieldText(resource, "uri");
+  const title = fieldText(resource, "title") || fieldText(resource, "name") || uri || `resource-${index + 1}`;
+  const mime = fieldText(resource, "mimeType") || fieldText(resource, "mime_type");
+  return {
+    id: `mcp-resource:${serverName}:${uri || index}`,
+    title,
+    kind: "mcpResource",
+    status: "resource",
+    meta: cleanList([serverName, mime]).join(" · ") || undefined,
+    details: cleanList([
+      fieldText(resource, "description"),
+      uri && `URI: ${uri}`,
+      numberField(resource, "size") !== null && `Size: ${numberField(resource, "size")} bytes`,
+    ]),
+    disabled: uri ? undefined : true,
+    action: uri ? { type: "readMcpResource", server: serverName, uri, title } : undefined,
+  };
+}
+
+function mcpResourceTemplateEntry(
+  serverName: string,
+  template: Record<string, unknown>,
+  index: number,
+): CommandPanelEntry {
+  const uriTemplate = fieldText(template, "uriTemplate") || fieldText(template, "uri_template");
+  const title = fieldText(template, "title") || fieldText(template, "name") || uriTemplate || `template-${index + 1}`;
+  const mime = fieldText(template, "mimeType") || fieldText(template, "mime_type");
+  return {
+    id: `mcp-resource-template:${serverName}:${uriTemplate || index}`,
+    title,
+    kind: "mcpResourceTemplate",
+    status: "template",
+    meta: cleanList([serverName, mime]).join(" · ") || undefined,
+    details: cleanList([
+      fieldText(template, "description"),
+      uriTemplate && `Template: ${uriTemplate}`,
+    ]),
+    disabled: true,
   };
 }
 
@@ -341,6 +449,25 @@ function mcpResultText(value: unknown): string {
   return formatUnknown(value);
 }
 
+function mcpResourceContentTitle(value: Record<string, unknown>, index: number): string {
+  const uri = fieldText(value, "uri");
+  if (uri) return `Resource content ${index + 1}`;
+  return `Content ${index + 1}`;
+}
+
+function mcpResourceContentDetails(value: Record<string, unknown>): string[] {
+  const uri = fieldText(value, "uri");
+  const mime = fieldText(value, "mimeType") || fieldText(value, "mime_type");
+  const text = fieldText(value, "text");
+  const blob = fieldText(value, "blob");
+  return cleanList([
+    uri && `URI: ${uri}`,
+    mime && `MIME: ${mime}`,
+    blob && `Blob: ${blob.length} base64 characters`,
+    ...textDetails(text || (!blob ? formatUnknown(value) : "")),
+  ]);
+}
+
 function textDetails(value: string): string[] {
   return value
     .split(/\r?\n/)
@@ -357,10 +484,14 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
   const scope = fieldText(skill, "scope");
   const defaultPrompt = fieldText(interfaceInfo, "defaultPrompt");
   const dependencies = arrayField(recordField(skill, "dependencies"), "tools")
-    .map((dependency) => fieldText(dependency, "value") || fieldText(dependency, "type"))
+    .map(skillDependencyLabel)
     .filter(Boolean);
   const hasEnabled = Object.prototype.hasOwnProperty.call(skill, "enabled");
   const enabled = booleanField(skill, "enabled");
+  const secondaryActions = cleanSecondaryActions([
+    path ? skillFileReadAction({ displayName, path }) : undefined,
+    hasEnabled ? skillConfigToggleAction({ name, displayName, path, enabled }) : undefined,
+  ]);
   return {
     id: `skill:${name}`,
     title: displayName,
@@ -378,7 +509,36 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
     ]),
     disabled: hasEnabled && !enabled ? true : undefined,
     action: path ? { type: "attachSkill", name, path, promptText: skillPromptText({ name, path, defaultPrompt }) } : undefined,
-    secondaryActions: hasEnabled ? [skillConfigToggleAction({ name, displayName, path, enabled })] : undefined,
+    secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
+  };
+}
+
+function skillDependencyLabel(dependency: Record<string, unknown>): string {
+  const value = fieldText(dependency, "value") || fieldText(dependency, "type");
+  const transport = fieldText(dependency, "transport");
+  const command = fieldText(dependency, "command");
+  const url = fieldText(dependency, "url");
+  const detail = cleanList([
+    transport,
+    command && `cmd: ${command}`,
+    url,
+  ]).join(" · ");
+  return detail ? `${value} (${detail})` : value;
+}
+
+function skillFileReadAction(skill: {
+  displayName: string;
+  path: string;
+}): CommandPanelSecondaryAction {
+  return {
+    id: `skill:${skill.path}:read`,
+    label: "View",
+    title: `View ${skill.displayName} source`,
+    action: {
+      type: "readSkillFile",
+      title: `View ${skill.displayName}`,
+      path: skill.path,
+    },
   };
 }
 
@@ -584,8 +744,20 @@ function booleanField(value: unknown, key: string): boolean {
   return isRecord(value) && value[key] === true;
 }
 
+function numberField(value: unknown, key: string): number | null {
+  if (!isRecord(value)) return null;
+  const field = value[key];
+  return typeof field === "number" && Number.isFinite(field) ? field : null;
+}
+
 function cleanList(values: Array<string | false | null | undefined>): string[] {
   return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function cleanSecondaryActions(
+  values: Array<CommandPanelSecondaryAction | false | null | undefined>,
+): CommandPanelSecondaryAction[] {
+  return values.filter((value): value is CommandPanelSecondaryAction => Boolean(value));
 }
 
 function firstLine(value: string): string {
@@ -616,6 +788,15 @@ function skillScopeLabel(scope: string): string {
 function countLabel(count: number, singular: string, empty: string): string {
   if (count === 0) return empty;
   return `${count} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+function mcpServerMeta(toolCount: number, resourceCount: number, templateCount: number): string {
+  const labels = cleanList([
+    countLabel(toolCount, "tool", "No tools"),
+    resourceCount > 0 && countLabel(resourceCount, "resource", ""),
+    templateCount > 0 && countLabel(templateCount, "template", ""),
+  ]);
+  return labels.join(" · ");
 }
 
 function panelTitle(panel: CommandPanelKind): string {

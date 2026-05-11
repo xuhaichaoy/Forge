@@ -2,12 +2,14 @@ use base64::{engine::general_purpose, Engine as _};
 use hicodex_host::{
     AppServerHost, AppServerStartConfig, HostStatus, LocalModelCatalogConfig, ThreadToolHistory,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::env;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager, State};
 
 const APP_SERVER_EVENT_NAME: &str = "hicodex://app-server-event";
@@ -22,6 +24,14 @@ struct LocalFileMetadata {
     is_file: bool,
     size_bytes: Option<u64>,
     mime_type: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImageGenerationRequest {
+    base_url: String,
+    api_key: Option<String>,
+    payload: Value,
 }
 
 impl Default for AppState {
@@ -147,7 +157,7 @@ fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, S
     let mut file =
         fs::File::open(target).map_err(|error| format!("failed to open text file: {error}"))?;
     let mut bytes = Vec::new();
-    file.by_ref()
+    Read::by_ref(&mut file)
         .take(max_bytes + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| format!("failed to read text file: {error}"))?;
@@ -174,6 +184,196 @@ fn host_read_thread_tool_history(
         .host
         .read_thread_tool_history(codex_home, thread_id, thread_path)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn host_generate_image(request: ImageGenerationRequest) -> Result<Value, String> {
+    let endpoint = image_generations_endpoint(&request.base_url)?;
+    let body = serde_json::to_vec(&request.payload)
+        .map_err(|error| format!("failed to serialize image request: {error}"))?;
+    let header_path = write_image_request_headers(request.api_key.as_deref())?;
+    let header_arg = format!("@{}", header_path.to_string_lossy());
+    let mut command = Command::new("curl");
+    command
+        .args([
+            "--fail-with-body",
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            "30",
+            "--max-time",
+            "180",
+            "--request",
+            "POST",
+            "--header",
+            &header_arg,
+            "--data-binary",
+            "@-",
+            &endpoint,
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = fs::remove_file(&header_path);
+            return Err(format!("failed to start image request: {error}"));
+        }
+    };
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        let _ = fs::remove_file(&header_path);
+        "failed to open image request stdin".to_string()
+    })?;
+    if let Err(error) = stdin.write_all(&body) {
+        let _ = fs::remove_file(&header_path);
+        return Err(format!("failed to write image request body: {error}"));
+    }
+    drop(stdin);
+
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = fs::remove_file(&header_path);
+            return Err(format!("failed to wait for image request: {error}"));
+        }
+    };
+    let _ = fs::remove_file(&header_path);
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = [stderr, stdout]
+            .into_iter()
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>()
+            .join(": ");
+        return Err(if detail.is_empty() {
+            format!("image generation backend returned {}", output.status)
+        } else {
+            detail
+        });
+    }
+
+    serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("image generation backend returned invalid JSON: {error}"))
+}
+
+fn write_image_request_headers(api_key: Option<&str>) -> Result<std::path::PathBuf, String> {
+    let mut content = String::from("Content-Type: application/json\n");
+    if let Some(token) = api_key.map(str::trim).filter(|value| !value.is_empty()) {
+        content.push_str("Authorization: Bearer ");
+        content.push_str(token);
+        content.push('\n');
+    }
+    let path = temp_file_path("hicodex-image-headers", "txt");
+    fs::write(&path, content)
+        .map_err(|error| format!("failed to write image request headers: {error}"))?;
+    Ok(path)
+}
+
+fn temp_file_path(prefix: &str, extension: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    env::temp_dir().join(format!(
+        "{prefix}-{}-{nanos}.{extension}",
+        std::process::id()
+    ))
+}
+
+fn image_generations_endpoint(base_url: &str) -> Result<String, String> {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("image generation base URL is empty".to_string());
+    }
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("image generation base URL must start with http:// or https://".to_string());
+    }
+    Ok(format!("{trimmed}/images/generations"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{host_generate_image, image_generations_endpoint, ImageGenerationRequest};
+    use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn builds_image_generation_endpoint_from_base_url() {
+        assert_eq!(
+            image_generations_endpoint(" http://127.0.0.1:8890/v1/// ").unwrap(),
+            "http://127.0.0.1:8890/v1/images/generations"
+        );
+    }
+
+    #[test]
+    fn rejects_non_http_image_generation_base_url() {
+        assert!(image_generations_endpoint("file:///tmp/socket").is_err());
+    }
+
+    #[test]
+    fn host_generate_image_posts_to_configured_image_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = String::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                match stream.read(&mut buffer) {
+                    Ok(0) => break,
+                    Ok(count) => {
+                        request.push_str(&String::from_utf8_lossy(&buffer[..count]));
+                        if request.contains("\r\n\r\n")
+                            && request.contains("\"prompt\":\"blue sky\"")
+                        {
+                            break;
+                        }
+                    }
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            || error.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        break;
+                    }
+                    Err(error) => panic!("failed to read image request: {error}"),
+                }
+            }
+
+            let body = r#"{"data":[{"b64_json":"PNGDATA"}]}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            request
+        });
+
+        let result = host_generate_image(ImageGenerationRequest {
+            base_url: format!("http://{address}/v1"),
+            api_key: Some("local-secret".to_string()),
+            payload: json!({
+                "prompt": "blue sky",
+                "n": 1,
+                "size": "1024x1024",
+            }),
+        })
+        .unwrap();
+        let request = server.join().unwrap();
+
+        assert!(request.starts_with("POST /v1/images/generations "));
+        assert!(request.contains("Authorization: Bearer local-secret"));
+        assert_eq!(result["data"][0]["b64_json"], "PNGDATA");
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -322,7 +522,8 @@ fn main() {
             host_read_image_data_url,
             host_read_file_metadata,
             host_read_text_file,
-            host_read_thread_tool_history
+            host_read_thread_tool_history,
+            host_generate_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running HiCodex desktop");

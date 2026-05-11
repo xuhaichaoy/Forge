@@ -28,7 +28,7 @@ export function useTurnCollapsed(
 }
 
 export function getUnitTurnId(unit: ConversationRenderUnit): string | null {
-  if (unit.kind === "message" || unit.kind === "event") {
+  if (unit.kind === "message" || unit.kind === "event" || unit.kind === "threadItem") {
     return readTurnId(unit.item);
   }
   if (unit.kind === "toolActivity") {
@@ -250,12 +250,15 @@ function TurnCollapseToggle({
         type="button"
         aria-expanded={!collapsed}
         aria-label={labelForAria(label, count)}
-        className="hc-turn-collapse-toggle"
+        className="hc-turn-collapse-toggle inline-flex items-center gap-1 rounded-md border border-transparent px-1 py-px text-left text-[13px] leading-5 text-stone-500 transition-colors hover:bg-black/5 hover:text-slate-700 focus-visible:outline-none"
         data-collapsed={collapsed}
         onClick={onToggle}
       >
         <span>{label}</span>
-        <ChevronRight size={14} className={`hc-turn-collapse-chevron ${collapsed ? "" : "is-open"}`} />
+        <ChevronRight
+          size={14}
+          className={`hc-turn-collapse-chevron text-stone-400 transition-transform duration-200 ${collapsed ? "" : "is-open rotate-90"}`}
+        />
       </button>
     </div>
   );

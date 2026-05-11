@@ -1,6 +1,7 @@
 import {
   formatItemDetail,
   itemText,
+  itemType,
   type ConversationRenderUnit,
 } from "./render-groups";
 
@@ -32,8 +33,11 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
       continue;
     }
 
-    const body = normalizedText(unit.text || itemText(unit.item)).trim();
-    sections.push(details(unit.label, body || "No detail"));
+    const body = unit.kind === "event"
+      ? normalizedText(unit.text || itemText(unit.item)).trim()
+      : normalizedText(formatItemDetail(unit.item) || itemText(unit.item)).trim();
+    const label = unit.kind === "event" ? unit.label : threadItemLabel(unit);
+    sections.push(details(label, body || "No detail"));
   }
 
   return `${sections.join("\n\n").trimEnd()}\n`;
@@ -65,4 +69,12 @@ function escapeHtml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;");
+}
+
+function threadItemLabel(unit: Extract<ConversationRenderUnit, { kind: "threadItem" }>): string {
+  const type = itemType(unit.item);
+  if (type === "dynamic-tool-call") return "Tool call";
+  if (type === "automatic-approval-review") return "Auto-review";
+  if (type === "hook") return "Hook";
+  return "Activity";
 }

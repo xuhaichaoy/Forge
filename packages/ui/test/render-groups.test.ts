@@ -27,8 +27,9 @@ export default function runRenderGroupsTests(): void {
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
-  keepsDurationBackedCommandsAsToolActivity();
-  usesLifecycleTimestampsAsToolActivityDuration();
+  projectsFinalAssistantArtifactsIntoMessageUnits();
+  keepsSingleCompletedExecRowsStandaloneLikeCodexDesktop();
+  keepsCurrentTailExecRowsAsActivityWhileTurnIsRunning();
   projectsExplicitWorkedForItemAsCompactActivity();
   usesWorkedForAsTurnCollapseDividerBeforeAssistant();
   keepsWorkedForExpandedUntilFinalAssistantStarts();
@@ -37,7 +38,10 @@ export default function runRenderGroupsTests(): void {
   groupsExplorationCommandActionsLikeCodexDesktop();
   dedupesExplorationReadCountsByCwdLikeCodexDesktop();
   keepsReasoningInsideActiveExplorationLikeCodexDesktop();
+  treatsReadOnlyCurlCommandsAsWebSearchCommandsLikeCodexDesktop();
   groupsToolActivityItemsAndPreservesSummaries();
+  groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop();
+  groupsHooksWithAdjacentActivityLikeCodexDesktop();
   summarizesPatchChangeKinds();
   formatsExpandedToolDetailsSemantically();
   groupsWebSearchIntoActivityAndSources();
@@ -143,6 +147,35 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
     assertEqual(second.text, "Done.", "assistant message text should be preserved");
     assertEqual(second.assistantPhase, "final_answer", "legacy final phase should normalize to final_answer");
     assertEqual(second.isStreaming ?? false, false, "completed assistant message should not be streaming by default");
+  }
+}
+
+function projectsFinalAssistantArtifactsIntoMessageUnits(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-artifact-request",
+      content: "Generate an Excel file",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-artifact-response",
+      text: "Created `beijing_weather_next_7_days.csv` for you.",
+      phase: "final",
+      memoryCitation: null,
+      _turnStatus: "completed",
+    } as ThreadItem,
+  ]);
+
+  const assistant = projection.units[1];
+  assertEqual(assistant?.kind, "message", "final assistant output should stay a message unit");
+  if (assistant?.kind === "message") {
+    assertEqual(assistant.role, "assistant", "assistant output role");
+    assertDeepEqual(
+      assistant.artifacts?.map((entry) => ({ title: entry.title, meta: entry.meta })),
+      [{ title: "beijing_weather_next_7_days.csv", meta: "beijing_weather_next_7_days.csv" }],
+      "final assistant message units should carry their own file resources for inline rendering",
+    );
   }
 }
 
@@ -372,10 +405,10 @@ function splitsReasoningFromCollapsedToolActivity(): void {
   } else {
     throw new Error("first group should be tool activity");
   }
-  if (second?.kind === "toolActivity") {
-    assertEqual(second.summary.groupType, "collapsed-tool-activity", "second group should be collapsed tool activity");
+  if (second?.kind === "threadItem") {
+    assertEqual(second.item.id, "command-1", "single completed exec after reasoning should stay standalone");
   } else {
-    throw new Error("second group should be tool activity");
+    throw new Error("second group should be a standalone exec row");
   }
 }
 
@@ -611,6 +644,25 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
       src: "https://example.com/generated image.png",
     } as unknown as ThreadItem,
     {
+      type: "imageGeneration",
+      id: "official-image-result-1",
+      status: "completed",
+      revisedPrompt: null,
+      result: "OFFICIALPNG",
+    } as unknown as ThreadItem,
+    {
+      type: "dynamicToolCall",
+      id: "hicodex-image-1",
+      tool: "hicodex_generate_image",
+      status: "completed",
+      arguments: { prompt: "blue sky" },
+      contentItems: [
+        { type: "inputText", text: "Generated image for: blue sky" },
+        { type: "inputImage", imageUrl: "data:image/png;base64,PNGDATA" },
+      ],
+      success: true,
+    } as unknown as ThreadItem,
+    {
       type: "automation-update",
       id: "automation-update-1",
       result: {
@@ -626,7 +678,7 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
     } as unknown as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 4, "renderable Desktop event items should stay visible");
+  assertEqual(projection.units.length, 6, "renderable Desktop event items should stay visible");
   const diff = eventByKey(projection, "turn-diff-1");
   assertEqual(diff.label, "Diff", "turn diff label");
   assertEqual(diff.format, "diff", "turn diff should use diff rendering");
@@ -639,6 +691,24 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
     image.text,
     "![Generated image](<https://example.com/generated image.png>)",
     "generated image should preserve source as a markdown image",
+  );
+
+  const officialImage = eventByKey(projection, "official-image-result-1");
+  assertEqual(officialImage.label, "Generated image", "official image generation label");
+  assertEqual(officialImage.format, "markdown", "official image generation result should render as markdown image content");
+  assertTextIncludes(
+    officialImage.text,
+    "![Generated image](data:image/png;base64,OFFICIALPNG)",
+    "official image generation should render base64 result when no saved path is available",
+  );
+
+  const hiCodexImage = eventByKey(projection, "hicodex-image-1");
+  assertEqual(hiCodexImage.label, "Generated image", "HiCodex image tool output should use generated image label");
+  assertEqual(hiCodexImage.format, "markdown", "HiCodex image tool output should render as markdown image content");
+  assertTextIncludes(
+    hiCodexImage.text,
+    "![Generated image](data:image/png;base64,PNGDATA)",
+    "HiCodex image tool output should render the returned inputImage",
   );
 
   const automation = eventByKey(projection, "automation-update-1");
@@ -693,6 +763,15 @@ function splitsTurnItemsIntoCodexDesktopBuckets(): void {
       src: "https://example.com/out.png",
     } as unknown as ThreadItem,
     {
+      type: "dynamicToolCall",
+      id: "hicodex-image-1",
+      namespace: "hicodex_image",
+      tool: "generate",
+      status: "completed",
+      contentItems: [{ type: "inputImage", imageUrl: "data:image/png;base64,PNGDATA" }],
+      success: true,
+    } as unknown as ThreadItem,
+    {
       type: "auto-review-interruption-warning",
       id: "warning-1",
     } as unknown as ThreadItem,
@@ -730,7 +809,7 @@ function splitsTurnItemsIntoCodexDesktopBuckets(): void {
   assertDeepEqual(split.agentItems.map((item) => item.id), ["command-1"], "agent bucket should exclude the final assistant");
   assertEqual(split.assistantItem?.id ?? null, "assistant-1", "final assistant bucket");
   assertDeepEqual(split.postAssistantItems.map((item) => item.id), ["warning-1", "auto-review-1"], "post-assistant bucket");
-  assertDeepEqual(split.toolOutputItems.map((item) => item.id), ["generated-image-1"], "tool output bucket");
+  assertDeepEqual(split.toolOutputItems.map((item) => item.id), ["generated-image-1", "hicodex-image-1"], "tool output bucket");
   assertEqual(split.proposedPlanItem?.id ?? null, "plan-1", "proposed plan bucket");
   assertEqual(split.unifiedDiffItem?.id ?? null, "diff-1", "diff bucket");
   assertDeepEqual(split.remoteTaskCreatedItems.map((item) => item.id), ["remote-1"], "remote task bucket");
@@ -812,7 +891,7 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
     [
       "event:model-changed-1",
       "user:user-1",
-      "toolActivity:collapsed-tool-activity:command-1:command-1",
+      "threadItem:item:exec:command-1",
       "assistant:assistant-1",
       "event:generated-image-1",
       "event:plan-1",
@@ -823,7 +902,7 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
   );
 }
 
-function keepsDurationBackedCommandsAsToolActivity(): void {
+function keepsSingleCompletedExecRowsStandaloneLikeCodexDesktop(): void {
   const projection = projectConversation([
     {
       type: "commandExecution",
@@ -837,33 +916,33 @@ function keepsDurationBackedCommandsAsToolActivity(): void {
   ]);
 
   const unit = projection.units[0];
-  assertEqual(unit?.kind, "toolActivity", "duration backed command should render as tool activity");
-  if (unit?.kind === "toolActivity") {
-    assertEqual(unit.summary.groupType, "collapsed-tool-activity", "command activity should keep its semantic group");
-    assertEqual(unit.summary.label, "Ran npm run build", "single command activity should use the item-level command label");
-    assertEqual(unit.summary.totalDurationMs, 65_000, "duration should be preserved in summary");
+  assertEqual(unit?.kind, "threadItem", "single completed exec rows should stay standalone in Desktop command detail mode");
+  if (unit?.kind === "threadItem") {
+    assertEqual(unit.item.id, "command-1", "standalone exec row should keep the original item");
   }
 }
 
-function usesLifecycleTimestampsAsToolActivityDuration(): void {
+function keepsCurrentTailExecRowsAsActivityWhileTurnIsRunning(): void {
   const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Run the build" }],
+    } as ThreadItem,
     {
       type: "commandExecution",
       id: "command-1",
       command: "npm run build",
-      status: "completed",
-      aggregatedOutput: "built",
-      exitCode: 0,
+      status: "running",
       startedAtMs: 1_000,
-      completedAtMs: 66_000,
     } as ThreadItem,
-  ]);
+  ], { isThreadRunning: true });
 
-  const unit = projection.units[0];
-  assertEqual(unit?.kind, "toolActivity", "timestamp backed command should render as tool activity");
+  const unit = projection.units[1];
+  assertEqual(unit?.kind, "toolActivity", "current tail exec should stay grouped while the turn is still running");
   if (unit?.kind === "toolActivity") {
-    assertEqual(unit.summary.totalDurationMs, 65_000, "duration should fall back to lifecycle timestamps");
-    assertEqual(unit.summary.label, "Ran npm run build", "timestamp backed command should keep command label");
+    assertEqual(unit.summary.groupType, "collapsed-tool-activity", "running tail exec should keep the ordinary activity group");
+    assertEqual(unit.items[0]?.id, "command-1", "running activity should preserve the command item");
   }
 }
 
@@ -925,19 +1004,20 @@ function usesWorkedForAsTurnCollapseDividerBeforeAssistant(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 4, "worked-for should render as the divider between agent activity and assistant output");
+  assertEqual(projection.units.length, 5, "worked-for should render as the divider between agent activity and assistant output");
   assertEqual(projection.units[0]?.kind, "message", "user message should remain first");
   const activity = projection.units[1];
-  assertEqual(activity?.kind, "toolActivity", "agent activity should render before the worked-for divider");
-  if (activity?.kind === "toolActivity") {
-    assertEqual(activity.summary.groupType, "collapsed-tool-activity", "tool and commentary should stay in the agent body");
-    assertDeepEqual(
-      activity.items.map((item) => item.id),
-      ["command-1", "assistant-commentary-1"],
-      "tool and commentary details should stay in the expanded agent body",
-    );
+  assertEqual(activity?.kind, "threadItem", "single completed exec rows before commentary should stay standalone like Codex Desktop");
+  if (activity?.kind === "threadItem") {
+    assertEqual(activity.item.id, "command-1", "standalone exec row should keep the command item");
   }
-  const workedFor = projection.units[2];
+  const commentary = projection.units[2];
+  assertEqual(commentary?.kind, "message", "intermediate commentary should remain a normal assistant message");
+  if (commentary?.kind === "message") {
+    assertEqual(commentary.role, "assistant", "intermediate commentary should keep the assistant role");
+    assertEqual(commentary.assistantPhase, "commentary", "intermediate commentary should keep the commentary phase");
+  }
+  const workedFor = projection.units[3];
   assertEqual(workedFor?.kind, "toolActivity", "worked-for should render before assistant as a divider source");
   if (workedFor?.kind === "toolActivity") {
     assertEqual(workedFor.summary.groupType, "worked-for", "worked-for should keep its own semantic group");
@@ -949,7 +1029,7 @@ function usesWorkedForAsTurnCollapseDividerBeforeAssistant(): void {
       "worked-for item should not swallow the expanded agent body",
     );
   }
-  assertEqual(projection.units[3]?.kind, "message", "assistant message should render after worked-for divider");
+  assertEqual(projection.units[4]?.kind, "message", "assistant message should render after worked-for divider");
 }
 
 function keepsWorkedForExpandedUntilFinalAssistantStarts(): void {
@@ -976,9 +1056,9 @@ function keepsWorkedForExpandedUntilFinalAssistantStarts(): void {
 
   assertEqual(projection.units.length, 3, "running worked-for should stay separate from preceding activity");
   const activity = projection.units[1];
-  assertEqual(activity?.kind, "toolActivity", "preceding command should render after the user");
-  if (activity?.kind === "toolActivity") {
-    assertEqual(activity.summary.groupType, "collapsed-tool-activity", "preceding command should remain normal activity");
+  assertEqual(activity?.kind, "threadItem", "single completed exec before worked-for should stay standalone once the slice is closed");
+  if (activity?.kind === "threadItem") {
+    assertEqual(activity.item.id, "command-1", "standalone exec row should preserve the command item");
   }
   const workedFor = projection.units[2];
   assertEqual(workedFor?.kind, "toolActivity", "running worked-for activity should render after the command");
@@ -1185,6 +1265,89 @@ function keepsReasoningInsideActiveExplorationLikeCodexDesktop(): void {
   assertEqual(unit.summary.counts.searches, 1, "search count should remain stable");
 }
 
+function treatsReadOnlyCurlCommandsAsWebSearchCommandsLikeCodexDesktop(): void {
+  const completed = projectConversation([
+    {
+      type: "commandExecution",
+      id: "curl-docs",
+      command: "curl https://example.com/docs",
+      status: "completed",
+      output: { exitCode: 0, stdout: "ok" },
+    } as unknown as ThreadItem,
+  ]);
+  const completedUnit = completed.units[0];
+  assertEqual(completedUnit?.kind, "threadItem", "completed external curl should stay standalone in Desktop command detail mode");
+  if (completedUnit?.kind === "threadItem") {
+    assertEqual(completedUnit.item.id, "curl-docs", "completed external curl should keep the original exec item");
+  }
+
+  const completedProse = projectConversation([
+    {
+      type: "commandExecution",
+      id: "curl-docs",
+      command: "curl https://example.com/docs",
+      status: "completed",
+      output: { exitCode: 0, stdout: "ok" },
+    } as unknown as ThreadItem,
+  ], { conversationDetailLevel: "STEPS_PROSE" });
+  const completedProseUnit = completedProse.units[0];
+  assertEqual(completedProseUnit?.kind, "toolActivity", "completed external curl should still classify as activity in Desktop prose mode");
+  if (completedProseUnit?.kind === "toolActivity") {
+    assertEqual(completedProseUnit.summary.label, "Searched web", "completed external curl should use Desktop web-search command wording");
+    assertEqual(completedProseUnit.summary.icon, "web-search", "completed external curl should use web-search icon");
+    assertEqual(completedProseUnit.summary.counts.commands, 1, "web-search curl still counts as an exec command");
+    assertEqual(completedProseUnit.summary.counts.webSearchCommands, 1, "web-search curl command count");
+  }
+
+  const running = projectConversation([
+    {
+      type: "commandExecution",
+      id: "curl-running",
+      command: "curl https://openai.com/news",
+      status: "running",
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+  const runningUnit = running.units[0];
+  if (runningUnit?.kind !== "toolActivity") {
+    throw new Error("running external curl should render as activity");
+  }
+  assertEqual(runningUnit.summary.label, "Searching the web", "running external curl should use Desktop active web-search wording");
+  assertEqual(runningUnit.summary.activeDetail, "Searching the web", "running external curl active detail");
+  assertEqual(runningUnit.summary.counts.runningWebSearchCommands, 1, "running web-search command count");
+
+  const mutating = projectConversation([
+    {
+      type: "commandExecution",
+      id: "curl-post",
+      command: "curl -X POST https://example.com/api",
+      status: "completed",
+      exitCode: 0,
+    } as unknown as ThreadItem,
+  ], { conversationDetailLevel: "STEPS_PROSE" });
+  const mutatingUnit = mutating.units[0];
+  if (mutatingUnit?.kind !== "toolActivity") {
+    throw new Error("mutating curl should still render as activity");
+  }
+  assertEqual(mutatingUnit.summary.label, "Ran 1 command", "mutating curl should remain a normal command summary");
+  assertEqual(mutatingUnit.summary.counts.webSearchCommands, 0, "mutating curl should not count as a web search command");
+
+  const local = projectConversation([
+    {
+      type: "commandExecution",
+      id: "curl-local",
+      command: "curl http://127.0.0.1:3000/health",
+      status: "completed",
+      exitCode: 0,
+    } as unknown as ThreadItem,
+  ], { conversationDetailLevel: "STEPS_PROSE" });
+  const localUnit = local.units[0];
+  if (localUnit?.kind !== "toolActivity") {
+    throw new Error("local curl should still render as activity");
+  }
+  assertEqual(localUnit.summary.label, "Ran 1 command", "localhost curl should remain a normal command summary");
+  assertEqual(localUnit.summary.counts.webSearchCommands, 0, "localhost curl should not count as a web search command");
+}
+
 function groupsToolActivityItemsAndPreservesSummaries(): void {
   const items: ThreadItem[] = [
     {
@@ -1230,27 +1393,30 @@ function groupsToolActivityItemsAndPreservesSummaries(): void {
   const projection = projectConversation(items);
   const unit = projection.units[0];
 
-  assertEqual(projection.units.length, 1, "adjacent tool-like items should collapse into one activity group");
+  assertEqual(projection.units.length, 2, "dynamic tool calls should not be folded into Desktop activity summaries");
   assertEqual(unit?.kind, "toolActivity", "tool-like items should render as tool activity");
   if (unit?.kind === "toolActivity") {
-    assertEqual(unit.key, "collapsed-tool-activity:command-1:dynamic-1", "tool activity key should include semantic group type plus first and last item id");
+    assertEqual(unit.key, "collapsed-tool-activity:command-1:mcp-1", "tool activity key should stop before a dynamic tool event");
     assertEqual(unit.summary.groupType, "collapsed-tool-activity", "ordinary tools should keep collapsed tool activity group type");
-    assertEqual(unit.summary.label, "Calling functions.exec_command", "running tool activity should use the active tool label");
-    assertEqual(unit.summary.inProgress, true, "running dynamic tool call should mark activity in progress");
+    assertEqual(
+      unit.summary.label,
+      "Created 1 file, edited 1 file, ran 1 command, called 1 tool",
+      "activity summary should preserve Desktop's combined completed activity segments",
+    );
+    assertEqual(unit.summary.inProgress, false, "dynamic tool call progress should not mark the preceding activity group in progress");
     assertEqual(unit.summary.counts.commands, 1, "command count");
     assertEqual(unit.summary.counts.fileChanges, 1, "file change count");
     assertEqual(unit.summary.counts.mcpCalls, 1, "mcp tool call count");
-    assertEqual(unit.summary.counts.dynamicCalls, 1, "dynamic tool call count");
+    assertEqual(unit.summary.counts.dynamicCalls, 0, "dynamic tool calls should not contribute to activity summaries");
     assertIncludes(unit.summary.details, "Ran npm run test", "command title should be preserved");
     assertIncludes(unit.summary.details, "Created 1 file, edited 1 file", "file change summary should include patch kinds");
     assertIncludes(unit.summary.details, "Called github:list_prs", "mcp tool title should be preserved");
-    assertIncludes(
-      unit.summary.details,
-      "Called functions.exec_command",
-      "dynamic tool title should be preserved",
-    );
-    assertEqual(unit.items.length, 4, "all activity items should stay attached to the activity group");
+    assertEqual(unit.items.length, 3, "only Desktop activity items should stay attached to the activity group");
   }
+  const dynamic = threadItemByKey(projection, "item:dynamic-tool-call:dynamic-1");
+  assertEqual(dynamic.item.id, "dynamic-1", "generic dynamic tools should render as standalone Desktop rows");
+  assertEqual(dynamic.item.tool, "exec_command", "dynamic tool row should preserve the tool name");
+  assertEqual(dynamic.item.status, "running", "dynamic tool row should preserve the running status");
 
   assertEqual(projection.artifacts.length, 2, "file changes should project artifact entries");
   assertEqual(projection.artifacts[0]?.title, "render-groups.ts", "first artifact title");
@@ -1261,6 +1427,89 @@ function groupsToolActivityItemsAndPreservesSummaries(): void {
   assertEqual(projection.sources[0]?.id, "mcp-server:github", "mcp source id");
   assertEqual(projection.sources[0]?.title, "GitHub", "mcp source title");
   assertEqual(projection.sources[0]?.status ?? null, null, "mcp source status should stay empty like Desktop");
+}
+
+function groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "npm run build",
+      status: "completed",
+      exitCode: 0,
+    } as ThreadItem,
+    {
+      type: "automatic-approval-review",
+      id: "auto-review-approved",
+      status: "approved",
+      riskLevel: "low",
+      rationale: "Safe command",
+    } as unknown as ThreadItem,
+    {
+      type: "automatic-approval-review",
+      id: "auto-review-running",
+      status: "inProgress",
+      riskLevel: null,
+      rationale: null,
+    } as unknown as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 2, "only approved or denied auto-review rows should fold into adjacent activity");
+  const activity = projection.units[0];
+  assertEqual(activity?.kind, "toolActivity", "approved auto-review should join the command activity group");
+  if (activity?.kind === "toolActivity") {
+    assertEqual(activity.summary.label, "Approved 1 request, ran 1 command", "auto-review count should use Desktop activity summary wording");
+    assertIncludes(activity.summary.details, "Approved request", "approved auto-review detail should stay visible");
+    assertDeepEqual(
+      activity.items.map((item) => item.id),
+      ["command-1", "auto-review-approved"],
+      "approved auto-review should stay attached to the adjacent activity group",
+    );
+  }
+  const pending = threadItemByKey(projection, "item:automatic-approval-review:auto-review-running");
+  assertEqual(pending.item.id, "auto-review-running", "in-progress auto-review should remain a standalone row");
+  assertEqual(pending.item.status, "inProgress", "standalone auto-review should preserve status text");
+}
+
+function groupsHooksWithAdjacentActivityLikeCodexDesktop(): void {
+  const solo = projectConversation([
+    {
+      type: "hook",
+      id: "hook-solo",
+      key: "post-response",
+      run: { status: "completed" },
+    } as unknown as ThreadItem,
+  ]);
+  assertEqual(solo.units[0]?.kind, "threadItem", "single hook rows should stay standalone like Codex Desktop");
+
+  const projection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "npm run test",
+      status: "completed",
+      exitCode: 0,
+    } as ThreadItem,
+    {
+      type: "hook",
+      id: "hook-1",
+      key: "post-command",
+      run: { status: "completed", command: "echo ok" },
+    } as unknown as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 1, "hook rows adjacent to tool activity should fold into the same activity group");
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "toolActivity", "hook plus command should render as tool activity");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(unit.summary.label, "Ran 1 hook, ran 1 command", "hook count should use Desktop activity summary wording");
+    assertIncludes(unit.summary.details, "Ran hook", "hook detail should stay visible");
+    assertDeepEqual(
+      unit.items.map((item) => item.id),
+      ["command-1", "hook-1"],
+      "hook should stay attached to the adjacent activity group",
+    );
+  }
 }
 
 function summarizesPatchChangeKinds(): void {
@@ -1657,6 +1906,17 @@ function eventByKey(
   const unit = projection.units.find((candidate) => candidate.kind === "event" && candidate.key === key);
   if (unit?.kind !== "event") {
     throw new Error(`expected ${key} to be an event unit`);
+  }
+  return unit;
+}
+
+function threadItemByKey(
+  projection: ReturnType<typeof projectConversation>,
+  key: string,
+): Extract<ReturnType<typeof projectConversation>["units"][number], { kind: "threadItem" }> {
+  const unit = projection.units.find((candidate) => candidate.kind === "threadItem" && candidate.key === key);
+  if (unit?.kind !== "threadItem") {
+    throw new Error(`expected ${key} to be a threadItem unit`);
   }
   return unit;
 }

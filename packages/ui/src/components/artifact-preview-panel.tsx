@@ -14,9 +14,12 @@ import {
   readTextFile,
   type LocalFileMetadata,
 } from "../lib/tauri-host";
+import { resolveFileReferencePathCandidates } from "../state/file-references";
 
 export interface ArtifactPreviewPanelProps {
   entry: RailEntry;
+  workspaceRoot?: string | null;
+  cwd?: string | null;
   onClose: () => void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenFileExternal?: (reference: RailEntryReference) => void;
@@ -37,6 +40,8 @@ type MetadataPreviewState =
 
 export function ArtifactPreviewPanel({
   entry,
+  workspaceRoot,
+  cwd,
   onClose,
   onOpenFileReference,
   onOpenFileExternal,
@@ -45,28 +50,61 @@ export function ArtifactPreviewPanel({
   const preview = useMemo(() => projectArtifactPreview(entry), [entry]);
   const [textPreview, setTextPreview] = useState<TextPreviewState>({ status: "idle", text: "" });
   const [metadataPreview, setMetadataPreview] = useState<MetadataPreviewState>({ status: "idle", metadata: null });
+  const [resolvedReferencePath, setResolvedReferencePath] = useState("");
   const referencePath = preview.reference?.path ?? "";
+  const referencePathCandidates = useMemo(
+    () => resolveFileReferencePathCandidates(referencePath, { workspaceRoot, cwd }),
+    [cwd, referencePath, workspaceRoot],
+  );
+  const preferredReferencePath = referencePathCandidates[0] ?? referencePath;
+  const effectiveReferencePath = resolvedReferencePath || preferredReferencePath;
+  const resolvedReference = preview.reference && effectiveReferencePath
+    ? { ...preview.reference, path: effectiveReferencePath }
+    : preview.reference;
   const metadata = metadataPreview.status === "ready" ? metadataPreview.metadata : null;
   const tooLarge = isArtifactPreviewTooLarge(metadata);
-  const metadataReadyForPreview = !preview.reference
+  const resolvedTextPath = resolveArtifactLocalPath(preview.textPath, {
+    referencePath,
+    resolvedReferencePath: effectiveReferencePath,
+    workspaceRoot,
+    cwd,
+  });
+  const resolvedPdfPath = resolveArtifactLocalPath(preview.pdfPath, {
+    referencePath,
+    resolvedReferencePath: effectiveReferencePath,
+    workspaceRoot,
+    cwd,
+  });
+  const resolvedImagePath = preview.imageSource?.kind === "file"
+    ? resolveArtifactLocalPath(preview.imageSource.src, {
+      referencePath,
+      resolvedReferencePath: effectiveReferencePath,
+      workspaceRoot,
+      cwd,
+    })
+    : "";
+  const metadataReadyForPreview = !resolvedReference
     || (metadataPreview.status === "ready" && metadataPreview.metadata.isFile && !tooLarge);
   const imageSrc = preview.imageSource && (preview.imageSource.kind !== "file" || metadataReadyForPreview)
-    ? preview.imageSource.kind === "file" ? localFileSrc(preview.imageSource.src) : preview.imageSource.src
+    ? preview.imageSource.kind === "file" ? localFileSrc(resolvedImagePath || preview.imageSource.src) : preview.imageSource.src
     : "";
-  const pdfSrc = preview.pdfPath && metadataReadyForPreview ? localFileSrc(preview.pdfPath) : "";
+  const pdfSrc = resolvedPdfPath && metadataReadyForPreview ? localFileSrc(resolvedPdfPath) : "";
   const fileSizeText = metadata?.sizeBytes != null ? formatArtifactFileSize(metadata.sizeBytes) : "";
 
   useEffect(() => {
-    if (!referencePath) {
+    if (referencePathCandidates.length === 0) {
+      setResolvedReferencePath("");
       setMetadataPreview({ status: "idle", metadata: null });
       return;
     }
 
     let cancelled = false;
+    setResolvedReferencePath(preferredReferencePath);
     setMetadataPreview({ status: "loading", metadata: null });
-    readFileMetadata(referencePath)
-      .then((nextMetadata) => {
+    readFirstAvailableMetadata(referencePathCandidates)
+      .then(({ metadata: nextMetadata, path }) => {
         if (cancelled) return;
+        setResolvedReferencePath(path);
         setMetadataPreview({ status: "ready", metadata: nextMetadata });
       })
       .catch((error: unknown) => {
@@ -81,17 +119,17 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [referencePath]);
+  }, [preferredReferencePath, referencePathCandidates]);
 
   useEffect(() => {
-    if (!preview.textPath || !metadataReadyForPreview) {
+    if (!resolvedTextPath || !metadataReadyForPreview) {
       setTextPreview({ status: "idle", text: "" });
       return;
     }
 
     let cancelled = false;
     setTextPreview({ status: "loading", text: "" });
-    readTextFile(preview.textPath, 120_000)
+    readTextFile(resolvedTextPath, 120_000)
       .then((text) => {
         if (cancelled) return;
         const clipped = clipArtifactPreviewText(text);
@@ -113,10 +151,10 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [metadataReadyForPreview, preview.textPath]);
+  }, [metadataReadyForPreview, resolvedTextPath]);
 
-  const previewState = artifactPreviewState(metadataPreview, tooLarge, preview.reference != null);
-  const hasInlinePreview = Boolean(imageSrc || pdfSrc || preview.textPath);
+  const previewState = artifactPreviewState(metadataPreview, tooLarge, resolvedReference != null);
+  const hasInlinePreview = Boolean(imageSrc || pdfSrc || resolvedTextPath);
   const showUnavailablePreview = !previewState && !hasInlinePreview && preview.kind !== "url";
 
   return (
@@ -130,24 +168,24 @@ export function ArtifactPreviewPanel({
           </div>
         </div>
         <div className="hc-artifact-preview-header-actions">
-          {preview.reference && onOpenFileReference && (
+          {resolvedReference && onOpenFileReference && (
             <button
               aria-label="View source"
               className="hc-artifact-preview-icon-button"
               title="View source"
               type="button"
-              onClick={() => onOpenFileReference(preview.reference!)}
+              onClick={() => onOpenFileReference(resolvedReference)}
             >
               <FileText size={14} />
             </button>
           )}
-          {preview.reference && onOpenFileExternal && (
+          {resolvedReference && onOpenFileExternal && (
             <button
               aria-label="Open"
               className="hc-artifact-preview-open-button"
               title="Open"
               type="button"
-              onClick={() => onOpenFileExternal(preview.reference!)}
+              onClick={() => onOpenFileExternal(resolvedReference)}
             >
               <FolderOpen size={14} />
               <span>Open</span>
@@ -192,7 +230,7 @@ export function ArtifactPreviewPanel({
 
       {pdfSrc && <ArtifactPdfPreviewFrame src={pdfSrc} title={preview.title} />}
 
-      {preview.textPath && <ArtifactTextPreviewView preview={textPreview} />}
+      {resolvedTextPath && <ArtifactTextPreviewView preview={textPreview} />}
 
       {showUnavailablePreview && (
         <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />
@@ -311,4 +349,47 @@ function localFileSrc(path: string): string {
   } catch {
     return `file://${encodeURI(path)}`;
   }
+}
+
+function resolveArtifactLocalPath(
+  path: string | undefined,
+  input: {
+    referencePath: string;
+    resolvedReferencePath: string;
+    workspaceRoot?: string | null;
+    cwd?: string | null;
+  },
+): string {
+  if (!path) return "";
+  if (input.resolvedReferencePath && path === input.referencePath) {
+    return input.resolvedReferencePath;
+  }
+  return resolveFileReferencePathCandidates(path, {
+    workspaceRoot: input.workspaceRoot,
+    cwd: input.cwd,
+  })[0] ?? path;
+}
+
+async function readFirstAvailableMetadata(
+  candidates: string[],
+): Promise<{ path: string; metadata: LocalFileMetadata }> {
+  let lastError: unknown = new Error("No preview path candidates were available.");
+  let firstReadable: { path: string; metadata: LocalFileMetadata } | null = null;
+  for (const path of candidates) {
+    try {
+      const metadata = await readFileMetadata(path);
+      if (metadata.isFile) {
+        return { path, metadata };
+      }
+      if (!firstReadable) {
+        firstReadable = { path, metadata };
+      }
+    } catch (error: unknown) {
+      lastError = error;
+    }
+  }
+  if (firstReadable) {
+    return firstReadable;
+  }
+  throw lastError;
 }

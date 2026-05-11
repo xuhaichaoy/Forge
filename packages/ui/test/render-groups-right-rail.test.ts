@@ -4,6 +4,9 @@ export default function runRenderGroupsRightRailTests(): void {
   usesLatestTodoListPlanForProgress();
   usesReducerPlanFactsForProgress();
   dedupesArtifactsAcrossFileChangesAndAssistantText();
+  projectsBareBacktickedFilenamesAsArtifacts();
+  skipsUnresolvedAssistantFileMentions();
+  dedupesBareImageLinksAgainstCommandOutputPaths();
   projectsGeneratedImageSourcesIntoArtifacts();
   excludesNodeReplSourcesButKeepsMcpAndWebSearchSources();
 }
@@ -119,6 +122,133 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
   );
 }
 
+function projectsBareBacktickedFilenamesAsArtifacts(): void {
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "assistant-bare-file",
+      text: "Created `beijing_weather_next_7_days.csv` for you and ran `web.run` via `multi_tool_use.parallel`.",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => ({
+      title: entry.title,
+      meta: entry.meta,
+      action: entry.action,
+    })),
+    [
+      {
+        title: "beijing_weather_next_7_days.csv",
+        meta: "beijing_weather_next_7_days.csv",
+        action: { kind: "file", reference: { path: "beijing_weather_next_7_days.csv", lineStart: 1 } },
+      },
+    ],
+    "Desktop-style backticked bare filenames should project into Artifacts without misclassifying tool names",
+  );
+}
+
+function skipsUnresolvedAssistantFileMentions(): void {
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "assistant-missing-file",
+      text:
+        "我没有在当前目录找到 `docs/DEVELOPMENT.md`，所以还不能开始按该仓库规范做代码修改。\n" +
+        "如果你愿意，可以把正确路径发我。",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    [],
+    "assistant missing-file prose should not create clickable Artifacts",
+  );
+  const assistant = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-missing-file"
+  );
+  assertDeepEqual(
+    assistant?.kind === "message" ? assistant.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [],
+    "assistant message units should not carry resource cards for files reported as missing",
+  );
+}
+
+function dedupesBareImageLinksAgainstCommandOutputPaths(): void {
+  const cwdPath = "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri";
+  const image2Path = "/Users/haichao/Downloads/Day2-UA-图片/UA- image2.png";
+  const image3Path = "/Users/haichao/Downloads/Day2-UA-图片/UA-image3.png";
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-find-images",
+      content: [{ type: "input_text", text: "先找一下图片" }],
+    } as unknown as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "cmd-images",
+      status: "completed",
+      aggregatedOutput: `${cwdPath}\n${image2Path}\n${image3Path}`,
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-found-images",
+      text: "我找到了 2 张图片。",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+    {
+      type: "userMessage",
+      id: "user-images",
+      content: [{ type: "input_text", text: "直接发给我就行" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-images",
+      text: `直接给你看这两张：\n\n1. ![UA-image2.png](UA-image2.png)\n2. ![UA-image3.png](UA-image3.png)`,
+      phase: "commentary",
+      memoryCitation: null,
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-final",
+      text: "如果你想，我也可以把它们按顺序排成一页。",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => ({ title: entry.title, meta: entry.meta, reference: entry.reference })),
+    [
+      {
+        title: "UA- image2.png",
+        meta: image2Path,
+        reference: { path: image2Path, lineStart: 1 },
+      },
+      {
+        title: "UA-image3.png",
+        meta: image3Path,
+        reference: { path: image3Path, lineStart: 1 },
+      },
+    ],
+    "right rail should prefer absolute image files from command output without promoting cwd directories",
+  );
+
+  const assistantUnit = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-images"
+  );
+  assertDeepEqual(
+    assistantUnit?.kind === "message" ? assistantUnit.artifacts?.map((entry) => entry.meta) : null,
+    [image2Path, image3Path],
+    "intermediate assistant output resources should resolve image paths from earlier turn artifacts",
+  );
+}
+
 function projectsGeneratedImageSourcesIntoArtifacts(): void {
   const projection = projectConversation([
     {
@@ -132,6 +262,21 @@ function projectsGeneratedImageSourcesIntoArtifacts(): void {
       id: "generated-image-2",
       status: "completed",
       savedPath: "/tmp/local-render.png",
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "generated-image-3",
+      status: "completed",
+      revisedPrompt: null,
+      result: "OFFICIALPNG",
+    } as unknown as ThreadItem,
+    {
+      type: "dynamicToolCall",
+      id: "hicodex-image-1",
+      tool: "hicodex_generate_image",
+      status: "completed",
+      contentItems: [{ type: "inputImage", imageUrl: "data:image/png;base64,PNGDATA" }],
+      success: true,
     } as unknown as ThreadItem,
   ]);
 
@@ -150,8 +295,20 @@ function projectsGeneratedImageSourcesIntoArtifacts(): void {
         status: "completed",
         action: { kind: "file", reference: { path: "/tmp/local-render.png", lineStart: 1 } },
       },
+      {
+        title: "Generated image",
+        meta: "data:image/png;base64,OFFICIALPNG",
+        status: "completed",
+        action: { kind: "url", url: "data:image/png;base64,OFFICIALPNG" },
+      },
+      {
+        title: "Generated image",
+        meta: "data:image/png;base64,PNGDATA",
+        status: "completed",
+        action: { kind: "url", url: "data:image/png;base64,PNGDATA" },
+      },
     ],
-    "generated images should surface remote src and local saved paths as Artifacts",
+    "generated images should surface native and HiCodex image tool outputs as Artifacts",
   );
 }
 

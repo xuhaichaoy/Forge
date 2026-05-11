@@ -13,6 +13,7 @@ export type ConversationRenderUnit =
       item: ThreadItem;
       text: string;
       userContent?: UserMessageContentPart[];
+      artifacts?: RailEntry[];
       assistantPhase?: AssistantMessagePhase;
       isStreaming?: boolean;
       renderPlaceholder?: boolean;
@@ -31,6 +32,11 @@ export type ConversationRenderUnit =
       text: string;
       tone?: EventTone;
       format?: EventFormat;
+    }
+  | {
+      kind: "threadItem";
+      key: string;
+      item: ThreadItem;
     };
 
 export type EventTone = "info" | "warning" | "error";
@@ -47,6 +53,9 @@ export interface ToolActivitySummary {
   totalDurationMs: number | null;
   counts: {
     commands: number;
+    webSearchCommands: number;
+    runningWebSearchCommands: number;
+    runningFolderCreationCommands: number;
     exploredFiles: number;
     searches: number;
     lists: number;

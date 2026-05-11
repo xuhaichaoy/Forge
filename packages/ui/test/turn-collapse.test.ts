@@ -78,6 +78,9 @@ function makeWorkedForUnit(turnId: string): ConversationRenderUnit {
       totalDurationMs: 67_000,
       counts: {
         commands: 0,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
         exploredFiles: 0,
         searches: 0,
         lists: 0,
@@ -117,6 +120,9 @@ function makeActivityUnit(turnId: string, id = "activity"): ConversationRenderUn
       totalDurationMs: null,
       counts: {
         commands: 1,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
         exploredFiles: 0,
         searches: 0,
         lists: 0,
@@ -252,6 +258,9 @@ function preventsAutoCollapseForDesktopPendingToolContent(): void {
       totalDurationMs: null,
       counts: {
         commands: 0,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
         exploredFiles: 0,
         searches: 0,
         lists: 0,

@@ -3,6 +3,7 @@ import {
   fileReferenceKey,
   fileReferenceLineLabel,
   normalizeFileReference,
+  resolveFileReferencePathCandidates,
 } from "../src/state/file-references";
 
 export default function runFileReferenceTests(): void {
@@ -10,6 +11,9 @@ export default function runFileReferenceTests(): void {
   defaultsInvalidLinesToSingleLine();
   formatsPreviewLabelsAndKeys();
   shortensLongPathsFromTheLeft();
+  prefersWorkspaceRootForRepoRelativePaths();
+  prefersCwdForBareAndDotRelativePaths();
+  walksUpFromNestedThreadCwdForRepoRelativePaths();
 }
 
 function normalizesClickedReferenceForPreview(): void {
@@ -47,6 +51,70 @@ function shortensLongPathsFromTheLeft(): void {
     fileReferenceDisplayPath("/workspace/packages/ui/src/components/file-reference-panel.tsx", 27),
     "...file-reference-panel.tsx",
     "long path should preserve the filename tail",
+  );
+}
+
+function prefersWorkspaceRootForRepoRelativePaths(): void {
+  assertDeepEqual(
+    resolveFileReferencePathCandidates("docs/DEVELOPMENT.md", {
+      workspaceRoot: "/workspace/HiCodex",
+      cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+    }).slice(0, 4),
+    [
+      "/workspace/HiCodex/docs/DEVELOPMENT.md",
+      "/workspace/docs/DEVELOPMENT.md",
+      "/docs/DEVELOPMENT.md",
+      "/workspace/HiCodex/apps/desktop/src-tauri/docs/DEVELOPMENT.md",
+    ],
+    "repo-relative paths should try the workspace root before the thread cwd",
+  );
+}
+
+function prefersCwdForBareAndDotRelativePaths(): void {
+  assertDeepEqual(
+    resolveFileReferencePathCandidates("beijing_weather_next_7_days.csv", {
+      workspaceRoot: "/workspace/HiCodex",
+      cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+    }).slice(0, 4),
+    [
+      "/workspace/HiCodex/apps/desktop/src-tauri/beijing_weather_next_7_days.csv",
+      "/workspace/HiCodex/apps/desktop/beijing_weather_next_7_days.csv",
+      "/workspace/HiCodex/apps/beijing_weather_next_7_days.csv",
+      "/workspace/HiCodex/beijing_weather_next_7_days.csv",
+    ],
+    "bare filenames should stay anchored to the thread cwd first",
+  );
+
+  assertDeepEqual(
+    resolveFileReferencePathCandidates("../docs/DEVELOPMENT.md", {
+      workspaceRoot: "/workspace/HiCodex",
+      cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+    }).slice(0, 4),
+    [
+      "/workspace/HiCodex/apps/desktop/src-tauri/../docs/DEVELOPMENT.md",
+      "/workspace/HiCodex/apps/desktop/../docs/DEVELOPMENT.md",
+      "/workspace/HiCodex/apps/../docs/DEVELOPMENT.md",
+      "/workspace/HiCodex/../docs/DEVELOPMENT.md",
+    ],
+    "explicit dot-relative paths should also prefer the thread cwd",
+  );
+}
+
+function walksUpFromNestedThreadCwdForRepoRelativePaths(): void {
+  const candidates = resolveFileReferencePathCandidates("docs/DEVELOPMENT.md", {
+    workspaceRoot: "/workspace/HiCodex/apps/desktop/src-tauri",
+    cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+  });
+
+  assertEqual(
+    candidates.includes("/workspace/HiCodex/docs/DEVELOPMENT.md"),
+    true,
+    "nested thread cwd should still find repo-root relative artifacts",
+  );
+  assertEqual(
+    candidates.indexOf("/workspace/HiCodex/docs/DEVELOPMENT.md") < candidates.indexOf("docs/DEVELOPMENT.md"),
+    true,
+    "ancestor candidates should be tried before the raw relative path",
   );
 }
 

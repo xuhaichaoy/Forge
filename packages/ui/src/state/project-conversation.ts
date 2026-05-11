@@ -1,4 +1,5 @@
 import type { ConversationProjection, ConversationProjectionOptions, ConversationRenderUnit, ItemRecord, RailEntry, ThreadItem, ToolActivityGroupType } from "./render-group-types";
+import { assistantArtifactsForTurn } from "./assistant-artifacts";
 import { projectBackgroundAgentRailEntries } from "./background-agents";
 import { projectBackgroundTerminalRailEntries } from "./background-terminals";
 import { eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
@@ -8,6 +9,7 @@ import {
   assistantMessageText,
   coalesceProgress,
   isCompletedRecord,
+  isItemInProgress,
   itemType,
   mcpElicitationServer,
   mcpServerName,
@@ -21,6 +23,7 @@ import {
   toolActivityGroupKey,
   toolActivityRenderKey,
 } from "./tool-activity-grouping";
+import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import { projectUserMessageContent, userMessageText } from "./user-message-content";
 
 export function projectConversation(items: ThreadItem[], options: ConversationProjectionOptions = {}): ConversationProjection {
@@ -29,11 +32,11 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
   const artifacts = new Map<string, RailEntry>();
   const sources = new Map<string, RailEntry>();
   const blockedMcpServers = blockedMcpServersFromItems(items);
-  const agentBodyAssistantIds = agentBodyAssistantMessageIds(items);
   const workedForCollapsedByDefaultIds = workedForIdsWithTrailingAssistant(items);
   let activity: ThreadItem[] = [];
   let activityGroupType: ToolActivityGroupType | null = null;
   let activityGroupKey: string | null = null;
+  const conversationDetailLevel = options.conversationDetailLevel ?? "STEPS_COMMANDS";
 
   const pushActivityItem = (item: ThreadItem, forcedGroupType?: ToolActivityGroupType) => {
     const baseGroupType = forcedGroupType ?? baseToolActivityGroupType(item);
@@ -52,8 +55,19 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     activity.push(item);
   };
 
-  const flushActivity = () => {
+  const flushActivity = (context: { isCurrentToolActivity?: boolean } = {}) => {
     if (activity.length === 0) return;
+    if (shouldKeepSingleActivityAsThreadItem(activity, {
+      conversationDetailLevel,
+      isCurrentToolActivity: context.isCurrentToolActivity === true,
+    })) {
+      const [item] = activity;
+      if (item) units.push(threadItemRenderUnit(item));
+      activity = [];
+      activityGroupType = null;
+      activityGroupKey = null;
+      return;
+    }
     const summary = summarizeToolActivity(activity, {
       conversationDetailLevel: options.conversationDetailLevel ?? "STEPS_COMMANDS",
       workedForCollapsedByDefault: activity.some((item) => workedForCollapsedByDefaultIds.has(item.id)),
@@ -70,7 +84,10 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     activityGroupKey = null;
   };
 
-  const pushConversationItem = (item: ThreadItem, options: { forceAgentBody?: boolean } = {}) => {
+  const pushConversationItem = (
+    item: ThreadItem,
+    options: { assistantArtifacts?: RailEntry[] } = {},
+  ) => {
     if (shouldSkipConversationItem(item)) {
       return;
     }
@@ -101,10 +118,6 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
       return;
     }
     if (isAssistantMessage(item)) {
-      if (options.forceAgentBody === true || agentBodyAssistantIds.has(item.id)) {
-        pushActivityItem(item, "collapsed-tool-activity");
-        return;
-      }
       const renderPlaceholder = shouldRenderAssistantPlaceholder(item);
       const text = assistantMessageText(item);
       if (!text.trim() && !renderPlaceholder) {
@@ -117,13 +130,34 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
         role: "assistant",
         item,
         text: renderPlaceholder ? "" : text,
+        ...(options.assistantArtifacts && options.assistantArtifacts.length > 0
+          ? { artifacts: options.assistantArtifacts }
+          : {}),
         assistantPhase: assistantMessagePhase(item),
         renderPlaceholder,
       });
       return;
     }
+    if (hiCodexImageToolOutputUrl(item)) {
+      flushActivity();
+      units.push({
+        kind: "event",
+        key: item.id,
+        item,
+        label: eventLabel(item),
+        text: eventText(item),
+        tone: eventTone(item),
+        format: eventFormat(item),
+      });
+      return;
+    }
     if (isToolActivityItem(item)) {
       pushActivityItem(item);
+      return;
+    }
+    if (shouldRenderStandaloneThreadItem(item)) {
+      flushActivity();
+      units.push(threadItemRenderUnit(item));
       return;
     }
     flushActivity();
@@ -141,14 +175,23 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
   const segments = conversationSegments(items);
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index] ?? [];
-    if (!segment.some(isUserMessage)) {
-      for (const item of segment) pushConversationItem(item);
-      continue;
-    }
-    const split = splitTurnItems(segment, turnStatusForSegment(segment, {
+    const turnStatus = turnStatusForSegment(segment, {
       isLastSegment: index === segments.length - 1,
       isThreadRunning: options.isThreadRunning === true,
-    }));
+    });
+    const assistantArtifactsForItem = (item: ThreadItem) =>
+      assistantArtifactsForTurn(segment, assistantMessageText(item), artifacts.values());
+
+    if (!segment.some(isUserMessage)) {
+      for (const item of segment) {
+        pushConversationItem(
+          item,
+          isAssistantMessage(item) ? { assistantArtifacts: assistantArtifactsForItem(item) } : {},
+        );
+      }
+      continue;
+    }
+    const split = splitTurnItems(segment, turnStatus);
 
     if (split.todoListItem) {
       pushConversationItem(split.todoListItem);
@@ -158,12 +201,21 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     for (const item of split.preUserItems) pushConversationItem(item);
     for (const item of split.userItems) pushConversationItem(item);
     for (const item of split.modelReroutedItems) pushConversationItem(item);
-    for (const item of split.agentItems) pushConversationItem(item, { forceAgentBody: true });
+    for (const item of split.agentItems) {
+      pushConversationItem(
+        item,
+        isAssistantMessage(item) ? { assistantArtifacts: assistantArtifactsForItem(item) } : {},
+      );
+    }
     for (const item of split.automationUpdateItems) pushConversationItem(item);
     if (split.systemEventItem) pushConversationItem(split.systemEventItem);
-    if (split.assistantItem) pushConversationItem(split.assistantItem);
+    if (split.assistantItem) {
+      pushConversationItem(split.assistantItem, {
+        assistantArtifacts: assistantArtifactsForItem(split.assistantItem),
+      });
+    }
     for (const item of split.toolOutputItems) pushConversationItem(item);
-    for (const item of split.postAssistantItems) pushConversationItem(item, { forceAgentBody: true });
+    for (const item of split.postAssistantItems) pushConversationItem(item);
     for (const item of split.mcpServerElicitationItems) pushConversationItem(item);
     for (const item of split.permissionRequestItems) pushConversationItem(item);
     if (split.approvalItem) pushConversationItem(split.approvalItem);
@@ -176,7 +228,7 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     for (const item of split.forkedFromConversationItems) pushConversationItem(item);
   }
 
-  flushActivity();
+  flushActivity({ isCurrentToolActivity: options.isThreadRunning === true });
 
   const explicitProgress = options.progressPlan
     ? progressEntriesFromPlan(options.progressPlan.plan, options.progressPlan.id ?? "turn-plan")
@@ -339,6 +391,10 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
       toolOutputItems.push(item);
       continue;
     }
+    if (hiCodexImageToolOutputUrl(item)) {
+      toolOutputItems.push(item);
+      continue;
+    }
     if (type === "automation-update") {
       automationUpdateItems.push(item);
       continue;
@@ -410,19 +466,45 @@ function shouldSkipConversationItem(item: ThreadItem): boolean {
   return record.tool === "wait" || record.action === "wait";
 }
 
-function agentBodyAssistantMessageIds(items: ThreadItem[]): Set<string> {
-  const ids = new Set<string>();
-  for (const segment of conversationSegments(items)) {
-    const workedForIndex = segment.findIndex((item) => itemType(item) === "worked-for");
-    if (workedForIndex < 0) continue;
-    const finalAssistantIndex = findLastIndex(segment, isAssistantMessage);
-    if (finalAssistantIndex < 0) continue;
-    for (let index = 0; index < finalAssistantIndex; index += 1) {
-      const item = segment[index];
-      if (item && isAssistantMessage(item)) ids.add(item.id);
-    }
-  }
-  return ids;
+function shouldKeepSingleActivityAsThreadItem(
+  items: ThreadItem[],
+  context: { conversationDetailLevel: "STEPS_COMMANDS" | "STEPS_PROSE"; isCurrentToolActivity: boolean },
+): boolean {
+  if (items.length !== 1) return false;
+  const item = items[0];
+  if (!item) return false;
+  const type = itemType(item);
+  if (type === "automatic-approval-review" || type === "hook") return true;
+  return (
+    type === "exec"
+    && context.conversationDetailLevel !== "STEPS_PROSE"
+    && context.isCurrentToolActivity !== true
+  );
+}
+
+function shouldRenderStandaloneThreadItem(item: ThreadItem): boolean {
+  const type = itemType(item);
+  return type === "dynamic-tool-call" || type === "automatic-approval-review";
+}
+
+function threadItemRenderUnit(
+  item: ThreadItem,
+): Extract<ConversationRenderUnit, { kind: "threadItem" }> {
+  return {
+    kind: "threadItem",
+    key: threadItemRenderKey(item),
+    item,
+  };
+}
+
+function threadItemRenderKey(item: ThreadItem): string {
+  const type = itemType(item);
+  const id = typeof item.id === "string" && item.id.length > 0
+    ? item.id
+    : typeof (item as Record<string, unknown>).callId === "string" && String((item as Record<string, unknown>).callId).length > 0
+      ? String((item as Record<string, unknown>).callId)
+      : "unknown";
+  return `item:${type}:${id}`;
 }
 
 function workedForIdsWithTrailingAssistant(items: ThreadItem[]): Set<string> {
@@ -551,6 +633,7 @@ function lastStreamingAssistantMessageIndex(units: ConversationRenderUnit[]): nu
   for (let index = units.length - 1; index >= 0; index -= 1) {
     const unit = units[index];
     if (unit?.kind === "toolActivity" && unit.summary.inProgress) return -1;
+    if (unit?.kind === "threadItem" && isItemInProgress(unit.item)) return -1;
     if (unit?.kind === "message" && unit.role === "assistant") {
       return isAssistantMessageStreamingCandidate(unit.item) ? index : -1;
     }

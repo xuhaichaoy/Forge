@@ -375,6 +375,24 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       status,
     };
   }
+  if (type === "automatic-approval-review") {
+    return {
+      kind: "text",
+      id: item.id,
+      running,
+      title: "Auto-review",
+      text: autoReviewText(record),
+    };
+  }
+  if (type === "hook") {
+    return {
+      kind: "text",
+      id: item.id,
+      running,
+      title: "Hook",
+      text: hookText(record),
+    };
+  }
   if (type === "web-search") {
     return {
       kind: "webSearch",
@@ -407,6 +425,23 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
     title: itemType(item),
     text: formatItemDetail(item) || itemText(item) || formatUnknown(item),
   };
+}
+
+function autoReviewText(record: ItemRecord): string {
+  return [
+    `Status: ${stringField(record, "status") || "pending"}`,
+    stringField(record, "riskLevel") ? `Risk: ${stringField(record, "riskLevel")}` : "",
+    stringField(record, "rationale") ? `Rationale: ${stringField(record, "rationale")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function hookText(record: ItemRecord): string {
+  const run = recordObject(record.run);
+  return [
+    `Status: ${stringField(run, "status") || stringField(record, "status") || "completed"}`,
+    stringField(record, "key") ? `Key: ${stringField(record, "key")}` : "",
+    stringField(run, "command") ? `Command: ${stringField(run, "command")}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 function LabeledCode({ label, text }: { label: string; text: string }) {

@@ -8,7 +8,7 @@ import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import { McpToolCallForm } from "./components/mcp-tool-call-form";
-import { ModelSettingsPanel } from "./components/model-settings-panel";
+import { SettingsPanel } from "./components/model-settings-panel";
 import type { OpenThreadOptions } from "./components/open-thread";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
@@ -31,6 +31,7 @@ import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model
 import {
   DEFAULT_MODEL_REASONING_SUMMARY,
   EMPTY_MODEL,
+  buildModelConfigFromConfig,
   normalizeModelConfig,
 } from "./model/model-settings";
 import {
@@ -45,6 +46,7 @@ import { projectBranchDetails } from "./state/branch-details";
 import { projectSidebarThreads } from "./state/sidebar-projection";
 import {
   normalizeFileReference,
+  resolveFileReferencePathCandidates,
   type FileReferenceSelection,
 } from "./state/file-references";
 import {
@@ -58,6 +60,7 @@ import {
   type ComposerAttachment,
   type ComposerMentionOption,
   type ComposerMode,
+  type SettingsPanelId,
   type SlashCommand,
   type SlashCommandAction,
 } from "./state/composer-workflow";
@@ -68,7 +71,10 @@ import {
 import {
   createCommandPanelState,
   projectCommandPanelEntries,
+  projectMcpResourceReadResultEntries,
   projectMcpToolCallResultEntries,
+  projectPluginEntries,
+  projectSkillFileReadResultEntries,
   type CommandPanelOptions,
   type CommandPanelEntry,
   type CommandPanelEntryAction,
@@ -83,7 +89,6 @@ import {
   mentionOptionsFromPluginsResponse,
   mentionOptionsFromSkillsResponse,
 } from "./state/mention-options";
-import { projectPermissionModeCommandEntries } from "./state/permissions-mode";
 import {
   isThreadStatusInProgress,
   projectConversation,
@@ -95,6 +100,24 @@ import {
   deriveActivePendingRequests,
   summarizePendingRequestAwaitingByThread,
 } from "./state/pending-request-scope";
+import {
+  executeHiCodexImageToolCall,
+  HICODEX_IMAGE_TOOL_NAME,
+  isHiCodexImageToolCall,
+  loadImageGenerationSettings,
+  saveImageGenerationSettings,
+  shouldRegisterHiCodexImageDynamicTool,
+  type BrowserStorageLike,
+  type ImageGenerationSettings,
+} from "./state/image-generation-tool";
+import {
+  generalSettingsEntries,
+  imageGenerationCapabilityEntries,
+  localSettingsEntries,
+  modelSettingsEntries,
+  settingsPanelCommandKind,
+  settingsPanelTitle,
+} from "./state/settings-panel-workflow";
 import {
   projectRightRailSections,
   rightRailDisplayMode,
@@ -133,6 +156,8 @@ interface BackgroundAgentPanelState {
   error: string | null;
 }
 
+type CommandPanelSink = (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
+
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
   const [input, setInput] = useState("");
@@ -140,12 +165,16 @@ export function HiCodexApp() {
   const [followUpQueueingEnabled, setFollowUpQueueingEnabled] = useState(true);
   const [collaborationModes, setCollaborationModes] = useState<CollaborationModeMask[]>([]);
   const [workspace, setWorkspace] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
+  const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
+  const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
   const [mcpToolForm, setMcpToolForm] = useState<
     Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpToolForm" }> | null
   >(null);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
+  const [imageGenerationDraft, setImageGenerationDraft] = useState<ImageGenerationSettings>(() =>
+    loadImageGenerationSettings(browserStorage())
+  );
   const [artifactPreview, setArtifactPreview] = useState<RailEntry | null>(null);
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
@@ -199,6 +228,24 @@ export function HiCodexApp() {
     () => summarizePendingRequestAwaitingByThread(state.pendingRequests, { itemsByThread }),
     [itemsByThread, state.pendingRequests],
   );
+  const handledImageToolRequestIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const request of state.pendingRequests) {
+      if (!isHiCodexImageToolCall(request)) continue;
+      const requestKey = String(request.id);
+      if (handledImageToolRequestIdsRef.current.has(requestKey)) continue;
+      handledImageToolRequestIdsRef.current.add(requestKey);
+      void executeHiCodexImageToolCall(request, normalizeModelConfig(modelDraft), { imageSettings: imageGenerationDraft })
+        .then((result) => client.respond(request.id, result))
+        .catch((error) => client.respond(request.id, {
+          success: false,
+          contentItems: [{ type: "inputText", text: `Image generation request failed: ${formatError(error)}` }],
+        }))
+        .finally(() => {
+          dispatch({ type: "resolveServerRequest", id: request.id });
+        });
+    }
+  }, [client, imageGenerationDraft, modelDraft, state.pendingRequests]);
   const activeProgressPlan = activeThreadRuntime.turnPlan;
   const activeModelSupportsImageInput = useMemo(() => {
     const providerId = state.threadContextDefaults?.modelProvider ?? "";
@@ -208,6 +255,10 @@ export function HiCodexApp() {
       ?? null;
     return model?.supportsImageInput !== false;
   }, [state.models, state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
+  const includeImageDynamicTool = useMemo(
+    () => shouldRegisterHiCodexImageDynamicTool(imageGenerationDraft),
+    [imageGenerationDraft],
+  );
   const conversation = useMemo(
     () => projectConversation(activeItems, { isThreadRunning: activeThreadRunning, progressPlan: activeProgressPlan }),
     [activeItems, activeProgressPlan, activeThreadRunning],
@@ -343,7 +394,10 @@ export function HiCodexApp() {
 
   useEffect(() => {
     if (!state.connected) return;
-    void refreshThreadContextDefaults(client, dispatch, workspace);
+    void refreshThreadContextDefaults(client, dispatch, workspace)
+      .then((config) => {
+        if (config) setModelDraft(buildModelConfigFromConfig(config));
+      });
   }, [client, state.connected, workspace]);
 
   useEffect(() => {
@@ -389,12 +443,231 @@ export function HiCodexApp() {
     setCommandPanel(createCommandPanelState(panel, options));
   }, []);
 
+  const openSettingsPanelContent = useCallback((
+    panel: CommandPanelKind,
+    options?: CommandPanelOptions,
+  ) => {
+    setSettingsPanelState(createCommandPanelState(panel, options));
+  }, []);
+
+  const loadSettingsPanel = useCallback(async (
+    panel: SettingsPanelId,
+    options: { forceReload?: boolean } = {},
+  ) => {
+    setActiveSettingsPanel(panel);
+    setCommandPanel(null);
+
+    if (panel === "models") {
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title: "Models",
+        message: "",
+        entries: modelSettingsEntries({
+          activeModel: state.threadContextDefaults?.model ?? null,
+          modelCount: state.models.length,
+        }),
+      }));
+      return;
+    }
+
+    if (panel === "images") {
+      const title = settingsPanelTitle(panel);
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "loading",
+        title,
+        entries: imageGenerationCapabilityEntries({
+          connected: state.connected,
+          dynamicToolRegistered: includeImageDynamicTool,
+          dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+        }),
+      }));
+      if (!(await ensureConnected())) {
+        setSettingsPanelState(createCommandPanelState("generic", {
+          status: "error",
+          title,
+          error: "Runtime is offline.",
+          entries: imageGenerationCapabilityEntries({
+            connected: false,
+            dynamicToolRegistered: includeImageDynamicTool,
+            dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+          }),
+        }));
+        return;
+      }
+      try {
+        const capabilities = await client.request<unknown>("modelProvider/capabilities/read", {}, 120_000);
+        setSettingsPanelState(createCommandPanelState("generic", {
+          status: "ready",
+          title,
+          message: options.forceReload ? "Refreshed image generation capabilities." : "",
+          entries: imageGenerationCapabilityEntries({
+            capabilities,
+            connected: true,
+            dynamicToolRegistered: includeImageDynamicTool,
+            dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+          }),
+        }));
+      } catch (error) {
+        const message = formatError(error);
+        setSettingsPanelState(createCommandPanelState("generic", {
+          status: "error",
+          title,
+          error: message,
+          entries: imageGenerationCapabilityEntries({
+            connected: true,
+            dynamicToolRegistered: includeImageDynamicTool,
+            dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+            error: message,
+          }),
+        }));
+      }
+      return;
+    }
+
+    if (panel === "general") {
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title: "General",
+        message: "",
+        entries: generalSettingsEntries({
+          activeThreadId: state.activeThreadId,
+          activeTurnId,
+          codexHome: state.hostStatus?.codexHome ?? null,
+          connected: state.connected,
+          defaultCwd: state.hostStatus?.defaultCwd ?? null,
+          model: state.threadContextDefaults?.model ?? null,
+          modelCount: state.models.length,
+          pendingRequestCount: state.pendingRequests.length,
+          pid: state.hostStatus?.pid ?? null,
+          workspace,
+        }),
+      }));
+      return;
+    }
+
+    if (panel === "permissions" || panel === "approvals") {
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title: panel === "permissions" ? "Permissions" : "Approvals",
+        entries: localSettingsEntries(panel, {
+          pendingRequestCount: state.pendingRequests.length,
+          threadContextDefaults: state.threadContextDefaults,
+          connected: state.connected,
+        }),
+        message: "",
+      }));
+      return;
+    }
+
+    const panelKind = settingsPanelCommandKind(panel);
+    const title = settingsPanelTitle(panel);
+    openSettingsPanelContent(panelKind, { status: "loading", title, entries: [] });
+    if (!(await ensureConnected())) {
+      openSettingsPanelContent(panelKind, {
+        status: "error",
+        title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+
+    try {
+      if (panel === "mcp") {
+        await client.request("config/mcpServer/reload", undefined, 120_000);
+        const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000);
+        openSettingsPanelContent("mcp", {
+          status: "ready",
+          title,
+          message: "Select a tool to call it, or a resource to read it.",
+          entries: projectCommandPanelEntries({ mcp: result }),
+        });
+        return;
+      }
+      if (panel === "skills") {
+        const result = await client.request<unknown>("skills/list", {
+          cwds: workspace.trim() ? [workspace.trim()] : [],
+          forceReload: options.forceReload === true,
+        }, 120_000);
+        openSettingsPanelContent("skills", {
+          status: "ready",
+          title,
+          message: options.forceReload ? "Reloaded skills from disk." : "Select a skill to attach, view, enable, or disable it.",
+          entries: projectCommandPanelEntries({ skills: result }),
+        });
+        return;
+      }
+      if (panel === "hooks") {
+        const result = await client.request<unknown>("hooks/list", {
+          cwds: workspace.trim() ? [workspace.trim()] : [],
+        }, 120_000);
+        openSettingsPanelContent("hooks", { status: "ready", title, entries: projectCommandPanelEntries({ hooks: result }) });
+        return;
+      }
+      if (panel === "apps") {
+        const result = await client.request<unknown>("app/list", {
+          limit: 50,
+          threadId: state.activeThreadId,
+        }, 120_000);
+        openSettingsPanelContent("apps", { status: "ready", title, entries: projectCommandPanelEntries({ apps: result }) });
+        return;
+      }
+      if (panel === "plugins") {
+        const result = await client.request<unknown>("plugin/list", {
+          cwds: workspace.trim() ? [workspace.trim()] : null,
+        }, 120_000);
+        openSettingsPanelContent("plugins", { status: "ready", title, entries: projectPluginEntries(result) });
+        return;
+      }
+      if (panel === "experimental") {
+        const result = await client.request<unknown>("experimentalFeature/list", { limit: 50 }, 120_000);
+        openSettingsPanelContent("experimental", { status: "ready", title, entries: projectCommandPanelEntries({ experimental: result }) });
+      }
+    } catch (error) {
+      openSettingsPanelContent(panelKind, {
+        status: "error",
+        title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [
+    activeTurnId,
+    client,
+    ensureConnected,
+    includeImageDynamicTool,
+    openSettingsPanelContent,
+    state.activeThreadId,
+    state.connected,
+    state.hostStatus?.codexHome,
+    state.hostStatus?.defaultCwd,
+    state.hostStatus?.pid,
+    state.models.length,
+    state.pendingRequests.length,
+    state.threadContextDefaults,
+    workspace,
+  ]);
+
+  const refreshActiveSettingsPanel = useCallback(() => {
+    if (!activeSettingsPanel) return;
+    void loadSettingsPanel(activeSettingsPanel, { forceReload: true });
+  }, [activeSettingsPanel, loadSettingsPanel]);
+
   useEffect(() => {
-    if (skillsChangedNonce === 0 || commandPanel?.panel !== "skills") return;
+    const commandSkillsOpen = commandPanel?.panel === "skills";
+    const settingsSkillsOpen = activeSettingsPanel === "skills";
+    if (skillsChangedNonce === 0 || (!commandSkillsOpen && !settingsSkillsOpen)) return;
     if (skillsChangedHandledRef.current === skillsChangedNonce) return;
     skillsChangedHandledRef.current = skillsChangedNonce;
     let disposed = false;
     setCommandPanel((current) => current?.panel === "skills"
+      ? {
+          ...current,
+          status: "loading",
+          message: "Skills changed on disk. Refreshing...",
+        }
+      : current);
+    setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
       ? {
           ...current,
           status: "loading",
@@ -406,6 +679,14 @@ export function HiCodexApp() {
       if (!(await ensureConnected())) {
         if (disposed) return;
         setCommandPanel((current) => current?.panel === "skills"
+          ? createCommandPanelState("skills", {
+              status: "error",
+              title: current.title,
+              error: "Runtime is offline.",
+              entries: current.entries,
+            })
+          : current);
+        setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
           ? createCommandPanelState("skills", {
               status: "error",
               title: current.title,
@@ -429,9 +710,25 @@ export function HiCodexApp() {
               entries: projectCommandPanelEntries({ skills }),
             })
           : current);
+        setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
+          ? createCommandPanelState("skills", {
+              status: "ready",
+              title: current.title,
+              message: "Skills changed on disk. Refreshed skills from app-server.",
+              entries: projectCommandPanelEntries({ skills }),
+            })
+          : current);
       } catch (error) {
         if (disposed) return;
         setCommandPanel((current) => current?.panel === "skills"
+          ? createCommandPanelState("skills", {
+              status: "error",
+              title: current.title,
+              error: formatError(error),
+              entries: current.entries,
+            })
+          : current);
+        setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
           ? createCommandPanelState("skills", {
               status: "error",
               title: current.title,
@@ -446,30 +743,11 @@ export function HiCodexApp() {
     return () => {
       disposed = true;
     };
-  }, [client, commandPanel?.panel, ensureConnected, skillsChangedNonce, workspace]);
+  }, [activeSettingsPanel, client, commandPanel?.panel, ensureConnected, skillsChangedNonce, workspace]);
 
   const setActiveComposerMode = useCallback((mode: ComposerMode) => {
     dispatch({ type: "setActiveComposerMode", mode });
   }, []);
-
-  const openLocalSettingsPanel = useCallback((panel: "permissions" | "approvals") => {
-    const entries = localSettingsEntries(panel, {
-      pendingRequestCount: state.pendingRequests.length,
-      threadContextDefaults: state.threadContextDefaults,
-      connected: state.connected,
-    });
-    openCommandPanel("generic", {
-      status: "ready",
-      title: panel === "permissions" ? "Permissions" : "Approvals",
-      entries,
-      message: "",
-    });
-  }, [
-    openCommandPanel,
-    state.connected,
-    state.pendingRequests.length,
-    state.threadContextDefaults,
-  ]);
 
   const selectThread = useCallback(async (thread: Thread) => {
     const requestId = threadSelectionRequestId.current + 1;
@@ -719,10 +997,29 @@ export function HiCodexApp() {
     }));
   }, [activeThread, conversation.units, copyTextToClipboard]);
 
-  const previewConversationFileReference = useCallback((reference: { path: string; lineStart: number; lineEnd?: number }) => {
+  const previewPathContext = useMemo(
+    () => ({
+      workspaceRoot: state.hostStatus?.defaultCwd || workspace,
+      cwd: activeThread?.cwd || workspace,
+    }),
+    [activeThread?.cwd, state.hostStatus?.defaultCwd, workspace],
+  );
+
+  const resolveFileSelection = useCallback((reference: {
+    path: string;
+    lineStart: number;
+    lineEnd?: number;
+  }): FileReferenceSelection | null => {
     const nextReference = normalizeFileReference(reference);
+    if (!nextReference) return null;
+    const resolvedPath = resolveFileReferencePathCandidates(nextReference.path, previewPathContext)[0];
+    return resolvedPath ? { ...nextReference, path: resolvedPath } : nextReference;
+  }, [previewPathContext]);
+
+  const previewConversationFileReference = useCallback((reference: { path: string; lineStart: number; lineEnd?: number }) => {
+    const nextReference = resolveFileSelection(reference);
     if (nextReference) setFileReference(nextReference);
-  }, []);
+  }, [resolveFileSelection]);
 
   const previewRailArtifact = useCallback((entry: RailEntry) => {
     setArtifactPreview(entry);
@@ -744,10 +1041,10 @@ export function HiCodexApp() {
   }, []);
 
   const openRailArtifactFileExternal = useCallback((reference: RailEntryReference) => {
-    const normalized = normalizeFileReference(reference);
+    const normalized = resolveFileSelection(reference);
     if (!normalized) return;
     openFileReferenceExternal(normalized);
-  }, [openFileReferenceExternal]);
+  }, [openFileReferenceExternal, resolveFileSelection]);
 
   const openRailUrl = useCallback((url: string) => {
     const normalized = url.trim();
@@ -761,12 +1058,7 @@ export function HiCodexApp() {
     }
   }, []);
 
-  const openFirstConversationArtifact = useCallback(() => {
-    const entry = conversation.artifacts[0];
-    if (!entry) {
-      dispatch({ type: "log", text: "Artifacts are unavailable", level: "warn" });
-      return;
-    }
+  const openAssistantArtifact = useCallback((entry: RailEntry) => {
     if (shouldOpenArtifactPreview(entry)) {
       previewRailArtifact(entry);
       return;
@@ -780,7 +1072,7 @@ export function HiCodexApp() {
       return;
     }
     previewRailArtifact(entry);
-  }, [conversation.artifacts, openRailUrl, previewRailArtifact, previewRailFileReference]);
+  }, [openRailUrl, previewRailArtifact, previewRailFileReference]);
 
   const openActiveDiffPanel = useCallback(() => {
     const diff = activeDiff.trim();
@@ -853,6 +1145,7 @@ export function HiCodexApp() {
     composerSubmitState,
     dispatch,
     ensureConnected,
+    includeImageDynamicTool,
     input,
     rememberLatestCollaborationMode,
     resetComposerSelectionAfterCreatedThread,
@@ -923,31 +1216,7 @@ export function HiCodexApp() {
       case "openSettings":
         setInput("");
         setComposerAttachments([]);
-        if (action.panel === "models" || action.panel === "general") {
-          setShowSettings(true);
-        }
-        if (action.panel === "mcp") {
-          await runSlashRequest("listMcp");
-        } else if (action.panel === "skills") {
-          await runSlashRequest("listSkills");
-        } else if (action.panel === "hooks") {
-          await runSlashRequest("listHooks");
-        } else if (action.panel === "plugins") {
-          await runSlashRequest("listPlugins");
-        } else if (action.panel === "apps") {
-          await runSlashRequest("listApps");
-        } else if (action.panel === "experimental") {
-          await runSlashRequest("showExperimental");
-        } else if (action.panel === "permissions" || action.panel === "approvals") {
-          openLocalSettingsPanel(action.panel);
-        } else if (action.panel !== "models" && action.panel !== "general") {
-          openCommandPanel("generic", {
-            status: "ready",
-            title: `${action.panel} settings`,
-            entries: [],
-            message: `${action.panel} settings are not exposed by app-server yet.`,
-          });
-        }
+        await loadSettingsPanel(action.panel);
         return;
       case "createThread":
         setInput("");
@@ -999,7 +1268,7 @@ export function HiCodexApp() {
       case "log":
         dispatch({ type: "log", text: action.message, level: action.level });
     }
-  }, [composerMode, createThread, enableComposerPlanMode, openCommandPanel, openLocalSettingsPanel, runSlashRequest, setActiveComposerMode]);
+  }, [composerMode, createThread, enableComposerPlanMode, loadSettingsPanel, openCommandPanel, runSlashRequest, setActiveComposerMode]);
 
   const executeSlashCommand = useCallback((command: SlashCommand) => {
     void handleSlashAction(applySlashCommand(command.id, { input, mode: composerMode }));
@@ -1062,17 +1331,18 @@ export function HiCodexApp() {
 
   const callMcpToolFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "callMcpTool" }>,
+    sink: CommandPanelSink = openCommandPanel,
   ) => {
     const threadId = state.activeThreadId;
     const title = `${action.server}:${action.tool}`;
     if (!threadId) {
       const message = "Select or start a thread before calling an MCP tool.";
       dispatch({ type: "log", text: message, level: "warn" });
-      openCommandPanel("mcp", { status: "error", title, error: message, entries: [] });
+      sink("mcp", { status: "error", title, error: message, entries: [] });
       return;
     }
     if (!(await ensureConnected())) return;
-    openCommandPanel("mcp", { status: "loading", title, message: "Calling MCP tool...", entries: [] });
+    sink("mcp", { status: "loading", title, message: "Calling MCP tool...", entries: [] });
     try {
       const result = await client.request<unknown>("mcpServer/tool/call", {
         threadId,
@@ -1080,14 +1350,94 @@ export function HiCodexApp() {
         tool: action.tool,
         arguments: action.arguments,
       }, 120_000);
-      openCommandPanel("mcp", {
+      sink("mcp", {
         status: "ready",
         title,
         message: "MCP tool call completed.",
         entries: projectMcpToolCallResultEntries(action.server, action.tool, result),
       });
     } catch (error) {
-      openCommandPanel("mcp", {
+      sink("mcp", {
+        status: "error",
+        title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, ensureConnected, openCommandPanel, state.activeThreadId]);
+
+  const reloadMcpServersFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "reloadMcpServers" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("mcp", {
+      status: "loading",
+      title: action.title,
+      message: "Reloading MCP config...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("mcp", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      await client.request("config/mcpServer/reload", undefined, 120_000);
+      const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000);
+      sink("mcp", {
+        status: "ready",
+        title: "MCP Servers",
+        message: "Reloaded MCP config. Select a tool to call it, or a resource to read it.",
+        entries: projectCommandPanelEntries({ mcp: result }),
+      });
+    } catch (error) {
+      sink("mcp", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, ensureConnected, openCommandPanel]);
+
+  const readMcpResourceFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "readMcpResource" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    const title = `${action.server}:${action.title}`;
+    sink("mcp", {
+      status: "loading",
+      title,
+      message: "Reading MCP resource...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("mcp", {
+        status: "error",
+        title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      const result = await client.request<unknown>("mcpServer/resource/read", {
+        threadId: state.activeThreadId ?? null,
+        server: action.server,
+        uri: action.uri,
+      }, 120_000);
+      sink("mcp", {
+        status: "ready",
+        title,
+        message: "MCP resource read completed.",
+        entries: projectMcpResourceReadResultEntries(action.server, action.uri, result),
+      });
+    } catch (error) {
+      sink("mcp", {
         status: "error",
         title,
         error: formatError(error),
@@ -1098,15 +1448,16 @@ export function HiCodexApp() {
 
   const writeConfigFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeConfig" }>,
+    sink: CommandPanelSink = openCommandPanel,
   ) => {
-    openCommandPanel("generic", {
+    sink("generic", {
       status: "loading",
       title: action.title,
       message: "Saving configuration...",
       entries: [],
     });
     if (!(await ensureConnected())) {
-      openCommandPanel("generic", {
+      sink("generic", {
         status: "error",
         title: action.title,
         error: "Runtime is offline.",
@@ -1138,7 +1489,7 @@ export function HiCodexApp() {
           },
         });
       }
-      openCommandPanel("generic", {
+      sink("generic", {
         status: "ready",
         title: action.title,
         message: action.message,
@@ -1152,7 +1503,7 @@ export function HiCodexApp() {
         }],
       });
     } catch (error) {
-      openCommandPanel("generic", {
+      sink("generic", {
         status: "error",
         title: action.title,
         error: formatError(error),
@@ -1163,23 +1514,24 @@ export function HiCodexApp() {
 
   const writeSkillConfigFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeSkillConfig" }>,
+    sink: CommandPanelSink = openCommandPanel,
   ) => {
     const path = action.path?.trim();
     const name = action.name.trim();
     if (!path && !name) {
       const message = "Skill config write requires a skill path or name.";
       dispatch({ type: "log", text: message, level: "warn" });
-      openCommandPanel("skills", { status: "error", title: action.title, error: message, entries: [] });
+      sink("skills", { status: "error", title: action.title, error: message, entries: [] });
       return;
     }
-    openCommandPanel("skills", {
+    sink("skills", {
       status: "loading",
       title: action.title,
       message: action.enabled ? "Enabling skill..." : "Disabling skill...",
       entries: [],
     });
     if (!(await ensureConnected())) {
-      openCommandPanel("skills", {
+      sink("skills", {
         status: "error",
         title: action.title,
         error: "Runtime is offline.",
@@ -1198,14 +1550,14 @@ export function HiCodexApp() {
         forceReload: true,
       }, 120_000);
       const effectiveEnabled = result.effectiveEnabled ?? action.enabled;
-      openCommandPanel("skills", {
+      sink("skills", {
         status: "ready",
         title: "Skills",
         message: `${action.name} ${effectiveEnabled ? "enabled" : "disabled"}.`,
         entries: projectCommandPanelEntries({ skills }),
       });
     } catch (error) {
-      openCommandPanel("skills", {
+      sink("skills", {
         status: "error",
         title: action.title,
         error: formatError(error),
@@ -1214,7 +1566,55 @@ export function HiCodexApp() {
     }
   }, [client, ensureConnected, openCommandPanel, workspace]);
 
-  const selectCommandPanelAction = useCallback((action: CommandPanelEntryAction) => {
+  const readSkillFileFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "readSkillFile" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    const path = action.path.trim();
+    if (!path) {
+      const message = "Skill source read requires a path.";
+      dispatch({ type: "log", text: message, level: "warn" });
+      sink("skills", { status: "error", title: action.title, error: message, entries: [] });
+      return;
+    }
+    sink("skills", {
+      status: "loading",
+      title: action.title,
+      message: "Reading skill source...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("skills", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      const result = await client.request<{ dataBase64?: string }>("fs/readFile", { path }, 120_000);
+      const contents = decodeBase64Utf8(result.dataBase64 ?? "");
+      sink("skills", {
+        status: "ready",
+        title: action.title,
+        message: "Skill source loaded from app-server.",
+        entries: projectSkillFileReadResultEntries(path, contents),
+      });
+    } catch (error) {
+      sink("skills", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, ensureConnected, openCommandPanel]);
+
+  const selectCommandPanelAction = useCallback((
+    action: CommandPanelEntryAction,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
     if (action.type === "attachMention") {
       setComposerAttachments((current) => mergeComposerAttachments(current, [{
         type: "mention",
@@ -1222,6 +1622,7 @@ export function HiCodexApp() {
         path: action.path,
       }]));
       setCommandPanel(null);
+      setActiveSettingsPanel(null);
       return;
     }
     if (action.type === "attachSkill") {
@@ -1235,35 +1636,58 @@ export function HiCodexApp() {
         setInput((current) => appendSkillPromptText(current, promptText));
       }
       setCommandPanel(null);
+      setActiveSettingsPanel(null);
       return;
     }
     if (action.type === "attachApp") {
       setInput((current) => appendSkillPromptText(current, action.promptText));
       setCommandPanel(null);
+      setActiveSettingsPanel(null);
       return;
     }
     if (action.type === "attachPlugin") {
       setInput((current) => appendSkillPromptText(current, action.promptText));
       setCommandPanel(null);
+      setActiveSettingsPanel(null);
       return;
     }
     if (action.type === "writeConfig") {
-      void writeConfigFromPanel(action);
+      void writeConfigFromPanel(action, sink);
       return;
     }
     if (action.type === "writeSkillConfig") {
-      void writeSkillConfigFromPanel(action);
+      void writeSkillConfigFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "readSkillFile") {
+      void readSkillFileFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "reloadMcpServers") {
+      void reloadMcpServersFromPanel(action, sink);
       return;
     }
     if (action.type === "callMcpTool") {
-      void callMcpToolFromPanel(action);
+      void callMcpToolFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "readMcpResource") {
+      void readMcpResourceFromPanel(action, sink);
       return;
     }
     if (action.type === "openMcpToolForm") {
       setCommandPanel(null);
       setMcpToolForm(action);
     }
-  }, [callMcpToolFromPanel, writeConfigFromPanel, writeSkillConfigFromPanel]);
+  }, [
+    callMcpToolFromPanel,
+    openCommandPanel,
+    readMcpResourceFromPanel,
+    readSkillFileFromPanel,
+    reloadMcpServersFromPanel,
+    writeConfigFromPanel,
+    writeSkillConfigFromPanel,
+  ]);
 
   const selectCommandPanelEntry = useCallback((entry: CommandPanelEntry) => {
     if (entry.disabled || !entry.action) return;
@@ -1288,6 +1712,17 @@ export function HiCodexApp() {
     answers?: Record<string, string[]>,
   ) => {
     try {
+      if (isHiCodexImageToolCall(request)) {
+        const result = accepted
+          ? await executeHiCodexImageToolCall(request, normalizeModelConfig(modelDraft), { imageSettings: imageGenerationDraft })
+          : {
+              success: false,
+              contentItems: [{ type: "inputText" as const, text: "Image generation was cancelled." }],
+            };
+        await client.respond(request.id, result);
+        dispatch({ type: "resolveServerRequest", id: request.id });
+        return;
+      }
       const result = buildApprovalResult(request, accepted, answers);
       result === null
         ? await client.reject(request.id, accepted ? "Unsupported HiCodex request" : "Rejected by HiCodex user")
@@ -1296,7 +1731,7 @@ export function HiCodexApp() {
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
     }
-  }, [client]);
+  }, [client, imageGenerationDraft, modelDraft]);
 
   const applyModelDraft = useCallback(() => {
     const nextModel = normalizeModelConfig(modelDraft);
@@ -1330,6 +1765,17 @@ export function HiCodexApp() {
     workspace,
   ]);
 
+  const applyImageGenerationDraft = useCallback(() => {
+    const nextSettings = saveImageGenerationSettings(browserStorage(), imageGenerationDraft);
+    setImageGenerationDraft(nextSettings);
+    dispatch({
+      type: "log",
+      text: nextSettings.baseUrl
+        ? `set image generation endpoint to ${nextSettings.baseUrl}`
+        : "image generation will reuse the active model endpoint",
+    });
+  }, [imageGenerationDraft]);
+
   return (
     <div className={showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app"}>
       <Sidebar
@@ -1347,7 +1793,7 @@ export function HiCodexApp() {
         onForkThread={forkSelectedThread}
         onRenameThread={openRenameThreadDialog}
         onArchiveThread={openArchiveThreadDialog}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={() => void loadSettingsPanel("general")}
         onDisconnect={disconnect}
         getThreadTitle={(thread) => threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null)}
       />
@@ -1420,7 +1866,7 @@ export function HiCodexApp() {
                 onBrowseFiles={browseComposerFiles}
                 onMentionSearch={searchComposerMentions}
                 onPlanSelected={selectComposerPlan}
-                onOpenPlugins={() => void runSlashRequest("listPlugins")}
+                onOpenPlugins={() => void loadSettingsPanel("plugins")}
                 pendingRequestContent={activePendingRequests.length > 0 ? (
                   <PendingRequestStack
                     pendingRequests={activePendingRequests}
@@ -1447,7 +1893,7 @@ export function HiCodexApp() {
               units={conversation.units}
               threadId={state.activeThreadId}
               onEditLastUserMessage={editLastUserTurn}
-              onOpenAssistantArtifacts={openFirstConversationArtifact}
+              onOpenAssistantArtifact={openAssistantArtifact}
               onForkTurn={forkActiveThreadFromTurn}
               onOpenFileReference={previewConversationFileReference}
               onOpenThreadId={openBackgroundAgentThread}
@@ -1477,6 +1923,8 @@ export function HiCodexApp() {
             displayMode={rightRailMode}
             artifactPreview={artifactPreview}
             fileReference={fileReference}
+            artifactWorkspaceRoot={previewPathContext.workspaceRoot}
+            artifactCwd={previewPathContext.cwd}
             onCloseArtifactPreview={() => setArtifactPreview(null)}
             onCloseFileReference={() => setFileReference(null)}
             onOpenArtifactPreview={previewRailArtifact}
@@ -1494,13 +1942,25 @@ export function HiCodexApp() {
         )}
       </main>
 
-      {showSettings && (
-        <ModelSettingsPanel
+      {activeSettingsPanel && (
+        <SettingsPanel
+          activePanel={activeSettingsPanel}
           modelDraft={modelDraft}
           setModelDraft={setModelDraft}
+          imageGenerationDraft={imageGenerationDraft}
+          setImageGenerationDraft={setImageGenerationDraft}
           models={state.models}
-          onClose={() => setShowSettings(false)}
-          onSave={applyModelDraft}
+          panelState={settingsPanelState}
+          onClose={() => setActiveSettingsPanel(null)}
+          onRefreshPanel={refreshActiveSettingsPanel}
+          onSaveModel={applyModelDraft}
+          onSaveImageGeneration={applyImageGenerationDraft}
+          onSelectAction={(action) => selectCommandPanelAction(action, openSettingsPanelContent)}
+          onSelectEntry={(entry) => {
+            if (entry.disabled || !entry.action) return;
+            selectCommandPanelAction(entry.action, openSettingsPanelContent);
+          }}
+          onSelectPanel={(panel) => void loadSettingsPanel(panel)}
         />
       )}
 
@@ -1508,7 +1968,7 @@ export function HiCodexApp() {
         <CommandPanel
           panel={commandPanel}
           onClose={() => setCommandPanel(null)}
-          onSelectAction={selectCommandPanelAction}
+          onSelectAction={(action) => selectCommandPanelAction(action)}
           onSelectEntry={selectCommandPanelEntry}
         />
       )}
@@ -1587,55 +2047,25 @@ function shortThreadId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
 }
 
-function localSettingsEntries(
-  panel: "permissions" | "approvals",
-  context: {
-    pendingRequestCount: number;
-    threadContextDefaults: Parameters<typeof projectPermissionModeCommandEntries>[0];
-    connected: boolean;
-  },
-): CommandPanelEntry[] {
-  if (panel === "permissions") {
-    return [
-      ...projectPermissionModeCommandEntries(context.threadContextDefaults),
-      {
-        id: "permissions:connection",
-        title: "Runtime connection",
-        kind: "status",
-        status: context.connected ? "connected" : "offline",
-        meta: "Permissions are enforced by app-server requests",
-      },
-    ];
+function browserStorage(): BrowserStorageLike | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
   }
-
-  return [
-    {
-      id: "approvals:policy",
-      title: "Approval policy",
-      kind: "status",
-      status: approvalPolicySetting(context.threadContextDefaults?.approvalPolicy) || "default",
-      meta: "Configured for new thread requests",
-    },
-    {
-      id: "approvals:pending",
-      title: "Pending requests",
-      kind: "status",
-      status: String(context.pendingRequestCount),
-      meta: "Shown above the composer when app-server asks for a decision",
-    },
-  ];
-}
-
-function approvalPolicySetting(value: unknown): string {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
-  return "custom";
 }
 
 function appendSkillPromptText(current: string, promptText: string): string {
   if (!promptText.trim()) return current;
   if (!current.trim()) return promptText;
   return `${current.trimEnd()}\n${promptText}`;
+}
+
+function decodeBase64Utf8(value: string): string {
+  if (!value) return "";
+  const binary = globalThis.atob(value);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 function threadGitBranch(thread: Thread | null): string | null {

@@ -4,6 +4,7 @@ import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError, formatUnknown, stringField } from "../lib/format";
 import { getHostStatus, isTauriRuntime, readThreadToolHistory } from "../lib/tauri-host";
 import { codexUiReducer, OPTIMISTIC_TURN_PLACEHOLDER_PREFIX, type ThreadContextDefaults } from "./codex-reducer";
+import { HICODEX_IMAGE_DYNAMIC_TOOL_SPEC } from "./image-generation-tool";
 import { mergeThreadToolHistory } from "./thread-history-tools";
 
 export type ThreadWorkflowDispatch = Dispatch<Parameters<typeof codexUiReducer>[1]>;
@@ -69,6 +70,10 @@ export function dropOptimisticUserMessage(
 
 export interface TurnStartOptions {
   collaborationMode?: CollaborationMode | null;
+}
+
+export interface ThreadCreationOptions {
+  includeDynamicTools?: boolean;
 }
 
 export const THREAD_LIST_PAGE_SIZE = 100;
@@ -137,8 +142,12 @@ export async function startThread(
   client: CodexJsonRpcClient,
   workspace: string,
   context?: ThreadContextDefaults | null,
+  options?: ThreadCreationOptions,
 ) {
-  return client.request<{ thread?: Thread }>("thread/start", buildThreadContextParams(workspace, context));
+  return client.request<{ thread?: Thread }>(
+    "thread/start",
+    buildThreadContextParams(workspace, context, { includeDynamicTools: options?.includeDynamicTools === true }),
+  );
 }
 
 export async function readThread(
@@ -197,8 +206,9 @@ export async function createAndSelectThreadForTurn(
   workspace: string,
   dispatch: ThreadWorkflowDispatch,
   context?: ThreadContextDefaults | null,
+  options?: ThreadCreationOptions,
 ): Promise<string | null> {
-  const result = await startThread(client, workspace, context);
+  const result = await startThread(client, workspace, context, options);
   const thread = result.thread
     ? await hydrateStartedThreadMetadata(client, result.thread)
     : null;
@@ -231,6 +241,7 @@ export interface EnsureThreadReadyForTurnInput {
   workspace: string;
   dispatch: ThreadWorkflowDispatch;
   context?: ThreadContextDefaults | null;
+  threadCreationOptions?: ThreadCreationOptions;
 }
 
 export interface ReadyThreadForTurn {
@@ -245,10 +256,11 @@ export async function ensureThreadReadyForTurn({
   workspace,
   dispatch,
   context,
+  threadCreationOptions,
 }: EnsureThreadReadyForTurnInput): Promise<ReadyThreadForTurn> {
   if (!activeThreadId) {
     return {
-      threadId: await createAndSelectThreadForTurn(client, workspace, dispatch, context),
+      threadId: await createAndSelectThreadForTurn(client, workspace, dispatch, context, threadCreationOptions),
       source: "created",
     };
   }
@@ -470,15 +482,17 @@ export async function refreshThreadContextDefaults(
   client: CodexJsonRpcClient,
   dispatch: ThreadWorkflowDispatch,
   workspace: string,
-) {
+): Promise<Record<string, unknown> | null> {
   try {
     const result = await client.request<{ config?: Record<string, unknown> }>("config/read", {
       includeLayers: false,
       cwd: normalizedCwd(workspace),
     });
     dispatch({ type: "setThreadContextDefaults", context: projectThreadContextDefaults(result.config) });
+    return result.config ?? null;
   } catch (error) {
     dispatch({ type: "log", text: `config/read failed: ${formatError(error)}`, level: "warn" });
+    return null;
   }
 }
 
@@ -574,6 +588,7 @@ export function isThreadStatusNotLoaded(status: unknown): boolean {
 export function buildThreadContextParams(
   workspace: string,
   context?: ThreadContextDefaults | null,
+  options?: { includeDynamicTools?: boolean },
 ): Record<string, unknown> {
   return {
     cwd: normalizedCwd(workspace),
@@ -587,6 +602,7 @@ export function buildThreadContextParams(
       baseInstructions: context?.baseInstructions,
       developerInstructions: context?.developerInstructions,
       personality: context?.personality,
+      dynamicTools: options?.includeDynamicTools ? [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] : undefined,
     }),
   };
 }

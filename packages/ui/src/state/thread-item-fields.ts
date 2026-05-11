@@ -122,6 +122,10 @@ export function isItemInProgress(item: ThreadItem): boolean {
     if (typeof record.success === "boolean") return false;
     return status === "pending" || status === "streaming" || status === "inProgress";
   }
+  if (itemType(item) === "hook") {
+    const run = recordObject(record.run);
+    return stringField(run, "status") === "running" || status === "running";
+  }
   if (itemType(item) === "web-search") return record.completed === false;
   if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
     return status !== "completed" && status !== "failed" && status !== "errored" && status !== "cancelled";

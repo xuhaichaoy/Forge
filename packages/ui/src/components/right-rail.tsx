@@ -34,6 +34,8 @@ export interface RightRailProps {
   displayMode?: RightRailDisplayMode;
   artifactPreview?: RailEntry | null;
   fileReference?: FileReferenceSelection | null;
+  artifactWorkspaceRoot?: string | null;
+  artifactCwd?: string | null;
   onCloseArtifactPreview?: () => void;
   onCloseFileReference?: () => void;
   onOpenArtifactPreview?: (entry: RailEntry) => void;
@@ -66,6 +68,8 @@ export function RightRail({
   displayMode = "overlay",
   artifactPreview = null,
   fileReference = null,
+  artifactWorkspaceRoot,
+  artifactCwd,
   onCloseArtifactPreview,
   onCloseFileReference,
   onOpenArtifactPreview,
@@ -108,6 +112,8 @@ export function RightRail({
       {artifactPreview && onCloseArtifactPreview && (
         <ArtifactPreviewPanel
           entry={artifactPreview}
+          workspaceRoot={artifactWorkspaceRoot}
+          cwd={artifactCwd}
           onClose={onCloseArtifactPreview}
           onOpenFileReference={onOpenFileReference}
           onOpenFileExternal={onOpenArtifactFileExternal}
@@ -472,10 +478,11 @@ function railEntryImageSrc(entry: RailEntry): string {
     : entry.meta && isImageArtifactPath(entry.meta) ? entry.meta : "";
   if (!imagePath) return "";
   if (/^(?:data:image\/|blob:|https?:|file:)/i.test(imagePath)) return imagePath;
+  if (!imagePath.startsWith("/")) return "";
   try {
     return convertLocalFileSrc(imagePath);
   } catch {
-    return imagePath.startsWith("/") ? `file://${encodeURI(imagePath)}` : "";
+    return `file://${encodeURI(imagePath)}`;
   }
 }
 
