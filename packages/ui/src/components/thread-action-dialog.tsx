@@ -75,7 +75,7 @@ export function ThreadActionDialog({
               <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
             </header>
             <div className="hc-thread-dialog-body">
-              <p>{title}</p>
+              <p title={title}>{title}</p>
               <span>This removes the chat from the active thread list.</span>
             </div>
             <footer>

@@ -203,6 +203,11 @@ export function filePathsFromItem(item: ThreadItem): string[] {
   return dedupe(paths);
 }
 
+export function shouldProjectArtifactsFromItem(item: ThreadItem): boolean {
+  if (isItemInProgress(item)) return false;
+  return !hasFailedOutcome(item);
+}
+
 function patchChanges(item: ThreadItem): Record<string, unknown>[] {
   const changes = (item as ItemRecord).changes;
   if (Array.isArray(changes)) {
@@ -238,6 +243,26 @@ function execExitCode(item: ThreadItem): number | null {
   if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
   const output = recordObject(record.output);
   return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
+}
+
+function hasFailedOutcome(item: ThreadItem): boolean {
+  const record = item as ItemRecord;
+  const status = typeof record.status === "string" ? record.status.toLowerCase() : "";
+  if (/^(?:failed|error|errored|cancelled|canceled|declined|rejected|denied|timeout|timedout|interrupted)$/.test(status)) {
+    return true;
+  }
+  if (record.success === false) return true;
+  if (record.executionStatus === "interrupted") return true;
+  if (execExitCode(item) !== null && execExitCode(item) !== 0) return true;
+  if (hasErrorValue(record.error)) return true;
+  const output = recordObject(record.output);
+  return hasErrorValue(output.error);
+}
+
+function hasErrorValue(value: unknown): boolean {
+  if (value == null || value === false) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
 }
 
 export function durationMs(item: ThreadItem): number {

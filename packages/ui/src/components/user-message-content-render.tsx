@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
 import type { ConversationRenderUnit, UserMessageContentPart } from "../state/render-groups";
-import type { FileReference } from "./message-unit";
+import type { FileReference } from "./file-reference-types";
 
 export type UserMessageMarkdownRenderer = (
   text: string,

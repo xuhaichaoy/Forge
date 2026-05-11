@@ -6,6 +6,7 @@ export default function runRenderGroupsRightRailTests(): void {
   dedupesArtifactsAcrossFileChangesAndAssistantText();
   projectsBareBacktickedFilenamesAsArtifacts();
   skipsUnresolvedAssistantFileMentions();
+  skipsFailedToolPathArtifacts();
   dedupesBareImageLinksAgainstCommandOutputPaths();
   projectsGeneratedImageSourcesIntoArtifacts();
   excludesNodeReplSourcesButKeepsMcpAndWebSearchSources();
@@ -175,6 +176,62 @@ function skipsUnresolvedAssistantFileMentions(): void {
     assistant?.kind === "message" ? assistant.artifacts?.map((entry) => entry.meta) ?? [] : null,
     [],
     "assistant message units should not carry resource cards for files reported as missing",
+  );
+}
+
+function skipsFailedToolPathArtifacts(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-find-dev-guide",
+      content: [{ type: "input_text", text: "你好" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-start",
+      text: "你好！我先按要求读取 `docs/DEVELOPMENT.md`，确认这个仓库的开发规范。",
+      phase: "commentary",
+      memoryCitation: null,
+    } as ThreadItem,
+    {
+      type: "dynamicToolCall",
+      id: "read-missing-dev-guide",
+      tool: "read_file",
+      status: "failed",
+      path: "docs/DEVELOPMENT.md",
+      error: "No such file or directory",
+    } as unknown as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "failed-search",
+      exitCode: 127,
+      aggregatedOutput:
+        "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri\n" +
+        "zsh:1: command not found: rg\n",
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-missing-final",
+      text:
+        "你好！我在当前目录里没有找到 `docs/DEVELOPMENT.md`，所以还不能开始按该仓库规范做代码修改。\n" +
+        "如果你愿意，可以把正确的路径发我。",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    [],
+    "failed tool input paths should not create clickable Artifacts",
+  );
+  const finalAssistant = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-missing-final"
+  );
+  assertDeepEqual(
+    finalAssistant?.kind === "message" ? finalAssistant.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [],
+    "final assistant rows should not inherit resource cards from failed tool paths",
   );
 }
 

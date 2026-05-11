@@ -2,11 +2,15 @@ import { assistantResourceCardViewModels } from "../src/components/assistant-res
 import {
   assistantArtifactMediaSources,
   assistantResourceCardEntriesForMessage,
-  parseMarkdownInline,
-  parseMarkdownBlocks,
   resolveAssistantMarkdownMediaSource,
   shouldRenderAssistantMessageChrome,
+} from "../src/components/assistant-message-artifacts";
+import {
   shouldRenderMessageActionRow,
+} from "../src/components/message-action-row";
+import {
+  parseMarkdownInline,
+  parseMarkdownBlocks,
   shouldRenderUserMessageActionStrip,
 } from "../src/components/message-unit";
 

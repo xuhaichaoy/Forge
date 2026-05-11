@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { RefObject } from "react";
-import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
+import type { CollaborationModeMask, ModelConfig } from "@hicodex/codex-protocol";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter } from "./components/composer-external-footer";
@@ -9,24 +8,28 @@ import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import { McpToolCallForm } from "./components/mcp-tool-call-form";
 import { SettingsPanel } from "./components/model-settings-panel";
-import type { OpenThreadOptions } from "./components/open-thread";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
 import { RightRail } from "./components/right-rail";
 import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
-import {
-  ThreadActionDialog,
-  type ThreadActionDialogState,
-} from "./components/thread-action-dialog";
+import { ThreadActionDialog } from "./components/thread-action-dialog";
 import { CodexJsonRpcClient } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
-import { openFileReference, pickFileReferences } from "./lib/tauri-host";
+import { pickFileReferences } from "./lib/tauri-host";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
 } from "./hooks/use-turn-submission";
-import { shouldOpenArtifactPreview } from "./state/artifact-preview";
+import { useElementInlineSize } from "./hooks/use-element-inline-size";
+import { useArtifactPreviewActions } from "./hooks/use-artifact-preview-actions";
+import {
+  useCommandPanelActions,
+  type McpToolFormAction,
+} from "./hooks/use-command-panel-actions";
+import { useBackgroundAgentPanel } from "./hooks/use-background-agent-panel";
+import { useSkillsPanelRefresh } from "./hooks/use-skills-panel-refresh";
+import { useThreadActions } from "./hooks/use-thread-actions";
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
   DEFAULT_MODEL_REASONING_SUMMARY,
@@ -44,19 +47,12 @@ import {
 import { buildApprovalResult } from "./state/approval-requests";
 import { projectBranchDetails } from "./state/branch-details";
 import { projectSidebarThreads } from "./state/sidebar-projection";
+import type { FileReferenceSelection } from "./state/file-references";
 import {
-  normalizeFileReference,
-  resolveFileReferencePathCandidates,
-  type FileReferenceSelection,
-} from "./state/file-references";
-import {
-  DEFAULT_SLASH_COMMANDS,
   applySlashCommand,
   composerAttachmentsFromPaths,
   composerPlaceholderText,
-  mergeComposerAttachments,
   projectComposerSubmitState,
-  slashCommandsForComposerMode,
   type ComposerAttachment,
   type ComposerMentionOption,
   type ComposerMode,
@@ -70,14 +66,8 @@ import {
 } from "./state/collaboration-modes";
 import {
   createCommandPanelState,
-  projectCommandPanelEntries,
-  projectMcpResourceReadResultEntries,
-  projectMcpToolCallResultEntries,
-  projectPluginEntries,
-  projectSkillFileReadResultEntries,
   type CommandPanelOptions,
   type CommandPanelEntry,
-  type CommandPanelEntryAction,
   type CommandPanelKind,
   type CommandPanelState,
 } from "./state/command-panel";
@@ -93,8 +83,6 @@ import {
   isThreadStatusInProgress,
   projectConversation,
   type RailEntry,
-  type RailEntryReference,
-  type ThreadItem,
 } from "./state/render-groups";
 import {
   deriveActivePendingRequests,
@@ -102,22 +90,20 @@ import {
 } from "./state/pending-request-scope";
 import {
   executeHiCodexImageToolCall,
-  HICODEX_IMAGE_TOOL_NAME,
   isHiCodexImageToolCall,
   loadImageGenerationSettings,
   saveImageGenerationSettings,
   shouldRegisterHiCodexImageDynamicTool,
-  type BrowserStorageLike,
   type ImageGenerationSettings,
 } from "./state/image-generation-tool";
 import {
-  generalSettingsEntries,
-  imageGenerationCapabilityEntries,
-  localSettingsEntries,
-  modelSettingsEntries,
-  settingsPanelCommandKind,
-  settingsPanelTitle,
-} from "./state/settings-panel-workflow";
+  browserStorage,
+  slashCommandEntries,
+  threadGitBranch,
+} from "./state/app-shell-helpers";
+import {
+  loadSettingsPanelContent,
+} from "./state/settings-panel-loader";
 import {
   projectRightRailSections,
   rightRailDisplayMode,
@@ -126,37 +112,11 @@ import {
 } from "./state/right-rail";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import {
-  archiveThread,
-  editLastUserTurn as editLastUserTurnWorkflow,
-  forkThread as forkThreadWorkflow,
-  forkThreadFromTurn as forkThreadFromTurnWorkflow,
-  isThreadNotFound,
-  isThreadNotMaterialized,
-  readThread,
-  readThreadForDisplay,
   refreshThreads,
   refreshThreadContextDefaults,
-  renameThread as renameThreadWorkflow,
-  resumeThreadWithMetadataRead,
-  startSideConversation as startSideConversationWorkflow,
   threadTitle,
-  threadStatusLabel,
   type TurnStartOptions,
 } from "./state/thread-workflow";
-
-const EMPTY_THREAD_ITEMS: ThreadItem[] = [];
-
-interface BackgroundAgentPanelState {
-  threadId: string;
-  displayName: string | null;
-  kind: "backgroundAgent" | "sideChat";
-  model: string | null;
-  role: string | null;
-  loading: boolean;
-  error: string | null;
-}
-
-type CommandPanelSink = (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
 
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
@@ -168,23 +128,16 @@ export function HiCodexApp() {
   const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
   const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
-  const [mcpToolForm, setMcpToolForm] = useState<
-    Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpToolForm" }> | null
-  >(null);
+  const [mcpToolForm, setMcpToolForm] = useState<McpToolFormAction | null>(null);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
   const [imageGenerationDraft, setImageGenerationDraft] = useState<ImageGenerationSettings>(() =>
     loadImageGenerationSettings(browserStorage())
   );
   const [artifactPreview, setArtifactPreview] = useState<RailEntry | null>(null);
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
-  const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
-  const [backgroundAgentPanel, setBackgroundAgentPanel] = useState<BackgroundAgentPanelState | null>(null);
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
   const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
-  const threadSelectionRequestId = useRef(0);
-  const backgroundAgentRequestId = useRef(0);
-  const skillsChangedHandledRef = useRef(0);
   const workspaceInitialized = useRef(false);
   const threadScrollOffsetsRef = useRef(new Map<string, number>());
   const mainRef = useRef<HTMLElement | null>(null);
@@ -263,43 +216,6 @@ export function HiCodexApp() {
     () => projectConversation(activeItems, { isThreadRunning: activeThreadRunning, progressPlan: activeProgressPlan }),
     [activeItems, activeProgressPlan, activeThreadRunning],
   );
-  const composerPlaceholder = composerPlaceholderText({
-    hasConversation: conversation.units.length > 0,
-    hasBackgroundAgentsPanel: backgroundAgentPanel != null,
-  });
-  const backgroundAgentThread = backgroundAgentPanel
-    ? state.threads.find((thread) => thread.id === backgroundAgentPanel.threadId) ?? null
-    : null;
-  const backgroundAgentRuntime = backgroundAgentPanel
-    ? state.threadsRuntime[backgroundAgentPanel.threadId] ?? null
-    : null;
-  const backgroundAgentItems = backgroundAgentRuntime?.items ?? EMPTY_THREAD_ITEMS;
-  const backgroundAgentRunning = Boolean(backgroundAgentRuntime?.activeTurnId)
-    || isThreadStatusInProgress(backgroundAgentThread?.status);
-  const backgroundAgentConversation = useMemo(
-    () => projectConversation(backgroundAgentItems, {
-      isThreadRunning: backgroundAgentRunning,
-      progressPlan: backgroundAgentRuntime?.turnPlan ?? null,
-    }),
-    [backgroundAgentItems, backgroundAgentRuntime?.turnPlan, backgroundAgentRunning],
-  );
-  const backgroundAgentTitle = backgroundAgentThread
-    ? backgroundAgentPanel?.displayName
-      || threadTitle(backgroundAgentThread, backgroundAgentItems)
-    : backgroundAgentPanel?.displayName || (backgroundAgentPanel?.kind === "sideChat" ? "Side chat" : "Background agent");
-  const backgroundAgentStatus = backgroundAgentPanel?.loading
-    ? "loading"
-    : backgroundAgentPanel?.error
-      ? "error"
-      : threadStatusLabel(backgroundAgentThread?.status);
-  const backgroundAgentSubtitle = backgroundAgentPanel
-    ? [
-        shortThreadId(backgroundAgentPanel.threadId),
-        backgroundAgentPanel.role,
-        backgroundAgentPanel.model ? `Uses ${backgroundAgentPanel.model}` : null,
-        backgroundAgentStatus,
-      ].filter(Boolean).join(" · ")
-    : "";
   const activeDiff = activeThreadRuntime.turnDiff;
   const branchDetails = useMemo(
     () => projectBranchDetails({
@@ -419,13 +335,6 @@ export function HiCodexApp() {
     }
   }, [client]);
 
-  const createThread = useCallback(async () => {
-    threadSelectionRequestId.current += 1;
-    setInput("");
-    setComposerAttachments([]);
-    dispatch({ type: "setActiveThread", threadId: null });
-  }, []);
-
   const ensureConnected = useCallback(async () => {
     if (state.connected) return true;
     return connect();
@@ -435,6 +344,56 @@ export function HiCodexApp() {
     if (mode !== "plan" || hasCollaborationModePreset(collaborationModes, "plan")) return collaborationModes;
     return loadCollaborationModes();
   }, [collaborationModes, loadCollaborationModes]);
+
+  const {
+    archiveSelectedThread,
+    closeThreadActionDialog,
+    createThread,
+    editLastUserTurn,
+    forkActiveThreadFromTurn,
+    forkSelectedThread,
+    openArchiveThreadDialog,
+    openRenameThreadDialog,
+    renameSelectedThread,
+    resumeSelectedThread,
+    selectThread,
+    threadActionDialog,
+  } = useThreadActions({
+    activeThread,
+    client,
+    dispatch,
+    ensureConnected,
+    setComposerAttachments,
+    setInput,
+    threadContextDefaults: state.threadContextDefaults,
+    threads: state.threads,
+    workspace,
+  });
+
+  const {
+    backgroundAgentConversation,
+    backgroundAgentPanel,
+    backgroundAgentStatus,
+    backgroundAgentSubtitle,
+    backgroundAgentTitle,
+    closeBackgroundAgentPanel,
+    openBackgroundAgentThread,
+    openSideChatFromThread,
+    openSideConversationPanel,
+  } = useBackgroundAgentPanel({
+    client,
+    dispatch,
+    ensureConnected,
+    hostDefaultCwd: state.hostStatus?.defaultCwd,
+    threadContextDefaults: state.threadContextDefaults,
+    threads: state.threads,
+    threadsRuntime: state.threadsRuntime,
+    workspace,
+  });
+  const composerPlaceholder = composerPlaceholderText({
+    hasConversation: conversation.units.length > 0,
+    hasBackgroundAgentsPanel: backgroundAgentPanel != null,
+  });
 
   const openCommandPanel = useCallback((
     panel: CommandPanelKind,
@@ -456,195 +415,25 @@ export function HiCodexApp() {
   ) => {
     setActiveSettingsPanel(panel);
     setCommandPanel(null);
-
-    if (panel === "models") {
-      setSettingsPanelState(createCommandPanelState("generic", {
-        status: "ready",
-        title: "Models",
-        message: "",
-        entries: modelSettingsEntries({
-          activeModel: state.threadContextDefaults?.model ?? null,
-          modelCount: state.models.length,
-        }),
-      }));
-      return;
-    }
-
-    if (panel === "images") {
-      const title = settingsPanelTitle(panel);
-      setSettingsPanelState(createCommandPanelState("generic", {
-        status: "loading",
-        title,
-        entries: imageGenerationCapabilityEntries({
-          connected: state.connected,
-          dynamicToolRegistered: includeImageDynamicTool,
-          dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
-        }),
-      }));
-      if (!(await ensureConnected())) {
-        setSettingsPanelState(createCommandPanelState("generic", {
-          status: "error",
-          title,
-          error: "Runtime is offline.",
-          entries: imageGenerationCapabilityEntries({
-            connected: false,
-            dynamicToolRegistered: includeImageDynamicTool,
-            dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
-          }),
-        }));
-        return;
-      }
-      try {
-        const capabilities = await client.request<unknown>("modelProvider/capabilities/read", {}, 120_000);
-        setSettingsPanelState(createCommandPanelState("generic", {
-          status: "ready",
-          title,
-          message: options.forceReload ? "Refreshed image generation capabilities." : "",
-          entries: imageGenerationCapabilityEntries({
-            capabilities,
-            connected: true,
-            dynamicToolRegistered: includeImageDynamicTool,
-            dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
-          }),
-        }));
-      } catch (error) {
-        const message = formatError(error);
-        setSettingsPanelState(createCommandPanelState("generic", {
-          status: "error",
-          title,
-          error: message,
-          entries: imageGenerationCapabilityEntries({
-            connected: true,
-            dynamicToolRegistered: includeImageDynamicTool,
-            dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
-            error: message,
-          }),
-        }));
-      }
-      return;
-    }
-
-    if (panel === "general") {
-      setSettingsPanelState(createCommandPanelState("generic", {
-        status: "ready",
-        title: "General",
-        message: "",
-        entries: generalSettingsEntries({
-          activeThreadId: state.activeThreadId,
-          activeTurnId,
-          codexHome: state.hostStatus?.codexHome ?? null,
-          connected: state.connected,
-          defaultCwd: state.hostStatus?.defaultCwd ?? null,
-          model: state.threadContextDefaults?.model ?? null,
-          modelCount: state.models.length,
-          pendingRequestCount: state.pendingRequests.length,
-          pid: state.hostStatus?.pid ?? null,
-          workspace,
-        }),
-      }));
-      return;
-    }
-
-    if (panel === "permissions" || panel === "approvals") {
-      setSettingsPanelState(createCommandPanelState("generic", {
-        status: "ready",
-        title: panel === "permissions" ? "Permissions" : "Approvals",
-        entries: localSettingsEntries(panel, {
-          pendingRequestCount: state.pendingRequests.length,
-          threadContextDefaults: state.threadContextDefaults,
-          connected: state.connected,
-        }),
-        message: "",
-      }));
-      return;
-    }
-
-    const panelKind = settingsPanelCommandKind(panel);
-    const title = settingsPanelTitle(panel);
-    openSettingsPanelContent(panelKind, { status: "loading", title, entries: [] });
-    if (!(await ensureConnected())) {
-      openSettingsPanelContent(panelKind, {
-        status: "error",
-        title,
-        error: "Runtime is offline.",
-        entries: [],
-      });
-      return;
-    }
-
-    try {
-      if (panel === "mcp") {
-        await client.request("config/mcpServer/reload", undefined, 120_000);
-        const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000);
-        openSettingsPanelContent("mcp", {
-          status: "ready",
-          title,
-          message: "Select a tool to call it, or a resource to read it.",
-          entries: projectCommandPanelEntries({ mcp: result }),
-        });
-        return;
-      }
-      if (panel === "skills") {
-        const result = await client.request<unknown>("skills/list", {
-          cwds: workspace.trim() ? [workspace.trim()] : [],
-          forceReload: options.forceReload === true,
-        }, 120_000);
-        openSettingsPanelContent("skills", {
-          status: "ready",
-          title,
-          message: options.forceReload ? "Reloaded skills from disk." : "Select a skill to attach, view, enable, or disable it.",
-          entries: projectCommandPanelEntries({ skills: result }),
-        });
-        return;
-      }
-      if (panel === "hooks") {
-        const result = await client.request<unknown>("hooks/list", {
-          cwds: workspace.trim() ? [workspace.trim()] : [],
-        }, 120_000);
-        openSettingsPanelContent("hooks", { status: "ready", title, entries: projectCommandPanelEntries({ hooks: result }) });
-        return;
-      }
-      if (panel === "apps") {
-        const result = await client.request<unknown>("app/list", {
-          limit: 50,
-          threadId: state.activeThreadId,
-        }, 120_000);
-        openSettingsPanelContent("apps", { status: "ready", title, entries: projectCommandPanelEntries({ apps: result }) });
-        return;
-      }
-      if (panel === "plugins") {
-        const result = await client.request<unknown>("plugin/list", {
-          cwds: workspace.trim() ? [workspace.trim()] : null,
-        }, 120_000);
-        openSettingsPanelContent("plugins", { status: "ready", title, entries: projectPluginEntries(result) });
-        return;
-      }
-      if (panel === "experimental") {
-        const result = await client.request<unknown>("experimentalFeature/list", { limit: 50 }, 120_000);
-        openSettingsPanelContent("experimental", { status: "ready", title, entries: projectCommandPanelEntries({ experimental: result }) });
-      }
-    } catch (error) {
-      openSettingsPanelContent(panelKind, {
-        status: "error",
-        title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
+    await loadSettingsPanelContent({
+      activeTurnId,
+      client,
+      ensureConnected,
+      forceReload: options.forceReload === true,
+      includeImageDynamicTool,
+      openSettingsPanelContent,
+      panel,
+      setSettingsPanelState,
+      state,
+      workspace,
+    });
   }, [
     activeTurnId,
     client,
     ensureConnected,
     includeImageDynamicTool,
     openSettingsPanelContent,
-    state.activeThreadId,
-    state.connected,
-    state.hostStatus?.codexHome,
-    state.hostStatus?.defaultCwd,
-    state.hostStatus?.pid,
-    state.models.length,
-    state.pendingRequests.length,
-    state.threadContextDefaults,
+    state,
     workspace,
   ]);
 
@@ -653,316 +442,20 @@ export function HiCodexApp() {
     void loadSettingsPanel(activeSettingsPanel, { forceReload: true });
   }, [activeSettingsPanel, loadSettingsPanel]);
 
-  useEffect(() => {
-    const commandSkillsOpen = commandPanel?.panel === "skills";
-    const settingsSkillsOpen = activeSettingsPanel === "skills";
-    if (skillsChangedNonce === 0 || (!commandSkillsOpen && !settingsSkillsOpen)) return;
-    if (skillsChangedHandledRef.current === skillsChangedNonce) return;
-    skillsChangedHandledRef.current = skillsChangedNonce;
-    let disposed = false;
-    setCommandPanel((current) => current?.panel === "skills"
-      ? {
-          ...current,
-          status: "loading",
-          message: "Skills changed on disk. Refreshing...",
-        }
-      : current);
-    setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
-      ? {
-          ...current,
-          status: "loading",
-          message: "Skills changed on disk. Refreshing...",
-        }
-      : current);
-
-    async function refreshSkillsPanel() {
-      if (!(await ensureConnected())) {
-        if (disposed) return;
-        setCommandPanel((current) => current?.panel === "skills"
-          ? createCommandPanelState("skills", {
-              status: "error",
-              title: current.title,
-              error: "Runtime is offline.",
-              entries: current.entries,
-            })
-          : current);
-        setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
-          ? createCommandPanelState("skills", {
-              status: "error",
-              title: current.title,
-              error: "Runtime is offline.",
-              entries: current.entries,
-            })
-          : current);
-        return;
-      }
-      try {
-        const skills = await client.request<unknown>("skills/list", {
-          cwds: workspace.trim() ? [workspace.trim()] : [],
-          forceReload: true,
-        }, 120_000);
-        if (disposed) return;
-        setCommandPanel((current) => current?.panel === "skills"
-          ? createCommandPanelState("skills", {
-              status: "ready",
-              title: current.title,
-              message: "Skills changed on disk. Refreshed skills from app-server.",
-              entries: projectCommandPanelEntries({ skills }),
-            })
-          : current);
-        setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
-          ? createCommandPanelState("skills", {
-              status: "ready",
-              title: current.title,
-              message: "Skills changed on disk. Refreshed skills from app-server.",
-              entries: projectCommandPanelEntries({ skills }),
-            })
-          : current);
-      } catch (error) {
-        if (disposed) return;
-        setCommandPanel((current) => current?.panel === "skills"
-          ? createCommandPanelState("skills", {
-              status: "error",
-              title: current.title,
-              error: formatError(error),
-              entries: current.entries,
-            })
-          : current);
-        setSettingsPanelState((current) => settingsSkillsOpen && current?.panel === "skills"
-          ? createCommandPanelState("skills", {
-              status: "error",
-              title: current.title,
-              error: formatError(error),
-              entries: current.entries,
-            })
-          : current);
-      }
-    }
-
-    void refreshSkillsPanel();
-    return () => {
-      disposed = true;
-    };
-  }, [activeSettingsPanel, client, commandPanel?.panel, ensureConnected, skillsChangedNonce, workspace]);
+  useSkillsPanelRefresh({
+    activeSettingsPanel,
+    client,
+    commandPanelPanel: commandPanel?.panel,
+    ensureConnected,
+    setCommandPanel,
+    setSettingsPanelState,
+    skillsChangedNonce,
+    workspace,
+  });
 
   const setActiveComposerMode = useCallback((mode: ComposerMode) => {
     dispatch({ type: "setActiveComposerMode", mode });
   }, []);
-
-  const selectThread = useCallback(async (thread: Thread) => {
-    const requestId = threadSelectionRequestId.current + 1;
-    threadSelectionRequestId.current = requestId;
-    dispatch({ type: "setActiveThread", threadId: thread.id });
-    try {
-      const displayThread = await readThreadForDisplay(client, thread, dispatch);
-      if (threadSelectionRequestId.current !== requestId) return;
-      if (displayThread) {
-        dispatch({ type: "upsertThread", thread: displayThread, select: true });
-      }
-    } catch (error) {
-      if (threadSelectionRequestId.current !== requestId) return;
-      if (isThreadNotFound(error)) {
-        dispatch({ type: "removeThread", threadId: thread.id });
-      } else {
-        dispatch({ type: "log", text: formatError(error), level: "error" });
-      }
-    }
-  }, [client]);
-
-  const closeBackgroundAgentPanel = useCallback(() => {
-    backgroundAgentRequestId.current += 1;
-    setBackgroundAgentPanel(null);
-  }, []);
-
-  const openBackgroundAgentThread = useCallback(async (threadId: string, options: OpenThreadOptions = {}) => {
-    const id = threadId.trim();
-    if (!id) return;
-    const requestId = backgroundAgentRequestId.current + 1;
-    backgroundAgentRequestId.current = requestId;
-    const displayName = normalizedOption(options.displayName);
-    const kind = options.panelKind ?? "backgroundAgent";
-    const model = normalizedOption(options.model);
-    const role = normalizedAgentRole(options.role);
-    const nextPanel = {
-      threadId: id,
-      displayName,
-      kind,
-      model,
-      role,
-      loading: true,
-      error: null,
-    };
-    setBackgroundAgentPanel((current) => ({
-      ...nextPanel,
-      displayName: displayName ?? (current?.threadId === id ? current.displayName : null),
-      model: model ?? (current?.threadId === id ? current.model : null),
-      role: role ?? (current?.threadId === id ? current.role : null),
-    }));
-    try {
-      if (!(await ensureConnected())) {
-        if (backgroundAgentRequestId.current !== requestId) return;
-        setBackgroundAgentPanel((current) => current?.threadId === id
-          ? { ...current, loading: false, error: "Unable to connect to app-server." }
-          : current);
-        return;
-      }
-      const metadata = await readThread(client, id, false);
-      if (backgroundAgentRequestId.current !== requestId) return;
-      const thread = metadata.thread;
-      if (!thread) {
-        dispatch({ type: "log", text: `thread not found: ${id}`, level: "error" });
-        setBackgroundAgentPanel((current) => current?.threadId === id
-          ? { ...current, loading: false, error: `Thread not found: ${id}` }
-          : current);
-        return;
-      }
-      const displayThread = await readThreadForDisplay(client, thread, dispatch);
-      if (backgroundAgentRequestId.current !== requestId) return;
-      dispatch({ type: "upsertThread", thread: displayThread ?? thread, select: false });
-      setBackgroundAgentPanel((current) => current?.threadId === id
-        ? { ...current, loading: false, error: null }
-        : current);
-    } catch (error) {
-      if (backgroundAgentRequestId.current !== requestId) return;
-      const message = isThreadNotFound(error) ? `Thread not found: ${id}` : formatError(error);
-      setBackgroundAgentPanel((current) => current?.threadId === id
-        ? { ...current, loading: false, error: message }
-        : current);
-      dispatch({ type: "log", text: message, level: isThreadNotFound(error) ? "warn" : "error" });
-    }
-  }, [client, ensureConnected]);
-
-  const openSideConversationPanel = useCallback((thread: Thread) => {
-    dispatch({ type: "upsertThread", thread, select: false });
-    void openBackgroundAgentThread(thread.id, {
-      displayName: "Side chat",
-      panelKind: "sideChat",
-      model: state.threadContextDefaults?.model ?? null,
-    });
-  }, [openBackgroundAgentThread, state.threadContextDefaults?.model]);
-
-  const openSideChatFromThread = useCallback(async (thread: Thread) => {
-    try {
-      if (!(await ensureConnected())) return;
-      const cwd = thread.cwd || workspace.trim() || state.hostStatus?.defaultCwd || "";
-      const result = await startSideConversationWorkflow(
-        client,
-        thread.id,
-        cwd,
-        state.threadContextDefaults,
-      );
-      dispatch({ type: "upsertThread", thread: result.thread, select: false });
-      openSideConversationPanel(result.thread);
-    } catch (error) {
-      dispatch({ type: "log", text: `Failed to open side chat: ${formatError(error)}`, level: "error" });
-    }
-  }, [
-    client,
-    ensureConnected,
-    openSideConversationPanel,
-    state.hostStatus?.defaultCwd,
-    state.threadContextDefaults,
-    workspace,
-  ]);
-
-  const resumeSelectedThread = useCallback(async (thread: Thread) => {
-    try {
-      if (!(await ensureConnected())) return;
-      const result = await resumeThreadWithMetadataRead(client, thread.id, workspace, state.threadContextDefaults);
-      dispatch({ type: "upsertThread", thread: result.thread, select: true });
-    } catch (error) {
-      if (isThreadNotFound(error)) {
-        dispatch({ type: "removeThread", threadId: thread.id });
-      } else {
-        dispatch({ type: "log", text: formatError(error), level: "error" });
-      }
-    }
-  }, [client, ensureConnected, state.threadContextDefaults, workspace]);
-
-  const forkSelectedThread = useCallback(async (thread: Thread) => {
-    try {
-      if (!(await ensureConnected())) return;
-      const result = await forkThreadWorkflow(client, thread.id, workspace, state.threadContextDefaults);
-      dispatch({ type: "upsertThread", thread: result.thread, select: true });
-    } catch (error) {
-      dispatch({ type: "log", text: formatError(error), level: "error" });
-    }
-  }, [client, ensureConnected, state.threadContextDefaults, workspace]);
-
-  const forkActiveThreadFromTurn = useCallback(async (turnId: string) => {
-    if (!activeThread) return;
-    try {
-      if (!(await ensureConnected())) return;
-      const result = await forkThreadFromTurnWorkflow(
-        client,
-        activeThread.id,
-        turnId,
-        workspace,
-        state.threadContextDefaults,
-      );
-      dispatch({ type: "upsertThread", thread: result.thread, select: true });
-    } catch (error) {
-      dispatch({ type: "log", text: formatError(error), level: "error" });
-    }
-  }, [activeThread, client, ensureConnected, state.threadContextDefaults, workspace]);
-
-  const editLastUserTurn = useCallback(async (turnId: string, message: string) => {
-    if (!activeThread) return;
-    try {
-      if (!(await ensureConnected())) return;
-      await editLastUserTurnWorkflow(
-        client,
-        activeThread.id,
-        turnId,
-        message,
-        workspace,
-        state.threadContextDefaults,
-        (thread) => {
-          dispatch({ type: "upsertThread", thread, select: true });
-        },
-      );
-    } catch (error) {
-      dispatch({ type: "log", text: formatError(error), level: "error" });
-      throw error;
-    }
-  }, [activeThread, client, ensureConnected, state.threadContextDefaults, workspace]);
-
-  const openRenameThreadDialog = useCallback((thread: Thread) => {
-    setThreadActionDialog({ kind: "rename", thread });
-  }, []);
-
-  const openArchiveThreadDialog = useCallback((thread: Thread) => {
-    setThreadActionDialog({ kind: "archive", thread });
-  }, []);
-
-  const renameSelectedThread = useCallback(async (thread: Thread, name: string) => {
-    if (!name.trim()) return;
-    try {
-      if (!(await ensureConnected())) return;
-      await renameThreadWorkflow(client, thread.id, name);
-      dispatch({
-        type: "setThreads",
-        threads: state.threads.map((item) => item.id === thread.id ? { ...item, name: name.trim() } : item),
-      });
-      setThreadActionDialog(null);
-    } catch (error) {
-      dispatch({ type: "log", text: formatError(error), level: "error" });
-    }
-  }, [client, ensureConnected, state.threads]);
-
-  const archiveSelectedThread = useCallback(async (thread: Thread) => {
-    setThreadActionDialog(null);
-    dispatch({ type: "removeThread", threadId: thread.id });
-    try {
-      if (!(await ensureConnected())) return;
-      await archiveThread(client, thread.id);
-    } catch (error) {
-      if (isThreadNotFound(error) || isThreadNotMaterialized(error)) {
-        return;
-      }
-      dispatch({ type: "log", text: formatError(error), level: "error" });
-    }
-  }, [client, ensureConnected]);
 
   const copyTextToClipboard = useCallback(async (label: string, value: string) => {
     const text = value.trim();
@@ -997,82 +490,27 @@ export function HiCodexApp() {
     }));
   }, [activeThread, conversation.units, copyTextToClipboard]);
 
-  const previewPathContext = useMemo(
-    () => ({
-      workspaceRoot: state.hostStatus?.defaultCwd || workspace,
-      cwd: activeThread?.cwd || workspace,
-    }),
-    [activeThread?.cwd, state.hostStatus?.defaultCwd, workspace],
-  );
-
-  const resolveFileSelection = useCallback((reference: {
-    path: string;
-    lineStart: number;
-    lineEnd?: number;
-  }): FileReferenceSelection | null => {
-    const nextReference = normalizeFileReference(reference);
-    if (!nextReference) return null;
-    const resolvedPath = resolveFileReferencePathCandidates(nextReference.path, previewPathContext)[0];
-    return resolvedPath ? { ...nextReference, path: resolvedPath } : nextReference;
-  }, [previewPathContext]);
-
-  const previewConversationFileReference = useCallback((reference: { path: string; lineStart: number; lineEnd?: number }) => {
-    const nextReference = resolveFileSelection(reference);
-    if (nextReference) setFileReference(nextReference);
-  }, [resolveFileSelection]);
-
-  const previewRailArtifact = useCallback((entry: RailEntry) => {
-    setArtifactPreview(entry);
-  }, []);
-
-  const previewRailFileReference = useCallback((reference: RailEntryReference) => {
-    setArtifactPreview(null);
-    previewConversationFileReference(reference);
-  }, [previewConversationFileReference]);
+  const {
+    openAssistantArtifact,
+    openFileReferenceExternal,
+    openRailArtifactFileExternal,
+    openRailUrl,
+    previewConversationFileReference,
+    previewPathContext,
+    previewRailArtifact,
+    previewRailFileReference,
+  } = useArtifactPreviewActions({
+    activeThreadCwd: activeThread?.cwd,
+    defaultCwd: state.hostStatus?.defaultCwd,
+    dispatch,
+    setArtifactPreview,
+    setFileReference,
+    workspace,
+  });
 
   const rememberThreadScrollOffset = useCallback((distanceFromBottomPx: number) => {
     threadScrollOffsetsRef.current.set(activeThreadScrollKey, Math.max(0, distanceFromBottomPx));
   }, [activeThreadScrollKey]);
-
-  const openFileReferenceExternal = useCallback((reference: FileReferenceSelection) => {
-    void openFileReference(reference.path, reference.lineStart).catch((error) => {
-      dispatch({ type: "log", text: formatError(error), level: "warn" });
-    });
-  }, []);
-
-  const openRailArtifactFileExternal = useCallback((reference: RailEntryReference) => {
-    const normalized = resolveFileSelection(reference);
-    if (!normalized) return;
-    openFileReferenceExternal(normalized);
-  }, [openFileReferenceExternal, resolveFileSelection]);
-
-  const openRailUrl = useCallback((url: string) => {
-    const normalized = url.trim();
-    if (!/^https?:\/\//.test(normalized)) {
-      dispatch({ type: "log", text: `Cannot open URL: ${url}`, level: "warn" });
-      return;
-    }
-    const opened = globalThis.open?.(normalized, "_blank", "noopener,noreferrer");
-    if (!opened) {
-      dispatch({ type: "log", text: `URL ready to open: ${normalized}`, level: "info" });
-    }
-  }, []);
-
-  const openAssistantArtifact = useCallback((entry: RailEntry) => {
-    if (shouldOpenArtifactPreview(entry)) {
-      previewRailArtifact(entry);
-      return;
-    }
-    if (entry.reference) {
-      previewRailFileReference(entry.reference);
-      return;
-    }
-    if (entry.action?.kind === "url") {
-      openRailUrl(entry.action.url);
-      return;
-    }
-    previewRailArtifact(entry);
-  }, [openRailUrl, previewRailArtifact, previewRailFileReference]);
 
   const openActiveDiffPanel = useCallback(() => {
     const diff = activeDiff.trim();
@@ -1329,370 +767,24 @@ export function HiCodexApp() {
     void enableComposerPlanMode();
   }, [composerMode, enableComposerPlanMode, setActiveComposerMode]);
 
-  const callMcpToolFromPanel = useCallback(async (
-    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "callMcpTool" }>,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    const threadId = state.activeThreadId;
-    const title = `${action.server}:${action.tool}`;
-    if (!threadId) {
-      const message = "Select or start a thread before calling an MCP tool.";
-      dispatch({ type: "log", text: message, level: "warn" });
-      sink("mcp", { status: "error", title, error: message, entries: [] });
-      return;
-    }
-    if (!(await ensureConnected())) return;
-    sink("mcp", { status: "loading", title, message: "Calling MCP tool...", entries: [] });
-    try {
-      const result = await client.request<unknown>("mcpServer/tool/call", {
-        threadId,
-        server: action.server,
-        tool: action.tool,
-        arguments: action.arguments,
-      }, 120_000);
-      sink("mcp", {
-        status: "ready",
-        title,
-        message: "MCP tool call completed.",
-        entries: projectMcpToolCallResultEntries(action.server, action.tool, result),
-      });
-    } catch (error) {
-      sink("mcp", {
-        status: "error",
-        title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
-  }, [client, ensureConnected, openCommandPanel, state.activeThreadId]);
-
-  const reloadMcpServersFromPanel = useCallback(async (
-    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "reloadMcpServers" }>,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    sink("mcp", {
-      status: "loading",
-      title: action.title,
-      message: "Reloading MCP config...",
-      entries: [],
-    });
-    if (!(await ensureConnected())) {
-      sink("mcp", {
-        status: "error",
-        title: action.title,
-        error: "Runtime is offline.",
-        entries: [],
-      });
-      return;
-    }
-    try {
-      await client.request("config/mcpServer/reload", undefined, 120_000);
-      const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000);
-      sink("mcp", {
-        status: "ready",
-        title: "MCP Servers",
-        message: "Reloaded MCP config. Select a tool to call it, or a resource to read it.",
-        entries: projectCommandPanelEntries({ mcp: result }),
-      });
-    } catch (error) {
-      sink("mcp", {
-        status: "error",
-        title: action.title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
-  }, [client, ensureConnected, openCommandPanel]);
-
-  const readMcpResourceFromPanel = useCallback(async (
-    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "readMcpResource" }>,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    const title = `${action.server}:${action.title}`;
-    sink("mcp", {
-      status: "loading",
-      title,
-      message: "Reading MCP resource...",
-      entries: [],
-    });
-    if (!(await ensureConnected())) {
-      sink("mcp", {
-        status: "error",
-        title,
-        error: "Runtime is offline.",
-        entries: [],
-      });
-      return;
-    }
-    try {
-      const result = await client.request<unknown>("mcpServer/resource/read", {
-        threadId: state.activeThreadId ?? null,
-        server: action.server,
-        uri: action.uri,
-      }, 120_000);
-      sink("mcp", {
-        status: "ready",
-        title,
-        message: "MCP resource read completed.",
-        entries: projectMcpResourceReadResultEntries(action.server, action.uri, result),
-      });
-    } catch (error) {
-      sink("mcp", {
-        status: "error",
-        title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
-  }, [client, ensureConnected, openCommandPanel, state.activeThreadId]);
-
-  const writeConfigFromPanel = useCallback(async (
-    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeConfig" }>,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    sink("generic", {
-      status: "loading",
-      title: action.title,
-      message: "Saving configuration...",
-      entries: [],
-    });
-    if (!(await ensureConnected())) {
-      sink("generic", {
-        status: "error",
-        title: action.title,
-        error: "Runtime is offline.",
-        entries: [],
-      });
-      return;
-    }
-    try {
-      await client.request("config/batchWrite", {
-        edits: action.edits,
-        reloadUserConfig: action.reloadUserConfig ?? true,
-      }, 120_000);
-      await refreshThreadContextDefaults(client, dispatch, workspace);
-      if (action.afterWrite?.type === "addPersonalityChangeSyntheticItem" && state.activeThreadId) {
-        dispatch({
-          type: "notification",
-          message: {
-            method: "item/completed",
-            params: {
-              threadId: state.activeThreadId,
-              turnId: activeTurnId,
-              item: {
-                id: `personality-changed:${Date.now()}`,
-                type: "personality-changed",
-                personality: action.afterWrite.personality,
-                completed: true,
-              },
-            },
-          },
-        });
-      }
-      sink("generic", {
-        status: "ready",
-        title: action.title,
-        message: action.message,
-        entries: [{
-          id: "config:write:success",
-          title: "Config updated",
-          kind: "status",
-          status: "saved",
-          meta: action.message,
-          details: action.edits.map((edit) => edit.keyPath),
-        }],
-      });
-    } catch (error) {
-      sink("generic", {
-        status: "error",
-        title: action.title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
-  }, [activeTurnId, client, ensureConnected, openCommandPanel, state.activeThreadId, workspace]);
-
-  const writeSkillConfigFromPanel = useCallback(async (
-    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeSkillConfig" }>,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    const path = action.path?.trim();
-    const name = action.name.trim();
-    if (!path && !name) {
-      const message = "Skill config write requires a skill path or name.";
-      dispatch({ type: "log", text: message, level: "warn" });
-      sink("skills", { status: "error", title: action.title, error: message, entries: [] });
-      return;
-    }
-    sink("skills", {
-      status: "loading",
-      title: action.title,
-      message: action.enabled ? "Enabling skill..." : "Disabling skill...",
-      entries: [],
-    });
-    if (!(await ensureConnected())) {
-      sink("skills", {
-        status: "error",
-        title: action.title,
-        error: "Runtime is offline.",
-        entries: [],
-      });
-      return;
-    }
-    try {
-      const result = await client.request<{ effectiveEnabled?: boolean }>("skills/config/write", {
-        path: path || null,
-        name: path ? null : name,
-        enabled: action.enabled,
-      }, 120_000);
-      const skills = await client.request<unknown>("skills/list", {
-        cwds: workspace.trim() ? [workspace.trim()] : [],
-        forceReload: true,
-      }, 120_000);
-      const effectiveEnabled = result.effectiveEnabled ?? action.enabled;
-      sink("skills", {
-        status: "ready",
-        title: "Skills",
-        message: `${action.name} ${effectiveEnabled ? "enabled" : "disabled"}.`,
-        entries: projectCommandPanelEntries({ skills }),
-      });
-    } catch (error) {
-      sink("skills", {
-        status: "error",
-        title: action.title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
-  }, [client, ensureConnected, openCommandPanel, workspace]);
-
-  const readSkillFileFromPanel = useCallback(async (
-    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "readSkillFile" }>,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    const path = action.path.trim();
-    if (!path) {
-      const message = "Skill source read requires a path.";
-      dispatch({ type: "log", text: message, level: "warn" });
-      sink("skills", { status: "error", title: action.title, error: message, entries: [] });
-      return;
-    }
-    sink("skills", {
-      status: "loading",
-      title: action.title,
-      message: "Reading skill source...",
-      entries: [],
-    });
-    if (!(await ensureConnected())) {
-      sink("skills", {
-        status: "error",
-        title: action.title,
-        error: "Runtime is offline.",
-        entries: [],
-      });
-      return;
-    }
-    try {
-      const result = await client.request<{ dataBase64?: string }>("fs/readFile", { path }, 120_000);
-      const contents = decodeBase64Utf8(result.dataBase64 ?? "");
-      sink("skills", {
-        status: "ready",
-        title: action.title,
-        message: "Skill source loaded from app-server.",
-        entries: projectSkillFileReadResultEntries(path, contents),
-      });
-    } catch (error) {
-      sink("skills", {
-        status: "error",
-        title: action.title,
-        error: formatError(error),
-        entries: [],
-      });
-    }
-  }, [client, ensureConnected, openCommandPanel]);
-
-  const selectCommandPanelAction = useCallback((
-    action: CommandPanelEntryAction,
-    sink: CommandPanelSink = openCommandPanel,
-  ) => {
-    if (action.type === "attachMention") {
-      setComposerAttachments((current) => mergeComposerAttachments(current, [{
-        type: "mention",
-        name: action.name,
-        path: action.path,
-      }]));
-      setCommandPanel(null);
-      setActiveSettingsPanel(null);
-      return;
-    }
-    if (action.type === "attachSkill") {
-      setComposerAttachments((current) => mergeComposerAttachments(current, [{
-        type: "skill",
-        name: action.name,
-        path: action.path,
-      }]));
-      const promptText = action.promptText;
-      if (promptText) {
-        setInput((current) => appendSkillPromptText(current, promptText));
-      }
-      setCommandPanel(null);
-      setActiveSettingsPanel(null);
-      return;
-    }
-    if (action.type === "attachApp") {
-      setInput((current) => appendSkillPromptText(current, action.promptText));
-      setCommandPanel(null);
-      setActiveSettingsPanel(null);
-      return;
-    }
-    if (action.type === "attachPlugin") {
-      setInput((current) => appendSkillPromptText(current, action.promptText));
-      setCommandPanel(null);
-      setActiveSettingsPanel(null);
-      return;
-    }
-    if (action.type === "writeConfig") {
-      void writeConfigFromPanel(action, sink);
-      return;
-    }
-    if (action.type === "writeSkillConfig") {
-      void writeSkillConfigFromPanel(action, sink);
-      return;
-    }
-    if (action.type === "readSkillFile") {
-      void readSkillFileFromPanel(action, sink);
-      return;
-    }
-    if (action.type === "reloadMcpServers") {
-      void reloadMcpServersFromPanel(action, sink);
-      return;
-    }
-    if (action.type === "callMcpTool") {
-      void callMcpToolFromPanel(action, sink);
-      return;
-    }
-    if (action.type === "readMcpResource") {
-      void readMcpResourceFromPanel(action, sink);
-      return;
-    }
-    if (action.type === "openMcpToolForm") {
-      setCommandPanel(null);
-      setMcpToolForm(action);
-    }
-  }, [
+  const {
     callMcpToolFromPanel,
+    selectCommandPanelAction,
+    selectCommandPanelEntry,
+  } = useCommandPanelActions({
+    activeThreadId: state.activeThreadId,
+    activeTurnId,
+    client,
+    dispatch,
+    ensureConnected,
     openCommandPanel,
-    readMcpResourceFromPanel,
-    readSkillFileFromPanel,
-    reloadMcpServersFromPanel,
-    writeConfigFromPanel,
-    writeSkillConfigFromPanel,
-  ]);
-
-  const selectCommandPanelEntry = useCallback((entry: CommandPanelEntry) => {
-    if (entry.disabled || !entry.action) return;
-    selectCommandPanelAction(entry.action);
-  }, [selectCommandPanelAction]);
+    setActiveSettingsPanel,
+    setCommandPanel,
+    setComposerAttachments,
+    setInput,
+    setMcpToolForm,
+    workspace,
+  });
 
   const interruptActiveTurn = useCallback(async () => {
     if (!state.activeThreadId || !activeTurnId) return;
@@ -1993,106 +1085,11 @@ export function HiCodexApp() {
       {threadActionDialog && (
         <ThreadActionDialog
           action={threadActionDialog}
-          onClose={() => setThreadActionDialog(null)}
+          onClose={closeThreadActionDialog}
           onRename={renameSelectedThread}
           onArchive={archiveSelectedThread}
         />
       )}
     </div>
   );
-}
-
-function normalizedOption(value: string | null | undefined): string | null {
-  const text = value?.trim() ?? "";
-  return text ? text : null;
-}
-
-function useElementInlineSize<T extends HTMLElement>(ref: RefObject<T | null>): number {
-  const [inlineSize, setInlineSize] = useState(0);
-
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-
-    const setMeasuredInlineSize = (next: number) => {
-      if (!Number.isFinite(next) || next < 0) return;
-      setInlineSize((current) => Math.abs(current - next) < 1 ? current : next);
-    };
-    const measure = () => setMeasuredInlineSize(element.getBoundingClientRect().width);
-    measure();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", measure);
-      return () => window.removeEventListener("resize", measure);
-    }
-
-    const observer = new ResizeObserver(([entry]) => {
-      const borderBoxSize = entry?.borderBoxSize;
-      const firstBox = Array.isArray(borderBoxSize) ? borderBoxSize[0] : borderBoxSize;
-      setMeasuredInlineSize(firstBox?.inlineSize ?? entry?.contentRect.width ?? element.getBoundingClientRect().width);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
-
-  return inlineSize;
-}
-
-function normalizedAgentRole(value: string | null | undefined): string | null {
-  const role = normalizedOption(value);
-  return role && role !== "default" ? role : null;
-}
-
-function shortThreadId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
-}
-
-function browserStorage(): BrowserStorageLike | null {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function appendSkillPromptText(current: string, promptText: string): string {
-  if (!promptText.trim()) return current;
-  if (!current.trim()) return promptText;
-  return `${current.trimEnd()}\n${promptText}`;
-}
-
-function decodeBase64Utf8(value: string): string {
-  if (!value) return "";
-  const binary = globalThis.atob(value);
-  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-  return new TextDecoder().decode(bytes);
-}
-
-function threadGitBranch(thread: Thread | null): string | null {
-  const gitInfo = thread?.gitInfo;
-  if (!gitInfo || typeof gitInfo !== "object") return null;
-  const branch = (gitInfo as Record<string, unknown>).branch;
-  return typeof branch === "string" && branch.trim() ? branch.trim() : null;
-}
-
-function slashCommandEntries(mode: ComposerMode): CommandPanelEntry[] {
-  return slashCommandsForComposerMode(mode, DEFAULT_SLASH_COMMANDS)
-    .filter((command) => !command.hidden)
-    .map((command) => {
-      const disabled = command.supported === "pending";
-      return {
-        id: `command:${command.id}`,
-        title: `/${command.id}`,
-        kind: "status",
-        status: disabled ? "not wired" : command.supported,
-        meta: command.title,
-        disabled,
-        details: [
-          command.description,
-          command.inlineArgs ? `Args: ${command.inlineArgs}` : "",
-          command.aliases?.length ? `Aliases: ${command.aliases.join(", ")}` : "",
-          disabled ? "Visible for Codex Desktop parity; app-server wiring is not available yet." : "",
-        ].filter(Boolean),
-      };
-    });
 }

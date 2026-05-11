@@ -1,7 +1,5 @@
 import {
-  Check,
   ChevronRight,
-  Copy,
   FileText,
   GitFork,
   Globe2,
@@ -12,13 +10,24 @@ import {
 import { renderToString as renderKatexToString } from "katex";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
-import type { AssistantMessagePhase, ConversationRenderUnit, RailEntry } from "../state/render-groups";
+import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
-import { projectArtifactPreview } from "../state/artifact-preview";
+import {
+  assistantArtifactMediaSources,
+  assistantResourceCardEntriesForMessage,
+  resolveAssistantMarkdownMediaSource,
+  shouldRenderAssistantMessageChrome,
+} from "./assistant-message-artifacts";
 import { AssistantResourceCards } from "./assistant-resource-cards";
 import {
   CodeSnippet,
 } from "./code-snippet";
+import type { FileReference } from "./file-reference-types";
+import {
+  IconActionButton,
+  MessageActionRow,
+  shouldRenderMessageActionRow,
+} from "./message-action-row";
 import { focusPromptEditorElement, PromptEditor } from "./prompt-editor";
 import {
   UserMessageAttachmentStrip,
@@ -27,11 +36,14 @@ import {
 
 type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
 
-export interface FileReference {
-  path: string;
-  lineStart: number;
-  lineEnd?: number;
-}
+export type { FileReference } from "./file-reference-types";
+export {
+  assistantArtifactMediaSources,
+  assistantResourceCardEntriesForMessage,
+  resolveAssistantMarkdownMediaSource,
+  shouldRenderAssistantMessageChrome,
+} from "./assistant-message-artifacts";
+export { shouldRenderMessageActionRow } from "./message-action-row";
 
 export function MessageUnitView({
   unit,
@@ -468,94 +480,6 @@ function assistantAutoReviewLabel(item: Record<string, unknown>): string | null 
   return status || "Review";
 }
 
-function MessageActionRow({
-  children,
-  copyText,
-  hasActionChildren = false,
-  persistent = false,
-  sentAtMs,
-}: {
-  children?: ReactNode;
-  copyText: string;
-  hasActionChildren?: boolean;
-  persistent?: boolean;
-  sentAtMs: number | null;
-}) {
-  const trimmedCopyText = copyText.trim();
-  const [copied, setCopied] = useState(false);
-  if (!shouldRenderMessageActionRow({ copyText, hasActionChildren })) return null;
-  const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    if (trimmedCopyText.length === 0) return;
-    await navigator.clipboard.writeText(trimmedCopyText);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <>
-      <div className="hc-message-actions" data-persistent={persistent || undefined}>
-        {trimmedCopyText.length > 0 && (
-          <button aria-label={copied ? "Copied" : "Copy message"} title={copied ? "Copied" : "Copy"} type="button" onClick={handleCopy}>
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-          </button>
-        )}
-        {children}
-        {sentAtMs !== null && <span className="hc-message-time">{formatMessageSentAt(sentAtMs)}</span>}
-      </div>
-      {copied && <CopyFeedbackToast />}
-    </>
-  );
-}
-
-export function shouldRenderMessageActionRow({
-  copyText,
-  hasActionChildren = false,
-}: {
-  copyText: string;
-  hasActionChildren?: boolean;
-}): boolean {
-  return copyText.trim().length > 0 || hasActionChildren;
-}
-
-export function shouldRenderAssistantMessageChrome(assistantPhase: MessageRenderUnit["assistantPhase"]): boolean {
-  return assistantPhase !== "commentary";
-}
-
-function CopyFeedbackToast() {
-  return (
-    <div className="hc-copy-toast" role="status" aria-live="polite">
-      <span className="hc-copy-toast-icon" aria-hidden="true"><Check size={15} /></span>
-      <span>Copied to clipboard</span>
-    </div>
-  );
-}
-
-function IconActionButton({
-  ariaLabel,
-  children,
-  onClick,
-  title,
-}: {
-  ariaLabel: string;
-  children: ReactNode;
-  onClick: () => void;
-  title: string;
-}) {
-  return (
-    <button
-      aria-label={ariaLabel}
-      title={title}
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 function messageSentAtMs(item: Record<string, unknown>): number | null {
   const value = item.sentAtMs ?? item.createdAtMs;
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -569,38 +493,6 @@ function messageTurnId(item: Record<string, unknown>): string | null {
 function messageTurnStatus(item: Record<string, unknown>): string {
   const value = item._turnStatus;
   return typeof value === "string" ? value : "";
-}
-
-function formatMessageSentAt(sentAtMs: number): string {
-  const date = new Date(sentAtMs);
-  if (!Number.isFinite(date.getTime())) return "";
-  const now = new Date();
-  const dayDelta = calendarDayDelta(date, now);
-  if (dayDelta < 0 && dayDelta > -7) {
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: "long",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(date);
-  }
-  if (dayDelta !== 0) {
-    return new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(date);
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function calendarDayDelta(left: Date, right: Date): number {
-  const leftDay = new Date(left.getFullYear(), left.getMonth(), left.getDate()).getTime();
-  const rightDay = new Date(right.getFullYear(), right.getMonth(), right.getDate()).getTime();
-  return Math.round((leftDay - rightDay) / 86_400_000);
 }
 
 export function Markdownish({
@@ -1463,105 +1355,12 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
   );
 }
 
-export function assistantArtifactMediaSources(entries: RailEntry[]): Map<string, string> {
-  const sources = new Map<string, string>();
-  for (const entry of entries) {
-    const preview = projectArtifactPreview(entry);
-    if (preview.kind !== "image") continue;
-    const path = preview.imageSource?.src ?? preview.reference?.path ?? "";
-    if (!path) continue;
-    for (const key of artifactMediaLookupKeys([
-      entry.title,
-      preview.title,
-      preview.reference?.path,
-      preview.meta,
-      path,
-      pathBasename(path),
-    ])) {
-      if (!sources.has(key)) sources.set(key, path);
-    }
-  }
-  return sources;
-}
-
-export function assistantResourceCardEntriesForMessage(input: {
-  phase?: AssistantMessagePhase;
-  text: string;
-  artifacts: RailEntry[];
-}): RailEntry[] {
-  if (!shouldRenderAssistantMessageChrome(input.phase)) return [];
-  if (!containsMarkdownImage(input.text)) return input.artifacts;
-  return input.artifacts.filter((entry) => projectArtifactPreview(entry).kind !== "image");
-}
-
-function containsMarkdownImage(text: string): boolean {
-  return /!\[[^\]]*]\(/.test(text);
-}
-
 function resolvedMarkdownImage(
   image: MarkdownImageBlock,
   mediaSources?: Map<string, string>,
 ): MarkdownImageBlock {
   const resolvedSrc = resolveAssistantMarkdownMediaSource(image.src, mediaSources);
   return resolvedSrc ? { ...image, src: resolvedSrc } : image;
-}
-
-export function resolveAssistantMarkdownMediaSource(
-  src: string,
-  mediaSources?: Map<string, string>,
-): string | null {
-  if (!mediaSources) return null;
-  for (const key of artifactMediaLookupKeys([src, pathBasename(src)])) {
-    const resolved = mediaSources.get(key);
-    if (resolved) return resolved;
-  }
-  return null;
-}
-
-function pathBasename(path: string): string {
-  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
-function artifactMediaLookupKeys(values: Array<string | null | undefined>): string[] {
-  const keys: string[] = [];
-  const seen = new Set<string>();
-  for (const value of values) {
-    const trimmed = value?.trim() ?? "";
-    if (!trimmed) continue;
-    const decoded = decodeUriComponentSafe(trimmed);
-    for (const key of [
-      trimmed,
-      decoded,
-      pathBasename(trimmed),
-      pathBasename(decoded),
-      normalizedArtifactMediaKey(trimmed),
-      normalizedArtifactMediaKey(decoded),
-      normalizedArtifactMediaKey(pathBasename(trimmed)),
-      normalizedArtifactMediaKey(pathBasename(decoded)),
-    ]) {
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      keys.push(key);
-    }
-  }
-  return keys;
-}
-
-function normalizedArtifactMediaKey(value: string): string {
-  return pathBasename(value)
-    .normalize("NFC")
-    .toLowerCase()
-    .replace(/\s*-\s*/g, "-")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function decodeUriComponentSafe(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
 }
 
 export function resolveMarkdownMediaSrc(src: string): string {

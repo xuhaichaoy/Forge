@@ -12,8 +12,8 @@ import {
   ToolActivityView,
   ToolBlock,
 } from "./event-unit";
+import type { FileReference } from "./file-reference-types";
 import { MessageUnitView } from "./message-unit";
-import type { FileReference } from "./message-unit";
 import type { OpenThreadHandler } from "./open-thread";
 import { ThreadItemView } from "./thread-item-view";
 import {
@@ -55,12 +55,12 @@ export {
   svgCodePreviewDataUrl,
 } from "./message-unit";
 export type {
-  FileReference,
   MarkdownBlock,
   MarkdownInlineSegment,
   MarkdownTaskListItem,
   MemoryCitationEntryView,
 } from "./message-unit";
+export type { FileReference } from "./file-reference-types";
 export { userImageSrc } from "./user-message-content-render";
 
 export interface ConversationViewProps {

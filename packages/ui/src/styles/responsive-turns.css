@@ -1,0 +1,136 @@
+@media (max-width: 1369px) {
+  .hc-right-rail {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .hc-app {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .hc-app {
+    grid-template-columns: 1fr;
+  }
+  .hc-sidebar {
+    display: none;
+  }
+  .hc-settings-shell {
+    grid-template-columns: 1fr;
+  }
+  .hc-settings-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #dedbd1;
+  }
+  .hc-settings-nav-item {
+    flex: 0 0 168px;
+  }
+  .hc-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Turn-level collapse — Codex Desktop OT/kT equivalent */
+.hc-turn-collapse-row {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  color: #6f716b;
+  font-size: 13px;
+}
+
+.hc-turn-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #6f716b;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.hc-turn-collapse-toggle:hover {
+  background: rgba(34, 38, 43, 0.06);
+  color: #27313d;
+}
+
+.hc-turn-collapse-chevron {
+  color: #8b8d86;
+  transition: transform 160ms ease;
+}
+
+.hc-turn-collapse-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.hc-turn-collapse-rule {
+  height: 1px;
+  width: 100%;
+  margin: 4px auto 0;
+  max-width: 100%;
+  background: rgba(34, 38, 43, 0.12);
+}
+
+.hc-turn-collapse-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--conversation-tool-assistant-gap);
+}
+
+.hc-turn-collapse-motion:not([data-open="true"]) {
+  margin-bottom: calc(-1 * var(--conversation-tool-assistant-gap));
+}
+
+.hc-thread-item-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hc-thread-item-inline,
+.hc-thread-item-button {
+  font: inherit;
+}
+
+.hc-thread-item-inline {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-thread-item-button {
+  cursor: pointer;
+  background: transparent;
+}
+
+.hc-thread-item-button:hover {
+  background: rgba(34, 38, 43, 0.05);
+}
+
+.hc-thread-item-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.hc-thread-item-copy {
+  margin: 0;
+}
+
+.hc-thread-item-chevron.is-open {
+  transform: rotate(90deg);
+}

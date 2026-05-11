@@ -1,0 +1,248 @@
+.hc-rail-section {
+  margin-bottom: 14px;
+  border-bottom: 1px solid #d9d5c9;
+  padding-bottom: 14px;
+}
+
+.hc-file-reference-panel,
+.hc-artifact-preview-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid #d6d2c6;
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 10px;
+}
+
+.hc-file-reference-header,
+.hc-artifact-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hc-file-reference-heading,
+.hc-artifact-preview-heading {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #27313d;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.hc-artifact-preview-heading-text {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.hc-artifact-preview-heading-text h2 {
+  overflow: hidden;
+  margin: 0;
+  color: #27313d;
+  font-size: 13px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-artifact-preview-heading-text span {
+  color: #7a7c77;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.hc-artifact-preview-header-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.hc-file-reference-heading svg,
+.hc-artifact-preview-heading svg {
+  flex: 0 0 auto;
+  color: #5f625d;
+}
+
+.hc-file-reference-icon-button,
+.hc-artifact-preview-icon-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6f716b;
+  cursor: pointer;
+}
+
+.hc-file-reference-icon-button:hover,
+.hc-artifact-preview-icon-button:hover {
+  background: rgba(34, 38, 43, 0.06);
+  color: #27313d;
+}
+
+.hc-file-reference-body,
+.hc-artifact-preview-body {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.hc-file-reference-path,
+.hc-artifact-preview-title {
+  overflow: hidden;
+  color: #27313d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.hc-file-reference-lines,
+.hc-artifact-preview-meta,
+.hc-artifact-preview-status,
+.hc-artifact-preview-state,
+.hc-artifact-preview-text-state,
+.hc-artifact-preview-truncation {
+  color: #6f716b;
+  font-size: 12px;
+}
+
+.hc-artifact-preview-status {
+  color: #2d5562;
+}
+
+.hc-artifact-preview-image-frame {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid #dfdbcf;
+  border-radius: 7px;
+  background: #f8f6ef;
+  aspect-ratio: 4 / 3;
+}
+
+.hc-artifact-preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+}
+
+.hc-artifact-preview-pdf-frame {
+  display: grid;
+  overflow: hidden;
+  min-height: 320px;
+  border: 1px solid #dfdbcf;
+  border-radius: 7px;
+  background: #f8f6ef;
+}
+
+.hc-artifact-preview-pdf {
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  background: #fffdfa;
+}
+
+.hc-artifact-preview-text-wrap {
+  overflow: hidden;
+  border: 1px solid #dfdbcf;
+  border-radius: 7px;
+  background: #fbfaf6;
+}
+
+.hc-artifact-preview-text {
+  overflow: auto;
+  max-height: 280px;
+  margin: 0;
+  padding: 9px;
+  color: #27313d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hc-artifact-preview-text-state {
+  border: 1px solid #dfdbcf;
+  border-radius: 7px;
+  background: #fbfaf6;
+  padding: 9px;
+}
+
+.hc-artifact-preview-state {
+  display: grid;
+  place-items: center;
+  min-height: 96px;
+  border: 1px solid #dfdbcf;
+  border-radius: 7px;
+  background: #fbfaf6;
+  padding: 12px;
+  text-align: center;
+}
+
+.hc-artifact-preview-text-state[data-status="error"] {
+  color: #8f3b2f;
+}
+
+.hc-artifact-preview-state[data-status="error"] {
+  color: #8f3b2f;
+}
+
+.hc-artifact-preview-state[data-status="loading"] {
+  font-weight: 650;
+}
+
+.hc-artifact-preview-truncation {
+  border-top: 1px solid #e3dfd3;
+  padding: 6px 9px;
+}
+
+.hc-artifact-preview-details {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 16px;
+  color: #5f625d;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hc-artifact-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.hc-file-reference-open-button,
+.hc-artifact-preview-open-button {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #c9c6ba;
+  border-radius: 7px;
+  background: #f8f6ef;
+  color: #27313d;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.hc-file-reference-open-button:hover,
+.hc-artifact-preview-open-button:hover {
+  background: #e9e6dc;
+}

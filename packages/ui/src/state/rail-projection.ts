@@ -10,6 +10,7 @@ import {
   itemType,
   mcpServerName,
   mcpSourceTitle,
+  shouldProjectArtifactsFromItem,
   statusText,
 } from "./thread-item-fields";
 
@@ -25,12 +26,16 @@ export function collectRailEntries(
     progress = progressEntriesFromPlan(plan, `todo:${item.id}`);
   }
 
-  for (const path of filePathsFromItem(item)) {
-    setArtifact(artifacts, fileArtifactEntryFromPath(path, statusText(item)));
-  }
+  const projectItemArtifacts = shouldProjectArtifactsFromItem(item);
 
-  for (const artifact of artifactsFromText(commandOutputText(item), { source: "output" })) {
-    if (artifact.action?.kind === "file") setArtifact(artifacts, artifact);
+  if (projectItemArtifacts) {
+    for (const path of filePathsFromItem(item)) {
+      setArtifact(artifacts, fileArtifactEntryFromPath(path, statusText(item)));
+    }
+
+    for (const artifact of artifactsFromText(commandOutputText(item), { source: "output" })) {
+      if (artifact.action?.kind === "file") setArtifact(artifacts, artifact);
+    }
   }
 
   if (item.type === "agentMessage") {
