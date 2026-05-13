@@ -5,6 +5,7 @@ import { eventLabel } from "./event-projection";
 import {
   assistantMessageText,
   commandLabel,
+  commandLabelParts,
   commandOutputText,
   commandText,
   dedupe,
@@ -15,6 +16,7 @@ import {
   isItemInProgress,
   itemText,
   itemType,
+  mcpAppResourceUri,
   mcpElicitationServer,
   mcpServerName,
   mcpToolName,
@@ -49,7 +51,18 @@ export function formatItemDetail(item: ThreadItem): string {
 
 export function summarizeToolActivity(
   items: ThreadItem[],
-  options: { conversationDetailLevel: ConversationDetailLevel; workedForCollapsedByDefault?: boolean },
+  options: {
+    conversationDetailLevel: ConversationDetailLevel;
+    workedForCollapsedByDefault?: boolean;
+    /**
+     * Forced group type from the caller's bucket grouping. When `pushActivityItem`
+     * has aggregated cross-type mergeable items (Codex `W` segment), it sets this
+     * to `"collapsed-tool-activity"` so the summary label uses the cross-type count
+     * formatter ("Explored 1 file, ran 2 commands, searched web 4 times") rather
+     * than the single-type label derived from `items[0]`.
+     */
+    groupTypeOverride?: ToolActivityGroupType;
+  },
 ): ToolActivitySummary {
   const activityCounts = {
     approvedRequests: 0,
@@ -66,8 +79,13 @@ export function summarizeToolActivity(
     lists: 0,
     fileChanges: 0,
     createdFiles: 0,
+    runningCreatedFiles: 0,
+    stoppedCreatedFiles: 0,
+    runningCreatedLineCount: 0,
     editedFiles: 0,
+    runningEditedFiles: 0,
     deletedFiles: 0,
+    runningDeletedFiles: 0,
     mcpCalls: 0,
     dynamicCalls: 0,
     webSearches: 0,
@@ -83,6 +101,14 @@ export function summarizeToolActivity(
   let workedForInProgress = false;
   let hasWorkedFor = false;
   const exploredReadKeys = new Set<string>();
+  let activeDiffStats: ToolActivitySummary["activeDiffStats"] = null;
+  const pushActiveDetail = (
+    label: string,
+    diffStats: ToolActivitySummary["activeDiffStats"] = null,
+  ) => {
+    activeDetails.push(label);
+    activeDiffStats = diffStats;
+  };
 
   for (const item of items) {
     const itemInProgress = isItemInProgress(item);
@@ -98,7 +124,7 @@ export function summarizeToolActivity(
         counts.searches += exploration.searches;
         counts.lists += exploration.lists;
         details.push(exploration.label);
-        if (itemInProgress) activeDetails.push(exploration.activeLabel);
+        if (itemInProgress) pushActiveDetail(exploration.activeLabel);
       } else {
         counts.commands += 1;
         if (commandSearchesWebLikeCodexDesktop(item)) counts.webSearchCommands += 1;
@@ -106,39 +132,46 @@ export function summarizeToolActivity(
         if (itemInProgress && commandSearchesWebLikeCodexDesktop(item)) counts.runningWebSearchCommands += 1;
         details.push(commandLabel(item));
         if (itemInProgress) {
-          if (commandSearchesWebLikeCodexDesktop(item)) activeDetails.push("Searching the web");
-          else if (commandCreatesFolderLikeCodexDesktop(item)) activeDetails.push("Creating folder");
-          else activeDetails.push(commandLabel(item));
+          if (commandSearchesWebLikeCodexDesktop(item)) pushActiveDetail("Searching the web");
+          else if (commandCreatesFolderLikeCodexDesktop(item)) pushActiveDetail("Creating folder");
+          else pushActiveDetail(commandLabel(item));
         }
       }
     } else if (type === "patch") {
       counts.fileChanges += 1;
       const patch = patchSummary(item);
       counts.createdFiles += patch.created;
+      counts.runningCreatedFiles += patch.runningCreated;
+      counts.stoppedCreatedFiles += patch.stoppedCreated;
+      counts.runningCreatedLineCount += patch.runningCreatedLineCount;
       counts.editedFiles += patch.edited;
+      counts.runningEditedFiles += patch.runningEdited;
       counts.deletedFiles += patch.deleted;
+      counts.runningDeletedFiles += patch.runningDeleted;
       details.push(patch.label);
-      if (itemInProgress) activeDetails.push(patch.activeLabel);
+      if (itemInProgress) {
+        pushActiveDetail(patch.activeLabel, patch.activeDiffStats);
+      }
     } else if (type === "mcp-tool-call") {
       counts.mcpCalls += 1;
       const label = `Called ${mcpServerName(item) || "mcp"}:${mcpToolName(item) || "tool"}`;
       details.push(label);
-      if (itemInProgress) activeDetails.push(label.replace(/^Called /, "Calling "));
+      if (itemInProgress) pushActiveDetail(label.replace(/^Called /, "Calling "));
     } else if (type === "dynamic-tool-call") {
       counts.dynamicCalls += 1;
       const label = `Called ${[stringField(record, "namespace"), stringField(record, "tool") || "tool"].filter(Boolean).join(".")}`;
       details.push(label);
-      if (itemInProgress) activeDetails.push(label.replace(/^Called /, "Calling "));
+      if (itemInProgress) pushActiveDetail(label.replace(/^Called /, "Calling "));
     } else if (type === "web-search") {
       counts.webSearches += 1;
       const detail = webSearchDetailText(record);
       const label = `Searched web${detail ? ` for ${detail}` : ""}`;
       details.push(label);
-      if (itemInProgress) activeDetails.push(`Searching the web${detail ? ` for ${detail}` : ""}`);
+      if (itemInProgress) pushActiveDetail(`Searching the web${detail ? ` for ${detail}` : ""}`);
     } else if (type === "multi-agent-action") {
       const label = multiAgentActionRowLabel(item);
       details.push(label);
-      if (itemInProgress) activeDetails.push(label);
+      if (itemInProgress) pushActiveDetail(label);
     } else if (type === "automatic-approval-review") {
       const status = stringField(record, "status");
       if (status === "approved") {
@@ -155,10 +188,10 @@ export function summarizeToolActivity(
       activityCounts.hooks += 1;
       const label = "Ran hook";
       details.push(label);
-      if (itemInProgress) activeDetails.push("Running hook");
+      if (itemInProgress) pushActiveDetail("Running hook");
     } else if (type === "reasoning") {
       counts.reasoning += 1;
-      if (itemInProgress) activeDetails.push("Thinking");
+      if (itemInProgress) pushActiveDetail("Thinking");
     } else if (type === "assistant-message") {
       counts.other += 1;
       const text = assistantMessageText(item).trim();
@@ -179,9 +212,10 @@ export function summarizeToolActivity(
     }
   }
 
-  const groupType = hasWorkedFor
+  const groupType: ToolActivityGroupType = hasWorkedFor
     ? "worked-for"
-    : baseToolActivityGroupType(items[0] ?? ({ type: "contextCompaction", id: "unknown" } as ThreadItem));
+    : options.groupTypeOverride
+      ?? baseToolActivityGroupType(items[0] ?? ({ type: "contextCompaction", id: "unknown" } as ThreadItem));
   const groupDurationMs = hasWorkedFor ? workedForDurationMs : totalDurationMs;
   const groupInProgress = hasWorkedFor ? workedForInProgress : inProgress;
   const itemLevelLabel = directItemActivityLabel(items, {
@@ -198,18 +232,59 @@ export function summarizeToolActivity(
     : groupType === "worked-for"
       ? groupLabel
     : activeDetail ?? itemLevelLabel ?? groupLabel;
+  const labelParts = directItemLabelParts(items, {
+    conversationDetailLevel: options.conversationDetailLevel,
+    groupType,
+    inProgress,
+    activeDetail,
+  });
 
   return {
     groupType,
     icon: activityIcon(groupType, counts),
     label,
+    ...(labelParts ? { labelParts } : {}),
     activeDetail,
+    activeDiffStats,
     ...(groupType === "worked-for" ? { defaultExpanded: options.workedForCollapsedByDefault !== true } : {}),
     details: dedupe(details).slice(0, 8),
     inProgress,
     totalDurationMs: groupDurationMs > 0 ? groupDurationMs : totalDurationMs > 0 ? totalDurationMs : null,
     counts,
   };
+}
+
+/**
+ * Source: codex-local-conversation-thread.pretty.js :3766 `wg.commandRanWithDetail` template
+ * `<action>Ran</action> <detail>{command}</detail>` (and the corresponding Running / Stopped
+ * variants). Only emitted for single-item collapsed-tool-activity exec rows that aren't routed
+ * to exploration / web-search-command, mirroring Codex's `Cg` summary builder.
+ */
+function directItemLabelParts(
+  items: ThreadItem[],
+  {
+    conversationDetailLevel,
+    groupType,
+    inProgress,
+    activeDetail,
+  }: {
+    conversationDetailLevel: ConversationDetailLevel;
+    groupType: ToolActivityGroupType;
+    inProgress: boolean;
+    activeDetail: string | null;
+  },
+): { action: string; detail: string } | undefined {
+  if (activeDetail) return undefined;
+  if (conversationDetailLevel !== "STEPS_COMMANDS" || groupType !== "collapsed-tool-activity") {
+    return undefined;
+  }
+  if (items.length !== 1) return undefined;
+  const item = items[0];
+  if (!item || itemType(item) !== "exec" || explorationSummary(item)) return undefined;
+  if (commandSearchesWebLikeCodexDesktop(item)) return undefined;
+  if (!inProgress && !isCompletedRecord(item as ItemRecord)) return undefined;
+  const parts = commandLabelParts(item);
+  return parts ?? undefined;
 }
 
 function directItemActivityLabel(
@@ -259,7 +334,11 @@ function activityLabel(
   if (groupType === "exploration") return explorationSummaryLabel(counts, inProgress) ?? (inProgress ? "Exploring" : "Explored");
   if (groupType === "todo-list") return "Updated progress";
   if (groupType === "pending-mcp-tool-calls") return "Waiting on MCP tool";
-  if (groupType === "web-search-group") return inProgress ? "Searching the web" : "Searched web";
+  if (groupType === "web-search-group") {
+    const count = counts.webSearches;
+    if (count <= 1) return inProgress ? "Searching the web" : "Searched web";
+    return inProgress ? `Searching the web ${count} times` : `Searched web ${count} times`;
+  }
   if (groupType === "multi-agent-group") return inProgress ? "Working with agents" : "Updated agents";
   if (groupType === "worked-for") {
     if (totalDurationMs > 0) return `${inProgress ? "Working for" : "Worked for"} ${formatDuration(totalDurationMs)}`;
@@ -332,7 +411,7 @@ function explorationSummary(item: ThreadItem): ExplorationSummary | null {
     searches,
     lists,
     label: explorationSummaryLabel({ reads, searches, lists }, false) ?? "Explored",
-    activeLabel: activeAction ? explorationActionLabel(activeAction, true) : explorationSummaryLabel({ reads, searches, lists }, true) ?? "Exploring",
+    activeLabel: activeAction ? explorationActionLabel(activeAction, true, item) : explorationSummaryLabel({ reads, searches, lists }, true) ?? "Exploring",
   };
 }
 
@@ -369,7 +448,7 @@ function explorationDetail(item: ThreadItem): string {
   const actions = commandActions(item).map(normalizeCommandAction).filter((action) => action !== null);
   if (actions.length === 0) return "";
   const inProgress = isItemInProgress(item);
-  return actions.map((action) => explorationActionLabel(action, inProgress)).join("\n");
+  return actions.map((action) => explorationActionLabel(action, inProgress, item)).join("\n");
 }
 
 function commandActions(item: ThreadItem): Record<string, unknown>[] {
@@ -388,29 +467,33 @@ function commandActions(item: ThreadItem): Record<string, unknown>[] {
 }
 
 type NormalizedCommandAction =
-  | { type: "read"; path: string }
-  | { type: "search"; path: string; query: string }
-  | { type: "listFiles"; path: string };
+  | { type: "read"; path: string; finished: boolean | null }
+  | { type: "search"; path: string; query: string; finished: boolean | null }
+  | { type: "listFiles"; path: string; finished: boolean | null };
 
 function normalizeCommandAction(action: Record<string, unknown>): NormalizedCommandAction | null {
   const type = stringField(action, "type");
+  const finished = typeof action.isFinished === "boolean" ? action.isFinished : null;
   if (type === "read") {
-    return { type: "read", path: stringField(action, "path") || stringField(action, "name") || "file" };
+    return { type: "read", path: stringField(action, "path") || stringField(action, "name") || "file", finished };
   }
   if (type === "search") {
     return {
       type: "search",
       path: stringField(action, "path"),
       query: stringField(action, "query"),
+      finished,
     };
   }
   if (type === "listFiles" || type === "list_files") {
-    return { type: "listFiles", path: stringField(action, "path") };
+    return { type: "listFiles", path: stringField(action, "path"), finished };
   }
   return null;
 }
 
-function explorationActionLabel(action: NormalizedCommandAction, inProgress: boolean): string {
+function explorationActionLabel(action: NormalizedCommandAction, inProgress: boolean, item: ThreadItem): string {
+  const skillLabel = skillExplorationLabel(action, item, inProgress);
+  if (skillLabel) return skillLabel;
   if (action.type === "read") {
     return `${inProgress ? "Reading" : "Read"} ${displayPath(action.path)}`;
   }
@@ -422,6 +505,165 @@ function explorationActionLabel(action: NormalizedCommandAction, inProgress: boo
   return action.path
     ? `${inProgress ? "Listing" : "Listed"} files in ${displayPath(action.path)}`
     : `${inProgress ? "Listing" : "Listed"} files`;
+}
+
+function skillExplorationLabel(
+  action: NormalizedCommandAction,
+  item: ThreadItem,
+  inProgress: boolean,
+): string | null {
+  const skillInfo = skillPathInfoForAction(action, item);
+  if (!skillInfo) return null;
+  if (action.type === "read") {
+    if (skillInfo.isSkillDefinitionFile && (inProgress || action.finished === false)) {
+      return `Reading ${skillInfo.skillName} skill`;
+    }
+    return `Read ${skillInfo.skillName} skill`;
+  }
+  if (action.type === "listFiles") {
+    return `Listed files in ${skillInfo.skillName} skill`;
+  }
+  const query = action.query.trim();
+  return query
+    ? `Searched for ${query} in ${skillInfo.skillName} skill`
+    : `Searched in ${skillInfo.skillName} skill`;
+}
+
+interface SkillPathInfo {
+  skillName: string;
+  isSkillDefinitionFile: boolean;
+}
+
+function skillPathInfoForAction(action: NormalizedCommandAction, item: ThreadItem): SkillPathInfo | null {
+  if (!action.path) return null;
+  return parseDesktopSkillPathInfo(normalizedActionPath(action.path, item));
+}
+
+function normalizedActionPath(path: string, item: ThreadItem): string {
+  const normalizedPath = normalizeSearchPath(path);
+  if (!normalizedPath) return "";
+  if (isAbsoluteSearchPath(normalizedPath)) return normalizeSearchPathSegments(normalizedPath);
+  const cwd = normalizeSearchPath(stringField(item as ItemRecord, "cwd"));
+  return normalizeSearchPathSegments(cwd ? `${cwd}/${normalizedPath}` : normalizedPath);
+}
+
+const DESKTOP_SKILL_ROOT_SEGMENTS = new Set([".codex", ".agents"]);
+const DESKTOP_SKILL_INDIRECT_SEGMENTS = new Set(["_import", ".system"]);
+const DESKTOP_SKILLS_SEGMENT = "skills";
+const DESKTOP_PLUGINS_SEGMENT = "plugins";
+const DESKTOP_PLUGIN_CACHE_SEGMENT = "cache";
+const DESKTOP_SKILL_DEFINITION_FILE = "skill.md";
+
+function parseDesktopSkillPathInfo(path: string): SkillPathInfo | null {
+  const parts = normalizeSearchPathSegments(path).split("/").filter(Boolean);
+  if (parts.length === 0) return null;
+  return parseDesktopCodexSkillPath(parts) ?? parseDesktopPluginSkillPath(parts);
+}
+
+function parseDesktopCodexSkillPath(parts: string[]): SkillPathInfo | null {
+  for (let index = 0; index < parts.length; index += 1) {
+    const current = parts[index]?.toLowerCase();
+    const next = parts[index + 1]?.toLowerCase();
+    if (!current || !DESKTOP_SKILL_ROOT_SEGMENTS.has(current) || next !== DESKTOP_SKILLS_SEGMENT) continue;
+    const candidate = parts[index + 2] ?? "";
+    const candidateLower = candidate.toLowerCase();
+    const usesIndirectSegment = DESKTOP_SKILL_INDIRECT_SEGMENTS.has(candidateLower);
+    const skillId = usesIndirectSegment ? parts[index + 3] ?? "" : candidate;
+    if (!skillId) continue;
+    const relativePathSegments = usesIndirectSegment ? parts.slice(index + 4) : parts.slice(index + 3);
+    return desktopSkillPathInfo(skillId, relativePathSegments);
+  }
+  return null;
+}
+
+function parseDesktopPluginSkillPath(parts: string[]): SkillPathInfo | null {
+  for (let index = 0; index < parts.length; index += 1) {
+    if (parts[index]?.toLowerCase() !== DESKTOP_PLUGINS_SEGMENT) continue;
+    const pluginId = desktopPluginIdFromPath(parts, index);
+    if (!pluginId) continue;
+    const skillsIndex = parts.findIndex((part, partIndex) =>
+      partIndex > index && part.toLowerCase() === DESKTOP_SKILLS_SEGMENT
+    );
+    const skillId = skillsIndex >= 0 ? parts[skillsIndex + 1] ?? "" : "";
+    if (!skillId) continue;
+    return desktopSkillPathInfo(skillId, parts.slice(skillsIndex + 2));
+  }
+  return null;
+}
+
+function desktopPluginIdFromPath(parts: string[], pluginsIndex: number): string | null {
+  const next = parts[pluginsIndex + 1] ?? "";
+  if (!next) return null;
+  return next.toLowerCase() === DESKTOP_PLUGIN_CACHE_SEGMENT ? parts[pluginsIndex + 3] ?? null : next;
+}
+
+function desktopSkillPathInfo(skillId: string, relativePathSegments: string[]): SkillPathInfo {
+  const firstSegment = relativePathSegments[0]?.toLowerCase();
+  return {
+    skillName: desktopSkillDisplayName(skillId.replaceAll("_", "-")),
+    isSkillDefinitionFile: relativePathSegments.length === 1 && firstSegment === DESKTOP_SKILL_DEFINITION_FILE,
+  };
+}
+
+const DESKTOP_TITLE_INITIALISMS = new Set([
+  "GH",
+  "IA",
+  "MCP",
+  "API",
+  "CI",
+  "CLI",
+  "LLM",
+  "PDF",
+  "PR",
+  "UI",
+  "URL",
+  "SQL",
+  "TW",
+  "GPU",
+  "CPU",
+]);
+const DESKTOP_TITLE_OVERRIDES = new Map([
+  ["openai", "OpenAI"],
+  ["openapi", "OpenAPI"],
+  ["github", "GitHub"],
+  ["pagerduty", "PagerDuty"],
+  ["datadog", "DataDog"],
+  ["sqlite", "SQLite"],
+  ["fastapi", "FastAPI"],
+]);
+const DESKTOP_LOWER_TITLE_WORDS = new Set(["and", "or", "to", "up", "with"]);
+
+function desktopSkillDisplayName(value: string): string {
+  return value.split(":").map((part) => desktopTitleCase(part)).join(": ");
+}
+
+function desktopTitleCase(value: string): string {
+  return value
+    .replace(/[_-]+/gu, " ")
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map((word, index) => desktopTitleWord(word, index))
+    .join(" ");
+}
+
+function desktopTitleWord(word: string, index: number): string {
+  const initialism = desktopInitialism(word);
+  if (initialism) return initialism;
+  const lower = word.toLowerCase();
+  return DESKTOP_TITLE_OVERRIDES.get(lower)
+    ?? (index > 0 && DESKTOP_LOWER_TITLE_WORDS.has(lower) ? lower : upperFirst(lower));
+}
+
+function desktopInitialism(word: string): string | null {
+  const upper = word.toUpperCase();
+  if (DESKTOP_TITLE_INITIALISMS.has(upper)) return upper;
+  if (!word.toLowerCase().endsWith("s")) return null;
+  const singular = word.slice(0, -1).toUpperCase();
+  return DESKTOP_TITLE_INITIALISMS.has(singular) ? `${singular}s` : null;
+}
+
+function upperFirst(value: string): string {
+  return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
 function explorationSummaryLabel(
@@ -443,33 +685,74 @@ function explorationSummaryLabel(
 
 interface PatchSummary {
   created: number;
+  runningCreated: number;
+  stoppedCreated: number;
+  runningCreatedLineCount: number;
   edited: number;
+  runningEdited: number;
   deleted: number;
+  runningDeleted: number;
   label: string;
   activeLabel: string;
+  activeDiffStats: ToolActivitySummary["activeDiffStats"];
 }
 
 function patchSummary(item: ThreadItem): PatchSummary {
   const changes = patchChanges(item);
   let created = 0;
+  let runningCreated = 0;
+  let stoppedCreated = 0;
+  let runningCreatedLineCount = 0;
   let edited = 0;
+  let runningEdited = 0;
   let deleted = 0;
+  let runningDeleted = 0;
+  const stopped = patchStoppedLikeCodexDesktop(item);
   for (const change of changes) {
     const kind = patchKind(change);
-    if (kind === "add") created += 1;
-    else if (kind === "delete") deleted += 1;
-    else edited += 1;
+    const success = patchSuccess(item);
+    const running = success === null;
+    if (kind === "add") {
+      created += 1;
+      if (running && stopped) stoppedCreated += 1;
+      else if (running) {
+        runningCreated += 1;
+        runningCreatedLineCount += patchCreatedLineCount(change);
+      }
+    } else if (kind === "delete") {
+      deleted += 1;
+      if (running) runningDeleted += 1;
+    } else {
+      edited += 1;
+      if (running) runningEdited += 1;
+    }
   }
 
   const lastChange = changes[changes.length - 1] ?? null;
   const lastKind = lastChange ? patchKind(lastChange) : "update";
   const lastPath = lastChange ? patchPath(lastChange) : "";
+  const activeDiffStats = lastChange ? patchDiffStats(lastChange) : null;
   return {
     created,
+    runningCreated,
+    stoppedCreated,
+    runningCreatedLineCount,
     edited,
+    runningEdited,
     deleted,
-    label: fileChangeSummaryLabel({ createdFiles: created, editedFiles: edited, deletedFiles: deleted }, false) ?? "Edited files",
+    runningDeleted,
+    label: fileChangeSummaryLabel({
+      createdFiles: created,
+      runningCreatedFiles: runningCreated,
+      stoppedCreatedFiles: stoppedCreated,
+      runningCreatedLineCount,
+      editedFiles: edited,
+      runningEditedFiles: runningEdited,
+      deletedFiles: deleted,
+      runningDeletedFiles: runningDeleted,
+    }, false) ?? "Edited files",
     activeLabel: patchActionLabel(lastKind, lastPath, true),
+    activeDiffStats,
   };
 }
 
@@ -510,6 +793,56 @@ function patchKind(change: Record<string, unknown>): "add" | "delete" | "update"
   return "update";
 }
 
+function patchSuccess(item: ThreadItem): boolean | null {
+  const record = item as ItemRecord;
+  const success = record.success;
+  if (typeof success === "boolean") return success;
+  const status = stringField(record, "status") || stringField(record, "executionStatus");
+  if (status === "success" || status === "succeeded") return true;
+  if (status === "failed" || status === "error" || status === "errored") return false;
+  // Desktop patch grouping branches on `success`; replayed HiCodex patch
+  // payloads can carry only a terminal status, so normalize that after
+  // preserving explicit failure states.
+  if (success !== null && isCompletedRecord(item)) return true;
+  return null;
+}
+
+function patchStoppedLikeCodexDesktop(item: ThreadItem): boolean {
+  const record = item as ItemRecord;
+  const status = stringField(record, "_turnStatus") || stringField(record, "status") || stringField(record, "executionStatus");
+  return status === "cancelled" || status === "canceled" || status === "interrupted";
+}
+
+function patchCreatedLineCount(change: Record<string, unknown>): number {
+  const content = stringField(change, "content");
+  if (content) return lineCount(content);
+  const diff = stringField(change, "diff") || stringField(change, "unifiedDiff") || stringField(change, "patch");
+  if (!diff) return 0;
+  return diff.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
+}
+
+function patchDiffStats(change: Record<string, unknown>): ToolActivitySummary["activeDiffStats"] {
+  const diff = stringField(change, "diff") || stringField(change, "unifiedDiff") || stringField(change, "patch");
+  if (!diff) {
+    const content = stringField(change, "content");
+    const added = content ? lineCount(content) : 0;
+    return added > 0 ? { linesAdded: added, linesRemoved: 0 } : null;
+  }
+  let linesAdded = 0;
+  let linesRemoved = 0;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) linesAdded += 1;
+    else if (line.startsWith("-") && !line.startsWith("---")) linesRemoved += 1;
+  }
+  return linesAdded > 0 || linesRemoved > 0 ? { linesAdded, linesRemoved } : null;
+}
+
+function lineCount(value: string): number {
+  const normalized = value.replace(/\r\n/gu, "\n");
+  const lines = normalized.split("\n");
+  return lines.length > 0 && lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+}
+
 function patchPath(change: Record<string, unknown>): string {
   return stringField(change, "path") || stringField(change, "newPath") || stringField(change, "oldPath") || "file";
 }
@@ -522,13 +855,28 @@ function patchActionLabel(kind: "add" | "delete" | "update", path: string, inPro
 }
 
 function fileChangeSummaryLabel(
-  counts: Pick<ToolActivitySummary["counts"], "createdFiles" | "editedFiles" | "deletedFiles">,
+  counts: Pick<ToolActivitySummary["counts"], "createdFiles" | "editedFiles" | "deletedFiles">
+    & Partial<Pick<ToolActivitySummary["counts"], "runningCreatedFiles" | "stoppedCreatedFiles" | "runningCreatedLineCount" | "runningEditedFiles" | "runningDeletedFiles">>,
   inProgress: boolean,
 ): string | null {
+  const runningCreated = counts.runningCreatedFiles ?? 0;
+  const stoppedCreated = counts.stoppedCreatedFiles ?? 0;
+  const runningCreatedLineCount = counts.runningCreatedLineCount ?? 0;
+  const runningEdited = counts.runningEditedFiles ?? 0;
+  const runningDeleted = counts.runningDeletedFiles ?? 0;
+  const completedCreated = Math.max(0, counts.createdFiles - runningCreated - stoppedCreated);
+  const completedEdited = Math.max(0, counts.editedFiles - runningEdited);
+  const completedDeleted = Math.max(0, counts.deletedFiles - runningDeleted);
   const segments = [
-    counts.createdFiles > 0 ? fileChangeSegment(inProgress ? "Creating" : "Created", counts.createdFiles, "file") : "",
-    counts.editedFiles > 0 ? fileChangeSegment(inProgress ? "Editing" : "Edited", counts.editedFiles, "file") : "",
-    counts.deletedFiles > 0 ? fileChangeSegment(inProgress ? "Deleting" : "Deleted", counts.deletedFiles, "file") : "",
+    completedCreated > 0 ? fileChangeSegment(inProgress ? "Creating" : "Created", completedCreated, "file") : "",
+    stoppedCreated > 0 ? fileChangeSegment("Stopped creating", stoppedCreated, "file") : "",
+    runningCreated > 0
+      ? `${fileChangeSegment("Creating", runningCreated, "file")}${runningCreatedLineCount > 0 ? ` • writing ${formatCount(runningCreatedLineCount, "line")}` : ""}`
+      : "",
+    completedEdited > 0 ? fileChangeSegment(inProgress ? "Editing" : "Edited", completedEdited, "file") : "",
+    runningEdited > 0 ? fileChangeSegment("Editing", runningEdited, "file") : "",
+    completedDeleted > 0 ? fileChangeSegment(inProgress ? "Deleting" : "Deleted", completedDeleted, "file") : "",
+    runningDeleted > 0 ? fileChangeSegment("Deleting", runningDeleted, "file") : "",
   ].filter(Boolean);
   if (segments.length === 0) return null;
   return segments.map((segment, index) => index === 0 ? segment : lowerInitial(segment)).join(", ");
@@ -636,16 +984,31 @@ export function toolActivityGroupKey(item: ThreadItem, groupType: ToolActivityGr
 }
 
 export function toolActivityRenderKey(groupType: ToolActivityGroupType, items: ThreadItem[], renderIndex: number): string {
+  /*
+   * The render key must stay STABLE across re-projections of the same bucket
+   * while items stream in. The earlier `${first.id}:${last.id}` /
+   * `${...}:${renderIndex}` shapes changed every time another item joined the
+   * bucket (last.id slid forward) or another unit appeared before it in the
+   * conversation (renderIndex shifted). React then unmounted + remounted the
+   * whole `<ToolActivityView>`, wiping its `viewState`/timer state and forcing
+   * a layout repaint — the visible "flicker" the user reported below the
+   * streaming model output.
+   *
+   * Anchor each bucket to its first item's id (the bucket's stable identity at
+   * creation time) plus the group type. The collapsed/expanded state and any
+   * children that React reconciles inside still see fresh `items`/`summary`
+   * props every render, so streaming updates still flow through — just
+   * without a remount.
+   */
   const first = items[0];
-  const last = items[items.length - 1];
   if (!first) return `${groupType}:unknown:${renderIndex}`;
   if (groupType === "web-search-group") {
-    return `${groupType}:${stringField(first, "query") || "unknown"}:${renderIndex}`;
+    return `${groupType}:${first.id ?? stringField(first, "query") ?? "unknown"}`;
   }
   if (groupType === "multi-agent-group") {
     return `${groupType}:${multiAgentAction(first)}:${multiAgentStatus(first)}:${first.id ?? renderIndex}`;
   }
-  return `${groupType}:${first?.id ?? "unknown"}:${last?.id ?? items.length}`;
+  return `${groupType}:${first.id ?? "unknown"}`;
 }
 
 export function isBlockingOutOfBandItem(item: ThreadItem, blockedMcpServers: Set<string>): boolean {
@@ -663,7 +1026,10 @@ export function isBlockingOutOfBandItem(item: ThreadItem, blockedMcpServers: Set
 }
 
 function shouldUsePendingMcpToolGroup(item: ThreadItem): boolean {
-  return itemType(item) === "mcp-tool-call" && isItemInProgress(item) && !isDesktopInlineMcpTool(item);
+  return itemType(item) === "mcp-tool-call"
+    && isItemInProgress(item)
+    && !mcpAppResourceUri(item)
+    && !isDesktopInlineMcpTool(item);
 }
 
 function isDesktopInlineMcpTool(item: ThreadItem): boolean {

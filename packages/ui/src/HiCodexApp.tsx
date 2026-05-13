@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { CollaborationModeMask, ModelConfig } from "@hicodex/codex-protocol";
+import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter } from "./components/composer-external-footer";
@@ -10,19 +10,22 @@ import { McpToolCallForm } from "./components/mcp-tool-call-form";
 import { SettingsPanel } from "./components/model-settings-panel";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
+import { FilePreviewPanel } from "./components/file-preview-panel";
 import { RightRail } from "./components/right-rail";
 import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
 import { ThreadActionDialog } from "./components/thread-action-dialog";
+import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
-import { pickFileReferences } from "./lib/tauri-host";
+import { openExternalUrl, openFileReference, pickFileReferences, pickWorkspaceFolder } from "./lib/tauri-host";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
 } from "./hooks/use-turn-submission";
 import { useElementInlineSize } from "./hooks/use-element-inline-size";
 import { useArtifactPreviewActions } from "./hooks/use-artifact-preview-actions";
+import { useFilePreviewPanelLayout } from "./hooks/use-file-preview-panel-layout";
 import {
   useCommandPanelActions,
   type McpToolFormAction,
@@ -46,7 +49,14 @@ import {
 } from "./state/codex-reducer";
 import { buildApprovalResult } from "./state/approval-requests";
 import { projectBranchDetails } from "./state/branch-details";
-import { projectSidebarThreads } from "./state/sidebar-projection";
+import {
+  projectSidebarThreads,
+  projectSidebarWorkspaceRootOptions,
+  sidebarThreadRelativeTime,
+  type SidebarSortKey,
+  type SidebarWorkspaceRootOption,
+  threadProjectLabel,
+} from "./state/sidebar-projection";
 import type { FileReferenceSelection } from "./state/file-references";
 import {
   applySlashCommand,
@@ -85,6 +95,23 @@ import {
   type RailEntry,
 } from "./state/render-groups";
 import {
+  MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR,
+  MCP_APP_BRIDGE_INVALID_PARAMS,
+  MCP_APP_BRIDGE_METHOD_NOT_FOUND,
+  downloadMcpAppFile,
+  mcpAppBridgeError,
+  mcpAppExternalHref,
+  mcpAppFileDownloadRequest,
+  mcpAppResourceTemplatesListResponse,
+  mcpAppResourcesListResponse,
+  mcpAppMcpProxyRequest,
+  mcpAppToolCallAllowed,
+  mcpAppToolCallRequest,
+  mcpAppToolCallRequestFromBridgeArgs,
+  mcpAppToolsListResponse,
+  mcpServerStatusFromListResult,
+} from "./state/mcp-app-host";
+import {
   deriveActivePendingRequests,
   summarizePendingRequestAwaitingByThread,
 } from "./state/pending-request-scope";
@@ -105,6 +132,7 @@ import {
   loadSettingsPanelContent,
 } from "./state/settings-panel-loader";
 import {
+  DESKTOP_RIGHT_RAIL_GAP_PX,
   projectRightRailSections,
   rightRailDisplayMode,
   rightRailReservedInlineEndPx,
@@ -125,15 +153,32 @@ export function HiCodexApp() {
   const [followUpQueueingEnabled, setFollowUpQueueingEnabled] = useState(true);
   const [collaborationModes, setCollaborationModes] = useState<CollaborationModeMask[]>([]);
   const [workspace, setWorkspace] = useState("");
+  const [selectedWorkspaceRoots, setSelectedWorkspaceRoots] = useState<string[]>([]);
+  const [sidebarSortKey, setSidebarSortKey] = useState<SidebarSortKey>("updated_at");
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
   const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
   const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
   const [mcpToolForm, setMcpToolForm] = useState<McpToolFormAction | null>(null);
+  const [mcpServerStatuses, setMcpServerStatuses] = useState<unknown>(null);
+  const [mcpServerStatusNonce, setMcpServerStatusNonce] = useState(0);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
   const [imageGenerationDraft, setImageGenerationDraft] = useState<ImageGenerationSettings>(() =>
     loadImageGenerationSettings(browserStorage())
   );
-  const [artifactPreview, setArtifactPreview] = useState<RailEntry | null>(null);
+  const [artifactPreview, setArtifactPreviewState] = useState<RailEntry | null>(null);
+  /*
+   * Bumped each time the artifact preview is (re-)opened so `ArtifactPreviewPanel`
+   * remounts via `key={...}` even when the user clicks the same artifact entry
+   * twice. Without this, React reuses the panel instance and its read-file
+   * useEffects keep their cached output (filed by the path-only dependency), so a
+   * file the model just rewrote on disk still shows the original contents.
+   */
+  const [artifactPreviewNonce, setArtifactPreviewNonce] = useState(0);
+  const setArtifactPreview = useCallback((entry: RailEntry | null) => {
+    setArtifactPreviewState(entry);
+    if (entry !== null) setArtifactPreviewNonce((value) => value + 1);
+  }, []);
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
   const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
@@ -150,6 +195,9 @@ export function HiCodexApp() {
         dispatch({ type: "notification", message });
         if (message.method === "skills/changed") {
           setSkillsChangedNonce((current) => current + 1);
+        }
+        if (message.method === "mcpServer/startupStatus/updated") {
+          setMcpServerStatusNonce((current) => current + 1);
         }
       },
       onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
@@ -213,8 +261,12 @@ export function HiCodexApp() {
     [imageGenerationDraft],
   );
   const conversation = useMemo(
-    () => projectConversation(activeItems, { isThreadRunning: activeThreadRunning, progressPlan: activeProgressPlan }),
-    [activeItems, activeProgressPlan, activeThreadRunning],
+    () => projectConversation(activeItems, {
+      isThreadRunning: activeThreadRunning,
+      mcpServerStatuses,
+      progressPlan: activeProgressPlan,
+    }),
+    [activeItems, activeProgressPlan, activeThreadRunning, mcpServerStatuses],
   );
   const activeDiff = activeThreadRuntime.turnDiff;
   const branchDetails = useMemo(
@@ -235,12 +287,31 @@ export function HiCodexApp() {
     }),
     [branchDetails, conversation],
   );
-  const hasRightRailContent = rightRailSections.length > 0
-    || fileReference !== null
-    || artifactPreview !== null;
-  const showRightRail = hasRightRailContent && rightRailShouldRender(mainWidth);
+  const hasFilePreviewSelection = artifactPreview !== null || fileReference !== null;
+  const showRightRail = rightRailSections.length > 0 && rightRailShouldRender(mainWidth);
   const rightRailMode = rightRailDisplayMode(mainWidth);
-  const threadInlineEndInset = rightRailReservedInlineEndPx(mainWidth, showRightRail);
+  /*
+   * Codex Desktop opens file/artifact previews into the AppShell RightPanel
+   * (`app-shell.formatted.js:518` `vn`), not into the summary rail. Drag <
+   * 320 px closes the panel — Codex `if (e3 < x(320)) v(s2, false)`. We
+   * close the artifact / file selection here so the panel unmounts.
+   */
+  const closeFilePreviewPanel = useCallback(() => {
+    setArtifactPreview(null);
+    setFileReference(null);
+  }, [setArtifactPreview, setFileReference]);
+  const filePreviewPanelLayout = useFilePreviewPanelLayout({
+    containerWidthPx: mainWidth,
+    onShouldClose: closeFilePreviewPanel,
+  });
+  const filePreviewPanelEffectiveWidthPx = hasFilePreviewSelection && !filePreviewPanelLayout.fullWidth
+    ? filePreviewPanelLayout.widthPx
+    : 0;
+  // Reserve the conversation's right edge for the side-sized file preview.
+  // In full-width mode the panel covers the thread instead of pushing it.
+  const threadInlineEndInset = hasFilePreviewSelection
+    ? Math.round(filePreviewPanelEffectiveWidthPx)
+    : rightRailReservedInlineEndPx(mainWidth, showRightRail);
   const composerSubmitState = useMemo(() => projectComposerSubmitState({
     input,
     attachmentCount: composerAttachments.length,
@@ -322,23 +393,135 @@ export function HiCodexApp() {
   }, [loadCollaborationModes, state.connected]);
 
   useEffect(() => {
+    if (!state.connected) {
+      setMcpServerStatuses(null);
+      return;
+    }
+    let cancelled = false;
+    void client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "toolsAndAuthOnly" }, 120_000)
+      .then((result) => {
+        if (!cancelled) setMcpServerStatuses(result);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMcpServerStatuses(null);
+          dispatch({ type: "log", text: `mcpServerStatus/list failed: ${formatError(error)}`, level: "warn" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, mcpServerStatusNonce, state.connected]);
+
+  useEffect(() => {
     setArtifactPreview(null);
     setFileReference(null);
   }, [state.activeThreadId]);
-
-  const disconnect = useCallback(async () => {
-    try {
-      await client.disconnect();
-      dispatch({ type: "connected", value: false });
-    } catch (error) {
-      dispatch({ type: "log", text: formatError(error), level: "error" });
-    }
-  }, [client]);
 
   const ensureConnected = useCallback(async () => {
     if (state.connected) return true;
     return connect();
   }, [connect, state.connected]);
+
+  const readMcpResource = useCallback(async ({ server, threadId, uri }: McpResourceReadRequest) => {
+    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
+    return client.request<unknown>("mcpServer/resource/read", {
+      threadId: threadId ?? state.activeThreadId ?? null,
+      server,
+      uri,
+    }, 120_000);
+  }, [client, ensureConnected, state.activeThreadId]);
+
+  const loadMcpServerStatus = useCallback(async (server: string, detail: "full" | "toolsAndAuthOnly" = "full") => {
+    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
+    const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail }, 120_000);
+    const status = mcpServerStatusFromListResult(result, server);
+    if (!status) throw mcpAppBridgeError(`MCP server not found: ${server}`);
+    return status;
+  }, [client, ensureConnected]);
+
+  const callMcpAppTool = useCallback(async (
+    request: McpAppHostCallRequest,
+    toolCall: { name: string; arguments: unknown; meta?: unknown },
+  ) => {
+    const threadId = request.threadId ?? state.activeThreadId;
+    if (!threadId) throw mcpAppBridgeError("Select or start a thread before calling an MCP tool.");
+    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
+    const status = await loadMcpServerStatus(request.server, "toolsAndAuthOnly");
+    if (!mcpAppToolCallAllowed(status, toolCall.name)) {
+      throw mcpAppBridgeError(
+        `MCP app widgets cannot call tools that accept file parameters: ${toolCall.name}`,
+        MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR,
+      );
+    }
+    return client.request<unknown>("mcpServer/tool/call", {
+      threadId,
+      server: request.server,
+      tool: toolCall.name,
+      arguments: toolCall.arguments,
+      ...(Object.prototype.hasOwnProperty.call(toolCall, "meta") ? { _meta: toolCall.meta } : {}),
+    }, 120_000);
+  }, [client, ensureConnected, loadMcpServerStatus, state.activeThreadId]);
+
+  const handleMcpAppHostCall = useCallback(async (request: McpAppHostCallRequest): Promise<unknown> => {
+    if (request.method === "openExternal") {
+      const href = mcpAppExternalHref(request.args[0]);
+      if (!href) return {};
+      await openExternalUrl(href);
+      return {};
+    }
+    if (request.method === "callTool") {
+      const toolCall = mcpAppToolCallRequestFromBridgeArgs(request.args);
+      if (!toolCall) throw mcpAppBridgeError("Invalid MCP tool call params.", MCP_APP_BRIDGE_INVALID_PARAMS);
+      return callMcpAppTool(request, toolCall);
+    }
+    if (request.method !== "callMcp") {
+      throw mcpAppBridgeError(`Unsupported MCP app host method: ${request.method}`, MCP_APP_BRIDGE_METHOD_NOT_FOUND);
+    }
+
+    const proxyRequest = mcpAppMcpProxyRequest(request.args[0]);
+    if (!proxyRequest) throw mcpAppBridgeError("Invalid MCP proxy request.", MCP_APP_BRIDGE_INVALID_PARAMS);
+    switch (proxyRequest.method) {
+      case "ping":
+        return {};
+      case "ui/download-file": {
+        const download = mcpAppFileDownloadRequest(proxyRequest.params);
+        if (!download) throw mcpAppBridgeError("Invalid MCP file download params.", MCP_APP_BRIDGE_INVALID_PARAMS);
+        downloadMcpAppFile(download);
+        return {};
+      }
+      case "tools/call": {
+        const toolCall = mcpAppToolCallRequest(proxyRequest.params);
+        if (!toolCall) throw mcpAppBridgeError("Invalid MCP tool call params.", MCP_APP_BRIDGE_INVALID_PARAMS);
+        return callMcpAppTool(request, toolCall);
+      }
+      case "resources/read": {
+        const params = recordObject(proxyRequest.params);
+        const uri = typeof params.uri === "string" ? params.uri : "";
+        if (!uri.trim()) throw mcpAppBridgeError("Invalid MCP resource read params.", MCP_APP_BRIDGE_INVALID_PARAMS);
+        return readMcpResource({ server: request.server, threadId: request.threadId, uri });
+      }
+      case "tools/list": {
+        const status = await loadMcpServerStatus(request.server, "toolsAndAuthOnly");
+        return mcpAppToolsListResponse(status);
+      }
+      case "resources/list": {
+        const status = await loadMcpServerStatus(request.server, "full");
+        return mcpAppResourcesListResponse(status, request.server);
+      }
+      case "resources/templates/list": {
+        const status = await loadMcpServerStatus(request.server, "full");
+        return mcpAppResourceTemplatesListResponse(status, request.server);
+      }
+      case "prompts/list":
+        return { prompts: [] };
+      default:
+        throw mcpAppBridgeError(
+          `Unsupported MCP proxy method: ${proxyRequest.method}`,
+          MCP_APP_BRIDGE_METHOD_NOT_FOUND,
+        );
+    }
+  }, [callMcpAppTool, loadMcpServerStatus, readMcpResource]);
 
   const collaborationModesForComposerMode = useCallback(async (mode: ComposerMode): Promise<CollaborationModeMask[]> => {
     if (mode !== "plan" || hasCollaborationModePreset(collaborationModes, "plan")) return collaborationModes;
@@ -355,7 +538,6 @@ export function HiCodexApp() {
     openArchiveThreadDialog,
     openRenameThreadDialog,
     renameSelectedThread,
-    resumeSelectedThread,
     selectThread,
     threadActionDialog,
   } = useThreadActions({
@@ -369,6 +551,31 @@ export function HiCodexApp() {
     threads: state.threads,
     workspace,
   });
+  const workspaceRootOptions = useMemo(() => (
+    workspaceRootOptionsWithCurrent(
+      projectSidebarWorkspaceRootOptions(state.threads),
+      [activeThread?.cwd, workspace, ...selectedWorkspaceRoots],
+    )
+  ), [activeThread?.cwd, selectedWorkspaceRoots, state.threads, workspace]);
+
+  const selectWorkspaceRoot = useCallback((root: string) => {
+    const normalized = normalizeWorkspaceRoot(root);
+    if (!normalized) return;
+    setSelectedWorkspaceRoots((current) => (
+      current.includes(normalized) ? current : [normalized, ...current]
+    ));
+    setWorkspace(normalized);
+    void createThread();
+  }, [createThread]);
+
+  const useExistingWorkspaceFolder = useCallback(async () => {
+    try {
+      const root = await pickWorkspaceFolder();
+      if (root) selectWorkspaceRoot(root);
+    } catch (error) {
+      dispatch({ type: "log", text: `folder picker failed: ${formatError(error)}`, level: "warn" });
+    }
+  }, [dispatch, selectWorkspaceRoot]);
 
   const {
     backgroundAgentConversation,
@@ -395,6 +602,15 @@ export function HiCodexApp() {
     hasBackgroundAgentsPanel: backgroundAgentPanel != null,
   });
 
+  const selectThreadById = useCallback((threadId: string) => {
+    const thread = state.threads.find((candidate) => candidate.id === threadId);
+    if (!thread) {
+      dispatch({ type: "log", text: `thread not found: ${threadId}`, level: "warn" });
+      return;
+    }
+    void selectThread(thread);
+  }, [selectThread, state.threads]);
+
   const openCommandPanel = useCallback((
     panel: CommandPanelKind,
     options?: CommandPanelOptions,
@@ -408,6 +624,23 @@ export function HiCodexApp() {
   ) => {
     setSettingsPanelState(createCommandPanelState(panel, options));
   }, []);
+
+  const openChatSearchPanel = useCallback(() => {
+    const visibleThreads = projectSidebarThreads(state.threads);
+    openCommandPanel("generic", {
+      status: "ready",
+      title: "Search chats",
+      message: "",
+      entries: visibleThreads.map((thread): CommandPanelEntry => ({
+        id: `thread:${thread.id}`,
+        title: threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null),
+        kind: "thread",
+        meta: threadProjectLabel(thread),
+        status: sidebarThreadRelativeTime(thread),
+        action: { type: "selectThread", threadId: thread.id },
+      })),
+    });
+  }, [openCommandPanel, state.threads, state.threadsRuntime]);
 
   const loadSettingsPanel = useCallback(async (
     panel: SettingsPanelId,
@@ -478,6 +711,54 @@ export function HiCodexApp() {
   const copySessionId = useCallback(() => {
     void copyTextToClipboard("Session ID", activeThread?.id ?? "");
   }, [activeThread?.id, copyTextToClipboard]);
+
+  const copyThreadWorkingDirectory = useCallback((thread: Thread) => {
+    void copyTextToClipboard("Working directory", thread.cwd || workspace || "");
+  }, [copyTextToClipboard, workspace]);
+
+  const copyThreadSessionId = useCallback((thread: Thread) => {
+    void copyTextToClipboard("Session ID", thread.id);
+  }, [copyTextToClipboard]);
+
+  const copyThreadDeeplink = useCallback((thread: Thread) => {
+    void copyTextToClipboard("Deeplink", `codex://threads/${thread.id}`);
+  }, [copyTextToClipboard]);
+
+  const openThreadFolder = useCallback(async (thread: Thread) => {
+    const cwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
+    if (!cwd) {
+      dispatch({ type: "log", text: "Working directory is unavailable", level: "warn" });
+      return;
+    }
+    try {
+      await openFileReference(cwd);
+    } catch (error) {
+      dispatch({ type: "log", text: `open folder failed: ${formatError(error)}`, level: "error" });
+    }
+  }, []);
+
+  const toggleThreadPinned = useCallback((thread: Thread, pinned: boolean) => {
+    setPinnedThreadIds((current) => {
+      const next = new Set(current);
+      if (pinned) {
+        next.add(thread.id);
+      } else {
+        next.delete(thread.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const markThreadUnread = useCallback((thread: Thread) => {
+    dispatch({
+      type: "setThreads",
+      threads: state.threads.map((item) =>
+        item.id === thread.id
+          ? ({ ...(item as Thread & Record<string, unknown>), hasUnreadTurn: true, has_unread_turn: true } as Thread)
+          : item,
+      ),
+    });
+  }, [state.threads]);
 
   const copyConversationMarkdown = useCallback(() => {
     if (!activeThread) {
@@ -783,6 +1064,7 @@ export function HiCodexApp() {
     setComposerAttachments,
     setInput,
     setMcpToolForm,
+    selectThreadById,
     workspace,
   });
 
@@ -871,22 +1153,29 @@ export function HiCodexApp() {
   return (
     <div className={showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app"}>
       <Sidebar
-        threads={projectSidebarThreads(state.threads)}
+        threads={projectSidebarThreads(state.threads, { sortKey: sidebarSortKey })}
         activeThreadId={state.activeThreadId}
-        activeThreadRunning={activeThreadRunning}
-        pendingRequestAwaitingByThread={pendingRequestAwaitingByThread}
         connected={state.connected}
         connecting={state.connecting}
         onConnect={() => void connect()}
         onCreateThread={createThread}
-        onRefreshThreads={() => refreshThreads(client, dispatch)}
+        onOpenSearch={openChatSearchPanel}
+        onOpenPlugins={() => void loadSettingsPanel("plugins")}
+        onUseExistingFolder={useExistingWorkspaceFolder}
         onSelectThread={selectThread}
-        onResumeThread={resumeSelectedThread}
         onForkThread={forkSelectedThread}
         onRenameThread={openRenameThreadDialog}
-        onArchiveThread={openArchiveThreadDialog}
+        onArchiveThread={archiveSelectedThread}
+        pinnedThreadIds={pinnedThreadIds}
+        onToggleThreadPinned={toggleThreadPinned}
+        onMarkThreadUnread={markThreadUnread}
+        onOpenThreadFolder={openThreadFolder}
+        onCopyWorkingDirectory={copyThreadWorkingDirectory}
+        onCopySessionId={copyThreadSessionId}
+        onCopyDeeplink={copyThreadDeeplink}
         onOpenSettings={() => void loadSettingsPanel("general")}
-        onDisconnect={disconnect}
+        sortKey={sidebarSortKey}
+        onSortKeyChange={setSidebarSortKey}
         getThreadTitle={(thread) => threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null)}
       />
 
@@ -896,7 +1185,7 @@ export function HiCodexApp() {
         ref={mainRef}
       >
         <ConversationChrome
-          title={activeThread ? threadTitle(activeThread, conversation.units.flatMap((unit) => "items" in unit ? unit.items : [])) : "Codex conversation"}
+          title={activeThread ? threadTitle(activeThread, state.threadsRuntime[activeThread.id]?.items ?? null) : "Codex conversation"}
           codexHome={state.hostStatus?.codexHome}
           connected={state.connected}
           pid={state.hostStatus?.pid ?? undefined}
@@ -975,6 +1264,9 @@ export function HiCodexApp() {
                 branch={threadGitBranch(activeThread)}
                 cwd={activeThread?.cwd || workspace}
                 model={state.threadContextDefaults?.model}
+                workspaceRoots={workspaceRootOptions}
+                onWorkspaceRootSelected={selectWorkspaceRoot}
+                onUseExistingFolder={useExistingWorkspaceFolder}
                 reasoningEffort={state.threadContextDefaults?.reasoningEffort}
               />
             </div>
@@ -986,9 +1278,12 @@ export function HiCodexApp() {
               threadId={state.activeThreadId}
               onEditLastUserMessage={editLastUserTurn}
               onOpenAssistantArtifact={openAssistantArtifact}
+              onOpenDiff={openActiveDiffPanel}
               onForkTurn={forkActiveThreadFromTurn}
               onOpenFileReference={previewConversationFileReference}
               onOpenThreadId={openBackgroundAgentThread}
+              onMcpAppHostCall={handleMcpAppHostCall}
+              onReadMcpResource={readMcpResource}
             />
           </section>
         </ThreadScrollLayout>
@@ -1004,8 +1299,10 @@ export function HiCodexApp() {
             title={backgroundAgentTitle}
             units={backgroundAgentConversation.units}
             onClose={closeBackgroundAgentPanel}
+            onMcpAppHostCall={handleMcpAppHostCall}
             onOpenFileReference={previewConversationFileReference}
             onOpenThreadId={openBackgroundAgentThread}
+            onReadMcpResource={readMcpResource}
           />
         )}
 
@@ -1013,15 +1310,7 @@ export function HiCodexApp() {
           <RightRail
             sections={rightRailSections}
             displayMode={rightRailMode}
-            artifactPreview={artifactPreview}
-            fileReference={fileReference}
-            artifactWorkspaceRoot={previewPathContext.workspaceRoot}
-            artifactCwd={previewPathContext.cwd}
-            onCloseArtifactPreview={() => setArtifactPreview(null)}
-            onCloseFileReference={() => setFileReference(null)}
             onOpenArtifactPreview={previewRailArtifact}
-            onOpenArtifactFileExternal={openRailArtifactFileExternal}
-            onOpenFileReferenceExternal={openFileReferenceExternal}
             onOpenFileReference={previewRailFileReference}
             onOpenUrl={openRailUrl}
             onOpenDiff={openActiveDiffPanel}
@@ -1032,6 +1321,34 @@ export function HiCodexApp() {
             backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
           />
         )}
+
+        {/*
+          * Codex Desktop opens file previews into its AppShell RightPanel
+          * (`vn` at `app-shell.formatted.js:518`), not into the summary rail.
+          * `<FilePreviewPanel>` is HiCodex's analogue: resizable (default
+          * 600 px / min 320 px), full-width toggle, double-click reset.
+          * Mounts only when there is an artifact / file selection.
+          */}
+        <FilePreviewPanel
+          artifactPreview={artifactPreview}
+          artifactPreviewNonce={artifactPreviewNonce}
+          fileReference={fileReference}
+          workspaceRoot={previewPathContext.workspaceRoot}
+          cwd={previewPathContext.cwd}
+          resize={{
+            widthPx: filePreviewPanelLayout.widthPx,
+            isResizing: filePreviewPanelLayout.isResizing,
+            fullWidth: filePreviewPanelLayout.fullWidth,
+            onResizeStart: filePreviewPanelLayout.startResize,
+            onResetWidth: filePreviewPanelLayout.resetWidth,
+            onToggleFullWidth: filePreviewPanelLayout.toggleFullWidth,
+          }}
+          onCloseArtifactPreview={() => setArtifactPreview(null)}
+          onCloseFileReference={() => setFileReference(null)}
+          onOpenArtifactFileExternal={openRailArtifactFileExternal}
+          onOpenFileReferenceExternal={openFileReferenceExternal}
+          onOpenUrl={openRailUrl}
+        />
       </main>
 
       {activeSettingsPanel && (
@@ -1092,4 +1409,32 @@ export function HiCodexApp() {
       )}
     </div>
   );
+}
+
+function recordObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeWorkspaceRoot(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.replace(/[\\/]+$/, "") || trimmed;
+}
+
+function workspaceRootOptionsWithCurrent(
+  options: SidebarWorkspaceRootOption[],
+  roots: Array<string | null | undefined>,
+): SidebarWorkspaceRootOption[] {
+  const merged = [...options];
+  const seen = new Set(merged.map((option) => normalizeWorkspaceRoot(option.root)));
+  for (const rootValue of roots) {
+    const root = normalizeWorkspaceRoot(rootValue ?? "");
+    if (!root || seen.has(root) || root === "~") continue;
+    seen.add(root);
+    merged.unshift({ root, label: workspaceRootLabel(root) });
+  }
+  return merged;
+}
+
+function workspaceRootLabel(root: string): string {
+  return root.split(/[\\/]+/).filter(Boolean).pop() || root;
 }

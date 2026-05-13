@@ -6,10 +6,30 @@ import {
 import { useEffect, useId, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 
-export function CodeSnippet({ language, text }: { language: string; text: string }) {
-  const [wrapped, setWrapped] = useState(false);
+export type CodeSnippetWrapMode = "always" | "off" | "user-controlled";
+
+export function CodeSnippet({
+  language,
+  text,
+  wrapMode = "user-controlled",
+  showActionBar = true,
+  wrapperClassName = "",
+  codeContainerClassName = "",
+  codeClassName = "",
+}: {
+  language: string;
+  text: string;
+  wrapMode?: CodeSnippetWrapMode;
+  showActionBar?: boolean;
+  wrapperClassName?: string;
+  codeContainerClassName?: string;
+  codeClassName?: string;
+}) {
+  const [userWrapped, setUserWrapped] = useState(false);
   const [copied, setCopied] = useState(false);
   const normalizedLanguage = language.trim().toLowerCase();
+  const wrapped = wrapMode === "always" || (wrapMode === "user-controlled" && userWrapped);
+  const showWrapToggle = wrapMode === "user-controlled";
   const title = codeBlockTitle(normalizedLanguage);
   const isDiff = normalizedLanguage === "diff";
   const shouldPreviewSvg = shouldRenderSvgCodePreview(normalizedLanguage, text);
@@ -32,24 +52,28 @@ export function CodeSnippet({ language, text }: { language: string; text: string
 
   return (
     <>
-      <figure className={`hc-code-snippet ${wrapped ? "is-wrapped" : ""} ${isDiff ? "is-diff" : ""} ${shouldPreviewSvg ? "is-svg-preview" : ""} ${isMermaid ? "is-mermaid-preview" : ""}`}>
-        <figcaption>
-          <span>{title}</span>
-          <div className="hc-code-actions">
-            <button
-              aria-label={wrapped ? "Disable word wrap" : "Enable word wrap"}
-              aria-pressed={wrapped}
-              title={wrapped ? "Disable word wrap" : "Enable word wrap"}
-              type="button"
-              onClick={() => setWrapped((value) => !value)}
-            >
-              <WrapText size={13} />
-            </button>
-            <button aria-label="Copy code" title="Copy code" type="button" onClick={handleCopy}>
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-            </button>
-          </div>
-        </figcaption>
+      <figure className={`hc-code-snippet ${wrapped ? "is-wrapped" : ""} ${isDiff ? "is-diff" : ""} ${shouldPreviewSvg ? "is-svg-preview" : ""} ${isMermaid ? "is-mermaid-preview" : ""} ${wrapperClassName}`}>
+        {showActionBar && (
+          <figcaption>
+            <span>{title}</span>
+            <div className="hc-code-actions">
+              {showWrapToggle && (
+                <button
+                  aria-label={wrapped ? "Disable word wrap" : "Enable word wrap"}
+                  aria-pressed={wrapped}
+                  title={wrapped ? "Disable word wrap" : "Enable word wrap"}
+                  type="button"
+                  onClick={() => setUserWrapped((value) => !value)}
+                >
+                  <WrapText size={13} />
+                </button>
+              )}
+              <button aria-label="Copy code" title="Copy code" type="button" onClick={handleCopy}>
+                {copied ? <Check size={13} /> : <Copy size={13} />}
+              </button>
+            </div>
+          </figcaption>
+        )}
         {isMermaid ? (
           <div className="hc-code-diagram-body">
             <MermaidDiagram
@@ -64,7 +88,7 @@ export function CodeSnippet({ language, text }: { language: string; text: string
             />
           </div>
         ) : (
-          <pre>
+          <pre className={codeContainerClassName}>
             {shouldPreviewSvg ? (
               <img
                 alt={`${title} preview`}
@@ -72,7 +96,7 @@ export function CodeSnippet({ language, text }: { language: string; text: string
                 src={svgCodePreviewDataUrl(text)}
               />
             ) : (
-              <code data-language={normalizedLanguage || undefined}>{renderCodeText(text, isDiff, normalizedLanguage)}</code>
+              <code className={codeClassName} data-language={normalizedLanguage || undefined}>{renderCodeText(text, isDiff, normalizedLanguage)}</code>
             )}
           </pre>
         )}
@@ -174,6 +198,13 @@ function mermaidThemeVariables(): Record<string, string> {
 
 export function codeBlockTitle(language: string): string {
   return language.trim() || "text";
+}
+
+export function desktopMarkdownCodeBlockWrapMode(language: string): CodeSnippetWrapMode {
+  const normalizedLanguage = language.trim().toLowerCase();
+  return !normalizedLanguage || normalizedLanguage === "text" || normalizedLanguage === "md" || normalizedLanguage === "markdown"
+    ? "user-controlled"
+    : "off";
 }
 
 export function shouldRenderSvgCodePreview(language: string, text: string): boolean {

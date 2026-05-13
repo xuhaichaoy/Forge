@@ -1,5 +1,13 @@
 @import "tailwindcss/theme";
+@source "../../../packages/ui/src";
 @import "tailwindcss/utilities";
+
+:root {
+  --text-sm: 12px;
+  --text-sm--line-height: calc(1.25 / .875);
+  --text-base: 14px;
+  --text-base--line-height: calc(1.5 / 1);
+}
 
 html,
 body,

@@ -42,11 +42,27 @@ export type ConversationRenderUnit =
 export type EventTone = "info" | "warning" | "error";
 export type EventFormat = "text" | "markdown" | "diff";
 
+export interface ToolActivityLabelParts {
+  action: string;
+  detail: string;
+}
+
 export interface ToolActivitySummary {
   groupType: ToolActivityGroupType;
   icon: ToolActivityIcon;
   label: string;
+  /**
+   * Codex Desktop `<action>Ran</action> <detail>{command}</detail>` i18n template
+   * (local-conversation-thread-*.js `wg.commandRanWithDetail` :3766; renderers `O_`/`D_` :4207-4211
+   * — `action` muted via `text-token-foreground/40`, `detail` normal). Present only for single-item
+   * collapsed-tool-activity exec rows where we want two-tone rendering.
+   */
+  labelParts?: ToolActivityLabelParts;
   activeDetail: string | null;
+  activeDiffStats?: {
+    linesAdded: number;
+    linesRemoved: number;
+  } | null;
   defaultExpanded?: boolean;
   details: string[];
   inProgress: boolean;
@@ -61,8 +77,13 @@ export interface ToolActivitySummary {
     lists: number;
     fileChanges: number;
     createdFiles: number;
+    runningCreatedFiles?: number;
+    stoppedCreatedFiles?: number;
+    runningCreatedLineCount?: number;
     editedFiles: number;
+    runningEditedFiles?: number;
     deletedFiles: number;
+    runningDeletedFiles?: number;
     mcpCalls: number;
     dynamicCalls: number;
     webSearches: number;
@@ -161,6 +182,7 @@ export interface ConversationProjection {
 export interface ConversationProjectionOptions {
   isThreadRunning?: boolean;
   conversationDetailLevel?: ConversationDetailLevel;
+  mcpServerStatuses?: unknown;
   progressPlan?: {
     id?: string | null;
     plan: unknown[];

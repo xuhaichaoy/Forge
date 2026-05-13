@@ -9,8 +9,16 @@ import {
   shouldRenderMessageActionRow,
 } from "../src/components/message-action-row";
 import {
+  DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN,
+  MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE,
+  markdownFadeTextSegments,
+  markdownImagePreviewAdjacentIndexes,
+  markdownIndexedFadeSegmentCount,
+  markdownPromptLinkFromHref,
+  desktopMarkdownCodeBlockWrapMode,
   parseMarkdownInline,
   parseMarkdownBlocks,
+  parseMarkdownPromptLink,
   shouldRenderUserMessageActionStrip,
 } from "../src/components/message-unit";
 
@@ -23,9 +31,14 @@ export default function runMessageUnitTests(): void {
   formatsAssistantSpreadsheetResourceCards();
   formatsAssistantImageResourceCards();
   parsesInlineMarkdownImagesBeforeLinks();
+  parsesAssistantPromptLinksLikeDesktop();
   parsesStandaloneImagesWithSpacesInTargets();
   resolvesAssistantImageSourcesWithLooseFilenameSpacing();
   hidesResourceCardsForWorkedCommentaryRows();
+  indexesStreamingMarkdownFadeSegmentsLikeDesktop();
+  limitsMarkdownCodeWrapToggleToDesktopTextLanguages();
+  usesDesktopLazyCodeBlockViewportMargin();
+  computesDesktopImagePreviewNavigation();
 }
 
 function hidesFinalOutputChromeForCommentaryRows(): void {
@@ -122,6 +135,65 @@ function formatsAssistantImageResourceCards(): void {
   );
 }
 
+function limitsMarkdownCodeWrapToggleToDesktopTextLanguages(): void {
+  assertEqual(
+    desktopMarkdownCodeBlockWrapMode(""),
+    "user-controlled",
+    "markdown code blocks without a language should keep Desktop's user-controlled wrap toggle",
+  );
+  assertEqual(
+    desktopMarkdownCodeBlockWrapMode("markdown"),
+    "user-controlled",
+    "markdown code blocks should keep Desktop's user-controlled wrap toggle",
+  );
+  assertEqual(
+    desktopMarkdownCodeBlockWrapMode("typescript"),
+    "off",
+    "typed code blocks should not expose Desktop's wrap toggle",
+  );
+  assertEqual(
+    desktopMarkdownCodeBlockWrapMode("mermaid"),
+    "off",
+    "mermaid blocks should not expose Desktop's wrap toggle",
+  );
+}
+
+function usesDesktopLazyCodeBlockViewportMargin(): void {
+  assertEqual(
+    DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN,
+    "600px 0px",
+    "markdown code blocks should lazy-render with Desktop's 600px vertical root margin",
+  );
+}
+
+function computesDesktopImagePreviewNavigation(): void {
+  assertEqual(
+    MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE,
+    "data-markdown-image-preview-trigger",
+    "markdown image preview triggers should expose Desktop's root query attribute",
+  );
+  assertDeepEqual(
+    markdownImagePreviewAdjacentIndexes({
+      index: 1,
+      items: [
+        { alt: "first", src: "first.png", title: null },
+        { alt: "second", src: "second.png", title: null },
+        { alt: "third", src: "third.png", title: null },
+      ],
+    }),
+    { previous: 0, next: 2 },
+    "markdown image preview should compute previous and next images from Desktop-style indexed preview state",
+  );
+  assertDeepEqual(
+    markdownImagePreviewAdjacentIndexes({
+      index: 0,
+      items: [{ alt: "only", src: "only.png", title: null }],
+    }),
+    { previous: null, next: null },
+    "markdown image preview should hide navigation at the collection edges",
+  );
+}
+
 function parsesInlineMarkdownImagesBeforeLinks(): void {
   assertDeepEqual(
     parseMarkdownInline("![UA-image2.png](UA-image2.png)").map((segment) => segment.kind === "image"
@@ -129,6 +201,46 @@ function parsesInlineMarkdownImagesBeforeLinks(): void {
       : { kind: segment.kind }),
     [{ kind: "image", alt: "UA-image2.png", src: "UA-image2.png" }],
     "inline markdown images in list items should not degrade into a literal bang plus link",
+  );
+}
+
+function parsesAssistantPromptLinksLikeDesktop(): void {
+  assertDeepEqual(
+    parseMarkdownInline("Use $review and $[deep research].").map(promptSegmentSummary),
+    [
+      { kind: "text", text: "Use " },
+      { kind: "promptLink", href: "skill://review", label: "$review", promptKind: "skill" },
+      { kind: "text", text: " and " },
+      { kind: "promptLink", href: "skill://deep%20research", label: "$deep research", promptKind: "skill" },
+      { kind: "text", text: "." },
+    ],
+    "assistant markdown should parse Desktop-style $skill prompt links",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Open [$figma](app://figma) with [@Browser](plugin://browser-use).").map(promptSegmentSummary),
+    [
+      { kind: "text", text: "Open " },
+      { kind: "promptLink", href: "app://figma", label: "$figma", promptKind: "app" },
+      { kind: "text", text: " with " },
+      { kind: "promptLink", href: "plugin://browser-use", label: "@Browser", promptKind: "plugin" },
+      { kind: "text", text: "." },
+    ],
+    "assistant markdown app/plugin prompt links should not fall through to ordinary links",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("[Docs](https://example.com)").map(promptSegmentSummary),
+    [{ kind: "link", href: "https://example.com", text: "Docs" }],
+    "ordinary markdown links should keep the existing link path",
+  );
+  assertDeepEqual(
+    parseMarkdownPromptLink("@browser-use/screenshot") && promptSegmentSummary(parseMarkdownPromptLink("@browser-use/screenshot")!),
+    { kind: "promptLink", href: "plugin://browser-use/screenshot", label: "@browser-use/screenshot", promptKind: "plugin" },
+    "assistant markdown should parse Desktop-style @plugin/path prompt mentions",
+  );
+  assertDeepEqual(
+    markdownPromptLinkFromHref("", "skill://code-review"),
+    { kind: "promptLink", href: "skill://code-review", label: "$code-review", promptKind: "skill" },
+    "prompt link fallback labels should be derived from Desktop prompt hrefs",
   );
 }
 
@@ -162,6 +274,24 @@ function resolvesAssistantImageSourcesWithLooseFilenameSpacing(): void {
   );
 }
 
+function promptSegmentSummary(segment: ReturnType<typeof parseMarkdownInline>[number]) {
+  if (segment.kind === "promptLink") {
+    return {
+      kind: segment.kind,
+      href: segment.href,
+      label: segment.label,
+      promptKind: segment.promptKind,
+    };
+  }
+  if (segment.kind === "link") {
+    return { kind: segment.kind, href: segment.href, text: segment.text };
+  }
+  if (segment.kind === "text") {
+    return { kind: segment.kind, text: segment.text };
+  }
+  return { kind: segment.kind };
+}
+
 function hidesResourceCardsForWorkedCommentaryRows(): void {
   const artifacts = [
     {
@@ -191,6 +321,24 @@ function hidesResourceCardsForWorkedCommentaryRows(): void {
     }).map((entry) => entry.meta),
     ["docs/DEVELOPMENT.md"],
     "final assistant rows should still show file resource cards",
+  );
+}
+
+function indexesStreamingMarkdownFadeSegmentsLikeDesktop(): void {
+  assertDeepEqual(
+    markdownFadeTextSegments("Hello, world", null),
+    ["Hello, ", "world"],
+    "Desktop indexed fade fallback should split text into word-like chunks and preserve punctuation/spacing",
+  );
+  assertEqual(
+    markdownFadeTextSegments("   ", null).join(""),
+    "   ",
+    "Desktop indexed fade should preserve whitespace-only text segments",
+  );
+  assertEqual(
+    markdownIndexedFadeSegmentCount(parseMarkdownBlocks("Hello **bold text**\n\n- item one\n- item two"), null),
+    7,
+    "Desktop indexed fade should count markdown text tokens across paragraphs, formatting, and list items",
   );
 }
 

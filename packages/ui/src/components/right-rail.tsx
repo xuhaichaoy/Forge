@@ -3,11 +3,13 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
+  FileArchive,
+  FileCode,
+  FileSpreadsheet,
   FileText,
   GitBranch,
   Globe,
   ImageIcon,
-  ListChecks,
   LoaderCircle,
   Network,
   Square,
@@ -15,12 +17,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { ArtifactPreviewPanel } from "./artifact-preview-panel";
-import { FileReferencePanel } from "./file-reference-panel";
 import { convertLocalFileSrc } from "../lib/tauri-host";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import type { BranchDetailsViewModel } from "../state/branch-details";
-import type { FileReferenceSelection } from "../state/file-references";
 import type { OpenThreadHandler } from "./open-thread";
 import type { RailEntry, RailEntryAction, RailEntryReference } from "../state/render-groups";
 import {
@@ -29,18 +28,28 @@ import {
   type RightRailSection as RightRailSectionViewModel,
 } from "../state/right-rail";
 
+/*
+ * Codex Desktop's right-rail summary panel (`Mf` at
+ * `local-conversation-thread.formatted.js:2058`) is a **fixed-size floating
+ * card** — `rounded-3xl border border-token-border-default py-3 shadow-md
+ * backdrop-blur-sm` (line 2099). It is NOT user-resizable; clicking an
+ * Artifact / file entry does **not** render an inline preview here. Instead
+ * it calls `openWorkspaceFile({..., openInSidePanel: true, scope: v2})`
+ * (line 2066), which opens the AppShell **RightPanel** (`vn` at
+ * `app-shell.formatted.js:518`) and routes it to `/file-preview` (a
+ * lazy-loaded `FilePreviewPage` registered at
+ * `app-main.formatted.js:10019`). That big right panel is the one with the
+ * `Le` resize handle, default 600 px, min 320 px, full-width toggle.
+ *
+ * Earlier versions of this file conflated the two by adding resize/fullwidth
+ * to the summary rail and inlining `ArtifactPreviewPanel` here. Reverted: the
+ * rail is purely sections, and file preview lives in its own
+ * `<FilePreviewPanel>` aside.
+ */
 export interface RightRailProps {
   sections: RightRailSectionViewModel[];
   displayMode?: RightRailDisplayMode;
-  artifactPreview?: RailEntry | null;
-  fileReference?: FileReferenceSelection | null;
-  artifactWorkspaceRoot?: string | null;
-  artifactCwd?: string | null;
-  onCloseArtifactPreview?: () => void;
-  onCloseFileReference?: () => void;
   onOpenArtifactPreview?: (entry: RailEntry) => void;
-  onOpenArtifactFileExternal?: (reference: RailEntryReference) => void;
-  onOpenFileReferenceExternal?: (reference: FileReferenceSelection) => void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
@@ -51,7 +60,6 @@ export interface RightRailProps {
 
 export interface RailSectionProps {
   count: number;
-  icon: ReactNode;
   id: RightRailSectionViewModel["id"];
   title: string;
   children: ReactNode;
@@ -66,15 +74,7 @@ export interface RailListProps {
 export function RightRail({
   sections,
   displayMode = "overlay",
-  artifactPreview = null,
-  fileReference = null,
-  artifactWorkspaceRoot,
-  artifactCwd,
-  onCloseArtifactPreview,
-  onCloseFileReference,
   onOpenArtifactPreview,
-  onOpenArtifactFileExternal,
-  onOpenFileReferenceExternal,
   onOpenFileReference,
   onOpenUrl,
   onOpenDiff,
@@ -97,6 +97,16 @@ export function RightRail({
       onOpenThreadId,
     });
   };
+  /*
+   * Click flow for the Artifact / file cards:
+   *   - If the entry is previewable (`shouldOpenArtifactPreview`), parent
+   *     opens `<FilePreviewPanel>` via `onOpenArtifactPreview`. Matches the
+   *     Codex `Or({..., openInSidePanel: true, ...})` route at
+   *     `local-conversation-thread.formatted.js:2066`.
+   *   - Otherwise fall back to the generic "open file in editor" / "open
+   *     URL" / "open diff" handlers (Codex `open-workspace-file`'s
+   *     non-side-panel branch at `open-workspace-file.formatted.js:84-92`).
+   */
   const canOpenArtifactEntry = (entry: RailEntry) =>
     canOpenEntry(entry) || Boolean(onOpenArtifactPreview && shouldOpenArtifactPreview(entry));
   const openArtifactEntry = (entry: RailEntry) => {
@@ -109,24 +119,6 @@ export function RightRail({
 
   return (
     <aside className="hc-right-rail" data-display-mode={displayMode}>
-      {artifactPreview && onCloseArtifactPreview && (
-        <ArtifactPreviewPanel
-          entry={artifactPreview}
-          workspaceRoot={artifactWorkspaceRoot}
-          cwd={artifactCwd}
-          onClose={onCloseArtifactPreview}
-          onOpenFileReference={onOpenFileReference}
-          onOpenFileExternal={onOpenArtifactFileExternal}
-          onOpenUrl={onOpenUrl}
-        />
-      )}
-      {fileReference && onCloseFileReference && onOpenFileReferenceExternal && (
-        <FileReferencePanel
-          reference={fileReference}
-          onClose={onCloseFileReference}
-          onOpenExternal={onOpenFileReferenceExternal}
-        />
-      )}
       {sections.map((section) => (
         <RailSection
           key={section.id}
@@ -143,7 +135,6 @@ export function RightRail({
               <Square size={12} />
             </button>
           ) : null}
-          icon={sectionIcon(section.id)}
           id={section.id}
           title={section.title}
         >
@@ -167,22 +158,12 @@ export function RightRail({
   );
 }
 
-function sectionIcon(id: RightRailSectionViewModel["id"]): ReactNode {
-  switch (id) {
-    case "progress":
-      return <ListChecks size={15} />;
-    case "branchDetails":
-      return <GitBranch size={15} />;
-    case "artifacts":
-      return <FileText size={15} />;
-    case "backgroundAgents":
-      return <Bot size={15} />;
-    case "backgroundTerminals":
-      return <Terminal size={15} />;
-    case "sources":
-      return <Network size={15} />;
-  }
-}
+/*
+ * Codex Desktop's rail sections are *text-only* — every `Kd` call site at
+ * codex-local-conversation-thread.pretty.js :1806 / :2103 / :2107 / :2109 / :2111
+ * / :2113 / :2115 passes a bare `<X i18n .../>` to the `title` prop. Section
+ * header icons were a HiCodex-original embellishment; removed for parity.
+ */
 
 function BranchDetailsCard({
   details,
@@ -229,7 +210,7 @@ function BranchDetailsCard({
   );
 }
 
-export function RailSection({ count, icon, id, title, children, headerAction = null }: RailSectionProps) {
+export function RailSection({ count, id, title, children, headerAction = null }: RailSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const contentId = `hc-rail-section-content-${id}`;
   return (
@@ -243,7 +224,7 @@ export function RailSection({ count, icon, id, title, children, headerAction = n
           onClick={() => setExpanded((value) => !value)}
         >
           <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
-          <span className="hc-rail-section-title">{icon}{title}</span>
+          <span className="hc-rail-section-title">{title}</span>
           {!expanded && count > 0 && <span className="hc-rail-section-count">{count}</span>}
         </button>
         {headerAction}
@@ -385,8 +366,44 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
   if (entry.action?.kind === "url") return <Globe size={14} />;
   if (entry.reference && isImageArtifactPath(entry.reference.path)) return <ImageIcon size={14} />;
+  /*
+   * Codex Desktop picks the per-file icon via `ys(path)` at
+   * codex-local-conversation-thread.pretty.js :1584-1585 — a native-electron icon
+   * component factory (`use-native-apps.electron-CXkIGHcX.js`) that produces a
+   * colored file-type icon based on extension. HiCodex has no native-app icon
+   * assets, so we approximate the heuristic with lucide monochrome icons
+   * differentiated by extension class.
+   */
+  return fileExtensionIcon(entry.reference?.path);
+}
+
+function fileExtensionIcon(path: string | null | undefined): ReactNode {
+  if (!path) return <FileText size={14} />;
+  const ext = lowercasePathExtension(path);
+  if (SPREADSHEET_EXTENSIONS.has(ext)) return <FileSpreadsheet size={14} />;
+  if (ARCHIVE_EXTENSIONS.has(ext)) return <FileArchive size={14} />;
+  if (CODE_EXTENSIONS.has(ext)) return <FileCode size={14} />;
   return <FileText size={14} />;
 }
+
+function lowercasePathExtension(path: string): string {
+  const slash = path.lastIndexOf("/");
+  const filename = slash >= 0 ? path.slice(slash + 1) : path;
+  const dot = filename.lastIndexOf(".");
+  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : "";
+}
+
+const SPREADSHEET_EXTENSIONS: ReadonlySet<string> = new Set([
+  "xlsx", "xls", "xlsm", "xlsb", "csv", "tsv", "ods", "numbers",
+]);
+const ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
+  "zip", "tar", "gz", "tgz", "rar", "7z", "bz2", "xz",
+]);
+const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rb", "go", "rs",
+  "java", "kt", "swift", "c", "cpp", "h", "hpp", "cs", "php",
+  "sh", "bash", "zsh", "sql", "yaml", "yml", "toml", "json", "jsonl",
+]);
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
   return sectionId === "artifacts" || sectionId === "sources";

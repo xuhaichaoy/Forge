@@ -1,5 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { Check, ChevronRight, Copy as CopyIcon, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatUnknown, stringField } from "../lib/format";
+import {
+  mcpAppBridgeError,
+  serializeMcpAppBridgeError,
+} from "../state/mcp-app-host";
 import {
   assistantMessageText,
   commandOutputText,
@@ -8,6 +13,7 @@ import {
   isItemInProgress,
   itemText,
   itemType,
+  mcpAppResourceUri,
   mcpServerName,
   mcpSourceTitle,
   mcpToolName,
@@ -17,6 +23,70 @@ import type { OpenThreadHandler } from "./open-thread";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
+
+export interface McpAppFrameViewModel {
+  csp: McpAppCspViewModel;
+  html: string;
+  heightPx: number;
+  mimeType: string;
+  prefersBorder: boolean;
+  widgetDomain: string | null;
+}
+
+export interface McpAppCspViewModel {
+  baseUriDomains: string[];
+  connectDomains: string[];
+  frameDomains: string[];
+  includeDefaultDomains: boolean;
+  isTrusted: boolean;
+  resourceDomains: string[];
+}
+
+export const MCP_APP_HTML_MAX_BYTES = 10_000_000;
+const MCP_APP_FRAME_MIN_HEIGHT_PX = 200;
+const MCP_APP_FRAME_DEFAULT_HEIGHT_PX = 240;
+const MCP_APP_FRAME_MAX_HEIGHT_PX = 720;
+const MCP_APP_BRIDGE_WIDGET_ID = "hicodex-inline-widget";
+const MCP_APP_BRIDGE_SOURCE = "hicodex:mcp-app";
+const MCP_APP_BRIDGE_HOST_SOURCE = "hicodex:mcp-app-host";
+const MCP_APP_SANDBOX_LOAD_ERROR = "The MCP app sandbox failed to load.";
+
+export type McpAppDisplayMode = "inline" | "fullscreen";
+
+export interface McpResourceReadRequest {
+  threadId?: string | null;
+  server: string;
+  uri: string;
+}
+
+export type ReadMcpResourceHandler = (request: McpResourceReadRequest) => Promise<unknown>;
+
+export type McpAppHostMethod =
+  | "callMcp"
+  | "callTool"
+  | "notifyBackgroundColor"
+  | "notifyEnvironmentError"
+  | "notifyIntrinsicHeight"
+  | "notifyIntrinsicWidth"
+  | "notifyNavigation"
+  | "notifySecurityPolicyViolation"
+  | "openExternal"
+  | "requestDisplayMode"
+  | "sendFollowUpMessage"
+  | "sendInstrument"
+  | "updateWidgetState";
+
+export interface McpAppHostCallRequest {
+  args: unknown[];
+  method: McpAppHostMethod;
+  resourceUri: string;
+  server: string;
+  threadId: string | null;
+  tool: string;
+  toolCallId: string;
+}
+
+export type McpAppHostCallHandler = (request: McpAppHostCallRequest) => Promise<unknown>;
 
 export type ToolActivityDetailViewModel =
   | {
@@ -48,6 +118,24 @@ export type ToolActivityDetailViewModel =
       running: boolean;
       name: string;
       toolKind: "MCP" | "Tool";
+      argumentsText: string;
+      resultText: string;
+      errorText: string;
+      status: string;
+    }
+  | {
+      kind: "mcpApp";
+      id: string;
+      running: boolean;
+      name: string;
+      server: string;
+      tool: string;
+      resourceUri: string;
+      inlineFrame: McpAppFrameViewModel | null;
+      toolArguments: unknown;
+      toolOutput: unknown;
+      toolResult: unknown;
+      toolResponseMetadata: unknown;
       argumentsText: string;
       resultText: string;
       errorText: string;
@@ -137,11 +225,19 @@ export interface PatchChangeViewModel {
 }
 
 export function ToolActivityDetail({
+  forceExecExpanded = false,
   item,
+  onMcpAppHostCall,
+  onReadMcpResource,
   onOpenThreadId,
+  threadId = null,
 }: {
+  forceExecExpanded?: boolean;
   item: ThreadItem;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
   onOpenThreadId?: OpenThreadHandler;
+  threadId?: string | null;
 }) {
   const detail = toolActivityDetailViewModel(item);
   if (detail.kind === "webSearch") {
@@ -214,21 +310,7 @@ export function ToolActivityDetail({
     );
   }
   if (detail.kind === "exec") {
-    return (
-      <section className={`hc-exec-shell ${detail.running ? "is-running" : ""}`}>
-        <div className="hc-exec-shell-command">
-          <span>$</span>
-          <code>{detail.command}</code>
-        </div>
-        {detail.cwd && <div className="hc-exec-shell-cwd">{detail.cwd}</div>}
-        {detail.output && (
-          <pre className="hc-exec-shell-output">
-            <code>{detail.output}</code>
-          </pre>
-        )}
-        {detail.footer && <div className="hc-exec-shell-footer">{detail.footer}</div>}
-      </section>
-    );
+    return <ExecShellDetail detail={detail} forceExpanded={forceExecExpanded} />;
   }
   if (detail.kind === "patch") {
     return (
@@ -260,6 +342,16 @@ export function ToolActivityDetail({
       </section>
     );
   }
+  if (detail.kind === "mcpApp") {
+    return (
+      <McpAppToolDetail
+        detail={detail}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
+      />
+    );
+  }
   if (detail.kind === "pendingTool") {
     return (
       <div
@@ -279,6 +371,990 @@ export function ToolActivityDetail({
       <CodeBlock text={detail.text || "..."} />
     </section>
   );
+}
+
+function McpAppToolDetail({
+  detail,
+  onMcpAppHostCall,
+  onReadMcpResource,
+  threadId,
+}: {
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
+  threadId: string | null;
+}) {
+  const inlineFrame = detail.inlineFrame;
+  const inlineFrameKey = inlineFrame
+    ? `${inlineFrame.mimeType}:${inlineFrame.heightPx}:${inlineFrame.prefersBorder ? "1" : "0"}:${inlineFrame.html}`
+    : "";
+  const [resourceState, setResourceState] = useState<{
+    status: "idle" | "loading" | "ready" | "error";
+    frame: McpAppFrameViewModel | null;
+    fallbackText: string;
+    errorText: string;
+  }>(() => ({
+    status: inlineFrame ? "ready" : "idle",
+    frame: inlineFrame,
+    fallbackText: "",
+    errorText: "",
+  }));
+
+  useEffect(() => {
+    if (inlineFrame) {
+      setResourceState({
+        status: "ready",
+        frame: inlineFrame,
+        fallbackText: "",
+        errorText: "",
+      });
+      return;
+    }
+    if (!onReadMcpResource || !detail.resourceUri) {
+      setResourceState({
+        status: "idle",
+        frame: null,
+        fallbackText: "",
+        errorText: "",
+      });
+      return;
+    }
+
+    let cancelled = false;
+    setResourceState({
+      status: "loading",
+      frame: null,
+      fallbackText: "",
+      errorText: "",
+    });
+    void onReadMcpResource({
+      threadId,
+      server: detail.server,
+      uri: detail.resourceUri,
+    }).then(
+      (value) => {
+        if (cancelled) return;
+        setResourceState({
+          status: "ready",
+          frame: mcpAppFrameFromResourceReadResult(value),
+          fallbackText: formatUnknown(value),
+          errorText: "",
+        });
+      },
+      (error) => {
+        if (cancelled) return;
+        setResourceState({
+          status: "error",
+          frame: null,
+          fallbackText: "",
+          errorText: error instanceof Error ? error.message : formatUnknown(error),
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id, detail.resourceUri, detail.server, inlineFrameKey, onReadMcpResource, threadId]);
+
+  const frame = resourceState.frame;
+  const frameTooLarge = frame ? mcpAppHtmlTooLarge(frame.html) : false;
+  const fallbackText = detail.errorText || detail.resultText || resourceState.fallbackText;
+
+  return (
+    <section className={`hc-tool-detail-stack mcp-app ${detail.running ? "is-running" : ""}`}>
+      <div className="hc-mcp-app-header">
+        <span className="hc-tool-detail-source">MCP app</span>
+        <span className="hc-tool-detail-title" title={detail.name}>{detail.name}</span>
+        <small>{detail.status}</small>
+      </div>
+      <div className="hc-mcp-app-uri" title={detail.resourceUri}>{detail.resourceUri}</div>
+      {frame && !frameTooLarge ? (
+        <McpAppSandboxFrame
+          detail={detail}
+          frame={frame}
+          onMcpAppHostCall={onMcpAppHostCall}
+          threadId={threadId}
+        />
+      ) : frameTooLarge ? (
+        <div className="hc-tool-detail-row error">Failed to load MCP app: HTML exceeds the maximum supported size.</div>
+      ) : resourceState.status === "loading" ? (
+        <div
+          aria-label="Loading MCP app"
+          className="hc-mcp-app-loading"
+          data-mcp-app-loading="true"
+          role="status"
+        />
+      ) : resourceState.status === "error" ? (
+        <div className="hc-tool-detail-row error">Failed to load MCP app: {resourceState.errorText}</div>
+      ) : (
+        <div className="hc-tool-detail-row">MCP app returned no HTML content</div>
+      )}
+      {detail.argumentsText && <LabeledCode label="Parameters" text={detail.argumentsText} />}
+      {!frame && fallbackText && <LabeledCode label={detail.errorText ? "Error" : "Result"} text={fallbackText} />}
+    </section>
+  );
+}
+
+function McpAppSandboxFrame({
+  detail,
+  frame,
+  onMcpAppHostCall,
+  threadId,
+}: {
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
+  frame: McpAppFrameViewModel;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  threadId: string | null;
+}) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const displayModeRef = useRef<McpAppDisplayMode>("inline");
+  const hostPortRef = useRef<MessagePort | null>(null);
+  const lastWidgetDataKeyRef = useRef("");
+  const lastWidgetViewKeyRef = useRef("");
+  const widgetStateRef = useRef<unknown>(null);
+  const [backgroundColor, setBackgroundColor] = useState<string | null>(null);
+  const [displayMode, setDisplayMode] = useState<McpAppDisplayMode>("inline");
+  const [frameLoadNonce, setFrameLoadNonce] = useState(0);
+  const [heightPx, setHeightPx] = useState(frame.heightPx);
+  const [sandboxErrorText, setSandboxErrorText] = useState<string | null>(null);
+  const srcDoc = useMemo(() => mcpAppSandboxSrcDoc(frame, detail), [detail, frame]);
+  const widgetDataKey = useMemo(() => mcpAppWidgetDataKey(detail), [detail]);
+  const widgetViewKey = useMemo(() => mcpAppWidgetViewKey(detail, displayMode), [detail, displayMode]);
+  const cspMetaContent = mcpAppCspMetaContent(frame.csp);
+
+  useEffect(() => {
+    setBackgroundColor(null);
+    setDisplayMode("inline");
+    displayModeRef.current = "inline";
+    setHeightPx(frame.heightPx);
+    setSandboxErrorText(null);
+    lastWidgetDataKeyRef.current = "";
+    lastWidgetViewKeyRef.current = "";
+    widgetStateRef.current = null;
+  }, [detail.id, frame.heightPx, srcDoc]);
+
+  useEffect(() => {
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow || typeof MessageChannel === "undefined") return;
+    const channel = new MessageChannel();
+
+    channel.port1.onmessage = (event) => {
+      const request = mcpAppBridgeRequestFromMessage(event.data);
+      if (!request) return;
+      void handleMcpAppBridgeRequest({
+        args: request.args,
+        detail,
+        id: request.id,
+        method: request.method,
+        onMcpAppHostCall,
+        port: channel.port1,
+        resourceUri: detail.resourceUri,
+        setDisplayMode,
+        setBackgroundColor,
+        setHeightPx,
+        setSandboxErrorText,
+        displayModeRef,
+        threadId,
+        widgetStateRef,
+      });
+    };
+    channel.port1.start();
+    hostPortRef.current = channel.port1;
+    frameWindow.postMessage({
+      source: MCP_APP_BRIDGE_HOST_SOURCE,
+      type: "init",
+    }, "*", [channel.port2]);
+    postMcpAppWidgetDataToPort({
+      detail,
+      lastWidgetDataKeyRef,
+      port: channel.port1,
+      widgetState: widgetStateRef.current,
+    });
+    postMcpAppWidgetViewToPort({
+      detail,
+      displayMode: displayModeRef.current,
+      lastWidgetViewKeyRef,
+      port: channel.port1,
+    });
+    return () => {
+      if (hostPortRef.current === channel.port1) hostPortRef.current = null;
+      channel.port1.onmessage = null;
+      channel.port1.close();
+    };
+  }, [
+    detail,
+    frameLoadNonce,
+    onMcpAppHostCall,
+    threadId,
+  ]);
+
+  useEffect(() => {
+    displayModeRef.current = displayMode;
+  }, [displayMode]);
+
+  useEffect(() => {
+    const port = hostPortRef.current;
+    if (!port) return;
+    postMcpAppWidgetDataToPort({
+      detail,
+      lastWidgetDataKeyRef,
+      port,
+      widgetState: widgetStateRef.current,
+    });
+  }, [detail, frameLoadNonce, widgetDataKey]);
+
+  useEffect(() => {
+    const port = hostPortRef.current;
+    if (!port) return;
+    postMcpAppWidgetViewToPort({
+      detail,
+      displayMode,
+      lastWidgetViewKeyRef,
+      port,
+    });
+  }, [detail, displayMode, frameLoadNonce, widgetViewKey]);
+
+  if (sandboxErrorText) {
+    return <div className="hc-tool-detail-row error">Failed to load MCP app: {sandboxErrorText}</div>;
+  }
+
+  return (
+    <div
+      className={`hc-mcp-app-frame-shell ${displayMode === "fullscreen" ? "is-fullscreen" : ""}`}
+      data-mcp-app-display-mode={displayMode}
+    >
+      {displayMode === "fullscreen" && (
+        <button
+          aria-label="Exit fullscreen MCP app"
+          className="hc-mcp-app-fullscreen-exit"
+          title="Exit fullscreen"
+          type="button"
+          onClick={() => {
+            displayModeRef.current = "inline";
+            setDisplayMode("inline");
+          }}
+        >
+          <X aria-hidden size={16} />
+        </button>
+      )}
+      <iframe
+        className="hc-mcp-app-frame"
+        data-csp-base-uri-domains={frame.csp.baseUriDomains.length > 0 ? frame.csp.baseUriDomains.join(" ") : undefined}
+        data-csp-connect-domains={frame.csp.connectDomains.length > 0 ? frame.csp.connectDomains.join(" ") : undefined}
+        data-csp-enforced={cspMetaContent ? "best-effort" : undefined}
+        data-csp-frame-domains={frame.csp.frameDomains.length > 0 ? frame.csp.frameDomains.join(" ") : undefined}
+        data-csp-resource-domains={frame.csp.resourceDomains.length > 0 ? frame.csp.resourceDomains.join(" ") : undefined}
+        data-csp-trusted={frame.csp.isTrusted ? "true" : undefined}
+        data-display-mode={displayMode}
+        data-mcp-app-frame="true"
+        data-mcp-app-host-bridge="message-channel"
+        data-prefers-border={frame.prefersBorder ? "true" : undefined}
+        data-widget-domain={frame.widgetDomain ?? undefined}
+        ref={iframeRef}
+        referrerPolicy="no-referrer"
+        sandbox="allow-downloads allow-forms allow-popups allow-scripts"
+        srcDoc={srcDoc}
+        style={{ backgroundColor: backgroundColor ?? undefined, height: heightPx }}
+        title={`${detail.name} MCP app`}
+        onLoad={() => setFrameLoadNonce((current) => current + 1)}
+      />
+    </div>
+  );
+}
+
+interface McpAppBridgeRequest {
+  args: unknown[];
+  id: string;
+  method: McpAppHostMethod;
+}
+
+export interface McpAppWidgetDataUpdatePayload {
+  toolInput: unknown;
+  toolOutput: unknown;
+  toolResponseMetadata: unknown;
+  toolResult: Record<string, unknown> | null;
+  viewParams: unknown;
+  widgetId: string;
+  widgetState: Record<string, unknown> | null;
+}
+
+export interface McpAppWidgetViewPayload {
+  displayMode: McpAppDisplayMode;
+  isTombstone: boolean;
+  viewParams: unknown;
+  widgetId: string;
+}
+
+interface HandleMcpAppBridgeRequestOptions {
+  args: unknown[];
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
+  displayModeRef: { current: McpAppDisplayMode };
+  id: string;
+  method: McpAppHostMethod;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  port: MessagePort;
+  resourceUri: string;
+  setBackgroundColor: (backgroundColor: string | null) => void;
+  setDisplayMode: (displayMode: McpAppDisplayMode) => void;
+  setHeightPx: (heightPx: number) => void;
+  setSandboxErrorText: (errorText: string | null) => void;
+  threadId: string | null;
+  widgetStateRef: { current: unknown };
+}
+
+async function handleMcpAppBridgeRequest({
+  args,
+  detail,
+  displayModeRef,
+  id,
+  method,
+  onMcpAppHostCall,
+  port,
+  resourceUri,
+  setBackgroundColor,
+  setDisplayMode,
+  setHeightPx,
+  setSandboxErrorText,
+  threadId,
+  widgetStateRef,
+}: HandleMcpAppBridgeRequestOptions): Promise<void> {
+  try {
+    const result = await resolveMcpAppBridgeRequest({
+      args,
+      detail,
+      displayModeRef,
+      method,
+      onMcpAppHostCall,
+      resourceUri,
+      setBackgroundColor,
+      setDisplayMode,
+      setHeightPx,
+      setSandboxErrorText,
+      threadId,
+      widgetStateRef,
+    });
+    port.postMessage({
+      id,
+      result,
+      source: MCP_APP_BRIDGE_HOST_SOURCE,
+      status: "resolve",
+    });
+  } catch (error) {
+    port.postMessage({
+      error: serializeMcpAppBridgeError(error),
+      id,
+      source: MCP_APP_BRIDGE_HOST_SOURCE,
+      status: "reject",
+    });
+  }
+}
+
+async function resolveMcpAppBridgeRequest({
+  args,
+  detail,
+  displayModeRef,
+  method,
+  onMcpAppHostCall,
+  resourceUri,
+  setBackgroundColor,
+  setDisplayMode,
+  setHeightPx,
+  setSandboxErrorText,
+  threadId,
+  widgetStateRef,
+}: Omit<HandleMcpAppBridgeRequestOptions, "id" | "port">): Promise<unknown> {
+  switch (method) {
+    case "notifyIntrinsicHeight": {
+      const height = mcpAppIntrinsicHeightFromValue(args[0]);
+      if (height !== null) setHeightPx(height);
+      return {};
+    }
+    case "notifyBackgroundColor":
+      setBackgroundColor(mcpAppBackgroundColorFromValue(args[0]));
+      return {};
+    case "notifyEnvironmentError":
+      setSandboxErrorText(MCP_APP_SANDBOX_LOAD_ERROR);
+      return {};
+    case "notifyIntrinsicWidth":
+    case "notifyNavigation":
+    case "notifySecurityPolicyViolation":
+    case "sendInstrument":
+      return {};
+    case "requestDisplayMode": {
+      const mode = mcpAppDisplayModeFromValue(args[0], displayModeRef.current);
+      displayModeRef.current = mode;
+      setDisplayMode(mode);
+      return { mode };
+    }
+    case "updateWidgetState":
+      widgetStateRef.current = mcpAppWidgetStateFromValue(args.at(-1));
+      return {};
+    case "sendFollowUpMessage":
+      throw mcpAppBridgeError("MCP app follow-up messages are not supported yet.");
+    case "callMcp":
+    case "callTool":
+    case "openExternal":
+      if (!onMcpAppHostCall) throw mcpAppBridgeError("MCP app host bridge is unavailable.");
+      return onMcpAppHostCall({
+        args,
+        method,
+        resourceUri,
+        server: detail.server,
+        threadId,
+        tool: detail.tool,
+        toolCallId: detail.id,
+      });
+  }
+}
+
+function mcpAppBridgeRequestFromMessage(value: unknown): McpAppBridgeRequest | null {
+  const record = recordObject(value);
+  if (record.source !== MCP_APP_BRIDGE_SOURCE || record.type !== "request") return null;
+  const id = stringField(record, "id");
+  const method = mcpAppHostMethod(record.method);
+  if (!id || !method) return null;
+  return {
+    args: Array.isArray(record.args) ? record.args : [],
+    id,
+    method,
+  };
+}
+
+const MCP_APP_HOST_METHODS = new Set<McpAppHostMethod>([
+  "callMcp",
+  "callTool",
+  "notifyBackgroundColor",
+  "notifyEnvironmentError",
+  "notifyIntrinsicHeight",
+  "notifyIntrinsicWidth",
+  "notifyNavigation",
+  "notifySecurityPolicyViolation",
+  "openExternal",
+  "requestDisplayMode",
+  "sendFollowUpMessage",
+  "sendInstrument",
+  "updateWidgetState",
+]);
+
+function mcpAppHostMethod(value: unknown): McpAppHostMethod | null {
+  return typeof value === "string" && MCP_APP_HOST_METHODS.has(value as McpAppHostMethod)
+    ? value as McpAppHostMethod
+    : null;
+}
+
+function mcpAppIntrinsicHeightFromValue(value: unknown): number | null {
+  const direct = typeof value === "number" && Number.isFinite(value) ? value : null;
+  if (direct !== null) return clampMcpAppHeight(direct);
+  const record = recordObject(value);
+  const height = typeof record.height === "number" && Number.isFinite(record.height)
+    ? record.height
+    : typeof record.intrinsicHeight === "number" && Number.isFinite(record.intrinsicHeight)
+      ? record.intrinsicHeight
+      : null;
+  return height === null ? null : clampMcpAppHeight(height);
+}
+
+function clampMcpAppHeight(value: number): number {
+  return Math.max(MCP_APP_FRAME_MIN_HEIGHT_PX, Math.min(MCP_APP_FRAME_MAX_HEIGHT_PX, Math.round(value)));
+}
+
+export function mcpAppBackgroundColorFromValue(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+export function mcpAppWidgetStateFromValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function postMcpAppWidgetDataToPort({
+  detail,
+  lastWidgetDataKeyRef,
+  port,
+  widgetState,
+}: {
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
+  lastWidgetDataKeyRef: { current: string };
+  port: MessagePort;
+  widgetState: unknown;
+}): void {
+  const payload = mcpAppWidgetDataUpdatePayload(detail, widgetState);
+  const payloadKey = safeScriptJson(payload);
+  if (lastWidgetDataKeyRef.current === payloadKey) return;
+  lastWidgetDataKeyRef.current = payloadKey;
+  port.postMessage({
+    data: payload,
+    source: MCP_APP_BRIDGE_HOST_SOURCE,
+    type: "setWidgetData",
+  });
+
+  const toolInput = mcpAppToolInputNotificationPayload(payload.toolInput);
+  if (toolInput) {
+    port.postMessage({
+      data: toolInput,
+      source: MCP_APP_BRIDGE_HOST_SOURCE,
+      type: "notifyMcpAppsToolInput",
+    });
+  }
+
+  if (payload.toolResult) {
+    port.postMessage({
+      data: payload.toolResult,
+      source: MCP_APP_BRIDGE_HOST_SOURCE,
+      type: "notifyMcpAppsToolResult",
+    });
+  }
+}
+
+function postMcpAppWidgetViewToPort({
+  detail,
+  displayMode,
+  lastWidgetViewKeyRef,
+  port,
+}: {
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
+  displayMode: McpAppDisplayMode;
+  lastWidgetViewKeyRef: { current: string };
+  port: MessagePort;
+}): void {
+  const payload = mcpAppWidgetViewPayload(detail, displayMode);
+  const payloadKey = safeScriptJson(payload);
+  if (lastWidgetViewKeyRef.current === payloadKey) return;
+  lastWidgetViewKeyRef.current = payloadKey;
+  port.postMessage({
+    data: payload,
+    source: MCP_APP_BRIDGE_HOST_SOURCE,
+    type: "setWidgetView",
+  });
+  port.postMessage({
+    data: mcpAppHostContextPayload(displayMode),
+    source: MCP_APP_BRIDGE_HOST_SOURCE,
+    type: "notifyMcpAppsHostContext",
+  });
+}
+
+function mcpAppWidgetDataKey(
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+): string {
+  return safeScriptJson(mcpAppWidgetDataUpdatePayload(detail, null));
+}
+
+function mcpAppWidgetViewKey(
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+  displayMode: McpAppDisplayMode,
+): string {
+  return safeScriptJson(mcpAppWidgetViewPayload(detail, displayMode));
+}
+
+export function mcpAppWidgetDataUpdatePayload(
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+  widgetState: unknown,
+): McpAppWidgetDataUpdatePayload {
+  return {
+    toolInput: mcpAppToolInputFromArguments(detail.toolArguments),
+    toolOutput: detail.toolOutput ?? null,
+    toolResponseMetadata: detail.toolResponseMetadata ?? null,
+    toolResult: mcpAppToolResultForWidget(detail.toolResult, detail.toolResponseMetadata),
+    viewParams: detail.toolOutput ?? null,
+    widgetId: MCP_APP_BRIDGE_WIDGET_ID,
+    widgetState: mcpAppWidgetStateFromValue(widgetState),
+  };
+}
+
+function mcpAppToolInputNotificationPayload(value: unknown): { arguments: unknown } | null {
+  return value === null || value === undefined ? null : { arguments: value };
+}
+
+export function mcpAppWidgetViewPayload(
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+  displayMode: McpAppDisplayMode,
+): McpAppWidgetViewPayload {
+  return {
+    displayMode,
+    isTombstone: false,
+    viewParams: detail.toolOutput ?? null,
+    widgetId: MCP_APP_BRIDGE_WIDGET_ID,
+  };
+}
+
+function mcpAppHostContextPayload(displayMode: McpAppDisplayMode): Record<string, unknown> {
+  return { displayMode };
+}
+
+export function mcpAppDisplayModeFromValue(value: unknown, fallback: McpAppDisplayMode): McpAppDisplayMode {
+  if (value === "inline" || value === "fullscreen") return value;
+  const mode = recordObject(value).mode;
+  return mode === "inline" || mode === "fullscreen" ? mode : fallback;
+}
+
+export function mcpAppSandboxSrcDoc(
+  frame: McpAppFrameViewModel,
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+): string {
+  const injections = [
+    mcpAppCspMetaTag(frame.csp),
+    `<script>${mcpAppSandboxBootstrapScript(detail, frame)}</script>`,
+  ].filter(Boolean).join("");
+  if (!injections) return frame.html;
+  if (/<head\b[^>]*>/iu.test(frame.html)) {
+    return frame.html.replace(/<head\b[^>]*>/iu, (match) => `${match}${injections}`);
+  }
+  if (/<html\b[^>]*>/iu.test(frame.html)) {
+    return frame.html.replace(/<html\b[^>]*>/iu, (match) => `${match}<head>${injections}</head>`);
+  }
+  return `${injections}${frame.html}`;
+}
+
+function mcpAppSandboxBootstrapScript(
+  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+  frame: McpAppFrameViewModel,
+): string {
+  const payload = {
+    displayMode: "inline",
+    hostCapabilities: mcpAppHostCapabilities(frame.csp),
+    source: MCP_APP_BRIDGE_SOURCE,
+    hostSource: MCP_APP_BRIDGE_HOST_SOURCE,
+    toolInput: mcpAppToolInputFromArguments(detail.toolArguments),
+    toolOutput: detail.toolOutput ?? null,
+    toolResponseMetadata: detail.toolResponseMetadata ?? null,
+    viewParams: detail.toolOutput ?? null,
+    widgetId: MCP_APP_BRIDGE_WIDGET_ID,
+    widgetState: null,
+  };
+  return `
+(function () {
+  var initial = ${safeScriptJson(payload)};
+  var hostPort = null;
+  var queued = [];
+  var pending = new Map();
+  var nextId = 1;
+  function rejectPending(error) {
+    pending.forEach(function (entry) { entry.reject(error); });
+    pending.clear();
+  }
+  function startPort(port) {
+    hostPort = port;
+    hostPort.onmessage = function (event) {
+      var data = event.data || {};
+      if (data.source !== initial.hostSource) return;
+      if (data.type === "setWidgetData") {
+        applyWidgetData(data.data || {});
+        return;
+      }
+      if (data.type === "setWidgetView") {
+        applyWidgetView(data.data || {});
+        return;
+      }
+      if (data.type === "notifyMcpAppsHostContext") {
+        dispatchOpenaiEvent("openai:hostContext", data.data || {});
+        return;
+      }
+      if (data.type === "notifyMcpAppsToolInput") {
+        dispatchOpenaiEvent("openai:toolInput", data.data || {});
+        return;
+      }
+      if (data.type === "notifyMcpAppsToolResult") {
+        dispatchOpenaiEvent("openai:toolResult", data.data || {});
+        return;
+      }
+      if (!data.id) return;
+      var entry = pending.get(data.id);
+      if (!entry) return;
+      pending.delete(data.id);
+      if (data.status === "resolve") entry.resolve(data.result);
+      else entry.reject(data.error || { message: "MCP sandbox host call failed." });
+    };
+    if (typeof hostPort.start === "function") hostPort.start();
+    queued.splice(0).forEach(function (fn) { fn(); });
+  }
+  function callHost(method, args) {
+    return new Promise(function (resolve, reject) {
+      var id = String(nextId++);
+      var send = function () {
+        if (!hostPort) {
+          queued.push(send);
+          return;
+        }
+        pending.set(id, { resolve: resolve, reject: reject });
+        hostPort.postMessage({
+          args: Array.prototype.slice.call(args || []),
+          id: id,
+          method: method,
+          source: initial.source,
+          type: "request"
+        });
+      };
+      send();
+    });
+  }
+  function normalizeWidgetState(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
+  }
+  function dispatchOpenaiEvent(type, detail) {
+    try {
+      window.dispatchEvent(new CustomEvent(type, { detail: detail }));
+    } catch (_error) {}
+  }
+  function applyWidgetData(data) {
+    openai.toolInput = Object.prototype.hasOwnProperty.call(data, "toolInput") ? data.toolInput : null;
+    openai.toolOutput = Object.prototype.hasOwnProperty.call(data, "toolOutput") ? data.toolOutput : null;
+    openai.toolResponseMetadata = Object.prototype.hasOwnProperty.call(data, "toolResponseMetadata") ? data.toolResponseMetadata : null;
+    openai.viewParams = Object.prototype.hasOwnProperty.call(data, "viewParams") ? data.viewParams : openai.toolOutput;
+    openai.widgetId = typeof data.widgetId === "string" && data.widgetId ? data.widgetId : initial.widgetId;
+    openai.widgetState = normalizeWidgetState(data.widgetState);
+    dispatchOpenaiEvent("openai:setWidgetData", data);
+  }
+  function applyWidgetView(data) {
+    var mode = data.displayMode === "fullscreen" ? "fullscreen" : "inline";
+    openai.displayMode = mode;
+    if (Object.prototype.hasOwnProperty.call(data, "viewParams")) openai.viewParams = data.viewParams;
+    if (typeof data.widgetId === "string" && data.widgetId) openai.widgetId = data.widgetId;
+    dispatchOpenaiEvent("openai:setWidgetView", data);
+  }
+  var openai = Object.assign({}, window.openai || {});
+  openai.callMcp = function (request) { return callHost("callMcp", [request]); };
+  openai.callTool = function (name, args) { return callHost("callTool", [name, args]); };
+  openai.openExternal = function (request) { return callHost("openExternal", [request]); };
+  openai.requestDisplayMode = function (request) { return callHost("requestDisplayMode", [request]); };
+  openai.sendFollowUpMessage = function (request) { return callHost("sendFollowUpMessage", [request]); };
+  openai.updateWidgetState = function () {
+    var args = Array.prototype.slice.call(arguments);
+    openai.widgetState = normalizeWidgetState(args.length > 0 ? args[args.length - 1] : null);
+    return callHost("updateWidgetState", args);
+  };
+  openai.notifyIntrinsicHeight = function (height) { return callHost("notifyIntrinsicHeight", [height]); };
+  openai.notifyIntrinsicWidth = function (width) { return callHost("notifyIntrinsicWidth", [width]); };
+  openai.toolInput = initial.toolInput;
+  openai.toolOutput = initial.toolOutput;
+  openai.toolResponseMetadata = initial.toolResponseMetadata;
+  openai.displayMode = initial.displayMode;
+  openai.viewParams = initial.viewParams;
+  openai.widgetId = initial.widgetId;
+  openai.widgetState = initial.widgetState;
+  openai.mcpApps = {
+    hostCapabilities: initial.hostCapabilities,
+    hostInfo: { name: "chatgpt" }
+  };
+  window.openai = openai;
+  window.addEventListener("message", function (event) {
+    var data = event.data || {};
+    if (data.source !== initial.hostSource || data.type !== "init") return;
+    if (!event.ports || !event.ports[0]) return;
+    startPort(event.ports[0]);
+  });
+  window.addEventListener("unload", function () {
+    rejectPending({ message: "MCP sandbox host call aborted." });
+    if (hostPort) hostPort.close();
+  });
+  window.parent.postMessage({ source: initial.source, type: "ready" }, "*");
+})();`.trim();
+}
+
+function mcpAppHostCapabilities(csp: McpAppCspViewModel): Record<string, unknown> {
+  return {
+    logging: {},
+    message: {},
+    openLinks: {},
+    serverResources: {},
+    serverTools: {},
+    updateModelContext: {},
+    ...(csp.isTrusted ? {
+      sandbox: {
+        csp: {
+          baseUriDomains: csp.baseUriDomains,
+          connectDomains: csp.connectDomains,
+          frameDomains: csp.frameDomains,
+          resourceDomains: csp.resourceDomains,
+        },
+      },
+    } : {}),
+  };
+}
+
+function safeScriptJson(value: unknown): string {
+  try {
+    return (JSON.stringify(value) ?? "null").replaceAll("<", "\\u003c");
+  } catch {
+    return "null";
+  }
+}
+
+function mcpAppCspMetaTag(csp: McpAppCspViewModel): string {
+  const content = mcpAppCspMetaContent(csp);
+  return content ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(content)}">` : "";
+}
+
+export function mcpAppCspMetaContent(csp: McpAppCspViewModel): string {
+  if (!csp.isTrusted) return "";
+  const resourceDomains = csp.resourceDomains;
+  const connectDomains = csp.connectDomains.length > 0 ? csp.connectDomains : resourceDomains;
+  const frameDomains = csp.frameDomains;
+  const baseUriDomains = csp.baseUriDomains;
+  const resourceSources = dedupeStrings(["'self'", "data:", "blob:", ...resourceDomains]);
+  const scriptSources = dedupeStrings(["'unsafe-inline'", "'unsafe-eval'", "blob:", ...resourceDomains]);
+  const styleSources = dedupeStrings(["'unsafe-inline'", ...resourceDomains]);
+  return [
+    "default-src 'none'",
+    `base-uri ${baseUriDomains.length > 0 ? baseUriDomains.join(" ") : "'none'"}`,
+    `connect-src ${dedupeStrings(["'self'", ...connectDomains]).join(" ")}`,
+    `font-src ${resourceSources.join(" ")}`,
+    `frame-src ${frameDomains.length > 0 ? frameDomains.join(" ") : "'none'"}`,
+    `img-src ${resourceSources.join(" ")}`,
+    `media-src ${resourceSources.join(" ")}`,
+    `script-src ${scriptSources.join(" ")}`,
+    `style-src ${styleSources.join(" ")}`,
+  ].join("; ");
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function ExecShellDetail({
+  detail,
+  forceExpanded = false,
+}: {
+  detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>;
+  forceExpanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(() => initialExecShellExpanded(detail));
+  const [copiedTarget, setCopiedTarget] = useState<ExecShellCopyTarget | null>(null);
+  const hasBody = Boolean(detail.output || detail.footer);
+  const bodyOpen = forceExpanded || detail.running || expanded;
+  const output = detail.output || (!detail.running && detail.footer ? "No output" : "");
+
+  useEffect(() => {
+    setExpanded(initialExecShellExpanded(detail));
+  }, [detail.id]);
+
+  const copyTarget = (target: ExecShellCopyTarget) => {
+    const text = execShellCopyText(detail, target);
+    void writeClipboardText(text).then((copied) => {
+      if (!copied) return;
+      setCopiedTarget(target);
+      setTimeout(() => {
+        setCopiedTarget((current) => current === target ? null : current);
+      }, 1500);
+    });
+  };
+
+  const commandContent = (
+    <>
+      <span>$</span>
+      <code>{detail.command}</code>
+      {hasBody && !forceExpanded && <ChevronRight className={bodyOpen ? "is-open" : ""} size={14} />}
+    </>
+  );
+
+  return (
+    <section
+      className={`hc-exec-shell ${detail.running ? "is-running" : ""}`}
+      data-shell-state={bodyOpen ? "expanded" : "collapsed"}
+    >
+      <div className="hc-exec-shell-title">Shell</div>
+      <ExecShellCopyButton
+        className="hc-exec-shell-copy-all"
+        copied={copiedTarget === "all"}
+        label={copiedTarget === "all" ? "Copied" : "Copy command and output"}
+        onClick={() => copyTarget("all")}
+      />
+      <div className="hc-exec-shell-command-row">
+        {hasBody && !forceExpanded ? (
+          <button
+            aria-expanded={bodyOpen}
+            className="hc-exec-shell-command hc-exec-shell-toggle"
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {commandContent}
+          </button>
+        ) : (
+          <div className="hc-exec-shell-command">{commandContent}</div>
+        )}
+        <ExecShellCopyButton
+          className="hc-exec-shell-command-copy"
+          copied={copiedTarget === "command"}
+          label={copiedTarget === "command" ? "Copied" : "Copy command"}
+          onClick={() => copyTarget("command")}
+        />
+      </div>
+      {bodyOpen && detail.cwd && <div className="hc-exec-shell-cwd">{detail.cwd}</div>}
+      {bodyOpen && output && (
+        <div className="hc-exec-shell-output-wrap">
+          <pre className="hc-exec-shell-output">
+            <code>{output}</code>
+          </pre>
+          <ExecShellCopyButton
+            className="hc-exec-shell-output-copy"
+            copied={copiedTarget === "output"}
+            label={copiedTarget === "output" ? "Copied" : "Copy output"}
+            onClick={() => copyTarget("output")}
+          />
+        </div>
+      )}
+      {bodyOpen && detail.footer && (
+        <div className="hc-exec-shell-footer">
+          {detail.footer === "Success" && <Check aria-hidden size={12} />}
+          <span>{detail.footer}</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export type ExecShellCopyTarget = "all" | "command" | "output";
+
+function ExecShellCopyButton({
+  className,
+  copied,
+  label,
+  onClick,
+}: {
+  className: string;
+  copied: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={`hc-exec-shell-copy-button ${className} ${copied ? "is-copied" : ""}`}
+      title={label}
+      type="button"
+      onClick={onClick}
+    >
+      {copied ? <Check aria-hidden size={13} /> : <CopyIcon aria-hidden size={13} />}
+    </button>
+  );
+}
+
+export function execShellCopyText(
+  detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>,
+  target: ExecShellCopyTarget = "all",
+): string {
+  if (target === "command") return detail.command;
+  if (target === "output") return detail.output;
+  return [`$ ${detail.command}`, detail.output].filter(Boolean).join("\n");
+}
+
+function writeClipboardText(text: string): Promise<boolean> {
+  if (!text) return Promise.resolve(false);
+  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+    return Promise.resolve(false);
+  }
+  return navigator.clipboard.writeText(text).then(
+    () => true,
+    () => false,
+  );
+}
+
+export function initialExecShellExpanded(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>): boolean {
+  return detail.running;
 }
 
 function MultiAgentPrompt({ text }: { text: string }) {
@@ -313,7 +1389,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       kind: "exec",
       id: item.id,
       running,
-      command: commandText(item) || "command",
+      command: normalizeDesktopShellCommand(commandText(item)) || "command",
       cwd: stringField(record, "cwd"),
       output: commandOutputText(item),
       status,
@@ -337,6 +1413,30 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
     const server = mcpServerName(item) || "mcp";
     const tool = mcpToolName(item) || "tool";
     const name = `${server}:${tool}`;
+    const invocation = recordObject(record.invocation);
+    const resourceUri = mcpAppResourceUri(item);
+    const result = record.result;
+    if (resourceUri) {
+      const resultRecord = recordObject(result);
+      return {
+        kind: "mcpApp",
+        id: item.id,
+        running,
+        name,
+        server,
+        tool,
+        resourceUri,
+        inlineFrame: mcpAppFrameFromResourceReadResult(result),
+        toolArguments: record.arguments ?? invocation.arguments ?? null,
+        toolOutput: mcpAppToolOutputFromResult(result),
+        toolResult: result ?? null,
+        toolResponseMetadata: resultRecord._meta ?? null,
+        argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
+        resultText: toolResultText(result),
+        errorText: formatUnknown(record.error),
+        status,
+      };
+    }
     if (running) {
       return {
         kind: "pendingTool",
@@ -348,7 +1448,6 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         status: status || "pending",
       };
     }
-    const invocation = recordObject(record.invocation);
     return {
       kind: "tool",
       id: item.id,
@@ -484,9 +1583,80 @@ function execFooter(record: ItemRecord, running: boolean): string {
   if (running) return "";
   if (record.executionStatus === "interrupted") return "Stopped";
   const exitCode = execExitCode(record);
-  if (exitCode === 0) return "";
+  if (exitCode === 0) return "Success";
   if (exitCode !== null) return `Exit code ${exitCode}`;
-  return statusLabel(record.status);
+  return "Exit code unknown";
+}
+
+export function normalizeDesktopShellCommand(value: string): string {
+  const command = value.trim().replace(/^\$\s+/u, "");
+  const normalized = stripDesktopShellQuotes(stripDesktopShellPrompt(command));
+  const shellMatch = /^(?:\/bin\/zsh|\/bin\/bash|zsh|bash)\s+-lc\s+([\s\S]+)$/u.exec(normalized);
+  if (shellMatch) return stripDesktopShellCommandArgument(shellMatch[1]?.trim() ?? "");
+  const trailingShellMatch = /(?:\/bin\/zsh|\/bin\/bash|zsh|bash)\s+-lc\s+([\s\S]+)$/u.exec(command);
+  return stripDesktopShellCommandArgument(
+    trailingShellMatch
+      ? trailingShellMatch[1]?.trim() ?? ""
+      : normalized,
+  );
+}
+
+function stripDesktopShellCommandArgument(value: string): string {
+  let text = stripDesktopShellQuotes(value).trim();
+  if (
+    (text.startsWith("'") && !text.endsWith("'"))
+    || (text.startsWith('"') && !text.endsWith('"'))
+  ) {
+    text = text.slice(1).trim();
+  }
+  if (
+    (!text.startsWith("'") && text.endsWith("'"))
+    || (!text.startsWith('"') && text.endsWith('"'))
+  ) {
+    text = text.slice(0, -1).trim();
+  }
+  return stripDesktopShellQuotes(text).trim();
+}
+
+function stripDesktopShellPrompt(value: string): string {
+  let text = value.trim().replace(/^\$\s+/u, "");
+  text = text.replaceAll("'\"'\"'", "'").replaceAll("\\'", "'").replaceAll('\\"', '"');
+  let changed = true;
+  while (changed) {
+    changed = false;
+    if (
+      (text.startsWith("'") && text.endsWith("'"))
+      || (text.startsWith('"') && text.endsWith('"'))
+    ) {
+      text = text.slice(1, -1).trim();
+      changed = true;
+    }
+  }
+  return text.replace(/^['"]+/u, "").replace(/['"]+$/u, "").trim();
+}
+
+function stripDesktopShellQuotes(value: string): string {
+  let text = value.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    if (text.startsWith("$'") && text.endsWith("'")) {
+      text = text.slice(2, -1).replaceAll("\\'", "'");
+      changed = true;
+      continue;
+    }
+    if (
+      (text.startsWith("'") && text.endsWith("'"))
+      || (text.startsWith('"') && text.endsWith('"'))
+    ) {
+      text = text
+        .slice(1, -1)
+        .replaceAll("'\"'\"'", "'")
+        .replaceAll('\\"', '"');
+      changed = true;
+    }
+  }
+  return text;
 }
 
 function execSummaryLabel(record: ItemRecord, running: boolean): string {
@@ -706,6 +1876,204 @@ function toolResultText(value: unknown): string {
   return [content, structuredText].filter(Boolean).join("\n\n") || formatUnknown(value);
 }
 
+export function mcpAppToolOutputFromResult(value: unknown): unknown {
+  const record = recordObject(value);
+  const structured = record.structuredContent ?? record.structured_content;
+  if (isPlainObject(structured)) return structured;
+  const content = Array.isArray(record.content) ? record.content : [];
+  if (content.length !== 1) return null;
+  const only = content[0];
+  if (!only || typeof only !== "object" || Array.isArray(only)) return null;
+  const text = (only as Record<string, unknown>).text;
+  if (typeof text !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isPlainObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function mcpAppToolResultForWidget(value: unknown, metadata: unknown = null): Record<string, unknown> | null {
+  if (value === null || value === undefined) return null;
+  const record = recordObject(value);
+  const content = Array.isArray(record.content) ? record.content : [];
+  const structured = record.structuredContent ?? record.structured_content;
+  const meta = metadata ?? record._meta;
+  return {
+    content,
+    ...(structured === null || structured === undefined ? {} : { structuredContent: structured }),
+    ...(meta === null || meta === undefined ? {} : { _meta: meta }),
+  };
+}
+
+export function mcpAppToolInputFromArguments(value: unknown): unknown {
+  return isPlainObject(value) ? value : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const MCP_APP_HTML_MIME_TYPES = new Set(["text/html", "text/html;profile=mcp-app"]);
+
+const EMPTY_MCP_APP_CSP: McpAppCspViewModel = {
+  baseUriDomains: [],
+  connectDomains: [],
+  frameDomains: [],
+  includeDefaultDomains: false,
+  isTrusted: false,
+  resourceDomains: [],
+};
+
+export function mcpAppFrameFromResourceReadResult(value: unknown): McpAppFrameViewModel | null {
+  if (value === null || value === undefined) return null;
+  const record = recordObject(value);
+  const contents = recordArrayField(record, "contents");
+  for (const content of contents) {
+    const frame = mcpAppFrameFromResourceContent(content);
+    if (frame) return frame;
+  }
+
+  for (const content of recordArrayField(record, "content")) {
+    const frame = mcpAppFrameFromToolResultContent(content);
+    if (frame) return frame;
+  }
+  return mcpAppFrameFromResourceContent(record);
+}
+
+export function mcpAppHtmlTooLarge(html: string): boolean {
+  return mcpAppHtmlByteSize(html) > MCP_APP_HTML_MAX_BYTES;
+}
+
+function mcpAppHtmlByteSize(html: string): number {
+  if (typeof Blob !== "undefined") return new Blob([html]).size;
+  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(html).byteLength;
+  return html.length;
+}
+
+function mcpAppFrameFromToolResultContent(content: Record<string, unknown>): McpAppFrameViewModel | null {
+  if (stringField(content, "type") === "embedded_resource") {
+    return mcpAppFrameFromResourceContent(recordObject(content.resource));
+  }
+  return mcpAppFrameFromResourceContent(content);
+}
+
+function mcpAppFrameFromResourceContent(content: Record<string, unknown>): McpAppFrameViewModel | null {
+  const mimeType = normalizedMcpAppMimeType(stringField(content, "mimeType") || stringField(content, "mime_type"));
+  if (!mimeType) return null;
+  const html = stringField(content, "text");
+  if (!html) return null;
+  const meta = recordObject(content._meta);
+  return {
+    csp: mcpAppCspFromMeta(meta),
+    html,
+    heightPx: mcpAppFrameHeight(meta),
+    mimeType,
+    prefersBorder: meta["openai/widgetPrefersBorder"] === true,
+    widgetDomain: mcpAppWidgetDomain(meta),
+  };
+}
+
+function normalizedMcpAppMimeType(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  return MCP_APP_HTML_MIME_TYPES.has(normalized) ? normalized : "";
+}
+
+function mcpAppFrameHeight(meta: Record<string, unknown>): number {
+  const value = meta["openai/widgetHeightHint"];
+  const height = typeof value === "number" && Number.isFinite(value) ? value : MCP_APP_FRAME_DEFAULT_HEIGHT_PX;
+  return clampMcpAppHeight(height);
+}
+
+function mcpAppWidgetDomain(meta: Record<string, unknown>): string | null {
+  const ui = recordObject(meta.ui);
+  return stringField(ui, "domain") || stringField(meta, "openai/widgetDomain") || null;
+}
+
+function mcpAppCspFromMeta(meta: Record<string, unknown>): McpAppCspViewModel {
+  const ui = recordObject(meta.ui);
+  const mcpAppCsp = recordObject(ui.csp);
+  const openaiWidgetCsp = recordObject(meta["openai/widgetCSP"]);
+  const hasMcpAppCsp = Object.keys(mcpAppCsp).length > 0;
+  const hasOpenaiWidgetCsp = Object.keys(openaiWidgetCsp).length > 0;
+  if (!hasMcpAppCsp && !hasOpenaiWidgetCsp) return EMPTY_MCP_APP_CSP;
+
+  const resourceDomains = cspDomains(mcpAppCsp, "resourceDomains")
+    ?? cspDomains(openaiWidgetCsp, "resourceDomains")
+    ?? cspDomains(openaiWidgetCsp, "resource_domains")
+    ?? [];
+  const connectDomains = dedupeStrings([
+    ...(cspDomains(mcpAppCsp, "connectDomains")
+      ?? cspDomains(openaiWidgetCsp, "connectDomains")
+      ?? cspDomains(openaiWidgetCsp, "connect_domains")
+      ?? []),
+    ...resourceDomains,
+  ]);
+  const frameDomains = cspDomains(mcpAppCsp, "frameDomains")
+    ?? cspDomains(openaiWidgetCsp, "frameDomains")
+    ?? cspDomains(openaiWidgetCsp, "frame_domains")
+    ?? [];
+  const baseUriDomains = cspDomains(mcpAppCsp, "baseUriDomains")
+    ?? cspDomains(openaiWidgetCsp, "baseUriDomains")
+    ?? cspDomains(openaiWidgetCsp, "base_uri_domains")
+    ?? [];
+
+  return {
+    baseUriDomains,
+    connectDomains,
+    frameDomains,
+    includeDefaultDomains: false,
+    isTrusted: true,
+    resourceDomains,
+  };
+}
+
+function cspDomains(record: Record<string, unknown>, key: string): string[] | null {
+  if (!(key in record)) return null;
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return dedupeStrings(value.flatMap((item) => {
+    if (typeof item !== "string") return [];
+    const normalized = normalizeMcpAppCspDomain(item);
+    return normalized ? [normalized] : [];
+  }));
+}
+
+const MCP_APP_CSP_ESCAPED_WILDCARD_RE = /^([a-z][a-z0-9+.-]*:\/\/)?%2a(?=\.)/iu;
+const MCP_APP_CSP_FORBIDDEN_RE = /[\s;,"']/u;
+
+function normalizeMcpAppCspDomain(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || MCP_APP_CSP_FORBIDDEN_RE.test(trimmed)) return null;
+  if (trimmed === "blob:" || trimmed === "data:") return trimmed;
+  const wildcardNormalized = trimmed.replace(MCP_APP_CSP_ESCAPED_WILDCARD_RE, "$1*");
+  const urlText = /^[a-z][a-z0-9+.-]*:\/\//iu.test(wildcardNormalized)
+    ? wildcardNormalized
+    : `https://${wildcardNormalized}`;
+  let url: URL;
+  try {
+    url = new URL(urlText);
+  } catch {
+    return null;
+  }
+  if (
+    url.protocol !== "https:"
+    || url.hostname === "*"
+    || url.username.length > 0
+    || url.password.length > 0
+  ) {
+    return null;
+  }
+  const hostname = url.hostname.replace(/^%2a(?=\.)/iu, "*");
+  if (hostname.includes("*") && !hostname.startsWith("*.")) return null;
+  return `${url.protocol}//${hostname}${url.port.length > 0 ? `:${url.port}` : ""}`;
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
 function toolResultContentText(value: unknown): string {
   if (!value || typeof value !== "object") return formatUnknown(value);
   const record = value as Record<string, unknown>;
@@ -916,6 +2284,13 @@ function multiAgentSendInputPromptVerb(status: string): string {
 
 function recordObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function recordArrayField(record: Record<string, unknown>, field: string): Record<string, unknown>[] {
+  const value = record[field];
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+    : [];
 }
 
 function objectField(value: unknown, key: string): string | null {

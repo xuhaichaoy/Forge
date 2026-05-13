@@ -25,6 +25,7 @@ export default function runCodexReducerTurnsTests(): void {
   upsertsExistingThreadWithoutMovingItToTheTop();
   upsertingRunningThreadSnapshotPreservesStreamingItems();
   appendsStreamingDeltasToAgentReasoningAndCommandItems();
+  turnScopesDeltaCreatedAssistantAndReasoningItems();
   preservesItemLifecycleTimestampsFromProtocolNotifications();
   completingTurnProjectsTurnTimingAsWorkedForItem();
   completingTurnPreservesLongerAccumulatedAgentText();
@@ -557,6 +558,47 @@ function startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage():
     runtime(next, "thread-1").activeTurnId,
     "turn-1",
     "turn/started should set the active turn id",
+  );
+}
+
+function turnScopesDeltaCreatedAssistantAndReasoningItems(): void {
+  const baseState = {
+    ...initialCodexUiState,
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        turnOrder: ["turn-1", "turn-2"],
+        items: [
+          { ...userMessage("user-1", "First turn"), _turnId: "turn-1" },
+          { ...userMessage("user-2", "Second turn"), _turnId: "turn-2" },
+        ] as AccumulatedThreadItem[],
+      }),
+    },
+  } as CodexUiState;
+
+  const state = [
+    ["item/agentMessage/delta", { threadId: "thread-1", turnId: "turn-1", itemId: "agent-delta", delta: "Hello" }],
+    ["item/reasoning/textDelta", { threadId: "thread-1", turnId: "turn-1", itemId: "reasoning-delta", delta: "Thinking" }],
+  ].reduce(
+    (current, [method, params]) =>
+      reduceNotification(current, { method: method as string, params }),
+    baseState,
+  );
+
+  assertDeepEqual(
+    items(state, "thread-1").map((item) => item.id),
+    ["user-1", "agent-delta", "reasoning-delta", "user-2"],
+    "delta-created assistant and reasoning items should stay inside the Desktop turn segment",
+  );
+  assertEqual(
+    (itemById(state, "thread-1", "agent-delta") as Record<string, unknown>)._turnId,
+    "turn-1",
+    "agent message delta-created items should keep the protocol turn id",
+  );
+  assertEqual(
+    (itemById(state, "thread-1", "reasoning-delta") as Record<string, unknown>)._turnId,
+    "turn-1",
+    "reasoning delta-created items should keep the protocol turn id",
   );
 }
 

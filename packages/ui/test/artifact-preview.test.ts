@@ -12,6 +12,7 @@ export default function runArtifactPreviewTests(): void {
   projectsMarkdownFilesForTextPreview();
   projectsPdfFilesForPdfPreview();
   projectsOfficeArtifactsAsTypedFilePreviews();
+  projectsLegacyDocFilesAsDocuments();
   keepsSpreadsheetArtifactsTypedWhilePreservingTextPreview();
   projectsOrdinaryUrlsWithoutImagePreview();
   separatesPreviewArtifactsFromBrowserUrls();
@@ -117,6 +118,29 @@ function projectsOfficeArtifactsAsTypedFilePreviews(): void {
       shouldPreview: true,
     },
     "Office artifacts should be classified as artifact-tab files, not browser URLs",
+  );
+}
+
+function projectsLegacyDocFilesAsDocuments(): void {
+  const preview = projectArtifactPreview({
+    id: "proposal.doc",
+    title: "proposal.doc",
+    meta: "proposal.doc",
+    reference: { path: "proposal.doc", lineStart: 1 },
+  });
+
+  assertDeepEqual(
+    {
+      kind: preview.kind,
+      artifactTypeLabel: preview.artifactTypeLabel,
+      textPath: preview.textPath ?? null,
+    },
+    {
+      kind: "document",
+      artifactTypeLabel: "Document",
+      textPath: null,
+    },
+    ".doc artifacts should use document preview instead of text preview",
   );
 }
 

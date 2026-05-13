@@ -843,9 +843,22 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
       { type: "localImage", path: "/tmp/screenshot.png" },
       { type: "image", url: "https://example.test/diagram.png" },
       { type: "image", url: "data:image/png;base64,AAA" },
-      { type: "skill", name: "code-review", path: "/skills/code-review/SKILL.md" },
     ] satisfies UserInput[],
-    "buildUserInputFromComposer should preserve text and structured attachments",
+    "buildUserInputFromComposer should preserve text and Desktop-supported structured attachments",
+  );
+
+  assertDeepEqual(
+    buildUserInputFromComposer("[$code-review](/skills/code-review/SKILL.md) summarize this", [
+      { type: "skill", name: "code-review", path: "/skills/code-review/SKILL.md" },
+    ]),
+    [
+      {
+        type: "text",
+        text: "[$code-review](/skills/code-review/SKILL.md) summarize this",
+        text_elements: [],
+      },
+    ] satisfies UserInput[],
+    "skill attachments should not emit a duplicate structured skill input",
   );
 
   assertDeepEqual(

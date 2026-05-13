@@ -834,13 +834,7 @@ export function buildUserInputFromComposer(
         }
         break;
       case "skill":
-        if (attachment.path.trim()) {
-          structuredInputs.push({
-            type: "skill",
-            name: attachment.name.trim() || inferNameFromPath(attachment.path),
-            path: normalizeAttachmentPath(attachment.path),
-          });
-        }
+        // Codex Desktop serializes skills as prompt-link text, not structured UserInput.
         break;
       case "mention":
         if (attachment.path.trim()) {

@@ -12,14 +12,20 @@ const TEST_SKILL_PATH = "/workspace/.codex/skills/code-review";
 
 export default function runRenderGroupsTests(): void {
   projectsUserAndAssistantMessagesAsStableMessageGroups();
+  projectsHeartbeatAssistantMessagesLikeDesktop();
   projectsResponsesApiImagePartsAsUserImages();
   stripsRawThinkingMarkupFromAssistantMessages();
   marksLatestAssistantMessageAsStreamingDuringActiveTurn();
   doesNotStreamCompletedAssistantWhileToolsAreRunning();
   rendersAssistantStreamingPlaceholderFromDesktopFlag();
+  rendersDesktopThinkingPlaceholderForActiveEmptyTurn();
+  suppressesDesktopThinkingPlaceholderWhileToolsRun();
   groupsReasoningSummaryAndContentIntoToolActivity();
+  marksIncompleteReasoningAsThinkingLikeCodexDesktop();
+  showsThinkingPlaceholderWhileReasoningStreams();
   splitsReasoningFromCollapsedToolActivity();
   groupsPendingMcpCallsSeparately();
+  hydratesMcpAppResourceUriFromServerStatusLikeCodexDesktop();
   keepsDesktopInlineMcpToolsOutOfPendingMcpGroups();
   suppressesPendingMcpCallCoveredByElicitation();
   projectsDesktopLifecycleEventsSemantically();
@@ -28,6 +34,8 @@ export default function runRenderGroupsTests(): void {
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
   projectsFinalAssistantArtifactsIntoMessageUnits();
+  keepsFinalAssistantArtifactsOffCommentaryMessages();
+  keepsPreviousArtifactsOutOfLaterAssistantMessages();
   keepsSingleCompletedExecRowsStandaloneLikeCodexDesktop();
   keepsCurrentTailExecRowsAsActivityWhileTurnIsRunning();
   projectsExplicitWorkedForItemAsCompactActivity();
@@ -36,6 +44,7 @@ export default function runRenderGroupsTests(): void {
   keepsTodoListOutOfMainConversationButProjectsProgress();
   hidesPendingApprovalItemsFromOrdinaryActivity();
   groupsExplorationCommandActionsLikeCodexDesktop();
+  labelsSkillExplorationActionsLikeCodexDesktop();
   dedupesExplorationReadCountsByCwdLikeCodexDesktop();
   keepsReasoningInsideActiveExplorationLikeCodexDesktop();
   treatsReadOnlyCurlCommandsAsWebSearchCommandsLikeCodexDesktop();
@@ -43,6 +52,7 @@ export default function runRenderGroupsTests(): void {
   groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop();
   groupsHooksWithAdjacentActivityLikeCodexDesktop();
   summarizesPatchChangeKinds();
+  showsActivePatchDiffStatsLikeCodexDesktop();
   formatsExpandedToolDetailsSemantically();
   groupsWebSearchIntoActivityAndSources();
   groupsAdjacentWebSearchesLikeCodexDesktop();
@@ -150,6 +160,45 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
   }
 }
 
+function projectsHeartbeatAssistantMessagesLikeDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "heartbeat-1",
+      text: "",
+      phase: "commentary",
+      memoryCitation: null,
+      structuredOutput: {
+        type: "heartbeat",
+        notificationMessage: "Still working through the files.",
+      },
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "heartbeat-2",
+      text: "",
+      phase: "commentary",
+      memoryCitation: null,
+      structured_output: {
+        type: "heartbeat",
+        decision: "DONT_NOTIFY",
+      },
+    } as unknown as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 2, "heartbeat assistant output should not disappear when content is blank");
+  const notification = projection.units[0];
+  const quiet = projection.units[1];
+  assertEqual(notification?.kind, "message", "heartbeat notification should render as an assistant message");
+  if (notification?.kind === "message") {
+    assertEqual(notification.text, "Still working through the files.", "heartbeat should use notificationMessage fallback");
+  }
+  assertEqual(quiet?.kind, "message", "quiet heartbeat should render Desktop's fallback text");
+  if (quiet?.kind === "message") {
+    assertEqual(quiet.text, "Heartbeat completed quietly.", "DONT_NOTIFY heartbeat should use Desktop fallback copy");
+  }
+}
+
 function projectsFinalAssistantArtifactsIntoMessageUnits(): void {
   const projection = projectConversation([
     {
@@ -177,6 +226,113 @@ function projectsFinalAssistantArtifactsIntoMessageUnits(): void {
       "final assistant message units should carry their own file resources for inline rendering",
     );
   }
+}
+
+function keepsFinalAssistantArtifactsOffCommentaryMessages(): void {
+  const savedPath = "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri/report.csv";
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-artifact-turn",
+      content: "Generate a CSV",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-commentary",
+      text: "I'll create the CSV now.",
+      phase: "commentary",
+      memoryCitation: null,
+      _turnStatus: "completed",
+    } as ThreadItem,
+    {
+      type: "fileChange",
+      id: "file-change-report",
+      status: "completed",
+      path: savedPath,
+      changes: [{ path: savedPath, kind: { type: "add" }, diff: "+a,b" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-final",
+      text: `Created ${savedPath} for you.`,
+      phase: "final_answer",
+      memoryCitation: null,
+      _turnStatus: "completed",
+    } as ThreadItem,
+  ]);
+
+  const commentary = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-commentary"
+  );
+  const final = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-final"
+  );
+
+  assertDeepEqual(
+    commentary?.kind === "message" ? commentary.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [],
+    "commentary assistant rows should not inherit later final output resources from the same turn",
+  );
+  assertDeepEqual(
+    final?.kind === "message" ? final.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [savedPath],
+    "final assistant rows should still show resources created before the final response",
+  );
+}
+
+function keepsPreviousArtifactsOutOfLaterAssistantMessages(): void {
+  const savedPath = "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri/北京未来7天天气.xlsx";
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-generate-file",
+      content: "帮我保存一个 Excel",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-generated-file",
+      text: `已帮你保存为 Excel 文件:\n\n${savedPath}`,
+      phase: "final",
+      memoryCitation: null,
+      _turnStatus: "completed",
+    } as ThreadItem,
+    {
+      type: "userMessage",
+      id: "user-hello",
+      content: "你好",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-hello",
+      text: "你好！有什么我可以帮你的吗？",
+      phase: "final",
+      memoryCitation: null,
+      _turnStatus: "completed",
+    } as ThreadItem,
+  ]);
+
+  const generated = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-generated-file"
+  );
+  const later = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-hello"
+  );
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    [savedPath],
+    "right rail should keep the previously generated file artifact",
+  );
+  assertDeepEqual(
+    generated?.kind === "message" ? generated.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [savedPath],
+    "the generating assistant message should show its file card",
+  );
+  assertDeepEqual(
+    later?.kind === "message" ? later.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [],
+    "later assistant messages should not inherit earlier generated file cards",
+  );
 }
 
 function projectsResponsesApiImagePartsAsUserImages(): void {
@@ -351,7 +507,60 @@ function rendersAssistantStreamingPlaceholderFromDesktopFlag(): void {
   assertEqual(unit.renderPlaceholder ?? false, true, "placeholder flag should reach the view layer");
 }
 
+function rendersDesktopThinkingPlaceholderForActiveEmptyTurn(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: "你好",
+      _turnId: "turn-1",
+    } as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertEqual(projection.units.length, 2, "active empty Desktop turn should show user message plus thinking placeholder");
+  const unit = projection.units[1];
+  assertEqual(unit?.kind, "toolActivity", "thinking placeholder should render through the compact activity row");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(unit.summary.groupType, "reasoning", "Desktop thinking placeholder uses the reasoning/thinking row style");
+    assertEqual(unit.summary.label, "Thinking", "active empty Desktop turn should display Thinking");
+    assertEqual(unit.summary.inProgress, true, "thinking placeholder should stay in progress while the turn runs");
+    assertEqual(unit.items[0]?.id, "thinking-placeholder:user-1", "placeholder key should be anchored to the active turn");
+  }
+}
+
+function suppressesDesktopThinkingPlaceholderWhileToolsRun(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: "Search files",
+      _turnId: "turn-1",
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "rg Thinking",
+      status: "inProgress",
+      _turnId: "turn-1",
+    } as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertEqual(projection.units.length, 2, "active tool output should suppress the separate thinking placeholder");
+  const tool = projection.units[1];
+  assertEqual(tool?.kind, "toolActivity", "running command should stay as the visible activity row");
+  if (tool?.kind === "toolActivity") {
+    assertEqual(tool.summary.groupType, "collapsed-tool-activity", "running non-exploration command should remain command activity");
+    assertEqual(tool.items.length, 1, "thinking placeholder should not be folded into a running tool activity");
+  }
+}
+
 function groupsReasoningSummaryAndContentIntoToolActivity(): void {
+  // Codex Desktop's `Jw` agent-body renderer
+  // (local-conversation-thread.pretty.js:7881) maps `entry.item.type === "reasoning"`
+  // to `F2 = null` — reasoning items never produce a standalone row. They are folded
+  // into the surrounding exploration buffer via `Ge` :7782, or silently dropped when
+  // no mergeable bucket is active. HiCodex matches by skipping reasoning in
+  // `pushActivityItem` unless the item is the synthetic `thinking-placeholder`.
   const reasoning: ThreadItem = {
     type: "reasoning",
     id: "reasoning-1",
@@ -360,23 +569,74 @@ function groupsReasoningSummaryAndContentIntoToolActivity(): void {
   };
 
   const projection = projectConversation([reasoning]);
-  const unit = projection.units[0];
 
-  assertEqual(projection.units.length, 1, "reasoning should produce one render group");
-  assertEqual(unit?.kind, "toolActivity", "reasoning should be grouped as tool activity");
-  if (unit?.kind === "toolActivity") {
-    assertEqual(unit.key, "reasoning:reasoning-1:reasoning-1", "reasoning activity key should include semantic group type");
-    assertEqual(unit.summary.groupType, "reasoning", "reasoning activity should keep Codex Desktop group type");
-    assertEqual(unit.summary.label, "Thought", "reasoning activity label");
-    assertEqual(unit.summary.counts.reasoning, 1, "reasoning activity count");
-    assertDeepEqual(unit.summary.details, [], "reasoning activity should not expose ordinary tool details");
-    assertEqual(unit.items[0], reasoning, "reasoning item should stay attached to the activity group");
-  }
+  assertEqual(projection.units.length, 0, "standalone reasoning should not produce a render unit (Codex Jw :7881)");
+  // Reasoning text remains readable from the item itself for downstream consumers
+  // (e.g. exploration group rendering that wants to surface the body in context).
   assertEqual(
     itemText(reasoning),
     "Checked the projection contract\nReasoning details stay on the item",
     "reasoning summary and content should remain readable from the item",
   );
+}
+
+function showsThinkingPlaceholderWhileReasoningStreams(): void {
+  /*
+   * Regression for the case where, while the assistant is reasoning (a
+   * `type: "reasoning"` ThreadItem is streaming with `completed: false`) and
+   * nothing else is happening yet, the user must still see a live "Thinking"
+   * row. Codex `Ge` (split-items-into-render-groups-C1Yh6v3t.js) folds reasoning
+   * into the active exploration buffer or drops it, and explicitly clears
+   * `isAnyNonExploringAgentItemInProgress` when the last surviving agent item
+   * is in-progress reasoning, so `oT` (:8000) still resolves to
+   * `{ type: 'thinking', isVisible: true }`. HiCodex must inject the synthetic
+   * `desktopThinkingPlaceholderItem` in this scenario — earlier code skipped it
+   * because `agentItems.some(isItemInProgress)` would return true for the
+   * streaming reasoning item.
+   */
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: "你好",
+      _turnId: "turn-1",
+    } as ThreadItem,
+    {
+      type: "reasoning",
+      id: "reasoning-streaming",
+      summary: ["Drafting a reply"],
+      completed: false,
+      _turnId: "turn-1",
+    } as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertEqual(projection.units.length, 2, "user message + thinking placeholder (no real reasoning row)");
+  const tail = projection.units[1];
+  if (tail?.kind === "toolActivity") {
+    assertEqual(tail.summary.groupType, "reasoning", "tail unit should be the reasoning placeholder bucket");
+    assertEqual(tail.summary.label, "Thinking", "placeholder should render the Thinking label");
+    assertEqual(tail.summary.inProgress, true, "placeholder reflects the in-progress thinking state");
+    assertEqual(tail.items[0]?.id, "thinking-placeholder:user-1", "anchor placeholder to the active turn");
+  } else {
+    throw new Error("trailing unit must be a tool activity (the thinking placeholder)");
+  }
+}
+
+function marksIncompleteReasoningAsThinkingLikeCodexDesktop(): void {
+  // Real (non-synthetic) reasoning items, even when streaming, are not surfaced
+  // in agent body per Codex `Jw` :7881. The live "Thinking" UX is driven instead
+  // by the separate `desktopThinkingPlaceholderItem` injected by
+  // `shouldRenderDesktopThinkingPlaceholder`, which carries
+  // `_syntheticKind: "thinking-placeholder"`.
+  const reasoning: ThreadItem = {
+    type: "reasoning",
+    id: "reasoning-running",
+    summary: ["Checking the current turn"],
+    completed: false,
+  };
+
+  const projection = projectConversation([reasoning]);
+  assertEqual(projection.units.length, 0, "incomplete reasoning is dropped (Codex Jw :7881); Thinking comes from the placeholder path");
 }
 
 function splitsReasoningFromCollapsedToolActivity(): void {
@@ -397,18 +657,16 @@ function splitsReasoningFromCollapsedToolActivity(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 2, "reasoning should not be mixed into collapsed tool activity");
-  const first = projection.units[0];
-  const second = projection.units[1];
-  if (first?.kind === "toolActivity") {
-    assertEqual(first.summary.groupType, "reasoning", "first group should be reasoning");
+  // Codex `Jw` :7881 + `Ge` :7782 — reasoning is either absorbed into the active
+  // mergeable bucket or silently dropped. Standalone reasoning followed by an exec
+  // therefore produces just the exec row (the reasoning has no mergeable bucket to
+  // join when it arrives first, so it is dropped per Codex behavior).
+  assertEqual(projection.units.length, 1, "reasoning is dropped; only the exec remains");
+  const only = projection.units[0];
+  if (only?.kind === "threadItem") {
+    assertEqual(only.item.id, "command-1", "single completed exec stays standalone");
   } else {
-    throw new Error("first group should be tool activity");
-  }
-  if (second?.kind === "threadItem") {
-    assertEqual(second.item.id, "command-1", "single completed exec after reasoning should stay standalone");
-  } else {
-    throw new Error("second group should be a standalone exec row");
+    throw new Error("the remaining group should be the standalone exec row");
   }
 }
 
@@ -443,6 +701,48 @@ function groupsPendingMcpCallsSeparately(): void {
   } else {
     throw new Error("pending MCP should render as tool activity");
   }
+}
+
+function hydratesMcpAppResourceUriFromServerStatusLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "mcpToolCall",
+      id: "mcp-app-pending-1",
+      server: "browser-use",
+      tool: "open",
+      status: "inProgress",
+      arguments: { url: "https://example.com" },
+      result: null,
+      error: null,
+    } as ThreadItem,
+  ], {
+    isThreadRunning: true,
+    mcpServerStatuses: {
+      data: [{
+        name: "browser-use",
+        tools: {
+          open: {
+            name: "open",
+            inputSchema: {},
+            _meta: { "openai/outputTemplate": "ui://browser/widget.html" },
+          },
+        },
+        resources: [],
+        resourceTemplates: [],
+        authStatus: "unsupported",
+      }],
+    },
+  });
+
+  assertEqual(projection.units.length, 1, "MCP app calls should stay as the active tool activity");
+  const unit = projection.units[0];
+  if (unit?.kind !== "toolActivity") throw new Error("MCP app call should render as tool activity");
+  assertEqual(unit.summary.groupType, "collapsed-tool-activity", "Desktop MCP apps should not become pending MCP groups");
+  assertEqual(
+    (unit.items[0] as Record<string, unknown> | undefined)?.mcpAppResourceUri,
+    "ui://browser/widget.html",
+    "Desktop server tool metadata should hydrate the MCP app resource URI before rendering",
+  );
 }
 
 function keepsDesktopInlineMcpToolsOutOfPendingMcpGroups(): void {
@@ -961,7 +1261,7 @@ function projectsExplicitWorkedForItemAsCompactActivity(): void {
   assertEqual(projection.units.length, 1, "worked-for should stay as a compact transcript activity");
   assertEqual(unit?.kind, "toolActivity", "worked-for should not render as a generic event block");
   if (unit?.kind === "toolActivity") {
-    assertEqual(unit.key, "worked-for:worked-for-1:worked-for-1", "worked-for key should keep Desktop group type");
+    assertEqual(unit.key, "worked-for:worked-for-1", "worked-for key should be anchored to the bucket's first-item id (stable across re-projections during streaming)");
     assertEqual(unit.summary.groupType, "worked-for", "worked-for group type");
     assertEqual(unit.summary.label, "Worked for 1m 5s", "worked-for label should use item timestamps");
     assertEqual(unit.summary.totalDurationMs, 65_000, "worked-for duration should come from started/completed timestamps");
@@ -1182,6 +1482,80 @@ function groupsExplorationCommandActionsLikeCodexDesktop(): void {
   }
 }
 
+function labelsSkillExplorationActionsLikeCodexDesktop(): void {
+  const cwd = "/workspace/project";
+  const skillDefinition = {
+    type: "commandExecution",
+    id: "skill-read",
+    command: "sed -n '1,120p' ../.codex/skills/code-review/SKILL.md",
+    cwd,
+    status: "completed",
+    commandActions: [
+      { type: "read", path: "../.codex/skills/code-review/SKILL.md", isFinished: true },
+    ],
+    exitCode: 0,
+  } as unknown as ThreadItem;
+  const skillList = {
+    type: "commandExecution",
+    id: "skill-list",
+    command: "rg --files /workspace/.codex/skills/code-review",
+    cwd,
+    status: "completed",
+    commandActions: [
+      { type: "list_files", path: "/workspace/.codex/skills/code-review/scripts" },
+    ],
+    exitCode: 0,
+  } as unknown as ThreadItem;
+  const skillSearch = {
+    type: "commandExecution",
+    id: "skill-search",
+    command: "rg TODO /workspace/.codex/skills/code-review",
+    cwd,
+    status: "completed",
+    commandActions: [
+      { type: "search", query: "TODO", path: "/workspace/.codex/skills/code-review" },
+    ],
+    exitCode: 0,
+  } as unknown as ThreadItem;
+  const activeSkillRead = {
+    type: "commandExecution",
+    id: "skill-active-read",
+    command: "sed -n '1,120p' /workspace/.codex/skills/code-review/SKILL.md",
+    cwd,
+    status: "running",
+    commandActions: [
+      { type: "read", path: "/workspace/.codex/skills/code-review/SKILL.md", isFinished: false },
+    ],
+  } as unknown as ThreadItem;
+
+  assertEqual(
+    formatItemDetail(skillDefinition),
+    "Read Code Review skill",
+    "skill definition reads should use Codex Desktop's skill exploration wording",
+  );
+  assertEqual(
+    formatItemDetail(skillList),
+    "Listed files in Code Review skill",
+    "skill directory listings should use Codex Desktop's skill exploration wording",
+  );
+  assertEqual(
+    formatItemDetail(skillSearch),
+    "Searched for TODO in Code Review skill",
+    "skill directory searches should use Codex Desktop's skill exploration wording",
+  );
+
+  const projection = projectConversation([activeSkillRead], { isThreadRunning: true });
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "toolActivity", "active skill read should render as tool activity");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(
+      unit.summary.label,
+      "Reading Code Review skill",
+      "active skill definition reads should use Codex Desktop's Reading skill label",
+    );
+  }
+}
+
 function dedupesExplorationReadCountsByCwdLikeCodexDesktop(): void {
   const projection = projectConversation([
     {
@@ -1396,7 +1770,7 @@ function groupsToolActivityItemsAndPreservesSummaries(): void {
   assertEqual(projection.units.length, 2, "dynamic tool calls should not be folded into Desktop activity summaries");
   assertEqual(unit?.kind, "toolActivity", "tool-like items should render as tool activity");
   if (unit?.kind === "toolActivity") {
-    assertEqual(unit.key, "collapsed-tool-activity:command-1:mcp-1", "tool activity key should stop before a dynamic tool event");
+    assertEqual(unit.key, "collapsed-tool-activity:command-1", "tool activity key should anchor to the bucket's first item id (stable across streaming)");
     assertEqual(unit.summary.groupType, "collapsed-tool-activity", "ordinary tools should keep collapsed tool activity group type");
     assertEqual(
       unit.summary.label,
@@ -1537,6 +1911,31 @@ function summarizesPatchChangeKinds(): void {
   }
 }
 
+function showsActivePatchDiffStatsLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "fileChange",
+      id: "patch-active",
+      status: "running",
+      success: null,
+      changes: [
+        { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+      ],
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "toolActivity", "active patch should render as current tool activity");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(unit.summary.label, "Editing src/app.ts", "active patch label should follow Desktop active patch wording");
+    assertDeepEqual(
+      unit.summary.activeDiffStats,
+      { linesAdded: 1, linesRemoved: 1 },
+      "active patch summary should expose Desktop-style inline diff stats",
+    );
+  }
+}
+
 function formatsExpandedToolDetailsSemantically(): void {
   const exploration = {
     type: "commandExecution",
@@ -1622,22 +2021,19 @@ function groupsAdjacentWebSearchesLikeCodexDesktop(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 2, "web search group should split from following command activity");
+  // Codex Desktop's `W` segment-level aggregation
+  // (`split-items-into-render-groups-C1Yh6v3t.js`) merges adjacent web-search +
+  // exec + exploration / patch / hook / mcp-tool-call items into a single
+  // `collapsed-tool-activity` bucket so the agent body shows one cross-type
+  // count summary instead of a row per item. Two adjacent webSearch + an exec
+  // therefore collapse into one toolActivity unit, not two.
+  assertEqual(projection.units.length, 1, "adjacent web searches + command should collapse into one activity");
   const search = projection.units[0];
-  assertEqual(search?.kind, "toolActivity", "adjacent web searches should render as one activity");
+  assertEqual(search?.kind, "toolActivity", "adjacent web searches + command should render as one activity");
   if (search?.kind === "toolActivity") {
-    assertEqual(search.key, "web-search-group:Codex Desktop render groups:0", "web search group key should follow Desktop query/index shape");
-    assertEqual(search.summary.groupType, "web-search-group", "adjacent web searches should keep Desktop group type");
-    assertEqual(search.summary.label, "Searched web", "web search group label");
-    assertEqual(search.summary.counts.webSearches, 2, "web search group count");
-    assertDeepEqual(
-      search.summary.details,
-      [
-        "Searched web for Codex Desktop render groups",
-        "Searched web for Codex Desktop multi agent UI",
-      ],
-      "web search group should preserve individual query rows",
-    );
+    assertEqual(search.summary.groupType, "collapsed-tool-activity", "cross-type bucket uses collapsed-tool-activity");
+    assertEqual(search.summary.counts.webSearches, 2, "web search count is preserved in cross-type bucket");
+    assertEqual(search.summary.counts.commands, 1, "command count is preserved in cross-type bucket");
   }
 }
 

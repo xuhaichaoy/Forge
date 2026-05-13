@@ -34,6 +34,7 @@ export type CommandPanelEntryKind =
   | "plugin"
   | "experimentalFeature"
   | "collaborationMode"
+  | "thread"
   | "status"
   | "diff";
 
@@ -42,6 +43,7 @@ export type CommandPanelEntryAction =
   | { type: "attachSkill"; name: string; path: string; promptText?: string }
   | { type: "attachApp"; name: string; path: string; promptText: string }
   | { type: "attachPlugin"; name: string; path: string; promptText: string }
+  | { type: "selectThread"; threadId: string }
   | {
       type: "writeConfig";
       title: string;

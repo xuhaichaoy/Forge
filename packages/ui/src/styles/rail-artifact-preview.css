@@ -1,14 +1,50 @@
+/*
+ * Codex Desktop `Kd` section at codex-local-conversation-thread.pretty.js :1649
+ *   <section className="relative z-0 flex flex-col pb-3
+ *                       after:absolute after:inset-x-4 after:bottom-0 after:h-[0.5px]
+ *                       after:bg-token-border-default after:content-['']
+ *                       last:pb-0 last:after:hidden">
+ * Separator is a 0.5px pseudo-element with 16px horizontal inset, hidden on the
+ * last section. HiCodex previously used a 1px `border-bottom` flush to edges;
+ * align to Codex's thinner, inset separator.
+ */
 .hc-rail-section {
-  margin-bottom: 14px;
-  border-bottom: 1px solid #d9d5c9;
-  padding-bottom: 14px;
+  position: relative;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
 }
 
+.hc-rail-section::after {
+  content: "";
+  position: absolute;
+  inset-inline: 16px;
+  bottom: 0;
+  height: 0.5px;
+  background: #d9d5c9;
+  pointer-events: none;
+}
+
+.hc-rail-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.hc-rail-section:last-child::after {
+  display: none;
+}
+
+/*
+ * Artifact / file-reference panels are siblings of sections inside `.hc-right-rail`.
+ * After D4 padding restructure (container `padding: 12px 0`), they would go edge-to-edge;
+ * 12px horizontal margin restores the previous breathing room. The 16px inset that sections
+ * use comes from each section's own `padding: 0 16px` — panels keep their previous 12px
+ * margin so the cards stay visually centered between the rail's rounded edges.
+ */
 .hc-file-reference-panel,
 .hc-artifact-preview-panel {
   display: grid;
   gap: 10px;
-  margin-bottom: 14px;
+  margin: 0 12px 14px;
   border: 1px solid #d6d2c6;
   border-radius: 8px;
   background: #fffdfa;
@@ -173,6 +209,67 @@
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/*
+ * Plain-text paragraph view for `.docx` artifacts. Codex Desktop's
+ * `docx-preview-panel-*.js` ships a full Word-like layout; we render a
+ * lighter "readable paragraphs" preview (parsed in Rust via
+ * `apps/desktop/src-tauri/src/document_preview.rs` → `host_read_document_preview`)
+ * because the right-rail card is small and a full layout would be wasted there.
+ * Reuses the `.hc-artifact-preview-text-wrap` chrome (border + bg) so error /
+ * truncation states render identically to the xlsx/text variants.
+ */
+.hc-artifact-preview-document {
+  overflow: auto;
+  max-height: 280px;
+  margin: 0;
+  padding: 9px 11px;
+  color: #27313d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hc-artifact-preview-document-paragraph {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hc-artifact-preview-document-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.hc-artifact-preview-sheet-wrap {
+  overflow: auto;
+  max-height: 280px;
+  border: 1px solid #dfdbcf;
+  border-radius: 7px;
+  background: #fbfaf6;
+}
+
+.hc-artifact-preview-sheet {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  color: #27313d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.hc-artifact-preview-sheet td {
+  max-width: 180px;
+  border-right: 1px solid #e3dfd3;
+  border-bottom: 1px solid #e3dfd3;
+  padding: 6px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-artifact-preview-sheet tr:first-child td {
+  background: #f1eee5;
+  font-weight: 650;
 }
 
 .hc-artifact-preview-text-state {

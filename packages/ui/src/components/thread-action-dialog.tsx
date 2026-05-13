@@ -41,7 +41,7 @@ export function ThreadActionDialog({
         className="hc-thread-dialog-panel"
         role="dialog"
         aria-modal="true"
-        aria-label={action.kind === "rename" ? "Rename chat" : "Archive chat"}
+        aria-label={action.kind === "rename" ? "Rename chat" : "Archive chat?"}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {action.kind === "rename" ? (
@@ -71,16 +71,15 @@ export function ThreadActionDialog({
         ) : (
           <>
             <header>
-              <div><Archive size={16} /> Archive chat</div>
+              <div><Archive size={16} /> Archive chat?</div>
               <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
             </header>
             <div className="hc-thread-dialog-body">
-              <p title={title}>{title}</p>
-              <span>This removes the chat from the active thread list.</span>
+              <span>You can find it later in your archived chats.</span>
             </div>
             <footer>
               <button type="button" className="hc-mini-button" onClick={onClose}>Cancel</button>
-              <button type="button" className="hc-mini-button decline" onClick={() => void onArchive(action.thread)}>
+              <button type="button" className="hc-mini-button decline" autoFocus onClick={() => void onArchive(action.thread)}>
                 Archive
               </button>
             </footer>

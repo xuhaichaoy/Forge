@@ -40,6 +40,7 @@ export function useCommandPanelActions({
   setComposerAttachments,
   setInput,
   setMcpToolForm,
+  selectThreadById,
   workspace,
 }: {
   activeThreadId: string | null;
@@ -53,6 +54,7 @@ export function useCommandPanelActions({
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setInput: Dispatch<SetStateAction<string>>;
   setMcpToolForm: Dispatch<SetStateAction<McpToolFormAction | null>>;
+  selectThreadById?: (threadId: string) => void | Promise<void>;
   workspace: string;
 }) {
   const callMcpToolFromPanel = useCallback(async (
@@ -352,15 +354,7 @@ export function useCommandPanelActions({
       return;
     }
     if (action.type === "attachSkill") {
-      setComposerAttachments((current) => mergeComposerAttachments(current, [{
-        type: "skill",
-        name: action.name,
-        path: action.path,
-      }]));
-      const promptText = action.promptText;
-      if (promptText) {
-        setInput((current) => appendSkillPromptText(current, promptText));
-      }
+      setInput((current) => appendSkillPromptText(current, action.promptText ?? skillPromptReference(action)));
       setCommandPanel(null);
       setActiveSettingsPanel(null);
       return;
@@ -375,6 +369,12 @@ export function useCommandPanelActions({
       setInput((current) => appendSkillPromptText(current, action.promptText));
       setCommandPanel(null);
       setActiveSettingsPanel(null);
+      return;
+    }
+    if (action.type === "selectThread") {
+      setCommandPanel(null);
+      setActiveSettingsPanel(null);
+      void selectThreadById?.(action.threadId);
       return;
     }
     if (action.type === "writeConfig") {
@@ -416,6 +416,7 @@ export function useCommandPanelActions({
     setComposerAttachments,
     setInput,
     setMcpToolForm,
+    selectThreadById,
     writeConfigFromPanel,
     writeSkillConfigFromPanel,
   ]);
@@ -435,4 +436,12 @@ export function useCommandPanelActions({
     writeConfigFromPanel,
     writeSkillConfigFromPanel,
   };
+}
+
+function skillPromptReference(action: Extract<CommandPanelEntryAction, { type: "attachSkill" }>): string {
+  return `[$${action.name}](${escapePromptPath(action.path)}) `;
+}
+
+function escapePromptPath(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }

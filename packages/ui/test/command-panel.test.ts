@@ -636,7 +636,7 @@ function projectsSkillsHooksAppsAndPluginsAsCommandEntries(): void {
       path: "/Users/example/.codex/skills/code-review/SKILL.md",
       promptText: "[$code-review](/Users/example/.codex/skills/code-review/SKILL.md) ",
     },
-    "skill entries should attach the selected skill to the next message",
+    "skill entries should insert the selected skill prompt reference into the next message",
   );
   assertDeepEqual(
     entries.find((entry) => entry.id === "app:figma")?.action,

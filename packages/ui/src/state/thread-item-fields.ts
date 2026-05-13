@@ -38,7 +38,21 @@ export function commandOutputText(item: ThreadItem): string {
 }
 
 export function assistantMessageText(item: ThreadItem): string {
-  return stripRawThinkingMarkup(itemText(item));
+  const text = stripRawThinkingMarkup(itemText(item));
+  if (text.trim()) return text;
+  const structured = heartbeatStructuredOutput(item);
+  if (!structured) return text;
+  const notificationMessage = stringField(structured, "notificationMessage").trim();
+  if (notificationMessage) return notificationMessage;
+  return stringField(structured, "decision") === "DONT_NOTIFY" ? "Heartbeat completed quietly." : "";
+}
+
+function heartbeatStructuredOutput(item: ThreadItem): Record<string, unknown> | null {
+  const record = item as ItemRecord;
+  const structured = recordObject(record.structuredOutput);
+  if (stringField(structured, "type") === "heartbeat") return structured;
+  const snakeStructured = recordObject(record.structured_output);
+  return stringField(snakeStructured, "type") === "heartbeat" ? snakeStructured : null;
 }
 
 function shouldRenderAssistantPlaceholder(item: ThreadItem): boolean {
@@ -111,6 +125,9 @@ export function isItemInProgress(item: ThreadItem): boolean {
   const status = record.status;
   if (status === "inProgress" || status === "running" || status === "pending" || status === "streaming") return true;
   if (itemType(item) === "worked-for") return status === "working";
+  // Codex Desktop's split-items activity predicate treats reasoning as active
+  // while the protocol item has not completed.
+  if (itemType(item) === "reasoning") return record.completed === false;
   if (itemType(item) === "exec") {
     if (record.executionStatus === "interrupted") return false;
     const parsedCmd = recordObject(record.parsedCmd);
@@ -138,6 +155,42 @@ export function mcpServerName(item: ThreadItem): string {
 
 export function mcpToolName(item: ThreadItem): string {
   return mcpInvocationField(item, "tool");
+}
+
+export function mcpAppResourceUri(item: ThreadItem): string {
+  if (itemType(item) !== "mcp-tool-call") return "";
+  const record = item as ItemRecord;
+  const direct = stringField(record, "mcpAppResourceUri");
+  if (direct) return direct;
+  const result = recordObject(record.result);
+  return mcpAppResourceUriFromMeta(result._meta);
+}
+
+export function mcpAppResourceUriFromMeta(meta: unknown): string {
+  const record = recordObject(meta);
+  const ui = recordObject(record.ui);
+  return stringField(ui, "resourceUri")
+    || stringField(record, "ui/resourceUri")
+    || stringField(record, "openai/outputTemplate");
+}
+
+export function mcpAppResourceUriFromServerStatuses(
+  mcpServerStatuses: unknown,
+  server: string,
+  tool: string,
+): string {
+  const statusRecord = recordObject(mcpServerStatuses);
+  const statuses = Array.isArray(statusRecord.data)
+    ? recordArray(statusRecord.data)
+    : recordArray(mcpServerStatuses);
+  const serverStatus = statuses.find((status) => stringField(status, "name") === server);
+  if (!serverStatus) return "";
+  const tools = recordObject(serverStatus.tools);
+  const directTool = recordObject(tools[tool]);
+  const matchedTool = Object.values(tools)
+    .map(recordObject)
+    .find((candidate) => stringField(candidate, "name") === tool);
+  return mcpAppResourceUriFromMeta((Object.keys(directTool).length > 0 ? directTool : matchedTool)?._meta);
 }
 
 export function mcpSourceTitle(server: string): string {
@@ -192,15 +245,33 @@ export function recordArray(value: unknown): Record<string, unknown>[] {
 export function filePathsFromItem(item: ThreadItem): string[] {
   const record = item as ItemRecord;
   const paths: string[] = [];
-  if (typeof record.path === "string") paths.push(record.path);
-  if (typeof record.savedPath === "string") paths.push(record.savedPath);
+  const addPath = (value: string) => {
+    const path = normalizeRenderableFilePath(value);
+    if (path) paths.push(path);
+  };
+  if (typeof record.path === "string") addPath(record.path);
+  if (typeof record.savedPath === "string") addPath(record.savedPath);
   for (const change of patchChanges(item)) {
     for (const key of ["path", "file", "filePath", "oldPath", "newPath"]) {
       const value = (change as Record<string, unknown>)[key];
-      if (typeof value === "string" && value.length > 0) paths.push(value);
+      if (typeof value === "string" && value.length > 0) addPath(value);
     }
   }
   return dedupe(paths);
+}
+
+function normalizeRenderableFilePath(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/[),.;:，。、；：]+$/g, "")
+    .trim();
+  if (!normalized) return "";
+  const withoutScheme = normalized.replace(/^file:\/\//i, "");
+  const withoutLine = withoutScheme.replace(/:(\d+)(?:-(\d+))?$/, "");
+  const basename = withoutLine.split(/[\\/]/).filter(Boolean).pop() ?? withoutLine;
+  if (!basename || basename === "." || basename === "..") return "";
+  return /[\p{L}\p{N}]/u.test(basename) ? normalized : "";
 }
 
 export function shouldProjectArtifactsFromItem(item: ThreadItem): boolean {
@@ -224,6 +295,22 @@ export function commandLabel(item: ThreadItem): string {
   const command = commandText(item);
   if (!command) return isItemInProgress(item) ? "Running command" : "Ran command";
   return `${isItemInProgress(item) ? "Running" : "Ran"} ${command}`;
+}
+
+/**
+ * Two-tone label parts mirroring Codex Desktop's `<action>Ran</action> <detail>{command}</detail>`
+ * i18n template (`wg.commandRanWithDetail` / `commandRunningWithDetail` / `commandStoppedWithDetail`
+ * in local-conversation-thread-*.js :3766; renderers `O_` / `D_` at :4207-4211 — action is muted,
+ * detail is normal foreground color). Returns null when no command text is available so the caller
+ * can fall back to the plain string `commandLabel`.
+ */
+export function commandLabelParts(item: ThreadItem): { action: string; detail: string } | null {
+  const command = commandText(item);
+  if (!command) return null;
+  const record = item as ItemRecord;
+  const executionStatus = typeof record.executionStatus === "string" ? record.executionStatus : "";
+  if (executionStatus === "interrupted") return { action: "Stopped", detail: command };
+  return { action: isItemInProgress(item) ? "Running" : "Ran", detail: command };
 }
 
 function shellCommandText(value: unknown): string {

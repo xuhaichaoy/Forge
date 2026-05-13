@@ -110,6 +110,8 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await forksThreadFromTurnUsingDesktopSequence();
   await startsEphemeralSideConversationFromForkedThread();
   await editsLastUserTurnUsingDesktopRollbackThenStartSequence();
+  await recoversThreadNotFoundOnEditByResumingFirst();
+  await recoversThreadNotFoundOnEditRollbackByResumingFirst();
   await buildsReadyThreadRequestsForTurns();
   await refreshesThreadMetadataWithoutChangingSelection();
   await resumesSelectedHistoricalThreadBeforeRetryingTurn();
@@ -1043,6 +1045,168 @@ async function editsLastUserTurnUsingDesktopRollbackThenStartSequence(): Promise
     "edit last turn should preserve structured inputs and replace the first text part",
   );
   assertDeepEqual(rollbacks, [rolledBackThread], "edit last turn should expose the rollback thread snapshot before restarting");
+}
+
+async function recoversThreadNotFoundOnEditByResumingFirst(): Promise<void> {
+  // App-server lost the in-memory thread (restart / unloaded) → first
+  // `thread/read` rejects with "thread not found". `editLastUserTurn` should
+  // call `thread/resume` and retry the read instead of bubbling the error up.
+  const latestTurn = turnFixture("turn-2", {
+    items: [
+      {
+        type: "userMessage",
+        id: "user-2",
+        content: [{ type: "text", text: "old prompt", text_elements: [] }],
+      },
+      { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
+    ],
+  });
+  const sourceThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1"), latestTurn],
+  });
+  const rolledBackThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1")],
+  });
+  const recorder = createClientSequenceRecorder([
+    new Error("thread not found: thread-edit"),
+    { thread: sourceThread },                  // thread/resume response
+    { thread: sourceThread },                  // retried thread/read response
+    { thread: rolledBackThread },              // thread/rollback response
+    { turn: { id: "turn-edited" } },           // turn/start response
+  ]);
+  const rollbacks: Thread[] = [];
+
+  await editLastUserTurn(
+    recorder.client,
+    "thread-edit",
+    "turn-2",
+    "new prompt",
+    "/workspace/ui",
+    { model: "gpt-5.2" },
+    (thread) => rollbacks.push(thread),
+    "/sessions/2026/05/13/rollout-thread-edit.jsonl",
+  );
+
+  assertRequest(
+    recorder.requests,
+    0,
+    "thread/read",
+    { threadId: "thread-edit", includeTurns: true },
+    "edit should first attempt to read the thread",
+  );
+  assertRequest(
+    recorder.requests,
+    1,
+    "thread/resume",
+    {
+      threadId: "thread-edit",
+      path: "/sessions/2026/05/13/rollout-thread-edit.jsonl",
+      cwd: "/workspace/ui",
+      model: "gpt-5.2",
+    },
+    "edit should resume the thread with the rollout path so a stale session_index doesn't block recovery",
+  );
+  assertRequest(
+    recorder.requests,
+    2,
+    "thread/read",
+    { threadId: "thread-edit", includeTurns: true },
+    "edit should retry thread/read after resume",
+  );
+  assertRequest(
+    recorder.requests,
+    3,
+    "thread/rollback",
+    { threadId: "thread-edit", numTurns: 1 },
+    "edit should rollback the latest turn after recovery",
+  );
+  assertEqual(recorder.requests[4]?.method, "turn/start", "edit should still issue turn/start after recovery");
+  assertDeepEqual(rollbacks, [rolledBackThread], "edit should expose the rollback snapshot after recovery");
+}
+
+async function recoversThreadNotFoundOnEditRollbackByResumingFirst(): Promise<void> {
+  // `thread/read` can rebuild the turn list from disk while `thread/rollback`
+  // still requires a live thread handle. If rollback reports "thread not found",
+  // recover with `thread/resume` and retry the rollback.
+  const latestTurn = turnFixture("turn-2", {
+    items: [
+      {
+        type: "userMessage",
+        id: "user-2",
+        content: [{ type: "text", text: "old prompt", text_elements: [] }],
+      },
+      { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
+    ],
+  });
+  const sourceThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    path: "/sessions/2026/05/13/rollout-thread-edit.jsonl",
+    turns: [turnFixture("turn-1"), latestTurn],
+  });
+  const rolledBackThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1")],
+  });
+  const recorder = createClientSequenceRecorder([
+    { thread: sourceThread },
+    new Error("thread not found: thread-edit"),
+    { thread: sourceThread },
+    { thread: rolledBackThread },
+    { turn: { id: "turn-edited" } },
+  ]);
+  const rollbacks: Thread[] = [];
+
+  await editLastUserTurn(
+    recorder.client,
+    "thread-edit",
+    "turn-2",
+    "new prompt",
+    "/workspace/ui",
+    { model: "gpt-5.2" },
+    (thread) => rollbacks.push(thread),
+  );
+
+  assertRequest(
+    recorder.requests,
+    0,
+    "thread/read",
+    { threadId: "thread-edit", includeTurns: true },
+    "rollback recovery should still read the source turn first",
+  );
+  assertRequest(
+    recorder.requests,
+    1,
+    "thread/rollback",
+    { threadId: "thread-edit", numTurns: 1 },
+    "rollback recovery should attempt rollback before resuming",
+  );
+  assertRequest(
+    recorder.requests,
+    2,
+    "thread/resume",
+    {
+      threadId: "thread-edit",
+      path: "/sessions/2026/05/13/rollout-thread-edit.jsonl",
+      cwd: "/workspace/source",
+      model: "gpt-5.2",
+    },
+    "rollback recovery should resume using the path returned by thread/read",
+  );
+  assertRequest(
+    recorder.requests,
+    3,
+    "thread/rollback",
+    { threadId: "thread-edit", numTurns: 1 },
+    "rollback recovery should retry rollback after resume",
+  );
+  assertEqual(recorder.requests[4]?.method, "turn/start", "rollback recovery should still restart the edited turn");
+  assertDeepEqual(rollbacks, [rolledBackThread], "rollback recovery should expose the rollback snapshot");
 }
 
 function buildsTurnStartAndSteerRequests(): void {

@@ -41,17 +41,22 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
   const params = request.params as Record<string, unknown> | undefined;
   switch (request.method) {
     case "item/commandExecution/requestApproval":
-    case "execCommandApproval":
+    case "execCommandApproval": {
+      const questions = commandApprovalQuestions(params);
       return {
         title: commandApprovalTitle(params),
         reason: stringField(params, "reason"),
         body: commandApprovalBody(params),
         metadata: commandApprovalMetadata(params),
-        questions: commandApprovalQuestions(params),
+        questions,
         acceptLabel: "Allow",
         declineLabel: "Cancel",
-        canAccept: true,
+        canAccept: questions.some((question) => question.options.length > 0),
+        acceptDisabledReason: questions.some((question) => question.options.length > 0)
+          ? undefined
+          : "No approvable command decision was provided.",
       };
+    }
     case "item/fileChange/requestApproval":
     case "applyPatchApproval": {
       const changes = Array.isArray(params?.changes) ? params.changes : [];
@@ -231,8 +236,10 @@ function approvalDecisionQuestion(
 }
 
 function commandApprovalOptions(params: unknown): PendingRequestOption[] {
+  const filterAvailable = (options: PendingRequestOption[]) =>
+    filterAvailableCommandDecisionOptions(params, options);
   if (networkApprovalContext(params)) {
-    return [
+    return filterAvailable([
       { value: "accept", label: "Yes, just this once", description: "Approve only the current network attempt." },
       { value: "acceptForSession", label: "Yes, and allow this host for this conversation", description: "Approve this host for the current conversation." },
       ...(allowNetworkPolicyAmendment(params)
@@ -242,11 +249,11 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
             description: "Save a host allowlist rule for future requests.",
           }]
         : []),
-    ];
+    ]);
   }
 
   const amendment = execPolicyAmendment(params);
-  return [
+  return filterAvailable([
     { value: "accept", label: "Yes", description: "Approve this command execution." },
     amendment
       ? {
@@ -259,7 +266,7 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
           label: "Yes, and don't ask again this session",
           description: "Approve command executions until app-server restarts.",
         },
-  ];
+  ]);
 }
 
 function commandApprovalTitle(params: unknown): string {
@@ -288,6 +295,8 @@ function commandApprovalDecisionFromAnswers(
   answers: Record<string, string[]>,
 ): unknown {
   const requested = answers[APPROVAL_DECISION_QUESTION_ID]?.[0];
+  const available = availableCommandDecisionIds(request.params);
+  if (requested && available && !available.has(requested)) return available.has("accept") ? "accept" : "cancel";
   if (requested === "acceptForSession") return "acceptForSession";
   if (requested === "acceptWithExecpolicyAmendment") {
     const amendment = execPolicyAmendment(request.params);
@@ -302,6 +311,28 @@ function commandApprovalDecisionFromAnswers(
       : "acceptForSession";
   }
   return "accept";
+}
+
+function filterAvailableCommandDecisionOptions(
+  params: unknown,
+  options: PendingRequestOption[],
+): PendingRequestOption[] {
+  const available = availableCommandDecisionIds(params);
+  if (!available) return options;
+  const filtered = options.filter((option) => available.has(option.value));
+  return filtered;
+}
+
+function availableCommandDecisionIds(params: unknown): Set<string> | null {
+  const record = objectRecord(params);
+  const decisions = record?.availableDecisions;
+  if (!Array.isArray(decisions)) return null;
+  const ids = decisions.flatMap((decision) => {
+    if (typeof decision === "string") return [decision];
+    if (!decision || typeof decision !== "object" || Array.isArray(decision)) return [];
+    return Object.keys(decision);
+  });
+  return ids.length > 0 ? new Set(ids) : null;
 }
 
 function fileChangeApprovalDecisionFromAnswers(
@@ -620,8 +651,8 @@ function permissionScopeQuestion(): PendingRequestQuestion {
     required: true,
     defaultAnswers: ["turn"],
     options: [
-      { value: "turn", label: "This turn", description: "Allow for the current turn only." },
-      { value: "session", label: "This session", description: "Allow until this app-server session ends." },
+      { value: "turn", label: "Yes, allow for this turn", description: "Allow the requested access for the current turn only." },
+      { value: "session", label: "Yes, allow for this session", description: "Allow until this app-server session ends." },
     ],
   };
 }

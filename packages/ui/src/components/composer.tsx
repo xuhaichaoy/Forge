@@ -110,6 +110,8 @@ export function Composer({
   const promptEditorRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>(attachments);
+  const slashMenuRef = useRef<HTMLDivElement | null>(null);
+  const slashActiveRowRef = useRef<HTMLButtonElement | null>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [attachmentPicker, setAttachmentPicker] = useState<ComposerAttachmentPickerState>(CLOSED_ATTACHMENT_PICKER_STATE);
@@ -147,6 +149,22 @@ export function Composer({
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  useLayoutEffect(() => {
+    if (!slashOpen) return;
+    const menu = slashMenuRef.current;
+    const row = slashActiveRowRef.current;
+    if (!menu || !row) return;
+    const rowTop = row.offsetTop;
+    const rowBottom = rowTop + row.offsetHeight;
+    const visibleTop = menu.scrollTop;
+    const visibleBottom = visibleTop + menu.clientHeight;
+    if (rowTop < visibleTop) {
+      menu.scrollTop = Math.max(0, rowTop - 6);
+    } else if (rowBottom > visibleBottom) {
+      menu.scrollTop = rowBottom - menu.clientHeight + 6;
+    }
+  }, [slashCommands.length, slashIndex, slashOpen]);
 
   const closeComposerPopovers = useCallback(() => {
     setSlashOpen(false);
@@ -408,7 +426,7 @@ export function Composer({
     const isSkill = option.kind === "skill";
     const isApp = option.kind === "app";
     const isPlugin = option.kind === "plugin";
-    if (isApp || isPlugin) {
+    if (isSkill || isApp || isPlugin) {
       if (trigger) {
         const nextInput = removeMentionTriggerText(input, trigger);
         onInputChange(appendMentionPromptText(nextInput, option.promptText ?? mentionPromptReference(option)));
@@ -417,23 +435,17 @@ export function Composer({
       requestComposerFocus(promptEditorRef.current);
       return;
     }
-    const nextAttachment: ComposerAttachment = isSkill
-      ? {
-          type: "skill",
-          name: option.name || mentionOptionName(option),
-          path: option.path,
-        }
-      : {
-          type: "mention",
-          name: option.name || mentionOptionName(option),
-          path: option.path,
-        };
+    const nextAttachment: ComposerAttachment = {
+      type: "mention",
+      name: option.name || mentionOptionName(option),
+      path: option.path,
+    };
     const merged = mergeComposerAttachments(attachmentsRef.current, [nextAttachment]);
     attachmentsRef.current = merged;
     onAttachmentsChange(merged);
     if (trigger) {
       const nextInput = removeMentionTriggerText(input, trigger);
-      onInputChange(isSkill ? appendMentionPromptText(nextInput, option.promptText ?? "") : nextInput);
+      onInputChange(nextInput);
     }
     closeComposerPopovers();
     requestComposerFocus(promptEditorRef.current);
@@ -576,24 +588,30 @@ export function Composer({
             )}
 
             {slashOpen && slashCommands.length > 0 && (
-              <div className="hc-composer-menu" role="listbox" aria-label="Slash commands">
-                {slashCommands.slice(0, 12).map((command) => (
-                  <button
-                    className="hc-composer-menu-row"
-                    data-active={command.id === selectedSlashCommand?.id}
-                    key={command.id}
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => selectSlashCommand(command)}
-                  >
-                    <span className="hc-command-icon">/{command.id.slice(0, 1)}</span>
-                    <span>
-                      <strong>/{command.id}</strong>
-                      <small>{command.description}</small>
-                    </span>
-                    <em>{command.supported}</em>
-                  </button>
-                ))}
+              <div ref={slashMenuRef} className="hc-composer-menu" role="listbox" aria-label="Slash commands">
+                {slashCommands.map((command) => {
+                  const active = command.id === selectedSlashCommand?.id;
+                  return (
+                    <button
+                      ref={active ? slashActiveRowRef : undefined}
+                      className="hc-composer-menu-row"
+                      data-active={active}
+                      key={command.id}
+                      role="option"
+                      aria-selected={active}
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectSlashCommand(command)}
+                    >
+                      <span className="hc-command-icon">/{command.id.slice(0, 1)}</span>
+                      <span>
+                        <strong>/{command.id}</strong>
+                        <small>{command.description}</small>
+                      </span>
+                      <em>{command.supported}</em>
+                    </button>
+                  );
+                })}
               </div>
             )}
 

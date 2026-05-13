@@ -1,0 +1,26 @@
+{
+  "name": "@hicodex/internal-api-mcp-demo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Demo MCP server exposing an internal API to HiCodex / Codex Desktop.",
+  "main": "dist/server.js",
+  "bin": {
+    "hicodex-internal-api-mcp": "dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "tsx": "^4.16.2",
+    "typescript": "^5.6.2"
+  }
+}

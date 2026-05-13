@@ -8,14 +8,17 @@ import type { ConversationRenderUnit } from "../state/render-groups";
 import { ConversationView } from "./conversation-view";
 import type { FileReference } from "./file-reference-types";
 import type { OpenThreadHandler } from "./open-thread";
+import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
 
 export interface BackgroundAgentPanelProps {
   error?: string | null;
   kind?: "backgroundAgent" | "sideChat";
   loading?: boolean;
   onClose: () => void;
+  onMcpAppHostCall?: McpAppHostCallHandler;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
   subtitle: string;
   status: string;
   threadId: string;
@@ -28,8 +31,10 @@ export function BackgroundAgentPanel({
   kind = "backgroundAgent",
   loading = false,
   onClose,
+  onMcpAppHostCall,
   onOpenFileReference,
   onOpenThreadId,
+  onReadMcpResource,
   subtitle,
   status,
   threadId,
@@ -80,8 +85,10 @@ export function BackgroundAgentPanel({
           <ConversationView
             units={units}
             threadId={threadId}
+            onMcpAppHostCall={onMcpAppHostCall}
             onOpenFileReference={onOpenFileReference}
             onOpenThreadId={onOpenThreadId}
+            onReadMcpResource={onReadMcpResource}
             emptyState={(
               <div className="hc-background-agent-empty">
                 {isSideChat ? "No side chat messages yet." : "No visible messages yet."}

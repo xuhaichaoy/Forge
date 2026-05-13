@@ -76,12 +76,33 @@ export function openFileReference(path: string, line?: number | null): Promise<v
   return invoke("host_open_file_reference", { path, line });
 }
 
+export async function openExternalUrl(url: string): Promise<void> {
+  const href = normalizedExternalUrl(url);
+  if (!href) throw new Error("external URL must use http or https");
+  if (isTauriRuntime()) {
+    await invoke("host_open_external_url", { url: href });
+    return;
+  }
+  const opened = window.open(href, "_blank", "noopener,noreferrer");
+  if (!opened) throw new Error("failed to open external URL");
+}
+
 export type HostFileReferenceKind = "file" | "image";
 
 export interface LocalFileMetadata {
   isFile: boolean;
   sizeBytes?: number | null;
   mimeType?: string | null;
+}
+
+export interface SpreadsheetPreview {
+  rows: string[][];
+  truncated: boolean;
+}
+
+export interface DocumentPreview {
+  paragraphs: string[];
+  truncated: boolean;
 }
 
 export interface ImageGenerationRequest {
@@ -94,6 +115,10 @@ export function pickFileReferences(kind: HostFileReferenceKind, multiple = true)
   return invoke("host_pick_file_references", { kind, multiple });
 }
 
+export function pickWorkspaceFolder(): Promise<string | null> {
+  return invoke("host_pick_workspace_folder");
+}
+
 export function readImageDataUrl(path: string): Promise<string> {
   return invoke("host_read_image_data_url", { path });
 }
@@ -104,6 +129,25 @@ export function readFileMetadata(path: string): Promise<LocalFileMetadata> {
 
 export function readTextFile(path: string, maxBytes?: number): Promise<string> {
   return invoke("host_read_text_file", { path, maxBytes });
+}
+
+export function readSpreadsheetPreview(path: string, maxRows?: number, maxCols?: number): Promise<SpreadsheetPreview> {
+  return invoke("host_read_spreadsheet_preview", { path, maxRows, maxCols });
+}
+
+export function readDocumentPreview(
+  path: string,
+  maxParagraphs?: number,
+  maxCharsPerParagraph?: number,
+): Promise<DocumentPreview> {
+  return invoke("host_read_document_preview", { path, maxParagraphs, maxCharsPerParagraph });
+}
+
+export function findRolloutForThread(
+  threadId: string,
+  codexHome?: string | null,
+): Promise<string | null> {
+  return invoke("host_find_rollout_for_thread", { codexHome, threadId });
 }
 
 export function readThreadToolHistory(
@@ -129,4 +173,13 @@ export function isTauriRuntime(): boolean {
 
 export function convertLocalFileSrc(path: string): string {
   return convertFileSrc(path);
+}
+
+function normalizedExternalUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }

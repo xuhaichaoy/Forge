@@ -145,6 +145,38 @@
   cursor: pointer;
 }
 
+.hc-image-preview-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(28, 31, 36, 0.86);
+  color: #ffffff;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.hc-image-preview-nav.previous {
+  left: 18px;
+}
+
+.hc-image-preview-nav.next {
+  right: 18px;
+}
+
+.hc-image-preview-nav:hover {
+  background: rgba(42, 46, 53, 0.94);
+}
+
+.hc-image-preview-nav .is-previous {
+  transform: rotate(180deg);
+}
+
 .hc-image-preview-caption {
   max-width: min(92vw, 860px);
   color: #ffffff;
@@ -168,6 +200,29 @@
   border-radius: 8px;
   background: #f5f6f8;
   contain: inline-size;
+}
+
+.hc-markdown-code-lazy {
+  margin: 0 0 10px;
+}
+
+.hc-markdown-code-lazy pre {
+  overflow-x: auto;
+  margin: 0;
+  border: 1px solid #d8dbe0;
+  border-radius: 8px;
+  background: rgba(34, 38, 43, 0.04);
+  padding: 8px;
+}
+
+.hc-markdown-code-lazy code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  color: #22262b;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
 }
 
 .hc-code-snippet figcaption {
@@ -457,6 +512,49 @@
   border-radius: 3px;
   background: #fff;
   object-fit: contain;
+}
+
+.hc-markdown-prompt-link {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: baseline;
+  gap: 3px;
+  border: 1px solid rgba(39, 49, 61, 0.12);
+  border-radius: 5px;
+  background: rgba(39, 49, 61, 0.05);
+  padding: 0 4px;
+  color: #27313d;
+  font-size: 0.95em;
+  line-height: 1.35;
+  vertical-align: baseline;
+}
+
+.hc-markdown-prompt-link-mark {
+  flex: 0 0 auto;
+  color: #6f716b;
+  font-weight: 650;
+}
+
+.hc-markdown-prompt-link-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-markdown-prompt-link.is-app {
+  background: rgba(45, 85, 98, 0.08);
+  color: #234f5e;
+}
+
+.hc-markdown-prompt-link.is-plugin {
+  background: rgba(61, 100, 112, 0.08);
+  color: #2d5562;
+}
+
+.hc-markdown-prompt-link.is-skill {
+  background: rgba(47, 122, 99, 0.08);
+  color: #2f6c59;
 }
 
 .hc-markdown .hc-file-citation-marker {

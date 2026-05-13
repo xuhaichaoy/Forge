@@ -136,29 +136,6 @@
   color: #767970;
 }
 
-.hc-assistant-streaming-cursor {
-  display: inline-block;
-  width: 7px;
-  height: 14px;
-  margin-left: 2px;
-  border-radius: 999px;
-  background: #767970;
-  opacity: 0.45;
-  animation: hc-streaming-pulse 1s ease-in-out infinite;
-  vertical-align: -0.12em;
-}
-
-@keyframes hc-streaming-pulse {
-  0%,
-  100% {
-    opacity: 0.28;
-  }
-
-  50% {
-    opacity: 0.62;
-  }
-}
-
 .hc-tool-label {
   margin-bottom: 7px;
   color: #6f716b;
@@ -209,6 +186,17 @@
 .hc-user-edit-form[data-disabled="true"] .hc-user-edit-editor {
   pointer-events: none;
   opacity: 0.55;
+}
+
+.hc-user-edit-error {
+  margin: 0 12px 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(160, 70, 60, 0.08);
+  color: #843127;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .hc-user-edit-actions {
@@ -397,6 +385,52 @@
   line-height: 1.5;
 }
 
+.hc-markdown.is-indexed-fade .hc-markdown-fade-in,
+.hc-markdown.is-indexed-fade hr,
+.hc-markdown.is-indexed-fade li,
+.hc-markdown.is-indexed-fade tr,
+.hc-markdown.is-indexed-fade blockquote,
+.hc-markdown.is-indexed-fade code,
+.hc-markdown.is-indexed-fade pre {
+  /*
+   * Matches Codex Desktop's `_fadeIn_wo5r6_52` (markdown-V5_Mvbrr.css): every
+   * block-level element inside the streaming markdown root starts at opacity 0
+   * and runs `_fade-in 0.2s cubic-bezier(.37,.55,.86,.88) forwards`. The
+   * animation runs ONCE at the element's first mount; subsequent re-renders
+   * without remount don't restart it (forwards keeps the end opacity). That
+   * is why Codex's typewriter feels alive rather than flickery — once an `<li>`
+   * has faded in, it stays at full opacity even as new text streams into the
+   * same row.
+   *
+   * NOTE: per-word fade is driven by the `.hc-markdown-fade-in` class, applied
+   * only to text segments whose index is >= `previousSegmentCount` (see
+   * `renderMarkdownFadeText` in message-unit.tsx). That gating means already-
+   * streamed words keep their persisted opacity 1; only NEW words fade in.
+   */
+  opacity: 0;
+  animation: hc-markdown-fade-in var(--hc-markdown-fade-duration, 0.2s) cubic-bezier(0.37, 0.55, 0.86, 0.88) forwards;
+}
+
+@keyframes hc-markdown-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-markdown.is-indexed-fade .hc-markdown-fade-in,
+  .hc-markdown.is-indexed-fade hr,
+  .hc-markdown.is-indexed-fade li,
+  .hc-markdown.is-indexed-fade tr,
+  .hc-markdown.is-indexed-fade blockquote,
+  .hc-markdown.is-indexed-fade code,
+  .hc-markdown.is-indexed-fade pre {
+    --hc-markdown-fade-duration: 0s;
+    opacity: 1;
+    animation-duration: 0s;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -441,12 +475,18 @@
   white-space: nowrap;
 }
 
+/*
+ * Codex `:4818` markdown <details> renderer uses
+ * `className="group my-3 rounded-xl border border-token-border/30 bg-token-bg-secondary/15 px-4 py-3"`
+ * — margin 12px, border-radius 12px (rounded-xl), padding 16px horizontal + 12px vertical.
+ * Color tokens stay on HiCodex's light-theme equivalents.
+ */
 .hc-markdown-details {
-  margin: 10px 0 12px;
+  margin: 12px 0;
   border: 1px solid rgba(34, 38, 43, 0.1);
-  border-radius: 8px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.62);
-  padding: 10px 12px;
+  padding: 12px 16px;
 }
 
 .hc-markdown-details > summary {
@@ -632,10 +672,11 @@
   min-width: 0;
   opacity: 0;
   transform: translateY(-2px);
+  /* Codex `yo` transition (`animations-y0LC3gHS.js` → pretty:89) — 500ms cubic-bezier(0.19,1,0.22,1) */
   transition:
-    grid-template-rows 180ms ease,
-    opacity 140ms ease,
-    transform 180ms ease;
+    grid-template-rows var(--hc-codex-transition),
+    opacity var(--hc-codex-transition),
+    transform var(--hc-codex-transition);
 }
 
 .hc-disclosure-motion[data-open="true"] {

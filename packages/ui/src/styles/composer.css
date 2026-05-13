@@ -40,7 +40,14 @@
   border-radius: 24px;
   background: rgba(255, 253, 250, 0.92);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.10), 0 4px 16px rgba(0, 0, 0, 0.05);
-  backdrop-filter: blur(16px);
+  /*
+   * Codex Desktop composer (`composer-Bszob1mP.css`) uses
+   * `backdrop-filter: blur(8px)` — half of what HiCodex previously had. The
+   * heavier 16px blur made the composer feel too "glassy" / out of place
+   * compared to the rest of the chrome which uses `backdrop-blur-sm` (4px on
+   * the right rail). Match Codex's 8px.
+   */
+  backdrop-filter: blur(8px);
 }
 
 .hc-composer-field[data-layout="multiline"] {
@@ -354,6 +361,12 @@
   gap: 12px;
 }
 
+.hc-composer-footer-project {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
 .hc-composer-footer-chip {
   display: inline-flex;
   min-width: 0;
@@ -379,6 +392,49 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hc-composer-project-menu {
+  top: auto;
+  right: auto;
+  bottom: 30px;
+  left: 0;
+  width: min(320px, calc(100vw - 32px));
+  max-height: 360px;
+}
+
+.hc-composer-project-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: #6f716b;
+  background: #f6f4ee;
+}
+
+.hc-composer-project-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #27313d;
+  font-size: 12px;
+}
+
+.hc-composer-project-list {
+  display: grid;
+  max-height: 232px;
+  overflow-y: auto;
+  gap: 2px;
+}
+
+.hc-composer-project-empty {
+  padding: 8px;
+  color: #7c7f78;
+  font-size: 12px;
 }
 
 .hc-composer-footer-model {

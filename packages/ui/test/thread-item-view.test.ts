@@ -2,12 +2,47 @@ import {
   autoReviewBody,
   autoReviewTitle,
   dynamicToolCallLabel,
+  execThreadItemSummaryLabel,
 } from "../src/components/thread-item-view";
 
 export default function runThreadItemViewTests(): void {
+  formatsDesktopExecThreadItemSummaries();
   formatsDesktopAutoReviewTitles();
   formatsDesktopAutoReviewBodies();
   formatsDesktopDynamicToolCallLabels();
+}
+
+function formatsDesktopExecThreadItemSummaries(): void {
+  const completed = {
+    kind: "exec",
+    id: "exec-1",
+    running: false,
+    command: "npm run test",
+    cwd: "/workspace",
+    output: "ok",
+    status: "completed",
+    footer: "Success",
+  } as const;
+  assertEqual(
+    execThreadItemSummaryLabel(completed, false),
+    "Ran npm run test",
+    "collapsed standalone exec summary should match Desktop's specific command row",
+  );
+  assertEqual(
+    execThreadItemSummaryLabel(completed, true),
+    "Ran command",
+    "expanded standalone exec summary should match Desktop's generic command row",
+  );
+  assertEqual(
+    execThreadItemSummaryLabel({ ...completed, running: true, footer: "" }, true),
+    "Running command",
+    "running standalone exec summary should match Desktop's running row",
+  );
+  assertEqual(
+    execThreadItemSummaryLabel({ ...completed, footer: "Stopped" }, false),
+    "Stopped npm run test",
+    "interrupted standalone exec summary should match Desktop's stopped command row",
+  );
 }
 
 function formatsDesktopAutoReviewTitles(): void {
@@ -61,6 +96,28 @@ function formatsDesktopDynamicToolCallLabels(): void {
     dynamicToolCallLabel({ type: "dynamicToolCall", tool: "custom_tool", status: "completed", id: "dynamic-3" } as never),
     "Custom Tool",
     "unknown dynamic tools should fall back to humanized Desktop labels",
+  );
+  assertEqual(
+    dynamicToolCallLabel({
+      type: "dynamicToolCall",
+      tool: "manage_codex_threads",
+      status: "running",
+      id: "dynamic-4",
+      arguments: { type: "threads.create_in_worktree" },
+    } as never),
+    "Creating worktree thread",
+    "running manage_codex_threads labels should match Desktop app-control wording",
+  );
+  assertEqual(
+    dynamicToolCallLabel({
+      type: "dynamicToolCall",
+      tool: "manage_codex_threads",
+      status: "completed",
+      id: "dynamic-5",
+      arguments: { type: "threads.send_message" },
+    } as never),
+    "Sent message to thread",
+    "completed manage_codex_threads labels should match Desktop app-control wording",
   );
 }
 

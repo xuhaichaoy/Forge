@@ -10,9 +10,13 @@ import {
 } from "../state/artifact-preview";
 import {
   convertLocalFileSrc,
+  readDocumentPreview,
   readFileMetadata,
+  readSpreadsheetPreview,
   readTextFile,
+  type DocumentPreview,
   type LocalFileMetadata,
+  type SpreadsheetPreview,
 } from "../lib/tauri-host";
 import { resolveFileReferencePathCandidates } from "../state/file-references";
 
@@ -38,6 +42,18 @@ type MetadataPreviewState =
   | { status: "ready"; metadata: LocalFileMetadata; message?: undefined }
   | { status: "error"; metadata: null; message: string };
 
+type SpreadsheetPreviewState =
+  | { status: "idle"; preview: null }
+  | { status: "loading"; preview: null }
+  | { status: "ready"; preview: SpreadsheetPreview }
+  | { status: "error"; preview: null; message: string };
+
+type DocumentPreviewState =
+  | { status: "idle"; preview: null }
+  | { status: "loading"; preview: null }
+  | { status: "ready"; preview: DocumentPreview }
+  | { status: "error"; preview: null; message: string };
+
 export function ArtifactPreviewPanel({
   entry,
   workspaceRoot,
@@ -49,6 +65,8 @@ export function ArtifactPreviewPanel({
 }: ArtifactPreviewPanelProps) {
   const preview = useMemo(() => projectArtifactPreview(entry), [entry]);
   const [textPreview, setTextPreview] = useState<TextPreviewState>({ status: "idle", text: "" });
+  const [spreadsheetPreview, setSpreadsheetPreview] = useState<SpreadsheetPreviewState>({ status: "idle", preview: null });
+  const [documentPreview, setDocumentPreview] = useState<DocumentPreviewState>({ status: "idle", preview: null });
   const [metadataPreview, setMetadataPreview] = useState<MetadataPreviewState>({ status: "idle", metadata: null });
   const [resolvedReferencePath, setResolvedReferencePath] = useState("");
   const referencePath = preview.reference?.path ?? "";
@@ -85,6 +103,20 @@ export function ArtifactPreviewPanel({
     : "";
   const metadataReadyForPreview = !resolvedReference
     || (metadataPreview.status === "ready" && metadataPreview.metadata.isFile && !tooLarge);
+  const resolvedSpreadsheetPath = preview.kind === "spreadsheet" && resolvedReference
+    ? effectiveReferencePath
+    : "";
+  /*
+   * Codex Desktop renders docx artifacts in its `docx-preview-panel-*.js`
+   * panel (full layout/runs/comments). HiCodex renders a plain-text
+   * paragraph preview via the new `host_read_document_preview` Tauri command
+   * (apps/desktop/src-tauri/src/document_preview.rs) — same approach we use
+   * for xlsx, just over `word/document.xml` instead of `xl/worksheets/*`.
+   */
+  const resolvedDocumentPath = preview.kind === "document" && resolvedReference
+    && isWordDocumentPath(effectiveReferencePath)
+    ? effectiveReferencePath
+    : "";
   const imageSrc = preview.imageSource && (preview.imageSource.kind !== "file" || metadataReadyForPreview)
     ? preview.imageSource.kind === "file" ? localFileSrc(resolvedImagePath || preview.imageSource.src) : preview.imageSource.src
     : "";
@@ -122,7 +154,7 @@ export function ArtifactPreviewPanel({
   }, [preferredReferencePath, referencePathCandidates]);
 
   useEffect(() => {
-    if (!resolvedTextPath || !metadataReadyForPreview) {
+    if (!resolvedTextPath || preview.kind === "spreadsheet" || !metadataReadyForPreview) {
       setTextPreview({ status: "idle", text: "" });
       return;
     }
@@ -151,10 +183,66 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [metadataReadyForPreview, resolvedTextPath]);
+  }, [metadataReadyForPreview, preview.kind, resolvedTextPath]);
+
+  useEffect(() => {
+    if (!resolvedDocumentPath || !metadataReadyForPreview) {
+      setDocumentPreview({ status: "idle", preview: null });
+      return;
+    }
+
+    let cancelled = false;
+    setDocumentPreview({ status: "loading", preview: null });
+    readDocumentPreview(resolvedDocumentPath, 80, 400)
+      .then((nextPreview) => {
+        if (cancelled) return;
+        setDocumentPreview({ status: "ready", preview: nextPreview });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setDocumentPreview({
+          status: "error",
+          preview: null,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [metadataReadyForPreview, resolvedDocumentPath]);
+
+  useEffect(() => {
+    if (!resolvedSpreadsheetPath || !metadataReadyForPreview) {
+      setSpreadsheetPreview({ status: "idle", preview: null });
+      return;
+    }
+
+    let cancelled = false;
+    setSpreadsheetPreview({ status: "loading", preview: null });
+    readSpreadsheetPreview(resolvedSpreadsheetPath, 40, 12)
+      .then((nextPreview) => {
+        if (cancelled) return;
+        setSpreadsheetPreview({ status: "ready", preview: nextPreview });
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSpreadsheetPreview({
+          status: "error",
+          preview: null,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [metadataReadyForPreview, resolvedSpreadsheetPath]);
 
   const previewState = artifactPreviewState(metadataPreview, tooLarge, resolvedReference != null);
-  const hasInlinePreview = Boolean(imageSrc || pdfSrc || resolvedTextPath);
+  const hasInlinePreview = Boolean(
+    imageSrc || pdfSrc || resolvedTextPath || resolvedSpreadsheetPath || resolvedDocumentPath,
+  );
   const showUnavailablePreview = !previewState && !hasInlinePreview && preview.kind !== "url";
 
   return (
@@ -229,6 +317,10 @@ export function ArtifactPreviewPanel({
       )}
 
       {pdfSrc && <ArtifactPdfPreviewFrame src={pdfSrc} title={preview.title} />}
+
+      {resolvedSpreadsheetPath && <ArtifactSpreadsheetPreviewView preview={spreadsheetPreview} />}
+
+      {resolvedDocumentPath && <ArtifactDocumentPreviewView preview={documentPreview} />}
 
       {resolvedTextPath && <ArtifactTextPreviewView preview={textPreview} />}
 
@@ -313,6 +405,67 @@ function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
   );
 }
 
+function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPreviewState }) {
+  if (preview.status === "idle") return null;
+  if (preview.status === "loading") {
+    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />;
+  }
+  if (preview.status === "error") {
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+  }
+  const rows = preview.preview.rows;
+  if (rows.length === 0) {
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+  }
+  const columnCount = Math.max(...rows.map((row) => row.length), 1);
+  return (
+    <div className="hc-artifact-preview-sheet-wrap">
+      <table className="hc-artifact-preview-sheet">
+        <tbody>
+          {rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {Array.from({ length: columnCount }, (_, colIndex) => (
+                <td key={colIndex}>{row[colIndex] ?? ""}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {preview.preview.truncated && (
+        <div className="hc-artifact-preview-truncation">
+          Preview truncated
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ArtifactDocumentPreviewView({ preview }: { preview: DocumentPreviewState }) {
+  if (preview.status === "idle") return null;
+  if (preview.status === "loading") {
+    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />;
+  }
+  if (preview.status === "error") {
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+  }
+  const paragraphs = preview.preview.paragraphs;
+  if (paragraphs.length === 0) {
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+  }
+  return (
+    <div className="hc-artifact-preview-text-wrap">
+      <div className="hc-artifact-preview-document">
+        {paragraphs.map((paragraph, index) => (
+          <p className="hc-artifact-preview-document-paragraph" key={index}>{paragraph}</p>
+        ))}
+      </div>
+      {preview.preview.truncated && (
+        <div className="hc-artifact-preview-truncation">Preview truncated</div>
+      )}
+    </div>
+  );
+}
+
 function artifactPreviewState(
   metadataPreview: MetadataPreviewState,
   tooLarge: boolean,
@@ -368,6 +521,10 @@ function resolveArtifactLocalPath(
     workspaceRoot: input.workspaceRoot,
     cwd: input.cwd,
   })[0] ?? path;
+}
+
+function isWordDocumentPath(path: string): boolean {
+  return /\.(?:doc|docx)$/i.test(path.split(/[?#]/, 1)[0] ?? "");
 }
 
 async function readFirstAvailableMetadata(
