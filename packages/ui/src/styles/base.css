@@ -1,17 +1,57 @@
 
 :root {
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #f6f5f1;
   color: #171717;
-  --thread-content-max-width: none;
+  --vscode-foreground: #202124;
+  --vscode-descriptionForeground: #8a8b84;
+  --vscode-list-hoverBackground: rgba(34, 38, 43, 0.08);
+  --vscode-focusBorder: #89a9b2;
+  --vscode-dropdown-background: rgba(255, 253, 250, 0.92);
+  --vscode-menu-border: #d2cdc0;
+  --text-sm: 12px;
+  --text-sm--line-height: calc(1.25 / .875);
+  --text-base: 14px;
+  --text-base--line-height: calc(1.5 / 1);
+  --padding-row-x: 8px;
+  --padding-row-y: 5px;
+  --height-token-nav-row: calc(14px * 1.5 + var(--padding-row-y) * 2);
+  /*
+   * Codex Desktop (electron window) sets in `app-main-*.css`:
+   *   --thread-content-max-width: 48rem    (768px) — main message/text column
+   *   --markdown-wide-block-max-width: 56rem (896px) — wide blocks (tables, code)
+   * Constraint applied via `.hc-thread-scroll-body` + footer-content (`max-width:
+   * var(--thread-content-max-width)`). Previously `none` meant the assistant
+   * column spanned the full viewport — visibly wrong vs. Codex on wide screens
+   * because long markdown paragraphs reflowed to ~1300px line lengths.
+   */
+  --thread-content-max-width: 48rem;
+  --markdown-wide-block-max-width: 56rem;
   --thread-content-padding-inline: 16px;
   --thread-body-padding-inline: 24px;
   --thread-content-top-inset: 0px;
   --codex-chat-font-size: 13px;
   --codex-chat-code-font-size: 12px;
   --conversation-block-gap: 12px;
+  /* Codex Desktop's `:root` in `app-main-*.css` defines:
+   *   --conversation-block-gap: 12px;
+   *   --conversation-tool-assistant-gap: 16px;
+   * (The JS consumers `local-conversation-thread.pretty.js:4270/7829/8238` write
+   * `var(--conversation-tool-assistant-gap, 8px)` with 8px as a *fallback*, which
+   * earlier audits misread as the effective value. The CSS variable IS defined,
+   * so 16px is the real Desktop gap.) */
   --conversation-tool-assistant-gap: 16px;
+  /* Codex Desktop's framer-motion transition `yo` — sourced from
+   * `animations-y0LC3gHS.js` (module body `var e={duration:.5,ease:[.19,1,.22,1]}`,
+   * imported into pretty conversation thread chunk at `:89` as `t as yo`).
+   * Framer-motion `duration` is seconds → 500ms. The cubic-bezier `[.19,1,.22,1]` is
+   * a sharp ease-out used uniformly for disclosure / collapse animations across
+   * `local-conversation-thread.pretty.js:1645, 3325, 3783, 4143, 5890, 6031, 6576,
+   * 6803, 6919, 6976, 7334, 7572, 7774, 8410`. */
+  --hc-codex-transition-duration: 500ms;
+  --hc-codex-transition-ease: cubic-bezier(0.19, 1, 0.22, 1);
+  --hc-codex-transition: var(--hc-codex-transition-duration) var(--hc-codex-transition-ease);
 }
 
 * {
@@ -23,6 +63,59 @@ input,
 textarea,
 select {
   font: inherit;
+  color: inherit;
+  background-color: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+button {
+  padding: 0;
+}
+
+.h-token-nav-row {
+  height: var(--height-token-nav-row);
+}
+
+.px-row-x {
+  padding-inline: var(--padding-row-x);
+}
+
+.py-row-y {
+  padding-block: var(--padding-row-y);
+}
+
+.cursor-interaction {
+  cursor: pointer;
+}
+
+.text-token-foreground {
+  color: var(--vscode-foreground);
+}
+
+.text-token-description-foreground {
+  color: var(--vscode-descriptionForeground);
+}
+
+.bg-token-list-hover-background,
+.hover\:bg-token-list-hover-background:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.bg-token-dropdown-background {
+  background-color: var(--vscode-dropdown-background);
+}
+
+.bg-token-menu-border {
+  background-color: var(--vscode-menu-border);
+}
+
+.ring-token-border {
+  --tw-ring-color: var(--vscode-menu-border);
+}
+
+.shadow-xl-spread {
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.20);
 }
 
 .hc-app {
@@ -44,8 +137,8 @@ select {
 .hc-sidebar {
   min-width: 0;
   min-height: 0;
-  background: #efeee8;
-  border-right: 1px solid #d8d5ca;
+  background: #f6f5f1;
+  border-right: 1px solid rgba(34, 38, 43, 0.12);
 }
 
 .hc-sidebar {
@@ -54,6 +147,28 @@ select {
   height: 100%;
 }
 
+/*
+ * Codex Desktop rail container (`Mf` inner div, `local-conversation-thread.pretty.js:2099/2117`):
+ *   "relative group/summary-panel flex h-fit max-h-full flex-col gap-3 overflow-y-auto
+ *    rounded-3xl border border-token-border-default py-3 shadow-md backdrop-blur-sm"
+ *   + bg toggles between `bg-token-dropdown-background` (overlay, fully opaque)
+ *     and `bg-token-dropdown-background/50` (non-overlay, 50% opaque).
+ *
+ * Aligned properties:
+ *   - shadow-md → Tailwind's `0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)`
+ *     (HiCodex previously used `0 16px 34px rgba(36,38,35,0.13)` — much heavier).
+ *   - backdrop-blur-sm → 4px (HiCodex previously 12px).
+ *   - background non-overlay → ~50% opaque (HiCodex previously 76%).
+ *
+ * D4 — horizontal padding model: Codex uses `py-3` only (no horizontal padding on the
+ * container itself) and pushes horizontal padding into each child:
+ *   - Section header (`Jd` :1666): `ps-4 pe-2` (16px left, 8px right)
+ *   - Section content (`Kd` :1645): `px-4` (16px)
+ *   - Section `::after` separator inset-x-4 (16px from each rail edge)
+ * Artifact / file-reference preview panels are siblings of sections and previously
+ * relied on the container's 12px horizontal padding for breathing room; we restore
+ * that via their own horizontal margin so they don't go edge-to-edge after the switch.
+ */
 .hc-right-rail {
   position: absolute;
   top: 12px;
@@ -68,54 +183,287 @@ select {
   overflow-y: auto;
   border: 1px solid rgba(34, 38, 43, 0.14);
   border-radius: 24px;
-  background: rgba(255, 253, 250, 0.76);
-  box-shadow: 0 16px 34px rgba(36, 38, 35, 0.13);
-  backdrop-filter: blur(12px);
-  padding: 12px;
+  background: rgba(255, 253, 250, 0.5);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(4px);
+  padding: 12px 0;
 }
 
 .hc-right-rail[data-display-mode="overlay"] {
   background: #fffdfa;
-  box-shadow: 0 18px 42px rgba(36, 38, 35, 0.20);
+  /* Slightly stronger shadow in overlay mode keeps the panel visually anchored when it floats
+   * over content without a reserved gutter — equivalent of Codex's mode-driven opacity bump. */
+  box-shadow:
+    0 6px 10px -2px rgba(0, 0, 0, 0.12),
+    0 3px 6px -3px rgba(0, 0, 0, 0.12);
 }
 
-.hc-brand {
+/*
+ * File preview panel (HiCodex equivalent of Codex Desktop's AppShell
+ * RightPanel `vn` at `app-shell.formatted.js:518` when hosting
+ * `FilePreviewPage`). This is the resizable big panel that opens on
+ * artifact / file clicks — distinct from `.hc-right-rail` (the summary
+ * card). See `right-rail.tsx` / `file-preview-panel.tsx` for the
+ * architectural split + source citations.
+ *
+ * Visual: solid main-surface background, no rounded corners, no shadow on
+ * the side it borders the conversation, single 1 px left border (matches
+ * Codex `vn` inner `border-l border-token-border-default` at :528 when not
+ * full-width).
+ */
+.hc-file-preview-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  display: flex;
+  width: 600px;
+  min-width: 320px;
+  flex-direction: column;
+  background: #fffdfa;
+  border-left: 1px solid rgba(34, 38, 43, 0.12);
+  box-shadow: -8px 0 24px -8px rgba(34, 38, 43, 0.10);
+  overflow: hidden;
+}
+
+.hc-file-preview-panel[data-full-width="true"] {
+  width: 100% !important;
+  border-left: 0;
+  box-shadow: none;
+}
+
+.hc-file-preview-panel[data-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/*
+ * Drag handle — Codex `app-shell-panel-animation-DTiWlXE1.js function T` for
+ * `edge: "left"`:
+ *   <div class="group absolute touch-none select-none z-40 top-0 bottom-0
+ *               left-0 w-4 -translate-x-2 cursor-col-resize active:cursor-col-resize">
+ *     <div class="h-full w-px bg-gradient-to-b from-transparent
+ *                 via-token-foreground/25 to-transparent m-auto opacity-0
+ *                 group-hover:opacity-100 group-active:opacity-100" />
+ *   </div>
+ *
+ * Match exactly: 16 px hit-zone, translated -8 px so half overlaps the panel
+ * and half overlaps the conversation; inside, a 1 px vertical line that
+ * fades in on hover/active with a top→middle→bottom gradient.
+ */
+.hc-file-preview-panel-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 16px;
+  transform: translateX(-8px);
+  z-index: 50;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  display: flex;
+  background: transparent;
+}
+
+.hc-file-preview-panel-resize-handle-line {
+  margin: auto;
+  width: 1px;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(34, 38, 43, 0.25) 50%,
+    transparent 100%
+  );
+  transition: opacity 120ms ease;
+}
+
+.hc-file-preview-panel-resize-handle:hover .hc-file-preview-panel-resize-handle-line,
+.hc-file-preview-panel-resize-handle:active .hc-file-preview-panel-resize-handle-line,
+.hc-file-preview-panel-resize-handle[data-resizing="true"] .hc-file-preview-panel-resize-handle-line {
+  opacity: 1;
+}
+
+.hc-file-preview-panel-chrome {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 48px;
-  padding: 8px 10px 8px 12px;
-  border-bottom: 1px solid #d8d5ca;
+  gap: 10px;
+  padding: 8px 12px 6px;
+  border-bottom: 1px solid rgba(34, 38, 43, 0.06);
 }
 
-.hc-brand-main {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 9px;
-}
-
-.hc-brand-mark {
+.hc-file-preview-panel-title {
   display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  color: #f8fafc;
-  background: #20262d;
+  min-width: 0;
+  gap: 1px;
+  color: #27313d;
 }
 
-.hc-brand-title {
+.hc-file-preview-panel-title span,
+.hc-file-preview-panel-title small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-file-preview-panel-title span {
   font-size: 13px;
   font-weight: 650;
+  line-height: 1.3;
+}
+
+.hc-file-preview-panel-title small {
+  color: #7a7c77;
+  font-size: 11px;
+  font-weight: 500;
   line-height: 1.25;
 }
 
-.hc-brand-subtitle,
+.hc-file-preview-panel-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.hc-file-preview-panel-icon-button {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6f716b;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.hc-file-preview-panel-icon-button:hover {
+  background: rgba(34, 38, 43, 0.08);
+  color: #27313d;
+}
+
+.hc-file-preview-panel-icon-button[aria-pressed="true"] {
+  color: #27313d;
+  background: rgba(34, 38, 43, 0.10);
+}
+
+.hc-file-preview-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hc-file-preview-line-label {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  z-index: 1;
+  border-radius: 999px;
+  background: rgba(255, 253, 250, 0.9);
+  color: #6f716b;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  box-shadow: 0 2px 8px rgba(34, 38, 43, 0.06);
+}
+
+.hc-file-preview-code-view {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.hc-file-preview-code-snippet {
+  min-height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fffdfa;
+  box-shadow: none;
+}
+
+.hc-file-preview-code-container {
+  min-height: 100%;
+  overflow: visible !important;
+  padding: 16px;
+}
+
+.hc-file-preview-code {
+  display: block;
+}
+
+.hc-file-preview-empty {
+  display: grid;
+  height: 100%;
+  min-height: 180px;
+  place-items: center;
+  color: #8a8c85;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.hc-file-preview-image-view {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  place-items: center;
+  overflow: auto;
+  padding: 16px;
+}
+
+.hc-file-preview-image-view img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.hc-file-preview-document-view {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 28px;
+  color: #27313d;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.hc-file-preview-document-view p {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hc-file-preview-document-view p:last-child {
+  margin-bottom: 0;
+}
+
+.hc-file-preview-truncation {
+  position: sticky;
+  bottom: 0;
+  border-top: 1px solid rgba(34, 38, 43, 0.08);
+  background: rgba(255, 253, 250, 0.94);
+  color: #6f716b;
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.hc-sidebar-subtitle,
 .hc-top-meta,
-.hc-muted,
-.hc-thread-meta {
+.hc-muted {
   color: #6f716b;
   font-size: 12px;
 }
@@ -125,12 +473,6 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.hc-sidebar-actions {
-  display: flex;
-  gap: 8px;
-  padding: 10px;
 }
 
 .hc-button,
@@ -171,6 +513,59 @@ select {
   border-radius: 7px;
 }
 
+.hc-sidebar-nav {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 12px 10px 8px;
+}
+
+.hc-sidebar-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #30332f;
+  cursor: pointer;
+  padding: 0 10px;
+  text-align: left;
+}
+
+.hc-sidebar-nav-item:hover,
+.hc-sidebar-nav-item.is-active {
+  background: rgba(34, 38, 43, 0.08);
+}
+
+.hc-sidebar-nav-item:disabled {
+  color: #8a8b84;
+  cursor: default;
+}
+
+.hc-sidebar-nav-item:disabled:hover {
+  background: transparent;
+}
+
+.hc-sidebar-nav-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.hc-sidebar-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 520;
+  line-height: 18px;
+}
+
 .hc-link-button {
   display: flex;
   align-items: center;
@@ -184,7 +579,6 @@ select {
 }
 
 .hc-link-button:hover,
-.hc-thread-row:hover,
 .hc-button:hover,
 .hc-icon-button:hover {
   background: #e4e1d7;
@@ -198,154 +592,108 @@ select {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px 6px 8px;
+  padding: 4px 10px 8px;
 }
 
-.hc-thread-row {
+.hc-thread-section-header {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  min-height: 46px;
-  margin: 1px 0;
-  border-radius: 8px;
-  background: transparent;
-}
-
-.hc-thread-row.is-active {
-  background: #fffdfa;
-  box-shadow: inset 0 0 0 1px rgba(34, 38, 43, 0.08);
-}
-
-.hc-thread-select {
-  flex: 1;
-  min-width: 0;
-  min-height: 46px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  padding: 7px 8px;
-  text-align: left;
-}
-
-.hc-thread-select:focus-visible,
-.hc-thread-action:focus-visible,
-.hc-thread-menu-item:focus-visible {
-  outline: 2px solid #89a9b2;
-  outline-offset: 2px;
-}
-
-.hc-thread-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 560;
-  line-height: 18px;
-}
-
-.hc-thread-mainline {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-}
-
-.hc-thread-mainline .hc-thread-name {
-  flex: 1;
-}
-
-.hc-thread-chevron {
-  flex: 0 0 auto;
-  color: #7c7d76;
-}
-
-.hc-thread-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 5px;
-  color: #787a73;
-  font-size: 11px;
-  line-height: 14px;
+  min-height: 34px;
+  padding: 8px 0 6px;
 }
 
-.hc-thread-project,
-.hc-thread-status {
+.hc-thread-section-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: #777973;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 16px;
 }
 
-.hc-thread-project {
-  flex: 1;
-}
-
-.hc-thread-status {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 1px;
-}
-
-.hc-thread-status-dot {
-  margin-left: -4px;
-}
-
-.hc-thread-status-dot[data-status="running"] {
-  color: #2f7a63;
-}
-
-.hc-thread-status-dot[data-status="attention"] {
-  color: #a35f18;
-}
-
-.hc-thread-status-dot[data-status="muted"] {
-  color: #9a9b94;
-}
-
-.hc-thread-actions {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
+.hc-thread-section-actions {
   position: relative;
-  flex: 0 0 auto;
-  padding-right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 120ms ease;
 }
 
-.hc-thread-row:hover .hc-thread-actions,
-.hc-thread-row.is-active .hc-thread-actions,
-.hc-thread-row.is-menu-open .hc-thread-actions,
-.hc-thread-row:focus-within .hc-thread-actions {
+.hc-thread-section-header:hover .hc-thread-section-actions,
+.hc-thread-section-header:focus-within .hc-thread-section-actions,
+.hc-thread-section-header.is-menu-open .hc-thread-section-actions {
   opacity: 1;
+  pointer-events: auto;
 }
 
-.hc-thread-action {
+.hc-sidebar-section-action {
   display: inline-grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 7px;
   background: transparent;
-  color: #5f625b;
+  color: #777973;
   cursor: pointer;
+  padding: 0;
 }
 
-.hc-thread-action:hover {
+.hc-sidebar-section-action:hover,
+.hc-sidebar-section-action[aria-expanded="true"] {
   background: #d8d5ca;
   color: #20262d;
 }
 
-.hc-thread-action.danger {
-  color: #963d2f;
+.hc-sidebar-section-menu {
+  top: 28px;
+  right: 0;
+}
+
+.hc-thread-group {
+  min-width: 0;
+  margin-bottom: 6px;
+}
+
+.hc-project-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #5f625b;
+  cursor: pointer;
+  padding: 0 8px 0 0;
+  text-align: left;
+}
+
+.hc-project-row:hover {
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #5f625b;
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.hc-thread-menu-item:focus-visible {
+  outline: 2px solid #89a9b2;
+  outline-offset: 2px;
 }
 
 .hc-thread-menu {
@@ -378,8 +726,49 @@ select {
   font-size: 12px;
 }
 
+.hc-thread-menu-title {
+  padding: 5px 8px 3px;
+  color: #777973;
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 14px;
+}
+
+.hc-thread-menu-check {
+  margin-left: auto;
+  color: #5f625b;
+}
+
 .hc-thread-menu-item:hover {
   background: #e9e6dc;
+}
+
+.hc-thread-pin-button {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.hc-sidebar-thread-row:hover .hc-thread-pin-button,
+.hc-sidebar-thread-row:focus-within .hc-thread-pin-button,
+.hc-thread-pin-button.is-pinned {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hc-sidebar-thread-row[data-confirming-archive="true"] .hc-thread-actions {
+  opacity: 1;
+}
+
+.hc-thread-confirm-archive {
+  background: rgba(150, 61, 47, 0.16);
+  color: #b43b31;
+  font-weight: 650;
+}
+
+.hc-thread-confirm-archive:hover,
+.hc-thread-confirm-archive:focus-visible {
+  background: rgba(150, 61, 47, 0.22);
+  color: #9f2f27;
 }
 
 .hc-thread-menu-item:disabled {
@@ -403,6 +792,5 @@ select {
 
 .hc-sidebar-footer {
   flex: 0 0 auto;
-  padding: 6px 8px 8px;
-  border-top: 1px solid #d8d5ca;
+  padding: 6px 10px 10px;
 }

@@ -1,10 +1,15 @@
-import { ChevronRight, TriangleAlert, Wrench } from "lucide-react";
+import { ChevronRight, Terminal, TriangleAlert, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { isItemInProgress, itemType } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import { ToolActivityDetail } from "./tool-activity-detail";
+import {
+  initialExecShellExpanded,
+  normalizeDesktopShellCommand,
+  ToolActivityDetail,
+  toolActivityDetailViewModel,
+} from "./tool-activity-detail";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
@@ -25,16 +30,74 @@ function ExecThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
+  const detail = toolActivityDetailViewModel(unit.item);
+  const canExpand = detail.kind === "exec";
+  const [expanded, setExpanded] = useState(() => detail.kind === "exec" && initialExecShellExpanded(detail));
+
+  useEffect(() => {
+    setExpanded(detail.kind === "exec" && initialExecShellExpanded(detail));
+  }, [detail.id, detail.kind]);
+
+  if (!canExpand) {
+    return (
+      <div
+        className="hc-thread-item-row"
+        data-content-search-unit-key={unit.key}
+        data-item-ids={unit.item.id}
+        data-item-type="exec"
+      >
+        <ToolActivityDetail item={unit.item} />
+      </div>
+    );
+  }
+
+  const bodyOpen = detail.running || expanded;
+  const label = execThreadItemSummaryLabel(detail, bodyOpen);
+
   return (
     <div
-      className="hc-thread-item-row"
+      className="hc-thread-item-row group"
       data-content-search-unit-key={unit.key}
       data-item-ids={unit.item.id}
       data-item-type="exec"
     >
-      <ToolActivityDetail item={unit.item} />
+      <button
+        type="button"
+        aria-expanded={bodyOpen}
+        className="group flex w-fit max-w-full min-w-0 appearance-none items-center self-start gap-1.5 border-0 bg-transparent px-0 py-0 text-left text-[13px] leading-5 text-stone-500 shadow-none transition-colors hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/20"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <Terminal aria-hidden className="shrink-0 text-stone-400 transition-colors group-hover:text-stone-500" size={14} />
+        <span className={`min-w-0 flex-1 truncate ${detail.running ? "animate-pulse" : ""}`}>{label}</span>
+        <ChevronRight
+          aria-hidden
+          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-200 ${
+            bodyOpen ? "rotate-90 opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          size={14}
+        />
+      </button>
+      <AnimatedDisclosure
+        className="hc-thread-item-disclosure"
+        innerClassName="hc-thread-item-body"
+        open={bodyOpen}
+      >
+        <div className="pt-2">
+          <ToolActivityDetail forceExecExpanded item={unit.item} />
+        </div>
+      </AnimatedDisclosure>
     </div>
   );
+}
+
+export function execThreadItemSummaryLabel(
+  detail: Extract<ReturnType<typeof toolActivityDetailViewModel>, { kind: "exec" }>,
+  expanded: boolean,
+): string {
+  if (detail.running) return "Running command";
+  if (detail.footer === "Stopped") return expanded ? "Stopped command" : `Stopped ${detail.command}`;
+  const command = normalizeDesktopShellCommand(detail.command).trim();
+  return !expanded && command ? `Ran ${command}` : "Ran command";
 }
 
 function DynamicToolCallThreadItemView({
@@ -203,6 +266,8 @@ export function dynamicToolCallLabel(item: ThreadItemUnit["item"]): string {
   const record = item as Record<string, unknown>;
   const tool = stringField(record, "tool") || stringField(record, "namespace");
   if (!tool) return isItemInProgress(item) ? "Running tool" : "Ran tool";
+  const manageThreadsLabel = manageCodexThreadsLabel(record, isItemInProgress(item));
+  if (manageThreadsLabel) return manageThreadsLabel;
   if (isItemInProgress(item)) {
     return DYNAMIC_TOOL_RUNNING_LABELS[tool] ?? humanizeToolLabel(tool);
   }
@@ -306,4 +371,36 @@ const DYNAMIC_TOOL_RUNNING_LABELS: Record<string, string> = {
   automation_update: "Updating automation",
   load_workspace_dependencies: "Loading workspace dependencies",
   read_thread_terminal: "Reading thread terminal",
+};
+
+function manageCodexThreadsLabel(record: Record<string, unknown>, running: boolean): string | null {
+  if (stringField(record, "tool") !== "manage_codex_threads") return null;
+  const action = stringField(objectField(record, "arguments"), "type");
+  return running
+    ? MANAGE_CODEX_THREADS_RUNNING_LABELS[action] ?? null
+    : MANAGE_CODEX_THREADS_COMPLETED_LABELS[action] ?? null;
+}
+
+const MANAGE_CODEX_THREADS_COMPLETED_LABELS: Record<string, string> = {
+  "app.help": "Checked thread actions",
+  "threads.create": "Created new thread",
+  "threads.create_in_worktree": "Created worktree thread",
+  "threads.list": "Listed threads",
+  "threads.read": "Read thread",
+  "threads.send_message": "Sent message to thread",
+  "threads.set_archived": "Updated thread archive",
+  "threads.set_pinned": "Updated thread pin",
+  "threads.set_title": "Renamed thread",
+};
+
+const MANAGE_CODEX_THREADS_RUNNING_LABELS: Record<string, string> = {
+  "app.help": "Checking thread actions",
+  "threads.create": "Creating new thread",
+  "threads.create_in_worktree": "Creating worktree thread",
+  "threads.list": "Listing threads",
+  "threads.read": "Reading thread",
+  "threads.send_message": "Sending message to thread",
+  "threads.set_archived": "Updating thread archive",
+  "threads.set_pinned": "Updating thread pin",
+  "threads.set_title": "Renaming thread",
 };

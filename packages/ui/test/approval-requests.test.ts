@@ -91,14 +91,26 @@ export default function runApprovalRequestTests(): void {
   });
   assertDeepEqual(
     pendingRequestDetail(oneShotCommandRequest).questions[0]?.options.map((option) => option.value),
-    ["accept", "acceptForSession"],
-    "command approval should follow Desktop's run once / session option shape",
+    ["accept"],
+    "command approval should only expose decisions app-server made available",
   );
   assertDeepEqual(
     buildApprovalResult(oneShotCommandRequest, true, { approvalDecision: ["acceptForSession"] }),
-    { decision: "acceptForSession" },
-    "command session choice should map to app-server acceptForSession",
+    { decision: "accept" },
+    "unavailable command approval choices should fall back to accept",
   );
+
+  const declineOnlyCommandRequest = request("item/commandExecution/requestApproval", {
+    command: "npm test",
+    availableDecisions: ["decline"],
+  });
+  const declineOnlyCommandDetail = pendingRequestDetail(declineOnlyCommandRequest);
+  assertDeepEqual(
+    declineOnlyCommandDetail.questions[0]?.options.map((option) => option.value),
+    [],
+    "decline-only command approval should not invent an accept option",
+  );
+  assertEqual(declineOnlyCommandDetail.canAccept, false, "decline-only command approval disables primary action");
 
   const execPolicyCommandRequest = request("item/commandExecution/requestApproval", {
     command: "npm test",

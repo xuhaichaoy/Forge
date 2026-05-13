@@ -18,6 +18,7 @@ const assert = (condition: unknown, message: string): void => {
 export default function runTurnCollapseTests(): void {
   groupsConsecutiveUnitsByTurnId();
   identifiesWorkedForAndAssistantUnits();
+  ignoresCommentaryAssistantMessagesAsFinalCollapseBoundary();
   splitsUserAgentAndFinalAssistantLikeDesktop();
   keepsSteeringUserMessagesPersistentWhenCollapsed();
   requiresFinalAssistantAndRenderableAgentItemsBeforeCollapse();
@@ -40,7 +41,7 @@ function makeUserUnit(turnId: string): ConversationRenderUnit {
   };
 }
 
-function makeAssistantUnit(turnId: string): ConversationRenderUnit {
+function makeAssistantUnit(turnId: string, phase?: "commentary" | "final_answer"): ConversationRenderUnit {
   const item: AccumulatedThreadItem = {
     id: `agent-${turnId}`,
     type: "agentMessage",
@@ -54,6 +55,7 @@ function makeAssistantUnit(turnId: string): ConversationRenderUnit {
     role: "assistant",
     item,
     text: "ok",
+    ...(phase ? { assistantPhase: phase } : {}),
   };
 }
 
@@ -177,10 +179,30 @@ function groupsConsecutiveUnitsByTurnId(): void {
 function identifiesWorkedForAndAssistantUnits(): void {
   const worked = makeWorkedForUnit("turn-1");
   const assistant = makeAssistantUnit("turn-1");
+  const commentary = makeAssistantUnit("turn-1", "commentary");
   assert(isWorkedForUnit(worked), "worked-for unit must be detected");
   assert(!isWorkedForUnit(assistant), "assistant must not be flagged worked-for");
   assert(isFinalAssistantUnit(assistant), "assistant message unit must be detected");
+  assert(!isFinalAssistantUnit(commentary), "commentary assistant messages must stay inside agent activity");
   assert(!isFinalAssistantUnit(worked), "worked-for must not be flagged assistant");
+}
+
+function ignoresCommentaryAssistantMessagesAsFinalCollapseBoundary(): void {
+  const user = makeUserUnit("turn-1");
+  const activity = makeActivityUnit("turn-1");
+  const commentary = makeAssistantUnit("turn-1", "commentary");
+  const tailActivity = makeActivityUnit("turn-1", "tail-activity");
+  const split = splitTurnUnits([user, activity, commentary, tailActivity]);
+
+  assert(!split.hasFinalAssistantStarted, "commentary should not start the final assistant collapse boundary");
+  assert(split.trailingUnits.length === 0, "commentary must stay in the agent body, not trailing final output");
+  assert(
+    split.expandedAgentUnits.length === 3
+      && split.expandedAgentUnits[0] === activity
+      && split.expandedAgentUnits[1] === commentary
+      && split.expandedAgentUnits[2] === tailActivity,
+    "agent body should preserve activity, commentary, and following activity while the turn is running",
+  );
 }
 
 function splitsUserAgentAndFinalAssistantLikeDesktop(): void {
@@ -280,4 +302,14 @@ function preventsAutoCollapseForDesktopPendingToolContent(): void {
 
   assert(shouldPreventTurnAutoCollapse([pendingUnit]), "pending MCP/app tool content should prevent default auto-collapse");
   assert(splitTurnUnits([makeUserUnit("turn-1"), pendingUnit, makeAssistantUnit("turn-1")]).preventAutoCollapse, "split should carry preventAutoCollapse to frame default");
+  assert(
+    !shouldPreventTurnAutoCollapse([
+      {
+        ...pendingUnit,
+        items: [{ ...pendingMcp, status: "completed", completed: true }],
+        summary: { ...pendingUnit.summary, inProgress: false },
+      },
+    ]),
+    "completed MCP/app tool content should follow Desktop's normal auto-collapse path",
+  );
 }

@@ -1,17 +1,32 @@
 import { projectArtifactPreview } from "./artifact-preview";
 import type { RailEntry, ThreadItem } from "./render-group-types";
-import { artifactsFromText, fileArtifactEntryFromPath, setArtifact } from "./rail-projection";
-import { commandOutputText, filePathsFromItem, itemText, shouldProjectArtifactsFromItem, statusText } from "./thread-item-fields";
+import {
+  addCommandOutputFileCandidates,
+  addFileArtifactCandidate,
+  artifactsFromText,
+  fileArtifactEntryFromPath,
+  resolveFileArtifactCandidate,
+  setArtifact,
+  type ArtifactFileCandidateIndex,
+} from "./rail-projection";
+import {
+  commandOutputText,
+  filePathsFromItem,
+  shouldProjectArtifactsFromItem,
+  statusText,
+} from "./thread-item-fields";
 
 export function assistantArtifactsForTurn(
   items: ThreadItem[],
   assistantText: string,
   knownArtifacts: Iterable<RailEntry> = [],
+  knownFileCandidates: ArtifactFileCandidateIndex = new Map(),
 ): RailEntry[] {
   const artifacts = new Map<string, RailEntry>();
+  const fileCandidates: ArtifactFileCandidateIndex = new Map(knownFileCandidates);
   for (const entry of knownArtifacts) {
     if (entry.action?.kind !== "file") continue;
-    setArtifact(artifacts, entry);
+    addFileArtifactCandidate(fileCandidates, entry);
   }
 
   for (const item of items) {
@@ -19,23 +34,15 @@ export function assistantArtifactsForTurn(
       for (const path of filePathsFromItem(item)) {
         const entry = fileArtifactEntryFromPath(path, statusText(item));
         setArtifact(artifacts, entry);
+        addFileArtifactCandidate(fileCandidates, entry);
       }
-      for (const entry of artifactsFromText(commandOutputText(item), { source: "output" })) {
-        if (entry.action?.kind !== "file") continue;
-        setArtifact(artifacts, entry);
-      }
-    }
-    if (item.type === "agentMessage") {
-      for (const entry of artifactsFromText(itemText(item), { source: "assistant" })) {
-        if (entry.action?.kind !== "file") continue;
-        setArtifact(artifacts, entry);
-      }
+      addCommandOutputFileCandidates(fileCandidates, commandOutputText(item));
     }
   }
 
   for (const entry of artifactsFromText(assistantText, { source: "assistant" })) {
     if (entry.action?.kind !== "file") continue;
-    setArtifact(artifacts, entry);
+    setArtifact(artifacts, resolveFileArtifactCandidate(entry, fileCandidates));
   }
 
   return Array.from(artifacts.values()).filter((entry) => {

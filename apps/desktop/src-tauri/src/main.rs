@@ -12,6 +12,12 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager, State};
 
+mod document_preview;
+mod spreadsheet_preview;
+
+use document_preview::{read_document_preview, DocumentPreview};
+use spreadsheet_preview::{read_spreadsheet_preview, SpreadsheetPreview};
+
 const APP_SERVER_EVENT_NAME: &str = "hicodex://app-server-event";
 
 struct AppState {
@@ -99,11 +105,22 @@ fn host_open_file_reference(path: String, line: Option<u32>) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn host_open_external_url(url: String) -> Result<(), String> {
+    let target = normalized_external_url(&url)?;
+    open_external_url(&target).map_err(|error| format!("failed to open external URL: {error}"))
+}
+
+#[tauri::command]
 fn host_pick_file_references(
     kind: Option<String>,
     multiple: Option<bool>,
 ) -> Result<Vec<String>, String> {
     pick_file_references(kind.as_deref(), multiple.unwrap_or(true))
+}
+
+#[tauri::command]
+fn host_pick_workspace_folder() -> Result<Option<String>, String> {
+    pick_workspace_folder()
 }
 
 #[tauri::command]
@@ -153,6 +170,10 @@ fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, S
         return Err(format!("text file does not exist: {trimmed}"));
     }
 
+    if is_word_document_path(target) {
+        return read_document_preview(target, 200, 1_000).map(DocumentPreview::into_plain_text);
+    }
+
     let max_bytes = max_bytes.unwrap_or(120_000).clamp(1, 240_000);
     let mut file =
         fs::File::open(target).map_err(|error| format!("failed to open text file: {error}"))?;
@@ -171,6 +192,178 @@ fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, S
         text.push_str("\n\n[Preview truncated]");
     }
     Ok(text)
+}
+
+#[tauri::command]
+fn host_read_spreadsheet_preview(
+    path: String,
+    max_rows: Option<usize>,
+    max_cols: Option<usize>,
+) -> Result<SpreadsheetPreview, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("spreadsheet path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    if !target.is_file() {
+        return Err(format!("spreadsheet file does not exist: {trimmed}"));
+    }
+
+    let max_rows = max_rows.unwrap_or(40).clamp(1, 200);
+    let max_cols = max_cols.unwrap_or(12).clamp(1, 80);
+    read_spreadsheet_preview(target, max_rows, max_cols)
+}
+
+#[tauri::command]
+fn host_read_document_preview(
+    path: String,
+    max_paragraphs: Option<usize>,
+    max_chars_per_paragraph: Option<usize>,
+) -> Result<DocumentPreview, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("document path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    if !target.is_file() {
+        return Err(format!("document file does not exist: {trimmed}"));
+    }
+
+    let max_paragraphs = max_paragraphs.unwrap_or(80).clamp(1, 400);
+    let max_chars_per_paragraph = max_chars_per_paragraph.unwrap_or(400).clamp(20, 4_000);
+    read_document_preview(target, max_paragraphs, max_chars_per_paragraph)
+}
+
+/// Recover the rollout JSONL path for a given thread by scanning the
+/// HiCodex sessions directory. Used as a fallback when `Thread.path` is
+/// missing in client state (e.g. the thread was loaded from a stale local
+/// snapshot) but the rollout file still exists on disk. The app-server's
+/// `thread/resume {path}` (codex-rs:thread_processor.rs:2810
+/// `read_thread_by_rollout_path`) bypasses the in-memory + `session_index`
+/// lookup that is producing "thread not found".
+///
+/// Returns `Ok(None)` (rather than `Err`) when the file is not found so the
+/// caller can decide whether to fall through to a friendlier error.
+#[tauri::command]
+fn host_find_rollout_for_thread(
+    codex_home: Option<String>,
+    thread_id: String,
+) -> Result<Option<String>, String> {
+    let id = thread_id.trim();
+    if id.is_empty() {
+        return Ok(None);
+    }
+    let sessions_root = match codex_home.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(home) => Path::new(home).join("sessions"),
+        None => match env::var_os("HOME") {
+            Some(home) => Path::new(&home)
+                .join("Library/Application Support/HiCodex/codex-home/sessions"),
+            None => return Ok(None),
+        },
+    };
+    if !sessions_root.is_dir() {
+        return Ok(None);
+    }
+    find_rollout_recursive(&sessions_root, id, 4).map_err(|err| err.to_string())
+}
+
+fn find_rollout_recursive(
+    dir: &Path,
+    thread_id: &str,
+    max_depth: usize,
+) -> std::io::Result<Option<String>> {
+    if max_depth == 0 {
+        return Ok(None);
+    }
+    let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            dirs.push(entry.path());
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|v| v.to_str()) else {
+            continue;
+        };
+        // `rollout-<iso-date>-<thread-id>.jsonl`
+        if name.starts_with("rollout-") && name.contains(thread_id) && name.ends_with(".jsonl") {
+            return Ok(Some(path.to_string_lossy().to_string()));
+        }
+    }
+    for sub in dirs {
+        if let Some(found) = find_rollout_recursive(&sub, thread_id, max_depth - 1)? {
+            return Ok(Some(found));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(test)]
+mod find_rollout_tests {
+    use super::find_rollout_recursive;
+    use std::fs;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    fn temp_dir() -> PathBuf {
+        let base = std::env::temp_dir().join(format!("hicodex-find-rollout-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    fn touch(path: &PathBuf) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        let mut file = fs::File::create(path).unwrap();
+        writeln!(file, "{{}}").unwrap();
+    }
+
+    #[test]
+    fn locates_rollout_by_thread_id_through_year_month_day_layout() {
+        let root = temp_dir();
+        let target = root
+            .join("2026/05/13")
+            .join("rollout-2026-05-13T06-43-27-019e1e5c-0434-7623-9622-bba23d1dc878.jsonl");
+        let unrelated = root
+            .join("2026/05/13")
+            .join("rollout-2026-05-13T06-44-00-aaaaaaaa-0000-0000-0000-000000000000.jsonl");
+        touch(&target);
+        touch(&unrelated);
+
+        let found =
+            find_rollout_recursive(&root, "019e1e5c-0434-7623-9622-bba23d1dc878", 4).unwrap();
+        assert_eq!(found, Some(target.to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn returns_none_when_no_file_matches() {
+        let root = temp_dir();
+        let unrelated = root.join("2026/05/13").join("rollout-2026-05-13T06-44-00-xyz.jsonl");
+        touch(&unrelated);
+        let found = find_rollout_recursive(&root, "thread-missing", 4).unwrap();
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn respects_max_depth_to_avoid_runaway_traversal() {
+        let root = temp_dir();
+        let deep = root.join("a/b/c/d/e/rollout-2026-05-13T06-44-00-deepid.jsonl");
+        touch(&deep);
+        // max_depth = 2 stops before reaching the deep file (a/b only).
+        assert!(find_rollout_recursive(&root, "deepid", 2).unwrap().is_none());
+        // max_depth = 8 reaches it.
+        assert_eq!(
+            find_rollout_recursive(&root, "deepid", 8).unwrap(),
+            Some(deep.to_string_lossy().to_string()),
+        );
+    }
 }
 
 #[tauri::command]
@@ -438,9 +631,42 @@ fn pick_file_references(kind: Option<&str>, multiple: bool) -> Result<Vec<String
         .collect())
 }
 
+#[cfg(target_os = "macos")]
+fn pick_workspace_folder() -> Result<Option<String>, String> {
+    let output = Command::new("osascript")
+        .args([
+            "-e",
+            "set selectedFolder to choose folder with prompt \"Use an existing folder\"",
+            "-e",
+            "return POSIX path of selectedFolder",
+        ])
+        .output()
+        .map_err(|error| format!("failed to open folder picker: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.to_lowercase().contains("user canceled") {
+            return Ok(None);
+        }
+        return Err(if stderr.is_empty() {
+            format!("folder picker exited with status {}", output.status)
+        } else {
+            stderr
+        });
+    }
+
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok((!path.is_empty()).then_some(path))
+}
+
 #[cfg(not(target_os = "macos"))]
 fn pick_file_references(_kind: Option<&str>, _multiple: bool) -> Result<Vec<String>, String> {
     Err("file picker is not implemented for this platform yet".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn pick_workspace_folder() -> Result<Option<String>, String> {
+    Err("folder picker is not implemented for this platform yet".to_string())
 }
 
 fn image_mime_type(path: &Path) -> Option<&'static str> {
@@ -467,6 +693,7 @@ fn file_mime_type(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_string_lossy().to_lowercase();
     match extension.as_str() {
         "csv" => Some("text/csv"),
+        "doc" => Some("application/msword"),
         "docx" => Some("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         "html" | "htm" => Some("text/html"),
         "ipynb" => Some("application/x-ipynb+json"),
@@ -479,6 +706,14 @@ fn file_mime_type(path: &Path) -> Option<&'static str> {
         "xlsx" => Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         _ => None,
     }
+}
+
+fn is_word_document_path(path: &Path) -> bool {
+    let extension = path
+        .extension()
+        .map(|value| value.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    matches!(extension.as_str(), "doc" | "docx")
 }
 
 fn open_path(path: &Path) -> std::io::Result<()> {
@@ -496,6 +731,41 @@ fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         Command::new("xdg-open").arg(path).spawn().map(|_| ())
+    }
+}
+
+fn normalized_external_url(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("external URL is empty".to_string());
+    }
+    if trimmed
+        .chars()
+        .any(|value| value.is_control() || value.is_whitespace())
+    {
+        return Err("external URL contains unsupported whitespace".to_string());
+    }
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("external URL must use http or https".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn open_external_url(url: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg(url).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open").arg(url).spawn().map(|_| ())
     }
 }
 
@@ -518,10 +788,15 @@ fn main() {
             host_send_raw,
             host_write_local_model_catalog,
             host_open_file_reference,
+            host_open_external_url,
             host_pick_file_references,
+            host_pick_workspace_folder,
             host_read_image_data_url,
             host_read_file_metadata,
             host_read_text_file,
+            host_read_spreadsheet_preview,
+            host_read_document_preview,
+            host_find_rollout_for_thread,
             host_read_thread_tool_history,
             host_generate_image
         ])

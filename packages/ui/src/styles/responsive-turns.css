@@ -73,12 +73,118 @@
   transform: rotate(90deg);
 }
 
+.hc-turn-collapse-rule-wrap {
+  padding-top: 4px;
+}
+
 .hc-turn-collapse-rule {
   height: 1px;
   width: 100%;
-  margin: 4px auto 0;
   max-width: 100%;
+  /* Codex `$T` :8408 rule wrapper uses `text-token-text-secondary` color with
+   * `border-token-border-light` border on the inner divider (~5% of foreground).
+   * Match that with a very faint hairline rather than the 12% gray that made the
+   * line feel disconnected from the rest of the turn. */
+  background: color-mix(in oklab, #22262b 6%, transparent);
+}
+
+/*
+ * Codex's `F_` spacer (pretty.js :4269-4271) injected at :8410 between the rule
+ * and the agent body when the collapse toggle is visible. `size` defaults to
+ * `NT = "var(--conversation-tool-assistant-gap, 8px)"` (:8238) — the 8px is a
+ * fallback; Codex's :root sets the variable to 16px.
+ */
+.hc-turn-collapse-gap {
+  width: 100%;
+  height: var(--conversation-tool-assistant-gap, 16px);
+}
+
+/*
+ * `TurnCollapseFrame` flattens its internal chain (toggle button → rule wrap →
+ * F_ spacer → persistent units → animated disclosure) into the `.hc-turn-row`
+ * direct-child sequence via Fragment. Without these resets the `.hc-turn-row > *
+ * + *` 16px margin-top rule would compound on every internal element, adding
+ * three spurious 16px gaps between the "Worked for {time}" header and the first
+ * body row (~69px instead of Codex's intended 21px = `pt-1` + 1px rule + `F_`).
+ *
+ * Codex's `$T` (codex-local-conversation-thread.pretty.js :8407-8414) emits the
+ * header + rule as siblings with NO inter-element spacing — only the rule's own
+ * `pt-1` (4px) — and then the `F_` spacer at :8410 is the ONLY 16px gap before
+ * the body. Mirror that here by zeroing the inherited row gap inside the chain.
+ */
+.hc-turn-row > .hc-turn-collapse-row + .hc-turn-collapse-rule-wrap,
+.hc-turn-row > .hc-turn-collapse-rule-wrap + .hc-turn-collapse-gap,
+.hc-turn-row > .hc-turn-collapse-gap + *,
+/* `~` sweeps over any persistent agent units that sit between the gap and the
+ * animated disclosure so the motion wrapper's margin-top is also reset. */
+.hc-turn-row > .hc-turn-collapse-gap ~ .hc-turn-collapse-motion {
+  margin-top: 0;
+}
+
+/*
+ * In-progress worked-for divider — Codex Desktop `Ah` at
+ * codex-local-conversation-thread.pretty.js :3315-3326. Non-interactive label
+ * + full-width 1px rule wrapped in framer-motion `ga.div` with:
+ *   initial: { opacity: 0, height: 0 }
+ *   animate: { opacity: 1, height: "auto" }
+ *   transition: yo  // animations-y0LC3gHS.js → 500ms cubic-bezier(0.19,1,0.22,1)
+ *
+ * Codex's animation interpolates layout via framer-motion's JS measurement of
+ * the natural content height. The CSS-only `grid-template-rows: 0fr → 1fr`
+ * trick I previously used here had an unwanted side-effect inside HiCodex's
+ * flex-column `.hc-turn-row` parent: after the animation settled with
+ * `forwards`, the `1fr` row resolved to a *flex-distributed* track height
+ * rather than content height in some layouts, leaving ~80px of empty space
+ * below the rule. Since the height growth is a polish touch (Codex's
+ * difference between with/without is barely perceptible on a one-line
+ * divider), drop the height interpolation and keep just the opacity fade —
+ * which matches `transition: yo` for the opacity component and never
+ * misreports a non-content row height.
+ *
+ * The inner block is a simple flex column: `text-size-chat flex flex-col
+ * items-start gap-2 text-token-text-secondary` (parity with Codex `Ah`'s inner
+ * div at :3325).
+ */
+.hc-worked-for-live {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  overflow: hidden;
+  animation: hc-worked-for-fade var(--hc-codex-transition) forwards;
+}
+
+.hc-worked-for-live-inner {
+  display: contents;
+}
+
+.hc-worked-for-live-label {
+  /* Codex `kh` (:3309) — `text-token-foreground/60`. */
+  color: #6f716b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hc-worked-for-live-rule {
+  height: 1px;
+  width: 100%;
+  /* Codex `Ah` (:3323) — `border-current/20` on the
+   * `text-token-text-secondary`-coloured inner div. With the parent ~60% of
+   * foreground, the resulting border resolves to ≈12% of foreground. */
   background: rgba(34, 38, 43, 0.12);
+}
+
+@keyframes hc-worked-for-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-worked-for-live {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 .hc-turn-collapse-content {

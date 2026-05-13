@@ -347,9 +347,22 @@ export async function resumeThread(
   threadId: string,
   workspace: string,
   context?: ThreadContextDefaults | null,
+  rolloutPath?: string | null,
 ) {
+  /*
+   * `path` lets the app-server skip the session_index lookup and read the
+   * rollout file directly — see
+   * `codex-rs/app-server/src/request_processors/thread_processor.rs:2810` /
+   * `read_thread_by_rollout_path`. This is the recovery path when the thread
+   * was orphaned (rollout JSONL on disk but session_index out of sync), which
+   * `thread/read` and a plain `thread/resume` both surface as "thread not
+   * found". Passing the rollout path bypasses that gap.
+   */
+  const rolloutPathParam =
+    rolloutPath && rolloutPath.trim().length > 0 ? { path: rolloutPath.trim() } : {};
   return client.request<{ thread: Thread }>("thread/resume", {
     threadId,
+    ...rolloutPathParam,
     ...buildThreadContextParams(workspace, context),
   }, 120_000);
 }
@@ -453,9 +466,38 @@ export async function editLastUserTurn(
   workspace: string,
   context?: ThreadContextDefaults | null,
   onRollback?: (thread: Thread) => void,
+  rolloutPath?: string | null,
 ) {
-  const sourceResult = await readThread(client, threadId, true);
-  const sourceThread = sourceResult.thread;
+  /*
+   * If the app-server lost its in-memory thread state (restart, crash, or the
+   * thread was archived/unarchived since we last interacted), `thread/read`
+   * comes back with `thread not found`. Auto-recover by calling `thread/resume`
+   * — and crucially, if we know the rollout JSONL path, pass it so the server
+   * goes through the path-based store lookup
+   * (`read_thread_by_rollout_path`) instead of the session_index lookup that
+   * also produces `thread not found` when the index is stale or empty. We
+   * observed this exact case locally: a fresh rollout file on disk
+   * (`~/Library/.../HiCodex/codex-home/sessions/.../rollout-*-019e1e5c-…jsonl`)
+   * but a `session_index.jsonl` with only one stale entry. Without the path
+   * arg, both `thread/read` and `thread/resume` reject; with the path, the
+   * server reads straight from the rollout and recovers.
+   */
+  let sourceThread: Thread | undefined;
+  try {
+    const initial = await readThread(client, threadId, true);
+    sourceThread = initial.thread;
+  } catch (error) {
+    if (!isThreadNotFound(error)) throw error;
+    await resumeThread(client, threadId, workspace, context, rolloutPath).catch(
+      (resumeError) => {
+        // If resume itself fails, surface the original `thread not found` error
+        // rather than a misleading resume-stage message.
+        throw isThreadNotFound(resumeError) ? error : resumeError;
+      },
+    );
+    const retried = await readThread(client, threadId, true);
+    sourceThread = retried.thread;
+  }
   if (!sourceThread) throw new Error("Conversation state not found.");
   const latestTurn = sourceThread.turns.at(-1) ?? null;
   if (!latestTurn || latestTurn.id !== targetTurnId) {
@@ -468,14 +510,47 @@ export async function editLastUserTurn(
   if (!userMessage) throw new Error("User message not found for edit.");
 
   const input = replaceFirstTextInput(userMessage.content, message.trim());
-  const rollback = await client.request<{ thread: Thread }>("thread/rollback", {
+  const rollback = await rollbackLatestTurnForEdit(
+    client,
+    threadId,
+    sourceThread.cwd || workspace,
+    context,
+    sourceThread.path || rolloutPath,
+  );
+  onRollback?.(rollback.thread);
+  const cwd = rollback.thread.cwd || sourceThread.cwd || workspace;
+  const turnResult = await startTurn(client, rollback.thread.id || threadId, input, cwd, context);
+  return { thread: rollback.thread, turnResult };
+}
+
+async function rollbackLatestTurnForEdit(
+  client: CodexJsonRpcClient,
+  threadId: string,
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+  rolloutPath?: string | null,
+): Promise<{ thread: Thread }> {
+  try {
+    return await requestThreadRollback(client, threadId);
+  } catch (error) {
+    if (!isThreadNotFound(error) && !isThreadNeedsResume(error)) throw error;
+    await resumeThread(client, threadId, workspace, context, rolloutPath).catch(
+      (resumeError) => {
+        throw isThreadNotFound(resumeError) ? error : resumeError;
+      },
+    );
+    return requestThreadRollback(client, threadId);
+  }
+}
+
+function requestThreadRollback(
+  client: CodexJsonRpcClient,
+  threadId: string,
+): Promise<{ thread: Thread }> {
+  return client.request<{ thread: Thread }>("thread/rollback", {
     threadId,
     numTurns: 1,
   }, 120_000);
-  onRollback?.(rollback.thread);
-  const cwd = rollback.thread.cwd || sourceThread.cwd || workspace;
-  const turnResult = await startTurn(client, threadId, input, cwd, context);
-  return { thread: rollback.thread, turnResult };
 }
 
 export async function refreshThreadContextDefaults(

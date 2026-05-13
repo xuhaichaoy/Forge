@@ -1,5 +1,6 @@
 import {
   codeBlockTitle,
+  formatTurnDiffFileCount,
   highlightCodeSegments,
   initialToolActivityExpanded,
   isToolActivityExpandable,
@@ -18,9 +19,11 @@ import {
   userImageSrc,
   virtualTurnRange,
   virtualTurnRangeFromBottom,
-  workedForExpandedUnits,
+  workedForExpandedDetailItems,
   initialToolActivityViewState,
   toolActivityDetailItems,
+  turnDiffHeaderStatsVisible,
+  turnDiffViewModel,
 } from "../src/components/conversation-view";
 
 export default function runConversationViewTests(): void {
@@ -44,12 +47,94 @@ export default function runConversationViewTests(): void {
   previewsCommonMermaidFlowchartsLikeCodexDesktop();
   keepsOnlyDesktopActiveRowsExpandedByDefault();
   keepsDesktopToolActivityViewStates();
+  keepsMcpAppToolRowsExpandedLikeDesktop();
+  projectsTurnDiffSummaryLikeCodexDesktop();
   projectsReasoningBodiesLikeCodexDesktop();
   keepsWorkedForRowsCompact();
   omitsReasoningRowsFromExplorationDetailsLikeDesktop();
-  rendersWorkedForExpansionThroughNormalConversationUnits();
+  rendersWorkedForExpansionThroughToolDetails();
   computesDesktopVirtualTurnRangeWithMeasuredHeights();
   computesDesktopVirtualTurnRangeFromBottomDistance();
+}
+
+function projectsTurnDiffSummaryLikeCodexDesktop(): void {
+  const diff = [
+    "diff --git a/packages/ui/src/a.ts b/packages/ui/src/a.ts",
+    "index 111..222 100644",
+    "--- a/packages/ui/src/a.ts",
+    "+++ b/packages/ui/src/a.ts",
+    "@@ -1,2 +1,3 @@",
+    " unchanged",
+    "-old",
+    "+new",
+    "+extra",
+    "diff --git a/packages/ui/src/b.ts b/packages/ui/src/b.ts",
+    "index 333..444 100644",
+    "--- a/packages/ui/src/b.ts",
+    "+++ b/packages/ui/src/b.ts",
+    "@@ -1 +1 @@",
+    "-removed",
+  ].join("\n");
+
+  assertDeepEqual(
+    turnDiffViewModel(diff),
+    {
+      hasChanges: true,
+      fileCount: 2,
+      linesAdded: 2,
+      linesRemoved: 2,
+      files: [
+        { path: "packages/ui/src/a.ts", linesAdded: 2, linesRemoved: 1 },
+        { path: "packages/ui/src/b.ts", linesAdded: 0, linesRemoved: 1 },
+      ],
+    },
+    "turn diff summary should match Desktop's file count and +/- row",
+  );
+  assertEqual(formatTurnDiffFileCount(1), "1 file changed", "single file diff label");
+  assertEqual(formatTurnDiffFileCount(2), "2 files changed", "multi file diff label");
+  assertEqual(
+    turnDiffHeaderStatsVisible(1, true),
+    true,
+    "in-progress Desktop turn diff summary should show +/- totals for a single changed file",
+  );
+  assertEqual(
+    turnDiffHeaderStatsVisible(1, false),
+    false,
+    "completed Desktop turn diff header should omit totals for a single changed file",
+  );
+  assertEqual(
+    turnDiffHeaderStatsVisible(2, false),
+    true,
+    "completed Desktop turn diff header should show totals for multiple changed files",
+  );
+
+  const quotedPathDiff = [
+    'diff --git "a/packages/ui/src/file with spaces.ts" "b/packages/ui/src/file with spaces.ts"',
+    "index 111..222 100644",
+    '--- "a/packages/ui/src/file with spaces.ts"',
+    '+++ "b/packages/ui/src/file with spaces.ts"',
+    "@@ -1 +1 @@",
+    "-old",
+    "+new",
+  ].join("\n");
+  assertDeepEqual(
+    turnDiffViewModel(quotedPathDiff).files,
+    [{ path: "packages/ui/src/file with spaces.ts", linesAdded: 1, linesRemoved: 1 }],
+    "turn diff parser should match Desktop's quoted diff path support",
+  );
+
+  const fallbackDiff = [
+    "--- a/src/fallback.ts",
+    "+++ b/src/fallback.ts",
+    "@@ -1 +1 @@",
+    "-old",
+    "+new",
+  ].join("\n");
+  assertDeepEqual(
+    turnDiffViewModel(fallbackDiff).files,
+    [{ path: "src/fallback.ts", linesAdded: 1, linesRemoved: 1 }],
+    "turn diff parser should fall back to non-git unified diff headers like Desktop",
+  );
 }
 
 function parsesMarkdownBlocksForModelOutput(): void {
@@ -500,6 +585,44 @@ function keepsDesktopToolActivityViewStates(): void {
   );
 }
 
+function keepsMcpAppToolRowsExpandedLikeDesktop(): void {
+  const unit = toolActivity("collapsed-tool-activity", false, 1, "mcpToolCall");
+  unit.items = [{
+    id: "mcp-app-1",
+    type: "mcpToolCall",
+    server: "browser-use",
+    tool: "open",
+    status: "completed",
+    arguments: {},
+    mcpAppResourceUri: "ui://browser/widget.html",
+    result: null,
+    error: null,
+  }];
+  assertEqual(
+    initialToolActivityViewState(unit),
+    "expanded",
+    "completed MCP app tool calls should stay expanded like Codex Desktop app widgets",
+  );
+
+  const runningUnit = toolActivity("collapsed-tool-activity", true, 1, "mcpToolCall");
+  runningUnit.items = [{
+    id: "mcp-app-running-1",
+    type: "mcpToolCall",
+    server: "browser-use",
+    tool: "open",
+    status: "inProgress",
+    arguments: {},
+    mcpAppResourceUri: "ui://browser/widget.html",
+    result: null,
+    error: null,
+  }];
+  assertEqual(
+    initialToolActivityViewState(runningUnit),
+    "expanded",
+    "running MCP app tool calls should auto-expand like Desktop shouldAutoExpandMcpApp",
+  );
+}
+
 function projectsReasoningBodiesLikeCodexDesktop(): void {
   assertEqual(
     stripReasoningActivityHeading("**Checked renderer**\nThe body stays visible."),
@@ -510,6 +633,11 @@ function projectsReasoningBodiesLikeCodexDesktop(): void {
     stripReasoningActivityHeading("**"),
     "",
     "unterminated heading marker should not render stray markdown",
+  );
+  assertEqual(
+    stripReasoningActivityHeading("## Checked renderer\n\nThe body stays visible."),
+    "The body stays visible.",
+    "Desktop reasoning body should drop a leading markdown heading before rendering details",
   );
   assertEqual(
     reasoningActivityBody({
@@ -645,7 +773,7 @@ function keepsWorkedForRowsCompact(): void {
   );
 }
 
-function rendersWorkedForExpansionThroughNormalConversationUnits(): void {
+function rendersWorkedForExpansionThroughToolDetails(): void {
   const unit = {
     kind: "toolActivity",
     key: "worked-for:command-1:worked-for-1",
@@ -701,23 +829,23 @@ function rendersWorkedForExpansionThroughNormalConversationUnits(): void {
         other: 0,
       },
     },
-  } as Parameters<typeof workedForExpandedUnits>[0];
+  } as Parameters<typeof workedForExpandedDetailItems>[0];
 
-  const expanded = workedForExpandedUnits(unit);
+  const expanded = workedForExpandedDetailItems(unit);
   assertDeepEqual(
-    expanded.map((item) => item.kind),
-    ["threadItem", "message"],
-    "worked-for expansion should reuse normal conversation render units",
+    expanded.map((item) => item.id),
+    ["command-1", "assistant-commentary-1"],
+    "worked-for expansion should keep only underlying tool/detail items",
   );
   assertEqual(
-    expanded[0]?.kind === "threadItem" ? expanded[0].item.id : null,
+    expanded[0]?.id ?? null,
     "command-1",
-    "single recovered exec rows should stay standalone like Codex Desktop",
+    "single recovered exec rows should render through Desktop-style tool details",
   );
   assertEqual(
-    expanded[1]?.kind === "message" ? expanded[1].role : null,
-    "assistant",
-    "intermediate model output should render as a normal assistant message",
+    expanded[1]?.id ?? null,
+    "assistant-commentary-1",
+    "intermediate model output should stay in worked details instead of creating file cards",
   );
 }
 

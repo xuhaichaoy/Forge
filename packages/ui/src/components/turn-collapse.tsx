@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AccumulatedThreadItem, ConversationRenderUnit } from "../state/render-groups";
 import { AnimatedDisclosure } from "./animated-disclosure";
+import { WorkedForDivider } from "./worked-for-divider";
 
 export function useTurnCollapsed(
   turnId: string | null | undefined,
@@ -56,7 +57,7 @@ export function isPersistentSteeringUserUnit(unit: ConversationRenderUnit): bool
 }
 
 export function isFinalAssistantUnit(unit: ConversationRenderUnit): boolean {
-  return unit.kind === "message" && unit.role === "assistant";
+  return unit.kind === "message" && unit.role === "assistant" && unit.assistantPhase !== "commentary";
 }
 
 export function isWorkedForUnit(unit: ConversationRenderUnit): boolean {
@@ -153,13 +154,7 @@ export function splitTurnUnits(units: ConversationRenderUnit[]): TurnUnitSplit {
 export function shouldPreventTurnAutoCollapse(units: ConversationRenderUnit[]): boolean {
   return units.some((unit) => {
     if (unit.kind === "toolActivity") {
-      if (
-        unit.summary.groupType === "pending-mcp-tool-calls"
-        || unit.summary.groupType === "multi-agent-group"
-        || unit.summary.inProgress
-      ) {
-        return true;
-      }
+      if (unit.summary.inProgress) return true;
       return unit.items.some(itemPreventsAutoCollapse);
     }
     return itemPreventsAutoCollapse(unit.item);
@@ -207,7 +202,22 @@ export function TurnCollapseFrame({
   const animatedAgentUnits = collapsed ? split.collapsibleAgentUnits : split.expandedAgentUnits;
 
   if (!showToggle) {
-    return <>{units.map((unit) => renderUnit(unit, unit.key))}</>;
+    // Codex renders the worked-for thread item as a non-interactive divider via `Ah`
+    // (codex-local-conversation-thread.pretty.js :7434 in the per-item render loop).
+    // While `showToggle === false` (i.e. turn still in-progress, cancelled, or no
+    // collapsible agent items), intercept the worked-for unit and replace it with the
+    // live `WorkedForDivider` instead of letting it render as a regular tool-activity
+    // button card. After the final assistant arrives `showToggle` flips true and the
+    // worked-for label moves into the `Ph` collapse toggle (:8408) — no divider needed.
+    return (
+      <>
+        {units.map((unit) =>
+          split.workedForUnit && unit.key === split.workedForUnit.key && unit.kind === "toolActivity"
+            ? <WorkedForDivider key={unit.key} unit={unit} />
+            : renderUnit(unit, unit.key),
+        )}
+      </>
+    );
   }
 
   return (
@@ -219,7 +229,22 @@ export function TurnCollapseFrame({
         label={turnCollapseLabel(split)}
         onToggle={toggle}
       />
-      {!collapsed && <div className="hc-turn-collapse-rule" aria-hidden />}
+      <div className="hc-turn-collapse-rule-wrap" aria-hidden>
+        <div className="hc-turn-collapse-rule" />
+      </div>
+      {/*
+        * Codex Desktop inserts an `F_` spacer (`:4269-4271`, plain `<div aria-hidden
+        * className="w-full" style={{ height: NT }}/>`) at `:8410` between the divider
+        * rule and the agent body whenever the collapse toggle is shown
+        * (`c2 ? <F_ size={NT}/> : null` with key `agent-body-toggle-gap`). `NT` resolves
+        * to `var(--conversation-tool-assistant-gap, 8px)` (`:8238`). Without it the rule
+        * sits flush against the next sibling.
+        */}
+      <div
+        aria-hidden
+        className="hc-turn-collapse-gap"
+        data-key="agent-body-toggle-gap"
+      />
       {collapsed && split.persistentAgentUnits.map((unit) => renderUnit(unit, unit.key))}
       <AnimatedDisclosure
         className="hc-turn-collapse-motion"
@@ -250,14 +275,14 @@ function TurnCollapseToggle({
         type="button"
         aria-expanded={!collapsed}
         aria-label={labelForAria(label, count)}
-        className="hc-turn-collapse-toggle inline-flex items-center gap-1 rounded-md border border-transparent px-1 py-px text-left text-[13px] leading-5 text-stone-500 transition-colors hover:bg-black/5 hover:text-slate-700 focus-visible:outline-none"
+        className="hc-turn-collapse-toggle inline-flex items-center gap-1 rounded-md border border-transparent px-1 py-px text-left text-[13px] leading-5 text-stone-500 transition-colors hover:bg-black/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400/40"
         data-collapsed={collapsed}
         onClick={onToggle}
       >
         <span>{label}</span>
         <ChevronRight
-          size={14}
-          className={`hc-turn-collapse-chevron text-stone-400 transition-transform duration-200 ${collapsed ? "" : "is-open rotate-90"}`}
+          size={12}
+          className={`hc-turn-collapse-chevron text-stone-400 transition-transform duration-200 ${collapsed ? "rotate-0" : "is-open rotate-90"}`}
         />
       </button>
     </div>
@@ -296,17 +321,8 @@ function itemPreventsAutoCollapse(item: AccumulatedThreadItem): boolean {
   const type = String(record.type ?? "");
   const status = String(record.status ?? record.executionStatus ?? "");
   if (status === "inProgress" || status === "running" || status === "pending") return true;
-  return (
-    type === "mcp-tool-call"
-    || type === "mcpToolCall"
-    || type === "dynamic-tool-call"
-    || type === "dynamicToolCall"
-    || type === "mcp-server-elicitation"
-    || type === "mcpServerElicitation"
-    || type === "permission-request"
-    || type === "permissionRequest"
-    || type === "userInput"
-  );
+  if (record.completed === false) return true;
+  return false;
 }
 
 function singleContextCompactionUnit(units: ConversationRenderUnit[]): boolean {

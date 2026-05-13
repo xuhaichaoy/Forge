@@ -55,6 +55,60 @@
   font-weight: 560;
 }
 
+/*
+ * Codex Desktop `co` shimmer wraps the "Thinking" label
+ * (thinking-shimmer-*.js: `g` + `cadencedShimmer` class) and runs a periodic
+ * gradient sweep — `cadencedShimmerActive` is toggled on for 1s every 4s
+ * (initial 600ms delay) per `f=1e3, p=4e3, m=6e2` constants. We approximate the
+ * effect with a CSS-only continuous gradient sweep over the text. Only applied
+ * while the reasoning unit is in-progress (the synthetic placeholder
+ * `_syntheticKind: "thinking-placeholder"` is the only thing that renders
+ * reasoning rows now — see `event-unit.tsx` and the `Jw`-parity null filter).
+ */
+.hc-tool-block.activity[data-group-type="reasoning"].is-running .hc-tool-summary-label {
+  /*
+   * Codex's shimmer (thinking-shimmer-*.css `_cadencedShimmerSweep` /
+   * `_cadencedShimmerHighlight`) uses --shimmer-text-secondary (~45% of
+   * text-primary, light theme) as the base color and --shimmer-contrast
+   * (`#0009` = rgba(0,0,0,0.6), light theme) as the highlight.
+   *
+   * Explicit colors here so we don't depend on `currentColor` after
+   * `-webkit-text-fill-color: transparent` clobbers `color`.
+   */
+  background: linear-gradient(
+    90deg,
+    #6f716b 0%,
+    #6f716b 35%,
+    rgba(0, 0, 0, 0.65) 50%,
+    #6f716b 65%,
+    #6f716b 100%
+  );
+  background-size: 220% 100%;
+  background-position: -120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  /* Codex cadence: 1s sweep every 4s (`f=1e3, p=4e3` in thinking-shimmer-*.js
+   * with steps(48,end)). We do the same 4s rhythm with a 25% active window. */
+  animation: hc-thinking-shimmer 4s steps(48, end) infinite;
+}
+
+@keyframes hc-thinking-shimmer {
+  0% { background-position: -120% 0; }
+  25% { background-position: 120% 0; }
+  100% { background-position: 120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-tool-block.activity[data-group-type="reasoning"].is-running .hc-tool-summary-label {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: inherit;
+  }
+}
+
 .hc-reasoning-details {
   max-height: 140px;
   overflow-y: auto;
@@ -113,19 +167,6 @@
   padding: 8px 0 0;
 }
 
-.hc-worked-for-expanded {
-  display: grid;
-  gap: 8px;
-  width: 100%;
-}
-
-.hc-worked-for-expanded .hc-message,
-.hc-worked-for-expanded .hc-tool-block {
-  width: 100%;
-  margin-right: 0;
-  margin-left: 0;
-}
-
 .hc-worked-for-divider {
   height: 1px;
   width: 100%;
@@ -145,6 +186,179 @@
 
 .hc-tool-block:not(.activity) .hc-code-snippet {
   margin-top: 8px;
+}
+
+.hc-turn-diff {
+  container-type: inline-size;
+  overflow: hidden;
+  border: 1px solid #ddd9ce;
+  background: #fffdfa;
+  padding: 0;
+}
+
+.hc-turn-diff-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.hc-turn-diff-toggle {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  padding: 10px 0;
+  color: #4f5855;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.hc-turn-diff-toggle:hover {
+  color: #27313d;
+}
+
+.hc-turn-diff-toggle > svg {
+  flex: 0 0 auto;
+  color: #8a8d86;
+}
+
+.hc-turn-diff-toggle > svg:last-child {
+  color: #7a7d76;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 160ms ease;
+}
+
+.hc-turn-diff-toggle:hover > svg:last-child,
+.hc-turn-diff-toggle > svg:last-child.is-open {
+  opacity: 1;
+}
+
+.hc-turn-diff-toggle > svg:last-child.is-open {
+  transform: rotate(90deg);
+}
+
+.hc-turn-diff-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #27313d;
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-turn-diff-title.is-muted {
+  color: #8a8d86;
+}
+
+.hc-turn-diff-progress-summary {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 0;
+}
+
+.hc-turn-diff-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+
+.hc-turn-diff-review {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #4f5855;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hc-turn-diff-review:hover {
+  color: #27313d;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hc-turn-diff-review-short {
+  display: none;
+}
+
+@container (max-width: 319px) {
+  .hc-turn-diff-review-full {
+    display: none;
+  }
+
+  .hc-turn-diff-review-short {
+    display: inline;
+  }
+}
+
+.hc-turn-diff-stats {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hc-turn-diff-added {
+  color: #168a55;
+}
+
+.hc-turn-diff-removed {
+  color: #b84645;
+}
+
+.hc-turn-diff-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid #ddd9ce;
+}
+
+.hc-turn-diff-body .hc-code-snippet {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.hc-turn-diff-files {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid #ddd9ce;
+}
+
+.hc-turn-diff-file {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(243, 241, 235, 0.6);
+  color: #4f5855;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hc-turn-diff-file + .hc-turn-diff-file {
+  border-top: 1px solid #e7e3da;
+}
+
+.hc-turn-diff-file > span:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hc-tool-summary {
@@ -173,6 +387,70 @@
 .hc-tool-summary-icon {
   flex: 0 0 auto;
   color: #8a8d86;
+}
+
+.hc-tool-summary-inline {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.hc-tool-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Two-tone exec row label parts (Codex Desktop wg.commandRanWithDetail :3766 + O_/D_ :4207-4211).
+ * Action span is muted, non-shrinking, no-wrap; detail inherits normal foreground.
+ */
+.hc-tool-summary-action {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: #98998f;
+}
+
+.hc-tool-summary-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * For collapsed-tool-activity rows (single-item exec summaries) Codex Desktop's
+ * `Ng` wrapper at :3781 uses only `mask-image:linear-gradient(...)` to fade text — no
+ * `text-overflow:ellipsis`. HiCodex was layering `…` on top of the gradient via the
+ * inherited rules on .hc-tool-summary-label / -text / -detail. Override to `clip`
+ * inside this group-type so mask-image dominates and the visible `…` disappears.
+ */
+.hc-tool-block.activity[data-group-type="collapsed-tool-activity"] .hc-tool-summary-label,
+.hc-tool-block.activity[data-group-type="collapsed-tool-activity"] .hc-tool-summary-text,
+.hc-tool-block.activity[data-group-type="collapsed-tool-activity"] .hc-tool-summary-detail {
+  text-overflow: clip;
+}
+
+.hc-tool-summary-diff-stats {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: #74776f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hc-tool-summary-diff-added {
+  color: #168a55;
+}
+
+.hc-tool-summary-diff-removed {
+  color: #b84645;
 }
 
 .hc-tool-block.activity.is-running .hc-tool-summary-icon {
@@ -205,6 +483,14 @@ button.hc-tool-summary:not(:disabled):hover .hc-tool-summary-icon,
   transition: color 120ms ease;
 }
 
+/*
+ * Hover label color shift. Codex Desktop's button (`Mg` at
+ * codex-local-conversation-thread.pretty.js :3769) carries `group/collapsed-tool-activity`
+ * + `group/summary` classes; its label span uses
+ * `group-hover/collapsed-tool-activity:text-token-foreground` (:3781) to shift
+ * from muted to foreground on hover. HiCodex's `button.hc-tool-summary:hover` pseudo
+ * selector is functionally equivalent — same trigger condition, same color target.
+ */
 button.hc-tool-summary:hover .hc-tool-summary-label,
 .hc-tool-summary[aria-expanded="true"] .hc-tool-summary-label {
   color: #27313d;
@@ -281,6 +567,10 @@ button.hc-tool-summary:hover svg:last-child,
   text-align: left;
 }
 
+.hc-tool-detail-row.error {
+  color: #9b3f33;
+}
+
 .hc-tool-detail-command-row {
   color: #74776f;
 }
@@ -292,7 +582,18 @@ button.hc-tool-summary:hover svg:last-child,
 .hc-tool-detail-web-search-row {
   display: flex;
   align-items: flex-start;
+  /*
+   * Codex `Uw` (`codex-local-conversation-thread.pretty.js` :7826-7828) renders
+   * each web-search row as `<div className="text-size-chat flex items-start
+   * gap-1.5 font-sans text-token-description-foreground/80">`. text-size-chat
+   * resolves to 13px (`app-main-*.css :root`), not the 12px the base
+   * `.hc-tool-detail-row` uses for exec/command output — those go through
+   * Codex's `wo` code-block at text-size-code (12px). Bump web-search rows
+   * specifically to 13px while leaving command rows untouched.
+   */
   gap: 6px;
+  font-size: 13px;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
   color: rgba(111, 113, 107, 0.88);
 }
 
@@ -421,14 +722,32 @@ button.hc-tool-summary:hover svg:last-child,
 }
 
 .hc-exec-shell {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  position: relative;
+  flex-direction: column;
   max-width: 100%;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  border: 1px solid #dedbd1;
+  border-radius: 8px;
+  background: #f3f1eb;
   color: #27313d;
+}
+
+.hc-exec-shell-title {
+  padding: 8px 34px 0 10px;
+  color: #636861;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.hc-exec-shell-command-row {
+  display: flex;
+  position: relative;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 4px;
+  padding-right: 26px;
 }
 
 .hc-exec-shell-command {
@@ -436,11 +755,24 @@ button.hc-tool-summary:hover svg:last-child,
   min-width: 0;
   align-items: flex-start;
   gap: 7px;
-  padding: 0;
+  padding: 4px 10px 0;
   color: #4f5855;
   font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.hc-exec-shell-toggle {
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.hc-exec-shell-toggle:hover {
+  color: #27313d;
 }
 
 .hc-exec-shell-command span {
@@ -450,33 +782,102 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-exec-shell-command code {
   min-width: 0;
+  flex: 1 1 auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
+.hc-exec-shell-command svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #7a7d76;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 160ms ease;
+}
+
+.hc-exec-shell-command:hover svg,
+.hc-exec-shell-command svg.is-open {
+  opacity: 1;
+}
+
+.hc-exec-shell-command svg.is-open {
+  transform: rotate(90deg);
+}
+
 .hc-exec-shell-cwd {
   border: 0;
-  padding: 0 0 0 17px;
+  padding: 4px 10px 0 27px;
   color: #74776f;
   font-size: 11px;
 }
 
+.hc-exec-shell-output-wrap {
+  position: relative;
+  min-width: 0;
+}
+
 .hc-exec-shell-output {
-  max-height: 240px;
-  margin-left: 17px;
+  max-height: 140px;
+  margin: 4px 0 0;
   border: 0;
-  border-left: 1px solid #d6d2c8;
   background: transparent;
-  padding: 2px 0 2px 9px;
+  padding: 8px 10px;
   color: #626b68;
+}
+
+.hc-exec-shell-copy-button {
+  display: inline-flex;
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #74776f;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.hc-exec-shell-copy-button:hover,
+.hc-exec-shell-copy-button.is-copied {
+  background: rgba(39, 49, 61, 0.08);
+  color: #27313d;
+}
+
+.hc-exec-shell:hover .hc-exec-shell-copy-all,
+.hc-exec-shell-command-row:hover .hc-exec-shell-command-copy,
+.hc-exec-shell-output-wrap:hover .hc-exec-shell-output-copy,
+.hc-exec-shell-copy-button:focus-visible,
+.hc-exec-shell-copy-button.is-copied {
+  opacity: 1;
+}
+
+.hc-exec-shell-copy-all {
+  top: 6px;
+  right: 8px;
+}
+
+.hc-exec-shell-command-copy {
+  top: 1px;
+  right: 6px;
+}
+
+.hc-exec-shell-output-copy {
+  top: 8px;
+  right: 8px;
 }
 
 .hc-exec-shell-footer {
   display: flex;
-  justify-content: flex-start;
-  margin-left: 17px;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
   border: 0;
-  padding: 0;
+  padding: 2px 10px 7px;
   color: #74776f;
   font-size: 11px;
 }
@@ -490,6 +891,124 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-tool-detail-stack.is-running {
   color: #2d4938;
+}
+
+.hc-tool-detail-stack.mcp-app {
+  gap: 7px;
+}
+
+.hc-mcp-app-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: #27313d;
+}
+
+.hc-mcp-app-header .hc-tool-detail-title {
+  flex: 1 1 auto;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.hc-mcp-app-header small {
+  flex: 0 0 auto;
+  color: #74776f;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.hc-mcp-app-uri {
+  min-width: 0;
+  overflow: hidden;
+  color: #74776f;
+  font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-mcp-app-frame-shell {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.hc-mcp-app-frame-shell.is-fullscreen {
+  position: fixed;
+  inset: 16px;
+  z-index: 120;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid rgba(39, 49, 61, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 60px rgba(28, 31, 35, 0.24);
+}
+
+.hc-mcp-app-frame {
+  width: 100%;
+  min-height: 160px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.hc-mcp-app-frame[data-prefers-border="true"] {
+  border: 1px solid #ddd9ce;
+}
+
+.hc-mcp-app-frame-shell.is-fullscreen .hc-mcp-app-frame {
+  flex: 1 1 auto;
+  height: calc(100vh - 32px) !important;
+  min-height: 0;
+  border: 0;
+  border-radius: 10px;
+}
+
+.hc-mcp-app-fullscreen-exit {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(39, 49, 61, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #27313d;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(28, 31, 35, 0.14);
+}
+
+.hc-mcp-app-fullscreen-exit:hover {
+  background: #fff;
+}
+
+.hc-mcp-app-loading {
+  width: 100%;
+  height: 240px;
+  overflow: hidden;
+  border: 1px solid #ddd9ce;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f5f2ea 0%, #ffffff 45%, #f5f2ea 100%);
+  background-size: 220% 100%;
+  animation: hc-mcp-app-loading-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes hc-mcp-app-loading-pulse {
+  0% {
+    background-position: 110% 0;
+  }
+
+  100% {
+    background-position: -110% 0;
+  }
 }
 
 .hc-tool-detail-line,

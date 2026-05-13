@@ -1578,28 +1578,33 @@ function appendItemText(
   const itemId = String(params.itemId ?? "");
   const delta = String(params[deltaField] ?? "");
   if (!threadId || !itemId || !delta) return state;
-  const items = selectThreadRuntime(state, threadId).items;
+  const runtime = selectThreadRuntime(state, threadId);
+  const turnId = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
+  const order = turnId ? ensureTurnInOrder(runtime.turnOrder, turnId) : runtime.turnOrder;
+  const items = runtime.items;
   let found = false;
-  const next = items.map((item) => {
+  let next = items.map((item) => {
     if (item.id !== itemId) return item;
     found = true;
     const previous = String((item as Record<string, unknown>)[field] ?? "");
-    return {
+    const updated = {
       ...item,
       type: item.type || expectedType,
       ...(expectedType === "agentMessage" && (item as Record<string, unknown>).completed !== true ? { completed: false } : {}),
       [field]: previous + delta,
     };
+    return turnId ? attachTurnId(updated as AccumulatedThreadItem, turnId) : updated;
   });
   if (!found) {
-    next.push({
+    const incoming = {
       id: itemId,
       type: expectedType,
       ...(expectedType === "agentMessage" ? { completed: false } : {}),
       [field]: delta,
-    });
+    } as unknown as AccumulatedThreadItem;
+    next = placeItemInTurn(next, turnId ? attachTurnId(incoming, turnId) : incoming, order);
   }
-  return threadRuntimePatch(state, threadId, { items: next });
+  return threadRuntimePatch(state, threadId, { items: next, turnOrder: order });
 }
 
 function mergeItemFields(
@@ -1671,7 +1676,7 @@ function appendReasoningText(
   const itemId = String(params.itemId ?? "");
   const delta = String(params.delta ?? "");
   if (!threadId || !itemId || !delta) return state;
-  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), delta);
+  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), delta, turnIdParam(params));
 }
 
 function ensureReasoningPart(
@@ -1683,7 +1688,7 @@ function ensureReasoningPart(
   const threadId = String(params.threadId ?? "");
   const itemId = String(params.itemId ?? "");
   if (!threadId || !itemId) return state;
-  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), "");
+  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), "", turnIdParam(params));
 }
 
 function updateReasoningParts(
@@ -1693,24 +1698,33 @@ function updateReasoningParts(
   field: "content" | "summary",
   index: number,
   delta: string,
+  turnId: string | null,
 ): CodexUiState {
-  const items = selectThreadRuntime(state, threadId).items;
+  const runtime = selectThreadRuntime(state, threadId);
+  const order = turnId ? ensureTurnInOrder(runtime.turnOrder, turnId) : runtime.turnOrder;
+  const items = runtime.items;
   let found = false;
-  const next = items.map((item) => {
+  let next = items.map((item) => {
     if (item.id !== itemId) return item;
     found = true;
     const parts = reasoningParts(item, field);
     while (parts.length <= index) parts.push("");
     parts[index] = `${parts[index] ?? ""}${delta}`;
-    return { ...item, type: "reasoning", [field]: parts };
+    const updated = { ...item, type: "reasoning", [field]: parts } as AccumulatedThreadItem;
+    return turnId ? attachTurnId(updated, turnId) : updated;
   });
   if (!found) {
     const parts: string[] = [];
     while (parts.length <= index) parts.push("");
     parts[index] = delta;
-    next.push({ id: itemId, type: "reasoning", [field]: parts });
+    const incoming = { id: itemId, type: "reasoning", [field]: parts } as unknown as AccumulatedThreadItem;
+    next = placeItemInTurn(next, turnId ? attachTurnId(incoming, turnId) : incoming, order);
   }
-  return threadRuntimePatch(state, threadId, { items: next });
+  return threadRuntimePatch(state, threadId, { items: next, turnOrder: order });
+}
+
+function turnIdParam(params: Record<string, unknown>): string | null {
+  return typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
 }
 
 function reasoningParts(item: AccumulatedThreadItem, field: "content" | "summary"): string[] {

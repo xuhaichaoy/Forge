@@ -3,6 +3,7 @@ import type { Thread } from "@hicodex/codex-protocol";
 import type { ThreadActionDialogState } from "../components/thread-action-dialog";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
+import { findRolloutForThread, getHostStatus, isTauriRuntime } from "../lib/tauri-host";
 import type {
   CodexUiAction,
   ThreadContextDefaults,
@@ -88,7 +89,7 @@ export function useThreadActions({
   const forkSelectedThread = useCallback(async (thread: Thread) => {
     try {
       if (!(await ensureConnected())) return;
-      const result = await forkThreadWorkflow(client, thread.id, workspace, threadContextDefaults);
+      const result = await forkThreadWorkflow(client, thread.id, thread.cwd || workspace, threadContextDefaults);
       dispatch({ type: "upsertThread", thread: result.thread, select: true });
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
@@ -114,8 +115,39 @@ export function useThreadActions({
 
   const editLastUserTurn = useCallback(async (turnId: string, message: string) => {
     if (!activeThread) return;
+    if (!(await ensureConnected())) return;
+    /*
+     * The workflow auto-recovers `thread not found` by calling
+     * `thread/resume {path}` (path-based bypass of the stale session_index).
+     * For that we need the rollout JSONL path. `activeThread.path` is
+     * populated by `thread/list` / `thread/start` responses, but the local
+     * UI may have cached a `Thread` without `path` (e.g. an older snapshot
+     * loaded from sqlite). When that happens, scan the on-disk sessions
+     * directory via Tauri (`host_find_rollout_for_thread`) so we still have
+     * something to hand the workflow.
+     *
+     * If `host_find_rollout_for_thread` is missing (older Tauri build that
+     * hasn't been restarted after we added the command), surface a clear
+     * message so the user knows to restart instead of seeing the same opaque
+     * "thread not found" again.
+     */
+    let rolloutPath: string | null = activeThread.path?.trim() ? activeThread.path : null;
+    let tauriCommandMissing = false;
+    if (!rolloutPath && isTauriRuntime()) {
+      try {
+        const status = await getHostStatus();
+        rolloutPath = await findRolloutForThread(activeThread.id, status?.codexHome ?? null);
+      } catch (lookupError) {
+        // Best-effort — don't break edit if the lookup itself fails.
+        const message = formatError(lookupError);
+        if (/command\s+host_find_rollout_for_thread\s+not\s+found/i.test(message)
+          || /unknown\s+command/i.test(message)) {
+          tauriCommandMissing = true;
+        }
+        dispatch({ type: "log", text: `rollout lookup failed: ${message}`, level: "warn" });
+      }
+    }
     try {
-      if (!(await ensureConnected())) return;
       await editLastUserTurnWorkflow(
         client,
         activeThread.id,
@@ -126,9 +158,20 @@ export function useThreadActions({
         (thread) => {
           dispatch({ type: "upsertThread", thread, select: true });
         },
+        rolloutPath,
       );
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
+      if (isThreadNotFound(error) && tauriCommandMissing) {
+        throw new Error(
+          `${formatError(error)}. The recovery helper for this app build is not yet loaded — please restart HiCodex (close the desktop window and run \`npm run tauri:dev\` again) and try Send once more.`,
+        );
+      }
+      if (isThreadNotFound(error) && !rolloutPath) {
+        throw new Error(
+          `${formatError(error)}. This conversation's rollout file could not be located on disk. Start a new chat to continue with your edited message.`,
+        );
+      }
       throw error;
     }
   }, [activeThread, client, dispatch, ensureConnected, threadContextDefaults, workspace]);

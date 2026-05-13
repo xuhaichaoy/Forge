@@ -13,8 +13,6 @@
   flex: 1;
   min-height: 0;
   min-width: 0;
-  padding-right: var(--thread-scroll-inline-end-inset, 0px);
-  transition: padding-right 180ms ease;
 }
 
 .hc-thread-scroll-container {
@@ -44,8 +42,9 @@
   min-width: 0;
   flex-direction: column;
   justify-content: flex-start;
+  padding-right: var(--thread-scroll-inline-end-inset, 0px);
   transform: translateX(var(--thread-scroll-content-x, 0));
-  transition: transform 180ms ease;
+  transition: padding-right 180ms ease, transform 180ms ease;
 }
 
 .hc-thread-scroll-body {
@@ -256,6 +255,10 @@
   margin-bottom: var(--conversation-block-gap);
   content-visibility: auto;
   contain-intrinsic-size: auto 240px;
+}
+
+.hc-turn-row:has([data-mcp-app-frame="true"]) {
+  content-visibility: visible;
 }
 
 .hc-turn-row > * + * {

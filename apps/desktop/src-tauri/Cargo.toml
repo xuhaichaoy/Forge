@@ -13,6 +13,7 @@ tauri-build = { workspace = true }
 
 [dependencies]
 base64 = { workspace = true }
+cfb = "0.7.3"
 hicodex-host = { path = "../../../crates/host" }
 serde = { workspace = true }
 serde_json = { workspace = true }

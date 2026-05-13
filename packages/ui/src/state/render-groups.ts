@@ -13,6 +13,8 @@ export {
   isThreadStatusInProgress,
   itemText,
   itemType,
+  mcpAppResourceUri,
+  mcpAppResourceUriFromMeta,
   mcpServerName,
   mcpSourceTitle,
   mcpToolName,

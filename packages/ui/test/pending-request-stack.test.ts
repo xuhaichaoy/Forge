@@ -1,8 +1,9 @@
-import { looksLikeCommandOrPath } from "../src/components/pending-request-stack";
+import { commandPreviewText, looksLikeCommandOrPath } from "../src/components/pending-request-stack";
 
 export default function runPendingRequestStackTests(): void {
   detectsCommandsAndPaths();
   keepsPlainLanguageDetailsAsText();
+  preservesCommandPreviewText();
 }
 
 function detectsCommandsAndPaths(): void {
@@ -16,6 +17,12 @@ function detectsCommandsAndPaths(): void {
 function keepsPlainLanguageDetailsAsText(): void {
   assertEqual(looksLikeCommandOrPath("No additional permissions"), false, "ordinary prose should not be code styled");
   assertEqual(looksLikeCommandOrPath("Apply generated changes"), false, "approval reason prose should not be code styled");
+}
+
+function preservesCommandPreviewText(): void {
+  const heredoc = "/bin/zsh -lc 'cat > ~/Downloads/hicodex_demo.html <<\\'HTML\\'\n<div>preview</div>\nHTML'";
+  assertEqual(commandPreviewText({ command: heredoc }), heredoc, "multiline command preview should stay as one preview block");
+  assertEqual(commandPreviewText({ command: ["npm", "run", "typecheck"] }), "npm run typecheck", "argv commands should join for preview");
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

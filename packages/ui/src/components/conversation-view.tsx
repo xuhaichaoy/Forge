@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
+import { isItemInProgress } from "../state/thread-item-fields";
 import {
   ToolActivityView,
   ToolBlock,
@@ -15,6 +16,7 @@ import {
 import type { FileReference } from "./file-reference-types";
 import { MessageUnitView } from "./message-unit";
 import type { OpenThreadHandler } from "./open-thread";
+import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
 import { ThreadItemView } from "./thread-item-view";
 import {
   setThreadScrollDistanceFromBottom,
@@ -27,17 +29,23 @@ import {
 } from "./turn-collapse";
 
 export {
+  DESKTOP_COLLAPSED_TOOL_ACTIVITY_LABEL_CLASS,
+  DESKTOP_COLLAPSED_TOOL_ACTIVITY_SUMMARY_CLASS,
+  desktopCollapsedToolActivityChevronClassName,
   initialToolActivityExpanded,
   initialToolActivityViewState,
   isToolActivityExpandable,
   reasoningActivityBody,
+  shouldShowToolActivityInlineDetail,
   stripReasoningActivityHeading,
   ToolActivityView,
   ToolBlock,
   toolActivityDetailItems,
-  workedForExpandedUnits,
+  formatTurnDiffFileCount,
+  turnDiffHeaderStatsVisible,
+  turnDiffViewModel,
+  workedForExpandedDetailItems,
 } from "./event-unit";
-export type { ConversationUnitRenderer } from "./event-unit";
 export {
   CodeSnippet,
   codeBlockTitle,
@@ -74,9 +82,12 @@ export interface ConversationViewProps {
   threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
+  onOpenDiff?: () => void;
   onForkTurn?: (turnId: string) => void;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
 }
 
 export function ConversationView({
@@ -85,9 +96,12 @@ export function ConversationView({
   threadId = null,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
+  onOpenDiff,
   onForkTurn,
   onOpenFileReference,
   onOpenThreadId,
+  onMcpAppHostCall,
+  onReadMcpResource,
 }: ConversationViewProps) {
   const groups = useMemo(() => groupUnitsByTurn(units), [units]);
   const [turnCollapseState, setTurnCollapseState] = useState<Record<string, boolean>>({});
@@ -106,9 +120,13 @@ export function ConversationView({
       isMostRecentTurn={context?.isMostRecentTurn === true}
       onEditLastUserMessage={onEditLastUserMessage}
       onOpenAssistantArtifact={onOpenAssistantArtifact}
+      onOpenDiff={onOpenDiff}
       onForkTurn={onForkTurn}
       onOpenFileReference={onOpenFileReference}
       onOpenThreadId={onOpenThreadId}
+      onMcpAppHostCall={onMcpAppHostCall}
+      onReadMcpResource={onReadMcpResource}
+      threadId={threadId}
     />
   );
 
@@ -477,16 +495,24 @@ export function ConversationUnitView({
   isMostRecentTurn = false,
   onOpenFileReference,
   onOpenThreadId,
+  onMcpAppHostCall,
+  onReadMcpResource,
+  threadId = null,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
+  onOpenDiff,
   onForkTurn,
 }: {
   unit: ConversationRenderUnit;
   isMostRecentTurn?: boolean;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
+  threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
+  onOpenDiff?: () => void;
   onForkTurn?: (turnId: string) => void;
 }) {
   if (unit.kind === "message") {
@@ -510,18 +536,9 @@ export function ConversationUnitView({
         unit={unit}
         onOpenFileReference={onOpenFileReference}
         onOpenThreadId={onOpenThreadId}
-        renderUnit={(detailUnit, key) => (
-          <ConversationUnitView
-            key={key}
-            unit={detailUnit}
-            isMostRecentTurn={isMostRecentTurn}
-            onEditLastUserMessage={onEditLastUserMessage}
-            onOpenAssistantArtifact={onOpenAssistantArtifact}
-            onForkTurn={onForkTurn}
-            onOpenFileReference={onOpenFileReference}
-            onOpenThreadId={onOpenThreadId}
-          />
-        )}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
       />
     );
   }
@@ -529,8 +546,10 @@ export function ConversationUnitView({
     <ToolBlock
       contentSearchUnitKey={unit.key}
       format={unit.format}
+      inProgress={isItemInProgress(unit.item)}
       itemIds={unit.item.id}
       label={unit.label}
+      onOpenDiff={onOpenDiff}
       onOpenFileReference={onOpenFileReference}
       tone={unit.tone}
       value={unit.text}

@@ -16,17 +16,17 @@
   gap: 10px;
   overflow: hidden;
   border: 1px solid #d7d3c8;
-  border-radius: 10px;
+  border-radius: 24px;
   background: rgba(255, 253, 250, 0.96);
   color: #292c2a;
-  box-shadow: 0 1px 2px rgba(28, 31, 35, 0.04);
+  box-shadow: 0 1px 2px rgba(28, 31, 35, 0.04), 0 10px 30px rgba(28, 31, 35, 0.06);
 }
 
 .hc-request-panel-content {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 12px 12px 0;
+  gap: 10px;
+  padding: 16px 14px 0;
 }
 
 .hc-request-panel-title {
@@ -70,6 +70,71 @@
   padding: 1px 3px;
   color: #4e5652;
   font-size: 11px;
+}
+
+.hc-request-command-preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 20rem;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(34, 38, 43, 0.06);
+  color: #5f6662;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.55;
+}
+
+.hc-request-command-preview pre {
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.hc-request-command-preview[data-expanded="false"] pre {
+  display: -webkit-box;
+  max-height: 4.65em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.hc-request-preview-toggle {
+  align-self: flex-end;
+  margin: 0 6px 6px;
+  border-radius: 7px;
+  padding: 3px 8px;
+  color: #4c5350;
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.hc-request-preview-toggle:hover {
+  background: rgba(34, 38, 43, 0.08);
+}
+
+.hc-request-file-preview {
+  display: flex;
+  max-height: 200px;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  border-radius: 8px;
+  background: rgba(34, 38, 43, 0.04);
+  padding: 8px 10px;
+}
+
+.hc-request-file-preview code {
+  color: #5f6662;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .hc-request-questions {
@@ -216,7 +281,7 @@
   justify-content: flex-end;
   gap: 7px;
   border-top: 1px solid rgba(34, 38, 43, 0.08);
-  padding: 8px 10px;
+  padding: 8px 12px;
 }
 
 .hc-request-action {

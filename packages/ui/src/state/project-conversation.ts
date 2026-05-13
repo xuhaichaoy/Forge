@@ -1,9 +1,21 @@
-import type { ConversationProjection, ConversationProjectionOptions, ConversationRenderUnit, ItemRecord, RailEntry, ThreadItem, ToolActivityGroupType } from "./render-group-types";
+import type {
+  ConversationProjection,
+  ConversationProjectionOptions,
+  ConversationRenderUnit,
+  ItemRecord,
+  RailEntry,
+  ThreadItem,
+  ToolActivityGroupType,
+} from "./render-group-types";
 import { assistantArtifactsForTurn } from "./assistant-artifacts";
 import { projectBackgroundAgentRailEntries } from "./background-agents";
 import { projectBackgroundTerminalRailEntries } from "./background-terminals";
 import { eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
-import { collectRailEntries, progressEntriesFromPlan } from "./rail-projection";
+import {
+  collectRailEntries,
+  progressEntriesFromPlan,
+  type ArtifactFileCandidateIndex,
+} from "./rail-projection";
 import {
   assistantMessagePhase,
   assistantMessageText,
@@ -11,8 +23,11 @@ import {
   isCompletedRecord,
   isItemInProgress,
   itemType,
+  mcpAppResourceUri,
+  mcpAppResourceUriFromServerStatuses,
   mcpElicitationServer,
   mcpServerName,
+  mcpToolName,
 } from "./thread-item-fields";
 import {
   baseToolActivityGroupType,
@@ -26,11 +41,13 @@ import {
 import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import { projectUserMessageContent, userMessageText } from "./user-message-content";
 
-export function projectConversation(items: ThreadItem[], options: ConversationProjectionOptions = {}): ConversationProjection {
+export function projectConversation(rawItems: ThreadItem[], options: ConversationProjectionOptions = {}): ConversationProjection {
+  const items = withMcpAppResourceUris(rawItems, options.mcpServerStatuses);
   const units: ConversationRenderUnit[] = [];
   let progress: RailEntry[] = [];
   const artifacts = new Map<string, RailEntry>();
   const sources = new Map<string, RailEntry>();
+  const fileCandidates: ArtifactFileCandidateIndex = new Map();
   const blockedMcpServers = blockedMcpServersFromItems(items);
   const workedForCollapsedByDefaultIds = workedForIdsWithTrailingAssistant(items);
   let activity: ThreadItem[] = [];
@@ -38,19 +55,78 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
   let activityGroupKey: string | null = null;
   const conversationDetailLevel = options.conversationDetailLevel ?? "STEPS_COMMANDS";
 
+  /*
+   * Codex Desktop `W` function (split-items-into-render-groups-C1Yh6v3t.js) aggregates
+   * exploration / patch / exec / hook / mcp-tool-call / web-search into one segment
+   * bucket per `G` predicate, then wraps that bucket as a single `collapsed-tool-activity`
+   * with cross-type counts (webSearchCount, commandCount, exploredFileCount, …). The
+   * `Ge` function additionally folds reasoning items into the current exploration buffer.
+   *
+   * We approximate the same behavior here: groupTypes that Codex's `G` accepts are mapped
+   * onto the same merged bucket so consecutive items don't split into separate render
+   * rows. Reasoning still joins the current merged bucket (or a standalone exploration
+   * if already in one). Standalone groupTypes (`worked-for` / `multi-agent-group` /
+   * `pending-mcp-tool-calls` / `todo-list`) keep their independent bucket.
+   */
+  const MERGEABLE_ACTIVITY_GROUP_TYPES: ReadonlySet<ToolActivityGroupType> = new Set([
+    "collapsed-tool-activity",
+    "exploration",
+    "web-search-group",
+  ]);
+
   const pushActivityItem = (item: ThreadItem, forcedGroupType?: ToolActivityGroupType) => {
     const baseGroupType = forcedGroupType ?? baseToolActivityGroupType(item);
-    const nextGroupType = baseGroupType === "reasoning" && activityGroupType === "exploration"
-      ? "exploration"
-      : baseGroupType;
-    const nextGroupKey = toolActivityGroupKey(item, nextGroupType);
-    if (nextGroupType === "worked-for" && activity.length > 0) {
+    const currentIsMergeable = activityGroupType !== null
+      && MERGEABLE_ACTIVITY_GROUP_TYPES.has(activityGroupType);
+    const incomingIsMergeable = MERGEABLE_ACTIVITY_GROUP_TYPES.has(baseGroupType);
+
+    // Codex `Ge` :7782 — real reasoning items are silently absorbed into the active
+    // exploration buffer (so the buffer keeps building) and `Jw` :7881 then renders
+    // each reasoning entry as `null`. Synthetic `thinking-placeholder` items, however,
+    // ARE the live "Thinking" UX (Codex `ZT` :8384) and must end up in their own
+    // `reasoning`-typed bucket so `ToolActivityView` routes them to
+    // `ReasoningActivityView`.
+    if (baseGroupType === "reasoning") {
+      const isThinkingPlaceholder = (item as Record<string, unknown>)._syntheticKind === "thinking-placeholder";
+      if (isThinkingPlaceholder) {
+        if (activity.length > 0) flushActivity();
+        activityGroupType = "reasoning";
+        activityGroupKey = toolActivityGroupKey(item, "reasoning");
+        activity.push(item);
+        return;
+      }
+      // Real reasoning item: append to the current mergeable bucket so the
+      // exploration / collapsed-tool-activity summary keeps building, but the item
+      // itself is hidden in `toolActivityDetailItems` so it never renders as a row.
+      if (currentIsMergeable) {
+        activity.push(item);
+      }
+      // Otherwise drop — no row, no JSON fallback.
+      return;
+    }
+
+    // Mergeable item joining a mergeable bucket (Codex `W` :line-2 segment aggregation).
+    if (currentIsMergeable && incomingIsMergeable) {
+      if (activityGroupType !== baseGroupType) {
+        // Heterogeneous mix — promote the bucket to `collapsed-tool-activity` so the
+        // summary builder produces a cross-type count label
+        // ("Explored 1 file, ran 2 commands, searched web 4 times").
+        activityGroupType = "collapsed-tool-activity";
+        activityGroupKey = `merged-activity:${activityGroupKey ?? toolActivityGroupKey(item, "collapsed-tool-activity")}`;
+      }
+      activity.push(item);
+      return;
+    }
+
+    // Otherwise the new item starts (or continues) a bucket of its own type.
+    const nextGroupKey = toolActivityGroupKey(item, baseGroupType);
+    if (baseGroupType === "worked-for" && activity.length > 0) {
       flushActivity();
     }
-    if (activity.length > 0 && (activityGroupType !== nextGroupType || activityGroupKey !== nextGroupKey)) {
+    if (activity.length > 0 && (activityGroupType !== baseGroupType || activityGroupKey !== nextGroupKey)) {
       flushActivity();
     }
-    activityGroupType = nextGroupType;
+    activityGroupType = baseGroupType;
     activityGroupKey = nextGroupKey;
     activity.push(item);
   };
@@ -71,6 +147,12 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     const summary = summarizeToolActivity(activity, {
       conversationDetailLevel: options.conversationDetailLevel ?? "STEPS_COMMANDS",
       workedForCollapsedByDefault: activity.some((item) => workedForCollapsedByDefaultIds.has(item.id)),
+      /*
+       * If `pushActivityItem` promoted the bucket to a cross-type
+       * `collapsed-tool-activity` (Codex `W` :line-2 segment aggregation), preserve that
+       * group type so the summary builder produces the cross-type count label.
+       */
+      groupTypeOverride: activityGroupType ?? undefined,
     });
     const renderIndex = units.length;
     units.push({
@@ -92,7 +174,7 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
       return;
     }
     if (itemType(item) === "todo-list") {
-      const nextProgress = collectRailEntries(item, artifacts, sources);
+      const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates);
       if (nextProgress) {
         progress = nextProgress;
       }
@@ -101,7 +183,7 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     if (isBlockingOutOfBandItem(item, blockedMcpServers)) {
       return;
     }
-    const nextProgress = collectRailEntries(item, artifacts, sources);
+    const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates);
     if (nextProgress) {
       progress = nextProgress;
     }
@@ -179,8 +261,16 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
       isLastSegment: index === segments.length - 1,
       isThreadRunning: options.isThreadRunning === true,
     });
-    const assistantArtifactsForItem = (item: ThreadItem) =>
-      assistantArtifactsForTurn(segment, assistantMessageText(item), artifacts.values());
+    const assistantArtifactsForItem = (item: ThreadItem) => {
+      const itemIndex = segment.indexOf(item);
+      const itemsThroughAssistant = itemIndex >= 0 ? segment.slice(0, itemIndex + 1) : segment;
+      return assistantArtifactsForTurn(
+        itemsThroughAssistant,
+        assistantMessageText(item),
+        artifacts.values(),
+        fileCandidates,
+      );
+    };
 
     if (!segment.some(isUserMessage)) {
       for (const item of segment) {
@@ -221,6 +311,9 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     if (split.approvalItem) pushConversationItem(split.approvalItem);
     if (split.userInputItem) pushConversationItem(split.userInputItem);
     if (split.proposedPlanItem) pushConversationItem(split.proposedPlanItem);
+    if (shouldRenderDesktopThinkingPlaceholder(split, turnStatus)) {
+      pushConversationItem(desktopThinkingPlaceholderItem(segment, split));
+    }
     if (split.planImplementationItem) pushConversationItem(split.planImplementationItem);
     if (split.unifiedDiffItem) pushConversationItem(split.unifiedDiffItem);
     for (const item of split.remoteTaskCreatedItems) pushConversationItem(item);
@@ -242,6 +335,23 @@ export function projectConversation(items: ThreadItem[], options: ConversationPr
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),
     sources: Array.from(sources.values()),
   };
+}
+
+function withMcpAppResourceUris(items: ThreadItem[], mcpServerStatuses: unknown): ThreadItem[] {
+  if (!mcpServerStatuses) return items;
+  let changed = false;
+  const next = items.map((item) => {
+    if (itemType(item) !== "mcp-tool-call" || mcpAppResourceUri(item)) return item;
+    const resourceUri = mcpAppResourceUriFromServerStatuses(
+      mcpServerStatuses,
+      mcpServerName(item),
+      mcpToolName(item),
+    );
+    if (!resourceUri) return item;
+    changed = true;
+    return { ...item, mcpAppResourceUri: resourceUri };
+  });
+  return changed ? next : items;
 }
 
 export interface DesktopTurnSplit {
@@ -464,6 +574,61 @@ function shouldSkipConversationItem(item: ThreadItem): boolean {
   if (itemType(item) !== "multi-agent-action") return false;
   const record = item as ItemRecord;
   return record.tool === "wait" || record.action === "wait";
+}
+
+function shouldRenderDesktopThinkingPlaceholder(
+  split: DesktopTurnSplit,
+  turnStatus: string,
+): boolean {
+  /*
+   * Mirrors Codex Desktop `oT` (local-conversation-thread.pretty.js :8000-8002)
+   * combined with `Ge` (split-items-into-render-groups-C1Yh6v3t.js): the live
+   * "Thinking" placeholder is shown when the turn is in progress AND nothing
+   * else (exploring/planning/blocking request/active web search/assistant with
+   * output / running non-reasoning agent step) is already telling the user the
+   * model is busy.
+   *
+   * In particular, Codex's `Ge` explicitly sets
+   * `isAnyNonExploringAgentItemInProgress = false` when the last agent item is
+   * an in-progress reasoning event (the `if (e.item.type === 'reasoning' && ...)
+   * o = false` branch). Reasoning items are folded into the exploration buffer
+   * or dropped — they never count as "an agent item in progress" that should
+   * suppress the thinking row. Without this carve-out, HiCodex's
+   * `event-unit.tsx` (`Jw`-parity: real reasoning units return `null`) would
+   * leave the entire process area visually empty while the model is reasoning.
+   */
+  if (turnStatus !== "in_progress") return false;
+  if (hasBlockingRequest(split)) return false;
+  if (split.proposedPlanItem && isItemInProgress(split.proposedPlanItem)) return false;
+  if (split.assistantItem && hasAssistantOutput(split.assistantItem)) return false;
+  return !split.agentItems.some((item) =>
+    itemType(item) !== "reasoning" && isItemInProgress(item),
+  );
+}
+
+function hasBlockingRequest(split: DesktopTurnSplit): boolean {
+  return Boolean(
+    split.approvalItem
+    || split.userInputItem
+    || split.mcpServerElicitationItems.some((item) => !isCompletedRecord(item))
+    || split.permissionRequestItems.some((item) => !isCompletedRecord(item)),
+  );
+}
+
+function desktopThinkingPlaceholderItem(segment: ThreadItem[], split: DesktopTurnSplit): ThreadItem {
+  const anchor = split.userItems[split.userItems.length - 1] ?? segment[0];
+  const turnId = segment.map((item) => (item as ItemRecord)._turnId).find((id): id is string =>
+    typeof id === "string" && id.length > 0
+  ) ?? null;
+  const anchorId = anchor?.id || turnId || "active-turn";
+  return {
+    id: `thinking-placeholder:${anchorId}`,
+    type: "reasoning",
+    status: "inProgress",
+    completed: false,
+    ...(turnId ? { _turnId: turnId } : {}),
+    _syntheticKind: "thinking-placeholder",
+  };
 }
 
 function shouldKeepSingleActivityAsThreadItem(

@@ -4,10 +4,15 @@ export default function runRenderGroupsRightRailTests(): void {
   usesLatestTodoListPlanForProgress();
   usesReducerPlanFactsForProgress();
   dedupesArtifactsAcrossFileChangesAndAssistantText();
+  ignoresPunctuationOnlyFileArtifacts();
+  stripsTrailingCjkPunctuationFromArtifactTargets();
   projectsBareBacktickedFilenamesAsArtifacts();
+  projectsSavedAbsolutePathFromAssistantContext();
+  skipsMissingAbsolutePathFromAssistantContext();
   skipsUnresolvedAssistantFileMentions();
   skipsFailedToolPathArtifacts();
-  dedupesBareImageLinksAgainstCommandOutputPaths();
+  doesNotPromoteCommandOutputPathsIntoArtifacts();
+  resolvesBareImageLinksAgainstCommandOutputPaths();
   projectsGeneratedImageSourcesIntoArtifacts();
   excludesNodeReplSourcesButKeepsMcpAndWebSearchSources();
 }
@@ -123,6 +128,45 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
   );
 }
 
+function ignoresPunctuationOnlyFileArtifacts(): void {
+  const projection = projectConversation([
+    {
+      type: "fileChange",
+      id: "file-change-punctuation",
+      status: "completed",
+      path: "、",
+      changes: [
+        { path: "、", kind: "update" },
+        { newPath: "packages/ui/src/state/rail-projection.ts", kind: "update" },
+      ],
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    ["packages/ui/src/state/rail-projection.ts"],
+    "punctuation-only fileChange paths should not appear in Artifacts",
+  );
+}
+
+function stripsTrailingCjkPunctuationFromArtifactTargets(): void {
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "assistant-cjk-punctuation",
+      text: "已保存 `report.csv`、预览地址是 http://localhost:5173/review、",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    ["report.csv", "http://localhost:5173/review"],
+    "artifact targets should drop trailing Chinese punctuation separators",
+  );
+}
+
 function projectsBareBacktickedFilenamesAsArtifacts(): void {
   const projection = projectConversation([
     {
@@ -148,6 +192,63 @@ function projectsBareBacktickedFilenamesAsArtifacts(): void {
       },
     ],
     "Desktop-style backticked bare filenames should project into Artifacts without misclassifying tool names",
+  );
+}
+
+function projectsSavedAbsolutePathFromAssistantContext(): void {
+  const savedPath = "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri/北京未来7天天气.xlsx";
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "assistant-saved-file",
+      text: `已帮你保存为 Excel 文件:\n\n${savedPath}\n\n说明: 文件已经写入本地。`,
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => ({
+      title: entry.title,
+      meta: entry.meta,
+      action: entry.action,
+    })),
+    [
+      {
+        title: "北京未来7天天气.xlsx",
+        meta: savedPath,
+        action: { kind: "file", reference: { path: savedPath, lineStart: 1 } },
+      },
+    ],
+    "assistant-saved absolute paths should inherit nearby save context and project into Artifacts",
+  );
+
+  const assistant = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-saved-file"
+  );
+  assertDeepEqual(
+    assistant?.kind === "message" ? assistant.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [savedPath],
+    "final assistant rows should show the generated file card when the saved path is explicit",
+  );
+}
+
+function skipsMissingAbsolutePathFromAssistantContext(): void {
+  const missingPath = "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri/missing.xlsx";
+  const projection = projectConversation([
+    {
+      type: "agentMessage",
+      id: "assistant-missing-absolute-path",
+      text: `我没有找到这个文件:\n\n${missingPath}`,
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    [],
+    "assistant missing absolute paths should keep nearby negative context and not create Artifacts",
   );
 }
 
@@ -235,10 +336,69 @@ function skipsFailedToolPathArtifacts(): void {
   );
 }
 
-function dedupesBareImageLinksAgainstCommandOutputPaths(): void {
+function doesNotPromoteCommandOutputPathsIntoArtifacts(): void {
+  const projection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "cmd-dev-guide",
+      status: "completed",
+      aggregatedOutput: [
+        "/Users/haichao/Desktop/data/HiCodex/docs/DEVELOPMENT.md",
+        "`local-conversation-thread-*.js`",
+        "`split-items-into-render-groups-*.js`",
+        "`packages/ui/src/components/conversation-view.tsx`",
+        "app.asar",
+      ].join("\n"),
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-hello",
+      text: "你好！我已经读过开发规范了。",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.artifacts.map((entry) => entry.meta),
+    [],
+    "command stdout should not be promoted into right-rail Artifacts without an explicit assistant artifact reference",
+  );
+  const assistantUnit = projection.units.find((unit) =>
+    unit.kind === "message" && unit.item.id === "assistant-hello"
+  );
+  assertDeepEqual(
+    assistantUnit?.kind === "message" ? assistantUnit.artifacts?.map((entry) => entry.meta) ?? [] : null,
+    [],
+    "assistant message resource cards should not inherit every file-like command output line",
+  );
+}
+
+function resolvesBareImageLinksAgainstCommandOutputPaths(): void {
   const cwdPath = "/Users/haichao/Desktop/data/HiCodex/apps/desktop/src-tauri";
   const image2Path = "/Users/haichao/Downloads/Day2-UA-图片/UA- image2.png";
   const image3Path = "/Users/haichao/Downloads/Day2-UA-图片/UA-image3.png";
+  const discoveredOnlyProjection = projectConversation([
+    {
+      type: "commandExecution",
+      id: "cmd-images",
+      status: "completed",
+      aggregatedOutput: `${cwdPath}\n${image2Path}\n${image3Path}`,
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-found-images",
+      text: "我找到了 2 张图片。",
+      phase: "final",
+      memoryCitation: null,
+    } as ThreadItem,
+  ]);
+  assertDeepEqual(
+    discoveredOnlyProjection.artifacts.map((entry) => entry.meta),
+    [],
+    "discovered stdout image paths should stay hidden until the assistant explicitly references them",
+  );
+
   const projection = projectConversation([
     {
       type: "userMessage",
@@ -293,7 +453,7 @@ function dedupesBareImageLinksAgainstCommandOutputPaths(): void {
         reference: { path: image3Path, lineStart: 1 },
       },
     ],
-    "right rail should prefer absolute image files from command output without promoting cwd directories",
+    "right rail should resolve explicit assistant image links to matching absolute command output paths",
   );
 
   const assistantUnit = projection.units.find((unit) =>

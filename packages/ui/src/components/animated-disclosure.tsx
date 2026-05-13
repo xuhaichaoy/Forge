@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-const DISCLOSURE_EXIT_MS = 180;
+/**
+ * Codex Desktop's `yo` framer-motion transition (`animations-y0LC3gHS.js`,
+ * imported into `local-conversation-thread.pretty.js:89` as `t as yo`) is
+ * `{ duration: 0.5, ease: [0.19, 1, 0.22, 1] }` — i.e. 500ms, applied to both
+ * `animate` and `exit`. Keep this value in lockstep with `--hc-codex-transition`
+ * in `base.css` so the unmount delay matches the CSS transition duration.
+ */
+const DISCLOSURE_EXIT_MS = 500;
 
 export function AnimatedDisclosure({
   children,
