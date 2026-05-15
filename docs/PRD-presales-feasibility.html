@@ -1,0 +1,1305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>售前 AI 方案 · 可行性评估</title>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --fg-2: #555;
+    --fg-3: #999;
+    --bg: #fbfaf7;
+    --card: #ffffff;
+    --border: #e6e3dc;
+    --accent: #2c5e6f;
+    --accent-bg: rgba(44, 94, 111, 0.08);
+    --gold: #b35a00;
+    --gold-bg: rgba(245, 158, 11, 0.1);
+    --red: #b91c1c;
+    --red-bg: rgba(220, 38, 38, 0.08);
+    --green: #15803d;
+    --green-bg: rgba(34, 197, 94, 0.1);
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.78;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 230px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  aside.toc {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 28px 18px;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 13px;
+  }
+  aside.toc .toc-title {
+    color: var(--fg-3);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    margin: 0 0 14px;
+    text-transform: uppercase;
+  }
+  aside.toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  aside.toc > ol > li { margin: 4px 0; }
+  aside.toc > ol > li > a {
+    color: var(--fg);
+    font-weight: 500;
+    text-decoration: none;
+    padding: 4px 10px;
+    display: block;
+    border-radius: 4px;
+  }
+  aside.toc > ol > li > a:hover { background: var(--accent-bg); color: var(--accent); }
+  aside.toc ol ol {
+    margin: 0 0 4px 12px;
+    padding-left: 0;
+  }
+  aside.toc ol ol li > a {
+    color: var(--fg-2);
+    font-size: 12px;
+    text-decoration: none;
+    padding: 2px 10px;
+    display: block;
+    border-radius: 4px;
+  }
+  aside.toc ol ol li > a:hover { color: var(--accent); }
+  main {
+    padding: 56px 60px 96px;
+    max-width: 920px;
+  }
+  h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--fg-2); margin: 0 0 28px; font-size: 16px; }
+  h2 {
+    font-size: 24px;
+    margin: 56px 0 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: -0.005em;
+  }
+  h3 { font-size: 18px; margin: 32px 0 12px; }
+  h4 { font-size: 14px; margin: 16px 0 6px; color: var(--accent); }
+  p { margin: 8px 0 12px; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 4px 0; }
+
+  .meta-bar {
+    display: flex;
+    gap: 28px;
+    padding: 14px 20px;
+    background: var(--card);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .meta-bar dl { margin: 0; }
+  .meta-bar dt {
+    color: var(--fg-3);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .meta-bar dd { margin: 2px 0 0; font-weight: 500; }
+
+  .tldr {
+    background: linear-gradient(135deg, var(--accent-bg) 0%, rgba(44, 94, 111, 0.02) 100%);
+    border: 1px solid rgba(44, 94, 111, 0.16);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 22px 26px;
+    margin: 24px 0 44px;
+  }
+  .tldr-label {
+    color: var(--accent);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .tldr p { margin: 0; font-size: 16px; line-height: 1.7; }
+
+  /* 评分小卡 */
+  .score {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 0 6px 0 0;
+  }
+  .score-h { background: var(--green-bg); color: var(--green); }
+  .score-m { background: var(--gold-bg); color: var(--gold); }
+  .score-l { background: var(--red-bg); color: var(--red); }
+
+  /* 场景卡 */
+  .scene {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin: 18px 0;
+  }
+  .scene-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+  .scene-num {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    text-align: center;
+    line-height: 28px;
+    font-weight: 600;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    margin-right: 12px;
+    font-size: 13px;
+  }
+  .scene-title { font-size: 18px; font-weight: 600; margin: 0; display: inline; }
+  .scene-eval { display: flex; gap: 6px; font-size: 12px; }
+  .scene-section {
+    margin: 12px 0 4px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--border);
+  }
+  .scene-section h4 {
+    margin: 0 0 4px;
+    color: var(--fg-2);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* before / after */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 14px 0;
+  }
+  .compare-side {
+    padding: 14px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .compare-now { background: var(--red-bg); border-color: rgba(220, 38, 38, 0.2); }
+  .compare-future { background: var(--green-bg); border-color: rgba(34, 197, 94, 0.2); }
+  .compare-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 6px;
+  }
+  .compare-now .compare-label { color: var(--red); }
+  .compare-future .compare-label { color: var(--green); }
+
+  /* 表格 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--fg-2);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  tbody tr:hover { background: rgba(0, 0, 0, 0.015); }
+
+  /* 流程图（纯 CSS） */
+  .flow {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+  }
+  .flow-step {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-step-num {
+    width: 26px;
+    height: 26px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-radius: 50%;
+    text-align: center;
+    line-height: 26px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .flow-step-title { font-weight: 600; margin: 2px 0 4px; }
+  .flow-step-body { color: var(--fg-2); font-size: 13.5px; }
+
+  /* 信息盒 */
+  .infobox {
+    padding: 14px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    margin: 14px 0;
+  }
+  .infobox-warn {
+    background: var(--gold-bg);
+    border-color: rgba(245, 158, 11, 0.35);
+  }
+  .infobox-warn::before {
+    content: "⚠ 注意：";
+    font-weight: 600;
+    color: var(--gold);
+  }
+  .infobox-key {
+    background: var(--accent-bg);
+    border-color: rgba(44, 94, 111, 0.2);
+  }
+  .infobox-key::before {
+    content: "💡 关键点：";
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  /* 决策清单 */
+  .decisions {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin: 16px 0;
+  }
+  .decisions ol {
+    margin: 0;
+    padding-left: 0;
+    list-style: none;
+    counter-reset: dec;
+  }
+  .decisions li {
+    counter-increment: dec;
+    position: relative;
+    padding: 10px 0 10px 38px;
+    border-bottom: 1px dashed var(--border);
+  }
+  .decisions li:last-child { border-bottom: none; }
+  .decisions li::before {
+    content: counter(dec);
+    position: absolute;
+    left: 0;
+    top: 12px;
+    width: 24px;
+    height: 24px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 24px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+
+  strong { color: var(--fg); font-weight: 600; }
+  em.term {
+    font-style: normal;
+    background: var(--accent-bg);
+    color: var(--accent);
+    padding: 0 4px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+  code {
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+  }
+
+  footer.doc-footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    aside.toc { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    main { padding: 32px 24px; }
+    .compare { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<aside class="toc">
+  <p class="toc-title">目录</p>
+  <ol>
+    <li><a href="#overview">一、立项概述</a></li>
+    <li><a href="#scenes">二、5 场景评估</a>
+      <ol>
+        <li><a href="#scene-1">① 方案平台化</a></li>
+        <li><a href="#scene-2">② 需求分析</a></li>
+        <li><a href="#scene-3">③ 匹配讲师</a></li>
+        <li><a href="#scene-4">④ 方案输出</a></li>
+        <li><a href="#scene-5">⑤ 内容包装</a></li>
+      </ol>
+    </li>
+    <li><a href="#core">三、核心机制（项目命门）</a>
+      <ol>
+        <li><a href="#kb">3.1 知识库怎么搭（双层架构）</a></li>
+        <li><a href="#coldstart">3.2 数据冷启动（让售前愿意贡献）</a></li>
+        <li><a href="#accuracy">3.3 怎么保证准确</a></li>
+        <li><a href="#integration">3.4 系统怎么连接</a></li>
+        <li><a href="#skill">3.5 Skill 怎么萃取</a></li>
+        <li><a href="#usage">3.6 怎么使用</a></li>
+      </ol>
+    </li>
+    <li><a href="#risk">四、风险评估</a></li>
+    <li><a href="#decision">五、决策建议</a></li>
+  </ol>
+</aside>
+
+<main>
+
+<h1>售前 AI 方案 · 可行性评估</h1>
+<p class="subtitle">基于《AI+方案可实施性评估》5 个场景的深度评估 — 不谈技术实现，只谈能不能做、怎么做才靠谱</p>
+
+<div class="meta-bar">
+  <dl><dt>面向</dt><dd>业务领导 · IT 负责人 · 法务</dd></dl>
+  <dl><dt>覆盖范围</dt><dd>售前方案 5 个场景</dd></dl>
+  <dl><dt>结论</dt><dd>整体<strong>可行</strong>，3 项需高度关注</dd></dl>
+  <dl><dt>核心难度</dt><dd>知识库 + 准确性 + Skill 萃取</dd></dl>
+</div>
+
+<div class="tldr">
+  <p class="tldr-label">一句话总结</p>
+  <p>
+    项目<strong>技术可行</strong>——5 个场景都有现成方案；但<strong>成败 80% 取决于 4 件事</strong>：<br/>
+    ① 知识库不仅要搭<strong>公司中央库</strong>，更要让 AI 能拿到<strong>每个售前手里的"私货"</strong>（活数据在个人手里，不在平台上）；<br/>
+    ② <strong>数据冷启动</strong>能否破解——售前愿不愿意把私货交给 AI 整理；<br/>
+    ③ 业务专家 + 一线售前能不能<strong>投足够时间</strong>把经验沉淀进 AI；<br/>
+    ④ 评估机制能不能<strong>客观衡量</strong>"AI 输出的好坏"。<br/>
+    全部是<strong>组织 + 业务方法</strong>问题，不是技术问题。
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════ -->
+
+<h2 id="overview">一、立项概述</h2>
+
+<h3>项目本质</h3>
+<p>
+把<strong>资深售前脑子里的"经验"</strong>变成 <strong>AI 能复用的"数字资产"</strong>。
+不是"做一个 AI 软件"，是"把公司沉淀的客户、讲师、方案、案例打通+加工，让任何一个售前都能调用资深的经验和公司全量的数据"。
+</p>
+
+<h3>核心矛盾</h3>
+<div class="compare">
+  <div class="compare-side compare-now">
+    <p class="compare-label">现在</p>
+    <p>资深售前脑子里的知识 ≠ 公司能复用的资产<br/>
+    资深售前离职 = 经验流失<br/>
+    新人 6 个月才能独立产方案</p>
+  </div>
+  <div class="compare-side compare-future">
+    <p class="compare-label">目标</p>
+    <p>资深经验沉淀成 AI 工具<br/>
+    任何售前用 AI 都能调用全公司经验<br/>
+    新人 2 个月独立上手</p>
+  </div>
+</div>
+
+<h3>5 个业务场景定位</h3>
+<table>
+<thead><tr><th>场景</th><th>本质</th><th>对客户的价值</th></tr></thead>
+<tbody>
+<tr><td>① 方案平台化</td><td>桌面端工作台基础底座</td><td>售前所有 AI 操作都在一个入口</td></tr>
+<tr><td>② 需求分析</td><td>把 RFP 自动拆解成"需求卡"</td><td>方向不偏，少返工</td></tr>
+<tr><td>③ 匹配讲师</td><td>从 2000+ 讲师库精准推荐</td><td>讲师贴合度高，客户接受率高</td></tr>
+<tr><td>④ 方案输出</td><td>AI 写方案初稿</td><td>从 3-5 天到 0.5-1 天</td></tr>
+<tr><td>⑤ 内容包装</td><td>讲师/课程/案例针对客户改写</td><td>千人千面，客户感受用心</td></tr>
+</tbody>
+</table>
+
+<!-- ════════════════════════════════════════ -->
+
+<h2 id="scenes">二、5 个场景逐项评估</h2>
+<p>每个场景从 3 个维度看：<strong>业务价值</strong> · <strong>技术可行性</strong>（不展开实现） · <strong>真实难点</strong>。</p>
+
+<!-- 场景 1 -->
+<div class="scene" id="scene-1">
+  <div class="scene-head">
+    <div><span class="scene-num">1</span><span class="scene-title">方案平台化</span></div>
+    <div class="scene-eval">
+      <span class="score score-h">价值 高</span>
+      <span class="score score-h">可行性 高</span>
+      <span class="score score-l">难点 中</span>
+    </div>
+  </div>
+
+  <div class="scene-section">
+    <h4>业务价值</h4>
+    <p>消除"信息孤岛"——售前不再需要在 CRM / 邮箱 / 共享盘 / 钉钉群之间来回切换，所有客户/项目/方案数据在一个入口。<strong>价值不是"AI"，是"统一入口 + 临时任务上下文"。</strong></p>
+  </div>
+
+  <div class="scene-section">
+    <h4>技术可行性 · 高</h4>
+    <p>桌面端工作台已经有基础（HiCodex），把它接到 CRM 是标准的"应用集成"问题，市面上的 CRM（销售易、纷享销客）都有 API。</p>
+  </div>
+
+  <div class="scene-section">
+    <h4>真实难点</h4>
+    <ul>
+      <li><strong>CRM API 开放度未知</strong>——需要 IT 部门支持，可能 2-4 周才能拿到稳定 API</li>
+      <li><strong>chat 跟"销售机会"怎么绑定</strong>——一个 chat 对应一个机会？还是可以跨机会？这是产品决策，不是技术问题</li>
+      <li><strong>AI 产物回写</strong>——AI 写完方案是否自动同步回 CRM？写错了怎么办？需要业务侧定规则</li>
+    </ul>
+  </div>
+
+  <div class="scene-section">
+    <h4>前置依赖</h4>
+    <p>IT 开放 CRM API · 业务定 chat ↔ 机会绑定规则</p>
+  </div>
+</div>
+
+<!-- 场景 2 -->
+<div class="scene" id="scene-2">
+  <div class="scene-head">
+    <div><span class="scene-num">2</span><span class="scene-title">需求分析</span></div>
+    <div class="scene-eval">
+      <span class="score score-h">价值 高</span>
+      <span class="score score-m">可行性 中</span>
+      <span class="score score-m">难点 中</span>
+    </div>
+  </div>
+
+  <div class="scene-section">
+    <h4>业务价值</h4>
+    <p>售前不再需要"读 RFP 一上午"——AI 5 分钟内提炼出客户行业、痛点、决策风格、关键字段、缺失信息，并自动推荐"同行业类似客户的赢标方案"。<strong>把"读+找"从半天变成 5 分钟。</strong></p>
+  </div>
+
+  <div class="scene-section">
+    <h4>技术可行性 · 中</h4>
+    <p>核心是"读文档 + 抽取结构化信息"，AI 已经能做得不错（准确率 70-85%）。但："准确率多少"取决于知识库质量。</p>
+  </div>
+
+  <div class="scene-section">
+    <h4>真实难点</h4>
+    <ul>
+      <li><strong>RFP 格式多样</strong>——同样信息可能藏在不同位置，AI 需要"读懂"而不是"找关键词"</li>
+      <li><strong>"客户偏好"不在文档里</strong>——客户偏好是销售口口相传的，需要 CRM 字段 + 业务专家整理</li>
+      <li><strong>"类似项目推荐"准确率</strong>——这是知识库质量决定的（见 §3.2）</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 场景 3 -->
+<div class="scene" id="scene-3">
+  <div class="scene-head">
+    <div><span class="scene-num">3</span><span class="scene-title">匹配讲师</span></div>
+    <div class="scene-eval">
+      <span class="score score-h">价值 高</span>
+      <span class="score score-h">可行性 高</span>
+      <span class="score score-m">难点 中</span>
+    </div>
+  </div>
+
+  <div class="scene-section">
+    <h4>业务价值</h4>
+    <p>从 2000+ 讲师库精准筛 Top 10，<strong>把 95% 不被想起的讲师变成可用资源</strong>。同时降低"讲师跟客户气场不合"的失误率。</p>
+  </div>
+
+  <div class="scene-section">
+    <h4>技术可行性 · 高</h4>
+    <p>这是 5 个场景里<strong>最成熟</strong>的能力，本质是"结构化数据筛选 + 排序"。HiCodex 已经有 demo（接 51CTO 讲师库）跑通过。</p>
+  </div>
+
+  <div class="scene-section">
+    <h4>真实难点</h4>
+    <ul>
+      <li><strong>讲师后台数据陈旧不全 ⭐</strong>——平台库往往半年没更新，售前实际用的是手里 Excel + 微信里的"鲜数据"。如果 AI 只接平台 → 推老死库，业务弃用。<strong>解法：双层 KB（详 §3.1）</strong></li>
+      <li><strong>"客户接受度"难量化</strong>——A 客户曾拒绝 X 讲师这种"潜规则"，需要持续收集 1-3 个月才能学到（来自个人 KB 的接触历史）</li>
+      <li><strong>讲师真名 / 化名</strong>——业务上有些讲师"对外不能用真名"，需要权限分级 + 法务确认</li>
+    </ul>
+  </div>
+</div>
+
+<!-- 场景 4 -->
+<div class="scene" id="scene-4">
+  <div class="scene-head">
+    <div><span class="scene-num">4</span><span class="scene-title">方案输出（Word/PPT）</span></div>
+    <div class="scene-eval">
+      <span class="score score-m">价值 高</span>
+      <span class="score score-l">可行性 低</span>
+      <span class="score score-l">难点 高</span>
+    </div>
+  </div>
+
+  <div class="scene-section">
+    <h4>业务价值</h4>
+    <p>从 3-5 天降到 0.5-1 天产方案初稿——<strong>这是项目里最容易被量化、最 PR 的成果</strong>。</p>
+  </div>
+
+  <div class="scene-section">
+    <h4>技术可行性 · 低（条件性可行）</h4>
+    <p>AI 写文本好做，但要写出<strong>客户可直接接收的</strong>、<strong>符合公司品牌的</strong> Word/PPT —— 难度高 10 倍。差别在：</p>
+    <ul>
+      <li>简单方案 Word（10-15 页文字）—— <strong>可行</strong>，第一阶段能做</li>
+      <li>复杂方案 PPT（30-50 页含图表、母版、品牌）—— <strong>第一阶段不建议做</strong>，依赖品牌团队定模板</li>
+    </ul>
+  </div>
+
+  <div class="scene-section">
+    <h4>真实难点</h4>
+    <ul>
+      <li><strong>品牌模板</strong>——市场部 / 品牌部要先定好模板规范（字体、配色、版式），4-6 周</li>
+      <li><strong>AI"AI 味"</strong>——客户能识别。需要持续 fine-tune 写作语气</li>
+      <li><strong>多版本管理</strong>——v1 给客户 → 反馈 → v2 ……售前要的不是"AI 一次写完"，是"易于改的初稿"</li>
+    </ul>
+  </div>
+
+  <div class="infobox infobox-warn">
+    建议<strong>第一阶段只做简单方案 Word</strong>，复杂方案 PPT 放第二阶段。把品牌团队拉进项目，单独走 4-6 周流程定 PPT 模板。
+  </div>
+</div>
+
+<!-- 场景 5 -->
+<div class="scene" id="scene-5">
+  <div class="scene-head">
+    <div><span class="scene-num">5</span><span class="scene-title">内容包装</span></div>
+    <div class="scene-eval">
+      <span class="score score-m">价值 中</span>
+      <span class="score score-h">可行性 高</span>
+      <span class="score score-m">难点 中</span>
+    </div>
+  </div>
+
+  <div class="scene-section">
+    <h4>业务价值</h4>
+    <p>讲师简历 / 课纲 / 案例 <strong>针对具体客户</strong>改写——给金融客户讲讲师 "曾任 X 银行风控负责人"，给制造业客户讲 "做过 Y 工业 4.0 项目"。<strong>千人千面，但成本 1/10。</strong></p>
+  </div>
+
+  <div class="scene-section">
+    <h4>技术可行性 · 高</h4>
+    <p>本质是"基于素材改写"，AI 擅长的事。</p>
+  </div>
+
+  <div class="scene-section">
+    <h4>真实难点</h4>
+    <ul>
+      <li><strong>AI 容易夸大</strong>——市场部红线词、法务敏感词需要事先列清单</li>
+      <li><strong>话术库需要积累</strong>——业务专家先把 50-100 段"高质量话术"整理出来，作为 AI 仿写的基础</li>
+      <li><strong>必须业务 review</strong>——AI 写完不能直接发给客户，需要 1 个 review 环节</li>
+    </ul>
+  </div>
+</div>
+
+<h3>5 场景综合评估</h3>
+<table>
+<thead><tr><th>场景</th><th>价值</th><th>可行性</th><th>第一阶段建议</th></tr></thead>
+<tbody>
+<tr><td>① 方案平台化</td><td>高</td><td>高</td><td><strong>做</strong>（基础底座）</td></tr>
+<tr><td>② 需求分析</td><td>高</td><td>中</td><td><strong>做</strong>（核心价值）</td></tr>
+<tr><td>③ 匹配讲师</td><td>高</td><td>高</td><td><strong>做</strong>（最快出效果）</td></tr>
+<tr><td>④ 方案输出（Word）</td><td>高</td><td>中</td><td>简单方案做，复杂方案延后</td></tr>
+<tr><td>④ 方案输出（PPT）</td><td>高</td><td>低</td><td><strong>延后</strong>到二阶段</td></tr>
+<tr><td>⑤ 内容包装</td><td>中</td><td>高</td><td>延后到二阶段</td></tr>
+</tbody>
+</table>
+
+<!-- ════════════════════════════════════════ -->
+
+<h2 id="core">三、核心机制（项目命门）</h2>
+
+<p>5 个场景能不能成功，本质看下面 5 件事做得好不好。<strong>这 5 件事是项目真正的难点。</strong></p>
+
+<!-- ── 知识库 ── -->
+
+<h3 id="kb">3.1 知识库怎么搭（双层架构）</h3>
+
+<div class="infobox infobox-warn">
+  <strong>这是项目里被最严重低估的问题。</strong>很多 AI 项目都死在"以为接 CRM/讲师后台就够了"，结果发现：<strong>平台数据是死的，活数据在每个销售脑子里 / 手里的 Excel / 微信里</strong>。
+</div>
+
+<h4>关键洞察：数据散落在哪里</h4>
+
+<table>
+<thead><tr><th>数据所在地</th><th>新鲜度</th><th>完整度</th><th>实际使用</th></tr></thead>
+<tbody>
+<tr><td>讲师后台（中央平台）</td><td><span class="score score-l">陈旧</span></td><td>中</td><td>很少（数据不准）</td></tr>
+<tr><td>CRM 客户系统</td><td><span class="score score-m">中等</span></td><td>差</td><td>只为交差</td></tr>
+<tr><td>历史方案共享盘</td><td>静态</td><td>看个人</td><td>偶尔翻找</td></tr>
+<tr><td><strong>售前个人 Excel</strong></td><td><span class="score score-h">最新</span></td><td>看人</td><td><strong>日常使用</strong></td></tr>
+<tr><td><strong>微信群 / 私聊</strong></td><td><span class="score score-h">实时</span></td><td>碎片</td><td><strong>日常使用</strong></td></tr>
+<tr><td><strong>销售脑子里</strong></td><td><span class="score score-h">最新</span></td><td>"潜规则"</td><td><strong>关键决策</strong></td></tr>
+</tbody>
+</table>
+
+<p><strong>真实情况是：</strong>售前下次跟客户聊讲师，用的是手里的 Excel 和最近在群里听到的消息，<strong>不是讲师后台</strong>。如果 AI 只接平台数据 → AI 推的全是过期信息 → 业务用一周就放弃。</p>
+
+<h4>为什么数据不会自然集中到平台</h4>
+
+<table>
+<thead><tr><th>销售员心理</th><th>结构性原因</th></tr></thead>
+<tbody>
+<tr><td>"我录进去公司就能用别人替我"</td><td>信息 = 销售员的护城河</td></tr>
+<tr><td>"和讲师私下沟通的事，平台没字段记"</td><td>软信息（关系/偏好）无法结构化</td></tr>
+<tr><td>"我跟讲师谈过 8 折，让大家知道就不值了"</td><td>价格隐私</td></tr>
+<tr><td>"录一条要 10 分钟，没动力"</td><td>录入门槛 vs 个人 ROI 不成比例</td></tr>
+</tbody>
+</table>
+
+<p>Salesforce 用了 25 年都没完全解决"销售员不愿录数据"的问题。<strong>所以方案不能是"教育销售员录入"，必须是"让 AI 帮个人整理私货"。</strong></p>
+
+<h4>解决方案：双层知识库架构</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">1</div>
+    <div>
+      <p class="flow-step-title">中央 KB（公司层，6 个）</p>
+      <p class="flow-step-body">权威但旧——讲师后台、CRM、历史方案、话术库等。<strong>用于 fallback 兜底</strong>，不是主要检索源。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">2</div>
+    <div>
+      <p class="flow-step-title">个人 KB（每个售前自己的）⭐ 之前漏了</p>
+      <p class="flow-step-body">活但散——售前手里的 Excel、微信记录、邮件归档、近期合作笔记。<strong>这是 AI 真正要用的"鲜数据"</strong>。每个人独立、默认私有、AI 帮整理。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">3</div>
+    <div>
+      <p class="flow-step-title">AI 检索顺序：先个人，后中央，再外部</p>
+      <p class="flow-step-body">售前问"推几个金融讲师"：<br/>
+      ① 优先从他个人 KB 里找（他熟的、近期合作过的）—— Top 3-5<br/>
+      ② 不够再补中央 KB（公司认证讲师）—— Top 5-10<br/>
+      ③ 不够再补外部（51CTO 等）—— 备选</p>
+    </div>
+  </div>
+</div>
+
+<h4>7 个知识库分工（修正：中央 6 + 个人 1）</h4>
+
+<table>
+<thead><tr><th>层级</th><th>知识库</th><th>装什么</th><th>从哪来</th><th>主要价值</th></tr></thead>
+<tbody>
+<tr><td rowspan="6" style="vertical-align: middle; font-weight: 600;">中央</td><td>讲师库</td><td>讲师官方档案</td><td>讲师后台 API</td><td>身份信息底座</td></tr>
+<tr><td>课程库</td><td>课程主题 + 大纲</td><td>课程后台 + xlsx</td><td>内容底座</td></tr>
+<tr><td>方案库 ⭐</td><td>历史成功/失败方案</td><td>共享盘批量导入</td><td>方案复用</td></tr>
+<tr><td>客户库</td><td>客户档案</td><td>CRM 同步</td><td>客户底座</td></tr>
+<tr><td>话术库</td><td>优质话术片段</td><td>业务整理 + 法务审</td><td>包装能力</td></tr>
+<tr><td>行业库</td><td>行业洞察</td><td>研究报告 + 新闻</td><td>专业背景</td></tr>
+<tr><td style="font-weight: 600; background: var(--gold-bg);">个人 ⭐</td><td style="background: var(--gold-bg);">个人 KB</td><td style="background: var(--gold-bg);">售前私货：合作过的讲师、客户偏好、价格记忆、近期接触</td><td style="background: var(--gold-bg);">AI 自动整理：Excel / 微信 / 邮件 / 对话</td><td style="background: var(--gold-bg);"><strong>真正的"活数据"</strong></td></tr>
+</tbody>
+</table>
+
+<div class="infobox infobox-key">
+  没有"个人 KB"——AI 推的是死库，业务一周就弃用。<br/>
+  有了"个人 KB"——AI 知道"你熟谁、最近合作过谁、谁最近报价是多少"，业务才信任 AI。
+</div>
+
+<h4>中央 KB 的搭建流程（4 步流水线，每个 KB 一样）</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">1</div>
+    <div>
+      <p class="flow-step-title">收集（去重 + 筛选）</p>
+      <p class="flow-step-body">1 TB"知识库素材"，真正高价值的可能只有 100-200 份。重要的是<strong>挑精选不是堆数量</strong>。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">2</div>
+    <div>
+      <p class="flow-step-title">解析（让 AI 读懂）</p>
+      <p class="flow-step-body">Word / PPT / Excel / PDF 解析成文本。扫描 PDF 错误率 5-15%。技术成熟。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">3</div>
+    <div>
+      <p class="flow-step-title">打标签（最核心）</p>
+      <p class="flow-step-body">提取行业 / 规模 / 金额 / 讲师 / 赢标状态等。AI 自动 80-90%，剩下要业务审核。<strong>100-300 份方案 × 5-15 分钟 / 份 = 20-50 小时业务时间</strong>。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">4</div>
+    <div>
+      <p class="flow-step-title">入库 + 向量化</p>
+      <p class="flow-step-body">让 AI 能按语义搜索。技术成熟，1-2 周。</p>
+    </div>
+  </div>
+</div>
+
+<h4>个人 KB 的搭建——零门槛输入（详见 §3.2 数据冷启动）</h4>
+
+<p>个人 KB 不是让售前"填表单"——是让 AI 帮他从已有的数据源自动整理：</p>
+
+<ul>
+  <li><strong>拖 Excel</strong> 进 AI 工作台 → AI 自动 parse → 1 分钟入个人库</li>
+  <li><strong>截屏微信聊天</strong> → AI 识别讲师/客户/价格 → 自动归类</li>
+  <li><strong>复制邮件正文</strong> → AI 抽取报价/时间/备注</li>
+  <li><strong>对话中提到</strong> → "X 老师上次跟客户不合"AI 自动记入"客户偏好"</li>
+</ul>
+
+<div class="infobox infobox-key">
+  <strong>项目第一阶段建议：</strong><br/>
+  · 中央 KB 做"精选 100-300 份"，不是 TB 全量<br/>
+  · 个人 KB 做"3-5 名标杆售前"试点，验证愿不愿意贡献私货<br/>
+  · 两层并行——8 周内中央 KB 跑通流水线，个人 KB 跑通数据冷启动机制
+</div>
+
+<!-- ── 准确性 ── -->
+
+<h3 id="coldstart">3.2 数据冷启动（让售前愿意贡献私货）</h3>
+
+<p>这一节回答<strong>所有 AI 销售项目的死亡题</strong>：怎么让售前/销售把"自己手里的活数据"交给 AI？业内已有成熟模式可参考（Gong / Salesforce Einstein / Apollo）。</p>
+
+<h4>核心矛盾 vs 破解思路</h4>
+
+<div class="compare">
+  <div class="compare-side compare-now">
+    <p class="compare-label">死循环</p>
+    <p>AI 没数据 → 推荐不准 → 售前不用 → 售前不贡献数据 → AI 还是没数据……</p>
+  </div>
+  <div class="compare-side compare-future">
+    <p class="compare-label">破解</p>
+    <p>AI 先<strong>主动整理</strong>售前手里的乱数据 → 售前自己<strong>受益</strong>（不是公司受益）→ 自然愿意继续投喂</p>
+  </div>
+</div>
+
+<h4>4 个机制（必须同时上）</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">1</div>
+    <div>
+      <p class="flow-step-title">零门槛输入（贡献成本必须 &lt; 1 分钟）</p>
+      <p class="flow-step-body">不是让售前"填表单"，是让 AI 帮整理：<br/>
+      · <strong>拖 Excel</strong> → AI 自动解析 47 位讲师 / 30 门课程<br/>
+      · <strong>截屏微信</strong> → AI 识别"X 老师涨价到 ¥3 万 / 天"自动记<br/>
+      · <strong>粘邮件正文</strong> → AI 抽报价 / 备注<br/>
+      · <strong>对话随口提</strong>："X 老师上次跟客户不合" → AI 自动记入"客户偏好"<br/><br/>
+      <strong>贡献成本 = 拖个文件，比填表单低 50 倍。</strong></p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">2</div>
+    <div>
+      <p class="flow-step-title">个人 KB 默认私有 + AI 检索优先用个人</p>
+      <p class="flow-step-body">售前贡献的数据<strong>默认只他自己能用</strong>——不是公司"白嫖"。这一点必须明确告诉售前。<br/><br/>
+      AI 检索讲师时<strong>先查个人 KB</strong>（他熟的）→ 不够再查中央库。这样售前贡献越多，AI 推得越准，他用得越爽——正向循环起来。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">3</div>
+    <div>
+      <p class="flow-step-title">自愿共享 + 隐私分级（3 档）</p>
+      <p class="flow-step-body">售前个人 KB 里有些信息对团队也有用——AI 主动提示售前是否分享：<br/><br/>
+      🔒 <strong>私</strong>（默认）：客户偏好笔记、价格谈判记录 — 仅自己<br/>
+      👥 <strong>组</strong>（可选）：讲师授课风格、行业洞察 — 同部门售前<br/>
+      🌐 <strong>公司</strong>（可选）：讲师身份、官方报价 — 全公司<br/><br/>
+      共享 +5 积分 / 月度排行榜 / 季度奖励。<strong>不强制，看自愿</strong>——尊重销售员护城河。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">4</div>
+    <div>
+      <p class="flow-step-title">冲突检测 + 过期标记</p>
+      <p class="flow-step-body">AI 发现"中央库说 X 老师 ¥2 万，你私货说 ¥3 万"——主动提示售前确认。<br/>
+      超过 6 个月没用过的数据自动标 <span class="score score-m">⚠ 待验证</span>，提示售前核实。<br/><br/>
+      <strong>保证数据持续保鲜</strong>，避免私货也变成"老死库"。</p>
+    </div>
+  </div>
+</div>
+
+<h4>合规与法务边界</h4>
+
+<table>
+<thead><tr><th>问题</th><th>解决</th></tr></thead>
+<tbody>
+<tr><td>个人 KB 算"个人数据"还是"公司数据"？</td><td>合同 / 入职协议明确：售前在工作中产生 / 整理的"工作记录"属公司，但 AI 工作台中<strong>默认仅本人可见</strong>，离职时数据可继承给指定接替人。</td></tr>
+<tr><td>客户敏感数据（金额 / 决策人）入个人 KB 可以吗？</td><td>需脱敏入库，原值加密存储。AI 在调用 LLM 时自动脱敏，结果回填到本地。</td></tr>
+<tr><td>讲师的"私下沟通"数据合规吗？</td><td>仅记客观事实（报价、档期、合作记录），不记主观评价和"隐私观察"。</td></tr>
+<tr><td>售前离职数据归属？</td><td>个人 KB 内容默认转交主管，3 个月内可由继任售前主张继承（避免一夜归零）。</td></tr>
+</tbody>
+</table>
+
+<h4>第一阶段的"数据冷启动"试点（前 4 周）</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">W1</div>
+    <div>
+      <p class="flow-step-title">挑 3-5 名愿意尝鲜的售前</p>
+      <p class="flow-step-body">不挑最资深，挑<strong>愿意尝新 + 中等业绩</strong>的——这种人最有动力让 AI 帮自己变强。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">W2</div>
+    <div>
+      <p class="flow-step-title">1v1 帮他们把"私货"灌进 AI</p>
+      <p class="flow-step-body">技术 + 售前坐一起，把售前的 Excel / 微信记录 / 邮件归档 → AI 自动整理 → 售前确认。<strong>第一次让售前感受到 "AI 在帮我整理 50 个讲师的报价"</strong> 的价值。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">W3-4</div>
+    <div>
+      <p class="flow-step-title">让售前真实跑业务用 AI</p>
+      <p class="flow-step-body">看售前是否<strong>主动</strong>把新接触的讲师 / 客户喂给 AI。这是项目能不能成的关键信号——如果售前用了 2 周就忘了喂，说明价值闭环没建立，<strong>项目需要回炉</strong>。</p>
+    </div>
+  </div>
+</div>
+
+<h4>怎么衡量"售前愿意贡献"</h4>
+
+<table>
+<thead><tr><th>指标</th><th>合格线（4 周后）</th><th>意义</th></tr></thead>
+<tbody>
+<tr><td>个人 KB 数据条数</td><td>每人 ≥ 50 条</td><td>有自然积累</td></tr>
+<tr><td>每周主动新增条数</td><td>每人 ≥ 5 条 / 周</td><td>形成习惯</td></tr>
+<tr><td>"AI 推荐采用率"（来自个人 KB）</td><td>≥ 50%</td><td>个人 KB 真有用</td></tr>
+<tr><td>自愿共享给团队的条数</td><td>每人 ≥ 5 条</td><td>飞轮开始转</td></tr>
+</tbody>
+</table>
+
+<div class="infobox infobox-warn">
+  4 周后这 4 个指标都不达标 → <strong>项目不应该扩量</strong>，回去研究 UX 障碍。强行扩量到 10-15 人会全员弃用。
+</div>
+
+<h3 id="accuracy">3.3 怎么保证匹配准确（项目的命脉）</h3>
+
+<p><strong>"准确"不是一个抽象概念，必须可量化、可验证、可迭代。</strong> 没有这套机制，AI 项目 6 个月后必然死掉——因为没法证明"AI 比人好"。</p>
+
+<h4>三层准确性保障</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">1</div>
+    <div>
+      <p class="flow-step-title">数据层准确：知识库"打标签"必须人工审核</p>
+      <p class="flow-step-body">第一道防线。每份方案打的标签（赢标/丢标、行业、讲师……）必须业务专家过一遍。<strong>这是"垃圾进、垃圾出"的源头治理。</strong></p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">2</div>
+    <div>
+      <p class="flow-step-title">检索层准确：建"黄金集"持续回测</p>
+      <p class="flow-step-body">从历史挑 30-50 个"标准 case"——比如"金融大客户 + 数据治理"应该匹配到哪 5 个讲师 / 哪 3 个方案。每次 AI 改动都自动跑黄金集，看准确率有没有下降。<strong>这是工程上最重要的指标。</strong></p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">3</div>
+    <div>
+      <p class="flow-step-title">业务层准确：每月评审会 + 错例库</p>
+      <p class="flow-step-body">业务用 AI 时遇到"AI 答错了"的 case，一键标记进"错例库"。每月开评审会，业务专家 + 技术一起过错例，决定改 SKILL 还是改 KB。<strong>这是 AI 持续变好的引擎。</strong></p>
+    </div>
+  </div>
+</div>
+
+<h4>怎么衡量"AI 用得好不好"</h4>
+
+<table>
+<thead><tr><th>维度</th><th>指标</th><th>合格线</th><th>评估方式</th></tr></thead>
+<tbody>
+<tr><td>检索准确</td><td>讲师 Top 5 业务采纳率</td><td>≥ 70%</td><td>黄金集回测 + 业务月度评审</td></tr>
+<tr><td>方案完整</td><td>AI 初稿是否覆盖 100% 标准章节</td><td>= 100%</td><td>对比"标准方案模板"</td></tr>
+<tr><td>业务满意</td><td>"愿意继续用"NPS</td><td>≥ 80</td><td>月度问卷</td></tr>
+<tr><td>错误率</td><td>业务标"AI 答错"的 case 数</td><td>&lt; 总用量 10%</td><td>错例库统计</td></tr>
+<tr><td>真实提效</td><td>新人产方案时间</td><td>降低 ≥ 50%</td><td>10 个机会真实计时</td></tr>
+</tbody>
+</table>
+
+<div class="infobox infobox-warn">
+  这套评估机制<strong>第一周就要建</strong>，不是上线后才建。没有评估，6 个月后业务说"AI 没价值"，你拿不出数据反驳。
+</div>
+
+<!-- ── 系统连接 ── -->
+
+<h3 id="integration">3.4 各种系统怎么连接</h3>
+
+<p>项目要连 <strong>5 个外部系统</strong>，每个的对接难度和价值不一样：</p>
+
+<table>
+<thead><tr><th>系统</th><th>用途</th><th>对接难度</th><th>缺失影响</th></tr></thead>
+<tbody>
+<tr><td><strong>CRM</strong>（销售易/纷享销客）</td><td>客户档案 / 销售机会 / 接触历史</td><td>中（需 IT 开 API）</td><td>失去 30% 价值（场景 1+2 受影响）</td></tr>
+<tr><td><strong>讲师后台</strong></td><td>讲师库实时数据</td><td>低（自建系统）</td><td>无法上线（场景 3 不能做）</td></tr>
+<tr><td><strong>共享盘 / OSS</strong></td><td>历史方案 / 案例 / 资料</td><td>低（文件访问）</td><td>无法上线（方案库不能建）</td></tr>
+<tr><td>钉钉 / 企微</td><td>通知 / 协作</td><td>中（OAuth + Webhook）</td><td>低（用户被动通知不到）</td></tr>
+<tr><td>LLM Provider</td><td>大模型调用</td><td>低（API 调用）</td><td>影响合规（见风险）</td></tr>
+</tbody>
+</table>
+
+<h4>连接方式：标准"中间层"架构</h4>
+
+<p>不是 AI 工作台直接连 5 个系统——会变成"耦合炸弹"。架构上加一层 <em class="term">数据适配层</em>：</p>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">1</div>
+    <div>
+      <p class="flow-step-title">每个系统配一个"适配器"</p>
+      <p class="flow-step-body">CRM 适配器、讲师后台适配器、OSS 适配器……每个适配器负责把对应系统的数据翻译成统一格式。<strong>对接哪个 CRM 都不影响上层。</strong></p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">2</div>
+    <div>
+      <p class="flow-step-title">数据同步策略：实时 vs 定期</p>
+      <p class="flow-step-body">客户档案变化频繁 → 实时拉；讲师库变化少 → 每日定期同步；历史方案 → 一次性导入 + 增量。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">3</div>
+    <div>
+      <p class="flow-step-title">数据脱敏层（合规必备）</p>
+      <p class="flow-step-body">客户金额、决策人姓名、身份证号在传给 AI 模型前自动脱敏，<strong>真实信息不出公司</strong>。AI 输出后再回填。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">4</div>
+    <div>
+      <p class="flow-step-title">失败 fallback</p>
+      <p class="flow-step-body">如果 CRM 暂时挂了，AI 工作台还能用——只是缺一部分功能。<strong>不能"一个系统挂全系统不能用"。</strong></p>
+    </div>
+  </div>
+</div>
+
+<h4>真实风险：API 拿不到怎么办</h4>
+
+<p>这是最现实的风险——IT 部门答应"3 周开 API"，实际可能拖到 12 周。</p>
+
+<div class="infobox infobox-warn">
+  对策：<strong>Phase 0 用 mock 数据先跑通</strong>，所有上层 SKILL 写好后等真 API 一接就上。这样不卡 critical path。
+</div>
+
+<!-- ── Skill 萃取 ── -->
+
+<h3 id="skill">3.5 怎么萃取 Skill</h3>
+
+<p><em class="term">Skill</em> 是这个项目的核心 ——把"<strong>资深售前的工作方法论</strong>"翻译成"<strong>AI 能执行的指令集</strong>"。</p>
+
+<h4>什么是 Skill（不展开技术）</h4>
+
+<p>Skill 是一份"操作手册" + 一组"调用 AI 工具的步骤"。比如"讲师匹配 Skill"的内容大概长这样：</p>
+
+<div class="infobox infobox-key">
+  <strong>讲师匹配 Skill</strong><br/>
+  Step 1：从需求卡读出客户行业 + 培训主题 + 预算<br/>
+  Step 2：调讲师库 API 筛符合行业 + 能力的候选<br/>
+  Step 3：对每个候选讲师，检查"这个客户过去是否拒绝过"<br/>
+  Step 4：按 "能力匹配 70% + 客户接受度 30%" 综合打分<br/>
+  Step 5：输出 Top 5 候选，附"推荐理由"<br/>
+  Step 6：业务专家 review 后才发给客户
+</div>
+
+<p>整个项目需要 <strong>6 个 Skill</strong>，每个对应一个工作场景。</p>
+
+<h4>萃取 Skill 的 4 个阶段（项目最关键的 6 周）</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">1</div>
+    <div>
+      <p class="flow-step-title">找业务标杆（第 1 周）</p>
+      <p class="flow-step-body">选 <strong>1-2 个最资深的售前</strong>担任"AI 师傅"。<strong>不要 5 个人一起开会</strong>——意见冲突，永远定不下来。1-2 人能产出能落地的方法论；其他人的差异作为后期补充。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">2</div>
+    <div>
+      <p class="flow-step-title">案例驱动访谈（第 2-5 周）</p>
+      <p class="flow-step-body">每周 2 次，每次 2 小时。<strong>不是问"你的流程是什么"——业务专家答不出来。</strong>是拿真实案例：<br/>"这份赢标方案，你当时怎么决定推这个讲师？"<br/>"这份丢标方案，事后看哪一步错了？"<br/><br/>录音 + 笔记 + 业务专家边讲边演示。<strong>从话术里萃取决策树。</strong></p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">3</div>
+    <div>
+      <p class="flow-step-title">SKILL 草稿 + 业务挑刺（第 5-7 周）</p>
+      <p class="flow-step-body">技术把访谈整理成 SKILL 草稿。给业务专家看："这里你写得太死、那里漏了一种情况……"<br/><br/>迭代 3-5 轮。<strong>这一步业务专家时间投入：6-10 小时。</strong></p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">4</div>
+    <div>
+      <p class="flow-step-title">真实新机会双跑（第 7-10 周）</p>
+      <p class="flow-step-body">拿 3-5 个真实新机会：业务专家正常做一遍 + AI 用 SKILL 跑一遍 → 对比差异 → 改 SKILL。<br/><br/>这一步跑完，SKILL 的 60-70% 能力对齐业务专家直觉。</p>
+    </div>
+  </div>
+</div>
+
+<h4>关键问题：业务专家"说不出来"怎么办</h4>
+
+<div class="infobox infobox-warn">
+  这是 AI 项目<strong>最常见的死法</strong>——业务专家说"凭经验"、"看情况"、"说不清楚"。<br/><br/>
+  解法不是"让业务写文档"（写不出来），是<strong>让业务"做"——拿真实案例，让他演示给你看，旁边录音 + 追问</strong>。这个角色叫 <em class="term">方法论萃取师</em>，通常由产品 PM 或资深技术 Lead 担任。<br/><br/>
+  如果团队里没有这种"既懂业务又懂 AI 的中间人"——<strong>启动前先解决这个人，不然项目必失败。</strong>
+</div>
+
+<h4>业务专家的真实投入</h4>
+
+<table>
+<thead><tr><th>阶段</th><th>周期</th><th>每周</th><th>累计</th></tr></thead>
+<tbody>
+<tr><td>访谈萃取</td><td>第 2-5 周</td><td>4-6 小时</td><td>16-24 小时</td></tr>
+<tr><td>SKILL Review</td><td>第 5-7 周</td><td>3-4 小时</td><td>9-12 小时</td></tr>
+<tr><td>双跑验证</td><td>第 7-10 周</td><td>3-4 小时</td><td>12-16 小时</td></tr>
+<tr><td>方案库审核（同期）</td><td>第 2-6 周</td><td>2-3 小时</td><td>10-15 小时</td></tr>
+<tr><td>上线后月度评审</td><td>持续</td><td>—</td><td>每月 6-8 小时</td></tr>
+<tr><td colspan="3"><strong>项目首期总投入</strong></td><td><strong>50-70 小时</strong></td></tr>
+</tbody>
+</table>
+
+<p style="color: var(--fg-3); font-size: 13px;">业务专家时间是项目<strong>最大成本</strong>。必须事先跟主管谈成 SLA，写进 OKR。否则项目第 3 周就会失败。</p>
+
+<!-- ── 怎么使用 ── -->
+
+<h3 id="usage">3.6 怎么使用（售前的真实工作场景）</h3>
+
+<p>站在售前角度，AI 工作台<strong>不是</strong>另一个要学的复杂软件。它就是一个聊天框 + 拖文件。</p>
+
+<h4>典型一天的真实操作</h4>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="flow-step-num">早</div>
+    <div>
+      <p class="flow-step-title">8:30 — 新机会进来</p>
+      <p class="flow-step-body">销售把客户 RFP 在钉钉发过来。售前打开 AI 工作台 → 新建对话 → 关联 CRM 里的销售机会（一键自动拉客户档案）。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">9:00</div>
+    <div>
+      <p class="flow-step-title">需求分析（场景 ②）</p>
+      <p class="flow-step-body">把 RFP 拖进对话窗 → 输入 "帮我分析这份 RFP"。<br/>AI 5 分钟输出"<strong>需求卡</strong>"：客户行业、规模、预算区间、能力维度、关键决策点、缺失信息。<br/>售前手动核实 + 补充几个字段。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">9:30</div>
+    <div>
+      <p class="flow-step-title">讲师匹配（场景 ③ + 个人 KB）</p>
+      <p class="flow-step-body">说"基于这个需求卡，推荐讲师"。<br/>AI 先从<strong>个人 KB</strong> 推 3-5 个（你熟的、最近合作过的、报价新鲜的），再从<strong>中央 KB</strong> 补 5 个候选。每个标注 "你曾合作 / 公司库 / 外部"。<br/>售前挑 5 个进方案，标 1 个备选。<br/><br/>过程中售前说："X 老师最近涨价到 ¥3 万了"——AI 自动记入个人 KB，下次推荐用新报价。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">10:00</div>
+    <div>
+      <p class="flow-step-title">检索历史方案（场景 ②延伸）</p>
+      <p class="flow-step-body">说"找 3 个类似项目的赢标方案"。<br/>AI 输出最相关的 3 份历史方案 + 关键差异。<br/>售前看完，知道"这次哪里要重点写"。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">10:30</div>
+    <div>
+      <p class="flow-step-title">方案初稿（场景 ④简单方案）</p>
+      <p class="flow-step-body">说"根据上面所有内容，生成方案 Word 初稿"。<br/>AI 15 分钟产出 10-15 页 Word，包含项目背景、需求理解、课程体系、讲师阵容、报价。<br/>售前打开 Word 微调 + 加客户专属表达。</p>
+    </div>
+  </div>
+  <div class="flow-step">
+    <div class="flow-step-num">12:00</div>
+    <div>
+      <p class="flow-step-title">提交内审</p>
+      <p class="flow-step-body">原本要 2-3 天的工作，现在中午前出初稿。</p>
+    </div>
+  </div>
+</div>
+
+<h4>跟现有工作流的关系</h4>
+
+<ul>
+  <li>✅ AI 不替代售前——AI <strong>出初稿，售前修</strong></li>
+  <li>✅ AI 不绕过 CRM——所有 AI 产物可一键<strong>保存回 CRM</strong></li>
+  <li>✅ AI 不挑战业务专家——AI 推荐的讲师，业务专家有<strong>review 权</strong></li>
+  <li>❌ AI 不打分客户——AI 不做客户决策类的事</li>
+  <li>❌ AI 不联系客户——所有客户接触仍由人工发起</li>
+</ul>
+
+<h4>出错怎么办</h4>
+
+<ul>
+  <li><strong>AI 答错</strong> → 售前一键标记 "答错"（5 秒） → 进错例库 → 下个月评审会改进</li>
+  <li><strong>AI 答慢</strong> → 30 秒还没结果可以中断 → 切到人工模式</li>
+  <li><strong>AI 不可用（系统挂了）</strong> → 售前回到老流程 → 不影响交付</li>
+</ul>
+
+<!-- ════════════════════════════════════════ -->
+
+<h2 id="risk">四、风险评估</h2>
+
+<table>
+<thead><tr><th>风险</th><th>触发条件</th><th>影响</th><th>缓解</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>业务专家时间不到位</strong></td>
+  <td>业务专家投入 &lt; 每周 4 小时</td>
+  <td><span class="score score-l">高 - 项目失败</span></td>
+  <td>启动前业务领导签 SLA + 写 OKR</td>
+</tr>
+<tr>
+  <td><strong>售前不愿意贡献个人 KB ⭐</strong></td>
+  <td>4 周后试点售前个人 KB 数据条数 &lt; 50 / 人</td>
+  <td><span class="score score-l">高 - AI 推荐永远是死库</span></td>
+  <td>零门槛输入 + 默认私有 + 自愿共享激励（详 §3.2）</td>
+</tr>
+<tr>
+  <td><strong>中央数据陈旧 / 不全</strong></td>
+  <td>讲师后台 / CRM 数据脏 / 缺字段</td>
+  <td><span class="score score-m">中 - 但个人 KB 能兜底</span></td>
+  <td>用个人 KB 作主，中央 KB 作底</td>
+</tr>
+<tr>
+  <td><strong>CRM API 不开放</strong></td>
+  <td>IT 部门 4 周内不能给 API</td>
+  <td><span class="score score-m">中 - 价值打折</span></td>
+  <td>Phase 0 用 mock，并行推动</td>
+</tr>
+<tr>
+  <td><strong>方案库审核工作量超预期</strong></td>
+  <td>业务专家无暇审核 300 份方案</td>
+  <td><span class="score score-m">中 - 准确率下降</span></td>
+  <td>第一阶段只做 100 份精选</td>
+</tr>
+<tr>
+  <td><strong>合规禁止数据出境</strong></td>
+  <td>法务不批用海外 LLM</td>
+  <td><span class="score score-l">高 - 重构选型</span></td>
+  <td>用国内合规模型 + 数据脱敏层</td>
+</tr>
+<tr>
+  <td><strong>AI 输出质量不达预期</strong></td>
+  <td>业务专家"不爱用"</td>
+  <td><span class="score score-l">高 - 业务弃用</span></td>
+  <td>评估体系 + 黄金集 + 错例迭代</td>
+</tr>
+<tr>
+  <td><strong>讲师"真名"敏感</strong></td>
+  <td>法务卡上线</td>
+  <td><span class="score score-m">中 - 拖后腿</span></td>
+  <td>真名 / 化名映射 + 权限分级</td>
+</tr>
+<tr>
+  <td><strong>预算超支</strong></td>
+  <td>LLM token 费用爆表</td>
+  <td><span class="score score-l">低</span></td>
+  <td>预算上限 + 模型分层 + 缓存</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ════════════════════════════════════════ -->
+
+<h2 id="decision">五、决策建议</h2>
+
+<h3>结论</h3>
+
+<p>项目<strong>建议启动</strong>，但<strong>第一阶段做精不做全</strong>：</p>
+
+<ul>
+  <li>✅ 第一阶段（8 周）：场景 1 + 2 + 3 + 简单方案 Word（场景 4 一部分）</li>
+  <li>⏳ 第二阶段（之后）：复杂方案 PPT、内容包装、投标侧场景</li>
+  <li>✅ 6 个知识库都建，但<strong>方案库只先做 100-300 份精选</strong></li>
+  <li>✅ 评估机制（黄金集 + 错例库 + 月度评审）<strong>第一周就建</strong></li>
+</ul>
+
+<h3>需要业务领导拍板的 6 件事</h3>
+
+<div class="decisions">
+  <ol>
+    <li>
+      <strong>愿意指定 1-2 名资深售前作为"AI 师傅"，每周投入 4-6 小时 × 6 周吗？</strong><br/>
+      <span style="color: var(--fg-3); font-size: 13px;">这是项目成败 #1 关键。如果给不出，项目不建议启动。</span>
+    </li>
+    <li>
+      <strong>愿意承担第一阶段 20-30 万的预算（含人力 + 云服务）吗？</strong>
+    </li>
+    <li>
+      <strong>能推动 IT 部门 4 周内开放 CRM / 讲师后台 API 吗？</strong><br/>
+      <span style="color: var(--fg-3); font-size: 13px;">如果不能，项目可以做但价值打 6-7 折。</span>
+    </li>
+    <li>
+      <strong>第一阶段试用的 3-5 名售前，您能指定吗？</strong><br/>
+      <span style="color: var(--fg-3); font-size: 13px;">建议：1 名资深（业务标杆，沉淀方法论）+ 2 名"愿尝鲜的中等业绩"（个人 KB 试点）+ 2 名新人（用 AI 加速上手）。</span>
+    </li>
+    <li>
+      <strong>愿意接受"售前个人 KB 数据默认私有"的设定吗？</strong><br/>
+      <span style="color: var(--fg-3); font-size: 13px;">这是售前贡献私货的前提。如果坚持"所有数据归公司，售前可见"，售前会全员消极抵制，AI 拿不到活数据。</span>
+    </li>
+    <li>
+      <strong>客户数据脱敏后传给 AI 模型，法务那边您能否推动批准？</strong><br/>
+      <span style="color: var(--fg-3); font-size: 13px;">技术上能做到合规，需要法务出"数据使用规范"。</span>
+    </li>
+    <li>
+      <strong>8 周后做评估，根据数据决定是否继续投入二阶段——OK 吗？</strong><br/>
+      <span style="color: var(--fg-3); font-size: 13px;">第一阶段是验证 + 试点，不是"一次性做完"。</span>
+    </li>
+  </ol>
+</div>
+
+<h3>立即开始的 3 件事</h3>
+
+<ol>
+  <li><strong>本周</strong> — 召开内部对齐会，过本文档，确认 6 个决策</li>
+  <li><strong>下周一</strong> — 业务专家 SLA 签字（写入 OKR）+ IT 启动 CRM API 准备</li>
+  <li><strong>下周三</strong> — 项目 Kickoff，第一次业务访谈</li>
+</ol>
+
+<footer class="doc-footer">
+  <p>
+    《售前 AI 方案 · 可行性评估》<br/>
+    基于《AI+方案可实施性评估.xlsx》5 个场景的深度评估 · v0.1<br/>
+    技术细节见 <code>PRD-presales-admin.html</code> · 业务速读见 <code>PRD-presales-brief.html</code>
+  </p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

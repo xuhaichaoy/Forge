@@ -10,6 +10,7 @@ import {
 } from "../src/components/message-action-row";
 import {
   DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN,
+  MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
   MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE,
   markdownFadeTextSegments,
   markdownImagePreviewAdjacentIndexes,
@@ -39,6 +40,7 @@ export default function runMessageUnitTests(): void {
   limitsMarkdownCodeWrapToggleToDesktopTextLanguages();
   usesDesktopLazyCodeBlockViewportMargin();
   computesDesktopImagePreviewNavigation();
+  usesScopedMarkdownImagePreviewClass();
 }
 
 function hidesFinalOutputChromeForCommentaryRows(): void {
@@ -191,6 +193,14 @@ function computesDesktopImagePreviewNavigation(): void {
     }),
     { previous: null, next: null },
     "markdown image preview should hide navigation at the collection edges",
+  );
+}
+
+function usesScopedMarkdownImagePreviewClass(): void {
+  assertEqual(
+    MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
+    "hc-markdown-image-preview-dialog",
+    "markdown image preview should not share composer attachment preview classes",
   );
 }
 

@@ -3,6 +3,12 @@ import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter } from "./components/composer-external-footer";
+import {
+  DEFAULT_PROVIDERS,
+  ModelPickerMenu,
+  decodeSelection,
+  encodeSelection,
+} from "./components/model-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
@@ -18,7 +24,15 @@ import { ThreadActionDialog } from "./components/thread-action-dialog";
 import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
-import { openExternalUrl, openFileReference, pickFileReferences, pickWorkspaceFolder } from "./lib/tauri-host";
+import {
+  openExternalUrl,
+  openFileReference,
+  pickFileReferences,
+  pickWorkspaceFolder,
+  readCodexAuthSummary,
+  type CodexAuthSummary,
+} from "./lib/tauri-host";
+import { applyUpdate, checkForUpdates } from "./lib/updater";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
@@ -35,9 +49,12 @@ import { useSkillsPanelRefresh } from "./hooks/use-skills-panel-refresh";
 import { useThreadActions } from "./hooks/use-thread-actions";
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
+  DEFAULT_SUBSCRIPTION_PROVIDER_ID,
   DEFAULT_MODEL_REASONING_SUMMARY,
   EMPTY_MODEL,
   buildModelConfigFromConfig,
+  modelSlugsForConfig,
+  normalizeModelSlugs,
   normalizeModelConfig,
 } from "./model/model-settings";
 import {
@@ -146,6 +163,28 @@ import {
   type TurnStartOptions,
 } from "./state/thread-workflow";
 
+function hasOpenAiCredential(summary: CodexAuthSummary | null): boolean {
+  if (!summary?.hasAuthFile) return false;
+  const authMode = summary.authMode?.trim().toLowerCase() ?? "";
+  if (authMode === "chatgpt" || authMode === "chatgptauthtokens") {
+    return summary.hasTokens;
+  }
+  if (authMode === "apikey" || authMode === "api_key" || authMode === "api-key") {
+    return summary.hasApiKey;
+  }
+  return summary.hasTokens || summary.hasApiKey;
+}
+
+function hostFromBaseUrl(value: string | null | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return fallback;
+  try {
+    return new URL(trimmed).host || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
   const [input, setInput] = useState("");
@@ -156,6 +195,57 @@ export function HiCodexApp() {
   const [selectedWorkspaceRoots, setSelectedWorkspaceRoots] = useState<string[]>([]);
   const [sidebarSortKey, setSidebarSortKey] = useState<SidebarSortKey>("updated_at");
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
+  /*
+   * Tauri auto-update state (mirror of Codex Desktop's update banner). The
+   * `pendingUpdate` ref holds the Update plugin handle (the actual download
+   * trigger); the visible state slice is only the version + progress + error
+   * so React doesn't re-render on every plugin internal mutation.
+   */
+  const [updateBadge, setUpdateBadge] = useState<{
+    version: string;
+    progress: number | null;
+    error: string | null;
+  } | null>(null);
+  const pendingUpdateRef = useRef<unknown>(null);
+  /*
+   * User-overridden model selection for new chats. Persisted to localStorage
+   * under `hicodex.selectedModelKey`. When non-null, applied to ThreadStart /
+   * ThreadFork params (codex-protocol v2 ThreadStartParams.modelProvider /
+   * .model accept overrides — see thread-workflow.ts buildThreadContextParams).
+   *
+   * `null` falls through to the config.toml default (state.threadContextDefaults).
+   * Existing in-flight threads keep their original model (protocol locks model
+   * per-thread); to change model for an active conversation users must fork it.
+   */
+  /* Selected `${providerId}::${modelSlug}`; null = follow config.toml default. */
+  const [selectedModelKey, setSelectedModelKeyState] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return window.localStorage.getItem("hicodex.selectedModelKey");
+    } catch {
+      return null;
+    }
+  });
+  const setSelectedModelKey = useCallback((key: string | null) => {
+    setSelectedModelKeyState(key);
+    try {
+      if (key) window.localStorage.setItem("hicodex.selectedModelKey", key);
+      else window.localStorage.removeItem("hicodex.selectedModelKey");
+    } catch {
+      // localStorage not available — selection still works in memory
+    }
+  }, []);
+  const [modelPickerAnchor, setModelPickerAnchor] = useState<HTMLElement | null>(null);
+  /*
+   * Auth status from codex-rs's `getAuthStatus` RPC. The actual `client` is
+   * declared further down, so the refresh function + effect live there too.
+   * Here we only declare the state slot. authMethod values:
+   *   "chatgpt" → OAuth signed in (subscription)
+   *   "apikey"  → API key configured (env var or [model_providers.openai].api_key)
+   *   null      → not authenticated
+   */
+  const [oauthAuthMethod, setOauthAuthMethod] = useState<string | null>(null);
+  const [codexAuthSummary, setCodexAuthSummary] = useState<CodexAuthSummary | null>(null);
   const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
   const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
@@ -199,6 +289,12 @@ export function HiCodexApp() {
         if (message.method === "mcpServer/startupStatus/updated") {
           setMcpServerStatusNonce((current) => current + 1);
         }
+        // OAuth completion → re-query auth status so the picker's Sign-in
+        // button + readyProviders flip immediately.
+        if (message.method === "account/login/completed"
+          || message.method === "account/updated") {
+          setAuthRefreshNonce((current) => current + 1);
+        }
       },
       onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
       onLog: (text, level) => dispatch({ type: "log", text, level }),
@@ -206,6 +302,68 @@ export function HiCodexApp() {
     clientRef.current = rpc;
     return rpc;
   }, []);
+
+  /* Auth refresh — bumped by login/logout notifications + manual picker opens. */
+  const [authRefreshNonce, setAuthRefreshNonce] = useState(0);
+  useEffect(() => {
+    if (!state.connected) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await client.request<{ authMethod?: string | null; requiresOpenaiAuth?: boolean | null }>(
+          "getAuthStatus",
+          { includeToken: false, refreshToken: false },
+          15_000,
+        );
+        if (cancelled) return;
+        const method = result?.authMethod ?? null;
+        setOauthAuthMethod(method);
+        dispatch({
+          type: "log",
+          text: `getAuthStatus → authMethod=${method ?? "null"} requiresOpenaiAuth=${result?.requiresOpenaiAuth ?? "null"}`,
+          level: "info",
+        });
+      } catch (err) {
+        if (!cancelled) {
+          setOauthAuthMethod(null);
+          dispatch({
+            type: "log",
+            text: `getAuthStatus failed: ${err instanceof Error ? err.message : String(err)}`,
+            level: "warn",
+          });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [client, state.connected, authRefreshNonce]);
+
+  useEffect(() => {
+    if (!state.connected) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const summary = await readCodexAuthSummary(state.hostStatus?.codexHome ?? null);
+        if (!cancelled) {
+          setCodexAuthSummary(summary);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setCodexAuthSummary(null);
+          dispatch({
+            type: "log",
+            text: `read auth summary failed: ${err instanceof Error ? err.message : String(err)}`,
+            level: "warn",
+          });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [state.connected, state.hostStatus?.codexHome, authRefreshNonce]);
+
+  // Re-check when the picker opens (covers OAuth completing while picker is closed).
+  useEffect(() => {
+    if (modelPickerAnchor) setAuthRefreshNonce((current) => current + 1);
+  }, [modelPickerAnchor]);
 
   const activeThreadRuntime = selectActiveThreadRuntime(state);
   const activeItems = activeThreadRuntime.items;
@@ -260,15 +418,19 @@ export function HiCodexApp() {
     () => shouldRegisterHiCodexImageDynamicTool(imageGenerationDraft),
     [imageGenerationDraft],
   );
+  const activeDiff = activeThreadRuntime.turnDiff;
   const conversation = useMemo(
     () => projectConversation(activeItems, {
       isThreadRunning: activeThreadRunning,
       mcpServerStatuses,
       progressPlan: activeProgressPlan,
+      // Feed the live turn-diff stream so projectConversation can emit the
+      // `inProgressDiff` render unit (mirror of Codex `sT` portal at
+      // codex-local-conversation-thread.pretty.js :8003).
+      turnDiff: activeDiff,
     }),
-    [activeItems, activeProgressPlan, activeThreadRunning, mcpServerStatuses],
+    [activeDiff, activeItems, activeProgressPlan, activeThreadRunning, mcpServerStatuses],
   );
-  const activeDiff = activeThreadRuntime.turnDiff;
   const branchDetails = useMemo(
     () => projectBranchDetails({
       thread: activeThread,
@@ -418,6 +580,55 @@ export function HiCodexApp() {
     setFileReference(null);
   }, [state.activeThreadId]);
 
+  /*
+   * Tauri auto-update check. Runs once on mount (5s after the app settles so
+   * we don't compete with the initial connect/listThreads burst), and then
+   * every 6 hours for long-running sessions. Failures are silently swallowed
+   * (placeholder endpoint, offline, DNS, etc.) — the badge simply doesn't
+   * appear and the app continues to work normally.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    const doCheck = async () => {
+      const result = await checkForUpdates();
+      if (cancelled) return;
+      if (result.state === "available") {
+        pendingUpdateRef.current = result.update;
+        setUpdateBadge({
+          version: result.update.version,
+          progress: null,
+          error: null,
+        });
+      }
+    };
+    const initialTimer = window.setTimeout(() => { void doCheck(); }, 5_000);
+    const periodicTimer = window.setInterval(() => { void doCheck(); }, 6 * 60 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(periodicTimer);
+    };
+  }, []);
+
+  const runUpdate = useCallback(async () => {
+    const update = pendingUpdateRef.current as { downloadAndInstall?: unknown } | null;
+    if (!update) return;
+    setUpdateBadge((current) => (current ? { ...current, progress: 0, error: null } : current));
+    try {
+      await applyUpdate(update as Parameters<typeof applyUpdate>[0], (loaded, total) => {
+        const fraction = total > 0 ? Math.min(loaded / total, 1) : 0;
+        setUpdateBadge((current) => (current ? { ...current, progress: fraction } : current));
+      });
+      // 走到这里说明 relaunch() 已经触发；进程要重启，UI 状态不再相关。
+    } catch (err) {
+      setUpdateBadge((current) => (current ? {
+        ...current,
+        progress: null,
+        error: err instanceof Error ? err.message : String(err),
+      } : current));
+    }
+  }, []);
+
   const ensureConnected = useCallback(async () => {
     if (state.connected) return true;
     return connect();
@@ -528,6 +739,94 @@ export function HiCodexApp() {
     return loadCollaborationModes();
   }, [collaborationModes, loadCollaborationModes]);
 
+  /*
+   * Effective ThreadContextDefaults for thread/start + thread/fork calls.
+   * If the user picked a (provider, model) pair in the UI picker, override
+   * the config.toml default's model + modelProvider. Otherwise pass through
+   * unchanged.
+   *
+   * `selectedModelKey` here stores `${providerId}::${modelSlug}` —
+   * see DEFAULT_PROVIDERS + encodeSelection in model-picker-menu.tsx.
+   */
+  const effectiveThreadContextDefaults = useMemo(() => {
+    const picked = decodeSelection(selectedModelKey);
+    if (!picked) return state.threadContextDefaults;
+    return {
+      ...(state.threadContextDefaults ?? {}),
+      model: picked.model,
+      modelProvider: picked.providerId,
+    };
+  }, [selectedModelKey, state.threadContextDefaults]);
+
+  const modelPickerProviders = useMemo(() => {
+    const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
+      ?? DEFAULT_PROVIDERS[0];
+    const openaiProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_PROVIDER_ID);
+    const activeProviderId = state.threadContextDefaults?.modelProvider?.trim() || localFallback.id;
+    const draftProviderId = modelDraft.id.trim();
+    const useDraftForLocalProvider = draftProviderId.length > 0 && draftProviderId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID;
+    const localProviderId = useDraftForLocalProvider
+      ? draftProviderId
+      : (activeProviderId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID ? activeProviderId : localFallback.id);
+    const localModels = normalizeModelSlugs([
+      ...modelSlugsForConfig(modelDraft),
+    ]);
+    const openaiModels = openaiProvider
+      ? normalizeModelSlugs([
+          ...openaiProvider.models,
+          activeProviderId === DEFAULT_SUBSCRIPTION_PROVIDER_ID ? state.threadContextDefaults?.model : null,
+        ])
+      : [];
+    return [
+      {
+        ...localFallback,
+        id: localProviderId,
+        label: useDraftForLocalProvider && modelDraft.name.trim()
+          ? modelDraft.name.trim()
+          : localFallback.label,
+        host: useDraftForLocalProvider
+          ? hostFromBaseUrl(modelDraft.baseUrl, localFallback.host)
+          : localFallback.host,
+        baseUrl: useDraftForLocalProvider && modelDraft.baseUrl.trim()
+          ? modelDraft.baseUrl.trim()
+          : localFallback.baseUrl,
+        models: localModels.length > 0 ? localModels : localFallback.models,
+      },
+      ...(openaiProvider ? [{ ...openaiProvider, models: openaiModels.length > 0 ? openaiModels : openaiProvider.models }] : []),
+    ];
+  }, [
+    modelDraft.baseUrl,
+    modelDraft.id,
+    modelDraft.model,
+    modelDraft.models,
+    modelDraft.name,
+    state.threadContextDefaults?.model,
+    state.threadContextDefaults?.modelProvider,
+  ]);
+
+  /*
+   * Set of providers whose auth is verified — drives "not signed in" / "no key"
+   * picker warnings and the inline Sign-in button.
+   *
+   * Logic:
+   *   - The active config.toml provider is always considered ready (the user
+   *     is presumably already using it, so its credential layer works).
+   *   - For the built-in `openai` provider: ready when `getAuthStatus` returns
+   *     any non-null auth method, or when the isolated HiCodex auth.json has a
+   *     ChatGPT/API-key credential. `getAuthStatus` is scoped to the active
+   *     provider, so a local API provider with `requires_openai_auth = false`
+   *     would otherwise make the subscription provider look signed out.
+   */
+  const readyProviders = useMemo(() => {
+    const ready = new Set<string>();
+    const active = state.threadContextDefaults?.modelProvider ?? "";
+    if (active) ready.add(active);
+    if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredential(codexAuthSummary)) {
+      ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
+    }
+    return ready;
+  }, [state.threadContextDefaults?.modelProvider, oauthAuthMethod, codexAuthSummary]);
+
   const {
     archiveSelectedThread,
     closeThreadActionDialog,
@@ -547,7 +846,7 @@ export function HiCodexApp() {
     ensureConnected,
     setComposerAttachments,
     setInput,
-    threadContextDefaults: state.threadContextDefaults,
+    threadContextDefaults: effectiveThreadContextDefaults,
     threads: state.threads,
     workspace,
   });
@@ -592,7 +891,7 @@ export function HiCodexApp() {
     dispatch,
     ensureConnected,
     hostDefaultCwd: state.hostStatus?.defaultCwd,
-    threadContextDefaults: state.threadContextDefaults,
+    threadContextDefaults: effectiveThreadContextDefaults,
     threads: state.threads,
     threadsRuntime: state.threadsRuntime,
     workspace,
@@ -871,7 +1170,7 @@ export function HiCodexApp() {
     setActiveComposerMode,
     setComposerAttachments,
     setInput,
-    threadContextDefaults: state.threadContextDefaults,
+    threadContextDefaults: effectiveThreadContextDefaults,
     threadIds,
     workspace,
   });
@@ -894,7 +1193,7 @@ export function HiCodexApp() {
       modelCount: state.models.length,
       pendingRequestCount: state.pendingRequests.length,
       threads: state.threads,
-      threadContextDefaults: state.threadContextDefaults,
+      threadContextDefaults: effectiveThreadContextDefaults,
       openSideConversationPanel,
     })
   ), [
@@ -911,7 +1210,7 @@ export function HiCodexApp() {
     state.hostStatus?.pid,
     state.models.length,
     state.pendingRequests.length,
-    state.threadContextDefaults,
+    effectiveThreadContextDefaults,
     state.threads,
     workspace,
   ]);
@@ -1157,6 +1456,8 @@ export function HiCodexApp() {
         activeThreadId={state.activeThreadId}
         connected={state.connected}
         connecting={state.connecting}
+        updateAvailable={updateBadge}
+        onApplyUpdate={runUpdate}
         onConnect={() => void connect()}
         onCreateThread={createThread}
         onOpenSearch={openChatSearchPanel}
@@ -1263,11 +1564,12 @@ export function HiCodexApp() {
               <ComposerExternalFooter
                 branch={threadGitBranch(activeThread)}
                 cwd={activeThread?.cwd || workspace}
-                model={state.threadContextDefaults?.model}
+                model={effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model}
                 workspaceRoots={workspaceRootOptions}
                 onWorkspaceRootSelected={selectWorkspaceRoot}
                 onUseExistingFolder={useExistingWorkspaceFolder}
                 reasoningEffort={state.threadContextDefaults?.reasoningEffort}
+                onOpenModelPicker={setModelPickerAnchor}
               />
             </div>
           )}
@@ -1405,6 +1707,23 @@ export function HiCodexApp() {
           onClose={closeThreadActionDialog}
           onRename={renameSelectedThread}
           onArchive={archiveSelectedThread}
+        />
+      )}
+      {modelPickerAnchor && (
+        <ModelPickerMenu
+          anchor={modelPickerAnchor}
+          providers={modelPickerProviders}
+          selectedKey={selectedModelKey}
+          defaultKey={
+            state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
+              ? encodeSelection(state.threadContextDefaults.modelProvider, state.threadContextDefaults.model)
+              : null
+          }
+          readyProviders={readyProviders}
+          onSelect={setSelectedModelKey}
+          onOpenSettings={() => loadSettingsPanel("models")}
+          onSignIn={() => { void runSlashRequest("loginChatgpt"); }}
+          onClose={() => setModelPickerAnchor(null)}
         />
       )}
     </div>

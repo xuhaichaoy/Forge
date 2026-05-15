@@ -53,11 +53,21 @@ pub struct HostStatus {
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelCatalogConfig {
     pub model: String,
+    pub models: Option<Vec<String>>,
     pub display_name: Option<String>,
     pub description: Option<String>,
     pub context_window: Option<u64>,
     pub auto_compact_token_limit: Option<u64>,
     pub input_modalities: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexAuthSummary {
+    pub has_auth_file: bool,
+    pub auth_mode: Option<String>,
+    pub has_api_key: bool,
+    pub has_tokens: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -279,6 +289,13 @@ impl AppServerHost {
         Ok(models_path.to_string_lossy().to_string())
     }
 
+    pub fn read_codex_auth_summary(
+        &self,
+        codex_home: Option<String>,
+    ) -> Result<CodexAuthSummary, HostError> {
+        read_codex_auth_summary(codex_home.as_deref())
+    }
+
     pub fn read_thread_tool_history(
         &self,
         codex_home: Option<String>,
@@ -468,6 +485,46 @@ fn default_codex_cli_home() -> PathBuf {
 
 fn has_codex_profile(path: &Path) -> bool {
     path.join("auth.json").exists() || path.join("config.toml").exists()
+}
+
+fn read_codex_auth_summary(codex_home: Option<&str>) -> Result<CodexAuthSummary, HostError> {
+    let auth_path = resolve_codex_home(codex_home).join("auth.json");
+    if !auth_path.exists() {
+        return Ok(CodexAuthSummary::default());
+    }
+    let contents =
+        fs::read_to_string(&auth_path).map_err(|error| HostError::Profile(error.to_string()))?;
+    let value: Value = serde_json::from_str(&contents)
+        .map_err(|error| HostError::Profile(format!("failed to parse auth.json: {error}")))?;
+    Ok(summarize_codex_auth_value(&value))
+}
+
+fn summarize_codex_auth_value(value: &Value) -> CodexAuthSummary {
+    CodexAuthSummary {
+        has_auth_file: true,
+        auth_mode: string_value(value.get("auth_mode"))
+            .or_else(|| string_value(value.get("authMode")))
+            .or_else(|| string_value(value.get("mode")))
+            .or_else(|| string_value(value.get("type"))),
+        has_api_key: auth_value_present(value.get("OPENAI_API_KEY"))
+            || auth_value_present(value.get("openai_api_key"))
+            || auth_value_present(value.get("api_key")),
+        has_tokens: auth_value_present(value.get("tokens"))
+            || auth_value_present(value.get("OPENAI_CHATGPT_ACCOUNT"))
+            || auth_value_present(value.get("refresh_token"))
+            || auth_value_present(value.get("chatgpt_token")),
+    }
+}
+
+fn auth_value_present(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::String(value)) => !value.trim().is_empty(),
+        Some(Value::Array(value)) => !value.is_empty(),
+        Some(Value::Object(value)) => !value.is_empty(),
+        Some(Value::Bool(value)) => *value,
+        Some(Value::Number(_)) => true,
+        _ => false,
+    }
 }
 
 fn read_thread_tool_history(
@@ -1662,6 +1719,7 @@ experimental_bearer_token = {api_key}
 fn default_model_catalog_json() -> String {
     model_catalog_json(&LocalModelCatalogConfig {
         model: "Qwen3.6-27B-mxfp4".to_string(),
+        models: None,
         display_name: Some("Qwen3.6 27B MXFP4".to_string()),
         description: Some("Local OpenAI-compatible coding model via HiCodex gateway.".to_string()),
         context_window: Some(262144),
@@ -1671,30 +1729,32 @@ fn default_model_catalog_json() -> String {
 }
 
 fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
-    let model = if config.model.trim().is_empty() {
-        "Qwen3.6-27B-mxfp4"
-    } else {
-        config.model.trim()
-    };
+    let model_slugs = configured_model_slugs(config);
     let context_window = config.context_window.unwrap_or(262144);
     let auto_compact_token_limit = config
         .auto_compact_token_limit
         .unwrap_or((context_window as f64 * 0.9) as u64);
-    let display_name = config
-        .display_name
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(model);
     let description = config
         .description
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("Local OpenAI-compatible coding model via HiCodex gateway.");
     let input_modalities = normalize_input_modalities(config.input_modalities.as_deref());
-
-    serde_json::to_string_pretty(&json!({
-        "models": [
-            {
+    let models = model_slugs
+        .iter()
+        .enumerate()
+        .map(|(index, model)| {
+            let display_name = if index == 0 {
+                config
+                    .display_name
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or(model)
+                    .to_string()
+            } else {
+                model_display_name(model)
+            };
+            json!({
                 "slug": model,
                 "display_name": display_name,
                 "description": description,
@@ -1703,7 +1763,7 @@ fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
                 "shell_type": "shell_command",
                 "visibility": "list",
                 "supported_in_api": true,
-                "priority": 0,
+                "priority": index,
                 "additional_speed_tiers": [],
                 "service_tiers": [],
                 "availability_nux": null,
@@ -1724,12 +1784,48 @@ fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
                 "auto_compact_token_limit": auto_compact_token_limit,
                 "effective_context_window_percent": 95,
                 "experimental_supported_tools": [],
-                "input_modalities": input_modalities,
+                "input_modalities": input_modalities.clone(),
                 "supports_search_tool": false
-            }
-        ]
+            })
+        })
+        .collect::<Vec<_>>();
+
+    serde_json::to_string_pretty(&json!({
+        "models": models
     }))
     .expect("default model catalog should serialize")
+}
+
+fn configured_model_slugs(config: &LocalModelCatalogConfig) -> Vec<String> {
+    let mut slugs = Vec::new();
+    push_unique_model_slug(&mut slugs, &config.model);
+    if let Some(models) = config.models.as_deref() {
+        for model in models {
+            push_unique_model_slug(&mut slugs, model);
+        }
+    }
+    if slugs.is_empty() {
+        slugs.push("Qwen3.6-27B-mxfp4".to_string());
+    }
+    slugs
+}
+
+fn push_unique_model_slug(slugs: &mut Vec<String>, model: &str) {
+    let trimmed = model.trim();
+    if trimmed.is_empty() || slugs.iter().any(|value| value == trimmed) {
+        return;
+    }
+    slugs.push(trimmed.to_string());
+}
+
+fn model_display_name(model: &str) -> String {
+    if model
+        .get(0..4)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("gpt-"))
+    {
+        return format!("GPT{}", &model[3..]);
+    }
+    model.to_string()
 }
 
 fn default_input_modalities_json() -> Vec<String> {
@@ -1829,6 +1925,70 @@ mod tests {
         let line = serde_json::to_string(&value).unwrap();
         let parsed: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(parsed["id"], 1);
+    }
+
+    #[test]
+    fn summarizes_chatgpt_auth_without_exposing_tokens() {
+        let value: Value = serde_json::json!({
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "access_token": "secret",
+                "refresh_token": "secret-refresh"
+            },
+            "OPENAI_API_KEY": null
+        });
+
+        let summary = summarize_codex_auth_value(&value);
+
+        assert!(summary.has_auth_file);
+        assert_eq!(summary.auth_mode.as_deref(), Some("chatgpt"));
+        assert!(summary.has_tokens);
+        assert!(!summary.has_api_key);
+    }
+
+    #[test]
+    fn reads_missing_codex_auth_as_unsigned() {
+        let dir = env::temp_dir().join(format!(
+            "hicodex-host-auth-summary-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let summary = read_codex_auth_summary(Some(dir.to_string_lossy().as_ref())).unwrap();
+
+        assert!(!summary.has_auth_file);
+        assert!(summary.auth_mode.is_none());
+        assert!(!summary.has_tokens);
+        assert!(!summary.has_api_key);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn writes_multiple_configured_models_to_catalog() {
+        let catalog = model_catalog_json(&LocalModelCatalogConfig {
+            model: " gpt-5.5 ".to_string(),
+            models: Some(vec![
+                "gpt-5.4".to_string(),
+                "gpt-5.5".to_string(),
+                "   ".to_string(),
+            ]),
+            display_name: Some("GPT-5.5".to_string()),
+            description: Some("API models".to_string()),
+            context_window: Some(100_000),
+            auto_compact_token_limit: Some(90_000),
+            input_modalities: Some(vec!["text".to_string()]),
+        });
+        let value: Value = serde_json::from_str(&catalog).unwrap();
+        let models = value["models"].as_array().unwrap();
+
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0]["slug"].as_str(), Some("gpt-5.5"));
+        assert_eq!(models[0]["display_name"].as_str(), Some("GPT-5.5"));
+        assert_eq!(models[1]["slug"].as_str(), Some("gpt-5.4"));
+        assert_eq!(models[1]["display_name"].as_str(), Some("GPT-5.4"));
+        assert_eq!(models[1]["priority"].as_u64(), Some(1));
     }
 
     #[test]

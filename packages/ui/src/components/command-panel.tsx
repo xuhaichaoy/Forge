@@ -21,8 +21,14 @@ export interface CommandPanelProps {
 
 export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction }: CommandPanelProps) {
   return (
-    <div className="hc-settings-backdrop">
-      <section className="hc-command-panel">
+    <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="hc-command-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={panel.title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header>
           <div>
             {panelIcon(panel.panel)}

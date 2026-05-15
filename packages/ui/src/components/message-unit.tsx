@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { renderToString as renderKatexToString } from "katex";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
@@ -49,6 +50,7 @@ export { shouldRenderMessageActionRow } from "./message-action-row";
 
 export const DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN = "600px 0px";
 export const MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE = "data-markdown-image-preview-trigger";
+export const MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS = "hc-markdown-image-preview-dialog";
 
 export interface MarkdownImagePreviewItem {
   alt: string;
@@ -1896,6 +1898,42 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
       </figure>
     );
   }
+  const previewDialog = previewItem && typeof document !== "undefined"
+    ? createPortal(
+        <div className={MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS} role="dialog" aria-modal="true" aria-label={previewItem.alt || "Image preview"}>
+          <button className="hc-markdown-image-preview-backdrop" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)} />
+          {previewIndexes.previous !== null && (
+            <button
+              aria-label="Previous image"
+              className="hc-markdown-image-preview-nav previous"
+              type="button"
+              onClick={() => navigatePreview(previewIndexes.previous ?? 0)}
+            >
+              <ChevronRight aria-hidden className="is-previous" size={22} />
+            </button>
+          )}
+          {previewIndexes.next !== null && (
+            <button
+              aria-label="Next image"
+              className="hc-markdown-image-preview-nav next"
+              type="button"
+              onClick={() => navigatePreview(previewIndexes.next ?? 0)}
+            >
+              <ChevronRight aria-hidden size={22} />
+            </button>
+          )}
+          <div className="hc-markdown-image-preview-content">
+            <button className="hc-markdown-image-preview-close" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)}>
+              <X size={16} />
+            </button>
+            <img alt={previewItem.alt} src={previewItem.src} title={previewItem.title ?? undefined} />
+            {previewItem.alt.trim().length > 0 && <div className="hc-markdown-image-preview-caption">{previewItem.alt}</div>}
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
+
   return (
     <>
       <figure className={`hc-markdown-image ${allowWide ? "is-grid-item" : ""}`}>
@@ -1910,38 +1948,7 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
         </button>
         {image.alt.trim().length > 0 && <figcaption>{image.alt}</figcaption>}
       </figure>
-      {previewItem && (
-        <div className="hc-image-preview-dialog" role="dialog" aria-modal="true" aria-label={previewItem.alt || "Image preview"}>
-          <button className="hc-image-preview-backdrop" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)} />
-          {previewIndexes.previous !== null && (
-            <button
-              aria-label="Previous image"
-              className="hc-image-preview-nav previous"
-              type="button"
-              onClick={() => navigatePreview(previewIndexes.previous ?? 0)}
-            >
-              <ChevronRight aria-hidden className="is-previous" size={22} />
-            </button>
-          )}
-          {previewIndexes.next !== null && (
-            <button
-              aria-label="Next image"
-              className="hc-image-preview-nav next"
-              type="button"
-              onClick={() => navigatePreview(previewIndexes.next ?? 0)}
-            >
-              <ChevronRight aria-hidden size={22} />
-            </button>
-          )}
-          <div className="hc-image-preview-content">
-            <button className="hc-image-preview-close" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)}>
-              <X size={16} />
-            </button>
-            <img alt={previewItem.alt} src={previewItem.src} title={previewItem.title ?? undefined} />
-            {previewItem.alt.trim().length > 0 && <div className="hc-image-preview-caption">{previewItem.alt}</div>}
-          </div>
-        </div>
-      )}
+      {previewDialog}
     </>
   );
 }

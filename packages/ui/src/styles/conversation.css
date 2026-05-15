@@ -68,6 +68,10 @@
   padding-bottom: 8px;
 }
 
+.hc-thread-scroll-footer:has(.hc-app-popover-menu, .hc-composer-menu, .hc-attachment-input-panel) {
+  z-index: var(--hc-z-popover);
+}
+
 .hc-thread-scroll-footer-gradient {
   pointer-events: none;
   position: absolute;
@@ -220,14 +224,27 @@
 
 .hc-workspace-bar input,
 .hc-settings-grid input,
-.hc-settings-grid select {
+.hc-settings-grid select,
+.hc-settings-grid textarea {
   width: 100%;
-  height: 32px;
   border: 1px solid #cfcabe;
   border-radius: 7px;
   background: #fffdfa;
-  padding: 0 9px;
   color: #222;
+}
+
+.hc-workspace-bar input,
+.hc-settings-grid input,
+.hc-settings-grid select {
+  height: 32px;
+  padding: 0 9px;
+}
+
+.hc-settings-grid textarea {
+  min-height: 92px;
+  resize: vertical;
+  padding: 8px 9px;
+  line-height: 1.45;
 }
 
 .hc-conversation {

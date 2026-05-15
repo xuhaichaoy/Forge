@@ -560,7 +560,7 @@
 .hc-image-preview-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--hc-z-preview-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -630,7 +630,7 @@
   right: 0;
   bottom: calc(100% + 8px);
   left: 0;
-  z-index: 20;
+  z-index: var(--hc-z-popover);
   max-height: min(390px, 48vh);
   overflow: auto;
   border: 1px solid #ccc7ba;
@@ -762,7 +762,7 @@
   right: 0;
   bottom: calc(100% + 8px);
   left: 0;
-  z-index: 21;
+  z-index: var(--hc-z-popover);
   display: grid;
   gap: 8px;
   max-width: 520px;

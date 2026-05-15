@@ -78,6 +78,7 @@ export interface ModelConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  models?: string[];
   temperature: number;
   maxTokens: number | null;
   supportsImageInput?: boolean;

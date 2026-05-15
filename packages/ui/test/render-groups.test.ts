@@ -33,6 +33,7 @@ export default function runRenderGroupsTests(): void {
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
+  injectsInProgressDiffAfterLatestUserMessage();
   projectsFinalAssistantArtifactsIntoMessageUnits();
   keepsFinalAssistantArtifactsOffCommentaryMessages();
   keepsPreviousArtifactsOutOfLaterAssistantMessages();
@@ -41,6 +42,7 @@ export default function runRenderGroupsTests(): void {
   projectsExplicitWorkedForItemAsCompactActivity();
   usesWorkedForAsTurnCollapseDividerBeforeAssistant();
   keepsWorkedForExpandedUntilFinalAssistantStarts();
+  keepsRunningWorkedForAfterRehydratedAssistantCommentary();
   keepsTodoListOutOfMainConversationButProjectsProgress();
   hidesPendingApprovalItemsFromOrdinaryActivity();
   groupsExplorationCommandActionsLikeCodexDesktop();
@@ -226,6 +228,52 @@ function projectsFinalAssistantArtifactsIntoMessageUnits(): void {
       "final assistant message units should carry their own file resources for inline rendering",
     );
   }
+}
+
+function injectsInProgressDiffAfterLatestUserMessage(): void {
+  const diff = [
+    "diff --git a/packages/ui/src/app.ts b/packages/ui/src/app.ts",
+    "index 111..222 100644",
+    "--- a/packages/ui/src/app.ts",
+    "+++ b/packages/ui/src/app.ts",
+    "@@ -1 +1 @@",
+    "-old",
+    "+new",
+  ].join("\n");
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-live-diff",
+      content: "Update the app.",
+      _turnId: "turn-live-diff",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "agent-live-diff",
+      text: "Editing now.",
+      phase: "commentary",
+      memoryCitation: null,
+      _turnId: "turn-live-diff",
+    } as ThreadItem,
+  ], {
+    isThreadRunning: true,
+    turnDiff: diff,
+  });
+
+  assertEqual(projection.units[0]?.kind, "message", "user message should stay first");
+  const liveDiffIndex = projection.units.findIndex((unit) => unit.kind === "inProgressDiff");
+  assertEqual(liveDiffIndex, 1, "live diff should be inserted immediately after the user message");
+  const liveDiff = projection.units[liveDiffIndex];
+  if (liveDiff?.kind !== "inProgressDiff") {
+    throw new Error("live diff should render as an inProgressDiff unit");
+  }
+  assertEqual(liveDiff.diff, diff, "live diff unit should carry the streamed diff");
+  assertEqual(liveDiff.turnId, "turn-live-diff", "live diff should stay in the active turn group");
+  assertEqual(
+    projection.units.some((unit) => unit.kind === "message" && unit.key === "agent-live-diff"),
+    true,
+    "assistant commentary should stay in the render tree",
+  );
 }
 
 function keepsFinalAssistantArtifactsOffCommentaryMessages(): void {
@@ -1366,6 +1414,68 @@ function keepsWorkedForExpandedUntilFinalAssistantStarts(): void {
     assertEqual(workedFor.summary.groupType, "worked-for", "running worked-for should keep its own group");
     assertEqual(workedFor.summary.defaultExpanded, true, "worked-for should stay expanded until final assistant output starts");
   }
+}
+
+function keepsRunningWorkedForAfterRehydratedAssistantCommentary(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Review current changes" }],
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "npm test",
+      status: "completed",
+      exitCode: 0,
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as ThreadItem,
+    {
+      type: "worked-for",
+      id: "worked-for-1",
+      status: "completed",
+      startedAtMs: 1_000,
+      completedAtMs: 481_000,
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-commentary-1",
+      text: "Tests passed. I am checking the runtime edge case next.",
+      phase: "commentary",
+      completed: true,
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as ThreadItem,
+    {
+      type: "reasoning",
+      id: "reasoning-1",
+      completed: false,
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertDeepEqual(
+    projection.units.map((unit) =>
+      unit.kind === "message"
+        ? `${unit.role}:${unit.item.id}`
+        : `${unit.kind}:${unit.key}`
+    ),
+    [
+      "user:user-1",
+      "threadItem:item:exec:command-1",
+      "assistant:assistant-commentary-1",
+      "toolActivity:worked-for:worked-for-1",
+      "toolActivity:reasoning:thinking-placeholder:user-1",
+    ],
+    "rehydrated running turns should keep worked-for below the latest assistant commentary",
+  );
 }
 
 function keepsTodoListOutOfMainConversationButProjectsProgress(): void {

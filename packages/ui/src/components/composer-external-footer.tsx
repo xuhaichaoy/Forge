@@ -1,5 +1,6 @@
 import { ChevronDown, Cpu, Folder, GitBranch, Monitor, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 
 export interface ComposerWorkspaceRootOption {
   root: string;
@@ -14,6 +15,13 @@ export interface ComposerExternalFooterProps {
   onWorkspaceRootSelected?: (root: string) => void | Promise<void>;
   onUseExistingFolder?: () => void | Promise<void>;
   reasoningEffort?: unknown;
+  /**
+   * Opens the model picker menu anchored at the model chip element.
+   * When omitted the chip is rendered as display-only (existing behaviour).
+   * The chevron next to the model name visually hints that this is
+   * interactive when `onOpenModelPicker` is provided.
+   */
+  onOpenModelPicker?: (anchor: HTMLElement) => void;
 }
 
 export function ComposerExternalFooter({
@@ -24,9 +32,12 @@ export function ComposerExternalFooter({
   onWorkspaceRootSelected,
   onUseExistingFolder,
   reasoningEffort,
+  onOpenModelPicker,
 }: ComposerExternalFooterProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
+  const projectMenuRootRef = useRef<HTMLDivElement | null>(null);
+  const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const modelLabel = model ? formatModelFooterLabel(model, reasoningEffort) : "";
   const rootOptions = useMemo(() => dedupeWorkspaceRoots(workspaceRoots), [workspaceRoots]);
   const visibleRootOptions = useMemo(
@@ -34,6 +45,7 @@ export function ComposerExternalFooter({
     [projectSearch, rootOptions],
   );
   const projectLabel = formatWorkspaceProjectLabel(cwd, rootOptions);
+  useDismissibleLayer(projectMenuOpen, projectMenuRootRef, closeProjectMenu);
 
   function selectWorkspaceRoot(root: string) {
     setProjectMenuOpen(false);
@@ -50,7 +62,7 @@ export function ComposerExternalFooter({
   return (
     <div className="hc-composer-external-footer" aria-label="Composer context">
       <div className="hc-composer-external-footer-left">
-        <div className="hc-composer-footer-project">
+        <div className="hc-composer-footer-project" ref={projectMenuRootRef}>
           <button
             type="button"
             className="hc-composer-footer-chip"
@@ -64,7 +76,7 @@ export function ComposerExternalFooter({
             <ChevronDown size={13} />
           </button>
           {projectMenuOpen && (
-            <div className="hc-thread-menu hc-composer-project-menu" role="menu">
+            <div className="hc-thread-menu hc-composer-project-menu hc-app-popover-menu" role="menu">
               <label className="hc-composer-project-search">
                 <Search size={13} />
                 <input
@@ -134,7 +146,9 @@ export function ComposerExternalFooter({
         <button
           type="button"
           className="hc-composer-footer-chip hc-composer-footer-model"
-          title={modelLabel}
+          title={onOpenModelPicker ? "Switch model for new chats" : modelLabel}
+          data-interactive={onOpenModelPicker ? "true" : undefined}
+          onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
         >
           <Cpu size={14} />
           <span>{modelLabel}</span>

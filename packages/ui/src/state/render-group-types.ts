@@ -37,6 +37,28 @@ export type ConversationRenderUnit =
       kind: "threadItem";
       key: string;
       item: ThreadItem;
+    }
+  /*
+   * Codex `sT` portal (codex-local-conversation-thread.pretty.js :8003-8012)
+   * + `in-progress-fixed-content` slot (:8339): while a turn is in progress
+   * and the runtime has a live unified-diff stream, Codex renders the diff
+   * via `createPortal` into a fixed-position container above the rest of the
+   * process region. HiCodex has no portal infrastructure, so we approximate
+   * by rendering the diff as a distinct render unit at the top of the
+   * in-progress turn's agent stream.
+   */
+  | {
+      kind: "inProgressDiff";
+      key: string;
+      diff: string;
+      /**
+       * `_turnId` of the surrounding turn segment so `groupUnitsByTurn`
+       * (turn-collapse.tsx:72) keeps the live-diff card inside the same
+       * TurnCollapseFrame as the user message it belongs to. Synthetic
+       * (no source item) — populated by `injectInProgressDiffUnit`
+       * (project-conversation.ts) when it splices the unit in.
+       */
+      turnId: string | null;
     };
 
 export type EventTone = "info" | "warning" | "error";
@@ -187,6 +209,14 @@ export interface ConversationProjectionOptions {
     id?: string | null;
     plan: unknown[];
   } | null;
+  /**
+   * Live in-progress unified-diff stream from `turn/diff/updated` events
+   * (codex-reducer.ts `turn/diff/updated` handler). Mirrors Codex's `sT` portal
+   * input (codex-local-conversation-thread.pretty.js :8003). When non-empty
+   * and the thread is running, the projection emits an `inProgressDiff`
+   * render unit above the in-progress turn's agent stream.
+   */
+  turnDiff?: string;
 }
 
 export type ConversationDetailLevel = "STEPS_COMMANDS" | "STEPS_PROSE";

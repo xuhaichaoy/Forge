@@ -1,4 +1,5 @@
 import {
+  nextThreadStickToBottomState,
   setThreadScrollDistanceFromBottom,
   threadScrollDistanceFromBottom,
   threadScrollKey,
@@ -9,6 +10,7 @@ export default function runThreadScrollLayoutTests(): void {
   computesBottomDistanceLikeDesktopScrollController();
   computesNormalScrollTopForDistanceFromBottom();
   computesReverseBottomDistanceLikeDesktopThreadScroll();
+  preservesStickToBottomAcrossLayoutScrollMeasurements();
   normalizesThreadScrollPersistenceKeys();
 }
 
@@ -71,6 +73,24 @@ function computesNormalScrollTopForDistanceFromBottom(): void {
     threadScrollTopForDistanceFromBottom(element, 120),
     980,
     "normal thread scroll should convert bottom distance back to scrollTop",
+  );
+}
+
+function preservesStickToBottomAcrossLayoutScrollMeasurements(): void {
+  assertEqual(
+    nextThreadStickToBottomState(true, 280, false),
+    true,
+    "layout-only measurements should not disable sticky bottom follow mode",
+  );
+  assertEqual(
+    nextThreadStickToBottomState(true, 280, true),
+    false,
+    "user-initiated scroll measurements should be allowed to leave sticky bottom follow mode",
+  );
+  assertEqual(
+    nextThreadStickToBottomState(false, 0, true),
+    true,
+    "user-initiated near-bottom measurements should re-enable sticky bottom follow mode",
   );
 }
 

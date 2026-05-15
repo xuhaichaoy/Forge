@@ -542,6 +542,9 @@ export function ConversationUnitView({
       />
     );
   }
+  if (unit.kind === "inProgressDiff") {
+    return <InProgressDiffView diff={unit.diff} />;
+  }
   return (
     <ToolBlock
       contentSearchUnitKey={unit.key}
@@ -554,5 +557,26 @@ export function ConversationUnitView({
       tone={unit.tone}
       value={unit.text}
     />
+  );
+}
+
+/*
+ * Visual approximation of Codex's `sT` in-progress diff portal
+ * (codex-local-conversation-thread.pretty.js :8003-8012). Codex renders a full
+ * unified-diff component (`QC`, marked `isInProgress`) via createPortal into a
+ * fixed slot above the process region. HiCodex has no portal infrastructure;
+ * we render the diff text inside the conversation flow with a sticky-styled
+ * card that visually conveys "live preview". The diff is treated as code, no
+ * syntax highlighting — same as Codex's fallback when QC streams partial data.
+ */
+function InProgressDiffView({ diff }: { diff: string }) {
+  return (
+    <aside className="hc-in-progress-diff" aria-label="Live diff preview" data-testid="in-progress-diff">
+      <header className="hc-in-progress-diff-header">
+        <span className="hc-in-progress-diff-dot" aria-hidden />
+        <span className="hc-in-progress-diff-label">Live diff preview</span>
+      </header>
+      <pre className="hc-in-progress-diff-body"><code>{diff}</code></pre>
+    </aside>
   );
 }

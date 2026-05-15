@@ -5,11 +5,17 @@ import {
   DEFAULT_MODEL_PROVIDER_ID,
   DEFAULT_MODEL_PROVIDER_NAME,
   DEFAULT_MODEL_REASONING_SUMMARY,
+  DEFAULT_SUBSCRIPTION_MODELS,
   buildModelConfigFromConfig,
+  buildLocalModelCatalogConfig,
+  buildLocalModelCatalogEntries,
   buildLocalModelCatalogEntry,
   buildModelConfigEdits,
+  formatModelDisplayName,
+  modelSlugsForConfig,
   normalizeBaseUrl,
   normalizeModelConfig,
+  parseModelSlugsInput,
   providerIdForModel,
   type ModelConfig,
 } from "../src/model/model-settings";
@@ -76,12 +82,38 @@ export default function runModelSettingsTests(): void {
   assertEqual(normalized.id, "local_provider", "normalizeModelConfig normalizes id");
   assertEqual(normalized.baseUrl, "http://127.0.0.1:8890/v1", "normalizeModelConfig trims baseUrl");
   assertEqual(normalized.model, "gpt-local", "normalizeModelConfig trims model");
+  assertDeepEqual(
+    normalized.models,
+    ["gpt-local"],
+    "normalizeModelConfig keeps the active model in the configured model list",
+  );
+  assertDeepEqual(
+    normalizeModelConfig(testModel({ model: " gpt-a ", models: [" gpt-b ", "gpt-a", ""] })).models,
+    ["gpt-a", "gpt-b"],
+    "normalizeModelConfig dedupes multiple API models while preserving primary model first",
+  );
+  assertDeepEqual(
+    parseModelSlugsInput("gpt-5.5\ngpt-5.4, gpt-5.5；local-model"),
+    ["gpt-5.5", "gpt-5.4", "local-model"],
+    "parseModelSlugsInput accepts newline, comma, and semicolon separated model slugs",
+  );
+  assertDeepEqual(
+    modelSlugsForConfig({ model: "gpt-5.5", models: ["gpt-5.4"] }),
+    ["gpt-5.5", "gpt-5.4"],
+    "modelSlugsForConfig merges primary and configured models",
+  );
+  assertEqual(formatModelDisplayName("gpt-5.5"), "GPT-5.5", "formatModelDisplayName formats GPT model names");
+  assertDeepEqual(
+    DEFAULT_SUBSCRIPTION_MODELS,
+    ["gpt-5.5", "gpt-5.4"],
+    "subscription fallback models match the Desktop picker defaults",
+  );
 
   assertDeepEqual(
     buildLocalModelCatalogEntry(testModel({ name: "" })),
     {
       model: "gpt-local",
-      displayName: "gpt-local",
+      displayName: "GPT-local",
       description: "Local OpenAI-compatible coding model via http://127.0.0.1:8890/v1.",
       contextWindow: DEFAULT_MODEL_CONTEXT_WINDOW,
       autoCompactTokenLimit: DEFAULT_MODEL_AUTO_COMPACT_TOKEN_LIMIT,
@@ -93,6 +125,16 @@ export default function runModelSettingsTests(): void {
     buildLocalModelCatalogEntry(testModel({ supportsImageInput: false })).inputModalities,
     ["text"],
     "buildLocalModelCatalogEntry can write text-only model capability",
+  );
+  assertDeepEqual(
+    buildLocalModelCatalogEntries(testModel({ model: " gpt-a ", models: ["gpt-b", "gpt-a"] })).map((entry) => entry.model),
+    ["gpt-a", "gpt-b"],
+    "buildLocalModelCatalogEntries writes every configured API model once",
+  );
+  assertDeepEqual(
+    buildLocalModelCatalogConfig(testModel({ model: " gpt-a ", models: ["gpt-b"] })).models,
+    ["gpt-a", "gpt-b"],
+    "buildLocalModelCatalogConfig includes the multi-model catalog payload",
   );
 
   const edits = buildModelConfigEdits(
@@ -170,6 +212,7 @@ export default function runModelSettingsTests(): void {
       baseUrl: "https://gateway.example.test/v1",
       apiKey: "bearer-token",
       model: "gpt-team",
+      models: ["gpt-team"],
       temperature: 0.2,
       maxTokens: null,
       supportsImageInput: true,
@@ -189,6 +232,7 @@ export default function runModelSettingsTests(): void {
       baseUrl: DEFAULT_MODEL_BASE_URL,
       apiKey: "",
       model: "Qwen3.6-27B-mxfp4",
+      models: ["Qwen3.6-27B-mxfp4"],
       temperature: 0.2,
       maxTokens: null,
       supportsImageInput: true,

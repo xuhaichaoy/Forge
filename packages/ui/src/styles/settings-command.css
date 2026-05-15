@@ -1,7 +1,7 @@
 .hc-settings-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: var(--hc-z-modal);
   display: grid;
   place-items: center;
   background: rgb(28 28 26 / 30%);
@@ -291,6 +291,10 @@
   color: #63665f;
   font-size: 12px;
   font-weight: 650;
+}
+
+.hc-settings-grid-wide {
+  grid-column: 1 / -1;
 }
 
 .hc-settings-footer {

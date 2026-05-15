@@ -327,14 +327,85 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     ? progressEntriesFromPlan(options.progressPlan.plan, options.progressPlan.id ?? "turn-plan")
     : null;
 
+  const unitsWithStreaming = withStreamingAssistantState(units, options.isThreadRunning === true);
+  const unitsWithInProgressDiff = injectInProgressDiffUnit(unitsWithStreaming, options);
+
   return {
-    units: withStreamingAssistantState(units, options.isThreadRunning === true),
+    units: unitsWithInProgressDiff,
     progress: coalesceProgress(explicitProgress ?? progress),
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),
     sources: Array.from(sources.values()),
   };
+}
+
+/*
+ * Codex `sT` portal logic (codex-local-conversation-thread.pretty.js :8003-8012)
+ * gates the in-progress diff on:
+ *   - portal target exists (c2 = Ws(n2))
+ *   - !hasBlockingRequest
+ *   - has unified-diff data
+ *   - conversationDetailLevel !== "STEPS_PROSE"
+ * and renders it via createPortal so it appears at a fixed position above the
+ * process region. HiCodex has no portal mechanism, so we splice an
+ * `inProgressDiff` render unit immediately after the last user message of the
+ * in-progress turn — visually it sits at the top of that turn's agent stream
+ * (above tool activity, thinking placeholder, and assistant output), matching
+ * Codex's "above-the-process-region" visual intent.
+ */
+function injectInProgressDiffUnit(
+  units: ConversationRenderUnit[],
+  options: ConversationProjectionOptions,
+): ConversationRenderUnit[] {
+  const diff = (options.turnDiff ?? "").trim();
+  if (!diff) return units;
+  if (options.isThreadRunning !== true) return units;
+  if (options.conversationDetailLevel === "STEPS_PROSE") return units;
+  // Find the LAST user message in the latest turn. We only inject the diff
+  // if we can find that user message AND its turnId — without a turnId the
+  // synthetic unit would form its own `null`-turn group, splitting an
+  // existing turn's render block in two (which would yield duplicate React
+  // keys via `turnKeyForGroup` falling back to the same `turnId` on both
+  // halves).
+  const lastUserIndex = findLastIndex(
+    units,
+    (unit) => unit.kind === "message" && unit.role === "user",
+  );
+  if (lastUserIndex < 0) return units;
+  const inheritedTurnId = readUnitTurnId(units[lastUserIndex]);
+  if (!inheritedTurnId) return units;
+  // Make sure no unit AFTER the user message belongs to a DIFFERENT turn —
+  // if it does, the latest turn hasn't actually started yet (we're between
+  // turns) so injecting would split groups. Skip in that case.
+  for (let i = lastUserIndex + 1; i < units.length; i++) {
+    const otherTurnId = readUnitTurnId(units[i]);
+    if (otherTurnId && otherTurnId !== inheritedTurnId) {
+      return units;
+    }
+  }
+  const diffUnit: ConversationRenderUnit = {
+    kind: "inProgressDiff",
+    key: `in-progress-diff:${inheritedTurnId}`,
+    diff,
+    turnId: inheritedTurnId,
+  };
+  return [...units.slice(0, lastUserIndex + 1), diffUnit, ...units.slice(lastUserIndex + 1)];
+}
+
+function readUnitTurnId(unit: ConversationRenderUnit | undefined): string | null {
+  if (!unit) return null;
+  if (unit.kind === "message" || unit.kind === "event" || unit.kind === "threadItem") {
+    const raw = (unit.item as Record<string, unknown>)._turnId;
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  }
+  if (unit.kind === "toolActivity") {
+    for (const item of unit.items) {
+      const raw = (item as Record<string, unknown>)._turnId;
+      if (typeof raw === "string" && raw.length > 0) return raw;
+    }
+  }
+  return null;
 }
 
 function withMcpAppResourceUris(items: ThreadItem[], mcpServerStatuses: unknown): ThreadItem[] {
@@ -525,7 +596,10 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
     || !blockedMcpServers.has(mcpServerName(item))
   );
   const finalAgentItem = filteredAgentItems[filteredAgentItems.length - 1];
-  const finalAssistantItem = finalAgentItem && isAssistantMessage(finalAgentItem) ? finalAgentItem : null;
+  const finalAssistantCandidate = finalAgentItem && isAssistantMessage(finalAgentItem) ? finalAgentItem : null;
+  const finalAssistantItem = shouldSplitFinalAssistantItem(finalAssistantCandidate, turnStatus)
+    ? finalAssistantCandidate
+    : null;
   const finalAssistantHasContent = finalAssistantItem ? hasAssistantOutput(finalAssistantItem) : false;
 
   if (finalAssistantItem) {
@@ -535,12 +609,15 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
     filteredAgentItems.push(...trailingApprovalReviewItems);
   }
 
-  const lastAgentItem = filteredAgentItems[filteredAgentItems.length - 1];
+  let renderAgentItems = turnStatus === "in_progress"
+    ? moveWorkedForItemsAfterRunningAgentOutput(filteredAgentItems)
+    : filteredAgentItems;
+  const lastAgentItem = renderAgentItems[renderAgentItems.length - 1];
   const systemEventItem = turnStatus !== "in_progress" && !finalAssistantHasContent && isSystemErrorItem(lastAgentItem)
     ? lastAgentItem ?? null
     : null;
   if (systemEventItem) {
-    filteredAgentItems.pop();
+    renderAgentItems = renderAgentItems.slice(0, -1);
   }
 
   assistantItem = finalAssistantItem;
@@ -548,7 +625,7 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
   return {
     preUserItems,
     userItems,
-    agentItems: filteredAgentItems,
+    agentItems: renderAgentItems,
     automationUpdateItems: assistantItem == null ? automationUpdateItems : [],
     assistantItem,
     toolOutputItems,
@@ -568,6 +645,30 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
     approvalItem,
     userInputItem,
   };
+}
+
+function shouldSplitFinalAssistantItem(item: ThreadItem | null, turnStatus: string): item is ThreadItem {
+  if (!item) return false;
+  return turnStatus !== "in_progress" || assistantMessagePhase(item) !== "commentary";
+}
+
+function moveWorkedForItemsAfterRunningAgentOutput(items: ThreadItem[]): ThreadItem[] {
+  const workedForItems: ThreadItem[] = [];
+  const otherItems: ThreadItem[] = [];
+  let needsMove = false;
+
+  for (const item of items) {
+    if (itemType(item) === "worked-for") {
+      workedForItems.push(item);
+      continue;
+    }
+    if (workedForItems.length > 0) {
+      needsMove = true;
+    }
+    otherItems.push(item);
+  }
+
+  return needsMove ? [...otherItems, ...workedForItems] : items;
 }
 
 function shouldSkipConversationItem(item: ThreadItem): boolean {
