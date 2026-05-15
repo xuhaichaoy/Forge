@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>售前 AI 工作台 · 立项说明（业务版）</title>
+<style>
+  :root {
+    --fg: #1d1d1d;
+    --fg-2: #555;
+    --fg-3: #999;
+    --bg: #fbfaf7;
+    --card: #ffffff;
+    --border: #e6e3dc;
+    --accent: #2c5e6f;
+    --accent-light: rgba(44, 94, 111, 0.08);
+    --gold: #b35a00;
+    --gold-light: rgba(245, 158, 11, 0.1);
+    --red: #b91c1c;
+    --red-light: rgba(220, 38, 38, 0.08);
+    --green: #15803d;
+    --green-light: rgba(34, 197, 94, 0.1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 0;
+  }
+  main {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 56px 48px 96px;
+  }
+  /* 头部 */
+  .header {
+    margin-bottom: 40px;
+  }
+  .header h1 {
+    font-size: 32px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .header .subtitle {
+    color: var(--fg-2);
+    font-size: 16px;
+    margin: 0;
+  }
+  .header-meta {
+    display: flex;
+    gap: 32px;
+    margin-top: 24px;
+    padding: 16px 20px;
+    background: var(--card);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  .header-meta div { display: flex; flex-direction: column; }
+  .header-meta dt {
+    color: var(--fg-3);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 2px;
+  }
+  .header-meta dd { margin: 0; font-weight: 500; }
+  /* TLDR */
+  .tldr {
+    background: linear-gradient(135deg, var(--accent-light) 0%, rgba(44, 94, 111, 0.03) 100%);
+    border: 1px solid rgba(44, 94, 111, 0.18);
+    border-left: 4px solid var(--accent);
+    border-radius: 10px;
+    padding: 24px 28px;
+    margin: 32px 0 48px;
+  }
+  .tldr-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .tldr p {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.7;
+  }
+  /* 章节 */
+  section.block { margin: 56px 0 0; }
+  section.block h2 {
+    font-size: 22px;
+    margin: 0 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  section.block h2 .emoji { font-size: 24px; }
+  section.block .lead {
+    color: var(--fg-2);
+    margin: 0 0 24px;
+    font-size: 14px;
+  }
+  /* 故事卡片 */
+  .story {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin: 16px 0;
+  }
+  .story h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    color: var(--fg);
+  }
+  .story-quote {
+    color: var(--fg-2);
+    font-style: italic;
+    padding: 12px 16px;
+    border-left: 3px solid var(--fg-3);
+    margin: 12px 0;
+    background: rgba(0,0,0,0.02);
+    font-size: 14px;
+  }
+  /* before / after */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .compare-side {
+    padding: 18px 20px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .compare-now {
+    background: var(--red-light);
+    border-color: rgba(220, 38, 38, 0.2);
+  }
+  .compare-future {
+    background: var(--green-light);
+    border-color: rgba(34, 197, 94, 0.2);
+  }
+  .compare-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .compare-now .compare-label { color: var(--red); }
+  .compare-future .compare-label { color: var(--green); }
+  .compare-content { font-size: 14px; line-height: 1.6; color: var(--fg); }
+  .compare ul { margin: 8px 0 0; padding-left: 20px; }
+  .compare li { margin: 4px 0; }
+  /* 数据卡 */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+    text-align: center;
+  }
+  .stat-num {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+  .stat-label {
+    color: var(--fg-2);
+    font-size: 12px;
+    margin: 6px 0 0;
+  }
+  /* 阶段时间轴 */
+  .timeline {
+    margin: 20px 0;
+  }
+  .phase {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 16px;
+    padding: 14px 18px;
+    border-left: 3px solid var(--border);
+    margin: 8px 0;
+    background: var(--card);
+    border-radius: 0 8px 8px 0;
+  }
+  .phase-1 { border-left-color: var(--accent); }
+  .phase-2 { border-left-color: var(--gold); }
+  .phase-3 { border-left-color: var(--green); }
+  .phase-4 { border-left-color: var(--fg-3); }
+  .phase-time {
+    color: var(--fg-3);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .phase-title {
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .phase-desc {
+    color: var(--fg-2);
+    font-size: 13px;
+    margin: 0;
+  }
+  /* 投入卡 */
+  .invest-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .invest {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .invest-title {
+    font-size: 13px;
+    color: var(--fg-3);
+    margin: 0 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .invest-num {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+  .invest-note {
+    font-size: 13px;
+    color: var(--fg-2);
+    margin: 0;
+  }
+  /* 风险 */
+  .risk {
+    background: var(--gold-light);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 10px 0;
+    font-size: 14px;
+  }
+  .risk-title { font-weight: 600; color: var(--gold); margin: 0 0 4px; font-size: 14px; }
+  /* 决策 */
+  .decisions {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .decisions ol {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    counter-reset: decisions;
+    list-style: none;
+  }
+  .decisions li {
+    margin: 12px 0;
+    padding-left: 38px;
+    position: relative;
+    counter-increment: decisions;
+  }
+  .decisions li::before {
+    content: counter(decisions);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 26px;
+    height: 26px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 26px;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .decision-q { font-weight: 500; }
+  .decision-hint {
+    display: block;
+    color: var(--fg-3);
+    font-size: 13px;
+    margin-top: 2px;
+  }
+  /* footer */
+  footer.doc-footer {
+    margin-top: 64px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--fg-3);
+    font-size: 12px;
+    text-align: center;
+  }
+  /* 强调 */
+  strong { color: var(--fg); font-weight: 600; }
+  .em-num { color: var(--accent); font-weight: 600; }
+  @media (max-width: 720px) {
+    main { padding: 32px 20px; }
+    .compare, .stats, .invest-grid { grid-template-columns: 1fr; }
+    .phase { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<div class="header">
+  <h1>售前 AI 工作台</h1>
+  <p class="subtitle">立项汇报 · 业务版</p>
+  <div class="header-meta">
+    <div><dt>提报人</dt><dd>技术 Lead</dd></div>
+    <div><dt>面向</dt><dd>业务领导 / 决策层</dd></div>
+    <div><dt>预算决策</dt><dd>第一阶段</dd></div>
+    <div><dt>建议启动</dt><dd>本月内</dd></div>
+    <div><dt>第一阶段周期</dt><dd>8 周（约 2 个月）</dd></div>
+  </div>
+</div>
+
+<div class="tldr">
+  <p class="tldr-label">一句话项目</p>
+  <p>
+    把售前从"<strong>拼老人经验</strong>"变成"<strong>新人也能写出资深质量方案</strong>"——
+    用 AI 把公司沉淀的讲师、课程、历史方案打通，售前写方案从 <span class="em-num">3-5 天</span>降到 <span class="em-num">0.5-1 天</span>，让 <span class="em-num">10 倍速度</span>响应客户成为可能。
+  </p>
+</div>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">🔥</span>为什么现在要做</h2>
+  <p class="lead">三个真实的售前痛点，每一个都直接影响赢标率。</p>
+
+  <div class="story">
+    <h3>痛点 1：新人售前 6 个月才能独立产方案</h3>
+    <p>资深售前每天能产 1-2 份方案，新人接到 RFP 不知道找哪个讲师、套哪个案例，写完还得资深的反复改。</p>
+    <p class="story-quote">"上次那个金融客户我们丢了，新人没把张总的同业案例放进去，他自己根本不知道有这案例。"</p>
+  </div>
+
+  <div class="story">
+    <h3>痛点 2：历史成功方案躺在硬盘里浪费</h3>
+    <p>过去 3 年累积的几百份方案散落在共享盘、个人电脑、邮箱附件里。要找"金融行业 AI 培训"的过往方案，靠的是"问老同事"和"凭印象搜文件名"。</p>
+    <p class="story-quote">"我记得去年好像做过一个类似的，但是谁做的、放在哪……找到的时候客户已经签别家了。"</p>
+  </div>
+
+  <div class="story">
+    <h3>痛点 3：讲师匹配靠"脑子里那 50 个人"</h3>
+    <p>资深售前脑子里能调动 50-100 个讲师，但公司讲师库实际有 2000+。新人和大部分售前只熟悉 10-20 个"老熟人"，好讲师被埋没，客户拿到的推荐永远是那几张老面孔。</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">💡</span>我们要建什么</h2>
+  <p class="lead">售前桌面上多一个 AI 助手——会看资料、会想问题、会推讲师、会写初稿。</p>
+
+  <div class="story">
+    <h3>用一个具体场景说明</h3>
+    <p>张总收到客户 RFP，传统流程：</p>
+    <p class="story-quote">读 RFP（2h）→ 找老同事问类似案例（半天）→ 凭印象列讲师（半天）→ 翻共享盘找模板（2h）→ 拼方案（1-2 天）→ 内部审（1 天）= <strong>3-5 天</strong></p>
+    <p>用 AI 工作台后：</p>
+    <p class="story-quote">把 RFP 拖到 AI 工作台 → AI 给出"需求摘要 + 类似 3 个赢标案例 + 10 个候选讲师 + 报价区间"（10 分钟）→ 张总挑 + 微调 → AI 出方案初稿（30 分钟）→ 内审 = <strong>0.5-1 天</strong></p>
+  </div>
+
+  <h3 style="margin-top: 32px;">具体能做的 5 件事</h3>
+  <div class="story">
+    <p><strong>① 需求分析</strong> —— 客户资料拖进来，AI 提炼出"客户行业 / 痛点 / 偏好 / 决策人风格"</p>
+    <p><strong>② 讲师匹配</strong> —— 从公司 2000+ 讲师库找出 Top 5-10，告诉你"为什么推他、客户接不接受"</p>
+    <p><strong>③ 课程匹配</strong> —— 按客户需求自动从课程库挑模块组合</p>
+    <p><strong>④ 方案初稿</strong> —— 综合上面三步，生成 Word/PPT 初稿，售前只需润色</p>
+    <p><strong>⑤ 历史复用</strong> —— 同类客户的历史成功方案自动浮现，知道"上次怎么赢的"</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">📈</span>能带来什么改变</h2>
+  <p class="lead">现状 vs 上线 6 个月后的对比。</p>
+
+  <div class="compare">
+    <div class="compare-side compare-now">
+      <p class="compare-label">现在</p>
+      <div class="compare-content">
+        <strong>方案产出时间</strong>
+        <ul>
+          <li>资深售前：1-2 天</li>
+          <li>新人售前：3-5 天</li>
+        </ul>
+      </div>
+    </div>
+    <div class="compare-side compare-future">
+      <p class="compare-label">用 AI 后</p>
+      <div class="compare-content">
+        <strong>方案产出时间</strong>
+        <ul>
+          <li>资深售前：0.3-0.5 天</li>
+          <li>新人售前：0.5-1 天</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="compare-side compare-now">
+      <p class="compare-label">现在</p>
+      <div class="compare-content">
+        <strong>讲师推荐</strong><br/>
+        靠售前记忆中的 50 个讲师，2000+ 讲师库实际用到 5%
+      </div>
+    </div>
+    <div class="compare-side compare-future">
+      <p class="compare-label">用 AI 后</p>
+      <div class="compare-content">
+        <strong>讲师推荐</strong><br/>
+        从 2000+ 讲师按维度 + 客户偏好筛 Top 10，业务采纳率 ≥ 70%
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="compare-side compare-now">
+      <p class="compare-label">现在</p>
+      <div class="compare-content">
+        <strong>历史方案复用率</strong><br/>
+        &lt; 20%，大量优秀案例被遗忘
+      </div>
+    </div>
+    <div class="compare-side compare-future">
+      <p class="compare-label">用 AI 后</p>
+      <div class="compare-content">
+        <strong>历史方案复用率</strong><br/>
+        &gt; 60%，类似机会自动调出"上次怎么赢的"
+      </div>
+    </div>
+  </div>
+
+  <div class="compare">
+    <div class="compare-side compare-now">
+      <p class="compare-label">现在</p>
+      <div class="compare-content">
+        <strong>新人独立上手</strong><br/>
+        6 个月以上
+      </div>
+    </div>
+    <div class="compare-side compare-future">
+      <p class="compare-label">用 AI 后</p>
+      <div class="compare-content">
+        <strong>新人独立上手</strong><br/>
+        2 个月（AI 当"虚拟师傅"）
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 28px;">折算到业务结果</h3>
+  <div class="stats">
+    <div class="stat">
+      <p class="stat-num">3-5×</p>
+      <p class="stat-label">售前同时跟进的<br/>机会数</p>
+    </div>
+    <div class="stat">
+      <p class="stat-num">+15-20%</p>
+      <p class="stat-label">赢标率提升<br/>（行业经验值）</p>
+    </div>
+    <div class="stat">
+      <p class="stat-num">10+</p>
+      <p class="stat-label">售前人力释放<br/>（每年）</p>
+    </div>
+  </div>
+  <p style="color: var(--fg-3); font-size: 13px; margin-top: 12px;">
+    * 上述数据来自类似 AI 项目行业基准 + 内部 1-2 个标杆售前的提效估算。第一阶段后做实测验证。
+  </p>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">🛠️</span>怎么做（分四步）</h2>
+  <p class="lead">不是"做一个 AI 系统"，是"把公司知识沉淀变成 AI 能用的资产"。</p>
+
+  <div class="timeline">
+    <div class="phase phase-1">
+      <div>
+        <p class="phase-time">第 0-1 周</p>
+      </div>
+      <div>
+        <p class="phase-title">启动 · 共识</p>
+        <p class="phase-desc">业务领导 + 业务专家 + 技术对齐范围、定 1-2 名业务标杆做"AI 师傅"</p>
+      </div>
+    </div>
+    <div class="phase phase-2">
+      <div>
+        <p class="phase-time">第 1-6 周</p>
+      </div>
+      <div>
+        <p class="phase-title">萃取 · 沉淀</p>
+        <p class="phase-desc">业务标杆每周陪 4-6 小时，技术拿真实案例做"师傅带徒"，把经验沉淀进 AI</p>
+      </div>
+    </div>
+    <div class="phase phase-3">
+      <div>
+        <p class="phase-time">第 6-10 周</p>
+      </div>
+      <div>
+        <p class="phase-title">上线 · 试用</p>
+        <p class="phase-desc">第一版上线，挑 3-5 名售前内部试用（含 1 名标杆 + 2 名新人）</p>
+      </div>
+    </div>
+    <div class="phase phase-4">
+      <div>
+        <p class="phase-time">第 10 周起</p>
+      </div>
+      <div>
+        <p class="phase-title">迭代 · 扩量</p>
+        <p class="phase-desc">每月评审 + 优化，逐步扩到全部售前（10-15 人）</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="story" style="margin-top: 28px;">
+    <h3>第一阶段范围（8 周内做什么 / 不做什么）</h3>
+    <p><strong>✅ 做：</strong>需求分析 + 讲师匹配 + 历史方案检索</p>
+    <p><strong>⏳ 二阶段：</strong>方案 Word/PPT 自动生成（依赖品牌团队定模板）</p>
+    <p><strong>⏳ 二阶段：</strong>客户接受度学习（需要上线后积累数据）</p>
+    <p><strong>⏳ 二阶段：</strong>投标侧 6 个场景（拆标 / 写标 / 审标 / ……）</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">💰</span>需要的投入</h2>
+  <p class="lead">第一阶段（8 周）的实际成本。</p>
+
+  <div class="invest-grid">
+    <div class="invest">
+      <p class="invest-title">业务专家时间</p>
+      <p class="invest-num">每周 4-6 小时 × 6 周</p>
+      <p class="invest-note">1-2 名资深售前担任"AI 师傅"，访谈 + Review。<strong>最关键的投入</strong>，不投这个，项目必失败。</p>
+    </div>
+    <div class="invest">
+      <p class="invest-title">技术团队</p>
+      <p class="invest-num">2-3 人 × 8 周</p>
+      <p class="invest-note">1 个技术 Lead（兼产品）+ 1-2 个工程师。HiCodex 桌面端已经现成，主要工作在数据 + 集成。</p>
+    </div>
+    <div class="invest">
+      <p class="invest-title">IT 协助</p>
+      <p class="invest-num">~ 10 小时</p>
+      <p class="invest-note">开放 CRM、讲师后台等内部 API。一次性投入，前 2 周完成。</p>
+    </div>
+    <div class="invest">
+      <p class="invest-title">服务器 / AI 费用</p>
+      <p class="invest-num">月均 ¥3-8k</p>
+      <p class="invest-note">含 LLM API 调用 + 向量库 + 服务器。规模化后逐步增加，上限可控。</p>
+    </div>
+  </div>
+
+  <p style="margin-top: 24px; color: var(--fg-2); font-size: 14px;">
+    第一阶段（8 周）总成本估算：<strong>20-30 万人民币</strong>（含人力 + 云服务 + 数据初始化）。
+    一个资深售前年成本 30-50 万，<strong>项目 ROI 在 6-12 个月内回本</strong>。
+  </p>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">⚠️</span>我们的风险</h2>
+  <p class="lead">三个真实风险，每个都有应对。</p>
+
+  <div class="risk">
+    <p class="risk-title">风险 1：业务专家时间不到位</p>
+    <p>AI 学的是公司资深售前的经验。如果业务专家"忙、回头再说"，AI 学不到东西，项目就失败。<br/>
+    <strong>应对：</strong>业务领导直接给标杆下 KPI，每周 4-6 小时写进考核。</p>
+  </div>
+
+  <div class="risk">
+    <p class="risk-title">风险 2：客户敏感数据合规</p>
+    <p>客户档案、过往方案涉密。直接传给 OpenAI 这种海外 AI 不合规。<br/>
+    <strong>应对：</strong>用国内合规模型（智谱 / 通义 / DeepSeek）+ 数据脱敏层。技术方案已确认可行。</p>
+  </div>
+
+  <div class="risk">
+    <p class="risk-title">风险 3：业务"看不上"AI 输出质量</p>
+    <p>第一版 AI 写的方案肯定不如老同志手写的好——可能有 60% 准确率。如果业务一开始抗拒，后面就用不起来。<br/>
+    <strong>应对：</strong>定位"AI = 助手"不是"AI 替代"。AI 出初稿，售前修。建立月度评审会，业务挑错 → 下版改进。</p>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">🤔</span>需要您的决策</h2>
+  <p class="lead">下面 6 个问题，需要业务领导拍板。每个都决定项目能不能启动。</p>
+
+  <div class="decisions">
+    <ol>
+      <li>
+        <span class="decision-q">愿意指定 1-2 名资深售前作为"AI 师傅"，每周投入 4-6 小时 × 6 周吗？</span>
+        <span class="decision-hint">如果不愿意 / 没有合适人选 → 项目不建议启动。</span>
+      </li>
+      <li>
+        <span class="decision-q">愿意承担第一阶段 20-30 万的预算吗？</span>
+        <span class="decision-hint">大部分是人力成本（不是外包）+ 少量云服务费。</span>
+      </li>
+      <li>
+        <span class="decision-q">能推动 IT 开放 CRM / 讲师后台的内部 API 吗？</span>
+        <span class="decision-hint">如果不能 → 项目可以做但价值打 4-5 折。</span>
+      </li>
+      <li>
+        <span class="decision-q">第一阶段试点的 3-5 名售前，您能指定吗？</span>
+        <span class="decision-hint">最好是：1 名资深（标杆）+ 2 名中坚 + 2 名新人。</span>
+      </li>
+      <li>
+        <span class="decision-q">8 周后做评估，根据数据决定是否继续投入二阶段——OK 吗？</span>
+        <span class="decision-hint">第一阶段是验证 + 试点，不是"一次性做完"。</span>
+      </li>
+      <li>
+        <span class="decision-q">客户数据外发到 AI 模型这件事，法务那边您能否帮推动一下？</span>
+        <span class="decision-hint">技术能做到合规，但需要法务批一份"使用规范"。</span>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ────────────────────────────────────────── -->
+
+<section class="block">
+  <h2><span class="emoji">📅</span>下一步</h2>
+  <p class="lead">如果您原则上同意，建议这周内做的 3 件事。</p>
+
+  <div class="story">
+    <p><strong>① 内部对齐会（本周）</strong> —— 您 + 业务标杆 + 技术 Lead + IT，30 分钟，过本文档</p>
+    <p><strong>② 业务标杆 SLA 签字（下周一前）</strong> —— 写入业务专家 OKR，确保时间投入</p>
+    <p><strong>③ 启动 Kickoff（下周内）</strong> —— 8 周项目正式开始</p>
+  </div>
+</section>
+
+<footer class="doc-footer">
+  <p>
+    售前 AI 工作台 · 立项说明（业务版）<br/>
+    技术详情见 <code>PRD-presales-admin.html</code>（开发用）<br/>
+    汇报人 · 技术 Lead
+  </p>
+</footer>
+
+</main>
+</body>
+</html>

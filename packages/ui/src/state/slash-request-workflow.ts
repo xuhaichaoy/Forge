@@ -9,6 +9,7 @@ import type {
 } from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
+import { openExternalUrl } from "../lib/tauri-host";
 import { projectBackgroundTerminalEntries } from "./background-terminals";
 import type { SlashCommandRequest } from "./composer-workflow";
 import {
@@ -240,6 +241,43 @@ export async function runSlashRequestWorkflow(
           cwds: workspace.trim() ? [workspace.trim()] : null,
         });
         openCommandPanel("plugins", { status: "ready", entries: projectPluginEntries(result) });
+        return;
+      }
+      case "loginChatgpt": {
+        // Codex protocol `account/login/start` (v2 LoginAccountParams.ts):
+        //   { type: "chatgpt" } → backend returns { loginId, authUrl }
+        // We open the authUrl in the system browser via Tauri's openExternalUrl.
+        // Backend asynchronously receives the OAuth callback and dispatches an
+        // `account/login/completed` notification (codex-reducer.ts handles it
+        // and refreshes account state). National IPs blocked by chatgpt.com
+        // require a VPN — this is a network-layer concern, not a code issue.
+        try {
+          const result = await client.request<{
+            type: string;
+            loginId?: string;
+            authUrl?: string;
+          }>("account/login/start", { type: "chatgpt" }, 120_000);
+          if (result?.type !== "chatgpt" || !result.authUrl) {
+            dispatch({
+              type: "log",
+              text: `account/login/start returned unexpected response: ${JSON.stringify(result)}`,
+              level: "warn",
+            });
+            return;
+          }
+          await openExternalUrl(result.authUrl);
+          dispatch({
+            type: "log",
+            text: "Opened ChatGPT sign-in in your browser. Complete login there — HiCodex will pick up the token automatically.",
+            level: "info",
+          });
+        } catch (error) {
+          dispatch({
+            type: "log",
+            text: `Login failed: ${formatError(error)}`,
+            level: "error",
+          });
+        }
         return;
       }
       case "logout": {

@@ -38,6 +38,9 @@ export function getUnitTurnId(unit: ConversationRenderUnit): string | null {
       if (id) return id;
     }
   }
+  if (unit.kind === "inProgressDiff") {
+    return unit.turnId;
+  }
   return null;
 }
 
@@ -157,6 +160,7 @@ export function shouldPreventTurnAutoCollapse(units: ConversationRenderUnit[]): 
       if (unit.summary.inProgress) return true;
       return unit.items.some(itemPreventsAutoCollapse);
     }
+    if (unit.kind === "inProgressDiff") return true; // live diff = active turn, never collapse
     return itemPreventsAutoCollapse(unit.item);
   });
 }
@@ -269,20 +273,36 @@ function TurnCollapseToggle({
   label: string;
   onToggle: () => void;
 }) {
+  /*
+   * Codex `Ph` button (codex-local-conversation-thread.pretty.js :3375):
+   *   className="text-size-chat hover:bg-token-bg-subtle inline-flex items-center
+   *              gap-1 rounded-md border border-transparent
+   *              focus-visible:ring-2 focus-visible:ring-token-focus-border
+   *              focus-visible:outline-none"
+   * No px/py padding; relies on the inner span and icon's intrinsic size.
+   *
+   * Codex chevron (`Ha`) at :3371:
+   *   className="icon-2xs text-token-foreground/40 transition-transform duration-200"
+   * `icon-2xs` ≈ 10px; `text-token-foreground/40` is 40% of foreground.
+   *
+   * We don't have the token system in HiCodex, so map to equivalent literal
+   * values: foreground/40 ≈ rgba(0, 0, 0, 0.4); bg-token-bg-subtle ≈ near-black
+   * 6% (similar to original bg-black/5 within 1% delta).
+   */
   return (
     <div className="hc-turn-collapse-row">
       <button
         type="button"
         aria-expanded={!collapsed}
         aria-label={labelForAria(label, count)}
-        className="hc-turn-collapse-toggle inline-flex items-center gap-1 rounded-md border border-transparent px-1 py-px text-left text-[13px] leading-5 text-stone-500 transition-colors hover:bg-black/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400/40"
+        className="hc-turn-collapse-toggle inline-flex items-center gap-1 rounded-md border border-transparent text-[13px] leading-5 text-stone-500 transition-colors hover:bg-stone-900/[0.06] hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-500/30"
         data-collapsed={collapsed}
         onClick={onToggle}
       >
         <span>{label}</span>
         <ChevronRight
-          size={12}
-          className={`hc-turn-collapse-chevron text-stone-400 transition-transform duration-200 ${collapsed ? "rotate-0" : "is-open rotate-90"}`}
+          size={10}
+          className={`hc-turn-collapse-chevron text-stone-900/40 transition-transform duration-200 ${collapsed ? "rotate-0" : "is-open rotate-90"}`}
         />
       </button>
     </div>
@@ -307,6 +327,7 @@ function isTurnCancelled(units: ConversationRenderUnit[]): boolean {
     if (unit.kind === "toolActivity") {
       return unit.items.some(itemIsCancelled);
     }
+    if (unit.kind === "inProgressDiff") return false; // synthetic, no source item
     return itemIsCancelled(unit.item);
   });
 }

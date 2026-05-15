@@ -15,6 +15,11 @@ import {
   X,
 } from "lucide-react";
 import type { ModelConfig } from "@hicodex/codex-protocol";
+import {
+  modelSlugsForConfig,
+  modelSlugsWithPrimary,
+  parseModelSlugsInput,
+} from "../model/model-settings";
 import type { SettingsPanelId } from "../state/composer-workflow";
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 import { IMAGE_GENERATION_SIZE_OPTIONS, type ImageGenerationSettings } from "../state/image-generation-tool";
@@ -57,8 +62,14 @@ export function SettingsPanel({
   const activeSection = SETTINGS_SECTIONS.find((section) => section.id === activePanel) ?? SETTINGS_SECTIONS[0];
   const refreshable = isRefreshableSettingsPanel(activePanel);
   return (
-    <div className="hc-settings-backdrop">
-      <section className="hc-settings-panel hc-settings-center">
+    <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="hc-settings-panel hc-settings-center"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header>
           <div><Settings size={17} /> Settings</div>
           <button className="hc-icon-button" type="button" onClick={onClose} aria-label="Close settings">
@@ -178,6 +189,23 @@ function ModelSettingsForm({
   models: ModelConfig[];
   onSave: () => void;
 }) {
+  const configuredModels = modelSlugsForConfig(modelDraft);
+  const configuredModelsText = configuredModels.join("\n");
+  const setPrimaryModel = (model: string) => {
+    setModelDraft({
+      ...modelDraft,
+      model,
+      models: modelSlugsWithPrimary(model, modelDraft.models ?? []),
+    });
+  };
+  const setAvailableModels = (value: string) => {
+    const nextModels = parseModelSlugsInput(value);
+    setModelDraft({
+      ...modelDraft,
+      model: modelDraft.model.trim() || nextModels[0] || "",
+      models: nextModels,
+    });
+  };
   return (
     <>
       <div className="hc-settings-grid">
@@ -185,12 +213,13 @@ function ModelSettingsForm({
         <label>Protocol<select value={modelDraft.protocol} onChange={(event) => setModelDraft({ ...modelDraft, protocol: event.target.value as ModelConfig["protocol"] })}><option value="openai">OpenAI compatible</option><option value="anthropic">Anthropic</option></select></label>
         <label>Base URL<input value={modelDraft.baseUrl} onChange={(event) => setModelDraft({ ...modelDraft, baseUrl: event.target.value })} /></label>
         <label>API Key<input type="password" value={modelDraft.apiKey} onChange={(event) => setModelDraft({ ...modelDraft, apiKey: event.target.value })} /></label>
-        <label>Model<input value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })} /></label>
+        <label>Default model<input value={modelDraft.model} onChange={(event) => setPrimaryModel(event.target.value)} /></label>
+        <label className="hc-settings-grid-wide">API models<textarea rows={4} value={configuredModelsText} onChange={(event) => setAvailableModels(event.target.value)} /></label>
         <label>Temperature<input type="number" step="0.1" value={modelDraft.temperature} onChange={(event) => setModelDraft({ ...modelDraft, temperature: Number(event.target.value) })} /></label>
         <label><input type="checkbox" checked={modelDraft.supportsImageInput !== false} onChange={(event) => setModelDraft({ ...modelDraft, supportsImageInput: event.target.checked })} /> Image input</label>
       </div>
       <div className="hc-settings-footer">
-        <div className="hc-muted">{models.length} configured model profile(s)</div>
+        <div className="hc-muted">{configuredModels.length} API model(s) in this provider · {models.length} runtime model profile(s)</div>
         <button className="hc-button hc-button-primary" onClick={onSave} type="button"><KeyRound size={15} /> Save and apply</button>
       </div>
     </>

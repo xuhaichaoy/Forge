@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use hicodex_host::{
-    AppServerHost, AppServerStartConfig, HostStatus, LocalModelCatalogConfig, ThreadToolHistory,
+    AppServerHost, AppServerStartConfig, CodexAuthSummary, HostStatus, LocalModelCatalogConfig,
+    ThreadToolHistory,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -83,6 +84,17 @@ fn host_write_local_model_catalog(
     state
         .host
         .write_local_model_catalog(codex_home, config)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn host_read_codex_auth_summary(
+    state: State<'_, AppState>,
+    codex_home: Option<String>,
+) -> Result<CodexAuthSummary, String> {
+    state
+        .host
+        .read_codex_auth_summary(codex_home)
         .map_err(|error| error.to_string())
 }
 
@@ -253,11 +265,16 @@ fn host_find_rollout_for_thread(
     if id.is_empty() {
         return Ok(None);
     }
-    let sessions_root = match codex_home.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let sessions_root = match codex_home
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         Some(home) => Path::new(home).join("sessions"),
         None => match env::var_os("HOME") {
-            Some(home) => Path::new(&home)
-                .join("Library/Application Support/HiCodex/codex-home/sessions"),
+            Some(home) => {
+                Path::new(&home).join("Library/Application Support/HiCodex/codex-home/sessions")
+            }
             None => return Ok(None),
         },
     };
@@ -311,7 +328,8 @@ mod find_rollout_tests {
     use std::path::PathBuf;
 
     fn temp_dir() -> PathBuf {
-        let base = std::env::temp_dir().join(format!("hicodex-find-rollout-{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("hicodex-find-rollout-{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base
@@ -345,7 +363,9 @@ mod find_rollout_tests {
     #[test]
     fn returns_none_when_no_file_matches() {
         let root = temp_dir();
-        let unrelated = root.join("2026/05/13").join("rollout-2026-05-13T06-44-00-xyz.jsonl");
+        let unrelated = root
+            .join("2026/05/13")
+            .join("rollout-2026-05-13T06-44-00-xyz.jsonl");
         touch(&unrelated);
         let found = find_rollout_recursive(&root, "thread-missing", 4).unwrap();
         assert!(found.is_none());
@@ -357,7 +377,9 @@ mod find_rollout_tests {
         let deep = root.join("a/b/c/d/e/rollout-2026-05-13T06-44-00-deepid.jsonl");
         touch(&deep);
         // max_depth = 2 stops before reaching the deep file (a/b only).
-        assert!(find_rollout_recursive(&root, "deepid", 2).unwrap().is_none());
+        assert!(find_rollout_recursive(&root, "deepid", 2)
+            .unwrap()
+            .is_none());
         // max_depth = 8 reaches it.
         assert_eq!(
             find_rollout_recursive(&root, "deepid", 8).unwrap(),
@@ -772,6 +794,8 @@ fn open_external_url(url: &str) -> std::io::Result<()> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -787,6 +811,7 @@ fn main() {
             host_status,
             host_send_raw,
             host_write_local_model_catalog,
+            host_read_codex_auth_summary,
             host_open_file_reference,
             host_open_external_url,
             host_pick_file_references,

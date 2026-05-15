@@ -1,6 +1,7 @@
 import { Activity, Archive, Copy, GitFork, MessageSquareText, MoreHorizontal, Pencil } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
+import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 
 const TOPBAR_TITLE_MAX_CHARS = 42;
 
@@ -40,10 +41,13 @@ export function ConversationChrome({
   onCopyConversationMarkdown,
 }: ConversationChromeProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const threadActionsRef = useRef<HTMLDivElement | null>(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const hasThread = Boolean(activeThread);
   const currentWorkspace = activeThread?.cwd?.trim() || workspace.trim() || "";
   const meta = currentWorkspace || codexHome || "Sidecar not started";
   const displayTitle = truncateTopbarTitle(title);
+  useDismissibleLayer(menuOpen, threadActionsRef, closeMenu);
 
   function runThreadAction(action?: (thread: Thread) => void | Promise<void>) {
     if (!activeThread || !action) return;
@@ -69,7 +73,7 @@ export function ConversationChrome({
             <Activity size={14} />
             {connected ? "running" : "offline"}
           </div>
-          <div className="hc-thread-header-actions">
+          <div className="hc-thread-header-actions" ref={threadActionsRef}>
             <button
               type="button"
               className="hc-icon-button"
@@ -83,7 +87,7 @@ export function ConversationChrome({
               <MoreHorizontal size={16} />
             </button>
             {menuOpen && activeThread && (
-              <div className="hc-thread-menu hc-thread-header-menu" role="menu">
+              <div className="hc-thread-menu hc-thread-header-menu hc-app-popover-menu" role="menu">
                 <button type="button" className="hc-thread-menu-item" role="menuitem" onClick={() => runThreadAction(onRenameThread)}>
                   <Pencil size={13} />
                   Rename chat

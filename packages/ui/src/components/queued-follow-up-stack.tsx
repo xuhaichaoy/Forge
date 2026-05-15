@@ -1,5 +1,6 @@
 import { Edit3, GripVertical, ListPlus, MoreHorizontal, Send, Trash2, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import type { QueuedFollowUp } from "../state/queued-followups";
 import { queuedFollowUpSummary } from "../state/queued-followups";
 
@@ -24,6 +25,9 @@ export function QueuedFollowUpStack({
 }: QueuedFollowUpStackProps) {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const openMenuWrapRef = useRef<HTMLDivElement | null>(null);
+  const closeOpenMenu = useCallback(() => setOpenMenuId(null), []);
+  useDismissibleLayer(openMenuId != null, openMenuWrapRef, closeOpenMenu);
 
   if (messages.length === 0) return null;
 
@@ -93,7 +97,10 @@ export function QueuedFollowUpStack({
             >
               <Trash2 size={13} />
             </button>
-            <div className="hc-queued-followup-menu-wrap">
+            <div
+              className="hc-queued-followup-menu-wrap"
+              ref={openMenuId === message.id ? openMenuWrapRef : undefined}
+            >
               <button
                 type="button"
                 title="Queued message actions"
@@ -105,7 +112,7 @@ export function QueuedFollowUpStack({
                 <MoreHorizontal size={13} />
               </button>
               {openMenuId === message.id && (
-                <div className="hc-thread-menu hc-queued-followup-menu" role="menu">
+                <div className="hc-thread-menu hc-queued-followup-menu hc-app-popover-menu" role="menu">
                   <button
                     type="button"
                     className="hc-thread-menu-item"

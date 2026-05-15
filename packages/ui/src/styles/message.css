@@ -6,7 +6,7 @@
 
 .hc-message {
   min-width: 0;
-  line-height: 1.5;
+  line-height: var(--codex-chat-line-height);
 }
 
 .hc-message.user {
@@ -382,7 +382,7 @@
   min-width: 0;
   width: 100%;
   font-size: var(--codex-chat-font-size);
-  line-height: 1.5;
+  line-height: var(--codex-chat-line-height);
 }
 
 .hc-markdown.is-indexed-fade .hc-markdown-fade-in,
@@ -445,7 +445,7 @@
 }
 
 .hc-markdown p {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
 .hc-math-display {
@@ -707,7 +707,7 @@
   position: fixed;
   top: 78px;
   left: 50%;
-  z-index: 120;
+  z-index: var(--hc-z-toast);
   display: inline-flex;
   align-items: center;
   gap: 10px;

@@ -18,8 +18,9 @@ import {
   Search,
   Settings,
 } from "lucide-react";
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
+import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import {
   projectSidebarThreadGroups,
   sidebarThreadHasVisibleStatus,
@@ -48,7 +49,7 @@ const threadPinIndicatorButtonClass =
   "hc-thread-pin-button relative flex h-5 w-5 items-center justify-center border-0 bg-transparent p-0 leading-none text-token-description-foreground hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vscode-focusBorder)]";
 const threadPinIndicatorButtonVisibleClass = "is-pinned";
 const threadMenuClass =
-  "fixed z-50 m-px flex w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background px-1 py-1 text-token-foreground shadow-xl-spread ring-[0.5px] ring-token-border backdrop-blur-sm";
+  "hc-app-popover-menu fixed z-50 m-px flex w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background px-1 py-1 text-token-foreground shadow-xl-spread ring-[0.5px] ring-token-border backdrop-blur-sm";
 const threadMenuItemClass =
   "flex w-full appearance-none items-center rounded-lg border-0 bg-transparent px-row-x py-row-y text-left text-sm text-token-foreground hover:bg-token-list-hover-background disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent";
 const threadMenuSeparatorClass = "w-full px-row-x py-1";
@@ -79,6 +80,17 @@ export interface SidebarProps {
   sortKey?: SidebarSortKey;
   onSortKeyChange?: (sortKey: SidebarSortKey) => void;
   getThreadTitle?: (thread: Thread) => string;
+  /**
+   * Update banner state. When set, sidebar shows a small "Update v0.1.1"
+   * button at the top. Click → onApplyUpdate(). Cleared by parent when
+   * download starts / completes / errors.
+   */
+  updateAvailable?: {
+    version: string;
+    progress?: number | null;     // 0-1 during download; null when idle
+    error?: string | null;
+  } | null;
+  onApplyUpdate?: () => void | Promise<void>;
 }
 
 export function Sidebar({
@@ -107,6 +119,8 @@ export function Sidebar({
   sortKey = "updated_at",
   onSortKeyChange,
   getThreadTitle = threadTitle,
+  updateAvailable,
+  onApplyUpdate,
 }: SidebarProps) {
   const [openThreadMenu, setOpenThreadMenu] = useState<{
     threadId: string;
@@ -115,6 +129,8 @@ export function Sidebar({
   } | null>(null);
   const openMenuThreadId = openThreadMenu?.threadId ?? null;
   const [openSectionMenu, setOpenSectionMenu] = useState<"filter" | "add-project" | null>(null);
+  const sectionActionsRef = useRef<HTMLDivElement | null>(null);
+  const threadMenuRef = useRef<HTMLDivElement | null>(null);
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
   const [previouslyExpandedGroupKeys, setPreviouslyExpandedGroupKeys] = useState<string[]>([]);
   const [confirmingArchiveThreadId, setConfirmingArchiveThreadId] = useState<string | null>(null);
@@ -139,15 +155,23 @@ export function Sidebar({
     runThreadAction(thread, action);
   };
 
+  const closeThreadMenu = useCallback(() => {
+    setOpenThreadMenu(null);
+  }, []);
+
+  const closeSectionMenu = useCallback(() => {
+    setOpenSectionMenu(null);
+  }, []);
+
+  useDismissibleLayer(openThreadMenu != null, threadMenuRef, closeThreadMenu);
+  useDismissibleLayer(openSectionMenu != null, sectionActionsRef, closeSectionMenu);
+
   const openContextMenu = (event: MouseEvent, thread: Thread) => {
     event.preventDefault();
     event.stopPropagation();
+    setOpenSectionMenu(null);
     setConfirmingArchiveThreadId(null);
     setOpenThreadMenu({ threadId: thread.id, x: event.clientX, y: event.clientY });
-  };
-
-  const closeThreadMenu = () => {
-    setOpenThreadMenu(null);
   };
 
   const requestArchiveConfirmation = (thread: Thread) => {
@@ -172,6 +196,7 @@ export function Sidebar({
   };
 
   const runSectionCollapseAction = () => {
+    setOpenSectionMenu(null);
     const groupKeys = threadGroups.map((group) => group.key);
     if (sectionCollapseAction === "collapse-all") {
       const expanded = groupKeys.filter((key) => !collapsedGroupKeys.has(key));
@@ -202,8 +227,32 @@ export function Sidebar({
     void onUseExistingFolder?.();
   };
 
+  const renderUpdateBadge = () => {
+    if (!updateAvailable) return null;
+    const downloading = typeof updateAvailable.progress === "number";
+    const pct = downloading ? Math.round((updateAvailable.progress ?? 0) * 100) : null;
+    const label = updateAvailable.error
+      ? "Update failed"
+      : downloading
+      ? `Updating ${pct}%`
+      : `Update v${updateAvailable.version}`;
+    return (
+      <button
+        type="button"
+        className="hc-sidebar-update-badge"
+        title={updateAvailable.error ?? `Install v${updateAvailable.version} and restart`}
+        disabled={downloading}
+        onClick={() => { void onApplyUpdate?.(); }}
+      >
+        <span className="hc-sidebar-update-dot" aria-hidden />
+        <span className="hc-sidebar-update-label">{label}</span>
+      </button>
+    );
+  };
+
   return (
     <aside className="hc-sidebar">
+      {renderUpdateBadge()}
       <div className="hc-sidebar-nav">
         <SidebarNavItem
           icon={connecting ? <Loader2 className="hc-spin" size={17} /> : <MessageSquarePlus size={17} />}
@@ -234,7 +283,7 @@ export function Sidebar({
       <div className="hc-thread-list">
         <div className={`hc-thread-section-header ${openSectionMenu ? "is-menu-open" : ""}`}>
           <div className="hc-thread-section-label">Projects</div>
-          <div className="hc-thread-section-actions" aria-label="Projects actions">
+          <div className="hc-thread-section-actions" aria-label="Projects actions" ref={sectionActionsRef}>
             {sectionCollapseAction && (
               <button
                 type="button"
@@ -253,12 +302,15 @@ export function Sidebar({
               aria-label="Filter sidebar chats"
               aria-haspopup="menu"
               aria-expanded={openSectionMenu === "filter"}
-              onClick={() => setOpenSectionMenu((menu) => menu === "filter" ? null : "filter")}
+              onClick={() => {
+                setOpenThreadMenu(null);
+                setOpenSectionMenu((menu) => menu === "filter" ? null : "filter");
+              }}
             >
               <ListFilter size={13} />
             </button>
             {openSectionMenu === "filter" && (
-              <div className="hc-thread-menu hc-sidebar-section-menu" role="menu">
+              <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
                 <div className="hc-thread-menu-title">Sort by</div>
                 <button
                   type="button"
@@ -291,12 +343,15 @@ export function Sidebar({
                   aria-label="Add new project"
                   aria-haspopup="menu"
                   aria-expanded={openSectionMenu === "add-project"}
-                  onClick={() => setOpenSectionMenu((menu) => menu === "add-project" ? null : "add-project")}
+                  onClick={() => {
+                    setOpenThreadMenu(null);
+                    setOpenSectionMenu((menu) => menu === "add-project" ? null : "add-project");
+                  }}
                 >
                   <FolderPlus size={13} />
                 </button>
                 {openSectionMenu === "add-project" && (
-                  <div className="hc-thread-menu hc-sidebar-section-menu" role="menu">
+                  <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
                     <button
                       type="button"
                       className="hc-thread-menu-item"
@@ -441,6 +496,7 @@ export function Sidebar({
                   {openThreadMenu && openMenuThreadId === thread.id && (
                     <div
                       className={threadMenuClass}
+                      ref={threadMenuRef}
                       role="menu"
                       style={{ left: openThreadMenu.x, top: openThreadMenu.y }}
                       onClick={(event) => event.stopPropagation()}

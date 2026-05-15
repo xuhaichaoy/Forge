@@ -40,8 +40,14 @@ export function McpToolCallForm({ action, onClose, onSubmit }: McpToolCallFormPr
   }
 
   return (
-    <div className="hc-settings-backdrop">
-      <section className="hc-command-panel hc-mcp-tool-form">
+    <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="hc-command-panel hc-mcp-tool-form"
+        role="dialog"
+        aria-modal="true"
+        aria-label={action.title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         <header>
           <div>
             <Server size={17} />

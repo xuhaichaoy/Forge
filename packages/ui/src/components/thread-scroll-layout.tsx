@@ -13,6 +13,7 @@ import type { CSSProperties, ReactNode } from "react";
 const DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX = 24;
 const DESKTOP_FOOTER_SCROLL_PADDING_PX = 16;
 const DEFAULT_SCROLL_KEY = "__hicodex_default_thread_scroll__";
+const USER_SCROLL_INTENT_WINDOW_MS = 600;
 
 const scrollDistanceByThreadKey = new Map<string, number>();
 
@@ -65,6 +66,7 @@ export function ThreadScrollLayout({
   const pendingRestoreDistanceRef = useRef<number | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const isScrolledFromBottomRef = useRef(false);
+  const userScrollIntentUntilRef = useRef(0);
   const scrollListenersRef = useRef(new Set<(distanceFromBottomPx: number) => void>());
   const [footerHeight, setFooterHeight] = useState(0);
   const [isScrolledFromBottom, setIsScrolledFromBottom] = useState(false);
@@ -74,14 +76,18 @@ export function ThreadScrollLayout({
     setIsScrolledFromBottom(next);
   }, []);
 
-  const measureScroll = useCallback(() => {
+  const measureScroll = useCallback((options: { updateStickiness?: boolean } = {}) => {
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
     const distance = threadScrollDistanceFromBottom(scrollElement);
     lastDistanceFromBottomRef.current = distance;
     scrollDistanceByThreadKey.set(activeScrollKeyRef.current, distance);
     const isNearBottom = distance <= DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX;
-    shouldStickToBottomRef.current = isNearBottom;
+    shouldStickToBottomRef.current = nextThreadStickToBottomState(
+      shouldStickToBottomRef.current,
+      distance,
+      options.updateStickiness ?? true,
+    );
     setScrolledFromBottom(!isNearBottom);
     onScroll?.(distance, isNearBottom);
     for (const listener of scrollListenersRef.current) listener(distance);
@@ -134,17 +140,24 @@ export function ThreadScrollLayout({
   useLayoutEffect(() => {
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
-    const handleScrollIntent = () => {
-      measureScroll();
+    const markUserScrollIntent = () => {
+      userScrollIntentUntilRef.current = Date.now() + USER_SCROLL_INTENT_WINDOW_MS;
     };
-    const handleScroll = () => measureScroll();
+    const handleScrollIntent = () => {
+      markUserScrollIntent();
+    };
+    const handleScroll = () => {
+      measureScroll({ updateStickiness: Date.now() <= userScrollIntentUntilRef.current });
+    };
     measureScroll();
     scrollElement.addEventListener("pointerdown", handleScrollIntent, { passive: true });
     scrollElement.addEventListener("wheel", handleScrollIntent, { passive: true });
+    scrollElement.addEventListener("touchstart", handleScrollIntent, { passive: true });
     scrollElement.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
       scrollElement.removeEventListener("pointerdown", handleScrollIntent);
       scrollElement.removeEventListener("wheel", handleScrollIntent);
+      scrollElement.removeEventListener("touchstart", handleScrollIntent);
       scrollElement.removeEventListener("scroll", handleScroll);
     };
   }, [measureScroll]);
@@ -281,6 +294,16 @@ export function threadScrollTopForDistanceFromBottom(element: HTMLElement, dista
     return normalizedDistance === 0 ? 0 : -normalizedDistance;
   }
   return Math.max(0, element.scrollHeight - element.clientHeight - normalizedDistance);
+}
+
+export function nextThreadStickToBottomState(
+  current: boolean,
+  distanceFromBottomPx: number,
+  updateStickiness: boolean,
+): boolean {
+  return updateStickiness
+    ? distanceFromBottomPx <= DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX
+    : current;
 }
 
 export function threadScrollKey(resetKey: string | null | undefined): string {

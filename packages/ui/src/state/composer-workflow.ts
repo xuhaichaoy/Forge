@@ -66,6 +66,7 @@ export type SlashCommandRequest =
   | "listHooks"
   | "listApps"
   | "listPlugins"
+  | "loginChatgpt"
   | "logout"
   | "exitApp"
   | "copyLastAnswer"
@@ -375,6 +376,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("mcp", "MCP", "Reload and list MCP servers and tools.", "mcp", "direct", ["tools", "server"], "verbose"),
   command("apps", "Apps", "List connected apps and connectors.", "tools", "direct", ["connectors"]),
   command("plugins", "Plugins", "List installed and marketplace plugins.", "tools", "direct", ["plugin"]),
+  command("login", "Login", "Sign in to ChatGPT (OpenAI subscription).", "settings", "direct", ["account", "oauth", "signin"]),
   command("logout", "Logout", "Sign out from the current Codex account.", "settings", "direct", ["account"]),
   command("quit", "Quit", "Quit HiCodex.", "settings", "desktop", ["exit"], undefined, true),
   command("exit", "Exit", "Quit HiCodex.", "settings", "desktop", ["quit"]),
@@ -726,6 +728,8 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
       return { action: "request", request: "listApps", clearInput: true };
     case "plugins":
       return { action: "request", request: "listPlugins", clearInput: true };
+    case "login":
+      return { action: "request", request: "loginChatgpt", clearInput: true };
     case "logout":
       return { action: "request", request: "logout", clearInput: true };
     case "quit":

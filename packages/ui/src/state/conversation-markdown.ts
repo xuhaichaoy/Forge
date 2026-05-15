@@ -33,6 +33,12 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
       continue;
     }
 
+    // `inProgressDiff` is a transient render unit emitted only while a turn
+    // is streaming (mirror of Codex `sT` portal). It has no persistent source
+    // item, so the markdown export omits it — completed turns will already
+    // include the final unifiedDiff as a regular threadItem.
+    if (unit.kind === "inProgressDiff") continue;
+
     const body = unit.kind === "event"
       ? normalizedText(unit.text || itemText(unit.item)).trim()
       : normalizedText(formatItemDetail(unit.item) || itemText(unit.item)).trim();

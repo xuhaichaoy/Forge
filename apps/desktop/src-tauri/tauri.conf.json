@@ -33,12 +33,23 @@
   "bundle": {
     "active": true,
     "targets": ["dmg", "app"],
+    "createUpdaterArtifacts": true,
     "icon": [],
     "resources": {
       "binaries": "binaries"
     },
     "macOS": {
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://placeholder.invalid/hicodex/{{target}}/{{arch}}/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxNUQzNjk0RTBDNjY1QkYKUldTL1pjYmdsRFpkZ1dZYm8ycEE5VE5NdkR0Q3ZvSzRsNmhKOXVaN3FkQlcvQXpMN1RMaThDY24K"
     }
   }
 }

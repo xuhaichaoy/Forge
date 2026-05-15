@@ -4,7 +4,7 @@ import { formatError } from "../lib/format";
 import { writeLocalModelCatalog } from "../lib/tauri-host";
 import type { CodexUiAction } from "../state/codex-reducer";
 import {
-  buildLocalModelCatalogEntry,
+  buildLocalModelCatalogConfig,
   buildModelConfigEdits,
   buildModelConfigsFromList,
   normalizeModelConfig,
@@ -51,7 +51,7 @@ export async function saveModelDraft({
     if (ready && nextModel.model) {
       const catalogPath = await writeLocalModelCatalog(
         codexHome,
-        buildLocalModelCatalogEntry(nextModel),
+        buildLocalModelCatalogConfig(nextModel),
       );
       await client.request("config/batchWrite", {
         edits: buildModelConfigEdits(nextModel, catalogPath),

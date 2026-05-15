@@ -1,0 +1,1170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>售前 AI 工作台 · 管理后台 PRD v0.1</title>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --fg-2: #555;
+    --fg-3: #888;
+    --bg: #fafaf7;
+    --bg-card: #ffffff;
+    --border: #e6e3dc;
+    --border-2: #d2cdc0;
+    --accent: #2c5e6f;
+    --accent-bg: rgba(44, 94, 111, 0.08);
+    --warn: #b35a00;
+    --warn-bg: rgba(245, 158, 11, 0.12);
+    --danger: #b91c1c;
+    --danger-bg: rgba(220, 38, 38, 0.1);
+    --ok: #15803d;
+    --ok-bg: rgba(34, 197, 94, 0.12);
+    --code-bg: #f4f3ef;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  /* ── sidebar TOC ──────────────────────────── */
+  aside.toc {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 20px;
+    border-right: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 13px;
+  }
+  aside.toc h1 {
+    font-size: 13px;
+    margin: 0 0 16px;
+    color: var(--fg-3);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  aside.toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    counter-reset: tocsec;
+  }
+  aside.toc li { margin: 2px 0; counter-increment: tocsec; }
+  aside.toc li::before {
+    content: counter(tocsec) ". ";
+    color: var(--fg-3);
+    margin-right: 4px;
+  }
+  aside.toc a {
+    color: var(--fg-2);
+    text-decoration: none;
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 120ms ease;
+  }
+  aside.toc a:hover { background: var(--accent-bg); color: var(--accent); }
+  /* ── main ──────────────────────────── */
+  main {
+    padding: 48px 56px 96px;
+    max-width: 980px;
+  }
+  h1, h2, h3, h4 {
+    font-weight: 600;
+    color: var(--fg);
+    line-height: 1.3;
+  }
+  h1.doc-title { font-size: 30px; margin: 0 0 8px; }
+  h2 {
+    font-size: 22px;
+    margin: 56px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 17px; margin: 32px 0 12px; }
+  h4 { font-size: 14px; margin: 20px 0 8px; color: var(--fg-2); }
+  p { margin: 8px 0 12px; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+  /* meta strip */
+  .meta {
+    display: flex;
+    gap: 24px;
+    margin: 16px 0 32px;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .meta dl { margin: 0; }
+  .meta dt { color: var(--fg-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .meta dd { margin: 2px 0 0; color: var(--fg); font-weight: 500; }
+  /* badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.6;
+    vertical-align: middle;
+  }
+  .badge-p0 { background: var(--danger-bg); color: var(--danger); }
+  .badge-p1 { background: var(--warn-bg); color: var(--warn); }
+  .badge-p2 { background: var(--accent-bg); color: var(--accent); }
+  .badge-p3 { background: #ececea; color: #6b6b6b; }
+  .badge-ok { background: var(--ok-bg); color: var(--ok); }
+  /* cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 12px 0;
+  }
+  .card-accent { border-left: 3px solid var(--accent); }
+  .card-warn { background: var(--warn-bg); border-color: rgba(245, 158, 11, 0.4); }
+  /* tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--fg-2);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(0, 0, 0, 0.02);
+  }
+  tbody tr:hover { background: rgba(0, 0, 0, 0.015); }
+  td code, p code, li code {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  pre {
+    background: #1e2227;
+    color: #e3e4dc;
+    padding: 14px 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  /* lists */
+  ul, ol { padding-left: 24px; }
+  ul li, ol li { margin: 4px 0; }
+  /* page mock (wireframe) */
+  .mock {
+    border: 1px solid var(--border-2);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 16px 0;
+    background: var(--bg-card);
+    font-size: 12px;
+    font-family: var(--mono);
+  }
+  .mock-bar {
+    background: #f0eee8;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg-3);
+  }
+  .mock-body { padding: 16px 20px; min-height: 200px; }
+  .mock-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .mock-cell { flex: 1; padding: 4px 12px; color: var(--fg-2); }
+  .mock-cell-key { flex: 0 0 140px; color: var(--fg-3); }
+  .mock-btn {
+    display: inline-block;
+    padding: 4px 12px;
+    border: 1px solid var(--border-2);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--fg-2);
+    margin: 0 4px;
+  }
+  .mock-btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+  /* diagram */
+  .arch-diagram {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .arch-layer {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    background: var(--bg-card);
+  }
+  .arch-layer-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--fg-3);
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+  }
+  .arch-modules {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .arch-mod {
+    flex: 1 1 0;
+    min-width: 120px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-2);
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 12px;
+  }
+  .arch-arrow {
+    text-align: center;
+    color: var(--fg-3);
+    font-family: var(--mono);
+  }
+  /* kbd */
+  kbd {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+  }
+  /* footer */
+  footer.doc-footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    aside.toc { position: relative; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    main { padding: 32px 24px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<aside class="toc">
+  <h1>目录</h1>
+  <ol>
+    <li><a href="#overview">概述</a></li>
+    <li><a href="#goal">业务目标 & KPI</a></li>
+    <li><a href="#roles">角色与权限</a></li>
+    <li><a href="#architecture">系统架构</a></li>
+    <li><a href="#modules">功能模块总览</a></li>
+    <li><a href="#m-dashboard">M1 · 数据看板</a></li>
+    <li><a href="#m-kb">M2 · 知识库管理</a></li>
+    <li><a href="#m-skill">M3 · SKILL 管理</a></li>
+    <li><a href="#m-pipeline">M4 · 文档处理</a></li>
+    <li><a href="#m-integration">M5 · 系统集成</a></li>
+    <li><a href="#m-user">M6 · 用户权限</a></li>
+    <li><a href="#m-audit">M7 · 审计日志</a></li>
+    <li><a href="#m-setting">M8 · 系统设置</a></li>
+    <li><a href="#info-arch">信息架构</a></li>
+    <li><a href="#nonfunc">非功能需求</a></li>
+    <li><a href="#milestone">里程碑</a></li>
+    <li><a href="#risk">风险登记</a></li>
+    <li><a href="#open">遗留问题</a></li>
+  </ol>
+</aside>
+
+<main>
+
+<h1 class="doc-title">售前 AI 工作台 — 管理后台 PRD</h1>
+<div class="meta">
+  <dl><dt>项目代号</dt><dd>HiCodex Sales</dd></dl>
+  <dl><dt>版本</dt><dd>v0.1（草案）</dd></dl>
+  <dl><dt>状态</dt><dd><span class="badge badge-p1">待评审</span></dd></dl>
+  <dl><dt>负责人</dt><dd>技术 Lead（兼 PM）</dd></dl>
+  <dl><dt>受众</dt><dd>业务主管 · IT · 法务 · 设计</dd></dl>
+  <dl><dt>第一阶段周期</dt><dd>8 周（启动 → MVP）</dd></dl>
+</div>
+
+<h2 id="overview">1. 概述</h2>
+
+<p>
+本文档定义 <strong>售前 AI 工作台</strong> 的<strong>管理后台</strong>需求。
+工作台前端是 <em>HiCodex 桌面端</em>（已开发，对话式 AI + Skill 编排），
+本管理后台负责对支撑前端的<strong>数据 / 配置 / 监控</strong>进行运营管理，
+是后台运营 / 产品 / 业务管理员使用的 Web 系统。
+</p>
+
+<p>
+管理后台覆盖：<strong>6 个知识库 · 6 个 SKILL · 5 个外部系统集成 · 用户权限 · 数据看板</strong>。
+不包括前端售前用户的 chat 界面（那是 HiCodex 桌面端的职责）。
+</p>
+
+<div class="card card-accent">
+  <strong>本文档解决三个问题：</strong>
+  <ol>
+    <li>管理后台<strong>有哪些模块</strong>、每个模块<strong>做什么</strong>？</li>
+    <li>每个模块的<strong>关键页面 / 字段 / 操作</strong>是什么？</li>
+    <li>开发优先级、依赖、风险？</li>
+  </ol>
+</div>
+
+<h3>边界与不包含</h3>
+<ul>
+  <li>✅ 包含：知识库 CRUD、SKILL 编辑、文档解析流水线、系统集成配置、用户权限、运营看板</li>
+  <li>❌ 不包含：售前用户的 chat 界面（HiCodex 桌面端已交付）</li>
+  <li>❌ 不包含：客户面向的方案展示门户（独立项目）</li>
+  <li>❌ 不包含：投标流程（场景 5/6，第二阶段）</li>
+</ul>
+
+<h2 id="goal">2. 业务目标 & KPI</h2>
+
+<table>
+<thead><tr><th>层级</th><th>目标</th><th>量化指标</th><th>评估方式</th></tr></thead>
+<tbody>
+<tr>
+  <td>业务结果</td>
+  <td>售前提效</td>
+  <td>方案初稿时间 3-5 天 → 0.5-1 天</td>
+  <td>计时对比（10 个真实机会）</td>
+</tr>
+<tr>
+  <td>业务结果</td>
+  <td>知识复用</td>
+  <td>历史方案复用率 &lt;20% → &gt;60%</td>
+  <td>方案库引用统计</td>
+</tr>
+<tr>
+  <td>业务结果</td>
+  <td>新人上手</td>
+  <td>新售前独立产方案周期 6 月 → 2 月</td>
+  <td>HR + 主管评估</td>
+</tr>
+<tr>
+  <td>产品健康</td>
+  <td>用户活跃</td>
+  <td>售前周活跃 ≥ 80%</td>
+  <td>HiCodex 使用埋点</td>
+</tr>
+<tr>
+  <td>产品健康</td>
+  <td>满意度</td>
+  <td>"愿意继续用" ≥ 80%</td>
+  <td>月度 NPS 调研</td>
+</tr>
+<tr>
+  <td>系统健康</td>
+  <td>检索准确</td>
+  <td>讲师匹配 Top 5 业务认可率 ≥ 70%</td>
+  <td>50 黄金集回测</td>
+</tr>
+<tr>
+  <td>系统健康</td>
+  <td>稳定性</td>
+  <td>SKILL 调用成功率 &gt; 95%</td>
+  <td>错误率监控</td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="roles">3. 角色与权限</h2>
+
+<table>
+<thead><tr><th>角色</th><th>主要工作</th><th>权限范围</th><th>预估人数</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>超级管理员</strong></td>
+  <td>系统配置、权限分配、集成接入</td>
+  <td>全部</td>
+  <td>1-2</td>
+</tr>
+<tr>
+  <td><strong>知识库管理员</strong></td>
+  <td>知识库录入、审核、标签</td>
+  <td>知识库 CRUD + SKILL 只读</td>
+  <td>2-3</td>
+</tr>
+<tr>
+  <td><strong>SKILL 维护人员</strong></td>
+  <td>编辑 SKILL prompt、调试评估</td>
+  <td>SKILL CRUD + 知识库只读</td>
+  <td>1-2</td>
+</tr>
+<tr>
+  <td><strong>业务审核员</strong></td>
+  <td>方案库 win/lost 标注、话术审批</td>
+  <td>方案库 / 话术库审核队列</td>
+  <td>2-3</td>
+</tr>
+<tr>
+  <td><strong>数据分析师</strong></td>
+  <td>看运营看板、出报表</td>
+  <td>看板只读、日志只读</td>
+  <td>1-2</td>
+</tr>
+<tr>
+  <td><strong>售前用户</strong></td>
+  <td>用 HiCodex 桌面端干活</td>
+  <td>不访问管理后台</td>
+  <td>10-30</td>
+</tr>
+</tbody>
+</table>
+
+<div class="card card-warn">
+  <strong>⚠ 权限边界注意</strong><br/>
+  ① 客户敏感数据（金额、决策人）需要"二级权限"——不是所有 KB 管理员都能看明文，普通管理员看脱敏版<br/>
+  ② SKILL 改动需要"双人确认"——避免单人误改影响线上效果<br/>
+  ③ 所有删除操作软删除（保留 90 天），可恢复
+</div>
+
+<h2 id="architecture">4. 系统架构</h2>
+
+<div class="arch-diagram">
+  <div class="arch-layer">
+    <div class="arch-layer-title">用户层</div>
+    <div class="arch-modules">
+      <div class="arch-mod">售前用户<br/><small>HiCodex 桌面端</small></div>
+      <div class="arch-mod">运营管理员<br/><small>本管理后台 (Web)</small></div>
+      <div class="arch-mod">业务专家<br/><small>审核 / 标注</small></div>
+    </div>
+  </div>
+  <div class="arch-arrow">▼ HTTP / WebSocket</div>
+  <div class="arch-layer">
+    <div class="arch-layer-title">应用层</div>
+    <div class="arch-modules">
+      <div class="arch-mod">管理后台 Web<br/><small>React + 本 PRD</small></div>
+      <div class="arch-mod">HiCodex Sidecar<br/><small>Codex-rs + MCP</small></div>
+    </div>
+  </div>
+  <div class="arch-arrow">▼ REST / GraphQL · MCP stdio</div>
+  <div class="arch-layer">
+    <div class="arch-layer-title">服务层（后端 API + MCP）</div>
+    <div class="arch-modules">
+      <div class="arch-mod">CRM MCP</div>
+      <div class="arch-mod">讲师 MCP</div>
+      <div class="arch-mod">KB MCP</div>
+      <div class="arch-mod">渲染 MCP</div>
+      <div class="arch-mod">安全 MCP</div>
+    </div>
+  </div>
+  <div class="arch-arrow">▼ SQL / Vector / Object Store</div>
+  <div class="arch-layer">
+    <div class="arch-layer-title">数据层</div>
+    <div class="arch-modules">
+      <div class="arch-mod">PostgreSQL<br/><small>元数据</small></div>
+      <div class="arch-mod">Qdrant / pgvector<br/><small>向量索引</small></div>
+      <div class="arch-mod">MinIO / OSS<br/><small>原始文件</small></div>
+      <div class="arch-mod">Redis<br/><small>缓存 / 队列</small></div>
+    </div>
+  </div>
+  <div class="arch-arrow">▼ 外部</div>
+  <div class="arch-layer">
+    <div class="arch-layer-title">集成层</div>
+    <div class="arch-modules">
+      <div class="arch-mod">CRM（销售易等）</div>
+      <div class="arch-mod">讲师后台</div>
+      <div class="arch-mod">钉钉/企微</div>
+      <div class="arch-mod">LLM Provider<br/><small>OpenAI / 国内合规</small></div>
+    </div>
+  </div>
+</div>
+
+<h2 id="modules">5. 功能模块总览</h2>
+
+<table>
+<thead><tr><th>编号</th><th>模块</th><th>核心目的</th><th>优先级</th><th>预估</th></tr></thead>
+<tbody>
+<tr><td>M1</td><td>数据看板</td><td>运营全景 + 告警</td><td><span class="badge badge-p1">P1</span></td><td>1 周</td></tr>
+<tr><td>M2</td><td>知识库管理</td><td>6 个 KB 的 CRUD + 标注</td><td><span class="badge badge-p0">P0</span></td><td>4 周</td></tr>
+<tr><td>M3</td><td>SKILL 管理</td><td>编辑 prompt / 测试 / 版本</td><td><span class="badge badge-p0">P0</span></td><td>2 周</td></tr>
+<tr><td>M4</td><td>文档处理流水线</td><td>批量上传 / 解析 / 审核</td><td><span class="badge badge-p0">P0</span></td><td>3 周</td></tr>
+<tr><td>M5</td><td>系统集成</td><td>CRM / 讲师后台 / LLM 配置</td><td><span class="badge badge-p1">P1</span></td><td>2 周</td></tr>
+<tr><td>M6</td><td>用户与权限</td><td>账号 / 角色 / RBAC</td><td><span class="badge badge-p1">P1</span></td><td>1 周</td></tr>
+<tr><td>M7</td><td>审计日志</td><td>操作 / 调用 / 错误追溯</td><td><span class="badge badge-p2">P2</span></td><td>1 周</td></tr>
+<tr><td>M8</td><td>系统设置</td><td>站点参数 / 主题 / 公告</td><td><span class="badge badge-p3">P3</span></td><td>0.5 周</td></tr>
+</tbody>
+</table>
+
+<p style="color: var(--fg-3); font-size: 12px;">
+预估总工程量：<strong>14.5 人周</strong>（前端 + 后端各算一份，~7 周 2 人并行）。
+</p>
+
+<hr/>
+
+<h2 id="m-dashboard">M1 · 数据看板 <span class="badge badge-p1">P1</span></h2>
+
+<h3>1.1 目的</h3>
+<p>给运营 / 主管一眼看到 <strong>"系统今天健康吗、业务在用吗、有哪些异常需要处理"</strong>。打开后台第一屏。</p>
+
+<h3>1.2 关键指标卡片（顶部 6 个数字）</h3>
+<table>
+<thead><tr><th>指标</th><th>说明</th><th>告警阈值</th></tr></thead>
+<tbody>
+<tr><td>今日 SKILL 调用次数</td><td>所有用户对所有 SKILL 的调用</td><td>&lt; 日均 50%</td></tr>
+<tr><td>今日活跃用户</td><td>当日发起过对话的售前数</td><td>&lt; 50% 注册</td></tr>
+<tr><td>SKILL 错误率</td><td>失败 / 总调用</td><td>&gt; 5%</td></tr>
+<tr><td>待审核文档</td><td>文档库 / 话术库待人工审核数</td><td>&gt; 30</td></tr>
+<tr><td>知识库总条数</td><td>6 KB 累加</td><td>—</td></tr>
+<tr><td>讲师匹配命中率</td><td>近 7 日 AI 推荐 Top 5 业务采纳率</td><td>&lt; 50%</td></tr>
+</tbody>
+</table>
+
+<h3>1.3 图表区（4 个）</h3>
+<ul>
+  <li><strong>近 30 日 SKILL 调用曲线</strong>（按 SKILL 分色叠图）</li>
+  <li><strong>近 30 日活跃用户曲线</strong></li>
+  <li><strong>各 SKILL 错误率排行</strong>（柱状）</li>
+  <li><strong>知识库引用 TOP 10</strong>（被检索次数最多的方案 / 讲师 / 课程）</li>
+</ul>
+
+<h3>1.4 告警面板（右侧）</h3>
+<ul>
+  <li>🔴 系统级：MCP 服务断连、LLM API 失败率突增</li>
+  <li>🟡 数据级：待审超 30 / SKILL 错误率超 5%</li>
+  <li>🔵 业务级：某讲师/方案"近 7 日 0 次引用"（提示数据老化）</li>
+</ul>
+
+<h3>1.5 页面 wireframe</h3>
+<div class="mock">
+  <div class="mock-bar">/dashboard　·　管理员视图</div>
+  <div class="mock-body">
+    <div class="mock-row">
+      <div class="mock-cell">[ 248 调用 ]</div>
+      <div class="mock-cell">[ 12/14 活跃 ]</div>
+      <div class="mock-cell">[ 3.2% 错误 ]</div>
+      <div class="mock-cell">[ 18 待审 ]</div>
+      <div class="mock-cell">[ 1842 KB ]</div>
+      <div class="mock-cell">[ 71% 命中 ]</div>
+    </div>
+    <div class="mock-row" style="margin-top: 16px;">
+      <div class="mock-cell" style="flex: 2;">▣ 30 日调用曲线（叠图：6 SKILL）</div>
+      <div class="mock-cell">🔴 MCP-CRM 连接失败<br/>🟡 待审 18 条<br/>🔵 KB-方案 7 日无引用 12 份</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell">▣ 用户活跃曲线</div>
+      <div class="mock-cell">▣ SKILL 错误排行</div>
+      <div class="mock-cell">▣ KB 引用 TOP 10</div>
+    </div>
+  </div>
+</div>
+
+<hr/>
+
+<h2 id="m-kb">M2 · 知识库管理 <span class="badge badge-p0">P0</span></h2>
+
+<h3>2.1 概述</h3>
+
+<p>6 个知识库共用一套 CRUD + 上传 + 标注框架，差异在元数据 schema 和审核规则。</p>
+
+<table>
+<thead><tr><th>KB</th><th>规模</th><th>主数据源</th><th>是否需要人工审核</th><th>审核难度</th></tr></thead>
+<tbody>
+<tr><td>KB-1 讲师库</td><td>内部 30-50 + 51CTO 2000+</td><td>讲师后台 API + docx 导入 + 51CTO API</td><td>否（API 是权威）</td><td>—</td></tr>
+<tr><td>KB-2 课程库</td><td>100-200 + 51CTO 900+</td><td>xlsx 导入 + 51CTO API</td><td>部分（dimension 标签）</td><td>低</td></tr>
+<tr><td>KB-3 方案库</td><td>100-300（精选）</td><td>pptx/docx 批量上传</td><td><strong>是（必审核）</strong></td><td><strong>高</strong></td></tr>
+<tr><td>KB-4 客户库</td><td>已有 + 持续</td><td>CRM API 同步</td><td>否（CRM 是权威）</td><td>—</td></tr>
+<tr><td>KB-5 话术库</td><td>200-500 段</td><td>业务专家手动录入</td><td>是（法务审）</td><td>中</td></tr>
+<tr><td>KB-6 行业库</td><td>6-10 行业 × 30-50 段</td><td>季度运营整理</td><td>是（数据团队）</td><td>低</td></tr>
+</tbody>
+</table>
+
+<h3>2.2 通用功能（每个 KB 都有）</h3>
+<ul>
+  <li><strong>列表页</strong>：筛选 + 搜索 + 批量操作（导出 / 删除 / 重打标签）</li>
+  <li><strong>详情页</strong>：单条记录 / 元数据 / 内容片段（chunks）/ 引用历史</li>
+  <li><strong>编辑页</strong>：手动编辑元数据 + chunk 内容</li>
+  <li><strong>新增页</strong>：批量上传（M4 流水线）/ 单条录入</li>
+  <li><strong>引用追踪</strong>：这条数据被哪些 SKILL 在何时引用过</li>
+  <li><strong>版本历史</strong>：每次编辑记录 diff + 谁改的</li>
+  <li><strong>下架 / 上架</strong>：临时禁用某条不删除（如"讲师暂停合作"）</li>
+</ul>
+
+<h3>2.3 KB-1 讲师库</h3>
+
+<h4>元数据 schema</h4>
+<pre>{
+  id, name, alias?,             // 真名 / 化名
+  affiliation,                  // 单位
+  title,                        // 职称
+  category: "学院"|"产业"|"hybrid",
+  is_academician: boolean,
+  expertise: string[],           // 能力标签
+  capability_dimensions: string[],
+  price_per_day: number,
+  availability_dates: Date[],   // 不可用日期
+  cooperate_count: int,
+  score: float,                  // 1-5
+  customer_acceptance: { [industry]: avg_score },
+  profile_text,                  // 履历全文
+  source: "internal" | "51cto" | "manual",
+  status: "active" | "paused" | "archived"
+}</pre>
+
+<h4>关键页面</h4>
+<ul>
+  <li><strong>讲师列表</strong>：筛选条 = 类别 / 维度 / 价格区间 / 状态。每行：头像、姓名、类别 chip、维度 tags、价格、评分</li>
+  <li><strong>讲师详情</strong>：左侧基础信息卡 + 右侧 5 个 tab（履历 / 课程 / 客户反馈 / 引用历史 / 编辑日志）</li>
+  <li><strong>同步管理</strong>：手动触发 / 自动 cron 拉讲师后台 + 51CTO；展示上次同步时间、新增 / 更新数</li>
+  <li><strong>能力维度词典管理</strong>：可编辑维度词典 + 重新打标签（背景跑 LLM）</li>
+</ul>
+
+<h3>2.4 KB-2 课程库</h3>
+<h4>元数据 schema</h4>
+<pre>{
+  id, title, direction,
+  dimensions: string[],          // 6 维度
+  duration_days: number,
+  audience: string,              // "研发"/"管理"/"全员"
+  format: string[],              // "集中授课"/"工作坊"/"线上"
+  recommended_instructors: id[],
+  outline_chunks: chunk[],
+  source: "xlsx" | "51cto" | "manual",
+  rating_history: { date, source, rating }[]
+}</pre>
+
+<h3>2.5 KB-3 方案库 ⭐ 最复杂</h3>
+
+<h4>元数据 schema</h4>
+<pre>{
+  id,
+  customer_industry,             // 行业
+  customer_size: "大客户"|"中"|"小",
+  customer_name_masked,          // 脱敏的客户名
+  year,
+  budget_range: { min, max },
+  win_status: "won"|"lost"|"pending"|"unknown",
+  lost_reason?,                  // 丢标原因（重要）
+  instructor_ids: id[],
+  course_ids: id[],
+  capability_dimensions: string[],
+  project_duration_days,
+  source_file_id,                // OSS 文件
+  section_chunks: {
+    background, requirement, curriculum,
+    instructors, schedule_pricing, case_study
+  }
+}</pre>
+
+<h4>关键页面 — 方案审核队列</h4>
+
+<div class="mock">
+  <div class="mock-bar">/kb/solutions/queue　·　业务审核员视图</div>
+  <div class="mock-body">
+    <div class="mock-row">
+      <div class="mock-cell-key">待审 12 / 已审本周 34</div>
+      <div class="mock-cell">[ 筛选: 全部 / 高置信 / 低置信 / 未标 win/lost ]</div>
+      <div class="mock-cell"><span class="mock-btn mock-btn-primary">开始审核</span></div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell">某国央企AI培训方案-2024</div>
+      <div class="mock-cell">行业: 金融 / 规模: 大客户</div>
+      <div class="mock-cell">置信度: 🟡 中（缺 win_status）</div>
+      <div class="mock-cell"><span class="mock-btn">查看</span><span class="mock-btn">审核</span></div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell">某科技公司...方案-2023</div>
+      <div class="mock-cell">行业: 互联网 / 中</div>
+      <div class="mock-cell">置信度: 🟢 高</div>
+      <div class="mock-cell"><span class="mock-btn">确认入库</span></div>
+    </div>
+  </div>
+</div>
+
+<h4>方案审核详情页（点击"审核"打开）</h4>
+<ul>
+  <li><strong>左栏 50%</strong>：方案 PPT 预览 + 分页跳转</li>
+  <li><strong>右栏 50%</strong>：表单逐字段确认
+    <ul>
+      <li>客户行业（下拉，AI 预填）</li>
+      <li>客户规模（下拉）</li>
+      <li>赢/丢标（必填，业务专家最有价值的标注）</li>
+      <li>丢标原因（如选"丢"，必填，30 字以上）</li>
+      <li>讲师 IDs（多选，AI 预填，可改）</li>
+      <li>课程 IDs（多选）</li>
+      <li>能力维度（多选）</li>
+      <li>金额区间（数字）</li>
+    </ul>
+  </li>
+  <li><strong>底部</strong>：通过 / 退回（要补材料）/ 标记不入库</li>
+</ul>
+
+<h3>2.6 KB-4 客户库</h3>
+<p>主要从 CRM 同步，管理后台只提供：</p>
+<ul>
+  <li>查看客户列表 + 详情</li>
+  <li>编辑"客户偏好"字段（CRM 不存的潜规则，业务专家访谈萃取的）</li>
+  <li>同步状态展示</li>
+</ul>
+
+<h3>2.7 KB-5 话术库</h3>
+
+<h4>元数据 schema</h4>
+<pre>{
+  id, text,                     // 50-300 字片段
+  scenario: "讲师介绍"|"课程亮点"|"案例"|"异议回应",
+  customer_type: string[],       // 行业 / 规模
+  tone: "formal"|"story"|"data"|"接地气",
+  target: "instructor"|"course"|"case",
+  approved_by: user_id,
+  legal_reviewed_by?: user_id,
+  last_reviewed_at,
+  status: "draft"|"approved"|"deprecated"
+}</pre>
+
+<h4>关键页面 — 话术审批流</h4>
+<div class="mock">
+  <div class="mock-bar">/kb/templates/{id} · 审批流</div>
+  <div class="mock-body">
+    <div class="mock-row"><div class="mock-cell-key">提交</div><div class="mock-cell">业务录入 → status: draft</div></div>
+    <div class="mock-row"><div class="mock-cell-key">业务复核</div><div class="mock-cell">业务主管确认内容准确 → 进入法务</div></div>
+    <div class="mock-row"><div class="mock-cell-key">法务审核</div><div class="mock-cell">检查夸大词 / 第三方品牌 → approved 或退回</div></div>
+    <div class="mock-row"><div class="mock-cell-key">生效</div><div class="mock-cell">approved 后入向量库，SKILL 可调用</div></div>
+    <div class="mock-row"><div class="mock-cell-key">定期复审</div><div class="mock-cell">超 12 月未引用自动 deprecated</div></div>
+  </div>
+</div>
+
+<h3>2.8 KB-6 行业库</h3>
+<p>简单 CMS 形式：行业 → 主题（趋势/痛点/案例/术语）→ 段落。运营手动维护。</p>
+
+<hr/>
+
+<h2 id="m-skill">M3 · SKILL 管理 <span class="badge badge-p0">P0</span></h2>
+
+<h3>3.1 6 个 SKILL 清单</h3>
+
+<table>
+<thead><tr><th>SKILL</th><th>能力</th><th>调用工具 (MCP)</th><th>优先级</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>opportunity-overview</code></td>
+  <td>新对话启动时拉客户上下文 + 历史</td>
+  <td>crm_api · kb_solutions</td>
+  <td><span class="badge badge-p1">P1</span></td>
+</tr>
+<tr>
+  <td><code>requirement-analysis</code></td>
+  <td>读上传文件 + CRM → 输出需求卡</td>
+  <td>crm_api · kb_solutions · kb_industries</td>
+  <td><span class="badge badge-p0">P0</span></td>
+</tr>
+<tr>
+  <td><code>instructor-matching</code></td>
+  <td>按需求卡推荐讲师 Top 5-10</td>
+  <td>instructor_api · kb_customers</td>
+  <td><span class="badge badge-p0">P0</span></td>
+</tr>
+<tr>
+  <td><code>solution-output</code></td>
+  <td>生成方案大纲 / Word / PPT</td>
+  <td>kb_solutions · renderer_mcp</td>
+  <td><span class="badge badge-p1">P1（依赖模板）</span></td>
+</tr>
+<tr>
+  <td><code>content-packaging</code></td>
+  <td>讲师/课程/案例针对客户包装</td>
+  <td>kb_templates · safety_mcp</td>
+  <td><span class="badge badge-p2">P2</span></td>
+</tr>
+<tr>
+  <td><code>skill-extraction</code></td>
+  <td>用 AI 萃取业务方法论，产出新 SKILL</td>
+  <td>无（纯对话）</td>
+  <td><span class="badge badge-p1">P1（项目自身工具）</span></td>
+</tr>
+</tbody>
+</table>
+
+<h3>3.2 SKILL 编辑器（核心页面）</h3>
+
+<div class="mock">
+  <div class="mock-bar">/skills/requirement-analysis/edit</div>
+  <div class="mock-body">
+    <div class="mock-row">
+      <div class="mock-cell-key">基础信息</div>
+      <div class="mock-cell">name / description / argument-hint / 触发关键词</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell-key">Prompt 编辑器</div>
+      <div class="mock-cell">Markdown 编辑器（左编辑 / 右预览）+ 语法高亮 + Step 折叠</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell-key">工具绑定</div>
+      <div class="mock-cell">勾选可调用的 MCP 工具（多选）</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell-key">变量声明</div>
+      <div class="mock-cell">{{customerId}} {{requirementCard}} 等模板变量</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell-key">测试运行</div>
+      <div class="mock-cell">[ 跑黄金集 ]  [ 单次试调 ]  → 输出结果对比</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell-key">版本</div>
+      <div class="mock-cell">v3 (current) ← v2 ← v1 ｜ diff 对比 ｜ 回滚</div>
+    </div>
+    <div class="mock-row">
+      <div class="mock-cell-key">发布</div>
+      <div class="mock-cell"><span class="mock-btn">保存草稿</span> <span class="mock-btn">提交评审</span> <span class="mock-btn mock-btn-primary">发布上线</span></div>
+    </div>
+  </div>
+</div>
+
+<h3>3.3 评估与黄金集</h3>
+
+<ul>
+  <li><strong>黄金集管理</strong>：每个 SKILL 至少 30 个测试 case（input → 期望 output 关键点）</li>
+  <li><strong>自动回归</strong>：SKILL 每次保存触发黄金集回测，记录通过率</li>
+  <li><strong>错例库</strong>：业务用户标"AI 答错了"会进错例库 → 下版 SKILL 的输入</li>
+  <li><strong>A/B 测试</strong>：v3 vs v4 灰度放量（10% / 30% / 50%），自动对比满意度</li>
+</ul>
+
+<h3>3.4 SKILL 发布流程（双人确认）</h3>
+<pre>编辑 → 保存草稿 → 自跑黄金集 → 提交评审
+  ↓
+评审员 1（业务）：内容方向正确
+  ↓
+评审员 2（技术）：prompt 工程合规
+  ↓
+发布 → 灰度 10% → 看指标 → 全量
+  ↓
+失败 → 自动回滚到上一版</pre>
+
+<hr/>
+
+<h2 id="m-pipeline">M4 · 文档处理流水线 <span class="badge badge-p0">P0</span></h2>
+
+<h3>4.1 流程图</h3>
+<pre>批量上传 → 格式检测 → 解析 → 清洗 → 切 chunks → LLM 抽元数据 → 置信度判定
+                                                                      ↓
+                                              high → 直接入库 ┐
+                                              med → 待审队列  ├→ 业务审核 → 入库
+                                              low → 重传 / 弃 ┘
+                                                                      ↓
+                                                                  向量化 → 索引</pre>
+
+<h3>4.2 关键页面</h3>
+
+<h4>批量上传页</h4>
+<ul>
+  <li>拖拽 / 选文件夹（支持 docx / pptx / pdf / xlsx）</li>
+  <li>目标 KB 选择（讲师 / 课程 / 方案 / 行业）</li>
+  <li>批量进度条 + 当前处理文件名</li>
+  <li>失败列表 + 重试按钮</li>
+</ul>
+
+<h4>处理队列页</h4>
+<table>
+<thead><tr><th>状态</th><th>说明</th><th>操作</th></tr></thead>
+<tbody>
+<tr><td><span class="badge badge-p2">解析中</span></td><td>正在跑 OCR / 解析</td><td>查看 / 取消</td></tr>
+<tr><td><span class="badge badge-p1">待审</span></td><td>等业务人工确认</td><td>跳转审核详情</td></tr>
+<tr><td><span class="badge badge-ok">已入库</span></td><td>完成</td><td>查看详情</td></tr>
+<tr><td><span class="badge badge-p0">失败</span></td><td>解析报错</td><td>查看错误 / 重试</td></tr>
+</tbody>
+</table>
+
+<h4>解析详情页（用于调试）</h4>
+<ul>
+  <li>原始文件预览</li>
+  <li>解析后的纯文本</li>
+  <li>切 chunks 结果（每个 chunk 可单独标记"质量好/差"）</li>
+  <li>LLM 抽元数据结果 + 置信度 + 原文出处</li>
+  <li>"重新跑解析" 按钮（参数调整后再跑一次）</li>
+</ul>
+
+<h3>4.3 批量重跑（重要）</h3>
+<p>场景：维度词典更新了 → 需要对 KB-1 全库重新打 expertise 标签。</p>
+<ul>
+  <li>选择目标 KB + 选择重跑的字段</li>
+  <li>预估时长 + token 成本</li>
+  <li>后台异步跑 + 进度可见</li>
+  <li>对比"旧 vs 新"标签 → 业务人 spot check</li>
+</ul>
+
+<hr/>
+
+<h2 id="m-integration">M5 · 系统集成 <span class="badge badge-p1">P1</span></h2>
+
+<h3>5.1 集成清单</h3>
+
+<table>
+<thead><tr><th>系统</th><th>方向</th><th>关键字段</th><th>同步频率</th></tr></thead>
+<tbody>
+<tr><td>CRM（销售易/纷享销客）</td><td>读 + 偶尔写</td><td>客户 / 机会 / 接触历史 / 附件</td><td>实时（read）+ 定时（write）</td></tr>
+<tr><td>讲师后台</td><td>读为主</td><td>讲师档案 / 档期 / 报价</td><td>每日全量 + 实时增量</td></tr>
+<tr><td>钉钉 / 企微</td><td>写</td><td>任务通知 / 审批</td><td>事件触发</td></tr>
+<tr><td>LLM Provider</td><td>调用</td><td>API key / endpoint / 配额</td><td>实时</td></tr>
+<tr><td>OSS（文件存储）</td><td>读写</td><td>原始文档 / 生成的 docx/pptx</td><td>实时</td></tr>
+</tbody>
+</table>
+
+<h3>5.2 集成配置页</h3>
+<ul>
+  <li>每个集成一张卡片：连接状态 / 上次同步 / 配置项</li>
+  <li>"测试连接" 按钮</li>
+  <li>字段映射表（外部字段 → 本系统字段）</li>
+  <li>同步日志（成功 / 失败 / 错误信息）</li>
+  <li>错误告警（连续 3 次失败发邮件 / 企微）</li>
+</ul>
+
+<h3>5.3 LLM Provider 配置（重点）</h3>
+<ul>
+  <li><strong>多 provider 并存</strong>：OpenAI / Anthropic / 国内合规（智谱 / 通义 / DeepSeek）</li>
+  <li><strong>按 SKILL 分配 provider</strong>：方案输出用强模型，话术包装用便宜模型</li>
+  <li><strong>预算上限 + 告警</strong>：单 SKILL 单日 / 单用户单日</li>
+  <li><strong>失败 fallback</strong>：主 provider 失败自动切备用</li>
+</ul>
+
+<hr/>
+
+<h2 id="m-user">M6 · 用户与权限 <span class="badge badge-p1">P1</span></h2>
+
+<ul>
+  <li>账号 CRUD（含 SSO 集成预留）</li>
+  <li>角色管理（见 §3）</li>
+  <li>权限矩阵：模块 × 操作（查看 / 编辑 / 删除 / 审核 / 发布）</li>
+  <li>用户组（按部门分组批量授权）</li>
+  <li>登录日志 / 失败次数锁定</li>
+</ul>
+
+<hr/>
+
+<h2 id="m-audit">M7 · 审计日志 <span class="badge badge-p2">P2</span></h2>
+
+<h3>记录范围</h3>
+<ul>
+  <li><strong>操作日志</strong>：谁在何时改了什么字段</li>
+  <li><strong>调用日志</strong>：每次 SKILL 调用 / 模型调用 / token 数 / 用时</li>
+  <li><strong>错误日志</strong>：MCP 失败 / LLM 报错 / 解析失败</li>
+  <li><strong>登录日志</strong>：账号 / IP / 设备</li>
+</ul>
+
+<h3>查询能力</h3>
+<ul>
+  <li>按用户 / 模块 / 时间筛选</li>
+  <li>导出 CSV</li>
+  <li>保留 6 个月（合规要求）</li>
+</ul>
+
+<hr/>
+
+<h2 id="m-setting">M8 · 系统设置 <span class="badge badge-p3">P3</span></h2>
+
+<ul>
+  <li>站点名称 / Logo</li>
+  <li>系统公告（弹给所有售前用户）</li>
+  <li>主题色 / 浅色 / 深色</li>
+  <li>备份策略（KB 数据每日备份到 OSS）</li>
+</ul>
+
+<hr/>
+
+<h2 id="info-arch">6. 信息架构 / Sitemap</h2>
+
+<pre>管理后台
+├── /dashboard                    数据看板
+├── /kb                           知识库（6 入口）
+│   ├── /kb/instructors          讲师库
+│   ├── /kb/courses              课程库
+│   ├── /kb/solutions            方案库
+│   │   ├── /list
+│   │   ├── /queue               审核队列
+│   │   └── /{id}/review         审核详情
+│   ├── /kb/customers            客户库（CRM 同步）
+│   ├── /kb/templates            话术库
+│   │   └── /approval            话术审批流
+│   └── /kb/industries           行业库
+├── /skills                      SKILL 管理
+│   ├── /list
+│   ├── /{id}/edit
+│   ├── /{id}/test               黄金集回测
+│   └── /{id}/history            版本历史
+├── /pipeline                    文档处理
+│   ├── /upload                  批量上传
+│   ├── /queue                   处理队列
+│   └── /reprocess               批量重跑
+├── /integration                 系统集成
+│   ├── /crm
+│   ├── /instructors-backend
+│   ├── /dingding-wechat
+│   ├── /llm-providers
+│   └── /storage
+├── /users                       用户权限
+│   ├── /accounts
+│   ├── /roles
+│   └── /permissions
+├── /audit                       审计日志
+│   ├── /operations
+│   ├── /calls
+│   └── /errors
+└── /settings                    系统设置</pre>
+
+<hr/>
+
+<h2 id="nonfunc">7. 非功能需求</h2>
+
+<table>
+<thead><tr><th>类别</th><th>要求</th></tr></thead>
+<tbody>
+<tr><td>性能</td><td>列表页 200ms 内、详情 500ms 内、检索 1s 内</td></tr>
+<tr><td>并发</td><td>支持 30 人同时在线管理后台</td></tr>
+<tr><td>可用性</td><td>核心 SKILL 调用 99% 可用</td></tr>
+<tr><td>数据安全</td><td>客户敏感字段必须加密存储；外发到 LLM 前脱敏</td></tr>
+<tr><td>合规</td><td>所有审计日志保留 6 月；数据出境前提脱敏（如走海外 LLM）</td></tr>
+<tr><td>兼容性</td><td>Chrome / Edge / Safari 最新 2 版</td></tr>
+<tr><td>移动适配</td><td>看板 / 审核基本可用，编辑能力限桌面</td></tr>
+<tr><td>国际化</td><td>预留中英文切换框架（一期只做中文）</td></tr>
+</tbody>
+</table>
+
+<hr/>
+
+<h2 id="milestone">8. 里程碑</h2>
+
+<table>
+<thead><tr><th>阶段</th><th>周期</th><th>交付</th><th>关键里程碑</th></tr></thead>
+<tbody>
+<tr>
+  <td>Phase 0 启动</td><td>第 0-1 周</td>
+  <td>项目共识备忘录、SLA 签字、业务标杆确认</td>
+  <td>主管批准启动</td>
+</tr>
+<tr>
+  <td>Phase 1 萃取 + 基建</td><td>第 1-6 周</td>
+  <td>需求 SKILL v1、讲师 SKILL v1、KB-1/2/4 接通</td>
+  <td>第一次内部 dual run</td>
+</tr>
+<tr>
+  <td>Phase 2 MVP</td><td>第 6-10 周</td>
+  <td>管理后台 M2/M3/M4 上线，开放 3-5 名售前试用</td>
+  <td>10 个真实机会跑通</td>
+</tr>
+<tr>
+  <td>Phase 3 优化 + 扩量</td><td>第 10-16 周</td>
+  <td>M1/M5/M6 上线，开放 10-15 名售前</td>
+  <td>NPS ≥ 80%</td>
+</tr>
+<tr>
+  <td>Phase 4 二阶段</td><td>第 16-24 周</td>
+  <td>方案输出 / 内容包装 / 投标场景</td>
+  <td>全公司售前 + 投标使用</td>
+</tr>
+</tbody>
+</table>
+
+<hr/>
+
+<h2 id="risk">9. 风险登记</h2>
+
+<table>
+<thead><tr><th>风险</th><th>影响</th><th>概率</th><th>缓解</th></tr></thead>
+<tbody>
+<tr>
+  <td>业务专家时间不到位</td>
+  <td><span class="badge badge-p0">高</span> 项目停滞</td>
+  <td>中</td>
+  <td>SLA 写进 KPI；前 2 周建立节奏</td>
+</tr>
+<tr>
+  <td>CRM API 拿不到 / 不开放</td>
+  <td><span class="badge badge-p1">中</span> 客户库只能 mock</td>
+  <td>高</td>
+  <td>Phase 1 用 mock；并行推动 IT 开 API</td>
+</tr>
+<tr>
+  <td>方案库审核工作量超预期</td>
+  <td><span class="badge badge-p1">中</span> 影响 KB-3 上线</td>
+  <td>高</td>
+  <td>先做 100 份精选；后续按需扩</td>
+</tr>
+<tr>
+  <td>合规禁止数据出境</td>
+  <td><span class="badge badge-p0">高</span> 不能用 OpenAI</td>
+  <td>高</td>
+  <td>双 provider 架构；国内合规模型保底</td>
+</tr>
+<tr>
+  <td>SKILL 输出质量不达预期</td>
+  <td><span class="badge badge-p1">中</span> 业务弃用</td>
+  <td>中</td>
+  <td>评估体系 + 黄金集 + 错例迭代</td>
+</tr>
+<tr>
+  <td>讲师数据敏感（真名问题）</td>
+  <td><span class="badge badge-p1">中</span> 法务卡上线</td>
+  <td>中</td>
+  <td>真名 / 化名映射 + 权限分级</td>
+</tr>
+<tr>
+  <td>预算超支（LLM token 费用）</td>
+  <td><span class="badge badge-p2">低</span> 但要监控</td>
+  <td>低</td>
+  <td>预算上限 + 模型分层 + 缓存</td>
+</tr>
+</tbody>
+</table>
+
+<hr/>
+
+<h2 id="open">10. 遗留问题（待业务 / 决策方确认）</h2>
+
+<ol>
+  <li>CRM 具体是哪个产品（销售易 / 纷享销客 / 自建）？API 文档何时给？</li>
+  <li>方案库初始入库的 100-300 份方案，谁来挑？挑的标准？</li>
+  <li>讲师"真名 / 化名"映射策略 — 法务是否能给硬性规则？</li>
+  <li>LLM provider 选型 — 海外 / 国内合规？预算上限多少？</li>
+  <li>钉钉 / 企微集成 — 必要吗？哪些通知必须发？</li>
+  <li>方案 Word/PPT 输出 — 一期做还是放二期？品牌团队何时给模板？</li>
+  <li>用户认证方式 — 公司 SSO？账号密码？</li>
+  <li>部署形态 — 公司内网 / VPC / SaaS？</li>
+  <li>预算上限 — 第一阶段（8 周）人力 / 服务器 / LLM 预算分别是？</li>
+  <li>谁担任"产品评审委员会"成员 — 每两周开一次评审会的人选？</li>
+</ol>
+
+<footer class="doc-footer">
+  <p>
+    本文档为 v0.1 草案。下一步：<strong>业务主管 / IT / 法务 review 后定 v1.0</strong>，作为开发依据。
+  </p>
+  <p>修订记录：v0.1 创建（2026-05-14） · 待评审</p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>

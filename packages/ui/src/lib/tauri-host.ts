@@ -21,11 +21,19 @@ export interface AppServerStartConfig {
 
 export interface LocalModelCatalogConfig {
   model: string;
+  models?: string[] | null;
   displayName?: string | null;
   description?: string | null;
   contextWindow?: number | null;
   autoCompactTokenLimit?: number | null;
   inputModalities?: Array<"text" | "image"> | null;
+}
+
+export interface CodexAuthSummary {
+  hasAuthFile: boolean;
+  authMode?: string | null;
+  hasApiKey: boolean;
+  hasTokens: boolean;
 }
 
 export interface ThreadToolHistory {
@@ -70,6 +78,12 @@ export function writeLocalModelCatalog(
   config: LocalModelCatalogConfig,
 ): Promise<string> {
   return invoke("host_write_local_model_catalog", { codexHome, config });
+}
+
+export function readCodexAuthSummary(
+  codexHome: string | null | undefined,
+): Promise<CodexAuthSummary> {
+  return invoke("host_read_codex_auth_summary", { codexHome });
 }
 
 export function openFileReference(path: string, line?: number | null): Promise<void> {
