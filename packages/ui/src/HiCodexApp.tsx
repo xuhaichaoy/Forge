@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
@@ -13,6 +13,8 @@ import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import { McpToolCallForm } from "./components/mcp-tool-call-form";
+import { McpServerConfigForm } from "./components/mcp-server-config-form";
+import { McpFollowUpDialog, type McpFollowUpDialogOption } from "./components/mcp-follow-up-dialog";
 import { SettingsPanel } from "./components/model-settings-panel";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
@@ -42,6 +44,7 @@ import { useArtifactPreviewActions } from "./hooks/use-artifact-preview-actions"
 import { useFilePreviewPanelLayout } from "./hooks/use-file-preview-panel-layout";
 import {
   useCommandPanelActions,
+  type McpServerFormAction,
   type McpToolFormAction,
 } from "./hooks/use-command-panel-actions";
 import { useBackgroundAgentPanel } from "./hooks/use-background-agent-panel";
@@ -77,6 +80,7 @@ import {
 import type { FileReferenceSelection } from "./state/file-references";
 import {
   applySlashCommand,
+  buildUserInputFromComposer,
   composerAttachmentsFromPaths,
   composerPlaceholderText,
   projectComposerSubmitState,
@@ -113,12 +117,16 @@ import {
 } from "./state/render-groups";
 import {
   MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR,
+  MCP_APP_BRIDGE_INTERNAL_ERROR,
   MCP_APP_BRIDGE_INVALID_PARAMS,
   MCP_APP_BRIDGE_METHOD_NOT_FOUND,
   downloadMcpAppFile,
   mcpAppBridgeError,
+  mcpAppBridgeUserCancelledError,
   mcpAppExternalHref,
   mcpAppFileDownloadRequest,
+  mcpAppFollowUpMessageRequest,
+  mcpAppFollowUpSource,
   mcpAppResourceTemplatesListResponse,
   mcpAppResourcesListResponse,
   mcpAppMcpProxyRequest,
@@ -128,6 +136,7 @@ import {
   mcpAppToolsListResponse,
   mcpServerStatusFromListResult,
 } from "./state/mcp-app-host";
+import { loadAllApps } from "./state/app-list";
 import {
   deriveActivePendingRequests,
   summarizePendingRequestAwaitingByThread,
@@ -146,6 +155,7 @@ import {
   threadGitBranch,
 } from "./state/app-shell-helpers";
 import {
+  loadMcpManagementEntries,
   loadSettingsPanelContent,
 } from "./state/settings-panel-loader";
 import {
@@ -157,7 +167,14 @@ import {
 } from "./state/right-rail";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import {
+  createAndSelectThreadForTurn,
   refreshThreads,
+  refreshThreadMetadata,
+  dispatchOptimisticUserMessage,
+  dropOptimisticUserMessage,
+  interruptThreadTurn,
+  sendPanelThreadMessage,
+  startSideConversation,
   refreshThreadContextDefaults,
   threadTitle,
   type TurnStartOptions,
@@ -185,6 +202,26 @@ function hostFromBaseUrl(value: string | null | undefined, fallback: string): st
   }
 }
 
+const BACKGROUND_AGENT_PANEL_WIDTH_PX = 520;
+const BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX = 320;
+const BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX = 48;
+
+function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
+  if (containerWidthPx <= 0) return BACKGROUND_AGENT_PANEL_WIDTH_PX;
+  return Math.max(
+    BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX,
+    Math.min(BACKGROUND_AGENT_PANEL_WIDTH_PX, containerWidthPx - BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX),
+  );
+}
+
+interface McpFollowUpDialogRequest {
+  prompt: string;
+  request: McpAppHostCallRequest;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+  source: ReturnType<typeof mcpAppFollowUpSource>;
+}
+
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
   const [input, setInput] = useState("");
@@ -207,6 +244,8 @@ export function HiCodexApp() {
     error: string | null;
   } | null>(null);
   const pendingUpdateRef = useRef<unknown>(null);
+  const mcpFollowUpDialogPendingRef = useRef(false);
+  const openSideConversationPanelRef = useRef<((thread: Thread) => void) | null>(null);
   /*
    * User-overridden model selection for new chats. Persisted to localStorage
    * under `hicodex.selectedModelKey`. When non-null, applied to ThreadStart /
@@ -249,7 +288,9 @@ export function HiCodexApp() {
   const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
   const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
+  const [mcpServerForm, setMcpServerForm] = useState<McpServerFormAction | null>(null);
   const [mcpToolForm, setMcpToolForm] = useState<McpToolFormAction | null>(null);
+  const [mcpFollowUpDialog, setMcpFollowUpDialog] = useState<McpFollowUpDialogRequest | null>(null);
   const [mcpServerStatuses, setMcpServerStatuses] = useState<unknown>(null);
   const [mcpServerStatusNonce, setMcpServerStatusNonce] = useState(0);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
@@ -272,6 +313,7 @@ export function HiCodexApp() {
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
   const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
+  const mcpStartupStatusPanelHandledRef = useRef(0);
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
   const workspaceInitialized = useRef(false);
   const threadScrollOffsetsRef = useRef(new Map<string, number>());
@@ -438,20 +480,7 @@ export function HiCodexApp() {
     }),
     [activeDiff, activeThread],
   );
-  const rightRailSections = useMemo(
-    () => projectRightRailSections({
-      progress: conversation.progress,
-      branchDetails,
-      artifacts: conversation.artifacts,
-      backgroundAgents: conversation.backgroundAgents,
-      backgroundTerminals: conversation.backgroundTerminals,
-      sources: conversation.sources,
-    }),
-    [branchDetails, conversation],
-  );
   const hasFilePreviewSelection = artifactPreview !== null || fileReference !== null;
-  const showRightRail = rightRailSections.length > 0 && rightRailShouldRender(mainWidth);
-  const rightRailMode = rightRailDisplayMode(mainWidth);
   /*
    * Codex Desktop opens file/artifact previews into the AppShell RightPanel
    * (`app-shell.formatted.js:518` `vn`), not into the summary rail. Drag <
@@ -462,18 +491,6 @@ export function HiCodexApp() {
     setArtifactPreview(null);
     setFileReference(null);
   }, [setArtifactPreview, setFileReference]);
-  const filePreviewPanelLayout = useFilePreviewPanelLayout({
-    containerWidthPx: mainWidth,
-    onShouldClose: closeFilePreviewPanel,
-  });
-  const filePreviewPanelEffectiveWidthPx = hasFilePreviewSelection && !filePreviewPanelLayout.fullWidth
-    ? filePreviewPanelLayout.widthPx
-    : 0;
-  // Reserve the conversation's right edge for the side-sized file preview.
-  // In full-width mode the panel covers the thread instead of pushing it.
-  const threadInlineEndInset = hasFilePreviewSelection
-    ? Math.round(filePreviewPanelEffectiveWidthPx)
-    : rightRailReservedInlineEndPx(mainWidth, showRightRail);
   const composerSubmitState = useMemo(() => projectComposerSubmitState({
     input,
     attachmentCount: composerAttachments.length,
@@ -634,6 +651,25 @@ export function HiCodexApp() {
     return connect();
   }, [connect, state.connected]);
 
+  /*
+   * Effective ThreadContextDefaults for thread/start + thread/fork calls.
+   * If the user picked a (provider, model) pair in the UI picker, override
+   * the config.toml default's model + modelProvider. Otherwise pass through
+   * unchanged.
+   *
+   * `selectedModelKey` here stores `${providerId}::${modelSlug}` —
+   * see DEFAULT_PROVIDERS + encodeSelection in model-picker-menu.tsx.
+   */
+  const effectiveThreadContextDefaults = useMemo(() => {
+    const picked = decodeSelection(selectedModelKey);
+    if (!picked) return state.threadContextDefaults;
+    return {
+      ...(state.threadContextDefaults ?? {}),
+      model: picked.model,
+      modelProvider: picked.providerId,
+    };
+  }, [selectedModelKey, state.threadContextDefaults]);
+
   const readMcpResource = useCallback(async ({ server, threadId, uri }: McpResourceReadRequest) => {
     if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
     return client.request<unknown>("mcpServer/resource/read", {
@@ -674,7 +710,166 @@ export function HiCodexApp() {
     }, 120_000);
   }, [client, ensureConnected, loadMcpServerStatus, state.activeThreadId]);
 
+  const sendMcpAppFollowUpMessage = useCallback(async (
+    request: McpAppHostCallRequest,
+    prompt: string,
+    option?: McpFollowUpDialogOption,
+  ) => {
+    const content = buildUserInputFromComposer(prompt);
+    if (content.length === 0) throw mcpAppBridgeError("Invalid follow-up message.", MCP_APP_BRIDGE_INVALID_PARAMS);
+    const target = option?.id ?? "current-thread";
+    if (target === "local" || target === "worktree") {
+      throw mcpAppBridgeError(
+        `MCP app follow-up target is disabled: ${option?.label ?? target}.`,
+        MCP_APP_BRIDGE_INVALID_PARAMS,
+      );
+    }
+    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
+
+    const sourceThreadId = request.threadId ?? state.activeThreadId;
+    const sourceThread = sourceThreadId
+      ? state.threads.find((candidate) => candidate.id === sourceThreadId) ?? null
+      : null;
+    const sourceWorkspace = sourceThread?.cwd || workspace.trim() || state.hostStatus?.defaultCwd || "";
+
+    if (target === "new-thread") {
+      const threadId = await createAndSelectThreadForTurn(
+        client,
+        sourceWorkspace,
+        dispatch,
+        effectiveThreadContextDefaults,
+      );
+      if (!threadId) throw mcpAppBridgeError("Unable to create a follow-up thread.");
+      let optimistic: ReturnType<typeof dispatchOptimisticUserMessage> | null = null;
+      try {
+        optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
+        await sendPanelThreadMessage(client, threadId, content, sourceWorkspace, effectiveThreadContextDefaults, null);
+        await refreshThreadMetadata(client, threadId, dispatch);
+        dispatch({ type: "log", text: "Sent MCP app follow-up message in a new thread.", level: "info" });
+        return {};
+      } catch (error) {
+        if (optimistic) dropOptimisticUserMessage(dispatch, optimistic);
+        throw error;
+      }
+    }
+
+    if (target === "new-side-chat") {
+      if (!sourceThreadId) throw mcpAppBridgeError("Select or start a thread before opening an MCP app side chat.");
+      const result = await startSideConversation(
+        client,
+        sourceThreadId,
+        sourceWorkspace,
+        effectiveThreadContextDefaults,
+        prompt,
+      );
+      const sideThread = result.thread;
+      openSideConversationPanelRef.current?.(sideThread);
+      let optimistic: ReturnType<typeof dispatchOptimisticUserMessage> | null = null;
+      try {
+        optimistic = dispatchOptimisticUserMessage(dispatch, sideThread.id, content, null);
+        await sendPanelThreadMessage(
+          client,
+          sideThread.id,
+          content,
+          sideThread.cwd || sourceWorkspace,
+          effectiveThreadContextDefaults,
+          null,
+        );
+        await refreshThreadMetadata(client, sideThread.id, dispatch);
+        dispatch({ type: "log", text: "Sent MCP app follow-up message in a new side chat.", level: "info" });
+        return {};
+      } catch (error) {
+        if (optimistic) dropOptimisticUserMessage(dispatch, optimistic);
+        throw error;
+      }
+    }
+
+    const threadId = sourceThreadId;
+    if (!threadId) throw mcpAppBridgeError("Select or start a thread before sending an MCP app follow-up.");
+    const thread = state.threads.find((candidate) => candidate.id === threadId) ?? null;
+    const runtime = state.threadsRuntime[threadId] ?? null;
+    const targetActiveTurnId = runtime?.activeTurnId ?? null;
+    const targetRunning = Boolean(targetActiveTurnId) || isThreadStatusInProgress(thread?.status);
+    if (targetRunning && !targetActiveTurnId) {
+      throw mcpAppBridgeError(
+        "Waiting for the active turn before steering this thread.",
+        MCP_APP_BRIDGE_INTERNAL_ERROR,
+      );
+    }
+
+    let optimistic: ReturnType<typeof dispatchOptimisticUserMessage> | null = null;
+    try {
+      optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content, targetActiveTurnId);
+      await sendPanelThreadMessage(
+        client,
+        threadId,
+        content,
+        thread?.cwd || workspace.trim() || state.hostStatus?.defaultCwd || "",
+        effectiveThreadContextDefaults,
+        targetActiveTurnId,
+      );
+      if (!targetActiveTurnId) await refreshThreadMetadata(client, threadId, dispatch);
+      dispatch({ type: "log", text: "Sent MCP app follow-up message.", level: "info" });
+      return {};
+    } catch (error) {
+      if (optimistic) dropOptimisticUserMessage(dispatch, optimistic);
+      throw error;
+    }
+  }, [
+    client,
+    dispatch,
+    effectiveThreadContextDefaults,
+    ensureConnected,
+    state.activeThreadId,
+    state.hostStatus?.defaultCwd,
+    state.threads,
+    state.threadsRuntime,
+    workspace,
+  ]);
+
+  const requestMcpAppFollowUpMessage = useCallback((
+    request: McpAppHostCallRequest,
+    prompt: string,
+  ) => {
+    if (mcpFollowUpDialogPendingRef.current) {
+      throw mcpAppBridgeError(
+        "A follow-up message is already awaiting confirmation.",
+        MCP_APP_BRIDGE_INTERNAL_ERROR,
+      );
+    }
+    mcpFollowUpDialogPendingRef.current = true;
+    return new Promise((resolve, reject) => {
+      setMcpFollowUpDialog({ prompt, request, resolve, reject, source: mcpAppFollowUpSource(request) });
+    });
+  }, []);
+
+  const closeMcpFollowUpDialog = useCallback(() => {
+    const pending = mcpFollowUpDialog;
+    setMcpFollowUpDialog(null);
+    mcpFollowUpDialogPendingRef.current = false;
+    pending?.reject(mcpAppBridgeUserCancelledError());
+  }, [mcpFollowUpDialog]);
+
+  const confirmMcpFollowUpDialog = useCallback(async (prompt: string, option: McpFollowUpDialogOption) => {
+    const pending = mcpFollowUpDialog;
+    if (!pending) return;
+    setMcpFollowUpDialog(null);
+    mcpFollowUpDialogPendingRef.current = false;
+    try {
+      const result = await sendMcpAppFollowUpMessage(pending.request, prompt, option);
+      pending.resolve(result);
+    } catch (error) {
+      pending.reject(error);
+      dispatch({ type: "log", text: `MCP app follow-up failed: ${formatError(error)}`, level: "error" });
+    }
+  }, [dispatch, mcpFollowUpDialog, sendMcpAppFollowUpMessage]);
+
   const handleMcpAppHostCall = useCallback(async (request: McpAppHostCallRequest): Promise<unknown> => {
+    if (request.method === "sendFollowUpMessage") {
+      const followUp = mcpAppFollowUpMessageRequest(request.args[0]);
+      if (!followUp) throw mcpAppBridgeError("Invalid follow-up message.", MCP_APP_BRIDGE_INVALID_PARAMS);
+      return requestMcpAppFollowUpMessage(request, followUp.prompt);
+    }
     if (request.method === "openExternal") {
       const href = mcpAppExternalHref(request.args[0]);
       if (!href) return {};
@@ -732,31 +927,12 @@ export function HiCodexApp() {
           MCP_APP_BRIDGE_METHOD_NOT_FOUND,
         );
     }
-  }, [callMcpAppTool, loadMcpServerStatus, readMcpResource]);
+  }, [callMcpAppTool, loadMcpServerStatus, readMcpResource, requestMcpAppFollowUpMessage]);
 
   const collaborationModesForComposerMode = useCallback(async (mode: ComposerMode): Promise<CollaborationModeMask[]> => {
     if (mode !== "plan" || hasCollaborationModePreset(collaborationModes, "plan")) return collaborationModes;
     return loadCollaborationModes();
   }, [collaborationModes, loadCollaborationModes]);
-
-  /*
-   * Effective ThreadContextDefaults for thread/start + thread/fork calls.
-   * If the user picked a (provider, model) pair in the UI picker, override
-   * the config.toml default's model + modelProvider. Otherwise pass through
-   * unchanged.
-   *
-   * `selectedModelKey` here stores `${providerId}::${modelSlug}` —
-   * see DEFAULT_PROVIDERS + encodeSelection in model-picker-menu.tsx.
-   */
-  const effectiveThreadContextDefaults = useMemo(() => {
-    const picked = decodeSelection(selectedModelKey);
-    if (!picked) return state.threadContextDefaults;
-    return {
-      ...(state.threadContextDefaults ?? {}),
-      model: picked.model,
-      modelProvider: picked.providerId,
-    };
-  }, [selectedModelKey, state.threadContextDefaults]);
 
   const modelPickerProviders = useMemo(() => {
     const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
@@ -878,28 +1054,78 @@ export function HiCodexApp() {
 
   const {
     backgroundAgentConversation,
+    backgroundAgentCanInterrupt,
+    backgroundAgentInterrupting,
+    backgroundAgentMessageDraft,
+    backgroundAgentMessageError,
+    backgroundAgentMessageSending,
     backgroundAgentPanel,
     backgroundAgentStatus,
     backgroundAgentSubtitle,
     backgroundAgentTitle,
     closeBackgroundAgentPanel,
+    interruptBackgroundAgentPanelTurn,
     openBackgroundAgentThread,
     openSideChatFromThread,
     openSideConversationPanel,
+    sendBackgroundAgentPanelMessage,
+    sideChatRailEntries,
+    setBackgroundAgentMessageDraft,
   } = useBackgroundAgentPanel({
     client,
     dispatch,
     ensureConnected,
     hostDefaultCwd: state.hostStatus?.defaultCwd,
+    activeThreadId: state.activeThreadId,
     threadContextDefaults: effectiveThreadContextDefaults,
     threads: state.threads,
     threadsRuntime: state.threadsRuntime,
     workspace,
   });
+  openSideConversationPanelRef.current = openSideConversationPanel;
   const composerPlaceholder = composerPlaceholderText({
     hasConversation: conversation.units.length > 0,
     hasBackgroundAgentsPanel: backgroundAgentPanel != null,
   });
+  const rightRailSections = useMemo(
+    () => projectRightRailSections({
+      progress: conversation.progress,
+      branchDetails,
+      artifacts: conversation.artifacts,
+      sideChats: sideChatRailEntries,
+      backgroundAgents: conversation.backgroundAgents,
+      backgroundTerminals: conversation.backgroundTerminals,
+      sources: conversation.sources,
+    }),
+    [branchDetails, conversation, sideChatRailEntries],
+  );
+  const filePreviewPanelLayout = useFilePreviewPanelLayout({
+    containerWidthPx: mainWidth,
+    onShouldClose: closeFilePreviewPanel,
+  });
+  const filePreviewPanelEffectiveWidthPx = hasFilePreviewSelection && !filePreviewPanelLayout.fullWidth
+    ? filePreviewPanelLayout.widthPx
+    : 0;
+  const backgroundAgentPanelEffectiveWidthPx = backgroundAgentPanel
+    ? backgroundAgentPanelWidthPx(mainWidth)
+    : 0;
+  const sidePanelRailOffsetPx = hasFilePreviewSelection
+    ? (filePreviewPanelLayout.fullWidth ? mainWidth : filePreviewPanelEffectiveWidthPx)
+    : backgroundAgentPanelEffectiveWidthPx;
+  const rightRailLayoutWidthPx = Math.max(0, mainWidth - sidePanelRailOffsetPx);
+  const showRightRail = rightRailSections.length > 0 && rightRailShouldRender(rightRailLayoutWidthPx);
+  const rightRailMode = rightRailDisplayMode(rightRailLayoutWidthPx);
+  const mainLayoutStyle = {
+    "--hc-right-panel-offset": `${Math.round(sidePanelRailOffsetPx)}px`,
+  } as CSSProperties;
+  // Reserve the conversation's right edge for side panels plus the summary rail.
+  // Full-width file preview covers the thread instead of pushing it.
+  const threadInlineEndInset = (hasFilePreviewSelection && filePreviewPanelLayout.fullWidth)
+    ? 0
+    : Math.round(
+      (hasFilePreviewSelection ? filePreviewPanelEffectiveWidthPx : backgroundAgentPanelEffectiveWidthPx)
+      + rightRailReservedInlineEndPx(rightRailLayoutWidthPx, showRightRail),
+    );
 
   const selectThreadById = useCallback((threadId: string) => {
     const thread = state.threads.find((candidate) => candidate.id === threadId);
@@ -984,6 +1210,64 @@ export function HiCodexApp() {
     skillsChangedNonce,
     workspace,
   });
+
+  useEffect(() => {
+    if (mcpServerStatusNonce === 0 || activeSettingsPanel !== "mcp") return;
+    if (mcpStartupStatusPanelHandledRef.current === mcpServerStatusNonce) return;
+    mcpStartupStatusPanelHandledRef.current = mcpServerStatusNonce;
+    let disposed = false;
+    setSettingsPanelState((current) => current?.panel === "mcp"
+      ? { ...current, status: "loading", message: "MCP startup status changed. Refreshing..." }
+      : current);
+
+    async function refreshOpenMcpPanel() {
+      if (!(await ensureConnected())) {
+        if (!disposed) {
+          setSettingsPanelState((current) => current?.panel === "mcp"
+            ? { ...current, status: "error", error: "Runtime is offline." }
+            : current);
+        }
+        return;
+      }
+      try {
+        const entries = await loadMcpManagementEntries({
+          client,
+          forceReload: false,
+          startupStatuses: state.mcpServerStartupStatuses,
+        });
+        if (disposed) return;
+        setSettingsPanelState((current) => current?.panel === "mcp"
+          ? {
+              ...current,
+              status: "ready",
+              message: "MCP startup status updated.",
+              entries,
+            }
+          : current);
+      } catch (error) {
+        if (!disposed) {
+          setSettingsPanelState((current) => current?.panel === "mcp"
+            ? {
+                ...current,
+                status: "error",
+                error: formatError(error),
+              }
+            : current);
+        }
+      }
+    }
+
+    void refreshOpenMcpPanel();
+    return () => {
+      disposed = true;
+    };
+  }, [
+    activeSettingsPanel,
+    client,
+    ensureConnected,
+    mcpServerStatusNonce,
+    state.mcpServerStartupStatuses,
+  ]);
 
   const setActiveComposerMode = useCallback((mode: ComposerMode) => {
     dispatch({ type: "setActiveComposerMode", mode });
@@ -1317,10 +1601,7 @@ export function HiCodexApp() {
         cwds: cwd ? [cwd] : [],
         forceReload: false,
       }),
-      client.request<unknown>("app/list", {
-        limit: 50,
-        threadId: state.activeThreadId,
-      }),
+      loadAllApps(client, { threadId: state.activeThreadId }),
       client.request<unknown>("plugin/list", {
         cwds: cwd ? [cwd] : null,
       }),
@@ -1334,7 +1615,13 @@ export function HiCodexApp() {
     return dedupeComposerMentionOptions([
       ...(skillResult.status === "fulfilled" ? mentionOptionsFromSkillsResponse(skillResult.value, query) : []),
       ...(appResult.status === "fulfilled" ? mentionOptionsFromAppsResponse(appResult.value, query) : []),
-      ...(pluginResult.status === "fulfilled" ? mentionOptionsFromPluginsResponse(pluginResult.value, query) : []),
+      ...(pluginResult.status === "fulfilled"
+        ? mentionOptionsFromPluginsResponse(
+            pluginResult.value,
+            query,
+            appResult.status === "fulfilled" ? appResult.value : undefined,
+          )
+        : []),
       ...(fileResult.status === "fulfilled" ? mentionOptionsFromFuzzyFiles(fileResult.value.files ?? []) : []),
     ]).slice(0, 25);
   }, [client, ensureConnected, state.activeThreadId, workspace]);
@@ -1351,6 +1638,7 @@ export function HiCodexApp() {
     callMcpToolFromPanel,
     selectCommandPanelAction,
     selectCommandPanelEntry,
+    writeMcpServerConfigFromPanel,
   } = useCommandPanelActions({
     activeThreadId: state.activeThreadId,
     activeTurnId,
@@ -1362,6 +1650,7 @@ export function HiCodexApp() {
     setCommandPanel,
     setComposerAttachments,
     setInput,
+    setMcpServerForm,
     setMcpToolForm,
     selectThreadById,
     workspace,
@@ -1370,10 +1659,7 @@ export function HiCodexApp() {
   const interruptActiveTurn = useCallback(async () => {
     if (!state.activeThreadId || !activeTurnId) return;
     try {
-      await client.request("turn/interrupt", {
-        threadId: state.activeThreadId,
-        turnId: activeTurnId,
-      }, 120_000);
+      await interruptThreadTurn(client, state.activeThreadId, activeTurnId);
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
     }
@@ -1484,6 +1770,7 @@ export function HiCodexApp() {
         className="hc-main"
         data-right-rail-mode={showRightRail ? rightRailMode : undefined}
         ref={mainRef}
+        style={mainLayoutStyle}
       >
         <ConversationChrome
           title={activeThread ? threadTitle(activeThread, state.threadsRuntime[activeThread.id]?.items ?? null) : "Codex conversation"}
@@ -1592,19 +1879,27 @@ export function HiCodexApp() {
 
         {backgroundAgentPanel && (
           <BackgroundAgentPanel
+            canInterrupt={backgroundAgentCanInterrupt}
             error={backgroundAgentPanel.error}
+            interrupting={backgroundAgentInterrupting}
             kind={backgroundAgentPanel.kind}
             loading={backgroundAgentPanel.loading}
             status={backgroundAgentStatus}
+            messageDraft={backgroundAgentMessageDraft}
+            messageError={backgroundAgentMessageError}
+            messageSending={backgroundAgentMessageSending}
             subtitle={backgroundAgentSubtitle}
             threadId={backgroundAgentPanel.threadId}
             title={backgroundAgentTitle}
             units={backgroundAgentConversation.units}
             onClose={closeBackgroundAgentPanel}
+            onInterrupt={interruptBackgroundAgentPanelTurn}
+            onMessageDraftChange={setBackgroundAgentMessageDraft}
             onMcpAppHostCall={handleMcpAppHostCall}
             onOpenFileReference={previewConversationFileReference}
             onOpenThreadId={openBackgroundAgentThread}
             onReadMcpResource={readMcpResource}
+            onSendMessage={sendBackgroundAgentPanelMessage}
           />
         )}
 
@@ -1701,12 +1996,36 @@ export function HiCodexApp() {
         />
       )}
 
+      {mcpServerForm && (
+        <McpServerConfigForm
+          action={mcpServerForm}
+          onClose={() => setMcpServerForm(null)}
+          onSubmit={(name, config) => {
+            const formAction = mcpServerForm;
+            setMcpServerForm(null);
+            void writeMcpServerConfigFromPanel({
+              type: "writeMcpServerConfig",
+              title: formAction.mode === "edit" ? `Save ${name}` : "Add MCP server",
+              name,
+              config,
+            }, openSettingsPanelContent);
+          }}
+        />
+      )}
+
       {threadActionDialog && (
         <ThreadActionDialog
           action={threadActionDialog}
           onClose={closeThreadActionDialog}
           onRename={renameSelectedThread}
           onArchive={archiveSelectedThread}
+        />
+      )}
+      {mcpFollowUpDialog && (
+        <McpFollowUpDialog
+          request={{ prompt: mcpFollowUpDialog.prompt, source: mcpFollowUpDialog.source }}
+          onClose={closeMcpFollowUpDialog}
+          onSend={confirmMcpFollowUpDialog}
         />
       )}
       {modelPickerAnchor && (

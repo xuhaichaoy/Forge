@@ -94,7 +94,7 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
       const questions = mcpElicitationQuestions(params);
       return {
         title: "MCP request",
-        body: stringField(params, "message") || stringField(params, "title") || formatUnknown(params),
+        body: mcpElicitationBody(params),
         metadata: mcpElicitationMetadata(params),
         questions,
         acceptLabel: questions.length > 0 ? "Submit" : "Allow",
@@ -118,17 +118,15 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
       };
     case "item/tool/call":
       return {
-        title: "Tool call",
-        body: [
-          "HiCodex does not implement dynamic client-side tool execution yet.",
-          formatUnknown(params?.arguments ?? params),
-        ].join("\n"),
-        metadata: requestMetadata(params, ["namespace", "tool", "callId", "threadId", "turnId"]),
+        title: "App tool request",
+        reason: "Dynamic client-side tool execution is not implemented.",
+        body: toolCallRequestBody(params),
+        metadata: toolCallRequestMetadata(params),
         questions: [],
         acceptLabel: "Unsupported",
         declineLabel: "Cancel",
         canAccept: false,
-        acceptDisabledReason: "Dynamic tool execution requires a typed tool response.",
+        acceptDisabledReason: "HiCodex can show this app-server request but cannot execute dynamic app tools from the UI shell yet.",
       };
     case "account/chatgptAuthTokens/refresh":
       return {
@@ -611,6 +609,10 @@ function mcpDefaultAnswers(record: Record<string, unknown>): string[] {
   return [String(value)];
 }
 
+function mcpElicitationBody(params: unknown): string {
+  return stringField(params, "message") || stringField(params, "title") || formatUnknown(params);
+}
+
 function buildMcpElicitationContent(
   request: PendingServerRequest,
   answers: Record<string, string[]>,
@@ -728,17 +730,83 @@ function fileSystemEntrySummary(value: unknown): { access: "read" | "write"; tar
 function mcpElicitationMetadata(params: unknown): PendingRequestMetadata[] {
   const metadata = requestMetadata(params, ["serverName", "mode", "url", "elicitationId", "threadId", "turnId"]);
   const labels: Record<string, string> = {
-    serverName: "Server",
+    serverName: "MCP server",
     mode: "Mode",
     url: "URL",
     elicitationId: "Request",
     threadId: "Thread",
     turnId: "Turn",
   };
-  return metadata.map((item) => ({
-    label: labels[item.label] ?? item.label,
-    value: item.value,
-  }));
+  return [
+    { label: "Kind", value: "MCP request" },
+    ...metadata.map((item) => ({
+      label: labels[item.label] ?? item.label,
+      value: item.value,
+    })),
+    ...mcpElicitationMetaMetadata(params),
+  ];
+}
+
+function mcpElicitationMetaMetadata(params: unknown): PendingRequestMetadata[] {
+  const meta = objectRecord(objectRecord(params)?._meta);
+  if (!meta) return [];
+  const rows: PendingRequestMetadata[] = [];
+  const approvalKind = stringField(meta, "codex_approval_kind");
+  if (approvalKind) {
+    rows.push({ label: "Approval", value: mcpApprovalKindLabel(approvalKind) });
+  }
+  const connector = stringField(meta, "connector_name") || stringField(meta, "connector_id");
+  if (connector) rows.push({ label: "Connector", value: connector });
+  const paramsDisplay = inlineUnknown(meta.tool_params_display);
+  if (paramsDisplay) rows.push({ label: "Tool parameters", value: paramsDisplay });
+  const persist = inlineUnknown(meta.persist);
+  if (persist) rows.push({ label: "Persist", value: persist });
+  return rows;
+}
+
+function mcpApprovalKindLabel(kind: string): string {
+  if (kind === "mcp_tool_call") return "MCP tool call";
+  if (kind === "tool_suggestion") return "Tool suggestion";
+  return kind;
+}
+
+function toolCallRequestBody(params: unknown): string {
+  const record = objectRecord(params);
+  const argumentsText = inlineUnknown(record?.arguments);
+  return [
+    "Status: Unsupported dynamic tool call",
+    "Details: This request came from app-server as an app tool call. HiCodex displays it as a pending request and does not run it as regular tool activity.",
+    ...(argumentsText ? [`Arguments: ${argumentsText}`] : []),
+  ].join("\n");
+}
+
+function toolCallRequestMetadata(params: unknown): PendingRequestMetadata[] {
+  const metadata = requestMetadata(params, ["namespace", "tool", "callId", "threadId", "turnId"]);
+  const labels: Record<string, string> = {
+    namespace: "Namespace",
+    tool: "Tool",
+    callId: "Call",
+    threadId: "Thread",
+    turnId: "Turn",
+  };
+  return [
+    { label: "Kind", value: "App tool request" },
+    ...metadata.map((item) => ({
+      label: labels[item.label] ?? item.label,
+      value: item.value,
+    })),
+  ];
+}
+
+function inlineUnknown(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 function requestMetadata(params: unknown, keys: string[]): PendingRequestMetadata[] {

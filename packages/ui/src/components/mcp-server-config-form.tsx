@@ -1,0 +1,419 @@
+import { Save, Server, X } from "lucide-react";
+import { useMemo, useState, type FormEvent } from "react";
+import type { CommandPanelEntry } from "../state/command-panel";
+import { normalizeMcpServerKey } from "../state/mcp-skills-management";
+
+export type McpServerFormAction = Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpServerForm" }>;
+type ExtendedMcpServerFormAction = McpServerFormAction & {
+  existingServers?: string[];
+  serverConfig?: Record<string, unknown>;
+};
+
+export interface McpServerConfigFormValues {
+  args: string;
+  baseConfig?: Record<string, unknown>;
+  bearerTokenEnvVar: string;
+  command: string;
+  currentKey?: string;
+  cwd: string;
+  enabled: boolean;
+  env: string;
+  envVars: string;
+  envHttpHeaders: string;
+  existingServers: string[];
+  httpHeaders: string;
+  name: string;
+  required: boolean;
+  transport: "stdio" | "streamable_http";
+  url: string;
+}
+
+export interface McpServerConfigFormProps {
+  action: McpServerFormAction;
+  onClose: () => void;
+  onSubmit: (name: string, config: Record<string, unknown>) => void;
+}
+
+export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConfigFormProps) {
+  const initialValues = useMemo(() => initialMcpServerConfigFormValues(action), [action]);
+  const [values, setValues] = useState<McpServerConfigFormValues>(initialValues);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function setValue<K extends keyof McpServerConfigFormValues>(key: K, value: McpServerConfigFormValues[K]) {
+    setValues((current) => ({ ...current, [key]: value }));
+    setErrors((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const result = buildMcpServerConfig(values);
+    setErrors(result.errors);
+    if (Object.keys(result.errors).length > 0 || !result.config) return;
+    onSubmit(result.name, result.config);
+  }
+
+  const isStdio = values.transport === "stdio";
+  return (
+    <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="hc-command-panel hc-mcp-tool-form"
+        role="dialog"
+        aria-modal="true"
+        aria-label={action.title}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <Server size={17} />
+            <span>{action.title}</span>
+          </div>
+          <button className="hc-icon-button" type="button" onClick={onClose} aria-label="Close MCP server form">
+            <X size={16} />
+          </button>
+        </header>
+        <form onSubmit={submit}>
+          <div className="hc-mcp-tool-form-body">
+            <div className="hc-mcp-tool-form-summary">
+              <strong>{action.mode === "edit" ? "Edit server config" : "New MCP server"}</strong>
+              <span>Saved to Codex config.toml under mcp_servers.&lt;name&gt;.</span>
+            </div>
+            <div className="hc-mcp-tool-fields">
+              <label className="hc-mcp-tool-field" data-error={errors.name ? "true" : "false"}>
+                <span className="hc-mcp-tool-field-header"><span>Name</span><em>Normalized</em></span>
+                <input
+                  className="hc-mcp-tool-control"
+                  placeholder="github"
+                  value={values.name}
+                  onChange={(event) => setValue("name", event.currentTarget.value)}
+                />
+                {errors.name && <small className="hc-mcp-tool-field-error">{errors.name}</small>}
+              </label>
+
+              <label className="hc-mcp-tool-field">
+                <span className="hc-mcp-tool-field-header"><span>Transport</span></span>
+                <select
+                  className="hc-mcp-tool-control"
+                  value={values.transport}
+                  onChange={(event) => setValue("transport", event.currentTarget.value as McpServerConfigFormValues["transport"])}
+                >
+                  <option value="stdio">stdio</option>
+                  <option value="streamable_http">streamable HTTP</option>
+                </select>
+              </label>
+
+              {isStdio ? (
+                <>
+                  <TextField
+                    error={errors.command}
+                    label="Command"
+                    onChange={(value) => setValue("command", value)}
+                    placeholder="npx"
+                    required
+                    value={values.command}
+                  />
+                  <TextAreaField
+                    label="Args"
+                    onChange={(value) => setValue("args", value)}
+                    placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/workspace"
+                    value={values.args}
+                  />
+                  <TextField
+                    label="Working directory"
+                    onChange={(value) => setValue("cwd", value)}
+                    placeholder="/workspace"
+                    value={values.cwd}
+                  />
+                  <TextAreaField
+                    error={errors.env}
+                    label="Environment"
+                    onChange={(value) => setValue("env", value)}
+                    placeholder="TOKEN=env-value"
+                    value={values.env}
+                  />
+                  <TextAreaField
+                    label="Env vars"
+                    onChange={(value) => setValue("envVars", value)}
+                    placeholder="GITHUB_TOKEN"
+                    value={values.envVars}
+                  />
+                </>
+              ) : (
+                <>
+                  <TextField
+                    error={errors.url}
+                    label="URL"
+                    onChange={(value) => setValue("url", value)}
+                    placeholder="https://example.com/mcp"
+                    required
+                    value={values.url}
+                  />
+                  <TextField
+                    label="Bearer token env var"
+                    onChange={(value) => setValue("bearerTokenEnvVar", value)}
+                    placeholder="LINEAR_API_KEY"
+                    value={values.bearerTokenEnvVar}
+                  />
+                  <TextAreaField
+                    error={errors.httpHeaders}
+                    label="HTTP headers"
+                    onChange={(value) => setValue("httpHeaders", value)}
+                    placeholder="X-Header=value"
+                    value={values.httpHeaders}
+                  />
+                  <TextAreaField
+                    error={errors.envHttpHeaders}
+                    label="Env HTTP headers"
+                    onChange={(value) => setValue("envHttpHeaders", value)}
+                    placeholder="Authorization=LINEAR_API_KEY"
+                    value={values.envHttpHeaders}
+                  />
+                </>
+              )}
+
+              <label className="hc-mcp-tool-field">
+                <span className="hc-mcp-tool-checkbox">
+                  <input
+                    checked={values.enabled}
+                    type="checkbox"
+                    onChange={(event) => setValue("enabled", event.currentTarget.checked)}
+                  />
+                  <span>Enabled</span>
+                </span>
+              </label>
+              <label className="hc-mcp-tool-field">
+                <span className="hc-mcp-tool-checkbox">
+                  <input
+                    checked={values.required}
+                    type="checkbox"
+                    onChange={(event) => setValue("required", event.currentTarget.checked)}
+                  />
+                  <span>Required at startup</span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <footer className="hc-mcp-tool-form-footer">
+            <button className="hc-button" type="button" onClick={onClose}>
+              <X size={15} />
+              <span>Cancel</span>
+            </button>
+            <button className="hc-button hc-mcp-tool-submit" type="submit">
+              <Save size={15} />
+              <span>Save server</span>
+            </button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function TextField({
+  error,
+  label,
+  onChange,
+  placeholder,
+  required,
+  value,
+}: {
+  error?: string;
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  required?: boolean;
+  value: string;
+}) {
+  return (
+    <label className="hc-mcp-tool-field" data-error={error ? "true" : "false"}>
+      <span className="hc-mcp-tool-field-header">
+        <span>{label}</span>
+        {required && <em>Required</em>}
+      </span>
+      <input
+        className="hc-mcp-tool-control"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
+      {error && <small className="hc-mcp-tool-field-error">{error}</small>}
+    </label>
+  );
+}
+
+function TextAreaField({
+  error,
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  error?: string;
+  label: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  value: string;
+}) {
+  return (
+    <label className="hc-mcp-tool-field" data-error={error ? "true" : "false"}>
+      <span className="hc-mcp-tool-field-header"><span>{label}</span></span>
+      <textarea
+        className="hc-mcp-tool-control"
+        placeholder={placeholder}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
+      {error && <small className="hc-mcp-tool-field-error">{error}</small>}
+    </label>
+  );
+}
+
+export function initialMcpServerConfigFormValues(action: McpServerFormAction): McpServerConfigFormValues {
+  const extended = action as ExtendedMcpServerFormAction;
+  const config = recordObject(extended.serverConfig);
+  const isHttp = "url" in config;
+  return {
+    args: linesFromArray(config.args),
+    baseConfig: Object.keys(config).length > 0 ? cloneRecord(config) : undefined,
+    bearerTokenEnvVar: stringField(config, "bearer_token_env_var"),
+    command: stringField(config, "command"),
+    currentKey: action.server,
+    cwd: stringField(config, "cwd"),
+    enabled: config.enabled !== false,
+    env: keyValueLinesFromRecord(config.env),
+    envVars: linesFromArray(config.env_vars),
+    envHttpHeaders: keyValueLinesFromRecord(config.env_http_headers),
+    existingServers: extended.existingServers ?? [],
+    httpHeaders: keyValueLinesFromRecord(config.http_headers),
+    name: action.server ?? "",
+    required: config.required === true,
+    transport: isHttp ? "streamable_http" : "stdio",
+    url: stringField(config, "url"),
+  };
+}
+
+export function buildMcpServerConfig(values: McpServerConfigFormValues): {
+  config: Record<string, unknown> | null;
+  errors: Record<string, string>;
+  name: string;
+} {
+  const name = normalizeMcpServerKey(values.name, values.existingServers, values.currentKey);
+  const errors: Record<string, string> = {};
+  const config = cloneRecord(values.baseConfig ?? {});
+  config.enabled = values.enabled;
+  if (values.required) config.required = true;
+  else delete config.required;
+
+  if (values.transport === "stdio") {
+    const command = values.command.trim();
+    if (!command) errors.command = "Enter a command";
+    const env = parseKeyValueLines(values.env, "env", errors);
+    if (Object.keys(errors).length > 0) return { config: null, errors, name };
+    delete config.url;
+    delete config.bearer_token_env_var;
+    delete config.http_headers;
+    delete config.env_http_headers;
+    config.command = command;
+    setOptionalArray(config, "args", nonEmptyLines(values.args));
+    setOptionalString(config, "cwd", values.cwd);
+    setOptionalRecord(config, "env", env);
+    setOptionalArray(config, "env_vars", nonEmptyLines(values.envVars));
+    return { config, errors, name };
+  }
+
+  const url = values.url.trim();
+  if (!url) errors.url = "Enter an MCP HTTP URL";
+  const httpHeaders = parseKeyValueLines(values.httpHeaders, "httpHeaders", errors);
+  const envHttpHeaders = parseKeyValueLines(values.envHttpHeaders, "envHttpHeaders", errors);
+  if (Object.keys(errors).length > 0) return { config: null, errors, name };
+  delete config.command;
+  delete config.args;
+  delete config.cwd;
+  delete config.env;
+  delete config.env_vars;
+  config.url = url;
+  setOptionalString(config, "bearer_token_env_var", values.bearerTokenEnvVar);
+  setOptionalRecord(config, "http_headers", httpHeaders);
+  setOptionalRecord(config, "env_http_headers", envHttpHeaders);
+  return { config, errors, name };
+}
+
+function parseKeyValueLines(
+  value: string,
+  field: string,
+  errors: Record<string, string>,
+): Record<string, string> | undefined {
+  const result: Record<string, string> = {};
+  for (const line of nonEmptyLines(value)) {
+    const separator = line.indexOf("=");
+    if (separator <= 0) {
+      errors[field] = "Use KEY=value, one per line";
+      return undefined;
+    }
+    const key = line.slice(0, separator).trim();
+    const fieldValue = line.slice(separator + 1).trim();
+    if (!key) {
+      errors[field] = "Use KEY=value, one per line";
+      return undefined;
+    }
+    result[key] = fieldValue;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function nonEmptyLines(value: string): string[] {
+  return value
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function setOptionalArray(config: Record<string, unknown>, key: string, value: string[]): void {
+  if (value.length > 0) config[key] = value;
+  else delete config[key];
+}
+
+function setOptionalRecord(config: Record<string, unknown>, key: string, value: Record<string, string> | undefined): void {
+  if (value && Object.keys(value).length > 0) config[key] = value;
+  else delete config[key];
+}
+
+function setOptionalString(config: Record<string, unknown>, key: string, value: string): void {
+  const trimmed = value.trim();
+  if (trimmed.length > 0) config[key] = trimmed;
+  else delete config[key];
+}
+
+function linesFromArray(value: unknown): string {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").join("\n") : "";
+}
+
+function keyValueLinesFromRecord(value: unknown): string {
+  return Object.entries(recordObject(value))
+    .filter(([, entry]) => typeof entry === "string")
+    .map(([key, entry]) => `${key}=${entry}`)
+    .join("\n");
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+function recordObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, cloneJsonValue(entry)]));
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((entry) => cloneJsonValue(entry));
+  if (value && typeof value === "object") return cloneRecord(value as Record<string, unknown>);
+  return value;
+}

@@ -1,4 +1,4 @@
-import { projectCommandPanelEntries } from "./command-panel";
+import { projectCommandPanelEntries, projectPluginEntries } from "./command-panel";
 import type { CommandPanelEntry } from "./command-panel";
 import type { ComposerMentionOption } from "./composer-workflow";
 
@@ -67,8 +67,12 @@ export function mentionOptionsFromAppsResponse(value: unknown, query: string): C
   return options.slice(0, 25);
 }
 
-export function mentionOptionsFromPluginsResponse(value: unknown, query: string): ComposerMentionOption[] {
-  const entries = projectCommandPanelEntries({ plugins: value });
+export function mentionOptionsFromPluginsResponse(
+  value: unknown,
+  query: string,
+  apps?: unknown,
+): ComposerMentionOption[] {
+  const entries = projectPluginEntries(value, { apps });
   const normalizedQuery = query.trim().toLowerCase();
   const options: ComposerMentionOption[] = [];
   for (const entry of entries) {

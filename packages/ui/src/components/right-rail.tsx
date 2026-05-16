@@ -11,6 +11,7 @@ import {
   Globe,
   ImageIcon,
   LoaderCircle,
+  MessageSquareText,
   Network,
   Square,
   Terminal,
@@ -97,6 +98,9 @@ export function RightRail({
       onOpenThreadId,
     });
   };
+  const openSideChatEntry = (entry: RailEntry) => {
+    openRailSideChatEntry(entry, { onOpenThreadId });
+  };
   /*
    * Click flow for the Artifact / file cards:
    *   - If the entry is previewable (`shouldOpenArtifactPreview`), parent
@@ -123,7 +127,7 @@ export function RightRail({
         <RailSection
           key={section.id}
           count={section.count}
-          headerAction={section.id === "backgroundTerminals" && onCleanBackgroundTerminals ? (
+          headerAction={section.id === "backgroundTasks" && onCleanBackgroundTerminals && hasBackgroundTerminalEntries(section.allEntries) ? (
             <button
               aria-label="Stop background terminals"
               className="hc-rail-section-action"
@@ -149,6 +153,7 @@ export function RightRail({
                     : section.id === "sources" ? undefined : canOpenEntry}
                   onOpenEntry={section.id === "artifacts"
                     ? openArtifactEntry
+                    : section.id === "sideChats" ? openSideChatEntry
                     : section.id === "sources" ? undefined : openEntry}
                 />
               )}
@@ -325,7 +330,7 @@ function RailEntryContent({
   const title = displayTitle ?? entry.title;
   const showSecondary = sectionId === "branchDetails";
   const tooltip = entry.meta ?? title;
-  const diffStats = sectionId === "backgroundAgents" ? entry.diffStats ?? null : null;
+  const diffStats = sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
   return (
     <div className="hc-rail-card-main">
       <span className="hc-rail-card-icon" aria-hidden="true">
@@ -355,12 +360,13 @@ function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }
 function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "progress") return progressEntryIcon(entry.status);
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
-  if (sectionId === "backgroundAgents") {
+  if (sectionId === "sideChats") return <MessageSquareText size={14} />;
+  if (sectionId === "backgroundTasks") {
+    if (isBackgroundTerminalEntry(entry)) return <Terminal size={14} />;
     return entry.status === "active"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
       : <Bot size={14} />;
   }
-  if (sectionId === "backgroundTerminals") return <Terminal size={14} />;
   if (sectionId === "sources") return <Network size={14} />;
   const imageSrc = railEntryImageSrc(entry);
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
@@ -473,8 +479,31 @@ function openRailEntry(entry: RailEntry, handlers: RailEntryOpenHandlers): void 
   }
 }
 
+function openRailSideChatEntry(entry: RailEntry, handlers: RailEntryOpenHandlers): void {
+  const action = railEntryAction(entry);
+  if (action?.kind !== "thread") return;
+  handlers.onOpenThreadId?.(action.threadId, {
+    displayName: action.displayName ?? entry.title,
+    panelKind: "sideChat",
+    model: action.model,
+    role: action.role,
+  });
+}
+
 function railEntryAction(entry: RailEntry): RailEntryAction | undefined {
   return entry.action ?? (entry.reference ? { kind: "file", reference: entry.reference } : undefined);
+}
+
+function hasBackgroundTerminalEntries(entries: ReadonlyArray<RailEntry>): boolean {
+  return entries.some(isBackgroundTerminalEntry);
+}
+
+function isBackgroundTerminalEntry(entry: RailEntry): boolean {
+  return entry.id.startsWith("background-terminal:");
+}
+
+function isBackgroundAgentEntry(entry: RailEntry): boolean {
+  return entry.id.startsWith("background-agent:");
 }
 
 function isImageArtifactPath(value: string): boolean {

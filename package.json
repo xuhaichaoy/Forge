@@ -15,6 +15,7 @@
     "test": "npm run test --workspaces --if-present && cargo test --workspace",
     "sync:protocol": "node scripts/sync-codex-protocol.mjs",
     "sidecar:prepare": "node scripts/prepare-codex-sidecar.mjs",
+    "extract:asar": "node scripts/extract-codex-asar.mjs",
     "tauri:dev": "npm run tauri:dev --workspace @hicodex/desktop",
     "tauri:build": "npm run tauri:build --workspace @hicodex/desktop"
   },

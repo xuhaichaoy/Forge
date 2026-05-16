@@ -295,7 +295,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  z-index: 30;
+  z-index: 45;
   display: flex;
   width: min(520px, calc(100% - 48px));
   min-width: 320px;
@@ -352,11 +352,90 @@
   font-size: 12px;
 }
 
+.hc-background-agent-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
 .hc-background-agent-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 14px 20px 18px;
+}
+
+.hc-background-agent-composer {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid #dedbd1;
+  background: rgb(255 253 250 / 94%);
+}
+
+.hc-background-agent-composer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: end;
+  gap: 8px;
+}
+
+.hc-background-agent-composer textarea {
+  min-height: 46px;
+  max-height: 112px;
+  resize: vertical;
+  border: 1px solid #d0ccc0;
+  border-radius: 8px;
+  background: #fffdfa;
+  color: #1f2933;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 9px 10px;
+}
+
+.hc-background-agent-composer textarea:focus {
+  outline: 2px solid #94bfae;
+  outline-offset: 1px;
+}
+
+.hc-background-agent-composer textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.66;
+}
+
+.hc-background-agent-composer-error {
+  color: #963d2f;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.hc-background-agent-send {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid #c9c6ba;
+  border-radius: 999px;
+  background: #1f2933;
+  color: #fffdfa;
+  cursor: pointer;
+  transition: background 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.hc-background-agent-send:hover:not(:disabled) {
+  background: #27313d;
+}
+
+.hc-background-agent-send:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.hc-background-agent-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .hc-background-agent-state,

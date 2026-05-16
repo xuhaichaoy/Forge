@@ -5,6 +5,7 @@ import {
   projectMcpServerEntries,
   projectMcpToolCallResultEntries,
   projectPluginEntries,
+  projectRequiredAppEntries,
   projectSkillFileReadResultEntries,
 } from "../src/state/command-panel";
 import {
@@ -22,6 +23,7 @@ type CommandPanelEntry = {
   details?: string[];
   disabled?: boolean;
   action?: unknown;
+  secondaryActions?: Array<{ id: string; label: string; title?: string; tone?: string; action: unknown }>;
 };
 
 export default function runCommandPanelTests(): void {
@@ -32,6 +34,8 @@ export default function runCommandPanelTests(): void {
   projectsSkillSourceReadResults();
   avoidsDuplicatingDesktopSkillPromptReferences();
   flattensPluginListMarketplaces();
+  mergesConnectorAppsIntoPluginProjection();
+  projectsRequiredAppsAfterPluginInstall();
   projectsAndBuildsMcpToolArguments();
   projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
@@ -261,6 +265,30 @@ function projectsMcpServerNamesToolsAndAuthStatus(): void {
     entries.find((entry) => entry.id === "mcp-tool:github:list_prs")?.action,
     { type: "callMcpTool", server: "github", tool: "list_prs", arguments: {} },
     "MCP tool rows without required arguments should be directly callable",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "mcp:memory")?.secondaryActions?.map((action) => ({
+      label: action.label,
+      action: action.action,
+    })),
+    [
+      {
+        label: "Authenticate",
+        action: { type: "loginMcpServer", server: "memory", title: "Authenticate memory" },
+      },
+      {
+        label: "Reload",
+        action: { type: "reloadMcpServers", title: "Reload MCP config" },
+      },
+    ],
+    "OAuth-capable MCP servers should expose authenticate plus reload actions",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "mcp:github")?.secondaryActions?.some((action) =>
+      action.action && typeof action.action === "object" && "type" in action.action && action.action.type === "openMcpServerForm"
+    ),
+    false,
+    "raw MCP inventory projection should not expose config mutation actions before the management layer adds Desktop-safe config context",
   );
   const requiredEntries: CommandPanelEntry[] = projectMcpServerEntries({
     data: [{
@@ -658,6 +686,92 @@ function projectsSkillsHooksAppsAndPluginsAsCommandEntries(): void {
     },
     "plugin entries should insert the selected plugin prompt reference into the next message",
   );
+
+  const appActions: CommandPanelEntry[] = projectCommandPanelEntries({
+    apps: {
+      data: [{
+        id: "gmail",
+        name: "gmail",
+        title: "Gmail",
+        description: "Read mail",
+        isAccessible: false,
+        isEnabled: false,
+        installUrl: "https://chatgpt.com/connectors/gmail",
+        needsAuth: true,
+      }],
+    },
+  });
+  assertDeepEqual(
+    appActions[0]?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    [
+      {
+        label: "Enable",
+        action: { type: "writeAppConfig", title: "Enable Gmail", appId: "gmail", enabled: true },
+      },
+      {
+        label: "Connect",
+        action: {
+          type: "connectRequiredApp",
+          title: "Connect Gmail",
+          appId: "gmail",
+          appName: "Gmail",
+          installUrl: "https://chatgpt.com/connectors/gmail",
+        },
+      },
+    ],
+    "app rows should expose enable and browser setup actions when app/list metadata provides them",
+  );
+  assertDeepEqual(
+    {
+      status: appActions[0]?.status,
+      details: appActions[0]?.details,
+    },
+    {
+      status: "disabled",
+      details: [
+        "Read mail",
+        "Enabled: no",
+        "Accessible: no",
+        "Auth: ChatGPT connector authorization required",
+        "Install: browser setup URL available",
+      ],
+    },
+    "app rows should project enabled, accessibility, auth, and installUrl state without implying a native app OAuth RPC",
+  );
+
+  const protocolLimitedApp = projectCommandPanelEntries({
+    apps: {
+      data: [{
+        id: "drive",
+        name: "drive",
+        title: "Drive",
+        isAccessible: false,
+        isEnabled: true,
+        needsAuth: true,
+      }],
+    },
+  })[0];
+  assertDeepEqual(
+    {
+      status: protocolLimitedApp?.status,
+      disabled: protocolLimitedApp?.disabled,
+      secondaryActions: protocolLimitedApp?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+      details: protocolLimitedApp?.details?.slice(-2),
+    },
+    {
+      status: "protocol-limited",
+      disabled: true,
+      secondaryActions: [{
+        label: "Disable",
+        action: { type: "writeAppConfig", title: "Disable Drive", appId: "drive", enabled: false },
+      }],
+      details: [
+        "Install: no browser setup URL returned",
+        "Protocol-limited: app-server returned app/list metadata only; no native connector OAuth method or browser setup URL is available.",
+      ],
+    },
+    "app rows without installUrl should clearly show protocol-limited connector auth",
+  );
 }
 
 function projectsCollaborationModesAsCommandEntries(): void {
@@ -740,6 +854,191 @@ function flattensPluginListMarketplaces(): void {
     entries.find((entry) => entry.id === "plugin:browser-use")?.details,
     ["Default prompt: Open the page."],
     "plugin/list projection should surface Desktop plugin default prompt metadata without raw JSON",
+  );
+
+  const installable = projectPluginEntries({
+    marketplaces: [{
+      name: "Local",
+      path: "/workspace/.agents/plugins/marketplace.json",
+      plugins: [{
+        id: "custom-plugin",
+        name: "custom-plugin",
+        installed: false,
+        enabled: false,
+        installPolicy: "AVAILABLE",
+        availability: "AVAILABLE",
+      }],
+    }],
+  });
+  assertDeepEqual(
+    installable[0]?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    [{
+      label: "Install",
+      action: {
+        type: "installPlugin",
+        title: "Install custom-plugin",
+        pluginId: "custom-plugin",
+        pluginName: "custom-plugin",
+        marketplaceName: "Local",
+        marketplacePath: "/workspace/.agents/plugins/marketplace.json",
+      },
+    }],
+    "installable plugin rows should call plugin/install with marketplace path and plugin name",
+  );
+
+  const installed = projectPluginEntries({
+    marketplaces: [{
+      name: "Local",
+      plugins: [{
+        id: "custom-plugin",
+        name: "custom-plugin",
+        installed: true,
+        enabled: false,
+        installPolicy: "AVAILABLE",
+        availability: "AVAILABLE",
+      }],
+    }],
+  });
+  assertDeepEqual(
+    installed[0]?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    [
+      {
+        label: "Enable",
+        action: { type: "writePluginConfig", title: "Enable custom-plugin", pluginId: "custom-plugin", enabled: true },
+      },
+      {
+        label: "Uninstall",
+        action: { type: "uninstallPlugin", title: "Uninstall custom-plugin", pluginId: "custom-plugin" },
+      },
+    ],
+    "installed plugin rows should expose enable and uninstall actions",
+  );
+}
+
+function mergesConnectorAppsIntoPluginProjection(): void {
+  const entries = projectPluginEntries(
+    {
+      marketplaces: [{
+        name: "OpenAI",
+        plugins: [{
+          id: "gmail",
+          name: "gmail",
+          installed: true,
+          enabled: true,
+          interface: { displayName: "Gmail" },
+        }],
+      }],
+    },
+    {
+      apps: {
+        data: [{
+          id: "gmail-app",
+          name: "Gmail",
+          isAccessible: false,
+          isEnabled: false,
+          pluginDisplayNames: ["Gmail"],
+        }],
+      },
+    },
+  );
+
+  assertDeepEqual(
+    {
+      status: entries[0]?.status,
+      disabled: entries[0]?.disabled,
+      details: entries[0]?.details,
+      secondaryActions: entries[0]?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    },
+    {
+      status: "app disabled",
+      disabled: true,
+      details: [
+        "Connector app: Gmail",
+        "Connector enabled: no",
+        "Connector accessible: no",
+        "Auth: not accessible according to app/list",
+        "Install: no browser setup URL returned",
+        "Protocol-limited: app-server returned app/list metadata only; no native connector OAuth method or browser setup URL is available.",
+      ],
+      secondaryActions: [{
+        label: "Enable",
+        action: { type: "writeAppConfig", title: "Enable Gmail", appId: "gmail-app", enabled: true },
+      }],
+    },
+    "connector-backed plugin installed/enabled state should follow app/list accessibility and enablement",
+  );
+}
+
+function projectsRequiredAppsAfterPluginInstall(): void {
+  const entries = projectRequiredAppEntries([{
+    id: "gmail",
+    name: "Gmail",
+    description: "Read mail",
+    installUrl: "https://chatgpt.com/connectors/gmail",
+    needsAuth: true,
+  }]);
+
+  assertDeepEqual(
+    entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      details: entry.details,
+      action: entry.action,
+      secondaryActions: entry.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    })),
+    [{
+      id: "required-app:gmail",
+      status: "auth required",
+      details: [
+        "Read mail",
+        "Auth: ChatGPT connector authorization required",
+        "Install: browser setup URL available",
+      ],
+      action: {
+        type: "connectRequiredApp",
+        title: "Connect Gmail",
+        appId: "gmail",
+        appName: "Gmail",
+        installUrl: "https://chatgpt.com/connectors/gmail",
+      },
+      secondaryActions: [{
+        label: "Connect",
+        action: {
+          type: "connectRequiredApp",
+          title: "Connect Gmail",
+          appId: "gmail",
+          appName: "Gmail",
+          installUrl: "https://chatgpt.com/connectors/gmail",
+        },
+      }],
+    }],
+    "plugin install appsNeedingAuth should project a required-apps connect panel state",
+  );
+
+  const limited = projectRequiredAppEntries([{
+    id: "drive",
+    name: "Drive",
+    needsAuth: true,
+  }]);
+  assertDeepEqual(
+    {
+      status: limited[0]?.status,
+      disabled: limited[0]?.disabled,
+      action: limited[0]?.action,
+      secondaryActions: limited[0]?.secondaryActions,
+      details: limited[0]?.details,
+    },
+    {
+      status: "protocol-limited",
+      disabled: true,
+      action: undefined,
+      secondaryActions: undefined,
+      details: [
+        "Auth: ChatGPT connector authorization required",
+        "Protocol-limited: app-server returned app/list metadata only; no native connector OAuth method or browser setup URL is available.",
+      ],
+    },
+    "required app rows without installUrl should not pretend a native OAuth connector action exists",
   );
 }
 

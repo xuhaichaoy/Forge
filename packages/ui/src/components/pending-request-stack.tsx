@@ -162,6 +162,7 @@ type RequestKind =
   | "file-change"
   | "user-input"
   | "mcp"
+  | "tool-call"
   | "permission"
   | "unknown";
 
@@ -279,7 +280,8 @@ function networkApprovalContext(params: unknown): Record<string, unknown> | null
 }
 
 function isTechnicalDetail(label: string, value: string): boolean {
-  return /cwd|thread|turn|item|request|url|path|root/i.test(label) || looksLikeCommandOrPath(value);
+  return /cwd|thread|turn|item|request|url|path|root|namespace|tool|call|argument|parameter|server|connector/i.test(label)
+    || looksLikeCommandOrPath(value);
 }
 
 export function looksLikeCommandOrPath(value: string): boolean {
@@ -339,6 +341,7 @@ function requestKind(method: string): RequestKind {
   if (method.includes("fileChange") || method === "applyPatchApproval") return "file-change";
   if (method.includes("requestUserInput")) return "user-input";
   if (method.includes("elicitation")) return "mcp";
+  if (method === "item/tool/call") return "tool-call";
   if (method.includes("permissions")) return "permission";
   return "unknown";
 }

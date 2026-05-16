@@ -1,10 +1,14 @@
 import {
   MCP_APP_BRIDGE_INVALID_PARAMS,
   MCP_APP_BRIDGE_METHOD_NOT_FOUND,
+  MCP_APP_BRIDGE_USER_CANCELLED,
   mcpAppBridgeError,
+  mcpAppBridgeUserCancelledError,
   mcpAppFileDownloadRequest,
   mcpAppExternalHref,
+  mcpAppFollowUpSource,
   mcpAppMcpProxyRequest,
+  mcpAppFollowUpMessageRequest,
   mcpAppResourceTemplatesListResponse,
   mcpAppResourcesListResponse,
   mcpAppToolCallAllowed,
@@ -18,8 +22,11 @@ import {
 export default function runMcpAppHostTests(): void {
   parsesDesktopMcpProxyRequests();
   parsesDesktopFileDownloadRequests();
+  parsesDesktopFollowUpRequests();
+  projectsFollowUpSource();
   parsesDesktopHostToolCalls();
   serializesDesktopBridgeErrors();
+  serializesUserCancelledBridgeErrors();
   projectsServerInventoryForBridgeResponses();
   validatesExternalLinks();
 }
@@ -59,6 +66,32 @@ function parsesDesktopFileDownloadRequests(): void {
     mcpAppFileDownloadRequest({ blob, name: " " }),
     null,
     "MCP app ui/download-file should reject blank filenames",
+  );
+}
+
+function parsesDesktopFollowUpRequests(): void {
+  assertDeepEqual(
+    mcpAppFollowUpMessageRequest({ prompt: " check this " }),
+    { prompt: "check this" },
+    "MCP app follow-up requests should parse Desktop's { prompt } payload",
+  );
+  assertDeepEqual(
+    mcpAppFollowUpMessageRequest({ prompt: " " }),
+    null,
+    "MCP app follow-up requests should reject empty prompts",
+  );
+}
+
+function projectsFollowUpSource(): void {
+  assertDeepEqual(
+    mcpAppFollowUpSource({ threadId: "thread-123", server: "figma", tool: "inspect" }),
+    { server: "figma", threadId: "thread-123", tool: "inspect" },
+    "MCP app follow-up dialog source should preserve thread, server, and tool",
+  );
+  assertDeepEqual(
+    mcpAppFollowUpSource({ threadId: " ", server: " ", tool: " " }),
+    { server: "mcp", threadId: null, tool: "tool" },
+    "MCP app follow-up dialog source should provide safe fallbacks",
   );
 }
 
@@ -105,6 +138,18 @@ function serializesDesktopBridgeErrors(): void {
       message: "Runtime is offline.",
     },
     "MCP app bridge rejects should match Desktop serialization for ordinary host errors",
+  );
+}
+
+function serializesUserCancelledBridgeErrors(): void {
+  assertDeepEqual(
+    serializeMcpAppBridgeError(mcpAppBridgeUserCancelledError()),
+    {
+      code: MCP_APP_BRIDGE_USER_CANCELLED,
+      name: "McpAppBridgeUserCancelledError",
+      message: "MCP app follow-up was cancelled by the user.",
+    },
+    "MCP app bridge cancel rejects should use a user-cancelled error type and code",
   );
 }
 

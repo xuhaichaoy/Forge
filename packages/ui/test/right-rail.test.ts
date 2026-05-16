@@ -27,6 +27,7 @@ function keepsCodexDesktopSectionOrder(): void {
       entries: [railEntry("branch-1", "Branch", "completed", "codex/right-rail")],
     },
     artifacts: [railEntry("artifact-1", "right-rail.test.ts", "modified", "packages/ui/test/right-rail.test.ts")],
+    sideChats: [railEntry("side-chat:side-1", "Side chat", "idle", "Uses gpt-5.2")],
     backgroundAgents: [railEntry("agent-1", "Explorer (explorer)", "active", "Uses gpt-5.4")],
     backgroundTerminals: [railEntry("terminal-1", "npm run dev", "running", "/workspace/project")],
     sources: [railEntry("source-1", "github:list_prs", "completed", "MCP tool")],
@@ -34,8 +35,13 @@ function keepsCodexDesktopSectionOrder(): void {
 
   assertDeepEqual(
     sections.map((section) => section.title),
-    ["Progress", "Branch details", "Artifacts", "Background agents", "Background terminals", "Sources"],
+    ["Progress", "Branch details", "Artifacts", "Side chats", "Background tasks", "Sources"],
     "right rail section order should match Codex Desktop",
+  );
+  assertEqual(
+    sectionById(sections, "backgroundTasks").count,
+    2,
+    "background tasks should combine background agents and terminals",
   );
 }
 
@@ -212,7 +218,7 @@ function makeEntries(count: number, prefix: string) {
 
 function sectionById(
   sections: ReturnType<typeof projectRightRailSections>,
-  id: "progress" | "branchDetails" | "artifacts" | "backgroundAgents" | "backgroundTerminals" | "sources",
+  id: "progress" | "branchDetails" | "artifacts" | "sideChats" | "backgroundTasks" | "sources",
 ) {
   const section = sections.find((candidate) => candidate.id === id);
   assertNotNull(section, `expected ${id} section`);

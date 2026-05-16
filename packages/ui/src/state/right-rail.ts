@@ -16,8 +16,8 @@ export type RightRailSectionId =
   | "progress"
   | "branchDetails"
   | "artifacts"
-  | "backgroundAgents"
-  | "backgroundTerminals"
+  | "sideChats"
+  | "backgroundTasks"
   | "sources";
 export type RightRailDisplayMode = "overlay" | "shift" | "gutter";
 
@@ -36,6 +36,7 @@ export interface RightRailProjectionInput {
   progress: RailEntry[];
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
   artifacts: RailEntry[];
+  sideChats?: RailEntry[];
   backgroundAgents?: RailEntry[];
   backgroundTerminals?: RailEntry[];
   sources: RailEntry[];
@@ -113,12 +114,16 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     sections.push(projectEntrySection("artifacts", "Artifacts", input.artifacts, true));
   }
 
-  if (input.backgroundAgents && input.backgroundAgents.length > 0) {
-    sections.push(projectEntrySection("backgroundAgents", "Background agents", input.backgroundAgents, false));
+  if (input.sideChats && input.sideChats.length > 0) {
+    sections.push(projectEntrySection("sideChats", "Side chats", input.sideChats, false));
   }
 
-  if (input.backgroundTerminals && input.backgroundTerminals.length > 0) {
-    sections.push(projectEntrySection("backgroundTerminals", "Background terminals", input.backgroundTerminals, false));
+  const backgroundTasks = [
+    ...(input.backgroundAgents ?? []),
+    ...(input.backgroundTerminals ?? []),
+  ];
+  if (backgroundTasks.length > 0) {
+    sections.push(projectEntrySection("backgroundTasks", "Background tasks", backgroundTasks, false));
   }
 
   if (input.sources.length > 0) {

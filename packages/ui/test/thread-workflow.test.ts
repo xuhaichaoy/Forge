@@ -8,6 +8,7 @@ import {
   ensureThreadReadyForTurn,
   forkThread,
   forkThreadFromTurn,
+  interruptThreadTurn,
   isThreadNotFound,
   isThreadNotMaterialized,
   isThreadNeedsResume,
@@ -21,7 +22,9 @@ import {
   resumeSelectedThreadAndStartTurn,
   resumeThread,
   resumeThreadWithMetadataRead,
-  sideConversationDeveloperInstructions,
+  sendPanelThreadMessage,
+  SIDE_CONVERSATION_BOUNDARY_MESSAGE,
+  SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS,
   startThread,
   startSideConversation,
   startTurn,
@@ -108,7 +111,7 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await readsThreadDisplayMetadataBeforeHydratingTurns();
   await resumesThreadAfterMetadataRead();
   await forksThreadFromTurnUsingDesktopSequence();
-  await startsEphemeralSideConversationFromForkedThread();
+  await startsEphemeralSideConversationByInjectingDesktopBoundary();
   await editsLastUserTurnUsingDesktopRollbackThenStartSequence();
   await recoversThreadNotFoundOnEditByResumingFirst();
   await recoversThreadNotFoundOnEditRollbackByResumingFirst();
@@ -116,6 +119,8 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await refreshesThreadMetadataWithoutChangingSelection();
   await resumesSelectedHistoricalThreadBeforeRetryingTurn();
   buildsTurnStartAndSteerRequests();
+  sendsPanelThreadMessagesWithoutChangingMainThreadSelection();
+  interruptsPanelThreadTurnsWithoutChangingMainThreadSelection();
 }
 
 function buildsPaginatedThreadListParams(): void {
@@ -920,11 +925,11 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
   );
 }
 
-async function startsEphemeralSideConversationFromForkedThread(): Promise<void> {
-  const sideThread = threadFixture({ id: "side-thread", cwd: "/workspace" });
+async function startsEphemeralSideConversationByInjectingDesktopBoundary(): Promise<void> {
+  const sideThread = threadFixture({ id: "side-thread", cwd: "/workspace", forkedFromId: "source-thread" });
   const side = createClientSequenceRecorder([
     { thread: sideThread },
-    { turn: { id: "side-turn" } },
+    {},
   ]);
 
   const result = await startSideConversation(
@@ -936,7 +941,6 @@ async function startsEphemeralSideConversationFromForkedThread(): Promise<void> 
       developerInstructions: "Existing developer rule.",
       personality: "friendly",
     },
-    " inspect this in parallel ",
   );
 
   assertEqual(result.thread, sideThread, "side conversation should return the ephemeral fork thread");
@@ -948,9 +952,10 @@ async function startsEphemeralSideConversationFromForkedThread(): Promise<void> 
       threadId: "source-thread",
       path: null,
       persistExtendedHistory: false,
+      threadSource: "user",
       cwd: "/workspace",
       model: "gpt-5.2",
-      developerInstructions: sideConversationDeveloperInstructions("Existing developer rule."),
+      developerInstructions: `Existing developer rule.\n\n${SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS}`,
       personality: "friendly",
       ephemeral: true,
     },
@@ -959,17 +964,23 @@ async function startsEphemeralSideConversationFromForkedThread(): Promise<void> 
   assertRequest(
     side.requests,
     1,
-    "turn/start",
+    "thread/inject_items",
     {
       threadId: "side-thread",
-      input: [{ type: "text", text: "inspect this in parallel", text_elements: [] }],
-      cwd: "/workspace",
-      model: "gpt-5.2",
-      personality: "friendly",
+      items: [{
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: SIDE_CONVERSATION_BOUNDARY_MESSAGE,
+        }],
+      }],
     },
-    "side conversation prompt should start inside the fork without selecting the main thread",
+    "side conversation should inject Desktop's synthetic boundary message into the fork",
   );
   assertEqual(side.requests[0]?.timeout, 120_000, "side conversation fork should use a long timeout");
+  assertEqual(side.requests[1]?.timeout, 120_000, "side conversation injection should use a long timeout");
+  assertEqual(side.requests.some((request) => request.method === "turn/start"), false, "side conversation opening should not start a turn");
 }
 
 async function editsLastUserTurnUsingDesktopRollbackThenStartSequence(): Promise<void> {
@@ -1277,4 +1288,56 @@ function buildsTurnStartAndSteerRequests(): void {
     "steerTurn should build a turn/steer request",
   );
   assertEqual(steer.requests[0]?.timeout, null, "steerTurn should not use the short default RPC timeout");
+}
+
+function sendsPanelThreadMessagesWithoutChangingMainThreadSelection(): void {
+  const input: UserInput[] = [{ type: "text", text: "continue in panel", text_elements: [] }];
+  const idle = createClientRecorder();
+  void sendPanelThreadMessage(idle.client, "panel-thread", input, " /workspace/panel ", {
+    model: "gpt-5.2",
+    personality: "friendly",
+  });
+  assertRequest(
+    idle.requests,
+    0,
+    "turn/start",
+    {
+      threadId: "panel-thread",
+      input,
+      cwd: "/workspace/panel",
+      model: "gpt-5.2",
+      personality: "friendly",
+    },
+    "idle panel thread should receive a normal turn/start without selecting the main thread",
+  );
+
+  const running = createClientRecorder();
+  void sendPanelThreadMessage(running.client, "panel-thread", input, "/workspace/panel", null, "turn-active");
+  assertRequest(
+    running.requests,
+    0,
+    "turn/steer",
+    {
+      threadId: "panel-thread",
+      input,
+      expectedTurnId: "turn-active",
+    },
+    "running panel thread should steer the active turn instead of starting a competing turn",
+  );
+}
+
+function interruptsPanelThreadTurnsWithoutChangingMainThreadSelection(): void {
+  const recorder = createClientRecorder();
+  void interruptThreadTurn(recorder.client, "panel-thread", "turn-active");
+  assertRequest(
+    recorder.requests,
+    0,
+    "turn/interrupt",
+    {
+      threadId: "panel-thread",
+      turnId: "turn-active",
+    },
+    "panel stop should interrupt the panel thread's active turn directly",
+  );
+  assertEqual(recorder.requests[0]?.timeout, 120_000, "panel stop should use the interrupt RPC timeout");
 }

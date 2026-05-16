@@ -14,11 +14,23 @@ export interface McpAppFileDownloadRequest {
   name: string;
 }
 
+export interface McpAppFollowUpMessageRequest {
+  prompt: string;
+}
+
+export interface McpAppFollowUpSource {
+  server: string;
+  threadId: string | null;
+  tool: string;
+}
+
 export const MCP_APP_BRIDGE_INTERNAL_ERROR = -32000;
+export const MCP_APP_BRIDGE_USER_CANCELLED = -32001;
 export const MCP_APP_BRIDGE_METHOD_NOT_FOUND = -32601;
 export const MCP_APP_BRIDGE_INVALID_PARAMS = -32602;
 export const MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR = -32603;
 const MCP_APP_BRIDGE_DEFAULT_ERROR_MESSAGE = "MCP sandbox host call failed.";
+const MCP_APP_BRIDGE_USER_CANCELLED_MESSAGE = "MCP app follow-up was cancelled by the user.";
 
 export interface McpAppBridgeErrorPayload {
   code?: number;
@@ -39,12 +51,23 @@ export class McpAppBridgeError extends Error {
   }
 }
 
+export class McpAppBridgeUserCancelledError extends McpAppBridgeError {
+  constructor(message = MCP_APP_BRIDGE_USER_CANCELLED_MESSAGE, cause?: unknown) {
+    super(message, MCP_APP_BRIDGE_USER_CANCELLED, cause);
+    this.name = "McpAppBridgeUserCancelledError";
+  }
+}
+
 export function mcpAppBridgeError(
   message: string,
   code = MCP_APP_BRIDGE_INTERNAL_ERROR,
   cause?: unknown,
 ): McpAppBridgeError {
   return new McpAppBridgeError(message, code, cause);
+}
+
+export function mcpAppBridgeUserCancelledError(cause?: unknown): McpAppBridgeUserCancelledError {
+  return new McpAppBridgeUserCancelledError(undefined, cause);
 }
 
 export function serializeMcpAppBridgeError(error: unknown): McpAppBridgeErrorPayload {
@@ -77,6 +100,20 @@ export function mcpAppFileDownloadRequest(value: unknown): McpAppFileDownloadReq
   const name = stringField(record, "name").trim();
   if (!(blob instanceof Blob) || !name) return null;
   return { blob, name };
+}
+
+export function mcpAppFollowUpMessageRequest(value: unknown): McpAppFollowUpMessageRequest | null {
+  const prompt = stringField(recordObject(value), "prompt").trim();
+  return prompt ? { prompt } : null;
+}
+
+export function mcpAppFollowUpSource(value: unknown): McpAppFollowUpSource {
+  const record = recordObject(value);
+  return {
+    server: stringField(record, "server").trim() || "mcp",
+    threadId: stringField(record, "threadId").trim() || null,
+    tool: stringField(record, "tool").trim() || "tool",
+  };
 }
 
 export function downloadMcpAppFile({ blob, name }: McpAppFileDownloadRequest): void {

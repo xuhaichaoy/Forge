@@ -11,6 +11,7 @@ export default function runMentionOptionTests(): void {
   projectsSkillMentionOptionsFromSkillsList();
   projectsAppMentionOptionsFromAppsList();
   projectsPluginMentionOptionsFromPluginList();
+  filtersConnectorBackedPluginMentionsWithAppsList();
   dedupesMentionOptionsByKindAndPath();
 }
 
@@ -179,6 +180,39 @@ function projectsPluginMentionOptionsFromPluginList(): void {
       promptText: "Use the browser to inspect this. [@Browser](plugin://browser-use) ",
     }],
     "plugin/list results should become selectable plugin mention options with Desktop prompt links",
+  );
+}
+
+function filtersConnectorBackedPluginMentionsWithAppsList(): void {
+  const options = mentionOptionsFromPluginsResponse(
+    {
+      marketplaces: [{
+        name: "OpenAI",
+        plugins: [{
+          id: "gmail",
+          name: "gmail",
+          installed: true,
+          enabled: true,
+          interface: { displayName: "Gmail" },
+        }],
+      }],
+    },
+    "gmail",
+    {
+      data: [{
+        id: "gmail-app",
+        name: "Gmail",
+        isAccessible: false,
+        isEnabled: false,
+        pluginDisplayNames: ["Gmail"],
+      }],
+    },
+  );
+
+  assertDeepEqual(
+    options,
+    [],
+    "plugin mentions should honor imported connector app accessibility when app/list is available",
   );
 }
 
