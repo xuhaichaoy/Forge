@@ -133,6 +133,7 @@ button {
   background: #f6f5f1;
   --hc-right-rail-width: 300px;
   --hc-right-rail-gap: 16px;
+  --hc-right-panel-offset: 0px;
 }
 
 .hc-app--with-right-rail {
@@ -177,7 +178,7 @@ button {
 .hc-right-rail {
   position: absolute;
   top: 12px;
-  right: var(--hc-right-rail-gap);
+  right: calc(var(--hc-right-rail-gap) + var(--hc-right-panel-offset, 0px));
   z-index: 40;
   display: flex;
   width: var(--hc-right-rail-width);

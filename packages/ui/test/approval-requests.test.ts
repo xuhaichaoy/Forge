@@ -260,6 +260,16 @@ export default function runApprovalRequestTests(): void {
   assertEqual(mcpFormDetail.questions.length, 5, "mcp form question count");
   assertEqual(mcpFormDetail.questions[1]?.kind, "singleSelect", "mcp enum question kind");
   assertEqual(mcpFormDetail.questions[4]?.kind, "multiSelect", "mcp multi-select question kind");
+  assertIncludes(
+    mcpFormDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Kind: MCP request",
+    "mcp form should be explicitly labelled as an MCP request",
+  );
+  assertIncludes(
+    mcpFormDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "MCP server: filesystem",
+    "mcp form should expose the originating MCP server",
+  );
   assertDeepEqual(
     buildApprovalResult(mcpFormRequest, true, {
       path: ["/tmp/result.json"],
@@ -308,6 +318,33 @@ export default function runApprovalRequestTests(): void {
     buildApprovalResult(mcpUrlRequest, true),
     { action: "accept", content: null, _meta: null },
     "mcp url accept result",
+  );
+
+  const mcpToolApprovalRequest = request("mcpServer/elicitation/request", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    serverName: "codex_apps",
+    mode: "form",
+    message: "Allow this app tool call?",
+    requestedSchema: { type: "object", properties: {} },
+    _meta: {
+      codex_approval_kind: "mcp_tool_call",
+      connector_id: "github",
+      connector_name: "GitHub",
+      tool_params_display: { repo: "openai/codex", action: "read" },
+    },
+  });
+  const mcpToolApprovalDetail = pendingRequestDetail(mcpToolApprovalRequest);
+  const mcpToolApprovalMetadata = mcpToolApprovalDetail.metadata
+    .map((item) => `${item.label}: ${item.value}`)
+    .join("\n");
+  assertEqual(mcpToolApprovalDetail.title, "MCP request", "mcp tool approval stays on the generic MCP request path");
+  assertIncludes(mcpToolApprovalMetadata, "Approval: MCP tool call", "mcp tool approval kind metadata");
+  assertIncludes(mcpToolApprovalMetadata, "Connector: GitHub", "mcp tool approval connector metadata");
+  assertIncludes(
+    mcpToolApprovalMetadata,
+    "Tool parameters: {\"repo\":\"openai/codex\",\"action\":\"read\"}",
+    "mcp tool approval parameter metadata",
   );
 
   const permissionsRequest = request("item/permissions/requestApproval", {
@@ -362,6 +399,34 @@ export default function runApprovalRequestTests(): void {
     arguments: { path: "/tmp/file" },
   });
   const toolCallDetail = pendingRequestDetail(toolCallRequest);
+  assertEqual(toolCallDetail.title, "App tool request", "dynamic tool call title");
+  assertEqual(
+    toolCallDetail.reason,
+    "Dynamic client-side tool execution is not implemented.",
+    "dynamic tool call reason",
+  );
+  assertIncludes(toolCallDetail.body, "Status: Unsupported dynamic tool call", "dynamic tool call status copy");
+  assertIncludes(
+    toolCallDetail.body,
+    "does not run it as regular tool activity",
+    "dynamic tool call should explain it is not ordinary tool activity",
+  );
+  assertIncludes(toolCallDetail.body, "Arguments: {\"path\":\"/tmp/file\"}", "dynamic tool call arguments copy");
+  assertIncludes(
+    toolCallDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Kind: App tool request",
+    "dynamic tool call kind metadata",
+  );
+  assertIncludes(
+    toolCallDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Tool: unknownTool",
+    "dynamic tool call tool metadata",
+  );
+  assertIncludes(
+    toolCallDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Call: call-1",
+    "dynamic tool call call-id metadata",
+  );
   assertEqual(toolCallDetail.canAccept, false, "dynamic tool call cannot accept");
   assertEqual(buildApprovalResult(toolCallRequest, true), null, "dynamic tool call accept result is null");
 

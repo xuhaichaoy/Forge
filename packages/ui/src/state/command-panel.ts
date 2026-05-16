@@ -55,6 +55,7 @@ export type CommandPanelEntryAction =
   | { type: "callMcpTool"; server: string; tool: string; arguments: Record<string, unknown> }
   | { type: "readMcpResource"; server: string; uri: string; title: string }
   | { type: "reloadMcpServers"; title: string }
+  | { type: "loginMcpServer"; server: string; title: string }
   | {
       type: "openMcpToolForm";
       server: string;
@@ -70,7 +71,16 @@ export type CommandPanelEntryAction =
       path?: string;
       enabled: boolean;
     }
-  | { type: "readSkillFile"; title: string; path: string };
+  | { type: "readSkillFile"; title: string; path: string }
+  | { type: "openMcpServerForm"; title: string; mode: "add" | "edit"; server?: string }
+  | { type: "writeMcpServerConfig"; title: string; name: string; config: Record<string, unknown> }
+  | { type: "removeMcpServer"; title: string; server: string }
+  | { type: "writeAppConfig"; title: string; appId: string; enabled: boolean }
+  | { type: "connectRequiredApp"; title: string; appId: string; appName: string; installUrl?: string | null }
+  | { type: "openExternalUrl"; title: string; url: string }
+  | { type: "installPlugin"; title: string; pluginId: string; pluginName: string; marketplaceName: string; marketplacePath?: string | null }
+  | { type: "uninstallPlugin"; title: string; pluginId: string }
+  | { type: "writePluginConfig"; title: string; pluginId: string; enabled: boolean };
 
 export type CommandPanelStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -101,6 +111,10 @@ export interface CommandPanelState {
   entries: CommandPanelEntry[];
   message: string;
 }
+
+const CONNECTOR_REFRESH_GUIDANCE = "Finish the browser flow, then refresh Apps or Plugins.";
+const CONNECTOR_PROTOCOL_LIMITED_DETAIL =
+  "Protocol-limited: app-server returned app/list metadata only; no native connector OAuth method or browser setup URL is available.";
 
 export interface CommandPanelOptions {
   status?: CommandPanelStatus;
@@ -140,7 +154,7 @@ export function projectCommandPanelEntries(value: {
     ...projectSkillEntries(value.skills),
     ...projectHookEntries(value.hooks),
     ...projectAppEntries(value.apps),
-    ...projectPluginEntries(value.plugins),
+    ...projectPluginEntries(value.plugins, { apps: value.apps }),
     ...projectExperimentalFeatureEntries(value.experimental),
     ...projectCollaborationModeEntries(value.collaboration),
   ];
@@ -168,23 +182,33 @@ export function projectMcpServerEntries(value: unknown): CommandPanelEntry[] {
       return title && uriTemplate && title !== uriTemplate ? `${title} - ${uriTemplate}` : title || uriTemplate;
     }).filter(Boolean);
 
+    const authStatus = mcpAuthStatus(server);
     const serverEntry: CommandPanelEntry = {
       id: `mcp:${name}`,
       title: name,
       kind: "mcpServer",
-      status: mcpAuthStatus(server),
+      status: authStatus,
       meta: mcpServerMeta(toolDetails.length, resourceDetails.length, templateDetails.length),
       details: [
         ...toolDetails,
         ...resourceDetails.map((detail) => `Resource: ${detail}`),
         ...templateDetails.map((detail) => `Template: ${detail}`),
       ],
-      secondaryActions: [{
-        id: `mcp:${name}:reload`,
-        label: "Reload",
-        title: "Reload MCP config",
-        action: { type: "reloadMcpServers", title: "Reload MCP config" },
-      }],
+      secondaryActions: cleanSecondaryActions([
+        mcpAuthStatusNeedsLogin(authStatus) ? {
+          id: `mcp:${name}:login`,
+          label: "Authenticate",
+          title: `Authenticate ${name}`,
+          tone: "success",
+          action: { type: "loginMcpServer", server: name, title: `Authenticate ${name}` },
+        } : undefined,
+        {
+          id: `mcp:${name}:reload`,
+          label: "Reload",
+          title: "Reload MCP config",
+          action: { type: "reloadMcpServers", title: "Reload MCP config" },
+        },
+      ]),
     };
     return [
       serverEntry,
@@ -339,41 +363,108 @@ function mcpResourceTemplateEntry(
   };
 }
 
-export function projectPluginEntries(value: unknown): CommandPanelEntry[] {
+export function projectPluginEntries(value: unknown, options: { apps?: unknown } = {}): CommandPanelEntry[] {
+  const connectorApps = responseItems(options.apps);
   return arrayField(value, "marketplaces").flatMap((marketplace) => {
     const marketplaceName = fieldText(marketplace, "name") || "Unknown marketplace";
+    const marketplacePath = fieldText(marketplace, "path") || null;
     return arrayField(marketplace, "plugins").map((plugin, index) => {
-      const pluginId = fieldText(plugin, "id") || fieldText(plugin, "name") || `plugin-${index + 1}`;
-      const interfaceInfo = recordField(plugin, "interface");
-      const title = fieldText(interfaceInfo, "displayName") || fieldText(plugin, "name") || pluginId;
+      const connectorApp = findConnectorAppForPlugin(plugin, connectorApps);
+      const connectorAppId = connectorApp ? appIdentity(connectorApp, index).appId : "";
+      const connectorState = connectorApp ? appListState(connectorApp) : null;
+      const effectivePlugin = connectorApp
+        ? {
+            ...plugin,
+            installed: connectorState?.accessible ?? false,
+            enabled: connectorState?.enabled ?? false,
+          }
+        : plugin;
+      const pluginId = fieldText(effectivePlugin, "id") || fieldText(effectivePlugin, "name") || `plugin-${index + 1}`;
+      const pluginName = fieldText(effectivePlugin, "name") || pluginId;
+      const interfaceInfo = recordField(effectivePlugin, "interface");
+      const title = fieldText(interfaceInfo, "displayName") || pluginName;
       const description = fieldText(interfaceInfo, "shortDescription")
         || fieldText(interfaceInfo, "longDescription")
-        || fieldText(plugin, "description");
+        || fieldText(effectivePlugin, "description");
       const promptPath = pluginPromptPath(pluginId);
-      const mentionName = pluginMentionName(pluginId, fieldText(plugin, "name") || title);
-      const mentionable = isPluginMentionable(plugin);
+      const mentionName = pluginMentionName(pluginId, pluginName || title);
+      const mentionable = isPluginMentionable(effectivePlugin);
+      const secondaryActions = connectorApp && connectorState
+        ? connectorAppSecondaryActions({ app: connectorApp, appId: connectorAppId, state: connectorState, title })
+        : pluginSecondaryActions({
+            plugin: effectivePlugin,
+            pluginId,
+            pluginName,
+            title,
+            marketplaceName,
+            marketplacePath,
+          });
       return {
         id: `plugin:${pluginId}`,
         title,
         kind: "plugin",
-        status: pluginStatus(plugin),
+        status: connectorState ? connectorPluginStatus(connectorState) : pluginStatus(effectivePlugin),
         meta: marketplaceName,
         details: cleanList([
           description,
-          pluginDefaultPrompt(plugin) && `Default prompt: ${firstLine(pluginDefaultPrompt(plugin))}`,
-          fieldText(plugin, "availability") && `Availability: ${fieldText(plugin, "availability")}`,
-          fieldText(plugin, "installPolicy") && `Install: ${fieldText(plugin, "installPolicy")}`,
-          fieldText(plugin, "authPolicy") && `Auth: ${fieldText(plugin, "authPolicy")}`,
+          pluginDefaultPrompt(effectivePlugin) && `Default prompt: ${firstLine(pluginDefaultPrompt(effectivePlugin))}`,
+          connectorApp && `Connector app: ${fieldText(connectorApp, "name") || fieldText(connectorApp, "id")}`,
+          connectorState && `Connector enabled: ${connectorState.enabled ? "yes" : "no"}`,
+          connectorState && `Connector accessible: ${connectorState.accessible ? "yes" : "no"}`,
+          connectorState && connectorAuthDetail(connectorState),
+          connectorState && connectorInstallDetail(connectorState),
+          connectorState && connectorProtocolLimitedDetail(connectorState),
+          fieldText(effectivePlugin, "availability") && `Availability: ${fieldText(effectivePlugin, "availability")}`,
+          fieldText(effectivePlugin, "installPolicy") && `Install: ${fieldText(effectivePlugin, "installPolicy")}`,
+          fieldText(effectivePlugin, "authPolicy") && `Auth: ${fieldText(effectivePlugin, "authPolicy")}`,
         ]),
         disabled: mentionable ? undefined : true,
         action: mentionable ? {
           type: "attachPlugin",
           name: mentionName,
           path: promptPath,
-          promptText: pluginPromptText(mentionName, promptPath, pluginDefaultPrompt(plugin)),
+          promptText: pluginPromptText(mentionName, promptPath, pluginDefaultPrompt(effectivePlugin)),
         } : undefined,
+        secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
       };
     });
+  });
+}
+
+export function projectRequiredAppEntries(
+  apps: unknown,
+  waitingAppIds: ReadonlySet<string> = new Set(),
+): CommandPanelEntry[] {
+  return responseItems(apps).map((app, index) => {
+    const { appId, appName, title } = appIdentity(app, index);
+    const installUrl = appInstallUrl(app);
+    const needsAuth = booleanField(app, "needsAuth");
+    const waiting = waitingAppIds.has(appId);
+    const action: CommandPanelEntryAction | undefined = installUrl
+      ? { type: "connectRequiredApp", title: `Connect ${title}`, appId, appName: title, installUrl }
+      : undefined;
+    return {
+      id: `required-app:${appId}`,
+      title,
+      kind: "app",
+      status: waiting ? "waiting for refresh" : installUrl ? "auth required" : "protocol-limited",
+      meta: "Required app",
+      details: cleanList([
+        fieldText(app, "description"),
+        needsAuth ? "Auth: ChatGPT connector authorization required" : "Auth: required before this plugin is ready",
+        installUrl ? "Install: browser setup URL available" : CONNECTOR_PROTOCOL_LIMITED_DETAIL,
+        waiting ? CONNECTOR_REFRESH_GUIDANCE : "",
+      ]),
+      disabled: action ? undefined : true,
+      action,
+      secondaryActions: action ? [{
+        id: `required-app:${appId}:connect`,
+        label: waiting ? "Open again" : "Connect",
+        title: `Open ${title} connect flow`,
+        tone: waiting ? "default" : "success",
+        action,
+      }] : undefined,
+    };
   });
 }
 
@@ -632,27 +723,67 @@ function hookEntry(hook: Record<string, unknown>, cwd = ""): CommandPanelEntry {
 
 function projectAppEntries(value: unknown): CommandPanelEntry[] {
   return responseItems(value).map((app, index) => {
-    const appId = fieldText(app, "id") || fieldText(app, "name") || `app-${index + 1}`;
-    const name = fieldText(app, "name") || appId;
-    const title = fieldText(app, "title") || fieldText(app, "displayName") || name;
+    const { appId, appName: name, title } = appIdentity(app, index);
     const plugins = stringArrayField(app, "pluginDisplayNames");
-    const hasAccessibleField = Object.prototype.hasOwnProperty.call(app, "isAccessible");
-    const accessible = !hasAccessibleField || booleanField(app, "isAccessible");
+    const state = appListState(app);
     const promptPath = appPromptPath(appId);
+    const secondaryActions = cleanSecondaryActions([
+      state.hasEnabledField ? appConfigToggleAction({ appId, title, enabled: state.enabled }) : undefined,
+      state.installUrl ? {
+        id: `app:${appId}:connect`,
+        label: "Connect",
+        title: `Open ${title} connect flow`,
+        tone: state.accessible ? "default" : "success",
+        action: {
+          type: "connectRequiredApp",
+          title: `Connect ${title}`,
+          appId,
+          appName: title,
+          installUrl: state.installUrl,
+        },
+      } : undefined,
+    ]);
     return {
       id: `app:${appId}`,
       title,
       kind: "app",
-      status: booleanField(app, "isEnabled") ? "enabled" : undefined,
+      status: appStatus(state),
       meta: name,
       details: cleanList([
         fieldText(app, "description"),
         plugins.length ? `Plugins: ${plugins.join(", ")}` : "",
+        state.hasEnabledField ? `Enabled: ${state.enabled ? "yes" : "no"}` : "Enabled: not reported by app/list",
+        state.hasAccessibleField ? `Accessible: ${state.accessible ? "yes" : "no"}` : "Accessible: not reported by app/list",
+        connectorAuthDetail(state),
+        connectorInstallDetail(state),
+        connectorProtocolLimitedDetail(state),
       ]),
-      disabled: accessible ? undefined : true,
-      action: accessible ? { type: "attachApp", name, path: promptPath, promptText: appPromptText(name, promptPath) } : undefined,
+      disabled: state.accessible ? undefined : true,
+      action: state.accessible ? { type: "attachApp", name, path: promptPath, promptText: appPromptText(name, promptPath) } : undefined,
+      secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
     };
   });
+}
+
+function appConfigToggleAction(app: {
+  appId: string;
+  title: string;
+  enabled: boolean;
+}): CommandPanelSecondaryAction {
+  const nextEnabled = !app.enabled;
+  const label = nextEnabled ? "Enable" : "Disable";
+  return {
+    id: `app:${app.appId}:${nextEnabled ? "enable" : "disable"}`,
+    label,
+    title: `${label} ${app.title}`,
+    tone: nextEnabled ? "success" : "danger",
+    action: {
+      type: "writeAppConfig",
+      title: `${label} ${app.title}`,
+      appId: app.appId,
+      enabled: nextEnabled,
+    },
+  };
 }
 
 function appPromptText(name: string, path: string): string {
@@ -700,6 +831,13 @@ function mcpAuthStatus(server: Record<string, unknown>): string {
   return fieldText(auth, "status") || fieldText(server, "authMode") || "unknown";
 }
 
+function mcpAuthStatusNeedsLogin(status: string): boolean {
+  const normalized = status.trim().toLowerCase();
+  return normalized === "notloggedin"
+    || normalized === "oauth"
+    || normalized === "unauthenticated";
+}
+
 function pluginStatus(plugin: Record<string, unknown>): string | undefined {
   if (booleanField(plugin, "installed")) {
     return booleanField(plugin, "enabled") ? "enabled" : "installed";
@@ -707,11 +845,212 @@ function pluginStatus(plugin: Record<string, unknown>): string | undefined {
   return fieldText(plugin, "availability") || undefined;
 }
 
+function findConnectorAppForPlugin(
+  plugin: Record<string, unknown>,
+  apps: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  if (apps.length === 0) return null;
+  const interfaceInfo = recordField(plugin, "interface");
+  const codexAppId = fieldText(plugin, "codexAppId") || fieldText(plugin, "codex_app_id");
+  if (codexAppId) {
+    const byId = apps.find((app) => fieldText(app, "id") === codexAppId);
+    if (byId) return byId;
+  }
+  const pluginNames = new Set([
+    fieldText(plugin, "name"),
+    fieldText(plugin, "displayName"),
+    fieldText(interfaceInfo, "displayName"),
+  ].map(normalizeConnectorName).filter(Boolean));
+  if (pluginNames.size === 0) return null;
+  return apps.find((app) => {
+    const appNames = [
+      fieldText(app, "name"),
+      ...stringArrayField(app, "pluginDisplayNames"),
+    ].map(normalizeConnectorName).filter(Boolean);
+    return appNames.some((name) => pluginNames.has(name));
+  }) ?? null;
+}
+
+function normalizeConnectorName(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function connectorPluginStatus(state: AppListState): string {
+  if (state.hasEnabledField && !state.enabled) return "app disabled";
+  if (state.accessible) return "enabled";
+  return state.installUrl ? "auth required" : "protocol-limited";
+}
+
+function connectorAppSecondaryActions({
+  app,
+  appId,
+  state,
+  title,
+}: {
+  app: Record<string, unknown>;
+  appId: string;
+  state: AppListState;
+  title: string;
+}): CommandPanelSecondaryAction[] {
+  return cleanSecondaryActions([
+    state.hasEnabledField ? appConfigToggleAction({ appId, title, enabled: state.enabled }) : undefined,
+    state.installUrl ? {
+      id: `app:${appId}:connect`,
+      label: state.accessible ? "Reconnect" : "Connect",
+      title: `Open ${title} connect flow`,
+      tone: state.accessible ? "default" : "success",
+      action: {
+        type: "connectRequiredApp",
+        title: `Connect ${title}`,
+        appId,
+        appName: fieldText(app, "title") || fieldText(app, "displayName") || fieldText(app, "name") || title,
+        installUrl: state.installUrl,
+      },
+    } : undefined,
+  ]);
+}
+
+function pluginSecondaryActions({
+  plugin,
+  pluginId,
+  pluginName,
+  title,
+  marketplaceName,
+  marketplacePath,
+}: {
+  plugin: Record<string, unknown>;
+  pluginId: string;
+  pluginName: string;
+  title: string;
+  marketplaceName: string;
+  marketplacePath: string | null;
+}): CommandPanelSecondaryAction[] {
+  const hasInstalled = Object.prototype.hasOwnProperty.call(plugin, "installed");
+  const installed = hasInstalled ? booleanField(plugin, "installed") : false;
+  const hasEnabled = Object.prototype.hasOwnProperty.call(plugin, "enabled");
+  const enabled = hasEnabled ? booleanField(plugin, "enabled") : true;
+  const installPolicy = fieldText(plugin, "installPolicy");
+  const availability = fieldText(plugin, "availability");
+  if (!hasInstalled) return [];
+  if (installed) {
+    return cleanSecondaryActions([
+      hasEnabled ? pluginConfigToggleAction({ pluginId, title, enabled }) : undefined,
+      installPolicy !== "INSTALLED_BY_DEFAULT" ? {
+        id: `plugin:${pluginId}:uninstall`,
+        label: "Uninstall",
+        title: `Uninstall ${title}`,
+        tone: "danger",
+        action: { type: "uninstallPlugin", title: `Uninstall ${title}`, pluginId },
+      } : undefined,
+    ]);
+  }
+  if (availability === "DISABLED_BY_ADMIN" || installPolicy === "NOT_AVAILABLE") return [];
+  if (!marketplacePath && marketplaceName === "Unknown marketplace") return [];
+  return [{
+    id: `plugin:${pluginId}:install`,
+    label: "Install",
+    title: `Install ${title}`,
+    tone: "success",
+    action: {
+      type: "installPlugin",
+      title: `Install ${title}`,
+      pluginId,
+      pluginName,
+      marketplaceName,
+      marketplacePath,
+    },
+  }];
+}
+
+function pluginConfigToggleAction(plugin: {
+  pluginId: string;
+  title: string;
+  enabled: boolean;
+}): CommandPanelSecondaryAction {
+  const nextEnabled = !plugin.enabled;
+  const label = nextEnabled ? "Enable" : "Disable";
+  return {
+    id: `plugin:${plugin.pluginId}:${nextEnabled ? "enable" : "disable"}`,
+    label,
+    title: `${label} ${plugin.title}`,
+    tone: nextEnabled ? "success" : "danger",
+    action: {
+      type: "writePluginConfig",
+      title: `${label} ${plugin.title}`,
+      pluginId: plugin.pluginId,
+      enabled: nextEnabled,
+    },
+  };
+}
+
 function responseItems(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) return value.filter(isRecord);
   if (!isRecord(value)) return [];
   if (Array.isArray(value.data)) return value.data.filter(isRecord);
   return [];
+}
+
+interface AppListState {
+  hasAccessibleField: boolean;
+  accessible: boolean;
+  hasEnabledField: boolean;
+  enabled: boolean;
+  installUrl: string;
+  needsAuth: boolean;
+}
+
+function appIdentity(app: Record<string, unknown>, index: number): {
+  appId: string;
+  appName: string;
+  title: string;
+} {
+  const appId = fieldText(app, "id") || fieldText(app, "name") || `app-${index + 1}`;
+  const appName = fieldText(app, "name") || appId;
+  const title = fieldText(app, "title") || fieldText(app, "displayName") || appName;
+  return { appId, appName, title };
+}
+
+function appListState(app: Record<string, unknown>): AppListState {
+  const hasAccessibleField = Object.prototype.hasOwnProperty.call(app, "isAccessible");
+  const hasEnabledField = Object.prototype.hasOwnProperty.call(app, "isEnabled");
+  return {
+    hasAccessibleField,
+    accessible: !hasAccessibleField || booleanField(app, "isAccessible"),
+    hasEnabledField,
+    enabled: !hasEnabledField || booleanField(app, "isEnabled"),
+    installUrl: appInstallUrl(app),
+    needsAuth: booleanField(app, "needsAuth"),
+  };
+}
+
+function appInstallUrl(app: Record<string, unknown>): string {
+  return fieldText(app, "installUrl");
+}
+
+function appStatus(state: AppListState): string | undefined {
+  if (state.hasEnabledField && !state.enabled) return "disabled";
+  if (state.hasAccessibleField && state.accessible) return "accessible";
+  if (state.needsAuth || (state.hasAccessibleField && !state.accessible)) {
+    return state.installUrl ? "auth required" : "protocol-limited";
+  }
+  return state.hasEnabledField ? "enabled" : undefined;
+}
+
+function connectorAuthDetail(state: AppListState): string {
+  if (state.needsAuth) return "Auth: ChatGPT connector authorization required";
+  if (state.hasAccessibleField) return state.accessible
+    ? "Auth: accessible according to app/list"
+    : "Auth: not accessible according to app/list";
+  return "Auth: not reported by app/list";
+}
+
+function connectorInstallDetail(state: AppListState): string {
+  return state.installUrl ? "Install: browser setup URL available" : "Install: no browser setup URL returned";
+}
+
+function connectorProtocolLimitedDetail(state: AppListState): string {
+  const missingConnectMethod = !state.installUrl && (state.needsAuth || (state.hasAccessibleField && !state.accessible));
+  return missingConnectMethod ? CONNECTOR_PROTOCOL_LIMITED_DETAIL : "";
 }
 
 function arrayField(value: unknown, key: string): Record<string, unknown>[] {

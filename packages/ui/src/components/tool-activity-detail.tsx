@@ -279,10 +279,11 @@ export function ToolActivityDetail({
               }
               return (
                 <button
+                  aria-label={`Open agent ${part.label}`}
                   className="hc-tool-detail-agent hc-tool-detail-agent-button"
                   key={`${row.key}:agent:${part.threadId}`}
                   style={{ color: part.color }}
-                  title={part.title ?? undefined}
+                  title={part.title ? `Open agent ${part.label}. ${part.title}` : `Open agent ${part.label}`}
                   type="button"
                   onClick={() => onOpenThreadId(part.threadId, {
                     displayName: part.label,
@@ -789,11 +790,10 @@ async function resolveMcpAppBridgeRequest({
     case "updateWidgetState":
       widgetStateRef.current = mcpAppWidgetStateFromValue(args.at(-1));
       return {};
-    case "sendFollowUpMessage":
-      throw mcpAppBridgeError("MCP app follow-up messages are not supported yet.");
     case "callMcp":
     case "callTool":
     case "openExternal":
+    case "sendFollowUpMessage":
       if (!onMcpAppHostCall) throw mcpAppBridgeError("MCP app host bridge is unavailable.");
       return onMcpAppHostCall({
         args,

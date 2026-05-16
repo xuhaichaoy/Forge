@@ -14,6 +14,7 @@ import { stringField } from "../lib/format";
 import type { HostStatus } from "../lib/tauri-host";
 import { composerModeFromCollaborationMode } from "./collaboration-modes";
 import type { ComposerMode } from "./composer-workflow";
+import type { McpServerStartupStatus } from "./mcp-skills-management";
 import type { AccumulatedThreadItem } from "./render-groups";
 
 export interface PendingServerRequest {
@@ -83,6 +84,7 @@ export interface CodexUiState {
   logs: LogLine[];
   models: ModelConfig[];
   threadContextDefaults: ThreadContextDefaults | null;
+  mcpServerStartupStatuses: Record<string, McpServerStartupStatus>;
 }
 
 export type CodexUiAction =
@@ -126,6 +128,7 @@ export const initialCodexUiState: CodexUiState = {
   logs: [],
   models: [],
   threadContextDefaults: null,
+  mcpServerStartupStatuses: {},
 };
 
 const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
@@ -679,9 +682,32 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
         ...state,
         pendingRequests: state.pendingRequests.filter((request) => request.id !== params.requestId),
       };
+    case "mcpServer/startupStatus/updated":
+      return applyMcpServerStartupStatusNotification(state, params, message);
     default:
       return logNotificationIfUseful(state, message);
   }
+}
+
+function applyMcpServerStartupStatusNotification(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+  message: JsonRpcNotification,
+): CodexUiState {
+  const name = stringParam(params, "name");
+  if (!name) return logNotificationIfUseful(state, message);
+  const startup: McpServerStartupStatus = {
+    status: formatUnknownForLog(params.status) || "unknown",
+    error: stringParam(params, "error") || null,
+    updatedAt: Date.now(),
+  };
+  return logNotificationIfUseful({
+    ...state,
+    mcpServerStartupStatuses: {
+      ...state.mcpServerStartupStatuses,
+      [name]: startup,
+    },
+  }, message);
 }
 
 function applyErrorNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {

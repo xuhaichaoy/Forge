@@ -1,13 +1,18 @@
 import {
   Boxes,
   CheckCircle2,
+  Download,
+  Edit3,
+  ExternalLink,
   FileText,
+  LogIn,
   Loader2,
   Power,
   PowerOff,
   RefreshCw,
   Server,
   TerminalSquare,
+  Trash2,
   X,
 } from "lucide-react";
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
@@ -167,6 +172,30 @@ function secondaryActionIcon(action: CommandPanelEntryAction) {
   }
   if (action.type === "reloadMcpServers") {
     return <RefreshCw size={13} />;
+  }
+  if (action.type === "loginMcpServer") {
+    return <LogIn size={13} />;
+  }
+  if (action.type === "openMcpServerForm") {
+    return <Edit3 size={13} />;
+  }
+  if (action.type === "removeMcpServer") {
+    return <Trash2 size={13} />;
+  }
+  if (action.type === "writeAppConfig" || action.type === "writePluginConfig") {
+    return action.enabled ? <Power size={13} /> : <PowerOff size={13} />;
+  }
+  if (action.type === "installPlugin") {
+    return <Download size={13} />;
+  }
+  if (action.type === "uninstallPlugin") {
+    return <Trash2 size={13} />;
+  }
+  if (action.type === "openExternalUrl") {
+    return <ExternalLink size={13} />;
+  }
+  if (action.type === "connectRequiredApp") {
+    return <ExternalLink size={13} />;
   }
   return null;
 }

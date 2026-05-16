@@ -3,6 +3,7 @@ import { mergeThreadToolHistory } from "../src/state/thread-history-tools";
 
 export default function runThreadHistoryToolTests(): void {
   restoresPersistedExecCommandBetweenCommentaryMessages();
+  restoresPersistedCollabAgentToolCallsBetweenCommentaryMessages();
   stampsRecoveredItemsWithTurnIdSoTheyStayInTurnSegment();
   doesNotInjectSyntheticMessageReplayWhenServerSnapshotMissesStreamedMessages();
 }
@@ -108,6 +109,41 @@ function restoresPersistedExecCommandBetweenCommentaryMessages(): void {
   assertEqual(items[3]?.id, "agent-2", "existing final answer should stay last");
 }
 
+function restoresPersistedCollabAgentToolCallsBetweenCommentaryMessages(): void {
+  const thread = threadWithTurn([
+    userMessage("user-1", "open agents"),
+    agentMessage("agent-1", "I will split this across agents.", "commentary"),
+    agentMessage("agent-2", "Done.", "final_answer"),
+  ]);
+
+  const merged = mergeThreadToolHistory(thread, {
+    threadId: "thread-1",
+    turns: [{
+      turnId: "turn-1",
+      items: [
+        replayUserMessage("open agents"),
+        replayAgentMessage("I will split this across agents.", "commentary"),
+        collabToolCall("spawn-weather", ["agent-weather"], "Weather agent"),
+        collabToolCall("spawn-traffic", ["agent-traffic"], "Traffic agent"),
+        replayAgentMessage("Done.", "final_answer"),
+      ],
+    }],
+  });
+
+  const items = merged.turns[0].items;
+  assertEqual(items.length, 5, "merge should restore replayed collab agent tool calls");
+  assertEqual(items[0]?.id, "user-1", "existing user item should be preserved");
+  assertEqual(items[1]?.id, "agent-1", "existing commentary item should be preserved");
+  assertEqual(items[2]?.id, "spawn-weather", "first recovered collab row should keep replay order");
+  assertEqual(items[3]?.id, "spawn-traffic", "second recovered collab row should keep replay order");
+  assertEqual(items[4]?.id, "agent-2", "existing final answer should stay last");
+  assertEqual(
+    ((items[2] as Record<string, unknown> | undefined)?.receiverThreadIds as string[] | undefined)?.[0],
+    "agent-weather",
+    "restored collab row should keep receiver thread ids for background task links",
+  );
+}
+
 function stampsRecoveredItemsWithTurnIdSoTheyStayInTurnSegment(): void {
   const thread = threadWithTurn([
     userMessage("user-1", "read source"),
@@ -206,6 +242,22 @@ function replayUserMessage(text: string): ThreadItem {
 function replayAgentMessage(text: string, phase: "commentary" | "final_answer"): ThreadItem {
   return {
     ...agentMessage(`history-agent:${text}`, text, phase),
+    _historyReplay: true,
+  } as unknown as ThreadItem;
+}
+
+function collabToolCall(id: string, receiverThreadIds: string[], prompt: string): ThreadItem {
+  return {
+    type: "collabAgentToolCall",
+    id,
+    tool: "spawnAgent",
+    status: "completed",
+    senderThreadId: "thread-1",
+    receiverThreadIds,
+    prompt,
+    model: "gpt-5.5",
+    reasoningEffort: "medium",
+    agentsStates: Object.fromEntries(receiverThreadIds.map((threadId) => [threadId, { status: "completed" }])),
     _historyReplay: true,
   } as unknown as ThreadItem;
 }

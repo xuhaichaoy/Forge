@@ -1,6 +1,7 @@
 import type { PendingServerRequest } from "../src/state/codex-reducer";
 import {
   deriveActivePendingRequests,
+  pendingRequestAwaitingKind,
   pendingRequestScope,
   summarizePendingRequestAwaitingByThread,
 } from "../src/state/pending-request-scope";
@@ -10,6 +11,7 @@ export default function runPendingRequestScopeTests(): void {
   filtersActivePendingRequestsByThreadAndTurn();
   matchesItemOnlyRequestsAgainstActiveThreadItems();
   ordersActivePendingRequestsLikeComposerModes();
+  classifiesMcpAndDynamicToolRequestsForAwaitingState();
   summarizesAwaitingStateByThread();
   attributesItemOnlyAwaitingStateWhenItemsAreIndexedByThread();
 }
@@ -125,6 +127,19 @@ function ordersActivePendingRequestsLikeComposerModes(): void {
     deriveActivePendingRequests(requests, { activeThreadId: "thread-1" }).map(requestId),
     ["approval", "input-older", "input-newer", "tool-call"],
     "active pending requests should dedupe by id, show approval first, then user response requests by age",
+  );
+}
+
+function classifiesMcpAndDynamicToolRequestsForAwaitingState(): void {
+  assertDeepEqual(
+    pendingRequestAwaitingKind(request("mcp", "mcpServer/elicitation/request", { threadId: "thread-1" })),
+    "userInput",
+    "MCP elicitation requests should keep the user-input awaiting lane",
+  );
+  assertDeepEqual(
+    pendingRequestAwaitingKind(request("tool-call", "item/tool/call", { threadId: "thread-1" })),
+    "toolCall",
+    "dynamic tool calls should keep the tool-call awaiting lane",
   );
 }
 

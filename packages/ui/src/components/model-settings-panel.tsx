@@ -25,6 +25,7 @@ import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } fr
 import { IMAGE_GENERATION_SIZE_OPTIONS, type ImageGenerationSettings } from "../state/image-generation-tool";
 import { SETTINGS_SECTIONS, isRefreshableSettingsPanel } from "../state/settings-panel-workflow";
 import { CommandPanelEntryList } from "./command-panel";
+import { McpSkillsManagementPanel } from "./mcp-skills-management-panel";
 
 export interface SettingsPanelProps {
   activePanel: SettingsPanelId;
@@ -131,6 +132,14 @@ export function SettingsPanel({
                 panelState={panelState}
                 setImageGenerationDraft={setImageGenerationDraft}
                 onSave={onSaveImageGeneration}
+              />
+            ) : activePanel === "mcp" || activePanel === "skills" ? (
+              <McpSkillsManagementPanel
+                kind={activePanel}
+                panelState={panelState}
+                onReload={onRefreshPanel}
+                onSelectAction={onSelectAction}
+                onSelectEntry={onSelectEntry}
               />
             ) : (
               <SettingsCommandContent

@@ -1,10 +1,12 @@
 import { formatError } from "../lib/format";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import type { CodexUiState } from "./codex-reducer";
+import { loadAllApps } from "./app-list";
 import {
   createCommandPanelState,
   projectCommandPanelEntries,
   projectPluginEntries,
+  type CommandPanelEntry,
   type CommandPanelKind,
   type CommandPanelOptions,
   type CommandPanelState,
@@ -13,6 +15,10 @@ import type { SettingsPanelId } from "./composer-workflow";
 import {
   HICODEX_IMAGE_TOOL_NAME,
 } from "./image-generation-tool";
+import {
+  projectMcpManagementEntries,
+  type McpServerStartupStatus,
+} from "./mcp-skills-management";
 import {
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
@@ -33,6 +39,30 @@ export interface LoadSettingsPanelContentOptions {
   setSettingsPanelState: (state: CommandPanelState) => void;
   state: CodexUiState;
   workspace: string;
+}
+
+export async function loadMcpManagementEntries({
+  client,
+  forceReload = false,
+  startupStatuses,
+  workspace,
+}: {
+  client: CodexJsonRpcClient;
+  forceReload?: boolean;
+  startupStatuses: Record<string, McpServerStartupStatus | undefined> | null | undefined;
+  workspace?: string;
+}): Promise<CommandPanelEntry[]> {
+  if (forceReload) {
+    await client.request("config/mcpServer/reload", undefined, 120_000);
+  }
+  const [result, configReadResult] = await Promise.all([
+    client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000),
+    client.request<unknown>("config/read", {
+      includeLayers: true,
+      cwd: workspace?.trim() ? workspace.trim() : null,
+    }, 120_000),
+  ]);
+  return projectMcpManagementEntries(result, startupStatuses, { configReadResult });
 }
 
 export async function loadSettingsPanelContent({
@@ -164,13 +194,19 @@ export async function loadSettingsPanelContent({
 
   try {
     if (panel === "mcp") {
-      await client.request("config/mcpServer/reload", undefined, 120_000);
-      const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000);
+      const entries = await loadMcpManagementEntries({
+        client,
+        forceReload,
+        startupStatuses: state.mcpServerStartupStatuses,
+        workspace,
+      });
       openSettingsPanelContent("mcp", {
         status: "ready",
         title,
-        message: "Select a tool to call it, or a resource to read it.",
-        entries: projectCommandPanelEntries({ mcp: result }),
+        message: forceReload
+          ? "Reloaded MCP config. Select a tool to call it, or a resource to read it."
+          : "Select a tool to call it, or a resource to read it.",
+        entries,
       });
       return;
     }
@@ -195,18 +231,23 @@ export async function loadSettingsPanelContent({
       return;
     }
     if (panel === "apps") {
-      const result = await client.request<unknown>("app/list", {
-        limit: 50,
-        threadId: state.activeThreadId,
-      }, 120_000);
+      const result = await loadAllApps(client, { threadId: state.activeThreadId });
       openSettingsPanelContent("apps", { status: "ready", title, entries: projectCommandPanelEntries({ apps: result }) });
       return;
     }
     if (panel === "plugins") {
-      const result = await client.request<unknown>("plugin/list", {
-        cwds: workspace.trim() ? [workspace.trim()] : null,
-      }, 120_000);
-      openSettingsPanelContent("plugins", { status: "ready", title, entries: projectPluginEntries(result) });
+      const [result, apps] = await Promise.allSettled([
+        client.request<unknown>("plugin/list", {
+          cwds: workspace.trim() ? [workspace.trim()] : null,
+        }, 120_000),
+        loadAllApps(client, { threadId: state.activeThreadId }),
+      ]);
+      if (result.status === "rejected") throw result.reason;
+      openSettingsPanelContent("plugins", {
+        status: "ready",
+        title,
+        entries: projectPluginEntries(result.value, { apps: apps.status === "fulfilled" ? apps.value : undefined }),
+      });
       return;
     }
     if (panel === "experimental") {

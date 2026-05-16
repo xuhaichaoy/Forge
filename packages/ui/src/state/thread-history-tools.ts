@@ -104,6 +104,8 @@ function sameRenderableItem(existing: ThreadItem, replayItem: ThreadItem): boole
         && existing.content.join("\n") === replayItem.content.join("\n");
     case "webSearch":
       return existing.type === "webSearch" && existing.query === replayItem.query;
+    case "collabAgentToolCall":
+      return collabToolCallKey(existing) === collabToolCallKey(replayItem);
     default:
       return false;
   }
@@ -124,9 +126,31 @@ function isRecoveredToolItem(item: ThreadItem): boolean {
     || item.type === "fileChange"
     || item.type === "mcpToolCall"
     || item.type === "dynamicToolCall"
+    || item.type === "collabAgentToolCall"
     || item.type === "webSearch"
     || item.type === "imageView"
     || item.type === "imageGeneration";
+}
+
+function collabToolCallKey(item: ThreadItem): string {
+  const record = item as ItemRecord;
+  if (record.type !== "collabAgentToolCall") return "";
+  return [
+    fieldText(record, "tool") || fieldText(record, "action"),
+    fieldText(record, "senderThreadId"),
+    normalizeText(fieldText(record, "prompt")),
+    fieldText(record, "model"),
+    fieldText(record, "reasoningEffort"),
+  ].join("\u001f");
+}
+
+function fieldText(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\r\n?/g, "\n").trim();
 }
 
 function isThreadItemLike(value: unknown): value is ThreadItem {
