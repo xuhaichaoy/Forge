@@ -59,6 +59,19 @@
   gap: 2px;
 }
 
+.hc-rail-card-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
+}
+
+.hc-rail-card-action {
+  flex-basis: 22px;
+  width: 22px;
+  height: 22px;
+}
+
 .hc-rail-card-title-row {
   display: flex;
   min-width: 0;
@@ -75,6 +88,18 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
+}
+
+.hc-rail-card[data-progress-status="completed"] .hc-rail-card-title {
+  color: #777a73;
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-color: rgba(119, 122, 115, 0.7);
+  text-decoration-thickness: 1px;
+}
+
+.hc-rail-card[data-progress-status="completed"] .hc-rail-card-icon {
+  color: #8a8c86;
 }
 
 .hc-rail-card-meta {

@@ -128,6 +128,7 @@ export function isItemInProgress(item: ThreadItem): boolean {
   // Codex Desktop's split-items activity predicate treats reasoning as active
   // while the protocol item has not completed.
   if (itemType(item) === "reasoning") return record.completed === false;
+  if (itemType(item) === "proposed-plan") return record.completed === false;
   if (itemType(item) === "exec") {
     if (record.executionStatus === "interrupted") return false;
     const parsedCmd = recordObject(record.parsedCmd);
@@ -138,10 +139,6 @@ export function isItemInProgress(item: ThreadItem): boolean {
     if (record.success === null) return true;
     if (typeof record.success === "boolean") return false;
     return status === "pending" || status === "streaming" || status === "inProgress";
-  }
-  if (itemType(item) === "hook") {
-    const run = recordObject(record.run);
-    return stringField(run, "status") === "running" || status === "running";
   }
   if (itemType(item) === "web-search") return record.completed === false;
   if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {

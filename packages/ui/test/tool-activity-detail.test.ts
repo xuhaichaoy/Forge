@@ -1,6 +1,7 @@
 import {
   execShellCopyText,
   initialExecShellExpanded,
+  MCP_APP_IFRAME_SANDBOX_POLICY,
   mcpAppBackgroundColorFromValue,
   mcpAppCspMetaContent,
   mcpAppDisplayModeFromValue,
@@ -12,6 +13,7 @@ import {
   mcpAppToolResultForWidget,
   mcpAppWidgetDataUpdatePayload,
   mcpAppWidgetViewPayload,
+  mcpAppWidgetStateFromBridgeArgs,
   mcpAppWidgetStateFromValue,
   multiAgentAgentColor,
   normalizeDesktopShellCommand,
@@ -33,10 +35,10 @@ export default function runToolActivityDetailTests(): void {
   buildsMcpAppWidgetDataUpdatesLikeDesktop();
   buildsMcpAppWidgetViewUpdatesLikeDesktop();
   parsesMcpAppResourceFrames();
+  pinsMcpAppIframeSandboxPolicy();
   buildsMcpAppSandboxSrcDoc();
   buildsDynamicToolDetails();
   buildsAutoReviewDetails();
-  buildsHookDetails();
   buildsWebSearchDetails();
   buildsMultiAgentDetails();
 }
@@ -472,6 +474,11 @@ function normalizesMcpAppWidgetStateLikeDesktop(): void {
     null,
     "MCP app updateWidgetState should reject scalar state like Desktop",
   );
+  assertDeepEqual(
+    mcpAppWidgetStateFromBridgeArgs([{ selectedId: "old" }, { selectedId: "new" }, { ignored: true }]),
+    { selectedId: "new" },
+    "MCP app updateWidgetState should store Desktop's second argument when extra metadata is present",
+  );
 }
 
 function buildsMcpAppWidgetDataUpdatesLikeDesktop(): void {
@@ -587,6 +594,16 @@ function parsesMcpAppResourceFrames(): void {
     },
     "MCP app HTML resources should become iframe view models with Desktop widget metadata",
   );
+  assertEqual(
+    mcpAppCspMetaContent(emptyCsp, "empty-csp-nonce").includes("connect-src 'none'"),
+    true,
+    "MCP app frames without widget CSP metadata should get a default deny connect-src",
+  );
+  assertEqual(
+    mcpAppCspMetaContent(emptyCsp, "empty-csp-nonce").includes("script-src 'nonce-empty-csp-nonce' blob:"),
+    true,
+    "MCP app frames without widget CSP metadata should restrict scripts to the nonce-bearing bridge and blob URLs",
+  );
   assertDeepEqual(
     mcpAppFrameFromResourceReadResult({
       contents: [{
@@ -597,9 +614,9 @@ function parsesMcpAppResourceFrames(): void {
           ui: {
             csp: {
               baseUriDomains: ["base.example.com"],
-              connectDomains: ["api.example.com", "bad path"],
+              connectDomains: ["api.example.com", "localhost:8443", "127.0.0.1", "bad path"],
               frameDomains: ["%2a.frames.example.com"],
-              resourceDomains: ["cdn.example.com", "http://not-https.example.com", "*.assets.example.com"],
+              resourceDomains: ["cdn.example.com", "http://not-https.example.com", "*.assets.example.com", "widgets.local"],
             },
             domain: "widgets.example.com",
           },
@@ -748,11 +765,36 @@ function buildsMcpAppSandboxSrcDoc(): void {
   });
   if (detail.kind !== "mcpApp") throw new Error("MCP app sandbox fixture should produce app detail");
 
-  const srcDoc = mcpAppSandboxSrcDoc(frame, detail);
+  const srcDoc = mcpAppSandboxSrcDoc(frame, detail, "test-bridge-nonce");
   assertEqual(
     srcDoc.includes("Content-Security-Policy"),
     true,
     "MCP app srcDoc should inject a best-effort CSP meta tag from Desktop widget metadata",
+  );
+  assertEqual(
+    srcDoc.startsWith("<!doctype html><html><head><meta http-equiv=\"Content-Security-Policy\""),
+    true,
+    "MCP app srcDoc should install CSP before any widget head or body markup",
+  );
+  assertEqual(
+    srcDoc.includes("'unsafe-inline'"),
+    false,
+    "MCP app CSP should not allow unsafe inline scripts or styles",
+  );
+  assertEqual(
+    srcDoc.includes("'unsafe-eval'"),
+    false,
+    "MCP app CSP should not allow unsafe eval",
+  );
+  assertEqual(
+    srcDoc.includes("script-src 'nonce-test-bridge-nonce' blob: https://cdn.example.com"),
+    true,
+    "MCP app CSP should allow only the nonce-bearing host bridge plus declared resource scripts",
+  );
+  assertEqual(
+    srcDoc.includes("<script nonce=\"test-bridge-nonce\">"),
+    true,
+    "MCP app bridge script should carry the CSP nonce",
   );
   assertEqual(
     srcDoc.includes("window.openai"),
@@ -795,9 +837,47 @@ function buildsMcpAppSandboxSrcDoc(): void {
     "MCP app CSP should be inserted at the start of the existing head",
   );
   assertEqual(
-    mcpAppCspMetaContent(frame.csp).includes("connect-src 'self' https://api.example.com https://cdn.example.com"),
+    mcpAppCspMetaContent(frame.csp, "test-bridge-nonce").includes("connect-src https://api.example.com https://cdn.example.com"),
     true,
     "MCP app CSP meta should mirror Desktop connect/resource domain propagation",
+  );
+  assertEqual(
+    srcDoc.includes("event.source !== window.parent"),
+    true,
+    "MCP app bridge init should validate the host window source",
+  );
+  assertEqual(
+    srcDoc.includes("data.nonce !== initial.bridgeNonce"),
+    true,
+    "MCP app bridge init should validate the per-frame nonce",
+  );
+  assertEqual(
+    srcDoc.includes("normalizeWidgetState(args.length > 1 ? args[1] : args[0])"),
+    true,
+    "MCP app bridge updateWidgetState should mirror Desktop's second-argument state semantics",
+  );
+}
+
+function pinsMcpAppIframeSandboxPolicy(): void {
+  assertEqual(
+    MCP_APP_IFRAME_SANDBOX_POLICY,
+    "allow-forms allow-scripts",
+    "MCP app iframe sandbox should allow script execution without same-origin, popups, or direct downloads",
+  );
+  assertEqual(
+    MCP_APP_IFRAME_SANDBOX_POLICY.includes("allow-downloads"),
+    false,
+    "MCP app widgets should download only through the host bridge",
+  );
+  assertEqual(
+    MCP_APP_IFRAME_SANDBOX_POLICY.includes("allow-same-origin"),
+    false,
+    "MCP app widgets should keep an opaque sandbox origin",
+  );
+  assertEqual(
+    MCP_APP_IFRAME_SANDBOX_POLICY.includes("allow-popups"),
+    false,
+    "MCP app widgets should open links only through the validated host bridge",
   );
 }
 
@@ -844,25 +924,6 @@ function buildsAutoReviewDetails(): void {
       text: "Status: approved\nRisk: low\nRationale: Command matches policy",
     },
     "auto-review detail should preserve status, risk, and rationale",
-  );
-}
-
-function buildsHookDetails(): void {
-  assertDeepEqual(
-    toolActivityDetailViewModel({
-      type: "hook",
-      id: "hook-1",
-      key: "post-command",
-      run: { status: "completed", command: "echo ok" },
-    }),
-    {
-      kind: "text",
-      id: "hook-1",
-      running: false,
-      title: "Hook",
-      text: "Status: completed\nKey: post-command\nCommand: echo ok",
-    },
-    "hook detail should preserve run status, key, and command",
   );
 }
 

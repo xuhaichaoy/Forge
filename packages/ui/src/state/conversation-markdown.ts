@@ -81,6 +81,5 @@ function threadItemLabel(unit: Extract<ConversationRenderUnit, { kind: "threadIt
   const type = itemType(unit.item);
   if (type === "dynamic-tool-call") return "Tool call";
   if (type === "automatic-approval-review") return "Auto-review";
-  if (type === "hook") return "Hook";
   return "Activity";
 }

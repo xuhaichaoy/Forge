@@ -7,6 +7,12 @@
  * sticky/z-index, 28px min-height, 8px header gap. Background is an opaque approximation
  * of the rail container so the sticky header masks scrolled-under content cleanly.
  */
+.hc-right-rail-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 8px 4px 16px;
+}
+
 .hc-rail-section-header {
   position: sticky;
   top: 0;
@@ -128,6 +134,17 @@
   flex-direction: column;
   gap: 1px;
   padding: 0 16px;
+}
+
+.hc-rail-section-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: #6f716b;
+  padding: 0 6px 5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .hc-empty-panel {

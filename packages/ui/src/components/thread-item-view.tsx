@@ -1,9 +1,10 @@
-import { ChevronRight, Terminal, TriangleAlert, Wrench } from "lucide-react";
+import { CheckCircle2, ChevronRight, Circle, LoaderCircle, Terminal, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { isItemInProgress, itemType } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
+import { PlanSummaryCard } from "./plan-summary-card";
 import {
   initialExecShellExpanded,
   normalizeDesktopShellCommand,
@@ -20,9 +21,107 @@ export function ThreadItemView({
 }) {
   const type = itemType(unit.item);
   if (type === "exec") return <ExecThreadItemView unit={unit} />;
-  if (type === "hook") return <HookThreadItemView unit={unit} />;
+  if (type === "todo-list") return <TodoListThreadItemView unit={unit} />;
+  if (type === "proposed-plan") return <PlanSummaryCard unit={unit} />;
   if (type === "automatic-approval-review") return <AutoReviewThreadItemView unit={unit} />;
   return <DynamicToolCallThreadItemView unit={unit} />;
+}
+
+function TodoListThreadItemView({
+  unit,
+}: {
+  unit: ThreadItemUnit;
+}) {
+  const plan = todoPlanItems(unit.item);
+  const [expanded, setExpanded] = useState(true);
+  const summary = todoListSummaryLabel(unit.item);
+  const completed = plan.length > 0 && plan.every((entry) => normalizedTodoStatus(entry.status) === "completed");
+
+  return (
+    <div
+      className="hc-thread-item-row"
+      data-content-search-unit-key={unit.key}
+      data-item-ids={unit.item.id}
+      data-item-type="todo-list"
+    >
+      <div className="hc-inline-plan-card">
+        <button
+          aria-expanded={expanded}
+          className="hc-inline-plan-header"
+          onClick={() => setExpanded((value) => !value)}
+          type="button"
+        >
+          <span className="hc-inline-plan-header-icon" aria-hidden="true">
+            {completed ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+          </span>
+          <span className="hc-inline-plan-summary">{summary}</span>
+          <ChevronRight
+            aria-hidden
+            className={`hc-thread-item-chevron shrink-0 text-stone-400 transition-transform duration-200 ${expanded ? "is-open" : ""}`}
+            size={14}
+          />
+        </button>
+        <AnimatedDisclosure
+          className="hc-thread-item-disclosure"
+          innerClassName="hc-thread-item-body"
+          open={expanded}
+        >
+          <ol className="hc-inline-plan-list">
+            {plan.map((entry, index) => (
+              <li className="hc-inline-plan-row" key={`${entry.step}:${index}`}>
+                <span className="hc-inline-plan-status" aria-hidden="true">
+                  {todoStatusIcon(entry.status)}
+                </span>
+                <span className="hc-inline-plan-index">{index + 1}.</span>
+                <span
+                  className="hc-inline-plan-step"
+                  data-status={normalizedTodoStatus(entry.status)}
+                >
+                  {entry.step}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </AnimatedDisclosure>
+      </div>
+    </div>
+  );
+}
+
+export function todoListSummaryLabel(item: ThreadItemUnit["item"]): string {
+  const plan = todoPlanItems(item);
+  const completed = plan.reduce((count, entry) =>
+    count + (normalizedTodoStatus(entry.status) === "completed" ? 1 : 0), 0);
+  const taskLabel = plan.length === 1 ? "task" : "tasks";
+  return `${completed} out of ${plan.length} ${taskLabel} completed`;
+}
+
+function todoPlanItems(item: ThreadItemUnit["item"]): Array<{ step: string; status: string }> {
+  const record = item as Record<string, unknown>;
+  if (!Array.isArray(record.plan)) return [];
+  return record.plan.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const planEntry = entry as Record<string, unknown>;
+    const step = typeof planEntry.step === "string" ? planEntry.step.trim() : "";
+    if (!step) return [];
+    const status = typeof planEntry.status === "string" ? planEntry.status : "";
+    return [{ step, status }];
+  });
+}
+
+function normalizedTodoStatus(status: string): "completed" | "inProgress" | "pending" {
+  if (status === "completed" || status === "complete" || status === "done") return "completed";
+  if (status === "in_progress" || status === "inProgress" || status === "running" || status === "active") {
+    return "inProgress";
+  }
+  return "pending";
+}
+
+function todoStatusIcon(status: string) {
+  const normalized = normalizedTodoStatus(status);
+  if (normalized === "completed") return <CheckCircle2 size={14} />;
+  if (normalized === "inProgress") return <LoaderCircle className="hc-inline-plan-spinner" size={14} />;
+  return <Circle size={14} />;
 }
 
 function ExecThreadItemView({
@@ -195,73 +294,6 @@ function AutoReviewThreadItemView({
   );
 }
 
-function HookThreadItemView({
-  unit,
-}: {
-  unit: ThreadItemUnit;
-}) {
-  const record = unit.item as Record<string, unknown>;
-  const run = objectField(record, "run");
-  const status = stringField(run, "status") || stringField(record, "status") || "completed";
-  const running = status === "running";
-  const summary = hookSummary(record);
-  const entries = hookEntries(run);
-  const hasEntries = entries.length > 0;
-  const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    setExpanded(false);
-  }, [unit.key]);
-
-  return (
-    <div
-      className="hc-thread-item-row"
-      data-content-search-unit-key={unit.key}
-      data-item-ids={unit.item.id}
-      data-item-type="hook"
-    >
-      {hasEntries ? (
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-label={running ? `${summary} running` : summary}
-          className="hc-thread-item-button group flex w-fit max-w-full min-w-0 items-center gap-1.5 rounded-md border border-transparent px-0 py-0 text-left text-[13px] leading-5 text-stone-500 transition-colors hover:bg-black/5 hover:text-slate-700"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <Wrench aria-hidden className="shrink-0 text-stone-400 group-hover:text-stone-500" size={14} />
-          <span className={`min-w-0 flex-1 truncate ${running ? "animate-pulse" : ""}`}>{summary}</span>
-          <ChevronRight
-            aria-hidden
-            className={`hc-thread-item-chevron shrink-0 text-stone-400 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
-            size={14}
-          />
-        </button>
-      ) : (
-        <div className="hc-thread-item-inline text-[13px] leading-5 text-stone-500">
-          <Wrench aria-hidden className="shrink-0 text-stone-400" size={14} />
-          <span className={`truncate ${running ? "animate-pulse" : ""}`}>{summary}</span>
-        </div>
-      )}
-      {hasEntries && (
-        <AnimatedDisclosure
-          className="hc-thread-item-disclosure"
-          innerClassName="hc-thread-item-body"
-          open={expanded}
-        >
-          <div className="-mx-1 mt-1 flex flex-col gap-1.5 px-1">
-            {entries.map((entry, index) => (
-              <p className="hc-thread-item-copy whitespace-pre-wrap text-[13px] leading-6 text-stone-600" key={`${entry.kind}:${index}`}>
-                <span className="font-medium text-stone-500">{hookEntryLabel(entry.kind)}:</span>{" "}
-                {entry.text}
-              </p>
-            ))}
-          </div>
-        </AnimatedDisclosure>
-      )}
-    </div>
-  );
-}
-
 export function dynamicToolCallLabel(item: ThreadItemUnit["item"]): string {
   const record = item as Record<string, unknown>;
   const tool = stringField(record, "tool") || stringField(record, "namespace");
@@ -297,53 +329,6 @@ export function autoReviewBody(record: Record<string, unknown>): string {
     return "A carefully prompted reviewer agent is reviewing this request before Codex runs it.";
   }
   return "A carefully prompted reviewer agent reviewed this request.";
-}
-
-function hookSummary(record: Record<string, unknown>): string {
-  const run = objectField(record, "run");
-  const hookLabel = `${hookEventNameLabel(run, record)} hook`;
-  const statusMessage = stringField(run, "statusMessage").trim();
-  const terminalStatus = hookTerminalStatusLabel(stringField(run, "status"));
-  if (!statusMessage) return terminalStatus ? `${hookLabel} ${terminalStatus}` : hookLabel;
-  return terminalStatus ? `${hookLabel} ${terminalStatus} - ${statusMessage}` : `${hookLabel} - ${statusMessage}`;
-}
-
-function hookEventNameLabel(run: Record<string, unknown>, record: Record<string, unknown>): string {
-  const eventName = stringField(run, "eventName") || stringField(record, "key");
-  if (eventName === "preToolUse") return "PreToolUse";
-  if (eventName === "permissionRequest") return "PermissionRequest";
-  if (eventName === "postToolUse") return "PostToolUse";
-  if (eventName === "preCompact") return "PreCompact";
-  if (eventName === "postCompact") return "PostCompact";
-  if (eventName === "sessionStart") return "SessionStart";
-  if (eventName === "userPromptSubmit") return "UserPromptSubmit";
-  if (eventName === "stop") return "Stop";
-  return eventName ? humanizeToolLabel(eventName).replace(/\s+/g, "") : "Hook";
-}
-
-function hookTerminalStatusLabel(status: string): string {
-  if (status === "blocked") return "blocked";
-  if (status === "failed") return "failed";
-  if (status === "stopped") return "stopped";
-  return "";
-}
-
-function hookEntries(run: Record<string, unknown>): Array<{ kind: string; text: string }> {
-  const entries = Array.isArray(run.entries) ? run.entries : [];
-  return entries.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const kind = stringField(entry, "kind") || "context";
-    const text = stringField(entry, "text");
-    return text ? [{ kind, text }] : [];
-  });
-}
-
-function hookEntryLabel(kind: string): string {
-  if (kind === "warning") return "warning";
-  if (kind === "stop") return "stop";
-  if (kind === "feedback") return "feedback";
-  if (kind === "error") return "error";
-  return "context";
 }
 
 function objectField(value: unknown, key: string): Record<string, unknown> {

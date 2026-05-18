@@ -1,11 +1,19 @@
 import { SETTINGS_SECTIONS, isRefreshableSettingsPanel } from "../src/components/model-settings-panel";
-import { imageGenerationCapabilityEntries } from "../src/state/settings-panel-workflow";
+import {
+  generalSettingsEntries,
+  imageGenerationCapabilityEntries,
+  localSettingsEntries,
+} from "../src/state/settings-panel-workflow";
 import type { SettingsPanelId } from "../src/state/composer-workflow";
 
 export default function runSettingsPanelTests(): void {
   exposesUnifiedSettingsSectionsWithoutLogin();
   marksServerBackedSectionsRefreshable();
   projectsImageGenerationCapabilities();
+  projectsNotificationPreferencesInGeneralSettings();
+  projectsThemeAndLocaleInGeneralSettings();
+  displaysCustomPermissionStateWithoutSelectableCustomMode();
+  displaysCustomApprovalPolicyAsDegraded();
 }
 
 function exposesUnifiedSettingsSectionsWithoutLogin(): void {
@@ -71,6 +79,108 @@ function projectsImageGenerationCapabilities(): void {
     imageGenerationCapabilityEntries({ connected: false })[0]?.status,
     "offline",
     "image settings should show offline native capability when app-server is unavailable",
+  );
+}
+
+function projectsNotificationPreferencesInGeneralSettings(): void {
+  const entries = generalSettingsEntries({
+    activeThreadId: "thread-1",
+    activeTurnId: null,
+    codexHome: "/tmp/codex-home",
+    connected: true,
+    defaultCwd: "/tmp/workspace",
+    model: "gpt-5.2",
+    modelCount: 1,
+    pendingRequestCount: 0,
+    pid: 123,
+    uiLocale: "en-US",
+    uiTheme: { mode: "system", resolved: "dark" },
+    workspace: "/tmp/workspace",
+    notificationPreferences: { turnCompletionPolicy: "always", sound: false },
+  });
+  const notifications = entries.find((entry) => entry.id === "settings:notifications");
+  assertDeepEqual(
+    [notifications?.status, notifications?.meta],
+    ["Always", "Sound off"],
+    "general settings should expose the saved notification policy and sound preference",
+  );
+  assertDeepEqual(
+    notifications?.secondaryActions?.map((action) => action.id),
+    ["notifications:policy:backgroundOnly", "notifications:policy:off", "notifications:sound:on"],
+    "notification settings should expose policy and sound actions",
+  );
+}
+
+function projectsThemeAndLocaleInGeneralSettings(): void {
+  const entries = generalSettingsEntries({
+    activeThreadId: null,
+    activeTurnId: null,
+    codexHome: null,
+    connected: false,
+    defaultCwd: null,
+    model: null,
+    modelCount: 0,
+    pendingRequestCount: 0,
+    pid: null,
+    uiLocale: "zh-CN",
+    uiTheme: { mode: "dark", resolved: "dark" },
+    workspace: "",
+    notificationPreferences: { turnCompletionPolicy: "backgroundOnly", sound: true },
+  });
+  const theme = entries.find((entry) => entry.id === "settings:theme");
+  const locale = entries.find((entry) => entry.id === "settings:locale");
+  assertDeepEqual(
+    [theme?.status, theme?.meta, theme?.secondaryActions?.map((action) => action.id)],
+    ["Dark", "Resolved dark", ["theme:system", "theme:light"]],
+    "general settings should expose local theme controls",
+  );
+  assertDeepEqual(
+    [locale?.status, locale?.meta, locale?.secondaryActions?.map((action) => action.id)],
+    ["Chinese (Simplified)", "Saved locally", ["locale:en-US"]],
+    "general settings should expose local i18n controls",
+  );
+}
+
+function displaysCustomPermissionStateWithoutSelectableCustomMode(): void {
+  const entries = localSettingsEntries("permissions", {
+    connected: true,
+    pendingRequestCount: 0,
+    threadContextDefaults: {
+      sandbox: "workspace-write",
+      approvalPolicy: { custom: true },
+      approvalsReviewer: "user",
+    },
+  });
+  assertDeepEqual(
+    entries.some((entry) => entry.id === "permissions:mode:custom" || entry.action?.type === "writeConfig" && entry.title === "Custom"),
+    false,
+    "permissions settings should not expose custom as a selectable mode",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "permissions:custom-status")?.status,
+    "custom/degraded",
+    "permissions settings should display custom/degraded status for unsupported tuples",
+  );
+}
+
+function displaysCustomApprovalPolicyAsDegraded(): void {
+  const entries = localSettingsEntries("approvals", {
+    connected: true,
+    pendingRequestCount: 2,
+    threadContextDefaults: {
+      sandbox: "workspace-write",
+      approvalPolicy: { unexpected: true },
+      approvalsReviewer: "auto_review",
+    },
+  });
+  assertDeepEqual(
+    entries.map((entry) => [entry.id, entry.status]),
+    [
+      ["approvals:policy", "custom/degraded"],
+      ["approvals:permissions-mode", "custom/degraded"],
+      ["approvals:pending", "2"],
+    ],
+    "approvals settings should show degraded custom policy without inventing a selectable mode",
   );
 }
 

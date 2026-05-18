@@ -129,6 +129,9 @@ function projectsSideChatRailEntriesForReopeningPanelThreads(): void {
       turnPlan: null,
       turnDiff: "",
       composerMode: null,
+      threadGoal: null,
+      threadGoalTurnId: null,
+      terminalTurnIds: [],
     },
   });
 

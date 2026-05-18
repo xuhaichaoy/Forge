@@ -10,6 +10,11 @@ import {
   normalizeModelConfig,
   type ModelListEntry,
 } from "./model-settings";
+import {
+  buildConfigBatchWriteParams,
+  formatConfigWriteError,
+  readConfigWriteTarget,
+} from "../state/config-write-target";
 
 export type CodexUiDispatch = (action: CodexUiAction) => void;
 
@@ -49,14 +54,25 @@ export async function saveModelDraft({
   try {
     const ready = connected || await connect();
     if (ready && nextModel.model) {
+      const configWriteTarget = await readConfigWriteTarget(client, {
+        keyPaths: [
+          "model_catalog_json",
+          "model_provider",
+          "model",
+          `model_providers.${nextModel.id}`,
+        ],
+        scope: "Model config write",
+      });
       const catalogPath = await writeLocalModelCatalog(
         codexHome,
         buildLocalModelCatalogConfig(nextModel),
       );
-      await client.request("config/batchWrite", {
-        edits: buildModelConfigEdits(nextModel, catalogPath),
+      const edits = buildModelConfigEdits(nextModel, catalogPath);
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
+        edits,
+        target: configWriteTarget,
         reloadUserConfig: true,
-      });
+      }));
       dispatch({
         type: "log",
         text: `set Codex model to ${nextModel.model}; restart sidecar if this model was not in the previous catalog`,
@@ -64,6 +80,10 @@ export async function saveModelDraft({
       await refreshModels(client, dispatch);
     }
   } catch (error) {
-    dispatch({ type: "log", text: `saved locally; Codex config write failed: ${formatError(error)}`, level: "warn" });
+    dispatch({
+      type: "log",
+      text: `saved locally; Codex config write failed: ${formatConfigWriteError(error, "Model config write")}`,
+      level: "warn",
+    });
   }
 }

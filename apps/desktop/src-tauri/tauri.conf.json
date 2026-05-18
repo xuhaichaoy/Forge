@@ -33,7 +33,7 @@
   "bundle": {
     "active": true,
     "targets": ["dmg", "app"],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "icon": [],
     "resources": {
       "binaries": "binaries"
@@ -44,12 +44,16 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["codex"],
+        "name": "com.hicodex.desktop.codex",
+        "role": "Viewer"
+      }
+    },
     "updater": {
-      "active": true,
-      "endpoints": [
-        "https://placeholder.invalid/hicodex/{{target}}/{{arch}}/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgxNUQzNjk0RTBDNjY1QkYKUldTL1pjYmdsRFpkZ1dZYm8ycEE5VE5NdkR0Q3ZvSzRsNmhKOXVaN3FkQlcvQXpMN1RMaThDY24K"
+      "endpoints": [],
+      "pubkey": ""
     }
   }
 }

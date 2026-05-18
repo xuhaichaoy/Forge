@@ -1,5 +1,6 @@
 import {
   projectCommandPanelEntries,
+  type ConfigWriteTarget,
   type CommandPanelEntry,
 } from "./command-panel";
 
@@ -76,6 +77,7 @@ export function addMcpServerConfigManagementEntries(
       title: "Add MCP server",
       mode: "add",
       existingServers,
+      configWriteTarget: config?.writableTarget,
     }),
   };
   return [
@@ -84,6 +86,9 @@ export function addMcpServerConfigManagementEntries(
       if (entry.kind !== "mcpServer") return entry;
       const serverKey = entry.title;
       const serverConfig = config?.servers[serverKey];
+      const configWriteTarget = config
+        ? config.serverTargets[serverKey] ?? config.writableTarget
+        : undefined;
       const hasConfigContext = config !== undefined;
       const isReadOnly = hasConfigContext && (!serverConfig || config.readOnlyServers.has(serverKey));
       const enabled = serverConfig ? serverConfig.enabled !== false : true;
@@ -101,6 +106,7 @@ export function addMcpServerConfigManagementEntries(
               title: `${enabled ? "Disable" : "Enable"} ${entry.title}`,
               name: serverKey,
               config: { ...serverConfig, enabled: !enabled },
+              configWriteTarget,
             },
           } : undefined,
           !isReadOnly ? {
@@ -113,6 +119,7 @@ export function addMcpServerConfigManagementEntries(
               server: entry.title,
               existingServers,
               serverConfig,
+              configWriteTarget,
             }),
           } : undefined,
           !isReadOnly ? {
@@ -124,6 +131,7 @@ export function addMcpServerConfigManagementEntries(
               type: "removeMcpServer" as const,
               title: `Remove ${entry.title}`,
               server: entry.title,
+              configWriteTarget,
             },
           } : undefined,
         ]),
@@ -202,7 +210,16 @@ function mcpManagementSummary(entries: CommandPanelEntry[]): ManagementPanelSumm
 }
 
 function skillManagementSummary(entries: CommandPanelEntry[]): ManagementPanelSummary[] {
-  const skills = entries.filter((entry) => entry.kind === "skill" && !entry.id.startsWith("skill-error:"));
+  const skills = entries.filter((entry) =>
+    entry.kind === "skill"
+    && !entry.id.startsWith("skill-error:")
+    && !entry.id.startsWith("recommended-skill:")
+    && !entry.id.startsWith("skill-creator:")
+  );
+  const recommended = entries.filter((entry) =>
+    entry.kind === "skill"
+    && (entry.id.startsWith("recommended-skill:") || entry.id.startsWith("skill-creator:"))
+  );
   const enabled = skills.filter((entry) => entry.status === "enabled" || entry.status === undefined);
   const disabled = skills.filter((entry) => entry.status === "disabled");
   const errors = entries.filter((entry) => entry.kind === "skill" && entry.status === "error");
@@ -210,6 +227,12 @@ function skillManagementSummary(entries: CommandPanelEntry[]): ManagementPanelSu
     { id: "skills:total", label: "Skills", value: skills.length },
     { id: "skills:enabled", label: "Enabled", value: enabled.length, tone: enabled.length > 0 ? "success" : "default" },
     { id: "skills:disabled", label: "Disabled", value: disabled.length, tone: disabled.length > 0 ? "warning" : "default" },
+    {
+      id: "skills:recommended",
+      label: "Recommended",
+      value: recommended.length,
+      tone: recommended.length > 0 ? "success" : "default",
+    },
     { id: "skills:errors", label: "Load errors", value: errors.length, tone: errors.length > 0 ? "danger" : "default" },
   ];
 }
@@ -311,7 +334,9 @@ function cleanSecondaryActions(
 interface McpManagementConfig {
   readOnlyServers: Set<string>;
   serverKeys: string[];
+  serverTargets: Record<string, ConfigWriteTarget | undefined>;
   servers: Record<string, Record<string, unknown>>;
+  writableTarget?: ConfigWriteTarget;
 }
 
 function mcpManagementConfig(configReadResult: unknown): McpManagementConfig | undefined {
@@ -321,11 +346,65 @@ function mcpManagementConfig(configReadResult: unknown): McpManagementConfig | u
   if (Object.keys(config).length === 0) return undefined;
   const origins = recordObject(root.origins);
   const serverKeys = Object.keys(servers ?? {});
+  const writableTarget = mcpConfigWriteTargetFromReadResult(configReadResult);
+  const serverTargets = Object.fromEntries(
+    serverKeys.map((key) => [key, mcpConfigWriteTargetFromReadResult(configReadResult, key)] as const),
+  );
   return {
     servers: servers ?? {},
     serverKeys,
+    serverTargets,
+    writableTarget,
     readOnlyServers: new Set(serverKeys.filter((key) => mcpServerHasProjectOrigin(key, origins))),
   };
+}
+
+export function mcpConfigWriteTargetFromReadResult(
+  configReadResult: unknown,
+  serverKey?: string,
+): ConfigWriteTarget | undefined {
+  const root = recordObject(configReadResult);
+  const origins = recordObject(root.origins);
+  if (serverKey) {
+    const target = mcpServerWriteTarget(serverKey, origins);
+    if (target) return target;
+  }
+  return userLayerWriteTarget(root.layers);
+}
+
+function mcpServerWriteTarget(
+  serverKey: string,
+  origins: Record<string, unknown>,
+): ConfigWriteTarget | undefined {
+  const prefix = `mcp_servers.${serverKey}.`;
+  for (const [path, origin] of Object.entries(origins)) {
+    if (path !== `mcp_servers.${serverKey}` && !path.startsWith(prefix)) continue;
+    const target = originWriteTarget(origin);
+    if (target) return target;
+  }
+  return undefined;
+}
+
+function originWriteTarget(origin: unknown): ConfigWriteTarget | undefined {
+  const metadata = recordObject(origin);
+  const source = recordObject(metadata.name);
+  if (source.type !== "user") return undefined;
+  const filePath = typeof source.file === "string" ? source.file : "";
+  const expectedVersion = typeof metadata.version === "string" ? metadata.version : "";
+  return filePath && expectedVersion ? { filePath, expectedVersion } : undefined;
+}
+
+function userLayerWriteTarget(layers: unknown): ConfigWriteTarget | undefined {
+  if (!Array.isArray(layers)) return undefined;
+  for (const layer of layers) {
+    const record = recordObject(layer);
+    const source = recordObject(record.name);
+    if (source.type !== "user") continue;
+    const filePath = typeof source.file === "string" ? source.file : "";
+    const expectedVersion = typeof record.version === "string" ? record.version : "";
+    if (filePath && expectedVersion) return { filePath, expectedVersion };
+  }
+  return undefined;
 }
 
 function mcpServerHasProjectOrigin(serverKey: string, origins: Record<string, unknown>): boolean {
@@ -343,20 +422,23 @@ function mcpServerEntryNames(entries: CommandPanelEntry[]): string[] {
 }
 
 function mcpServerFormAction(action: {
+  configWriteTarget?: ConfigWriteTarget;
   existingServers: string[];
   mode: "add" | "edit";
   server?: string;
   serverConfig?: Record<string, unknown>;
   title: string;
 }): NonNullable<CommandPanelEntry["action"]> {
-  return {
+  const result: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpServerForm" }> = {
     type: "openMcpServerForm",
     title: action.title,
     mode: action.mode,
-    server: action.server,
+    ...(action.server !== undefined ? { server: action.server } : {}),
     existingServers: action.existingServers,
-    serverConfig: action.serverConfig,
-  } as NonNullable<CommandPanelEntry["action"]>;
+    ...(action.serverConfig !== undefined ? { serverConfig: action.serverConfig } : {}),
+    ...(action.configWriteTarget !== undefined ? { configWriteTarget: action.configWriteTarget } : {}),
+  };
+  return result;
 }
 
 function recordObject(value: unknown): Record<string, unknown> {

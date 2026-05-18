@@ -1,17 +1,20 @@
 use base64::{engine::general_purpose, Engine as _};
 use hicodex_host::{
-    AppServerHost, AppServerStartConfig, CodexAuthSummary, HostStatus, LocalModelCatalogConfig,
-    ThreadToolHistory,
+    AppServerHost, AppServerStartConfig, CodexAuthSummary, HostInstallationState, HostStatus,
+    LocalModelCatalogConfig, ThreadToolHistory,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::env;
 use std::fs;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{Emitter, Manager, State};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_notification::NotificationExt;
 
 mod document_preview;
 mod spreadsheet_preview;
@@ -20,6 +23,17 @@ use document_preview::{read_document_preview, DocumentPreview};
 use spreadsheet_preview::{read_spreadsheet_preview, SpreadsheetPreview};
 
 const APP_SERVER_EVENT_NAME: &str = "hicodex://app-server-event";
+const NATIVE_SHELL_EVENT_NAME: &str = "hicodex://native-shell-event";
+const CODEX_DEEP_LINK_SCHEME: &str = "codex://";
+const APP_CONNECT_OAUTH_CALLBACK_PATH: &str = "/aip/connectors/links/oauth/callback";
+const APP_CONNECT_OAUTH_BROWSER_REDIRECT_PATH: &str = "/connector_platform_oauth_redirect";
+
+const MENU_NEW_CHAT: &str = "hicodex:new-chat";
+const MENU_SEARCH: &str = "hicodex:search";
+const MENU_SETTINGS: &str = "hicodex:settings";
+const MENU_RELOAD: &str = "hicodex:reload";
+const MENU_CLOSE: &str = "hicodex:close-window";
+const MENU_QUIT: &str = "hicodex:quit";
 
 struct AppState {
     host: AppServerHost,
@@ -35,10 +49,23 @@ struct LocalFileMetadata {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct TurnCompletionNotificationRequest {
+    title: Option<String>,
+    body: Option<String>,
+    sound: Option<bool>,
+    thread_id: Option<String>,
+    turn_id: Option<String>,
+    status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ImageGenerationRequest {
     base_url: String,
     api_key: Option<String>,
     payload: Value,
+    codex_home: Option<String>,
+    thread_id: Option<String>,
 }
 
 impl Default for AppState {
@@ -95,6 +122,17 @@ fn host_read_codex_auth_summary(
     state
         .host
         .read_codex_auth_summary(codex_home)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn host_read_installation_state(
+    state: State<'_, AppState>,
+    codex_home: Option<String>,
+) -> Result<HostInstallationState, String> {
+    state
+        .host
+        .read_or_init_installation_state(codex_home)
         .map_err(|error| error.to_string())
 }
 
@@ -172,6 +210,40 @@ fn host_read_file_metadata(path: String) -> Result<LocalFileMetadata, String> {
 }
 
 #[tauri::command]
+fn host_notify_turn_completed(
+    app: AppHandle,
+    request: TurnCompletionNotificationRequest,
+) -> Result<(), String> {
+    let title = notification_text(request.title, "Codex turn completed", 96);
+    let body = notification_text(request.body, "The background turn has finished.", 240);
+    let builder = app.notification().builder().title(title).body(body);
+    let builder = if request.sound.unwrap_or(true) {
+        builder.sound("default")
+    } else {
+        builder
+    };
+    builder
+        .show()
+        .map_err(|error| format!("failed to show turn notification: {error}"))?;
+    let _ = app.emit(
+        NATIVE_SHELL_EVENT_NAME,
+        json!({
+            "action": "turnCompletedNotification",
+            "supported": true,
+            "threadId": request.thread_id,
+            "turnId": request.turn_id,
+            "status": request.status,
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+fn host_handle_deep_link_url(app: AppHandle, url: String) -> Result<(), String> {
+    handle_deep_link_url(&app, &url)
+}
+
+#[tauri::command]
 fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, String> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -221,8 +293,8 @@ fn host_read_spreadsheet_preview(
         return Err(format!("spreadsheet file does not exist: {trimmed}"));
     }
 
-    let max_rows = max_rows.unwrap_or(40).clamp(1, 200);
-    let max_cols = max_cols.unwrap_or(12).clamp(1, 80);
+    let max_rows = max_rows.unwrap_or(80).clamp(1, 400);
+    let max_cols = max_cols.unwrap_or(24).clamp(1, 120);
     read_spreadsheet_preview(target, max_rows, max_cols)
 }
 
@@ -326,10 +398,17 @@ mod find_rollout_tests {
     use std::fs;
     use std::io::Write;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir() -> PathBuf {
-        let base =
-            std::env::temp_dir().join(format!("hicodex-find-rollout-{}", std::process::id()));
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or_default();
+        let base = std::env::temp_dir().join(format!(
+            "hicodex-find-rollout-{}-{nanos}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base
@@ -470,8 +549,13 @@ fn host_generate_image(request: ImageGenerationRequest) -> Result<Value, String>
         });
     }
 
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("image generation backend returned invalid JSON: {error}"))
+    let response = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("image generation backend returned invalid JSON: {error}"))?;
+    persist_image_generation_response(
+        response,
+        request.codex_home.as_deref(),
+        request.thread_id.as_deref(),
+    )
 }
 
 fn write_image_request_headers(api_key: Option<&str>) -> Result<std::path::PathBuf, String> {
@@ -509,14 +593,120 @@ fn image_generations_endpoint(base_url: &str) -> Result<String, String> {
     Ok(format!("{trimmed}/images/generations"))
 }
 
+fn persist_image_generation_response(
+    mut response: Value,
+    codex_home: Option<&str>,
+    thread_id: Option<&str>,
+) -> Result<Value, String> {
+    let Some(codex_home) = codex_home.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(response);
+    };
+    let Some(data) = response.get_mut("data").and_then(Value::as_array_mut) else {
+        return Ok(response);
+    };
+    let Some(first) = data.first_mut().and_then(Value::as_object_mut) else {
+        return Ok(response);
+    };
+    let image_b64 = first
+        .get("b64_json")
+        .or_else(|| first.get("b64Json"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(image_b64) = image_b64 else {
+        return Ok(response);
+    };
+    let image_bytes = general_purpose::STANDARD
+        .decode(image_b64)
+        .map_err(|error| format!("image generation backend returned invalid b64_json: {error}"))?;
+    let output_dir = image_generation_output_dir(codex_home, thread_id);
+    fs::create_dir_all(&output_dir)
+        .map_err(|error| format!("failed to create image output directory: {error}"))?;
+    let output_path = output_dir.join(format!("ig_{}.png", image_content_hash(&image_bytes)));
+    if !output_path.exists() {
+        fs::write(&output_path, &image_bytes)
+            .map_err(|error| format!("failed to save generated image: {error}"))?;
+    }
+    first.insert(
+        "url".to_string(),
+        Value::String(file_url_from_path(&output_path)),
+    );
+    Ok(response)
+}
+
+fn image_generation_output_dir(codex_home: &str, thread_id: Option<&str>) -> PathBuf {
+    let thread_dir = thread_id
+        .map(sanitize_image_generation_path_segment)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "unthreaded".to_string());
+    Path::new(codex_home)
+        .join("generated_images")
+        .join(thread_dir)
+}
+
+fn sanitize_image_generation_path_segment(value: &str) -> String {
+    let mut sanitized = String::new();
+    for ch in value.trim().chars().take(120) {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+            sanitized.push(ch);
+        } else {
+            sanitized.push('_');
+        }
+    }
+    sanitized.trim_matches('.').to_string()
+}
+
+fn image_content_hash(bytes: &[u8]) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn file_url_from_path(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    let mut url = String::from("file://");
+    for byte in path.as_bytes() {
+        match *byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
+                url.push(char::from(*byte));
+            }
+            _ => {
+                url.push_str(&format!("%{byte:02X}"));
+            }
+        }
+    }
+    url
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{host_generate_image, image_generations_endpoint, ImageGenerationRequest};
+    use super::{
+        file_url_from_path, host_generate_image, image_generations_endpoint,
+        is_supported_native_shell_url, ImageGenerationRequest,
+    };
     use serde_json::json;
+    use std::fs;
     use std::io::{Read, Write};
     use std::net::TcpListener;
+    use std::path::PathBuf;
     use std::thread;
     use std::time::Duration;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or_default();
+        let base =
+            std::env::temp_dir().join(format!("hicodex-image-test-{}-{nanos}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        fs::create_dir_all(&base).unwrap();
+        base
+    }
 
     #[test]
     fn builds_image_generation_endpoint_from_base_url() {
@@ -529,6 +719,20 @@ mod tests {
     #[test]
     fn rejects_non_http_image_generation_base_url() {
         assert!(image_generations_endpoint("file:///tmp/socket").is_err());
+    }
+
+    #[test]
+    fn recognizes_shell_links_and_connector_oauth_callbacks() {
+        assert!(is_supported_native_shell_url("codex://threads/thread-1"));
+        assert!(is_supported_native_shell_url(
+            "https://chatgpt.com/aip/connectors/links/oauth/callback?state=s&code=c"
+        ));
+        assert!(is_supported_native_shell_url(
+            "https://chatgpt.com/connector_platform_oauth_redirect?state=s&code=c"
+        ));
+        assert!(!is_supported_native_shell_url(
+            "https://example.com/threads/thread-1"
+        ));
     }
 
     #[test]
@@ -563,7 +767,7 @@ mod tests {
                 }
             }
 
-            let body = r#"{"data":[{"b64_json":"PNGDATA"}]}"#;
+            let body = r#"{"data":[{"b64_json":"UE5HREFUQQ=="}]}"#;
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),
@@ -573,6 +777,7 @@ mod tests {
             request
         });
 
+        let codex_home = temp_dir();
         let result = host_generate_image(ImageGenerationRequest {
             base_url: format!("http://{address}/v1"),
             api_key: Some("local-secret".to_string()),
@@ -581,13 +786,28 @@ mod tests {
                 "n": 1,
                 "size": "1024x1024",
             }),
+            codex_home: Some(codex_home.to_string_lossy().to_string()),
+            thread_id: Some("thread/with spaces".to_string()),
         })
         .unwrap();
         let request = server.join().unwrap();
 
         assert!(request.starts_with("POST /v1/images/generations "));
         assert!(request.contains("Authorization: Bearer local-secret"));
-        assert_eq!(result["data"][0]["b64_json"], "PNGDATA");
+        assert_eq!(result["data"][0]["b64_json"], "UE5HREFUQQ==");
+        let output_dir = codex_home
+            .join("generated_images")
+            .join("thread_with_spaces");
+        let saved_images = fs::read_dir(output_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(saved_images.len(), 1);
+        assert_eq!(fs::read(&saved_images[0]).unwrap(), b"PNGDATA");
+        assert_eq!(
+            result["data"][0]["url"],
+            file_url_from_path(&saved_images[0])
+        );
     }
 }
 
@@ -791,13 +1011,209 @@ fn open_external_url(url: &str) -> std::io::Result<()> {
     }
 }
 
+fn notification_text(value: Option<String>, fallback: &str, max_chars: usize) -> String {
+    let mut text = value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback)
+        .to_string();
+    if text.chars().count() > max_chars {
+        text = text.chars().take(max_chars).collect();
+        text.push_str("...");
+    }
+    text
+}
+
+fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
+    let handle = app.handle();
+    let settings = MenuItemBuilder::with_id(MENU_SETTINGS, "Settings")
+        .accelerator("CmdOrCtrl+,")
+        .build(handle)?;
+    let quit = MenuItemBuilder::with_id(MENU_QUIT, "Quit HiCodex")
+        .accelerator("CmdOrCtrl+Q")
+        .build(handle)?;
+    let new_chat = MenuItemBuilder::with_id(MENU_NEW_CHAT, "New Chat")
+        .accelerator("CmdOrCtrl+N")
+        .build(handle)?;
+    let search = MenuItemBuilder::with_id(MENU_SEARCH, "Search")
+        .accelerator("CmdOrCtrl+K")
+        .build(handle)?;
+    let close = MenuItemBuilder::with_id(MENU_CLOSE, "Close Window")
+        .accelerator("CmdOrCtrl+W")
+        .build(handle)?;
+    let reload = MenuItemBuilder::with_id(MENU_RELOAD, "Reload")
+        .accelerator("CmdOrCtrl+R")
+        .build(handle)?;
+
+    let app_menu = SubmenuBuilder::new(handle, "HiCodex")
+        .item(&settings)
+        .separator()
+        .item(&quit)
+        .build()?;
+    let file_menu = SubmenuBuilder::new(handle, "File")
+        .item(&new_chat)
+        .item(&search)
+        .separator()
+        .item(&close)
+        .build()?;
+    let view_menu = SubmenuBuilder::new(handle, "View").item(&reload).build()?;
+    let menu = MenuBuilder::new(handle)
+        .item(&app_menu)
+        .item(&file_menu)
+        .item(&view_menu)
+        .build()?;
+    app.set_menu(menu)?;
+    Ok(())
+}
+
+fn handle_native_menu_event(app: &AppHandle, id: &str) {
+    match id {
+        MENU_NEW_CHAT => emit_native_shell_action(app, "newChat", true, None, None),
+        MENU_SEARCH => emit_native_shell_action(app, "search", true, None, None),
+        MENU_SETTINGS => emit_native_shell_action(app, "settings", true, None, None),
+        MENU_RELOAD => emit_unsupported_native_menu_action(
+            app,
+            "reload",
+            "Reload is unsupported because HiCodex has no separate browser panel.",
+        ),
+        MENU_CLOSE => emit_unsupported_native_menu_action(
+            app,
+            "closeWindow",
+            "Close Window is unsupported because HiCodex has no safe tab target.",
+        ),
+        MENU_QUIT => app.exit(0),
+        _ => {}
+    }
+}
+
+fn emit_native_shell_action(
+    app: &AppHandle,
+    action: &str,
+    supported: bool,
+    message: Option<&str>,
+    url: Option<&str>,
+) {
+    let _ = activate_main_window(app);
+    let _ = app.emit(
+        NATIVE_SHELL_EVENT_NAME,
+        json!({
+            "action": action,
+            "supported": supported,
+            "message": message,
+            "url": url,
+        }),
+    );
+}
+
+fn activate_main_window(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.unminimize()?;
+        window.show()?;
+        window.set_focus()?;
+    }
+    Ok(())
+}
+
+fn emit_unsupported_native_menu_action(app: &AppHandle, action: &str, message: &str) {
+    emit_native_shell_action(app, action, false, Some(message), None);
+    eprintln!("HiCodex native shell: {message}");
+}
+
+fn handle_deep_link_url(app: &AppHandle, url: &str) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !is_supported_native_shell_url(trimmed) {
+        return Err(
+            "native shell URL must be a codex:// link or connector OAuth callback".to_string(),
+        );
+    }
+    emit_native_shell_action(app, "openDeepLink", true, None, Some(trimmed));
+    eprintln!("HiCodex native shell: received deep link {trimmed}");
+    Ok(())
+}
+
+fn handle_deep_link_urls<'a, I>(app: &AppHandle, urls: I)
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    for url in urls {
+        if let Err(error) = handle_deep_link_url(app, url) {
+            eprintln!("HiCodex native shell: ignored deep link {url}: {error}");
+        }
+    }
+}
+
+fn handle_single_instance_activation(app: &AppHandle, args: Vec<String>, cwd: String) {
+    let _ = activate_main_window(app);
+    let deep_link_args = args
+        .iter()
+        .map(String::as_str)
+        .filter(|arg| is_supported_native_shell_url(arg.trim()));
+    handle_deep_link_urls(app, deep_link_args);
+    eprintln!("HiCodex native shell: focused existing instance from cwd {cwd}");
+}
+
+fn is_supported_native_shell_url(url: &str) -> bool {
+    url.starts_with(CODEX_DEEP_LINK_SCHEME) || is_app_connect_oauth_callback_url(url)
+}
+
+fn is_app_connect_oauth_callback_url(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return false;
+    }
+    lower.contains(APP_CONNECT_OAUTH_CALLBACK_PATH)
+        || lower.contains(APP_CONNECT_OAUTH_BROWSER_REDIRECT_PATH)
+}
+
+fn install_deep_link_handlers(app: &tauri::App) {
+    match app.deep_link().get_current() {
+        Ok(Some(urls)) => {
+            let url_strings: Vec<String> =
+                urls.iter().map(|url| url.as_str().to_string()).collect();
+            handle_deep_link_urls(app.handle(), url_strings.iter().map(String::as_str));
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("HiCodex native shell: failed to read startup deep links: {error}");
+        }
+    }
+
+    let handle = app.handle().clone();
+    app.deep_link().on_open_url(move |event| {
+        let url_strings: Vec<String> = event
+            .urls()
+            .iter()
+            .map(|url| url.as_str().to_string())
+            .collect();
+        handle_deep_link_urls(&handle, url_strings.iter().map(String::as_str));
+    });
+}
+
+fn log_unsupported_native_shell_boundaries() {
+    eprintln!(
+        "HiCodex native shell: release update endpoints/signing and product notification entitlement/distribution policy still need production configuration"
+    );
+}
+
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(
+            handle_single_instance_activation,
+        ))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .on_menu_event(|app, event| {
+            handle_native_menu_event(app, event.id().as_ref());
+        })
         .manage(AppState::default())
         .setup(|app| {
+            install_native_menu(app)?;
+            install_deep_link_handlers(app);
+            log_unsupported_native_shell_boundaries();
             let handle = app.handle().clone();
             let state = app.state::<AppState>();
             state.host.forward_events(move |event| {
@@ -812,6 +1228,7 @@ fn main() {
             host_send_raw,
             host_write_local_model_catalog,
             host_read_codex_auth_summary,
+            host_read_installation_state,
             host_open_file_reference,
             host_open_external_url,
             host_pick_file_references,
@@ -823,6 +1240,8 @@ fn main() {
             host_read_document_preview,
             host_find_rollout_for_thread,
             host_read_thread_tool_history,
+            host_notify_turn_completed,
+            host_handle_deep_link_url,
             host_generate_image
         ])
         .run(tauri::generate_context!())

@@ -1,0 +1,204 @@
+.hc-automations-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  width: min(520px, calc(100% - 48px));
+  min-width: 320px;
+  overflow: auto;
+  border-left: 1px solid rgba(34, 38, 43, 0.12);
+  background: #fffdfa;
+  box-shadow: -8px 0 24px -8px rgba(34, 38, 43, 0.10);
+  color: #27313d;
+  padding: 14px;
+}
+
+.hc-automations-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hc-automations-panel-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.hc-automations-panel-title h2 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.hc-automations-panel-title span {
+  display: block;
+  margin-top: 2px;
+  color: #6f716b;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.hc-automations-panel-title span[data-status="ready"] {
+  color: #237245;
+}
+
+.hc-automations-panel-title span[data-status="loading"] {
+  color: #51636b;
+}
+
+.hc-automations-panel-title span[data-status="unsupported"],
+.hc-automations-panel-title span[data-status="error"] {
+  color: #a33a32;
+}
+
+.hc-automations-panel-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.hc-automations-icon-button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #6f716b;
+  cursor: pointer;
+}
+
+.hc-automations-icon-button:hover {
+  background: rgba(34, 38, 43, 0.08);
+  color: #27313d;
+}
+
+.hc-automations-panel-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(34, 38, 43, 0.08);
+  border-radius: 7px;
+  background: #f8f6ef;
+  color: #5f625d;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hc-automations-panel-message[data-status="unsupported"],
+.hc-automations-panel-message[data-status="error"] {
+  background: #fbedea;
+  color: #8f3b2f;
+}
+
+.hc-automations-panel-message[data-status="loading"] {
+  background: #eef4f6;
+  color: #51636b;
+}
+
+.hc-automations-heartbeat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(34, 38, 43, 0.10);
+  border-radius: 7px;
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.hc-automations-heartbeat span {
+  color: #6f716b;
+}
+
+.hc-automations-heartbeat strong {
+  color: #8f3b2f;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.hc-automations-heartbeat[data-eligible="true"] strong {
+  color: #237245;
+}
+
+.hc-automations-schedule-list {
+  display: grid;
+  gap: 8px;
+}
+
+.hc-automations-schedule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  border: 1px solid rgba(34, 38, 43, 0.10);
+  border-radius: 7px;
+  padding: 10px;
+}
+
+.hc-automations-schedule-row h3,
+.hc-automations-schedule-row p {
+  margin: 0;
+}
+
+.hc-automations-schedule-row h3 {
+  font-size: 13px;
+}
+
+.hc-automations-schedule-row p {
+  margin-top: 3px;
+  color: #6f716b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+}
+
+.hc-automations-schedule-row dl {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.hc-automations-schedule-row dt {
+  color: #8a8c85;
+}
+
+.hc-automations-schedule-row dd {
+  margin: 1px 0 0;
+  color: #27313d;
+  font-weight: 650;
+}
+
+.hc-automations-empty,
+.hc-automations-hooks {
+  border: 1px dashed rgba(34, 38, 43, 0.14);
+  border-radius: 7px;
+  color: #6f716b;
+  padding: 12px;
+  font-size: 12px;
+}
+
+.hc-automations-hooks {
+  display: grid;
+  gap: 6px;
+}
+
+.hc-automations-hooks code {
+  color: #27313d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}

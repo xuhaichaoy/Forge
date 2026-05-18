@@ -8,6 +8,10 @@ import type { Thread } from "@hicodex/codex-protocol";
  */
 
 export type SidebarSortKey = "updated_at" | "created_at";
+export type SidebarOrganizeMode = "project" | "recent" | "current_workspace";
+
+export const DEFAULT_SIDEBAR_SORT_KEY: SidebarSortKey = "updated_at";
+export const DEFAULT_SIDEBAR_ORGANIZE_MODE: SidebarOrganizeMode = "project";
 
 /**
  * Codex Desktop's `is-subagent-conversation-Ce7kusa7.js` returns true when
@@ -34,6 +38,11 @@ export const BACKGROUND_SUBAGENTS_GATE = false;
 export interface ThreadSortContext {
   sortKey?: SidebarSortKey;
   hideSubagents?: boolean;
+}
+
+export interface SidebarThreadGroupContext {
+  organizeMode?: SidebarOrganizeMode;
+  currentWorkspaceRoot?: string | null;
 }
 
 export interface SidebarThreadGroup {
@@ -63,7 +72,7 @@ export function projectSidebarThreads(
   threads: Thread[],
   context: ThreadSortContext = {},
 ): Thread[] {
-  const sortKey = context.sortKey ?? "updated_at";
+  const sortKey = context.sortKey ?? DEFAULT_SIDEBAR_SORT_KEY;
   const hide = context.hideSubagents ?? !BACKGROUND_SUBAGENTS_GATE;
   const visible = hide ? threads.filter((thread) => !isSubagentThread(thread)) : [...threads];
   visible.sort((left, right) => threadSortAt(right, sortKey) - threadSortAt(left, sortKey));
@@ -82,7 +91,26 @@ export function threadSortAt(thread: Thread, sortKey: SidebarSortKey): number {
  * app-server threads today, so we mirror the local project half by cwd while
  * preserving the already sorted thread order inside each group.
  */
-export function projectSidebarThreadGroups(threads: Thread[]): SidebarThreadGroup[] {
+export function projectSidebarThreadGroups(
+  threads: Thread[],
+  context: SidebarThreadGroupContext = {},
+): SidebarThreadGroup[] {
+  const organizeMode = context.organizeMode ?? DEFAULT_SIDEBAR_ORGANIZE_MODE;
+  if (organizeMode === "recent") {
+    return threads.length === 0
+      ? []
+      : [{ key: "recent", label: "Recent", path: null, threads: [...threads] }];
+  }
+  if (organizeMode === "current_workspace") {
+    const currentRoot = normalizeSidebarWorkspaceRoot(context.currentWorkspaceRoot);
+    if (currentRoot) {
+      return projectCurrentWorkspaceThreadGroups(threads, currentRoot);
+    }
+  }
+  return projectLocalWorkspaceThreadGroups(threads);
+}
+
+function projectLocalWorkspaceThreadGroups(threads: Thread[]): SidebarThreadGroup[] {
   const groups: SidebarThreadGroup[] = [];
   const byKey = new Map<string, SidebarThreadGroup>();
   for (const thread of threads) {
@@ -95,6 +123,26 @@ export function projectSidebarThreadGroups(threads: Thread[]): SidebarThreadGrou
     }
     group.threads.push(thread);
   }
+  return groups;
+}
+
+function projectCurrentWorkspaceThreadGroups(threads: Thread[], currentRoot: string): SidebarThreadGroup[] {
+  const currentThreads: Thread[] = [];
+  const otherThreads: Thread[] = [];
+  for (const thread of threads) {
+    if (threadBelongsToWorkspace(thread, currentRoot)) currentThreads.push(thread);
+    else otherThreads.push(thread);
+  }
+  const groups: SidebarThreadGroup[] = [];
+  if (currentThreads.length > 0) {
+    groups.push({
+      key: `current:${currentRoot}`,
+      label: "Current workspace",
+      path: currentRoot,
+      threads: currentThreads,
+    });
+  }
+  groups.push(...projectLocalWorkspaceThreadGroups(otherThreads));
   return groups;
 }
 
@@ -166,12 +214,26 @@ export function sidebarThreadHasVisibleStatus(state: SidebarThreadStatusState): 
 function threadProjectKey(thread: Thread): string {
   const cwd = threadProjectPath(thread) ?? "";
   if (!cwd || cwd === "~" || cwd === "/") return "local";
-  return cwd.replace(/[\\/]+$/, "");
+  return normalizeSidebarWorkspaceRoot(cwd) ?? cwd;
 }
 
 function threadProjectPath(thread: Thread): string | null {
   const cwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
   return cwd || null;
+}
+
+function normalizeSidebarWorkspaceRoot(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed === "~") return null;
+  return trimmed.replace(/[\\/]+$/, "") || trimmed;
+}
+
+function threadBelongsToWorkspace(thread: Thread, workspaceRoot: string): boolean {
+  const cwd = normalizeSidebarWorkspaceRoot(threadProjectPath(thread));
+  if (!cwd) return false;
+  if (cwd === workspaceRoot) return true;
+  const separator = workspaceRoot.includes("\\") ? "\\" : "/";
+  return cwd.startsWith(`${workspaceRoot}${separator}`);
 }
 
 function threadUpdatedSeconds(thread: Thread): number {

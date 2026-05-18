@@ -13,6 +13,8 @@ import {
   LoaderCircle,
   MessageSquareText,
   Network,
+  Pin,
+  PinOff,
   Square,
   Terminal,
 } from "lucide-react";
@@ -50,11 +52,13 @@ import {
 export interface RightRailProps {
   sections: RightRailSectionViewModel[];
   displayMode?: RightRailDisplayMode;
+  isPinned?: boolean;
   onOpenArtifactPreview?: (entry: RailEntry) => void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
   onOpenThreadId?: OpenThreadHandler;
+  onPinnedChange?: (isPinned: boolean) => void;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
 }
@@ -62,6 +66,7 @@ export interface RightRailProps {
 export interface RailSectionProps {
   count: number;
   id: RightRailSectionViewModel["id"];
+  summary?: string;
   title: string;
   children: ReactNode;
   headerAction?: ReactNode;
@@ -70,16 +75,20 @@ export interface RailSectionProps {
 export interface RailListProps {
   entries: RailEntry[];
   sectionId: RightRailSectionViewModel["id"];
+  backgroundTerminalCleanupPending?: boolean;
+  onCleanBackgroundTerminals?: () => void;
 }
 
 export function RightRail({
   sections,
   displayMode = "overlay",
+  isPinned = true,
   onOpenArtifactPreview,
   onOpenFileReference,
   onOpenUrl,
   onOpenDiff,
   onOpenThreadId,
+  onPinnedChange,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
 }: RightRailProps) {
@@ -122,24 +131,27 @@ export function RightRail({
   };
 
   return (
-    <aside className="hc-right-rail" data-display-mode={displayMode}>
+    <aside className="hc-right-rail" data-display-mode={displayMode} data-pinned={isPinned ? "true" : "false"}>
+      {onPinnedChange && (
+        <div className="hc-right-rail-toolbar">
+          <button
+            aria-label={isPinned ? "Unpin summary panel" : "Pin summary panel"}
+            aria-pressed={isPinned}
+            className="hc-rail-section-action"
+            onClick={() => onPinnedChange(!isPinned)}
+            title={isPinned ? "Unpin summary panel" : "Pin summary panel"}
+            type="button"
+          >
+            {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
+          </button>
+        </div>
+      )}
       {sections.map((section) => (
         <RailSection
           key={section.id}
           count={section.count}
-          headerAction={section.id === "backgroundTasks" && onCleanBackgroundTerminals && hasBackgroundTerminalEntries(section.allEntries) ? (
-            <button
-              aria-label="Stop background terminals"
-              className="hc-rail-section-action"
-              disabled={backgroundTerminalCleanupPending}
-              onClick={onCleanBackgroundTerminals}
-              title="Stop background terminals"
-              type="button"
-            >
-              <Square size={12} />
-            </button>
-          ) : null}
           id={section.id}
+          summary={section.summary}
           title={section.title}
         >
           {section.id === "branchDetails" && section.branchDetails
@@ -148,9 +160,13 @@ export function RightRail({
                 <RailList
                   entries={section.allEntries}
                   sectionId={section.id}
+                  backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
                   canOpenEntry={section.id === "artifacts"
                     ? canOpenArtifactEntry
                     : section.id === "sources" ? undefined : canOpenEntry}
+                  onCleanBackgroundTerminals={section.id === "backgroundTasks" && hasBackgroundTerminalEntries(section.allEntries)
+                    ? onCleanBackgroundTerminals
+                    : undefined}
                   onOpenEntry={section.id === "artifacts"
                     ? openArtifactEntry
                     : section.id === "sideChats" ? openSideChatEntry
@@ -215,7 +231,7 @@ function BranchDetailsCard({
   );
 }
 
-export function RailSection({ count, id, title, children, headerAction = null }: RailSectionProps) {
+export function RailSection({ count, id, summary, title, children, headerAction = null }: RailSectionProps) {
   const [expanded, setExpanded] = useState(true);
   const contentId = `hc-rail-section-content-${id}`;
   return (
@@ -236,6 +252,7 @@ export function RailSection({ count, id, title, children, headerAction = null }:
       </div>
       {expanded && (
         <div className="hc-rail-section-content" id={contentId}>
+          {summary && <div className="hc-rail-section-summary">{summary}</div>}
           {children}
         </div>
       )}
@@ -246,10 +263,13 @@ export function RailSection({ count, id, title, children, headerAction = null }:
 export function RailList({
   entries,
   sectionId,
+  backgroundTerminalCleanupPending = false,
   canOpenEntry,
+  onCleanBackgroundTerminals,
   onOpenEntry,
 }: RailListProps & {
   canOpenEntry?: (entry: RailEntry) => boolean;
+  onCleanBackgroundTerminals?: () => void;
   onOpenEntry?: (entry: RailEntry) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -272,6 +292,23 @@ export function RailList({
             key={entry.id}
             sectionId={sectionId}
             displayTitle={isGeneratedImage ? `Generated image ${generatedImageCount}` : undefined}
+            trailingAction={sectionId === "backgroundTasks" && isBackgroundTerminalEntry(entry) && onCleanBackgroundTerminals ? (
+              <button
+                aria-label="Stop all background terminals"
+                className="hc-rail-section-action hc-rail-card-action"
+                disabled={backgroundTerminalCleanupPending}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onCleanBackgroundTerminals();
+                }}
+                title="Stop all background terminals"
+                type="button"
+              >
+                {backgroundTerminalCleanupPending
+                  ? <LoaderCircle className="hc-rail-progress-spinner" size={12} />
+                  : <Square size={12} />}
+              </button>
+            ) : undefined}
             canOpen={canOpenEntry}
             onOpen={onOpenEntry}
           />
@@ -290,30 +327,44 @@ function RailEntryCard({
   entry,
   sectionId,
   displayTitle,
+  trailingAction,
   canOpen,
   onOpen,
 }: {
   entry: RailEntry;
   sectionId: RightRailSectionViewModel["id"];
   displayTitle?: string;
+  trailingAction?: ReactNode;
   canOpen?: (entry: RailEntry) => boolean;
   onOpen?: (entry: RailEntry) => void;
 }) {
+  const progressStatus = sectionId === "progress" ? normalizeProgressStatus(entry.status) : undefined;
   if (canOpen?.(entry) && onOpen) {
     return (
       <button
         className="hc-rail-card hc-rail-card-button"
+        data-progress-status={progressStatus}
         type="button"
         onClick={() => onOpen(entry)}
       >
-        <RailEntryContent entry={entry} sectionId={sectionId} displayTitle={displayTitle} />
+        <RailEntryContent
+          entry={entry}
+          sectionId={sectionId}
+          displayTitle={displayTitle}
+          trailingAction={trailingAction}
+        />
       </button>
     );
   }
 
   return (
-    <div className="hc-rail-card">
-      <RailEntryContent entry={entry} sectionId={sectionId} displayTitle={displayTitle} />
+    <div className="hc-rail-card" data-progress-status={progressStatus}>
+      <RailEntryContent
+        entry={entry}
+        sectionId={sectionId}
+        displayTitle={displayTitle}
+        trailingAction={trailingAction}
+      />
     </div>
   );
 }
@@ -322,10 +373,12 @@ function RailEntryContent({
   entry,
   sectionId,
   displayTitle,
+  trailingAction,
 }: {
   entry: RailEntry;
   sectionId: RightRailSectionViewModel["id"];
   displayTitle?: string;
+  trailingAction?: ReactNode;
 }) {
   const title = displayTitle ?? entry.title;
   const showSecondary = sectionId === "branchDetails";
@@ -344,6 +397,7 @@ function RailEntryContent({
         {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
         {showSecondary && entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
       </div>
+      {trailingAction && <div className="hc-rail-card-actions">{trailingAction}</div>}
     </div>
   );
 }
@@ -360,7 +414,11 @@ function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }
 function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "progress") return progressEntryIcon(entry.status);
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
-  if (sectionId === "sideChats") return <MessageSquareText size={14} />;
+  if (sectionId === "sideChats") {
+    return normalizeProgressStatus(entry.status) === "inProgress"
+      ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
+      : <MessageSquareText size={14} />;
+  }
   if (sectionId === "backgroundTasks") {
     if (isBackgroundTerminalEntry(entry)) return <Terminal size={14} />;
     return entry.status === "active"

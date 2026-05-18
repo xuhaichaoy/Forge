@@ -8,6 +8,7 @@ import {
   attachmentLabel,
   buildUserInputFromComposer,
   compactAttachmentLabel,
+  composerAttachmentKindLabel,
   composerAttachmentPreviewSrc,
   composerAttachmentsFromPaths,
   composerFilePath,
@@ -60,6 +61,7 @@ export default function runComposerWorkflowTests(): void {
   updatesPlanCommandTextForComposerMode();
   appliesSlashCommandsAsDeclarativeActions();
   exposesAttachActions();
+  projectsAttachmentKindLabelsWithoutProtocolDrift();
   detectsActiveMentionTriggers();
   drivesAttachmentPickerWithoutWindowPrompt();
   projectsDroppedAndPastedFilesIntoAttachments();
@@ -135,6 +137,29 @@ function projectsCodexDesktopSubmitTooltips(): void {
       "Resolve the pending request before sending more input",
     ],
     "submit tooltip should distinguish send, stop, queue, and blocked states",
+  );
+}
+
+function projectsAttachmentKindLabelsWithoutProtocolDrift(): void {
+  const attachments = [
+    { type: "mention" as const, name: "composer.tsx", path: "packages/ui/src/components/composer.tsx" },
+    { type: "localImage" as const, path: "/tmp/screenshot.png" },
+    { type: "image" as const, url: "https://example.com/diagram.png" },
+    { type: "skill" as const, name: "review", path: "/skills/review.md" },
+    { type: "plainText" as const, text: "inline context" },
+    { type: "filePath" as const, path: "/workspace/package.json" },
+  ];
+
+  assertDeepEqual(
+    attachments.map(composerAttachmentKindLabel),
+    ["Mention", "Image", "Image URL", "Skill", "Text", "File"],
+    "attachment chips should expose each existing ComposerAttachment kind",
+  );
+
+  assertDeepEqual(
+    buildUserInputFromComposer("inspect", attachments).map((item) => item.type),
+    ["text", "mention", "localImage", "image", "mention"],
+    "attachment kind labels should not invent durable UserInput types",
   );
 }
 
@@ -400,6 +425,7 @@ function exposesCodexCliSlashCommands(): void {
       "mention",
       "status",
       "debug-config",
+      "rpc",
       "title",
       "statusline",
       "theme",
@@ -455,7 +481,10 @@ function exposesCodexCliSlashCommands(): void {
       "goal",
       "collab",
       "side",
+      "memories",
       "mention",
+      "debug-config",
+      "rpc",
       "personality",
       "ps",
       "stop",
@@ -466,7 +495,7 @@ function exposesCodexCliSlashCommands(): void {
     assert(command.supported !== "pending", `visible slash command /${command.id} should not be pending`);
   }
   const visibleIds = new Set(visibleCommands.map((command) => command.id));
-  for (const id of ["fast", "ide", "memories", "agent", "debug-config"]) {
+  for (const id of ["fast", "ide", "agent"]) {
     assert(!visibleIds.has(id), `unwired slash command /${id} should stay hidden by default`);
   }
 }
@@ -834,7 +863,11 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
   assertDeepEqual(
     input,
     [
-      { type: "text", text: "summarize this", text_elements: [] },
+      {
+        type: "text",
+        text: "summarize this\n[$code-review](/skills/code-review/SKILL.md)",
+        text_elements: [],
+      },
       {
         type: "mention",
         name: "composer-workflow.ts",
@@ -844,7 +877,7 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
       { type: "image", url: "https://example.test/diagram.png" },
       { type: "image", url: "data:image/png;base64,AAA" },
     ] satisfies UserInput[],
-    "buildUserInputFromComposer should preserve text and Desktop-supported structured attachments",
+    "buildUserInputFromComposer should preserve text and serialize skill chips as Desktop prompt links",
   );
 
   assertDeepEqual(

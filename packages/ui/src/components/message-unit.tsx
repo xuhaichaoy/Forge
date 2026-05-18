@@ -458,6 +458,8 @@ function likelyLongUserMessage(text: string): boolean {
 
 function userMessageMetaChips(item: Record<string, unknown>): string[] {
   const chips: string[] = [];
+  const goalChip = threadGoalMetaChip(item);
+  if (goalChip) chips.push(goalChip);
   if (booleanField(item, "referencesPriorConversation")) chips.push("References prior conversation");
   if (booleanField(item, "reviewMode")) chips.push("Review mode");
   if (booleanField(item, "pullRequestFixMode")) chips.push("PR fix");
@@ -471,6 +473,14 @@ function userMessageMetaChips(item: Record<string, unknown>): string[] {
   return chips;
 }
 
+function threadGoalMetaChip(item: Record<string, unknown>): string | null {
+  const goal = recordField(item, "_threadGoal");
+  const objective = stringValue(goal.objective).trim();
+  if (objective) return `Goal: ${truncateMetaChip(objective)}`;
+  const status = stringValue(goal.status).trim();
+  return status ? `Goal: ${truncateMetaChip(status)}` : null;
+}
+
 function booleanField(item: Record<string, unknown>, key: string): boolean {
   return item[key] === true;
 }
@@ -478,6 +488,19 @@ function booleanField(item: Record<string, unknown>, key: string): boolean {
 function numericField(item: Record<string, unknown>, key: string): number {
   const value = item[key];
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function recordField(item: Record<string, unknown>, key: string): Record<string, unknown> {
+  const value = item[key];
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function truncateMetaChip(value: string): string {
+  return value.length > 72 ? `${value.slice(0, 69)}...` : value;
 }
 
 function UserMessageActions({
@@ -2296,10 +2319,7 @@ function markdownPromptLinkDisplayLabel(segment: MarkdownPromptLinkSegment): str
 }
 
 function MarkdownLink({ children, href }: { children: ReactNode; href: string }) {
-  const [failedFaviconUrl, setFailedFaviconUrl] = useState<string | null>(null);
   const external = isExternalHref(href);
-  const faviconUrl = external ? markdownLinkFaviconUrl(href) : null;
-  const showFavicon = faviconUrl !== null && failedFaviconUrl !== faviconUrl;
   return (
     <a
       className={external ? "hc-markdown-link is-external" : "hc-markdown-link"}
@@ -2311,31 +2331,11 @@ function MarkdownLink({ children, href }: { children: ReactNode; href: string })
       {external && (
         <span className="hc-markdown-link-icon" aria-hidden="true">
           <Globe2 size={12} />
-          {showFavicon && (
-            <img
-              alt=""
-              decoding="async"
-              draggable={false}
-              referrerPolicy="no-referrer"
-              src={faviconUrl}
-              onError={() => setFailedFaviconUrl(faviconUrl)}
-            />
-          )}
         </span>
       )}
       <span className="hc-markdown-link-label">{children}</span>
     </a>
   );
-}
-
-export function markdownLinkFaviconUrl(href: string): string | null {
-  try {
-    const url = new URL(href);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    return `${url.origin}/favicon.ico`;
-  } catch {
-    return null;
-  }
 }
 
 function isExternalHref(value: string): boolean {

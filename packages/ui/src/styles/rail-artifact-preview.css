@@ -248,6 +248,35 @@
   background: #fbfaf6;
 }
 
+.hc-artifact-preview-sheet-meta {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #e3dfd3;
+  background: rgba(251, 250, 246, 0.96);
+  padding: 7px 9px;
+  color: #27313d;
+  font-size: 11px;
+}
+
+.hc-artifact-preview-sheet-meta strong,
+.hc-artifact-preview-sheet-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-artifact-preview-sheet-meta span {
+  flex: 0 0 auto;
+  color: #6f716b;
+  font-weight: 600;
+}
+
 .hc-artifact-preview-sheet {
   width: max-content;
   min-width: 100%;
@@ -305,6 +334,25 @@
 .hc-artifact-preview-truncation {
   border-top: 1px solid #e3dfd3;
   padding: 6px 9px;
+}
+
+.hc-artifact-preview-boundary {
+  border-top: 1px solid #e3dfd3;
+  color: #6f716b;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.hc-artifact-preview-sheet-details {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  border-top: 1px solid #e3dfd3;
+  padding: 7px 9px 8px 22px;
+  color: #5f625d;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .hc-artifact-preview-details {

@@ -1,4 +1,4 @@
-import { ExternalLink, Maximize2, Minimize2, X } from "lucide-react";
+import { Copy, ExternalLink, Maximize2, Minimize2, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -11,6 +11,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { CodeSnippet } from "./code-snippet";
+import { ImagePreviewLightbox } from "./image-preview-lightbox";
 import {
   ARTIFACT_PREVIEW_MAX_BYTES,
   clipArtifactPreviewText,
@@ -18,6 +19,11 @@ import {
   isArtifactPreviewTooLarge,
   projectArtifactPreview,
 } from "../state/artifact-preview";
+import {
+  projectDiffViewer,
+  sideBySideDiffRows,
+  type DiffViewerHunk,
+} from "../state/diff-viewer";
 import {
   fileReferenceDisplayPath,
   fileReferenceLineLabel,
@@ -27,6 +33,7 @@ import {
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 import {
   convertLocalFileSrc,
+  openFileReference,
   readDocumentPreview,
   readFileMetadata,
   readTextFile,
@@ -351,12 +358,20 @@ function FilePreviewPanelBody({
   return (
     <div className="hc-file-preview-panel-body">
       {source.lineLabel && <div className="hc-file-preview-line-label">{source.lineLabel}</div>}
-      <FilePreviewStateView state={state} />
+      <FilePreviewStateView cwd={cwd} state={state} workspaceRoot={workspaceRoot} />
     </div>
   );
 }
 
-function FilePreviewStateView({ state }: { state: FilePreviewLoadState }) {
+function FilePreviewStateView({
+  cwd,
+  state,
+  workspaceRoot,
+}: {
+  cwd?: string | null;
+  state: FilePreviewLoadState;
+  workspaceRoot?: string | null;
+}) {
   if (state.status === "loading") {
     return <div className="hc-file-preview-empty">Preparing preview...</div>;
   }
@@ -365,13 +380,19 @@ function FilePreviewStateView({ state }: { state: FilePreviewLoadState }) {
   }
   if (state.status === "image") {
     return (
-      <div className="hc-file-preview-image-view">
-        <img alt="" src={state.src} />
-      </div>
+      <ImagePreviewLightbox
+        alt="File preview"
+        frameClassName="hc-file-preview-image-view"
+        src={state.src}
+        title={basename(state.path)}
+      />
     );
   }
   if (state.status === "document") {
     return <DocumentPreviewView preview={state.preview} />;
+  }
+  if (isDiffLanguage(state.language)) {
+    return <DiffPreviewView cwd={cwd} text={state.text} workspaceRoot={workspaceRoot} />;
   }
   return (
     <div className="hc-file-preview-code-view">
@@ -387,6 +408,167 @@ function FilePreviewStateView({ state }: { state: FilePreviewLoadState }) {
       {(state.truncatedLineCount > 0 || state.truncatedCharCount > 0) && (
         <div className="hc-file-preview-truncation">Preview truncated</div>
       )}
+    </div>
+  );
+}
+
+function DiffPreviewView({
+  cwd,
+  text,
+  workspaceRoot,
+}: {
+  cwd?: string | null;
+  text: string;
+  workspaceRoot?: string | null;
+}) {
+  const model = useMemo(() => projectDiffViewer(text), [text]);
+  const [mode, setMode] = useState<"side-by-side" | "unified">("side-by-side");
+  const [activeHunkId, setActiveHunkId] = useState<string>(model.hunkNav[0]?.id ?? "");
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveHunkId(model.hunkNav[0]?.id ?? "");
+  }, [model.hunkNav]);
+
+  const jumpToHunk = useCallback((hunkId: string) => {
+    setActiveHunkId(hunkId);
+    if (typeof document === "undefined") return;
+    document.getElementById(`hc-file-diff-${hunkId}`)?.scrollIntoView({
+      block: "start",
+      behavior: "smooth",
+    });
+  }, []);
+
+  const openDiffFile = useCallback((path: string) => {
+    const [targetPath] = resolveFileReferencePathCandidates(path, { cwd, workspaceRoot });
+    void openFileReference(targetPath ?? path).catch(() => undefined);
+  }, [cwd, workspaceRoot]);
+
+  const copyDiffPath = useCallback((path: string) => {
+    if (!path.trim() || typeof navigator === "undefined" || !navigator.clipboard) return;
+    void navigator.clipboard.writeText(path).then(() => {
+      setCopiedPath(path);
+      window.setTimeout(() => {
+        setCopiedPath((current) => (current === path ? null : current));
+      }, 1_200);
+    }).catch(() => undefined);
+  }, []);
+
+  if (!model.hasChanges) {
+    return <div className="hc-file-preview-empty">No diff hunks to preview</div>;
+  }
+
+  return (
+    <div className="hc-file-diff-viewer">
+      <div className="hc-file-diff-toolbar">
+        <div className="hc-file-diff-summary">
+          <strong>{model.files.length} file(s)</strong>
+          <span className="hc-file-diff-added">+{model.linesAdded}</span>
+          <span className="hc-file-diff-removed">-{model.linesRemoved}</span>
+        </div>
+        <div className="hc-file-diff-controls">
+          {model.hunkNav.length > 1 && (
+            <select
+              aria-label="Jump to hunk"
+              value={activeHunkId}
+              onChange={(event) => jumpToHunk(event.target.value)}
+            >
+              {model.hunkNav.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label} (+{item.linesAdded}/-{item.linesRemoved})
+                </option>
+              ))}
+            </select>
+          )}
+          <div className="hc-file-diff-mode-toggle" role="group" aria-label="Diff layout">
+            <button
+              aria-pressed={mode === "side-by-side"}
+              type="button"
+              onClick={() => setMode("side-by-side")}
+            >
+              Side by side
+            </button>
+            <button
+              aria-pressed={mode === "unified"}
+              type="button"
+              onClick={() => setMode("unified")}
+            >
+              Unified
+            </button>
+          </div>
+        </div>
+      </div>
+      {model.files.map((file) => (
+        <section className="hc-file-diff-file" key={file.id}>
+          <header>
+            <span className="hc-file-diff-file-path" title={file.path}>{file.path}</span>
+            <small>
+              <span className="hc-file-diff-added">+{file.linesAdded}</span>
+              <span className="hc-file-diff-removed">-{file.linesRemoved}</span>
+            </small>
+            <div className="hc-file-diff-file-actions">
+              <button
+                aria-label={`Open file ${file.path}`}
+                onClick={() => openDiffFile(file.path)}
+                title="Open in editor"
+                type="button"
+              >
+                <ExternalLink size={13} />
+              </button>
+              <button
+                aria-label={`Copy path ${file.path}`}
+                onClick={() => copyDiffPath(file.path)}
+                title={copiedPath === file.path ? "Copied" : "Copy path"}
+                type="button"
+              >
+                <Copy size={13} />
+              </button>
+            </div>
+          </header>
+          {file.hunks.map((hunk) => (
+            <article className="hc-file-diff-hunk" id={`hc-file-diff-${hunk.id}`} key={hunk.id}>
+              <div className="hc-file-diff-hunk-header">
+                <code>{hunk.header}</code>
+                {hunk.section && <span>{hunk.section}</span>}
+              </div>
+              {mode === "side-by-side"
+                ? <SideBySideDiffHunk hunk={hunk} />
+                : <UnifiedDiffHunk hunk={hunk} />}
+            </article>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function SideBySideDiffHunk({ hunk }: { hunk: DiffViewerHunk }) {
+  return (
+    <table className="hc-file-diff-side-by-side">
+      <tbody>
+        {sideBySideDiffRows(hunk).map((row, index) => (
+          <tr data-kind={row.kind} key={index}>
+            <td className="hc-file-diff-line-number">{lineNumber(row.oldLineNumber)}</td>
+            <td><code>{row.oldText}</code></td>
+            <td className="hc-file-diff-line-number">{lineNumber(row.newLineNumber)}</td>
+            <td><code>{row.newText}</code></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function UnifiedDiffHunk({ hunk }: { hunk: DiffViewerHunk }) {
+  return (
+    <div className="hc-file-diff-unified">
+      {hunk.lines.map((line, index) => (
+        <div data-kind={line.kind} key={`${index}:${line.raw}`}>
+          <span>{lineNumber(line.oldLineNumber)}</span>
+          <span>{lineNumber(line.newLineNumber)}</span>
+          <code>{line.raw}</code>
+        </div>
+      ))}
     </div>
   );
 }
@@ -451,6 +633,14 @@ function languageFromPath(path: string): string {
   if (extension === "ts") return "ts";
   if (extension === "yml") return "yaml";
   return extension || "text";
+}
+
+function isDiffLanguage(language: string): boolean {
+  return language === "diff" || language === "patch";
+}
+
+function lineNumber(value: number | undefined): string {
+  return value == null || value <= 0 ? "" : String(value);
 }
 
 function isPdfPath(path: string, metadata: LocalFileMetadata): boolean {

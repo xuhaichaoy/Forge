@@ -42,6 +42,16 @@ export function decodeBase64Utf8(value: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+export function encodeBase64Utf8(value: string): string {
+  if (!value) return "";
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return globalThis.btoa(binary);
+}
+
 export function threadGitBranch(thread: Thread | null): string | null {
   const gitInfo = thread?.gitInfo;
   if (!gitInfo || typeof gitInfo !== "object") return null;
@@ -61,6 +71,13 @@ export function slashCommandEntries(mode: ComposerMode): CommandPanelEntry[] {
         status: disabled ? "not wired" : command.supported,
         meta: command.title,
         disabled,
+        action: disabled
+          ? undefined
+          : {
+              type: "runSlashCommand",
+              title: command.title,
+              commandId: command.id,
+            },
         details: [
           command.description,
           command.inlineArgs ? `Args: ${command.inlineArgs}` : "",

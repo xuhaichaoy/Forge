@@ -9,6 +9,35 @@ use std::process::Command;
 pub struct SpreadsheetPreview {
     rows: Vec<Vec<String>>,
     truncated: bool,
+    sheet_name: Option<String>,
+    sheet_index: usize,
+    sheet_count: usize,
+    sheets: Vec<SpreadsheetSheet>,
+    freeze_panes: Option<SpreadsheetFreezePanes>,
+    max_rows: usize,
+    max_cols: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpreadsheetSheet {
+    name: String,
+    index: usize,
+    selected: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpreadsheetFreezePanes {
+    x_split: Option<u32>,
+    y_split: Option<u32>,
+    top_left_cell: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct XlsxWorkbookSheet {
+    name: String,
+    rel_id: String,
 }
 
 pub fn read_spreadsheet_preview(
@@ -26,6 +55,7 @@ pub fn read_spreadsheet_preview(
             &fs::read_to_string(path)
                 .map_err(|error| format!("failed to read spreadsheet text: {error}"))?,
             ',',
+            "CSV",
             max_rows,
             max_cols,
         )),
@@ -33,6 +63,7 @@ pub fn read_spreadsheet_preview(
             &fs::read_to_string(path)
                 .map_err(|error| format!("failed to read spreadsheet text: {error}"))?,
             '\t',
+            "TSV",
             max_rows,
             max_cols,
         )),
@@ -44,6 +75,7 @@ pub fn read_spreadsheet_preview(
 fn parse_delimited_preview(
     text: &str,
     delimiter: char,
+    sheet_name: &str,
     max_rows: usize,
     max_cols: usize,
 ) -> SpreadsheetPreview {
@@ -61,7 +93,21 @@ fn parse_delimited_preview(
         }
         rows.push(row);
     }
-    SpreadsheetPreview { rows, truncated }
+    SpreadsheetPreview {
+        rows,
+        truncated,
+        sheet_name: Some(sheet_name.to_string()),
+        sheet_index: 0,
+        sheet_count: 1,
+        sheets: vec![SpreadsheetSheet {
+            name: sheet_name.to_string(),
+            index: 0,
+            selected: true,
+        }],
+        freeze_panes: None,
+        max_rows,
+        max_cols,
+    }
 }
 
 fn parse_delimited_line(line: &str, delimiter: char) -> Vec<String> {
@@ -100,21 +146,50 @@ fn read_xlsx_preview(
         .flatten()
         .map(|xml| parse_shared_strings(&xml))
         .unwrap_or_default();
-    let sheet_path =
-        xlsx_first_sheet_path(path).unwrap_or_else(|| "xl/worksheets/sheet1.xml".to_string());
+    let workbook_sheets = xlsx_workbook_sheets(path).unwrap_or_default();
+    let selected_sheet = workbook_sheets.first().cloned();
+    let sheet_path = selected_sheet
+        .as_ref()
+        .and_then(|sheet| xlsx_sheet_path_for_relationship(path, &sheet.rel_id))
+        .unwrap_or_else(|| "xl/worksheets/sheet1.xml".to_string());
     let sheet_xml = unzip_member_text(path, &sheet_path)?
         .ok_or_else(|| format!("failed to read worksheet from xlsx: {sheet_path}"))?;
-    Ok(parse_xlsx_sheet_preview(
-        &sheet_xml,
-        &shared_strings,
-        max_rows,
-        max_cols,
-    ))
+    let mut preview = parse_xlsx_sheet_preview(&sheet_xml, &shared_strings, max_rows, max_cols);
+    let sheet_count = workbook_sheets.len().max(1);
+    let sheet_name = selected_sheet
+        .as_ref()
+        .map(|sheet| sheet.name.clone())
+        .unwrap_or_else(|| "Sheet 1".to_string());
+    preview.sheet_name = Some(sheet_name.clone());
+    preview.sheet_index = 0;
+    preview.sheet_count = sheet_count;
+    preview.sheets = if workbook_sheets.is_empty() {
+        vec![SpreadsheetSheet {
+            name: sheet_name,
+            index: 0,
+            selected: true,
+        }]
+    } else {
+        workbook_sheets
+            .iter()
+            .enumerate()
+            .map(|(index, sheet)| SpreadsheetSheet {
+                name: sheet.name.clone(),
+                index,
+                selected: index == 0,
+            })
+            .collect()
+    };
+    preview.freeze_panes = parse_xlsx_freeze_panes(&sheet_xml);
+    Ok(preview)
 }
 
-fn xlsx_first_sheet_path(path: &Path) -> Option<String> {
+fn xlsx_workbook_sheets(path: &Path) -> Option<Vec<XlsxWorkbookSheet>> {
     let workbook = unzip_member_text(path, "xl/workbook.xml").ok().flatten()?;
-    let rel_id = first_sheet_relationship_id(&workbook)?;
+    Some(parse_workbook_sheets(&workbook))
+}
+
+fn xlsx_sheet_path_for_relationship(path: &Path, rel_id: &str) -> Option<String> {
     let rels = unzip_member_text(path, "xl/_rels/workbook.xml.rels")
         .ok()
         .flatten()?;
@@ -134,14 +209,29 @@ fn unzip_member_text(path: &Path, member: &str) -> Result<Option<String>, String
     Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
 }
 
-fn first_sheet_relationship_id(workbook_xml: &str) -> Option<String> {
-    let start = workbook_xml.find("<sheet ")?;
-    let tag_end = workbook_xml[start..].find('>')? + start;
-    let attrs = xml_attributes(&workbook_xml[start..=tag_end]);
-    attrs
-        .get("r:id")
-        .or_else(|| attrs.get("id"))
-        .map(ToOwned::to_owned)
+fn parse_workbook_sheets(workbook_xml: &str) -> Vec<XlsxWorkbookSheet> {
+    let mut sheets = Vec::new();
+    let mut offset = 0;
+    while let Some(relative_start) = workbook_xml[offset..].find("<sheet ") {
+        let start = offset + relative_start;
+        let Some(tag_end) = workbook_xml[start..].find('>').map(|value| start + value) else {
+            break;
+        };
+        let attrs = xml_attributes(&workbook_xml[start..=tag_end]);
+        let rel_id = attrs.get("r:id").or_else(|| attrs.get("id")).cloned();
+        if let Some(rel_id) = rel_id {
+            sheets.push(XlsxWorkbookSheet {
+                name: attrs
+                    .get("name")
+                    .filter(|name| !name.trim().is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("Sheet {}", sheets.len() + 1)),
+                rel_id,
+            });
+        }
+        offset = tag_end + 1;
+    }
+    sheets
 }
 
 fn relationship_target(rels_xml: &str, rel_id: &str) -> Option<String> {
@@ -165,6 +255,35 @@ fn normalize_xlsx_target_path(target: &str) -> String {
     } else {
         format!("xl/{trimmed}")
     }
+}
+
+fn parse_xlsx_freeze_panes(sheet_xml: &str) -> Option<SpreadsheetFreezePanes> {
+    let start = sheet_xml.find("<pane")?;
+    let tag_end = sheet_xml[start..].find('>').map(|value| start + value)?;
+    let attrs = xml_attributes(&sheet_xml[start..=tag_end]);
+    let state = attrs.get("state").map(String::as_str).unwrap_or_default();
+    let x_split = attrs.get("xSplit").and_then(|value| parse_u32ish(value));
+    let y_split = attrs.get("ySplit").and_then(|value| parse_u32ish(value));
+    if state != "frozen" && state != "frozenSplit" && x_split.is_none() && y_split.is_none() {
+        return None;
+    }
+    Some(SpreadsheetFreezePanes {
+        x_split,
+        y_split,
+        top_left_cell: attrs
+            .get("topLeftCell")
+            .filter(|value| !value.trim().is_empty())
+            .cloned(),
+    })
+}
+
+fn parse_u32ish(value: &str) -> Option<u32> {
+    value
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|number| number.is_finite() && *number > 0.0)
+        .map(|number| number.floor() as u32)
 }
 
 fn parse_shared_strings(xml: &str) -> Vec<String> {
@@ -215,7 +334,17 @@ fn parse_xlsx_sheet_preview(
         }
         offset = end + "</row>".len();
     }
-    SpreadsheetPreview { rows, truncated }
+    SpreadsheetPreview {
+        rows,
+        truncated,
+        sheet_name: None,
+        sheet_index: 0,
+        sheet_count: 1,
+        sheets: Vec::new(),
+        freeze_panes: parse_xlsx_freeze_panes(xml),
+        max_rows,
+        max_cols,
+    }
 }
 
 fn parse_xlsx_row(
@@ -368,4 +497,73 @@ fn xlsx_column_index(reference: &str) -> Option<usize> {
         value = value * 26 + (ch.to_ascii_uppercase() as u8 - b'A' + 1) as usize;
     }
     seen.then_some(value.saturating_sub(1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delimited_preview_reports_bounds_and_sheet() {
+        let preview = parse_delimited_preview("a,b,c\n1,2,3\n4,5,6", ',', "CSV", 2, 2);
+        assert_eq!(preview.rows, vec![vec!["a", "b"], vec!["1", "2"]]);
+        assert!(preview.truncated);
+        assert_eq!(preview.sheet_name.as_deref(), Some("CSV"));
+        assert_eq!(preview.sheet_count, 1);
+        assert_eq!(preview.max_rows, 2);
+        assert_eq!(preview.max_cols, 2);
+    }
+
+    #[test]
+    fn parses_workbook_sheets() {
+        let workbook = r#"
+          <workbook>
+            <sheets>
+              <sheet name="Revenue" sheetId="1" r:id="rId1"/>
+              <sheet name="Costs &amp; Ops" sheetId="2" r:id="rId2"/>
+            </sheets>
+          </workbook>
+        "#;
+        let sheets = parse_workbook_sheets(workbook);
+        assert_eq!(sheets.len(), 2);
+        assert_eq!(sheets[0].name, "Revenue");
+        assert_eq!(sheets[0].rel_id, "rId1");
+        assert_eq!(sheets[1].name, "Costs & Ops");
+    }
+
+    #[test]
+    fn parses_freeze_panes_metadata() {
+        let sheet = r#"
+          <worksheet>
+            <sheetViews>
+              <sheetView workbookViewId="0">
+                <pane xSplit="1" ySplit="2" topLeftCell="B3" activePane="bottomRight" state="frozen"/>
+              </sheetView>
+            </sheetViews>
+          </worksheet>
+        "#;
+        let freeze = parse_xlsx_freeze_panes(sheet).expect("freeze panes");
+        assert_eq!(freeze.x_split, Some(1));
+        assert_eq!(freeze.y_split, Some(2));
+        assert_eq!(freeze.top_left_cell.as_deref(), Some("B3"));
+    }
+
+    #[test]
+    fn xlsx_sheet_preview_keeps_freeze_and_limits() {
+        let xml = r#"
+          <worksheet>
+            <sheetViews><sheetView><pane ySplit="1" topLeftCell="A2" state="frozen"/></sheetView></sheetViews>
+            <sheetData>
+              <row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>2</v></c></row>
+              <row r="2"><c r="A2"><v>3</v></c><c r="B2"><v>4</v></c></row>
+            </sheetData>
+          </worksheet>
+        "#;
+        let preview = parse_xlsx_sheet_preview(xml, &["Name".to_string()], 10, 1);
+        assert_eq!(preview.rows, vec![vec!["Name"], vec!["3"]]);
+        assert!(preview.truncated);
+        assert_eq!(preview.max_rows, 10);
+        assert_eq!(preview.max_cols, 1);
+        assert_eq!(preview.freeze_panes.unwrap().y_split, Some(1));
+    }
 }

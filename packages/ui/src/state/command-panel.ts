@@ -4,11 +4,19 @@ import {
   projectMcpToolArgumentFields,
   type McpToolArgumentField,
 } from "./mcp-tool-arguments";
+import type { HiCodexLocale } from "./i18n";
+import type { NotificationPreferences } from "./notification-preferences";
+import type { UiThemeMode } from "./theme";
 
 export interface ConfigWriteActionEdit {
   keyPath: string;
   value: unknown;
   mergeStrategy: "replace" | "upsert";
+}
+
+export interface ConfigWriteTarget {
+  filePath: string;
+  expectedVersion: string;
 }
 
 export type CommandPanelKind =
@@ -20,6 +28,8 @@ export type CommandPanelKind =
   | "experimental"
   | "collaboration"
   | "status"
+  | "theme"
+  | "files"
   | "diff"
   | "generic";
 
@@ -36,6 +46,8 @@ export type CommandPanelEntryKind =
   | "collaborationMode"
   | "thread"
   | "status"
+  | "theme"
+  | "file"
   | "diff";
 
 export type CommandPanelEntryAction =
@@ -49,6 +61,7 @@ export type CommandPanelEntryAction =
       title: string;
       message: string;
       edits: ConfigWriteActionEdit[];
+      configWriteTarget?: ConfigWriteTarget;
       reloadUserConfig?: boolean;
       afterWrite?: { type: "addPersonalityChangeSyntheticItem"; personality: "friendly" | "pragmatic" };
     }
@@ -72,15 +85,47 @@ export type CommandPanelEntryAction =
       enabled: boolean;
     }
   | { type: "readSkillFile"; title: string; path: string }
-  | { type: "openMcpServerForm"; title: string; mode: "add" | "edit"; server?: string }
-  | { type: "writeMcpServerConfig"; title: string; name: string; config: Record<string, unknown> }
-  | { type: "removeMcpServer"; title: string; server: string }
-  | { type: "writeAppConfig"; title: string; appId: string; enabled: boolean }
+  | {
+      type: "createStarterSkill";
+      title: string;
+      skillName: string;
+      directoryPath: string;
+      filePath: string;
+      contents: string;
+    }
+  | {
+      type: "readPluginSkill";
+      title: string;
+      remoteMarketplaceName: string;
+      remotePluginId: string;
+      skillName: string;
+    }
+  | { type: "insertLocalCommand"; title: string; command: string; message: string }
+  | {
+      type: "openMcpServerForm";
+      title: string;
+      mode: "add" | "edit";
+      server?: string;
+      existingServers?: string[];
+      serverConfig?: Record<string, unknown>;
+      configWriteTarget?: ConfigWriteTarget;
+    }
+  | { type: "writeMcpServerConfig"; title: string; name: string; config: Record<string, unknown>; configWriteTarget?: ConfigWriteTarget }
+  | { type: "removeMcpServer"; title: string; server: string; configWriteTarget?: ConfigWriteTarget }
+  | { type: "writeAppConfig"; title: string; appId: string; enabled: boolean; configWriteTarget?: ConfigWriteTarget }
   | { type: "connectRequiredApp"; title: string; appId: string; appName: string; installUrl?: string | null }
   | { type: "openExternalUrl"; title: string; url: string }
   | { type: "installPlugin"; title: string; pluginId: string; pluginName: string; marketplaceName: string; marketplacePath?: string | null }
   | { type: "uninstallPlugin"; title: string; pluginId: string }
-  | { type: "writePluginConfig"; title: string; pluginId: string; enabled: boolean };
+  | { type: "writePluginConfig"; title: string; pluginId: string; enabled: boolean; configWriteTarget?: ConfigWriteTarget }
+  | { type: "setThreadMemoryMode"; title: string; threadId: string; mode: "enabled" | "disabled" }
+  | { type: "setUiTheme"; title: string; mode: UiThemeMode }
+  | { type: "setUiLocale"; title: string; locale: HiCodexLocale }
+  | { type: "setNotificationPreferences"; title: string; patch: Partial<NotificationPreferences> }
+  | { type: "runSlashCommand"; title: string; commandId: string }
+  | { type: "openFileSearch"; title: string }
+  | { type: "copyText"; title: string; label: string; text: string }
+  | { type: "scrollToContentUnit"; title: string; unitKey: string };
 
 export type CommandPanelStatus = "idle" | "loading" | "ready" | "empty" | "error";
 
@@ -115,6 +160,7 @@ export interface CommandPanelState {
 const CONNECTOR_REFRESH_GUIDANCE = "Finish the browser flow, then refresh Apps or Plugins.";
 const CONNECTOR_PROTOCOL_LIMITED_DETAIL =
   "Protocol-limited: app-server returned app/list metadata only; no native connector OAuth method or browser setup URL is available.";
+const STARTER_SKILL_NAME = "starter-skill";
 
 export interface CommandPanelOptions {
   status?: CommandPanelStatus;
@@ -122,6 +168,13 @@ export interface CommandPanelOptions {
   error?: string;
   message?: string;
   title?: string;
+}
+
+export interface FileSearchResult {
+  path?: string;
+  file_name?: string;
+  score?: number;
+  match_type?: string;
 }
 
 export function createCommandPanelState(
@@ -157,6 +210,40 @@ export function projectCommandPanelEntries(value: {
     ...projectPluginEntries(value.plugins, { apps: value.apps }),
     ...projectExperimentalFeatureEntries(value.experimental),
     ...projectCollaborationModeEntries(value.collaboration),
+  ];
+}
+
+export function projectFileSearchEntries(result: { files?: FileSearchResult[] }): CommandPanelEntry[] {
+  return (result.files ?? []).slice(0, 25).map((file, index) => ({
+    id: `file:${file.path ?? file.file_name ?? index}`,
+    title: file.file_name || file.path || "file",
+    kind: "file",
+    status: file.match_type,
+    meta: file.path,
+    details: [`score: ${file.score ?? "unknown"}`],
+    action: file.path
+      ? {
+          type: "attachMention",
+          name: file.file_name || file.path,
+          path: file.path,
+        }
+      : undefined,
+  }));
+}
+
+export function projectSkillManagementEntries(
+  skills: unknown,
+  options: {
+    recommendedSkills?: unknown;
+    workspace?: string;
+  } = {},
+): CommandPanelEntry[] {
+  return [
+    ...projectSkillEntries(skills),
+    ...projectRecommendedSkillEntries(options.recommendedSkills, {
+      existingSkills: skills,
+    }),
+    skillCreatorEntry(options.workspace),
   ];
 }
 
@@ -293,6 +380,21 @@ export function projectSkillFileReadResultEntries(path: string, contents: string
     status: "read",
     meta: path,
     details: textDetails(contents),
+  }];
+}
+
+export function projectPluginSkillReadResultEntries(
+  skillName: string,
+  source: string,
+  contents: string | null | undefined,
+): CommandPanelEntry[] {
+  return [{
+    id: `plugin-skill-file:${source}:${skillName}`,
+    title: skillName || "Plugin skill",
+    kind: "status",
+    status: contents ? "read" : "empty",
+    meta: source,
+    details: contents ? textDetails(contents) : ["plugin/skill/read returned no source contents."],
   }];
 }
 
@@ -604,6 +706,219 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
     action: path ? { type: "attachSkill", name, path, promptText: skillPromptText({ name, path, defaultPrompt }) } : undefined,
     secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
   };
+}
+
+export function projectRecommendedSkillEntries(
+  value: unknown,
+  options: {
+    existingSkills?: unknown;
+  } = {},
+): CommandPanelEntry[] {
+  const existing = skillIdentityKeys(options.existingSkills);
+  return pluginDetails(value).flatMap((plugin, pluginIndex) => {
+    const summary = recordField(plugin, "summary");
+    const marketplaceName = fieldText(plugin, "marketplaceName") || fieldText(plugin, "remoteMarketplaceName");
+    const marketplacePath = fieldText(plugin, "marketplacePath") || null;
+    const pluginId = fieldText(summary, "id")
+      || fieldText(summary, "remotePluginId")
+      || fieldText(summary, "name")
+      || `plugin-${pluginIndex + 1}`;
+    const remotePluginId = fieldText(summary, "remotePluginId") || pluginId;
+    const pluginName = fieldText(summary, "name") || pluginId;
+    const interfaceInfo = recordField(summary, "interface");
+    const pluginTitle = fieldText(interfaceInfo, "displayName") || pluginName;
+    const installed = booleanField(summary, "installed");
+    const availability = fieldText(summary, "availability");
+    const installPolicy = fieldText(summary, "installPolicy");
+    const canInstall = !installed
+      && availability !== "DISABLED_BY_ADMIN"
+      && installPolicy !== "NOT_AVAILABLE"
+      && Boolean(marketplacePath || marketplaceName);
+    return arrayField(plugin, "skills")
+      .map((skill, skillIndex) => recommendedSkillEntry({
+        canInstall,
+        existing,
+        installed,
+        marketplaceName,
+        marketplacePath,
+        pluginId,
+        pluginName,
+        pluginTitle,
+        remotePluginId,
+        skill,
+        skillIndex,
+      }))
+      .filter((entry): entry is CommandPanelEntry => entry !== null);
+  });
+}
+
+function recommendedSkillEntry({
+  canInstall,
+  existing,
+  installed,
+  marketplaceName,
+  marketplacePath,
+  pluginId,
+  pluginName,
+  pluginTitle,
+  remotePluginId,
+  skill,
+  skillIndex,
+}: {
+  canInstall: boolean;
+  existing: Set<string>;
+  installed: boolean;
+  marketplaceName: string;
+  marketplacePath: string | null;
+  pluginId: string;
+  pluginName: string;
+  pluginTitle: string;
+  remotePluginId: string;
+  skill: Record<string, unknown>;
+  skillIndex: number;
+}): CommandPanelEntry | null {
+  const name = fieldText(skill, "name") || `skill-${skillIndex + 1}`;
+  const path = fieldText(skill, "path");
+  if (existing.has(`name:${name.toLowerCase()}`) || (path && existing.has(`path:${path}`))) return null;
+
+  const interfaceInfo = recordField(skill, "interface");
+  const displayName = fieldText(interfaceInfo, "displayName") || name;
+  const defaultPrompt = fieldText(interfaceInfo, "defaultPrompt");
+  const enabled = !Object.prototype.hasOwnProperty.call(skill, "enabled") || booleanField(skill, "enabled");
+  const remoteReadable = marketplaceName && remotePluginId && name;
+  const secondaryActions = cleanSecondaryActions([
+    path ? skillFileReadAction({ displayName, path }) : undefined,
+    !path && remoteReadable ? {
+      id: `recommended-skill:${pluginId}:${name}:read`,
+      label: "View",
+      title: `View ${displayName} source`,
+      action: {
+        type: "readPluginSkill" as const,
+        title: `View ${displayName}`,
+        remoteMarketplaceName: marketplaceName,
+        remotePluginId,
+        skillName: name,
+      },
+    } : undefined,
+    path && Object.prototype.hasOwnProperty.call(skill, "enabled")
+      ? skillConfigToggleAction({ name, displayName, path, enabled })
+      : undefined,
+    canInstall ? {
+      id: `recommended-skill:${pluginId}:${name}:install`,
+      label: "Install plugin",
+      title: `Install ${pluginTitle}`,
+      tone: "success" as const,
+      action: {
+        type: "installPlugin" as const,
+        title: `Install ${pluginTitle}`,
+        pluginId,
+        pluginName,
+        marketplaceName,
+        marketplacePath,
+      },
+    } : undefined,
+  ]);
+
+  return {
+    id: `recommended-skill:${pluginId}:${name}`,
+    title: displayName,
+    kind: "skill",
+    status: path ? enabled ? "available" : "disabled" : installed ? "plugin skill" : "install plugin",
+    meta: `Recommended Skills · ${pluginTitle}`,
+    details: cleanList([
+      fieldText(interfaceInfo, "shortDescription")
+        || fieldText(skill, "shortDescription")
+        || fieldText(skill, "description"),
+      defaultPrompt && `Default prompt: ${firstLine(defaultPrompt)}`,
+      `Plugin: ${pluginTitle}`,
+      path ? `Path: ${path}` : "Source: plugin/skill/read",
+      !installed && "Install the plugin to materialize this skill locally.",
+    ]),
+    disabled: path && enabled ? undefined : true,
+    action: path && enabled
+      ? { type: "attachSkill", name, path, promptText: skillPromptText({ name, path, defaultPrompt }) }
+      : undefined,
+    secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
+  };
+}
+
+function skillCreatorEntry(workspace: string | undefined): CommandPanelEntry {
+  const target = starterSkillTarget(workspace);
+  return {
+    id: "skill-creator:local-helper",
+    title: "Skill creator",
+    kind: "skill",
+    status: target ? "starter available" : "workspace required",
+    meta: "Recommended Skills · available boundary",
+    details: cleanList([
+      "No app-server creator RPC is exposed; this creates a starter SKILL.md through fs/createDirectory and fs/writeFile.",
+      target ? `Directory: ${target.directoryPath}` : "Open an absolute workspace folder before creating a starter skill.",
+      target ? `File: ${target.filePath}` : undefined,
+    ]),
+    disabled: target ? undefined : true,
+    secondaryActions: target ? [{
+      id: "skill-creator:create-starter",
+      label: "Create",
+      title: "Create starter skill",
+      tone: "success",
+      action: {
+        type: "createStarterSkill",
+        title: "Create starter skill",
+        ...target,
+      },
+    }] : undefined,
+  };
+}
+
+export interface StarterSkillTarget {
+  skillName: string;
+  directoryPath: string;
+  filePath: string;
+  contents: string;
+}
+
+export function starterSkillTarget(workspace: string | undefined): StarterSkillTarget | null {
+  const root = workspace?.trim().replace(/[\\/]+$/u, "") ?? "";
+  if (!isAbsolutePath(root)) return null;
+  const directoryPath = joinFixedPath(root, ".codex", "skills", STARTER_SKILL_NAME);
+  return {
+    skillName: STARTER_SKILL_NAME,
+    directoryPath,
+    filePath: joinFixedPath(directoryPath, "SKILL.md"),
+    contents: starterSkillContents(STARTER_SKILL_NAME),
+  };
+}
+
+function starterSkillContents(skillName: string): string {
+  return `---
+name: ${skillName}
+description: Use when the user asks to try or customize the starter skill workflow.
+metadata:
+  short-description: Starter skill
+---
+
+# Starter Skill
+
+Use this file to capture a focused workflow, domain rule, or repeatable task.
+
+## Workflow
+
+1. Identify when this skill should apply.
+2. Follow the project-specific steps here.
+3. Verify the result before responding.
+`;
+}
+
+function isAbsolutePath(value: string): boolean {
+  return value.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(value);
+}
+
+function joinFixedPath(root: string, ...parts: string[]): string {
+  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+  return [root, ...parts].map((part, index) => {
+    if (index === 0) return part.replace(/[\\/]+$/u, "");
+    return part.replace(/^[\\/]+|[\\/]+$/gu, "");
+  }).filter(Boolean).join(separator);
 }
 
 function skillDependencyLabel(dependency: Record<string, unknown>): string {
@@ -990,6 +1305,31 @@ function responseItems(value: unknown): Record<string, unknown>[] {
   return [];
 }
 
+function pluginDetails(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.flatMap(pluginDetails);
+  if (!isRecord(value)) return [];
+  if (isRecord(value.plugin)) return [value.plugin];
+  const direct = arrayField(value, "plugins");
+  if (direct.length > 0) return direct;
+  const details = arrayField(value, "pluginDetails");
+  if (details.length > 0) return details.flatMap(pluginDetails);
+  return [];
+}
+
+function skillIdentityKeys(value: unknown): Set<string> {
+  const keys = new Set<string>();
+  for (const item of responseItems(value)) {
+    const skills = Array.isArray(item.skills) ? arrayField(item, "skills") : [item];
+    for (const skill of skills) {
+      const name = fieldText(skill, "name");
+      const path = fieldText(skill, "path");
+      if (name) keys.add(`name:${name.toLowerCase()}`);
+      if (path) keys.add(`path:${path}`);
+    }
+  }
+  return keys;
+}
+
 interface AppListState {
   hasAccessibleField: boolean;
   accessible: boolean;
@@ -1158,6 +1498,10 @@ function panelTitle(panel: CommandPanelKind): string {
       return "Collaboration modes";
     case "status":
       return "Status";
+    case "theme":
+      return "Theme";
+    case "files":
+      return "Files";
     case "diff":
       return "Diff";
     default:

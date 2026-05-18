@@ -1,14 +1,101 @@
 import { runSlashRequestWorkflow } from "../src/state/slash-request-workflow";
+import { initialAccountState, type AccountState } from "../src/state/account-state";
 import type { CommandPanelKind, CommandPanelOptions } from "../src/state/command-panel";
+import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
 
 export default async function runSlashRequestWorkflowTests(): Promise<void> {
+  await resumesAndForksThreadsWithContextDefaults();
+  await listsAppsThroughDesktopPagingLoader();
   await listsCollaborationModesThroughAppServer();
   await reloadsSkillsThroughAppServer();
+  await logsOutThroughAccountStateRefresh();
   await setsReadsAndClearsThreadGoalsThroughAppServer();
   await listsBackgroundTerminalsFromActiveItems();
   await cleansBackgroundTerminalsThroughAppServer();
   await showsPersonalityOptionsFromThreadContext();
+  await showsMemoriesOptionsFromThreadContext();
+  await showsDebugConfigFromConfigLayers();
+  await showsRpcInspectorWithoutRuntimeConnection();
   await searchesMentionsThroughAppServer();
+}
+
+async function resumesAndForksThreadsWithContextDefaults(): Promise<void> {
+  const workflow = createWorkflowRecorder([
+    { thread: { id: "resumed-thread" } },
+    { thread: { id: "forked-thread" } },
+  ]);
+  const threadContextDefaults = {
+    model: "gpt-5.2",
+    modelProvider: "openai",
+    developerInstructions: "Workspace developer instructions.",
+    personality: "friendly" as const,
+    memories: { useMemories: false, generateMemories: true },
+  };
+
+  await runSlashRequestWorkflow("resumeThread", { threadId: "thread-resume" }, {
+    ...workflow.context,
+    threadContextDefaults,
+  });
+  await runSlashRequestWorkflow("forkThread", undefined, {
+    ...workflow.context,
+    activeThread: { id: "thread-1", cwd: "/thread-cwd" } as never,
+    threadContextDefaults,
+  });
+
+  assertDeepEqual(
+    workflow.requests,
+    [
+      {
+        method: "thread/resume",
+        params: {
+          threadId: "thread-resume",
+          cwd: "/workspace",
+          model: "gpt-5.2",
+          modelProvider: "openai",
+          developerInstructions: "Workspace developer instructions.",
+          personality: "friendly",
+          config: {
+            "memories.use_memories": false,
+            "memories.generate_memories": true,
+          },
+        },
+        timeoutMs: 120_000,
+      },
+      {
+        method: "thread/fork",
+        params: {
+          threadId: "thread-1",
+          cwd: "/thread-cwd",
+          model: "gpt-5.2",
+          modelProvider: "openai",
+          developerInstructions: "Workspace developer instructions.",
+          config: {
+            "memories.use_memories": false,
+            "memories.generate_memories": true,
+          },
+          threadSource: "user",
+        },
+        timeoutMs: 120_000,
+      },
+    ],
+    "slash resume/fork should reuse ThreadContextDefaults instead of bare thread requests",
+  );
+}
+
+async function listsAppsThroughDesktopPagingLoader(): Promise<void> {
+  const workflow = createWorkflowRecorder([{ data: [], nextCursor: null }]);
+
+  await runSlashRequestWorkflow("listApps", undefined, workflow.context);
+
+  assertDeepEqual(
+    workflow.requests,
+    [{
+      method: "app/list",
+      params: { cursor: null, forceRefetch: undefined, limit: 1000, threadId: "thread-1" },
+      timeoutMs: 120_000,
+    }],
+    "/apps should use the Desktop paging loader instead of a 50-item single page",
+  );
 }
 
 async function reloadsSkillsThroughAppServer(): Promise<void> {
@@ -96,6 +183,52 @@ async function reloadsSkillsThroughAppServer(): Promise<void> {
       },
     },
     "skills reload should show Desktop-style skill metadata in the command panel",
+  );
+}
+
+async function logsOutThroughAccountStateRefresh(): Promise<void> {
+  const rateLimits: RateLimitSnapshot = {
+    limitId: "codex",
+    limitName: "Codex",
+    primary: { usedPercent: 11, windowDurationMins: 300, resetsAt: null },
+    secondary: null,
+    credits: { hasCredits: true, unlimited: false, balance: "12.50" },
+    planType: "pro",
+    rateLimitReachedType: null,
+  };
+  const workflow = createWorkflowRecorder([
+    {},
+    { account: null, requiresOpenaiAuth: true },
+    { rateLimits, rateLimitsByLimitId: null },
+  ]);
+  const accountStates: AccountState[] = [];
+
+  await runSlashRequestWorkflow("logout", undefined, {
+    ...workflow.context,
+    accountState: {
+      ...initialAccountState,
+      account: { type: "chatgpt", email: "ada@example.com", planType: "pro" },
+      requiresOpenaiAuth: false,
+      rateLimits,
+      rateLimitsByLimitId: { codex: rateLimits },
+      status: "ready",
+    },
+    setAccountState: (state) => accountStates.push(state),
+  });
+
+  assertDeepEqual(
+    workflow.requests,
+    [
+      { method: "account/logout", params: undefined, timeoutMs: 120_000 },
+      { method: "account/read", params: { refreshToken: false }, timeoutMs: 120_000 },
+      { method: "account/rateLimits/read", params: undefined, timeoutMs: 120_000 },
+    ],
+    "logout slash request should refresh account projection after account/logout",
+  );
+  assertDeepEqual(
+    accountStates.map((state) => ({ account: state.account, buckets: state.rateLimitsByLimitId })),
+    [{ account: null, buckets: {} }],
+    "logout slash request should publish the refreshed signed-out account state",
   );
 }
 
@@ -319,6 +452,255 @@ async function showsPersonalityOptionsFromThreadContext(): Promise<void> {
   );
 }
 
+async function showsMemoriesOptionsFromThreadContext(): Promise<void> {
+  const workflow = createWorkflowRecorder([]);
+
+  await runSlashRequestWorkflow("showMemories", undefined, {
+    ...workflow.context,
+    threadContextDefaults: {
+      memories: {
+        useMemories: false,
+        generateMemories: true,
+      },
+    },
+  });
+
+  assertDeepEqual(workflow.requests, [], "memories slash request should project local config without polling app-server");
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "generic",
+      options: {
+        status: "ready",
+        title: "Memories",
+        message: "Configure memory defaults, or update whether the current chat can generate future memories.",
+        entries: [
+          {
+            id: "memories:defaults",
+            title: "New chats",
+            kind: "status",
+            status: "use off · generate on",
+            meta: "Applies to chats started from this composer",
+            details: [
+              "Use memories: let Codex bring existing memories into the chat context.",
+              "Generate memories: allow Codex to use this chat when creating new memories later.",
+            ],
+            secondaryActions: [
+              {
+                id: "memories:defaults:use:on",
+                label: "Turn on",
+                title: "Enable use memories",
+                tone: "success",
+                action: {
+                  type: "writeConfig",
+                  title: "Memories",
+                  message: "Use memories enabled for new chats.",
+                  edits: [{ keyPath: "memories.use_memories", value: true, mergeStrategy: "upsert" }],
+                  reloadUserConfig: true,
+                },
+              },
+              {
+                id: "memories:defaults:generate:off",
+                label: "Turn off",
+                title: "Disable generate memories",
+                tone: "danger",
+                action: {
+                  type: "writeConfig",
+                  title: "Memories",
+                  message: "Generate memories disabled for new chats.",
+                  edits: [{ keyPath: "memories.generate_memories", value: false, mergeStrategy: "upsert" }],
+                  reloadUserConfig: true,
+                },
+              },
+            ],
+          },
+          {
+            id: "memories:thread:thread-1",
+            title: "Current chat memory generation",
+            kind: "status",
+            status: "thread mode",
+            meta: "thread thread-1",
+            details: [
+              "Use memories cannot be changed after a chat has started.",
+              "Generate memories controls whether this chat remains eligible for future memory generation.",
+            ],
+            secondaryActions: [
+              {
+                id: "memories:thread:thread-1:enable",
+                label: "Enable",
+                title: "Enable memory generation for this chat",
+                tone: "success",
+                action: {
+                  type: "setThreadMemoryMode",
+                  title: "Memories",
+                  threadId: "thread-1",
+                  mode: "enabled",
+                },
+              },
+              {
+                id: "memories:thread:thread-1:disable",
+                label: "Disable",
+                title: "Disable memory generation for this chat",
+                tone: "danger",
+                action: {
+                  type: "setThreadMemoryMode",
+                  title: "Memories",
+                  threadId: "thread-1",
+                  mode: "disabled",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    "memories slash request should expose default config writes and thread/memoryMode actions",
+  );
+}
+
+async function showsDebugConfigFromConfigLayers(): Promise<void> {
+  const configReadResult = {
+    config: {
+      model: "gpt-5.2",
+      model_provider: "openai",
+      memories: {
+        use_memories: true,
+        generate_memories: false,
+      },
+      nested: { ignored: true },
+    },
+    layers: [
+      {
+        name: "Defaults",
+        path: "/Users/test/.codex/config.toml",
+        config: { model: "gpt-5.2" },
+      },
+      {
+        source: "Workspace",
+        cwd: "/workspace",
+        settings: { approval_policy: "on-request" },
+      },
+    ],
+  };
+  const workflow = createWorkflowRecorder([configReadResult]);
+
+  await runSlashRequestWorkflow("showDebugConfig", undefined, workflow.context);
+
+  assertDeepEqual(
+    workflow.requests,
+    [{
+      method: "config/read",
+      params: { includeLayers: true, cwd: "/workspace" },
+      timeoutMs: 120_000,
+    }],
+    "debug-config should read effective config layers from app-server",
+  );
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "generic",
+      options: {
+        status: "ready",
+        title: "Debug config",
+        message: "Effective config and config layers from app-server.",
+        entries: [
+          {
+            id: "debug-config:effective",
+            title: "Effective config",
+            kind: "status",
+            status: "4 key(s)",
+            meta: "/workspace",
+            details: [
+              "model: gpt-5.2",
+              "model_provider: openai",
+              "memories.use_memories: true",
+              "memories.generate_memories: false",
+            ],
+            action: {
+              type: "copyText",
+              title: "Debug config",
+              label: "Debug config",
+              text: JSON.stringify(configReadResult, null, 2),
+            },
+          },
+          {
+            id: "debug-config:layer:0",
+            title: "Defaults",
+            kind: "status",
+            status: undefined,
+            meta: "/Users/test/.codex/config.toml",
+            details: ["model: gpt-5.2"],
+          },
+          {
+            id: "debug-config:layer:1",
+            title: "Workspace",
+            kind: "status",
+            status: undefined,
+            meta: "/workspace",
+            details: ["approval_policy: on-request"],
+          },
+        ],
+      },
+    },
+    "debug-config should show effective config plus individual layers",
+  );
+}
+
+async function showsRpcInspectorWithoutRuntimeConnection(): Promise<void> {
+  const workflow = createWorkflowRecorder([]);
+
+  await runSlashRequestWorkflow("showRpcInspector", undefined, {
+    ...workflow.context,
+    ensureConnected: async () => {
+      throw new Error("RPC inspector should not require a live app-server connection");
+    },
+    rpcDebugEvents: [
+      {
+        id: "rpc-1",
+        at: 1_700_000_000_000,
+        kind: "client-request",
+        method: "thread/list",
+        requestId: "req-1",
+        payload: { limit: 10 },
+      },
+    ],
+  });
+
+  assertDeepEqual(
+    workflow.panels.at(-1),
+    {
+      panel: "generic",
+      options: {
+        status: "ready",
+        title: "RPC inspector",
+        message: "1 recent JSON-RPC / host event(s). Select an entry to copy the raw event.",
+        entries: [{
+          id: "rpc:rpc-1",
+          title: "→ request thread/list",
+          kind: "status",
+          status: "id req-1",
+          meta: new Date(1_700_000_000_000).toLocaleTimeString(),
+          details: ["{\n  \"limit\": 10\n}"],
+          action: {
+            type: "copyText",
+            title: "Copy RPC event",
+            label: "RPC event",
+            text: JSON.stringify({
+              id: "rpc-1",
+              at: 1_700_000_000_000,
+              kind: "client-request",
+              method: "thread/list",
+              requestId: "req-1",
+              payload: { limit: 10 },
+            }, null, 2),
+          },
+        }],
+      },
+    },
+    "rpc inspector should show recent RPC events from local UI state",
+  );
+}
+
 async function searchesMentionsThroughAppServer(): Promise<void> {
   const workflow = createWorkflowRecorder([
     {
@@ -354,7 +736,7 @@ async function searchesMentionsThroughAppServer(): Promise<void> {
         entries: [{
           id: "file:/workspace/packages/ui/src/HiCodexApp.tsx",
           title: "HiCodexApp.tsx",
-          kind: "status",
+          kind: "file",
           status: "fuzzy",
           meta: "/workspace/packages/ui/src/HiCodexApp.tsx",
           details: ["score: 91"],

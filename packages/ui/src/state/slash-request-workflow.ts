@@ -7,23 +7,45 @@ import type {
   ThreadGoalGetResponse,
   ThreadGoalSetResponse,
 } from "@hicodex/codex-protocol";
-import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
-import { formatError } from "../lib/format";
+import { CodexJsonRpcClient, type RpcDebugEvent } from "../lib/codex-json-rpc-client";
+import { formatError, formatUnknown } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
+import {
+  logoutAndRefreshAccountState,
+  type AccountState,
+} from "./account-state";
+import { loadAllApps } from "./app-list";
 import { projectBackgroundTerminalEntries } from "./background-terminals";
+import { buildInfoDetails, type HiCodexBuildInfo } from "./build-info";
 import type { SlashCommandRequest } from "./composer-workflow";
 import {
   projectCommandPanelEntries,
+  projectFileSearchEntries,
   projectMcpServerEntries,
   projectPluginEntries,
   type CommandPanelEntry,
   type CommandPanelKind,
   type CommandPanelOptions,
+  type CommandPanelSecondaryAction,
 } from "./command-panel";
-import type { ThreadContextDefaults } from "./codex-reducer";
+import type { LogLine, ThreadContextDefaults } from "./codex-reducer";
 import { projectPersonalityCommandEntries } from "./personality";
+import { projectRpcDebugEntries, rpcDebugPanelMessage } from "./rpc-debug";
 import type { AccumulatedThreadItem } from "./render-groups";
-import { startSideConversation, type ThreadWorkflowDispatch } from "./thread-workflow";
+import {
+  effectiveThreadMemoryPreferences,
+  forkThread,
+  resumeThread,
+  startSideConversation,
+  type ThreadWorkflowDispatch,
+} from "./thread-workflow";
+import {
+  UI_THEME_MODES,
+  nextToggleThemeMode,
+  themeModeDescription,
+  themeModeLabel,
+  type UiThemeSnapshot,
+} from "./theme";
 
 export interface SlashRequestWorkflowContext {
   client: CodexJsonRpcClient;
@@ -44,6 +66,12 @@ export interface SlashRequestWorkflowContext {
   threads: Thread[];
   threadContextDefaults?: ThreadContextDefaults | null;
   openSideConversationPanel?: (thread: Thread) => void;
+  accountState?: AccountState;
+  setAccountState?: (state: AccountState) => void;
+  uiTheme?: UiThemeSnapshot;
+  logs?: LogLine[];
+  rpcDebugEvents?: RpcDebugEvent[];
+  buildInfo?: HiCodexBuildInfo;
 }
 
 export async function runSlashRequestWorkflow(
@@ -70,9 +98,52 @@ export async function runSlashRequestWorkflow(
     threads,
     threadContextDefaults = null,
     openSideConversationPanel,
+    accountState,
+    setAccountState,
+    uiTheme,
+    logs = [],
+    rpcDebugEvents = [],
+    buildInfo,
   } = context;
 
   try {
+    if (request === "showTheme") {
+      openCommandPanel("theme", {
+        status: "ready",
+        title: "Theme",
+        message: themePanelMessage(uiTheme),
+        entries: projectThemeCommandEntries(uiTheme),
+      });
+      return;
+    }
+
+    if (request === "showFeedback") {
+      openCommandPanel("generic", {
+        status: "ready",
+        title: "Feedback",
+        message: "Prepare a Codex feedback report. Include the diagnostics when opening a GitHub issue.",
+        entries: projectFeedbackCommandEntries({
+          activeThreadId,
+          activeTurnId,
+          connected,
+          logs,
+          workspace: workspace.trim() || defaultCwd || "",
+        }),
+      });
+      return;
+    }
+
+    if (request === "showRpcInspector") {
+      const entries = projectRpcDebugEntries(rpcDebugEvents);
+      openCommandPanel("generic", {
+        status: entries.length > 0 ? "ready" : "empty",
+        title: "RPC inspector",
+        message: rpcDebugPanelMessage(rpcDebugEvents),
+        entries,
+      });
+      return;
+    }
+
     if (!(await ensureConnected())) return;
 
     switch (request) {
@@ -82,10 +153,7 @@ export async function runSlashRequestWorkflow(
           dispatch({ type: "log", text: "Select a thread from the sidebar to resume it.", level: "info" });
           return;
         }
-        const result = await client.request<{ thread: Thread }>("thread/resume", {
-          threadId,
-          cwd: workspace.trim() || null,
-        });
+        const result = await resumeThread(client, threadId, workspace.trim() || defaultCwd || "", threadContextDefaults);
         dispatch({ type: "setThreads", threads: [result.thread, ...threads.filter((thread) => thread.id !== result.thread.id)] });
         dispatch({ type: "setActiveThread", threadId: result.thread.id });
         dispatch({ type: "notification", message: { method: "thread/started", params: { thread: result.thread } } });
@@ -157,10 +225,12 @@ export async function runSlashRequestWorkflow(
       case "forkThread": {
         const threadId = requireActiveThreadId(request, activeThreadId, dispatch);
         if (!threadId) return;
-        const result = await client.request<{ thread: Thread }>("thread/fork", {
+        const result = await forkThread(
+          client,
           threadId,
-          cwd: workspace.trim() || null,
-        }, 120_000);
+          activeThread?.cwd || workspace.trim() || defaultCwd || "",
+          threadContextDefaults,
+        );
         dispatch({ type: "setThreads", threads: [result.thread, ...threads.filter((thread) => thread.id !== result.thread.id)] });
         dispatch({ type: "setActiveThread", threadId: result.thread.id });
         dispatch({ type: "notification", message: { method: "thread/started", params: { thread: result.thread } } });
@@ -228,10 +298,7 @@ export async function runSlashRequestWorkflow(
       }
       case "listApps": {
         openCommandPanel("apps", { status: "loading", entries: [] });
-        const result = await client.request<unknown>("app/list", {
-          limit: 50,
-          threadId: activeThreadId,
-        });
+        const result = await loadAllApps(client, { threadId: activeThreadId });
         openCommandPanel("apps", { status: "ready", entries: projectCommandPanelEntries({ apps: result }) });
         return;
       }
@@ -281,7 +348,8 @@ export async function runSlashRequestWorkflow(
         return;
       }
       case "logout": {
-        await client.request("account/logout", undefined, 120_000);
+        const nextAccountState = await logoutAndRefreshAccountState(client, accountState);
+        setAccountState?.(nextAccountState);
         dispatch({ type: "log", text: "Logged out from the current Codex account.", level: "info" });
         return;
       }
@@ -379,8 +447,43 @@ export async function runSlashRequestWorkflow(
         });
         return;
       }
+      case "showMemories": {
+        openCommandPanel("generic", {
+          status: "ready",
+          title: "Memories",
+          message: "Configure memory defaults, or update whether the current chat can generate future memories.",
+          entries: projectMemoryCommandEntries(activeThreadId, threadContextDefaults),
+        });
+        return;
+      }
       case "showMentionPicker": {
-        await handleMentionSearch(client, openCommandPanel, stringPayload(payload, "query"), workspace.trim() || defaultCwd || "");
+        await handleMentionSearch(
+          client,
+          openCommandPanel,
+          stringPayload(payload, "query"),
+          activeThread?.cwd?.trim() || workspace.trim() || defaultCwd || "",
+        );
+        return;
+      }
+      case "showDebugConfig": {
+        const cwd = workspace.trim() || defaultCwd || "";
+        openCommandPanel("generic", {
+          status: "loading",
+          title: "Debug config",
+          message: "Reading effective Codex config...",
+          entries: [],
+        });
+        const result = await client.request<unknown>("config/read", {
+          includeLayers: true,
+          cwd: cwd || null,
+        }, 120_000);
+        const entries = projectDebugConfigEntries(result, cwd, buildInfo);
+        openCommandPanel("generic", {
+          status: entries.length > 0 ? "ready" : "empty",
+          title: "Debug config",
+          message: entries.length > 0 ? "Effective config and config layers from app-server." : "No config data returned.",
+          entries,
+        });
         return;
       }
       default:
@@ -480,6 +583,241 @@ function cleanGoalDetails(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
 }
 
+function projectMemoryCommandEntries(
+  activeThreadId: string | null,
+  context: ThreadContextDefaults | null,
+): CommandPanelEntry[] {
+  const preferences = effectiveThreadMemoryPreferences(context);
+  const entries: CommandPanelEntry[] = [{
+    id: "memories:defaults",
+    title: "New chats",
+    kind: "status",
+    status: memorySummary(preferences.useMemories, preferences.generateMemories),
+    meta: "Applies to chats started from this composer",
+    details: [
+      "Use memories: let Codex bring existing memories into the chat context.",
+      "Generate memories: allow Codex to use this chat when creating new memories later.",
+    ],
+    secondaryActions: [
+      memoryConfigAction("use", !preferences.useMemories),
+      memoryConfigAction("generate", !preferences.generateMemories),
+    ],
+  }];
+
+  if (activeThreadId) {
+    entries.push({
+      id: `memories:thread:${activeThreadId}`,
+      title: "Current chat memory generation",
+      kind: "status",
+      status: "thread mode",
+      meta: `thread ${activeThreadId}`,
+      details: [
+        "Use memories cannot be changed after a chat has started.",
+        "Generate memories controls whether this chat remains eligible for future memory generation.",
+      ],
+      secondaryActions: [
+        {
+          id: `memories:thread:${activeThreadId}:enable`,
+          label: "Enable",
+          title: "Enable memory generation for this chat",
+          tone: "success",
+          action: {
+            type: "setThreadMemoryMode",
+            title: "Memories",
+            threadId: activeThreadId,
+            mode: "enabled",
+          },
+        },
+        {
+          id: `memories:thread:${activeThreadId}:disable`,
+          label: "Disable",
+          title: "Disable memory generation for this chat",
+          tone: "danger",
+          action: {
+            type: "setThreadMemoryMode",
+            title: "Memories",
+            threadId: activeThreadId,
+            mode: "disabled",
+          },
+        },
+      ],
+    });
+  }
+
+  return entries;
+}
+
+function memoryConfigAction(kind: "use" | "generate", enabled: boolean): CommandPanelSecondaryAction {
+  const title = kind === "use" ? "Use memories" : "Generate memories";
+  const keyPath = kind === "use" ? "memories.use_memories" : "memories.generate_memories";
+  return {
+    id: `memories:defaults:${kind}:${enabled ? "on" : "off"}`,
+    label: enabled ? "Turn on" : "Turn off",
+    title: `${enabled ? "Enable" : "Disable"} ${title.toLowerCase()}`,
+    tone: enabled ? "success" : "danger",
+    action: {
+      type: "writeConfig",
+      title: "Memories",
+      message: `${title} ${enabled ? "enabled" : "disabled"} for new chats.`,
+      edits: [{ keyPath, value: enabled, mergeStrategy: "upsert" }],
+      reloadUserConfig: true,
+    },
+  };
+}
+
+function memorySummary(useMemories: boolean, generateMemories: boolean): string {
+  return `use ${useMemories ? "on" : "off"} · generate ${generateMemories ? "on" : "off"}`;
+}
+
+function projectDebugConfigEntries(
+  value: unknown,
+  cwd: string,
+  buildInfo?: HiCodexBuildInfo,
+): CommandPanelEntry[] {
+  const buildEntry = buildInfo ? [projectBuildInfoEntry(buildInfo)] : [];
+  const root = recordValue(value);
+  if (!root) {
+    return [
+      ...buildEntry,
+      {
+        id: "debug-config:raw",
+        title: "Config response",
+        kind: "status",
+        meta: cwd || "global config",
+        details: [formatUnknown(value)],
+        action: {
+          type: "copyText",
+          title: "Debug config",
+          label: "Debug config",
+          text: compactDebugJson(value),
+        },
+      },
+    ];
+  }
+
+  const effectiveConfig = firstRecordField(root, ["config", "settings", "effective", "effectiveConfig"]) ?? root;
+  const layers = firstArrayField(root, ["layers", "configLayers", "config_layers"]);
+  const entries: CommandPanelEntry[] = [...buildEntry, {
+    id: "debug-config:effective",
+    title: "Effective config",
+    kind: "status",
+    status: `${Object.keys(effectiveConfig).length} key(s)`,
+    meta: cwd || "global config",
+    details: summarizeDebugConfig(effectiveConfig),
+    action: {
+      type: "copyText",
+      title: "Debug config",
+      label: "Debug config",
+      text: compactDebugJson(value),
+    },
+  }];
+
+  layers.forEach((layer, index) => {
+    const layerConfig = firstRecordField(layer, ["config", "settings", "values"]) ?? layer;
+    entries.push({
+      id: `debug-config:layer:${index}`,
+      title: debugLayerTitle(layer, index),
+      kind: "status",
+      status: debugLayerStatus(layer),
+      meta: debugLayerMeta(layer),
+      details: summarizeDebugConfig(layerConfig),
+    });
+  });
+
+  return entries;
+}
+
+function projectBuildInfoEntry(buildInfo: HiCodexBuildInfo): CommandPanelEntry {
+  return {
+    id: "debug-config:build",
+    title: "HiCodex build",
+    kind: "status",
+    status: `${buildInfo.flavor} / ${buildInfo.channel}`,
+    meta: buildInfo.version,
+    details: buildInfoDetails(buildInfo),
+    action: {
+      type: "copyText",
+      title: "Build info",
+      label: "Build info",
+      text: JSON.stringify(buildInfo, null, 2),
+    },
+  };
+}
+
+function summarizeDebugConfig(config: Record<string, unknown>): string[] {
+  const preferredKeys = [
+    "model",
+    "model_provider",
+    "approval_policy",
+    "approvals_reviewer",
+    "sandbox_mode",
+    "profile",
+    "model_reasoning_effort",
+    "model_reasoning_summary",
+    "instructions",
+    "developer_instructions",
+  ];
+  const details: string[] = [];
+  const seen = new Set<string>();
+  for (const key of preferredKeys) {
+    const formatted = debugConfigDetail(config, key);
+    if (!formatted) continue;
+    seen.add(key);
+    details.push(formatted);
+  }
+  const memories = recordField(config, "memories");
+  if (memories) {
+    for (const key of ["use_memories", "generate_memories"]) {
+      const formatted = debugConfigDetail(memories, key, `memories.${key}`);
+      if (formatted) details.push(formatted);
+    }
+  }
+  for (const [key, value] of Object.entries(config)) {
+    if (details.length >= 10) break;
+    if (seen.has(key) || key === "memories") continue;
+    const formatted = formatDebugValue(value);
+    if (formatted) details.push(`${key}: ${formatted}`);
+  }
+  return details.length > 0 ? details : ["No scalar config values returned."];
+}
+
+function debugConfigDetail(config: Record<string, unknown>, key: string, label = key): string {
+  const formatted = formatDebugValue(config[key]);
+  return formatted ? `${label}: ${formatted}` : "";
+}
+
+function formatDebugValue(value: unknown): string {
+  if (typeof value === "string") return truncateDebugValue(value.trim());
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value === null) return "null";
+  return "";
+}
+
+function truncateDebugValue(value: string): string {
+  if (!value) return "";
+  return value.length > 160 ? `${value.slice(0, 157)}...` : value;
+}
+
+function debugLayerTitle(layer: Record<string, unknown>, index: number): string {
+  return fieldText(layer, "name")
+    || fieldText(layer, "source")
+    || fieldText(layer, "path")
+    || `Config layer ${index + 1}`;
+}
+
+function debugLayerStatus(layer: Record<string, unknown>): string | undefined {
+  return fieldText(layer, "status")
+    || fieldText(layer, "kind")
+    || (layer.enabled === false ? "disabled" : undefined);
+}
+
+function debugLayerMeta(layer: Record<string, unknown>): string | undefined {
+  return fieldText(layer, "path")
+    || fieldText(layer, "cwd")
+    || fieldText(layer, "profile")
+    || undefined;
+}
+
 function formatGoalDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0s";
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -491,6 +829,120 @@ function formatGoalDuration(seconds: number): string {
 function formatGoalTimestamp(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "unknown";
   return new Date(seconds * 1_000).toLocaleString();
+}
+
+function themePanelMessage(snapshot: UiThemeSnapshot | undefined): string {
+  if (!snapshot) return "Choose the UI appearance. The selection is saved locally.";
+  return `Choose the UI appearance. Current mode: ${themeModeLabel(snapshot.mode)}; resolved: ${snapshot.resolved}.`;
+}
+
+function projectThemeCommandEntries(snapshot: UiThemeSnapshot | undefined): CommandPanelEntry[] {
+  const currentMode = snapshot?.mode ?? "system";
+  const resolved = snapshot?.resolved ?? "light";
+  const toggleMode = nextToggleThemeMode(resolved);
+  const toggleTitle = toggleMode === "dark" ? "Switch to dark theme" : "Switch to light theme";
+  return [
+    {
+      id: "theme:toggle",
+      title: toggleTitle,
+      kind: "theme",
+      status: "toggle",
+      meta: `Current resolved theme is ${resolved}.`,
+      action: {
+        type: "setUiTheme",
+        title: toggleTitle,
+        mode: toggleMode,
+      },
+    },
+    ...UI_THEME_MODES.map((mode): CommandPanelEntry => ({
+      id: `theme:${mode}`,
+      title: themeModeLabel(mode),
+      kind: "theme",
+      status: mode === currentMode ? "current" : undefined,
+      meta: themeModeDescription(mode, resolved),
+      disabled: mode === currentMode,
+      action: mode === currentMode
+        ? undefined
+        : {
+            type: "setUiTheme",
+            title: `Use ${themeModeLabel(mode)} theme`,
+            mode,
+          },
+    })),
+  ];
+}
+
+function projectFeedbackCommandEntries(input: {
+  activeThreadId: string | null;
+  activeTurnId: string | null;
+  connected: boolean;
+  logs: LogLine[];
+  workspace: string;
+}): CommandPanelEntry[] {
+  const diagnostics = feedbackDiagnosticsText(input);
+  const threadSuffix = input.activeThreadId ? `thread ${shortThreadId(input.activeThreadId)}` : "no active thread";
+  return [
+    {
+      id: "feedback:copy-diagnostics",
+      title: "Copy feedback diagnostics",
+      kind: "status",
+      status: "recommended",
+      meta: threadSuffix,
+      details: [
+        "Copies thread id, workspace, runtime status, and recent UI logs.",
+        "Matches Codex Desktop's include-session-logs intent without uploading logs from HiCodex.",
+      ],
+      action: {
+        type: "copyText",
+        title: "Feedback diagnostics",
+        label: "Feedback diagnostics",
+        text: diagnostics,
+      },
+    },
+    {
+      id: "feedback:open-github",
+      title: "Open Codex GitHub issue",
+      kind: "status",
+      status: "browser",
+      meta: "github.com/openai/codex",
+      details: [
+        "Paste the copied diagnostics into the issue body.",
+        input.activeThreadId ? `Thread: ${input.activeThreadId}` : "No active thread selected.",
+      ],
+      action: {
+        type: "openExternalUrl",
+        title: "Open Codex GitHub issue",
+        url: feedbackIssueUrl(input.activeThreadId),
+      },
+    },
+  ];
+}
+
+function feedbackDiagnosticsText(input: {
+  activeThreadId: string | null;
+  activeTurnId: string | null;
+  connected: boolean;
+  logs: LogLine[];
+  workspace: string;
+}): string {
+  const recentLogs = input.logs.slice(0, 12).map((log) => (
+    `- [${log.level}] ${new Date(log.at).toISOString()} ${log.text}`
+  ));
+  return [
+    "HiCodex feedback diagnostics",
+    `Thread: ${input.activeThreadId ?? "none"}`,
+    `Turn: ${input.activeTurnId ?? "none"}`,
+    `Workspace: ${input.workspace || "none"}`,
+    `Runtime connected: ${input.connected ? "yes" : "no"}`,
+    "",
+    "Recent UI logs:",
+    ...(recentLogs.length > 0 ? recentLogs : ["- none"]),
+  ].join("\n");
+}
+
+function feedbackIssueUrl(threadId: string | null): string {
+  const steps = `feedback: ${threadId ?? "no-active-thread"}`;
+  return `https://github.com/openai/codex/issues/new?template=1-codex-app.yml&steps=${encodeURIComponent(steps)}`;
 }
 
 async function handleMentionSearch(
@@ -513,21 +965,7 @@ async function handleMentionSearch(
     { query, roots: [cwd], cancellationToken: null },
     120_000,
   );
-  const entries: CommandPanelEntry[] = (result.files ?? []).slice(0, 25).map((file, index) => ({
-    id: `file:${file.path ?? file.file_name ?? index}`,
-    title: file.file_name || file.path || "file",
-    kind: "status",
-    status: file.match_type,
-    meta: file.path,
-    details: [`score: ${file.score ?? "unknown"}`],
-    action: file.path
-      ? {
-          type: "attachMention",
-          name: file.file_name || file.path,
-          path: file.path,
-        }
-      : undefined,
-  }));
+  const entries: CommandPanelEntry[] = projectFileSearchEntries(result);
   openCommandPanel("generic", {
     status: "ready",
     title: "Files",
@@ -564,6 +1002,47 @@ function shortThreadId(id: string): string {
 function stringPayload(payload: Record<string, unknown> | undefined, key: string): string {
   const value = payload?.[key];
   return typeof value === "string" ? value.trim() : "";
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function recordField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  return recordValue(value[key]);
+}
+
+function firstRecordField(value: Record<string, unknown>, keys: string[]): Record<string, unknown> | null {
+  for (const key of keys) {
+    const record = recordField(value, key);
+    if (record) return record;
+  }
+  return null;
+}
+
+function firstArrayField(value: Record<string, unknown>, keys: string[]): Record<string, unknown>[] {
+  for (const key of keys) {
+    const field = value[key];
+    if (Array.isArray(field)) return field.map(recordValue).filter((item): item is Record<string, unknown> => item != null);
+  }
+  return [];
+}
+
+function fieldText(value: Record<string, unknown>, key: string): string {
+  const field = value[key];
+  if (typeof field === "string") return field.trim();
+  if (typeof field === "number" || typeof field === "boolean" || typeof field === "bigint") return String(field);
+  return "";
+}
+
+function compactDebugJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return formatUnknown(value);
+  }
 }
 
 function diffLineCount(value: string): number {

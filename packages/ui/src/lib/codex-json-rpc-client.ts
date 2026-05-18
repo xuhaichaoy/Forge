@@ -26,15 +26,41 @@ type PendingRequest = {
 
 const INITIALIZE_TIMEOUT_MS = 60_000;
 
+export type RpcDebugEventKind =
+  | "client-request"
+  | "client-notification"
+  | "client-response"
+  | "client-error"
+  | "client-cancel"
+  | "server-response"
+  | "server-error"
+  | "server-request"
+  | "server-notification"
+  | "host-event"
+  | "host-error";
+
+export interface RpcDebugEvent {
+  id: string;
+  at: number;
+  kind: RpcDebugEventKind;
+  method?: string;
+  requestId?: RequestId;
+  level?: "info" | "warn" | "error";
+  payload?: unknown;
+  message?: string;
+}
+
 export interface CodexRpcClientHandlers {
   onHostStatus?: (status: HostStatus) => void;
   onNotification?: (message: JsonRpcNotification) => void;
   onServerRequest?: (message: JsonRpcRequest) => void;
   onLog?: (line: string, level?: "info" | "warn" | "error") => void;
+  onDebugEvent?: (event: RpcDebugEvent) => void;
 }
 
 export class CodexJsonRpcClient {
   private nextId = 1;
+  private nextDebugId = 1;
   private readonly idPrefix = `hicodex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   private eventUnlisten: (() => void) | null = null;
   private eventListenPromise: Promise<void> | null = null;
@@ -138,14 +164,27 @@ export class CodexJsonRpcClient {
   }
 
   request<T = unknown>(method: string, params?: unknown, timeoutMs: number | null = 60_000): Promise<T> {
-    this.assertActive();
+    this.assertCanSend();
     const id = `${this.idPrefix}-${this.nextId++}`;
     const message = params === undefined ? { id, method } : { id, method, params };
+    this.emitDebugEvent({
+      kind: "client-request",
+      method,
+      requestId: id,
+      payload: params,
+    });
     return new Promise<T>((resolve, reject) => {
       const timeout = timeoutMs === null
         ? null
         : window.setTimeout(() => {
             this.pending.delete(id);
+            this.emitDebugEvent({
+              kind: "client-cancel",
+              method,
+              requestId: id,
+              level: "warn",
+              message: `${method} timed out after ${timeoutMs}ms`,
+            });
             reject(new Error(`${method} timed out after ${timeoutMs}ms`));
           }, timeoutMs);
       this.pending.set(id, {
@@ -162,23 +201,40 @@ export class CodexJsonRpcClient {
           }
         })
         .catch((error) => {
-          this.rejectPendingRequest(id, error);
+          this.handleTransportFailure(error);
         });
     });
   }
 
   async notify(method: string, params?: unknown): Promise<void> {
-    this.assertActive();
+    this.assertCanSend();
+    this.emitDebugEvent({
+      kind: "client-notification",
+      method,
+      payload: params,
+    });
     await sendRaw(params === undefined ? { method } : { method, params });
   }
 
   async respond(id: RequestId, result: unknown): Promise<void> {
-    this.assertActive();
+    this.assertCanSend();
+    this.emitDebugEvent({
+      kind: "client-response",
+      requestId: id,
+      payload: result,
+    });
     await sendRaw({ id, result });
   }
 
   async reject(id: RequestId, message: string, code = -32000): Promise<void> {
-    this.assertActive();
+    this.assertCanSend();
+    this.emitDebugEvent({
+      kind: "client-error",
+      requestId: id,
+      level: "warn",
+      payload: { code, message },
+      message,
+    });
     await sendRaw({ id, error: { code, message } });
   }
 
@@ -222,14 +278,30 @@ export class CodexJsonRpcClient {
         this.handleMessage(event.value);
         break;
       case "stderr":
+        this.emitDebugEvent({ kind: "host-event", level: "warn", message: event.line });
         this.handlers.onLog?.(event.line, "warn");
         break;
       case "stdout":
       case "lifecycle":
+        this.emitDebugEvent({
+          kind: "host-event",
+          level: "info",
+          message: "line" in event ? event.line : event.message,
+          payload: event,
+        });
         this.handlers.onLog?.("line" in event ? event.line : event.message);
+        if (event.type === "lifecycle") {
+          if (isFatalLifecycleMessage(event.message)) {
+            this.markTransportClosed(`Codex app-server connection closed: ${event.message}`);
+          }
+          void this.refreshStatus().catch((error) => this.handlers.onLog?.(formatError(error), "warn"));
+        }
         break;
       case "error":
+        this.emitDebugEvent({ kind: "host-error", level: "error", message: event.message, payload: event });
         this.handlers.onLog?.(event.message, "error");
+        this.markTransportClosed(`Codex app-server connection failed: ${event.message}`);
+        void this.refreshStatus().catch((error) => this.handlers.onLog?.(formatError(error), "warn"));
         break;
     }
   }
@@ -241,6 +313,11 @@ export class CodexJsonRpcClient {
       if (!pending) return;
       this.pending.delete(message.id);
       clearPendingTimeout(pending);
+      this.emitDebugEvent({
+        kind: "server-response",
+        requestId: message.id,
+        payload: message.result,
+      });
       pending.resolve(message.result);
       return;
     }
@@ -250,23 +327,47 @@ export class CodexJsonRpcClient {
       if (!pending) return;
       this.pending.delete(message.id);
       clearPendingTimeout(pending);
+      this.emitDebugEvent({
+        kind: "server-error",
+        requestId: message.id,
+        level: "error",
+        payload: message.error,
+        message: message.error.message,
+      });
       pending.reject(new Error(message.error.message));
       return;
     }
 
     if (isRequest(message)) {
+      this.emitDebugEvent({
+        kind: "server-request",
+        method: message.method,
+        requestId: message.id,
+        payload: message.params,
+      });
       this.handlers.onServerRequest?.(message);
       return;
     }
 
     if (isNotification(message)) {
+      this.emitDebugEvent({
+        kind: "server-notification",
+        method: message.method,
+        payload: message.params,
+      });
       this.handlers.onNotification?.(message);
     }
   }
 
   private rejectPending(message: string): void {
-    for (const pending of this.pending.values()) {
+    for (const [id, pending] of this.pending.entries()) {
       clearPendingTimeout(pending);
+      this.emitDebugEvent({
+        kind: "client-cancel",
+        requestId: id,
+        level: "warn",
+        message,
+      });
       pending.reject(new Error(message));
     }
     this.pending.clear();
@@ -277,7 +378,28 @@ export class CodexJsonRpcClient {
     if (!pending) return;
     this.pending.delete(id);
     clearPendingTimeout(pending);
+    this.emitDebugEvent({
+      kind: "client-error",
+      requestId: id,
+      level: "error",
+      message: formatError(error),
+    });
     pending.reject(error instanceof Error ? error : new Error(formatError(error)));
+  }
+
+  private handleTransportFailure(error: unknown): void {
+    this.emitDebugEvent({
+      kind: "client-error",
+      level: "error",
+      message: formatError(error),
+    });
+    this.markTransportClosed(formatError(error));
+  }
+
+  private markTransportClosed(message: string): void {
+    this.connected = false;
+    this.connectPromise = null;
+    this.rejectPending(message);
   }
 
   private assertActive(): void {
@@ -285,10 +407,30 @@ export class CodexJsonRpcClient {
       throw new Error("Codex JSON-RPC client was disposed");
     }
   }
+
+  private assertCanSend(): void {
+    this.assertActive();
+    if (!this.connected && !this.connectPromise) {
+      throw new Error("Codex app-server is not connected");
+    }
+  }
+
+  private emitDebugEvent(event: Omit<RpcDebugEvent, "id" | "at">): void {
+    this.handlers.onDebugEvent?.({
+      id: `${this.idPrefix}-debug-${this.nextDebugId++}`,
+      at: Date.now(),
+      level: "info",
+      ...event,
+    });
+  }
 }
 
 function clearPendingTimeout(pending: PendingRequest): void {
   if (pending.timeout !== null) window.clearTimeout(pending.timeout);
+}
+
+function isFatalLifecycleMessage(message: string): boolean {
+  return /\b(?:stopped|exited|stdout closed|not running)\b/i.test(message);
 }
 
 function isResponse(message: JsonRpcMessage): message is JsonRpcResponse {

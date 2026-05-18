@@ -8,6 +8,7 @@ import {
   ensureThreadReadyForTurn,
   forkThread,
   forkThreadFromTurn,
+  IMAGE_TOOL_RESUME_FALLBACK_MESSAGE,
   interruptThreadTurn,
   isThreadNotFound,
   isThreadNotMaterialized,
@@ -15,6 +16,7 @@ import {
   isThreadStatusNotLoaded,
   mergeThreadListPage,
   projectThreadContextDefaults,
+  readWorkspaceDeveloperInstructions,
   readThread,
   readThreadForDisplay,
   refreshThreadMetadata,
@@ -32,6 +34,7 @@ import {
   threadStatusLabel,
   threadTitle,
   unarchiveThread,
+  withWorkspaceDeveloperInstructions,
 } from "../src/state/thread-workflow";
 import { HICODEX_IMAGE_DYNAMIC_TOOL_SPEC } from "../src/state/image-generation-tool";
 
@@ -105,6 +108,9 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   detectsNotLoadedThreadStatus();
   detectsRecoverableThreadErrors();
   projectsThreadContextFromCodexConfig();
+  await loadsWorkspaceDeveloperInstructionsFromAncestors();
+  await prefersOverrideAgentsAndStopsAtProjectRoot();
+  mergesWorkspaceDeveloperInstructionsIntoContext();
   buildsPaginatedThreadListParams();
   buildsStartThreadRequestsWithoutHardcodedWorkspace();
   buildsThreadLifecycleRequests();
@@ -115,6 +121,8 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await editsLastUserTurnUsingDesktopRollbackThenStartSequence();
   await recoversThreadNotFoundOnEditByResumingFirst();
   await recoversThreadNotFoundOnEditRollbackByResumingFirst();
+  await restoresOriginalEditInputWhenEditedTurnStartFails();
+  await reportsEditFailureWhenOriginalInputRestoreAlsoFails();
   await buildsReadyThreadRequestsForTurns();
   await refreshesThreadMetadataWithoutChangingSelection();
   await resumesSelectedHistoricalThreadBeforeRetryingTurn();
@@ -300,12 +308,18 @@ function projectsThreadContextFromCodexConfig(): void {
       approval_policy: "on-request",
       approvals_reviewer: "auto_review",
       sandbox_mode: "workspace-write",
+      default_permissions: "dev",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       instructions: " Base ",
       developer_instructions: " Dev ",
       personality: "pragmatic",
       model_reasoning_effort: "high",
       model_reasoning_summary: "none",
       model_context_window: 262144,
+      memories: {
+        use_memories: false,
+        generate_memories: true,
+      },
     }),
     {
       model: "gpt-5.2",
@@ -314,11 +328,17 @@ function projectsThreadContextFromCodexConfig(): void {
       approvalPolicy: "on-request",
       approvalsReviewer: "auto_review",
       sandbox: "workspace-write",
+      permissions: { type: "profile", id: "dev" },
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       baseInstructions: "Base",
       developerInstructions: "Dev",
       personality: "pragmatic",
       reasoningEffort: "high",
       reasoningSummary: "none",
+      memories: {
+        useMemories: false,
+        generateMemories: true,
+      },
     },
     "thread context should project protocol config fields to request overrides",
   );
@@ -342,16 +362,27 @@ function projectsThreadContextFromCodexConfig(): void {
       approvalPolicy: undefined,
       approvalsReviewer: "user",
       sandbox: "workspace-write",
+      permissions: { type: "profile", id: "dev" },
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       reasoningEffort: "high",
       personality: "pragmatic",
+      memories: {
+        useMemories: false,
+        generateMemories: true,
+      },
     }),
     {
       cwd: "/workspace",
       model: "gpt-5.2",
       modelProvider: "hicodex_local",
       approvalsReviewer: "user",
-      sandbox: "workspace-write",
+      permissions: { type: "profile", id: "dev" },
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       personality: "pragmatic",
+      config: {
+        "memories.use_memories": false,
+        "memories.generate_memories": true,
+      },
     },
     "thread context params should keep thread-level overrides and drop turn-only values",
   );
@@ -437,6 +468,22 @@ function projectsThreadContextFromCodexConfig(): void {
     },
     "plan mode should use app-server collaborationMode instead of prompt rewriting",
   );
+
+  assertDeepEqual(
+    buildTurnStartParams("thread-permissions", [], "/workspace", {
+      permissions: { type: "profile", id: "dev" },
+      sandbox: "workspace-write",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+    }),
+    {
+      threadId: "thread-permissions",
+      input: [],
+      cwd: "/workspace",
+      permissions: { type: "profile", id: "dev" },
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+    },
+    "turn context params should send v2 permissions and environments without a legacy sandboxPolicy conflict",
+  );
 }
 
 function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
@@ -446,7 +493,7 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     first.requests,
     0,
     "thread/start",
-    { cwd: "/workspace/project" },
+    { cwd: "/workspace/project", threadSource: "user" },
     "startThread should trim workspace cwd",
   );
 
@@ -456,7 +503,7 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     withDynamicTool.requests,
     0,
     "thread/start",
-    { cwd: "/workspace/project", dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] },
+    { cwd: "/workspace/project", threadSource: "user", dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] },
     "startThread should opt into the HiCodex image dynamic tool",
   );
 
@@ -466,7 +513,7 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     second.requests,
     0,
     "thread/start",
-    { cwd: null },
+    { cwd: null, threadSource: "user" },
     "startThread should use null cwd for empty workspace",
   );
 
@@ -475,6 +522,8 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     model: "gpt-5.2",
     modelProvider: "hicodex_local",
     serviceTier: "flex",
+    permissions: { type: "profile", id: "dev" },
+    environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
   });
   assertRequest(
     withContext.requests,
@@ -485,8 +534,113 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
       model: "gpt-5.2",
       modelProvider: "hicodex_local",
       serviceTier: "flex",
+      permissions: { type: "profile", id: "dev" },
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+      threadSource: "user",
     },
     "startThread should include protocol-supported config overrides",
+  );
+}
+
+async function loadsWorkspaceDeveloperInstructionsFromAncestors(): Promise<void> {
+  const files = new Map<string, string>([
+    ["/repo/AGENTS.md", "Root agent rule."],
+    ["/repo/app/CLAUDE.md", "Claude importer rule."],
+    ["/repo/app/workspace/AGENTS.md", "Workspace agent rule."],
+  ]);
+  const loaded = await readWorkspaceDeveloperInstructions(" /repo/app/workspace ", {
+    isRuntimeAvailable: () => true,
+    readFile: async (path) => {
+      const value = files.get(path);
+      if (value === undefined) throw new Error(`missing ${path}`);
+      return value;
+    },
+  });
+
+  assertEqual(
+    loaded,
+    `Workspace developer instructions:
+
+Instructions from /repo/AGENTS.md:
+Root agent rule.
+
+Instructions from /repo/app/CLAUDE.md:
+Claude importer rule.
+
+Instructions from /repo/app/workspace/AGENTS.md:
+Workspace agent rule.`,
+    "workspace developer instructions should load AGENTS/CLAUDE files from ancestors in stable order",
+  );
+  assertEqual(
+    await readWorkspaceDeveloperInstructions(" /repo/app/workspace ", { isRuntimeAvailable: () => false }),
+    null,
+    "workspace developer instructions should be skipped outside the Tauri host",
+  );
+}
+
+async function prefersOverrideAgentsAndStopsAtProjectRoot(): Promise<void> {
+  const files = new Map<string, string>([
+    ["/home/.codex/AGENTS.override.md", "Global override rule."],
+    ["/home/.codex/AGENTS.md", "Global default rule."],
+    ["/repo/AGENTS.md", "Outer repo rule."],
+    ["/repo/app/AGENTS.override.md", "Project override rule."],
+    ["/repo/app/AGENTS.md", "Project default rule."],
+    ["/repo/app/workspace/AGENTS.md", "Workspace agent rule."],
+    ["/repo/app/workspace/CLAUDE.md", "Workspace Claude rule."],
+  ]);
+  const loaded = await readWorkspaceDeveloperInstructions(" /repo/app/workspace ", {
+    codexHome: "/home/.codex",
+    isRuntimeAvailable: () => true,
+    pathExists: async (path) => path === "/repo/app/.git",
+    readFile: async (path) => {
+      const value = files.get(path);
+      if (value === undefined) throw new Error(`missing ${path}`);
+      return value;
+    },
+  });
+
+  assertEqual(
+    loaded,
+    `Workspace developer instructions:
+
+Instructions from /home/.codex/AGENTS.override.md:
+Global override rule.
+
+Instructions from /repo/app/AGENTS.override.md:
+Project override rule.
+
+Instructions from /repo/app/workspace/AGENTS.md:
+Workspace agent rule.
+
+Instructions from /repo/app/workspace/CLAUDE.md:
+Workspace Claude rule.`,
+    "workspace developer instructions should prefer override files, prepend codex home instructions, and stop at the project root",
+  );
+}
+
+function mergesWorkspaceDeveloperInstructionsIntoContext(): void {
+  assertDeepEqual(
+    withWorkspaceDeveloperInstructions(
+      { model: "gpt-5.2", developerInstructions: "Configured developer rule." },
+      "Workspace developer instructions:\n\nInstructions from /repo/AGENTS.md:\nAgent rule.",
+    ),
+    {
+      model: "gpt-5.2",
+      developerInstructions: `Configured developer rule.
+
+Workspace developer instructions:
+
+Instructions from /repo/AGENTS.md:
+Agent rule.`,
+    },
+    "workspace developer instructions should append after config developer instructions",
+  );
+  assertDeepEqual(
+    withWorkspaceDeveloperInstructions(null, "Workspace developer instructions:\n\nInstructions from /repo/AGENTS.md:\nAgent rule."),
+    {
+      developerInstructions: "Workspace developer instructions:\n\nInstructions from /repo/AGENTS.md:\nAgent rule.",
+    },
+    "workspace developer instructions should create context when config has no developer instructions",
   );
 }
 
@@ -506,6 +660,13 @@ function buildsThreadLifecycleRequests(): void {
     model: "gpt-5.2",
     modelProvider: "hicodex_local",
     sandbox: "workspace-write",
+    permissions: { type: "profile", id: "dev" },
+    environments: [{ environmentId: "remote", cwd: "/workspace" }],
+    personality: "pragmatic",
+    memories: {
+      useMemories: false,
+      generateMemories: true,
+    },
   });
   assertRequest(
     resume.requests,
@@ -516,20 +677,34 @@ function buildsThreadLifecycleRequests(): void {
       cwd: "/workspace",
       model: "gpt-5.2",
       modelProvider: "hicodex_local",
-      sandbox: "workspace-write",
+      permissions: { type: "profile", id: "dev" },
+      personality: "pragmatic",
+      config: {
+        "memories.use_memories": false,
+        "memories.generate_memories": true,
+      },
     },
-    "resumeThread should include protocol-supported config overrides",
+    "resumeThread should include resume-supported overrides without fork/start-only environments",
   );
   assertEqual(resume.requests[0]?.timeout, 120_000, "resumeThread should use a long timeout");
 
   const fork = createClientRecorder();
-  void forkThread(fork.client, "thread-1", "");
+  void forkThread(fork.client, "thread-1", "", {
+    permissions: { type: "profile", id: "read-only" },
+    environments: [],
+    personality: "friendly",
+  });
   assertRequest(
     fork.requests,
     0,
     "thread/fork",
-    { threadId: "thread-1", cwd: null },
-    "forkThread should use null cwd for empty workspace",
+    {
+      threadId: "thread-1",
+      cwd: null,
+      permissions: { type: "profile", id: "read-only" },
+      threadSource: "user",
+    },
+    "forkThread should include fork-supported user params without unsupported environments or personality",
   );
 
   const archive = createClientRecorder();
@@ -570,6 +745,7 @@ async function resumesThreadAfterMetadataRead(): Promise<void> {
 
   const result = await resumeThreadWithMetadataRead(resume.client, "thread-1", " /workspace ", {
     model: "gpt-5.2",
+    environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
   });
 
   assertEqual(result.thread, resumedThread, "resume with metadata read should return the resumed thread");
@@ -589,7 +765,7 @@ async function resumesThreadAfterMetadataRead(): Promise<void> {
       cwd: "/workspace",
       model: "gpt-5.2",
     },
-    "resume with metadata read should then call thread/resume",
+    "resume with metadata read should then call thread/resume without unsupported environment overrides",
   );
   assertEqual(resume.requests[1]?.timeout, 120_000, "resume with metadata read should preserve resume timeout");
 }
@@ -690,7 +866,10 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     dispatch: (action: unknown) => {
       createdActions.push(action);
     },
-    context: { model: "gpt-5.2" },
+    context: {
+      model: "gpt-5.2",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+    },
   });
   assertEqual(createdReady.threadId, "created-thread", "missing active thread should return the created thread id");
   assertEqual(createdReady.source, "created", "missing active thread should report a created source");
@@ -701,6 +880,8 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     {
       cwd: "/workspace/project",
       model: "gpt-5.2",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+      threadSource: "user",
     },
     "missing active thread should create a new thread for the first turn",
   );
@@ -724,7 +905,10 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     activeThreadId: "thread-1",
     workspace: " /workspace/project ",
     dispatch: () => {},
-    context: { sandbox: "workspace-write" },
+    context: {
+      sandbox: "workspace-write",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+    },
   });
   assertRequest(
     resumed.requests,
@@ -743,6 +927,92 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
       sandbox: "workspace-write",
     },
     "notLoaded historical thread should resume before starting a turn",
+  );
+
+  const imageInput: UserInput[] = [{ type: "text", text: "please generate an image of a glass city", text_elements: [] }];
+  const imageFallbackThread = threadFixture({ id: "image-thread", cwd: "/workspace/project", gitInfo: null });
+  const imageFallbackHydrated = threadFixture({ id: "image-thread", cwd: "/workspace/project" });
+  const imageFallback = createClientSequenceRecorder([{ thread: imageFallbackThread }, { thread: imageFallbackHydrated }]);
+  const imageFallbackActions: unknown[] = [];
+  const imageFallbackReady = await ensureThreadReadyForTurn({
+    client: imageFallback.client,
+    activeThread: threadFixture({ id: "old-thread", status: { type: "notLoaded" }, path: "/tmp/old-rollout.jsonl" }),
+    activeThreadId: "old-thread",
+    input: imageInput,
+    workspace: "/workspace/project",
+    dispatch: (action: unknown) => {
+      imageFallbackActions.push(action);
+    },
+    threadCreationOptions: { includeDynamicTools: true },
+    readRolloutText: async () => JSON.stringify({
+      timestamp: "2026-05-18T00:00:00Z",
+      type: "session_meta",
+      payload: {},
+    }),
+  });
+  assertEqual(imageFallbackReady.threadId, "image-thread", "old image request should move to a dynamic-tool thread");
+  assertEqual(imageFallbackReady.source, "created", "old image request fallback should report a created source");
+  assertRequest(
+    imageFallback.requests,
+    0,
+    "thread/start",
+    { cwd: "/workspace/project", threadSource: "user", dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] },
+    "old image request fallback should create a thread with dynamic tools",
+  );
+  assertRequest(
+    imageFallback.requests,
+    1,
+    "thread/read",
+    { threadId: "image-thread", includeTurns: false },
+    "old image request fallback should hydrate the newly created thread",
+  );
+  assertEqual(
+    imageFallback.requests.some((request) => request.method === "thread/resume"),
+    false,
+    "old image request fallback must not pass unsupported dynamicTools through thread/resume",
+  );
+  assertDeepEqual(
+    imageFallbackActions,
+    [
+      { type: "log", text: IMAGE_TOOL_RESUME_FALLBACK_MESSAGE, level: "warn" },
+      { type: "upsertThread", thread: imageFallbackHydrated, select: true },
+    ],
+    "old image request fallback should warn and select the image-capable thread",
+  );
+
+  const restorableImage = createClientRecorder({ thread: threadFixture({ id: "restorable-thread", status: { type: "idle" } }) });
+  await ensureThreadReadyForTurn({
+    client: restorableImage.client,
+    activeThread: threadFixture({ id: "restorable-thread", status: { type: "notLoaded" }, path: "/tmp/restorable-rollout.jsonl" }),
+    activeThreadId: "restorable-thread",
+    input: imageInput,
+    workspace: "/workspace/project",
+    dispatch: () => {},
+    threadCreationOptions: { includeDynamicTools: true },
+    readRolloutText: async () => JSON.stringify({
+      timestamp: "2026-05-18T00:00:00Z",
+      type: "session_meta",
+      payload: {
+        dynamic_tools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC],
+      },
+    }),
+  });
+  assertRequest(
+    restorableImage.requests,
+    0,
+    "thread/read",
+    { threadId: "restorable-thread", includeTurns: false },
+    "restorable image thread should still do the normal metadata read",
+  );
+  assertRequest(
+    restorableImage.requests,
+    1,
+    "thread/resume",
+    {
+      threadId: "restorable-thread",
+      cwd: "/workspace/project",
+    },
+    "restorable image thread should resume because app-server can load persisted dynamic tools",
   );
 
   const selected = createClientRecorder();
@@ -774,7 +1044,10 @@ async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void
     (action: unknown) => {
       actions.push(action);
     },
-    { model: "gpt-5.2" },
+    {
+      model: "gpt-5.2",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+    },
   );
 
   assertEqual(recovered, true, "recoverable selected historical thread should resume and send");
@@ -794,13 +1067,19 @@ async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void
       cwd: "/workspace/project",
       model: "gpt-5.2",
     },
-    "selected historical thread recovery should resume the same thread",
+    "selected historical thread recovery should resume the same thread without turn-only environments",
   );
   assertRequest(
     sent.requests,
     2,
     "turn/start",
-    { threadId: "thread-history", input, cwd: "/workspace/project", model: "gpt-5.2" },
+    {
+      threadId: "thread-history",
+      input,
+      cwd: "/workspace/project",
+      model: "gpt-5.2",
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
+    },
     "selected historical thread recovery should retry turn/start on the same thread id",
   );
   assertEqual(
@@ -893,6 +1172,7 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
 
   const result = await forkThreadFromTurn(forked.client, "source-thread", "turn-2", " /workspace ", {
     model: "gpt-5.2",
+    environments: [{ environmentId: "remote", cwd: "/workspace" }],
   });
 
   assertEqual(result.thread, rolledBackThread, "fork from turn should return the rolled back fork");
@@ -913,6 +1193,7 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
       persistExtendedHistory: false,
       cwd: "/workspace",
       model: "gpt-5.2",
+      threadSource: "user",
     },
     "fork from turn should fork the complete source thread first",
   );
@@ -938,6 +1219,7 @@ async function startsEphemeralSideConversationByInjectingDesktopBoundary(): Prom
     " /workspace ",
     {
       model: "gpt-5.2",
+      environments: [{ environmentId: "remote", cwd: "/workspace" }],
       developerInstructions: "Existing developer rule.",
       personality: "friendly",
     },
@@ -952,12 +1234,11 @@ async function startsEphemeralSideConversationByInjectingDesktopBoundary(): Prom
       threadId: "source-thread",
       path: null,
       persistExtendedHistory: false,
-      threadSource: "user",
       cwd: "/workspace",
       model: "gpt-5.2",
       developerInstructions: `Existing developer rule.\n\n${SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS}`,
-      personality: "friendly",
       ephemeral: true,
+      threadSource: "user",
     },
     "side conversation should fork the source thread as an ephemeral right-panel thread",
   );
@@ -1055,7 +1336,7 @@ async function editsLastUserTurnUsingDesktopRollbackThenStartSequence(): Promise
     },
     "edit last turn should preserve structured inputs and replace the first text part",
   );
-  assertDeepEqual(rollbacks, [rolledBackThread], "edit last turn should expose the rollback thread snapshot before restarting");
+  assertDeepEqual(rollbacks, [rolledBackThread], "edit last turn should expose the rollback thread snapshot after restart succeeds");
 }
 
 async function recoversThreadNotFoundOnEditByResumingFirst(): Promise<void> {
@@ -1220,6 +1501,145 @@ async function recoversThreadNotFoundOnEditRollbackByResumingFirst(): Promise<vo
   assertDeepEqual(rollbacks, [rolledBackThread], "rollback recovery should expose the rollback snapshot");
 }
 
+async function restoresOriginalEditInputWhenEditedTurnStartFails(): Promise<void> {
+  const originalInput: UserInput[] = [
+    { type: "skill", name: "review", path: "skills/review" },
+    { type: "text", text: "old prompt", text_elements: [] },
+  ];
+  const latestTurn = turnFixture("turn-2", {
+    items: [
+      {
+        type: "userMessage",
+        id: "user-2",
+        content: originalInput,
+      },
+      { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
+    ],
+  });
+  const sourceThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1"), latestTurn],
+  });
+  const rolledBackThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1")],
+  });
+  const startError = new Error("turn/start failed");
+  const recorder = createClientSequenceRecorder([
+    { thread: sourceThread },
+    { thread: rolledBackThread },
+    startError,
+    { turn: { id: "turn-restored" } },
+  ]);
+  const rollbacks: Thread[] = [];
+  let thrown: unknown = null;
+
+  try {
+    await editLastUserTurn(
+      recorder.client,
+      "thread-edit",
+      "turn-2",
+      "new prompt",
+      "/workspace/ui",
+      { model: "gpt-5.2" },
+      (thread) => rollbacks.push(thread),
+    );
+  } catch (error) {
+    thrown = error;
+  }
+
+  assertEqual(thrown, startError, "edit should surface the edited turn/start failure after restoring the original input");
+  assertRequest(
+    recorder.requests,
+    2,
+    "turn/start",
+    {
+      threadId: "thread-edit",
+      input: [
+        { type: "skill", name: "review", path: "skills/review" },
+        { type: "text", text: "new prompt", text_elements: [] },
+      ],
+      cwd: "/workspace/source",
+      model: "gpt-5.2",
+    },
+    "edit should first try to start the edited prompt",
+  );
+  assertRequest(
+    recorder.requests,
+    3,
+    "turn/start",
+    {
+      threadId: "thread-edit",
+      input: originalInput,
+      cwd: "/workspace/source",
+      model: "gpt-5.2",
+    },
+    "edit should restore the original user input if the edited restart fails",
+  );
+  assertDeepEqual(rollbacks, [], "edit should not publish the rollback snapshot when the edited restart fails");
+}
+
+async function reportsEditFailureWhenOriginalInputRestoreAlsoFails(): Promise<void> {
+  const originalInput: UserInput[] = [{ type: "text", text: "old prompt", text_elements: [] }];
+  const latestTurn = turnFixture("turn-2", {
+    items: [
+      {
+        type: "userMessage",
+        id: "user-2",
+        content: originalInput,
+      },
+      { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
+    ],
+  });
+  const sourceThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1"), latestTurn],
+  });
+  const rolledBackThread = threadFixture({
+    id: "thread-edit",
+    cwd: "/workspace/source",
+    turns: [turnFixture("turn-1")],
+  });
+  const recorder = createClientSequenceRecorder([
+    { thread: sourceThread },
+    { thread: rolledBackThread },
+    new Error("edited start failed"),
+    new Error("restore start failed"),
+  ]);
+  const rollbacks: Thread[] = [];
+  let thrown: unknown = null;
+
+  try {
+    await editLastUserTurn(
+      recorder.client,
+      "thread-edit",
+      "turn-2",
+      "new prompt",
+      "/workspace/ui",
+      { model: "gpt-5.2" },
+      (thread) => rollbacks.push(thread),
+    );
+  } catch (error) {
+    thrown = error;
+  }
+
+  assertEqual(thrown instanceof Error, true, "double edit failure should throw a descriptive Error");
+  assertEqual(
+    String((thrown as Error).message).includes("Edited message failed to start after rollback: edited start failed."),
+    true,
+    "double edit failure should include the edited restart error",
+  );
+  assertEqual(
+    String((thrown as Error).message).includes("Restoring the original message also failed: restore start failed"),
+    true,
+    "double edit failure should include the original input restore error",
+  );
+  assertDeepEqual(rollbacks, [], "double edit failure should not publish the rollback snapshot");
+}
+
 function buildsTurnStartAndSteerRequests(): void {
   const input: UserInput[] = [{ type: "text", text: "hello", text_elements: [] }];
   const start = createClientRecorder();
@@ -1229,6 +1649,7 @@ function buildsTurnStartAndSteerRequests(): void {
     approvalPolicy: "on-request",
     approvalsReviewer: "user",
     sandbox: "workspace-write",
+    environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
     baseInstructions: "Base",
     developerInstructions: "Dev",
     personality: "pragmatic",
@@ -1253,6 +1674,7 @@ function buildsTurnStartAndSteerRequests(): void {
         excludeTmpdirEnvVar: false,
         excludeSlashTmp: false,
       },
+      environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       effort: "medium",
       summary: "none",
       personality: "pragmatic",
@@ -1295,6 +1717,7 @@ function sendsPanelThreadMessagesWithoutChangingMainThreadSelection(): void {
   const idle = createClientRecorder();
   void sendPanelThreadMessage(idle.client, "panel-thread", input, " /workspace/panel ", {
     model: "gpt-5.2",
+    environments: [{ environmentId: "remote", cwd: "/workspace/panel" }],
     personality: "friendly",
   });
   assertRequest(
@@ -1306,6 +1729,7 @@ function sendsPanelThreadMessagesWithoutChangingMainThreadSelection(): void {
       input,
       cwd: "/workspace/panel",
       model: "gpt-5.2",
+      environments: [{ environmentId: "remote", cwd: "/workspace/panel" }],
       personality: "friendly",
     },
     "idle panel thread should receive a normal turn/start without selecting the main thread",

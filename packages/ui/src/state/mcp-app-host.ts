@@ -156,7 +156,7 @@ export function mcpAppExternalHref(value: unknown): string | null {
   if (!trimmed) return null;
   try {
     const url = new URL(trimmed);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+    return url.protocol === "https:" ? url.href : null;
   } catch {
     return null;
   }

@@ -1,11 +1,18 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { RightRail } from "../src/components/right-rail";
 import {
   RAIL_LIST_PREVIEW_LIMIT,
+  RIGHT_RAIL_PINNED_STORAGE_KEY,
   clipRailEntries,
+  loadRightRailPinned,
   projectRightRailSections,
   rightRailContentShiftPx,
   rightRailDisplayMode,
   rightRailReservedInlineEndPx,
   rightRailShouldRender,
+  saveRightRailPinned,
+  type RightRailPreferenceStorageLike,
 } from "../src/state/right-rail";
 
 export default function runRightRailTests(): void {
@@ -14,17 +21,21 @@ export default function runRightRailTests(): void {
   keepsPopulatedBranchDetails();
   clipsRailEntriesByDefaultAndExpandsAllEntries();
   keepsProgressEntriesUnclippedLikeCodexDesktop();
+  summarizesProgressCompletionLikeCodexDesktop();
+  hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop();
+  rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction();
   preservesSectionCountsAndEntryMeta();
   projectsBranchDiffAction();
+  loadsAndPersistsRightRailPinnedPreference();
   computesDesktopRightRailDisplayModeAndContentShift();
-  hidesRightRailBelowThirteenSeventyViewportEquivalent();
+  hidesRightRailWhileDesktopModeIsOverlay();
 }
 
 function keepsCodexDesktopSectionOrder(): void {
   const sections = projectRightRailSections({
     progress: [railEntry("progress-1", "Read guide", "completed", "Plan")],
     branchDetails: {
-      entries: [railEntry("branch-1", "Branch", "completed", "codex/right-rail")],
+      entries: [],
     },
     artifacts: [railEntry("artifact-1", "right-rail.test.ts", "modified", "packages/ui/test/right-rail.test.ts")],
     sideChats: [railEntry("side-chat:side-1", "Side chat", "idle", "Uses gpt-5.2")],
@@ -35,7 +46,7 @@ function keepsCodexDesktopSectionOrder(): void {
 
   assertDeepEqual(
     sections.map((section) => section.title),
-    ["Progress", "Branch details", "Artifacts", "Side chats", "Background tasks", "Sources"],
+    ["Progress", "Outputs", "Side chats", "Background tasks", "Sources"],
     "right rail section order should match Codex Desktop",
   );
   assertEqual(
@@ -62,7 +73,7 @@ function keepsPopulatedBranchDetails(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
-      title: "Branch details",
+      title: "Git",
       emptyText: "empty",
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
@@ -75,7 +86,7 @@ function keepsPopulatedBranchDetails(): void {
   });
 
   assertEqual(sections.length, 1, "populated branch details should be projected");
-  assertEqual(sections[0]?.title, "Branch details", "branch details section should keep its title");
+  assertEqual(sections[0]?.title, "Git", "branch details section should keep Desktop Git title");
 }
 
 function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
@@ -111,6 +122,79 @@ function keepsProgressEntriesUnclippedLikeCodexDesktop(): void {
   assertEqual(progress.remainingCount, 0, "progress should not hide entries behind a remaining count");
 }
 
+function summarizesProgressCompletionLikeCodexDesktop(): void {
+  const sections = projectRightRailSections({
+    progress: [
+      railEntry("progress-1", "Read Desktop bundle", "completed", "latest todo-list"),
+      railEntry("progress-2", "Patch right rail", "in_progress", "latest todo-list"),
+      railEntry("progress-3", "Run focused tests", "pending", "latest todo-list"),
+    ],
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    sources: [],
+  });
+
+  assertEqual(
+    sectionById(sections, "progress").summary,
+    "1 out of 3 tasks completed",
+    "progress summary should match Codex Desktop completed-task copy",
+  );
+}
+
+function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
+  const sections = projectRightRailSections({
+    progress: [],
+    branchDetails: {
+      title: "Git",
+      emptyText: "empty",
+      rows: [
+        { id: "branch", label: "Branch", value: "codex/right-rail" },
+      ],
+      hasData: true,
+      diff: null,
+    },
+    artifacts: [railEntry("artifact-1", "right-rail.test.ts", "modified", "artifact meta")],
+    showOutputs: false,
+    sources: [],
+  });
+
+  assertDeepEqual(
+    sections.map((section) => section.title),
+    ["Git"],
+    "Desktop hides Outputs when the Git summary section is active",
+  );
+}
+
+function rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction(): void {
+  const sections = projectRightRailSections({
+    progress: [],
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    sideChats: [railEntry("side-chat:side-1", "Side chat", "active", "Uses gpt-5.2")],
+    backgroundTerminals: [railEntry("background-terminal:proc-1", "npm run dev", "running", "/workspace")],
+    sources: [],
+  });
+  const html = renderToStaticMarkup(createElement(RightRail, {
+    sections,
+    onCleanBackgroundTerminals: () => {},
+  }));
+
+  assertStringIncludes(
+    html,
+    "hc-rail-progress-spinner",
+    "running side chat should render a spinner icon like Codex Desktop",
+  );
+  assertStringIncludes(
+    html,
+    "aria-label=\"Stop all background terminals\"",
+    "background terminal row should expose an inline stop action",
+  );
+}
+
 function preservesSectionCountsAndEntryMeta(): void {
   const artifacts = makeEntries(RAIL_LIST_PREVIEW_LIMIT + 1, "artifact");
   const sources = [
@@ -124,6 +208,7 @@ function preservesSectionCountsAndEntryMeta(): void {
       entries: [railEntry("branch-1", "Working directory", "available", "/workspace/project")],
     },
     artifacts,
+    showOutputs: true,
     sources,
   });
 
@@ -163,7 +248,7 @@ function projectsBranchDiffAction(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
-      title: "Branch details",
+      title: "Git",
       emptyText: "empty",
       rows: [],
       hasData: true,
@@ -185,25 +270,43 @@ function projectsBranchDiffAction(): void {
   );
 }
 
+function loadsAndPersistsRightRailPinnedPreference(): void {
+  const storage = new MemoryStorage();
+
+  assertEqual(loadRightRailPinned(storage), true, "right rail should default to pinned when no preference exists");
+  saveRightRailPinned(storage, false);
+  assertEqual(storage.getItem(RIGHT_RAIL_PINNED_STORAGE_KEY), "0", "unpinned preference should persist as zero");
+  assertEqual(loadRightRailPinned(storage), false, "right rail should load unpinned preference");
+  saveRightRailPinned(storage, true);
+  assertEqual(storage.getItem(RIGHT_RAIL_PINNED_STORAGE_KEY), "1", "pinned preference should persist as one");
+  assertEqual(loadRightRailPinned(storage), true, "right rail should load pinned preference");
+
+  storage.setItem(RIGHT_RAIL_PINNED_STORAGE_KEY, "invalid");
+  assertEqual(loadRightRailPinned(storage, false), false, "invalid right rail preference should use fallback");
+}
+
 function computesDesktopRightRailDisplayModeAndContentShift(): void {
   assertEqual(rightRailDisplayMode(1_000), "overlay", "narrow content should use overlay right rail mode");
   assertEqual(rightRailDisplayMode(1_200), "shift", "medium content should use shift right rail mode");
-  assertEqual(rightRailDisplayMode(1_500), "gutter", "wide content should use gutter right rail mode");
+  assertEqual(rightRailDisplayMode(1_500), "shift", "Desktop keeps shifting until the side space reaches 400px");
+  assertEqual(rightRailDisplayMode(1_600), "gutter", "wide content should use gutter right rail mode");
 
   assertEqual(rightRailContentShiftPx(1_200, true), -158, "shift mode should move content by half the rail plus gap");
   assertEqual(rightRailContentShiftPx(1_200, false), 0, "missing content should not move the thread body");
   assertEqual(rightRailContentShiftPx(1_200, true, false), 0, "unpinned right rail should not move the thread body");
-  assertEqual(rightRailContentShiftPx(1_500, true), 0, "gutter mode should keep the thread centered");
+  assertEqual(rightRailContentShiftPx(1_500, true), -158, "shift mode should keep moving content below the 400px gutter threshold");
+  assertEqual(rightRailContentShiftPx(1_600, true), 0, "gutter mode should keep the thread centered");
   assertEqual(rightRailReservedInlineEndPx(1_000, true), 0, "overlay mode should not reserve layout space");
   assertEqual(rightRailReservedInlineEndPx(1_200, true), 332, "shift mode should reserve the visible rail footprint");
-  assertEqual(rightRailReservedInlineEndPx(1_500, true), 332, "gutter mode should reserve the visible rail footprint");
+  assertEqual(rightRailReservedInlineEndPx(1_500, true), 332, "shift mode should reserve the visible rail footprint");
+  assertEqual(rightRailReservedInlineEndPx(1_600, true), 332, "gutter mode should reserve the visible rail footprint");
   assertEqual(rightRailReservedInlineEndPx(1_200, false), 0, "missing content should not reserve right rail space");
   assertEqual(rightRailReservedInlineEndPx(1_200, true, false), 0, "unpinned right rail should not reserve right rail space");
 }
 
-function hidesRightRailBelowThirteenSeventyViewportEquivalent(): void {
-  assertEqual(rightRailShouldRender(1_069), false, "right rail should not render below the 1370px app width breakpoint");
-  assertEqual(rightRailShouldRender(1_070), true, "right rail should render once the main content width reaches the 1370px breakpoint");
+function hidesRightRailWhileDesktopModeIsOverlay(): void {
+  assertEqual(rightRailShouldRender(1_095), false, "right rail should not render while Desktop display mode is overlay");
+  assertEqual(rightRailShouldRender(1_096), true, "right rail should render once the Desktop display mode leaves overlay");
 }
 
 function railEntry(id: string, title: string, status: string, meta: string) {
@@ -242,5 +345,23 @@ function assertDeepEqual(actual: unknown, expected: unknown, message: string): v
   const expectedJson = JSON.stringify(expected);
   if (actualJson !== expectedJson) {
     throw new Error(`${message}: expected ${expectedJson}, got ${actualJson}`);
+  }
+}
+
+function assertStringIncludes(actual: string, expected: string, message: string): void {
+  if (!actual.includes(expected)) {
+    throw new Error(`${message}: missing ${expected}`);
+  }
+}
+
+class MemoryStorage implements RightRailPreferenceStorageLike {
+  private readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
   }
 }
