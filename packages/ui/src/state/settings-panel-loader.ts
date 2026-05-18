@@ -6,6 +6,7 @@ import {
   createCommandPanelState,
   projectCommandPanelEntries,
   projectPluginEntries,
+  projectSkillManagementEntries,
   type CommandPanelEntry,
   type CommandPanelKind,
   type CommandPanelOptions,
@@ -15,6 +16,11 @@ import type { SettingsPanelId } from "./composer-workflow";
 import {
   HICODEX_IMAGE_TOOL_NAME,
 } from "./image-generation-tool";
+import type { HiCodexLocale } from "./i18n";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  type NotificationPreferences,
+} from "./notification-preferences";
 import {
   projectMcpManagementEntries,
   type McpServerStartupStatus,
@@ -27,6 +33,10 @@ import {
   settingsPanelCommandKind,
   settingsPanelTitle,
 } from "./settings-panel-workflow";
+import type { UiThemeSnapshot } from "./theme";
+
+const MCP_RELOAD_RESTART_MESSAGE =
+  "Reloaded MCP config. New threads use refreshed servers; running threads may need a thread restart or another MCP reload before tool changes appear.";
 
 export interface LoadSettingsPanelContentOptions {
   activeTurnId: string | null;
@@ -39,6 +49,9 @@ export interface LoadSettingsPanelContentOptions {
   setSettingsPanelState: (state: CommandPanelState) => void;
   state: CodexUiState;
   workspace: string;
+  notificationPreferences?: NotificationPreferences;
+  uiLocale?: HiCodexLocale;
+  uiTheme?: UiThemeSnapshot;
 }
 
 export async function loadMcpManagementEntries({
@@ -76,6 +89,9 @@ export async function loadSettingsPanelContent({
   setSettingsPanelState,
   state,
   workspace,
+  notificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
+  uiLocale,
+  uiTheme,
 }: LoadSettingsPanelContentOptions): Promise<void> {
   if (panel === "models") {
     setSettingsPanelState(createCommandPanelState("generic", {
@@ -159,7 +175,10 @@ export async function loadSettingsPanelContent({
         modelCount: state.models.length,
         pendingRequestCount: state.pendingRequests.length,
         pid: state.hostStatus?.pid ?? null,
+        uiLocale,
+        uiTheme,
         workspace,
+        notificationPreferences,
       }),
     }));
     return;
@@ -203,9 +222,7 @@ export async function loadSettingsPanelContent({
       openSettingsPanelContent("mcp", {
         status: "ready",
         title,
-        message: forceReload
-          ? "Reloaded MCP config. Select a tool to call it, or a resource to read it."
-          : "Select a tool to call it, or a resource to read it.",
+        message: forceReload ? MCP_RELOAD_RESTART_MESSAGE : "Select a tool to call it, or a resource to read it.",
         entries,
       });
       return;
@@ -215,11 +232,17 @@ export async function loadSettingsPanelContent({
         cwds: workspace.trim() ? [workspace.trim()] : [],
         forceReload,
       }, 120_000);
+      const recommendedSkills = await loadRecommendedSkillPluginDetails(client, workspace);
       openSettingsPanelContent("skills", {
         status: "ready",
         title,
-        message: forceReload ? "Reloaded skills from disk." : "Select a skill to attach, view, enable, or disable it.",
-        entries: projectCommandPanelEntries({ skills: result }),
+        message: forceReload
+          ? "Reloaded skills from disk. Recommended Skills are derived from plugin/skill metadata when available."
+          : "Select a skill to attach, view, enable, disable, or inspect local helper boundaries.",
+        entries: projectSkillManagementEntries(result, {
+          recommendedSkills,
+          workspace,
+        }),
       });
       return;
     }
@@ -231,7 +254,7 @@ export async function loadSettingsPanelContent({
       return;
     }
     if (panel === "apps") {
-      const result = await loadAllApps(client, { threadId: state.activeThreadId });
+      const result = await loadAllApps(client, { forceRefetch: forceReload, threadId: state.activeThreadId });
       openSettingsPanelContent("apps", { status: "ready", title, entries: projectCommandPanelEntries({ apps: result }) });
       return;
     }
@@ -240,7 +263,7 @@ export async function loadSettingsPanelContent({
         client.request<unknown>("plugin/list", {
           cwds: workspace.trim() ? [workspace.trim()] : null,
         }, 120_000),
-        loadAllApps(client, { threadId: state.activeThreadId }),
+        loadAllApps(client, { forceRefetch: forceReload, threadId: state.activeThreadId }),
       ]);
       if (result.status === "rejected") throw result.reason;
       openSettingsPanelContent("plugins", {
@@ -262,4 +285,91 @@ export async function loadSettingsPanelContent({
       entries: [],
     });
   }
+}
+
+export async function loadRecommendedSkillPluginDetails(
+  client: CodexJsonRpcClient,
+  workspace: string,
+): Promise<unknown[]> {
+  try {
+    const pluginList = await client.request<unknown>("plugin/list", {
+      cwds: workspace.trim() ? [workspace.trim()] : null,
+    }, 120_000);
+    const candidates = recommendedPluginReadCandidates(pluginList).slice(0, 8);
+    if (candidates.length === 0) return [];
+    const results = await Promise.allSettled(candidates.map((candidate) =>
+      client.request<unknown>("plugin/read", {
+        marketplacePath: candidate.marketplacePath,
+        remoteMarketplaceName: candidate.marketplacePath ? null : candidate.marketplaceName,
+        pluginName: candidate.marketplacePath ? candidate.pluginName : candidate.pluginId,
+      }, 120_000)
+    ));
+    return results
+      .filter((result): result is PromiseFulfilledResult<unknown> => result.status === "fulfilled")
+      .map((result) => result.value);
+  } catch {
+    return [];
+  }
+}
+
+function recommendedPluginReadCandidates(value: unknown): Array<{
+  marketplaceName: string;
+  marketplacePath: string | null;
+  pluginId: string;
+  pluginName: string;
+}> {
+  const root = recordObject(value);
+  const featured = new Set(stringArray(root.featuredPluginIds));
+  const candidates: Array<{
+    installed: boolean;
+    featured: boolean;
+    marketplaceName: string;
+    marketplacePath: string | null;
+    pluginId: string;
+    pluginName: string;
+  }> = [];
+  for (const marketplace of recordArray(root.marketplaces)) {
+    const marketplaceName = fieldText(marketplace, "name") || "Unknown marketplace";
+    const marketplacePath = fieldText(marketplace, "path") || null;
+    for (const plugin of recordArray(marketplace.plugins)) {
+      const pluginId = fieldText(plugin, "id") || fieldText(plugin, "remotePluginId") || fieldText(plugin, "name");
+      if (!pluginId) continue;
+      candidates.push({
+        installed: plugin.installed === true,
+        featured: featured.has(pluginId),
+        marketplaceName,
+        marketplacePath,
+        pluginId,
+        pluginName: fieldText(plugin, "name") || pluginId,
+      });
+    }
+  }
+  return candidates
+    .filter((candidate) => candidate.installed || candidate.featured)
+    .sort((a, b) => Number(b.installed) - Number(a.installed) || Number(b.featured) - Number(a.featured))
+    .map(({ installed: _installed, featured: _featured, ...candidate }) => candidate);
+}
+
+function recordObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function recordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> =>
+    Boolean(item) && typeof item === "object" && !Array.isArray(item)
+  ) : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean)
+    : [];
+}
+
+function fieldText(value: unknown, key: string): string {
+  const record = recordObject(value);
+  const field = record[key];
+  if (typeof field === "string") return field.trim();
+  if (typeof field === "number" || typeof field === "boolean" || typeof field === "bigint") return String(field);
+  return "";
 }

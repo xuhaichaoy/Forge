@@ -36,11 +36,12 @@ export function shouldSteerQueuedFollowUp(input: {
 }
 
 export function selectNextQueuedFollowUp(input: {
+  activeThreadNeedsResume?: boolean;
   activeThreadRunning: boolean;
   pendingRequestCount: number;
   queue: QueuedFollowUp[];
 }): QueuedFollowUp | null {
-  if (input.activeThreadRunning || input.pendingRequestCount > 0) return null;
+  if (input.activeThreadRunning || input.activeThreadNeedsResume || input.pendingRequestCount > 0) return null;
   return input.queue.find((message) => message.status === "queued") ?? null;
 }
 

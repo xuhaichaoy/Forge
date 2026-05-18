@@ -67,7 +67,6 @@ export function summarizeToolActivity(
   const activityCounts = {
     approvedRequests: 0,
     deniedRequests: 0,
-    hooks: 0,
   };
   const counts = {
     commands: 0,
@@ -184,11 +183,6 @@ export function summarizeToolActivity(
         counts.other += 1;
         details.push(eventLabel(item));
       }
-    } else if (type === "hook") {
-      activityCounts.hooks += 1;
-      const label = "Ran hook";
-      details.push(label);
-      if (itemInProgress) pushActiveDetail("Running hook");
     } else if (type === "reasoning") {
       counts.reasoning += 1;
       if (itemInProgress) pushActiveDetail("Thinking");
@@ -328,7 +322,7 @@ function activityLabel(
   counts: ToolActivitySummary["counts"],
   inProgress: boolean,
   totalDurationMs: number,
-  activityCounts: { approvedRequests: number; deniedRequests: number; hooks?: number } = { approvedRequests: 0, deniedRequests: 0 },
+  activityCounts: { approvedRequests: number; deniedRequests: number } = { approvedRequests: 0, deniedRequests: 0 },
 ): string {
   if (groupType === "reasoning") return inProgress ? "Thinking" : totalDurationMs > 0 ? `Thought for ${formatDuration(totalDurationMs)}` : "Thought";
   if (groupType === "exploration") return explorationSummaryLabel(counts, inProgress) ?? (inProgress ? "Exploring" : "Explored");
@@ -354,14 +348,13 @@ function activityLabel(
 
 function completedActivitySummaryLabel(
   counts: ToolActivitySummary["counts"],
-  activityCounts: { approvedRequests: number; deniedRequests: number; hooks?: number },
+  activityCounts: { approvedRequests: number; deniedRequests: number },
 ): string | null {
   const segments = [
     fileChangeSummaryLabel(counts, false),
     explorationSummaryLabel(counts, false),
     requestSummarySegment("Approved", activityCounts.approvedRequests),
     requestSummarySegment("Denied", activityCounts.deniedRequests),
-    activityCounts.hooks && activityCounts.hooks > 0 ? `Ran ${formatCount(activityCounts.hooks, "hook")}` : "",
     webSearchCommandSummarySegment(counts.webSearchCommands),
     ordinaryCommandSummarySegment(counts),
     counts.mcpCalls + counts.dynamicCalls > 0 ? `Called ${formatCount(counts.mcpCalls + counts.dynamicCalls, "tool")}` : "",
@@ -898,7 +891,6 @@ function lowerInitial(value: string): string {
 export function isToolActivityItem(item: ThreadItem): boolean {
   if (itemType(item) === "multi-agent-action") return true;
   if (itemType(item) === "automatic-approval-review") return isCompletedApprovalReviewActivity(item);
-  if (itemType(item) === "hook") return true;
   return [
     "reasoning",
     "worked-for",

@@ -93,8 +93,8 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   }
 
   return {
-    title: "Branch details",
-    emptyText: "Branch details will appear when the app server provides thread Git or diff data.",
+    title: "Git",
+    emptyText: "Git details will appear when the app server provides thread Git or diff data.",
     rows,
     diff,
     hasData: hasThreadGitContext || diff !== null,

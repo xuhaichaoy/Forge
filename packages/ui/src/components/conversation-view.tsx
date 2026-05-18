@@ -51,7 +51,6 @@ export {
   codeBlockTitle,
   highlightCodeSegments,
   Markdownish,
-  markdownLinkFaviconUrl,
   mermaidDiagramKind,
   mermaidFlowchartPreviewModel,
   memoryCitationEntries,

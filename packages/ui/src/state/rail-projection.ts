@@ -49,28 +49,19 @@ export function collectRailEntries(
   }
 
   if (itemType(item) === "generated-image" || itemType(item) === "imageGeneration") {
-    const imageSrc = stringField(record, "src") || stringField(record, "url") || imageResultDataUrl(record);
+    const imageSrc = stringField(record, "src")
+      || stringField(record, "url")
+      || stringField(record, "path")
+      || stringField(record, "savedPath")
+      || imageResultDataUrl(record);
     if (imageSrc) {
-      const url = imageEventSource(record);
-      setArtifact(artifacts, {
-        id: `image:${imageSrc}`,
-        title: imageArtifactTitle(imageSrc),
-        meta: imageSrc,
-        status: statusText(item),
-        action: { kind: "url", url },
-      });
+      setArtifact(artifacts, imageArtifactEntryFromSource(imageSrc, statusText(item)));
     }
   }
 
   const hiCodexImageUrl = hiCodexImageToolOutputUrl(item);
   if (hiCodexImageUrl) {
-    setArtifact(artifacts, {
-      id: `image:${hiCodexImageUrl}`,
-      title: imageArtifactTitle(hiCodexImageUrl),
-      meta: hiCodexImageUrl,
-      status: statusText(item),
-      action: { kind: "url", url: hiCodexImageUrl },
-    });
+    setArtifact(artifacts, imageArtifactEntryFromSource(hiCodexImageUrl, statusText(item)));
   }
 
   if (item.type === "mcpToolCall") {
@@ -143,12 +134,26 @@ export function progressEntriesFromPlan(plan: unknown[], idPrefix: string): Rail
     };
   });
 }
-function imageEventSource(record: ItemRecord): string {
-  const src = stringField(record, "src") || stringField(record, "url") || stringField(record, "path") || stringField(record, "savedPath");
-  if (!src) return imageResultDataUrl(record);
-  if (/^(?:data|blob|https?|file):/i.test(src)) return src;
-  if (src.startsWith("/")) return `file://${encodeURI(src)}`;
-  return src;
+function imageArtifactEntryFromSource(source: string, status: string): RailEntry {
+  const localPath = filePathFromFileUrl(source) || (source.startsWith("/") ? source : "");
+  if (localPath) return fileArtifactEntryFromPath(localPath, status);
+  return {
+    id: `image:${source}`,
+    title: imageArtifactTitle(source),
+    meta: source,
+    status,
+    action: { kind: "url", url: source },
+  };
+}
+
+function filePathFromFileUrl(value: string): string {
+  if (!/^file:/i.test(value)) return "";
+  try {
+    const url = new URL(value);
+    return url.protocol === "file:" ? decodeURIComponent(url.pathname) : "";
+  } catch {
+    return "";
+  }
 }
 
 function imageResultDataUrl(record: ItemRecord): string {
@@ -168,9 +173,6 @@ function imageArtifactTitle(value: string): string {
   }
 }
 
-function markdownImageTarget(value: string): string {
-  return /[\s()<>]/.test(value) ? `<${value.replaceAll(">", "%3E")}>` : value;
-}
 type ArtifactTextSource = "assistant" | "generic" | "output";
 
 interface ArtifactTextMatch {

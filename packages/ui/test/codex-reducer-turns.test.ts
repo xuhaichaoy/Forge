@@ -12,11 +12,13 @@ import type { AccumulatedThreadItem } from "../src/state/render-groups";
 export default function runCodexReducerTurnsTests(): void {
   refreshThreadListPreservesDraftNewThreadState();
   refreshThreadListDoesNotKeepMissingActiveThread();
+  marksKnownThreadsNotLoadedAfterReconnect();
   dedupesServerRequestsByRequestId();
   tracksLatestCollaborationModeByThread();
   tracksComposerModeDraftsInReducer();
   startsThreadWithCollectedTurnItemsAndActiveTurn();
   startsThreadWithRunningOrActiveTurnStatuses();
+  threadStartedStaleSnapshotDoesNotOverwriteCompletedLiveItems();
   threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt();
   projectsTurnTimingAsWorkedForItems();
   delaysWorkedForProjectionUntilTurnItemsExist();
@@ -31,6 +33,9 @@ export default function runCodexReducerTurnsTests(): void {
   completingTurnPreservesLongerAccumulatedAgentText();
   normalizesThreadStatusChangedNotifications();
   threadCompactedNotificationAddsCompletedContextCompactionEvent();
+  threadGoalNotificationsProjectOntoUserMessages();
+  fsChangedNotificationsAreLogged();
+  hookNotificationsAreLoggedWithoutSyntheticTranscriptItems();
   surfacesTerminalErrorNotificationsInTheTranscript();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
@@ -50,6 +55,8 @@ export default function runCodexReducerTurnsTests(): void {
   upsertingLiveSnapshotWithRolloutReplayReasoningDoesNotDuplicateConfirmed();
   upsertingLiveSnapshotWithCompletedCollabToolCallReplacesStartedTwin();
   finishingTurnWithRolloutReplayUserMessageDoesNotDuplicateConfirmed();
+  finishingTurnDoesNotDedupeSamePromptAcrossTurns();
+  lateInProgressThreadSnapshotDoesNotReactivateCompletedTurn();
   redispatchingTheSameOptimisticUserMessageIsIdempotent();
 }
 
@@ -91,6 +98,55 @@ function refreshThreadListDoesNotKeepMissingActiveThread(): void {
 
   const empty = codexUiReducer(next, { type: "setThreads", threads: [] });
   assertEqual(empty.activeThreadId, null, "setThreads should clear active thread when the refreshed list is empty");
+}
+
+function marksKnownThreadsNotLoadedAfterReconnect(): void {
+  const state = {
+    ...initialCodexUiState,
+    threads: [
+      threadWithTurns("thread-active", [{ id: "turn-1", status: "in_progress", items: [] }]),
+      threadWithTurns("thread-idle", []),
+    ],
+    activeThreadId: "thread-active",
+    threadsRuntime: {
+      "thread-active": {
+        activeTurnId: "turn-1",
+        items: [],
+        turnOrder: ["optimistic-turn:1"],
+        pendingOptimisticTurns: ["optimistic-turn:1"],
+        latestCollaborationMode: null,
+        turnPlan: null,
+        turnDiff: "",
+        composerMode: null,
+        threadGoal: null,
+        threadGoalTurnId: null,
+        terminalTurnIds: [],
+      },
+    },
+  };
+
+  const next = codexUiReducer(state, { type: "markThreadsNeedResumeAfterReconnect" });
+
+  assertDeepEqual(
+    next.threads.map((thread) => thread.status),
+    [{ type: "notLoaded" }, { type: "notLoaded" }],
+    "reconnect recovery should mark all known threads as needing resume",
+  );
+  assertEqual(
+    next.activeThreadId,
+    "thread-active",
+    "reconnect recovery should not change the selected thread",
+  );
+  assertEqual(
+    runtime(next, "thread-active").activeTurnId,
+    null,
+    "reconnect recovery should clear stale active turn ids until metadata resume completes",
+  );
+  assertDeepEqual(
+    runtime(next, "thread-active").pendingOptimisticTurns,
+    [],
+    "reconnect recovery should clear optimistic turn bindings that can no longer be matched",
+  );
 }
 
 function dedupesServerRequestsByRequestId(): void {
@@ -351,6 +407,48 @@ function startsThreadWithRunningOrActiveTurnStatuses(): void {
       `thread/started should treat ${JSON.stringify(status)} turn status as active`,
     );
   }
+}
+
+function threadStartedStaleSnapshotDoesNotOverwriteCompletedLiveItems(): void {
+  const completedAgent = agentMessage("agent-late", "Final answer streamed completely.");
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        activeTurnId: null,
+        terminalTurnIds: ["turn-late"],
+        items: [
+          { ...userMessage("user-late", "finish it"), _turnId: "turn-late", _turnStatus: "completed" },
+          { ...completedAgent, _turnId: "turn-late", _turnStatus: "completed" },
+        ] as AccumulatedThreadItem[],
+      }),
+    },
+  };
+
+  state = reduceNotification(state, {
+    method: "thread/started",
+    params: {
+      thread: threadWithTurns("thread-1", [
+        {
+          id: "turn-late",
+          status: "inProgress",
+          items: [
+            userMessage("user-late", "finish it"),
+            agentMessage("agent-late", "Final"),
+          ],
+        },
+      ]),
+    },
+  });
+
+  assertEqual(runtime(state, "thread-1").activeTurnId, null, "stale thread/started must not reactivate a completed turn");
+  assertEqual(
+    agentText(state, "thread-1", "agent-late"),
+    "Final answer streamed completely.",
+    "stale thread/started must merge with live completed items instead of replacing them",
+  );
 }
 
 function threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt(): void {
@@ -863,6 +961,115 @@ function threadCompactedNotificationAddsCompletedContextCompactionEvent(): void 
     items(repeated, "thread-1").filter((item) => item.id === "context-compaction:turn-1").length,
     1,
     "repeated thread/compacted notifications should replace the same fallback item",
+  );
+}
+
+function threadGoalNotificationsProjectOntoUserMessages(): void {
+  let state = codexUiReducer(initialCodexUiState, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-goal", [
+      {
+        id: "turn-1",
+        status: "completed",
+        items: [userMessage("user-1", "Ship parity")],
+      },
+    ]),
+  });
+
+  state = reduceNotification(state, {
+    method: "thread/goal/updated",
+    params: {
+      threadId: "thread-goal",
+      turnId: "turn-1",
+      goal: goalFixture({ threadId: "thread-goal", objective: "Close Desktop parity" }),
+    },
+  });
+
+  let user = itemById(state, "thread-goal", "user-1") as Record<string, unknown>;
+  const projectedGoal = user._threadGoal as Record<string, unknown>;
+  assertEqual(projectedGoal.objective, "Close Desktop parity", "thread goal update should project onto the user message");
+  assertEqual(user._threadGoalTurnId, "turn-1", "thread goal projection should preserve the source turn id");
+
+  state = reduceNotification(state, {
+    method: "thread/goal/cleared",
+    params: { threadId: "thread-goal" },
+  });
+
+  user = itemById(state, "thread-goal", "user-1") as Record<string, unknown>;
+  assertEqual(user._threadGoal, undefined, "thread goal clear should remove the projected goal");
+  assertEqual(user._threadGoalTurnId, undefined, "thread goal clear should remove the projected goal turn id");
+}
+
+function fsChangedNotificationsAreLogged(): void {
+  const state = reduceNotification(initialCodexUiState, {
+    method: "fs/changed",
+    params: {
+      watchId: "watch-1",
+      changedPaths: ["/workspace/a.ts", "/workspace/b.ts", "/workspace/c.ts", "/workspace/d.ts"],
+    },
+  });
+
+  assertEqual(
+    state.logs[0]?.text,
+    "filesystem changed for watch watch-1: /workspace/a.ts, /workspace/b.ts, /workspace/c.ts (+1 more)",
+    "fs/changed should leave an observable log entry",
+  );
+}
+
+function hookNotificationsAreLoggedWithoutSyntheticTranscriptItems(): void {
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-hooks", [])],
+    activeThreadId: "thread-hooks",
+    threadsRuntime: {
+      "thread-hooks": runtimeSlice({
+        turnOrder: ["turn-hooks"],
+        items: [
+          { ...userMessage("user-hooks", "run hooks"), _turnId: "turn-hooks" },
+        ] as AccumulatedThreadItem[],
+      }),
+    },
+  };
+
+  state = reduceNotification(state, {
+    method: "hook/started",
+    params: {
+      threadId: "thread-hooks",
+      turnId: "turn-hooks",
+      run: hookRun("hook-1", "preToolUse", "running"),
+    },
+  });
+
+  assertEqual(
+    state.logs[0]?.text.includes("hook started: preToolUse"),
+    true,
+    "hook/started should leave an observable log entry",
+  );
+  assertDeepEqual(
+    items(state, "thread-hooks").map((item) => item.id),
+    ["user-hooks"],
+    "hook/started must not add a synthetic hook transcript item",
+  );
+
+  state = reduceNotification(state, {
+    method: "hook/completed",
+    params: {
+      threadId: "thread-hooks",
+      turnId: "turn-hooks",
+      run: hookRun("hook-1", "preToolUse", "failed", "blocked by policy"),
+    },
+  });
+
+  assertEqual(state.logs[0]?.level, "warn", "failed hook/completed should be surfaced as a warning log");
+  assertEqual(
+    state.logs[0]?.text.includes("blocked by policy"),
+    true,
+    "hook/completed should log the hook status message",
+  );
+  assertDeepEqual(
+    items(state, "thread-hooks").map((item) => item.id),
+    ["user-hooks"],
+    "hook/completed must not add a synthetic hook transcript item",
   );
 }
 
@@ -1849,6 +2056,116 @@ function finishingTurnWithRolloutReplayUserMessageDoesNotDuplicateConfirmed(): v
   );
 }
 
+function finishingTurnDoesNotDedupeSamePromptAcrossTurns(): void {
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+  };
+
+  for (const turnId of ["turn-a", "turn-b"]) {
+    state = reduceNotification(state, {
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          id: turnId,
+          threadId: "thread-1",
+          status: "inProgress",
+          items: [userMessage(`user-${turnId}`, "ok")],
+          startedAt: 1,
+        },
+      },
+    });
+    state = reduceNotification(state, {
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: {
+          id: turnId,
+          threadId: "thread-1",
+          status: "completed",
+          items: [
+            userMessage(`user-${turnId}`, "ok"),
+            agentMessage(`agent-${turnId}`, `done ${turnId}`),
+          ],
+        },
+      },
+    });
+  }
+
+  assertDeepEqual(
+    items(state, "thread-1")
+      .filter((item) => item.type === "userMessage")
+      .map((item) => item.id),
+    ["user-turn-a", "user-turn-b"],
+    "same user prompt in separate turns should remain as two distinct messages",
+  );
+}
+
+function lateInProgressThreadSnapshotDoesNotReactivateCompletedTurn(): void {
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+  };
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-late", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-late",
+      item: agentMessage("agent-late", "Final answer streamed completely."),
+    },
+  });
+  state = reduceNotification(state, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-late",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-late", "finish it"),
+          agentMessage("agent-late", "Final answer streamed completely."),
+        ],
+      },
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-late",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          userMessage("user-late", "finish it"),
+          agentMessage("agent-late", "Final"),
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  assertEqual(runtime(refreshed, "thread-1").activeTurnId, null, "late stale thread/read must not reactivate a completed turn");
+  assertEqual(threadStatus(refreshed, "thread-1"), "idle", "late stale thread/read must not regress the thread status to active");
+  assertEqual(
+    agentText(refreshed, "thread-1", "agent-late"),
+    "Final answer streamed completely.",
+    "late stale thread/read must preserve the longer completed assistant output",
+  );
+}
+
 function upsertingMetadataOnlyThreadPreservesOptimisticPrompt(): void {
   const optimistic = codexUiReducer(
     {
@@ -2035,6 +2352,44 @@ function agentMessage(id: string, text: string): ThreadItem {
     text,
     phase: null,
     memoryCitation: null,
+  };
+}
+
+function goalFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    threadId: "thread-1",
+    objective: "Finish parity",
+    status: "active",
+    tokenBudget: null,
+    tokensUsed: 0,
+    timeUsedSeconds: 0,
+    createdAt: 0,
+    updatedAt: 0,
+    ...overrides,
+  };
+}
+
+function hookRun(
+  id: string,
+  eventName: string,
+  status: string,
+  statusMessage: string | null = null,
+): Record<string, unknown> {
+  return {
+    id,
+    eventName,
+    handlerType: "command",
+    executionMode: "blocking",
+    scope: "project",
+    sourcePath: "/workspace/.codex/hooks.json",
+    source: "project",
+    displayOrder: 0,
+    status,
+    statusMessage,
+    startedAt: 0,
+    completedAt: status === "running" ? null : 10,
+    durationMs: status === "running" ? null : 10,
+    entries: [],
   };
 }
 

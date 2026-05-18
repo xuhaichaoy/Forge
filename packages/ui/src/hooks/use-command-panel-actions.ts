@@ -13,8 +13,10 @@ import {
   projectCommandPanelEntries,
   projectMcpResourceReadResultEntries,
   projectMcpToolCallResultEntries,
+  projectPluginSkillReadResultEntries,
   projectPluginEntries,
   projectRequiredAppEntries,
+  projectSkillManagementEntries,
   projectSkillFileReadResultEntries,
   type CommandPanelEntry,
   type CommandPanelEntryAction,
@@ -22,16 +24,43 @@ import {
   type CommandPanelOptions,
   type CommandPanelState,
 } from "../state/command-panel";
-import { loadAllApps } from "../state/app-list";
+import {
+  buildConfigBatchWriteParams,
+  formatConfigWriteError,
+  readConfigWriteTarget,
+} from "../state/config-write-target";
+import { localeLabel, type HiCodexLocale } from "../state/i18n";
+import { appEnabledConfigEdit, loadAllApps } from "../state/app-list";
+import { markAppConnectOAuthPending } from "../state/app-connect-oauth";
 import {
   appendSkillPromptText,
   decodeBase64Utf8,
+  encodeBase64Utf8,
 } from "../state/app-shell-helpers";
 import {
   normalizeMcpServerKey,
   projectMcpManagementEntries,
 } from "../state/mcp-skills-management";
+import {
+  mergeNotificationPreferences,
+  notificationPolicyLabel,
+  notificationSoundLabel,
+  type NotificationPreferences,
+} from "../state/notification-preferences";
+import { projectNotificationSettingsEntry } from "../state/settings-panel-workflow";
 import { refreshThreadContextDefaults } from "../state/thread-workflow";
+import { themeModeLabel, type UiThemeMode } from "../state/theme";
+
+const MCP_RELOAD_RESTART_MESSAGE =
+  "Reloaded MCP config. New threads use refreshed servers; running threads may need a thread restart or another MCP reload before tool changes appear.";
+
+function mcpSavedRestartMessage(server: string): string {
+  return `${server} saved and MCP config reloaded. New threads use the update; running threads may need a thread restart or MCP reload before tool changes appear.`;
+}
+
+function mcpRemovedRestartMessage(server: string): string {
+  return `${server} removed and MCP config reloaded. New threads use the update; running threads may need a thread restart or MCP reload before tool changes disappear.`;
+}
 
 export type CommandPanelSink = (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
 export type McpToolFormAction = Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpToolForm" }>;
@@ -50,6 +79,12 @@ export function useCommandPanelActions({
   setInput,
   setMcpServerForm,
   setMcpToolForm,
+  setUiLocale,
+  setUiThemeMode,
+  notificationPreferences,
+  setNotificationPreferences,
+  runSlashCommand,
+  openFileSearchPanel,
   selectThreadById,
   workspace,
 }: {
@@ -65,6 +100,12 @@ export function useCommandPanelActions({
   setInput: Dispatch<SetStateAction<string>>;
   setMcpServerForm: Dispatch<SetStateAction<McpServerFormAction | null>>;
   setMcpToolForm: Dispatch<SetStateAction<McpToolFormAction | null>>;
+  setUiLocale?: (locale: HiCodexLocale) => void;
+  setUiThemeMode?: (mode: UiThemeMode) => void;
+  notificationPreferences?: NotificationPreferences;
+  setNotificationPreferences?: (patch: Partial<NotificationPreferences>) => NotificationPreferences;
+  runSlashCommand?: (commandId: string) => void;
+  openFileSearchPanel?: () => void;
   selectThreadById?: (threadId: string) => void | Promise<void>;
   workspace: string;
 }) {
@@ -131,7 +172,7 @@ export function useCommandPanelActions({
       sink("mcp", {
         status: "ready",
         title: "MCP Servers",
-        message: "Reloaded MCP config. Select a tool to call it, or a resource to read it.",
+        message: MCP_RELOAD_RESTART_MESSAGE,
         entries: projectMcpManagementEntries(result, null, { configReadResult }),
       });
     } catch (error) {
@@ -164,13 +205,24 @@ export function useCommandPanelActions({
       return;
     }
     try {
-      await client.request("mcpServer/oauth/login", { name: action.server }, 120_000);
+      const login = await client.request<unknown>("mcpServer/oauth/login", { name: action.server }, 120_000);
+      const authorizationUrl = mcpOauthAuthorizationUrl(login);
+      if (authorizationUrl) {
+        await openExternalUrl(authorizationUrl);
+        markAppConnectOAuthPending({
+          appId: `mcp:${action.server}`,
+          appName: action.server,
+          redirectUrl: authorizationUrl,
+        });
+      }
       const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail: "full" }, 120_000);
       const configReadResult = await readMcpConfig(client, workspace);
       sink("mcp", {
         status: "ready",
         title: "MCP Servers",
-        message: `${action.server} authentication requested.`,
+        message: authorizationUrl
+          ? `${action.server} authentication opened in your browser.`
+          : `${action.server} authentication requested.`,
         entries: projectMcpManagementEntries(result, null, { configReadResult }),
       });
     } catch (error) {
@@ -245,10 +297,16 @@ export function useCommandPanelActions({
       return;
     }
     try {
-      await client.request("config/batchWrite", {
+      const configWriteTarget = action.configWriteTarget
+        ?? await readConfigWriteTarget(client, {
+          cwd: workspace,
+          keyPaths: action.edits.map((edit) => edit.keyPath),
+        });
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
         edits: action.edits,
+        target: configWriteTarget,
         reloadUserConfig: action.reloadUserConfig ?? true,
-      }, 120_000);
+      }), 120_000);
       await refreshThreadContextDefaults(client, dispatch, workspace);
       if (action.afterWrite?.type === "addPersonalityChangeSyntheticItem" && activeThreadId) {
         dispatch({
@@ -285,7 +343,7 @@ export function useCommandPanelActions({
       sink("generic", {
         status: "error",
         title: action.title,
-        error: formatError(error),
+        error: formatConfigWriteError(error, action.title),
         entries: [],
       });
     }
@@ -390,6 +448,110 @@ export function useCommandPanelActions({
     }
   }, [client, dispatch, ensureConnected, openCommandPanel]);
 
+  const createStarterSkillFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "createStarterSkill" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("skills", {
+      status: "loading",
+      title: action.title,
+      message: "Creating starter skill...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("skills", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      if (await fsPathExists(client, action.filePath)) {
+        const message = `${action.filePath} already exists. Open it from Skills instead of overwriting it.`;
+        dispatch({ type: "log", text: message, level: "warn" });
+        sink("skills", {
+          status: "error",
+          title: action.title,
+          error: message,
+          entries: [],
+        });
+        return;
+      }
+      await client.request("fs/createDirectory", {
+        path: action.directoryPath,
+        recursive: true,
+      }, 120_000);
+      await client.request("fs/writeFile", {
+        path: action.filePath,
+        dataBase64: encodeBase64Utf8(action.contents),
+      }, 120_000);
+      const skills = await client.request<unknown>("skills/list", {
+        cwds: workspace.trim() ? [workspace.trim()] : [],
+        forceReload: true,
+      }, 120_000);
+      sink("skills", {
+        status: "ready",
+        title: "Skills",
+        message: `${action.skillName} created. Edit ${action.filePath} to customize it.`,
+        entries: projectSkillManagementEntries(skills, { workspace }),
+      });
+    } catch (error) {
+      sink("skills", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, dispatch, ensureConnected, openCommandPanel, workspace]);
+
+  const readPluginSkillFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "readPluginSkill" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("skills", {
+      status: "loading",
+      title: action.title,
+      message: "Reading plugin skill source...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("skills", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      const result = await client.request<{ contents?: string | null }>("plugin/skill/read", {
+        remoteMarketplaceName: action.remoteMarketplaceName,
+        remotePluginId: action.remotePluginId,
+        skillName: action.skillName,
+      }, 120_000);
+      sink("skills", {
+        status: "ready",
+        title: action.title,
+        message: "Plugin skill source loaded from app-server.",
+        entries: projectPluginSkillReadResultEntries(
+          action.skillName,
+          `${action.remoteMarketplaceName}:${action.remotePluginId}`,
+          result.contents,
+        ),
+      });
+    } catch (error) {
+      sink("skills", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, ensureConnected, openCommandPanel]);
+
   const refreshMcpServersPanel = useCallback(async (
     message: string,
     sink: CommandPanelSink = openCommandPanel,
@@ -428,15 +590,19 @@ export function useCommandPanelActions({
     }
     try {
       const normalizedName = normalizeMcpServerKey(action.name, [], action.name);
-      await client.request("config/batchWrite", {
-        edits: [{
-          keyPath: `mcp_servers.${normalizedName}`,
-          value: action.config,
-          mergeStrategy: "replace",
-        }],
+      const configWriteTarget = action.configWriteTarget
+        ?? await readMcpConfigWriteTarget(client, workspace, normalizedName);
+      const edits = [{
+        keyPath: `mcp_servers.${normalizedName}`,
+        value: action.config,
+        mergeStrategy: "replace" as const,
+      }];
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
+        edits,
+        target: configWriteTarget,
         reloadUserConfig: true,
-      }, 120_000);
-      await refreshMcpServersPanel(`${normalizedName} saved. Restart may be required for running threads.`, sink);
+      }), 120_000);
+      await refreshMcpServersPanel(mcpSavedRestartMessage(normalizedName), sink);
     } catch (error) {
       sink("mcp", {
         status: "error",
@@ -445,7 +611,7 @@ export function useCommandPanelActions({
         entries: [],
       });
     }
-  }, [client, ensureConnected, openCommandPanel, refreshMcpServersPanel]);
+  }, [client, ensureConnected, openCommandPanel, refreshMcpServersPanel, workspace]);
 
   const removeMcpServerFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "removeMcpServer" }>,
@@ -468,15 +634,19 @@ export function useCommandPanelActions({
     }
     try {
       const normalizedServer = normalizeMcpServerKey(action.server, [], action.server);
-      await client.request("config/batchWrite", {
-        edits: [{
-          keyPath: `mcp_servers.${normalizedServer}`,
-          value: null,
-          mergeStrategy: "replace",
-        }],
+      const configWriteTarget = action.configWriteTarget
+        ?? await readMcpConfigWriteTarget(client, workspace, normalizedServer);
+      const edits = [{
+        keyPath: `mcp_servers.${normalizedServer}`,
+        value: null,
+        mergeStrategy: "replace" as const,
+      }];
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
+        edits,
+        target: configWriteTarget,
         reloadUserConfig: true,
-      }, 120_000);
-      await refreshMcpServersPanel(`${normalizedServer} removed. Restart may be required for running threads.`, sink);
+      }), 120_000);
+      await refreshMcpServersPanel(mcpRemovedRestartMessage(normalizedServer), sink);
     } catch (error) {
       sink("mcp", {
         status: "error",
@@ -485,7 +655,7 @@ export function useCommandPanelActions({
         entries: [],
       });
     }
-  }, [client, ensureConnected, openCommandPanel, refreshMcpServersPanel]);
+  }, [client, ensureConnected, openCommandPanel, refreshMcpServersPanel, workspace]);
 
   const writeAppConfigFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writeAppConfig" }>,
@@ -507,14 +677,18 @@ export function useCommandPanelActions({
       return;
     }
     try {
-      await client.request("config/batchWrite", {
-        edits: [{
-          keyPath: `apps.${action.appId}`,
-          value: { enabled: action.enabled },
-          mergeStrategy: "upsert",
-        }],
+      const edits = [appEnabledConfigEdit(action.appId, action.enabled)];
+      const configWriteTarget = action.configWriteTarget
+        ?? await readConfigWriteTarget(client, {
+          cwd: workspace,
+          keyPaths: edits.map((edit) => edit.keyPath),
+          scope: "App config write",
+        });
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
+        edits,
+        target: configWriteTarget,
         reloadUserConfig: true,
-      }, 120_000);
+      }), 120_000);
       const result = await loadAllApps(client, { forceRefetch: true, threadId: activeThreadId });
       sink("apps", {
         status: "ready",
@@ -526,11 +700,11 @@ export function useCommandPanelActions({
       sink("apps", {
         status: "error",
         title: action.title,
-        error: formatError(error),
+        error: formatConfigWriteError(error, "App config write"),
         entries: [],
       });
     }
-  }, [activeThreadId, client, ensureConnected, openCommandPanel]);
+  }, [activeThreadId, client, ensureConnected, openCommandPanel, workspace]);
 
   const connectRequiredAppFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "connectRequiredApp" }>,
@@ -548,18 +722,26 @@ export function useCommandPanelActions({
     }
     try {
       await openExternalUrl(url);
+      const pendingOAuth = markAppConnectOAuthPending({
+        appId: action.appId,
+        appName: action.appName,
+        redirectUrl: url,
+      });
+      const flowMessage = pendingOAuth
+        ? "Finish the browser flow. HiCodex will refresh Apps or Plugins when the OAuth callback returns."
+        : "Finish the browser flow, then refresh Apps or Plugins.";
       setCommandPanel((current) => current?.panel === "apps" || current?.panel === "plugins"
         ? {
             ...current,
             status: "ready",
-            message: `${action.appName} setup URL opened. Finish the browser flow, then refresh Apps or Plugins.`,
+            message: `${action.appName} setup URL opened. ${flowMessage}`,
             entries: current.entries.map((entry) => entryTracksAppConnectAction(entry, action.appId)
               ? {
                   ...entry,
                   status: "waiting for refresh",
                   details: [
                     ...(entry.details ?? []).filter((detail) => !detail.startsWith("Finish the browser flow")),
-                    "Finish the browser flow, then refresh Apps or Plugins.",
+                    flowMessage,
                   ],
                   secondaryActions: entry.secondaryActions?.map((secondary) => ({
                     ...secondary,
@@ -572,7 +754,7 @@ export function useCommandPanelActions({
         : current);
       dispatch({
         type: "log",
-        text: `${action.appName} setup URL opened. Refresh Apps or Plugins after completing the browser flow.`,
+        text: `${action.appName} setup URL opened. ${flowMessage}`,
         level: "info",
       });
     } catch (error) {
@@ -725,25 +907,81 @@ export function useCommandPanelActions({
       return;
     }
     try {
-      await client.request("config/batchWrite", {
-        edits: [{
-          keyPath: `plugins.${action.pluginId}`,
-          value: { enabled: action.enabled },
-          mergeStrategy: "upsert",
-        }],
+      const edits = [{
+        keyPath: `plugins.${action.pluginId}`,
+        value: { enabled: action.enabled },
+        mergeStrategy: "upsert" as const,
+      }];
+      const configWriteTarget = action.configWriteTarget
+        ?? await readConfigWriteTarget(client, {
+          cwd: workspace,
+          keyPaths: edits.map((edit) => edit.keyPath),
+          scope: "Plugin config write",
+        });
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
+        edits,
+        target: configWriteTarget,
         reloadUserConfig: true,
-      }, 120_000);
+      }), 120_000);
       await refreshThreadContextDefaults(client, dispatch, workspace);
       await refreshPluginsPanel(`${action.pluginId} ${action.enabled ? "enabled" : "disabled"}.`, sink);
     } catch (error) {
       sink("plugins", {
         status: "error",
         title: action.title,
-        error: formatError(error),
+        error: formatConfigWriteError(error, "Plugin config write"),
         entries: [],
       });
     }
   }, [client, dispatch, ensureConnected, openCommandPanel, refreshPluginsPanel, workspace]);
+
+  const setThreadMemoryModeFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "setThreadMemoryMode" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("generic", {
+      status: "loading",
+      title: action.title,
+      message: "Updating memory mode...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      await client.request("thread/memoryMode/set", {
+        threadId: action.threadId,
+        mode: action.mode,
+      }, 120_000);
+      const enabled = action.mode === "enabled";
+      sink("generic", {
+        status: "ready",
+        title: action.title,
+        message: `Current chat memory generation ${enabled ? "enabled" : "disabled"}.`,
+        entries: [{
+          id: `memories:thread:${action.threadId}:saved`,
+          title: "Current chat memory generation",
+          kind: "status",
+          status: action.mode,
+          meta: `thread ${action.threadId}`,
+          details: ["thread/memoryMode/set accepted by app-server."],
+        }],
+      });
+    } catch (error) {
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, ensureConnected, openCommandPanel]);
 
   const selectCommandPanelAction = useCallback((
     action: CommandPanelEntryAction,
@@ -795,6 +1033,21 @@ export function useCommandPanelActions({
       void readSkillFileFromPanel(action, sink);
       return;
     }
+    if (action.type === "createStarterSkill") {
+      void createStarterSkillFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "readPluginSkill") {
+      void readPluginSkillFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "insertLocalCommand") {
+      setInput((current) => current.trim() ? `${current.trimEnd()}\n${action.command}` : action.command);
+      setCommandPanel(null);
+      setActiveSettingsPanel(null);
+      dispatch({ type: "log", text: action.message, level: "info" });
+      return;
+    }
     if (action.type === "openMcpServerForm") {
       setCommandPanel(null);
       setMcpServerForm(action);
@@ -832,6 +1085,122 @@ export function useCommandPanelActions({
       void writePluginConfigFromPanel(action, sink);
       return;
     }
+    if (action.type === "setThreadMemoryMode") {
+      void setThreadMemoryModeFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "setUiTheme") {
+      setUiThemeMode?.(action.mode);
+      sink("theme", {
+        status: "ready",
+        title: action.title,
+        message: `${themeModeLabel(action.mode)} theme selected.`,
+        entries: [{
+          id: `theme:${action.mode}:saved`,
+          title: themeModeLabel(action.mode),
+          kind: "theme",
+          status: "selected",
+          meta: "Saved locally",
+        }],
+      });
+      dispatch({ type: "log", text: `${themeModeLabel(action.mode)} theme selected.`, level: "info" });
+      return;
+    }
+    if (action.type === "setUiLocale") {
+      setUiLocale?.(action.locale);
+      const label = localeLabel(action.locale);
+      sink("generic", {
+        status: "ready",
+        title: action.title,
+        message: `${label} language selected.`,
+        entries: [{
+          id: `locale:${action.locale}:saved`,
+          title: label,
+          kind: "status",
+          status: "selected",
+          meta: "Saved locally",
+        }],
+      });
+      dispatch({ type: "log", text: `${label} language selected.`, level: "info" });
+      return;
+    }
+    if (action.type === "setNotificationPreferences") {
+      const fallback = notificationPreferences ?? {
+        turnCompletionPolicy: "backgroundOnly" as const,
+        sound: true,
+      };
+      const next = setNotificationPreferences?.(action.patch)
+        ?? mergeNotificationPreferences(fallback, action.patch);
+      const status = notificationPolicyLabel(next.turnCompletionPolicy);
+      sink("generic", {
+        status: "ready",
+        title: "Notifications",
+        message: `Turn completion notifications: ${status}; ${notificationSoundLabel(next.sound).toLowerCase()}.`,
+        entries: [projectNotificationSettingsEntry(next)],
+      });
+      dispatch({
+        type: "log",
+        text: `Turn completion notifications set to ${status}; ${notificationSoundLabel(next.sound).toLowerCase()}.`,
+        level: "info",
+      });
+      return;
+    }
+    if (action.type === "runSlashCommand") {
+      setCommandPanel(null);
+      setActiveSettingsPanel(null);
+      runSlashCommand?.(action.commandId);
+      return;
+    }
+    if (action.type === "openFileSearch") {
+      setActiveSettingsPanel(null);
+      openFileSearchPanel?.();
+      return;
+    }
+    if (action.type === "copyText") {
+      const clipboard = globalThis.navigator?.clipboard;
+      if (!clipboard?.writeText) {
+        sink("generic", {
+          status: "error",
+          title: action.title,
+          error: "Clipboard API is unavailable.",
+          entries: [],
+        });
+        return;
+      }
+      void clipboard.writeText(action.text)
+        .then(() => {
+          dispatch({ type: "log", text: `${action.label} copied to clipboard.`, level: "info" });
+          sink("generic", {
+            status: "ready",
+            title: action.title,
+            message: `${action.label} copied to clipboard.`,
+            entries: [],
+          });
+        })
+        .catch((error) => {
+          sink("generic", {
+            status: "error",
+            title: action.title,
+            error: formatError(error),
+            entries: [],
+          });
+        });
+      return;
+    }
+    if (action.type === "scrollToContentUnit") {
+      const target = Array.from(document.querySelectorAll<HTMLElement>("[data-content-search-unit-key]"))
+        .find((element) => element.dataset.contentSearchUnitKey === action.unitKey);
+      if (!target) {
+        dispatch({ type: "log", text: `Thread result is no longer mounted: ${action.title}`, level: "warn" });
+        return;
+      }
+      setCommandPanel(null);
+      setActiveSettingsPanel(null);
+      target.scrollIntoView({ block: "center" });
+      target.classList.add("hc-thread-find-flash");
+      window.setTimeout(() => target.classList.remove("hc-thread-find-flash"), 1200);
+      return;
+    }
     if (action.type === "reloadMcpServers") {
       void reloadMcpServersFromPanel(action, sink);
       return;
@@ -855,11 +1224,13 @@ export function useCommandPanelActions({
   }, [
     callMcpToolFromPanel,
     connectRequiredAppFromPanel,
+    createStarterSkillFromPanel,
     installPluginFromPanel,
     loginMcpServerFromPanel,
     openCommandPanel,
     openExternalUrlFromPanel,
     readMcpResourceFromPanel,
+    readPluginSkillFromPanel,
     readSkillFileFromPanel,
     refreshMcpServersPanel,
     refreshPluginsPanel,
@@ -869,8 +1240,15 @@ export function useCommandPanelActions({
     setCommandPanel,
     setComposerAttachments,
     setInput,
+    setThreadMemoryModeFromPanel,
     setMcpServerForm,
     setMcpToolForm,
+    setUiLocale,
+    setUiThemeMode,
+    notificationPreferences,
+    setNotificationPreferences,
+    runSlashCommand,
+    openFileSearchPanel,
     selectThreadById,
     uninstallPluginFromPanel,
     writeAppConfigFromPanel,
@@ -893,6 +1271,7 @@ export function useCommandPanelActions({
     reloadMcpServersFromPanel,
     removeMcpServerFromPanel,
     readMcpResourceFromPanel,
+    readPluginSkillFromPanel,
     readSkillFileFromPanel,
     selectCommandPanelAction,
     selectCommandPanelEntry,
@@ -925,4 +1304,32 @@ async function readMcpConfig(client: CodexJsonRpcClient, workspace: string): Pro
     includeLayers: true,
     cwd: workspace.trim() ? workspace.trim() : null,
   }, 120_000);
+}
+
+async function fsPathExists(client: CodexJsonRpcClient, path: string): Promise<boolean> {
+  try {
+    await client.request("fs/getMetadata", { path }, 120_000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function mcpOauthAuthorizationUrl(result: unknown): string | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const record = result as Record<string, unknown>;
+  const value = record.authorizationUrl ?? record.authorization_url ?? record.authUrl ?? record.url;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+async function readMcpConfigWriteTarget(
+  client: CodexJsonRpcClient,
+  workspace: string,
+  server: string,
+): Promise<{ filePath: string; expectedVersion: string }> {
+  return readConfigWriteTarget(client, {
+    cwd: workspace,
+    keyPaths: [`mcp_servers.${server}`],
+    scope: "MCP config write",
+  });
 }

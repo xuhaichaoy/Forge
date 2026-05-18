@@ -15,7 +15,13 @@ import {
   type CommandPanelEntry,
   type CommandPanelState,
 } from "../src/state/command-panel";
+import {
+  claimAppConnectOAuthCallback,
+  markAppConnectOAuthPending,
+  resetAppConnectOAuthPendingForTest,
+} from "../src/state/app-connect-oauth";
 import { loadSettingsPanelContent } from "../src/state/settings-panel-loader";
+import { DEFAULT_NOTIFICATION_PREFERENCES } from "../src/state/notification-preferences";
 import {
   managementPanelSections,
   managementPanelSummary,
@@ -33,6 +39,8 @@ export default async function runMcpSkillsManagementTests(): Promise<void> {
   projectsSkillsWithMetadataAndActions();
   rendersReusableManagementPanelControls();
   await reloadsMcpConfigOnlyForForcedReloads();
+  await loadsSkillRecommendationsAndCreatorForSettingsPanel();
+  registersMcpOauthPendingOnlyWhenAuthorizationUrlHasState();
 }
 
 function projectsMcpServersWithStartupErrors(): void {
@@ -115,15 +123,40 @@ function projectsMcpConfigActionsFromEffectiveConfig(): void {
           "mcp_servers.user-server.command": { name: { type: "user", file: "/Users/me/.codex/config.toml" }, version: "1" },
           "mcp_servers.project-server.url": { name: { type: "project", dotCodexFolder: "/workspace/.codex" }, version: "1" },
         },
+        layers: [
+          { name: { type: "user", file: "/Users/me/.codex/config.toml" }, version: "1", config: {}, disabledReason: null },
+        ],
       },
     },
   );
 
   const userServer = entries.find((entry) => entry.id === "mcp:user-server");
   assertDeepEqual(
+    entries.find((entry) => entry.id === "mcp:add-server")?.action,
+    {
+      type: "openMcpServerForm",
+      title: "Add MCP server",
+      mode: "add",
+      existingServers: ["user-server", "project-server"],
+      configWriteTarget: { filePath: "/Users/me/.codex/config.toml", expectedVersion: "1" },
+    },
+    "add action should carry the current user config write target from config/read layers",
+  );
+  assertDeepEqual(
     userServer?.secondaryActions?.map((action) => action.label),
     ["Reload", "Disable", "Edit", "Remove"],
     "user-scope MCP servers should expose reload plus enable/edit/remove config actions",
+  );
+  assertDeepEqual(
+    userServer?.secondaryActions?.find((action) => action.label === "Disable")?.action,
+    {
+      type: "writeMcpServerConfig",
+      title: "Disable user-server",
+      name: "user-server",
+      config: { command: "node", enabled: false },
+      configWriteTarget: { filePath: "/Users/me/.codex/config.toml", expectedVersion: "1" },
+    },
+    "enable/disable action should carry filePath and expectedVersion for config/batchWrite",
   );
   assertDeepEqual(
     userServer?.secondaryActions?.find((action) => action.label === "Edit")?.action,
@@ -134,6 +167,7 @@ function projectsMcpConfigActionsFromEffectiveConfig(): void {
       server: "user-server",
       existingServers: ["user-server", "project-server"],
       serverConfig: { command: "node", enabled: true },
+      configWriteTarget: { filePath: "/Users/me/.codex/config.toml", expectedVersion: "1" },
     },
     "edit action should carry the current server key, existing keys, and effective config",
   );
@@ -199,7 +233,9 @@ function buildsMcpServerConfigPayloads(): void {
       command: "npx",
       currentKey: undefined,
       cwd: "/workspace",
+      disabledTools: "",
       enabled: true,
+      enabledTools: "search\nread",
       env: "TOKEN=abc",
       envVars: "",
       envHttpHeaders: "",
@@ -207,6 +243,9 @@ function buildsMcpServerConfigPayloads(): void {
       httpHeaders: "",
       name: "filesystem",
       required: true,
+      startupTimeoutMs: "",
+      startupTimeoutSec: "20",
+      toolTimeoutSec: "90",
       transport: "stdio",
       url: "",
     }),
@@ -214,6 +253,9 @@ function buildsMcpServerConfigPayloads(): void {
       config: {
         enabled: true,
         required: true,
+        enabled_tools: ["search", "read"],
+        startup_timeout_sec: 20,
+        tool_timeout_sec: 90,
         command: "npx",
         args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
         cwd: "/workspace",
@@ -233,7 +275,9 @@ function buildsMcpServerConfigPayloads(): void {
       command: "",
       currentKey: undefined,
       cwd: "",
+      disabledTools: "write",
       enabled: false,
+      enabledTools: "",
       env: "",
       envVars: "",
       envHttpHeaders: "Authorization=TOKEN",
@@ -241,12 +285,17 @@ function buildsMcpServerConfigPayloads(): void {
       httpHeaders: "X-App=codex",
       name: "linear",
       required: false,
+      startupTimeoutMs: "20000",
+      startupTimeoutSec: "",
+      toolTimeoutSec: "",
       transport: "streamable_http",
       url: "https://linear.example/mcp",
     }),
     {
       config: {
         enabled: false,
+        disabled_tools: ["write"],
+        startup_timeout_ms: 20000,
         url: "https://linear.example/mcp",
         bearer_token_env_var: "TOKEN",
         http_headers: { "X-App": "codex" },
@@ -286,18 +335,28 @@ function initializesAndPreservesExistingMcpServerConfig(): void {
       args: values.args,
       command: values.command,
       enabled: values.enabled,
+      enabledTools: values.enabledTools,
+      disabledTools: values.disabledTools,
       env: values.env,
       envVars: values.envVars,
       name: values.name,
+      startupTimeoutSec: values.startupTimeoutSec,
+      startupTimeoutMs: values.startupTimeoutMs,
+      toolTimeoutSec: values.toolTimeoutSec,
       transport: values.transport,
     },
     {
       args: "server.js",
       command: "node",
       enabled: false,
+      enabledTools: "search",
+      disabledTools: "write",
       env: "TOKEN=abc",
       envVars: "GITHUB_TOKEN",
       name: "docs",
+      startupTimeoutSec: "20",
+      startupTimeoutMs: "20000",
+      toolTimeoutSec: "90",
       transport: "stdio",
     },
     "edit form should initialize from the existing MCP server config instead of blank defaults",
@@ -419,6 +478,7 @@ async function reloadsMcpConfigOnlyForForcedReloads(): Promise<void> {
     setSettingsPanelState: normal.setPanel,
     state: initialCodexUiState,
     workspace: "/workspace",
+    notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
   });
   assertDeepEqual(
     normal.calls.map((call) => [call.method, call.params]),
@@ -441,6 +501,7 @@ async function reloadsMcpConfigOnlyForForcedReloads(): Promise<void> {
     setSettingsPanelState: forced.setPanel,
     state: initialCodexUiState,
     workspace: "/workspace",
+    notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
   });
   assertDeepEqual(
     forced.calls.map((call) => [call.method, call.params]),
@@ -452,6 +513,83 @@ async function reloadsMcpConfigOnlyForForcedReloads(): Promise<void> {
     "MCP Reload should force the app-server MCP config refresh before listing status",
   );
   assertIncludes(forced.panel?.message ?? "", "Reloaded MCP config", "forced reload should show reload feedback");
+  assertIncludes(
+    forced.panel?.message ?? "",
+    "running threads may need a thread restart or another MCP reload",
+    "MCP reload feedback should explain the running-thread restart/reload boundary",
+  );
+}
+
+async function loadsSkillRecommendationsAndCreatorForSettingsPanel(): Promise<void> {
+  const host = fakeSettingsClient();
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    forceReload: false,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: host.openPanel,
+    panel: "skills",
+    setSettingsPanelState: host.setPanel,
+    state: initialCodexUiState,
+    workspace: "/workspace",
+    notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+  });
+
+  assertDeepEqual(
+    host.calls.map((call) => [call.method, call.params]),
+    [
+      ["skills/list", { cwds: ["/workspace"], forceReload: false }],
+      ["plugin/list", { cwds: ["/workspace"] }],
+      ["plugin/read", { marketplacePath: null, remoteMarketplaceName: "OpenAI", pluginName: "browser-use" }],
+    ],
+    "Skills settings should load skills/list first and only derive recommendations from real plugin/read metadata",
+  );
+  assertIncludes(
+    host.panel?.message ?? "",
+    "inspect local helper boundaries",
+    "Skills settings message should describe the creator/helper boundary",
+  );
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => [entry.id, entry.status, entry.meta]),
+    [
+      ["skill:review", "enabled", "Repo · /workspace/.codex/skills/review/SKILL.md"],
+      ["recommended-skill:browser-use:web-research", "plugin skill", "Recommended Skills · Browser Use"],
+      ["skill-creator:local-helper", "starter available", "Recommended Skills · available boundary"],
+    ],
+    "Skills settings should include loaded skills, real plugin skill recommendations, and the local creator helper",
+  );
+}
+
+function registersMcpOauthPendingOnlyWhenAuthorizationUrlHasState(): void {
+  resetAppConnectOAuthPendingForTest();
+  assertEqual(
+    markAppConnectOAuthPending({
+      appId: "mcp:docs",
+      appName: "docs",
+      redirectUrl: "https://auth.example/authorize?client_id=codex",
+    }),
+    null,
+    "MCP OAuth login should not register a pending callback when the authorization URL has no state",
+  );
+  assertEqual(
+    claimAppConnectOAuthCallback("https://chatgpt.com/aip/connectors/links/oauth/callback?code=123")?.pending ?? null,
+    null,
+    "state-less callbacks should not match a stale pending MCP OAuth entry",
+  );
+
+  const pending = markAppConnectOAuthPending({
+    appId: "mcp:docs",
+    appName: "docs",
+    redirectUrl: "https://auth.example/authorize?client_id=codex&state=mcp-state",
+  });
+  assertEqual(pending?.oauthState, "mcp-state", "MCP OAuth pending entry should be keyed by authorization state");
+  assertEqual(
+    claimAppConnectOAuthCallback("https://chatgpt.com/aip/connectors/links/oauth/callback?code=123&state=mcp-state")?.pending?.appId,
+    "mcp:docs",
+    "MCP OAuth callback should resolve the pending entry by state",
+  );
+  resetAppConnectOAuthPendingForTest();
 }
 
 function fakeSettingsClient(): {
@@ -482,6 +620,57 @@ function fakeSettingsClient(): {
           config: { mcp_servers: { github: { command: "gh", enabled: true } } },
           origins: { "mcp_servers.github.command": { name: { type: "user", file: "/Users/me/.codex/config.toml" }, version: "1" } },
           layers: [],
+        } as T;
+      }
+      if (method === "skills/list") {
+        return {
+          data: [{
+            cwd: "/workspace",
+            skills: [{
+              name: "review",
+              path: "/workspace/.codex/skills/review/SKILL.md",
+              scope: "repo",
+              enabled: true,
+            }],
+            errors: [],
+          }],
+        } as T;
+      }
+      if (method === "plugin/list") {
+        return {
+          marketplaces: [{
+            name: "OpenAI",
+            path: null,
+            plugins: [{
+              id: "browser-use",
+              remotePluginId: "remote-browser",
+              name: "browser-use",
+              installed: true,
+              enabled: true,
+            }],
+          }],
+          featuredPluginIds: [],
+        } as T;
+      }
+      if (method === "plugin/read") {
+        return {
+          plugin: {
+            marketplaceName: "OpenAI",
+            marketplacePath: null,
+            summary: {
+              id: "browser-use",
+              remotePluginId: "remote-browser",
+              name: "browser-use",
+              installed: true,
+              enabled: true,
+              interface: { displayName: "Browser Use" },
+            },
+            skills: [{
+              name: "web-research",
+              description: "Research web sources.",
+              interface: { displayName: "Web Research" },
+            }],
+          },
         } as T;
       }
       return {} as T;

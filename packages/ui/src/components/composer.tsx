@@ -10,6 +10,7 @@ import {
   composerAttachmentPreviewSrc,
   attachmentLabel,
   compactAttachmentLabel,
+  composerAttachmentKindLabel,
   composerAttachmentsFromPaths,
   composerFilePath,
   closeAttachmentPicker,
@@ -549,34 +550,39 @@ export function Composer({
                 {attachments.map((attachment, index) => {
                   const label = attachmentLabel(attachment);
                   const displayLabel = compactAttachmentLabel(label);
+                  const kindLabel = composerAttachmentKindLabel(attachment);
                   const previewSrc = resolveAttachmentPreviewSrc(attachment);
+                  const chipTitle = `${kindLabel}: ${label}`;
                   return (
                     <div
                       className="hc-attachment-chip"
                       key={`${attachment.type}-${index}-${label}`}
-                      title={label}
+                      title={chipTitle}
+                      data-attachment-kind={attachment.type}
                     >
                       {previewSrc ? (
                         <button
                           className="hc-attachment-chip-main"
                           type="button"
-                          aria-label={`Preview ${label}`}
+                          aria-label={`Preview ${chipTitle}`}
                           onClick={() => setImagePreview({ src: previewSrc, label })}
                         >
                           <AttachmentPreview src={previewSrc} />
-                          <span>{displayLabel}</span>
+                          <span className="hc-attachment-kind">{kindLabel}</span>
+                          <span className="hc-attachment-label">{displayLabel}</span>
                         </button>
                       ) : (
                         <span className="hc-attachment-chip-main static">
                           <AttachmentStaticIcon attachment={attachment} />
-                          <span>{displayLabel}</span>
+                          <span className="hc-attachment-kind">{kindLabel}</span>
+                          <span className="hc-attachment-label">{displayLabel}</span>
                         </span>
                       )}
                       <button
                         className="hc-attachment-remove"
                         type="button"
                         title="Remove attachment"
-                        aria-label={`Remove ${label}`}
+                        aria-label={`Remove ${chipTitle}`}
                         onClick={() => onAttachmentsChange(removeComposerAttachment(attachments, index))}
                       >
                         <X size={13} />

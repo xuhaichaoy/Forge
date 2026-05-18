@@ -203,6 +203,7 @@ export default function runApprovalRequestTests(): void {
   const inputDetail = pendingRequestDetail(inputRequest);
   assertEqual(inputDetail.title, "Codex needs input", "user input title");
   assertEqual(inputDetail.acceptLabel, "Submit", "user input accept label");
+  assertEqual(inputDetail.declineLabel, "Stop", "user input decline should interrupt the turn");
   assertEqual(inputDetail.canAccept, true, "user input can accept");
   assertEqual(inputDetail.questions.length, 3, "user input question count");
   assertEqual(inputDetail.questions[0]?.id, "question_1", "user input fallback id");
@@ -307,8 +308,11 @@ export default function runApprovalRequestTests(): void {
     elicitationId: "elicitation-1",
   });
   const mcpUrlDetail = pendingRequestDetail(mcpUrlRequest);
-  assertEqual(mcpUrlDetail.acceptLabel, "Allow", "mcp url accept label");
+  assertEqual(mcpUrlDetail.title, "Action required", "mcp url title");
+  assertEqual(mcpUrlDetail.acceptLabel, "Open link", "mcp url accept label");
+  assertEqual(mcpUrlDetail.externalUrl, "https://example.com/connect", "mcp url external link");
   assertEqual(mcpUrlDetail.questions.length, 0, "mcp url has no form questions");
+  assertIncludes(mcpUrlDetail.body, "URL: https://example.com/connect", "mcp url body includes URL");
   assertIncludes(
     mcpUrlDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
     "URL: https://example.com/connect",
@@ -318,6 +322,47 @@ export default function runApprovalRequestTests(): void {
     buildApprovalResult(mcpUrlRequest, true),
     { action: "accept", content: null, _meta: null },
     "mcp url accept result",
+  );
+
+  const toolSuggestionRequest = request("mcpServer/elicitation/request", {
+    kind: "toolSuggestion",
+    message: "Codex can use GitHub.",
+    suggestion: {
+      tool_type: "connector",
+      tool_id: "github",
+      tool_name: "GitHub",
+      suggest_type: "install",
+    },
+    _meta: { persist: ["always"] },
+  });
+  const toolSuggestionDetail = pendingRequestDetail(toolSuggestionRequest);
+  assertEqual(toolSuggestionDetail.title, "Install GitHub?", "tool suggestion title");
+  assertEqual(toolSuggestionDetail.acceptLabel, "Install", "tool suggestion accept label");
+  assertIncludes(
+    toolSuggestionDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Suggested tool: GitHub",
+    "tool suggestion metadata",
+  );
+
+  const connectorAuthRequest = request("mcpServer/elicitation/request", {
+    kind: "connectorAuth",
+    message: "Sign in to continue.",
+    connector: {
+      connector_id: "gmail",
+      connector_name: "Gmail",
+      auth_reason: "missing_link",
+      auth_url: "https://example.com/oauth/gmail",
+    },
+  });
+  const connectorAuthDetail = pendingRequestDetail(connectorAuthRequest);
+  assertEqual(connectorAuthDetail.title, "Sign in to Gmail?", "connector auth title");
+  assertEqual(connectorAuthDetail.acceptLabel, "Sign in", "connector auth accept label");
+  assertEqual(connectorAuthDetail.externalUrl, "https://example.com/oauth/gmail", "connector auth external URL");
+  assertIncludes(connectorAuthDetail.body, "URL: https://example.com/oauth/gmail", "connector auth body includes URL");
+  assertIncludes(
+    connectorAuthDetail.metadata.map((item) => `${item.label}: ${item.value}`).join("\n"),
+    "Auth URL: https://example.com/oauth/gmail",
+    "connector auth metadata should expose auth URL",
   );
 
   const mcpToolApprovalRequest = request("mcpServer/elicitation/request", {
@@ -331,6 +376,7 @@ export default function runApprovalRequestTests(): void {
       codex_approval_kind: "mcp_tool_call",
       connector_id: "github",
       connector_name: "GitHub",
+      persist: ["always", "session"],
       tool_params_display: { repo: "openai/codex", action: "read" },
     },
   });
@@ -338,13 +384,24 @@ export default function runApprovalRequestTests(): void {
   const mcpToolApprovalMetadata = mcpToolApprovalDetail.metadata
     .map((item) => `${item.label}: ${item.value}`)
     .join("\n");
-  assertEqual(mcpToolApprovalDetail.title, "MCP request", "mcp tool approval stays on the generic MCP request path");
+  assertEqual(mcpToolApprovalDetail.title, "Allow GitHub to run?", "mcp tool approval title should reflect the approval subtype");
+  assertEqual(mcpToolApprovalDetail.questions[0]?.id, "_meta.persist", "mcp tool approval should expose persist choices");
+  assertDeepEqual(
+    mcpToolApprovalDetail.questions[0]?.options.map((option) => option.label),
+    ["Don't persist", "Always allow", "Allow for this chat"],
+    "mcp tool approval persist labels",
+  );
   assertIncludes(mcpToolApprovalMetadata, "Approval: MCP tool call", "mcp tool approval kind metadata");
   assertIncludes(mcpToolApprovalMetadata, "Connector: GitHub", "mcp tool approval connector metadata");
   assertIncludes(
     mcpToolApprovalMetadata,
     "Tool parameters: {\"repo\":\"openai/codex\",\"action\":\"read\"}",
     "mcp tool approval parameter metadata",
+  );
+  assertDeepEqual(
+    buildApprovalResult(mcpToolApprovalRequest, true, { "_meta.persist": ["always"] }),
+    { action: "accept", content: {}, _meta: { persist: "always" } },
+    "mcp tool approval should return selected persist metadata",
   );
 
   const permissionsRequest = request("item/permissions/requestApproval", {

@@ -3,16 +3,21 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
 const INSTALLED_CODEX_BIN: &str = "/Applications/Codex.app/Contents/Resources/codex";
+const INSTALLATION_ID_FILENAME: &str = "installation_id";
 
 #[derive(Debug, Error)]
 pub enum HostError {
@@ -28,6 +33,8 @@ pub enum HostError {
     Serialize(String),
     #[error("failed to write Codex profile: {0}")]
     Profile(String),
+    #[error("failed to read or initialize installation id: {0}")]
+    Installation(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -45,8 +52,18 @@ pub struct HostStatus {
     pub pid: Option<u32>,
     pub codex_bin: Option<String>,
     pub codex_home: String,
+    pub installation_id: Option<String>,
+    pub first_launch: Option<bool>,
     pub default_cwd: Option<String>,
     pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInstallationState {
+    pub installation_id: String,
+    pub first_launch: bool,
+    pub installation_id_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +130,9 @@ struct HostInner {
     process: Option<AppServerProcess>,
     codex_bin: Option<String>,
     codex_home: Option<String>,
+    installation_codex_home: Option<String>,
+    installation_id: Option<String>,
+    first_launch: Option<bool>,
     last_error: Option<String>,
     event_forwarder_started: bool,
 }
@@ -152,6 +172,13 @@ impl AppServerHost {
             inner.last_error = Some(error.to_string());
             return Err(HostError::Start(error.to_string()));
         }
+        let installation_state = match read_or_init_installation_state_at(&codex_home) {
+            Ok(state) => state,
+            Err(error) => {
+                inner.last_error = Some(error.to_string());
+                return Err(HostError::Start(error.to_string()));
+            }
+        };
         if let Err(error) = ensure_default_hicodex_profile(&codex_home) {
             inner.last_error = Some(error.to_string());
             return Err(HostError::Start(error.to_string()));
@@ -202,6 +229,7 @@ impl AppServerHost {
 
         inner.codex_bin = Some(codex_bin.to_string_lossy().to_string());
         inner.codex_home = Some(codex_home.to_string_lossy().to_string());
+        store_installation_state(&mut inner, &codex_home, installation_state);
         inner.last_error = None;
         inner.process = Some(AppServerProcess { child, stdin });
         let _ = self.events_tx.send(AppServerEvent::Lifecycle {
@@ -227,6 +255,9 @@ impl AppServerHost {
     pub fn status(&self) -> HostStatus {
         let mut inner = self.inner.lock().expect("host mutex poisoned");
         refresh_running_state(&mut inner, &self.events_tx);
+        if let Err(error) = refresh_installation_state(&mut inner) {
+            inner.last_error = Some(error.to_string());
+        }
         status_from_inner(&inner)
     }
 
@@ -296,6 +327,27 @@ impl AppServerHost {
         read_codex_auth_summary(codex_home.as_deref())
     }
 
+    pub fn read_or_init_installation_state(
+        &self,
+        codex_home: Option<String>,
+    ) -> Result<HostInstallationState, HostError> {
+        let codex_home = match codex_home
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(path) => PathBuf::from(path),
+            None => {
+                let inner = self.inner.lock().expect("host mutex poisoned");
+                codex_home_from_inner(&inner)
+            }
+        };
+        let state = read_or_init_installation_state_at(&codex_home)?;
+        let mut inner = self.inner.lock().expect("host mutex poisoned");
+        store_installation_state(&mut inner, &codex_home, state.clone());
+        Ok(state)
+    }
+
     pub fn read_thread_tool_history(
         &self,
         codex_home: Option<String>,
@@ -318,19 +370,54 @@ impl Drop for AppServerHost {
 }
 
 fn status_from_inner(inner: &HostInner) -> HostStatus {
+    let codex_home = codex_home_from_inner(inner);
     HostStatus {
         running: inner.process.is_some(),
         pid: inner.process.as_ref().map(|process| process.child.id()),
         codex_bin: inner.codex_bin.clone(),
-        codex_home: inner
-            .codex_home
-            .clone()
-            .unwrap_or_else(|| resolve_codex_home(None).to_string_lossy().to_string()),
+        codex_home: codex_home.to_string_lossy().to_string(),
+        installation_id: inner.installation_id.clone(),
+        first_launch: inner.first_launch,
         default_cwd: env::current_dir()
             .ok()
             .map(|path| path.to_string_lossy().to_string()),
         last_error: inner.last_error.clone(),
     }
+}
+
+fn codex_home_from_inner(inner: &HostInner) -> PathBuf {
+    inner
+        .codex_home
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| resolve_codex_home(None))
+}
+
+fn refresh_installation_state(inner: &mut HostInner) -> Result<(), HostError> {
+    let codex_home = codex_home_from_inner(inner);
+    let codex_home_string = codex_home.to_string_lossy().to_string();
+    if inner.installation_id.is_some()
+        && inner.installation_codex_home.as_deref() == Some(codex_home_string.as_str())
+    {
+        return Ok(());
+    }
+
+    let state = read_or_init_installation_state_at(&codex_home)?;
+    store_installation_state(inner, &codex_home, state);
+    Ok(())
+}
+
+fn store_installation_state(
+    inner: &mut HostInner,
+    codex_home: &Path,
+    state: HostInstallationState,
+) {
+    let codex_home_string = codex_home.to_string_lossy().to_string();
+    let same_home = inner.installation_codex_home.as_deref() == Some(codex_home_string.as_str());
+    let session_first_launch = same_home && inner.first_launch == Some(true);
+    inner.installation_codex_home = Some(codex_home_string);
+    inner.installation_id = Some(state.installation_id);
+    inner.first_launch = Some(session_first_launch || state.first_launch);
 }
 
 fn refresh_running_state(inner: &mut HostInner, events_tx: &Sender<AppServerEvent>) {
@@ -372,6 +459,9 @@ fn spawn_stdout_reader(
                 }
             }
         }
+        let _ = events_tx.send(AppServerEvent::Lifecycle {
+            message: "codex app-server stdout closed".to_string(),
+        });
     });
 }
 
@@ -485,6 +575,131 @@ fn default_codex_cli_home() -> PathBuf {
 
 fn has_codex_profile(path: &Path) -> bool {
     path.join("auth.json").exists() || path.join("config.toml").exists()
+}
+
+fn read_or_init_installation_state_at(
+    codex_home: &Path,
+) -> Result<HostInstallationState, HostError> {
+    fs::create_dir_all(codex_home).map_err(|error| HostError::Installation(error.to_string()))?;
+    let path = codex_home.join(INSTALLATION_ID_FILENAME);
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        options.mode(0o644);
+    }
+
+    let mut file = options
+        .open(&path)
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+
+    #[cfg(unix)]
+    {
+        let metadata = file
+            .metadata()
+            .map_err(|error| HostError::Installation(error.to_string()))?;
+        let current_mode = metadata.permissions().mode() & 0o777;
+        if current_mode != 0o644 {
+            let mut permissions = metadata.permissions();
+            permissions.set_mode(0o644);
+            file.set_permissions(permissions)
+                .map_err(|error| HostError::Installation(error.to_string()))?;
+        }
+    }
+
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+    if let Some(existing) = canonical_installation_uuid(contents.trim()) {
+        return Ok(HostInstallationState {
+            installation_id: existing,
+            first_launch: false,
+            installation_id_path: path.to_string_lossy().to_string(),
+        });
+    }
+
+    let installation_id = new_installation_uuid();
+    file.set_len(0)
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+    file.write_all(installation_id.as_bytes())
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+    file.flush()
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+    file.sync_all()
+        .map_err(|error| HostError::Installation(error.to_string()))?;
+
+    Ok(HostInstallationState {
+        installation_id,
+        first_launch: true,
+        installation_id_path: path.to_string_lossy().to_string(),
+    })
+}
+
+fn canonical_installation_uuid(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.len() != 36 {
+        return None;
+    }
+    for (index, ch) in trimmed.chars().enumerate() {
+        let is_hyphen = matches!(index, 8 | 13 | 18 | 23);
+        if is_hyphen {
+            if ch != '-' {
+                return None;
+            }
+        } else if !ch.is_ascii_hexdigit() {
+            return None;
+        }
+    }
+    Some(trimmed.to_ascii_lowercase())
+}
+
+fn new_installation_uuid() -> String {
+    let mut bytes = [0_u8; 16];
+    if fill_random_bytes(&mut bytes).is_err() {
+        fill_fallback_bytes(&mut bytes);
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0],
+        bytes[1],
+        bytes[2],
+        bytes[3],
+        bytes[4],
+        bytes[5],
+        bytes[6],
+        bytes[7],
+        bytes[8],
+        bytes[9],
+        bytes[10],
+        bytes[11],
+        bytes[12],
+        bytes[13],
+        bytes[14],
+        bytes[15],
+    )
+}
+
+fn fill_random_bytes(bytes: &mut [u8]) -> std::io::Result<()> {
+    let mut file = fs::File::open("/dev/urandom")?;
+    file.read_exact(bytes)
+}
+
+fn fill_fallback_bytes(bytes: &mut [u8]) {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_nanos() as u64)
+        .unwrap_or_default();
+    let mut state = nanos ^ ((std::process::id() as u64) << 32) ^ (bytes.as_ptr() as usize as u64);
+    for byte in bytes {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        *byte = (state & 0xff) as u8;
+    }
 }
 
 fn read_codex_auth_summary(codex_home: Option<&str>) -> Result<CodexAuthSummary, HostError> {
@@ -2074,7 +2289,17 @@ fn insert_top_level_toml(config: &str, addition: &str) -> String {
 }
 
 fn default_config_toml(models_path: &Path) -> String {
-    let api_key = env::var("HICODEX_LOCAL_API_KEY").unwrap_or_else(|_| "haichao".to_string());
+    let api_key = env::var("HICODEX_LOCAL_API_KEY")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    default_config_toml_with_api_key(models_path, api_key.as_deref())
+}
+
+fn default_config_toml_with_api_key(models_path: &Path, api_key: Option<&str>) -> String {
+    let bearer_token_line = api_key
+        .map(|value| format!("experimental_bearer_token = {}\n", toml_string(value)))
+        .unwrap_or_default();
     format!(
         r#"model = "Qwen3.6-27B-mxfp4"
 model_provider = "hicodex_local"
@@ -2091,11 +2316,10 @@ base_url = "http://127.0.0.1:8890/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
-experimental_bearer_token = {api_key}
-"#,
+{bearer_token_line}"#,
         models_path = toml_string(&models_path.to_string_lossy()),
         instructions = toml_multiline_literal(HICODEX_BASE_INSTRUCTIONS),
-        api_key = toml_string(&api_key),
+        bearer_token_line = bearer_token_line,
     )
 }
 
@@ -2303,6 +2527,69 @@ mod tests {
     }
 
     #[test]
+    fn read_or_init_installation_id_generates_and_reuses_uuid() {
+        let dir = env::temp_dir().join(format!(
+            "hicodex-host-installation-id-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|value| value.as_nanos())
+                .unwrap_or_default()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+
+        let generated = read_or_init_installation_state_at(&dir).unwrap();
+        assert!(generated.first_launch);
+        assert!(canonical_installation_uuid(&generated.installation_id).is_some());
+        assert_eq!(
+            fs::read_to_string(dir.join(INSTALLATION_ID_FILENAME)).unwrap(),
+            generated.installation_id
+        );
+
+        let reused = read_or_init_installation_state_at(&dir).unwrap();
+        assert!(!reused.first_launch);
+        assert_eq!(reused.installation_id, generated.installation_id);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_or_init_installation_id_canonicalizes_or_rewrites() {
+        let dir = env::temp_dir().join(format!(
+            "hicodex-host-installation-id-rewrite-test-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|value| value.as_nanos())
+                .unwrap_or_default()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join(INSTALLATION_ID_FILENAME),
+            "AAAAAAAA-0000-4000-8000-000000000000\n",
+        )
+        .unwrap();
+        let existing = read_or_init_installation_state_at(&dir).unwrap();
+        assert!(!existing.first_launch);
+        assert_eq!(
+            existing.installation_id,
+            "aaaaaaaa-0000-4000-8000-000000000000"
+        );
+
+        fs::write(dir.join(INSTALLATION_ID_FILENAME), "not-a-uuid").unwrap();
+        let rewritten = read_or_init_installation_state_at(&dir).unwrap();
+        assert!(rewritten.first_launch);
+        assert!(canonical_installation_uuid(&rewritten.installation_id).is_some());
+        assert_eq!(
+            fs::read_to_string(dir.join(INSTALLATION_ID_FILENAME)).unwrap(),
+            rewritten.installation_id
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn parses_json_stdout_as_event() {
         let value: Value = serde_json::json!({"id": 1, "result": {}});
         let line = serde_json::to_string(&value).unwrap();
@@ -2393,6 +2680,23 @@ mod tests {
         assert!(catalog.contains("\"image\""));
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_config_does_not_bake_personal_bearer_token() {
+        let models_path = Path::new("/tmp/hicodex-models.json");
+        let config = default_config_toml_with_api_key(models_path, None);
+
+        assert!(!config.contains("haichao"));
+        assert!(!config.contains("experimental_bearer_token"));
+    }
+
+    #[test]
+    fn default_config_uses_explicit_local_api_key_when_configured() {
+        let models_path = Path::new("/tmp/hicodex-models.json");
+        let config = default_config_toml_with_api_key(models_path, Some("local-dev-token"));
+
+        assert!(config.contains("experimental_bearer_token = \"local-dev-token\""));
     }
 
     #[test]

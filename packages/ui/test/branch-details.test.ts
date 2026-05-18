@@ -25,7 +25,7 @@ function projectsThreadCwdGitInfoAndStatus() {
     }),
   });
 
-  assertEqual(view.hasData, true, "thread data should mark branch details as populated");
+  assertEqual(view.hasData, true, "thread data should mark Git details as populated");
   assertRow(view.rows, "cwd", "Working directory", TEST_WORKSPACE);
   assertRow(view.rows, "branch", "Branch", "codex/branch-details-tests");
   assertRow(view.rows, "commit", "Commit", "1234567890ab");
@@ -43,7 +43,7 @@ function ignoresPlainThreadContextWithoutGitOrDiffData() {
     }),
   });
 
-  assertEqual(view.hasData, false, "non-git thread context alone should not populate branch details");
+  assertEqual(view.hasData, false, "non-git thread context alone should not populate Git details");
   assertEqual(view.rows.length, 0, "non-git thread context should not create branch detail rows");
 }
 
@@ -129,11 +129,11 @@ function returnsEmptyStateWithoutData() {
     diff: null,
   });
 
-  assertEqual(view.title, "Branch details", "title should be stable");
+  assertEqual(view.title, "Git", "title should match Codex Desktop");
   assertEqual(
     view.emptyText,
-    "Branch details will appear when the app server provides thread Git or diff data.",
-    "empty text should explain unavailable branch details",
+    "Git details will appear when the app server provides thread Git or diff data.",
+    "empty text should explain unavailable Git details",
   );
   assertEqual(view.rows.length, 0, "empty state should not include rows");
   assertEqual(view.diff, null, "empty state should not include diff");

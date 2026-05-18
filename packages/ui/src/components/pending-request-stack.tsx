@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { formatError } from "../lib/format";
+import { openExternalUrl } from "../lib/tauri-host";
 import type { PendingServerRequest } from "../state/codex-reducer";
 import {
   pendingRequestDetail,
@@ -46,56 +47,99 @@ export function ApprovalCard({
   onLog,
 }: ApprovalCardProps) {
   const detail = useMemo(() => pendingRequestDetail(request), [request]);
+  const [externalUrlOpened, setExternalUrlOpened] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(detail.questions.map((question) => [question.id, defaultAnswers(question)])),
   );
+  const [responding, setResponding] = useState(false);
+  const respondingRef = useRef(false);
   const canSubmitWithAnswers = (candidateAnswers: Record<string, string[]>) =>
     detail.canAccept && detail.questions.every((question) =>
       !question.required || (candidateAnswers[question.id] ?? question.defaultAnswers).some((answer) => answer.trim()),
     );
-  const canSubmit = canSubmitWithAnswers(answers);
+  const canSubmit = !responding && canSubmitWithAnswers(answers);
 
   const respond = (accepted: boolean, nextAnswers: Record<string, string[]> = answers) => {
+    if (respondingRef.current) return;
     if (accepted && !canSubmitWithAnswers(nextAnswers)) return;
+    respondingRef.current = true;
+    setResponding(true);
+    const finishResponding = () => {
+      respondingRef.current = false;
+      setResponding(false);
+    };
+    if (accepted && detail.externalUrl && !externalUrlOpened) {
+      void openExternalUrl(detail.externalUrl)
+        .then(() => {
+          setExternalUrlOpened(true);
+          onLog?.("Opened link for pending request.", "info");
+        })
+        .catch((error: unknown) => {
+          onLog?.(formatError(error), "error");
+        })
+        .finally(() => {
+          finishResponding();
+        });
+      return;
+    }
     try {
       const result = onRespond(request, accepted, accepted ? answerPayload(detail, nextAnswers) : undefined);
       if (isPromiseLike(result)) {
-        void result.catch((error: unknown) => {
-          onLog?.(formatError(error), "error");
-        });
+        void result
+          .catch((error: unknown) => {
+            onLog?.(formatError(error), "error");
+          })
+          .finally(() => {
+            finishResponding();
+          });
+      } else {
+        finishResponding();
       }
     } catch (error) {
+      finishResponding();
       onLog?.(formatError(error), "error");
     }
   };
   const panelTitle = requestPanelTitle(detail);
   const kind = requestKind(request.method);
   const details = requestPanelDetails(detail, request);
+  const primaryLabel = detail.externalUrl && externalUrlOpened ? "Continue" : detail.acceptLabel;
+  const declineTitle = kind === "user-input"
+    ? "Stops the running turn instead of submitting an empty answer."
+    : undefined;
 
   return (
     <div
       className="hc-request-input-panel"
       data-request-kind={kind}
+      aria-busy={responding || undefined}
       tabIndex={0}
       onKeyDown={(event) => {
         if (event.defaultPrevented) return;
+        if (respondingRef.current) return;
         if (event.key === "Escape") {
           event.preventDefault();
           respond(false);
           return;
         }
-        if (event.key >= "1" && event.key <= "9" && !isEditableEventTarget(event.target)) {
-          const question = detail.questions[0];
-          const option = question?.options[Number(event.key) - 1];
-          if (question && option) {
-            event.preventDefault();
-            const nextAnswers = { ...answers, [question.id]: [option.value] };
-            setAnswers(nextAnswers);
-            respond(true, nextAnswers);
-            return;
-          }
+        const shortcut = pendingRequestOptionShortcut({
+          key: event.key,
+          questions: detail.questions,
+          responding: respondingRef.current,
+          isEditableTarget: isEditableEventTarget(event.target),
+        });
+        if (shortcut) {
+          event.preventDefault();
+          setAnswers((current) => ({ ...current, [shortcut.questionId]: [shortcut.value] }));
+          return;
         }
-        if (event.key === "Enter" && !event.shiftKey && canSubmit) {
+        if (pendingRequestShouldSubmitOnEnter({
+          canSubmit,
+          isEditableTarget: isEditableEventTarget(event.target),
+          key: event.key,
+          responding,
+          shiftKey: event.shiftKey,
+        })) {
           event.preventDefault();
           respond(true);
         }
@@ -121,6 +165,7 @@ export function ApprovalCard({
               key={question.id}
               question={question}
               index={index}
+              disabled={responding}
               value={answers[question.id] ?? question.defaultAnswers}
               onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))}
             />
@@ -131,7 +176,13 @@ export function ApprovalCard({
         <div className="hc-approval-disabled-note">{detail.acceptDisabledReason}</div>
       )}
       <div className="hc-request-panel-actions">
-        <button type="button" className="hc-request-action ghost" onClick={() => respond(false)}>
+        <button
+          type="button"
+          className="hc-request-action ghost"
+          disabled={responding}
+          title={declineTitle}
+          onClick={() => respond(false)}
+        >
           <span>{detail.declineLabel}</span>
           <kbd>Esc</kbd>
         </button>
@@ -143,7 +194,7 @@ export function ApprovalCard({
           title={!canSubmit ? detail.acceptDisabledReason : undefined}
           onClick={() => respond(true)}
         >
-          <span>{detail.acceptLabel}</span>
+          <span>{primaryLabel}</span>
           <kbd>↵</kbd>
         </button>
       </div>
@@ -295,6 +346,34 @@ export function looksLikeCommandOrPath(value: string): boolean {
   return /^[\w.-]+\.(?:[cm]?[jt]sx?|json|md|css|scss|html|rs|go|py|rb|php|java|kt|swift|toml|ya?ml|lock|sh|zsh|bash|sql|txt)$/.test(first);
 }
 
+export function pendingRequestShouldSubmitOnEnter(input: {
+  canSubmit: boolean;
+  isEditableTarget: boolean;
+  key: string;
+  responding: boolean;
+  shiftKey: boolean;
+}): boolean {
+  return input.key === "Enter"
+    && !input.shiftKey
+    && input.canSubmit
+    && !input.responding
+    && !input.isEditableTarget;
+}
+
+export function pendingRequestOptionShortcut(input: {
+  key: string;
+  questions: PendingRequestQuestion[];
+  responding: boolean;
+  isEditableTarget: boolean;
+}): { questionId: string; value: string } | null {
+  if (input.responding || input.isEditableTarget) return null;
+  if (!/^[1-9]$/.test(input.key)) return null;
+  const question = input.questions[0];
+  if (!question || question.kind === "multiSelect") return null;
+  const option = question.options[Number(input.key) - 1];
+  return option ? { questionId: question.id, value: option.value } : null;
+}
+
 const COMMON_SHELL_COMMANDS = new Set([
   "awk",
   "bun",
@@ -349,11 +428,13 @@ function requestKind(method: string): RequestKind {
 function QuestionField({
   question,
   index,
+  disabled,
   value,
   onChange,
 }: {
   question: PendingRequestQuestion;
   index: number;
+  disabled: boolean;
   value: string[];
   onChange: (value: string[]) => void;
 }) {
@@ -373,6 +454,7 @@ function QuestionField({
                 <span className="hc-request-option-index">{optionIndex + 1}.</span>
                 <input
                   type="checkbox"
+                  disabled={disabled}
                   checked={selected}
                   onChange={() => onChange(
                     selected ? value.filter((item) => item !== option.value) : [...value, option.value],
@@ -397,6 +479,7 @@ function QuestionField({
                 data-selected={selected}
                 role="radio"
                 aria-checked={selected}
+                disabled={disabled}
                 key={option.value}
                 onClick={() => onChange([option.value])}
               >
@@ -416,6 +499,7 @@ function QuestionField({
             value={currentValue}
             placeholder="Type here"
             rows={1}
+            disabled={disabled}
             onChange={(event) => onChange([event.target.value])}
           />
         </div>
@@ -426,6 +510,7 @@ function QuestionField({
             type={question.kind === "password" ? "password" : question.kind === "number" ? "number" : "text"}
             value={currentValue}
             placeholder="Type here"
+            disabled={disabled}
             onChange={(event) => onChange([event.target.value])}
           />
         </div>

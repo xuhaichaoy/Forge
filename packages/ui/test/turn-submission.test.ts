@@ -116,6 +116,16 @@ function selectsNextQueuedFollowUp(): void {
   assertDeepEqual(
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
+      activeThreadNeedsResume: true,
+      pendingRequestCount: 0,
+      queue: [queued],
+    }),
+    null,
+    "auto drain should wait while the active thread needs reconnect resume",
+  );
+  assertDeepEqual(
+    selectNextQueuedFollowUp({
+      activeThreadRunning: false,
       pendingRequestCount: 1,
       queue: [queued],
     }),

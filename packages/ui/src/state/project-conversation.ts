@@ -57,7 +57,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
 
   /*
    * Codex Desktop `W` function (split-items-into-render-groups-C1Yh6v3t.js) aggregates
-   * exploration / patch / exec / hook / mcp-tool-call / web-search into one segment
+   * exploration / patch / exec / mcp-tool-call / web-search into one segment
    * bucket per `G` predicate, then wraps that bucket as a single `collapsed-tool-activity`
    * with cross-type counts (webSearchCount, commandCount, exploredFileCount, …). The
    * `Ge` function additionally folds reasoning items into the current exploration buffer.
@@ -178,6 +178,13 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       if (nextProgress) {
         progress = nextProgress;
       }
+      flushActivity();
+      units.push(threadItemRenderUnit(item));
+      return;
+    }
+    if (itemType(item) === "proposed-plan") {
+      flushActivity();
+      units.push(threadItemRenderUnit(item));
       return;
     }
     if (isBlockingOutOfBandItem(item, blockedMcpServers)) {
@@ -283,12 +290,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     }
     const split = splitTurnItems(segment, turnStatus);
 
-    if (split.todoListItem) {
-      pushConversationItem(split.todoListItem);
-    }
-
     for (const item of split.modelChangedItems) pushConversationItem(item);
-    for (const item of split.preUserItems) pushConversationItem(item);
     for (const item of split.userItems) pushConversationItem(item);
     for (const item of split.modelReroutedItems) pushConversationItem(item);
     for (const item of split.agentItems) {
@@ -296,6 +298,9 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         item,
         isAssistantMessage(item) ? { assistantArtifacts: assistantArtifactsForItem(item) } : {},
       );
+    }
+    if (split.todoListItem) {
+      pushConversationItem(split.todoListItem);
     }
     for (const item of split.automationUpdateItems) pushConversationItem(item);
     if (split.systemEventItem) pushConversationItem(split.systemEventItem);
@@ -307,15 +312,18 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     for (const item of split.toolOutputItems) pushConversationItem(item);
     for (const item of split.postAssistantItems) pushConversationItem(item);
     for (const item of split.mcpServerElicitationItems) pushConversationItem(item);
-    for (const item of split.permissionRequestItems) pushConversationItem(item);
-    if (split.approvalItem) pushConversationItem(split.approvalItem);
-    if (split.userInputItem) pushConversationItem(split.userInputItem);
     if (split.proposedPlanItem) pushConversationItem(split.proposedPlanItem);
     if (shouldRenderDesktopThinkingPlaceholder(split, turnStatus)) {
       pushConversationItem(desktopThinkingPlaceholderItem(segment, split));
     }
     if (split.planImplementationItem) pushConversationItem(split.planImplementationItem);
-    if (split.unifiedDiffItem) pushConversationItem(split.unifiedDiffItem);
+    if (
+      split.unifiedDiffItem
+      && !hasBlockingRequest(split)
+      && conversationDetailLevel !== "STEPS_PROSE"
+    ) {
+      pushConversationItem(split.unifiedDiffItem);
+    }
     for (const item of split.remoteTaskCreatedItems) pushConversationItem(item);
     for (const item of split.personalityChangedItems) pushConversationItem(item);
     for (const item of split.forkedFromConversationItems) pushConversationItem(item);
@@ -426,7 +434,6 @@ function withMcpAppResourceUris(items: ThreadItem[], mcpServerStatuses: unknown)
 }
 
 export interface DesktopTurnSplit {
-  preUserItems: ThreadItem[];
   userItems: ThreadItem[];
   agentItems: ThreadItem[];
   automationUpdateItems: ThreadItem[];
@@ -452,7 +459,6 @@ export interface DesktopTurnSplit {
 export function splitTurnItems(items: ThreadItem[], turnStatus: string = "completed"): DesktopTurnSplit {
   let approvalItem: ThreadItem | null = null;
   let userInputItem: ThreadItem | null = null;
-  const preUserItems: ThreadItem[] = [];
   const userItems: ThreadItem[] = [];
   let assistantItem: ThreadItem | null = null;
   let todoListItem: ThreadItem | null = null;
@@ -470,31 +476,18 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
   const forkedFromConversationItems: ThreadItem[] = [];
   const modelChangedItems: ThreadItem[] = [];
   const modelReroutedItems: ThreadItem[] = [];
-  const hasFutureUserOrAgentItem: boolean[] = new Array(items.length);
-  let hasFutureRenderable = false;
   let hasTurnStarted = false;
   let unifiedDiffItem: ThreadItem | null = null;
 
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    hasFutureUserOrAgentItem[index] = hasFutureRenderable;
-    const item = items[index];
-    if (item && (isUserMessage(item) || isDesktopAgentRenderableItem(item))) {
-      hasFutureRenderable = true;
-    }
-  }
-
-  for (const [index, item] of items.entries()) {
+  for (const item of items) {
     const type = itemType(item);
+    if (type === "hook") continue;
     if (type === "user-message" && hasHeartbeatTrigger(item)) {
       userItems.push(item);
       continue;
     }
     if (!hasTurnStarted && type === "user-message") {
       userItems.push(item);
-      continue;
-    }
-    if (!hasTurnStarted && type === "hook") {
-      preUserItems.push(item);
       continue;
     }
 
@@ -556,14 +549,6 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
       userInputItem = item;
       continue;
     }
-    if (type === "hook") {
-      if (hasFutureUserOrAgentItem[index]) {
-        agentItems.push(item);
-      } else {
-        postAssistantItems.push(item);
-      }
-      continue;
-    }
     if (type === "user-message") {
       agentItems.push(item);
       continue;
@@ -623,7 +608,6 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
   assistantItem = finalAssistantItem;
 
   return {
-    preUserItems,
     userItems,
     agentItems: renderAgentItems,
     automationUpdateItems: assistantItem == null ? automationUpdateItems : [],
@@ -672,9 +656,16 @@ function moveWorkedForItemsAfterRunningAgentOutput(items: ThreadItem[]): ThreadI
 }
 
 function shouldSkipConversationItem(item: ThreadItem): boolean {
+  if (itemType(item) === "hook") return true;
+  if (itemType(item) === "model-rerouted") return !isHighRiskCyberActivityModelReroute(item);
   if (itemType(item) !== "multi-agent-action") return false;
   const record = item as ItemRecord;
   return record.tool === "wait" || record.action === "wait";
+}
+
+function isHighRiskCyberActivityModelReroute(item: ThreadItem): boolean {
+  const record = item as ItemRecord;
+  return record.reason === "highRiskCyberActivity";
 }
 
 function shouldRenderDesktopThinkingPlaceholder(
@@ -740,7 +731,7 @@ function shouldKeepSingleActivityAsThreadItem(
   const item = items[0];
   if (!item) return false;
   const type = itemType(item);
-  if (type === "automatic-approval-review" || type === "hook") return true;
+  if (type === "automatic-approval-review") return true;
   return (
     type === "exec"
     && context.conversationDetailLevel !== "STEPS_PROSE"

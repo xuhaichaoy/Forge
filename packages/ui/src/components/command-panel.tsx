@@ -1,4 +1,5 @@
 import {
+  Bell,
   Boxes,
   CheckCircle2,
   Download,
@@ -7,14 +8,18 @@ import {
   FileText,
   LogIn,
   Loader2,
+  Monitor,
+  Moon,
   Power,
   PowerOff,
   RefreshCw,
   Server,
+  Sun,
   TerminalSquare,
   Trash2,
   X,
 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 
 export interface CommandPanelProps {
@@ -22,9 +27,19 @@ export interface CommandPanelProps {
   onClose: () => void;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
+  onSearchQueryChange?: (query: string) => void;
 }
 
-export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction }: CommandPanelProps) {
+export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, onSearchQueryChange }: CommandPanelProps) {
+  const [query, setQuery] = useState("");
+  const visibleEntries = useMemo(
+    () => panel.panel === "files" ? panel.entries : filterCommandEntries(panel.entries, query),
+    [panel.entries, panel.panel, query],
+  );
+  const showSearchInput = panel.entries.length > 0 || panel.panel === "files";
+  useEffect(() => {
+    setQuery("");
+  }, [panel.panel, panel.title]);
   return (
     <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
       <section
@@ -51,14 +66,58 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction }: 
           </div>
         )}
 
+        {showSearchInput && (
+          <label className="hc-command-panel-search">
+            <span>Search</span>
+            <input
+              autoFocus
+              placeholder={commandPanelSearchPlaceholder(panel)}
+              value={query}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                setQuery(nextQuery);
+                onSearchQueryChange?.(nextQuery);
+              }}
+            />
+          </label>
+        )}
+
+        {panel.entries.length > 0 && visibleEntries.length === 0 && (
+          <div className="hc-command-panel-message" data-status="empty">
+            <span>{panel.panel === "files" ? "No matching files." : "No matching commands or chats."}</span>
+          </div>
+        )}
+
         <CommandPanelEntryList
-          entries={panel.entries}
+          entries={visibleEntries}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
         />
       </section>
     </div>
   );
+}
+
+function commandPanelSearchPlaceholder(panel: CommandPanelState): string {
+  if (panel.panel === "files") return "Search files";
+  if (panel.title.toLowerCase().includes("chat")) return "Search chats";
+  if (panel.title.toLowerCase().includes("command")) return "Search commands and chats";
+  return "Search";
+}
+
+function filterCommandEntries(entries: CommandPanelEntry[], query: string): CommandPanelEntry[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return entries;
+  return entries.filter((entry) => commandEntrySearchText(entry).includes(normalized));
+}
+
+function commandEntrySearchText(entry: CommandPanelEntry): string {
+  return [
+    entry.title,
+    entry.meta,
+    entry.status,
+    ...(entry.details ?? []),
+  ].filter(Boolean).join("\n").toLowerCase();
 }
 
 export function CommandPanelEntryList({
@@ -185,6 +244,17 @@ function secondaryActionIcon(action: CommandPanelEntryAction) {
   if (action.type === "writeAppConfig" || action.type === "writePluginConfig") {
     return action.enabled ? <Power size={13} /> : <PowerOff size={13} />;
   }
+  if (action.type === "setThreadMemoryMode") {
+    return action.mode === "enabled" ? <Power size={13} /> : <PowerOff size={13} />;
+  }
+  if (action.type === "setUiTheme") {
+    if (action.mode === "dark") return <Moon size={13} />;
+    if (action.mode === "light") return <Sun size={13} />;
+    return <Monitor size={13} />;
+  }
+  if (action.type === "setNotificationPreferences") {
+    return <Bell size={13} />;
+  }
   if (action.type === "installPlugin") {
     return <Download size={13} />;
   }
@@ -196,6 +266,12 @@ function secondaryActionIcon(action: CommandPanelEntryAction) {
   }
   if (action.type === "connectRequiredApp") {
     return <ExternalLink size={13} />;
+  }
+  if (action.type === "copyText") {
+    return <FileText size={13} />;
+  }
+  if (action.type === "openFileSearch") {
+    return <FileText size={13} />;
   }
   return null;
 }
@@ -210,6 +286,10 @@ function panelIcon(panel: CommandPanelState["panel"]) {
       return <Boxes size={17} />;
     case "status":
       return <CheckCircle2 size={17} />;
+    case "theme":
+      return <Sun size={17} />;
+    case "files":
+      return <FileText size={17} />;
     default:
       return <TerminalSquare size={17} />;
   }

@@ -35,6 +35,7 @@ import {
   dropOptimisticUserMessage,
   ensureThreadReadyForTurn,
   isThreadNotFound,
+  isThreadStatusNotLoaded,
   isThreadNeedsResume,
   refreshThreadMetadata,
   resumeSelectedThreadAndStartTurn,
@@ -79,6 +80,7 @@ export interface UseTurnSubmissionResult {
   reorderQueuedFollowUp: (activeId: string, overId: string) => void;
   sendQueuedFollowUpNow: (message: QueuedFollowUp) => void;
   sendTurn: (options?: ComposerSendOptions) => Promise<void>;
+  startingConversation: boolean;
 }
 
 export function useTurnSubmission({
@@ -108,8 +110,20 @@ export function useTurnSubmission({
   workspace,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
+  const [startingConversation, setStartingConversation] = useState(false);
   const sendingQueuedFollowUpId = useRef<string | null>(null);
+  const latestInputRef = useRef(input);
+  const latestComposerAttachmentsRef = useRef(composerAttachments);
   const activeQueuedFollowUps = activeThreadId ? queuedFollowUpsByThread[activeThreadId] ?? [] : [];
+  const activeThreadNeedsResume = isThreadStatusNotLoaded(activeThread?.status);
+
+  useEffect(() => {
+    latestInputRef.current = input;
+  }, [input]);
+
+  useEffect(() => {
+    latestComposerAttachmentsRef.current = composerAttachments;
+  }, [composerAttachments]);
 
   const updateQueuedFollowUps = useCallback((
     threadId: string,
@@ -263,10 +277,13 @@ export function useTurnSubmission({
         return;
       }
       const selectedThreadId = activeThreadId;
+      const creatingInitialThread = !selectedThreadId;
+      if (creatingInitialThread) setStartingConversation(true);
       const readyThread = await ensureThreadReadyForTurn({
         client,
         activeThread,
         activeThreadId: selectedThreadId,
+        input: content,
         workspace,
         dispatch,
         context: threadContextDefaults,
@@ -274,13 +291,12 @@ export function useTurnSubmission({
       });
       const threadId = readyThread.threadId;
       if (!threadId) throw new Error("No active Codex thread");
-      setInput("");
-      setComposerAttachments([]);
       if (shouldQueueFollowUp) {
         const existingQueue = queuedFollowUpsByThread[threadId] ?? [];
         if (isQueuedFollowUpDuplicate(existingQueue, { text: input, attachments: sendAttachments })) {
           return;
         }
+        clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
         const queued = createQueuedFollowUp({
           text: input,
           attachments: sendAttachments,
@@ -290,6 +306,7 @@ export function useTurnSubmission({
         updateQueuedFollowUps(threadId, (queue) => [...queue, queued]);
         return;
       }
+      clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
       let optimistic: OptimisticUserMessageHandle | null = null;
       try {
         if (activeTurnId && activeThreadRunning) {
@@ -305,6 +322,14 @@ export function useTurnSubmission({
         const recoverableSelectedThreadError = isThreadNotFound(error) || isThreadNeedsResume(error);
         if (!recoverableSelectedThreadError) {
           dropOptimisticUserMessage(dispatch, optimistic);
+          restoreComposerDraftIfUntouched(
+            setInput,
+            setComposerAttachments,
+            latestInputRef,
+            latestComposerAttachmentsRef,
+            input,
+            composerAttachments,
+          );
           throw error;
         }
         dropOptimisticUserMessage(dispatch, optimistic);
@@ -328,8 +353,14 @@ export function useTurnSubmission({
         }
         if (selectedThreadId) {
           dispatch({ type: "removeThread", threadId: selectedThreadId });
-          setInput(input);
-          setComposerAttachments(composerAttachments);
+          restoreComposerDraftIfUntouched(
+            setInput,
+            setComposerAttachments,
+            latestInputRef,
+            latestComposerAttachmentsRef,
+            input,
+            composerAttachments,
+          );
           dispatch({
             type: "log",
             text: "Selected thread is no longer available; message was not sent to a new thread.",
@@ -352,6 +383,14 @@ export function useTurnSubmission({
           await refreshThreadMetadata(client, nextThreadId, dispatch);
         } catch (subError) {
           dropOptimisticUserMessage(dispatch, optimistic);
+          restoreComposerDraftIfUntouched(
+            setInput,
+            setComposerAttachments,
+            latestInputRef,
+            latestComposerAttachmentsRef,
+            input,
+            composerAttachments,
+          );
           throw subError;
         }
         rememberLatestCollaborationMode(nextThreadId, turnStartOptions);
@@ -359,6 +398,8 @@ export function useTurnSubmission({
       }
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
+    } finally {
+      if (!activeThreadId) setStartingConversation(false);
     }
   }, [
     activeModelSupportsImageInput,
@@ -393,6 +434,7 @@ export function useTurnSubmission({
   useEffect(() => {
     if (!activeThreadId) return;
     const nextQueuedFollowUp = selectNextQueuedFollowUp({
+      activeThreadNeedsResume,
       activeThreadRunning,
       pendingRequestCount: activePendingRequestCount,
       queue: queuedFollowUpsByThread[activeThreadId] ?? [],
@@ -402,6 +444,7 @@ export function useTurnSubmission({
   }, [
     activePendingRequestCount,
     activeThreadId,
+    activeThreadNeedsResume,
     activeThreadRunning,
     queuedFollowUpsByThread,
     sendQueuedFollowUp,
@@ -443,6 +486,7 @@ export function useTurnSubmission({
     reorderQueuedFollowUp,
     sendQueuedFollowUpNow,
     sendTurn,
+    startingConversation,
   };
 }
 
@@ -471,6 +515,33 @@ export async function attachmentsWithDataImagePreviews(
 function fileNameFromPath(path: string): string {
   const normalized = path.trim().replace(/\/+$/, "");
   return normalized.split(/[\\/]/).filter(Boolean).pop() || "image";
+}
+
+function clearComposerDraft(
+  setInput: Dispatch<SetStateAction<string>>,
+  setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>,
+  latestInputRef: { current: string },
+  latestComposerAttachmentsRef: { current: ComposerAttachment[] },
+): void {
+  latestInputRef.current = "";
+  latestComposerAttachmentsRef.current = [];
+  setInput("");
+  setComposerAttachments([]);
+}
+
+function restoreComposerDraftIfUntouched(
+  setInput: Dispatch<SetStateAction<string>>,
+  setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>,
+  latestInputRef: { current: string },
+  latestComposerAttachmentsRef: { current: ComposerAttachment[] },
+  input: string,
+  attachments: ComposerAttachment[],
+): void {
+  if (latestInputRef.current.length > 0 || latestComposerAttachmentsRef.current.length > 0) return;
+  latestInputRef.current = input;
+  latestComposerAttachmentsRef.current = attachments;
+  setInput(input);
+  setComposerAttachments(attachments);
 }
 
 async function steerTurnWithOptimistic(input: {

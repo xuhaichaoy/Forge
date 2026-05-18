@@ -151,6 +151,7 @@ export function BackgroundAgentPanel({
               onChange={(event) => onMessageDraftChange?.(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key !== "Enter" || event.shiftKey) return;
+                if (event.nativeEvent.isComposing) return;
                 event.preventDefault();
                 if (!messageDisabled) void onSendMessage?.();
               }}

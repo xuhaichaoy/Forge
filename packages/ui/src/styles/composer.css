@@ -3,8 +3,8 @@
   flex: 0 0 auto;
   min-width: 0;
   padding: 12px 20px 16px;
-  border-top: 1px solid #dedbd1;
-  background: #f7f6f1;
+  border-top: 1px solid var(--hc-border-subtle);
+  background: var(--hc-surface-main);
 }
 
 .hc-thread-scroll-footer .hc-composer {
@@ -18,7 +18,7 @@
   position: relative;
   flex: 0 0 auto;
   padding: 0 20px;
-  background: #f7f6f1;
+  background: var(--hc-surface-main);
 }
 
 .hc-thread-scroll-footer .hc-above-composer-portal,
@@ -38,8 +38,8 @@
   min-width: 0;
   overflow-y: auto;
   border-radius: 24px;
-  background: rgba(255, 253, 250, 0.92);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.10), 0 4px 16px rgba(0, 0, 0, 0.05);
+  background: var(--hc-surface-composer);
+  box-shadow: 0 0 0 1px var(--hc-border-subtle), 0 4px 16px rgba(0, 0, 0, 0.05);
   /*
    * Codex Desktop composer (`composer-Bszob1mP.css`) uses
    * `backdrop-filter: blur(8px)` — half of what HiCodex previously had. The
@@ -345,10 +345,12 @@
 
 .hc-composer-external-footer {
   display: flex;
+  min-width: 0;
   min-height: 30px;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
+  overflow: hidden;
   padding: 0 24px 0;
   color: #6f716b;
   font-size: 13px;
@@ -357,8 +359,21 @@
 .hc-composer-external-footer-left {
   display: inline-flex;
   min-width: 0;
+  flex: 1 1 auto;
   align-items: center;
   gap: 12px;
+  overflow: hidden;
+}
+
+.hc-composer-external-footer-context {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 52%;
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .hc-composer-footer-project {
@@ -371,6 +386,7 @@
   display: inline-flex;
   min-width: 0;
   max-width: min(280px, 38vw);
+  flex: 0 1 auto;
   height: 26px;
   align-items: center;
   gap: 6px;
@@ -382,9 +398,22 @@
   cursor: pointer;
 }
 
+.hc-composer-footer-chip svg {
+  flex: 0 0 auto;
+}
+
 .hc-composer-footer-chip:hover {
   background: rgba(34, 38, 43, 0.06);
   color: #27313d;
+}
+
+.hc-composer-footer-chip-readonly {
+  cursor: default;
+}
+
+.hc-composer-footer-chip-readonly:hover {
+  background: transparent;
+  color: inherit;
 }
 
 .hc-composer-footer-chip span {
@@ -395,11 +424,12 @@
 }
 
 .hc-composer-project-menu {
+  position: static;
   top: auto;
   right: auto;
-  bottom: 30px;
-  left: 0;
-  width: min(320px, calc(100vw - 32px));
+  bottom: auto;
+  left: auto;
+  width: 100%;
   max-height: 360px;
 }
 
@@ -440,6 +470,14 @@
 .hc-composer-footer-model {
   flex: 0 1 auto;
   justify-content: flex-end;
+}
+
+.hc-composer-footer-permissions {
+  max-width: min(190px, 22vw);
+}
+
+.hc-composer-footer-intelligence {
+  max-width: min(320px, 34vw);
 }
 
 .hc-composer-input-measure {
@@ -537,6 +575,21 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hc-attachment-chip-main .hc-attachment-kind {
+  min-width: auto;
+  flex: 0 0 auto;
+  color: #767b74;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.hc-attachment-chip-main .hc-attachment-label {
+  min-width: 0;
 }
 
 .hc-attachment-remove {
@@ -879,4 +932,61 @@
 .hc-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .hc-composer-external-footer {
+    align-items: stretch;
+    gap: 4px;
+    padding-inline: 16px;
+  }
+
+  .hc-composer-external-footer-left,
+  .hc-composer-external-footer-context {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .hc-composer-external-footer-left::-webkit-scrollbar,
+  .hc-composer-external-footer-context::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hc-composer-external-footer-left {
+    gap: 8px;
+  }
+
+  .hc-composer-external-footer-context {
+    max-width: 48%;
+    gap: 6px;
+  }
+
+  .hc-composer-footer-chip {
+    max-width: 180px;
+    flex: 0 0 auto;
+  }
+
+  .hc-composer-footer-permissions {
+    max-width: 150px;
+  }
+
+  .hc-composer-footer-intelligence {
+    max-width: 210px;
+  }
+}
+
+@media (max-width: 540px) {
+  .hc-composer-external-footer {
+    flex-direction: column;
+  }
+
+  .hc-composer-external-footer-left,
+  .hc-composer-external-footer-context {
+    width: 100%;
+    max-width: none;
+  }
+
+  .hc-composer-external-footer-context {
+    justify-content: flex-start;
+  }
 }

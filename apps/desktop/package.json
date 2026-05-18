@@ -9,8 +9,11 @@
     "build": "tsc --noEmit --pretty false && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4178",
     "typecheck": "tsc --noEmit --pretty false",
+    "test": "node --test scripts/tauri-release-config.test.mjs",
+    "release:config": "node scripts/tauri-release-config.mjs --check",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "tauri:build:release": "node scripts/tauri-release-config.mjs --build"
   },
   "dependencies": {
     "@hicodex/codex-protocol": "0.1.0",

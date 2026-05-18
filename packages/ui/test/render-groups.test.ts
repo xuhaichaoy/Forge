@@ -29,11 +29,13 @@ export default function runRenderGroupsTests(): void {
   keepsDesktopInlineMcpToolsOutOfPendingMcpGroups();
   suppressesPendingMcpCallCoveredByElicitation();
   projectsDesktopLifecycleEventsSemantically();
+  filtersNonHighRiskModelReroutesLikeCodexDesktop();
   projectsContextCompactionSnapshotStatusFromTurnState();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
   injectsInProgressDiffAfterLatestUserMessage();
+  rendersTurnDiffWhenNoBlockingRequestLikeCodexDesktop();
   projectsFinalAssistantArtifactsIntoMessageUnits();
   keepsFinalAssistantArtifactsOffCommentaryMessages();
   keepsPreviousArtifactsOutOfLaterAssistantMessages();
@@ -43,7 +45,9 @@ export default function runRenderGroupsTests(): void {
   usesWorkedForAsTurnCollapseDividerBeforeAssistant();
   keepsWorkedForExpandedUntilFinalAssistantStarts();
   keepsRunningWorkedForAfterRehydratedAssistantCommentary();
-  keepsTodoListOutOfMainConversationButProjectsProgress();
+  keepsTodoListInMainConversationAndProjectsProgress();
+  rendersProposedPlanAsInlineCardOnly();
+  keepsBlockingRequestsOutOfTranscriptButSuppressesThinking();
   hidesPendingApprovalItemsFromOrdinaryActivity();
   groupsExplorationCommandActionsLikeCodexDesktop();
   labelsSkillExplorationActionsLikeCodexDesktop();
@@ -52,7 +56,7 @@ export default function runRenderGroupsTests(): void {
   treatsReadOnlyCurlCommandsAsWebSearchCommandsLikeCodexDesktop();
   groupsToolActivityItemsAndPreservesSummaries();
   groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop();
-  groupsHooksWithAdjacentActivityLikeCodexDesktop();
+  dropsHookThreadItemsLikeCodexDesktop();
   summarizesPatchChangeKinds();
   showsActivePatchDiffStatsLikeCodexDesktop();
   formatsExpandedToolDetailsSemantically();
@@ -914,7 +918,7 @@ function projectsDesktopLifecycleEventsSemantically(): void {
       id: "model-rerouted-1",
       fromModel: "gpt-5.3",
       toModel: "gpt-5.4",
-      reason: "capacity",
+      reason: "highRiskCyberActivity",
     } as unknown as ThreadItem,
   ]);
 
@@ -961,7 +965,32 @@ function projectsDesktopLifecycleEventsSemantically(): void {
 
   assertTextIncludes(eventByKey(projection, "remote-task-1").text, "Task ID: task-123", "remote task id");
   assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "gpt-5.3 -> gpt-5.4", "model reroute transition");
-  assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "Reason: capacity", "model reroute reason");
+  assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "Reason: highRiskCyberActivity", "model reroute reason");
+}
+
+function filtersNonHighRiskModelReroutesLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "model-rerouted",
+      id: "model-rerouted-capacity",
+      fromModel: "gpt-5.3",
+      toModel: "gpt-5.4",
+      reason: "capacity",
+    } as unknown as ThreadItem,
+    {
+      type: "model-rerouted",
+      id: "model-rerouted-risk",
+      fromModel: "gpt-5.3",
+      toModel: "gpt-5.4",
+      reason: "highRiskCyberActivity",
+    } as unknown as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.key),
+    ["model-rerouted-risk"],
+    "only high-risk cyber activity model reroutes should render in the transcript",
+  );
 }
 
 function projectsContextCompactionSnapshotStatusFromTurnState(): void {
@@ -1151,7 +1180,6 @@ function splitsTurnItemsIntoCodexDesktopBuckets(): void {
     } as unknown as ThreadItem,
   ], "completed");
 
-  assertDeepEqual(split.preUserItems.map((item) => item.id), ["hook-before-user"], "pre-user hook bucket");
   assertDeepEqual(split.userItems.map((item) => item.id), ["user-1"], "user bucket");
   assertDeepEqual(split.modelChangedItems.map((item) => item.id), ["model-changed-1"], "model-changed bucket");
   assertDeepEqual(split.agentItems.map((item) => item.id), ["command-1"], "agent bucket should exclude the final assistant");
@@ -1242,11 +1270,41 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
       "threadItem:item:exec:command-1",
       "assistant:assistant-1",
       "event:generated-image-1",
-      "event:plan-1",
+      "threadItem:item:proposed-plan:plan-1",
       "event:diff-1",
       "event:remote-1",
     ],
     "projectConversation should render split Desktop buckets in VT order",
+  );
+}
+
+function rendersTurnDiffWhenNoBlockingRequestLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-1",
+      content: [{ type: "text", text: "Patch projection" }],
+    } as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-1",
+      _turnId: "turn-1",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-1",
+      _turnId: "turn-1",
+      text: "Projection patched.",
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.key),
+    ["user-1", "assistant-1", "diff-1"],
+    "turn-diff should render when the turn has no blocking request and is not in prose mode",
   );
 }
 
@@ -1478,7 +1536,7 @@ function keepsRunningWorkedForAfterRehydratedAssistantCommentary(): void {
   );
 }
 
-function keepsTodoListOutOfMainConversationButProjectsProgress(): void {
+function keepsTodoListInMainConversationAndProjectsProgress(): void {
   const projection = projectConversation([
     {
       type: "todo-list",
@@ -1497,12 +1555,75 @@ function keepsTodoListOutOfMainConversationButProjectsProgress(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 1, "todo-list should not render as a main conversation activity");
-  assertEqual(projection.units[0]?.kind, "message", "assistant message should remain in the main conversation");
+  assertEqual(projection.units.length, 2, "todo-list should render as an inline plan card plus the assistant message");
+  assertEqual(projection.units[0]?.kind, "threadItem", "todo-list should render as a main conversation thread item");
+  assertEqual(projection.units[1]?.kind, "message", "assistant message should remain in the main conversation");
   assertDeepEqual(
     projection.progress.map((entry) => entry.title),
     ["Inspect Codex Desktop output", "Patch HiCodex projection"],
     "todo-list should still drive Progress",
+  );
+}
+
+function rendersProposedPlanAsInlineCardOnly(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Draft a plan" }],
+    } as ThreadItem,
+    {
+      type: "proposed-plan",
+      id: "plan-1",
+      content: "1. Inspect\n2. Patch\n3. Verify",
+      completed: false,
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertEqual(projection.units.length, 2, "proposed-plan should render with the user message");
+  assertEqual(projection.units[1]?.kind, "threadItem", "proposed-plan should render as a dedicated thread item");
+  if (projection.units[1]?.kind === "threadItem") {
+    assertEqual(projection.units[1].key, "item:proposed-plan:plan-1", "proposed-plan card key");
+  }
+  assertDeepEqual(projection.progress, [], "proposed-plan should not drive right-rail Progress");
+}
+
+function keepsBlockingRequestsOutOfTranscriptButSuppressesThinking(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-1",
+      content: [{ type: "text", text: "Run the build" }],
+    } as ThreadItem,
+    {
+      type: "permission-request",
+      id: "permission-1",
+      _turnId: "turn-1",
+      completed: false,
+      reason: "Needs write access",
+    } as unknown as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-approval-1",
+      _turnId: "turn-1",
+      command: "npm run build",
+      status: "inProgress",
+      approvalRequestId: "approval-1",
+    } as unknown as ThreadItem,
+    {
+      type: "userInput",
+      id: "user-input-1",
+      _turnId: "turn-1",
+      completed: false,
+      questions: [{ question: "Proceed?", options: ["Yes", "No"] }],
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.kind === "message" ? `${unit.role}:${unit.key}` : `${unit.kind}:${unit.key}`),
+    ["user:user-1"],
+    "pending permission, approval, and user-input requests should stay out of transcript rows and suppress thinking",
   );
 }
 
@@ -1955,7 +2076,7 @@ function groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop(): void {
   assertEqual(pending.item.status, "inProgress", "standalone auto-review should preserve status text");
 }
 
-function groupsHooksWithAdjacentActivityLikeCodexDesktop(): void {
+function dropsHookThreadItemsLikeCodexDesktop(): void {
   const solo = projectConversation([
     {
       type: "hook",
@@ -1964,7 +2085,7 @@ function groupsHooksWithAdjacentActivityLikeCodexDesktop(): void {
       run: { status: "completed" },
     } as unknown as ThreadItem,
   ]);
-  assertEqual(solo.units[0]?.kind, "threadItem", "single hook rows should stay standalone like Codex Desktop");
+  assertEqual(solo.units.length, 0, "synthetic hook ThreadItems should not render as transcript rows");
 
   const projection = projectConversation([
     {
@@ -1982,17 +2103,11 @@ function groupsHooksWithAdjacentActivityLikeCodexDesktop(): void {
     } as unknown as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 1, "hook rows adjacent to tool activity should fold into the same activity group");
+  assertEqual(projection.units.length, 1, "hook rows adjacent to tool activity should be ignored rather than grouped");
   const unit = projection.units[0];
-  assertEqual(unit?.kind, "toolActivity", "hook plus command should render as tool activity");
-  if (unit?.kind === "toolActivity") {
-    assertEqual(unit.summary.label, "Ran 1 hook, ran 1 command", "hook count should use Desktop activity summary wording");
-    assertIncludes(unit.summary.details, "Ran hook", "hook detail should stay visible");
-    assertDeepEqual(
-      unit.items.map((item) => item.id),
-      ["command-1", "hook-1"],
-      "hook should stay attached to the adjacent activity group",
-    );
+  assertEqual(unit?.kind, "threadItem", "the completed command should keep Desktop's standalone command row");
+  if (unit?.kind === "threadItem") {
+    assertEqual(unit.item.id, "command-1", "hook rows should not displace the command item");
   }
 }
 

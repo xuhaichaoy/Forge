@@ -413,6 +413,42 @@
   color: #963d2f;
 }
 
+.hc-command-panel-search {
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #ece8dc;
+  color: #63665f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hc-command-panel-search span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.hc-command-panel-search input {
+  width: 100%;
+  border: 1px solid #d9d3c6;
+  border-radius: 7px;
+  background: #fffdfa;
+  color: #242824;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 500;
+  outline: none;
+}
+
+.hc-command-panel-search input:focus {
+  border-color: #8c7a57;
+  box-shadow: 0 0 0 2px rgba(140, 122, 87, 0.14);
+}
+
 .hc-command-panel-list {
   display: grid;
   gap: 8px;

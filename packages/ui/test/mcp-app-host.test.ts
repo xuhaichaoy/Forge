@@ -211,6 +211,11 @@ function validatesExternalLinks(): void {
     "MCP app openExternal should accept https links",
   );
   assertDeepEqual(
+    mcpAppExternalHref({ href: "http://example.com/path?q=1" }),
+    null,
+    "MCP app openExternal should reject plaintext http links",
+  );
+  assertDeepEqual(
     mcpAppExternalHref({ href: "file:///etc/passwd" }),
     null,
     "MCP app openExternal should reject non-web protocols",

@@ -491,27 +491,19 @@
 }
 
 .hc-markdown-link-icon {
-  position: relative;
-  top: 2px;
-  display: inline-grid;
+  display: inline-flex;
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
   color: #5f686f;
+  transform: translateY(2px);
 }
 
-.hc-markdown-link-icon img,
 .hc-markdown-link-icon svg {
-  grid-area: 1 / 1;
   width: 12px;
   height: 12px;
-}
-
-.hc-markdown-link-icon img {
-  border-radius: 3px;
-  background: #fff;
-  object-fit: contain;
 }
 
 .hc-markdown-prompt-link {

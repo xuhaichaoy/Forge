@@ -43,6 +43,7 @@ export interface McpAppCspViewModel {
 }
 
 export const MCP_APP_HTML_MAX_BYTES = 10_000_000;
+export const MCP_APP_IFRAME_SANDBOX_POLICY = "allow-forms allow-scripts";
 const MCP_APP_FRAME_MIN_HEIGHT_PX = 200;
 const MCP_APP_FRAME_DEFAULT_HEIGHT_PX = 240;
 const MCP_APP_FRAME_MAX_HEIGHT_PX = 720;
@@ -518,10 +519,11 @@ function McpAppSandboxFrame({
   const [frameLoadNonce, setFrameLoadNonce] = useState(0);
   const [heightPx, setHeightPx] = useState(frame.heightPx);
   const [sandboxErrorText, setSandboxErrorText] = useState<string | null>(null);
-  const srcDoc = useMemo(() => mcpAppSandboxSrcDoc(frame, detail), [detail, frame]);
+  const bridgeNonce = useMemo(() => createMcpAppBridgeNonce(), [detail.id, frame.html]);
+  const srcDoc = useMemo(() => mcpAppSandboxSrcDoc(frame, detail, bridgeNonce), [bridgeNonce, detail, frame]);
   const widgetDataKey = useMemo(() => mcpAppWidgetDataKey(detail), [detail]);
   const widgetViewKey = useMemo(() => mcpAppWidgetViewKey(detail, displayMode), [detail, displayMode]);
-  const cspMetaContent = mcpAppCspMetaContent(frame.csp);
+  const cspMetaContent = mcpAppCspMetaContent(frame.csp, bridgeNonce);
 
   useEffect(() => {
     setBackgroundColor(null);
@@ -537,54 +539,68 @@ function McpAppSandboxFrame({
   useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow;
     if (!frameWindow || typeof MessageChannel === "undefined") return;
-    const channel = new MessageChannel();
+    let hostPort: MessagePort | null = null;
 
-    channel.port1.onmessage = (event) => {
-      const request = mcpAppBridgeRequestFromMessage(event.data);
-      if (!request) return;
-      void handleMcpAppBridgeRequest({
-        args: request.args,
+    const startBridge = () => {
+      if (hostPort) return;
+      const channel = new MessageChannel();
+      hostPort = channel.port1;
+      channel.port1.onmessage = (event) => {
+        const request = mcpAppBridgeRequestFromMessage(event.data);
+        if (!request) return;
+        void handleMcpAppBridgeRequest({
+          args: request.args,
+          detail,
+          id: request.id,
+          method: request.method,
+          onMcpAppHostCall,
+          port: channel.port1,
+          resourceUri: detail.resourceUri,
+          setDisplayMode,
+          setBackgroundColor,
+          setHeightPx,
+          setSandboxErrorText,
+          displayModeRef,
+          threadId,
+          widgetStateRef,
+        });
+      };
+      channel.port1.start();
+      hostPortRef.current = channel.port1;
+      frameWindow.postMessage({
+        nonce: bridgeNonce,
+        source: MCP_APP_BRIDGE_HOST_SOURCE,
+        type: "init",
+      }, "*", [channel.port2]);
+      postMcpAppWidgetDataToPort({
         detail,
-        id: request.id,
-        method: request.method,
-        onMcpAppHostCall,
+        lastWidgetDataKeyRef,
         port: channel.port1,
-        resourceUri: detail.resourceUri,
-        setDisplayMode,
-        setBackgroundColor,
-        setHeightPx,
-        setSandboxErrorText,
-        displayModeRef,
-        threadId,
-        widgetStateRef,
+        widgetState: widgetStateRef.current,
+      });
+      postMcpAppWidgetViewToPort({
+        detail,
+        displayMode: displayModeRef.current,
+        lastWidgetViewKeyRef,
+        port: channel.port1,
       });
     };
-    channel.port1.start();
-    hostPortRef.current = channel.port1;
-    frameWindow.postMessage({
-      source: MCP_APP_BRIDGE_HOST_SOURCE,
-      type: "init",
-    }, "*", [channel.port2]);
-    postMcpAppWidgetDataToPort({
-      detail,
-      lastWidgetDataKeyRef,
-      port: channel.port1,
-      widgetState: widgetStateRef.current,
-    });
-    postMcpAppWidgetViewToPort({
-      detail,
-      displayMode: displayModeRef.current,
-      lastWidgetViewKeyRef,
-      port: channel.port1,
-    });
+
+    const handleReady = (event: MessageEvent) => {
+      if (event.source !== frameWindow || !mcpAppBridgeReadyFromMessage(event.data, bridgeNonce)) return;
+      startBridge();
+    };
+    window.addEventListener("message", handleReady);
+
     return () => {
-      if (hostPortRef.current === channel.port1) hostPortRef.current = null;
-      channel.port1.onmessage = null;
-      channel.port1.close();
+      window.removeEventListener("message", handleReady);
+      if (hostPortRef.current === hostPort) hostPortRef.current = null;
+      if (hostPort) hostPort.onmessage = null;
+      hostPort?.close();
     };
   }, [
+    bridgeNonce,
     detail,
-    frameLoadNonce,
     onMcpAppHostCall,
     threadId,
   ]);
@@ -653,7 +669,7 @@ function McpAppSandboxFrame({
         data-widget-domain={frame.widgetDomain ?? undefined}
         ref={iframeRef}
         referrerPolicy="no-referrer"
-        sandbox="allow-downloads allow-forms allow-popups allow-scripts"
+        sandbox={MCP_APP_IFRAME_SANDBOX_POLICY}
         srcDoc={srcDoc}
         style={{ backgroundColor: backgroundColor ?? undefined, height: heightPx }}
         title={`${detail.name} MCP app`}
@@ -788,7 +804,7 @@ async function resolveMcpAppBridgeRequest({
       return { mode };
     }
     case "updateWidgetState":
-      widgetStateRef.current = mcpAppWidgetStateFromValue(args.at(-1));
+      widgetStateRef.current = mcpAppWidgetStateFromBridgeArgs(args);
       return {};
     case "callMcp":
     case "callTool":
@@ -818,6 +834,13 @@ function mcpAppBridgeRequestFromMessage(value: unknown): McpAppBridgeRequest | n
     id,
     method,
   };
+}
+
+function mcpAppBridgeReadyFromMessage(value: unknown, bridgeNonce: string): boolean {
+  const record = recordObject(value);
+  return record.source === MCP_APP_BRIDGE_SOURCE
+    && record.type === "ready"
+    && stringField(record, "nonce") === bridgeNonce;
 }
 
 const MCP_APP_HOST_METHODS = new Set<McpAppHostMethod>([
@@ -866,6 +889,10 @@ export function mcpAppWidgetStateFromValue(value: unknown): Record<string, unkno
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+export function mcpAppWidgetStateFromBridgeArgs(args: unknown[]): Record<string, unknown> | null {
+  return mcpAppWidgetStateFromValue(args.length > 1 ? args[1] : args[0]);
 }
 
 function postMcpAppWidgetDataToPort({
@@ -988,29 +1015,97 @@ export function mcpAppDisplayModeFromValue(value: unknown, fallback: McpAppDispl
   return mode === "inline" || mode === "fullscreen" ? mode : fallback;
 }
 
+export function createMcpAppBridgeNonce(): string {
+  const bytes = new Uint8Array(16);
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi?.getRandomValues) {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export function mcpAppSandboxSrcDoc(
   frame: McpAppFrameViewModel,
   detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
+  bridgeNonce = createMcpAppBridgeNonce(),
 ): string {
+  const documentParts = mcpAppHtmlDocumentParts(frame.html);
   const injections = [
-    mcpAppCspMetaTag(frame.csp),
-    `<script>${mcpAppSandboxBootstrapScript(detail, frame)}</script>`,
+    mcpAppCspMetaTag(frame.csp, bridgeNonce),
+    `<script nonce="${escapeHtmlAttribute(bridgeNonce)}">${mcpAppSandboxBootstrapScript(detail, frame, bridgeNonce)}</script>`,
   ].filter(Boolean).join("");
-  if (!injections) return frame.html;
-  if (/<head\b[^>]*>/iu.test(frame.html)) {
-    return frame.html.replace(/<head\b[^>]*>/iu, (match) => `${match}${injections}`);
-  }
-  if (/<html\b[^>]*>/iu.test(frame.html)) {
-    return frame.html.replace(/<html\b[^>]*>/iu, (match) => `${match}<head>${injections}</head>`);
-  }
-  return `${injections}${frame.html}`;
+  return [
+    documentParts.doctype,
+    `<html${documentParts.htmlAttributes}>`,
+    `<head>${injections}${documentParts.headContent}</head>`,
+    `<body${documentParts.bodyAttributes}>${documentParts.bodyContent}</body>`,
+    "</html>",
+  ].join("");
+}
+
+interface McpAppHtmlDocumentParts {
+  bodyAttributes: string;
+  bodyContent: string;
+  doctype: string;
+  headContent: string;
+  htmlAttributes: string;
+}
+
+function mcpAppHtmlDocumentParts(html: string): McpAppHtmlDocumentParts {
+  const doctypeMatch = /^\s*(<!doctype\b[^>]*>)/iu.exec(html);
+  const doctype = doctypeMatch ? doctypeMatch[1] : "<!doctype html>";
+  const htmlMatch = /<html\b([^>]*)>/iu.exec(html);
+  const head = mcpAppHtmlElement(html, "head");
+  const body = mcpAppHtmlElement(html, "body");
+  const bodyContent = body?.content ?? mcpAppHtmlWithoutDocumentShell(html, doctypeMatch?.[0] ?? "", htmlMatch?.[0] ?? "", head?.outer ?? "");
+  return {
+    bodyAttributes: body?.attributes ?? "",
+    bodyContent,
+    doctype,
+    headContent: head?.content ?? "",
+    htmlAttributes: htmlMatch?.[1] ?? "",
+  };
+}
+
+function mcpAppHtmlElement(html: string, tagName: "body" | "head"): {
+  attributes: string;
+  content: string;
+  outer: string;
+} | null {
+  const match = new RegExp(`<${tagName}\\b([^>]*)>([\\s\\S]*?)<\\/${tagName}>`, "iu").exec(html);
+  return match
+    ? {
+        attributes: match[1] ?? "",
+        content: match[2] ?? "",
+        outer: match[0],
+      }
+    : null;
+}
+
+function mcpAppHtmlWithoutDocumentShell(
+  html: string,
+  doctype: string,
+  htmlOpen: string,
+  headOuter: string,
+): string {
+  let body = html;
+  if (doctype) body = body.replace(doctype, "");
+  if (htmlOpen) body = body.replace(htmlOpen, "");
+  if (headOuter) body = body.replace(headOuter, "");
+  return body.replace(/<\/html\s*>/iu, "");
 }
 
 function mcpAppSandboxBootstrapScript(
   detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
   frame: McpAppFrameViewModel,
+  bridgeNonce: string,
 ): string {
   const payload = {
+    bridgeNonce,
     displayMode: "inline",
     hostCapabilities: mcpAppHostCapabilities(frame.csp),
     source: MCP_APP_BRIDGE_SOURCE,
@@ -1029,12 +1124,25 @@ function mcpAppSandboxBootstrapScript(
   var queued = [];
   var pending = new Map();
   var nextId = 1;
+  var readyTimer = null;
   function rejectPending(error) {
     pending.forEach(function (entry) { entry.reject(error); });
     pending.clear();
   }
+  function postReady() {
+    window.parent.postMessage({
+      nonce: initial.bridgeNonce,
+      source: initial.source,
+      type: "ready"
+    }, "*");
+  }
   function startPort(port) {
+    if (hostPort) return;
     hostPort = port;
+    if (readyTimer !== null) {
+      window.clearInterval(readyTimer);
+      readyTimer = null;
+    }
     hostPort.onmessage = function (event) {
       var data = event.data || {};
       if (data.source !== initial.hostSource) return;
@@ -1120,7 +1228,7 @@ function mcpAppSandboxBootstrapScript(
   openai.sendFollowUpMessage = function (request) { return callHost("sendFollowUpMessage", [request]); };
   openai.updateWidgetState = function () {
     var args = Array.prototype.slice.call(arguments);
-    openai.widgetState = normalizeWidgetState(args.length > 0 ? args[args.length - 1] : null);
+    openai.widgetState = normalizeWidgetState(args.length > 1 ? args[1] : args[0]);
     return callHost("updateWidgetState", args);
   };
   openai.notifyIntrinsicHeight = function (height) { return callHost("notifyIntrinsicHeight", [height]); };
@@ -1139,15 +1247,18 @@ function mcpAppSandboxBootstrapScript(
   window.openai = openai;
   window.addEventListener("message", function (event) {
     var data = event.data || {};
-    if (data.source !== initial.hostSource || data.type !== "init") return;
+    if (event.source !== window.parent) return;
+    if (data.source !== initial.hostSource || data.type !== "init" || data.nonce !== initial.bridgeNonce) return;
     if (!event.ports || !event.ports[0]) return;
     startPort(event.ports[0]);
   });
   window.addEventListener("unload", function () {
     rejectPending({ message: "MCP sandbox host call aborted." });
+    if (readyTimer !== null) window.clearInterval(readyTimer);
     if (hostPort) hostPort.close();
   });
-  window.parent.postMessage({ source: initial.source, type: "ready" }, "*");
+  postReady();
+  readyTimer = window.setInterval(postReady, 50);
 })();`.trim();
 }
 
@@ -1180,30 +1291,35 @@ function safeScriptJson(value: unknown): string {
   }
 }
 
-function mcpAppCspMetaTag(csp: McpAppCspViewModel): string {
-  const content = mcpAppCspMetaContent(csp);
+function mcpAppCspMetaTag(csp: McpAppCspViewModel, bridgeNonce: string): string {
+  const content = mcpAppCspMetaContent(csp, bridgeNonce);
   return content ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(content)}">` : "";
 }
 
-export function mcpAppCspMetaContent(csp: McpAppCspViewModel): string {
-  if (!csp.isTrusted) return "";
-  const resourceDomains = csp.resourceDomains;
-  const connectDomains = csp.connectDomains.length > 0 ? csp.connectDomains : resourceDomains;
-  const frameDomains = csp.frameDomains;
-  const baseUriDomains = csp.baseUriDomains;
-  const resourceSources = dedupeStrings(["'self'", "data:", "blob:", ...resourceDomains]);
-  const scriptSources = dedupeStrings(["'unsafe-inline'", "'unsafe-eval'", "blob:", ...resourceDomains]);
-  const styleSources = dedupeStrings(["'unsafe-inline'", ...resourceDomains]);
+export function mcpAppCspMetaContent(csp: McpAppCspViewModel, bridgeNonce = ""): string {
+  const resourceDomains = csp.isTrusted ? csp.resourceDomains : [];
+  const connectDomains = csp.isTrusted && csp.connectDomains.length > 0 ? csp.connectDomains : resourceDomains;
+  const frameDomains = csp.isTrusted ? csp.frameDomains : [];
+  const baseUriDomains = csp.isTrusted ? csp.baseUriDomains : [];
+  const resourceSources = dedupeStrings(["data:", "blob:", ...resourceDomains]);
+  const scriptSources = dedupeStrings([
+    bridgeNonce ? `'nonce-${bridgeNonce}'` : "",
+    "blob:",
+    ...resourceDomains,
+  ].filter(Boolean));
+  const styleSources = dedupeStrings(resourceDomains);
   return [
     "default-src 'none'",
     `base-uri ${baseUriDomains.length > 0 ? baseUriDomains.join(" ") : "'none'"}`,
-    `connect-src ${dedupeStrings(["'self'", ...connectDomains]).join(" ")}`,
-    `font-src ${resourceSources.join(" ")}`,
+    `connect-src ${connectDomains.length > 0 ? connectDomains.join(" ") : "'none'"}`,
+    "form-action 'none'",
+    `font-src ${resourceSources.length > 0 ? resourceSources.join(" ") : "'none'"}`,
     `frame-src ${frameDomains.length > 0 ? frameDomains.join(" ") : "'none'"}`,
-    `img-src ${resourceSources.join(" ")}`,
-    `media-src ${resourceSources.join(" ")}`,
-    `script-src ${scriptSources.join(" ")}`,
-    `style-src ${styleSources.join(" ")}`,
+    `img-src ${resourceSources.length > 0 ? resourceSources.join(" ") : "'none'"}`,
+    `media-src ${resourceSources.length > 0 ? resourceSources.join(" ") : "'none'"}`,
+    "object-src 'none'",
+    `script-src ${scriptSources.length > 0 ? scriptSources.join(" ") : "'none'"}`,
+    `style-src ${styleSources.length > 0 ? styleSources.join(" ") : "'none'"}`,
   ].join("; ");
 }
 
@@ -1483,15 +1599,6 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       text: autoReviewText(record),
     };
   }
-  if (type === "hook") {
-    return {
-      kind: "text",
-      id: item.id,
-      running,
-      title: "Hook",
-      text: hookText(record),
-    };
-  }
   if (type === "web-search") {
     return {
       kind: "webSearch",
@@ -1531,15 +1638,6 @@ function autoReviewText(record: ItemRecord): string {
     `Status: ${stringField(record, "status") || "pending"}`,
     stringField(record, "riskLevel") ? `Risk: ${stringField(record, "riskLevel")}` : "",
     stringField(record, "rationale") ? `Rationale: ${stringField(record, "rationale")}` : "",
-  ].filter(Boolean).join("\n");
-}
-
-function hookText(record: ItemRecord): string {
-  const run = recordObject(record.run);
-  return [
-    `Status: ${stringField(run, "status") || stringField(record, "status") || "completed"}`,
-    stringField(record, "key") ? `Key: ${stringField(record, "key")}` : "",
-    stringField(run, "command") ? `Command: ${stringField(run, "command")}` : "",
   ].filter(Boolean).join("\n");
 }
 
@@ -2067,7 +2165,22 @@ function normalizeMcpAppCspDomain(value: string): string | null {
   }
   const hostname = url.hostname.replace(/^%2a(?=\.)/iu, "*");
   if (hostname.includes("*") && !hostname.startsWith("*.")) return null;
+  if (!isMcpAppCspHostnameAllowed(hostname)) return null;
   return `${url.protocol}//${hostname}${url.port.length > 0 ? `:${url.port}` : ""}`;
+}
+
+function isMcpAppCspHostnameAllowed(hostname: string): boolean {
+  const normalized = hostname.startsWith("*.") ? hostname.slice(2) : hostname;
+  const lower = normalized.toLowerCase();
+  if (
+    lower === "localhost"
+    || lower.endsWith(".localhost")
+    || lower.endsWith(".local")
+    || lower.startsWith("[")
+  ) {
+    return false;
+  }
+  return !/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(lower);
 }
 
 function dedupeStrings(values: string[]): string[] {

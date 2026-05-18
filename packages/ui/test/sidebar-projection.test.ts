@@ -17,6 +17,7 @@ const assert = (condition: unknown, message: string): void => {
 
 export default function runSidebarProjectionTests(): void {
   sortsThreadsByUpdatedAtDescending();
+  sortsThreadsByCreatedAtDescendingWhenRequested();
   hidesSpawnedSubagentThreadsByDefault();
   treatsAgentNicknameAsSubagentSignal();
   treatsSubagentSourceParentAsSubagentSignal();
@@ -28,6 +29,8 @@ export default function runSidebarProjectionTests(): void {
   projectsThreadProjectLabelFromCwd();
   projectsWorkspaceRootOptionsFromVisibleLocalThreads();
   groupsThreadsByLocalProjectWithoutReordering();
+  groupsThreadsAsRecentWhenOrganizeModeRequestsRecent();
+  groupsCurrentWorkspaceThreadsBeforeOtherLocalProjects();
 }
 
 function makeThread(overrides: Partial<Thread> & Record<string, unknown>): Thread {
@@ -64,6 +67,19 @@ function sortsThreadsByUpdatedAtDescending(): void {
   assert(
     projected.map((thread) => thread.id).join(",") === "newest,mid,old",
     `expected updated_at desc, got ${projected.map((thread) => thread.id).join(",")}`,
+  );
+}
+
+function sortsThreadsByCreatedAtDescendingWhenRequested(): void {
+  const threads = [
+    makeThread({ id: "old", createdAt: 100, updatedAt: 900 }),
+    makeThread({ id: "newest-created", createdAt: 300, updatedAt: 100 }),
+    makeThread({ id: "mid", createdAt: 200, updatedAt: 800 }),
+  ];
+  const projected = projectSidebarThreads(threads, { sortKey: "created_at" });
+  assert(
+    projected.map((thread) => thread.id).join(",") === "newest-created,mid,old",
+    `expected created_at desc, got ${projected.map((thread) => thread.id).join(",")}`,
   );
 }
 
@@ -182,4 +198,33 @@ function groupsThreadsByLocalProjectWithoutReordering(): void {
     `expected project group to preserve thread order, got ${groups[0]?.threads.map((thread) => thread.id).join(",")}`,
   );
   assert(groups[1]?.label === "b", `expected second project label b, got ${groups[1]?.label}`);
+}
+
+function groupsThreadsAsRecentWhenOrganizeModeRequestsRecent(): void {
+  const groups = projectSidebarThreadGroups([
+    makeThread({ id: "a", cwd: ("/work/a" as unknown) as Thread["cwd"] }),
+    makeThread({ id: "b", cwd: ("/work/b" as unknown) as Thread["cwd"] }),
+  ], { organizeMode: "recent" });
+  assert(groups.length === 1, `expected one recent group, got ${groups.length}`);
+  assert(groups[0]?.key === "recent", `expected recent group key, got ${groups[0]?.key}`);
+  assert(
+    groups[0]?.threads.map((thread) => thread.id).join(",") === "a,b",
+    `expected recent group to preserve caller sort order, got ${groups[0]?.threads.map((thread) => thread.id).join(",")}`,
+  );
+}
+
+function groupsCurrentWorkspaceThreadsBeforeOtherLocalProjects(): void {
+  const groups = projectSidebarThreadGroups([
+    makeThread({ id: "outside", cwd: ("/work/other" as unknown) as Thread["cwd"] }),
+    makeThread({ id: "inside-child", cwd: ("/work/app/packages/ui" as unknown) as Thread["cwd"] }),
+    makeThread({ id: "inside-root", cwd: ("/work/app/" as unknown) as Thread["cwd"] }),
+  ], { organizeMode: "current_workspace", currentWorkspaceRoot: "/work/app/" });
+  assert(groups.length === 2, `expected current workspace plus other project, got ${groups.length}`);
+  assert(groups[0]?.key === "current:/work/app", `expected current workspace key, got ${groups[0]?.key}`);
+  assert(groups[0]?.label === "Current workspace", `expected current workspace label, got ${groups[0]?.label}`);
+  assert(
+    groups[0]?.threads.map((thread) => thread.id).join(",") === "inside-child,inside-root",
+    `expected current workspace group to preserve matching thread order, got ${groups[0]?.threads.map((thread) => thread.id).join(",")}`,
+  );
+  assert(groups[1]?.label === "other", `expected remaining local project group, got ${groups[1]?.label}`);
 }

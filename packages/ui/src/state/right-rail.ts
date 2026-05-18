@@ -5,12 +5,11 @@ export const RAIL_LIST_PREVIEW_LIMIT = 6;
 export const DESKTOP_RIGHT_RAIL_WIDTH_PX = 300;
 export const DESKTOP_RIGHT_RAIL_GAP_PX = 16;
 export const DESKTOP_LEFT_PANEL_WIDTH_PX = 300;
-export const RIGHT_RAIL_MIN_APP_WIDTH_PX = 1370;
-export const RIGHT_RAIL_MIN_MAIN_WIDTH_PX = RIGHT_RAIL_MIN_APP_WIDTH_PX - DESKTOP_LEFT_PANEL_WIDTH_PX;
+export const RIGHT_RAIL_PINNED_STORAGE_KEY = "hicodex.rightRail.isPinned";
 
 const DESKTOP_THREAD_LAYOUT_WIDTH_PX = 736;
 const DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX = 180;
-const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 360;
+const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 400;
 
 export type RightRailSectionId =
   | "progress"
@@ -24,6 +23,7 @@ export type RightRailDisplayMode = "overlay" | "shift" | "gutter";
 export interface RightRailSection {
   id: RightRailSectionId;
   title: string;
+  summary?: string;
   count: number;
   entries: RailEntry[];
   allEntries: RailEntry[];
@@ -36,6 +36,7 @@ export interface RightRailProjectionInput {
   progress: RailEntry[];
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
   artifacts: RailEntry[];
+  showOutputs?: boolean;
   sideChats?: RailEntry[];
   backgroundAgents?: RailEntry[];
   backgroundTerminals?: RailEntry[];
@@ -53,6 +54,46 @@ export interface ClippedRailEntries {
   canToggle: boolean;
 }
 
+export interface RightRailPreferenceStorageLike {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+export function rightRailPreferenceStorage(): RightRailPreferenceStorageLike | null {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function loadRightRailPinned(
+  storage: RightRailPreferenceStorageLike | null | undefined,
+  fallback = true,
+): boolean {
+  if (!storage) return fallback;
+  try {
+    const raw = storage.getItem(RIGHT_RAIL_PINNED_STORAGE_KEY);
+    if (raw === "1" || raw === "true") return true;
+    if (raw === "0" || raw === "false") return false;
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function saveRightRailPinned(
+  storage: RightRailPreferenceStorageLike | null | undefined,
+  isPinned: boolean,
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(RIGHT_RAIL_PINNED_STORAGE_KEY, isPinned ? "1" : "0");
+  } catch {
+    // Storage failures should not break the conversation shell.
+  }
+}
+
 export function rightRailDisplayMode(contentWidthPx: number): RightRailDisplayMode {
   const sideSpace = rightRailSideSpace(contentWidthPx);
   if (sideSpace < DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX) return "overlay";
@@ -61,7 +102,7 @@ export function rightRailDisplayMode(contentWidthPx: number): RightRailDisplayMo
 }
 
 export function rightRailShouldRender(contentWidthPx: number): boolean {
-  return contentWidthPx >= RIGHT_RAIL_MIN_MAIN_WIDTH_PX;
+  return rightRailDisplayMode(contentWidthPx) !== "overlay";
 }
 
 export function rightRailContentShiftPx(
@@ -90,7 +131,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   const sections: RightRailSection[] = [];
 
   if (input.progress.length > 0) {
-    sections.push(projectEntrySection("progress", "Progress", input.progress, false));
+    sections.push(projectEntrySection("progress", "Progress", input.progress, false, progressSummary(input.progress)));
   }
 
   const branchInput = input.branchDetails;
@@ -100,7 +141,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   if (hasBranchDetails) {
     sections.push({
       id: "branchDetails",
-      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Branch details",
+      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Git",
       count: branchEntries.length,
       entries: branchEntries,
       allEntries: branchEntries,
@@ -110,8 +151,9 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  if (input.artifacts.length > 0) {
-    sections.push(projectEntrySection("artifacts", "Artifacts", input.artifacts, true));
+  const shouldShowOutputs = input.showOutputs ?? !hasBranchDetails;
+  if (shouldShowOutputs && input.artifacts.length > 0) {
+    sections.push(projectEntrySection("artifacts", "Outputs", input.artifacts, true));
   }
 
   if (input.sideChats && input.sideChats.length > 0) {
@@ -156,6 +198,7 @@ function projectEntrySection(
   title: string,
   entries: RailEntry[],
   clippedByDefault: boolean,
+  summary?: string,
 ): RightRailSection {
   const clipped = clippedByDefault
     ? clipRailEntries(entries)
@@ -167,12 +210,23 @@ function projectEntrySection(
   return {
     id,
     title,
+    ...(summary ? { summary } : {}),
     count: entries.length,
     entries: clipped.entries,
     allEntries: entries,
     remainingCount: clipped.remainingCount,
     canToggle: clipped.canToggle,
   };
+}
+
+function progressSummary(entries: RailEntry[]): string {
+  const completed = entries.reduce((count, entry) => count + (isCompletedProgressStatus(entry.status) ? 1 : 0), 0);
+  const taskLabel = entries.length === 1 ? "task" : "tasks";
+  return `${completed} out of ${entries.length} ${taskLabel} completed`;
+}
+
+function isCompletedProgressStatus(status: string | undefined): boolean {
+  return status === "completed" || status === "complete" || status === "done";
 }
 
 function isBranchDetailsViewModel(value: RightRailProjectionInput["branchDetails"]): value is BranchDetailsViewModel {

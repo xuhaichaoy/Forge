@@ -1,10 +1,21 @@
 import type { Dispatch } from "react";
 import type { CollaborationMode, Thread, TurnStartParams, UserInput } from "@hicodex/codex-protocol";
+import type { ThreadSource } from "@hicodex/codex-protocol/generated/v2/ThreadSource";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError, formatUnknown, stringField } from "../lib/format";
-import { getHostStatus, isTauriRuntime, readThreadToolHistory } from "../lib/tauri-host";
-import { codexUiReducer, OPTIMISTIC_TURN_PLACEHOLDER_PREFIX, type ThreadContextDefaults } from "./codex-reducer";
-import { HICODEX_IMAGE_DYNAMIC_TOOL_SPEC } from "./image-generation-tool";
+import { getHostStatus, isTauriRuntime, readFileMetadata, readTextFile, readThreadToolHistory } from "../lib/tauri-host";
+import {
+  codexUiReducer,
+  OPTIMISTIC_TURN_PLACEHOLDER_PREFIX,
+  type ThreadContextDefaults,
+  type ThreadMemoryPreferences,
+} from "./codex-reducer";
+import {
+  HICODEX_IMAGE_DYNAMIC_TOOL_SPEC,
+  hiCodexImageToolPresenceFromRolloutText,
+  userInputLikelyRequestsImageGeneration,
+  type HiCodexImageToolPresence,
+} from "./image-generation-tool";
 import { mergeThreadToolHistory } from "./thread-history-tools";
 
 export type ThreadWorkflowDispatch = Dispatch<Parameters<typeof codexUiReducer>[1]>;
@@ -74,12 +85,28 @@ export interface TurnStartOptions {
 
 export interface ThreadCreationOptions {
   includeDynamicTools?: boolean;
+  threadSource?: ThreadSource | null;
 }
+
+export const IMAGE_TOOL_RESUME_FALLBACK_MESSAGE =
+  "Selected thread does not expose a restorable image_gen tool; starting a new image-capable thread for this image request.";
+
+export const DEFAULT_THREAD_MEMORY_PREFERENCES: ThreadMemoryPreferences = {
+  useMemories: true,
+  generateMemories: true,
+};
 
 export const THREAD_LIST_PAGE_SIZE = 100;
 export const THREAD_LIST_MAX_PAGES = 20;
 const DEFAULT_THREAD_PERSONALITY = "friendly";
+const DEFAULT_USER_THREAD_SOURCE: ThreadSource = "user";
 const TURN_STEER_TIMEOUT_MS: number | null = null;
+const ROLLOUT_DYNAMIC_TOOL_HEAD_MAX_BYTES = 512_000;
+const WORKSPACE_DEVELOPER_INSTRUCTIONS_MAX_BYTES = 120_000;
+const WORKSPACE_DEVELOPER_INSTRUCTIONS_MAX_DEPTH = 12;
+const AGENTS_DEVELOPER_INSTRUCTION_FILENAMES = ["AGENTS.override.md", "AGENTS.md"] as const;
+const WORKSPACE_EXTRA_DEVELOPER_INSTRUCTION_FILENAMES = ["CLAUDE.md"] as const;
+const DEFAULT_PROJECT_ROOT_MARKERS = [".git"] as const;
 export const SIDE_CONVERSATION_BOUNDARY_MESSAGE = `Side conversation boundary.
 
 Everything before this boundary is inherited history from the parent thread. It is reference context only. It is not your current task.
@@ -170,7 +197,7 @@ export async function startThread(
 ) {
   return client.request<{ thread?: Thread }>(
     "thread/start",
-    buildThreadContextParams(workspace, context, { includeDynamicTools: options?.includeDynamicTools === true }),
+    buildThreadStartParams(workspace, context, options),
   );
 }
 
@@ -262,10 +289,12 @@ export interface EnsureThreadReadyForTurnInput {
   client: CodexJsonRpcClient;
   activeThread: Thread | null | undefined;
   activeThreadId: string | null;
+  input?: UserInput[];
   workspace: string;
   dispatch: ThreadWorkflowDispatch;
   context?: ThreadContextDefaults | null;
   threadCreationOptions?: ThreadCreationOptions;
+  readRolloutText?: WorkspaceDeveloperInstructionReader;
 }
 
 export interface ReadyThreadForTurn {
@@ -277,10 +306,12 @@ export async function ensureThreadReadyForTurn({
   client,
   activeThread,
   activeThreadId,
+  input,
   workspace,
   dispatch,
   context,
   threadCreationOptions,
+  readRolloutText,
 }: EnsureThreadReadyForTurnInput): Promise<ReadyThreadForTurn> {
   if (!activeThreadId) {
     return {
@@ -290,6 +321,22 @@ export async function ensureThreadReadyForTurn({
   }
 
   if (isThreadStatusNotLoaded(activeThread?.status)) {
+    if (await shouldCreateImageCapableThreadInsteadOfResume({
+      activeThread,
+      input: input ?? [],
+      threadCreationOptions,
+      readRolloutText,
+    })) {
+      dispatch({
+        type: "log",
+        text: IMAGE_TOOL_RESUME_FALLBACK_MESSAGE,
+        level: "warn",
+      });
+      return {
+        threadId: await createAndSelectThreadForTurn(client, workspace, dispatch, context, threadCreationOptions),
+        source: "created",
+      };
+    }
     await readThreadResumeMetadata(client, activeThreadId);
     const result = await resumeThread(client, activeThreadId, workspace, context);
     dispatch({ type: "upsertThread", thread: result.thread, select: true });
@@ -303,6 +350,34 @@ export async function ensureThreadReadyForTurn({
     threadId: activeThreadId,
     source: "selected",
   };
+}
+
+export async function shouldCreateImageCapableThreadInsteadOfResume(input: {
+  activeThread: Thread | null | undefined;
+  input: UserInput[];
+  threadCreationOptions?: ThreadCreationOptions;
+  readRolloutText?: WorkspaceDeveloperInstructionReader;
+}): Promise<boolean> {
+  if (input.threadCreationOptions?.includeDynamicTools !== true) return false;
+  if (!userInputLikelyRequestsImageGeneration(input.input)) return false;
+  const presence = await hiCodexImageToolPresenceForThread(input.activeThread, input.readRolloutText);
+  return presence !== "present";
+}
+
+async function hiCodexImageToolPresenceForThread(
+  thread: Thread | null | undefined,
+  readRolloutText: WorkspaceDeveloperInstructionReader = readTextFile,
+): Promise<HiCodexImageToolPresence> {
+  const rolloutPath = typeof thread?.path === "string" ? thread.path.trim() : "";
+  if (!rolloutPath) return "unknown";
+  if (readRolloutText === readTextFile && !isTauriRuntime()) return "unknown";
+  try {
+    return hiCodexImageToolPresenceFromRolloutText(
+      await readRolloutText(rolloutPath, ROLLOUT_DYNAMIC_TOOL_HEAD_MAX_BYTES),
+    );
+  } catch {
+    return "unknown";
+  }
 }
 
 export async function startTurn(
@@ -398,7 +473,7 @@ export async function resumeThread(
   return client.request<{ thread: Thread }>("thread/resume", {
     threadId,
     ...rolloutPathParam,
-    ...buildThreadContextParams(workspace, context),
+    ...buildThreadResumeParams(workspace, context),
   }, 120_000);
 }
 
@@ -427,7 +502,7 @@ export async function forkThread(
 ) {
   return client.request<{ thread: Thread }>("thread/fork", {
     threadId,
-    ...buildThreadContextParams(workspace, context),
+    ...buildThreadForkParams(workspace, context),
   }, 120_000);
 }
 
@@ -448,7 +523,7 @@ export async function forkThreadFromTurn(
     threadId: sourceThreadId,
     path: null,
     persistExtendedHistory: false,
-    ...buildThreadContextParams(workspace, context),
+    ...buildThreadForkParams(workspace, context),
   }, 120_000);
   if (rollbackTurns <= 0) return forkResult;
   return client.request<{ thread: Thread }>("thread/rollback", {
@@ -468,10 +543,11 @@ export async function startSideConversation(
     threadId: sourceThreadId,
     path: null,
     persistExtendedHistory: false,
-    threadSource: "user",
-    ...buildThreadContextParams(workspace, context),
-    developerInstructions: sideConversationDeveloperInstructions(context?.developerInstructions),
-    ephemeral: true,
+    ...buildThreadForkParams(workspace, context, {
+      developerInstructions: sideConversationDeveloperInstructions(context?.developerInstructions),
+      ephemeral: true,
+      threadSource: DEFAULT_USER_THREAD_SOURCE,
+    }),
   }, 120_000);
   await client.request("thread/inject_items", {
     threadId: forkResult.thread.id,
@@ -497,6 +573,59 @@ export async function startSideConversation(
 export function sideConversationDeveloperInstructions(existing?: string | null): string {
   const trimmed = existing?.trim() ?? "";
   return trimmed ? `${trimmed}\n\n${SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS}` : SIDE_CONVERSATION_DEVELOPER_INSTRUCTIONS;
+}
+
+type WorkspaceDeveloperInstructionReader = (path: string, maxBytes?: number) => Promise<string>;
+type WorkspacePathExistsReader = (path: string) => Promise<boolean>;
+
+export interface ReadWorkspaceDeveloperInstructionsOptions {
+  codexHome?: string | null;
+  readFile?: WorkspaceDeveloperInstructionReader;
+  pathExists?: WorkspacePathExistsReader;
+  isRuntimeAvailable?: () => boolean;
+  maxBytes?: number;
+  projectRootMarkers?: readonly string[];
+}
+
+export async function readWorkspaceDeveloperInstructions(
+  workspace: string,
+  options: ReadWorkspaceDeveloperInstructionsOptions = {},
+): Promise<string | null> {
+  const cwd = normalizedCwd(workspace);
+  if (!cwd) return null;
+  const runtimeAvailable = options.isRuntimeAvailable ?? isTauriRuntime;
+  if (!runtimeAvailable()) return null;
+  const reader = options.readFile ?? readTextFile;
+  const pathExists = options.pathExists ?? pathExistsByMetadata;
+  const maxBytes = options.maxBytes ?? WORKSPACE_DEVELOPER_INSTRUCTIONS_MAX_BYTES;
+  const sources: Array<{ path: string; text: string }> = [];
+  const codexHome = normalizedCwd(options.codexHome ?? "");
+  if (codexHome) {
+    sources.push(...await readDeveloperInstructionSourcesInDir(codexHome, reader, maxBytes, false));
+  }
+  const dirs = await workspaceDeveloperInstructionDirs(cwd, {
+    pathExists,
+    projectRootMarkers: options.projectRootMarkers ?? DEFAULT_PROJECT_ROOT_MARKERS,
+  });
+  for (const dir of dirs) {
+    sources.push(...await readDeveloperInstructionSourcesInDir(dir, reader, maxBytes, true));
+  }
+  return formatWorkspaceDeveloperInstructions(sources);
+}
+
+export function withWorkspaceDeveloperInstructions(
+  context: ThreadContextDefaults | null | undefined,
+  workspaceInstructions: string | null | undefined,
+): ThreadContextDefaults | null {
+  const trimmedWorkspaceInstructions = workspaceInstructions?.trim() ?? "";
+  if (!trimmedWorkspaceInstructions) return context ?? null;
+  const existingDeveloperInstructions = context?.developerInstructions?.trim() ?? "";
+  return {
+    ...(context ?? {}),
+    developerInstructions: existingDeveloperInstructions
+      ? `${existingDeveloperInstructions}\n\n${trimmedWorkspaceInstructions}`
+      : trimmedWorkspaceInstructions,
+  };
 }
 
 export async function sendPanelThreadMessage(
@@ -572,10 +701,41 @@ export async function editLastUserTurn(
     context,
     sourceThread.path || rolloutPath,
   );
-  onRollback?.(rollback.thread);
   const cwd = rollback.thread.cwd || sourceThread.cwd || workspace;
-  const turnResult = await startTurn(client, rollback.thread.id || threadId, input, cwd, context);
+  let turnResult: unknown;
+  try {
+    turnResult = await startTurn(client, rollback.thread.id || threadId, input, cwd, context);
+  } catch (error) {
+    await restoreRolledBackUserTurnAfterEditFailure(
+      client,
+      rollback.thread.id || threadId,
+      userMessage.content,
+      cwd,
+      context,
+      error,
+    );
+    throw error;
+  }
+  onRollback?.(rollback.thread);
   return { thread: rollback.thread, turnResult };
+}
+
+async function restoreRolledBackUserTurnAfterEditFailure(
+  client: CodexJsonRpcClient,
+  threadId: string,
+  input: UserInput[],
+  cwd: string,
+  context: ThreadContextDefaults | null | undefined,
+  startError: unknown,
+): Promise<void> {
+  try {
+    await startTurn(client, threadId, input, cwd, context);
+  } catch (restoreError) {
+    throw new Error(
+      `Edited message failed to start after rollback: ${formatError(startError)}. `
+      + `Restoring the original message also failed: ${formatError(restoreError)}`,
+    );
+  }
 }
 
 async function rollbackLatestTurnForEdit(
@@ -715,11 +875,15 @@ export function isThreadStatusNotLoaded(status: unknown): boolean {
   return trimmedStringField(record, "type") === "notLoaded" || trimmedStringField(record, "status") === "notLoaded";
 }
 
+// `thread/start` accepts the full thread context surface. Resume/fork use
+// narrower protocol shapes and must go through their method-specific builders.
 export function buildThreadContextParams(
   workspace: string,
   context?: ThreadContextDefaults | null,
-  options?: { includeDynamicTools?: boolean },
+  options?: { includeDynamicTools?: boolean; threadSource?: ThreadSource | null },
 ): Record<string, unknown> {
+  const memoryConfig = threadMemoryConfig(context?.memories);
+  const permissions = context?.permissions;
   return {
     cwd: normalizedCwd(workspace),
     ...compactParams({
@@ -728,11 +892,82 @@ export function buildThreadContextParams(
       serviceTier: context?.serviceTier,
       approvalPolicy: context?.approvalPolicy,
       approvalsReviewer: context?.approvalsReviewer,
-      sandbox: context?.sandbox,
+      sandbox: permissions ? undefined : context?.sandbox,
+      permissions,
+      environments: context?.environments,
       baseInstructions: context?.baseInstructions,
       developerInstructions: context?.developerInstructions,
       personality: context?.personality,
+      threadSource: options?.threadSource,
+      config: memoryConfig,
       dynamicTools: options?.includeDynamicTools ? [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] : undefined,
+    }),
+  };
+}
+
+function buildThreadStartParams(
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+  options?: ThreadCreationOptions,
+): Record<string, unknown> {
+  return buildThreadContextParams(workspace, context, {
+    includeDynamicTools: options?.includeDynamicTools === true,
+    threadSource: options?.threadSource ?? DEFAULT_USER_THREAD_SOURCE,
+  });
+}
+
+function buildThreadResumeParams(
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+): Record<string, unknown> {
+  return buildThreadBaseParams(workspace, context, { includePersonality: true });
+}
+
+function buildThreadForkParams(
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+  options?: {
+    developerInstructions?: string | null;
+    ephemeral?: boolean;
+    threadSource?: ThreadSource | null;
+  },
+): Record<string, unknown> {
+  return {
+    ...buildThreadBaseParams(workspace, context, {
+      developerInstructions: options?.developerInstructions ?? context?.developerInstructions,
+      includePersonality: false,
+    }),
+    ...compactParams({
+      ephemeral: options?.ephemeral,
+      threadSource: options?.threadSource ?? DEFAULT_USER_THREAD_SOURCE,
+    }),
+  };
+}
+
+function buildThreadBaseParams(
+  workspace: string,
+  context?: ThreadContextDefaults | null,
+  options?: {
+    developerInstructions?: string | null;
+    includePersonality?: boolean;
+  },
+): Record<string, unknown> {
+  const memoryConfig = threadMemoryConfig(context?.memories);
+  const permissions = context?.permissions;
+  return {
+    cwd: normalizedCwd(workspace),
+    ...compactParams({
+      model: context?.model,
+      modelProvider: context?.modelProvider,
+      serviceTier: context?.serviceTier,
+      approvalPolicy: context?.approvalPolicy,
+      approvalsReviewer: context?.approvalsReviewer,
+      sandbox: permissions ? undefined : context?.sandbox,
+      permissions,
+      baseInstructions: context?.baseInstructions,
+      developerInstructions: options?.developerInstructions ?? context?.developerInstructions,
+      personality: options?.includePersonality === false ? undefined : context?.personality,
+      config: memoryConfig,
     }),
   };
 }
@@ -744,6 +979,7 @@ export function buildTurnStartParams(
   context?: ThreadContextDefaults | null,
   options?: TurnStartOptions | null,
 ): TurnStartParams {
+  const permissions = context?.permissions;
   return {
     threadId,
     input,
@@ -753,7 +989,9 @@ export function buildTurnStartParams(
       serviceTier: context?.serviceTier,
       approvalPolicy: context?.approvalPolicy,
       approvalsReviewer: context?.approvalsReviewer,
-      sandboxPolicy: sandboxPolicyFromMode(context?.sandbox),
+      sandboxPolicy: permissions ? undefined : sandboxPolicyFromMode(context?.sandbox),
+      permissions,
+      environments: context?.environments,
       effort: context?.reasoningEffort,
       summary: context?.reasoningSummary,
       personality: context?.personality,
@@ -764,6 +1002,8 @@ export function buildTurnStartParams(
 
 export function projectThreadContextDefaults(config: Record<string, unknown> | null | undefined): ThreadContextDefaults | null {
   if (!config) return null;
+  const memories = projectThreadMemoryPreferences(config);
+  const permissions = projectThreadPermissions(config);
   const context = compactParams({
     model: stringOverride(config.model),
     modelProvider: stringOverride(config.model_provider),
@@ -771,13 +1011,22 @@ export function projectThreadContextDefaults(config: Record<string, unknown> | n
     approvalPolicy: config.approval_policy,
     approvalsReviewer: config.approvals_reviewer,
     sandbox: config.sandbox_mode,
+    permissions,
+    environments: projectThreadEnvironments(config),
     baseInstructions: stringOverride(config.instructions),
     developerInstructions: stringOverride(config.developer_instructions),
     personality: personalityOverride(config.personality) ?? defaultPersonalityOverride(config),
     reasoningEffort: config.model_reasoning_effort,
     reasoningSummary: config.model_reasoning_summary,
+    memories,
   }) as ThreadContextDefaults;
   return Object.keys(context).length > 0 ? context : null;
+}
+
+export function effectiveThreadMemoryPreferences(
+  context?: ThreadContextDefaults | null,
+): ThreadMemoryPreferences {
+  return context?.memories ?? DEFAULT_THREAD_MEMORY_PREFERENCES;
 }
 
 export function isThreadNotFound(error: unknown): boolean {
@@ -814,10 +1063,252 @@ function normalizedCwd(workspace: string): string | null {
   return workspace.trim() || null;
 }
 
+async function workspaceDeveloperInstructionDirs(
+  workspace: string,
+  options: { pathExists: WorkspacePathExistsReader; projectRootMarkers: readonly string[] },
+): Promise<string[]> {
+  const dirs: string[] = [];
+  let current: string | null = stripTrailingPathSeparators(workspace);
+  let depth = 0;
+  while (current && depth < WORKSPACE_DEVELOPER_INSTRUCTIONS_MAX_DEPTH) {
+    dirs.push(current);
+    if (await hasProjectRootMarker(current, options.pathExists, options.projectRootMarkers)) break;
+    const parent = parentPath(current);
+    if (!parent || parent === current) break;
+    current = parent;
+    depth += 1;
+  }
+  dirs.reverse();
+  return dirs;
+}
+
+async function hasProjectRootMarker(
+  dir: string,
+  pathExists: WorkspacePathExistsReader,
+  projectRootMarkers: readonly string[],
+): Promise<boolean> {
+  for (const marker of projectRootMarkers) {
+    if (await pathExists(joinPath(dir, marker))) return true;
+  }
+  return false;
+}
+
+async function pathExistsByMetadata(path: string): Promise<boolean> {
+  try {
+    await readFileMetadata(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readDeveloperInstructionSourcesInDir(
+  dir: string,
+  reader: WorkspaceDeveloperInstructionReader,
+  maxBytes: number,
+  includeExtraFiles: boolean,
+): Promise<Array<{ path: string; text: string }>> {
+  const sources: Array<{ path: string; text: string }> = [];
+  const agentsSource = await readFirstDeveloperInstructionSource(
+    dir,
+    AGENTS_DEVELOPER_INSTRUCTION_FILENAMES,
+    reader,
+    maxBytes,
+  );
+  if (agentsSource?.text.trim()) sources.push({ path: agentsSource.path, text: agentsSource.text.trim() });
+  if (!includeExtraFiles) return sources;
+  for (const fileName of WORKSPACE_EXTRA_DEVELOPER_INSTRUCTION_FILENAMES) {
+    const source = await readDeveloperInstructionSource(joinPath(dir, fileName), reader, maxBytes);
+    if (source?.text.trim()) sources.push({ path: source.path, text: source.text.trim() });
+  }
+  return sources;
+}
+
+async function readFirstDeveloperInstructionSource(
+  dir: string,
+  fileNames: readonly string[],
+  reader: WorkspaceDeveloperInstructionReader,
+  maxBytes: number,
+): Promise<{ path: string; text: string } | null> {
+  for (const fileName of fileNames) {
+    const source = await readDeveloperInstructionSource(joinPath(dir, fileName), reader, maxBytes);
+    if (source) return source;
+  }
+  return null;
+}
+
+async function readDeveloperInstructionSource(
+  path: string,
+  reader: WorkspaceDeveloperInstructionReader,
+  maxBytes: number,
+): Promise<{ path: string; text: string } | null> {
+  try {
+    return { path, text: await reader(path, maxBytes) };
+  } catch {
+    // Missing AGENTS.md / CLAUDE.md files are normal; keep scanning.
+    return null;
+  }
+}
+
+function formatWorkspaceDeveloperInstructions(sources: Array<{ path: string; text: string }>): string | null {
+  if (sources.length === 0) return null;
+  return [
+    "Workspace developer instructions:",
+    ...sources.map((source) => `Instructions from ${source.path}:\n${source.text.trim()}`),
+  ].join("\n\n");
+}
+
+function stripTrailingPathSeparators(path: string): string {
+  const trimmed = path.trim();
+  if (trimmed === "/") return "/";
+  if (/^[A-Za-z]:[\\/]?$/.test(trimmed)) return trimmed.slice(0, 2);
+  return trimmed.replace(/[\\/]+$/, "");
+}
+
+function parentPath(path: string): string | null {
+  const normalized = stripTrailingPathSeparators(path);
+  if (!normalized || normalized === "/") return null;
+  const separatorIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (separatorIndex < 0) return null;
+  if (separatorIndex === 0) return "/";
+  if (separatorIndex === 2 && /^[A-Za-z]:/.test(normalized)) return normalized.slice(0, 2);
+  return normalized.slice(0, separatorIndex);
+}
+
+function joinPath(dir: string, fileName: string): string {
+  const normalized = stripTrailingPathSeparators(dir);
+  if (!normalized || normalized === "/") return `/${fileName}`;
+  return `${normalized}/${fileName}`;
+}
+
 function compactParams(params: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ""),
   );
+}
+
+type PermissionProfileModificationParam =
+  NonNullable<NonNullable<ThreadContextDefaults["permissions"]>["modifications"]>[number];
+
+function projectThreadPermissions(
+  config: Record<string, unknown>,
+): ThreadContextDefaults["permissions"] | undefined {
+  return permissionProfileSelection(config.permissions)
+    ?? permissionProfileSelection(config.default_permissions)
+    ?? permissionProfileSelection(config.defaultPermissions)
+    ?? permissionProfileSelection(config.permission_profile)
+    ?? permissionProfileSelection(config.permissionProfile)
+    ?? permissionProfileSelection(config.active_permission_profile)
+    ?? permissionProfileSelection(config.activePermissionProfile);
+}
+
+function permissionProfileSelection(value: unknown): ThreadContextDefaults["permissions"] | undefined {
+  const directId = stringOverride(value);
+  if (directId) return { type: "profile", id: directId };
+
+  const record = recordField(value);
+  if (!record) return undefined;
+  const type = stringOverride(record.type);
+  if (type && type !== "profile") return undefined;
+  const id = stringOverride(record.id);
+  if (!id) return undefined;
+  const modifications = permissionProfileModifications(record.modifications);
+  return modifications === undefined
+    ? { type: "profile", id }
+    : { type: "profile", id, modifications };
+}
+
+function permissionProfileModifications(value: unknown): PermissionProfileModificationParam[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const modifications: PermissionProfileModificationParam[] = [];
+  for (const entry of value) {
+    const record = recordField(entry);
+    if (!record || record.type !== "additionalWritableRoot") continue;
+    const path = stringOverride(record.path);
+    if (!path) continue;
+    modifications.push({ type: "additionalWritableRoot", path });
+  }
+  return modifications;
+}
+
+function projectThreadEnvironments(
+  config: Record<string, unknown>,
+): ThreadContextDefaults["environments"] | undefined {
+  const fallbackCwd = stringOverride(config.cwd);
+  return turnEnvironmentParams(config.environments, fallbackCwd)
+    ?? turnEnvironmentParams(config.thread_environments, fallbackCwd)
+    ?? turnEnvironmentParams(config.threadEnvironments, fallbackCwd)
+    ?? turnEnvironmentParams(config.environment, fallbackCwd)
+    ?? turnEnvironmentParams(config.environment_id, fallbackCwd)
+    ?? turnEnvironmentParams(config.environmentId, fallbackCwd);
+}
+
+function turnEnvironmentParams(
+  value: unknown,
+  fallbackCwd: string | undefined,
+): ThreadContextDefaults["environments"] | undefined {
+  if (Array.isArray(value)) {
+    const environments = value
+      .map((entry) => turnEnvironmentParam(entry, fallbackCwd))
+      .filter((entry): entry is NonNullable<ThreadContextDefaults["environments"]>[number] => entry !== null);
+    if (value.length === 0 || environments.length > 0) return environments;
+    return undefined;
+  }
+  const environment = turnEnvironmentParam(value, fallbackCwd);
+  return environment ? [environment] : undefined;
+}
+
+function turnEnvironmentParam(
+  value: unknown,
+  fallbackCwd: string | undefined,
+): NonNullable<ThreadContextDefaults["environments"]>[number] | null {
+  const directId = stringOverride(value);
+  if (directId) {
+    return fallbackCwd ? { environmentId: directId, cwd: fallbackCwd } : null;
+  }
+
+  const record = recordField(value);
+  if (!record) return null;
+  const environmentId = stringOverride(record.environmentId)
+    ?? stringOverride(record.environment_id)
+    ?? stringOverride(record.id);
+  const cwd = stringOverride(record.cwd) ?? fallbackCwd;
+  return environmentId && cwd ? { environmentId, cwd } : null;
+}
+
+function projectThreadMemoryPreferences(
+  config: Record<string, unknown>,
+): ThreadMemoryPreferences | undefined {
+  const memories = recordField(config.memories);
+  const useMemories = booleanOverride(memories?.use_memories)
+    ?? booleanOverride(config["memories.use_memories"]);
+  const generateMemories = booleanOverride(memories?.generate_memories)
+    ?? booleanOverride(config["memories.generate_memories"]);
+  if (useMemories === undefined && generateMemories === undefined) return undefined;
+  return {
+    useMemories: useMemories ?? DEFAULT_THREAD_MEMORY_PREFERENCES.useMemories,
+    generateMemories: generateMemories ?? DEFAULT_THREAD_MEMORY_PREFERENCES.generateMemories,
+  };
+}
+
+function threadMemoryConfig(
+  preferences: ThreadMemoryPreferences | undefined,
+): Record<string, boolean> | undefined {
+  if (!preferences) return undefined;
+  return {
+    "memories.use_memories": preferences.useMemories,
+    "memories.generate_memories": preferences.generateMemories,
+  };
+}
+
+function booleanOverride(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function recordField(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function isProtocolUserMessage(

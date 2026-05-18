@@ -2,9 +2,69 @@ import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 
 export const DESKTOP_APP_LIST_LIMIT = 1000;
 
+export type AppListInvalidationReason =
+  | "app-list-updated"
+  | "mcp-oauth-login-completed"
+  | "app-connect-oauth-callback";
+
+export interface AppConfigWriteEdit {
+  keyPath: string;
+  value: boolean;
+  mergeStrategy: "upsert";
+}
+
+export interface AppListInvalidation {
+  reason: AppListInvalidationReason;
+  version: number;
+}
+
 export interface LoadAllAppsOptions {
   forceRefetch?: boolean;
   threadId?: string | null;
+}
+
+let appListInvalidationVersion = 0;
+const appListInvalidationListeners = new Set<(invalidation: AppListInvalidation) => void>();
+
+export function appEnabledConfigEdit(appId: string, enabled: boolean): AppConfigWriteEdit {
+  return {
+    keyPath: `apps.${appId.trim()}.enabled`,
+    value: enabled,
+    mergeStrategy: "upsert",
+  };
+}
+
+export function appListInvalidationReasonForNotification(
+  method: string,
+): AppListInvalidationReason | null {
+  if (method === "app/list/updated") return "app-list-updated";
+  if (method === "mcpServer/oauthLogin/completed") return "mcp-oauth-login-completed";
+  return null;
+}
+
+export function invalidateAppList(reason: AppListInvalidationReason): AppListInvalidation {
+  appListInvalidationVersion += 1;
+  const invalidation = { reason, version: appListInvalidationVersion };
+  appListInvalidationListeners.forEach((listener) => listener(invalidation));
+  return invalidation;
+}
+
+export function invalidateAppListForNotification(method: string): AppListInvalidation | null {
+  const reason = appListInvalidationReasonForNotification(method);
+  return reason ? invalidateAppList(reason) : null;
+}
+
+export function getAppListInvalidationVersion(): number {
+  return appListInvalidationVersion;
+}
+
+export function subscribeAppListInvalidation(
+  listener: (invalidation: AppListInvalidation) => void,
+): () => void {
+  appListInvalidationListeners.add(listener);
+  return () => {
+    appListInvalidationListeners.delete(listener);
+  };
 }
 
 export async function loadAllApps(

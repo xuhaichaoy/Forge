@@ -1,12 +1,17 @@
 import {
   createCommandPanelState,
   projectCommandPanelEntries,
+  projectFileSearchEntries,
   projectMcpResourceReadResultEntries,
   projectMcpServerEntries,
   projectMcpToolCallResultEntries,
+  projectPluginSkillReadResultEntries,
   projectPluginEntries,
   projectRequiredAppEntries,
+  projectRecommendedSkillEntries,
+  projectSkillManagementEntries,
   projectSkillFileReadResultEntries,
+  starterSkillTarget,
 } from "../src/state/command-panel";
 import {
   buildMcpToolArguments,
@@ -31,15 +36,44 @@ export default function runCommandPanelTests(): void {
   projectsMcpResourcesTemplatesAndReadResults();
   projectsSkillsHooksAppsAndPluginsAsCommandEntries();
   projectsDesktopSkillMetadataAndErrors();
+  projectsRecommendedSkillAndCreatorEntries();
   projectsSkillSourceReadResults();
   avoidsDuplicatingDesktopSkillPromptReferences();
   flattensPluginListMarketplaces();
   mergesConnectorAppsIntoPluginProjection();
   projectsRequiredAppsAfterPluginInstall();
+  projectsFileSearchEntriesAsMentions();
   projectsAndBuildsMcpToolArguments();
   projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
   keepsDetailsHumanReadableWithoutRawJson();
+}
+
+function projectsFileSearchEntriesAsMentions(): void {
+  assertDeepEqual(
+    projectFileSearchEntries({
+      files: [{
+        path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+        file_name: "HiCodexApp.tsx",
+        score: 91,
+        match_type: "fuzzy",
+      }],
+    }),
+    [{
+      id: "file:/workspace/packages/ui/src/HiCodexApp.tsx",
+      title: "HiCodexApp.tsx",
+      kind: "file",
+      status: "fuzzy",
+      meta: "/workspace/packages/ui/src/HiCodexApp.tsx",
+      details: ["score: 91"],
+      action: {
+        type: "attachMention",
+        name: "HiCodexApp.tsx",
+        path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+      },
+    }],
+    "file search projection should reuse composer mention attachment actions",
+  );
 }
 
 function projectsDesktopSkillMetadataAndErrors(): void {
@@ -145,6 +179,180 @@ function projectsSkillSourceReadResults(): void {
       },
     ],
     "skill source reads should be projected as readable command panel rows",
+  );
+}
+
+function projectsRecommendedSkillAndCreatorEntries(): void {
+  const recommended = projectRecommendedSkillEntries(
+    [{
+      plugin: {
+        marketplaceName: "OpenAI",
+        summary: {
+          id: "browser-use",
+          remotePluginId: "remote-browser",
+          name: "browser-use",
+          installed: false,
+          installPolicy: "AVAILABLE",
+          availability: "AVAILABLE",
+          interface: { displayName: "Browser Use" },
+        },
+        skills: [{
+          name: "web-research",
+          description: "Research web sources.",
+          enabled: true,
+          interface: {
+            displayName: "Web Research",
+            shortDescription: "Research current web sources.",
+            defaultPrompt: "Research this topic.",
+          },
+        }],
+      },
+    }],
+    {
+      existingSkills: {
+        data: [{
+          cwd: "/workspace",
+          skills: [{ name: "already-installed", path: "/workspace/.codex/skills/already/SKILL.md" }],
+        }],
+      },
+    },
+  );
+
+  assertDeepEqual(
+    recommended.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      status: entry.status,
+      meta: entry.meta,
+      disabled: entry.disabled,
+      details: entry.details,
+      secondaryActions: entry.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    })),
+    [{
+      id: "recommended-skill:browser-use:web-research",
+      title: "Web Research",
+      status: "install plugin",
+      meta: "Recommended Skills · Browser Use",
+      disabled: true,
+      details: [
+        "Research current web sources.",
+        "Default prompt: Research this topic.",
+        "Plugin: Browser Use",
+        "Source: plugin/skill/read",
+        "Install the plugin to materialize this skill locally.",
+      ],
+      secondaryActions: [
+        {
+          label: "View",
+          action: {
+            type: "readPluginSkill",
+            title: "View Web Research",
+            remoteMarketplaceName: "OpenAI",
+            remotePluginId: "remote-browser",
+            skillName: "web-research",
+          },
+        },
+        {
+          label: "Install plugin",
+          action: {
+            type: "installPlugin",
+            title: "Install Browser Use",
+            pluginId: "browser-use",
+            pluginName: "browser-use",
+            marketplaceName: "OpenAI",
+            marketplacePath: null,
+          },
+        },
+      ],
+    }],
+    "Recommended Skills should be projected only from real plugin/read skill metadata and current plugin actions",
+  );
+
+  assertDeepEqual(
+    projectRecommendedSkillEntries([{
+      plugin: {
+        marketplaceName: "OpenAI",
+        summary: { id: "browser-use", name: "browser-use", installed: true },
+        skills: [{ name: "already-installed", path: "/workspace/.codex/skills/already/SKILL.md" }],
+      },
+    }], {
+      existingSkills: {
+        data: [{ cwd: "/workspace", skills: [{ name: "already-installed", path: "/workspace/.codex/skills/already/SKILL.md" }] }],
+      },
+    }),
+    [],
+    "Recommended Skills should not duplicate skills already returned by skills/list",
+  );
+
+  const management = projectSkillManagementEntries({ data: [] }, { workspace: "/workspace" });
+  const creator = management.find((entry) => entry.id === "skill-creator:local-helper");
+  const starter = starterSkillTarget("/workspace");
+  assertDeepEqual(
+    {
+      status: creator?.status,
+      meta: creator?.meta,
+      details: creator?.details,
+      disabled: creator?.disabled,
+      secondaryActions: creator?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    },
+    {
+      status: "starter available",
+      meta: "Recommended Skills · available boundary",
+      details: [
+        "No app-server creator RPC is exposed; this creates a starter SKILL.md through fs/createDirectory and fs/writeFile.",
+        "Directory: /workspace/.codex/skills/starter-skill",
+        "File: /workspace/.codex/skills/starter-skill/SKILL.md",
+      ],
+      disabled: undefined,
+      secondaryActions: [{
+        label: "Create",
+        action: {
+          type: "createStarterSkill",
+          title: "Create starter skill",
+          skillName: "starter-skill",
+          directoryPath: "/workspace/.codex/skills/starter-skill",
+          filePath: "/workspace/.codex/skills/starter-skill/SKILL.md",
+          contents: starter?.contents,
+        },
+      }],
+    },
+    "Skills management should expose a local Skill creator helper through app-server fs methods without pretending a creator RPC exists",
+  );
+  assertDeepEqual(
+    starter?.contents.includes("name: starter-skill"),
+    true,
+    "starter skill contents should include required skill frontmatter",
+  );
+  assertDeepEqual(
+    projectSkillManagementEntries({ data: [] }, { workspace: "relative/workspace" })
+      .find((entry) => entry.id === "skill-creator:local-helper"),
+    {
+      id: "skill-creator:local-helper",
+      title: "Skill creator",
+      kind: "skill",
+      status: "workspace required",
+      meta: "Recommended Skills · available boundary",
+      details: [
+        "No app-server creator RPC is exposed; this creates a starter SKILL.md through fs/createDirectory and fs/writeFile.",
+        "Open an absolute workspace folder before creating a starter skill.",
+      ],
+      disabled: true,
+      secondaryActions: undefined,
+    },
+    "Skill creator should not issue fs/writeFile requests for non-absolute workspace paths",
+  );
+
+  assertDeepEqual(
+    projectPluginSkillReadResultEntries("web-research", "OpenAI:remote-browser", "# Web Research"),
+    [{
+      id: "plugin-skill-file:OpenAI:remote-browser:web-research",
+      title: "web-research",
+      kind: "status",
+      status: "read",
+      meta: "OpenAI:remote-browser",
+      details: ["# Web Research"],
+    }],
+    "plugin/skill/read results should render as readable source rows",
   );
 }
 
@@ -282,6 +490,16 @@ function projectsMcpServerNamesToolsAndAuthStatus(): void {
       },
     ],
     "OAuth-capable MCP servers should expose authenticate plus reload actions",
+  );
+  assertDeepEqual(
+    projectMcpServerEntries({
+      data: [{ name: "linear", tools: {}, resources: [], resourceTemplates: [], authStatus: "oAuth" }],
+    })[0]?.secondaryActions?.map((action) => action.action),
+    [
+      { type: "loginMcpServer", server: "linear", title: "Authenticate linear" },
+      { type: "reloadMcpServers", title: "Reload MCP config" },
+    ],
+    "MCP authStatus oAuth should expose the inline Authenticate action used by app-server OAuth login",
   );
   assertDeepEqual(
     entries.find((entry) => entry.id === "mcp:github")?.secondaryActions?.some((action) =>
@@ -1013,6 +1231,38 @@ function projectsRequiredAppsAfterPluginInstall(): void {
       }],
     }],
     "plugin install appsNeedingAuth should project a required-apps connect panel state",
+  );
+
+  const waitingEntries = projectRequiredAppEntries([{
+    id: "gmail",
+    name: "Gmail",
+    installUrl: "https://chatgpt.com/connectors/gmail?state=oauth-state",
+    needsAuth: true,
+  }], new Set(["gmail"]));
+  assertDeepEqual(
+    {
+      status: waitingEntries[0]?.status,
+      details: waitingEntries[0]?.details,
+      secondaryLabel: waitingEntries[0]?.secondaryActions?.[0]?.label,
+      action: waitingEntries[0]?.action,
+    },
+    {
+      status: "waiting for refresh",
+      details: [
+        "Auth: ChatGPT connector authorization required",
+        "Install: browser setup URL available",
+        "Finish the browser flow, then refresh Apps or Plugins.",
+      ],
+      secondaryLabel: "Open again",
+      action: {
+        type: "connectRequiredApp",
+        title: "Connect Gmail",
+        appId: "gmail",
+        appName: "Gmail",
+        installUrl: "https://chatgpt.com/connectors/gmail?state=oauth-state",
+      },
+    },
+    "required app rows should stay connectable while waiting for OAuth callback refresh",
   );
 
   const limited = projectRequiredAppEntries([{

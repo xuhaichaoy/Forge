@@ -1,0 +1,123 @@
+import type { BrowserStorageLike } from "./image-generation-tool";
+
+export const HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = "hicodex:notification-preferences";
+
+export const TURN_COMPLETION_NOTIFICATION_POLICIES = ["backgroundOnly", "always", "off"] as const;
+export type TurnCompletionNotificationPolicy = (typeof TURN_COMPLETION_NOTIFICATION_POLICIES)[number];
+
+export interface NotificationPreferences {
+  turnCompletionPolicy: TurnCompletionNotificationPolicy;
+  sound: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  turnCompletionPolicy: "backgroundOnly",
+  sound: true,
+};
+
+export function isTurnCompletionNotificationPolicy(value: unknown): value is TurnCompletionNotificationPolicy {
+  return typeof value === "string"
+    && TURN_COMPLETION_NOTIFICATION_POLICIES.includes(value as TurnCompletionNotificationPolicy);
+}
+
+export function normalizeNotificationPreferences(
+  value: unknown,
+  fallback: NotificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
+): NotificationPreferences {
+  const source = decodeNotificationPreferenceValue(value);
+  const policy = isTurnCompletionNotificationPolicy(source?.turnCompletionPolicy)
+    ? source.turnCompletionPolicy
+    : isTurnCompletionNotificationPolicy(source?.policy)
+      ? source.policy
+      : fallback.turnCompletionPolicy;
+  return {
+    turnCompletionPolicy: policy,
+    sound: typeof source?.sound === "boolean" ? source.sound : fallback.sound,
+  };
+}
+
+export function mergeNotificationPreferences(
+  current: NotificationPreferences,
+  patch: Partial<NotificationPreferences>,
+): NotificationPreferences {
+  return normalizeNotificationPreferences({ ...current, ...patch }, current);
+}
+
+export function loadNotificationPreferences(storage: BrowserStorageLike | null): NotificationPreferences {
+  if (!storage) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+  try {
+    return normalizeNotificationPreferences(storage.getItem(HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY));
+  } catch {
+    return { ...DEFAULT_NOTIFICATION_PREFERENCES };
+  }
+}
+
+export function saveNotificationPreferences(
+  storage: BrowserStorageLike | null,
+  preferences: NotificationPreferences,
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(
+      HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY,
+      JSON.stringify(normalizeNotificationPreferences(preferences)),
+    );
+  } catch {
+    // Preference still applies for this session when storage is unavailable.
+  }
+}
+
+export function shouldNotifyTurnCompletion(input: {
+  preferences: NotificationPreferences;
+  visibilityState?: string | null;
+  hasFocus?: boolean | null;
+}): boolean {
+  if (input.preferences.turnCompletionPolicy === "off") return false;
+  if (input.preferences.turnCompletionPolicy === "always") return true;
+  return !(input.visibilityState === "visible" && input.hasFocus === true);
+}
+
+export function notificationPolicyLabel(policy: TurnCompletionNotificationPolicy): string {
+  switch (policy) {
+    case "always":
+      return "Always";
+    case "off":
+      return "Off";
+    default:
+      return "Background only";
+  }
+}
+
+export function notificationPolicyDescription(policy: TurnCompletionNotificationPolicy): string {
+  switch (policy) {
+    case "always":
+      return "Notify when a turn finishes, even while the HiCodex window is focused.";
+    case "off":
+      return "Do not show native turn-completion notifications.";
+    default:
+      return "Notify when a turn finishes outside the focused HiCodex window.";
+  }
+}
+
+export function notificationSoundLabel(enabled: boolean): string {
+  return enabled ? "Sound on" : "Sound off";
+}
+
+function decodeNotificationPreferenceValue(value: unknown): Record<string, unknown> | null {
+  if (isTurnCompletionNotificationPolicy(value)) {
+    return { turnCompletionPolicy: value };
+  }
+  if (typeof value === "string") {
+    try {
+      const decoded = JSON.parse(value) as unknown;
+      return decoded && typeof decoded === "object" && !Array.isArray(decoded)
+        ? decoded as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}

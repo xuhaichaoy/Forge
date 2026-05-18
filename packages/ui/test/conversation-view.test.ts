@@ -4,7 +4,6 @@ import {
   highlightCodeSegments,
   initialToolActivityExpanded,
   isToolActivityExpandable,
-  markdownLinkFaviconUrl,
   mermaidDiagramKind,
   mermaidFlowchartPreviewModel,
   memoryCitationEntries,
@@ -30,7 +29,6 @@ export default function runConversationViewTests(): void {
   parsesMarkdownBlocksForModelOutput();
   preservesOrderedListStartLikeDesktopMarkdown();
   parsesInlineCodeAndLinks();
-  derivesMarkdownLinkFaviconsLikeDesktop();
   parsesInlineEmphasisLikeAssistantMarkdown();
   parsesSanitizedBasicInlineHtmlLikeDesktopMarkdown();
   parsesMathBlocksAndInlineMathLikeDesktopMarkdown();
@@ -197,12 +195,6 @@ function parsesInlineCodeAndLinks(): void {
     ],
     "email autolinks should render while HTML tags stay plain text",
   );
-}
-
-function derivesMarkdownLinkFaviconsLikeDesktop(): void {
-  assertEqual(markdownLinkFaviconUrl("https://docs.example.com/path?q=1"), "https://docs.example.com/favicon.ico", "external links should derive an origin favicon URL");
-  assertEqual(markdownLinkFaviconUrl("mailto:team@example.com"), null, "non-web links should not show website favicons");
-  assertEqual(markdownLinkFaviconUrl("not a url"), null, "invalid links should not show favicons");
 }
 
 function parsesInlineEmphasisLikeAssistantMarkdown(): void {

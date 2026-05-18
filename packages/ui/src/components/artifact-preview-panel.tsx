@@ -1,5 +1,6 @@
 import { ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ImagePreviewLightbox } from "./image-preview-lightbox";
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 import {
   ARTIFACT_PREVIEW_MAX_BYTES,
@@ -8,6 +9,7 @@ import {
   isArtifactPreviewTooLarge,
   projectArtifactPreview,
 } from "../state/artifact-preview";
+import { projectSpreadsheetPreviewView } from "../state/spreadsheet-viewer";
 import {
   convertLocalFileSrc,
   readDocumentPreview,
@@ -220,7 +222,7 @@ export function ArtifactPreviewPanel({
 
     let cancelled = false;
     setSpreadsheetPreview({ status: "loading", preview: null });
-    readSpreadsheetPreview(resolvedSpreadsheetPath, 40, 12)
+    readSpreadsheetPreview(resolvedSpreadsheetPath, 80, 24)
       .then((nextPreview) => {
         if (cancelled) return;
         setSpreadsheetPreview({ status: "ready", preview: nextPreview });
@@ -311,9 +313,13 @@ export function ArtifactPreviewPanel({
       {previewState && <ArtifactPreviewStateView state={previewState} />}
 
       {imageSrc && (
-        <figure className="hc-artifact-preview-image-frame">
-          <img alt={preview.title} className="hc-artifact-preview-image" src={imageSrc} />
-        </figure>
+        <ImagePreviewLightbox
+          alt={preview.title}
+          frameClassName="hc-artifact-preview-image-frame"
+          imageClassName="hc-artifact-preview-image"
+          src={imageSrc}
+          title={preview.title}
+        />
       )}
 
       {pdfSrc && <ArtifactPdfPreviewFrame src={pdfSrc} title={preview.title} />}
@@ -418,8 +424,13 @@ function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPrevi
     return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
   }
   const columnCount = Math.max(...rows.map((row) => row.length), 1);
+  const view = projectSpreadsheetPreviewView(preview.preview);
   return (
     <div className="hc-artifact-preview-sheet-wrap">
+      <div className="hc-artifact-preview-sheet-meta">
+        <strong>{view.sheetLabel}</strong>
+        <span>{view.sampleLabel}</span>
+      </div>
       <table className="hc-artifact-preview-sheet">
         <tbody>
           {rows.map((row, rowIndex) => (
@@ -435,6 +446,14 @@ function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPrevi
         <div className="hc-artifact-preview-truncation">
           Preview truncated
         </div>
+      )}
+      <div className="hc-artifact-preview-boundary">{view.boundary}</div>
+      {view.details.length > 0 && (
+        <ul className="hc-artifact-preview-sheet-details">
+          {view.details.map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

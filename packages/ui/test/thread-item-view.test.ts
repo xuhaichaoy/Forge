@@ -1,8 +1,16 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  planSummaryCompleted,
+  planSummaryContent,
+} from "../src/components/plan-summary-card";
+import { ThreadItemView } from "../src/components/thread-item-view";
 import {
   autoReviewBody,
   autoReviewTitle,
   dynamicToolCallLabel,
   execThreadItemSummaryLabel,
+  todoListSummaryLabel,
 } from "../src/components/thread-item-view";
 
 export default function runThreadItemViewTests(): void {
@@ -10,6 +18,8 @@ export default function runThreadItemViewTests(): void {
   formatsDesktopAutoReviewTitles();
   formatsDesktopAutoReviewBodies();
   formatsDesktopDynamicToolCallLabels();
+  rendersInlineTodoListPlanCard();
+  rendersProposedPlanSummaryCard();
 }
 
 function formatsDesktopExecThreadItemSummaries(): void {
@@ -121,8 +131,84 @@ function formatsDesktopDynamicToolCallLabels(): void {
   );
 }
 
+function rendersInlineTodoListPlanCard(): void {
+  const item = {
+    type: "todo-list",
+    id: "todo-1",
+    plan: [
+      { step: "Inspect Desktop plan card", status: "completed" },
+      { step: "Patch HiCodex inline card", status: "in_progress" },
+    ],
+  };
+  assertEqual(
+    todoListSummaryLabel(item as never),
+    "1 out of 2 tasks completed",
+    "todo-list summary should match Desktop plan copy",
+  );
+  const html = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:todo-list:todo-1",
+      item,
+    } as never,
+  }));
+  assertStringIncludes(html, "data-item-type=\"todo-list\"", "todo-list should render as an inline thread item");
+  assertStringIncludes(html, "1 out of 2 tasks completed", "todo-list card should render the summary");
+  assertStringIncludes(html, "data-status=\"completed\"", "completed plan steps should expose completed styling");
+}
+
+function rendersProposedPlanSummaryCard(): void {
+  const completeItem = {
+    type: "proposed-plan",
+    id: "plan-1",
+    content: "## Plan\n\n- Inspect\n- Patch\n- Verify",
+    completed: true,
+  };
+  assertEqual(
+    planSummaryContent(completeItem as never),
+    "## Plan\n\n- Inspect\n- Patch\n- Verify",
+    "proposed-plan content should come from the Desktop content field",
+  );
+  assertEqual(planSummaryCompleted(completeItem as never), true, "completed proposed plan should use completed=true");
+  const completeHtml = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:proposed-plan:plan-1",
+      item: completeItem,
+    } as never,
+  }));
+  assertStringIncludes(completeHtml, "data-item-type=\"proposed-plan\"", "proposed-plan should render a dedicated card");
+  assertStringIncludes(completeHtml, "<h3 class=\"hc-plan-summary-title\">Plan</h3>", "completed proposed plan title");
+  assertStringIncludes(completeHtml, "Download plan", "completed proposed plan should expose PLAN.md download");
+  assertStringIncludes(completeHtml, "Copy plan", "completed proposed plan should expose copy");
+  assertStringIncludes(completeHtml, "<h2", "proposed-plan markdown should render as markdown");
+
+  const writingItem = {
+    type: "proposed-plan",
+    id: "plan-2",
+    content: "- Keep working",
+    completed: false,
+  };
+  const writingHtml = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:proposed-plan:plan-2",
+      item: writingItem,
+    } as never,
+  }));
+  assertStringIncludes(writingHtml, "Writing plan", "incomplete proposed plan title");
+  assertStringIncludes(writingHtml, "hc-plan-summary-body is-collapsed", "incomplete proposed plan should start collapsed");
+  assertStringIncludes(writingHtml, "Expand plan", "collapsed proposed plan should expose an expand affordance");
+}
+
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
+function assertStringIncludes(actual: string, expected: string, message: string): void {
+  if (!actual.includes(expected)) {
+    throw new Error(`${message}: missing ${expected}`);
   }
 }

@@ -15,14 +15,17 @@ export function useDismissibleLayer<T extends HTMLElement>(
     };
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onDismiss();
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onDismiss();
     };
 
     document.addEventListener("pointerdown", closeOnPointerDown, true);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", closeOnEscape, true);
     return () => {
       document.removeEventListener("pointerdown", closeOnPointerDown, true);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", closeOnEscape, true);
     };
   }, [layerRef, onDismiss, open]);
 }

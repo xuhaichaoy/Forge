@@ -4,6 +4,7 @@ import {
   MCP_FOLLOW_UP_LOCAL_DISABLED_REASON,
   MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON,
   McpFollowUpDialog,
+  nextMcpFollowUpDraft,
   normalizeMcpFollowUpOptions,
 } from "../src/components/mcp-follow-up-dialog";
 
@@ -18,6 +19,7 @@ export default function runMcpFollowUpDialogTests(): void {
   defaultsToCurrentThreadTarget();
   selectsNewThreadAndSideChatTargets();
   disablesLocalAndWorktreeTargets();
+  preservesEditedDraftWhenPromptRefreshes();
 }
 
 function rendersDesktopConfirmationPrompt(): void {
@@ -102,6 +104,17 @@ function disablesLocalAndWorktreeTargets(): void {
       disabled: false,
     }])[0]?.disabled === true,
     "normalization should force worktree mode disabled",
+  );
+}
+
+function preservesEditedDraftWhenPromptRefreshes(): void {
+  assert(
+    nextMcpFollowUpDraft("Edited by user", "Original prompt", "New app prompt") === "Edited by user",
+    "follow-up dialog should not wipe a user-edited draft when a new app prompt arrives",
+  );
+  assert(
+    nextMcpFollowUpDraft("Original prompt", "Original prompt", "New app prompt") === "New app prompt",
+    "follow-up dialog should refresh untouched drafts when the app prompt changes",
   );
 }
 

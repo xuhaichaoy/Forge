@@ -4,10 +4,12 @@ import { formatError } from "../lib/format";
 import {
   createCommandPanelState,
   projectCommandPanelEntries,
+  projectSkillManagementEntries,
   type CommandPanelKind,
   type CommandPanelState,
 } from "../state/command-panel";
 import type { SettingsPanelId } from "../state/composer-workflow";
+import { loadRecommendedSkillPluginDetails } from "../state/settings-panel-loader";
 
 export function useSkillsPanelRefresh({
   activeSettingsPanel,
@@ -78,6 +80,9 @@ export function useSkillsPanelRefresh({
           cwds: workspace.trim() ? [workspace.trim()] : [],
           forceReload: true,
         }, 120_000);
+        const recommendedSkills = settingsSkillsOpen
+          ? await loadRecommendedSkillPluginDetails(client, workspace)
+          : [];
         if (disposed) return;
         setCommandPanel((current) => current?.panel === "skills"
           ? createCommandPanelState("skills", {
@@ -92,7 +97,7 @@ export function useSkillsPanelRefresh({
               status: "ready",
               title: current.title,
               message: "Skills changed on disk. Refreshed skills from app-server.",
-              entries: projectCommandPanelEntries({ skills }),
+              entries: projectSkillManagementEntries(skills, { recommendedSkills, workspace }),
             })
           : current);
       } catch (error) {

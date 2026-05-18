@@ -10,6 +10,7 @@ import {
   FolderPlus,
   ListFilter,
   Loader2,
+  LogOut,
   Maximize2,
   MessageSquarePlus,
   Minimize2,
@@ -22,10 +23,17 @@ import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "
 import type { Thread } from "@hicodex/codex-protocol";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import {
+  projectAccountMenuItems,
+  type AccountMenuItem,
+  type AccountViewModel,
+} from "../state/account-state";
+import {
+  DEFAULT_SIDEBAR_ORGANIZE_MODE,
   projectSidebarThreadGroups,
   sidebarThreadHasVisibleStatus,
   sidebarThreadRelativeTime,
   sidebarThreadStatusState,
+  type SidebarOrganizeMode,
   type SidebarSortKey,
   type SidebarThreadStatusState,
 } from "../state/sidebar-projection";
@@ -48,6 +56,9 @@ const threadPinIndicatorClass = "h-5 w-5 shrink-0";
 const threadPinIndicatorButtonClass =
   "hc-thread-pin-button relative flex h-5 w-5 items-center justify-center border-0 bg-transparent p-0 leading-none text-token-description-foreground hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vscode-focusBorder)]";
 const threadPinIndicatorButtonVisibleClass = "is-pinned";
+const threadMenuWidthPx = 220;
+const threadMenuEstimatedHeightPx = 360;
+const threadMenuViewportMarginPx = 8;
 const threadMenuClass =
   "hc-app-popover-menu fixed z-50 m-px flex w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background px-1 py-1 text-token-foreground shadow-xl-spread ring-[0.5px] ring-token-border backdrop-blur-sm";
 const threadMenuItemClass =
@@ -77,8 +88,15 @@ export interface SidebarProps {
   onCopySessionId?: (thread: Thread) => void | Promise<void>;
   onCopyDeeplink?: (thread: Thread) => void | Promise<void>;
   onOpenSettings: () => void;
+  accountView?: AccountViewModel | null;
+  onSignOut?: () => void | Promise<void>;
   sortKey?: SidebarSortKey;
   onSortKeyChange?: (sortKey: SidebarSortKey) => void;
+  organizeMode?: SidebarOrganizeMode;
+  currentWorkspaceRoot?: string | null;
+  onOrganizeModeChange?: (organizeMode: SidebarOrganizeMode) => void;
+  collapsedGroupKeys?: ReadonlySet<string>;
+  onCollapsedGroupKeysChange?: (collapsedGroupKeys: string[]) => void;
   getThreadTitle?: (thread: Thread) => string;
   /**
    * Update banner state. When set, sidebar shows a small "Update v0.1.1"
@@ -116,8 +134,15 @@ export function Sidebar({
   onCopySessionId,
   onCopyDeeplink,
   onOpenSettings,
+  accountView,
+  onSignOut,
   sortKey = "updated_at",
   onSortKeyChange,
+  organizeMode,
+  currentWorkspaceRoot,
+  onOrganizeModeChange,
+  collapsedGroupKeys,
+  onCollapsedGroupKeysChange,
   getThreadTitle = threadTitle,
   updateAvailable,
   onApplyUpdate,
@@ -131,13 +156,20 @@ export function Sidebar({
   const [openSectionMenu, setOpenSectionMenu] = useState<"filter" | "add-project" | null>(null);
   const sectionActionsRef = useRef<HTMLDivElement | null>(null);
   const threadMenuRef = useRef<HTMLDivElement | null>(null);
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
+  const [internalOrganizeMode, setInternalOrganizeMode] = useState<SidebarOrganizeMode>(DEFAULT_SIDEBAR_ORGANIZE_MODE);
+  const [internalCollapsedGroupKeys, setInternalCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
   const [previouslyExpandedGroupKeys, setPreviouslyExpandedGroupKeys] = useState<string[]>([]);
   const [confirmingArchiveThreadId, setConfirmingArchiveThreadId] = useState<string | null>(null);
-  const threadGroups = projectSidebarThreadGroups(threads);
+  const effectiveOrganizeMode = organizeMode ?? internalOrganizeMode;
+  const effectiveCollapsedGroupKeys = collapsedGroupKeys ?? internalCollapsedGroupKeys;
+  const threadGroups = projectSidebarThreadGroups(threads, {
+    organizeMode: effectiveOrganizeMode,
+    currentWorkspaceRoot,
+  });
+  const sectionLabel = effectiveOrganizeMode === "recent" ? "Chats" : "Projects";
   const sectionCollapseAction = projectSectionCollapseAction(
     threadGroups.map((group) => group.key),
-    collapsedGroupKeys,
+    effectiveCollapsedGroupKeys,
     previouslyExpandedGroupKeys,
   );
 
@@ -171,7 +203,11 @@ export function Sidebar({
     event.stopPropagation();
     setOpenSectionMenu(null);
     setConfirmingArchiveThreadId(null);
-    setOpenThreadMenu({ threadId: thread.id, x: event.clientX, y: event.clientY });
+    const position = sidebarContextMenuPosition(
+      { x: event.clientX, y: event.clientY },
+      browserViewportSize(),
+    );
+    setOpenThreadMenu({ threadId: thread.id, x: position.left, y: position.top });
   };
 
   const requestArchiveConfirmation = (thread: Thread) => {
@@ -183,14 +219,20 @@ export function Sidebar({
     setConfirmingArchiveThreadId((current) => current === thread.id ? null : current);
   };
 
+  const updateCollapsedGroupKeys = (updater: (current: ReadonlySet<string>) => Set<string>) => {
+    const next = updater(effectiveCollapsedGroupKeys);
+    if (onCollapsedGroupKeysChange) {
+      onCollapsedGroupKeysChange([...next]);
+      return;
+    }
+    setInternalCollapsedGroupKeys(next);
+  };
+
   const toggleGroup = (key: string) => {
-    setCollapsedGroupKeys((current) => {
+    updateCollapsedGroupKeys((current) => {
       const next = new Set(current);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -199,13 +241,13 @@ export function Sidebar({
     setOpenSectionMenu(null);
     const groupKeys = threadGroups.map((group) => group.key);
     if (sectionCollapseAction === "collapse-all") {
-      const expanded = groupKeys.filter((key) => !collapsedGroupKeys.has(key));
-      setCollapsedGroupKeys(new Set(groupKeys));
+      const expanded = groupKeys.filter((key) => !effectiveCollapsedGroupKeys.has(key));
+      updateCollapsedGroupKeys(() => new Set(groupKeys));
       setPreviouslyExpandedGroupKeys(expanded);
       return;
     }
     if (sectionCollapseAction === "reopen-previous") {
-      setCollapsedGroupKeys((current) => {
+      updateCollapsedGroupKeys((current) => {
         const next = new Set(current);
         const visible = new Set(groupKeys);
         for (const key of previouslyExpandedGroupKeys) {
@@ -222,9 +264,23 @@ export function Sidebar({
     onSortKeyChange?.(nextSortKey);
   };
 
+  const chooseOrganizeMode = (nextOrganizeMode: SidebarOrganizeMode) => {
+    setOpenSectionMenu(null);
+    if (onOrganizeModeChange) {
+      onOrganizeModeChange(nextOrganizeMode);
+      return;
+    }
+    setInternalOrganizeMode(nextOrganizeMode);
+  };
+
   const useExistingFolder = () => {
     setOpenSectionMenu(null);
     void onUseExistingFolder?.();
+  };
+
+  const signOut = () => {
+    if (!accountView?.signedIn || accountView.signOutAction.disabled) return;
+    void onSignOut?.();
   };
 
   const renderUpdateBadge = () => {
@@ -251,7 +307,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="hc-sidebar">
+    <aside className="hc-sidebar" id="hc-sidebar">
       {renderUpdateBadge()}
       <div className="hc-sidebar-nav">
         <SidebarNavItem
@@ -282,7 +338,7 @@ export function Sidebar({
 
       <div className="hc-thread-list">
         <div className={`hc-thread-section-header ${openSectionMenu ? "is-menu-open" : ""}`}>
-          <div className="hc-thread-section-label">Projects</div>
+          <div className="hc-thread-section-label">{sectionLabel}</div>
           <div className="hc-thread-section-actions" aria-label="Projects actions" ref={sectionActionsRef}>
             {sectionCollapseAction && (
               <button
@@ -311,11 +367,49 @@ export function Sidebar({
             </button>
             {openSectionMenu === "filter" && (
               <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
+                <div className="hc-thread-menu-title">Organize</div>
+                <button
+                  type="button"
+                  className="hc-thread-menu-item"
+                  role="menuitemradio"
+                  aria-checked={effectiveOrganizeMode === "project"}
+                  onClick={() => chooseOrganizeMode("project")}
+                >
+                  <Folder size={13} />
+                  <span>By project</span>
+                  {effectiveOrganizeMode === "project" && <Check size={13} className="hc-thread-menu-check" />}
+                </button>
+                <button
+                  type="button"
+                  className="hc-thread-menu-item"
+                  role="menuitemradio"
+                  aria-checked={effectiveOrganizeMode === "current_workspace"}
+                  onClick={() => chooseOrganizeMode("current_workspace")}
+                >
+                  <Folder size={13} />
+                  <span>Current workspace first</span>
+                  {effectiveOrganizeMode === "current_workspace" && <Check size={13} className="hc-thread-menu-check" />}
+                </button>
+                <button
+                  type="button"
+                  className="hc-thread-menu-item"
+                  role="menuitemradio"
+                  aria-checked={effectiveOrganizeMode === "recent"}
+                  onClick={() => chooseOrganizeMode("recent")}
+                >
+                  <Clock size={13} />
+                  <span>Recent</span>
+                  {effectiveOrganizeMode === "recent" && <Check size={13} className="hc-thread-menu-check" />}
+                </button>
+                <div className={threadMenuSeparatorClass}>
+                  <div className="h-px w-full bg-token-menu-border" />
+                </div>
                 <div className="hc-thread-menu-title">Sort by</div>
                 <button
                   type="button"
                   className="hc-thread-menu-item"
-                  role="menuitem"
+                  role="menuitemradio"
+                  aria-checked={sortKey === "updated_at"}
                   onClick={() => chooseSortKey("updated_at")}
                 >
                   <Clock size={13} />
@@ -325,7 +419,8 @@ export function Sidebar({
                 <button
                   type="button"
                   className="hc-thread-menu-item"
-                  role="menuitem"
+                  role="menuitemradio"
+                  aria-checked={sortKey === "created_at"}
                   onClick={() => chooseSortKey("created_at")}
                 >
                   <Calendar size={13} />
@@ -375,15 +470,15 @@ export function Sidebar({
             <button
               className="hc-project-row"
               type="button"
-              aria-expanded={!collapsedGroupKeys.has(group.key)}
+              aria-expanded={!effectiveCollapsedGroupKeys.has(group.key)}
               onClick={() => toggleGroup(group.key)}
               title={group.path ?? group.label}
             >
-              {collapsedGroupKeys.has(group.key) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              {effectiveCollapsedGroupKeys.has(group.key) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
               <Folder size={16} />
               <span className="hc-project-name">{group.label}</span>
             </button>
-            {!collapsedGroupKeys.has(group.key) && group.threads.map((thread) => {
+            {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.map((thread) => {
               const relativeTime = sidebarThreadRelativeTime(thread);
               const statusState = sidebarThreadStatusState(thread);
               const isPinned = pinnedThreadIds?.has(thread.id) ?? false;
@@ -498,7 +593,11 @@ export function Sidebar({
                       className={threadMenuClass}
                       ref={threadMenuRef}
                       role="menu"
-                      style={{ left: openThreadMenu.x, top: openThreadMenu.y }}
+                      style={{
+                        left: openThreadMenu.x,
+                        maxHeight: `calc(100vh - ${threadMenuViewportMarginPx * 2}px)`,
+                        top: openThreadMenu.y,
+                      }}
                       onClick={(event) => event.stopPropagation()}
                     >
                       {onToggleThreadPinned && (
@@ -599,6 +698,9 @@ export function Sidebar({
       </div>
 
       <div className="hc-sidebar-footer">
+        {accountView && (
+          <SidebarAccountSummary accountView={accountView} onSignOut={signOut} />
+        )}
         <SidebarNavItem icon={<Settings size={17} />} label="Settings" onClick={onOpenSettings} />
       </div>
     </aside>
@@ -611,7 +713,7 @@ function cx(...classes: Array<string | false | null | undefined>) {
 
 function projectSectionCollapseAction(
   groupKeys: string[],
-  collapsedGroupKeys: Set<string>,
+  collapsedGroupKeys: ReadonlySet<string>,
   previouslyExpandedGroupKeys: string[],
 ): "collapse-all" | "reopen-previous" | null {
   const expanded = groupKeys.filter((key) => !collapsedGroupKeys.has(key));
@@ -654,6 +756,126 @@ function ThreadStatusIndicator({ state }: { state: SidebarThreadStatusState }) {
     >
       <span className="block h-1.5 w-1.5 rounded-full bg-[#2f6fed]" />
     </span>
+  );
+}
+
+export function sidebarContextMenuPosition(
+  point: { x: number; y: number },
+  viewport: { width: number; height: number },
+): { left: number; top: number } {
+  const maxLeft = Math.max(
+    threadMenuViewportMarginPx,
+    viewport.width - threadMenuWidthPx - threadMenuViewportMarginPx,
+  );
+  const maxTop = Math.max(
+    threadMenuViewportMarginPx,
+    viewport.height - threadMenuEstimatedHeightPx - threadMenuViewportMarginPx,
+  );
+  return {
+    left: clamp(point.x, threadMenuViewportMarginPx, maxLeft),
+    top: clamp(point.y, threadMenuViewportMarginPx, maxTop),
+  };
+}
+
+function browserViewportSize(): { width: number; height: number } {
+  return {
+    width: window.innerWidth || threadMenuWidthPx + threadMenuViewportMarginPx * 2,
+    height: window.innerHeight || threadMenuEstimatedHeightPx + threadMenuViewportMarginPx * 2,
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function SidebarAccountSummary({
+  accountView,
+  onSignOut,
+}: {
+  accountView: AccountViewModel;
+  onSignOut: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const layerRef = useRef<HTMLDivElement | null>(null);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissibleLayer(open, layerRef, close);
+  const title = [
+    accountView.email,
+    accountView.authLabel,
+    accountView.planLabel,
+    accountView.quotaLabel,
+    accountView.quotaDetail,
+    accountView.error,
+  ].filter(Boolean).join("\n");
+  const meta = [
+    accountView.authLabel,
+    accountView.planLabel,
+  ].filter(Boolean).join(" / ");
+  const items = projectAccountMenuItems(accountView);
+  const runMenuItem = (item: AccountMenuItem) => {
+    if (item.action === "account/signOut") {
+      if (item.disabled) return;
+      setOpen(false);
+      onSignOut();
+    }
+  };
+  return (
+    <div
+      className="hc-sidebar-account"
+      data-quota-tone={accountView.quotaTone}
+      title={title || undefined}
+      ref={layerRef}
+    >
+      <button
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="hc-sidebar-account-trigger"
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="hc-sidebar-account-avatar" aria-hidden="true">
+          {accountView.avatarInitials}
+        </span>
+        <span className="hc-sidebar-account-body">
+          <span className="hc-sidebar-account-name">{accountView.displayName}</span>
+          <span className="hc-sidebar-account-meta">
+            {accountView.loading ? "Refreshing account..." : meta || accountView.quotaLabel}
+          </span>
+        </span>
+        <ChevronRight className="hc-sidebar-account-chevron" size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="hc-sidebar-account-menu" role="menu">
+          {items.map((item) => item.action
+            ? (
+                <button
+                  key={item.id}
+                  className="hc-sidebar-account-menu-item"
+                  data-tone={item.tone}
+                  disabled={item.disabled}
+                  role="menuitem"
+                  type="button"
+                  onClick={() => runMenuItem(item)}
+                >
+                  <LogOut size={14} aria-hidden="true" />
+                  <span>{item.label}</span>
+                  {item.value && <small>{item.value}</small>}
+                </button>
+              )
+            : (
+                <div
+                  className="hc-sidebar-account-menu-item"
+                  data-tone={item.tone}
+                  key={item.id}
+                  role="menuitem"
+                >
+                  <span>{item.label}</span>
+                  {item.value && <strong>{item.value}</strong>}
+                </div>
+              ))}
+        </div>
+      )}
+    </div>
   );
 }
 

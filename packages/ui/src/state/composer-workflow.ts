@@ -86,6 +86,7 @@ export type SlashCommandRequest =
   | "showPlanMode"
   | "showMentionPicker"
   | "showDebugConfig"
+  | "showRpcInspector"
   | "showTitle"
   | "showStatusline"
   | "showTheme"
@@ -348,7 +349,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("experimental", "Experimental", "Open experimental feature toggles.", "settings", "panel", ["features", "labs"]),
   command("approve", "Approve retry", "Approve a blocked auto-review retry for this thread.", "tools", "direct", ["auto-review"]),
   command("approvals", "Approvals", "Open pending approval and permission controls.", "settings", "panel", ["permission", "requests"]),
-  command("memories", "Memories", "Inspect or configure memory behavior.", "tools", "pending", ["memory"], undefined, true),
+  command("memories", "Memories", "Inspect or configure memory behavior.", "tools", "direct", ["memory"]),
   command("skills", "Skills", "List available Codex skills.", "tools", "direct", ["skill"], "reload"),
   command("hooks", "Hooks", "List configured lifecycle hooks.", "tools", "direct", ["hook"]),
   command("review", "Review", "Review the current working tree or custom instructions.", "workspace", "direct", ["inspect", "code review"], "instructions"),
@@ -369,10 +370,11 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("diff", "Diff", "Show the current git diff.", "workspace", "direct", ["changes"]),
   command("mention", "Mention", "Add a file mention to the composer.", "workspace", "direct", ["file", "@"]),
   command("status", "Status", "Show active thread, workspace, model, and sidecar status.", "workspace", "direct", ["session"]),
-  command("debug-config", "Debug config", "Inspect effective Codex config layers.", "debug", "pending", ["config"], undefined, true),
+  command("debug-config", "Debug config", "Inspect effective Codex config layers.", "debug", "direct", ["config"]),
+  command("rpc", "RPC inspector", "Inspect recent JSON-RPC and host events.", "debug", "direct", ["json-rpc", "inspector"]),
   command("title", "Terminal title", "Configure terminal title behavior.", "settings", "pending", ["terminal"], undefined, true),
   command("statusline", "Status line", "Configure status-line behavior.", "settings", "pending", ["status"], undefined, true),
-  command("theme", "Theme", "Choose the UI or syntax theme.", "settings", "pending", ["appearance"], undefined, true),
+  command("theme", "Theme", "Choose the UI appearance.", "settings", "direct", ["appearance", "dark", "light"]),
   command("mcp", "MCP", "Reload and list MCP servers and tools.", "mcp", "direct", ["tools", "server"], "verbose"),
   command("apps", "Apps", "List connected apps and connectors.", "tools", "direct", ["connectors"]),
   command("plugins", "Plugins", "List installed and marketplace plugins.", "tools", "direct", ["plugin"]),
@@ -380,7 +382,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("logout", "Logout", "Sign out from the current Codex account.", "settings", "direct", ["account"]),
   command("quit", "Quit", "Quit HiCodex.", "settings", "desktop", ["exit"], undefined, true),
   command("exit", "Exit", "Quit HiCodex.", "settings", "desktop", ["quit"]),
-  command("feedback", "Feedback", "Prepare a feedback upload.", "tools", "pending", ["logs"], undefined, true),
+  command("feedback", "Feedback", "Prepare a feedback report with diagnostics.", "tools", "direct", ["logs", "bug"]),
   command("rollout", "Rollout path", "Show the current rollout path when available.", "debug", "pending", ["debug"], undefined, true),
   command("ps", "Background terminals", "List background terminal processes.", "tools", "direct", ["processes"]),
   command("stop", "Stop terminals", "Stop all background terminals for this thread.", "tools", "direct", ["clean"]),
@@ -569,6 +571,23 @@ export function compactAttachmentLabel(label: string, maxLength = 10): string {
   if (trimmed.length <= maxLength) return trimmed;
   if (maxLength <= 3) return trimmed.slice(0, maxLength);
   return `${trimmed.slice(0, maxLength - 3)}...`;
+}
+
+export function composerAttachmentKindLabel(attachment: ComposerAttachment): string {
+  switch (attachment.type) {
+    case "mention":
+      return "Mention";
+    case "localImage":
+      return "Image";
+    case "image":
+      return attachment.url.trim().startsWith("data:") ? "Image" : "Image URL";
+    case "skill":
+      return "Skill";
+    case "plainText":
+      return "Text";
+    case "filePath":
+      return "File";
+  }
 }
 
 export function isImageFileLike(file: ComposerTransferFileLike): boolean {
@@ -774,6 +793,8 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
       return { action: "request", request: "showMentionPicker", clearInput: true, payload: optionalPayload("query", args) };
     case "debug-config":
       return { action: "request", request: "showDebugConfig", clearInput: true };
+    case "rpc":
+      return { action: "request", request: "showRpcInspector", clearInput: true };
     case "title":
       return { action: "request", request: "showTitle", clearInput: true };
     case "statusline":
@@ -838,7 +859,12 @@ export function buildUserInputFromComposer(
         }
         break;
       case "skill":
-        // Codex Desktop serializes skills as prompt-link text, not structured UserInput.
+        {
+          const promptLink = skillAttachmentPromptLink(attachment);
+          if (promptLink && !textParts.some((part) => part.includes(promptLink))) {
+            textParts.push(promptLink);
+          }
+        }
         break;
       case "mention":
         if (attachment.path.trim()) {
@@ -857,6 +883,19 @@ export function buildUserInputFromComposer(
     ...(text ? [{ type: "text" as const, text, text_elements: [] }] : []),
     ...structuredInputs,
   ];
+}
+
+function skillAttachmentPromptLink(attachment: Extract<ComposerAttachment, { type: "skill" }>): string | null {
+  const path = normalizeAttachmentPath(attachment.path);
+  if (!path) return null;
+  const rawName = attachment.name.trim() || inferNameFromPath(path).replace(/\.md$/i, "");
+  const name = rawName.replace(/^\$+/, "").trim();
+  if (!name) return null;
+  return `[$${name}](${escapePromptLinkPath(path)})`;
+}
+
+function escapePromptLinkPath(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }
 
 export function createAttachmentFromInput(actionId: AttachActionId, value: string): ComposerAttachment | null {

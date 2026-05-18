@@ -17,13 +17,18 @@ export interface McpServerConfigFormValues {
   currentKey?: string;
   cwd: string;
   enabled: boolean;
+  disabledTools: string;
   env: string;
   envVars: string;
   envHttpHeaders: string;
   existingServers: string[];
+  enabledTools: string;
   httpHeaders: string;
   name: string;
   required: boolean;
+  startupTimeoutMs: string;
+  startupTimeoutSec: string;
+  toolTimeoutSec: string;
   transport: "stdio" | "streamable_http";
   url: string;
 }
@@ -195,6 +200,40 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                   <span>Required at startup</span>
                 </span>
               </label>
+
+              <TextAreaField
+                label="Enabled tools"
+                onChange={(value) => setValue("enabledTools", value)}
+                placeholder="search&#10;read"
+                value={values.enabledTools}
+              />
+              <TextAreaField
+                label="Disabled tools"
+                onChange={(value) => setValue("disabledTools", value)}
+                placeholder="write"
+                value={values.disabledTools}
+              />
+              <TextField
+                error={errors.startupTimeoutSec}
+                label="Startup timeout seconds"
+                onChange={(value) => setValue("startupTimeoutSec", value)}
+                placeholder="20"
+                value={values.startupTimeoutSec}
+              />
+              <TextField
+                error={errors.startupTimeoutMs}
+                label="Startup timeout milliseconds"
+                onChange={(value) => setValue("startupTimeoutMs", value)}
+                placeholder="20000"
+                value={values.startupTimeoutMs}
+              />
+              <TextField
+                error={errors.toolTimeoutSec}
+                label="Tool timeout seconds"
+                onChange={(value) => setValue("toolTimeoutSec", value)}
+                placeholder="90"
+                value={values.toolTimeoutSec}
+              />
             </div>
           </div>
           <footer className="hc-mcp-tool-form-footer">
@@ -283,7 +322,9 @@ export function initialMcpServerConfigFormValues(action: McpServerFormAction): M
     command: stringField(config, "command"),
     currentKey: action.server,
     cwd: stringField(config, "cwd"),
+    disabledTools: linesFromArray(config.disabled_tools),
     enabled: config.enabled !== false,
+    enabledTools: linesFromArray(config.enabled_tools),
     env: keyValueLinesFromRecord(config.env),
     envVars: linesFromArray(config.env_vars),
     envHttpHeaders: keyValueLinesFromRecord(config.env_http_headers),
@@ -291,6 +332,9 @@ export function initialMcpServerConfigFormValues(action: McpServerFormAction): M
     httpHeaders: keyValueLinesFromRecord(config.http_headers),
     name: action.server ?? "",
     required: config.required === true,
+    startupTimeoutMs: numberField(config, "startup_timeout_ms"),
+    startupTimeoutSec: numberField(config, "startup_timeout_sec"),
+    toolTimeoutSec: numberField(config, "tool_timeout_sec"),
     transport: isHttp ? "streamable_http" : "stdio",
     url: stringField(config, "url"),
   };
@@ -307,6 +351,12 @@ export function buildMcpServerConfig(values: McpServerConfigFormValues): {
   config.enabled = values.enabled;
   if (values.required) config.required = true;
   else delete config.required;
+  setOptionalArray(config, "enabled_tools", nonEmptyLines(values.enabledTools));
+  setOptionalArray(config, "disabled_tools", nonEmptyLines(values.disabledTools));
+  setOptionalInteger(config, "startup_timeout_sec", values.startupTimeoutSec, errors);
+  setOptionalInteger(config, "startup_timeout_ms", values.startupTimeoutMs, errors);
+  setOptionalInteger(config, "tool_timeout_sec", values.toolTimeoutSec, errors);
+  if (Object.keys(errors).length > 0) return { config: null, errors, name };
 
   if (values.transport === "stdio") {
     const command = values.command.trim();
@@ -388,6 +438,28 @@ function setOptionalString(config: Record<string, unknown>, key: string, value: 
   else delete config[key];
 }
 
+function setOptionalInteger(
+  config: Record<string, unknown>,
+  key: string,
+  value: string,
+  errors: Record<string, string>,
+): void {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    delete config[key];
+    return;
+  }
+  if (!/^\d+$/u.test(trimmed)) {
+    errors[key === "startup_timeout_sec"
+      ? "startupTimeoutSec"
+      : key === "startup_timeout_ms"
+        ? "startupTimeoutMs"
+        : "toolTimeoutSec"] = "Enter a whole number";
+    return;
+  }
+  config[key] = Number(trimmed);
+}
+
 function linesFromArray(value: unknown): string {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string").join("\n") : "";
 }
@@ -402,6 +474,11 @@ function keyValueLinesFromRecord(value: unknown): string {
 function stringField(record: Record<string, unknown>, key: string): string {
   const value = record[key];
   return typeof value === "string" ? value : "";
+}
+
+function numberField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : "";
 }
 
 function recordObject(value: unknown): Record<string, unknown> {

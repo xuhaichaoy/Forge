@@ -495,6 +495,19 @@ function projectsGeneratedImageSourcesIntoArtifacts(): void {
       contentItems: [{ type: "inputImage", imageUrl: "data:image/png;base64,PNGDATA" }],
       success: true,
     } as unknown as ThreadItem,
+    {
+      type: "dynamicToolCall",
+      id: "hicodex-image-2",
+      tool: "image_gen",
+      status: "completed",
+      contentItems: [
+        {
+          type: "inputImage",
+          imageUrl: "file:///tmp/hicodex-home/generated_images/thread-1/ig_generated.png",
+        },
+      ],
+      success: true,
+    } as unknown as ThreadItem,
   ]);
 
   assertDeepEqual(
@@ -523,6 +536,18 @@ function projectsGeneratedImageSourcesIntoArtifacts(): void {
         meta: "data:image/png;base64,PNGDATA",
         status: "completed",
         action: { kind: "url", url: "data:image/png;base64,PNGDATA" },
+      },
+      {
+        title: "ig_generated.png",
+        meta: "/tmp/hicodex-home/generated_images/thread-1/ig_generated.png",
+        status: "completed",
+        action: {
+          kind: "file",
+          reference: {
+            path: "/tmp/hicodex-home/generated_images/thread-1/ig_generated.png",
+            lineStart: 1,
+          },
+        },
       },
     ],
     "generated images should surface native and HiCodex image tool outputs as Artifacts",

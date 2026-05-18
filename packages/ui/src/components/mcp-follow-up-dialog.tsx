@@ -1,5 +1,5 @@
 import { MessageSquareText, X } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { McpAppFollowUpSource } from "../state/mcp-app-host";
 
 export type McpFollowUpDialogOptionId =
@@ -83,6 +83,9 @@ export function McpFollowUpDialog({
   const [selectedOptionId, setSelectedOptionId] = useState<McpFollowUpDialogOptionId>(
     () => initialMcpFollowUpOptionId(options, defaultOptionId),
   );
+  const lastPromptRef = useRef(request.prompt);
+  const lastDefaultOptionIdRef = useRef(defaultOptionId);
+  const optionStateKey = useMemo(() => mcpFollowUpOptionStateKey(options), [options]);
   const selectedOption = mcpFollowUpOptionById(options, selectedOptionId)
     ?? mcpFollowUpOptionById(options, DEFAULT_MCP_FOLLOW_UP_OPTION_ID)
     ?? options.find((option) => !option.disabled)
@@ -90,9 +93,22 @@ export function McpFollowUpDialog({
   const sourceSummary = mcpFollowUpSourceSummary(request.source);
 
   useEffect(() => {
-    setDraft(request.prompt);
-    setSelectedOptionId(initialMcpFollowUpOptionId(options, defaultOptionId));
-  }, [defaultOptionId, options, request.prompt]);
+    setDraft((current) => {
+      const previousPrompt = lastPromptRef.current;
+      lastPromptRef.current = request.prompt;
+      return nextMcpFollowUpDraft(current, previousPrompt, request.prompt);
+    });
+  }, [request.prompt]);
+
+  useEffect(() => {
+    setSelectedOptionId((current) => {
+      const defaultChanged = lastDefaultOptionIdRef.current !== defaultOptionId;
+      lastDefaultOptionIdRef.current = defaultOptionId;
+      const currentOption = mcpFollowUpOptionById(options, current);
+      if (!defaultChanged && currentOption && !currentOption.disabled) return current;
+      return initialMcpFollowUpOptionId(options, defaultOptionId);
+    });
+  }, [defaultOptionId, optionStateKey]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -208,6 +224,10 @@ export function normalizeMcpFollowUpOptions(
   });
 }
 
+export function nextMcpFollowUpDraft(currentDraft: string, previousPrompt: string, nextPrompt: string): string {
+  return currentDraft === previousPrompt ? nextPrompt : currentDraft;
+}
+
 export function mcpFollowUpOptionById(
   options: readonly McpFollowUpDialogOption[],
   optionId: McpFollowUpDialogOptionId,
@@ -222,4 +242,8 @@ function initialMcpFollowUpOptionId(
   const requested = mcpFollowUpOptionById(options, defaultOptionId);
   if (requested && !requested.disabled) return requested.id;
   return options.find((option) => !option.disabled)?.id ?? DEFAULT_MCP_FOLLOW_UP_OPTION_ID;
+}
+
+function mcpFollowUpOptionStateKey(options: readonly McpFollowUpDialogOption[]): string {
+  return options.map((option) => `${option.id}:${option.disabled === true ? "1" : "0"}`).join("|");
 }

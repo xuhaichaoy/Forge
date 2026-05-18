@@ -10,9 +10,11 @@
 #       同时打 Intel Mac 版本（aarch64 + x86_64 两份）。默认只打 aarch64。
 #
 # 前置：
-#   1. 已经运行过 `cargo tauri signer generate -w ~/.tauri/hicodex.key -p ""`
-#   2. apps/desktop/src-tauri/tauri.conf.json 里 plugins.updater.endpoints 已经
-#      改成真实托管 URL（不是 placeholder.invalid）
+#   1. HICODEX_UPDATER_ENDPOINTS 指向真实 HTTPS 更新元数据 URL。
+#   2. HICODEX_UPDATER_PUBKEY 或 HICODEX_UPDATER_PUBKEY_PATH 指向匹配的 Tauri 公钥。
+#   3. TAURI_SIGNING_PRIVATE_KEY 或 TAURI_SIGNING_PRIVATE_KEY_PATH 提供 updater 私钥。
+#   4. APPLE_SIGNING_IDENTITY / HICODEX_MACOS_SIGNING_IDENTITY / APPLE_CERTIFICATE
+#      提供 macOS 正式签名；本地候选包可显式设置 HICODEX_RELEASE_ALLOW_ADHOC_SIGNING=1。
 #
 # 输出：
 #   dist/release/<version>/
@@ -32,19 +34,20 @@ WITH_INTEL=false
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-KEY_PATH="${HOME}/.tauri/hicodex.key"
-if [[ ! -f "$KEY_PATH" ]]; then
-  echo "✗ 私钥不存在：$KEY_PATH"
-  echo "  跑一次：cargo tauri signer generate -w ~/.tauri/hicodex.key -p \"\""
-  exit 1
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${HOME}/.tauri/hicodex.key}"
+  if [[ ! -f "$KEY_PATH" ]]; then
+    echo "✗ updater 私钥未配置"
+    echo "  设置 TAURI_SIGNING_PRIVATE_KEY，或设置 TAURI_SIGNING_PRIVATE_KEY_PATH 指向私钥文件。"
+    echo "  本机默认也会尝试读取：${HOME}/.tauri/hicodex.key"
+    exit 1
+  fi
+  export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY_PATH")"
 fi
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 
-# 1) 检查 endpoint 不是 placeholder
-if grep -q 'placeholder.invalid' apps/desktop/src-tauri/tauri.conf.json; then
-  echo "✗ tauri.conf.json 里 plugins.updater.endpoints 还是 placeholder.invalid"
-  echo "  改成你们的真实 URL 再发版"
-  exit 1
-fi
+echo "▸ Checking release updater config..."
+node apps/desktop/scripts/tauri-release-config.mjs --check >/dev/null
 
 # 2) bump 版本号（4 处同步）
 echo "▸ Bumping version to $VERSION..."
@@ -53,29 +56,27 @@ sed -i '' -E "s/^version = \"[0-9.]+\"/version = \"$VERSION\"/" Cargo.toml
 npm pkg set version="$VERSION" >/dev/null
 ( cd apps/desktop && npm pkg set version="$VERSION" >/dev/null )
 
-# 3) 签名密钥
-export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY_PATH")"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-
-# 4) 构建（arm64 + 可选 intel）
+# 3) 构建（arm64 + 可选 intel）
 TARGETS=("aarch64-apple-darwin")
 $WITH_INTEL && TARGETS+=("x86_64-apple-darwin")
 
 OUT_DIR="$REPO_ROOT/dist/release/$VERSION"
 mkdir -p "$OUT_DIR"
+RELEASE_CONFIG="$OUT_DIR/tauri.release.conf.json"
+node apps/desktop/scripts/tauri-release-config.mjs --write "$RELEASE_CONFIG"
 
 for TARGET in "${TARGETS[@]}"; do
   ARCH="${TARGET%-apple-darwin}"
   echo "▸ Building $TARGET..."
-  ( cd apps/desktop && npm run tauri:build -- --target "$TARGET" )
+  ( cd apps/desktop && npm run tauri:build -- --target "$TARGET" --config "$RELEASE_CONFIG" )
   BUNDLE_DIR="apps/desktop/src-tauri/target/$TARGET/release/bundle"
   cp "$BUNDLE_DIR/macos/HiCodex.app.tar.gz"     "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.app.tar.gz"
   cp "$BUNDLE_DIR/macos/HiCodex.app.tar.gz.sig" "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.app.tar.gz.sig"
   cp "$BUNDLE_DIR/dmg/"HiCodex_*.dmg            "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.dmg"
 done
 
-# 5) 生成 latest.json（从 tauri.conf.json 解析 endpoint base）
-ENDPOINT=$(node -p "JSON.parse(require('fs').readFileSync('apps/desktop/src-tauri/tauri.conf.json','utf-8')).plugins.updater.endpoints[0]")
+# 4) 生成 latest.json（从 release merge config 解析 endpoint base）
+ENDPOINT=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')).plugins.updater.endpoints[0]" "$RELEASE_CONFIG")
 # 把 .json 文件名替换掉，留下 base URL
 URL_BASE=$(echo "$ENDPOINT" | sed -E 's|/latest\.json.*$||; s|/\{\{.*\}\}.*$||')
 URL_BASE="${URL_BASE%/}"
@@ -110,7 +111,10 @@ EOF
 echo
 echo "✓ Release $VERSION built. Upload these files:"
 echo
-ls -1 "$OUT_DIR"
+for FILE in "$OUT_DIR"/*; do
+  [[ "$(basename "$FILE")" == "tauri.release.conf.json" ]] && continue
+  basename "$FILE"
+done
 echo
 echo "Upload destinations:"
 for TARGET in "${TARGETS[@]}"; do
