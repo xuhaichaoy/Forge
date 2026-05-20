@@ -44,12 +44,15 @@ export default function runCodexReducerTurnsTests(): void {
   keepsLateUserMessageInsideItsOriginatingTurnSegment();
   optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted();
   itemCompletedReconcilesSameTurnOptimisticUserMessageWhenContentShapeDiffers();
+  itemStartedReconcilesTextOnlyUserMessageAndKeepsLocalFileMention();
   bindOptimisticTurnRewritesItemsAndDropsPendingPlaceholder();
   optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder();
   completingTurnDropsSameTurnOptimisticUserMessageWhenContentShapeDiffers();
   upsertingMetadataOnlyThreadPreservesOptimisticPrompt();
   upsertingThreadSnapshotDropsDuplicateOptimisticUserMessage();
+  upsertingLiveSnapshotDropsUnboundOptimisticFileMention();
   upsertingLiveSnapshotAfterSwitchDropsBoundOptimisticUserMessage();
+  upsertingLiveSnapshotPreservesBoundOptimisticFileMention();
   upsertingLiveSnapshotWithRolloutReplayUserMessageDoesNotDuplicateConfirmed();
   upsertingLiveSnapshotWithRolloutReplayAgentMessageDoesNotDuplicateConfirmed();
   upsertingLiveSnapshotWithRolloutReplayReasoningDoesNotDuplicateConfirmed();
@@ -1341,6 +1344,51 @@ function itemCompletedReconcilesSameTurnOptimisticUserMessageWhenContentShapeDif
   );
 }
 
+function itemStartedReconcilesTextOnlyUserMessageAndKeepsLocalFileMention(): void {
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:file",
+      localId: "optimistic-user:file",
+      content: [textInput("inspect this file"), mentionInput("report.pdf", "/tmp/report.pdf")],
+    },
+  );
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-file", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+  state = reduceNotification(state, {
+    method: "item/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-file",
+      item: userMessage("real-user-file", "inspect this file"),
+    },
+  });
+
+  const userMessages = items(state, "thread-1").filter((item) => item.type === "userMessage");
+  assertDeepEqual(
+    userMessages.map((item) => item.id),
+    ["real-user-file"],
+    "server-confirmed userMessage should replace the local optimistic placeholder",
+  );
+  assertDeepEqual(
+    (userMessages[0] as Record<string, unknown>).content,
+    [textInput("inspect this file"), mentionInput("report.pdf", "/tmp/report.pdf")],
+    "reconciled userMessage should keep the local file mention when the server confirmation only echoes text",
+  );
+}
+
 function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
   // Replays the exact regression the user reported (three submissions in a row,
   // each turn fails with a 401-style error) but now with the optimistic insert
@@ -1615,6 +1663,61 @@ function upsertingThreadSnapshotDropsDuplicateOptimisticUserMessage(): void {
   }
 }
 
+function upsertingLiveSnapshotDropsUnboundOptimisticFileMention(): void {
+  const text = "识别一下文件内容\n/Users/haichao/Downloads/注意保密/广发银行-需求分析及产品运营培训项目/分散采购比选文件-需求分析及产品运营培训项目.docx";
+  const optimistic = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:file-unbound",
+      localId: "optimistic-user:file-unbound",
+      content: [
+        textInput(text),
+        mentionInput("分散采购比选文件-需求分析及产品运营培训项目.docx", "/Users/haichao/Downloads/注意保密/广发银行-需求分析及产品运营培训项目/分散采购比选文件-需求分析及产品运营培训项目.docx"),
+      ],
+    },
+  );
+
+  const refreshed = codexUiReducer(
+    stateWithRuntime(optimistic, "thread-1", { activeTurnId: "turn-file-unbound" }),
+    {
+      type: "upsertThread",
+      thread: threadWithTurns("thread-1", [
+        {
+          id: "turn-file-unbound",
+          status: "inProgress",
+          startedAt: 1,
+          items: [
+            userMessage("real-user-file-unbound", text),
+            agentMessage("agent-file-unbound", "Working"),
+          ],
+        },
+      ]),
+      select: true,
+    },
+  );
+
+  const userMessages = items(refreshed, "thread-1").filter((item) => item.type === "userMessage");
+  assertDeepEqual(
+    userMessages.map((item) => item.id),
+    ["real-user-file-unbound"],
+    "live snapshot should drop the unbound optimistic file userMessage when confirmed text matches",
+  );
+  assertDeepEqual(
+    (userMessages[0] as Record<string, unknown>).content,
+    [
+      textInput(text),
+      mentionInput("分散采购比选文件-需求分析及产品运营培训项目.docx", "/Users/haichao/Downloads/注意保密/广发银行-需求分析及产品运营培训项目/分散采购比选文件-需求分析及产品运营培训项目.docx"),
+    ],
+    "confirmed userMessage should keep the local file mention after dropping the optimistic twin",
+  );
+}
+
 function upsertingLiveSnapshotAfterSwitchDropsBoundOptimisticUserMessage(): void {
   // Replays the user-visible switch-away/switch-back case: the local prompt
   // has already been bound to the real running turn, then `thread/read`
@@ -1689,6 +1792,59 @@ function upsertingLiveSnapshotAfterSwitchDropsBoundOptimisticUserMessage(): void
     runtime(refreshed, "thread-1").pendingOptimisticTurns,
     [],
     "confirmed live snapshot should remove the unused optimistic turn placeholder from pending queue",
+  );
+}
+
+function upsertingLiveSnapshotPreservesBoundOptimisticFileMention(): void {
+  let state: CodexUiState = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [])],
+      activeThreadId: "thread-1",
+    },
+    {
+      type: "optimisticUserMessage",
+      threadId: "thread-1",
+      localTurnId: "optimistic-turn:file-snapshot",
+      localId: "optimistic-user:file-snapshot",
+      content: [textInput("summarize"), mentionInput("brief.docx", "/tmp/brief.docx")],
+    },
+  );
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-file-snapshot", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-file-snapshot",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          userMessage("real-user-file-snapshot", "summarize"),
+          agentMessage("agent-file-snapshot", "Working"),
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  const userMessages = items(refreshed, "thread-1").filter((item) => item.type === "userMessage");
+  assertDeepEqual(
+    userMessages.map((item) => item.id),
+    ["real-user-file-snapshot"],
+    "live thread snapshot should still drop the duplicate optimistic userMessage",
+  );
+  assertDeepEqual(
+    (userMessages[0] as Record<string, unknown>).content,
+    [textInput("summarize"), mentionInput("brief.docx", "/tmp/brief.docx")],
+    "live thread snapshot should preserve local file mentions that the server snapshot omits",
   );
 }
 
@@ -2255,6 +2411,7 @@ function threadWithTurns(
   const fullTurns = turns.map((turn) => turnFixture(turn));
   return {
     id,
+    sessionId: id,
     forkedFromId: null,
     preview: "",
     ephemeral: false,
@@ -2340,6 +2497,14 @@ function textInput(text: string): UserInput {
 function skillInput(name: string, path: string): UserInput {
   return {
     type: "skill",
+    name,
+    path,
+  };
+}
+
+function mentionInput(name: string, path: string): UserInput {
+  return {
+    type: "mention",
     name,
     path,
   };

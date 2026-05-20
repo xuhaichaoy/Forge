@@ -1,6 +1,8 @@
 import type { BrowserStorageLike } from "./image-generation-tool";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
-export const HICODEX_LOCALE_STORAGE_KEY = "hicodex:locale";
+export const LEGACY_HICODEX_LOCALE_STORAGE_KEY = "hicodex:locale";
+export const HICODEX_LOCALE_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.locale;
 export const HICODEX_DEFAULT_LOCALE = "en-US";
 
 export type HiCodexLocale = "en-US" | "zh-CN";
@@ -59,7 +61,7 @@ export function resolveHiCodexLocale(preferred: unknown, fallback: HiCodexLocale
 export function loadHiCodexLocale(storage: BrowserStorageLike | null, browserLocale?: string | null): HiCodexLocale {
   if (storage) {
     try {
-      const stored = storage.getItem(HICODEX_LOCALE_STORAGE_KEY);
+      const stored = readMigratedStorageValue(storage, HICODEX_LOCALE_STORAGE_KEY, [LEGACY_HICODEX_LOCALE_STORAGE_KEY]);
       if (stored) return resolveHiCodexLocale(stored);
     } catch {
       // Fall through to browser locale.

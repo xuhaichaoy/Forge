@@ -7,6 +7,7 @@ export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await resumesAndForksThreadsWithContextDefaults();
   await listsAppsThroughDesktopPagingLoader();
   await listsCollaborationModesThroughAppServer();
+  await listsExperimentalFeaturesForActiveThread();
   await reloadsSkillsThroughAppServer();
   await logsOutThroughAccountStateRefresh();
   await setsReadsAndClearsThreadGoalsThroughAppServer();
@@ -95,6 +96,22 @@ async function listsAppsThroughDesktopPagingLoader(): Promise<void> {
       timeoutMs: 120_000,
     }],
     "/apps should use the Desktop paging loader instead of a 50-item single page",
+  );
+}
+
+async function listsExperimentalFeaturesForActiveThread(): Promise<void> {
+  const workflow = createWorkflowRecorder([{ data: [], nextCursor: null }]);
+
+  await runSlashRequestWorkflow("showExperimental", undefined, workflow.context);
+
+  assertDeepEqual(
+    workflow.requests,
+    [{
+      method: "experimentalFeature/list",
+      params: { limit: 50, threadId: "thread-1" },
+      timeoutMs: 120_000,
+    }],
+    "/experimental should ask app-server for the active thread's feature state",
   );
 }
 

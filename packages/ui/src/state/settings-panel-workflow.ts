@@ -31,11 +31,12 @@ export const SETTINGS_SECTIONS: Array<{
   id: SettingsPanelId;
   title: string;
   description: string;
-  icon: "general" | "models" | "images" | "permissions" | "mcp" | "skills" | "hooks" | "apps" | "plugins" | "experimental";
+  icon: "general" | "models" | "images" | "permissions" | "mcp" | "skills" | "hooks" | "apps" | "plugins" | "worktrees" | "experimental";
 }> = [
   { id: "general", title: "General", description: "Runtime and workspace", icon: "general" },
   { id: "models", title: "Models", description: "Provider and model profile", icon: "models" },
   { id: "images", title: "Images", description: "Image generation endpoint", icon: "images" },
+  { id: "worktrees", title: "Worktrees", description: "Local, worktree, cloud modes", icon: "worktrees" },
   { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions" },
   { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions" },
   { id: "mcp", title: "MCP", description: "Servers, tools, resources", icon: "mcp" },
@@ -53,6 +54,7 @@ export function isRefreshableSettingsPanel(panel: SettingsPanelId): boolean {
     || panel === "hooks"
     || panel === "apps"
     || panel === "plugins"
+    || panel === "worktrees"
     || panel === "experimental";
 }
 
@@ -68,6 +70,8 @@ export function settingsPanelCommandKind(panel: SettingsPanelId): CommandPanelKi
       return "apps";
     case "plugins":
       return "plugins";
+    case "worktrees":
+      return "generic";
     case "experimental":
       return "experimental";
     default:
@@ -87,6 +91,8 @@ export function settingsPanelTitle(panel: SettingsPanelId): string {
       return "Apps";
     case "plugins":
       return "Plugins";
+    case "worktrees":
+      return "Worktrees";
     case "experimental":
       return "Experimental";
     case "permissions":

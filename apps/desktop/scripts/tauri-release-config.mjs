@@ -25,13 +25,20 @@ export function buildTauriReleaseConfig(env = process.env, options = {}) {
   const readFile = options.readFile ?? ((path) => readFileSync(path, "utf8"));
 
   const allowInsecure = parseBool(env.HICODEX_UPDATER_ALLOW_INSECURE);
+  const allowAdhocSigning = parseBool(env.HICODEX_RELEASE_ALLOW_ADHOC_SIGNING);
   const endpoints = parseUpdaterEndpoints(env.HICODEX_UPDATER_ENDPOINTS, errors);
   validateUpdaterEndpoints(endpoints, { allowInsecure, errors });
 
   const pubkey = readUpdaterPubkey(env, readFile, errors);
   validateUpdaterSigningKey(env, readFile, errors);
+  validateAppleCertificate(env, errors);
 
-  const macOS = buildMacOSReleaseConfig(env, { errors, warnings });
+  const macOSNotarizationAuth = validateMacOSNotarizationAuth(env, {
+    allowAdhocSigning,
+    errors,
+    warnings,
+  });
+  const macOS = buildMacOSReleaseConfig(env, { allowAdhocSigning, errors, warnings });
 
   if (errors.length > 0) {
     throw new ReleaseConfigError(errors);
@@ -61,6 +68,7 @@ export function buildTauriReleaseConfig(env = process.env, options = {}) {
       createUpdaterArtifacts: true,
       pubkeyConfigured: pubkey.length > 0,
       updaterSigningKeyConfigured: hasValue(env.TAURI_SIGNING_PRIVATE_KEY) || hasValue(env.TAURI_SIGNING_PRIVATE_KEY_PATH),
+      macOSNotarizationAuth,
       macOS,
     },
     warnings,
@@ -175,11 +183,56 @@ function validateUpdaterSigningKey(env, readFile, errors) {
   errors.push("Set TAURI_SIGNING_PRIVATE_KEY or TAURI_SIGNING_PRIVATE_KEY_PATH so Tauri can sign updater artifacts.");
 }
 
-function buildMacOSReleaseConfig(env, { errors, warnings }) {
+function validateAppleCertificate(env, errors) {
+  const hasCertificate = hasValue(env.APPLE_CERTIFICATE);
+  const hasCertificatePassword = hasValue(env.APPLE_CERTIFICATE_PASSWORD);
+  if (hasCertificate && !hasCertificatePassword) {
+    errors.push("Set APPLE_CERTIFICATE_PASSWORD when APPLE_CERTIFICATE is provided for CI signing.");
+  }
+  if (!hasCertificate && hasCertificatePassword) {
+    errors.push("Set APPLE_CERTIFICATE when APPLE_CERTIFICATE_PASSWORD is provided for CI signing.");
+  }
+}
+
+function validateMacOSNotarizationAuth(env, { allowAdhocSigning = false, errors = [], warnings = [] } = {}) {
+  const appleIdFields = ["APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID"];
+  const apiKeyFields = ["APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH"];
+
+  const hasAnyAppleIdField = appleIdFields.some((name) => hasValue(env[name]));
+  const hasAllAppleIdFields = appleIdFields.every((name) => hasValue(env[name]));
+  const hasAnyApiKeyField = apiKeyFields.some((name) => hasValue(env[name]));
+  const hasAllApiKeyFields = apiKeyFields.every((name) => hasValue(env[name]));
+
+  if (hasAllAppleIdFields) {
+    return "apple-id";
+  }
+  if (hasAnyAppleIdField) {
+    errors.push(`Set all of ${appleIdFields.join(", ")} for app-specific-password notarization.`);
+  }
+
+  if (hasAllApiKeyFields) {
+    return "api-key";
+  }
+  if (hasAnyApiKeyField) {
+    errors.push(`Set all of ${apiKeyFields.join(", ")} for App Store Connect API-key notarization.`);
+  }
+
+  if (!hasAnyAppleIdField && !hasAnyApiKeyField) {
+    if (allowAdhocSigning) {
+      warnings.push("Skipping macOS notarization auth validation because HICODEX_RELEASE_ALLOW_ADHOC_SIGNING=1.");
+      return "skipped-ad-hoc";
+    }
+    errors.push("Set APPLE_ID, APPLE_PASSWORD, and APPLE_TEAM_ID, or APPLE_API_KEY, APPLE_API_ISSUER, and APPLE_API_KEY_PATH for macOS notarization.");
+  }
+
+  return "missing";
+}
+
+function buildMacOSReleaseConfig(env, { allowAdhocSigning = false, errors, warnings }) {
   const signingIdentity = firstValue(env.HICODEX_MACOS_SIGNING_IDENTITY, env.APPLE_SIGNING_IDENTITY);
   const entitlements = firstValue(env.HICODEX_MACOS_ENTITLEMENTS);
+  const providerShortName = firstValue(env.HICODEX_MACOS_PROVIDER_SHORT_NAME, env.APPLE_PROVIDER_SHORT_NAME);
   const hasAppleCertificate = hasValue(env.APPLE_CERTIFICATE);
-  const allowAdhoc = parseBool(env.HICODEX_RELEASE_ALLOW_ADHOC_SIGNING);
 
   const macOS = {};
   if (signingIdentity) {
@@ -187,7 +240,7 @@ function buildMacOSReleaseConfig(env, { errors, warnings }) {
   } else if (hasAppleCertificate) {
     macOS.signingIdentity = null;
     warnings.push("APPLE_CERTIFICATE is set; release config removes the local ad-hoc identity so Tauri can infer the imported certificate.");
-  } else if (allowAdhoc) {
+  } else if (allowAdhocSigning) {
     macOS.signingIdentity = "-";
     warnings.push("Using ad-hoc macOS signing for a release build because HICODEX_RELEASE_ALLOW_ADHOC_SIGNING=1.");
   } else {
@@ -196,6 +249,9 @@ function buildMacOSReleaseConfig(env, { errors, warnings }) {
 
   if (entitlements) {
     macOS.entitlements = entitlements;
+  }
+  if (providerShortName) {
+    macOS.providerShortName = providerShortName;
   }
 
   return macOS;

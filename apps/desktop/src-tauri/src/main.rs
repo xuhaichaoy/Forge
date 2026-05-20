@@ -11,7 +11,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_notification::NotificationExt;
@@ -66,6 +66,47 @@ struct ImageGenerationRequest {
     payload: Value,
     codex_home: Option<String>,
     thread_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostGitStatus {
+    cwd: String,
+    repo_root: Option<String>,
+    branch: Option<String>,
+    sha: Option<String>,
+    upstream: Option<String>,
+    ahead: u32,
+    behind: u32,
+    changed_files: Vec<HostGitChangedFile>,
+    has_diff: bool,
+    diff: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HostGitChangedFile {
+    status: String,
+    path: String,
+    old_path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatePendingWorktreeRequest {
+    cwd: String,
+    branch_name: Option<String>,
+    base_ref: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatePendingWorktreeResponse {
+    repo_root: String,
+    path: String,
+    branch_name: String,
+    base_ref: String,
+    base_sha: String,
 }
 
 impl Default for AppState {
@@ -298,6 +339,39 @@ fn host_read_spreadsheet_preview(
     read_spreadsheet_preview(target, max_rows, max_cols)
 }
 
+// CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js — Codex Desktop streams
+// xlsx bytes to its WASM Popcorn workbook viewer. HiCodex's reduced preview parses
+// the workbook in the renderer with SheetJS, so we need raw bytes back. The CSP
+// blocks `fetch()` against the asset protocol, so we expose a small base64
+// fetcher that mirrors the existing `host_read_image_data_url` pattern and is
+// capped so we never load a multi-hundred-MB workbook into JS.
+#[tauri::command]
+fn host_read_file_bytes_base64(path: String, max_bytes: Option<u64>) -> Result<String, String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("file path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    if !target.is_file() {
+        return Err(format!("file does not exist: {trimmed}"));
+    }
+    // Cap to ~16 MiB so an accidentally giant workbook can't pin the renderer.
+    let max_bytes = max_bytes
+        .unwrap_or(16 * 1024 * 1024)
+        .clamp(1, 64 * 1024 * 1024);
+    let mut file =
+        fs::File::open(target).map_err(|error| format!("failed to open file: {error}"))?;
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file)
+        .take(max_bytes + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("failed to read file: {error}"))?;
+    if bytes.len() as u64 > max_bytes {
+        return Err(format!("file exceeds preview limit ({} bytes)", max_bytes));
+    }
+    Ok(general_purpose::STANDARD.encode(bytes))
+}
+
 #[tauri::command]
 fn host_read_document_preview(
     path: String,
@@ -316,6 +390,18 @@ fn host_read_document_preview(
     let max_paragraphs = max_paragraphs.unwrap_or(80).clamp(1, 400);
     let max_chars_per_paragraph = max_chars_per_paragraph.unwrap_or(400).clamp(20, 4_000);
     read_document_preview(target, max_paragraphs, max_chars_per_paragraph)
+}
+
+#[tauri::command]
+fn host_git_status(cwd: String) -> Result<HostGitStatus, String> {
+    read_host_git_status(&cwd)
+}
+
+#[tauri::command]
+fn host_create_pending_worktree(
+    request: CreatePendingWorktreeRequest,
+) -> Result<CreatePendingWorktreeResponse, String> {
+    create_pending_worktree(request)
 }
 
 /// Recover the rollout JSONL path for a given thread by scanning the
@@ -390,6 +476,378 @@ fn find_rollout_recursive(
         }
     }
     Ok(None)
+}
+
+fn read_host_git_status(cwd: &str) -> Result<HostGitStatus, String> {
+    let cwd = cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+
+    let cwd_path = Path::new(cwd);
+    let Some(repo_root) = git_repo_root(cwd_path)? else {
+        return Ok(non_git_status(cwd));
+    };
+    let repo_path = Path::new(&repo_root);
+    let branch = git_stdout_optional(repo_path, &["branch", "--show-current"])?;
+    let sha = git_stdout_optional(repo_path, &["rev-parse", "HEAD"])?;
+    let upstream = git_stdout_optional(
+        repo_path,
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+    )?;
+    let (ahead, behind) = if upstream.is_some() {
+        let counts = git_stdout_optional(
+            repo_path,
+            &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+        )?
+        .unwrap_or_default();
+        parse_ahead_behind_counts(&counts)
+    } else {
+        (0, 0)
+    };
+    let changed_files = read_changed_git_files(repo_path)?;
+    let diff = read_git_diff(repo_path, sha.is_some())?;
+    let has_diff = !changed_files.is_empty() || !diff.trim().is_empty();
+
+    Ok(HostGitStatus {
+        cwd: cwd.to_string(),
+        repo_root: Some(repo_root),
+        branch,
+        sha,
+        upstream,
+        ahead,
+        behind,
+        changed_files,
+        has_diff,
+        diff,
+    })
+}
+
+fn create_pending_worktree(
+    request: CreatePendingWorktreeRequest,
+) -> Result<CreatePendingWorktreeResponse, String> {
+    let cwd = request.cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let repo_root =
+        git_repo_root(Path::new(cwd))?.ok_or_else(|| format!("not a git repository: {cwd}"))?;
+    let repo_path = PathBuf::from(&repo_root);
+    let base_ref = normalize_base_ref(request.base_ref.as_deref())?;
+    let commit_ref = format!("{base_ref}^{{commit}}");
+    let base_sha = git_stdout_required(
+        &repo_path,
+        &["rev-parse", "--verify", &commit_ref],
+        "failed to resolve worktree base ref",
+    )?;
+    let repo_name = repo_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("repo");
+    let default_name = default_pending_worktree_name(repo_name, SystemTime::now());
+    let base_name = request
+        .branch_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| sanitize_pending_worktree_name(value, &default_name))
+        .unwrap_or(default_name);
+    let (worktree_path, branch_name) = unique_pending_worktree_target(&repo_path, &base_name)?;
+
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(&repo_path)
+        .args(["worktree", "add", "-b"])
+        .arg(&branch_name)
+        .arg(&worktree_path)
+        .arg(&base_ref)
+        .output()
+        .map_err(|error| format!("failed to run git worktree add: {error}"))?;
+    if !output.status.success() {
+        return Err(format_git_failure(
+            "failed to create pending worktree",
+            &output,
+        ));
+    }
+
+    Ok(CreatePendingWorktreeResponse {
+        repo_root,
+        path: worktree_path.to_string_lossy().to_string(),
+        branch_name,
+        base_ref,
+        base_sha,
+    })
+}
+
+fn non_git_status(cwd: &str) -> HostGitStatus {
+    HostGitStatus {
+        cwd: cwd.to_string(),
+        repo_root: None,
+        branch: None,
+        sha: None,
+        upstream: None,
+        ahead: 0,
+        behind: 0,
+        changed_files: Vec::new(),
+        has_diff: false,
+        diff: String::new(),
+    }
+}
+
+fn git_repo_root(cwd: &Path) -> Result<Option<String>, String> {
+    let output = run_git(cwd, &["rev-parse", "--show-toplevel"])?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let repo_root = command_stdout(&output);
+    Ok((!repo_root.is_empty()).then_some(repo_root))
+}
+
+fn read_changed_git_files(repo_path: &Path) -> Result<Vec<HostGitChangedFile>, String> {
+    let output = run_git(
+        repo_path,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    )?;
+    if !output.status.success() {
+        return Err(format_git_failure("failed to read git status", &output));
+    }
+    Ok(parse_git_status_porcelain_z(&output.stdout))
+}
+
+fn read_git_diff(repo_path: &Path, has_head: bool) -> Result<String, String> {
+    let output = if has_head {
+        run_git(
+            repo_path,
+            &["diff", "--no-ext-diff", "--no-color", "HEAD", "--"],
+        )?
+    } else {
+        run_git(repo_path, &["diff", "--no-ext-diff", "--no-color", "--"])?
+    };
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+    Err(format_git_failure("failed to read git diff", &output))
+}
+
+fn run_git(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String> {
+    Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .output()
+        .map_err(|error| format!("failed to run git: {error}"))
+}
+
+fn git_stdout_optional(cwd: &Path, args: &[&str]) -> Result<Option<String>, String> {
+    let output = run_git(cwd, args)?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let text = command_stdout(&output);
+    Ok((!text.is_empty()).then_some(text))
+}
+
+fn git_stdout_required(cwd: &Path, args: &[&str], context: &str) -> Result<String, String> {
+    let output = run_git(cwd, args)?;
+    if output.status.success() {
+        let text = command_stdout(&output);
+        if !text.is_empty() {
+            return Ok(text);
+        }
+    }
+    Err(format_git_failure(context, &output))
+}
+
+fn command_stdout(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn format_git_failure(context: &str, output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let detail = if stderr.is_empty() { stdout } else { stderr };
+    if detail.is_empty() {
+        format!("{context}: git exited with status {}", output.status)
+    } else {
+        format!("{context}: {detail}")
+    }
+}
+
+fn parse_git_status_porcelain_z(output: &[u8]) -> Vec<HostGitChangedFile> {
+    let entries = output
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+        .collect::<Vec<_>>();
+    let mut files = Vec::new();
+    let mut index = 0;
+    while index < entries.len() {
+        let entry = entries[index];
+        if entry.len() < 4 {
+            index += 1;
+            continue;
+        }
+        let status_raw = String::from_utf8_lossy(&entry[..2]).to_string();
+        let status = status_raw.trim().to_string();
+        let path_start = if entry.get(2) == Some(&b' ') { 3 } else { 2 };
+        let path = String::from_utf8_lossy(&entry[path_start..]).to_string();
+        let is_rename_or_copy = status_raw
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(*byte, b'R' | b'C'));
+        let old_path = if is_rename_or_copy && index + 1 < entries.len() {
+            index += 1;
+            Some(String::from_utf8_lossy(entries[index]).to_string())
+        } else {
+            None
+        };
+        files.push(HostGitChangedFile {
+            status,
+            path,
+            old_path,
+        });
+        index += 1;
+    }
+    files
+}
+
+fn parse_ahead_behind_counts(value: &str) -> (u32, u32) {
+    let mut parts = value.split_whitespace();
+    let ahead = parts
+        .next()
+        .and_then(|part| part.parse::<u32>().ok())
+        .unwrap_or(0);
+    let behind = parts
+        .next()
+        .and_then(|part| part.parse::<u32>().ok())
+        .unwrap_or(0);
+    (ahead, behind)
+}
+
+fn normalize_base_ref(value: Option<&str>) -> Result<String, String> {
+    let base_ref = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("HEAD");
+    if base_ref.len() > 240 {
+        return Err("baseRef is too long".to_string());
+    }
+    if base_ref.starts_with('-') {
+        return Err("baseRef must not start with '-'".to_string());
+    }
+    if base_ref
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err("baseRef contains unsupported whitespace or control characters".to_string());
+    }
+    Ok(base_ref.to_string())
+}
+
+fn unique_pending_worktree_target(
+    repo_path: &Path,
+    base_name: &str,
+) -> Result<(PathBuf, String), String> {
+    let parent = repo_path
+        .parent()
+        .ok_or_else(|| "repository root has no parent directory".to_string())?;
+    for attempt in 0..1000 {
+        let candidate = if attempt == 0 {
+            base_name.to_string()
+        } else {
+            format!("{base_name}-{}", attempt + 1)
+        };
+        let path = parent.join(&candidate);
+        if path.exists() || git_branch_exists(repo_path, &candidate)? {
+            continue;
+        }
+        return Ok((path, candidate));
+    }
+    Err("failed to allocate a unique pending worktree name".to_string())
+}
+
+fn git_branch_exists(repo_path: &Path, branch_name: &str) -> Result<bool, String> {
+    let branch_ref = format!("refs/heads/{branch_name}");
+    let output = run_git(repo_path, &["show-ref", "--verify", "--quiet", &branch_ref])?;
+    Ok(output.status.success())
+}
+
+fn default_pending_worktree_name(repo_name: &str, now: SystemTime) -> String {
+    let repo = sanitize_pending_worktree_name(repo_name, "repo");
+    format!("{repo}-worktree-{}", format_worktree_timestamp(now))
+}
+
+fn sanitize_pending_worktree_name(value: &str, fallback: &str) -> String {
+    let mut sanitized = String::new();
+    let mut last_dash = false;
+    for ch in value.trim().chars() {
+        let mapped = if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.') {
+            ch
+        } else if ch == '-' {
+            '-'
+        } else {
+            '-'
+        };
+        if mapped == '-' {
+            if !last_dash {
+                sanitized.push('-');
+            }
+            last_dash = true;
+        } else {
+            sanitized.push(mapped);
+            last_dash = false;
+        }
+        if sanitized.len() >= 96 {
+            break;
+        }
+    }
+    while sanitized.contains("..") {
+        sanitized = sanitized.replace("..", ".");
+    }
+    let sanitized = sanitized
+        .trim_matches(|ch| matches!(ch, '-' | '_' | '.'))
+        .to_string();
+    let mut sanitized = if sanitized.is_empty() {
+        fallback.to_string()
+    } else {
+        sanitized
+    };
+    if sanitized.to_ascii_lowercase().ends_with(".lock") {
+        sanitized.push_str("-branch");
+    }
+    sanitized
+}
+
+fn format_worktree_timestamp(time: SystemTime) -> String {
+    let seconds = time
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    let days = seconds.div_euclid(86_400);
+    let seconds_of_day = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    let second = seconds_of_day % 60;
+    format!("{year:04}{month:02}{day:02}-{hour:02}{minute:02}{second:02}")
+}
+
+fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
+    let z = days_since_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if month <= 2 { 1 } else { 0 };
+    (year, month, day)
 }
 
 #[cfg(test)]
@@ -622,7 +1080,12 @@ fn persist_image_generation_response(
     let output_dir = image_generation_output_dir(codex_home, thread_id);
     fs::create_dir_all(&output_dir)
         .map_err(|error| format!("failed to create image output directory: {error}"))?;
-    let output_path = output_dir.join(format!("ig_{}.png", image_content_hash(&image_bytes)));
+    let extension = image_generation_response_extension(first).unwrap_or("png");
+    let output_path = output_dir.join(format!(
+        "ig_{}.{}",
+        image_content_hash(&image_bytes),
+        extension
+    ));
     if !output_path.exists() {
         fs::write(&output_path, &image_bytes)
             .map_err(|error| format!("failed to save generated image: {error}"))?;
@@ -665,6 +1128,38 @@ fn image_content_hash(bytes: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
+fn image_generation_response_extension(
+    image: &serde_json::Map<String, Value>,
+) -> Option<&'static str> {
+    [
+        "mimeType",
+        "mime_type",
+        "contentType",
+        "content_type",
+        "mime",
+    ]
+    .into_iter()
+    .filter_map(|key| image.get(key).and_then(Value::as_str))
+    .find_map(image_mime_extension)
+}
+
+fn image_mime_extension(value: &str) -> Option<&'static str> {
+    let mime = value.split(';').next()?.trim().to_ascii_lowercase();
+    match mime.as_str() {
+        "image/avif" => Some("avif"),
+        "image/bmp" => Some("bmp"),
+        "image/gif" => Some("gif"),
+        "image/heic" => Some("heic"),
+        "image/heif" => Some("heif"),
+        "image/jpeg" | "image/jpg" => Some("jpg"),
+        "image/png" => Some("png"),
+        "image/svg+xml" => Some("svg"),
+        "image/tiff" => Some("tiff"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
 fn file_url_from_path(path: &Path) -> String {
     let path = path.to_string_lossy();
     let mut url = String::from("file://");
@@ -684,8 +1179,10 @@ fn file_url_from_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        file_url_from_path, host_generate_image, image_generations_endpoint,
-        is_supported_native_shell_url, ImageGenerationRequest,
+        default_pending_worktree_name, file_url_from_path, host_generate_image,
+        image_generations_endpoint, is_supported_native_shell_url, parse_ahead_behind_counts,
+        parse_git_status_porcelain_z, persist_image_generation_response,
+        sanitize_pending_worktree_name, HostGitChangedFile, ImageGenerationRequest,
     };
     use serde_json::json;
     use std::fs;
@@ -719,6 +1216,62 @@ mod tests {
     #[test]
     fn rejects_non_http_image_generation_base_url() {
         assert!(image_generations_endpoint("file:///tmp/socket").is_err());
+    }
+
+    #[test]
+    fn sanitizes_pending_worktree_branch_and_path_names() {
+        assert_eq!(
+            sanitize_pending_worktree_name(" ../feature/foo:bar.lock ", "fallback"),
+            "feature-foo-bar.lock-branch"
+        );
+        assert_eq!(
+            sanitize_pending_worktree_name("a..b   c", "fallback"),
+            "a.b-c"
+        );
+        assert_eq!(
+            sanitize_pending_worktree_name(" ../.. ", "fallback"),
+            "fallback"
+        );
+    }
+
+    #[test]
+    fn parses_git_status_porcelain_z_entries() {
+        let files = parse_git_status_porcelain_z(
+            b" M src/lib.rs\0R  renamed file.rs\0old file.rs\0?? new.txt\0",
+        );
+        assert_eq!(
+            files,
+            vec![
+                HostGitChangedFile {
+                    status: "M".to_string(),
+                    path: "src/lib.rs".to_string(),
+                    old_path: None,
+                },
+                HostGitChangedFile {
+                    status: "R".to_string(),
+                    path: "renamed file.rs".to_string(),
+                    old_path: Some("old file.rs".to_string()),
+                },
+                HostGitChangedFile {
+                    status: "??".to_string(),
+                    path: "new.txt".to_string(),
+                    old_path: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_ahead_behind_counts() {
+        assert_eq!(parse_ahead_behind_counts("3\t12\n"), (3, 12));
+        assert_eq!(parse_ahead_behind_counts("bad data"), (0, 0));
+        assert_eq!(parse_ahead_behind_counts("7"), (7, 0));
+    }
+
+    #[test]
+    fn builds_nonempty_default_pending_worktree_name() {
+        let name = default_pending_worktree_name("???", UNIX_EPOCH);
+        assert_eq!(name, "repo-worktree-19700101-000000");
     }
 
     #[test]
@@ -803,7 +1356,42 @@ mod tests {
             .map(|entry| entry.unwrap().path())
             .collect::<Vec<_>>();
         assert_eq!(saved_images.len(), 1);
+        assert_eq!(
+            saved_images[0].extension().and_then(|ext| ext.to_str()),
+            Some("png")
+        );
         assert_eq!(fs::read(&saved_images[0]).unwrap(), b"PNGDATA");
+        assert_eq!(
+            result["data"][0]["url"],
+            file_url_from_path(&saved_images[0])
+        );
+    }
+
+    #[test]
+    fn persists_generated_images_with_response_mime_extension() {
+        let codex_home = temp_dir();
+        let result = persist_image_generation_response(
+            json!({
+                "data": [{
+                    "b64_json": "V0VCUERBVEE=",
+                    "mimeType": "image/webp; charset=binary"
+                }]
+            }),
+            Some(codex_home.to_string_lossy().as_ref()),
+            Some("thread-webp"),
+        )
+        .unwrap();
+        let output_dir = codex_home.join("generated_images").join("thread-webp");
+        let saved_images = fs::read_dir(output_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(saved_images.len(), 1);
+        assert_eq!(
+            saved_images[0].extension().and_then(|ext| ext.to_str()),
+            Some("webp")
+        );
+        assert_eq!(fs::read(&saved_images[0]).unwrap(), b"WEBPDATA");
         assert_eq!(
             result["data"][0]["url"],
             file_url_from_path(&saved_images[0])
@@ -1045,6 +1633,13 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let reload = MenuItemBuilder::with_id(MENU_RELOAD, "Reload")
         .accelerator("CmdOrCtrl+R")
         .build(handle)?;
+    let undo = PredefinedMenuItem::undo(handle, None)?;
+    let redo = PredefinedMenuItem::redo(handle, None)?;
+    let edit_separator = PredefinedMenuItem::separator(handle)?;
+    let cut = PredefinedMenuItem::cut(handle, None)?;
+    let copy = PredefinedMenuItem::copy(handle, None)?;
+    let paste = PredefinedMenuItem::paste(handle, None)?;
+    let select_all = PredefinedMenuItem::select_all(handle, None)?;
 
     let app_menu = SubmenuBuilder::new(handle, "HiCodex")
         .item(&settings)
@@ -1057,10 +1652,20 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .separator()
         .item(&close)
         .build()?;
+    let edit_menu = SubmenuBuilder::new(handle, "Edit")
+        .item(&undo)
+        .item(&redo)
+        .item(&edit_separator)
+        .item(&cut)
+        .item(&copy)
+        .item(&paste)
+        .item(&select_all)
+        .build()?;
     let view_menu = SubmenuBuilder::new(handle, "View").item(&reload).build()?;
     let menu = MenuBuilder::new(handle)
         .item(&app_menu)
         .item(&file_menu)
+        .item(&edit_menu)
         .item(&view_menu)
         .build()?;
     app.set_menu(menu)?;
@@ -1237,7 +1842,10 @@ fn main() {
             host_read_file_metadata,
             host_read_text_file,
             host_read_spreadsheet_preview,
+            host_read_file_bytes_base64,
             host_read_document_preview,
+            host_git_status,
+            host_create_pending_worktree,
             host_find_rollout_for_thread,
             host_read_thread_tool_history,
             host_notify_turn_completed,

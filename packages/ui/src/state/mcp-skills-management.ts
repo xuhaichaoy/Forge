@@ -4,7 +4,7 @@ import {
   type CommandPanelEntry,
 } from "./command-panel";
 
-export type ManagementPanelKind = "mcp" | "skills";
+export type ManagementPanelKind = "mcp" | "plugins" | "skills";
 
 export interface McpServerStartupStatus {
   status: string;
@@ -35,6 +35,7 @@ export function managementPanelSummary(
   entries: CommandPanelEntry[],
 ): ManagementPanelSummary[] {
   if (kind === "mcp") return mcpManagementSummary(entries);
+  if (kind === "plugins") return pluginManagementSummary(entries);
   return skillManagementSummary(entries);
 }
 
@@ -43,6 +44,7 @@ export function managementPanelSections(
   entries: CommandPanelEntry[],
 ): ManagementPanelSection[] {
   if (kind === "mcp") return mcpManagementSections(entries);
+  if (kind === "plugins") return pluginManagementSections(entries);
   return skillManagementSections(entries);
 }
 
@@ -237,6 +239,43 @@ function skillManagementSummary(entries: CommandPanelEntry[]): ManagementPanelSu
   ];
 }
 
+function pluginManagementSummary(entries: CommandPanelEntry[]): ManagementPanelSummary[] {
+  const plugins = entries.filter((entry) => entry.kind === "plugin");
+  const installed = plugins.filter((entry) =>
+    entry.status === "enabled" || entry.status === "installed" || entry.status === "app disabled"
+  );
+  const enabled = plugins.filter((entry) => entry.status === "enabled");
+  const featured = plugins.filter(pluginEntryFeatured);
+  const shared = plugins.filter(pluginEntryShared);
+  return [
+    { id: "plugins:total", label: "Plugins", value: plugins.length },
+    {
+      id: "plugins:installed",
+      label: "Installed",
+      value: installed.length,
+      tone: installed.length > 0 ? "success" : "default",
+    },
+    {
+      id: "plugins:enabled",
+      label: "Enabled",
+      value: enabled.length,
+      tone: enabled.length > 0 ? "success" : "default",
+    },
+    {
+      id: "plugins:featured",
+      label: "Featured",
+      value: featured.length,
+      tone: featured.length > 0 ? "success" : "default",
+    },
+    {
+      id: "plugins:shared",
+      label: "Shared",
+      value: shared.length,
+      tone: shared.length > 0 ? "warning" : "default",
+    },
+  ];
+}
+
 function mcpManagementSections(entries: CommandPanelEntry[]): ManagementPanelSection[] {
   const servers = entries.filter((entry) => entry.kind === "mcpServer");
   const children = entries.filter((entry) => entry.kind !== "mcpServer");
@@ -287,6 +326,53 @@ function skillManagementSections(entries: CommandPanelEntry[]): ManagementPanelS
     meta: `${sectionEntries.length} entries`,
     entries: sectionEntries,
   }));
+}
+
+function pluginManagementSections(entries: CommandPanelEntry[]): ManagementPanelSection[] {
+  const plugins = entries.filter((entry) => entry.kind === "plugin");
+  const sections: ManagementPanelSection[] = [];
+  const addSection = (id: string, title: string, sectionEntries: CommandPanelEntry[]) => {
+    if (sectionEntries.length === 0) return;
+    sections.push({
+      id,
+      title,
+      meta: `${sectionEntries.length} entries`,
+      entries: sectionEntries,
+    });
+  };
+  const installed = plugins.filter((entry) =>
+    entry.status === "enabled" || entry.status === "installed" || entry.status === "app disabled"
+  );
+  const shared = plugins.filter(pluginEntryShared);
+  const featured = plugins.filter((entry) => pluginEntryFeatured(entry) && !installed.includes(entry));
+  const seen = new Set([...installed, ...shared, ...featured].map((entry) => entry.id));
+  addSection("plugins:installed", "Installed", installed);
+  addSection("plugins:shared", "Shared", shared.filter((entry) => !installed.includes(entry)));
+  addSection("plugins:featured", "Featured", featured);
+
+  const marketplaceBuckets = new Map<string, CommandPanelEntry[]>();
+  for (const entry of plugins) {
+    if (seen.has(entry.id)) continue;
+    const marketplace = entry.meta?.split(" · ")[0]?.trim() || "Marketplace";
+    const current = marketplaceBuckets.get(marketplace) ?? [];
+    current.push(entry);
+    marketplaceBuckets.set(marketplace, current);
+  }
+  for (const [marketplace, sectionEntries] of marketplaceBuckets.entries()) {
+    addSection(`plugins:${marketplace.toLowerCase().replace(/\s+/g, "-")}`, marketplace, sectionEntries);
+  }
+
+  const nonPlugins = entries.filter((entry) => entry.kind !== "plugin");
+  addSection("plugins:other", "Other plugin entries", nonPlugins);
+  return sections;
+}
+
+function pluginEntryFeatured(entry: CommandPanelEntry): boolean {
+  return entry.status === "featured" || (entry.meta ?? "").includes("Featured");
+}
+
+function pluginEntryShared(entry: CommandPanelEntry): boolean {
+  return entry.status === "shared" || (entry.meta ?? "").includes("Shared");
 }
 
 function mcpEntryServerName(entry: CommandPanelEntry): string {

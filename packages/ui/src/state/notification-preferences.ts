@@ -1,6 +1,8 @@
 import type { BrowserStorageLike } from "./image-generation-tool";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
-export const HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = "hicodex:notification-preferences";
+export const LEGACY_HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = "hicodex:notification-preferences";
+export const HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.notificationPreferences;
 
 export const TURN_COMPLETION_NOTIFICATION_POLICIES = ["backgroundOnly", "always", "off"] as const;
 export type TurnCompletionNotificationPolicy = (typeof TURN_COMPLETION_NOTIFICATION_POLICIES)[number];
@@ -46,7 +48,11 @@ export function mergeNotificationPreferences(
 export function loadNotificationPreferences(storage: BrowserStorageLike | null): NotificationPreferences {
   if (!storage) return { ...DEFAULT_NOTIFICATION_PREFERENCES };
   try {
-    return normalizeNotificationPreferences(storage.getItem(HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY));
+    return normalizeNotificationPreferences(readMigratedStorageValue(
+      storage,
+      HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY,
+      [LEGACY_HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY],
+    ));
   } catch {
     return { ...DEFAULT_NOTIFICATION_PREFERENCES };
   }

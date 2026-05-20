@@ -40,6 +40,7 @@ export default function runCommandPanelTests(): void {
   projectsSkillSourceReadResults();
   avoidsDuplicatingDesktopSkillPromptReferences();
   flattensPluginListMarketplaces();
+  projectsPluginMarketplaceInstalledFeaturedAndSharedActions();
   mergesConnectorAppsIntoPluginProjection();
   projectsRequiredAppsAfterPluginInstall();
   projectsFileSearchEntriesAsMentions();
@@ -261,6 +262,7 @@ function projectsRecommendedSkillAndCreatorEntries(): void {
             pluginName: "browser-use",
             marketplaceName: "OpenAI",
             marketplacePath: null,
+            remotePluginId: "remote-browser",
           },
         },
       ],
@@ -1130,6 +1132,137 @@ function flattensPluginListMarketplaces(): void {
       },
     ],
     "installed plugin rows should expose enable and uninstall actions",
+  );
+}
+
+function projectsPluginMarketplaceInstalledFeaturedAndSharedActions(): void {
+  const entries = projectPluginEntries({
+    marketplaces: [{
+      name: "OpenAI",
+      plugins: [{
+        id: "browser-use",
+        remotePluginId: "remote-browser",
+        name: "browser-use",
+        installed: false,
+        enabled: false,
+        installPolicy: "AVAILABLE",
+        availability: "AVAILABLE",
+        interface: { displayName: "Browser Use", defaultPrompt: ["Open pages."] },
+      }],
+    }],
+    featuredPluginIds: ["remote-browser"],
+  }, {
+    installed: {
+      marketplaces: [{
+        name: "Installed",
+        path: "/Users/me/.codex/plugins/marketplace.json",
+        plugins: [{
+          id: "local-helper",
+          name: "local-helper",
+          installed: true,
+          enabled: false,
+          localVersion: "1.2.3",
+          installPolicy: "AVAILABLE",
+          availability: "AVAILABLE",
+        }],
+      }],
+    },
+    shares: {
+      data: [{
+        plugin: {
+          id: "shared-review",
+          remotePluginId: "share_123",
+          name: "shared-review",
+          installed: false,
+          enabled: false,
+          installPolicy: "AVAILABLE",
+          availability: "AVAILABLE",
+          interface: { displayName: "Shared Review" },
+          shareContext: {
+            remotePluginId: "share_123",
+            shareUrl: "https://chatgpt.com/share/plugin/share_123",
+            remoteVersion: "2026-05-18",
+          },
+        },
+        localPluginPath: null,
+      }],
+    },
+  });
+
+  const featured = entries.find((entry) => entry.id === "plugin:browser-use");
+  assertDeepEqual(
+    {
+      status: featured?.status,
+      meta: featured?.meta,
+      action: featured?.secondaryActions?.[0]?.action,
+    },
+    {
+      status: "featured",
+      meta: "OpenAI · Featured",
+      action: {
+        type: "installPlugin",
+        title: "Install Browser Use",
+        pluginId: "browser-use",
+        pluginName: "remote-browser",
+        marketplaceName: "OpenAI",
+        marketplacePath: null,
+        remotePluginId: "remote-browser",
+      },
+    },
+    "featured remote plugins should install by remotePluginId while keeping marketplace metadata",
+  );
+
+  const installed = entries.find((entry) => entry.id === "plugin:local-helper");
+  assertDeepEqual(
+    {
+      status: installed?.status,
+      actions: installed?.secondaryActions?.map((action) => action.label),
+      details: installed?.details,
+    },
+    {
+      status: "installed",
+      actions: ["Enable", "Uninstall"],
+      details: [
+        "Marketplace: /Users/me/.codex/plugins/marketplace.json",
+        "Local version: 1.2.3",
+        "Availability: AVAILABLE",
+        "Install: AVAILABLE",
+      ],
+    },
+    "plugin/installed rows should appear even when absent from plugin/list",
+  );
+
+  const shared = entries.find((entry) => entry.id === "plugin:shared-review");
+  assertDeepEqual(
+    {
+      status: shared?.status,
+      meta: shared?.meta,
+      actions: shared?.secondaryActions?.map((action) => ({ label: action.label, action: action.action })),
+    },
+    {
+      status: "shared",
+      meta: "Shared plugins · Shared",
+      actions: [
+        {
+          label: "Checkout",
+          action: {
+            type: "checkoutPluginShare",
+            title: "Checkout Shared Review",
+            remotePluginId: "share_123",
+            pluginName: "shared-review",
+          },
+        },
+        {
+          label: "Share",
+          action: {
+            type: "openExternalUrl",
+            title: "Open Shared Review share",
+            url: "https://chatgpt.com/share/plugin/share_123",
+          },
+        },
+      ],
+    },
+    "plugin/share/list rows should expose a plugin/share/checkout action without inventing install params",
   );
 }
 

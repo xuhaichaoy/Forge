@@ -295,6 +295,112 @@
   white-space: nowrap;
 }
 
+.hc-thread-find-bar {
+  position: absolute;
+  top: 50px;
+  right: max(12px, var(--thread-body-padding-inline));
+  z-index: 20;
+  display: flex;
+  width: min(420px, calc(100% - 24px));
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(34, 38, 43, 0.16);
+  border-radius: 8px;
+  background: var(--hc-surface-panel);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+  color: var(--hc-text-primary);
+  padding: 6px;
+}
+
+.hc-thread-find-input {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(34, 38, 43, 0.12);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--hc-surface-panel) 88%, white);
+  color: #6a675e;
+  padding: 0 8px;
+}
+
+.hc-thread-find-input:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.hc-thread-find-input input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--hc-text-primary);
+  font: inherit;
+}
+
+.hc-thread-find-count {
+  width: 48px;
+  flex: 0 0 48px;
+  color: #6a675e;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hc-thread-find-icon-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #5f625b;
+  cursor: pointer;
+}
+
+.hc-thread-find-icon-button:hover:not(:disabled),
+.hc-thread-find-icon-button:focus-visible {
+  background: rgba(34, 38, 43, 0.08);
+  color: var(--hc-text-primary);
+}
+
+.hc-thread-find-icon-button:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.hc-thread-find-icon-button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+::highlight(hc-thread-find-match) {
+  background: #ffe58a;
+  color: inherit;
+}
+
+::highlight(hc-thread-find-current) {
+  background: #ffb84d;
+  color: inherit;
+}
+
+.hc-thread-find-mark {
+  border-radius: 3px;
+  background: #ffe58a;
+  color: inherit;
+  padding: 0 1px;
+}
+
+.hc-thread-find-mark[data-current="true"] {
+  background: #ffb84d;
+  box-shadow: 0 0 0 1px rgba(160, 92, 0, 0.24);
+}
+
 .hc-settings-grid input,
 .hc-settings-grid select,
 .hc-settings-grid textarea {
@@ -527,4 +633,80 @@
 
 .hc-background-agent-spinner {
   animation: hc-spin 900ms linear infinite;
+}
+
+.hc-app[data-theme="dark"] .hc-scroll-to-bottom {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  color: var(--hc-text-primary);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.34);
+}
+
+.hc-app[data-theme="dark"] .hc-scroll-to-bottom:hover {
+  background: var(--hc-surface-panel-muted);
+}
+
+.hc-app[data-theme="dark"] .hc-topbar {
+  border-bottom-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-trigger {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-trigger:hover,
+.hc-app[data-theme="dark"] .hc-sidebar-trigger:focus-visible {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-find-bar {
+  border-color: var(--hc-border-default);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.40);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-find-input {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-find-count {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-find-icon-button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-find-icon-button:hover:not(:disabled),
+.hc-app[data-theme="dark"] .hc-thread-find-icon-button:focus-visible {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] ::highlight(hc-thread-find-match),
+.hc-app[data-theme="dark"] .hc-thread-find-mark {
+  background: rgba(255, 184, 77, 0.40);
+}
+
+.hc-app[data-theme="dark"] ::highlight(hc-thread-find-current),
+.hc-app[data-theme="dark"] .hc-thread-find-mark[data-current="true"] {
+  background: rgba(255, 184, 77, 0.65);
+}
+
+.hc-app[data-theme="dark"] .hc-settings-grid input,
+.hc-app[data-theme="dark"] .hc-settings-grid select,
+.hc-app[data-theme="dark"] .hc-settings-grid textarea {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-state {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-state.error {
+  color: #f0a195;
 }

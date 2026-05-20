@@ -179,9 +179,14 @@ export type UserMessageContentPart =
     }
   | {
       kind: "chip";
-      chipKind: "mention" | "skill";
+      chipKind: "mention" | "skill" | "file";
       label: string;
       path: string;
+      /**
+       * Filename extension (lowercase, no leading dot) for chipKind === "file".
+       * Renderer uses it to pick a file-type icon (Word/Excel/PDF/etc).
+       */
+      fileExtension?: string;
     };
 
 export interface UserMessageTextElement {

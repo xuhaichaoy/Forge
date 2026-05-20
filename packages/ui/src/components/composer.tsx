@@ -1,8 +1,8 @@
 import { ArrowUp, AtSign, FileText, ListChecks, Loader2, Paperclip, PlugZap, Plus, Sparkles, Square, X } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { convertLocalFileSrc } from "../lib/tauri-host";
-import { focusPromptEditorElement, PromptEditor } from "./prompt-editor";
+import { convertLocalFileSrc, listenNativeFileDropEvents } from "../lib/tauri-host";
+import { focusPromptEditorElement, PromptEditor, replacePromptEditorTextRangeWithMention } from "./prompt-editor";
 import {
   CLOSED_ATTACHMENT_PICKER_STATE,
   DEFAULT_SLASH_COMMANDS,
@@ -30,6 +30,7 @@ import {
   type AttachActionId,
   type ComposerAttachmentPickerState,
   type ComposerAttachment,
+  type ComposerMentionMarker,
   type ComposerMentionOption,
   type ComposerMentionTrigger,
   type ComposerMode,
@@ -74,7 +75,7 @@ export interface ComposerProps {
   supportsImageInput?: boolean;
   onAttachmentError?: (message: string) => void;
   onBrowseFiles?: (kind: ComposerBrowseKind) => Promise<ComposerAttachment[]>;
-  onMentionSearch?: (query: string) => Promise<ComposerMentionOption[]>;
+  onMentionSearch?: (query: string, marker: ComposerMentionMarker) => Promise<ComposerMentionOption[]>;
   onPlanSelected?: () => void;
   onOpenPlugins?: () => void;
   pendingRequestContent?: ReactNode;
@@ -136,6 +137,7 @@ export function Composer({
     mentionPicker.activeIndex,
     Math.max(0, mentionOptions.length - 1),
   )] ?? null;
+  const mentionMenuLabel = mentionPicker.trigger?.marker === "$" ? "Skills and apps" : "Plugins";
   const setFooterRightMeasureElement = useCallback((element: HTMLElement | null) => {
     footerRightMeasureRef.current = element;
   }, []);
@@ -150,6 +152,11 @@ export function Composer({
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  const changeAttachments = useCallback((next: ComposerAttachment[]) => {
+    attachmentsRef.current = next;
+    onAttachmentsChange(next);
+  }, [onAttachmentsChange]);
 
   useLayoutEffect(() => {
     if (!slashOpen) return;
@@ -188,14 +195,13 @@ export function Composer({
     if (incoming.length === 0) return;
     const merged = mergeComposerAttachments(attachmentsRef.current, incoming);
     if (merged.length === attachmentsRef.current.length) return;
-    attachmentsRef.current = merged;
-    onAttachmentsChange(merged);
+    changeAttachments(merged);
     if (input.trim() === "+") onInputChange("");
     setAttachmentPicker(closeAttachmentPicker());
     setSlashOpen(false);
     setMentionPicker(CLOSED_MENTION_PICKER_STATE);
     requestComposerFocus(promptEditorRef.current);
-  }, [input, onAttachmentsChange, onInputChange]);
+  }, [changeAttachments, input, onInputChange]);
 
   const addAttachmentPaths = useCallback((paths: string[]) => {
     addAttachments(composerAttachmentsFromPaths(paths));
@@ -212,10 +218,14 @@ export function Composer({
     });
   }, [addAttachments, onAttachmentError, supportsImageInput]);
 
-  const addTransferFiles = useCallback((files: FileList | File[]) => {
+  const addTransferFiles = useCallback((
+    files: FileList | File[],
+    options: { warnUnavailablePaths?: boolean } = {},
+  ) => {
     const { imageFiles, otherFiles } = splitComposerTransferFiles(files);
     const pathAttachments: ComposerAttachment[] = [];
     const imageFilesWithoutPath: File[] = [];
+    let unavailablePathCount = 0;
 
     if (imageFiles.length > 0 && !supportsImageInput) {
       onAttachmentError?.("Current model does not declare image input support");
@@ -227,14 +237,61 @@ export function Composer({
       }
     }
     for (const file of otherFiles) {
-      const path = composerFilePath(file) || file.name?.trim();
+      const path = composerFilePath(file);
       if (path) pathAttachments.push(...composerAttachmentsFromPaths([path]));
+      else unavailablePathCount += 1;
+    }
+    if (unavailablePathCount > 0 && options.warnUnavailablePaths !== false) {
+      onAttachmentError?.("File path is unavailable. Use the + file picker or drag the file from Finder.");
     }
 
     addAttachments(pathAttachments);
     addImageFilesAsDataUrls(imageFilesWithoutPath);
-    return pathAttachments.length > 0 || imageFilesWithoutPath.length > 0 || imageFiles.length > 0;
+    return pathAttachments.length > 0
+      || imageFilesWithoutPath.length > 0
+      || imageFiles.length > 0
+      || unavailablePathCount > 0;
   }, [addAttachments, addImageFilesAsDataUrls, onAttachmentError, supportsImageInput]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    void listenNativeFileDropEvents((event) => {
+      if (event.type === "leave") {
+        setDropActive(false);
+        return;
+      }
+
+      const insideComposer = event.position
+        ? isNativeDropInsideElement(composerFieldRef.current, event.position)
+        : false;
+      if (event.type === "enter" || event.type === "over") {
+        setDropActive(insideComposer);
+        return;
+      }
+
+      if (event.type === "drop") {
+        setDropActive(false);
+        if (!insideComposer) return;
+        addAttachmentPaths(event.paths);
+        requestComposerFocus(promptEditorRef.current);
+      }
+    }).then((nextUnlisten) => {
+      if (cancelled) {
+        nextUnlisten?.();
+      } else {
+        unlisten = nextUnlisten;
+      }
+    }).catch(() => {
+      // Browser/dev fallbacks still handle regular HTML paste and drop events.
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [addAttachmentPaths]);
 
   useEffect(() => {
     if (!imagePreview) return;
@@ -249,34 +306,29 @@ export function Composer({
     const trigger = mentionPicker.trigger;
     const query = mentionPicker.query;
     if (!trigger) return;
+    const marker = trigger.marker;
 
     const matchesActiveTrigger = (state: MentionPickerState) => (
       state.trigger?.from === trigger.from
+      && state.trigger?.marker === trigger.marker
       && state.trigger?.to === trigger.to
       && state.query === query
     );
 
     if (!onMentionSearch) {
       setMentionPicker((state) => matchesActiveTrigger(state)
-        ? { ...state, status: "error", error: "File mention search is unavailable", options: [] }
+        ? { ...state, status: "error", error: "Mention search is unavailable", options: [] }
         : state);
       return;
     }
 
     const trimmedQuery = query.trim();
-    if (!trimmedQuery) {
-      setMentionPicker((state) => matchesActiveTrigger(state)
-        ? { ...state, status: "idle", options: [], activeIndex: 0, error: null }
-        : state);
-      return;
-    }
-
     let cancelled = false;
     const timer = window.setTimeout(() => {
       setMentionPicker((state) => matchesActiveTrigger(state)
         ? { ...state, status: "loading", error: null }
         : state);
-      void onMentionSearch(trimmedQuery)
+      void onMentionSearch(trimmedQuery, marker)
         .then((options) => {
           if (cancelled) return;
           setMentionPicker((state) => matchesActiveTrigger(state)
@@ -307,7 +359,13 @@ export function Composer({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [mentionPicker.query, mentionPicker.trigger?.from, mentionPicker.trigger?.to, onMentionSearch]);
+  }, [
+    mentionPicker.query,
+    mentionPicker.trigger?.from,
+    mentionPicker.trigger?.marker,
+    mentionPicker.trigger?.to,
+    onMentionSearch,
+  ]);
 
   function updateInput(value: string) {
     onInputChange(value);
@@ -409,8 +467,7 @@ export function Composer({
           };
         }
         const merged = mergeComposerAttachments(attachmentsRef.current, [result.attachment]);
-        attachmentsRef.current = merged;
-        onAttachmentsChange(merged);
+        changeAttachments(merged);
         if (input.trim() === "+") onInputChange("");
         setSlashOpen(false);
         setMentionPicker(CLOSED_MENTION_PICKER_STATE);
@@ -422,6 +479,14 @@ export function Composer({
     });
   }
 
+  function sendComposer(options: ComposerSendOptions = {}) {
+    onSend({
+      ...options,
+      input,
+      attachments: attachmentsRef.current,
+    });
+  }
+
   function selectMention(option: ComposerMentionOption) {
     const trigger = mentionPicker.trigger ?? findActiveMentionTrigger(input);
     const isSkill = option.kind === "skill";
@@ -429,8 +494,16 @@ export function Composer({
     const isPlugin = option.kind === "plugin";
     if (isSkill || isApp || isPlugin) {
       if (trigger) {
-        const nextInput = removeMentionTriggerText(input, trigger);
-        onInputChange(appendMentionPromptText(nextInput, option.promptText ?? mentionPromptReference(option)));
+        const inserted = replacePromptEditorTextRangeWithMention(promptEditorRef.current, {
+          kind: option.kind,
+          name: option.name || mentionOptionName(option),
+          displayName: mentionOptionDisplayName(option),
+          path: option.path,
+          description: option.description ?? option.detail,
+        }, { from: trigger.from, to: trigger.to });
+        if (!inserted) {
+          onInputChange(replaceMentionTriggerText(input, trigger, mentionPromptReference(option)));
+        }
       }
       closeComposerPopovers();
       requestComposerFocus(promptEditorRef.current);
@@ -442,8 +515,7 @@ export function Composer({
       path: option.path,
     };
     const merged = mergeComposerAttachments(attachmentsRef.current, [nextAttachment]);
-    attachmentsRef.current = merged;
-    onAttachmentsChange(merged);
+    changeAttachments(merged);
     if (trigger) {
       const nextInput = removeMentionTriggerText(input, trigger);
       onInputChange(nextInput);
@@ -473,8 +545,12 @@ export function Composer({
       data-drop-active={dropActive}
       onPaste={(event) => {
         if (event.defaultPrevented) return;
-        const handled = addTransferFiles(event.clipboardData.files);
-        if (handled) event.preventDefault();
+        const pastedPaths = droppedAttachmentPaths(event.clipboardData);
+        if (pastedPaths.length > 0) addAttachmentPaths(pastedPaths);
+        const handled = addTransferFiles(event.clipboardData.files, {
+          warnUnavailablePaths: pastedPaths.length === 0,
+        });
+        if (handled || pastedPaths.length > 0) event.preventDefault();
       }}
       onDragEnter={(event) => {
         if (!hasAttachmentTransfer(event.dataTransfer)) return;
@@ -514,8 +590,10 @@ export function Composer({
         }
         event.preventDefault();
         event.stopPropagation();
-        const handled = addTransferFiles(event.dataTransfer.files);
         const droppedPaths = droppedAttachmentPaths(event.dataTransfer);
+        const handled = addTransferFiles(event.dataTransfer.files, {
+          warnUnavailablePaths: droppedPaths.length === 0,
+        });
         if (droppedPaths.length > 0) addAttachmentPaths(droppedPaths);
         if (!handled && droppedPaths.length === 0) requestComposerFocus(promptEditorRef.current);
         setDropActive(false);
@@ -527,7 +605,7 @@ export function Composer({
           onInterrupt();
           return;
         }
-        onSend();
+        sendComposer();
       }}
     >
       <div
@@ -583,7 +661,7 @@ export function Composer({
                         type="button"
                         title="Remove attachment"
                         aria-label={`Remove ${chipTitle}`}
-                        onClick={() => onAttachmentsChange(removeComposerAttachment(attachments, index))}
+                        onClick={() => changeAttachments(removeComposerAttachment(attachments, index))}
                       >
                         <X size={13} />
                       </button>
@@ -622,8 +700,8 @@ export function Composer({
             )}
 
             {mentionOpen && (
-              <div className="hc-composer-menu mention" role="listbox" aria-label="Mentions">
-                <div className="hc-composer-menu-section-label">Mentions</div>
+              <div className="hc-composer-menu mention" role="listbox" aria-label={mentionMenuLabel}>
+                <div className="hc-composer-menu-section-label">{mentionMenuLabel}</div>
                 {mentionOptions.map((option) => (
                   <button
                     className="hc-composer-menu-row"
@@ -637,10 +715,10 @@ export function Composer({
                   >
                     {mentionOptionIcon(option)}
                     <span>
-                      <strong>{option.name || mentionOptionName(option)}</strong>
-                      <small>{option.detail || option.path}</small>
+                      <strong>{mentionOptionDisplayName(option)}</strong>
+                      <small>{mentionOptionDetail(option)}</small>
                     </span>
-                    <em>{mentionOptionPrefix(option)}</em>
+                    <em>{mentionOptionScope(option)}</em>
                   </button>
                 ))}
                 {mentionPicker.status === "idle" && (
@@ -649,11 +727,15 @@ export function Composer({
                 {mentionPicker.status === "loading" && mentionOptions.length === 0 && (
                   <div className="hc-composer-menu-empty">
                     <Loader2 className="hc-spin" size={13} />
-                    Searching mentions...
+                    {mentionPicker.trigger?.marker === "$" ? "Loading skills and apps..." : "Searching mentions..."}
                   </div>
                 )}
                 {mentionPicker.status === "ready" && mentionOptions.length === 0 && (
-                  <div className="hc-composer-menu-empty">No files, skills, apps, or plugins found</div>
+                  <div className="hc-composer-menu-empty">
+                    {mentionPicker.trigger?.marker === "$"
+                      ? "No skills or apps found"
+                      : "No files, skills, apps, or plugins found"}
+                  </div>
                 )}
                 {mentionPicker.status === "error" && (
                   <div className="hc-composer-menu-empty">{mentionPicker.error || "Unable to search mentions"}</div>
@@ -801,7 +883,7 @@ export function Composer({
                     onPastedFiles={addTransferFiles}
                     onPastedImages={addTransferFiles}
                     onSubmit={() => {
-                      if (!submitState.disabled && submitState.submitButtonMode !== "stop") onSend();
+                      if (!submitState.disabled && submitState.submitButtonMode !== "stop") sendComposer();
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
@@ -902,7 +984,7 @@ export function Composer({
                         attachments.length > 0
                       ) {
                         event.preventDefault();
-                        onAttachmentsChange(removeComposerAttachment(attachments, attachments.length - 1));
+                        changeAttachments(removeComposerAttachment(attachments, attachments.length - 1));
                         return true;
                       }
 
@@ -910,7 +992,7 @@ export function Composer({
                       if (followUpSubmitAction) {
                         event.preventDefault();
                         if (!submitState.disabled && submitState.submitButtonMode !== "stop") {
-                          onSend({ followUpSubmitAction });
+                          sendComposer({ followUpSubmitAction });
                         }
                         return true;
                       }
@@ -1222,6 +1304,18 @@ function mentionOptionName(option: ComposerMentionOption): string {
   return normalized.split(/[\\/]/).filter(Boolean).pop() || normalized || "file";
 }
 
+function mentionOptionDisplayName(option: ComposerMentionOption): string {
+  return option.displayName?.trim() || option.name || mentionOptionName(option);
+}
+
+function mentionOptionDetail(option: ComposerMentionOption): string {
+  return option.description?.trim() || option.detail || option.path;
+}
+
+function mentionOptionScope(option: ComposerMentionOption): string {
+  return option.scopeLabel?.trim() || mentionOptionPrefix(option);
+}
+
 function mentionOptionKey(option: ComposerMentionOption): string {
   return `${option.kind ?? "file"}:${option.path}`;
 }
@@ -1244,6 +1338,9 @@ function mentionPromptReference(option: ComposerMentionOption): string {
 }
 
 function escapePromptPath(value: string): string {
+  if (/[\s()<>]/.test(value)) {
+    return `<${value.replace(/\\/g, "\\\\").replace(/>/g, "\\>")}>`;
+  }
   return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }
 
@@ -1251,6 +1348,17 @@ function appendMentionPromptText(current: string, promptText: string): string {
   if (!promptText.trim()) return current;
   if (!current.trim()) return promptText;
   return `${current.trimEnd()}\n${promptText}`;
+}
+
+function replaceMentionTriggerText(input: string, trigger: ComposerMentionTrigger, promptText: string): string {
+  if (!promptText.trim()) return removeMentionTriggerText(input, trigger);
+  if (trigger.from < 0 || trigger.to < trigger.from || trigger.to > input.length) {
+    return appendMentionPromptText(input, promptText);
+  }
+  const prefix = input.slice(0, trigger.from);
+  const suffix = input.slice(trigger.to);
+  const separator = suffix && !/^\s/.test(suffix) ? " " : "";
+  return `${prefix}${promptText}${separator}${suffix}`;
 }
 
 function hasAttachmentTransfer(dataTransfer: DataTransfer | null): boolean {
@@ -1287,6 +1395,15 @@ function isDomDropInsideElement(
 ): boolean {
   if (!element) return false;
   return isPointInsideRect(event.clientX, event.clientY, element.getBoundingClientRect());
+}
+
+function isNativeDropInsideElement(
+  element: HTMLElement | null,
+  position: { x: number; y: number },
+): boolean {
+  if (!element || typeof window === "undefined") return false;
+  const scale = window.devicePixelRatio || 1;
+  return isPointInsideRect(position.x / scale, position.y / scale, element.getBoundingClientRect());
 }
 
 function readImageFileAttachment(file: File): Promise<ComposerAttachment | null> {

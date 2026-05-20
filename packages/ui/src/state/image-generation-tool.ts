@@ -2,12 +2,14 @@ import type { JsonRpcRequest, JsonValue, ModelConfig, UserInput } from "@hicodex
 import { formatError, formatUnknown, stringField } from "../lib/format";
 import { generateImageWithHost, isTauriRuntime } from "../lib/tauri-host";
 import { DEFAULT_MODEL_BASE_URL, normalizeBaseUrl } from "../model/model-settings";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
 export const HICODEX_IMAGE_TOOL_NAME = "image_gen";
 export const HICODEX_LEGACY_IMAGE_TOOL_PLAIN_NAME = "hicodex_generate_image";
 export const HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE = "hicodex_image";
 export const HICODEX_LEGACY_IMAGE_TOOL_NAME = "generate";
-export const HICODEX_IMAGE_SETTINGS_STORAGE_KEY = "hicodex:image-generation-settings";
+export const LEGACY_HICODEX_IMAGE_SETTINGS_STORAGE_KEY = "hicodex:image-generation-settings";
+export const HICODEX_IMAGE_SETTINGS_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.imageGeneration;
 export const IMAGE_GENERATION_FETCH_TIMEOUT_MS = 120_000;
 export const IMAGE_GENERATION_SIZE_OPTIONS = ["1024x1024", "1024x1536", "1536x1024", "auto"] as const;
 export type ImageGenerationSize = (typeof IMAGE_GENERATION_SIZE_OPTIONS)[number];
@@ -298,7 +300,10 @@ export function normalizeImageGenerationSettings(value: unknown): ImageGeneratio
 export function loadImageGenerationSettings(storage: BrowserStorageLike | null | undefined): ImageGenerationSettings {
   if (!storage) return EMPTY_IMAGE_GENERATION_SETTINGS;
   try {
-    return normalizeImageGenerationSettings(JSON.parse(storage.getItem(HICODEX_IMAGE_SETTINGS_STORAGE_KEY) || "null"));
+    return normalizeImageGenerationSettings(JSON.parse(
+      readMigratedStorageValue(storage, HICODEX_IMAGE_SETTINGS_STORAGE_KEY, [LEGACY_HICODEX_IMAGE_SETTINGS_STORAGE_KEY])
+        || "null",
+    ));
   } catch {
     return EMPTY_IMAGE_GENERATION_SETTINGS;
   }

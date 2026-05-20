@@ -1,11 +1,13 @@
 import type { BranchDetailsViewModel } from "./branch-details";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 import type { RailEntry } from "./render-groups";
 
 export const RAIL_LIST_PREVIEW_LIMIT = 6;
 export const DESKTOP_RIGHT_RAIL_WIDTH_PX = 300;
 export const DESKTOP_RIGHT_RAIL_GAP_PX = 16;
 export const DESKTOP_LEFT_PANEL_WIDTH_PX = 300;
-export const RIGHT_RAIL_PINNED_STORAGE_KEY = "hicodex.rightRail.isPinned";
+export const LEGACY_RIGHT_RAIL_PINNED_STORAGE_KEY = "hicodex.rightRail.isPinned";
+export const RIGHT_RAIL_PINNED_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.rightRailPinned;
 
 const DESKTOP_THREAD_LAYOUT_WIDTH_PX = 736;
 const DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX = 180;
@@ -73,7 +75,7 @@ export function loadRightRailPinned(
 ): boolean {
   if (!storage) return fallback;
   try {
-    const raw = storage.getItem(RIGHT_RAIL_PINNED_STORAGE_KEY);
+    const raw = readMigratedStorageValue(storage, RIGHT_RAIL_PINNED_STORAGE_KEY, [LEGACY_RIGHT_RAIL_PINNED_STORAGE_KEY]);
     if (raw === "1" || raw === "true") return true;
     if (raw === "0" || raw === "false") return false;
     return fallback;
@@ -151,8 +153,24 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  const shouldShowOutputs = input.showOutputs ?? !hasBranchDetails;
-  if (shouldShowOutputs && input.artifacts.length > 0) {
+  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Xf —
+  // Codex Desktop's `Xf` function renders Outputs as `se = !M && jsx(cf, ...)` where
+  // `M = !E && b.kind === 'git'`, so Outputs is strictly suppressed whenever a git
+  // project owns the right rail — even if real artifacts exist. The empty body uses the
+  // `codex.localConversation.artifacts.empty` "No artifacts yet" row when shown.
+  //
+  // HiCodex deviation: in our agentic flows the assistant routinely writes files to
+  // locations outside the git working tree (e.g. /Users/<me>/Downloads/*.xlsx,
+  // generated images, /tmp scripts). Strictly mirroring Codex hides those artifacts
+  // entirely whenever the user happens to be inside a git project, which makes the
+  // generated file undiscoverable in the rail even though the inline file card is
+  // visible in the transcript. We therefore keep Codex behavior for the empty case
+  // (git project + no artifacts -> Outputs hidden) but force the section back on when
+  // at least one artifact was projected, so users can always reach their generated
+  // outputs. Non-git projects still get the always-on empty-state row like Codex.
+  const shouldShowOutputs =
+    input.showOutputs ?? (!hasBranchDetails || input.artifacts.length > 0);
+  if (shouldShowOutputs) {
     sections.push(projectEntrySection("artifacts", "Outputs", input.artifacts, true));
   }
 
@@ -168,7 +186,13 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     sections.push(projectEntrySection("backgroundTasks", "Background tasks", backgroundTasks, false));
   }
 
-  if (input.sources.length > 0) {
+  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js he —
+  // Codex Desktop's `<jf>` panel section always renders the "Sources" group in the
+  // summary panel; when no tool sources are present it shows a "No sources yet" empty
+  // state row instead of hiding the section. We mirror that by emitting Sources
+  // whenever the rest of the panel has content (so users never see Sources collapse
+  // mid-conversation), or whenever real sources are present.
+  if (input.sources.length > 0 || sections.length > 0) {
     sections.push(projectEntrySection("sources", "Sources", input.sources, true));
   }
 
@@ -237,20 +261,29 @@ function branchDetailsEntries(details: BranchDetailsViewModel): RailEntry[] {
   const rows = details.rows.map((row) => ({
     id: row.id,
     title: row.label,
-    meta: row.value,
-    status: "available",
+    ...(row.value ? { meta: row.value } : {}),
+    status: row.status ?? "available",
+    ...(row.details && row.details.length > 0 ? { details: row.details } : {}),
   }));
-  if (!details.diff) return rows;
   return [
-    ...rows,
     {
-      id: "diff",
-      title: details.diff.title,
-      meta: details.diff.summary,
-      status: details.diff.files.length > 0 ? "changed" : undefined,
+      id: "changes",
+      title: "Changes",
+      meta: branchChangesMeta(details),
+      status: details.diff?.hasDiff ? "changed" : "available",
       action: { kind: "diff" },
     },
+    ...rows,
   ];
+}
+
+function branchChangesMeta(details: BranchDetailsViewModel): string {
+  if (details.diff) return details.diff.summary;
+  const changedFiles = details.gitStatus?.changedFiles;
+  if (changedFiles !== undefined) {
+    return `${changedFiles} changed file${changedFiles === 1 ? "" : "s"}`;
+  }
+  return "Review changed files";
 }
 
 function rightRailSideSpace(contentWidthPx: number): number {

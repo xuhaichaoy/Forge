@@ -1,0 +1,102 @@
+name: macOS release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build signed macOS release
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck workspaces
+        run: npm run typecheck
+
+      - name: Test desktop release config
+        run: npm run test --workspace @hicodex/desktop
+
+      - name: Test Rust workspace
+        run: cargo test --workspace
+
+      - name: Build desktop web assets
+        run: npm run build --workspace @hicodex/desktop
+
+      - name: Check release updater and signing config
+        run: npm run release:config --workspace @hicodex/desktop
+        env:
+          HICODEX_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
+          HICODEX_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
+          HICODEX_UPDATER_PUBKEY_PATH: ${{ secrets.HICODEX_UPDATER_PUBKEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PATH }}
+          HICODEX_MACOS_SIGNING_IDENTITY: ${{ secrets.HICODEX_MACOS_SIGNING_IDENTITY }}
+          HICODEX_MACOS_ENTITLEMENTS: ${{ vars.HICODEX_MACOS_ENTITLEMENTS }}
+          HICODEX_MACOS_PROVIDER_SHORT_NAME: ${{ vars.HICODEX_MACOS_PROVIDER_SHORT_NAME }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVIDER_SHORT_NAME: ${{ vars.APPLE_PROVIDER_SHORT_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+
+      - name: Build signed Tauri release
+        run: npm run tauri:build:release --workspace @hicodex/desktop
+        env:
+          HICODEX_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
+          HICODEX_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
+          HICODEX_UPDATER_PUBKEY_PATH: ${{ secrets.HICODEX_UPDATER_PUBKEY_PATH }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PATH }}
+          HICODEX_MACOS_SIGNING_IDENTITY: ${{ secrets.HICODEX_MACOS_SIGNING_IDENTITY }}
+          HICODEX_MACOS_ENTITLEMENTS: ${{ vars.HICODEX_MACOS_ENTITLEMENTS }}
+          HICODEX_MACOS_PROVIDER_SHORT_NAME: ${{ vars.HICODEX_MACOS_PROVIDER_SHORT_NAME }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVIDER_SHORT_NAME: ${{ vars.APPLE_PROVIDER_SHORT_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hicodex-macos-release-${{ github.run_number }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig.*

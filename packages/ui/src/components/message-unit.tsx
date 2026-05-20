@@ -567,8 +567,8 @@ function AssistantMessageActions({
   sentAtMs: number | null;
 }) {
   const hasArtifacts = assistantHasArtifacts(item, artifacts);
-  const autoReviewLabel = assistantAutoReviewLabel(item);
-  const hasActionChildren = hasArtifacts || Boolean(onFork) || Boolean(autoReviewLabel);
+  const autoReviewSummary = assistantAutoReviewSummary(item);
+  const hasActionChildren = hasArtifacts || Boolean(onFork) || Boolean(autoReviewSummary);
   return (
     <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={sentAtMs}>
       {hasArtifacts && (
@@ -589,11 +589,7 @@ function AssistantMessageActions({
           <GitFork size={13} />
         </IconActionButton>
       )}
-      {autoReviewLabel && (
-        <span className="hc-message-action-status text" title={autoReviewLabel}>
-          {autoReviewLabel}
-        </span>
-      )}
+      {autoReviewSummary && <AssistantAutoReviewAction summary={autoReviewSummary} />}
     </MessageActionRow>
   );
 }
@@ -607,14 +603,121 @@ function assistantHasArtifacts(item: Record<string, unknown>, artifacts: RailEnt
   return Array.isArray(itemArtifacts) && itemArtifacts.length > 0;
 }
 
-function assistantAutoReviewLabel(item: Record<string, unknown>): string | null {
+function AssistantAutoReviewAction({ summary }: { summary: AssistantAutoReviewSummary }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="hc-auto-review-action">
+      <button
+        aria-expanded={open}
+        className="hc-message-action-status text hc-auto-review-trigger"
+        onClick={() => setOpen((value) => !value)}
+        title={summary.title}
+        type="button"
+      >
+        {summary.label}
+      </button>
+      {open && (
+        <span className="hc-auto-review-popover" role="dialog" aria-label={summary.title}>
+          <span className="hc-auto-review-popover-title">{summary.title}</span>
+          {summary.rows.length > 0 && (
+            <span className="hc-auto-review-popover-rows">
+              {summary.rows.map((row) => (
+                <span className="hc-auto-review-popover-row" key={`${row.label}:${row.value}`}>
+                  <span>{row.label}</span>
+                  <span>{row.value}</span>
+                </span>
+              ))}
+            </span>
+          )}
+          {summary.commands.length > 0 && (
+            <span className="hc-auto-review-command-list">
+              {summary.commands.map((command, index) => (
+                <code key={`${index}:${command}`}>{command}</code>
+              ))}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function assistantAutoReviewSummary(item: Record<string, unknown>): AssistantAutoReviewSummary | null {
   const stats = item.autoReviewStats;
   if (!stats || typeof stats !== "object") return null;
   const record = stats as Record<string, unknown>;
+  const rows: Array<{ label: string; value: string }> = [];
+  const status = autoReviewStringField(record, "status");
+  if (status) rows.push({ label: "Status", value: status });
+  const risk = autoReviewStringField(record, "riskLevel") || autoReviewStringField(record, "risk");
+  if (risk) rows.push({ label: "Risk", value: risk });
   const issueCount = numericField(record, "issueCount") || numericField(record, "findings") || numericField(record, "findingCount");
+  if (issueCount > 0) rows.push({ label: "Findings", value: String(issueCount) });
+  const accepted = numericField(record, "accepted") || numericField(record, "acceptedCount");
+  if (accepted > 0) rows.push({ label: "Accepted", value: String(accepted) });
+  const rejected = numericField(record, "rejected") || numericField(record, "rejectedCount");
+  if (rejected > 0) rows.push({ label: "Rejected", value: String(rejected) });
+  const duration = autoReviewDuration(record);
+  if (duration) rows.push({ label: "Duration", value: duration });
+  const rationale = autoReviewStringField(record, "rationale") || autoReviewStringField(record, "summary");
+  if (rationale) rows.push({ label: "Rationale", value: truncateAutoReviewDetail(rationale) });
+  const commands = autoReviewCommands(record);
+  const label = autoReviewLabel(record, issueCount, status);
+  return {
+    label,
+    title: issueCount > 0 ? "Auto-review notes" : "Auto-review",
+    rows,
+    commands,
+  };
+}
+
+function autoReviewLabel(record: Record<string, unknown>, issueCount: number, status: string): string {
   if (issueCount > 0) return issueCount === 1 ? "1 review note" : `${issueCount} review notes`;
-  const status = typeof record.status === "string" ? record.status.trim() : "";
+  const accepted = numericField(record, "accepted") || numericField(record, "acceptedCount");
+  const rejected = numericField(record, "rejected") || numericField(record, "rejectedCount");
+  if (accepted > 0 || rejected > 0) return `${accepted} accepted / ${rejected} rejected`;
   return status || "Review";
+}
+
+function autoReviewDuration(record: Record<string, unknown>): string {
+  const durationMs = numericField(record, "durationMs") || numericField(record, "elapsedMs");
+  if (durationMs <= 0) return "";
+  if (durationMs < 1000) return `${Math.round(durationMs)} ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
+  const minutes = Math.floor(durationMs / 60_000);
+  const seconds = Math.round((durationMs % 60_000) / 1000);
+  return seconds > 0 ? `${minutes} min ${seconds} s` : `${minutes} min`;
+}
+
+function autoReviewCommands(record: Record<string, unknown>): string[] {
+  const fields = [
+    record.perCommandHistory,
+    record.commands,
+    record.commandHistory,
+  ];
+  return fields.flatMap((field) => {
+    if (!Array.isArray(field)) return [];
+    return field.flatMap((entry) => autoReviewCommandText(entry));
+  }).slice(0, 6);
+}
+
+function autoReviewCommandText(entry: unknown): string[] {
+  if (typeof entry === "string" && entry.trim()) return [entry.trim()];
+  if (!entry || typeof entry !== "object") return [];
+  const record = entry as Record<string, unknown>;
+  const command = autoReviewStringField(record, "command") || autoReviewStringField(record, "cmd") || autoReviewStringField(record, "text");
+  const decision = autoReviewStringField(record, "decision") || autoReviewStringField(record, "status");
+  if (!command) return [];
+  return [decision ? `${decision}: ${command}` : command];
+}
+
+function autoReviewStringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function truncateAutoReviewDetail(value: string): string {
+  return value.length > 180 ? `${value.slice(0, 177).trimEnd()}...` : value;
 }
 
 function messageSentAtMs(item: Record<string, unknown>): number | null {
@@ -988,6 +1091,13 @@ export type MarkdownPromptLinkKind = "app" | "plugin" | "skill";
 
 type MarkdownBasicHtmlTag = "b" | "del" | "em" | "i" | "s" | "strong" | "sub" | "sup" | "u";
 
+export interface AssistantAutoReviewSummary {
+  label: string;
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+  commands: string[];
+}
+
 export interface MemoryCitationEntryView {
   path: string;
   lineStart: number;
@@ -1242,7 +1352,14 @@ export function parseMarkdownInline(text: string): MarkdownInlineSegment[] {
         pushTextSegment(segments, text.slice(token.index, closeHref + 1));
       } else {
         const promptLink = markdownPromptLinkFromHref(label, href);
-        segments.push(promptLink ?? { kind: "link", text: label, href });
+        const safeHref = promptLink ? href : safeMarkdownHref(href);
+        if (promptLink) {
+          segments.push(promptLink);
+        } else if (safeHref) {
+          segments.push({ kind: "link", text: label, href: safeHref });
+        } else {
+          pushTextSegment(segments, text.slice(token.index, closeHref + 1));
+        }
       }
       index = closeHref + 1;
       continue;
@@ -1568,7 +1685,8 @@ function parseMarkdownAutolink(
   if (closeIndex < 0) return null;
   const value = text.slice(startIndex + 1, closeIndex);
   if (/^[A-Za-z][A-Za-z0-9+.-]{0,31}:[^\s<>]*$/u.test(value)) {
-    return { text: value, href: value, endIndex: closeIndex + 1 };
+    const href = safeMarkdownHref(value);
+    return href ? { text: value, href, endIndex: closeIndex + 1 } : null;
   }
   if (/^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/u.test(value)) {
     return { text: value, href: `mailto:${value}`, endIndex: closeIndex + 1 };
@@ -2295,6 +2413,24 @@ function normalizeMarkdownHref(value: string): string {
   const trimmed = value.trim();
   if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed.slice(1, -1).trim();
   return trimmed;
+}
+
+export function safeMarkdownHref(value: string): string | null {
+  const href = normalizeMarkdownHref(value);
+  if (!href || /[\u0000-\u001F\u007F]/u.test(href)) return null;
+  if (href.startsWith("//")) return null;
+  const scheme = href.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
+  if (!scheme) return href;
+  if (scheme === "http" || scheme === "https") {
+    try {
+      new URL(href);
+      return href;
+    } catch {
+      return null;
+    }
+  }
+  if (scheme === "mailto") return href;
+  return null;
 }
 
 function MarkdownPromptLink({ segment }: { segment: MarkdownPromptLinkSegment }) {

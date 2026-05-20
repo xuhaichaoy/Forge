@@ -1,4 +1,4 @@
-import { ChevronDown, Cpu, Folder, GitBranch, Monitor, Search, ShieldCheck } from "lucide-react";
+import { ChevronDown, Cpu, Folder, Plus, Search, ShieldCheck } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -11,6 +11,12 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  projectWorktreeModeOptions,
+  type ComposerWorkMode,
+  type WorktreeModeOption,
+} from "../state/worktrees";
+import { WorktreeModeMenuItems } from "./worktree-mode-menu";
 
 export interface ComposerWorkspaceRootOption {
   root: string;
@@ -21,9 +27,12 @@ export interface ComposerExternalFooterProps {
   branch?: string | null;
   cwd?: string | null;
   model?: string | null;
+  workMode?: ComposerWorkMode;
+  workModeOptions?: WorktreeModeOption[];
   workspaceRoots?: ComposerWorkspaceRootOption[];
   onWorkspaceRootSelected?: (root: string) => void | Promise<void>;
   onUseExistingFolder?: () => void | Promise<void>;
+  onWorkModeChange?: (mode: ComposerWorkMode) => void;
   approvalPolicy?: unknown;
   approvalsReviewer?: unknown;
   reasoningSummary?: unknown;
@@ -40,15 +49,16 @@ export interface ComposerExternalFooterProps {
 }
 
 export function ComposerExternalFooter({
-  branch,
   cwd,
   model,
+  workMode = "local",
+  workModeOptions,
   workspaceRoots = [],
   onWorkspaceRootSelected,
   onUseExistingFolder,
+  onWorkModeChange,
   approvalPolicy,
   approvalsReviewer,
-  reasoningSummary,
   reasoningEffort,
   sandboxMode,
   onOpenPermissions,
@@ -59,15 +69,18 @@ export function ComposerExternalFooter({
   const projectTriggerRef = useRef<HTMLButtonElement | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
-  const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort, reasoningSummary });
+  const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
   const permissionsLabel = formatPermissionsFooterLabel({ approvalPolicy, approvalsReviewer, sandboxMode });
   const permissionsTitle = formatPermissionsFooterTitle({ approvalPolicy, approvalsReviewer, sandboxMode }, permissionsLabel);
   const rootOptions = useMemo(() => dedupeWorkspaceRoots(workspaceRoots), [workspaceRoots]);
+  const resolvedWorkModeOptions = useMemo(
+    () => workModeOptions ?? projectWorktreeModeOptions({ mode: workMode }),
+    [workMode, workModeOptions],
+  );
   const visibleRootOptions = useMemo(
     () => filterWorkspaceRoots(rootOptions, projectSearch),
     [projectSearch, rootOptions],
   );
-  const projectLabel = formatWorkspaceProjectLabel(cwd, rootOptions);
   useAnchoredMenuDismiss(projectMenuOpen, projectTriggerRef, projectMenuRef, closeProjectMenu);
 
   function selectWorkspaceRoot(root: string) {
@@ -83,22 +96,40 @@ export function ComposerExternalFooter({
   }
 
   return (
+    // CODEX-REF: composer-DXaiOlFj.js line ~975700 — the composer footer is a
+    // strict 3-column grid:
+    //   <div className="composer-footer grid grid-cols-[minmax(0,auto)_auto_minmax(0,1fr)] items-center gap-[5px]">
+    //     <vz .../>                              {/* left: + add menu + permissions */}
+    //     <div className="flex items-center">    {/* middle: cloud-only slot */}
+    //       {d==="cloud" ? <jR/> : null}
+    //     </div>
+    //     <div className="flex w-full min-w-0 items-center justify-end gap-2">
+    //       <div className="flex min-w-0 flex-1 justify-end"> ... model/context ... </div>
+    //       <div className="flex shrink-0 items-center gap-2"> mic + send </div>
+    //     </div>
+    //   </div>
+    // The send button + mic live in composer.tsx for HiCodex, so the actions
+    // cluster slot in this strip is intentionally empty here.
     <div className="hc-composer-external-footer" aria-label="Composer context">
+      {/*
+       * CODEX-REF: composer-DXaiOlFj.js line ~975700 — left column hosts the
+       * `+` add-menu trigger followed by the permissions chip (Codex packs
+       * both into the `vz` component rendered into the first grid cell).
+       */}
       <div className="hc-composer-external-footer-left">
         <div className="hc-composer-footer-project">
           <button
             ref={projectTriggerRef}
             type="button"
-            className="hc-composer-footer-chip"
-            title={cwd?.trim() || "Select your project"}
+            className="hc-composer-footer-chip hc-composer-footer-add-menu"
+            title="Project and work mode"
+            aria-label="Project and work mode"
             aria-haspopup="menu"
             aria-expanded={projectMenuOpen}
             aria-controls={projectMenuOpen ? "hc-composer-project-menu" : undefined}
             onClick={() => setProjectMenuOpen((value) => !value)}
           >
-            <Folder size={14} />
-            <span>{projectLabel}</span>
-            <ChevronDown size={13} />
+            <Plus size={15} />
           </button>
           {projectMenuOpen && (
             <ProjectMenuPortal anchor={projectTriggerRef.current}>
@@ -117,6 +148,7 @@ export function ComposerExternalFooter({
                   />
                 </label>
                 <div className="hc-composer-project-list">
+                  <div className="hc-composer-project-menu-title" role="presentation">Project</div>
                   {visibleRootOptions.map((option) => (
                     <button
                       key={option.root}
@@ -149,31 +181,24 @@ export function ComposerExternalFooter({
                     </button>
                   </>
                 )}
+                <div className="hc-thread-menu-separator" />
+                <div className="hc-composer-project-menu-title" role="presentation">Work mode</div>
+                <WorktreeModeMenuItems
+                  mode={workMode}
+                  options={resolvedWorkModeOptions}
+                  onModeChange={onWorkModeChange}
+                  onClose={closeProjectMenu}
+                />
               </div>
             </ProjectMenuPortal>
           )}
         </div>
-        <span
-          className="hc-composer-footer-chip hc-composer-footer-chip-readonly"
-          data-chip="work-mode"
-          title={cwd?.trim() || "Work locally"}
-        >
-          <Monitor size={14} />
-          <span>Work locally</span>
-        </span>
-        {branch && (
-          <button
-            type="button"
-            className="hc-composer-footer-chip"
-            title={`Branch: ${branch}`}
-          >
-            <GitBranch size={14} />
-            <span>{branch}</span>
-            <ChevronDown size={13} />
-          </button>
-        )}
-      </div>
-      <div className="hc-composer-external-footer-context" aria-label="Composer runtime context">
+        {/*
+         * CODEX-REF: composer-DXaiOlFj.js line ~975700 — Codex renders the
+         * permissions dropdown immediately after the `+` button inside the
+         * left grid cell, so the trigger sits on the same baseline as the add
+         * menu.
+         */}
         <button
           type="button"
           className="hc-composer-footer-chip hc-composer-footer-permissions"
@@ -183,23 +208,44 @@ export function ComposerExternalFooter({
           onClick={onOpenPermissions ? (event) => onOpenPermissions(event.currentTarget) : undefined}
         >
           <ShieldCheck size={14} />
-          <span>{permissionsLabel}</span>
+          <span className="hc-composer-footer-chip-label">{permissionsLabel}</span>
           <ChevronDown size={13} />
         </button>
-        {intelligenceLabel && (
-          <button
-            type="button"
-            className="hc-composer-footer-chip hc-composer-footer-model hc-composer-footer-intelligence"
-            title={onOpenModelPicker ? "Select model" : intelligenceLabel}
-            data-chip="intelligence"
-            data-interactive={onOpenModelPicker ? "true" : undefined}
-            onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
-          >
-            <Cpu size={14} />
-            <span>{intelligenceLabel}</span>
-            <ChevronDown size={13} />
-          </button>
-        )}
+      </div>
+      {/*
+       * CODEX-REF: composer-DXaiOlFj.js line ~975700 — middle grid cell:
+       *   <div className="flex items-center">{d==="cloud" ? <jR/> : null}</div>
+       * Empty for local-only HiCodex but kept so the 3-column grid alignment
+       * stays consistent with Codex.
+       */}
+      <div className="hc-composer-external-footer-center" aria-hidden="true" />
+      {/*
+       * CODEX-REF: composer-DXaiOlFj.js line ~975700 — right grid cell:
+       *   <div className="flex w-full min-w-0 items-center justify-end gap-2">
+       *     <div className="flex min-w-0 flex-1 justify-end"> model/context </div>
+       *     <div className="flex shrink-0 items-center gap-2"> mic + send </div>
+       *   </div>
+       * The mic + send cluster is rendered by composer.tsx in HiCodex, so the
+       * `actions` slot here is intentionally empty.
+       */}
+      <div className="hc-composer-external-footer-context" aria-label="Composer runtime context">
+        <div className="hc-composer-external-footer-context-flex">
+          {intelligenceLabel && (
+            <button
+              type="button"
+              className="hc-composer-footer-chip hc-composer-footer-model hc-composer-footer-intelligence"
+              title={onOpenModelPicker ? "Select model" : intelligenceLabel}
+              data-chip="intelligence"
+              data-interactive={onOpenModelPicker ? "true" : undefined}
+              onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
+            >
+              <Cpu size={14} />
+              <span className="hc-composer-footer-chip-label">{intelligenceLabel}</span>
+              <ChevronDown size={13} />
+            </button>
+          )}
+        </div>
+        <div className="hc-composer-external-footer-actions" aria-hidden="true" />
       </div>
     </div>
   );
@@ -340,7 +386,6 @@ function workspaceBasename(value: string): string {
 export function formatIntelligenceFooterLabel({
   model,
   reasoningEffort,
-  reasoningSummary,
 }: {
   model?: string | null;
   reasoningEffort?: unknown;
@@ -349,8 +394,7 @@ export function formatIntelligenceFooterLabel({
   const trimmedModel = model?.trim() ?? "";
   if (!trimmedModel) return "";
   const effort = formatReasoningEffort(reasoningEffort);
-  const summary = formatReasoningSummary(reasoningSummary);
-  return [trimmedModel, effort, summary].filter(Boolean).join(" / ");
+  return [trimmedModel, effort].filter(Boolean).join(" ");
 }
 
 export function formatPermissionsFooterLabel(input: {
@@ -402,17 +446,6 @@ function formatReasoningEffort(value?: unknown): string {
   if (normalized === "high") return "High";
   if (normalized === "medium") return "Medium";
   if (normalized === "low") return "Low";
-  return value.trim();
-}
-
-function formatReasoningSummary(value?: unknown): string {
-  if (typeof value !== "string") return "";
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return "";
-  if (normalized === "none") return "No summaries";
-  if (normalized === "auto") return "Auto summaries";
-  if (normalized === "concise") return "Concise summaries";
-  if (normalized === "detailed") return "Detailed summaries";
   return value.trim();
 }
 

@@ -1,6 +1,8 @@
 import type { BrowserStorageLike } from "./image-generation-tool";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
-export const HICODEX_THEME_STORAGE_KEY = "hicodex:appearance-theme";
+export const LEGACY_HICODEX_THEME_STORAGE_KEY = "hicodex:appearance-theme";
+export const HICODEX_THEME_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.appearanceTheme;
 
 export const UI_THEME_MODES = ["system", "light", "dark"] as const;
 export type UiThemeMode = (typeof UI_THEME_MODES)[number];
@@ -22,7 +24,7 @@ export function normalizeUiThemeMode(value: unknown, fallback: UiThemeMode = "sy
 export function loadUiThemeMode(storage: BrowserStorageLike | null): UiThemeMode {
   if (!storage) return "system";
   try {
-    return normalizeUiThemeMode(storage.getItem(HICODEX_THEME_STORAGE_KEY));
+    return normalizeUiThemeMode(readMigratedStorageValue(storage, HICODEX_THEME_STORAGE_KEY, [LEGACY_HICODEX_THEME_STORAGE_KEY]));
   } catch {
     return "system";
   }

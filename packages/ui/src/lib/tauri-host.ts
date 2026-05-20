@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import type { JsonRpcMessage } from "@hicodex/codex-protocol";
 import { recordHostOnboardingSignal } from "../state/onboarding";
 import type { BrowserStorageLike } from "../state/image-generation-tool";
@@ -57,6 +58,39 @@ export interface ThreadToolHistoryTurn {
   items: unknown[];
 }
 
+export interface HostGitChangedFile {
+  status: string;
+  path: string;
+  oldPath?: string | null;
+}
+
+export interface HostGitStatus {
+  cwd: string;
+  repoRoot?: string | null;
+  branch?: string | null;
+  sha?: string | null;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  changedFiles: HostGitChangedFile[];
+  hasDiff: boolean;
+  diff: string;
+}
+
+export interface CreatePendingWorktreeRequest {
+  cwd: string;
+  branchName?: string | null;
+  baseRef?: string | null;
+}
+
+export interface PendingWorktree {
+  repoRoot: string;
+  path: string;
+  branchName: string;
+  baseRef: string;
+  baseSha: string;
+}
+
 export type HostEvent =
   | { type: "json"; value: JsonRpcMessage }
   | { type: "stdout"; line: string }
@@ -93,12 +127,40 @@ export function sendRaw(message: unknown): Promise<void> {
   return invoke("host_send_raw", { message });
 }
 
+export function readHostGitStatus(cwd: string): Promise<HostGitStatus> {
+  return invoke("host_git_status", { cwd });
+}
+
+export function createPendingWorktree(
+  request: CreatePendingWorktreeRequest,
+): Promise<PendingWorktree> {
+  return invoke("host_create_pending_worktree", { request });
+}
+
 export function listenEvents(handler: (event: HostEvent) => void): Promise<UnlistenFn> {
   return listen<HostEvent>(APP_SERVER_EVENT_NAME, (event) => handler(event.payload));
 }
 
 export function listenNativeShellEvents(handler: (event: NativeShellAction) => void): Promise<UnlistenFn> {
   return listen<NativeShellAction>(NATIVE_SHELL_EVENT_NAME, (event) => handler(event.payload));
+}
+
+export interface NativeFileDropEvent {
+  type: DragDropEvent["type"];
+  paths: string[];
+  position?: { x: number; y: number };
+}
+
+export function listenNativeFileDropEvents(handler: (event: NativeFileDropEvent) => void): Promise<UnlistenFn | null> {
+  if (!isTauriRuntime()) return Promise.resolve(null);
+  return getCurrentWebview().onDragDropEvent((event) => {
+    const payload = event.payload;
+    handler({
+      type: payload.type,
+      paths: "paths" in payload ? payload.paths : [],
+      position: "position" in payload ? { x: payload.position.x, y: payload.position.y } : undefined,
+    });
+  });
 }
 
 export function writeLocalModelCatalog(
@@ -181,6 +243,14 @@ export function readFileMetadata(path: string): Promise<LocalFileMetadata> {
 
 export function readTextFile(path: string, maxBytes?: number): Promise<string> {
   return invoke("host_read_text_file", { path, maxBytes });
+}
+
+// CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js — Codex loads xlsx
+// bytes into its WASM viewer; HiCodex's simplified preview needs the same
+// bytes for SheetJS in the renderer. Returns base64 so the IPC bridge stays
+// JSON-safe.
+export function readFileBytesBase64(path: string, maxBytes?: number): Promise<string> {
+  return invoke("host_read_file_bytes_base64", { path, maxBytes });
 }
 
 export function readSpreadsheetPreview(path: string, maxRows?: number, maxCols?: number): Promise<SpreadsheetPreview> {

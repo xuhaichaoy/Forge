@@ -300,7 +300,7 @@ function commandApprovalDecisionFromAnswers(
 ): unknown {
   const requested = answers[APPROVAL_DECISION_QUESTION_ID]?.[0];
   const available = availableCommandDecisionIds(request.params);
-  if (requested && available && !available.has(requested)) return available.has("accept") ? "accept" : "cancel";
+  if (requested && available && !available.has(requested)) return available.has("accept") ? "accept" : "decline";
   if (requested === "acceptForSession") return "acceptForSession";
   if (requested === "acceptWithExecpolicyAmendment") {
     const amendment = execPolicyAmendment(request.params);

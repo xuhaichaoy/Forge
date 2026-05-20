@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
+import { useMeasuredTextCollapse } from "../hooks/use-measured-text-collapse";
 import type { PendingServerRequest } from "../state/codex-reducer";
 import {
   pendingRequestDetail,
@@ -298,27 +299,67 @@ function RequestBodyPreview({
   return null;
 }
 
+// CODEX-REF: /tmp/codex_asar_extract/webview/assets/composer-DXaiOlFj.js — lW(e)
+// Codex 渲染：<div min-h-0 overflow-y-auto px-2 pt-2 pb-2 font-mono font-medium>
+//   <span block break-words whitespace-pre-wrap style={ZU /* line-clamp 3 */}>{cmd}</span></div>
+// + 独立 footer <div flex shrink-0 justify-end p-1><Ya>{展开/收起}</Ya></div>
+// HiCodex 这里改用 useMeasuredTextCollapse 三态 hook：靠 ResizeObserver 测真实
+// 文本高度而不是用启发式行数/字数；展开后是内层容器滚动而非把卡片撑高。
 function CommandPreview({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = text.split(/\r?\n/);
-  const canCollapse = lines.length > 3 || text.length > 220;
+  const { ref, state, toggle } = useMeasuredTextCollapse<HTMLSpanElement>(3);
+  const isExpanded = state === "expanded";
+  const isCollapsed = state === "collapsed";
+  const showToggle = state !== "uncollapsible";
   return (
-    <div className="hc-request-command-preview" data-expanded={expanded || !canCollapse}>
-      <pre>{text}</pre>
-      {canCollapse && (
-        <button type="button" className="hc-request-preview-toggle" onClick={() => setExpanded((value) => !value)}>
-          {expanded ? "Collapse" : "Expand"}
-        </button>
+    <div className="hc-request-command-preview" data-expanded={isExpanded}>
+      <div className="hc-request-command-preview-content">
+        <span
+          ref={ref}
+          className="hc-request-command-preview-text"
+          data-collapsed={isCollapsed}
+        >
+          {text}
+        </span>
+      </div>
+      {showToggle && (
+        <div className="hc-request-command-preview-footer">
+          <button
+            type="button"
+            className="hc-request-command-preview-toggle"
+            onClick={toggle}
+          >
+            {isExpanded ? "Collapse" : "Expand"}
+          </button>
+        </div>
       )}
     </div>
   );
+}
+
+// CODEX-REF: /tmp/codex_asar_extract/webview/assets/composer-DXaiOlFj.js — lW
+// Codex 直接把 cmd 的 raw text 交给 <span whitespace-pre-wrap> 渲染，靠 CSS 真实换行；
+// 对于 `bash -lc <heredoc>` 这种结构，HiCodex 特判 cmd[2]，避免被 join(" ") 拼成单行字符串
+// 后 heredoc 里的 "\n" 显示成转义符。其它形式继续 join(" ")。
+function bashShellScriptText(command: readonly unknown[]): string | null {
+  if (command.length !== 3) return null;
+  const head = command[0];
+  const flag = command[1];
+  const body = command[2];
+  if (typeof head !== "string" || typeof flag !== "string" || typeof body !== "string") return null;
+  if (!/^(bash|sh|zsh)$/.test(head)) return null;
+  if (!/^-l?c$/.test(flag)) return null;
+  return body;
 }
 
 export function commandPreviewText(params: unknown): string {
   const command = params && typeof params === "object"
     ? (params as Record<string, unknown>).command ?? (params as Record<string, unknown>).cmd
     : null;
-  if (Array.isArray(command)) return command.map((part) => String(part)).join(" ");
+  if (Array.isArray(command)) {
+    const shellScript = bashShellScriptText(command);
+    if (shellScript !== null) return shellScript;
+    return command.map((part) => String(part)).join(" ");
+  }
   return typeof command === "string" && command.trim().length > 0 ? command : "command";
 }
 

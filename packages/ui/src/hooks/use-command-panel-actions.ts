@@ -14,7 +14,6 @@ import {
   projectMcpResourceReadResultEntries,
   projectMcpToolCallResultEntries,
   projectPluginSkillReadResultEntries,
-  projectPluginEntries,
   projectRequiredAppEntries,
   projectSkillManagementEntries,
   projectSkillFileReadResultEntries,
@@ -48,6 +47,7 @@ import {
   type NotificationPreferences,
 } from "../state/notification-preferences";
 import { projectNotificationSettingsEntry } from "../state/settings-panel-workflow";
+import { loadPluginManagementEntries } from "../state/settings-panel-loader";
 import { refreshThreadContextDefaults } from "../state/thread-workflow";
 import { themeModeLabel, type UiThemeMode } from "../state/theme";
 
@@ -790,18 +790,17 @@ export function useCommandPanelActions({
     message: string,
     sink: CommandPanelSink = openCommandPanel,
   ) => {
-    const [result, apps] = await Promise.allSettled([
-      client.request<unknown>("plugin/list", {
-        cwds: workspace.trim() ? [workspace.trim()] : null,
-      }, 120_000),
-      loadAllApps(client, { forceRefetch: true, threadId: activeThreadId }),
-    ]);
-    if (result.status === "rejected") throw result.reason;
+    const entries = await loadPluginManagementEntries({
+      client,
+      forceReload: true,
+      threadId: activeThreadId,
+      workspace,
+    });
     sink("plugins", {
       status: "ready",
       title: "Plugins",
       message,
-      entries: projectPluginEntries(result.value, { apps: apps.status === "fulfilled" ? apps.value : undefined }),
+      entries,
     });
   }, [activeThreadId, client, openCommandPanel, workspace]);
 
@@ -828,7 +827,7 @@ export function useCommandPanelActions({
       const result = await client.request<{ appsNeedingAuth?: unknown[] }>("plugin/install", {
         marketplacePath: action.marketplacePath ?? null,
         remoteMarketplaceName: action.marketplacePath ? null : action.marketplaceName,
-        pluginName: action.marketplacePath ? action.pluginName : action.pluginId,
+        pluginName: action.marketplacePath ? action.pluginName : action.remotePluginId ?? action.pluginName,
       }, 120_000);
       await refreshThreadContextDefaults(client, dispatch, workspace);
       const appsNeedingAuth = result.appsNeedingAuth ?? [];
@@ -853,6 +852,41 @@ export function useCommandPanelActions({
       });
     }
   }, [client, dispatch, ensureConnected, openCommandPanel, refreshPluginsPanel, setActiveSettingsPanel, workspace]);
+
+  const checkoutPluginShareFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "checkoutPluginShare" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("plugins", {
+      status: "loading",
+      title: action.title,
+      message: "Checking out shared plugin...",
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("plugins", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      const result = await client.request<{ pluginName?: string }>("plugin/share/checkout", {
+        remotePluginId: action.remotePluginId,
+      }, 120_000);
+      await refreshThreadContextDefaults(client, dispatch, workspace);
+      await refreshPluginsPanel(`${result.pluginName ?? action.pluginName} checked out.`, sink);
+    } catch (error) {
+      sink("plugins", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [client, dispatch, ensureConnected, openCommandPanel, refreshPluginsPanel, workspace]);
 
   const uninstallPluginFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "uninstallPlugin" }>,
@@ -1077,6 +1111,10 @@ export function useCommandPanelActions({
       void installPluginFromPanel(action, sink);
       return;
     }
+    if (action.type === "checkoutPluginShare") {
+      void checkoutPluginShareFromPanel(action, sink);
+      return;
+    }
     if (action.type === "uninstallPlugin") {
       void uninstallPluginFromPanel(action, sink);
       return;
@@ -1223,6 +1261,7 @@ export function useCommandPanelActions({
     }
   }, [
     callMcpToolFromPanel,
+    checkoutPluginShareFromPanel,
     connectRequiredAppFromPanel,
     createStarterSkillFromPanel,
     installPluginFromPanel,
@@ -1265,6 +1304,7 @@ export function useCommandPanelActions({
 
   return {
     callMcpToolFromPanel,
+    checkoutPluginShareFromPanel,
     installPluginFromPanel,
     loginMcpServerFromPanel,
     openExternalUrlFromPanel,

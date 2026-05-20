@@ -1,4 +1,4 @@
-import type { UserInput } from "@hicodex/codex-protocol";
+import type { ImageDetail, UserInput } from "@hicodex/codex-protocol";
 
 export type ComposerEnterResult =
   | { action: "none"; preventDefault: false }
@@ -47,6 +47,7 @@ export type SettingsPanelId =
   | "skills"
   | "hooks"
   | "plugins"
+  | "worktrees"
   | "apps"
   | "experimental"
   | "team"
@@ -120,6 +121,8 @@ export type FollowUpSubmitAction = "queue" | "steer";
 
 export interface ComposerSendOptions {
   followUpSubmitAction?: FollowUpSubmitAction;
+  input?: string;
+  attachments?: ComposerAttachment[];
 }
 
 export function composerPlaceholderText(input: {
@@ -151,8 +154,8 @@ export type AttachActionId =
 
 export type ComposerAttachment =
   | { type: "mention"; name: string; path: string }
-  | { type: "localImage"; path: string }
-  | { type: "image"; url: string; name?: string }
+  | { type: "localImage"; path: string; detail?: ImageDetail }
+  | { type: "image"; url: string; name?: string; detail?: ImageDetail }
   | { type: "skill"; name: string; path: string }
   | { type: "plainText"; text: string }
   | { type: "filePath"; path: string };
@@ -160,13 +163,19 @@ export type ComposerAttachment =
 export interface ComposerMentionOption {
   kind?: "file" | "skill" | "app" | "plugin";
   name: string;
+  displayName?: string;
+  description?: string;
+  scopeLabel?: string;
   path: string;
   detail?: string;
   promptText?: string;
   score?: number;
 }
 
+export type ComposerMentionMarker = "@" | "$";
+
 export interface ComposerMentionTrigger {
+  marker: ComposerMentionMarker;
   query: string;
   from: number;
   to: number;
@@ -378,6 +387,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("mcp", "MCP", "Reload and list MCP servers and tools.", "mcp", "direct", ["tools", "server"], "verbose"),
   command("apps", "Apps", "List connected apps and connectors.", "tools", "direct", ["connectors"]),
   command("plugins", "Plugins", "List installed and marketplace plugins.", "tools", "direct", ["plugin"]),
+  command("worktrees", "Worktrees", "Inspect local, worktree, and cloud work modes.", "workspace", "panel", ["git", "branch", "cloud"]),
   command("login", "Login", "Sign in to ChatGPT (OpenAI subscription).", "settings", "direct", ["account", "oauth", "signin"]),
   command("logout", "Logout", "Sign out from the current Codex account.", "settings", "direct", ["account"]),
   command("quit", "Quit", "Quit HiCodex.", "settings", "desktop", ["exit"], undefined, true),
@@ -607,10 +617,19 @@ export function imageAttachmentToUserInput(
   if (!value) return null;
   if (/^file:/i.test(value)) {
     const path = fileUrlToPath(value);
-    return path ? { type: "localImage", path } : null;
+    return path ? imageUserInputWithDetail({ type: "localImage", path }, attachment.detail) : null;
   }
-  if (/^(?:data:image\/|blob:|https?:)/i.test(value)) return { type: "image", url: value };
-  return { type: "localImage", path: value };
+  if (/^(?:data:image\/|blob:|https?:)/i.test(value)) {
+    return imageUserInputWithDetail({ type: "image", url: value }, attachment.detail);
+  }
+  return imageUserInputWithDetail({ type: "localImage", path: value }, attachment.detail);
+}
+
+function imageUserInputWithDetail<T extends Extract<UserInput, { type: "image" | "localImage" }>>(
+  input: T,
+  detail: ImageDetail | undefined,
+): T {
+  return detail === undefined ? input : { ...input, detail };
 }
 
 export function normalizeAttachmentPath(value: string): string {
@@ -622,15 +641,37 @@ export function findActiveMentionTrigger(input: string): ComposerMentionTrigger 
   const cursor = input.length;
   const lineStart = input.lastIndexOf("\n", cursor - 1) + 1;
   const linePrefix = input.slice(lineStart, cursor);
-  const match = linePrefix.match(/(?:^|[\s([{])@([^\s@]*)$/);
+  return findMarkerMentionTrigger({
+    marker: "@",
+    linePrefix,
+    lineStart,
+    cursor,
+    pattern: /(^|\s)(@[^@]*)$/,
+  }) ?? findMarkerMentionTrigger({
+    marker: "$",
+    linePrefix,
+    lineStart,
+    cursor,
+    pattern: /(^|\s)(\$[^$]*)$/,
+  });
+}
+
+function findMarkerMentionTrigger(input: {
+  marker: ComposerMentionMarker;
+  linePrefix: string;
+  lineStart: number;
+  cursor: number;
+  pattern: RegExp;
+}): ComposerMentionTrigger | null {
+  const match = input.linePrefix.match(input.pattern);
   if (!match || match.index == null) return null;
   const matchedText = match[0] ?? "";
-  const atOffset = matchedText.lastIndexOf("@");
-  if (atOffset < 0) return null;
-  const from = lineStart + match.index + atOffset;
-  const query = match[1] ?? "";
+  const markerOffset = matchedText.lastIndexOf(input.marker);
+  if (markerOffset < 0) return null;
+  const from = input.lineStart + match.index + markerOffset;
+  const query = matchedText.slice(markerOffset + input.marker.length);
   if (query.length > 120) return null;
-  return { query, from, to: cursor };
+  return { marker: input.marker, query, from, to: input.cursor };
 }
 
 export function removeMentionTriggerText(input: string, trigger: ComposerMentionTrigger): string {
@@ -747,6 +788,8 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
       return { action: "request", request: "listApps", clearInput: true };
     case "plugins":
       return { action: "request", request: "listPlugins", clearInput: true };
+    case "worktrees":
+      return { action: "openSettings", panel: "worktrees", clearInput: true };
     case "login":
       return { action: "request", request: "loginChatgpt", clearInput: true };
     case "logout":
@@ -835,15 +878,16 @@ export function buildUserInputFromComposer(
   for (const attachment of attachments) {
     switch (attachment.type) {
       case "plainText":
-        if (attachment.text.trim()) textParts.push(attachment.text.trim());
+        appendComposerTextPart(textParts, attachment.text);
         break;
       case "filePath":
-        if (attachment.path.trim()) {
-          structuredInputs.push({
-            type: "mention",
-            name: inferNameFromPath(attachment.path),
-            path: normalizeAttachmentPath(attachment.path),
-          });
+        {
+          const path = normalizeAttachmentPath(attachment.path);
+          // Keep local files inline as `[name](path)` so the model can `cat`/`rg`
+          // the file directly. The projection layer extracts these links into
+          // chip parts so the user message still renders a file chip above the
+          // bubble instead of a raw markdown link inside it.
+          appendLocalFileReference(textParts, path);
         }
         break;
       case "image":
@@ -867,11 +911,19 @@ export function buildUserInputFromComposer(
         }
         break;
       case "mention":
-        if (attachment.path.trim()) {
+        {
+          const path = normalizeAttachmentPath(attachment.path);
+          if (!path) break;
+          if (isLocalFileReference(path)) {
+            // Local files stay inline so the model can read the path directly;
+            // the projection layer upgrades them to file chips for display.
+            appendLocalFileReference(textParts, path, attachment.name);
+            break;
+          }
           structuredInputs.push({
             type: "mention",
-            name: attachment.name.trim() || inferNameFromPath(attachment.path),
-            path: normalizeAttachmentPath(attachment.path),
+            name: attachment.name.trim() || inferNameFromPath(path),
+            path,
           });
         }
         break;
@@ -885,6 +937,34 @@ export function buildUserInputFromComposer(
   ];
 }
 
+function appendComposerTextPart(textParts: string[], value: string): void {
+  const text = value.trim();
+  if (!text) return;
+  if (textParts.some((part) => part.includes(text))) return;
+  textParts.push(text);
+}
+
+function appendLocalFileReference(textParts: string[], path: string, label?: string): void {
+  const normalized = normalizeAttachmentPath(path);
+  if (!isLocalFileReference(normalized)) return;
+  const promptLink = localFilePromptLink(normalized, label);
+  if (textParts.some((part) => part.includes(promptLink) || part.includes(normalized))) return;
+  textParts.push(promptLink);
+}
+
+function isLocalFileReference(path: string): boolean {
+  const normalized = normalizeAttachmentPath(path);
+  if (!normalized) return false;
+  if (/^(?:app|plugin|skill|agent|http|https|mailto|tel|data|blob):/i.test(normalized)) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(normalized)) return false;
+  return true;
+}
+
+function localFilePromptLink(path: string, label?: string): string {
+  const name = label?.trim() || inferNameFromPath(path) || path;
+  return `[${escapePromptLinkLabel(name)}](${escapePromptLinkPath(path)})`;
+}
+
 function skillAttachmentPromptLink(attachment: Extract<ComposerAttachment, { type: "skill" }>): string | null {
   const path = normalizeAttachmentPath(attachment.path);
   if (!path) return null;
@@ -895,7 +975,14 @@ function skillAttachmentPromptLink(attachment: Extract<ComposerAttachment, { typ
 }
 
 function escapePromptLinkPath(value: string): string {
+  if (/[\s()<>]/.test(value)) {
+    return `<${value.replace(/\\/g, "\\\\").replace(/>/g, "\\>")}>`;
+  }
   return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function escapePromptLinkLabel(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\]/g, "\\]");
 }
 
 export function createAttachmentFromInput(actionId: AttachActionId, value: string): ComposerAttachment | null {

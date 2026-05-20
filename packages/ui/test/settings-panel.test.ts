@@ -4,16 +4,54 @@ import {
   imageGenerationCapabilityEntries,
   localSettingsEntries,
 } from "../src/state/settings-panel-workflow";
+import {
+  COMPOSER_WORK_MODE_STORAGE_KEY,
+  LEGACY_COMPOSER_WORK_MODE_STORAGE_KEY,
+  createHostPendingWorktree,
+  loadComposerWorkMode,
+  projectWorktreeModeOptions,
+  projectWorktreesSettingsEntries,
+  saveComposerWorkMode,
+  type HostGitStatus,
+  type PendingWorktree,
+  type WorktreeHostApi,
+} from "../src/state/worktrees";
 import type { SettingsPanelId } from "../src/state/composer-workflow";
+import { loadSettingsPanelContent } from "../src/state/settings-panel-loader";
+import { initialCodexUiState } from "../src/state/codex-reducer";
+import type { CommandPanelState } from "../src/state/command-panel";
 
-export default function runSettingsPanelTests(): void {
+export default async function runSettingsPanelTests(): Promise<void> {
   exposesUnifiedSettingsSectionsWithoutLogin();
   marksServerBackedSectionsRefreshable();
   projectsImageGenerationCapabilities();
   projectsNotificationPreferencesInGeneralSettings();
   projectsThemeAndLocaleInGeneralSettings();
+  migratesComposerWorkModeStorage();
+  projectsHostAvailableWorktreeSelectable();
+  projectsPendingWorktreePath();
+  projectsWorktreesSettingsFallback();
+  await createsPendingWorktreeThroughHostApi();
+  await loadsWorktreesSettingsFromHostBeforeProtocolFallback();
+  await fallsBackToGitDiffWhenHostUnavailable();
   displaysCustomPermissionStateWithoutSelectableCustomMode();
   displaysCustomApprovalPolicyAsDegraded();
+}
+
+function migratesComposerWorkModeStorage(): void {
+  const storage = new MemoryStorage();
+  storage.setItem(LEGACY_COMPOSER_WORK_MODE_STORAGE_KEY, "worktree");
+  assertDeepEqual(
+    loadComposerWorkMode(storage),
+    "worktree",
+    "composer work mode should read the legacy storage key during migration",
+  );
+  saveComposerWorkMode(storage, "cloud");
+  assertDeepEqual(
+    storage.getItem(COMPOSER_WORK_MODE_STORAGE_KEY),
+    "cloud",
+    "composer work mode should persist under desktop.hicodex",
+  );
 }
 
 function exposesUnifiedSettingsSectionsWithoutLogin(): void {
@@ -23,6 +61,7 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
       "general",
       "models",
       "images",
+      "worktrees",
       "permissions",
       "approvals",
       "mcp",
@@ -38,9 +77,9 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
 
 function marksServerBackedSectionsRefreshable(): void {
   assertDeepEqual(
-    (["images", "mcp", "skills", "hooks", "apps", "plugins", "experimental"] as SettingsPanelId[])
+    (["images", "worktrees", "mcp", "skills", "hooks", "apps", "plugins", "experimental"] as SettingsPanelId[])
       .map((panel) => isRefreshableSettingsPanel(panel)),
-    [true, true, true, true, true, true, true],
+    [true, true, true, true, true, true, true, true],
     "server-backed settings sections should expose a refresh action",
   );
   assertDeepEqual(
@@ -141,6 +180,186 @@ function projectsThemeAndLocaleInGeneralSettings(): void {
   );
 }
 
+function projectsHostAvailableWorktreeSelectable(): void {
+  const options = projectWorktreeModeOptions({
+    hostGitStatus: hostGitStatusFixture(),
+    mode: "local",
+    tauriRuntimeAvailable: true,
+  });
+  assertDeepEqual(
+    options.map((entry) => [entry.id, entry.status, entry.disabledReason ?? null]),
+    [
+      ["local", "selected", null],
+      ["worktree", "ready", null],
+      ["cloud", "disabled", "No cloud workspace handoff is connected in HiCodex."],
+    ],
+    "worktree mode should be selectable when Tauri host status reports a repo root",
+  );
+}
+
+function projectsPendingWorktreePath(): void {
+  const pending = pendingWorktreeFixture();
+  const entries = projectWorktreesSettingsEntries({
+    activeThread: null,
+    connected: true,
+    hostGitStatus: hostGitStatusFixture(),
+    mode: "worktree",
+    pendingWorktree: pending,
+    tauriRuntimeAvailable: true,
+    workspace: "/workspace/project",
+  });
+  const pendingEntry = entries.find((entry) => entry.id === "worktrees:pending-worktree");
+  assertDeepEqual(
+    [pendingEntry?.status, pendingEntry?.meta, pendingEntry?.disabled === true],
+    ["pending", "/workspace/project-worktree", false],
+    "settings should project the real pending worktree path returned by the host",
+  );
+  assertDeepEqual(
+    pendingEntry?.details,
+    [
+      "Path: /workspace/project-worktree",
+      "Branch: project-worktree",
+      "Base ref: main",
+      "Base commit: abcdef123456",
+      "Repo root: /workspace/project",
+    ],
+    "settings should show pending worktree branch and base sha",
+  );
+}
+
+function projectsWorktreesSettingsFallback(): void {
+  const entries = projectWorktreesSettingsEntries({
+    activeThread: {
+      id: "thread-1",
+      cwd: "/workspace/project",
+      gitInfo: {
+        branch: "main",
+        sha: "1234567890abcdef",
+        originUrl: "git@example.com:project/repo.git",
+      },
+    } as never,
+    connected: true,
+    gitDiffResult: {
+      diff: "diff --git a/src/app.ts b/src/app.ts\n",
+    },
+    hostGitStatusError: "Tauri runtime unavailable",
+    mode: "local",
+    tauriRuntimeAvailable: false,
+    workspace: "/workspace/project",
+  });
+  assertDeepEqual(
+    entries.map((entry) => [entry.id, entry.status, entry.disabled === true]),
+    [
+      ["worktrees:mode:local", "selected", false],
+      ["worktrees:mode:worktree", "disabled", true],
+      ["worktrees:mode:cloud", "disabled", true],
+      ["worktrees:git-context", "changes detected", false],
+      ["worktrees:pending-worktree", "blocked", true],
+    ],
+    "worktrees settings should fall back to protocol Git diff without inventing a worktree path",
+  );
+}
+
+async function createsPendingWorktreeThroughHostApi(): Promise<void> {
+  const calls: unknown[] = [];
+  const pending = pendingWorktreeFixture();
+  const hostApi: WorktreeHostApi = {
+    isTauriRuntime: () => true,
+    createPendingWorktree: async (request) => {
+      calls.push(request);
+      return pending;
+    },
+  };
+  assertDeepEqual(
+    await createHostPendingWorktree({ cwd: " /workspace/project ", branchName: "", baseRef: undefined }, hostApi),
+    pending,
+    "pending worktree creation should return the host response",
+  );
+  assertDeepEqual(
+    calls,
+    [{ cwd: "/workspace/project", branchName: null, baseRef: null }],
+    "pending worktree creation should pass a real cwd without inventing thread facts",
+  );
+}
+
+async function loadsWorktreesSettingsFromHostBeforeProtocolFallback(): Promise<void> {
+  const host = fakeSettingsPanelHost((method) => {
+    throw new Error(`unexpected protocol call: ${method}`);
+  });
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => {
+      throw new Error("ensureConnected should not run when host Git status succeeds");
+    },
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: () => undefined,
+    panel: "worktrees",
+    setSettingsPanelState: host.setPanel,
+    state: initialCodexUiState,
+    workspace: "/workspace/project",
+    workMode: "local",
+    worktreeHostApi: {
+      isTauriRuntime: () => true,
+      readHostGitStatus: async () => hostGitStatusFixture(),
+    },
+  });
+
+  assertDeepEqual(host.calls, [], "host Git status should be preferred over gitDiffToRemote");
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => [entry.id, entry.status, entry.disabled === true]),
+    [
+      ["worktrees:mode:local", "selected", false],
+      ["worktrees:mode:worktree", "ready", false],
+      ["worktrees:mode:cloud", "disabled", true],
+      ["worktrees:git-context", "changes detected", false],
+      ["worktrees:pending-worktree", "ready", false],
+    ],
+    "host-backed Worktrees settings should enable worktree mode and show current Git status",
+  );
+}
+
+async function fallsBackToGitDiffWhenHostUnavailable(): Promise<void> {
+  const host = fakeSettingsPanelHost((method) => {
+    if (method === "gitDiffToRemote") {
+      return { diff: "diff --git a/src/app.ts b/src/app.ts\n" };
+    }
+    throw new Error(`unexpected protocol call: ${method}`);
+  });
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: () => undefined,
+    panel: "worktrees",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, connected: true },
+    workspace: "/workspace/project",
+    workMode: "local",
+    worktreeHostApi: {
+      isTauriRuntime: () => false,
+    },
+  });
+
+  assertDeepEqual(
+    host.calls.map((call) => [call.method, call.params]),
+    [["gitDiffToRemote", { cwd: "/workspace/project" }]],
+    "Worktrees settings should use protocol fallback when Tauri host Git status is unavailable",
+  );
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => [entry.id, entry.status, entry.disabled === true]),
+    [
+      ["worktrees:mode:local", "selected", false],
+      ["worktrees:mode:worktree", "disabled", true],
+      ["worktrees:mode:cloud", "disabled", true],
+      ["worktrees:git-context", "changes detected", false],
+      ["worktrees:pending-worktree", "blocked", true],
+    ],
+    "host-unavailable fallback should keep worktree disabled while showing protocol Git status",
+  );
+}
+
 function displaysCustomPermissionStateWithoutSelectableCustomMode(): void {
   const entries = localSettingsEntries("permissions", {
     connected: true,
@@ -182,6 +401,69 @@ function displaysCustomApprovalPolicyAsDegraded(): void {
     ],
     "approvals settings should show degraded custom policy without inventing a selectable mode",
   );
+}
+
+class MemoryStorage {
+  private readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+}
+
+function hostGitStatusFixture(overrides: Partial<HostGitStatus> = {}): HostGitStatus {
+  return {
+    cwd: "/workspace/project",
+    repoRoot: "/workspace/project",
+    branch: "main",
+    sha: "abcdef1234567890",
+    upstream: "origin/main",
+    ahead: 1,
+    behind: 2,
+    changedFiles: ["src/app.ts"],
+    hasDiff: true,
+    diff: "diff --git a/src/app.ts b/src/app.ts\n",
+    ...overrides,
+  };
+}
+
+function pendingWorktreeFixture(overrides: Partial<PendingWorktree> = {}): PendingWorktree {
+  return {
+    repoRoot: "/workspace/project",
+    path: "/workspace/project-worktree",
+    branchName: "project-worktree",
+    baseRef: "main",
+    baseSha: "abcdef1234567890",
+    ...overrides,
+  };
+}
+
+function fakeSettingsPanelHost(
+  request: (method: string, params?: unknown) => unknown,
+): {
+  calls: Array<{ method: string; params: unknown }>;
+  client: Parameters<typeof loadSettingsPanelContent>[0]["client"];
+  panel: CommandPanelState | null;
+  setPanel: (state: CommandPanelState) => void;
+} {
+  const host = {
+    calls: [] as Array<{ method: string; params: unknown }>,
+    panel: null as CommandPanelState | null,
+    client: {
+      async request<T>(method: string, params?: unknown): Promise<T> {
+        host.calls.push({ method, params });
+        return request(method, params) as T;
+      },
+    } as Parameters<typeof loadSettingsPanelContent>[0]["client"],
+    setPanel(state: CommandPanelState) {
+      host.panel = state;
+    },
+  };
+  return host;
 }
 
 function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {
