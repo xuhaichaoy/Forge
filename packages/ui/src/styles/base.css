@@ -78,23 +78,38 @@
 :root[data-hc-theme="dark"],
 .hc-app[data-theme="dark"] {
   color-scheme: dark;
-  --hc-surface-app: #101216;
-  --hc-surface-main: #15171c;
-  --hc-surface-sidebar: #101216;
-  --hc-surface-panel: rgba(27, 30, 36, 0.96);
-  --hc-surface-panel-muted: rgba(27, 30, 36, 0.72);
-  --hc-surface-composer: rgba(27, 30, 36, 0.94);
-  --hc-surface-hover: rgba(235, 238, 244, 0.09);
-  --hc-surface-soft: rgba(235, 238, 244, 0.07);
-  --hc-text-primary: #e8eaee;
-  --hc-text-strong: #f7f8fa;
-  --hc-text-secondary: #a3a8b1;
-  --hc-border-default: rgba(235, 238, 244, 0.16);
-  --hc-border-subtle: rgba(235, 238, 244, 0.10);
-  --hc-border-strong: rgba(235, 238, 244, 0.24);
-  --hc-shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.34);
-  --hc-thread-footer-gradient: linear-gradient(to top, #15171c 0%, #15171c 74%, rgba(21, 23, 28, 0) 100%);
-  --vscode-focusBorder: #7aa9b8;
+  /* Aligned with Codex Desktop `.electron-dark` palette
+   * (webview/assets/app-main-*.css):
+   *   --color-background-surface: gray-900 #181818
+   *   --color-background-editor-opaque: gray-800 #212121
+   *   --color-background-elevated-primary: #212121f5
+   *   --color-text-foreground: #fff
+   *   --color-text-foreground-secondary: rgba(255,255,255,0.70)
+   *   --color-text-foreground-tertiary: rgba(255,255,255,0.50)
+   *   --color-border: rgba(255,255,255,0.08)
+   *   --color-border-heavy: rgba(255,255,255,0.16)
+   *   --color-border-light: rgba(255,255,255,0.04)
+   *   --color-background-button-secondary-hover: rgba(255,255,255,0.08)
+   */
+  --hc-surface-app: #181818;
+  --hc-surface-main: #212121;
+  --hc-surface-sidebar: #181818;
+  --hc-surface-panel: rgba(33, 33, 33, 0.96);
+  --hc-surface-panel-muted: rgba(33, 33, 33, 0.74);
+  --hc-surface-composer: rgba(33, 33, 33, 0.94);
+  --hc-surface-hover: rgba(255, 255, 255, 0.08);
+  --hc-surface-soft: rgba(255, 255, 255, 0.05);
+  --hc-text-primary: #ffffff;
+  --hc-text-strong: #ffffff;
+  --hc-text-secondary: rgba(255, 255, 255, 0.70);
+  --hc-border-default: rgba(255, 255, 255, 0.08);
+  --hc-border-subtle: rgba(255, 255, 255, 0.04);
+  --hc-border-strong: rgba(255, 255, 255, 0.16);
+  --hc-shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.40);
+  --hc-thread-footer-gradient: linear-gradient(to top, #212121 0%, #212121 74%, rgba(33, 33, 33, 0) 100%);
+  --vscode-focusBorder: rgba(51, 156, 255, 0.70);
+  background: var(--hc-surface-app);
+  color: var(--hc-text-primary);
 }
 
 * {

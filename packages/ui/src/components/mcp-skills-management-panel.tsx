@@ -10,6 +10,7 @@ import {
   LogIn,
   Loader2,
   Play,
+  Plug,
   Power,
   PowerOff,
   RefreshCw,
@@ -59,7 +60,7 @@ export function McpSkillsManagementPanel({
       )}
 
       <div className="hc-management-summary-bar">
-        <div className="hc-management-summary" aria-label={kind === "mcp" ? "MCP summary" : "Skills summary"}>
+        <div className="hc-management-summary" aria-label={`${managementKindLabel(kind)} summary`}>
           {summary.map((item) => (
             <div className="hc-management-summary-item" data-tone={item.tone ?? "default"} key={item.id}>
               <strong>{item.value}</strong>
@@ -86,7 +87,7 @@ export function McpSkillsManagementPanel({
             <section className="hc-management-section" key={section.id}>
               <header>
                 <div>
-                  {kind === "mcp" ? <Server size={14} /> : <Boxes size={14} />}
+                  {kind === "mcp" ? <Server size={14} /> : kind === "plugins" ? <Plug size={14} /> : <Boxes size={14} />}
                   <strong>{section.title}</strong>
                 </div>
                 {section.meta && <span>{section.meta}</span>}
@@ -107,12 +108,18 @@ export function McpSkillsManagementPanel({
       ) : (
         panelState.status !== "loading" && !panelState.message && (
           <div className="hc-settings-empty">
-            {kind === "mcp" ? "No MCP servers." : "No skills."}
+            {kind === "mcp" ? "No MCP servers." : kind === "plugins" ? "No plugins." : "No skills."}
           </div>
         )
       )}
     </div>
   );
+}
+
+function managementKindLabel(kind: ManagementPanelKind): string {
+  if (kind === "mcp") return "MCP";
+  if (kind === "plugins") return "Plugins";
+  return "Skills";
 }
 
 function ManagementEntryRow({
@@ -213,6 +220,8 @@ function entryIcon(entry: CommandPanelEntry) {
       return <Braces size={14} />;
     case "skill":
       return entry.status === "error" ? <FileText size={14} /> : <Boxes size={14} />;
+    case "plugin":
+      return <Plug size={14} />;
     default:
       return <CheckCircle2 size={14} />;
   }
@@ -230,6 +239,14 @@ function primaryActionLabel(entry: CommandPanelEntry): string {
       return "Configure";
     case "attachSkill":
       return "Insert prompt";
+    case "attachPlugin":
+      return "Insert mention";
+    case "checkoutPluginShare":
+      return "Checkout";
+    case "installPlugin":
+      return "Install";
+    case "uninstallPlugin":
+      return "Uninstall";
     default:
       return "Open";
   }
@@ -258,6 +275,9 @@ function secondaryActionIcon(action: CommandPanelEntryAction) {
     return action.enabled ? <Power size={13} /> : <PowerOff size={13} />;
   }
   if (action.type === "installPlugin") {
+    return <Download size={13} />;
+  }
+  if (action.type === "checkoutPluginShare") {
     return <Download size={13} />;
   }
   if (action.type === "uninstallPlugin") {

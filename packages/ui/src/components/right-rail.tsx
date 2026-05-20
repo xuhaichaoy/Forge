@@ -1,6 +1,7 @@
 import {
   Bot,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Circle,
   FileArchive,
@@ -8,11 +9,15 @@ import {
   FileSpreadsheet,
   FileText,
   GitBranch,
+  GitCommitHorizontal,
+  Github,
   Globe,
   ImageIcon,
   LoaderCircle,
   MessageSquareText,
+  Monitor,
   Network,
+  PencilLine,
   Pin,
   PinOff,
   Square,
@@ -23,6 +28,8 @@ import type { ReactNode } from "react";
 import { convertLocalFileSrc } from "../lib/tauri-host";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import type { BranchDetailsViewModel } from "../state/branch-details";
+import { DiffStatsDisplay } from "./diff-stats-display";
+import { SummaryPanelRow } from "./summary-panel-row";
 import type { OpenThreadHandler } from "./open-thread";
 import type { RailEntry, RailEntryAction, RailEntryReference } from "../state/render-groups";
 import {
@@ -156,6 +163,18 @@ export function RightRail({
         >
           {section.id === "branchDetails" && section.branchDetails
             ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
+            : section.id === "sources" && section.allEntries.length === 0
+              /* CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js jf —
+               * Codex Desktop renders Sources with a `py-1 text-base
+               * text-token-description-foreground` "No sources yet" row whenever the
+               * tool-source list is empty rather than hiding the entire section. */
+              ? <div className="hc-rail-empty-state">No sources yet</div>
+            : section.id === "artifacts" && section.allEntries.length === 0
+              /* CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js ef —
+               * Codex Desktop's `ef` artifact list body renders a
+               * `codex.localConversation.artifacts.empty` "No artifacts yet" row when
+               * the artifact list is empty, matching the Sources empty-state behavior. */
+              ? <div className="hc-rail-empty-state">No artifacts yet</div>
             : (
                 <RailList
                   entries={section.allEntries}
@@ -186,6 +205,15 @@ export function RightRail({
  * header icons were a HiCodex-original embellishment; removed for parity.
  */
 
+// CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Sf —
+// Codex Desktop's Git summary panel renders exactly five rows in this strict order:
+//   1. df  — Changes        (pencil icon  + `<Sc linesAdded linesRemoved>` trailing)
+//   2. yf  — Local          (Monitor/Cloud/Worktree icon + chevron-down trailing)
+//   3. Fn  — Branch         (branch icon  + chevron-down trailing, label = currentBranch)
+//   4. er  — Commit         (commit icon  + "Commit" label, no trailing)
+//   5. mf  — GitHub status  (GitHub icon  + ghStatus-derived label)
+// Every row shares the `nt` (gs/Kl) container so they all flush to the same 28px line
+// height; HiCodex now uses `SummaryPanelRow` for the same effect.
 function BranchDetailsCard({
   details,
   canOpenEntry,
@@ -203,32 +231,78 @@ function BranchDetailsCard({
     );
   }
 
+  const localRow = details.rows.find((row) => row.id === "local");
+  const branchRow = details.rows.find((row) => row.id === "branch");
+  const commitRow = details.rows.find((row) => row.id === "commit");
+  const githubRow = details.rows.find((row) => row.id === "github");
+  const githubLabel = githubRow?.value ?? details.githubStatus?.label ?? "GitHub CLI unavailable";
+
+  const changesEntry: RailEntry = {
+    id: "changes",
+    title: "Changes",
+    meta: branchChangesMeta(details),
+    status: details.diff?.hasDiff ? "changed" : "available",
+    action: { kind: "diff" },
+  };
+  const canOpenChanges = canOpenEntry(changesEntry);
+  const linesAdded = details.gitStatus?.linesAdded ?? 0;
+  const linesRemoved = details.gitStatus?.linesRemoved ?? 0;
+  const changesTrailing = (linesAdded > 0 || linesRemoved > 0)
+    ? <DiffStatsDisplay linesAdded={linesAdded} linesRemoved={linesRemoved} />
+    : <span className="hc-summary-panel-row-meta">{changesEntry.meta}</span>;
+
   return (
     <div className="hc-rail-list">
-      {details.rows.map((row) => (
-        <div className="hc-rail-card" key={row.id}>
-          <div className="hc-rail-card-title">{row.label}</div>
-          <div className="hc-rail-card-meta">{row.value}</div>
-        </div>
-      ))}
-      {details.diff && (
-        <RailEntryCard
-          entry={{
-            id: "diff",
-            title: details.diff.title,
-            meta: details.diff.summary,
-            status: details.diff.files.length > 0
-              ? details.diff.files.slice(0, 3).map((file) => file.path).join(", ")
-              : undefined,
-            action: { kind: "diff" },
-          }}
-          sectionId="branchDetails"
-          canOpen={canOpenEntry}
-          onOpen={onOpenEntry}
+      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js df — Changes row + diff stats trailing */}
+      <SummaryPanelRow
+        icon={<PencilLine size={14} />}
+        label="Changes"
+        trailing={changesTrailing}
+        onClick={canOpenChanges ? () => onOpenEntry(changesEntry) : undefined}
+        title={changesEntry.meta}
+      />
+      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js yf — Local row */}
+      {localRow ? (
+        <SummaryPanelRow
+          icon={<Monitor size={14} />}
+          label={localRow.label}
+          title={localRow.value || localRow.label}
+          trailing={<ChevronDown size={12} />}
         />
-      )}
+      ) : null}
+      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js Fn — Branch row (label = branch name) */}
+      {branchRow ? (
+        <SummaryPanelRow
+          icon={<GitBranch size={14} />}
+          label={branchRow.value || branchRow.label}
+          title={branchRow.value || branchRow.label}
+          trailing={<ChevronDown size={12} />}
+        />
+      ) : null}
+      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js er — Commit row */}
+      {commitRow ? (
+        <SummaryPanelRow
+          icon={<GitCommitHorizontal size={14} />}
+          label={commitRow.label}
+        />
+      ) : null}
+      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js mf — GitHub status row */}
+      <SummaryPanelRow
+        icon={<Github size={14} />}
+        label={githubLabel}
+        title={githubLabel}
+      />
     </div>
   );
+}
+
+function branchChangesMeta(details: BranchDetailsViewModel): string {
+  if (details.diff) return details.diff.summary;
+  const changedFiles = details.gitStatus?.changedFiles;
+  if (changedFiles !== undefined) {
+    return `${changedFiles} changed file${changedFiles === 1 ? "" : "s"}`;
+  }
+  return "Review changed files";
 }
 
 export function RailSection({ count, id, summary, title, children, headerAction = null }: RailSectionProps) {
@@ -396,6 +470,9 @@ function RailEntryContent({
         </div>
         {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
         {showSecondary && entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
+        {showSecondary && entry.details?.map((detail) => (
+          <div className="hc-rail-card-status" key={detail}>{detail}</div>
+        ))}
       </div>
       {trailingAction && <div className="hc-rail-card-actions">{trailingAction}</div>}
     </div>

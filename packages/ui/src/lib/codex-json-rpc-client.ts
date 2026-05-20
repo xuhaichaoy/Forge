@@ -133,6 +133,7 @@ export class CodexJsonRpcClient {
           },
           capabilities: {
             experimentalApi: true,
+            requestAttestation: false,
             optOutNotificationMethods: [],
           },
         },

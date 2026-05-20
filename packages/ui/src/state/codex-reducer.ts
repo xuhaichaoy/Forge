@@ -11,7 +11,6 @@ import type {
   ThreadItem,
   UserInput,
 } from "@hicodex/codex-protocol";
-import type { PermissionProfileSelectionParams } from "@hicodex/codex-protocol/generated/v2/PermissionProfileSelectionParams";
 import type { TurnEnvironmentParams } from "@hicodex/codex-protocol/generated/v2/TurnEnvironmentParams";
 import { stringField } from "../lib/format";
 import type { HostStatus } from "../lib/tauri-host";
@@ -42,7 +41,7 @@ export interface ThreadContextDefaults {
   approvalPolicy?: unknown;
   approvalsReviewer?: unknown;
   sandbox?: unknown;
-  permissions?: PermissionProfileSelectionParams;
+  permissions?: string;
   environments?: TurnEnvironmentParams[];
   baseInstructions?: string;
   developerInstructions?: string;
@@ -439,6 +438,8 @@ function bindOptimisticTurn(
   const confirmedUserMessagesInTurn = items.filter((item) =>
     isConfirmedUserMessage(item) && turnIdOf(item) === turnId
   );
+  const preservedConfirmedById = new Map<string, AccumulatedThreadItem>();
+  const unmatchedConfirmed = [...confirmedUserMessagesInTurn];
   const next: AccumulatedThreadItem[] = [];
   for (const item of items) {
     if (turnIdOf(item) !== localTurnId) {
@@ -446,8 +447,21 @@ function bindOptimisticTurn(
       continue;
     }
     if (item.type === "userMessage" && localIdOf(item)) {
-      if (confirmedUserMessagesInTurn.some((confirmed) => userMessagesHaveSameContent(item, confirmed))) continue;
-      if (confirmedUserMessagesInTurn.length > 0) continue;
+      const contentMatchIndex = unmatchedConfirmed.findIndex((confirmed) => userMessagesHaveSameContent(item, confirmed));
+      if (contentMatchIndex >= 0) {
+        const confirmed = unmatchedConfirmed.splice(contentMatchIndex, 1)[0];
+        rememberConfirmedWithLocalInputs(preservedConfirmedById, confirmed, item);
+        continue;
+      }
+      if (unmatchedConfirmed.length > 0) {
+        const confirmed = unmatchedConfirmed.shift();
+        rememberConfirmedWithLocalInputs(preservedConfirmedById, confirmed, item);
+        continue;
+      }
+      if (confirmedUserMessagesInTurn.length > 0) {
+        rememberConfirmedWithLocalInputs(preservedConfirmedById, confirmedUserMessagesInTurn[0], item);
+        continue;
+      }
     }
     next.push({ ...item, _turnId: turnId });
   }
@@ -455,7 +469,7 @@ function bindOptimisticTurn(
   return threadRuntimePatch(state, threadId, {
     turnOrder: dedup,
     pendingOptimisticTurns: pending,
-    items: next,
+    items: applyPreservedConfirmedUserMessages(next, preservedConfirmedById),
   });
 }
 
@@ -1153,8 +1167,9 @@ function mergeLiveThreadSnapshotItems(
   current: AccumulatedThreadItem[],
   snapshot: Array<AccumulatedThreadItem | ThreadItem>,
 ): AccumulatedThreadItem[] {
-  const swept = dropConfirmedOptimisticPlaceholders(current, snapshot);
-  const aligned = realignSnapshotIdsToStreamedTwins(swept, snapshot);
+  const snapshotWithLocalInputs = preserveLocalInputsInConfirmedUserMessages(current, snapshot);
+  const swept = dropConfirmedOptimisticPlaceholders(current, snapshotWithLocalInputs);
+  const aligned = realignSnapshotIdsToStreamedTwins(swept, snapshotWithLocalInputs);
   return dedupeConfirmedUserMessagesByContent(mergeItemsInIncomingOrder(swept, aligned));
 }
 
@@ -1348,10 +1363,15 @@ function dropConfirmedOptimisticPlaceholders(
 ): AccumulatedThreadItem[] {
   const confirmedUserMessages = snapshot.filter(isConfirmedUserMessage);
   if (confirmedUserMessages.length === 0) return current;
-  return current.filter((item) => {
-    if (!isLocalUserMessage(item)) return true;
-    return !confirmedUserMessages.some((confirmed) => optimisticUserMessageConfirmedBy(item, confirmed));
-  });
+  const optimisticUserMessages = current.filter(isLocalUserMessage);
+  if (optimisticUserMessages.length === 0) return current;
+  const usedOptimistic = new Set<AccumulatedThreadItem>();
+  for (const confirmed of confirmedUserMessages) {
+    const optimistic = matchingOptimisticUserMessage(confirmed, optimisticUserMessages, usedOptimistic);
+    if (optimistic) usedOptimistic.add(optimistic);
+  }
+  if (usedOptimistic.size === 0) return current;
+  return current.filter((item) => !usedOptimistic.has(item));
 }
 
 function pruneUnusedOptimisticTurnState(
@@ -1473,9 +1493,10 @@ function reconcileUserMessage(
   const order = turnId
     ? ensureTurnInOrder(runtime.turnOrder, turnId)
     : runtime.turnOrder;
+  const incomingWithLocalInputs = userMessageWithPreservedLocalInputs(incoming, optimistic);
   const replacement: AccumulatedThreadItem = {
     ...optimistic,
-    ...(incoming as AccumulatedThreadItem),
+    ...(incomingWithLocalInputs as AccumulatedThreadItem),
     _turnId: turnId ?? turnIdOf(optimistic) ?? undefined,
     _localId: undefined,
   };
@@ -1731,6 +1752,14 @@ function findOptimisticUserMessage(
     const existingContentKey = userInputContentKey((item as Record<string, unknown>).content);
     if (existingContentKey === incomingContentKey) return item;
   }
+  const incomingText = userInputContentText(content);
+  if (incomingText) {
+    for (const item of items) {
+      if (!isLocalUserMessage(item)) continue;
+      const existingText = userInputContentText((item as Record<string, unknown>).content);
+      if (existingText === incomingText) return item;
+    }
+  }
   if (turnId) {
     const sameTurnOptimistic = items.filter((item) =>
       isLocalUserMessage(item) && turnIdOf(item) === turnId
@@ -1825,6 +1854,118 @@ function userInputContentText(value: unknown): string {
     .filter(Boolean)
     .join("\n")
     .trim();
+}
+
+function preserveLocalInputsInConfirmedUserMessages<T extends AccumulatedThreadItem | ThreadItem>(
+  current: AccumulatedThreadItem[],
+  incoming: T[],
+): T[] {
+  const optimisticUserMessages = current.filter(isLocalUserMessage);
+  if (optimisticUserMessages.length === 0) return incoming;
+  const usedOptimistic = new Set<AccumulatedThreadItem>();
+  let changed = false;
+  const next = incoming.map((item) => {
+    if (!isConfirmedUserMessage(item)) return item;
+    const optimistic = matchingOptimisticUserMessage(item, optimisticUserMessages, usedOptimistic);
+    if (!optimistic) return item;
+    usedOptimistic.add(optimistic);
+    const merged = userMessageWithPreservedLocalInputs(item, optimistic) as T;
+    if (merged !== item) changed = true;
+    return merged;
+  });
+  return changed ? next : incoming;
+}
+
+function matchingOptimisticUserMessage(
+  confirmed: AccumulatedThreadItem | ThreadItem,
+  optimisticUserMessages: AccumulatedThreadItem[],
+  usedOptimistic: Set<AccumulatedThreadItem>,
+): AccumulatedThreadItem | null {
+  for (const optimistic of optimisticUserMessages) {
+    if (usedOptimistic.has(optimistic)) continue;
+    if (userMessagesHaveSameContent(optimistic, confirmed)) return optimistic;
+  }
+  for (const optimistic of optimisticUserMessages) {
+    if (usedOptimistic.has(optimistic)) continue;
+    if (sameNonOptimisticTurn(optimistic, confirmed)) return optimistic;
+  }
+  for (const optimistic of optimisticUserMessages) {
+    if (usedOptimistic.has(optimistic)) continue;
+    if (userMessagesHaveSameText(optimistic, confirmed)) return optimistic;
+  }
+  return null;
+}
+
+function sameNonOptimisticTurn(
+  left: AccumulatedThreadItem | ThreadItem,
+  right: AccumulatedThreadItem | ThreadItem,
+): boolean {
+  const leftTurnId = turnIdOf(left);
+  const rightTurnId = turnIdOf(right);
+  return Boolean(leftTurnId && rightTurnId && leftTurnId === rightTurnId && !isOptimisticTurnPlaceholder(leftTurnId));
+}
+
+function userMessagesHaveSameText(
+  left: AccumulatedThreadItem | ThreadItem,
+  right: AccumulatedThreadItem | ThreadItem,
+): boolean {
+  const leftText = userInputContentText((left as Record<string, unknown>).content);
+  const rightText = userInputContentText((right as Record<string, unknown>).content);
+  return Boolean(leftText && rightText && leftText === rightText);
+}
+
+function userMessageWithPreservedLocalInputs<T extends AccumulatedThreadItem | ThreadItem>(
+  confirmed: T,
+  optimistic: AccumulatedThreadItem | ThreadItem,
+): T {
+  const mergedContent = userInputContentWithPreservedLocalInputs(
+    (confirmed as Record<string, unknown>).content,
+    (optimistic as Record<string, unknown>).content,
+  );
+  if (mergedContent === (confirmed as Record<string, unknown>).content) return confirmed;
+  return { ...(confirmed as object), content: mergedContent } as T;
+}
+
+function userInputContentWithPreservedLocalInputs(confirmedContent: unknown, optimisticContent: unknown): unknown {
+  const confirmedParts = userInputContentParts(confirmedContent);
+  const optimisticParts = userInputContentParts(optimisticContent);
+  if (optimisticParts.length === 0) return confirmedContent;
+  const confirmedKeys = new Set(confirmedParts.map(userInputPartKey).filter(Boolean));
+  const localInputs = optimisticParts.filter((part) => {
+    const key = userInputPartKey(part);
+    return key && !key.startsWith("text:") && !confirmedKeys.has(key);
+  });
+  if (localInputs.length === 0) return confirmedContent;
+  return [...confirmedParts, ...localInputs];
+}
+
+function userInputContentParts(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    const text = normalizeUserInputText(value);
+    return text ? [{ type: "text", text, text_elements: [] }] : [];
+  }
+  return [];
+}
+
+function rememberConfirmedWithLocalInputs(
+  preservedConfirmedById: Map<string, AccumulatedThreadItem>,
+  confirmed: AccumulatedThreadItem | undefined,
+  optimistic: AccumulatedThreadItem,
+): void {
+  if (!confirmed) return;
+  const rawId = (confirmed as Record<string, unknown>).id;
+  const id = typeof rawId === "string" ? rawId : "";
+  if (!id) return;
+  preservedConfirmedById.set(id, userMessageWithPreservedLocalInputs(confirmed, optimistic));
+}
+
+function applyPreservedConfirmedUserMessages(
+  items: AccumulatedThreadItem[],
+  preservedConfirmedById: Map<string, AccumulatedThreadItem>,
+): AccumulatedThreadItem[] {
+  if (preservedConfirmedById.size === 0) return items;
+  return items.map((item) => preservedConfirmedById.get(item.id) ?? item);
 }
 
 function mergeAccumulatedItem(
@@ -2130,7 +2271,10 @@ function replaceTurnSegment(
     }
   }
 
-  const stamped = segment.map((item) => attachTurnId(item, turnId));
+  const stamped = preserveLocalInputsInConfirmedUserMessages(
+    inSegment,
+    segment.map((item) => attachTurnId(item, turnId)),
+  );
   const stampedById = new Map(stamped.map((item) => [item.id, item]));
 
   inSegment = inSegment.map((item) => {

@@ -21,6 +21,9 @@ function baseEnv() {
     HICODEX_UPDATER_PUBKEY: ENCODED_PUBLIC_KEY,
     TAURI_SIGNING_PRIVATE_KEY: "secret key material",
     APPLE_SIGNING_IDENTITY: "Developer ID Application: Example Inc (ABCDE12345)",
+    APPLE_ID: "ci@example.com",
+    APPLE_PASSWORD: "app-specific-password",
+    APPLE_TEAM_ID: "ABCDE12345",
   };
 }
 
@@ -59,32 +62,84 @@ test("builds a release merge config from environment variables", () => {
   const result = buildTauriReleaseConfig({
     ...baseEnv(),
     HICODEX_MACOS_ENTITLEMENTS: "src-tauri/entitlements.plist",
+    HICODEX_MACOS_PROVIDER_SHORT_NAME: "ProviderShortName",
   });
   assert.deepEqual(result.config.bundle, {
     createUpdaterArtifacts: true,
     macOS: {
       signingIdentity: "Developer ID Application: Example Inc (ABCDE12345)",
       entitlements: "src-tauri/entitlements.plist",
+      providerShortName: "ProviderShortName",
     },
   });
   assert.deepEqual(result.config.plugins.updater, {
     endpoints: ["https://releases.hicodex.test/{{target}}/{{arch}}/{{current_version}}"],
     pubkey: ENCODED_PUBLIC_KEY,
   });
+  assert.equal(result.summary.macOSNotarizationAuth, "apple-id");
 });
 
 test("removes local ad-hoc signing when CI provides an Apple certificate", () => {
   const env = baseEnv();
   delete env.APPLE_SIGNING_IDENTITY;
   env.APPLE_CERTIFICATE = "base64-p12";
+  env.APPLE_CERTIFICATE_PASSWORD = "certificate password";
   const result = buildTauriReleaseConfig(env);
   assert.equal(result.config.bundle.macOS.signingIdentity, null);
   assert.match(result.warnings.join("\n"), /removes the local ad-hoc identity/);
 });
 
+test("requires the Apple certificate password when CI provides a certificate", () => {
+  const env = baseEnv();
+  delete env.APPLE_SIGNING_IDENTITY;
+  env.APPLE_CERTIFICATE = "base64-p12";
+  assert.throws(
+    () => buildTauriReleaseConfig(env),
+    (err) =>
+      err instanceof ReleaseConfigError &&
+      err.errors.includes("Set APPLE_CERTIFICATE_PASSWORD when APPLE_CERTIFICATE is provided for CI signing."),
+  );
+});
+
+test("accepts App Store Connect API key notarization credentials", () => {
+  const env = baseEnv();
+  delete env.APPLE_ID;
+  delete env.APPLE_PASSWORD;
+  delete env.APPLE_TEAM_ID;
+  env.APPLE_API_KEY = "ABC123DEFG";
+  env.APPLE_API_ISSUER = "00000000-0000-0000-0000-000000000000";
+  env.APPLE_API_KEY_PATH = "/tmp/AuthKey_ABC123DEFG.p8";
+  const result = buildTauriReleaseConfig(env);
+  assert.equal(result.summary.macOSNotarizationAuth, "api-key");
+});
+
+test("requires complete macOS notarization credentials", () => {
+  const env = baseEnv();
+  delete env.APPLE_TEAM_ID;
+  assert.throws(
+    () => buildTauriReleaseConfig(env),
+    (err) =>
+      err instanceof ReleaseConfigError &&
+      err.errors.includes("Set all of APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID for app-specific-password notarization."),
+  );
+});
+
+test("allows explicit ad-hoc candidate builds without notarization credentials", () => {
+  const env = baseEnv();
+  delete env.APPLE_SIGNING_IDENTITY;
+  delete env.APPLE_ID;
+  delete env.APPLE_PASSWORD;
+  delete env.APPLE_TEAM_ID;
+  env.HICODEX_RELEASE_ALLOW_ADHOC_SIGNING = "1";
+  const result = buildTauriReleaseConfig(env);
+  assert.equal(result.config.bundle.macOS.signingIdentity, "-");
+  assert.equal(result.summary.macOSNotarizationAuth, "skipped-ad-hoc");
+  assert.match(result.warnings.join("\n"), /Skipping macOS notarization auth validation/);
+});
+
 test("fails fast when release-only values are missing", () => {
   assert.throws(
     () => buildTauriReleaseConfig({}),
-    (err) => err instanceof ReleaseConfigError && err.errors.length === 4,
+    (err) => err instanceof ReleaseConfigError && err.errors.length === 5,
   );
 });

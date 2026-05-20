@@ -29,6 +29,7 @@ export default function runRenderGroupsTests(): void {
   keepsDesktopInlineMcpToolsOutOfPendingMcpGroups();
   suppressesPendingMcpCallCoveredByElicitation();
   projectsDesktopLifecycleEventsSemantically();
+  projectsErrorDetailFieldsAsDisclosures();
   filtersNonHighRiskModelReroutesLikeCodexDesktop();
   projectsContextCompactionSnapshotStatusFromTurnState();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
@@ -124,9 +125,10 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
         },
         {
           kind: "chip",
-          chipKind: "mention",
+          chipKind: "file",
           label: "render-groups.ts",
           path: "packages/ui/src/state/render-groups.ts",
+          fileExtension: "ts",
         },
         {
           kind: "chip",
@@ -901,6 +903,7 @@ function projectsDesktopLifecycleEventsSemantically(): void {
       type: "system-error",
       id: "system-error-1",
       content: "Sandbox failed",
+      raw_detail: "Sandbox profile denied /tmp/hicodex-write.",
     } as unknown as ThreadItem,
     {
       type: "contextCompaction",
@@ -952,12 +955,17 @@ function projectsDesktopLifecycleEventsSemantically(): void {
 
   const streamError = eventByKey(projection, "stream-error-1");
   assertEqual(streamError.tone, "error", "stream errors should carry error tone");
+  assertEqual(streamError.format, "markdown", "stream errors with details should render through markdown disclosure");
   assertTextIncludes(streamError.text, "Connection dropped", "stream error content");
+  assertTextIncludes(streamError.text, "<details><summary>Details</summary>", "stream error details should be behind disclosure");
   assertTextIncludes(streamError.text, "Retry the turn.", "stream error details");
 
   const systemError = eventByKey(projection, "system-error-1");
   assertEqual(systemError.tone, "error", "system errors should carry error tone");
+  assertEqual(systemError.format, "markdown", "system errors with raw detail should render through markdown disclosure");
   assertTextIncludes(systemError.text, "Sandbox failed", "system error content");
+  assertTextIncludes(systemError.text, "<details><summary>Details</summary>", "system error raw detail should be behind disclosure");
+  assertTextIncludes(systemError.text, "Sandbox profile denied /tmp/hicodex-write.", "system error raw detail");
 
   const context = eventByKey(projection, "context-1");
   assertTextIncludes(context.text, "Source: auto", "context compaction source");
@@ -966,6 +974,44 @@ function projectsDesktopLifecycleEventsSemantically(): void {
   assertTextIncludes(eventByKey(projection, "remote-task-1").text, "Task ID: task-123", "remote task id");
   assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "gpt-5.3 -> gpt-5.4", "model reroute transition");
   assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "Reason: highRiskCyberActivity", "model reroute reason");
+}
+
+function projectsErrorDetailFieldsAsDisclosures(): void {
+  const projection = projectConversation([
+    {
+      type: "stream-error",
+      id: "camel-stream-error",
+      content: "Stream stopped",
+      additionalDetails: "Camel detail",
+    } as unknown as ThreadItem,
+    {
+      type: "stream-error",
+      id: "snake-stream-error",
+      message: "Stream failed",
+      additional_details: "Snake detail",
+    } as unknown as ThreadItem,
+    {
+      type: "system-error",
+      id: "raw-system-error",
+      message: "System failed",
+      raw_detail: { code: "E_SANDBOX", path: "/tmp/hicodex-write" },
+    } as unknown as ThreadItem,
+  ]);
+
+  const camel = eventByKey(projection, "camel-stream-error");
+  assertEqual(camel.format, "markdown", "camel-case stream error details should use markdown disclosure");
+  assertTextIncludes(camel.text, "<details><summary>Details</summary>", "camel-case stream details disclosure");
+  assertTextIncludes(camel.text, "Camel detail", "camel-case stream details content");
+
+  const snake = eventByKey(projection, "snake-stream-error");
+  assertEqual(snake.format, "markdown", "snake-case stream error details should use markdown disclosure");
+  assertTextIncludes(snake.text, "<details><summary>Details</summary>", "snake-case stream details disclosure");
+  assertTextIncludes(snake.text, "Snake detail", "snake-case stream details content");
+
+  const raw = eventByKey(projection, "raw-system-error");
+  assertEqual(raw.format, "markdown", "raw system error details should use markdown disclosure");
+  assertTextIncludes(raw.text, "<details><summary>Details</summary>", "raw system details disclosure");
+  assertTextIncludes(raw.text, "\"code\": \"E_SANDBOX\"", "raw system details content");
 }
 
 function filtersNonHighRiskModelReroutesLikeCodexDesktop(): void {

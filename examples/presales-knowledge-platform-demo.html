@@ -3,7 +3,7 @@
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>桌面端知识库 Demo</title>
+  <title>51CTO企培事业部</title>
   <style type="text/css">
     :root {
       color-scheme: light;
@@ -426,6 +426,67 @@
     .status.blue {
       background: var(--blue-soft);
       color: var(--blue);
+    }
+
+    .status.teal {
+      background: var(--teal-soft);
+      color: var(--teal-strong);
+    }
+
+    .status.purple {
+      background: #f3e8ff;
+      color: #7e22ce;
+    }
+
+    /* === 看板 · 今天待处理 chip 行 === */
+    .todo-chips {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .todo-chip {
+      display: grid;
+      gap: 6px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      cursor: pointer;
+      text-align: left;
+      font-family: inherit;
+      transition: all 120ms ease;
+    }
+    .todo-chip:hover {
+      border-color: #94a3b8;
+      background: #f8fafc;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    }
+    .todo-chip-row1 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .todo-chip-icon {
+      font-size: 16px;
+    }
+    .todo-chip-count {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1;
+    }
+    .todo-chip-count.amber { color: var(--amber); }
+    .todo-chip-count.red { color: var(--red); }
+    .todo-chip-count.blue { color: var(--blue); }
+    .todo-chip-label {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .todo-chip-meta {
+      font-size: 11px;
+      color: var(--muted);
     }
 
     .toolbar {
@@ -1155,6 +1216,166 @@
       padding: 11px 14px;
       border-bottom: 1px solid var(--line-soft);
       background: var(--panel-soft);
+    }
+
+    .approval-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-top: 2px;
+    }
+
+    .approval-strip .btn {
+      min-height: 30px;
+      font-size: 12px;
+    }
+
+    .teacher-candidate-grid,
+    .outline-source-grid,
+    .template-fill-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .teacher-candidate-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .teacher-card,
+    .outline-source-card,
+    .template-fill-card {
+      display: grid;
+      gap: 8px;
+      padding: 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .outline-source-head,
+    .template-fill-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    /* === 讲师候选卡（image #8 风格） === */
+    .teacher-card {
+      position: relative;
+    }
+    .teacher-card.recommended {
+      border-color: #14b8a6;
+      box-shadow: inset 3px 0 0 #14b8a6;
+    }
+    .teacher-card.backup {
+      border-color: #bfdbfe;
+    }
+    .teacher-card-select {
+      position: absolute;
+      top: 11px;
+      right: 11px;
+      display: grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: #10b981;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .teacher-card-row-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding-right: 30px;
+    }
+    .teacher-card-star {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fef3c7;
+      color: #d97706;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .teacher-card-name {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--ink);
+    }
+    .teacher-card-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    .teacher-card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .teacher-tag {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #64748b;
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+    .teacher-tag.tone-teal { background: #ccfbf1; color: #0f766e; }
+    .teacher-tag.tone-amber { background: #fed7aa; color: #9a3412; }
+    .teacher-tag.tone-rose { background: #fecaca; color: #991b1b; }
+    .teacher-card-desc {
+      font-size: 12.5px;
+      color: var(--ink);
+      line-height: 1.55;
+      margin: 0;
+    }
+    .teacher-card-risk {
+      font-size: 11.5px;
+      color: #b45309;
+      margin: 0;
+    }
+    .teacher-card-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .teacher-rating {
+      color: #dc2626;
+      font-weight: 600;
+    }
+    .teacher-rating .rating-count {
+      color: var(--muted);
+      font-weight: 400;
+      margin-left: 2px;
+    }
+    .teacher-price {
+      color: var(--ink);
+    }
+    .teacher-price-amount {
+      color: #dc2626;
+      font-weight: 600;
+    }
+    .teacher-card-syllabus {
+      color: #15803d;
+      font-weight: 500;
+    }
+    .teacher-card-syllabus.warn {
+      color: #b45309;
+    }
+
+    .template-fill-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .chat-thread {
@@ -2960,6 +3181,8 @@
       .step-record-grid,
       .detail-status-grid,
       .pipeline,
+      .teacher-candidate-grid,
+      .template-fill-grid,
       .candidate {
         grid-template-columns: 1fr;
       }
@@ -3028,6 +3251,9 @@
     .desktop-stage[data-desktop-stage-panel="run"] .flow-action-row,
     .desktop-stage[data-desktop-stage-panel="run"] .flow-choice-note,
     .desktop-stage[data-desktop-stage-panel="run"] .flow-mode-current {
+      display: none !important;
+    }
+    .desktop-stage[data-desktop-stage-panel="run"] .xlsx-scenario-bar {
       display: none !important;
     }
     .desktop-stage[data-desktop-stage-panel="run"] .flow-mode-complete {
@@ -4388,44 +4614,30 @@
 
     /* === 弹窗演示框 === */
     .modal-demo-wrapper {
-      position: relative;
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: none;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 40px 24px;
+      background: rgba(15, 23, 42, 0.45);
+      overflow-y: auto;
     }
-    .modal-demo-caption {
+    .modal-demo-wrapper[data-open="true"] {
       display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      background: #fef9c3;
-      border: 1px solid #facc15;
-      border-radius: 6px;
-      font-size: 12px;
-      color: #78350f;
-      margin-bottom: 12px;
-    }
-    .modal-demo-tag {
-      padding: 2px 8px;
-      background: #facc15;
-      color: #78350f;
-      border-radius: 10px;
-      font-weight: 600;
     }
     .modal-demo-frame {
       border: 1px solid #cbd5e1;
       border-radius: 10px;
       background: #fff;
-      box-shadow: 0 12px 40px rgba(15, 23, 42, 0.15);
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.25);
       overflow: hidden;
-      max-width: 1100px;
-      margin: 0 auto;
+      width: min(1100px, 100%);
+      max-height: calc(100vh - 80px);
+      display: flex;
+      flex-direction: column;
       position: relative;
-    }
-    .modal-demo-frame::before {
-      content: "";
-      position: absolute;
-      inset: -8px -8px 0 -8px;
-      border-radius: 14px 14px 0 0;
-      background: rgba(15, 23, 42, 0.04);
-      z-index: -1;
     }
     .modal-demo-titlebar {
       display: flex;
@@ -4446,6 +4658,238 @@
     }
     .modal-demo-body {
       padding: 16px 20px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .modal-demo-close {
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      padding: 4px 8px;
+      font-size: 20px;
+      color: #94a3b8;
+      line-height: 1;
+    }
+    .modal-demo-close:hover {
+      color: var(--ink);
+    }
+    .modal-demo-titlebar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .modal-demo-titlebar-left > span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* === 弹窗内可编辑组件 === */
+    .ingest-summary-edit {
+      width: 100%;
+      min-height: 76px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--ink);
+      line-height: 1.55;
+      resize: vertical;
+    }
+    .ingest-summary-edit:focus {
+      outline: none;
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+    }
+    .tag.removable {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding-right: 4px;
+    }
+    .tag-remove {
+      display: inline-grid;
+      place-items: center;
+      width: 16px;
+      height: 16px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.08);
+      color: #64748b;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      padding: 0;
+    }
+    .tag-remove:hover {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .ingest-entity-list.editable li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .entity-value-input {
+      flex: 1;
+      padding: 4px 8px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      font-size: 13px;
+      color: var(--ink);
+      font-family: inherit;
+      min-width: 0;
+    }
+    .entity-value-input:hover {
+      border-color: var(--line-soft);
+      background: #f8fafc;
+    }
+    .entity-value-input:focus {
+      outline: none;
+      border-color: #38bdf8;
+      background: #fff;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18);
+    }
+    .entity-remove {
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 0;
+    }
+    .entity-remove:hover {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .ingest-risk-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 6px;
+    }
+    .ingest-risk-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 13px;
+      color: var(--ink);
+    }
+    .btn.compact.tiny {
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+    .ingest-ai-block-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .ingest-section-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #fff7ed;
+      color: #b45309;
+      font-size: 11.5px;
+      font-weight: 600;
+      margin-left: auto;
+    }
+
+    /* === 置信度 hover tooltip === */
+    .entity-confidence[data-tooltip],
+    .tag[data-tooltip] {
+      cursor: help;
+      position: relative;
+      text-decoration: underline dotted;
+      text-decoration-color: rgba(100, 116, 139, 0.4);
+      text-underline-offset: 2px;
+    }
+    .entity-confidence[data-tooltip]:hover::after,
+    .tag[data-tooltip]:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: calc(100% + 8px);
+      right: 0;
+      padding: 8px 10px;
+      background: #1e293b;
+      color: #fff;
+      font-size: 11.5px;
+      font-weight: 400;
+      line-height: 1.55;
+      border-radius: 6px;
+      white-space: pre-line;
+      width: max-content;
+      max-width: 280px;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+      pointer-events: none;
+    }
+    .entity-confidence[data-tooltip]:hover::before,
+    .tag[data-tooltip]:hover::before {
+      content: '';
+      position: absolute;
+      bottom: calc(100% + 2px);
+      right: 14px;
+      border: 5px solid transparent;
+      border-top-color: #1e293b;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    /* === 反向 HyDE / Doc2Query 业务问法列表 === */
+    .ingest-hyde-list {
+      list-style: none;
+      padding: 0;
+      margin: 8px 0 6px;
+      display: grid;
+      gap: 8px;
+    }
+    .ingest-hyde-list li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: #f8fafc;
+      border: 1px solid var(--line-soft);
+      border-radius: 6px;
+    }
+    .ingest-hyde-list .hyde-q-icon {
+      flex-shrink: 0;
+      color: #2563eb;
+      font-size: 12px;
+      width: 18px;
+      text-align: center;
+    }
+    .ingest-hyde-list .entity-value-input {
+      flex: 1.8;
+      background: #fff;
+      border: 1px solid transparent;
+    }
+    .ingest-hyde-list .entity-value-input:hover {
+      border-color: var(--line-soft);
+    }
+    .ingest-hyde-list .hyde-hit {
+      flex: 1;
+      color: var(--muted);
+      font-size: 11.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* === 资料上传单文件确认 === */
@@ -4494,6 +4938,17 @@
       gap: 6px;
       flex-wrap: wrap;
       margin-top: 4px;
+    }
+    .ingest-target-libs-group {
+      display: grid;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .ingest-target-libs-line {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
     }
     .ingest-pill {
       display: inline-flex;
@@ -5216,16 +5671,15 @@
 
     /* === 已完成会话的简洁 composer === */
     .session-complete-composer {
-      margin-top: 16px;
-      padding: 14px 16px;
+      flex: 0 0 auto;
+      padding: 10px 14px 12px;
       background: #fff;
-      border: 1px solid var(--border, #e2e8f0);
-      border-radius: 12px;
+      border-top: 1px solid var(--border, #e2e8f0);
     }
     .session-complete-composer .ssc-hint {
       font-size: 12px;
       color: #64748b;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .session-complete-composer .ssc-input {
       display: flex;
@@ -5239,6 +5693,145 @@
     .session-complete-composer .ssc-input strong {
       color: #475569;
       font-weight: 500;
+    }
+
+    /* === File Preview Panel（对齐桌面版 FilePreviewPanel）=== */
+    .file-preview-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      width: 580px;
+      min-width: 320px;
+      max-width: 90vw;
+      background: #fffdfa;
+      border-left: 1px solid rgba(34, 38, 43, 0.12);
+      box-shadow: -8px 0 24px -8px rgba(34, 38, 43, 0.10);
+      transform: translateX(100%);
+      transition: transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
+      overflow: hidden;
+    }
+    .file-preview-panel[data-open="true"] {
+      transform: translateX(0);
+    }
+    .file-preview-panel-chrome {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      height: 48px;
+      padding: 0 12px 0 14px;
+      border-bottom: 1px solid var(--line-soft);
+      flex-shrink: 0;
+    }
+    .file-preview-panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .file-preview-panel-title strong {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-preview-panel-icon-button {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .file-preview-panel-icon-button:hover {
+      background: #f1f5f9;
+      color: var(--ink);
+    }
+    .file-preview-panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 22px 28px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--ink);
+    }
+    .file-preview-panel-body h1,
+    .file-preview-panel-body h2,
+    .file-preview-panel-body h3 {
+      margin: 18px 0 8px;
+      color: var(--ink);
+      font-weight: 700;
+    }
+    .file-preview-panel-body h1 { font-size: 18px; }
+    .file-preview-panel-body h2 { font-size: 15px; }
+    .file-preview-panel-body h3 { font-size: 13.5px; }
+    .file-preview-panel-body h1:first-child,
+    .file-preview-panel-body h2:first-child {
+      margin-top: 0;
+    }
+    .file-preview-panel-body ul {
+      margin: 6px 0;
+      padding-left: 22px;
+    }
+    .file-preview-panel-body ul li {
+      margin: 4px 0;
+    }
+    .file-preview-panel-body p {
+      margin: 6px 0;
+    }
+    .file-preview-panel-body hr {
+      border: 0;
+      border-top: 1px solid var(--line-soft);
+      margin: 14px 0;
+    }
+    .file-preview-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .file-preview-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 99;
+      background: rgba(15, 23, 42, 0.04);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 220ms ease;
+    }
+    .file-preview-backdrop[data-open="true"] {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* 可点击的 artifact 入口（rail-item + doc-version-update）*/
+    [data-artifact] {
+      cursor: pointer;
+    }
+    .rail-item[data-artifact] {
+      padding: 4px 6px;
+      margin: -4px -6px;
+      border-radius: 6px;
+      transition: background 120ms ease;
+    }
+    .rail-item[data-artifact]:hover {
+      background: #f1f5f9;
+    }
+    .doc-version-update[data-artifact] {
+      transition: background 120ms ease;
+    }
+    .doc-version-update[data-artifact]:hover {
+      background: #f3f4f6;
     }
   </style>
 </head>
@@ -5256,22 +5849,23 @@
           <span class="rail-button-icon">▦</span>
           <span class="rail-button-label">工作台</span>
         </button>
-        <button class="rail-button" type="button" data-view="overview" aria-label="管理总览">
-          <span class="rail-button-icon">◷</span>
-          <span class="rail-button-label">总览</span>
-        </button>
+
         <!-- 待办中心入口隐藏；view 内容保留，可以从 overview 的"今日待处理"小 panel 跳转 -->
         <button class="rail-button" type="button" data-view="ingest" aria-label="知识库资料上传">
           <span class="rail-button-icon">⇧</span>
-          <span class="rail-button-label">上传</span>
+          <span class="rail-button-label">知识库维护</span>
         </button>
         <button class="rail-button" type="button" data-view="library" aria-label="知识库分类">
           <span class="rail-button-icon">□</span>
-          <span class="rail-button-label">分类</span>
+          <span class="rail-button-label">知识库</span>
         </button>
         <button class="rail-button" type="button" data-view="authority" aria-label="权威数据">
           <span class="rail-button-icon">✓</span>
-          <span class="rail-button-label">权威</span>
+          <span class="rail-button-label">知识库维护</span>
+        </button>
+        <button class="rail-button" type="button" data-view="overview" aria-label="数据看板">
+          <span class="rail-button-icon">◷</span>
+          <span class="rail-button-label">看板</span>
         </button>
         <!-- 标签与规则、检索测试、技术架构暂时隐藏；view 内容保留以便后续恢复 -->
       </div>
@@ -5287,7 +5881,7 @@
       <div class="topbar">
         <div class="title-block">
           <h1 id="pageTitle">桌面工作台</h1>
-          <p id="pageDesc">业务先在当前 Agent 窗口输入需求、@Skills 和上传资料，再查看运行过程、追问、确认和最终产物。</p>
+          <p id="pageDesc">当前项目 · A 银行 2026 中高层领导力培训方案</p>
         </div>
         <div class="top-actions">
           <input class="search" id="globalSearch" placeholder="🔍  全局搜索 · 讲师 / 课程 / 客户 / 标签…  ⌘K">
@@ -5317,7 +5911,7 @@
                 <div class="input-page-main">
                   <div class="input-panel">
                     <h3>当前 Agent 输入框</h3>
-                    <form class="hc-composer demo-composer input-page-composer" aria-label="当前项目输入框示意">
+                    <form class="hc-composer demo-composer input-page-composer" aria-label="当前项目输入框">
                       <div class="hc-composer-field" data-layout="multiline" data-mode="input">
                         <div class="hc-attachment-strip" aria-label="本次需求输入资料">
                           <div class="hc-attachment-chip"><span class="hc-attachment-chip-main static"><span class="hc-attachment-file-icon">PDF</span><span>A银行客户背景介绍.pdf</span></span><button class="hc-attachment-remove" type="button" aria-label="移除附件">×</button></div>
@@ -5503,24 +6097,10 @@
                 <div class="chat-header">
                   <div>
                     <h2 class="panel-title">Agent 运行：A 银行中高层领导力项目</h2>
-                    <p class="panel-note">这里展示发送后的对话过程；每次输入都会追加到最后，知识库管理页只处理资料治理。</p>
                   </div>
-                  <span class="status amber flow-mode-current">等待业务补充</span><span class="status green flow-mode-complete">完整文档草稿</span>
-                </div>
-                <div class="xlsx-scenario-bar" aria-label="对应需求文档 5 场景">
-                  <span class="xlsx-scenario-label">对应《AI+方案可实施性评估》5 场景</span>
-                  <span class="tag" data-xlsx="1">① 方案平台化（底座）</span>
-                  <span class="tag" data-xlsx="2">② 需求分析</span>
-                  <span class="tag" data-xlsx="3">③ 匹配讲师</span>
-                  <span class="tag" data-xlsx="4">④ 方案输出</span>
-                  <span class="tag" data-xlsx="5">⑤ 内容包装</span>
                 </div>
                 <div class="chat-thread" aria-live="polite">
                   <div class="message user sent-input-summary">
-                    <div class="composer-demo-caption">
-                      <span>已发送的用户输入</span>
-                      <span class="status blue">进入 Agent</span>
-                    </div>
                     <div class="message-bubble">
                       <span class="skill-chip">@需求分析</span> 帮我分析 A 银行 2026 年中高层领导力培训需求。资料我先传这几份，培训对象约 80 人，希望 6 月交付，客户偏实战工作坊；先拆文件和需求让我确认，资料不够先问我，不要直接生成正式方案。
                     </div>
@@ -5537,34 +6117,32 @@
                   <div class="message-bubble">
                     我已收到 5 份资料。本轮只运行你 @ 的一个 Skill：@需求分析。我会先拆文件和需求，提取目标、对象、约束、已有依据和缺口；拆完先让你确认，资料不足时先追问，不直接生成正式方案。
                   </div>
-                  <div class="agent-readback" aria-label="Agent 自动识别结果">
+                  <!-- <div class="agent-readback" aria-label="Agent 自动识别结果">
                     <div class="agent-readback-head">
-                      <span>Agent 自动识别，不是用户手填</span>
-                      <span class="status blue">来自输入框和附件</span>
+                      <span>自动识别</span>
+                      <span class="status blue">输入 + 附件</span>
                     </div>
                     <div class="composer-derived-row">
                       <span>目标：分析 2026 中高层领导力培训需求</span>
                       <span>约束：约 80 人 / 6 月交付 / 偏实战工作坊</span>
                       <span>规则：资料不全先追问，不直接生成正式报告</span>
                     </div>
-                  </div>
+                  </div> -->
                 </div>
-
-                <div class="agent-worked-divider">Worked for 12s</div>
 
                 <div class="message assistant">
                   <div class="message-bubble">
-                    我先不生成正式方案。当前资料不足以进入正式 @需求分析，我会先返回资料缺口和需要你补充的问题；下面的已识别信息只作为判断缺口的依据。
+                    我先不生成正式方案。当前资料不足以进入正式 @需求分析；已识别信息只作为判断缺口的依据。
                   </div>
                 </div>
 
                 <div class="message assistant flow-current-section transcript-message">
                   <div class="assistant-transcript">
                     <h3>@需求分析 资料完整性检查</h3>
-                    <p>我已读取你上传的资料并做了初步识别，但现在资料还不够支撑正式需求分析。先补齐下面的关键缺口；已识别内容仅用于说明为什么要追问，不作为最终结论。</p>
+                    <p>资料不足，先补齐关键缺口；已识别内容不作为最终结论。</p>
                     <hr>
                     <p><strong>必须先补充：</strong>客户 2026 战略重点、近一年同类项目反馈、预算范围、交付边界和培训对象明细。</p>
-                    <p><strong>如果不补充：</strong>只能生成低可信草稿，讲师匹配、课程组合和风险判断都会缺少依据。</p>
+                    <p><strong>如果不补充：</strong>只能生成低可信分析结果，讲师匹配、课程组合和风险判断都会缺少依据。</p>
                     <p><strong>已初步识别：</strong>A 银行为金融行业客户；本次需求大概率围绕中高层管理升级，约 80 人，期望 6 月交付，偏实战工作坊。</p>
                     <div class="source-chip-row transcript-sources" aria-label="本轮需求分析拆解依据">
                       <span class="source-chip">A银行客户背景介绍.pdf</span>
@@ -5574,10 +6152,10 @@
                       <span class="source-chip">销售补充说明.txt</span>
                     </div>
                     <details class="assistant-inline-details">
-                      <summary>展开看我为什么停在这里</summary>
+                      <summary>查看缺口依据</summary>
                       <div class="chat-mini-record">
-                        <strong>这不是一张管理表，而是本轮 @需求分析 的可追溯消息记录。</strong>
-                        <p>我已经读取文件并做了初步识别，但这些识别只用于判断“还缺什么”，不能直接当成正式需求分析结论。</p>
+                        <strong>缺口判断依据</strong>
+                        <p>当前识别仅用于判断信息缺口。</p>
                       </div>
                       <ul class="chat-result-list">
                         <li>
@@ -5632,13 +6210,13 @@
 
                 <div class="message assistant flow-complete-only" data-flow-step="1">
                   <div class="message-bubble">
-                    @需求分析 已更新资料。还差最后两个确认点：1. 这次培训是否要形成高管共识输出物；2. 交付后评估以满意度为主，还是要包含行动计划落地检查？这两个会影响方案主线和课程评估方式。
+                    @需求分析 已更新资料。还差三个确认点：1. <strong>培训天数</strong>没明确，是 1 天 / 2 天 / 2 天 1 晚？2. 这次培训是否要形成高管共识输出物；3. 交付后评估以满意度为主，还是要包含行动计划落地检查？
                   </div>
                 </div>
 
                 <div class="message user flow-complete-only" data-flow-step="2">
                   <div class="message-bubble">
-                    需要形成高管共识输出物，最好每个小组有行动计划。评估不仅看满意度，也要看行动计划是否能在 1 个月内复盘。这个需求分析方向没问题，可以输出需求分析结论。
+                    天数定 2 天 1 晚（约 16 课时）。需要形成高管共识输出物，最好每个小组有行动计划。评估不仅看满意度，也要看行动计划是否能在 1 个月内复盘。这个需求分析方向没问题，可以输出需求分析结论。
                   </div>
                 </div>
 
@@ -5646,40 +6224,33 @@
                   <div class="assistant-markdown">
                     <h3>@需求分析 输出结果</h3>
 
-                    <h4>需求主线</h4>
-                    <p>围绕跨部门协同、管理升级和高管共识，设计真实案例拆解与行动计划工作坊。</p>
-
-                    <h4>关键约束</h4>
+                    <h4>需求摘要</h4>
                     <ul>
-                      <li>培训对象：约 80 人</li>
-                      <li>预算：45–60 万</li>
-                      <li>交付：6 月下旬</li>
-                      <li>需形成小组行动计划和 1 个月复盘</li>
+                      <li><strong>客户</strong>：A 银行</li>
+                      <li><strong>部门</strong>：培训中心</li>
+                      <li><strong>培训主题</strong>：中高层领导力 · 跨部门协同 · 管理升级</li>
+                      <li><strong>培训人群</strong>：中高层管理者 约 80 人</li>
+                      <li><strong>培训天数</strong>：2 天 1 晚（约 16 课时）</li>
+                      <li><strong>培训目标</strong>：高管共识 + 小组行动计划 + 1 个月复盘</li>
+                      <li><strong>预算</strong>：45–60 万</li>
+                      <li><strong>交付时间</strong>：6 月下旬</li>
                     </ul>
 
-                    <h4>可进入下一 Skill</h4>
-                    <p><code>@讲师匹配</code> 可读取本轮确认后的目标、对象、预算、偏好和交付要求。</p>
+                    <h4>需求主线</h4>
+                    <p>围绕跨部门协同、管理升级和高管共识，设计真实案例拆解与行动计划工作坊。</p>
 
                     <hr>
                     <p class="md-source-line">依据：2026战略沟通补充.docx · 近一年项目反馈汇总.xlsx · @需求分析 对话确认</p>
                   </div>
-                  <div class="doc-version-update">
+                  <div class="doc-version-update" data-artifact="req-analysis" role="button" tabindex="0" title="点击预览 需求分析.md">
                     <div class="doc-version-update-head">
                       <span class="doc-version-update-icon">📄</span>
-                      <span class="doc-version-update-doc">A 银行 2026 中高层领导力培训方案.docx</span>
-                      <span class="doc-version-tag">v0</span>
-                      <span class="doc-version-arrow">→</span>
-                      <span class="doc-version-tag doc-version-tag-new">v1</span>
+                      <span class="doc-version-update-label">本轮新增产物</span>
+                      <span class="doc-version-update-doc">需求分析.md</span>
                     </div>
                     <ul class="doc-version-change-list">
-                      <li><span class="vc-add">+</span><span>新增 §1 需求与目标（培训主线、对象、约束、交付要求）</span></li>
+                      <li><span class="vc-add">+</span><span>@需求分析 · 培训主线、对象、约束、交付要求</span></li>
                     </ul>
-                  </div>
-                  <div class="value-realized">
-                    <span class="value-realized-icon">📈</span>
-                    <span class="value-realized-label">量化业务价值</span>
-                    <span class="value-realized-text">方案方向准确率 +50%（过去常返工 2–3 轮，本次首轮直接定案）</span>
-                    <span class="tag value-realized-tag">对应 xlsx 场景 ②</span>
                   </div>
                 </div>
 
@@ -5719,40 +6290,47 @@
                 <div class="message assistant flow-complete-only" data-flow-step="5" style="max-width: 100%;">
                   <div class="assistant-markdown">
                     <h3>@讲师匹配 输出结果</h3>
-                    <p>推荐保留两个候选，不直接替业务拍板：</p>
 
-                    <h4>第一候选：王老师</h4>
-                    <ul>
-                      <li>优势：金融行业高管项目经验强，擅长跨部门协同工作坊和共创输出</li>
-                      <li>风险：报价略高，需要提前锁定 6 月下旬档期</li>
-                    </ul>
+                    <h4>王老师 / 中欧管理学院特聘教授</h4>
+                    <p><strong>标签</strong>：金融行业 · 领导力 · 高管班 · 北京</p>
+                    <p><strong>匹配度</strong>：方向 96 · 行业 96 · 经验 90 · 价格 80 · 评价 93</p>
+                    <p>14 年金融高管培训经验，服务过招行 / 工行 / 浦发等同业，擅长跨部门协同工作坊与共创输出。</p>
+                    <p><strong>风险</strong>：报价略高；需提前锁定 6 月下旬档期</p>
+                    <p>★ 4.8（32 次）· 报价 ¥38,000/天 · 有银行行业课纲</p>
 
-                    <h4>预算内备选：刘老师 + 助教</h4>
-                    <ul>
-                      <li>优势：预算更稳，工作坊控场和行动计划辅导能力较好</li>
-                      <li>风险：高管共创经验略弱，建议补充真实金融案例包</li>
-                    </ul>
+                    <h4>刘老师 + 助教 / 资深领导力顾问</h4>
+                    <p><strong>标签</strong>：国有大行 · 工作坊 · 行动计划 · 上海</p>
+                    <p><strong>匹配度</strong>：方向 88 · 行业 80 · 经验 85 · 价格 100 · 评价 80</p>
+                    <p>国有大行高管行动计划辅导专家，工作坊控场扎实，预算友好。</p>
+                    <p><strong>风险</strong>：高管共创经验略弱；需补充金融案例包</p>
+                    <p>★ 4.7（28 次）· 报价 ¥22,000/天（含助教）· 有领导力共创课纲</p>
+
+                    <h4>陈老师 / 知名领导力培训师</h4>
+                    <p><strong>标签</strong>：领导力沙盘 · 跨行业 · 共创 · 深圳</p>
+                    <p><strong>匹配度</strong>：方向 80 · 行业 72 · 经验 90 · 价格 87 · 评价 80</p>
+                    <p>擅长领导力沙盘与行动计划共创，可作为局部模块讲师。</p>
+                    <p><strong>风险</strong>：银行行业案例不足</p>
+                    <p>★ 4.6（19 次）· 报价 ¥25,000/天 · 有领导力沙盘工具包</p>
+
+                    <h4>张老师 / 实战派培训师</h4>
+                    <p><strong>标签</strong>：工具实操 · 通用行业 · 小组辅导 · 杭州</p>
+                    <p><strong>匹配度</strong>：方向 76 · 行业 64 · 经验 85 · 价格 93 · 评价 80</p>
+                    <p>适合补充工具实操和小组辅导，预算友好。</p>
+                    <p><strong>风险</strong>：不建议作为主讲</p>
+                    <p>★ 4.5（15 次）· 报价 ¥15,000/天 · 无银行案例课纲</p>
 
                     <hr>
                     <p class="md-source-line">依据：2026讲师档期与报价.xlsx · 讲师反馈与评分表.xlsx · @需求分析 输出结果</p>
                   </div>
-                  <div class="doc-version-update">
+                  <div class="doc-version-update" data-artifact="instructor-rec" role="button" tabindex="0" title="点击预览 讲师推荐.md">
                     <div class="doc-version-update-head">
                       <span class="doc-version-update-icon">📄</span>
-                      <span class="doc-version-update-doc">A 银行 2026 中高层领导力培训方案.docx</span>
-                      <span class="doc-version-tag">v1</span>
-                      <span class="doc-version-arrow">→</span>
-                      <span class="doc-version-tag doc-version-tag-new">v2</span>
+                      <span class="doc-version-update-label">本轮新增产物</span>
+                      <span class="doc-version-update-doc">讲师推荐.md</span>
                     </div>
                     <ul class="doc-version-change-list">
-                      <li><span class="vc-add">+</span><span>新增 §2 讲师推荐（4 位候选 + 评分 + 风险）</span></li>
+                      <li><span class="vc-add">+</span><span>@讲师匹配 · 4 位候选 + 评分 + 风险</span></li>
                     </ul>
-                  </div>
-                  <div class="value-realized">
-                    <span class="value-realized-icon">📈</span>
-                    <span class="value-realized-label">量化业务价值</span>
-                    <span class="value-realized-text">讲师筛选范围 50 → 2000+ 人，过去靠 BD 个人记忆容易漏掉合适讲师</span>
-                    <span class="tag value-realized-tag">对应 xlsx 场景 ③</span>
                   </div>
                 </div>
 
@@ -5764,213 +6342,296 @@
 
                 <div class="message assistant flow-complete-only" data-flow-step="6">
                   <div class="message-bubble">
-                    我只运行本轮 @ 的 Skill：@课程匹配。当前可用输入有：需求主线、预算、交付时间、候选讲师。还缺课程时长、班级拆分方式、是否需要训前访谈，以及客户是否有必须保留/必须避开的模块。
+                    我只运行本轮 @ 的 Skill：@课程匹配。当前可用输入有：需求主线、预算、交付时间（6 月下旬）、培训天数（2 天 1 晚）、候选讲师。还缺班级拆分方式、是否需要训前访谈，以及客户是否有必须保留/必须避开的模块。
                   </div>
                 </div>
 
                 <div class="message user flow-complete-only" data-flow-step="7">
                   <div class="message-bubble">
-                    课程两天一晚，80 人分 4 个小组。需要训前访谈 6-8 人，必须保留真实案例复盘和行动计划共创，避免太多理论模型。可以引用 2025 复盘里的优秀案例，但不要复用旧课程结构。
+                    80 人分 4 个小组。需要训前访谈 6-8 人，必须保留真实案例复盘和行动计划共创，避免太多理论模型。可以引用 2025 复盘里的优秀案例，但不要复用旧课程结构。
                   </div>
                 </div>
 
                 <div class="message assistant flow-complete-only" data-flow-step="7" style="max-width: 100%;">
                   <div class="assistant-markdown">
                     <h3>@课程匹配 输出结果</h3>
-                    <p>建议课程结构先按下面四段进入方案草稿，每一段都保留依据：</p>
+                    <p>已确认讲师：王老师、刘老师 + 助教（2 位）。<strong>优先检索两位讲师的历史课纲库，无匹配的由 AI 新生成</strong>。</p>
+                    <p>为 <strong>2 天 1 晚课程</strong> 匹配课纲如下，已结合金融行业 + 银行管理升级 + 高管群体优化。本轮 <strong>3 块复用老师课纲库 + 1 块 AI 新生成</strong>：</p>
 
-                    <h4>1. 训前诊断</h4>
+                    <h4>训前 · 主讲准备（Day -7 ~ Day -3）</h4>
+                    <p><strong>讲师</strong>：王老师 · <strong>选用方式</strong>：王老师课纲库 · 直接复用</p>
+                    <p><strong>课纲来源</strong>：王老师_金融领导力课纲_2026版.docx · §「高管访谈框架」</p>
                     <ul>
-                      <li>访谈 6–8 位关键管理者，确认跨部门协同卡点和案例素材</li>
-                      <li>依据：@需求分析 追问确认</li>
+                      <li>访谈 6–8 位关键管理者（含分管副行长 / 部门总经理代表）</li>
+                      <li>每人 30 min · 半结构化提纲 6 题</li>
+                      <li>输出：5 个核心协同卡点 + 案例素材清单</li>
                     </ul>
 
-                    <h4>2. 真实案例复盘</h4>
+                    <h4>王老师 · Day 1 全天 课纲</h4>
+                    <p><strong>选用方式</strong>：王老师课纲库 · 直接复用</p>
+                    <p><strong>课纲来源</strong>：王老师_金融领导力课纲_2026版.docx · §「金融跨部门协同」</p>
+                    <p><strong>Day 1 上午 · 跨部门协同卡点拆解</strong></p>
                     <ul>
-                      <li>围绕客户近一年项目反馈和金融行业协同案例拆解问题链路</li>
-                      <li>依据：近一年项目反馈汇总.xlsx</li>
+                      <li>金融行业协同案例引入（20 min）</li>
+                      <li>5W2H 拆解方法 + 小组练习（60 min）</li>
+                      <li>全员对照 + 卡点提炼（30 min）</li>
+                    </ul>
+                    <p><strong>Day 1 下午 · 真实案例复盘</strong></p>
+                    <ul>
+                      <li>招行 / 工行 / 浦发同业案例引入</li>
+                      <li>客户近一年项目反馈拆解</li>
+                      <li>讲师串讲 + 卡点提炼</li>
                     </ul>
 
-                    <h4>3. 跨部门共创工作坊</h4>
+                    <h4>刘老师 + 助教 · Day 1 晚 + Day 2 上午 课纲</h4>
+                    <p><strong>选用方式</strong>：王老师课纲库（工作坊工具包）· 直接复用</p>
+                    <p><strong>课纲来源</strong>：王老师工作坊工具包.docx · §「共创工作坊 4 步法」</p>
+                    <p><strong>Day 1 晚 · 跨部门共创工作坊（启动）</strong></p>
                     <ul>
-                      <li>4 组共创行动计划，输出协同机制、责任人和 1 个月复盘节点</li>
-                      <li>依据：@需求分析 输出结果</li>
+                      <li>第 1 步：定义议题（30 min）</li>
+                      <li>第 2 步：散点产出（45 min · 便签 + 静默书写）</li>
+                      <li>4 组分组共创 · 行动计划草稿</li>
+                    </ul>
+                    <p><strong>Day 2 上午 · 共创工作坊（收口）</strong></p>
+                    <ul>
+                      <li>第 3 步：聚类排序（30 min · 点投票）</li>
+                      <li>第 4 步：行动计划细化（45 min）</li>
+                      <li>责任人 + 1 个月复盘节点确认</li>
                     </ul>
 
-                    <h4>4. 高管共识收口</h4>
+                    <h4>王老师 · Day 2 下午 课纲</h4>
+                    <p><strong>选用方式</strong>：<strong>AI 新生成</strong>（王老师 / 刘老师课纲库均无完全匹配的高管共识收口模块）</p>
+                    <p><strong>生成依据</strong>：王老师工具包 · §「共识对齐工具」+ 刘老师历史项目 · §「高管复盘节奏」+ A 银行需求（高管共识输出物）</p>
+                    <p><strong>Day 2 下午 · 高管共识收口</strong></p>
                     <ul>
-                      <li>主讲带领共识对齐，形成可对内发布的行动计划摘要</li>
-                      <li>依据：@讲师匹配 输出结果</li>
+                      <li>4 组行动计划展示（5 min × 2 轮 · 30 min）</li>
+                      <li>异议澄清（结构化提问 + 主讲串场 · 30 min）</li>
+                      <li>高管共识投票 + 收口陈词（分管副行长 take-away · 30 min）</li>
                     </ul>
 
                     <hr>
-                    <p class="md-source-line">依据：@需求分析 输出结果 · @讲师匹配 输出结果 · 2025领导力项目复盘.pptx</p>
+                    <p class="md-source-line">依据：需求分析.md · 讲师推荐.md · 王老师_金融领导力课纲_2026版.docx · 王老师工作坊工具包.docx · 2025领导力项目复盘.pptx</p>
                   </div>
-                  <div class="doc-version-update">
+                  <div class="doc-version-update" data-artifact="course-plan" role="button" tabindex="0" title="点击预览 课程方案.md">
                     <div class="doc-version-update-head">
                       <span class="doc-version-update-icon">📄</span>
-                      <span class="doc-version-update-doc">A 银行 2026 中高层领导力培训方案.docx</span>
-                      <span class="doc-version-tag">v2</span>
-                      <span class="doc-version-arrow">→</span>
-                      <span class="doc-version-tag doc-version-tag-new">v3</span>
+                      <span class="doc-version-update-label">本轮新增产物</span>
+                      <span class="doc-version-update-doc">课程方案.md</span>
                     </div>
                     <ul class="doc-version-change-list">
-                      <li><span class="vc-add">+</span><span>新增 §3 课程方案（5 个模块 + 历史复盘依据）</span></li>
+                      <li><span class="vc-add">+</span><span>@课程匹配 · 4 模块（3 复用 + 1 AI 新生成）+ 历史复盘依据</span></li>
                     </ul>
-                  </div>
-                  <div class="value-realized">
-                    <span class="value-realized-icon">📈</span>
-                    <span class="value-realized-label">量化业务价值</span>
-                    <span class="value-realized-text">课程方向匹配率 +40%，每个推荐都绑定历史项目反馈，而不是凭经验</span>
-                    <span class="tag value-realized-tag">对应 xlsx 场景 ③+④</span>
                   </div>
                 </div>
 
                 <div class="message user flow-complete-only" data-flow-step="8">
                   <div class="message-bubble">
-                    课程匹配也确认。@方案输出 把 §1 §2 §3 整合进主文档，重组为完整方案结构，再加上 §4 交付计划与风险，所有推荐都要带依据。
+                    刘老师 + 助教 那块 Day 1 晚 + Day 2 上午 的课纲不太满意，金融实战感不够。重新生成一版——引用王老师工具包里的 5 步法，加同业银行（招行 / 工行）真实跨部门协同案例，其他三块不动。
                   </div>
                 </div>
 
                 <div class="message assistant flow-complete-only" data-flow-step="8" style="max-width: 100%;">
+                  <div class="message-bubble">
+                    收到。@课程匹配 只重写 刘老师 + 助教 这一块，训前 / 王老师 Day 1 / 王老师 Day 2 下午 三块保持原版。
+                  </div>
                   <div class="assistant-markdown">
-                    <h3>@方案输出 已完成</h3>
-                    <p>主文档已重组为完整可交付结构，并新增 §4 交付计划与风险。</p>
+                    <h3>@课程匹配 重新生成 · 刘老师 + 助教</h3>
 
-                    <h4>主文档当前结构（v4）</h4>
+                    <h4>刘老师 + 助教 · Day 1 晚 + Day 2 上午 课纲（v2）</h4>
+                    <p><strong>选用方式</strong>：王老师课纲库（工作坊工具包）+ 金融决策案例库 · 复用 + 同业案例替换</p>
+                    <p><strong>课纲来源</strong>：王老师工作坊工具包.docx · §「金融工作坊 5 步法」+ 2024 同业银行跨部门协同案例库</p>
+                    <p><strong>Day 1 晚 · 跨部门共创工作坊（金融实战版）</strong></p>
                     <ul>
-                      <li>§1 需求与目标 ← @需求分析</li>
-                      <li>§2 讲师推荐 ← @讲师匹配</li>
-                      <li>§3 课程方案 ← @课程匹配</li>
-                      <li>§4 交付计划与风险 ← 本轮新增</li>
+                      <li>第 1 步：定义议题（25 min · 招行某季度风控与零售协同卡点引入）</li>
+                      <li>第 2 步：散点产出（40 min · 5 步法 step 1-2）</li>
+                      <li>第 3 步：决策权衡（30 min · 5 步法 step 3 · 风险 vs 收益矩阵）</li>
+                      <li>4 组分组共创 · 行动计划草稿</li>
                     </ul>
-
-                    <h4>§4 新增内容摘要</h4>
+                    <p><strong>Day 2 上午 · 共创工作坊（金融场景收口）</strong></p>
                     <ul>
-                      <li>交付节奏：6 月 21 日 / 6 月 28 日 / 7 月 5 日（3 天分散）</li>
-                      <li>关键风险：A 讲师档期 70% 概率冲突 → 已备 B 讲师</li>
-                      <li>资源依赖：场地、餐饮、外部翻译</li>
+                      <li>第 4 步：聚类排序（30 min · 点投票 + 业务优先级）</li>
+                      <li>第 5 步：行动计划落地（45 min · 5 步法 step 4-5 · 含 KPI / 复盘节点）</li>
+                      <li>同业案例对照（工行 2023 跨条线协同案例 · 30 min）</li>
+                      <li>责任人 + 1 个月复盘节点确认</li>
                     </ul>
 
                     <hr>
-                    <p class="md-source-line">依据：@需求分析 输出 · @讲师匹配 输出 · @课程匹配 输出 · 2025领导力项目复盘.pptx</p>
+                    <p class="md-source-line">依据：王老师工作坊工具包.docx · §「金融工作坊 5 步法」· 2024 同业银行跨部门协同案例库 · @课程匹配 输出（v1）· 用户反馈</p>
                   </div>
-                  <div class="doc-version-update">
+                  <div class="doc-version-update" data-artifact="course-plan" role="button" tabindex="0" title="点击预览 课程方案.md（已更新）">
                     <div class="doc-version-update-head">
                       <span class="doc-version-update-icon">📄</span>
-                      <span class="doc-version-update-doc">A 银行 2026 中高层领导力培训方案.docx</span>
-                      <span class="doc-version-tag">v3</span>
-                      <span class="doc-version-arrow">→</span>
-                      <span class="doc-version-tag doc-version-tag-new">v4</span>
+                      <span class="doc-version-update-label">本轮更新</span>
+                      <span class="doc-version-update-doc">课程方案.md（局部重写）</span>
                     </div>
                     <ul class="doc-version-change-list">
-                      <li><span class="vc-add">+</span><span>新增 §4 交付计划与风险</span></li>
-                      <li><span class="vc-mod">~</span><span>§1 §2 §3 重新组织为可交付方案结构（标题层级、依据清单、风险标注）</span></li>
+                      <li><span class="vc-mod">~</span><span>刘老师 + 助教 · Day 1 晚 + Day 2 上午 课纲改为金融实战版（5 步法 + 同业案例）</span></li>
+                      <li><span class="vc-add">+</span><span>新增依据：2024 同业银行跨部门协同案例库</span></li>
                     </ul>
-                  </div>
-                  <div class="value-realized">
-                    <span class="value-realized-icon">📈</span>
-                    <span class="value-realized-label">量化业务价值</span>
-                    <span class="value-realized-text">方案产出周期 3–5 天 → 0.5 天，完整性 95%+，每条推荐都可追溯到源文件</span>
-                    <span class="tag value-realized-tag">对应 xlsx 场景 ④</span>
                   </div>
                 </div>
 
                 <div class="message user flow-complete-only" data-flow-step="9">
                   <div class="message-bubble">
-                    客户初步反馈：完整方案大方向认可，但希望讲师介绍要更"对客版本"，突出银行业项目经验，淡化学术背景；课程亮点要给客户高管看的版本，案例换成同业银行的。请用 <span class="skill-chip">@内容包装</span> 基于刚才的完整方案做对客版本。
+                    这版课纲可以。@方案输出 把 §1 §2 §3 整合进主文档，重组为完整方案结构，再加上 §4 交付计划与风险 + §5 费用估算（基于讲师推荐报价 + 课程天数算），所有推荐都要带依据。
                   </div>
                 </div>
 
-                <div class="message assistant flow-complete-only" data-flow-step="9">
-                  <div class="message-bubble">
-                    收到。@内容包装 已读取完整方案文档 + 讲师/课程的原始资料，正在做对客版本。先检查一下输入是否够：客户提的"突出银行业经验、淡化学术背景"已明确；但缺少 1 项关键资料 —— <strong>客户高管的称谓与岗位偏好</strong>（用董事长/行长/分管副行长？是否需要"您"/"您方"敬语？）。这影响讲师简介和沟通话术的措辞口径。能补充一下吗？
+                <div class="message assistant flow-complete-only" data-flow-step="9" style="max-width: 100%;">
+                  <div class="assistant-markdown">
+                    <h3>@方案输出 已完成</h3>
+                    <div class="template-fill-card">
+                      <div class="template-fill-head"><strong>Word 模板：培训方案标准版 v3.2</strong><span class="status green">已套用</span></div>
+                      <div class="template-fill-grid" aria-label="模板填充字段">
+                        <div><strong>项目背景分析</strong><p class="small muted">来自 需求分析.md</p></div>
+                        <div><strong>讲师团队</strong><p class="small muted">来自 讲师推荐.md</p></div>
+                        <div><strong>课程课纲</strong><p class="small muted">来自 课程方案.md</p></div>
+                        <div><strong>交付成果</strong><p class="small muted">来自 交付计划与风险.md</p></div>
+                        <div><strong>费用估算</strong><p class="small muted">讲师推荐.md 报价 × 课程方案.md 天数 + 平台成本表</p></div>
+                      </div>
+                    </div>
+
+                    <h4>主文档当前结构</h4>
+                    <ul>
+                      <li>§1 需求与目标 ← 需求分析.md</li>
+                      <li>§2 讲师推荐 ← 讲师推荐.md</li>
+                      <li>§3 课程课纲 ← 课程方案.md（4 模块：3 复用王老师课纲库 + 1 AI 新生成）</li>
+                      <li>§4 交付计划与风险 ← 交付计划与风险.md（本轮新增）</li>
+                      <li>§5 费用估算 ← 讲师推荐报价 + 课程天数 + 平台运营成本表（自动计算 · 本轮新增）</li>
+                    </ul>
+
+                    <h4>§4 交付计划摘要</h4>
+                    <ul>
+                      <li>交付节奏：6 月 21 日 / 6 月 28 日 / 7 月 5 日（3 天分散）</li>
+                      <li>关键风险：王老师档期 70% 概率冲突 → 已备 刘老师 + 助教组合</li>
+                      <li>资源依赖：场地、餐饮、外部翻译</li>
+                    </ul>
+
+                    <h4>§5 费用估算</h4>
+                    <ul>
+                      <li><strong>讲师费</strong>：¥106,000
+                        <ul>
+                          <li>王老师 · 主讲 Day 1 全天 + Day 2 下午 + 训前访谈 · 2 天计 · ¥38,000/天 = ¥84,000</li>
+                          <li>刘老师 + 助教 · Day 1 晚 + Day 2 上午 工作坊 · 1 天计 · ¥22,000/天 = ¥22,000</li>
+                        </ul>
+                      </li>
+                      <li><strong>课程定制费</strong>：¥40,000（模块 4 高管共识收口 AI 新生成 + 6 份同业银行案例本地化）</li>
+                      <li><strong>运营成本</strong>：约 ¥60,000 · <em>待业务确认</em>（场地 / 餐饮 / 物料 / 印刷 / D2 晚加点）</li>
+                      <li><strong>项目管理费</strong>：¥30,000（PM 全程 + 1 个月复盘节点跟进）</li>
+                      <li><strong>合计</strong>：约 <strong>¥236,000</strong> · 客户预算 45 - 60 万，余量 21 - 36 万</li>
+                    </ul>
+
+                    <hr>
+                    <p class="md-source-line">依据：需求分析.md（预算）· 讲师推荐.md（报价）· 课程方案.md（天数）· 平台运营成本表 · 2025领导力项目复盘.pptx</p>
+                  </div>
+                  <div class="doc-version-update" data-artifact="full-proposal" role="button" tabindex="0" title="点击预览 A 银行 完整方案.docx">
+                    <div class="doc-version-update-head">
+                      <span class="doc-version-update-icon">📄</span>
+                      <span class="doc-version-update-label">本轮新增产物</span>
+                      <span class="doc-version-update-doc">交付计划与风险.md · A 银行 完整方案.docx</span>
+                    </div>
+                    <ul class="doc-version-change-list">
+                      <li><span class="vc-add">+</span><span>@方案输出 · 交付节奏、风险、资源依赖</span></li>
+                      <li><span class="vc-add">+</span><span>§5 费用估算 自动计算（讲师报价 × 天数 + 平台成本表）· 合计 ¥236,000 · 预算余量 21-36 万</span></li>
+                      <li><span class="vc-add">+</span><span>合订本 · 需求分析.md / 讲师推荐.md / 课程方案.md / 交付计划与风险.md 自动拼装为 §1–§4 + §5 费用</span></li>
+                    </ul>
                   </div>
                 </div>
 
                 <div class="message user flow-complete-only" data-flow-step="10">
                   <div class="message-bubble">
+                    客户初步反馈：完整方案大方向认可，但希望讲师介绍要更"对客版本"，突出银行业项目经验，淡化学术背景；课程亮点要给客户高管看的版本，案例换成同业银行的。请用 <span class="skill-chip">@内容包装</span> 基于刚才的完整方案做对客版本。
+                  </div>
+                </div>
+
+                <div class="message assistant flow-complete-only" data-flow-step="10">
+                  <div class="message-bubble">
+                    收到。@内容包装 已读取完整方案文档 + 讲师/课程的原始资料，正在做对客版本。先检查一下输入是否够：客户提的"突出银行业经验、淡化学术背景"已明确；但缺少 1 项关键资料 —— <strong>客户高管的称谓与岗位偏好</strong>（用董事长/行长/分管副行长？是否需要"您"/"您方"敬语？）。这影响讲师简介和沟通话术的措辞口径。能补充一下吗？
+                  </div>
+                </div>
+
+                <div class="message user flow-complete-only" data-flow-step="11">
+                  <div class="message-bubble">
                     阅读对象主要是分管副行长 + 培训中心总经理，正式场合用"贵行"，沟通话术保持专业但不要太硬。对客版本可以输出了。
                   </div>
                 </div>
 
-                <div class="message assistant flow-complete-only" data-flow-step="10" style="max-width: 100%;">
+                <div class="message assistant flow-complete-only" data-flow-step="11" style="max-width: 100%;">
                   <div class="assistant-markdown">
                     <h3>@内容包装 已完成</h3>
-                    <p>主文档已加上 §5 对客版本，并修改 §2 §3 的对客口径。这是本次会话的最终版。</p>
+                    <p>派生自 完整方案.docx，整理为客户高管阅读版。<strong>不改动主文档</strong>——完整方案.docx 的 §1–§5 保持原样，对客措辞、案例口径全部写入新的 对客版方案.docx。</p>
 
-                    <h4>主文档当前结构（v5 · 最终）</h4>
+                    <h4>对客版方案.docx 内容（三件套）</h4>
                     <ul>
-                      <li>§1 需求与目标</li>
-                      <li>§2 讲师推荐 <em>（对客口径已调整）</em></li>
-                      <li>§3 课程方案 <em>（对客口径已调整）</em></li>
-                      <li>§4 交付计划与风险</li>
-                      <li>§5 对客版本与沟通话术 ← 本轮新增</li>
+                      <li><strong>讲师对客简介</strong> × 2 份（王老师、刘老师 + 助教）：突出银行业 / 金融行业项目经验，统一"贵行"称谓，淡化学术背景</li>
+                      <li><strong>课程亮点高管版</strong> × 4 块：训前 / Day 1 全天 / Day 1 晚 + Day 2 上 / Day 2 下，每块案例替换为同业银行（招行 / 工行 / 浦发）</li>
+                      <li><strong>沟通话术 + 异议回应</strong> × 6 条：预算、档期、案例真实性、效果保障、讲师变更、课程定制</li>
                     </ul>
 
-                    <h4>§5 内容（对客三件套）</h4>
+                    <h4>对客口径处理（仅在 对客版方案.docx 里，不进主文档）</h4>
                     <ul>
-                      <li>讲师对客简介 × 3 份：突出银行业 / 金融行业项目经验，统一"贵行"称谓</li>
-                      <li>课程亮点高管版 × 5 个模块：案例替换为招行 / 工行 / 浦发同业</li>
-                      <li>沟通话术 + 异议回应 × 6 条：预算、档期、案例真实性、效果保障…</li>
-                    </ul>
-
-                    <h4>§2 §3 章节修改摘要</h4>
-                    <ul>
-                      <li>§2 讲师推荐：学术背景描述 → 弱化；项目落地经验 → 加强</li>
-                      <li>§3 课程方案：原型案例 → 替换为同业银行案例</li>
+                      <li>讲师介绍：学术背景描述 → 弱化；项目落地经验 → 加强</li>
+                      <li>课程案例：泛行业案例 → 替换为同业银行（招行 / 工行 / 浦发）案例</li>
+                      <li>称谓：统一"贵行"，正式但不生硬</li>
                     </ul>
 
                     <hr>
-                    <p class="md-source-line">依据：主文档 v4 · 客户反馈纪要 · 同业银行项目案例库 · @讲师匹配 输出 · @课程匹配 输出</p>
+                    <p class="md-source-line">依据：完整方案.docx · 客户反馈纪要 · 同业银行项目案例库 · 讲师推荐.md · 课程方案.md</p>
                   </div>
-                  <div class="doc-version-update">
+                  <div class="doc-version-update" data-artifact="client-version" role="button" tabindex="0" title="点击预览 对客版方案.docx">
                     <div class="doc-version-update-head">
                       <span class="doc-version-update-icon">📄</span>
-                      <span class="doc-version-update-doc">A 银行 2026 中高层领导力培训方案.docx</span>
-                      <span class="doc-version-tag">v4</span>
-                      <span class="doc-version-arrow">→</span>
-                      <span class="doc-version-tag doc-version-tag-final">v5 · 最终版</span>
+                      <span class="doc-version-update-label">本轮新增产物</span>
+                      <span class="doc-version-update-doc">对客版方案.docx</span>
                     </div>
                     <ul class="doc-version-change-list">
-                      <li><span class="vc-add">+</span><span>新增 §5 对客版本与沟通话术</span></li>
-                      <li><span class="vc-mod">~</span><span>§2 §3 调整对客口径（淡化学术、案例换同业）</span></li>
+                      <li><span class="vc-add">+</span><span>@内容包装 · 派生自 完整方案.docx · 讲师对客简介、课程亮点高管版、沟通话术与异议回应</span></li>
                     </ul>
                   </div>
-                  <div class="value-realized">
-                    <span class="value-realized-icon">📈</span>
-                    <span class="value-realized-label">量化业务价值</span>
-                    <span class="value-realized-text">讲师对客版本 2 小时 → 10 分钟；客户反馈后二次包装即时完成，迭代周期 1 天 → 实时</span>
-                    <span class="tag value-realized-tag">对应 xlsx 场景 ⑤</span>
-                  </div>
                 </div>
 
-                <div class="session-complete-composer" aria-label="本轮会话已完成">
-                  <div class="ssc-hint">本次 Agent 运行已走完 5 个 Skill。要继续，可在下方再 @Skill；或返回左上"01 输入需求"开新会话。</div>
+              </div>
+
+                <div class="session-complete-composer" aria-label="继续输入">
+                  <div class="ssc-hint">继续确认、追问、补资料，或在输入框里 @Skill。</div>
                   <div class="ssc-input">
                     <span>@</span>
-                    <strong>输入下一个 Skill 名称…</strong>
+                    <strong>输入消息或 @需求分析 / @讲师匹配 / @课程匹配 / @方案输出…</strong>
                   </div>
                 </div>
-              </div>
             </section>
 
-            <aside class="agent-right-rail" aria-label="Artifacts 和 Sources">
+            <aside class="agent-right-rail" aria-label="产物和来源">
               <div class="rail-section">
-                <div class="rail-title">Artifacts</div>
-                <div class="rail-item rail-doc-main">
-                  <div class="rail-doc-main-head">
-                    <span class="rail-item-icon">DOC</span>
-                    <strong>A 银行 2026 中高层领导力培训方案.docx</strong>
-                  </div>
-                  <div class="rail-doc-main-meta">v5 · 最终版 · 5 次 Skill 迭代后</div>
-                  <ul class="rail-doc-versions" aria-label="版本历史">
-                    <li><span class="v-tag">v1</span><span>@需求分析 写入 §1</span></li>
-                    <li><span class="v-tag">v2</span><span>@讲师匹配 加入 §2</span></li>
-                    <li><span class="v-tag">v3</span><span>@课程匹配 加入 §3</span></li>
-                    <li><span class="v-tag">v4</span><span>@方案输出 重组 + §4</span></li>
-                    <li class="current"><span class="v-tag">v5</span><span>@内容包装 + §5（对客）</span></li>
-                  </ul>
+                <div class="rail-title">产物</div>
+                <div class="rail-item" data-artifact="req-analysis" role="button" tabindex="0">
+                  <span class="rail-item-icon">MD</span>
+                  <span><strong>需求分析.md</strong><span>@需求分析 · 资料完整性检查后输出</span></span>
+                </div>
+
+                <div class="rail-item" data-artifact="instructor-rec" role="button" tabindex="0">
+                  <span class="rail-item-icon">MD</span>
+                  <span><strong>讲师推荐.md</strong><span>@讲师匹配 · 4 候选 + 风险</span></span>
+                </div>
+
+                <div class="rail-item" data-artifact="course-plan" role="button" tabindex="0">
+                  <span class="rail-item-icon">MD</span>
+                  <span><strong>课程方案.md</strong><span>@课程匹配 · 4 模块（3 复用 + 1 AI 新生成）</span></span>
+                </div>
+
+                <div class="rail-item" data-artifact="delivery-plan" role="button" tabindex="0">
+                  <span class="rail-item-icon">MD</span>
+                  <span><strong>交付计划与风险.md</strong><span>@方案输出 · 3 天分散交付 + 风险备案</span></span>
+                </div>
+
+                <div class="rail-item" data-artifact="full-proposal" role="button" tabindex="0">
+                  <span class="rail-item-icon">DOC</span>
+                  <span><strong>A 银行 完整方案.docx</strong><span>合订本 · §1–§4 自动拼装</span></span>
+                </div>
+
+                <div class="rail-item" data-artifact="client-version" role="button" tabindex="0">
+                  <span class="rail-item-icon">DOC</span>
+                  <span><strong>对客版方案.docx</strong><span>@内容包装 · 高管阅读版</span></span>
                 </div>
               </div>
               <div class="rail-section">
@@ -5995,6 +6656,10 @@
                   <span class="rail-item-icon">XLS</span>
                   <span><strong>2026讲师档期与报价.xlsx</strong><span>讲师匹配依据</span></span>
                 </div>
+                <div class="rail-item flow-complete-only" data-flow-step="9">
+                  <span class="rail-item-icon">DOC</span>
+                  <span><strong>培训方案标准版 v3.2.docx</strong><span>Word 模板</span></span>
+                </div>
               </div>
             </aside>
 
@@ -6007,22 +6672,22 @@
             <div class="metric">
               <div class="metric-label">知识库资料</div>
               <div class="metric-value">12,480</div>
-              <div class="metric-sub">业务上传样本 4,216 条，平台同步 8,264 条</div>
+              <div class="metric-sub">业务上传 4,216 + 平台同步 8,264</div>
             </div>
             <div class="metric">
               <div class="metric-label">待数据确认</div>
-              <div class="metric-value">128</div>
-              <div class="metric-sub">其中讲师资料冲突 42 条，课程资料冲突 37 条</div>
+              <div class="metric-value">79</div>
+              <div class="metric-sub">讲师资料冲突 42 + 课程资料冲突 37</div>
             </div>
             <div class="metric">
-              <div class="metric-label">资料缺口识别</div>
-              <div class="metric-value">31%</div>
-              <div class="metric-sub">入库和检索测试中发现资料字段不完整</div>
+              <div class="metric-label">Agent MCP 调用</div>
+              <div class="metric-value">1,284</div>
+              <div class="metric-sub">近 30 天 · 服务于 6 个 Skill · 失败率 0.4%</div>
             </div>
             <div class="metric">
-              <div class="metric-label">直接搜索可用率</div>
-              <div class="metric-value">68%</div>
-              <div class="metric-sub">近 30 天业务标注为可直接引用或部分可用</div>
+              <div class="metric-label">直接搜索</div>
+              <div class="metric-value">2,418</div>
+              <div class="metric-sub">近 30 天 · 命中 84% · 可直接引用 68%</div>
             </div>
           </div>
 
@@ -6030,17 +6695,16 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">外部系统连接</h2>
-                <p class="panel-note">桌面端 AI 工作台通过 MCP / API / 爬虫接入下列业务系统，所有数据流向均可追溯、可审批。</p>
+                <p class="panel-note">连接状态与同步进度</p>
               </div>
               <div class="top-actions">
-                <span class="status green">10 路已连接</span>
-                <span class="status amber">1 路异常</span>
+                <span class="status green">6 路已连接</span>
                 <button class="btn">查看连接日志</button>
               </div>
             </div>
             <div class="panel-body">
               <div class="ext-systems">
-                <div class="ext-systems-group-head">📚 数据源（4 路）</div>
+                <div class="ext-systems-group-head">📚 数据源（3 路）</div>
                 <div class="ext-system-card">
                   <div class="ext-system-card-head">
                     <strong>CRM 系统</strong>
@@ -6065,16 +6729,7 @@
                   <div class="ext-system-card-meta"><span class="proto-tag">MCP</span><span>项目状态 / 交付节点 / 资源分配</span></div>
                   <div class="ext-system-card-stat">186 个在跑项目 · 实时</div>
                 </div>
-                <div class="ext-system-card">
-                  <div class="ext-system-card-head">
-                    <strong>独立知识库服务</strong>
-                    <span class="status green">已连接</span>
-                  </div>
-                  <div class="ext-system-card-meta"><span class="proto-tag">MCP</span><span>历史方案 / 课纲 / 案例</span></div>
-                  <div class="ext-system-card-stat">12,480 条资料 · 索引同步中</div>
-                </div>
-
-                <div class="ext-systems-group-head">📋 投标业务（6 路）</div>
+                <div class="ext-systems-group-head">📋 投标业务（4 路）</div>
                 <div class="ext-system-card">
                   <div class="ext-system-card-head">
                     <strong>招标网爬虫</strong>
@@ -6094,7 +6749,7 @@
                 <div class="ext-system-card">
                   <div class="ext-system-card-head">
                     <strong>各省政采爬虫</strong>
-                    <span class="status amber">部分异常</span>
+                    <span class="status green">运行中</span>
                   </div>
                   <div class="ext-system-card-meta"><span class="proto-tag">SCRAPE</span><span>31 个省级平台</span></div>
                   <div class="ext-system-card-stat">28/31 路在跑 · 3 路反爬中</div>
@@ -6111,90 +6766,45 @@
             </div>
           </div>
 
-          <div class="grid cols-2" style="margin-top: 14px;">
-            <div class="panel">
-              <div class="panel-header">
-                <div>
-                  <h2 class="panel-title">知识库管理流程</h2>
-                  <p class="panel-note">第一阶段围绕这 6 个步骤运转，业务可以随时直接搜索知识库。</p>
-                </div>
-                <span class="status green">运行中</span>
+          <div class="panel" style="margin-top: 14px;">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">📥 今天需要你处理的</h2>
+                <p class="panel-note">从上传 / 权威 / 规则 / 风险 各入口汇总 · 点 chip 直达对应页</p>
               </div>
-              <div class="panel-body">
-                <div class="pipeline">
-                  <div class="pipe-step active">
-                    <span class="pipe-no">1</span>
-                    <strong>知识库资料上传</strong>
-                    <p class="small muted">业务上传最新资料样本，确认入库范围。</p>
-                  </div>
-                  <div class="pipe-step active">
-                    <span class="pipe-no">2</span>
-                    <strong>解析入库</strong>
-                    <p class="small muted">抽取正文、表格、课纲、标签和向量索引。</p>
-                  </div>
-                  <div class="pipe-step">
-                    <span class="pipe-no">3</span>
-                    <strong>分类标签</strong>
-                    <p class="small muted">进入讲师库、课程库、案例库等分类。</p>
-                  </div>
-                  <div class="pipe-step">
-                    <span class="pipe-no">4</span>
-                    <strong>数据确认</strong>
-                    <p class="small muted">确认是否用业务最新资料更新当前记录。</p>
-                  </div>
-                  <div class="pipe-step">
-                    <span class="pipe-no">5</span>
-                    <strong>检索测试</strong>
-                    <p class="small muted">用真实业务问题测试召回质量。</p>
-                  </div>
-                  <div class="pipe-step">
-                    <span class="pipe-no">6</span>
-                    <strong>后续调用</strong>
-                    <p class="small muted">知识库稳定后再接 Agent 和推荐。</p>
-                  </div>
-                </div>
-              </div>
+              <button class="btn" data-jump-view="todo">查看全部 109 →</button>
             </div>
-
-            <div class="panel">
-              <div class="panel-header">
-                <div>
-                  <h2 class="panel-title">今日待处理</h2>
-                  <p class="panel-note">业务侧需要确认的工作项。</p>
-                </div>
-                <button class="btn" data-jump-view="todo">查看全部</button>
-              </div>
-              <div class="panel-body">
-                <table summary="管理平台演示表格">
-                  <thead>
-                    <tr><th>事项</th><th>责任人</th><th>状态</th></tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>确认 18 份讲师资料是否为最新版本</td>
-                      <td>售前负责人</td>
-                      <td><span class="status amber">待确认</span></td>
-                    </tr>
-                    <tr>
-                      <td>补充金融行业领导力课程客户反馈</td>
-                      <td>项目经理</td>
-                      <td><span class="status red">缺资料</span></td>
-                    </tr>
-                    <tr>
-                      <td>确认讲师标签和规则字段</td>
-                      <td>业务专家</td>
-                      <td><span class="status blue">评审中</span></td>
-                    </tr>
-                    <tr>
-                      <td>确认 6 条平台课程数据是否过期</td>
-                      <td>课程运营</td>
-                      <td><span class="status amber">待确认</span></td>
-                    </tr>
-                  </tbody>
-                </table>
+            <div class="panel-body">
+              <div class="todo-chips">
+                <button class="todo-chip" type="button" data-jump-view="ingest">
+                  <div class="todo-chip-row1"><span class="todo-chip-icon">📋</span><span class="todo-chip-count amber">17</span></div>
+                  <div class="todo-chip-label">上传待人工</div>
+                  <div class="todo-chip-meta">最旧 25 分钟前</div>
+                </button>
+                <button class="todo-chip" type="button" data-jump-view="ingest">
+                  <div class="todo-chip-row1"><span class="todo-chip-icon">✗</span><span class="todo-chip-count red">2</span></div>
+                  <div class="todo-chip-label">上传失败 / 冲突</div>
+                  <div class="todo-chip-meta">解析失败 / 库内冲突</div>
+                </button>
+                <button class="todo-chip" type="button" data-jump-view="authority">
+                  <div class="todo-chip-row1"><span class="todo-chip-icon">⚖</span><span class="todo-chip-count amber">79</span></div>
+                  <div class="todo-chip-label">权威数据更新</div>
+                  <div class="todo-chip-meta">售前 60 · 投标 19</div>
+                </button>
+                <button class="todo-chip" type="button" data-jump-view="scoring">
+                  <div class="todo-chip-row1"><span class="todo-chip-icon">📐</span><span class="todo-chip-count blue">6</span></div>
+                  <div class="todo-chip-label">规则评审</div>
+                  <div class="todo-chip-meta">标签 / 扣分 / 一票否决</div>
+                </button>
+                <button class="todo-chip" type="button" data-jump-view="todo">
+                  <div class="todo-chip-row1"><span class="todo-chip-icon">💼</span><span class="todo-chip-count red">5</span></div>
+                  <div class="todo-chip-label">业务风险</div>
+                  <div class="todo-chip-meta">档期 / 退回中</div>
+                </button>
               </div>
             </div>
           </div>
+
         </div>
 
         <div class="view" id="todo">
@@ -6379,7 +6989,7 @@
                     </tr>
                     <tr>
                       <td><span class="status red">关闭</span></td>
-                      <td>不进入正式库；保留审计记录（带"为什么不要"的批注）</td>
+                      <td>不入库；保留审计记录</td>
                     </tr>
                   </tbody>
                 </table>
@@ -6407,7 +7017,7 @@
                   <tr>
                     <th>事项</th>
                     <th>来源</th>
-                    <th>为什么要处理</th>
+                    <th>处理原因</th>
                     <th>负责人</th>
                     <th>状态</th>
                     <th>入口</th>
@@ -6463,17 +7073,20 @@
               </div>
               <div class="panel-body">
                 <div class="tree">
-                  <div class="tree-row"><strong>讲师库</strong><span class="status green">3,214 条</span></div>
-                  <div class="tree-row"><strong>课程库</strong><span class="status green">1,860 条</span></div>
-                  <div class="tree-row"><strong>案例库</strong><span class="status blue">2,508 条</span></div>
-                  <div class="tree-row"><strong>客户与行业库</strong><span class="status amber">1,125 条</span></div>
-                  <div class="tree-row"><strong>方案素材库</strong><span class="status green">1,446 条</span></div>
+                  <div class="tree-group-head">📚 培训售前 · 5 库</div>
+                  <div class="tree-row"><strong>讲师库</strong><span class="status teal">3,214 条</span><span class="muted small">讲师档案 · 讲师后台同步</span></div>
+                  <div class="tree-row"><strong>课程库</strong><span class="status teal">1,860 条</span><span class="muted small">课纲 + 模块结构</span></div>
+                  <div class="tree-row"><strong>案例库</strong><span class="status teal">2,508 条</span><span class="muted small">行业真实交付案例 · 含 2025 复盘</span></div>
+                  <div class="tree-row"><strong>客户与行业库</strong><span class="status teal">1,125 条</span><span class="muted small">客户档案 + 行业标签字典</span></div>
+                  <div class="tree-row"><strong>方案素材库</strong><span class="status teal">1,446 条</span><span class="muted small">方案模板 + 章节碎片</span></div>
+
+                  <div class="tree-group-head">📋 投标业务 · 6 库</div>
                   <div class="tree-row"><strong>招标信息库</strong><span class="status blue">8,612 条</span><span class="muted small">源：多源招标平台爬虫</span></div>
-                  <div class="tree-row"><strong>历史赢标案例库</strong><span class="status green">427 条</span></div>
-                  <div class="tree-row"><strong>标书模板库</strong><span class="status green">86 套</span><span class="muted small">主标 + 05 标分版</span></div>
-                  <div class="tree-row"><strong>废标风险库</strong><span class="status amber">312 条</span><span class="muted small">法规 / 格式 / 常见错误</span></div>
+                  <div class="tree-row"><strong>历史赢标案例库</strong><span class="status blue">427 条</span><span class="muted small">中标记录 + 标书原文</span></div>
+                  <div class="tree-row"><strong>标书模板库</strong><span class="status blue">86 套</span><span class="muted small">主标 + 05 标分版</span></div>
+                  <div class="tree-row"><strong>废标风险库</strong><span class="status blue">312 条</span><span class="muted small">法规 / 格式 / 常见错误</span></div>
                   <div class="tree-row"><strong>竞品谍报库</strong><span class="status blue">196 条</span><span class="muted small">主要竞品中标记录</span></div>
-                  <div class="tree-row"><strong>投标复盘库</strong><span class="status green">238 条</span><span class="muted small">赢/丢标原因 + 经验回流</span></div>
+                  <div class="tree-row"><strong>投标复盘库</strong><span class="status blue">238 条</span><span class="muted small">赢/丢标原因 + 经验回流</span></div>
                 </div>
               </div>
             </div>
@@ -6496,16 +7109,16 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">库之间的关联关系：完全打通</h2>
-                <p class="panel-note">选任意一个客户/讲师/课程/项目/方案/投标，AI 实时把相关数据拉通，任何反向查询都成立：讲师能查“出现在哪些方案和投标”，项目能查“用了哪些老师和课程”。</p>
+                <p class="panel-note">任意实体都可反查关联项目、方案、讲师、课程和反馈。</p>
               </div>
             </div>
             <div class="panel-body">
 
-              <div class="relation-network-map" aria-label="知识库多对多关联示意">
+              <div class="relation-network-map" aria-label="知识库多对多关联">
                 <div class="relation-network-head">
                   <div>
-                    <h3>核心表达：每个模块都不是孤岛，所有实体都是 N:N 关联</h3>
-                    <p>讲师、课程、项目、需求、方案、投标、客户反馈之间不是固定顺序。任意选中一个实体，都能反查它关联过的其他实体，并继续向外扩展。</p>
+                    <h3>实体关系</h3>
+                    <p>讲师、课程、项目、需求、方案、投标、客户反馈可互相关联。</p>
                   </div>
                   <div class="relation-formula">
                     <strong>关系记录长这样</strong>
@@ -6519,7 +7132,7 @@
                     <div class="relation-entity-card" data-kind="teacher">
                       <span class="relation-kind">讲师库</span>
                       <strong>王老师</strong>
-                      <p>不是只存一份讲师简介，而是能连接到他讲过的课程、参与过的项目、出现过的方案和投标记录。</p>
+                      <p>关联课程、项目、方案和投标记录。</p>
                       <div class="relation-mini-pills"><span>N 门课</span><span>N 个项目</span><span>N 个方案</span><span>N 次投标</span></div>
                     </div>
                     <div class="relation-entity-card" data-kind="course">
@@ -6539,7 +7152,7 @@
                   <div class="relation-hub">
                     <div class="relation-hub-badge">关系层</div>
                     <strong>把所有库用关系连起来</strong>
-                    <p>每条关系都要记录来源：来自哪个文件、哪个知识库条目、哪次业务确认。Agent 检索时不是只搜关键词，而是沿关系找到上下文。</p>
+                    <p>来源文件、知识库条目、业务确认记录。</p>
                     <div class="relation-mini-pills"><span>可正查</span><span>可反查</span><span>可多跳</span><span>可追溯</span></div>
                   </div>
 
@@ -6553,7 +7166,7 @@
                     <div class="relation-entity-card" data-kind="proposal">
                       <span class="relation-kind">方案库</span>
                       <strong>A 银行 2026 方案 v5</strong>
-                      <p>方案不是孤立文档，它要反向指向引用过的需求判断、讲师、课程、案例、反馈和风险依据。</p>
+                    <p>关联需求判断、讲师、课程、案例、反馈和风险依据。</p>
                       <div class="relation-mini-pills"><span>N 个依据</span><span>N 个老师</span><span>N 门课</span><span>N 条风险</span></div>
                     </div>
                     <div class="relation-entity-card" data-kind="bid">
@@ -6568,7 +7181,7 @@
                 <div class="relation-query-grid">
                   <div class="relation-query-card">
                     <h4>例 1：从“王老师”出发</h4>
-                    <p>业务问“王老师适不适合 A 银行这次需求”，系统不是只看讲师简介，而是把所有关联一起拉出来。</p>
+                    <p>关联证据合并展示。</p>
                     <div class="relation-count-grid">
                       <div class="relation-count"><strong>6</strong><span>可讲课程</span></div>
                       <div class="relation-count"><strong>19</strong><span>历史项目</span></div>
@@ -6593,7 +7206,7 @@
                   </div>
                 </div>
 
-                <table class="relation-matrix-table" summary="多对多关联示例">
+                <table class="relation-matrix-table" summary="多对多关联关系">
                   <thead>
                     <tr><th>选中实体</th><th>能反查到</th><th>给业务带来的效果</th></tr>
                   </thead>
@@ -6615,7 +7228,7 @@
                   <span class="kb-legend-item"><span class="kb-dot proposal"></span>方案</span>
                   <span class="kb-legend-item"><span class="kb-dot feedback"></span>反馈</span>
                   <span class="kb-legend-spacer"></span>
-                  <span class="muted small">线粗细 = 关系频次 · 鼠标悬停可高亮邻居（演示版静态）</span>
+                  <span class="muted small">线粗细 = 关系频次 · 鼠标悬停可查看相邻关系</span>
                 </div>
 
                 <svg class="kb-graph-svg" viewBox="0 0 1200 540" preserveAspectRatio="xMidYMid meet" aria-label="知识库实体关系图">
@@ -6752,7 +7365,7 @@
 
                 <div class="kb-graph-caption">
                   <strong>这就是"图"</strong>
-                  <p class="small muted">每个圆是一个实体；每条线是一条关系。底层用图数据库存储，AI 任何 SKILL 都能 1–2 跳跨库查询：从 A 银行跳到合作过的讲师，再跳到讲师讲过的课程，再跳到课程出现过的方案，全程毫秒级。下面 3 张表是把同样的图按 3 个维度展开成"360° 视图"看的样子。</p>
+                  <p class="small muted">实体和关系支持跨库检索。</p>
                 </div>
               </div>
 
@@ -7033,7 +7646,7 @@
 
               <div class="callout blue" style="margin-top: 16px;">
                 <strong>"完全打通"在哪里？</strong>
-                <p class="small muted">完全打通不是把资料都塞进一个大表，而是在每个库之间建立可追溯关系。任意 Skill 执行时都可以从一个实体出发，多跳找到相关老师、课程、项目、需求、方案、投标和反馈，不用分别去多个系统手动查。</p>
+                <p class="small muted">跨库关系已建立，可从任意实体追溯到相关资料。</p>
               </div>
             </div>
           </div>
@@ -7046,7 +7659,7 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">全部知识库 · 全局搜索</h2>
-                <p class="panel-note">在所有知识库（培训 6 类 + 投标 6 类 + 跨业务 2 类）里搜讲师 / 课程 / 案例 / 客户 / 方案 / 投标 / 反馈。一个入口搜全部。</p>
+                <p class="panel-note">讲师 / 课程 / 案例 / 客户 / 方案 / 投标 / 反馈</p>
               </div>
               <div class="kb-search-scope">
                 <span class="kb-search-scope-num">14</span><span class="muted small">个知识库 · </span>
@@ -7198,32 +7811,10 @@
           <div class="panel">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">线上知识库资料入库流程</h2>
-                <p class="panel-note">业务上传最新资料样本，经授权后沉淀到线上知识库。</p>
-              </div>
-              <button class="btn primary"><span class="btn-icon">＋</span>创建入库批次</button>
-            </div>
-            <div class="panel-body">
-              <div class="pipeline">
-                <div class="pipe-step active"><span class="pipe-no">1</span><strong>授权上传</strong><p class="small muted">业务上传文件或资料包。</p></div>
-                <div class="pipe-step active"><span class="pipe-no">2</span><strong>解析抽取</strong><p class="small muted">正文、表格、图片 OCR、PPT 页。</p></div>
-                <div class="pipe-step active"><span class="pipe-no">3</span><strong>分类建议</strong><p class="small muted">推荐讲师库、课程库、案例库等。</p></div>
-                <div class="pipe-step"><span class="pipe-no">4</span><strong>标签确认</strong><p class="small muted">行业、对象、课程、讲师、客户。</p></div>
-                <div class="pipe-step"><span class="pipe-no">5</span><strong>权限设置</strong><p class="small muted">可引用范围、保留周期。</p></div>
-                <div class="pipe-step"><span class="pipe-no">6</span><strong>正式入库</strong><p class="small muted">写入知识库并建立索引。</p></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="panel" style="margin-top: 14px;">
-            <div class="panel-header">
-              <div>
                 <h2 class="panel-title">批量入库工作台</h2>
-                <p class="panel-note">实际生产中一次拖入几十到几百份资料；AI 批量提炼后按规则自动分流：高置信自动入库 / 待人工 / 冲突。业务只需要处理少量例外。</p>
+                <p class="panel-note">高置信自动入库，异常进入人工确认。</p>
               </div>
               <div class="top-actions">
-                <span class="status green">AI 处理中</span>
-                <button class="btn">查看历史批次</button>
               </div>
             </div>
             <div class="panel-body">
@@ -7243,11 +7834,15 @@
 
               <div class="batch-rules">
                 <div class="batch-rules-head">⚙️ AI 批量处理规则（业务可改）</div>
+                <div class="batch-rules-mode-label small muted" style="margin-bottom: 6px;">处理模式（二选一）</div>
+                <div class="batch-rules-body" style="margin-bottom: 10px;">
+                  <label class="ingest-checkbox checked"><input type="radio" name="batch-mode" checked><span>自动入库 · 置信 ≥ 85% 自动入库，其余进人工队列</span></label>
+                  <label class="ingest-checkbox"><input type="radio" name="batch-mode"><span>全人工队列 · 关闭自动入库，所有文件等待人工确认（慎用）</span></label>
+                </div>
+                <div class="batch-rules-mode-label small muted" style="margin-bottom: 6px;">辅助规则</div>
                 <div class="batch-rules-body">
-                  <label class="ingest-checkbox checked"><input type="checkbox" checked><span>高置信 ≥ 85% 自动入库（不进人工队列）</span></label>
                   <label class="ingest-checkbox checked"><input type="checkbox" checked><span>同批次同目录 → 同主分类</span></label>
                   <label class="ingest-checkbox checked"><input type="checkbox" checked><span>重复文件检测（标题 + 内容哈希）→ 自动合并</span></label>
-                  <label class="ingest-checkbox"><input type="checkbox"><span>全部进人工队列（关闭自动入库，慎用）</span></label>
                 </div>
               </div>
 
@@ -7257,7 +7852,10 @@
                     <strong>当前批次：金融行业讲师资料补齐</strong>
                     <span class="muted small">186 文件 · 上传于 25 分钟前</span>
                   </div>
-                  <span class="status blue">AI 批量处理中</span>
+                  <div style="display:flex; gap:6px; align-items:center;">
+                    <span class="status teal">售前</span>
+                    <span class="status blue">处理中 171 / 186</span>
+                  </div>
                 </div>
 
                 <div class="batch-progress-row">
@@ -7273,7 +7871,7 @@
                     <div class="batch-split-meta">置信 ≥ 85% · 已写入索引</div>
                   </div>
                   <div class="batch-split-card manual">
-                    <div class="batch-split-num">32</div>
+                    <div class="batch-split-num">17</div>
                     <div class="batch-split-label">⚠ 待人工确认</div>
                     <div class="batch-split-meta">置信偏低 / 缺元数据 / 多归属</div>
                   </div>
@@ -7285,7 +7883,7 @@
                 </div>
 
                 <div class="batch-queue-head">
-                  <strong>待人工确认队列（32）</strong>
+                  <strong>待人工确认队列（17）</strong>
                   <span class="muted small">业务点击文件查看详情 →</span>
                 </div>
                 <table class="batch-queue-table" summary="待人工队列">
@@ -7298,7 +7896,7 @@
                       <td><strong>王老师_金融领导力_2026版.docx</strong><span class="muted small">DOC · 1.4 MB</span></td>
                       <td><span class="status amber">标签置信低</span></td>
                       <td>72%</td>
-                      <td><button class="btn compact">查看（弹窗）</button></td>
+                      <td><button class="btn compact">查看</button></td>
                     </tr>
                     <tr>
                       <td><input type="checkbox"></td>
@@ -7309,7 +7907,7 @@
                     </tr>
                     <tr>
                       <td><input type="checkbox"></td>
-                      <td><strong>李老师_零售管理_v3.docx</strong><span class="muted small">DOC · 980 KB</span></td>
+                      <td><strong>李老师_零售管理_v3.docx</strong><span class="muted small">DOC · 980 KB · <span class="status blue" style="padding:1px 6px;">💾 已暂存</span></span></td>
                       <td><span class="status amber">与库内 v2 冲突</span></td>
                       <td>78%</td>
                       <td><button class="btn compact">查看</button></td>
@@ -7322,7 +7920,7 @@
                       <td><button class="btn compact">查看</button></td>
                     </tr>
                     <tr>
-                      <td colspan="5" class="muted small" style="text-align: center; padding: 8px;">还有 28 个文件待确认 · <a href="#">展开全部</a></td>
+                      <td colspan="5" class="muted small" style="text-align: center; padding: 8px;">还有 13 个文件待确认 · <a href="#">展开全部</a></td>
                     </tr>
                   </tbody>
                 </table>
@@ -7341,12 +7939,13 @@
                   <button class="btn compact">查看全部</button>
                 </div>
                 <table summary="历史批次">
-                  <thead><tr><th>批次</th><th>文件数</th><th>自动入库</th><th>人工确认</th><th>状态</th><th>完成时间</th></tr></thead>
+                  <thead><tr><th>批次</th><th>业务线</th><th>文件数</th><th>自动入库</th><th>人工确认</th><th>状态</th><th>完成时间</th></tr></thead>
                   <tbody>
-                    <tr><td>制造业客户复盘样本</td><td>54</td><td>49</td><td>5</td><td><span class="status green">已入库</span></td><td>3 小时前</td></tr>
-                    <tr><td>课程包 2026 更新</td><td>238</td><td>—</td><td>—</td><td><span class="status blue">解析中 45%</span></td><td>—</td></tr>
-                    <tr><td>2025 历史方案归档</td><td>412</td><td>389</td><td>23</td><td><span class="status green">已入库</span></td><td>昨天</td></tr>
-                    <tr><td>讲师后台增量同步</td><td>168</td><td>168</td><td>0</td><td><span class="status green">已入库</span></td><td>昨天</td></tr>
+                    <tr><td>制造业客户复盘样本</td><td><span class="status teal">售前</span></td><td>54</td><td>49</td><td>5</td><td><span class="status green">已入库</span></td><td>3 小时前</td></tr>
+                    <tr><td>Q1 政采云投标历史归档</td><td><span class="status blue">投标</span></td><td>312</td><td>289</td><td>23</td><td><span class="status green">已入库</span></td><td>5 小时前</td></tr>
+                    <tr><td>课程包 2026 更新</td><td><span class="status teal">售前</span></td><td>238</td><td>—</td><td>—</td><td><span class="status blue">解析中 45%</span></td><td>—</td></tr>
+                    <tr><td>2025 历史方案归档</td><td><span class="status purple">共用</span></td><td>412</td><td>389</td><td>23</td><td><span class="status green">已入库</span></td><td>昨天</td></tr>
+                    <tr><td>讲师后台增量同步</td><td><span class="status teal">售前</span></td><td>168</td><td>168</td><td>0</td><td><span class="status green">已入库</span></td><td>昨天</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -7354,15 +7953,14 @@
             </div>
           </div>
 
-          <div class="modal-demo-wrapper" style="margin-top: 14px;">
-            <div class="modal-demo-caption">
-              <span class="modal-demo-tag">💡 弹窗演示</span>
-              业务点击上面"待人工队列"中某文件后，弹出下面这个对话框做单个文件确认。下面只是把弹窗的内部结构平铺出来给业务看。
-            </div>
+          <div class="modal-demo-wrapper" id="fileConfirmModal" data-open="false" role="dialog" aria-modal="true" aria-label="文件确认弹窗">
             <div class="modal-demo-frame">
               <div class="modal-demo-titlebar">
-                <span>📄 文件确认 · 王老师_金融领导力课纲_2026版.docx</span>
-                <span class="modal-demo-close">×</span>
+                <div class="modal-demo-titlebar-left">
+                  <span>📄 文件确认 · 王老师_金融领导力课纲_2026版.docx</span>
+                  <span class="status amber">人工确认中</span>
+                </div>
+                <button class="modal-demo-close" type="button" aria-label="关闭弹窗">×</button>
               </div>
               <div class="modal-demo-body">
 
@@ -7406,12 +8004,24 @@
                   </div>
                   <div class="ingest-field ingest-field-wide">
                     <label>目标知识库（可选预选 · AI 仍会再建议） <span class="muted small">业务清楚就直接选；不选则全交给 AI 判断</span></label>
-                    <div class="ingest-target-libs">
-                      <label class="ingest-pill checked"><input type="checkbox" checked><span>课程库</span></label>
-                      <label class="ingest-pill checked"><input type="checkbox" checked><span>方案素材库</span></label>
-                      <label class="ingest-pill"><input type="checkbox"><span>讲师库</span></label>
-                      <label class="ingest-pill"><input type="checkbox"><span>案例库</span></label>
-                      <label class="ingest-pill"><input type="checkbox"><span>客户与行业库</span></label>
+                    <div class="ingest-target-libs-group">
+                      <div class="ingest-target-libs-line">
+                        <span class="status teal">售前</span>
+                        <label class="ingest-pill checked"><input type="checkbox" checked><span>课程库</span></label>
+                        <label class="ingest-pill checked"><input type="checkbox" checked><span>方案素材库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>讲师库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>案例库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>客户与行业库</span></label>
+                      </div>
+                      <div class="ingest-target-libs-line">
+                        <span class="status blue">投标</span>
+                        <label class="ingest-pill"><input type="checkbox"><span>招标信息库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>历史赢标案例库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>标书模板库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>废标风险库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>竞品谍报库</span></label>
+                        <label class="ingest-pill"><input type="checkbox"><span>投标复盘库</span></label>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -7421,63 +8031,160 @@
                 <div class="ingest-detail-section-head">
                   <span class="ingest-section-tag ai">②</span>
                   <strong>AI 提炼重点</strong>
-                  <span class="muted small">模型自动产出 / 可校对</span>
+                  <span class="muted small">模型自动产出 / 人工可改</span>
+                  <span class="ingest-section-banner">✏️ 所有内容可编辑</span>
                 </div>
 
                 <div class="ingest-ai-block">
-                  <div class="ingest-ai-block-head">📝 摘要</div>
+                  <div class="ingest-ai-block-head">
+                    <span>📝 摘要（可编辑）</span>
+                    <button class="btn compact" type="button">🔄 重新提炼</button>
+                  </div>
                   <div class="ingest-ai-block-body">
-                    本课纲面向金融行业中高层管理者，围绕"跨部门协同、决策落地、行动计划"三条主线展开，包含 4 大模块共 12 个工作坊。课纲突出案例驱动，配套 6 份银行业真实案例、3 套高管共创工具，区别于纯理论讲授。建议适用：行长班、中层干部班、跨条线协同培训。
-                    <button class="btn compact" type="button">重新提炼</button>
+                    <textarea class="ingest-summary-edit" rows="6">本课纲面向金融行业中高层管理者（行长班 / 中层干部班 / 跨条线协同），围绕「跨部门协同 · 决策落地 · 行动计划」三条主线展开，共 4 大模块 12 个工作坊单元（开场认知 + 案例拆解 + 共创工作坊 + 高管共识收口）。配套 6 份银行业真实案例（招行、工行、浦发、建行、农行、中信）、3 套高管共创工具（OST 开放空间、World Café、行动学习）。建议时长 2 天 1 晚（约 16 课时），区别于纯理论讲授。讲师为王老师（中欧管理学院特聘教授，14 年金融高管培训经验），跟 A 银行 2025 领导力项目延续。</textarea>
                   </div>
                 </div>
 
                 <div class="ingest-ai-grid">
                   <div class="ingest-ai-card">
-                    <div class="ingest-ai-card-head">🏷️ 关键标签</div>
+                    <div class="ingest-ai-card-head">🏷️ 关键标签（可增删 · 分类标注）</div>
                     <div class="ingest-ai-card-body">
+                      <div class="tag-list" style="margin-bottom:4px;"><span class="muted small" style="width:100%;">行业 · 主题</span></div>
                       <div class="tag-list">
-                        <span class="tag ai-suggested">金融 ✓</span>
-                        <span class="tag ai-suggested">领导力 ✓</span>
-                        <span class="tag ai-suggested">中高层 ✓</span>
-                        <span class="tag ai-suggested">跨部门协同 ✓</span>
-                        <span class="tag ai-suggested">案例驱动 ✓</span>
-                        <span class="tag ai-suggested-low">银行业 ?</span>
+                        <span class="tag ai-suggested removable">金融 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">银行业 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">领导力 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">跨部门协同 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">决策落地 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">行动计划 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                      </div>
+                      <div class="tag-list" style="margin: 8px 0 4px;"><span class="muted small" style="width:100%;">群体</span></div>
+                      <div class="tag-list">
+                        <span class="tag ai-suggested removable">高管 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">行长班 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">中层干部 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                      </div>
+                      <div class="tag-list" style="margin: 8px 0 4px;"><span class="muted small" style="width:100%;">教学方法</span></div>
+                      <div class="tag-list">
+                        <span class="tag ai-suggested removable">案例驱动 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested removable">共创工作坊 ✓<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
+                        <span class="tag ai-suggested-low removable" data-tooltip="embedding 相似度 0.62 · 文中只提及 1 次 · 上下文不明确（疑似 OST 工具的别名）">沙盘演练 ?<button class="tag-remove" type="button" aria-label="移除标签">×</button></span>
                       </div>
                       <div class="ingest-ai-actions">
-                        <span class="muted small">AI 建议 6 个，5 个已采纳；"银行业"置信度低，待确认</span>
+                        <span class="muted small">点 × 移除 · "沙盘演练" 置信低待人工确认</span>
                         <button class="btn compact">+ 添加</button>
                       </div>
                     </div>
                   </div>
                   <div class="ingest-ai-card">
-                    <div class="ingest-ai-card-head">🔗 识别的关键实体</div>
+                    <div class="ingest-ai-card-head">🔗 识别的关键实体（可改）</div>
                     <div class="ingest-ai-card-body">
-                      <ul class="ingest-entity-list">
-                        <li><span class="entity-type">讲师</span>王老师 <span class="entity-confidence">置信 99%</span></li>
-                        <li><span class="entity-type">课程</span>金融行业领导力 <span class="entity-confidence">置信 96%</span></li>
-                        <li><span class="entity-type">客户</span>A 银行 <span class="entity-confidence">置信 88%</span></li>
-                        <li><span class="entity-type">行业</span>金融 / 银行业 <span class="entity-confidence">置信 95%</span></li>
+                      <ul class="ingest-entity-list editable">
+                        <li>
+                          <span class="entity-type">讲师</span>
+                          <input class="entity-value-input" type="text" value="王老师（中欧管理学院特聘教授）">
+                          <span class="entity-confidence" data-tooltip="embedding 相似度 0.97 · 全文共现 12 次 · 库内实体精确匹配">置信 99%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">课程</span>
+                          <input class="entity-value-input" type="text" value="金融行业领导力（4 模块 / 12 工作坊）">
+                          <span class="entity-confidence" data-tooltip="embedding 相似度 0.92 · 标题命中 + 章节命中 · 库内有同类记录">置信 96%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">关联客户</span>
+                          <input class="entity-value-input" type="text" value="A 银行（延续 2025 项目）">
+                          <span class="entity-confidence" data-tooltip="embedding 相似度 0.84 · 全文共现 4 次 · 库内客户档案匹配">置信 88%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">同业案例</span>
+                          <input class="entity-value-input" type="text" value="招行 · 工行 · 浦发 · 建行 · 农行 · 中信（6 家）">
+                          <span class="entity-confidence" data-tooltip="提及密集（6 家行各 1-3 次）· 案例段落明确列举 · 库内行业字典命中">置信 92%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">共创工具</span>
+                          <input class="entity-value-input" type="text" value="OST 开放空间 · World Café · 行动学习">
+                          <span class="entity-confidence" data-tooltip="工具名独立出现 3 次 · 段落主题强相关 · embedding 相似度 0.91">置信 94%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">适用群体</span>
+                          <input class="entity-value-input" type="text" value="行长班 / 中层干部班 / 跨条线协同">
+                          <span class="entity-confidence" data-tooltip="标题命中 · 课纲定位段直接说明 · 库内"群体"字典覆盖">置信 90%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">建议时长</span>
+                          <input class="entity-value-input" type="text" value="2 天 1 晚（约 16 课时）">
+                          <span class="entity-confidence" data-tooltip="推断自模块时长合计（16 课时） · 文档未直接声明 · 推理路径置信偏低">置信 86%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                        <li>
+                          <span class="entity-type">行业</span>
+                          <input class="entity-value-input" type="text" value="金融 / 银行业">
+                          <span class="entity-confidence" data-tooltip="embedding + tag 双重匹配 · 库内行业字典命中 · 上下文一致">置信 95%</span>
+                          <button class="entity-remove" type="button" aria-label="移除">×</button>
+                        </li>
+                      </ul>
+                      <div class="ingest-ai-actions">
+                        <span class="muted small">字段点击直接改 · 点 × 移除整条</span>
+                        <button class="btn compact">+ 新增实体</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="ingest-ai-card">
+                    <div class="ingest-ai-card-head">⏱️ 时效与版本变化（可改）</div>
+                    <div class="ingest-ai-card-body">
+                      <ul class="ingest-meta-list">
+                        <li>课纲版本：<input class="entity-value-input" type="text" value="2026 版" style="width: 100px; display: inline-block;"></li>
+                        <li>库内版本：2025 版 · 与本次 <strong>38%</strong> 内容差异</li>
+                        <li class="muted small" style="margin-top:6px;">主要变化：</li>
+                        <li>　+ 新增 OST 开放空间 / 行动学习 2 套共创工具</li>
+                        <li>　+ 增加 3 份 2025 银行案例（建行 · 农行 · 中信）</li>
+                        <li>　~ "决策落地"模块从 2 工作坊扩到 4 工作坊</li>
+                        <li>　− 删除"领导力理论流派"理论章节（占 12% 篇幅）</li>
+                        <li>建议处理：
+                          <select class="select" style="margin-left: 4px; padding: 4px 8px; font-size: 12px;">
+                            <option selected>更新现有权威记录（保留 2025 版审计）</option>
+                            <option>并行保留 2025 / 2026 两版</option>
+                            <option>暂不更新（待补依据）</option>
+                            <option>仅作为会话附件</option>
+                          </select>
+                        </li>
                       </ul>
                     </div>
                   </div>
                   <div class="ingest-ai-card">
-                    <div class="ingest-ai-card-head">⏱️ 时效与当前数据</div>
+                    <div class="ingest-ai-card-head">⚠️ 风险与缺口提示（可处理）</div>
                     <div class="ingest-ai-card-body">
-                      <ul class="ingest-meta-list">
-                        <li>版本：<strong>2026 版</strong></li>
-                        <li>对比库内：与 2025 版有 38% 内容差异</li>
-                        <li>建议处理：<span class="status green">更新现有权威记录</span></li>
-                      </ul>
-                    </div>
-                  </div>
-                  <div class="ingest-ai-card">
-                    <div class="ingest-ai-card-head">⚠️ 风险与缺口提示</div>
-                    <div class="ingest-ai-card-body">
-                      <ul class="ingest-meta-list">
-                        <li>缺少：客户授权对客引用范围确认</li>
-                        <li>缺少：与 A 银行其他课纲的关联标注</li>
-                        <li>无敏感信息识别命中</li>
+                      <ul class="ingest-risk-list">
+                        <li>
+                          <span><strong>缺：</strong>客户授权对客引用范围确认（A 银行）</span>
+                          <button class="btn compact tiny" type="button">标记已处理</button>
+                        </li>
+                        <li>
+                          <span><strong>缺：</strong>与 A 银行其他课纲（2024 / 2025 版）的关联标注</span>
+                          <button class="btn compact tiny" type="button">标记已处理</button>
+                        </li>
+                        <li>
+                          <span><strong>缺：</strong>讲师 2026 Q3 之后档期信息（需从讲师后台查）</span>
+                          <button class="btn compact tiny" type="button">已查询</button>
+                        </li>
+                        <li>
+                          <span><strong>缺：</strong>课程报价单 / 助教配置（讲师后台未同步）</span>
+                          <button class="btn compact tiny" type="button">已补</button>
+                        </li>
+                        <li>
+                          <span><strong>提示：</strong>12 个工作坊中 2 个 step 未明确（共创-step5、共识收口-step7）</span>
+                          <button class="btn compact tiny" type="button">退回补</button>
+                        </li>
+                        <li>
+                          <span class="muted">无敏感信息识别命中</span>
+                          <span class="muted small">无需处理</span>
+                        </li>
                       </ul>
                     </div>
                   </div>
@@ -7493,7 +8200,7 @@
                 <div class="ingest-confirm-grid">
                   <div class="ingest-confirm-block">
                     <div class="ingest-confirm-head">📚 知识库归类</div>
-                    <p class="small muted">AI 建议：主分类「课程库」，可同时进入「方案素材库」做引用。</p>
+                    <p class="small muted">AI 建议：课程库 / 方案素材库</p>
                     <div class="ingest-checkbox-list">
                       <label class="ingest-checkbox checked"><input type="checkbox" checked><span>课程库（主）</span></label>
                       <label class="ingest-checkbox checked"><input type="checkbox" checked><span>方案素材库（副）</span></label>
@@ -7501,7 +8208,7 @@
                   </div>
                   <div class="ingest-confirm-block">
                     <div class="ingest-confirm-head">👁 可见与引用范围</div>
-                    <p class="small muted">默认内部全员可见，对客引用需逐次审批。</p>
+                    <p class="small muted">内部可见；对客引用需审批。</p>
                     <div class="ingest-checkbox-list">
                       <label class="ingest-checkbox checked"><input type="checkbox" checked><span>内部方案可引用</span></label>
                       <label class="ingest-checkbox checked"><input type="checkbox" checked><span>对客版本可引用（需二次审批）</span></label>
@@ -7510,7 +8217,7 @@
                   </div>
                   <div class="ingest-confirm-block">
                     <div class="ingest-confirm-head">📅 当前记录与审计策略</div>
-                    <p class="small muted">确认后只保留一条当前权威数据；旧字段不作为业务可用版本出现，只进入审计记录，方便追溯谁在什么时间改过。</p>
+                    <p class="small muted">更新当前权威记录；旧字段进入审计记录。</p>
                     <div class="ingest-checkbox-list">
                       <label class="ingest-checkbox checked"><input type="radio" name="retention" checked><span>更新当前权威记录，并保留审计轨迹</span></label>
                       <label class="ingest-checkbox"><input type="radio" name="retention"><span>先不更新，退回业务补充依据</span></label>
@@ -7520,12 +8227,58 @@
                 </div>
               </div>
 
+              <div class="ingest-detail-section">
+                <div class="ingest-detail-section-head">
+                  <span class="ingest-section-tag ai">④</span>
+                  <strong>🔍 检索增强 · AI 预生成业务问法</strong>
+                  <span class="muted small">离线索引扩展（反向 HyDE / Doc2Query）· 提高 Agent / 直接搜索命中率</span>
+                  <span class="ingest-section-banner">✏️ 可校对增删</span>
+                </div>
+                <p class="small muted" style="margin: 4px 0 8px;">把这份课纲跟"业务可能问出口的问题"做关联索引，命中率从 ~0.6 提升到 ~0.9。业务方可以增 / 删 / 改问法，让真实查询场景被覆盖。</p>
+                <ul class="ingest-hyde-list">
+                  <li>
+                    <span class="hyde-q-icon">❓</span>
+                    <input class="entity-value-input" type="text" value="A 银行做过中高层领导力培训吗？谁带的？">
+                    <span class="hyde-hit">命中 §1 项目背景 + §2 讲师</span>
+                    <button class="entity-remove" type="button" aria-label="移除">×</button>
+                  </li>
+                  <li>
+                    <span class="hyde-q-icon">❓</span>
+                    <input class="entity-value-input" type="text" value="2 天 1 晚的金融高管培训大概多少钱？">
+                    <span class="hyde-hit">命中 §5 费用估算</span>
+                    <button class="entity-remove" type="button" aria-label="移除">×</button>
+                  </li>
+                  <li>
+                    <span class="hyde-q-icon">❓</span>
+                    <input class="entity-value-input" type="text" value="有招行 / 工行的同业案例可以引用吗？">
+                    <span class="hyde-hit">命中 §3 课程 + 同业案例实体</span>
+                    <button class="entity-remove" type="button" aria-label="移除">×</button>
+                  </li>
+                  <li>
+                    <span class="hyde-q-icon">❓</span>
+                    <input class="entity-value-input" type="text" value="王老师 6 月下旬有档期吗？报价多少？">
+                    <span class="hyde-hit">命中 §2 讲师 + 讲师后台同步数据</span>
+                    <button class="entity-remove" type="button" aria-label="移除">×</button>
+                  </li>
+                  <li>
+                    <span class="hyde-q-icon">❓</span>
+                    <input class="entity-value-input" type="text" value="行长班和中层干部班课程内容怎么差异化？">
+                    <span class="hyde-hit">命中 §3 课程 + 适用群体实体</span>
+                    <button class="entity-remove" type="button" aria-label="移除">×</button>
+                  </li>
+                </ul>
+                <div class="ingest-ai-actions">
+                  <span class="muted small">AI 生成 5 条 · 命中率从 ~0.6 → ~0.9</span>
+                  <button class="btn compact">+ 添加问法</button>
+                  <button class="btn compact">🔄 让 AI 重新生成</button>
+                </div>
+              </div>
+
               <div class="ingest-action-bar">
-                <button class="btn">⌫ 关闭弹窗</button>
-                <button class="btn">💾 暂存草稿</button>
-                <button class="btn">🔄 让 AI 重新提炼</button>
-                <button class="btn">↩ 退回业务补充</button>
-                <button class="btn primary">✓ 确认并入库</button>
+                <button class="btn" type="button">💾 暂存修改</button>
+                <button class="btn" type="button" data-action="reject-upload">↩ 退回业务补充</button>
+                <button class="btn" type="button">✓ 仅入库</button>
+                <button class="btn primary" type="button">✓ 入库并下一条 →</button>
               </div>
 
               </div><!-- /modal-demo-body -->
@@ -7538,23 +8291,23 @@
           <div class="grid cols-4">
             <div class="metric">
               <div class="metric-label">待确认更新</div>
-              <div class="metric-value">128</div>
-              <div class="metric-sub">需要判断是否覆盖当前权威数据</div>
+              <div class="metric-value">79</div>
+              <div class="metric-sub">售前 60 · 投标 19（跟看板 KPI 同口径）</div>
             </div>
             <div class="metric">
               <div class="metric-label">高优先级</div>
               <div class="metric-value">14</div>
-              <div class="metric-sub">影响在跑方案 / 待对客的资料</div>
+              <div class="metric-sub">售前 11 · 投标 3 · 影响在跑方案 / 待对客</div>
             </div>
             <div class="metric">
               <div class="metric-label">影响下游引用</div>
-              <div class="metric-value">386</div>
-              <div class="metric-sub">方案 / 课程匹配 / 检索结果</div>
+              <div class="metric-value">312</div>
+              <div class="metric-sub">79 条更新涉及 方案 / 课程匹配 / 检索 的 312 处引用</div>
             </div>
             <div class="metric">
               <div class="metric-label">可批量建议</div>
-              <div class="metric-value">89</div>
-              <div class="metric-sub">置信度 ≥ 90% 的明显更新建议</div>
+              <div class="metric-value">49</div>
+              <div class="metric-sub">售前 38 · 投标 11 · 置信度 ≥ 90% 的明显更新</div>
             </div>
           </div>
 
@@ -7562,9 +8315,10 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">当前数据更新确认 · 李老师（讲师 ID: L0042）</h2>
-                <p class="panel-note">知识库里最终只保留一份当前权威数据。业务上传的新资料先作为“更新候选”比对；确认后覆盖旧字段，并保留来源、时间和操作人作为审计记录。</p>
+                <p class="panel-note">当前权威数据与更新候选比对</p>
               </div>
               <div class="top-actions">
+                <span class="status teal">售前</span>
                 <span class="status amber">高优先级</span>
                 <button class="btn compact">下一个待确认 →</button>
               </div>
@@ -7706,7 +8460,7 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">李老师资料 · 更新审计记录</h2>
-                <p class="panel-note">业务使用时只看到一条当前权威数据；下面记录的是历史修改来源，方便追溯，不代表多份数据并存。</p>
+                <p class="panel-note">历史修改记录</p>
               </div>
             </div>
             <div class="panel-body">
@@ -7751,10 +8505,10 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">待确认更新队列</h2>
-                <p class="panel-note">128 条更新待确认；其中 89 条 AI 高置信，可批量按 AI 建议更新当前记录；39 条需要业务介入。</p>
+                <p class="panel-note">79 条待确认 · 49 条高置信 · 售前 60 / 投标 19</p>
               </div>
               <div class="top-actions">
-                <button class="btn">按 AI 建议批量更新 89 条</button>
+                <button class="btn">按 AI 建议批量更新 49 条</button>
                 <button class="btn">导出待确认清单</button>
               </div>
             </div>
@@ -7785,6 +8539,7 @@
                   <tr>
                     <th><input type="checkbox"></th>
                     <th>对象</th>
+                    <th>业务线</th>
                     <th>待更新字段</th>
                     <th>下游影响</th>
                     <th>AI 建议</th>
@@ -7797,6 +8552,7 @@
                   <tr>
                     <td><input type="checkbox"></td>
                     <td><strong>李老师</strong><span class="muted small">讲师</span></td>
+                    <td><span class="status teal">售前</span></td>
                     <td>专长 / 课程 / 报价 +3 字段</td>
                     <td>8 份方案 · 2 个在跑</td>
                     <td>更新当前记录</td>
@@ -7807,6 +8563,7 @@
                   <tr>
                     <td><input type="checkbox"></td>
                     <td><strong>王老师</strong><span class="muted small">讲师 · 课程</span></td>
+                    <td><span class="status teal">售前</span></td>
                     <td>课纲 v2 vs v3</td>
                     <td>22 份方案 · A 银行项目</td>
                     <td>更新为 2026 版字段</td>
@@ -7816,7 +8573,19 @@
                   </tr>
                   <tr>
                     <td><input type="checkbox"></td>
+                    <td><strong>标书模板库_主标 v4</strong><span class="muted small">模板</span></td>
+                    <td><span class="status blue">投标</span></td>
+                    <td>评分维度 + 价格分模板</td>
+                    <td>影响 6 个 Q2 在投项目</td>
+                    <td>采纳新版（评分细则更明确）</td>
+                    <td>94%</td>
+                    <td><span class="status red">极高</span></td>
+                    <td><span class="status amber">待确认</span></td>
+                  </tr>
+                  <tr>
+                    <td><input type="checkbox"></td>
                     <td><strong>制造业复盘案例</strong><span class="muted small">案例</span></td>
+                    <td><span class="status teal">售前</span></td>
                     <td>对客可引用范围</td>
                     <td>3 份方案待对客</td>
                     <td>需业务确认</td>
@@ -7827,6 +8596,7 @@
                   <tr>
                     <td><input type="checkbox"></td>
                     <td><strong>金融行业领导力 课程</strong><span class="muted small">课程</span></td>
+                    <td><span class="status teal">售前</span></td>
                     <td>课纲页码不一致</td>
                     <td>5 份方案</td>
                     <td>更新当前课纲页码</td>
@@ -7837,6 +8607,7 @@
                   <tr>
                     <td><input type="checkbox"></td>
                     <td><strong>张老师</strong><span class="muted small">讲师</span></td>
+                    <td><span class="status teal">售前</span></td>
                     <td>合作状态待核实</td>
                     <td>14 份方案 · 1 个在跑</td>
                     <td>需业务确认（涉及暂停）</td>
@@ -7845,7 +8616,7 @@
                     <td><span class="status red">需负责人</span></td>
                   </tr>
                   <tr>
-                    <td colspan="8" class="muted small" style="text-align: center; padding: 8px;">还有 123 条待确认更新 · <a href="#">展开全部</a></td>
+                    <td colspan="9" class="muted small" style="text-align: center; padding: 8px;">还有 73 条待确认更新 · <a href="#">展开全部</a></td>
                   </tr>
                 </tbody>
               </table>
@@ -8002,7 +8773,7 @@
             <div class="panel-header">
               <div>
                 <h2 class="panel-title">评分模型 · 用在哪里</h2>
-                <p class="panel-note">这套模型决定 @讲师匹配 / @课程匹配 / @方案草稿 Skill 在排序候选时怎么打分。业务调权重后，后续检索和推荐会按新规则重排。</p>
+                <p class="panel-note">这套模型决定 @讲师匹配 / @课程匹配 / @方案输出 Skill 在排序候选时怎么打分。业务调权重后，后续检索和推荐会按新规则重排。</p>
               </div>
               <div class="top-actions">
                 <span class="status green">当前模板：培训售前 v1.4</span>
@@ -8085,8 +8856,8 @@
           <div class="panel" style="margin-top: 14px;">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">当前权重下的实际打分示例</h2>
-                <p class="panel-note">用真实场景演示这套权重最终选了谁。场景：A 银行 2026 中高层领导力项目 · @讲师匹配 候选排序。</p>
+                <h2 class="panel-title">当前权重下的实际打分</h2>
+                <p class="panel-note">场景：A 银行 2026 中高层领导力项目 · @讲师匹配 候选排序。</p>
               </div>
               <span class="status blue">实时计算 · 权重改了立刻重算</span>
             </div>
@@ -8160,7 +8931,7 @@
           <div class="panel" style="margin-top: 14px;">
             <div class="panel-header">
               <div>
-                <h2 class="panel-title">规则库样例 · 加分 / 扣分 / 一票否决</h2>
+                <h2 class="panel-title">规则库 · 加分 / 扣分 / 一票否决</h2>
                 <p class="panel-note">权重决定"算什么"，规则决定"怎么算"。下面这些规则会在打分过程中自动触发。</p>
               </div>
               <button class="btn primary">+ 新增规则</button>
@@ -8742,10 +9513,10 @@
   <script type="text/javascript">
     const viewMeta = {
       desktop: ["桌面工作台", "业务先在当前 Agent 窗口输入需求、@Skills 和上传资料，再查看运行过程、追问、确认和最终产物。"],
-      overview: ["管理总览", "桌面端内的知识库管理页：知识库资料上传、分类、直接搜索、当前数据确认和检索质量。"],
+      overview: ["数据看板", "知识库总量与健康 · Agent MCP 调用 · 直接搜索 · 外部数据源连接。"],
       todo: ["待办中心", ""],
       library: ["知识库分类", "按分类、标签、当前权威数据和权限组织业务资料，并支持直接搜索。"],
-      ingest: ["知识库资料上传", "业务上传最新样本，经授权后进入线上知识库。"],
+      ingest: ["知识库资料上传", "知识运营 / 业务负责人上传，给整个团队 + Agent 长期使用（不是 Agent 一次性附件入口）。"],
       authority: ["权威数据", "平台旧数据与业务上传新资料不一致时，由业务确认是否更新当前权威记录。"],
       scoring: ["标签与规则", "让 Agent 检索、匹配、排序和追问有统一业务标准。"],
       recommend: ["知识库检索测试", "验证知识库能否召回讲师、课程、案例和反馈依据。"],
@@ -8865,14 +9636,15 @@
     const flowJumpSelect = document.getElementById("flowJumpSelect");
     const flowActionControls = Array.from(document.querySelectorAll("[data-flow-choice], [data-flow-jump], #flowJumpSelect"));
     const flowComposerHints = [
-      "在这里确认 @需求分析 的拆解、补充资料，或要求重拆；点击发送会把下一轮输入追加到对话末尾。",
+      "确认 @需求分析、补资料或要求重拆。",
       "下一轮输入：回答 @需求分析 的最后确认点，确认无误后让 Agent 输出需求分析结论。",
       "下一轮输入：确认 @需求分析 结果后，再手动 @讲师匹配，不会自动进入下一个 Skill。",
       "下一轮输入：补充讲师权重和档期资料，让 @讲师匹配 继续计算。",
       "下一轮输入：确认讲师候选规则，要求保留最优候选和预算内备选。",
       "下一轮输入：讲师匹配确认后，再手动 @课程匹配。",
-      "下一轮输入：补充课程时长、班级拆分、访谈和必须保留的模块。",
-      "下一轮输入：课程匹配确认后，要求综上生成完整方案文档。"
+      "下一轮输入：补充班级拆分、训前访谈和必须保留/避开的模块。",
+      "下一轮输入：课程匹配后，对不满意的某块可要求局部重写，其余不动。",
+      "下一轮输入：课纲确认后，要求综上生成完整方案文档。"
     ];
     const flowBranchTurns = {
       revise: {
@@ -8903,10 +9675,10 @@
           control.disabled = true;
           control.setAttribute("aria-disabled", "true");
         });
-        setChoiceNote("完整文档已经生成。右侧 Artifacts 会出现最终方案，Sources 保留关键依据。", "good");
+        setChoiceNote("完整文档已经生成。右侧产物区会出现最终方案，Sources 保留关键依据。", "good");
         return;
       }
-      flowComposerHint.textContent = flowComposerHints[flowRevealStep] || "继续在这里输入下一轮确认、追问、补资料或 @Skill。";
+      flowComposerHint.textContent = flowComposerHints[flowRevealStep] || "继续确认、追问、补资料或 @Skill。";
       flowComposerSend.textContent = flowRevealStep === 0 ? "确认并继续" : "继续追加";
       flowComposerSend.disabled = false;
       flowComposerSend.removeAttribute("aria-disabled");
@@ -8965,7 +9737,7 @@
       flowItems.forEach((item) => item.classList.remove("revealed"));
       document.querySelectorAll(".demo-branch-turn").forEach((item) => item.remove());
       document.body.classList.remove("flow-progress-active", "flow-finished");
-      setChoiceNote("真实产品里这些动作都来自用户在输入框里的确认、追问、补资料或继续 @Skill；demo 用按钮模拟。");
+      setChoiceNote("已等待用户确认、追问、补资料或继续 @Skill。");
       updateFlowComposer();
     }
 
@@ -9017,23 +9789,23 @@
       button.addEventListener("click", () => {
         const choice = button.dataset.flowChoice;
         if (choice === "confirm") {
-          setChoiceNote("已模拟用户确认：下一轮内容会追加到当前对话末尾。", "good");
+          setChoiceNote("已确认，下一轮内容会追加到当前对话末尾。", "good");
           advanceFlow();
           return;
         }
         if (choice === "supplement") {
-          setChoiceNote("已模拟补资料/追问：Agent 会基于补充内容继续当前 Skill，而不是自动跳到下一个 Skill。", "good");
+          setChoiceNote("已补充，Agent 将继续当前 Skill。", "good");
           advanceFlow();
           return;
         }
         if (choice === "revise") {
           appendBranchTurn("revise");
-          setChoiceNote("已模拟重拆分支：流程暂停在当前 Skill，用户可以继续追问或之后再确认继续。", "warn");
+          setChoiceNote("已要求重拆，流程暂停在当前 Skill。", "warn");
           return;
         }
         if (choice === "low") {
           appendBranchTurn("low");
-          setChoiceNote("已模拟低可信继续：下一步会继续，但风险标记会保留。", "warn");
+          setChoiceNote("已低可信继续，风险标记保留。", "warn");
           advanceFlow();
         }
       });
@@ -9044,7 +9816,7 @@
       const target = value === "next" ? flowRevealStep + 1 : Number(value);
       if (!Number.isFinite(target)) return;
       revealFlowStep(target);
-      setChoiceNote(value === "next" ? "已追加下一轮。" : "已按演示选择直接展开到指定 Skill；真实产品里对应用户手动输入 @Skill。", "good");
+      setChoiceNote(value === "next" ? "已追加下一轮。" : "已展开到指定 Skill。", "good");
     });
 
     document.querySelector("[data-flow-reset]")?.addEventListener("click", () => {
@@ -9153,6 +9925,332 @@
       input.addEventListener("input", updateWeights);
     });
     updateWeights();
+
+    // === 文件确认 弹窗（资料上传页）===
+    (function () {
+      const modal = document.getElementById("fileConfirmModal");
+      if (!modal) return;
+      const closeBtn = modal.querySelector(".modal-demo-close");
+
+      function openModal() {
+        modal.setAttribute("data-open", "true");
+        document.body.style.overflow = "hidden";
+      }
+      function closeModal() {
+        modal.setAttribute("data-open", "false");
+        document.body.style.overflow = "";
+      }
+
+      // 触发器：批量队列里的「查看」按钮
+      document.querySelectorAll(".batch-queue-table button.btn.compact").forEach((btn) => {
+        btn.addEventListener("click", openModal);
+      });
+
+      closeBtn?.addEventListener("click", closeModal);
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && modal.getAttribute("data-open") === "true") closeModal();
+      });
+
+      // 退回业务补充 → 弹简易 prompt 让用户写理由
+      modal.querySelectorAll('[data-action="reject-upload"]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const reason = window.prompt("请输入退回理由（会通知原上传人）：");
+          if (reason && reason.trim()) {
+            window.alert("已退回。理由「" + reason.trim() + "」已发送给原上传人，文件状态变为「退回中」。");
+            closeModal();
+          }
+        });
+      });
+
+      // 标签 / 实体的 × 移除 demo（点击直接从 DOM 移除）
+      modal.addEventListener("click", (e) => {
+        const removeBtn = e.target.closest(".tag-remove, .entity-remove");
+        if (!removeBtn) return;
+        e.stopPropagation();
+        const item = removeBtn.closest(".tag, li");
+        if (item) item.remove();
+      });
+    })();
+
+    // === File Preview Panel ===
+    (function () {
+      const ARTIFACTS = {
+        "req-analysis": {
+          icon: "MD",
+          title: "需求分析.md",
+          html: `
+            <div class="file-preview-meta">@需求分析 · 资料完整性检查后输出</div>
+            <h2>需求摘要</h2>
+            <ul>
+              <li><strong>客户</strong>：A 银行</li>
+              <li><strong>部门</strong>：培训中心</li>
+              <li><strong>培训主题</strong>：中高层领导力 · 跨部门协同 · 管理升级</li>
+              <li><strong>培训人群</strong>：中高层管理者 约 80 人</li>
+              <li><strong>培训天数</strong>：2 天 1 晚（约 16 课时）</li>
+              <li><strong>培训目标</strong>：高管共识 + 小组行动计划 + 1 个月复盘</li>
+              <li><strong>预算</strong>：45–60 万</li>
+              <li><strong>交付时间</strong>：6 月下旬</li>
+            </ul>
+            <h2>需求主线</h2>
+            <p>围绕跨部门协同、管理升级和高管共识，设计真实案例拆解与行动计划工作坊。</p>
+            <h2>已确认依据</h2>
+            <ul>
+              <li>2026战略沟通补充.docx</li>
+              <li>近一年项目反馈汇总.xlsx</li>
+              <li>@需求分析 对话确认</li>
+            </ul>
+          `,
+        },
+        "instructor-rec": {
+          icon: "MD",
+          title: "讲师推荐.md",
+          html: `
+            <div class="file-preview-meta">@讲师匹配 · 4 候选 + 风险</div>
+            <h2>王老师</h2>
+            <ul>
+              <li>中欧管理学院特聘教授 · 北京</li>
+              <li>标签：金融行业 · 领导力 · 高管班</li>
+              <li>14 年金融高管培训经验，服务过招行 / 工行 / 浦发等同业，擅长跨部门协同工作坊与共创输出</li>
+              <li>★ 4.8（32 次）· 报价 ¥38,000/天 · 有银行行业课纲</li>
+              <li>风险：报价略高；需提前锁定 6 月下旬档期</li>
+            </ul>
+            <h2>刘老师 + 助教</h2>
+            <ul>
+              <li>资深领导力顾问 · 上海</li>
+              <li>标签：国有大行 · 工作坊 · 行动计划</li>
+              <li>国有大行高管行动计划辅导专家，工作坊控场扎实，预算友好</li>
+              <li>★ 4.7（28 次）· 报价 ¥22,000/天（含助教）· 有领导力共创课纲</li>
+              <li>风险：高管共创经验略弱；需补充金融案例包</li>
+            </ul>
+            <h2>陈老师</h2>
+            <ul>
+              <li>知名领导力培训师 · 深圳</li>
+              <li>标签：领导力沙盘 · 跨行业 · 共创</li>
+              <li>擅长领导力沙盘与行动计划共创，可作为局部模块讲师</li>
+              <li>★ 4.6（19 次）· 报价 ¥25,000/天 · 有领导力沙盘工具包</li>
+              <li>风险：银行行业案例不足</li>
+            </ul>
+            <h2>张老师</h2>
+            <ul>
+              <li>实战派培训师 · 杭州</li>
+              <li>标签：工具实操 · 通用行业 · 小组辅导</li>
+              <li>适合补充工具实操和小组辅导，预算友好</li>
+              <li>★ 4.5（15 次）· 报价 ¥15,000/天 · 无银行案例课纲</li>
+              <li>风险：不建议作为主讲</li>
+            </ul>
+            <h2>推荐建议</h2>
+            <p>已锁定 王老师（第一候选）+ 刘老师组合（预算内备选）。客户最终决定后锁档期，其余两位作为局部模块备选。</p>
+            <h2>依据</h2>
+            <p>需求分析.md · 2026讲师档期与报价.xlsx · 讲师反馈与评分表.xlsx</p>
+          `,
+        },
+        "course-plan": {
+          icon: "MD",
+          title: "课程方案.md",
+          html: `
+            <div class="file-preview-meta">@课程匹配 · 2 天 1 晚 · 3 块复用老师课纲库 + 1 块 AI 新生成</div>
+            <h2>训前 · 主讲准备（Day -7 ~ Day -3）</h2>
+            <ul>
+              <li>讲师：王老师 · 选用方式：王老师课纲库 · 直接复用</li>
+              <li>课纲来源：王老师_金融领导力课纲_2026版.docx · §「高管访谈框架」</li>
+              <li>访谈 6-8 位关键管理者，每人 30 min · 半结构化提纲 6 题</li>
+              <li>输出：5 个核心协同卡点 + 案例素材清单</li>
+            </ul>
+            <h2>王老师 · Day 1 全天 课纲</h2>
+            <p>选用方式：王老师课纲库 · 直接复用 · 来源：王老师_金融领导力课纲_2026版.docx · §「金融跨部门协同」</p>
+            <p><strong>Day 1 上午 · 跨部门协同卡点拆解</strong></p>
+            <ul>
+              <li>金融行业协同案例引入（20 min）</li>
+              <li>5W2H 拆解方法 + 小组练习（60 min）</li>
+              <li>全员对照 + 卡点提炼（30 min）</li>
+            </ul>
+            <p><strong>Day 1 下午 · 真实案例复盘</strong></p>
+            <ul>
+              <li>招行 / 工行 / 浦发同业案例引入</li>
+              <li>客户近一年项目反馈拆解</li>
+              <li>讲师串讲 + 卡点提炼</li>
+            </ul>
+            <h2>刘老师 + 助教 · Day 1 晚 + Day 2 上午 课纲</h2>
+            <p>选用方式：王老师课纲库（工作坊工具包）· 直接复用 · 来源：王老师工作坊工具包.docx · §「共创工作坊 4 步法」</p>
+            <p><strong>Day 1 晚 · 跨部门共创工作坊（启动）</strong></p>
+            <ul>
+              <li>第 1 步：定义议题（30 min）</li>
+              <li>第 2 步：散点产出（45 min · 便签 + 静默书写）</li>
+              <li>4 组分组共创 · 行动计划草稿</li>
+            </ul>
+            <p><strong>Day 2 上午 · 共创工作坊（收口）</strong></p>
+            <ul>
+              <li>第 3 步：聚类排序（30 min · 点投票）</li>
+              <li>第 4 步：行动计划细化（45 min）</li>
+              <li>责任人 + 1 个月复盘节点确认</li>
+            </ul>
+            <h2>王老师 · Day 2 下午 课纲</h2>
+            <p>选用方式：AI 新生成（王老师 / 刘老师课纲库均无完全匹配的高管共识收口模块）</p>
+            <p>生成依据：王老师工具包 · §「共识对齐工具」+ 刘老师历史项目 · §「高管复盘节奏」+ A 银行需求</p>
+            <p><strong>Day 2 下午 · 高管共识收口</strong></p>
+            <ul>
+              <li>4 组行动计划展示（5 min × 2 轮 · 30 min）</li>
+              <li>异议澄清（结构化提问 + 主讲串场 · 30 min）</li>
+              <li>高管共识投票 + 收口陈词（分管副行长 take-away · 30 min）</li>
+            </ul>
+            <h2>依据</h2>
+            <p>需求分析.md · 讲师推荐.md · 王老师_金融领导力课纲_2026版.docx · 王老师工作坊工具包.docx · 2025领导力项目复盘.pptx</p>
+          `,
+        },
+        "delivery-plan": {
+          icon: "MD",
+          title: "交付计划与风险.md",
+          html: `
+            <div class="file-preview-meta">@方案输出 · 交付节奏 + 风险 + 资源依赖</div>
+            <h2>交付节奏</h2>
+            <ul>
+              <li>6 月 21 日 · D1：训前诊断 + 案例复盘</li>
+              <li>6 月 28 日 · D2 上：跨部门共创工作坊；D2 晚：行动计划起草</li>
+              <li>7 月 5 日 · 高管共识收口 + 复盘节点交付</li>
+            </ul>
+            <h2>关键风险</h2>
+            <ul>
+              <li>王老师 6 月下旬档期 70% 概率冲突 → 已备 刘老师 + 助教组合</li>
+              <li>客户部门归属待确认 → 可能影响访谈名单和复盘汇报路径</li>
+            </ul>
+            <h2>资源依赖</h2>
+            <ul>
+              <li>场地：80 人会议室 + 4 个分组讨论区</li>
+              <li>餐饮：午餐 + 晚餐 + D2 晚加点</li>
+              <li>外部支持：训前访谈预约协调（客户 HR / 培训中心）</li>
+            </ul>
+          `,
+        },
+        "full-proposal": {
+          icon: "DOC",
+          title: "A 银行 完整方案.docx",
+          html: `
+            <div class="file-preview-meta">合订本 · 由 4 个子文档拼装 + §5 费用自动计算 · 培训方案标准版 v3.2 模板</div>
+            <h1>A 银行 2026 中高层领导力培训方案</h1>
+            <h2>§1 项目背景与目标</h2>
+            <div class="file-preview-meta">← 需求分析.md</div>
+            <p>A 银行 2026 年战略主线是跨部门协同与管理升级。本次培训目标是形成高管共识 + 小组行动计划 + 1 个月复盘机制。培训人群为中高层管理者约 80 人，预算 45–60 万，2 天 1 晚于 6 月下旬交付。</p>
+            <h2>§2 讲师团队</h2>
+            <div class="file-preview-meta">← 讲师推荐.md</div>
+            <p>主讲：王老师（中欧管理学院特聘教授）。预算内备选：刘老师 + 助教（资深领导力顾问）。两位均覆盖金融行业经验、工作坊控场和高管共创三个核心维度。</p>
+            <h2>§3 课程课纲</h2>
+            <div class="file-preview-meta">← 课程方案.md</div>
+            <p>4 个模块：训前诊断 → 真实案例复盘 → 跨部门共创工作坊 → 高管共识收口。3 个模块直接复用老师课纲库 / 历史项目，1 个为 AI 新生成（高管共识收口）。每模块含时长、关键活动、输出物。</p>
+            <h2>§4 交付成果与风险</h2>
+            <div class="file-preview-meta">← 交付计划与风险.md</div>
+            <p>交付节奏：6 月 21 日 / 6 月 28 日 / 7 月 5 日。关键风险：王老师档期 70% 概率冲突，已备 刘老师 + 助教组合。资源依赖：场地、餐饮、外部翻译。</p>
+            <h2>§5 费用估算</h2>
+            <div class="file-preview-meta">← 讲师推荐.md 报价 × 课程方案.md 天数 + 平台运营成本表（自动计算）</div>
+            <ul>
+              <li>讲师费 ¥106,000（王老师 ¥84,000 + 刘老师 + 助教 ¥22,000）</li>
+              <li>课程定制费 ¥40,000（高管共识收口 AI 新生成 + 同业案例本地化）</li>
+              <li>运营成本 约 ¥60,000（场地 / 餐饮 / 物料 · 待业务确认）</li>
+              <li>项目管理费 ¥30,000（PM 全程 + 1 个月复盘跟进）</li>
+              <li><strong>合计 约 ¥236,000</strong> · 客户预算 45-60 万 · 余量 21-36 万</li>
+            </ul>
+          `,
+        },
+        "client-version": {
+          icon: "DOC",
+          title: "对客版方案.docx",
+          html: `
+            <div class="file-preview-meta">@内容包装 · 派生自 完整方案.docx · 高管阅读版</div>
+            <h2>讲师对客简介（2 份）</h2>
+            <p>突出银行业 / 金融行业项目经验，统一"贵行"称谓，淡化学术背景：</p>
+            <ul>
+              <li>王老师 · 14 年金融高管培训 · 服务过招行 / 工行 / 浦发等同业 · 中欧管理学院特聘教授</li>
+              <li>刘老师 + 助教 · 国有大行高管行动计划辅导专家 · 工作坊控场扎实</li>
+            </ul>
+            <h2>课程亮点高管版（4 块）</h2>
+            <p>对应主文档 §3 的 4 块课纲，案例全部替换为同业银行（招行 / 工行 / 浦发），不引用泛行业案例：</p>
+            <ul>
+              <li>训前 · 主讲准备：访谈 6-8 位关键管理者，提取协同卡点</li>
+              <li>Day 1 全天 · 王老师主讲：跨部门协同卡点拆解 + 真实案例复盘（同业案例）</li>
+              <li>Day 1 晚 + Day 2 上 · 刘老师工作坊：金融工作坊 5 步法 + 招行 / 工行同业案例对照</li>
+              <li>Day 2 下 · 王老师收口：高管共识投票 + 收口陈词</li>
+            </ul>
+            <h2>沟通话术与异议回应（6 条）</h2>
+            <ul>
+              <li>预算问题 → 套餐组合 + 阶段交付</li>
+              <li>档期紧张 → 主备讲师机制</li>
+              <li>案例真实性 → 同业银行可验证案例库</li>
+              <li>效果保障 → 1 个月复盘 + 行动计划落地检查</li>
+              <li>讲师变更 → 助教 + 备选讲师方案</li>
+              <li>课程定制 → 训前访谈差异化设计</li>
+            </ul>
+          `,
+        },
+      };
+
+      let panel = document.getElementById("filePreviewPanel");
+      let backdrop = document.getElementById("filePreviewBackdrop");
+      if (!panel) {
+        panel = document.createElement("div");
+        panel.id = "filePreviewPanel";
+        panel.className = "file-preview-panel";
+        panel.setAttribute("data-open", "false");
+        panel.innerHTML = `
+          <div class="file-preview-panel-chrome">
+            <div class="file-preview-panel-title">
+              <span class="rail-item-icon" id="filePreviewIcon">MD</span>
+              <strong id="filePreviewTitle">预览</strong>
+            </div>
+            <button class="file-preview-panel-icon-button" type="button" id="filePreviewClose" aria-label="关闭预览">×</button>
+          </div>
+          <div class="file-preview-panel-body" id="filePreviewBody"></div>
+        `;
+        document.body.appendChild(panel);
+
+        backdrop = document.createElement("div");
+        backdrop.id = "filePreviewBackdrop";
+        backdrop.className = "file-preview-backdrop";
+        backdrop.setAttribute("data-open", "false");
+        document.body.appendChild(backdrop);
+      }
+
+      const iconEl = document.getElementById("filePreviewIcon");
+      const titleEl = document.getElementById("filePreviewTitle");
+      const bodyEl = document.getElementById("filePreviewBody");
+      const closeBtn = document.getElementById("filePreviewClose");
+
+      function openPreview(slug) {
+        const a = ARTIFACTS[slug];
+        if (!a) return;
+        iconEl.textContent = a.icon;
+        titleEl.textContent = a.title;
+        bodyEl.innerHTML = a.html;
+        bodyEl.scrollTop = 0;
+        panel.setAttribute("data-open", "true");
+        backdrop.setAttribute("data-open", "true");
+      }
+      function closePreview() {
+        panel.setAttribute("data-open", "false");
+        backdrop.setAttribute("data-open", "false");
+      }
+
+      document.addEventListener("click", (e) => {
+        const trigger = e.target.closest("[data-artifact]");
+        if (trigger) {
+          openPreview(trigger.getAttribute("data-artifact"));
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const active = document.activeElement;
+        if (active && active.hasAttribute && active.hasAttribute("data-artifact")) {
+          e.preventDefault();
+          openPreview(active.getAttribute("data-artifact"));
+        }
+      });
+      closeBtn.addEventListener("click", closePreview);
+      backdrop.addEventListener("click", closePreview);
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closePreview();
+      });
+    })();
   </script>
 </body>
 </html>

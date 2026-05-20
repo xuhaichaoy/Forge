@@ -34,6 +34,14 @@ import {
   settingsPanelTitle,
 } from "./settings-panel-workflow";
 import type { UiThemeSnapshot } from "./theme";
+import {
+  DEFAULT_WORKTREE_HOST_API,
+  projectWorktreesSettingsEntries,
+  readCurrentHostGitStatus,
+  type ComposerWorkMode,
+  type PendingWorktree,
+  type WorktreeHostApi,
+} from "./worktrees";
 
 const MCP_RELOAD_RESTART_MESSAGE =
   "Reloaded MCP config. New threads use refreshed servers; running threads may need a thread restart or another MCP reload before tool changes appear.";
@@ -52,6 +60,9 @@ export interface LoadSettingsPanelContentOptions {
   notificationPreferences?: NotificationPreferences;
   uiLocale?: HiCodexLocale;
   uiTheme?: UiThemeSnapshot;
+  workMode?: ComposerWorkMode;
+  pendingWorktree?: PendingWorktree | null;
+  worktreeHostApi?: WorktreeHostApi;
 }
 
 export async function loadMcpManagementEntries({
@@ -78,6 +89,37 @@ export async function loadMcpManagementEntries({
   return projectMcpManagementEntries(result, startupStatuses, { configReadResult });
 }
 
+export async function loadPluginManagementEntries({
+  client,
+  forceReload = false,
+  threadId,
+  workspace,
+}: {
+  client: CodexJsonRpcClient;
+  forceReload?: boolean;
+  threadId?: string | null;
+  workspace?: string;
+}): Promise<CommandPanelEntry[]> {
+  const cwds = workspace?.trim() ? [workspace.trim()] : null;
+  const [marketplace, extraMarketplaces, installed, shares, apps] = await Promise.allSettled([
+    client.request<unknown>("plugin/list", { cwds }, 120_000),
+    client.request<unknown>("plugin/list", {
+      cwds,
+      marketplaceKinds: ["workspace-directory", "shared-with-me"],
+    }, 120_000),
+    client.request<unknown>("plugin/installed", { cwds }, 120_000),
+    client.request<unknown>("plugin/share/list", {}, 120_000),
+    loadAllApps(client, { forceRefetch: forceReload, threadId }),
+  ]);
+  if (marketplace.status === "rejected") throw marketplace.reason;
+  return projectPluginEntries(marketplace.value, {
+    additionalLists: extraMarketplaces.status === "fulfilled" ? [extraMarketplaces.value] : [],
+    apps: apps.status === "fulfilled" ? apps.value : undefined,
+    installed: installed.status === "fulfilled" ? installed.value : undefined,
+    shares: shares.status === "fulfilled" ? shares.value : undefined,
+  });
+}
+
 export async function loadSettingsPanelContent({
   activeTurnId,
   client,
@@ -92,6 +134,9 @@ export async function loadSettingsPanelContent({
   notificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
   uiLocale,
   uiTheme,
+  workMode = "local",
+  pendingWorktree = null,
+  worktreeHostApi = DEFAULT_WORKTREE_HOST_API,
 }: LoadSettingsPanelContentOptions): Promise<void> {
   if (panel === "models") {
     setSettingsPanelState(createCommandPanelState("generic", {
@@ -198,6 +243,102 @@ export async function loadSettingsPanelContent({
     return;
   }
 
+  if (panel === "worktrees") {
+    const title = settingsPanelTitle(panel);
+    const activeThread = state.activeThreadId
+      ? state.threads.find((thread) => thread.id === state.activeThreadId) ?? null
+      : null;
+    const cwd = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
+    const tauriRuntimeAvailable = worktreeHostApi.isTauriRuntime();
+    setSettingsPanelState(createCommandPanelState("generic", {
+      status: "loading",
+      title,
+      entries: projectWorktreesSettingsEntries({
+        activeThread,
+        connected: state.connected,
+        mode: workMode,
+        pendingWorktree,
+        tauriRuntimeAvailable,
+        workspace: cwd,
+      }),
+    }));
+    let hostGitStatus = null as Awaited<ReturnType<typeof readCurrentHostGitStatus>>;
+    let hostGitStatusError: string | null = null;
+    if (cwd) {
+      try {
+        hostGitStatus = await readCurrentHostGitStatus(cwd, worktreeHostApi);
+      } catch (error) {
+        hostGitStatusError = formatError(error);
+      }
+    }
+    if (hostGitStatus) {
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title,
+        message: "Loaded Git status from the Tauri host. Worktree mode uses the returned repo root and pending path only.",
+        entries: projectWorktreesSettingsEntries({
+          activeThread,
+          connected: state.connected,
+          hostGitStatus,
+          mode: workMode,
+          pendingWorktree,
+          tauriRuntimeAvailable,
+          workspace: cwd,
+        }),
+      }));
+      return;
+    }
+    const fallbackHostError = hostGitStatusError
+      ?? (!tauriRuntimeAvailable
+        ? "Tauri runtime unavailable"
+        : "Tauri host readHostGitStatus unavailable");
+    if (!(await ensureConnected())) {
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title,
+        message: "Host Git status is unavailable and runtime is offline. Showing local work mode overlay only.",
+        entries: projectWorktreesSettingsEntries({
+          activeThread,
+          connected: false,
+          hostGitStatusError: fallbackHostError,
+          mode: workMode,
+          pendingWorktree,
+          tauriRuntimeAvailable,
+          workspace: cwd,
+        }),
+      }));
+      return;
+    }
+    let gitDiffResult: unknown = null;
+    let gitDiffError: string | null = null;
+    if (cwd) {
+      try {
+        gitDiffResult = await client.request<unknown>("gitDiffToRemote", { cwd }, 120_000);
+      } catch (error) {
+        gitDiffError = formatError(error);
+      }
+    }
+    setSettingsPanelState(createCommandPanelState("generic", {
+      status: "ready",
+      title,
+      message: gitDiffError
+        ? "Host Git status is unavailable and protocol Git fallback returned an error."
+        : "Host Git status is unavailable; showing protocol/overlay Git fallback.",
+      entries: projectWorktreesSettingsEntries({
+        activeThread,
+        connected: true,
+        gitDiffError,
+        gitDiffResult,
+        hostGitStatusError: fallbackHostError,
+        mode: workMode,
+        pendingWorktree,
+        tauriRuntimeAvailable,
+        workspace: cwd,
+      }),
+    }));
+    return;
+  }
+
   const panelKind = settingsPanelCommandKind(panel);
   const title = settingsPanelTitle(panel);
   openSettingsPanelContent(panelKind, { status: "loading", title, entries: [] });
@@ -259,22 +400,28 @@ export async function loadSettingsPanelContent({
       return;
     }
     if (panel === "plugins") {
-      const [result, apps] = await Promise.allSettled([
-        client.request<unknown>("plugin/list", {
-          cwds: workspace.trim() ? [workspace.trim()] : null,
-        }, 120_000),
-        loadAllApps(client, { forceRefetch: forceReload, threadId: state.activeThreadId }),
-      ]);
-      if (result.status === "rejected") throw result.reason;
+      const entries = await loadPluginManagementEntries({
+        client,
+        forceReload,
+        threadId: state.activeThreadId,
+        workspace,
+      });
       openSettingsPanelContent("plugins", {
         status: "ready",
         title,
-        entries: projectPluginEntries(result.value, { apps: apps.status === "fulfilled" ? apps.value : undefined }),
+        message: forceReload
+          ? "Refreshed marketplace, installed plugins, and shared plugin checkout state."
+          : "Install, enable, disable, uninstall, or checkout shared plugins from app-server plugin surfaces.",
+        entries,
       });
       return;
     }
     if (panel === "experimental") {
-      const result = await client.request<unknown>("experimentalFeature/list", { limit: 50 }, 120_000);
+      const result = await client.request<unknown>(
+        "experimentalFeature/list",
+        { limit: 50, threadId: state.activeThreadId ?? null },
+        120_000,
+      );
       openSettingsPanelContent("experimental", { status: "ready", title, entries: projectCommandPanelEntries({ experimental: result }) });
     }
   } catch (error) {
@@ -334,9 +481,10 @@ function recommendedPluginReadCandidates(value: unknown): Array<{
     for (const plugin of recordArray(marketplace.plugins)) {
       const pluginId = fieldText(plugin, "id") || fieldText(plugin, "remotePluginId") || fieldText(plugin, "name");
       if (!pluginId) continue;
+      const remotePluginId = fieldText(plugin, "remotePluginId");
       candidates.push({
         installed: plugin.installed === true,
-        featured: featured.has(pluginId),
+        featured: [remotePluginId, pluginId, fieldText(plugin, "name")].some((candidate) => candidate && featured.has(candidate)),
         marketplaceName,
         marketplacePath,
         pluginId,

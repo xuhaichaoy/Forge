@@ -3,6 +3,7 @@ import {
   Boxes,
   CheckCircle2,
   FlaskConical,
+  GitBranch,
   ImageIcon,
   KeyRound,
   Loader2,
@@ -133,7 +134,7 @@ export function SettingsPanel({
                 setImageGenerationDraft={setImageGenerationDraft}
                 onSave={onSaveImageGeneration}
               />
-            ) : activePanel === "mcp" || activePanel === "skills" ? (
+            ) : activePanel === "mcp" || activePanel === "skills" || activePanel === "plugins" ? (
               <McpSkillsManagementPanel
                 kind={activePanel}
                 panelState={panelState}
@@ -281,6 +282,8 @@ function settingsSectionIcon(icon: (typeof SETTINGS_SECTIONS)[number]["icon"]) {
       return <AppWindow size={15} />;
     case "plugins":
       return <Plug size={15} />;
+    case "worktrees":
+      return <GitBranch size={15} />;
     case "experimental":
       return <FlaskConical size={15} />;
     default:

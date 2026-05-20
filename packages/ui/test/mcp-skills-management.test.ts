@@ -37,9 +37,12 @@ export default async function runMcpSkillsManagementTests(): Promise<void> {
   buildsMcpServerConfigPayloads();
   initializesAndPreservesExistingMcpServerConfig();
   projectsSkillsWithMetadataAndActions();
+  projectsPluginsWithMarketplaceSectionsAndActions();
   rendersReusableManagementPanelControls();
   await reloadsMcpConfigOnlyForForcedReloads();
   await loadsSkillRecommendationsAndCreatorForSettingsPanel();
+  await loadsPluginsMarketplaceInstalledAndSharedForSettingsPanel();
+  await loadsExperimentalFeaturesForActiveThreadInSettingsPanel();
   registersMcpOauthPendingOnlyWhenAuthorizationUrlHasState();
 }
 
@@ -433,6 +436,50 @@ function projectsSkillsWithMetadataAndActions(): void {
   );
 }
 
+function projectsPluginsWithMarketplaceSectionsAndActions(): void {
+  const entries = projectCommandPanelEntries({
+    plugins: {
+      marketplaces: [{
+        name: "OpenAI",
+        plugins: [{
+          id: "browser-use",
+          remotePluginId: "remote-browser",
+          name: "browser-use",
+          installed: false,
+          enabled: false,
+          installPolicy: "AVAILABLE",
+          availability: "AVAILABLE",
+          interface: { displayName: "Browser Use" },
+        }, {
+          id: "local-helper",
+          name: "local-helper",
+          installed: true,
+          enabled: true,
+          installPolicy: "AVAILABLE",
+          availability: "AVAILABLE",
+        }],
+      }],
+      featuredPluginIds: ["remote-browser"],
+    },
+  });
+
+  const summary = managementPanelSummary("plugins", entries);
+  assertEqual(summary.find((item) => item.id === "plugins:installed")?.value, 1, "installed plugins should be counted");
+  assertEqual(summary.find((item) => item.id === "plugins:featured")?.value, 1, "featured plugins should be counted");
+
+  const sections = managementPanelSections("plugins", entries);
+  assertDeepEqual(
+    sections.map((section) => section.title),
+    ["Installed", "Featured"],
+    "plugin management should split installed and featured marketplace rows",
+  );
+  assertEqual(
+    sections[1]?.entries[0]?.secondaryActions?.[0]?.action.type,
+    "installPlugin",
+    "featured plugin rows should keep install action projection",
+  );
+}
+
 function rendersReusableManagementPanelControls(): void {
   const entries = projectCommandPanelEntries({
     skills: {
@@ -463,6 +510,36 @@ function rendersReusableManagementPanelControls(): void {
   assertIncludes(html, "hc-management-panel", "management component should render its reusable root");
   assertIncludes(html, "Reload", "management component should expose reload");
   assertIncludes(html, "Insert prompt", "skill primary action should be labeled as prompt insertion");
+
+  const pluginHtml = renderToStaticMarkup(createElement(McpSkillsManagementPanel, {
+    kind: "plugins",
+    panelState: createCommandPanelState("plugins", {
+      status: "ready",
+      title: "Plugins",
+      entries: projectCommandPanelEntries({
+        plugins: {
+          marketplaces: [{
+            name: "Shared plugins",
+            plugins: [{
+              id: "shared-review",
+              remotePluginId: "share_123",
+              name: "shared-review",
+              installed: false,
+              enabled: false,
+              shareContext: { remotePluginId: "share_123" },
+              installPolicy: "AVAILABLE",
+              availability: "AVAILABLE",
+            }],
+          }],
+        },
+      }),
+    }),
+    onReload: () => undefined,
+    onSelectEntry: () => undefined,
+    onSelectAction: () => undefined,
+  }));
+  assertIncludes(pluginHtml, "Plugins summary", "management component should label plugin summary");
+  assertIncludes(pluginHtml, "Checkout", "plugin management rows should expose shared plugin actions");
 }
 
 async function reloadsMcpConfigOnlyForForcedReloads(): Promise<void> {
@@ -561,6 +638,77 @@ async function loadsSkillRecommendationsAndCreatorForSettingsPanel(): Promise<vo
   );
 }
 
+async function loadsPluginsMarketplaceInstalledAndSharedForSettingsPanel(): Promise<void> {
+  const host = fakeSettingsClient();
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    forceReload: true,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: host.openPanel,
+    panel: "plugins",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, activeThreadId: "thread-1" },
+    workspace: "/workspace",
+    notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+  });
+
+  assertDeepEqual(
+    host.calls.map((call) => [call.method, call.params]),
+    [
+      ["plugin/list", { cwds: ["/workspace"] }],
+      ["plugin/list", { cwds: ["/workspace"], marketplaceKinds: ["workspace-directory", "shared-with-me"] }],
+      ["plugin/installed", { cwds: ["/workspace"] }],
+      ["plugin/share/list", {}],
+      ["app/list", { cursor: null, forceRefetch: true, limit: 1000, threadId: "thread-1" }],
+    ],
+    "Plugins settings should load marketplace, expanded remote marketplaces, installed plugins, shares, and apps through real protocol methods",
+  );
+  assertIncludes(
+    host.panel?.message ?? "",
+    "marketplace, installed plugins, and shared plugin checkout state",
+    "Plugins refresh should explain the loaded protocol surfaces",
+  );
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      meta: entry.meta,
+      actions: entry.secondaryActions?.map((action) => action.action.type),
+    })),
+    [
+      { id: "plugin:browser-use", status: "featured", meta: "OpenAI · Featured", actions: ["installPlugin"] },
+      { id: "plugin:local-helper", status: "installed", meta: "Installed", actions: ["writePluginConfig", "uninstallPlugin"] },
+      { id: "plugin:shared-review", status: "shared", meta: "Shared plugins · Shared", actions: ["checkoutPluginShare"] },
+    ],
+    "Plugins settings should project featured marketplace rows, plugin/installed rows, and share checkout rows",
+  );
+}
+
+async function loadsExperimentalFeaturesForActiveThreadInSettingsPanel(): Promise<void> {
+  const host = fakeSettingsClient();
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    forceReload: false,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: host.openPanel,
+    panel: "experimental",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, activeThreadId: "thread-1" },
+    workspace: "/workspace",
+    notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+  });
+
+  assertDeepEqual(
+    host.calls.map((call) => [call.method, call.params]),
+    [["experimentalFeature/list", { limit: 50, threadId: "thread-1" }]],
+    "Experimental settings should load feature state for the active thread",
+  );
+}
+
 function registersMcpOauthPendingOnlyWhenAuthorizationUrlHasState(): void {
   resetAppConnectOAuthPendingForTest();
   assertEqual(
@@ -637,6 +785,15 @@ function fakeSettingsClient(): {
         } as T;
       }
       if (method === "plugin/list") {
+        const pluginListParams = (typeof params === "object" && params !== null ? params : {}) as {
+          marketplaceKinds?: string[];
+        };
+        if (pluginListParams.marketplaceKinds?.length) {
+          return {
+            marketplaces: [],
+            featuredPluginIds: [],
+          } as T;
+        }
         return {
           marketplaces: [{
             name: "OpenAI",
@@ -645,12 +802,51 @@ function fakeSettingsClient(): {
               id: "browser-use",
               remotePluginId: "remote-browser",
               name: "browser-use",
-              installed: true,
-              enabled: true,
+              installed: false,
+              enabled: false,
+              installPolicy: "AVAILABLE",
+              availability: "AVAILABLE",
+              interface: { displayName: "Browser Use" },
             }],
           }],
-          featuredPluginIds: [],
+          featuredPluginIds: ["remote-browser"],
         } as T;
+      }
+      if (method === "plugin/installed") {
+        return {
+          marketplaces: [{
+            name: "Installed",
+            path: null,
+            plugins: [{
+              id: "local-helper",
+              name: "local-helper",
+              installed: true,
+              enabled: false,
+              installPolicy: "AVAILABLE",
+              availability: "AVAILABLE",
+            }],
+          }],
+        } as T;
+      }
+      if (method === "plugin/share/list") {
+        return {
+          data: [{
+            plugin: {
+              id: "shared-review",
+              remotePluginId: "share_123",
+              name: "shared-review",
+              installed: false,
+              enabled: false,
+              installPolicy: "AVAILABLE",
+              availability: "AVAILABLE",
+              shareContext: { remotePluginId: "share_123" },
+            },
+            localPluginPath: null,
+          }],
+        } as T;
+      }
+      if (method === "app/list") {
+        return { data: [], nextCursor: null } as T;
       }
       if (method === "plugin/read") {
         return {

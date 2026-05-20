@@ -121,13 +121,10 @@ export function eventText(item: ThreadItem): string {
     ]) || itemText(item) || formatUnknown(item);
   }
   if (type === "system-error") {
-    return itemText(item) || scalarText(record.message) || scalarText(record.error) || formatUnknown(item);
+    return errorTextWithDetails(item) || formatUnknown(item);
   }
   if (type === "stream-error") {
-    return eventLines([
-      scalarText(record.content) || scalarText(record.message) || scalarText(record.error),
-      scalarText(record.additionalDetails) || scalarText(record.additional_details),
-    ]) || formatUnknown(item);
+    return errorTextWithDetails(item) || formatUnknown(item);
   }
   if (type === "dynamic-tool-call") {
     return eventLines([
@@ -159,14 +156,73 @@ export function eventTone(item: ThreadItem): EventTone | undefined {
   return undefined;
 }
 
+function errorSummaryText(item: ThreadItem): string {
+  const record = item as ItemRecord;
+  return itemText(item)
+    || scalarText(record.message)
+    || scalarText(record.error)
+    || scalarText(record.content)
+    || scalarText(record.title);
+}
+
 export function eventFormat(item: ThreadItem): EventFormat | undefined {
   if (hiCodexImageToolOutputUrl(item)) return "markdown";
   const type = itemType(item);
   if (type === "turn-diff") return "diff";
+  if ((type === "system-error" || type === "stream-error") && hasDistinctErrorDetails(item)) return "markdown";
   if ((type === "generated-image" || type === "imageGeneration") && imageEventSource(item as ItemRecord)) {
     return "markdown";
   }
   return undefined;
+}
+
+function errorTextWithDetails(item: ThreadItem): string {
+  const summary = errorSummaryText(item);
+  const details = errorDetailsText(item);
+  if (!hasDistinctErrorDetails(item)) return summary;
+  return eventLines([
+    summary,
+    "",
+    "<details><summary>Details</summary>",
+    "",
+    fencedCodeBlock(details),
+    "",
+    "</details>",
+  ]);
+}
+
+function hasDistinctErrorDetails(item: ThreadItem): boolean {
+  const summary = errorSummaryText(item).trim();
+  const details = errorDetailsText(item).trim();
+  return Boolean(details && details !== summary);
+}
+
+function errorDetailsText(item: ThreadItem): string {
+  const record = item as ItemRecord;
+  return firstScalarText([
+    record.additionalDetails,
+    record.additional_details,
+    record.rawDetail,
+    record.raw_detail,
+    record.rawDetails,
+    record.raw_details,
+    record.detail,
+    record.details,
+  ]);
+}
+
+function firstScalarText(values: unknown[]): string {
+  for (const value of values) {
+    const text = scalarText(value);
+    if (text.trim()) return text;
+  }
+  return "";
+}
+
+function fencedCodeBlock(value: string): string {
+  const longestFence = Math.max(2, ...Array.from(value.matchAll(/`+/g), (match) => match[0].length));
+  const fence = "`".repeat(longestFence + 1);
+  return `${fence}\n${value}\n${fence}`;
 }
 
 function userInputQuestionLines(record: ItemRecord): string[] {

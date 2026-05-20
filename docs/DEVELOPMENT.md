@@ -63,6 +63,10 @@ docs/DEVELOPMENT.md        # index and global rules
 docs/dev/<topic>.md        # one topic, no repeated global rules
 ```
 
+Linked topic docs:
+
+- [docs/dev/presales-mcp-tools.md](dev/presales-mcp-tools.md): MCP tool boundary for the presales knowledge-base prototype and Skill file workflow.
+
 Do not add ad hoc handoff docs, scratch notes, copied agent outputs, or extracted `app.asar` content. Temporary investigation output belongs under `/private/tmp`, not in the repo.
 
 ## 4. Source Of Truth Rules

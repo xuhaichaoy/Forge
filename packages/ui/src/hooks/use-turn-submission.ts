@@ -243,18 +243,20 @@ export function useTurnSubmission({
   ]);
 
   const sendTurn = useCallback(async (options: ComposerSendOptions = {}) => {
+    const draftInput = options.input ?? latestInputRef.current;
+    const draftAttachments = options.attachments ?? latestComposerAttachmentsRef.current;
     if (composerSubmitState.disabled) {
       if (composerSubmitState.submitBlockReason !== "empty" && composerSubmitState.disabledReason) {
         dispatch({ type: "log", text: composerSubmitState.disabledReason, level: "warn" });
       }
       return;
     }
-    if (composerHasImageAttachments(composerAttachments) && !activeModelSupportsImageInput) {
+    if (composerHasImageAttachments(draftAttachments) && !activeModelSupportsImageInput) {
       dispatch({ type: "log", text: "Current model does not declare image input support", level: "warn" });
       return;
     }
-    const sendAttachments = await attachmentsWithDataImagePreviews(composerAttachments);
-    const content = buildUserInputFromComposer(input, sendAttachments);
+    const sendAttachments = await attachmentsWithDataImagePreviews(draftAttachments);
+    const content = buildUserInputFromComposer(draftInput, sendAttachments);
     if (content.length === 0) return;
     try {
       if (!(await ensureConnected())) return;
@@ -293,12 +295,12 @@ export function useTurnSubmission({
       if (!threadId) throw new Error("No active Codex thread");
       if (shouldQueueFollowUp) {
         const existingQueue = queuedFollowUpsByThread[threadId] ?? [];
-        if (isQueuedFollowUpDuplicate(existingQueue, { text: input, attachments: sendAttachments })) {
+        if (isQueuedFollowUpDuplicate(existingQueue, { text: draftInput, attachments: sendAttachments })) {
           return;
         }
         clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
         const queued = createQueuedFollowUp({
-          text: input,
+          text: draftInput,
           attachments: sendAttachments,
           cwd: workspace,
           mode: composerMode,
@@ -327,8 +329,8 @@ export function useTurnSubmission({
             setComposerAttachments,
             latestInputRef,
             latestComposerAttachmentsRef,
-            input,
-            composerAttachments,
+            draftInput,
+            draftAttachments,
           );
           throw error;
         }
@@ -358,8 +360,8 @@ export function useTurnSubmission({
             setComposerAttachments,
             latestInputRef,
             latestComposerAttachmentsRef,
-            input,
-            composerAttachments,
+            draftInput,
+            draftAttachments,
           );
           dispatch({
             type: "log",
@@ -388,8 +390,8 @@ export function useTurnSubmission({
             setComposerAttachments,
             latestInputRef,
             latestComposerAttachmentsRef,
-            input,
-            composerAttachments,
+            draftInput,
+            draftAttachments,
           );
           throw subError;
         }
@@ -410,7 +412,6 @@ export function useTurnSubmission({
     client,
     collaborationModes,
     collaborationModesForComposerMode,
-    composerAttachments,
     composerMode,
     composerSubmitState.disabled,
     composerSubmitState.disabledReason,
@@ -420,7 +421,6 @@ export function useTurnSubmission({
     dispatch,
     ensureConnected,
     includeImageDynamicTool,
-    input,
     queuedFollowUpsByThread,
     rememberLatestCollaborationMode,
     resetComposerSelectionAfterCreatedThread,

@@ -5,3 +5,5 @@
 @import "./styles/composer.css";
 @import "./styles/rail-settings.css";
 @import "./styles/responsive-turns.css";
+/* CODEX-REF: open-workspace-file-DOOUD1lA.js — simplified spreadsheet preview replacement for Codex's Popcorn Workbook. */
+@import "./styles/spreadsheet-preview.css";

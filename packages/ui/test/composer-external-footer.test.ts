@@ -38,8 +38,8 @@ function formatsContextChipLabels(): void {
       model: "gpt-5.5",
       reasoningEffort: "medium",
       reasoningSummary: "concise",
-    }) === "gpt-5.5 / Medium / Concise summaries",
-    "intelligence label should include model, reasoning effort, and summary mode",
+    }) === "gpt-5.5 Medium",
+    "intelligence label should include model and effort only",
   );
   assert(
     formatPermissionsFooterLabel({
@@ -61,6 +61,8 @@ function formatsContextChipLabels(): void {
 
 function rendersContextChipsWithOverflowHooks(): void {
   const html = renderToStaticMarkup(createElement(ComposerExternalFooter, {
+    branch: "main",
+    cwd: "/workspace/HiCodex",
     model: "gpt-5.5",
     reasoningEffort: "medium",
     reasoningSummary: "auto",
@@ -75,6 +77,10 @@ function rendersContextChipsWithOverflowHooks(): void {
     "footer should group runtime context chips away from project chips",
   );
   assert(
+    html.includes('aria-label="Project and work mode"'),
+    "footer should keep project and work mode behind the left add menu",
+  );
+  assert(
     html.includes('data-chip="permissions"'),
     "footer should render a permissions chip",
   );
@@ -87,15 +93,23 @@ function rendersContextChipsWithOverflowHooks(): void {
     "footer should render an intelligence chip",
   );
   assert(
-    html.includes('data-chip="work-mode"'),
-    "work-mode chip should remain visible while it is display-only",
+    !html.includes('data-chip="work-mode"'),
+    "work-mode should not remain as a persistent footer chip",
+  );
+  assert(
+    !html.includes("main"),
+    "branch should not remain as a persistent footer chip",
   );
   assert(
     html.includes('data-interactive="true"'),
     "interactive intelligence chip should expose the interactive styling hook",
   );
   assert(
-    html.includes("gpt-5.5 / Medium / Auto summaries"),
-    "intelligence chip should show the full projected label before CSS truncates it",
+    html.includes("gpt-5.5 Medium"),
+    "intelligence chip should show the Desktop-style model and effort label",
+  );
+  assert(
+    !html.includes("Auto summaries") && !html.includes(" / "),
+    "intelligence chip should not expose summary mode or slash-joined labels",
   );
 }

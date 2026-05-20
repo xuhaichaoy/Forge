@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "notification:allow-is-permission-granted",
     "process:allow-restart",
     "shell:allow-open",
     "updater:default"

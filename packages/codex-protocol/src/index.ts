@@ -54,6 +54,7 @@ export type { ModeKind } from "./generated/ModeKind";
 export type { ReasoningEffort } from "./generated/ReasoningEffort";
 export type { Settings } from "./generated/Settings";
 export type { InputModality } from "./generated/InputModality";
+export type { ImageDetail } from "./generated/ImageDetail";
 export type { ThreadBackgroundTerminalsCleanResponse } from "./generated/v2/ThreadBackgroundTerminalsCleanResponse";
 export type { ThreadGoal } from "./generated/v2/ThreadGoal";
 export type { ThreadGoalClearResponse } from "./generated/v2/ThreadGoalClearResponse";

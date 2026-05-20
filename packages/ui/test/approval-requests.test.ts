@@ -111,6 +111,11 @@ export default function runApprovalRequestTests(): void {
     "decline-only command approval should not invent an accept option",
   );
   assertEqual(declineOnlyCommandDetail.canAccept, false, "decline-only command approval disables primary action");
+  assertDeepEqual(
+    buildApprovalResult(declineOnlyCommandRequest, true, { approvalDecision: ["acceptForSession"] }),
+    { decision: "decline" },
+    "unavailable command approval choices should fall back to decline when accept is unavailable",
+  );
 
   const execPolicyCommandRequest = request("item/commandExecution/requestApproval", {
     command: "npm test",

@@ -14,10 +14,12 @@ import {
   Maximize2,
   MessageSquarePlus,
   Minimize2,
+  Moon,
   Pin,
   Plug,
   Search,
   Settings,
+  Sun,
 } from "lucide-react";
 import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
@@ -88,6 +90,10 @@ export interface SidebarProps {
   onCopySessionId?: (thread: Thread) => void | Promise<void>;
   onCopyDeeplink?: (thread: Thread) => void | Promise<void>;
   onOpenSettings: () => void;
+  /** "light" | "dark" — the currently applied theme; used to pick the toggle icon. */
+  resolvedUiTheme?: "light" | "dark";
+  /** Click handler for the appearance toggle (sidebar footer). */
+  onToggleTheme?: () => void;
   accountView?: AccountViewModel | null;
   onSignOut?: () => void | Promise<void>;
   sortKey?: SidebarSortKey;
@@ -134,6 +140,8 @@ export function Sidebar({
   onCopySessionId,
   onCopyDeeplink,
   onOpenSettings,
+  resolvedUiTheme,
+  onToggleTheme,
   accountView,
   onSignOut,
   sortKey = "updated_at",
@@ -700,6 +708,13 @@ export function Sidebar({
       <div className="hc-sidebar-footer">
         {accountView && (
           <SidebarAccountSummary accountView={accountView} onSignOut={signOut} />
+        )}
+        {onToggleTheme && (
+          <SidebarNavItem
+            icon={resolvedUiTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
+            label={resolvedUiTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            onClick={onToggleTheme}
+          />
         )}
         <SidebarNavItem icon={<Settings size={17} />} label="Settings" onClick={onOpenSettings} />
       </div>

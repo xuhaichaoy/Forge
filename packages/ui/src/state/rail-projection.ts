@@ -295,7 +295,28 @@ function shouldKeepArtifactTextMatch(
   if (hasNegativeArtifactContext(text, match.index)) return false;
   if (source !== "assistant") return true;
   if (match.kind === "markdownImage") return true;
+  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js dv/hv/xv —
+  // Codex Desktop's assistant artifact extraction parses markdown links and inline-code
+  // file references without a "positive context" keyword gate; any resolved path it
+  // surfaces becomes an artifact. HiCodex still keeps a heuristic for bare/relative
+  // filenames (to avoid false positives in prose), but treats absolute filesystem
+  // paths (`/Users/...`, `file://...`, `C:\...`) and `linePath` matches (lines that
+  // start with a path) as strong-enough signals on their own, so AI messages like
+  // "saved to /Users/me/Downloads/report.xlsx" keep the artifact even when no
+  // surrounding verb such as "saved/created/wrote" is present.
+  if (match.kind === "linePath") return true;
+  if (isAbsoluteArtifactPath(match.target)) return true;
   return hasPositiveAssistantArtifactContext(text, match.index);
+}
+
+function isAbsoluteArtifactPath(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("/")) return true;
+  if (/^file:\/\//i.test(trimmed)) return true;
+  // Windows drive-letter paths (e.g. `C:\foo\bar.xlsx` or `C:/foo/bar.xlsx`).
+  if (/^[A-Za-z]:[\\/]/.test(trimmed)) return true;
+  return false;
 }
 
 function hasNegativeArtifactContext(text: string, index: number): boolean {

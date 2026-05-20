@@ -378,6 +378,23 @@
   border-color: rgba(45, 85, 98, 0.25);
 }
 
+/* File-type attachment chip: bordered pill with a colored file icon, matches Codex Desktop's user-message-attachments shape. */
+.hc-user-chip-file {
+  max-width: 18rem;
+}
+
+.hc-user-chip-file > span {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-user-chip-icon-word { color: #2b579a; }
+.hc-user-chip-icon-excel { color: #217346; }
+.hc-user-chip-icon-pdf { color: #d93025; }
+.hc-user-chip-icon-ppt { color: #d24726; }
+
 .hc-markdown {
   min-width: 0;
   width: 100%;
@@ -581,6 +598,85 @@
   white-space: nowrap;
 }
 
+.hc-auto-review-action {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.hc-auto-review-trigger {
+  width: auto;
+  max-width: 160px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 3px;
+}
+
+.hc-auto-review-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: var(--hc-z-popover);
+  display: grid;
+  width: min(320px, calc(100vw - 32px));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--hc-border-default, rgba(39, 49, 61, 0.12));
+  border-radius: 8px;
+  background: var(--hc-surface-panel, rgba(255, 255, 255, 0.98));
+  box-shadow: var(--hc-shadow-panel, 0 14px 40px rgba(17, 24, 28, 0.16));
+  color: var(--hc-text-primary, #24292f);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.hc-auto-review-popover-title {
+  color: var(--hc-text-strong, #20262d);
+  font-weight: 700;
+}
+
+.hc-auto-review-popover-rows {
+  display: grid;
+  gap: 5px;
+}
+
+.hc-auto-review-popover-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.hc-auto-review-popover-row > span:first-child {
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-auto-review-popover-row > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.hc-auto-review-command-list {
+  display: grid;
+  gap: 4px;
+}
+
+.hc-auto-review-command-list code {
+  display: block;
+  max-height: 44px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: var(--hc-surface-soft, rgba(39, 49, 61, 0.06));
+  padding: 4px 5px;
+  color: var(--hc-text-primary, #30343a);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hc-message-action-status.meta {
   color: #6f716b;
 }
@@ -646,6 +742,13 @@
 .hc-message-actions button:hover {
   background: rgba(34, 38, 43, 0.07);
   color: #27313d;
+}
+
+.hc-message-actions .hc-auto-review-trigger {
+  display: inline-flex;
+  width: auto;
+  max-width: 160px;
+  padding: 0 3px;
 }
 
 .hc-message-time {
@@ -742,4 +845,108 @@
     opacity: 1;
     transform: translate(-50%, 0);
   }
+}
+
+.hc-app[data-theme="dark"] .hc-message.assistant {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card.is-button:hover {
+  border-color: var(--hc-border-strong);
+  background: var(--hc-surface-panel-muted);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.36);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-icon,
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-preview {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-type {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-meta {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-placeholder {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-label {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-message-bubble {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-edit-form {
+  background: var(--hc-surface-panel);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.34);
+  outline-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-user-edit-error {
+  background: rgba(232, 90, 84, 0.16);
+  color: #f5b3ae;
+}
+
+.hc-app[data-theme="dark"] .hc-user-edit-actions button {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-edit-actions button.primary {
+  border-color: #2a8a78;
+  background: #2a8a78;
+  color: #ffffff;
+}
+
+.hc-app[data-theme="dark"] .hc-message-action-status.meta {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-message-actions button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-message-actions button:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-auto-review-popover {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-auto-review-popover-title {
+  color: var(--hc-text-strong);
+}
+
+.hc-app[data-theme="dark"] .hc-auto-review-popover-row > span:first-child {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-auto-review-command-list code {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
 }

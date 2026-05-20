@@ -217,7 +217,7 @@
   inset: 0 0 auto;
   max-width: 100%;
   overflow: hidden;
-  color: #9a9b95;
+  color: var(--hc-text-secondary, #9a9b95);
   content: attr(data-placeholder);
   pointer-events: none;
   text-overflow: ellipsis;
@@ -254,10 +254,31 @@
   display: inline-flex;
   max-width: 100%;
   align-items: center;
+  gap: 4px;
   border-radius: 6px;
   background: rgba(34, 38, 43, 0.06);
   color: #4d625c;
   padding: 0 4px;
+}
+
+.hc-prompt-mention[data-prompt-mention-kind="skillMention"],
+.hc-prompt-mention[data-prompt-mention-kind="appMention"],
+.hc-prompt-mention[data-prompt-mention-kind="pluginMention"] {
+  color: #2870a8;
+  background: rgba(40, 112, 168, 0.1);
+}
+
+.hc-prompt-mention[data-prompt-mention-kind="skillMention"]::before,
+.hc-prompt-mention[data-prompt-mention-kind="appMention"]::before,
+.hc-prompt-mention[data-prompt-mention-kind="pluginMention"]::before {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  content: "";
+  transform: rotate(-8deg);
 }
 
 .hc-composer-plus {
@@ -343,37 +364,92 @@
   background: rgba(34, 38, 43, 0.06);
 }
 
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 (search `composer-footer grid grid-cols`)
+ * Codex renders the composer footer as a strict 3-column grid:
+ *   grid-cols-[minmax(0,auto)_auto_minmax(0,1fr)] items-center gap-[5px]
+ * Only the trailing column flexes; left/middle columns hug their content.
+ * This keeps the footer on a single line at every viewport width — the right
+ * column's nested flex containers (with `min-w-0` and `shrink-0` on the send
+ * cluster) absorb space pressure instead of wrapping.
+ */
 .hc-composer-external-footer {
-  display: flex;
+  container: composer-external-footer / inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, auto) auto minmax(0, 1fr);
   min-width: 0;
   min-height: 30px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  overflow: hidden;
+  gap: 5px;
   padding: 0 24px 0;
   color: #6f716b;
   font-size: 13px;
 }
 
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 — left column hosts the `vz`
+ * component (the `+` add menu + permissions cluster). Codex wraps it in a
+ * `flex items-center` so multiple chips align horizontally.
+ */
 .hc-composer-external-footer-left {
   display: inline-flex;
   min-width: 0;
-  flex: 1 1 auto;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   overflow: hidden;
 }
 
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 — middle column is rendered as
+ *   <div className="flex items-center">{d==="cloud" ? <jR/> : null}</div>
+ * For HiCodex (local-only) the slot stays empty, but we keep the cell to
+ * preserve the 3-column grid alignment.
+ */
+.hc-composer-external-footer-center {
+  display: flex;
+  align-items: center;
+}
+
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 — right column:
+ *   <div className="flex w-full min-w-0 items-center justify-end gap-2">
+ *     <div className="flex min-w-0 flex-1 justify-end"> ... model/context ... </div>
+ *     <div className="flex shrink-0 items-center gap-2"> mic + send </div>
+ *   </div>
+ * `min-width: 0` is what allows the flex children to shrink below content.
+ */
 .hc-composer-external-footer-context {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   min-width: 0;
-  max-width: 52%;
-  flex: 0 1 auto;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  overflow: hidden;
+}
+
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 — inner flex wrapper around the
+ * model/context chip stack: `flex min-w-0 flex-1 justify-end`.
+ */
+.hc-composer-external-footer-context-flex {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 — the actions cluster (mic +
+ * send) sits in `flex shrink-0 items-center gap-2` so it is never crushed
+ * when the model label is long.
+ */
+.hc-composer-external-footer-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
 }
 
 .hc-composer-footer-project {
@@ -396,6 +472,13 @@
   color: inherit;
   padding: 0 4px;
   cursor: pointer;
+}
+
+.hc-composer-footer-chip.hc-composer-footer-add-menu {
+  width: 28px;
+  max-width: 28px;
+  justify-content: center;
+  padding: 0;
 }
 
 .hc-composer-footer-chip svg {
@@ -461,6 +544,15 @@
   gap: 2px;
 }
 
+.hc-composer-project-menu-title {
+  padding: 4px 8px 3px;
+  color: #7c7f78;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
 .hc-composer-project-empty {
   padding: 8px;
   color: #7c7f78;
@@ -477,7 +569,33 @@
 }
 
 .hc-composer-footer-intelligence {
-  max-width: min(320px, 34vw);
+  max-width: min(220px, 28vw);
+}
+
+@container composer-external-footer (width <= 520px) {
+  .hc-composer-footer-intelligence .hc-composer-footer-chip-label {
+    display: none;
+  }
+
+  .hc-composer-footer-intelligence {
+    width: 28px;
+    max-width: 28px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+}
+
+@container composer-external-footer (width <= 420px) {
+  .hc-composer-footer-permissions .hc-composer-footer-chip-label {
+    display: none;
+  }
+
+  .hc-composer-footer-permissions {
+    width: 28px;
+    max-width: 28px;
+    justify-content: center;
+    padding-inline: 0;
+  }
 }
 
 .hc-composer-input-measure {
@@ -934,36 +1052,35 @@
   cursor: not-allowed;
 }
 
+/*
+ * CODEX-REF: composer-DXaiOlFj.js line ~975700 — Codex keeps the 3-column grid
+ * at every width. The narrow-viewport adjustments below only tighten gap /
+ * padding and shrink chip caps; they MUST NOT switch the footer to
+ * `flex-direction: column` (that was the bug that broke single-line layout).
+ * The previous `@media (max-width: 540px)` rule which forced
+ * `flex-direction: column` has been removed.
+ */
 @media (max-width: 760px) {
   .hc-composer-external-footer {
-    align-items: stretch;
     gap: 4px;
     padding-inline: 16px;
   }
 
-  .hc-composer-external-footer-left,
-  .hc-composer-external-footer-context {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .hc-composer-external-footer-left::-webkit-scrollbar,
-  .hc-composer-external-footer-context::-webkit-scrollbar {
-    display: none;
-  }
-
   .hc-composer-external-footer-left {
-    gap: 8px;
+    gap: 6px;
   }
 
   .hc-composer-external-footer-context {
-    max-width: 48%;
     gap: 6px;
   }
 
   .hc-composer-footer-chip {
-    max-width: 180px;
+    max-width: 160px;
     flex: 0 0 auto;
+  }
+
+  .hc-composer-footer-chip.hc-composer-footer-add-menu {
+    max-width: 28px;
   }
 
   .hc-composer-footer-permissions {
@@ -971,22 +1088,6 @@
   }
 
   .hc-composer-footer-intelligence {
-    max-width: 210px;
-  }
-}
-
-@media (max-width: 540px) {
-  .hc-composer-external-footer {
-    flex-direction: column;
-  }
-
-  .hc-composer-external-footer-left,
-  .hc-composer-external-footer-context {
-    width: 100%;
-    max-width: none;
-  }
-
-  .hc-composer-external-footer-context {
-    justify-content: flex-start;
+    max-width: 180px;
   }
 }

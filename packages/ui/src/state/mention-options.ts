@@ -37,9 +37,13 @@ export function mentionOptionsFromSkillsResponse(value: unknown, query: string):
     const action = entry.action;
     if (entry.disabled || action?.type !== "attachSkill") continue;
     if (normalizedQuery && !skillEntryMatchesQuery(entry, normalizedQuery)) continue;
+    const description = primaryEntryDescription(entry);
     options.push({
       kind: "skill",
       name: action.name,
+      displayName: mentionDisplayName(entry.title, action.name),
+      description,
+      scopeLabel: entryScopeLabel(entry.meta) || "Skill",
       path: action.path,
       detail: entry.meta ?? "Skill",
       promptText: action.promptText,
@@ -59,6 +63,9 @@ export function mentionOptionsFromAppsResponse(value: unknown, query: string): C
     options.push({
       kind: "app",
       name: action.name,
+      displayName: entry.title || action.name,
+      description: primaryEntryDescription(entry),
+      scopeLabel: "App",
       path: action.path,
       detail: entry.meta ?? "App",
       promptText: action.promptText,
@@ -82,6 +89,9 @@ export function mentionOptionsFromPluginsResponse(
     options.push({
       kind: "plugin",
       name: action.name,
+      displayName: entry.title || action.name,
+      description: primaryEntryDescription(entry),
+      scopeLabel: entry.meta ?? "Plugin",
       path: action.path,
       detail: entry.meta ?? "Plugin",
       promptText: action.promptText,
@@ -137,6 +147,65 @@ function pluginEntryMatchesQuery(entry: CommandPanelEntry, normalizedQuery: stri
   ];
   return values.some((value) => value?.toLowerCase().includes(normalizedQuery));
 }
+
+function primaryEntryDescription(entry: CommandPanelEntry): string | undefined {
+  return (entry.details ?? []).find((detail) => {
+    const normalized = detail.trim();
+    return normalized
+      && !normalized.startsWith("Default prompt:")
+      && !normalized.startsWith("Tools:")
+      && !normalized.startsWith("Path:")
+      && !normalized.startsWith("CWD:")
+      && !normalized.startsWith("Plugin:")
+      && !normalized.startsWith("Enabled:")
+      && !normalized.startsWith("Accessible:")
+      && !normalized.startsWith("Auth:")
+      && !normalized.startsWith("Install:");
+  });
+}
+
+function entryScopeLabel(meta: string | undefined): string {
+  return meta?.split(" · ", 1)[0]?.trim() ?? "";
+}
+
+function mentionDisplayName(title: string, name: string): string {
+  const trimmedTitle = title.trim();
+  const trimmedName = name.trim();
+  if (trimmedTitle && trimmedTitle !== trimmedName) return trimmedTitle;
+  return titleizeMentionName(trimmedName || trimmedTitle);
+}
+
+function titleizeMentionName(value: string): string {
+  return value
+    .split(":")
+    .map((segment) => segment
+      .replace(/[_-]+/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(mentionTitleWord)
+      .join(" "))
+    .join(": ");
+}
+
+function mentionTitleWord(word: string, index: number): string {
+  const lower = word.toLowerCase();
+  const special = MENTION_TITLE_WORDS.get(lower);
+  if (special) return special;
+  if (index > 0 && MENTION_TITLE_LOWER_WORDS.has(lower)) return lower;
+  return `${lower.slice(0, 1).toUpperCase()}${lower.slice(1)}`;
+}
+
+const MENTION_TITLE_WORDS = new Map([
+  ["openai", "OpenAI"],
+  ["openapi", "OpenAPI"],
+  ["github", "GitHub"],
+  ["pagerduty", "PagerDuty"],
+  ["datadog", "DataDog"],
+  ["sqlite", "SQLite"],
+  ["fastapi", "FastAPI"],
+]);
+
+const MENTION_TITLE_LOWER_WORDS = new Set(["and", "or", "to", "up", "with"]);
 
 function stringRecordValue(record: Record<string, unknown>, key: string): string {
   const value = record[key];

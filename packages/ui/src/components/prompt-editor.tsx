@@ -32,6 +32,14 @@ export interface PromptEditorPasteFileLike {
   readonly type?: string;
 }
 
+export interface PromptEditorMentionInput {
+  kind?: "file" | "skill" | "app" | "plugin" | "agent";
+  name: string;
+  displayName?: string;
+  path: string;
+  description?: string;
+}
+
 class PromptEditorEmitter {
   private readonly listeners = new Map<PromptEditorEventName, Set<PromptEditorEventListener>>();
 
@@ -462,6 +470,23 @@ export function insertPromptEditorText(element: HTMLElement | null, text: string
   selection.addRange(range);
 }
 
+export function replacePromptEditorTextRangeWithMention(
+  element: HTMLElement | null,
+  mention: PromptEditorMentionInput,
+  range: { from: number; to: number },
+): boolean {
+  const view = promptEditorViewFromElement(element);
+  if (!view || range.from < 0 || range.to < range.from) return false;
+  const node = promptMentionNodeFromInput(view.state.schema, mention);
+  if (!node) return false;
+  const from = promptTextOffsetToDocPos(view.state.doc, range.from);
+  const to = promptTextOffsetToDocPos(view.state.doc, range.to);
+  const { transaction, selectionPos } = insertMentionNodeTransaction(view.state, node, from, to);
+  const dispatched = safeDispatchEditorTransaction(view, transaction.scrollIntoView());
+  safeFocusEditorView(view);
+  return dispatched && selectionPos >= 0;
+}
+
 export function movePromptEditorCursorToEnd(element: HTMLElement | null): void {
   const view = promptEditorViewFromElement(element);
   if (view) {
@@ -490,6 +515,9 @@ const mentionNodeSpec: NodeSpec = {
     name: { default: "" },
     displayName: { default: "" },
     path: { default: "" },
+    description: { default: "" },
+    iconSmall: { default: "" },
+    brandColor: { default: "" },
   },
   parseDOM: [{
     tag: "span[data-prompt-mention]",
@@ -512,8 +540,10 @@ const mentionNodeSpec: NodeSpec = {
       "data-display-name": node.attrs.displayName,
       "data-path": node.attrs.path,
       class: "hc-prompt-mention",
+      "data-prompt-mention-kind": node.type.name,
+      ...(node.attrs.description ? { title: node.attrs.description } : {}),
     },
-    node.attrs.label || node.attrs.displayName || node.attrs.name,
+    promptMentionDisplayText(node),
   ],
 };
 
@@ -602,13 +632,13 @@ function promptInlineNodes(schema: Schema, line: string): Fragment | null {
 function promptMentionNode(schema: Schema, label: string, path: string): ProseMirrorNode | null {
   const name = label.replace(/^[@$]/, "");
   if (path.startsWith("plugin://")) {
-    return schema.nodes.pluginMention.create({ label, name, displayName: name, path });
+    return schema.nodes.pluginMention.create({ label: `@${name}`, name, displayName: name, path });
   }
   if (path.startsWith("app://")) {
-    return schema.nodes.appMention.create({ label, name, displayName: name, path });
+    return schema.nodes.appMention.create({ label: `$${name}`, name, displayName: name, path });
   }
   if (path.startsWith("skill://") || label.startsWith("$")) {
-    return schema.nodes.skillMention.create({ label, name, displayName: name, path });
+    return schema.nodes.skillMention.create({ label: `$${name}`, name, displayName: name, path });
   }
   if (path.startsWith("agent://") || label.startsWith("@")) {
     return schema.nodes.agentMention.create({ label, name, displayName: name, path });
@@ -644,11 +674,134 @@ function docFragmentToPromptText(fragment: Fragment): { content: string; metadat
       return;
     }
     if (isMentionNode(node)) {
-      const label = String(node.attrs.label || node.attrs.displayName || node.attrs.name || "");
       const path = String(node.attrs.path || "");
-      text += `[${label}](${escapePromptPath(path)})`;
+      const label = promptMentionSerializedLabel(node);
+      if (label && path) text += `[${label}](${escapePromptPath(path)})`;
     }
   }
+}
+
+function promptMentionNodeFromInput(schema: Schema, mention: PromptEditorMentionInput): ProseMirrorNode | null {
+  const kind = mention.kind ?? "file";
+  const path = mention.path.trim();
+  const name = mention.name.trim() || inferMentionNameFromPath(path);
+  if (!path || !name) return null;
+  const displayName = mention.displayName?.trim() || name;
+  const description = mention.description?.trim() || "";
+  switch (kind) {
+    case "skill":
+      return schema.nodes.skillMention.create({ label: `$${name}`, name, displayName, path, description });
+    case "app":
+      return schema.nodes.appMention.create({ label: `$${name}`, name, displayName, path, description });
+    case "plugin":
+      return schema.nodes.pluginMention.create({ label: `@${name}`, name, displayName, path, description });
+    case "agent":
+      return schema.nodes.agentMention.create({ label: `@${name}`, name, displayName, path, description });
+    case "file":
+      return schema.nodes.atMention.create({ label: displayName || name, name, displayName, path, description });
+  }
+}
+
+function insertMentionNodeTransaction(
+  state: EditorState,
+  node: ProseMirrorNode,
+  from: number,
+  to: number,
+): { transaction: EditorState["tr"]; selectionPos: number } {
+  let transaction = state.tr.replaceRangeWith(from, to, node);
+  const afterMention = transaction.mapping.map(from) + node.nodeSize;
+  const needsSpace = !docCharAt(transaction.doc, afterMention).match(/\s/);
+  if (needsSpace) transaction = transaction.insertText(" ", afterMention);
+  const selectionPos = afterMention + (needsSpace ? 1 : 0);
+  transaction = transaction.setSelection(TextSelection.create(transaction.doc, selectionPos));
+  return { transaction, selectionPos };
+}
+
+function promptTextOffsetToDocPos(doc: ProseMirrorNode, offset: number): number {
+  const promptText = docToPromptText(doc).content;
+  const target = Math.max(0, Math.min(offset, promptText.length));
+  let textOffset = 0;
+  let result: number | null = null;
+
+  doc.forEach((paragraph, paragraphOffset, index) => {
+    if (result != null) return;
+    const paragraphStart = paragraphOffset + 1;
+    paragraph.forEach((child, childOffset) => {
+      if (result != null) return;
+      const serialized = promptNodeSerializedText(child);
+      const nextOffset = textOffset + serialized.length;
+      if (target <= nextOffset) {
+        if (child.isText) {
+          result = paragraphStart + childOffset + Math.max(0, target - textOffset);
+        } else {
+          result = paragraphStart + childOffset + (target > textOffset ? child.nodeSize : 0);
+        }
+        return;
+      }
+      textOffset = nextOffset;
+    });
+    if (result != null) return;
+    const paragraphEnd = paragraphStart + paragraph.content.size;
+    if (target <= textOffset) {
+      result = paragraphEnd;
+      return;
+    }
+    if (index < doc.childCount - 1) {
+      if (target === textOffset) {
+        result = paragraphEnd;
+        return;
+      }
+      textOffset += 1;
+    }
+  });
+
+  return result ?? TextSelection.atEnd(doc).from;
+}
+
+function promptNodeSerializedText(node: ProseMirrorNode): string {
+  if (node.isText) return node.text ?? "";
+  if (isMentionNode(node)) {
+    const label = promptMentionSerializedLabel(node);
+    const path = String(node.attrs.path || "");
+    return label && path ? `[${label}](${escapePromptPath(path)})` : "";
+  }
+  return "";
+}
+
+function promptMentionSerializedLabel(node: ProseMirrorNode): string {
+  const name = String(node.attrs.name || "").replace(/^[@$]/, "");
+  if (node.type.name === "skillMention" || node.type.name === "appMention") return name ? `$${name}` : "";
+  if (node.type.name === "pluginMention") return name ? `@${name}` : "";
+  if (node.type.name === "agentMention") {
+    const displayName = String(node.attrs.displayName || name).replace(/^@/, "");
+    return displayName ? `@${displayName}` : "";
+  }
+  return String(node.attrs.label || node.attrs.displayName || node.attrs.name || "");
+}
+
+function promptMentionDisplayText(node: ProseMirrorNode): string {
+  const displayName = String(node.attrs.displayName || node.attrs.name || node.attrs.label || "");
+  if (node.type.name === "agentMention") return displayName.startsWith("@") ? displayName : `@${displayName}`;
+  if (node.type.name === "skillMention" || node.type.name === "appMention" || node.type.name === "pluginMention") {
+    return displayName.replace(/^[@$]/, "");
+  }
+  return String(node.attrs.label || displayName);
+}
+
+function docCharAt(doc: ProseMirrorNode, pos: number): string {
+  if (pos >= doc.content.size) return "";
+  const resolved = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)));
+  if (resolved.parentOffset >= resolved.parent.content.size) return "\n";
+  const next = resolved.parent.childAfter(resolved.parentOffset).node;
+  return next?.isText ? next.text?.[0] ?? "" : "";
+}
+
+function inferMentionNameFromPath(path: string): string {
+  if (/^(?:app|plugin|agent):\/\//i.test(path)) return path.replace(/^[a-z]+:\/\//i, "").split(/[/?#]/, 1)[0] ?? "";
+  const normalized = path.replace(/\/+$/, "");
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  if (parts.at(-1)?.toLowerCase() === "skill.md" && parts.length >= 2) return parts.at(-2) ?? "";
+  return parts.at(-1) ?? normalized;
 }
 
 function insertPlainTextAtSelection(view: EditorView, text: string): void {
@@ -701,10 +854,16 @@ function isMentionNode(node: ProseMirrorNode): boolean {
 }
 
 function unescapePromptPath(value: string): string {
-  return value.replace(/\\([\\)])/g, "$1");
+  const unwrapped = value.startsWith("<") && value.endsWith(">") && value.length >= 2
+    ? value.slice(1, -1).replace(/\\>/g, ">")
+    : value;
+  return unwrapped.replace(/\\([\\)])/g, "$1");
 }
 
 function escapePromptPath(value: string): string {
+  if (/[\s()<>]/.test(value)) {
+    return `<${value.replace(/\\/g, "\\\\").replace(/>/g, "\\>")}>`;
+  }
   return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }
 

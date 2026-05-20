@@ -384,7 +384,11 @@ export async function runSlashRequestWorkflow(
         return;
       case "showExperimental": {
         openCommandPanel("experimental", { status: "loading", entries: [] });
-        const result = await client.request<unknown>("experimentalFeature/list", { limit: 50 }, 120_000);
+        const result = await client.request<unknown>(
+          "experimentalFeature/list",
+          { limit: 50, threadId: activeThreadId ?? null },
+          120_000,
+        );
         openCommandPanel("experimental", { status: "ready", entries: projectCommandPanelEntries({ experimental: result }) });
         return;
       }

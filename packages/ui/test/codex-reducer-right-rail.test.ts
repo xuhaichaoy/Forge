@@ -160,8 +160,13 @@ function projectsBranchDetailsAfterFirstTurnMetadataRefresh(): void {
     "metadata refresh after first send should not erase the visible prompt",
   );
   assertDeepEqual(
+    // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js he —
+    // Codex Desktop's summary panel always emits the Sources subsection alongside
+    // the Git surface (empty-state copy "No sources yet"), so once branchDetails
+    // becomes visible we expect ["branchDetails", "sources"] back from the
+    // projection rather than just ["branchDetails"].
     sections.map((section) => section.id),
-    ["branchDetails"],
+    ["branchDetails", "sources"],
     "metadata refresh after first send should make the right rail visible without switching threads",
   );
   assertEqual(
@@ -261,6 +266,7 @@ function stateWithThread(...threadIds: string[]): CodexUiState {
 function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
     id,
+    sessionId: id,
     forkedFromId: null,
     preview: "",
     ephemeral: false,

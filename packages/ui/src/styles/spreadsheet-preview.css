@@ -1,0 +1,88 @@
+/* CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js
+ * Codex Desktop renders xlsx through its Popcorn Workbook component
+ * (heavyweight .NET WASM viewer with grid virtualization, styles, and charts).
+ * HiCodex's reduced preview uses a plain <table> emitted by SheetJS
+ * sheet_to_html, so these styles only cover the basics: a tab strip for
+ * multi-sheet workbooks, a scrollable table area, and a sticky-feeling header
+ * row via :first-child styling.
+ */
+
+.hc-spreadsheet-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--hc-bg, #fff);
+}
+
+.hc-spreadsheet-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hc-border, rgba(0, 0, 0, 0.08));
+  overflow-x: auto;
+}
+
+.hc-spreadsheet-tab {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--hc-text-secondary, rgba(0, 0, 0, 0.6));
+}
+
+.hc-spreadsheet-tab:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.hc-spreadsheet-tab.is-active {
+  background: var(--hc-bg-accent, rgba(0, 0, 0, 0.08));
+  color: var(--hc-text-primary, rgba(0, 0, 0, 0.9));
+  border-color: var(--hc-border, rgba(0, 0, 0, 0.1));
+}
+
+.hc-spreadsheet-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.hc-spreadsheet-table-wrap table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.hc-spreadsheet-table-wrap th,
+.hc-spreadsheet-table-wrap td {
+  border: 1px solid var(--hc-border, rgba(0, 0, 0, 0.12));
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: top;
+}
+
+.hc-spreadsheet-table-wrap tr:first-child td,
+.hc-spreadsheet-table-wrap tr:first-child th {
+  background: var(--hc-bg-muted, rgba(0, 0, 0, 0.04));
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.hc-spreadsheet-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--hc-text-secondary, rgba(0, 0, 0, 0.6));
+  font-size: 13px;
+}

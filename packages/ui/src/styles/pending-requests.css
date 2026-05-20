@@ -10,10 +10,14 @@
   padding: 0;
 }
 
+/* CODEX-REF: /tmp/codex_asar_extract/webview/assets/composer-DXaiOlFj.js — xU
+   Codex 卡片用 flex column + body 滚动 / footer 独立的结构，让 Cancel/Allow
+   按钮永远贴在卡片底部可见。HiCodex 这里加 max-height 视口约束 + body 滚动， */
 .hc-request-input-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: min(70vh, 560px);
   overflow: hidden;
   border: 1px solid #d7d3c8;
   border-radius: 24px;
@@ -22,10 +26,15 @@
   box-shadow: 0 1px 2px rgba(28, 31, 35, 0.04), 0 10px 30px rgba(28, 31, 35, 0.06);
 }
 
+/* CODEX-REF: composer-DXaiOlFj.js — xU body className "flex flex-col gap-2 px-4 pt-4 pb-3"
+   滚动区域；min-height: 0 + flex 1 让内部 overflow 才能真正生效 */
 .hc-request-panel-content {
   display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
   padding: 16px 14px 0;
 }
 
@@ -72,12 +81,15 @@
   font-size: 11px;
 }
 
+/* CODEX-REF: composer-DXaiOlFj.js — lW
+   Codex 命令预览：外层 flex column；内层 min-h-0 overflow-y-auto font-mono；
+   <span block break-words whitespace-pre-wrap> + 独立 footer button。
+   HiCodex 用相同结构：外壳不再设 max-height（避免撑高卡片），改由 content
+   12rem 内部滚动 + line-clamp 3 折叠态实现 Codex 一致行为。 */
 .hc-request-command-preview {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 20rem;
-  overflow: hidden;
   border-radius: 8px;
   background: rgba(34, 38, 43, 0.06);
   color: #5f6662;
@@ -87,34 +99,55 @@
   line-height: 1.55;
 }
 
-.hc-request-command-preview pre {
+/* CODEX-REF: composer-DXaiOlFj.js — lW 内层 "min-h-0 overflow-y-auto px-2 pt-2 pb-2" */
+.hc-request-command-preview-content {
+  flex: 1 1 auto;
   min-height: 0;
-  margin: 0;
-  overflow: auto;
+  max-height: 12rem;
+  overflow-y: auto;
   padding: 8px 10px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
-.hc-request-command-preview[data-expanded="false"] pre {
+/* CODEX-REF: composer-DXaiOlFj.js — lW 内层 <span block break-words whitespace-pre-wrap>
+   靠 whitespace-pre-wrap 渲染 bash -lc heredoc 里的真实 \n 换行 */
+.hc-request-command-preview-text {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* CODEX-REF: composer-DXaiOlFj.js — ZU {display:-webkit-box;maxHeight:"3lh";WebkitLineClamp:3;...} */
+.hc-request-command-preview-text[data-collapsed="true"] {
   display: -webkit-box;
-  max-height: 4.65em;
+  max-height: 3lh;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
 
-.hc-request-preview-toggle {
-  align-self: flex-end;
-  margin: 0 6px 6px;
+/* CODEX-REF: composer-DXaiOlFj.js — lW footer "flex shrink-0 justify-end p-1" */
+.hc-request-command-preview-footer {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding: 4px;
+}
+
+.hc-request-command-preview-toggle {
+  border: 0;
   border-radius: 7px;
+  background: transparent;
   padding: 3px 8px;
   color: #4c5350;
   font-size: 12px;
   font-weight: 520;
+  cursor: pointer;
 }
 
-.hc-request-preview-toggle:hover {
+.hc-request-command-preview-toggle:hover {
   background: rgba(34, 38, 43, 0.08);
 }
 
@@ -276,8 +309,12 @@
   line-height: 1.35;
 }
 
+/* CODEX-REF: composer-DXaiOlFj.js — xU footer
+   "border-t border-token-border-default px-2 py-2 flex shrink-0 justify-end"
+   独立 footer，永远不会被压扁 / 推出视口 */
 .hc-request-panel-actions {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-end;
   gap: 7px;
   border-top: 1px solid rgba(34, 38, 43, 0.08);
@@ -330,4 +367,133 @@
 .hc-request-action.ghost kbd {
   background: rgba(34, 38, 43, 0.07);
   color: #74776f;
+}
+
+/* Codex Desktop dark overrides — palette mirrors `.electron-dark`:
+ *   panel bg = elevated-primary #212121f5
+ *   text = #fff / rgba(255,255,255,0.70) / rgba(255,255,255,0.50)
+ *   borders = rgba(255,255,255,0.08) default, 0.16 heavy
+ *   primary cta = blue-900 with white text
+ */
+.hc-app[data-theme="dark"] .hc-request-input-panel {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  color: var(--hc-text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.50), 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.hc-app[data-theme="dark"] .hc-request-panel-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-detail-row {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-detail-row > span:first-child {
+  color: rgba(255, 255, 255, 0.50);
+}
+
+.hc-app[data-theme="dark"] .hc-request-detail-row > span:last-child {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-detail-row code {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.80);
+}
+
+.hc-app[data-theme="dark"] .hc-request-command-preview {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.hc-app[data-theme="dark"] .hc-request-command-preview-toggle {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-command-preview-toggle:hover {
+  background: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] .hc-request-file-preview {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hc-app[data-theme="dark"] .hc-request-file-preview code {
+  color: rgba(255, 255, 255, 0.80);
+}
+
+.hc-app[data-theme="dark"] .hc-request-question {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-question-heading > small {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-option-row {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-option-row:hover,
+.hc-app[data-theme="dark"] .hc-request-option-row[data-selected="true"] {
+  background: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] .hc-request-option-index,
+.hc-app[data-theme="dark"] .hc-request-inline-freeform > span {
+  color: rgba(255, 255, 255, 0.50);
+}
+
+.hc-app[data-theme="dark"] .hc-request-option-copy strong {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-option-copy small {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-inline-freeform input,
+.hc-app[data-theme="dark"] .hc-request-inline-freeform textarea {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-inline-freeform input::placeholder,
+.hc-app[data-theme="dark"] .hc-request-inline-freeform textarea::placeholder {
+  color: rgba(255, 255, 255, 0.40);
+}
+
+.hc-app[data-theme="dark"] .hc-approval-disabled-note {
+  color: #f0a195;
+}
+
+.hc-app[data-theme="dark"] .hc-request-panel-actions {
+  border-top-color: var(--hc-border-default);
+}
+
+/* primary CTA stays green (codex brand `accent.success`),
+ * but bumped a touch for dark contrast */
+.hc-app[data-theme="dark"] .hc-request-action.primary {
+  background: #2a8a78;
+  color: #ffffff;
+}
+
+.hc-app[data-theme="dark"] .hc-request-action.ghost {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-action.ghost:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-action kbd {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-action.ghost kbd {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--hc-text-secondary);
 }

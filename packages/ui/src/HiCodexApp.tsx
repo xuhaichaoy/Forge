@@ -29,6 +29,7 @@ import { RightRail } from "./components/right-rail";
 import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
 import { ThreadActionDialog } from "./components/thread-action-dialog";
+import { ThreadFindBar } from "./components/thread-find-bar";
 import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
@@ -114,6 +115,7 @@ import {
   composerPlaceholderText,
   projectComposerSubmitState,
   type ComposerAttachment,
+  type ComposerMentionMarker,
   type ComposerMentionOption,
   type ComposerMode,
   type SettingsPanelId,
@@ -201,12 +203,24 @@ import {
   saveHiCodexLocale,
   type HiCodexLocale,
 } from "./state/i18n";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./state/hicodex-desktop-namespace";
 import {
   loadNotificationPreferences,
   mergeNotificationPreferences,
   saveNotificationPreferences,
   type NotificationPreferences,
 } from "./state/notification-preferences";
+import {
+  createHostPendingWorktree,
+  loadComposerWorkMode,
+  projectWorktreeModeOptions,
+  readCurrentHostGitStatus,
+  saveComposerWorkMode,
+  selectableComposerWorkMode,
+  type ComposerWorkMode,
+  type HostGitStatus,
+  type PendingWorktree,
+} from "./state/worktrees";
 import {
   completeProjectlessOnboarding,
   dismissFirstNewThreadPromos,
@@ -232,11 +246,22 @@ import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import { appendRpcDebugEvent } from "./state/rpc-debug";
 import {
   loadUiThemeMode,
+  nextToggleThemeMode,
   resolveUiThemeMode,
   saveUiThemeMode,
   type ResolvedUiTheme,
   type UiThemeMode,
 } from "./state/theme";
+import {
+  applyThreadFindMarks,
+  clampThreadFindIndex,
+  clearThreadFindMarks,
+  collectThreadFindUnitsFromDom,
+  findThreadFindMatches,
+  nextThreadFindIndex,
+  scrollThreadFindMatchIntoView,
+  type ThreadFindMatch,
+} from "./state/thread-find";
 import {
   createAndSelectThreadForTurn,
   refreshThreads,
@@ -288,6 +313,9 @@ function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
   );
 }
 
+const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
+const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;
+
 function readSystemThemeVariant(): ResolvedUiTheme {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -324,6 +352,11 @@ export function HiCodexApp() {
   const [followUpQueueingEnabled, setFollowUpQueueingEnabled] = useState(true);
   const [collaborationModes, setCollaborationModes] = useState<CollaborationModeMask[]>([]);
   const [workspace, setWorkspace] = useState("");
+  const [composerWorkMode, setComposerWorkModeState] = useState<ComposerWorkMode>(() =>
+    loadComposerWorkMode(browserStorage())
+  );
+  const [pendingWorktree, setPendingWorktree] = useState<PendingWorktree | null>(null);
+  const [worktreeHostGitStatus, setWorktreeHostGitStatus] = useState<HostGitStatus | null>(null);
   const [workspaceDeveloperInstructions, setWorkspaceDeveloperInstructions] = useState<{
     workspace: string;
     value: string | null;
@@ -431,8 +464,8 @@ export function HiCodexApp() {
   const mcpFollowUpDialogDispatchingRef = useRef(false);
   const openSideConversationPanelRef = useRef<((thread: Thread) => void) | null>(null);
   /*
-   * User-overridden model selection for new chats. Persisted to localStorage
-   * under `hicodex.selectedModelKey`. When non-null, applied to ThreadStart /
+   * User-overridden model selection for new chats. Persisted under the
+   * `desktop.hicodex.*` app namespace. When non-null, applied to ThreadStart /
    * ThreadFork params (codex-protocol v2 ThreadStartParams.modelProvider /
    * .model accept overrides — see thread-workflow.ts buildThreadContextParams).
    *
@@ -444,7 +477,7 @@ export function HiCodexApp() {
   const [selectedModelKey, setSelectedModelKeyState] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     try {
-      return window.localStorage.getItem("hicodex.selectedModelKey");
+      return readMigratedStorageValue(window.localStorage, SELECTED_MODEL_STORAGE_KEY, [LEGACY_SELECTED_MODEL_STORAGE_KEY]);
     } catch {
       return null;
     }
@@ -452,8 +485,12 @@ export function HiCodexApp() {
   const setSelectedModelKey = useCallback((key: string | null) => {
     setSelectedModelKeyState(key);
     try {
-      if (key) window.localStorage.setItem("hicodex.selectedModelKey", key);
-      else window.localStorage.removeItem("hicodex.selectedModelKey");
+      if (key) {
+        window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, key);
+      } else {
+        window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY);
+        window.localStorage.removeItem(LEGACY_SELECTED_MODEL_STORAGE_KEY);
+      }
     } catch {
       // localStorage not available — selection still works in memory
     }
@@ -475,6 +512,15 @@ export function HiCodexApp() {
   const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
   const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
+  const [threadFindOpen, setThreadFindOpen] = useState(false);
+  const [threadFindQuery, setThreadFindQuery] = useState("");
+  const [threadFindIndex, setThreadFindIndex] = useState(0);
+  const [threadFindFocusToken, setThreadFindFocusToken] = useState(0);
+  const [threadFindResult, setThreadFindResult] = useState<{ query: string; matches: ThreadFindMatch[] }>({
+    query: "",
+    matches: [],
+  });
+  const previousThreadFindQueryRef = useRef("");
   const [mcpServerForm, setMcpServerForm] = useState<McpServerFormAction | null>(null);
   const [mcpToolForm, setMcpToolForm] = useState<McpToolFormAction | null>(null);
   const [mcpFollowUpDialog, setMcpFollowUpDialog] = useState<McpFollowUpDialogRequest | null>(null);
@@ -674,6 +720,7 @@ export function HiCodexApp() {
   const activeTurnId = activeThreadRuntime.activeTurnId;
   const itemsByThread = useMemo(() => selectItemsByThread(state), [state.threadsRuntime]);
   const activeThreadRunning = Boolean(activeTurnId) || isThreadStatusInProgress(activeThread?.status);
+  const worktreeStatusCwd = activeThread?.cwd?.trim() || workspace.trim();
   const activePendingRequests = useMemo(
     () => deriveActivePendingRequests(state.pendingRequests, {
       activeThreadId: state.activeThreadId,
@@ -775,9 +822,92 @@ export function HiCodexApp() {
     () => projectBranchDetails({
       thread: activeThread,
       diff: activeDiff ? { diff: activeDiff } : null,
+      gitStatus: worktreeHostGitStatus,
     }),
-    [activeDiff, activeThread],
+    [activeDiff, activeThread, worktreeHostGitStatus],
   );
+  useEffect(() => {
+    if (!worktreeStatusCwd || !isTauriRuntime()) {
+      setWorktreeHostGitStatus(null);
+      return;
+    }
+    let cancelled = false;
+    void readCurrentHostGitStatus(worktreeStatusCwd)
+      .then((status) => {
+        if (cancelled) return;
+        setWorktreeHostGitStatus(status);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setWorktreeHostGitStatus(null);
+        dispatch({ type: "log", text: `host git status failed: ${formatError(error)}`, level: "warn" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch, worktreeStatusCwd]);
+  const composerWorkModeOptions = useMemo(
+    () => projectWorktreeModeOptions({
+      hostGitStatus: worktreeHostGitStatus,
+      mode: composerWorkMode,
+      tauriRuntimeAvailable: isTauriRuntime(),
+    }),
+    [composerWorkMode, worktreeHostGitStatus],
+  );
+  const activeThreadFindMatches = useMemo(
+    () => (threadFindResult.query === threadFindQuery ? threadFindResult.matches : []),
+    [threadFindQuery, threadFindResult],
+  );
+  const visibleThreadFindIndex = clampThreadFindIndex(threadFindIndex, activeThreadFindMatches.length);
+  const activeThreadFindMatch = activeThreadFindMatches[visibleThreadFindIndex] ?? null;
+  const openThreadFindBar = useCallback(() => {
+    setCommandPanel(null);
+    setActiveSettingsPanel(null);
+    setThreadFindOpen(true);
+    setThreadFindFocusToken((current) => current + 1);
+  }, []);
+  const closeThreadFindBar = useCallback(() => {
+    setThreadFindOpen(false);
+  }, []);
+  const goToThreadFindMatch = useCallback((direction: 1 | -1) => {
+    setThreadFindIndex((current) => nextThreadFindIndex(current, activeThreadFindMatches.length, direction));
+  }, [activeThreadFindMatches.length]);
+  useEffect(() => {
+    if (!threadFindOpen || typeof document === "undefined") return;
+    const root = document.querySelector<HTMLElement>("[data-thread-find-target='conversation']");
+    if (!root) {
+      setThreadFindResult({ query: threadFindQuery, matches: [] });
+      return;
+    }
+    clearThreadFindMarks(root);
+    const matches = findThreadFindMatches(collectThreadFindUnitsFromDom(root), threadFindQuery);
+    const queryChanged = previousThreadFindQueryRef.current !== threadFindQuery;
+    previousThreadFindQueryRef.current = threadFindQuery;
+    setThreadFindResult({ query: threadFindQuery, matches });
+    setThreadFindIndex((current) => queryChanged ? 0 : clampThreadFindIndex(current, matches.length));
+  }, [activeThreadScrollKey, conversation.units, threadFindOpen, threadFindQuery]);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.querySelector<HTMLElement>("[data-thread-find-target='conversation']");
+    if (!root) return;
+    if (!threadFindOpen) {
+      clearThreadFindMarks(root);
+      return;
+    }
+    applyThreadFindMarks(root, activeThreadFindMatches, activeThreadFindMatch?.id ?? null);
+    if (activeThreadFindMatch) scrollThreadFindMatchIntoView(activeThreadFindMatch, root);
+    return () => clearThreadFindMarks(root);
+  }, [activeThreadFindMatch, activeThreadFindMatches, threadFindOpen]);
+  useEffect(() => {
+    if (!threadFindOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeThreadFindBar();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [closeThreadFindBar, threadFindOpen]);
   const hasFilePreviewSelection = artifactPreview !== null || fileReference !== null;
   /*
    * Codex Desktop opens file/artifact previews into the AppShell RightPanel
@@ -1377,12 +1507,22 @@ export function HiCodexApp() {
   const readyProviders = useMemo(() => {
     const ready = new Set<string>();
     const active = state.threadContextDefaults?.modelProvider ?? "";
-    if (active) ready.add(active);
-    if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredential(codexAuthSummary)) {
+    // The OAuth subscription provider must be gated by **live** auth status,
+    // not by being marked active in config.toml and not by the on-disk
+    // auth.json summary (which can show a stale ChatGPT token or an unrelated
+    // API key for a third-party gateway). `oauthAuthMethod` is the
+    // authoritative signal: codex-rs's `getAuthStatus` RPC only returns a
+    // non-null `authMethod` when the openai provider has a usable credential
+    // right now. Without this gate the inline "Sign in to ChatGPT" button
+    // silently disappears even though the user has not completed OAuth.
+    if (active && active !== DEFAULT_SUBSCRIPTION_PROVIDER_ID) {
+      ready.add(active);
+    }
+    if (oauthAuthMethod && oauthAuthMethod.length > 0) {
       ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
     }
     return ready;
-  }, [state.threadContextDefaults?.modelProvider, oauthAuthMethod, codexAuthSummary]);
+  }, [state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
 
   const {
     archiveSelectedThread,
@@ -1425,6 +1565,9 @@ export function HiCodexApp() {
   const selectWorkspaceRoot = useCallback((root: string) => {
     const normalized = normalizeWorkspaceRoot(root);
     if (!normalized) return;
+    setPendingWorktree((current) => (
+      normalizeWorkspaceRoot(current?.path ?? "") === normalized ? current : null
+    ));
     setSelectedWorkspaceRoots((current) => (
       current.includes(normalized) ? current : [normalized, ...current]
     ));
@@ -1440,6 +1583,47 @@ export function HiCodexApp() {
       dispatch({ type: "log", text: `folder picker failed: ${formatError(error)}`, level: "warn" });
     }
   }, [dispatch, selectWorkspaceRoot]);
+
+  const setComposerWorkMode = useCallback(async (mode: ComposerWorkMode) => {
+    const selectableMode = selectableComposerWorkMode(mode, composerWorkModeOptions);
+    if (selectableMode !== mode) {
+      const option = composerWorkModeOptions.find((candidate) => candidate.id === mode);
+      dispatch({
+        type: "log",
+        text: option?.disabledReason ?? `${mode} mode is disabled for the current workspace.`,
+        level: "warn",
+      });
+      return;
+    }
+    if (mode !== "worktree") {
+      setComposerWorkModeState(saveComposerWorkMode(browserStorage(), selectableMode));
+      return;
+    }
+    try {
+      const pending = await createHostPendingWorktree({ cwd: worktreeStatusCwd });
+      const pendingPath = normalizeWorkspaceRoot(pending.path);
+      if (!pendingPath) throw new Error("Host returned an empty pending worktree path.");
+      setPendingWorktree(pending);
+      setSelectedWorkspaceRoots((current) => (
+        current.includes(pendingPath) ? current : [pendingPath, ...current]
+      ));
+      setWorkspace(pendingPath);
+      setComposerWorkModeState(saveComposerWorkMode(browserStorage(), "worktree"));
+      await createWorkbenchThread();
+      dispatch({
+        type: "log",
+        text: `Pending worktree ready: ${pendingPath}`,
+        level: "info",
+      });
+    } catch (error) {
+      dispatch({ type: "log", text: `create worktree failed: ${formatError(error)}`, level: "error" });
+    }
+  }, [
+    composerWorkModeOptions,
+    createWorkbenchThread,
+    dispatch,
+    worktreeStatusCwd,
+  ]);
 
   const {
     backgroundAgentConversation,
@@ -1835,18 +2019,6 @@ export function HiCodexApp() {
     })();
   }, [activeThread?.cwd, client, commandMenuEntries, ensureConnected, state.hostStatus?.defaultCwd, workspace]);
 
-  const openThreadFindPanel = useCallback(() => {
-    const entries = threadFindEntriesFromDom();
-    openCommandPanel("generic", {
-      status: entries.length > 0 ? "ready" : "empty",
-      title: "Find in thread",
-      message: entries.length > 0
-        ? "Search rendered thread content and select a result to jump to it."
-        : "No rendered thread content is available to search.",
-      entries,
-    });
-  }, [openCommandPanel]);
-
   const loadSettingsPanel = useCallback(async (
     panel: SettingsPanelId,
     options: { forceReload?: boolean } = {},
@@ -1862,19 +2034,23 @@ export function HiCodexApp() {
       notificationPreferences,
       openSettingsPanelContent,
       panel,
+      pendingWorktree,
       setSettingsPanelState,
       state,
       uiLocale,
       uiTheme: uiThemeSnapshot,
+      workMode: composerWorkMode,
       workspace,
     });
   }, [
     activeTurnId,
     client,
+    composerWorkMode,
     ensureConnected,
     includeImageDynamicTool,
     notificationPreferences,
     openSettingsPanelContent,
+    pendingWorktree,
     state,
     uiLocale,
     uiThemeSnapshot,
@@ -1893,13 +2069,13 @@ export function HiCodexApp() {
       const key = event.key.toLowerCase();
       if (key !== "k" && key !== "f" && key !== "b") return;
       event.preventDefault();
-      if (key === "f") openThreadFindPanel();
+      if (key === "f") openThreadFindBar();
       else if (key === "b") toggleSidebar();
       else openCommandMenu();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openCommandMenu, openThreadFindPanel, toggleSidebar]);
+  }, [openCommandMenu, openThreadFindBar, toggleSidebar]);
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -2510,43 +2686,53 @@ export function HiCodexApp() {
     return attachmentsWithDataImagePreviews(visibleAttachments);
   }, []);
 
-  const searchComposerMentions = useCallback(async (query: string): Promise<ComposerMentionOption[]> => {
+  const searchComposerMentions = useCallback(async (
+    query: string,
+    marker: ComposerMentionMarker,
+  ): Promise<ComposerMentionOption[]> => {
     const cwd = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
-    if (!query.trim()) return [];
     if (!(await ensureConnected())) return [];
-    const [fileResult, skillResult, appResult, pluginResult] = await Promise.allSettled([
-      cwd
+    const trimmedQuery = query.trim();
+    if (marker === "$") {
+      const [skillResult, appResult] = await Promise.allSettled([
+        client.request<unknown>("skills/list", {
+          cwds: cwd ? [cwd] : [],
+          forceReload: false,
+        }),
+        loadAllApps(client, { threadId: state.activeThreadId }),
+      ]);
+      if (skillResult.status === "rejected" && appResult.status === "rejected") throw skillResult.reason;
+      return dedupeComposerMentionOptions([
+        ...(skillResult.status === "fulfilled" ? mentionOptionsFromSkillsResponse(skillResult.value, query) : []),
+        ...(appResult.status === "fulfilled" ? mentionOptionsFromAppsResponse(appResult.value, query) : []),
+      ]).slice(0, 25);
+    }
+    const [pluginResult, skillResult, fileResult] = await Promise.allSettled([
+      client.request<unknown>("plugin/list", {
+        cwds: cwd ? [cwd] : null,
+      }),
+      trimmedQuery
+        ? client.request<unknown>("skills/list", {
+            cwds: cwd ? [cwd] : [],
+            forceReload: false,
+          })
+        : Promise.resolve(null),
+      trimmedQuery && cwd
         ? client.request<{ files?: Array<Record<string, unknown>> }>(
             "fuzzyFileSearch",
             { query, roots: [cwd], cancellationToken: null },
             120_000,
           )
         : Promise.resolve({ files: [] }),
-      client.request<unknown>("skills/list", {
-        cwds: cwd ? [cwd] : [],
-        forceReload: false,
-      }),
-      loadAllApps(client, { threadId: state.activeThreadId }),
-      client.request<unknown>("plugin/list", {
-        cwds: cwd ? [cwd] : null,
-      }),
     ]);
     if (
-      fileResult.status === "rejected"
+      pluginResult.status === "rejected"
       && skillResult.status === "rejected"
-      && appResult.status === "rejected"
-      && pluginResult.status === "rejected"
-    ) throw fileResult.reason;
+      && fileResult.status === "rejected"
+    ) throw pluginResult.reason;
     return dedupeComposerMentionOptions([
+      ...(pluginResult.status === "fulfilled" ? mentionOptionsFromPluginsResponse(pluginResult.value, query) : []),
       ...(skillResult.status === "fulfilled" ? mentionOptionsFromSkillsResponse(skillResult.value, query) : []),
-      ...(appResult.status === "fulfilled" ? mentionOptionsFromAppsResponse(appResult.value, query) : []),
-      ...(pluginResult.status === "fulfilled"
-        ? mentionOptionsFromPluginsResponse(
-            pluginResult.value,
-            query,
-            appResult.status === "fulfilled" ? appResult.value : undefined,
-          )
-        : []),
       ...(fileResult.status === "fulfilled" ? mentionOptionsFromFuzzyFiles(fileResult.value.files ?? []) : []),
     ]).slice(0, 25);
   }, [activeThread?.cwd, client, ensureConnected, state.activeThreadId, state.hostStatus?.defaultCwd, workspace]);
@@ -2735,6 +2921,8 @@ export function HiCodexApp() {
           onCopySessionId={copyThreadSessionId}
           onCopyDeeplink={copyThreadDeeplink}
           onOpenSettings={() => void loadSettingsPanel("general")}
+          resolvedUiTheme={resolvedUiTheme}
+          onToggleTheme={() => setUiThemeMode(nextToggleThemeMode(resolvedUiTheme))}
           accountView={accountViewModel}
           onSignOut={signOutAccount}
           sortKey={sidebarPreferences.sortKey}
@@ -2761,6 +2949,18 @@ export function HiCodexApp() {
           sidebarOpen={sidebarOpen}
           onToggleSidebar={toggleSidebar}
         />
+        {threadFindOpen && (
+          <ThreadFindBar
+            currentIndex={visibleThreadFindIndex}
+            focusToken={threadFindFocusToken}
+            matchCount={activeThreadFindMatches.length}
+            query={threadFindQuery}
+            onClose={closeThreadFindBar}
+            onNext={() => goToThreadFindMatch(1)}
+            onPrevious={() => goToThreadFindMatch(-1)}
+            onQueryChange={setThreadFindQuery}
+          />
+        )}
 
         <ThreadScrollLayout
           resetKey={activeThreadScrollKey}
@@ -2824,9 +3024,12 @@ export function HiCodexApp() {
                 branch={threadGitBranch(activeThread)}
                 cwd={activeThread?.cwd || workspace}
                 model={effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model}
+                workMode={composerWorkMode}
+                workModeOptions={composerWorkModeOptions}
                 workspaceRoots={workspaceRootOptions}
                 onWorkspaceRootSelected={selectWorkspaceRoot}
                 onUseExistingFolder={useExistingWorkspaceFolder}
+                onWorkModeChange={setComposerWorkMode}
                 approvalPolicy={effectiveThreadContextDefaults?.approvalPolicy ?? state.threadContextDefaults?.approvalPolicy}
                 approvalsReviewer={effectiveThreadContextDefaults?.approvalsReviewer ?? state.threadContextDefaults?.approvalsReviewer}
                 reasoningEffort={effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort}
@@ -3100,47 +3303,6 @@ function isAppBackedPanel(panel: CommandPanelKind | null | undefined): panel is 
 
 function isCommandMenuPanel(panel: CommandPanelState | null | undefined): panel is CommandPanelState & { panel: "generic" } {
   return panel?.panel === "generic" && panel.title === "Search commands and chats";
-}
-
-function threadFindEntriesFromDom(): CommandPanelEntry[] {
-  if (typeof document === "undefined") return [];
-  const root = document.querySelector<HTMLElement>("[data-thread-find-target='conversation']");
-  if (!root) return [];
-  const seen = new Set<string>();
-  return Array.from(root.querySelectorAll<HTMLElement>("[data-content-search-unit-key]"))
-    .map((element, index): CommandPanelEntry | null => {
-      const unitKey = element.dataset.contentSearchUnitKey?.trim();
-      if (!unitKey || seen.has(unitKey)) return null;
-      seen.add(unitKey);
-      const text = normalizeThreadFindText(element.innerText);
-      if (!text) return null;
-      return {
-        id: `thread-find:${unitKey}`,
-        title: threadFindTitle(text, index),
-        kind: "status",
-        meta: `Result ${index + 1}`,
-        details: [threadFindSnippet(text)],
-        action: {
-          type: "scrollToContentUnit",
-          title: threadFindTitle(text, index),
-          unitKey,
-        },
-      };
-    })
-    .filter((entry): entry is CommandPanelEntry => entry != null);
-}
-
-function normalizeThreadFindText(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function threadFindTitle(text: string, index: number): string {
-  const firstLine = text.slice(0, 72).trim();
-  return firstLine || `Thread result ${index + 1}`;
-}
-
-function threadFindSnippet(text: string): string {
-  return text.length > 220 ? `${text.slice(0, 217).trimEnd()}...` : text;
 }
 
 function isAppBackedPanelState(

@@ -1151,3 +1151,37 @@ button.hc-tool-summary:hover svg:last-child,
 @media (prefers-reduced-motion: reduce) {
   .hc-in-progress-diff-dot { animation: none; }
 }
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="worked-for"],
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="worked-for"] .hc-tool-summary {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="worked-for"] .hc-tool-summary:not(:disabled):hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-worked-for-divider {
+  background: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary:not(:disabled):hover {
+  background: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary-label {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary-detail,
+.hc-app[data-theme="dark"] .hc-tool-summary-action {
+  color: var(--hc-text-secondary);
+}

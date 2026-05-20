@@ -1187,9 +1187,6 @@ function compactParams(params: Record<string, unknown>): Record<string, unknown>
   );
 }
 
-type PermissionProfileModificationParam =
-  NonNullable<NonNullable<ThreadContextDefaults["permissions"]>["modifications"]>[number];
-
 function projectThreadPermissions(
   config: Record<string, unknown>,
 ): ThreadContextDefaults["permissions"] | undefined {
@@ -1204,31 +1201,14 @@ function projectThreadPermissions(
 
 function permissionProfileSelection(value: unknown): ThreadContextDefaults["permissions"] | undefined {
   const directId = stringOverride(value);
-  if (directId) return { type: "profile", id: directId };
+  if (directId) return directId;
 
   const record = recordField(value);
   if (!record) return undefined;
   const type = stringOverride(record.type);
   if (type && type !== "profile") return undefined;
   const id = stringOverride(record.id);
-  if (!id) return undefined;
-  const modifications = permissionProfileModifications(record.modifications);
-  return modifications === undefined
-    ? { type: "profile", id }
-    : { type: "profile", id, modifications };
-}
-
-function permissionProfileModifications(value: unknown): PermissionProfileModificationParam[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const modifications: PermissionProfileModificationParam[] = [];
-  for (const entry of value) {
-    const record = recordField(entry);
-    if (!record || record.type !== "additionalWritableRoot") continue;
-    const path = stringOverride(record.path);
-    if (!path) continue;
-    modifications.push({ type: "additionalWritableRoot", path });
-  }
-  return modifications;
+  return id || undefined;
 }
 
 function projectThreadEnvironments(

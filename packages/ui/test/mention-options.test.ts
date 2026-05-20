@@ -76,6 +76,9 @@ function projectsSkillMentionOptionsFromSkillsList(): void {
     [{
       kind: "skill",
       name: "review",
+      displayName: "Review",
+      description: "Review local changes.",
+      scopeLabel: "Repo",
       path: "/workspace/.codex/skills/review/SKILL.md",
       detail: "Repo · /workspace/.codex/skills/review/SKILL.md",
       promptText: "Review the current diff. [$review](/workspace/.codex/skills/review/SKILL.md) ",
@@ -101,6 +104,40 @@ function projectsSkillMentionOptionsFromSkillsList(): void {
     ),
     [],
     "disabled skills should not become attachable mention options",
+  );
+
+  assertDeepEqual(
+    mentionOptionsFromSkillsResponse(
+      {
+        data: [{
+          cwd: "/workspace",
+          skills: [{
+            name: "tender-outline-from-rfp",
+            path: "/workspace/.codex/skills/tender-outline-from-rfp/SKILL.md",
+            scope: "user",
+            enabled: true,
+            interface: {
+              displayName: "标书解析拆分",
+              shortDescription: "通用解析标书/RFP",
+              defaultPrompt: "拆出响应文件目录。",
+            },
+          }],
+          errors: [],
+        }],
+      },
+      "标书",
+    ),
+    [{
+      kind: "skill",
+      name: "tender-outline-from-rfp",
+      displayName: "标书解析拆分",
+      description: "通用解析标书/RFP",
+      scopeLabel: "User",
+      path: "/workspace/.codex/skills/tender-outline-from-rfp/SKILL.md",
+      detail: "User · /workspace/.codex/skills/tender-outline-from-rfp/SKILL.md",
+      promptText: "拆出响应文件目录。 [$tender-outline-from-rfp](/workspace/.codex/skills/tender-outline-from-rfp/SKILL.md) ",
+    }],
+    "localized skill display names should be searchable from the inline skill picker",
   );
 }
 
@@ -131,6 +168,9 @@ function projectsAppMentionOptionsFromAppsList(): void {
     [{
       kind: "app",
       name: "figma",
+      displayName: "Figma",
+      description: "Design workspace",
+      scopeLabel: "App",
       path: "app://figma",
       detail: "figma",
       promptText: "[$figma](app://figma) ",
@@ -175,6 +215,9 @@ function projectsPluginMentionOptionsFromPluginList(): void {
     [{
       kind: "plugin",
       name: "Browser",
+      displayName: "Browser Use",
+      description: "Inspect web pages.",
+      scopeLabel: "OpenAI",
       path: "plugin://browser-use",
       detail: "OpenAI",
       promptText: "Use the browser to inspect this. [@Browser](plugin://browser-use) ",

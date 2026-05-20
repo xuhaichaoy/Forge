@@ -46,7 +46,8 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
     case "input_text":
     case "inputText": {
       const text = stringField(record, "text");
-      return text ? [{ kind: "text", text, textElements: textElements(record.text_elements) }] : [];
+      if (!text) return [];
+      return splitTextWithFileLinks(text, textElements(record.text_elements));
     }
     case "image":
     case "image_url":
@@ -63,7 +64,19 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
     case "mention": {
       const path = stringField(record, "path");
       const label = stringField(record, "name") || path;
-      return label || path ? [{ kind: "chip", chipKind: "mention", label: label || path, path }] : [];
+      if (!label && !path) return [];
+      // If the mention points at a local file path (no URL scheme), render as a
+      // file chip with a file-type icon. Otherwise stay a generic @mention.
+      if (path && isLocalFilePath(path)) {
+        return [{
+          kind: "chip",
+          chipKind: "file",
+          label: label || basenameOf(path) || path,
+          path,
+          fileExtension: extensionOf(path),
+        }];
+      }
+      return [{ kind: "chip", chipKind: "mention", label: label || path, path }];
     }
     case "skill": {
       const path = stringField(record, "path");
@@ -119,4 +132,110 @@ function decodeURIComponentSafe(value: string): string {
   } catch {
     return value;
   }
+}
+
+const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+const REMOTE_PROMPT_LINK_RE = /^(?:app|plugin|skill|agent|http|https|mailto|tel|data|blob):/i;
+
+function isLocalFilePath(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (REMOTE_PROMPT_LINK_RE.test(trimmed)) return false;
+  if (URL_SCHEME_RE.test(trimmed)) return false;
+  // Absolute or relative path → treat as local file
+  return trimmed.startsWith("/") || trimmed.startsWith("~") || /\.[A-Za-z0-9]{1,8}$/.test(trimmed);
+}
+
+function basenameOf(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  const segment = trimmed.split(/[/?#]/).filter(Boolean).pop() ?? "";
+  return decodeURIComponentSafe(segment);
+}
+
+function extensionOf(path: string): string {
+  const name = basenameOf(path);
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || dot === name.length - 1) return "";
+  return name.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * Markdown link to local file:
+ *   `[some name](path/with/extension.ext)`
+ *   `[报价函](/tmp/报价.docx)`
+ *   `[report final.pdf](</tmp/report final.pdf>)` — angle-bracket escaped for
+ *   paths containing spaces (CommonMark angle-bracket destination).
+ *
+ * The composer inlines local file attachments as such links so the model can
+ * read the path directly. The projection layer extracts those links into
+ * chip parts so the user message renders a file chip above the bubble
+ * instead of a raw markdown link inside it.
+ *
+ * Two alternatives in the destination group:
+ *   `<...>`  (CommonMark angle-bracket destination — wraps a path that may
+ *             contain spaces; the `<` / `>` are markdown syntax, not content)
+ *   `(...)`  (plain destination — no spaces / parens)
+ */
+const FILE_LINK_RE = /\[([^\[\]\n]+)\]\(<([^>\n]+)>\)|\[([^\[\]\n]+)\]\(([^)\s\n]+)\)/g;
+
+function splitTextWithFileLinks(text: string, baseElements: UserMessageTextElement[]): UserMessageContentPart[] {
+  // Fast path: nothing that looks like a markdown link.
+  if (!text.includes("](")) {
+    return [{ kind: "text", text, textElements: baseElements }];
+  }
+  const parts: UserMessageContentPart[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  FILE_LINK_RE.lastIndex = 0;
+  while ((match = FILE_LINK_RE.exec(text)) !== null) {
+    // The regex has two alternatives; one branch yields (1,2), the other (3,4).
+    const label = (match[1] ?? match[3] ?? "").trim();
+    const rawPath = match[2] ?? match[4] ?? "";
+    const whole = match[0];
+    const path = rawPath.trim();
+    if (!isLocalFilePath(path)) continue;
+    const matchStart = match.index;
+    const before = text.slice(cursor, matchStart);
+    if (before) {
+      parts.push({ kind: "text", text: before, textElements: sliceTextElements(baseElements, cursor, matchStart) });
+    }
+    parts.push({
+      kind: "chip",
+      chipKind: "file",
+      label: label.trim() || basenameOf(path),
+      path,
+      fileExtension: extensionOf(path),
+    });
+    cursor = matchStart + whole.length;
+  }
+  if (parts.length === 0) {
+    return [{ kind: "text", text, textElements: baseElements }];
+  }
+  const tail = text.slice(cursor);
+  if (tail) {
+    parts.push({ kind: "text", text: tail, textElements: sliceTextElements(baseElements, cursor, text.length) });
+  }
+  // Drop any leading / trailing pure-whitespace text segments left over by the
+  // extraction (`\n[link]\n` -> drops both newlines so the chip doesn't end up
+  // wrapped by blank lines).
+  return parts.filter((part) => part.kind !== "text" || part.text.replace(/\s+/g, "").length > 0);
+}
+
+function sliceTextElements(
+  elements: UserMessageTextElement[],
+  start: number,
+  end: number,
+): UserMessageTextElement[] {
+  if (elements.length === 0) return [];
+  const out: UserMessageTextElement[] = [];
+  for (const el of elements) {
+    if (el.end <= start || el.start >= end) continue;
+    out.push({
+      start: Math.max(0, el.start - start),
+      end: Math.min(end - start, el.end - start),
+      placeholder: el.placeholder,
+    });
+  }
+  return out;
 }

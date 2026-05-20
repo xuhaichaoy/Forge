@@ -12,6 +12,7 @@ import {
   DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN,
   MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
   MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE,
+  assistantAutoReviewSummary,
   markdownFadeTextSegments,
   markdownImagePreviewAdjacentIndexes,
   markdownIndexedFadeSegmentCount,
@@ -20,6 +21,7 @@ import {
   parseMarkdownInline,
   parseMarkdownBlocks,
   parseMarkdownPromptLink,
+  safeMarkdownHref,
   shouldRenderUserMessageActionStrip,
 } from "../src/components/message-unit";
 
@@ -32,7 +34,9 @@ export default function runMessageUnitTests(): void {
   formatsAssistantSpreadsheetResourceCards();
   formatsAssistantImageResourceCards();
   parsesInlineMarkdownImagesBeforeLinks();
+  rejectsUnsafeMarkdownLinks();
   parsesAssistantPromptLinksLikeDesktop();
+  summarizesAssistantAutoReviewStats();
   parsesStandaloneImagesWithSpacesInTargets();
   resolvesAssistantImageSourcesWithLooseFilenameSpacing();
   hidesResourceCardsForWorkedCommentaryRows();
@@ -214,6 +218,29 @@ function parsesInlineMarkdownImagesBeforeLinks(): void {
   );
 }
 
+function rejectsUnsafeMarkdownLinks(): void {
+  assertDeepEqual(
+    parseMarkdownInline("No <javascript:alert(1)> and no [x](javascript:alert(1)).").map(promptSegmentSummary),
+    [{ kind: "text", text: "No <javascript:alert(1)> and no [x](javascript:alert(1))." }],
+    "unsafe URL schemes should remain plain text",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Keep <https://example.com/docs>, <dev@example.com>, and [file](</tmp/example file.ts:3>).").map(promptSegmentSummary),
+    [
+      { kind: "text", text: "Keep " },
+      { kind: "link", href: "https://example.com/docs", text: "https://example.com/docs" },
+      { kind: "text", text: ", " },
+      { kind: "link", href: "mailto:dev@example.com", text: "dev@example.com" },
+      { kind: "text", text: ", and " },
+      { kind: "link", href: "/tmp/example file.ts:3", text: "file" },
+      { kind: "text", text: "." },
+    ],
+    "safe external and local markdown links should still render",
+  );
+  assertEqual(safeMarkdownHref("data:text/html,hello"), null, "data URLs should be rejected");
+  assertEqual(safeMarkdownHref("//example.com"), null, "protocol-relative URLs should be rejected");
+}
+
 function parsesAssistantPromptLinksLikeDesktop(): void {
   assertDeepEqual(
     parseMarkdownInline("Use $review and $[deep research].").map(promptSegmentSummary),
@@ -251,6 +278,42 @@ function parsesAssistantPromptLinksLikeDesktop(): void {
     markdownPromptLinkFromHref("", "skill://code-review"),
     { kind: "promptLink", href: "skill://code-review", label: "$code-review", promptKind: "skill" },
     "prompt link fallback labels should be derived from Desktop prompt hrefs",
+  );
+}
+
+function summarizesAssistantAutoReviewStats(): void {
+  assertDeepEqual(
+    assistantAutoReviewSummary({
+      autoReviewStats: {
+        status: "completed",
+        riskLevel: "low",
+        issueCount: 2,
+        accepted: 1,
+        rejected: 1,
+        durationMs: 1530,
+        perCommandHistory: [
+          { decision: "accepted", command: "npm test" },
+          { decision: "rejected", command: "rm -rf /tmp/build" },
+        ],
+      },
+    }),
+    {
+      label: "2 review notes",
+      title: "Auto-review notes",
+      rows: [
+        { label: "Status", value: "completed" },
+        { label: "Risk", value: "low" },
+        { label: "Findings", value: "2" },
+        { label: "Accepted", value: "1" },
+        { label: "Rejected", value: "1" },
+        { label: "Duration", value: "1.5 s" },
+      ],
+      commands: [
+        "accepted: npm test",
+        "rejected: rm -rf /tmp/build",
+      ],
+    },
+    "assistant auto-review stats should expose popover-ready detail rows",
   );
 }
 

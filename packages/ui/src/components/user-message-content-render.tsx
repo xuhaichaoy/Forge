@@ -1,6 +1,11 @@
 import {
   AtSign,
+  File,
+  FileArchive,
+  FileCode,
   FileImage,
+  FileSpreadsheet,
+  FileText,
   Sparkles,
   X,
 } from "lucide-react";
@@ -115,12 +120,22 @@ function UserMessageContentPartView({
   if (part.kind === "image") {
     return <UserMessageImagePartView part={part} />;
   }
-  const icon = part.chipKind === "mention" ? <AtSign size={13} /> : <Sparkles size={13} />;
-  const label = `${part.chipKind === "mention" ? "@" : "$"}${part.label}`;
-  if (part.chipKind === "mention" && part.path && onOpenFileReference) {
+  let icon: ReactNode;
+  let label: string;
+  if (part.chipKind === "file") {
+    icon = fileIconFor(part.fileExtension);
+    label = part.label;
+  } else if (part.chipKind === "mention") {
+    icon = <AtSign size={13} />;
+    label = `@${part.label}`;
+  } else {
+    icon = <Sparkles size={13} />;
+    label = `$${part.label}`;
+  }
+  if ((part.chipKind === "mention" || part.chipKind === "file") && part.path && onOpenFileReference) {
     return (
       <button
-        className="hc-user-chip hc-user-chip-button"
+        className={`hc-user-chip hc-user-chip-button${part.chipKind === "file" ? " hc-user-chip-file" : ""}`}
         title={part.path}
         type="button"
         onClick={() => onOpenFileReference({ path: part.path, lineStart: 1 })}
@@ -131,11 +146,28 @@ function UserMessageContentPartView({
     );
   }
   return (
-    <span className="hc-user-chip" title={part.path || part.label}>
+    <span
+      className={`hc-user-chip${part.chipKind === "file" ? " hc-user-chip-file" : ""}`}
+      title={part.path || part.label}
+    >
       {icon}
       <span>{label}</span>
     </span>
   );
+}
+
+function fileIconFor(extension: string | undefined): ReactNode {
+  const ext = (extension ?? "").toLowerCase();
+  if (!ext) return <File size={13} />;
+  if (["doc", "docx", "rtf", "odt", "pages"].includes(ext)) return <FileText size={13} className="hc-user-chip-icon-word" />;
+  if (["xls", "xlsx", "csv", "tsv", "ods", "numbers"].includes(ext)) return <FileSpreadsheet size={13} className="hc-user-chip-icon-excel" />;
+  if (["pdf"].includes(ext)) return <FileText size={13} className="hc-user-chip-icon-pdf" />;
+  if (["ppt", "pptx", "key", "odp"].includes(ext)) return <FileText size={13} className="hc-user-chip-icon-ppt" />;
+  if (["zip", "tar", "gz", "rar", "7z"].includes(ext)) return <FileArchive size={13} />;
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "heic"].includes(ext)) return <FileImage size={13} />;
+  if (["txt", "md", "log"].includes(ext)) return <FileText size={13} />;
+  if (["ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "json", "yaml", "yml", "html", "css", "scss"].includes(ext)) return <FileCode size={13} />;
+  return <File size={13} />;
 }
 
 function UserMessageImagePartView({

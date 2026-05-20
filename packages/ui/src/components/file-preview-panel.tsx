@@ -12,6 +12,9 @@ import {
 import type { ReactNode } from "react";
 import { CodeSnippet } from "./code-snippet";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
+// CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js — spreadsheet route
+// (xlsx/xlsm/csv/tsv) renders through HiCodex's simplified SheetJS preview.
+import { SpreadsheetPreview, type SpreadsheetPreviewKind } from "./spreadsheet-preview";
 import {
   ARTIFACT_PREVIEW_MAX_BYTES,
   clipArtifactPreviewText,
@@ -35,6 +38,7 @@ import {
   convertLocalFileSrc,
   openFileReference,
   readDocumentPreview,
+  readFileBytesBase64,
   readFileMetadata,
   readTextFile,
   type DocumentPreview,
@@ -91,6 +95,9 @@ type FilePreviewLoadState =
   | { status: "ready"; path: string; text: string; language: string; truncatedLineCount: number; truncatedCharCount: number; metadata: LocalFileMetadata }
   | { status: "document"; path: string; preview: DocumentPreview; metadata: LocalFileMetadata }
   | { status: "image"; path: string; src: string; metadata: LocalFileMetadata | null }
+  // CODEX-REF: open-workspace-file-DOOUD1lA.js — xlsx/xlsm/csv/tsv state for the
+  // SheetJS-backed simplified preview (no formula recalc, no charts).
+  | { status: "spreadsheet"; path: string; data: ArrayBuffer; importKind: SpreadsheetPreviewKind; metadata: LocalFileMetadata }
   | { status: "binary"; message: string; metadata: LocalFileMetadata | null }
   | { status: "error"; message: string };
 
@@ -323,6 +330,32 @@ function FilePreviewPanelBody({
           }
           return;
         }
+        // CODEX-REF: open-workspace-file-DOOUD1lA.js — xlsx/xlsm/csv/tsv route.
+        // Codex Desktop renders these in the Popcorn Workbook component; the
+        // HiCodex simplified version pulls bytes via host_read_file_bytes_base64
+        // and lets SheetJS in the renderer do the parsing. This branch sits
+        // *before* the generic binary fallback so xlsx no longer shows the
+        // "Binary file not shown" placeholder.
+        const spreadsheetImportKind = getSpreadsheetImportKind(path);
+        if (spreadsheetImportKind) {
+          try {
+            const base64 = await readFileBytesBase64(path);
+            if (cancelled) return;
+            const data = decodeBase64ToArrayBuffer(base64);
+            setState({
+              status: "spreadsheet",
+              path,
+              data,
+              importKind: spreadsheetImportKind,
+              metadata,
+            });
+          } catch {
+            if (!cancelled) {
+              setState({ status: "binary", message: "Binary file not shown", metadata });
+            }
+          }
+          return;
+        }
         if (isKnownBinaryDocumentPath(path, metadata)) {
           setState({ status: "binary", message: "Binary file not shown", metadata });
           return;
@@ -390,6 +423,16 @@ function FilePreviewStateView({
   }
   if (state.status === "document") {
     return <DocumentPreviewView preview={state.preview} />;
+  }
+  if (state.status === "spreadsheet") {
+    // CODEX-REF: open-workspace-file-DOOUD1lA.js — simplified SheetJS render path.
+    return (
+      <SpreadsheetPreview
+        className="hc-file-preview-spreadsheet"
+        data={state.data}
+        importKind={state.importKind}
+      />
+    );
   }
   if (isDiffLanguage(state.language)) {
     return <DiffPreviewView cwd={cwd} text={state.text} workspaceRoot={workspaceRoot} />;
@@ -657,11 +700,38 @@ function isDocumentPath(path: string, metadata: LocalFileMetadata): boolean {
 
 function isKnownBinaryDocumentPath(path: string, metadata: LocalFileMetadata): boolean {
   const extension = pathExtension(path);
-  if (["ppt", "pptx", "xls", "xlsx"].includes(extension)) return true;
+  // CODEX-REF: open-workspace-file-DOOUD1lA.js — xlsx/xlsm are now routed to
+  // the SheetJS preview before this check fires, so we keep them out of this
+  // binary-fallback set. xls (legacy BIFF) still falls back here because
+  // SheetJS's xls path needs extra codepages we don't bundle.
+  if (["ppt", "pptx", "xls"].includes(extension)) return true;
   return metadata.mimeType === "application/vnd.ms-excel"
-    || metadata.mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     || metadata.mimeType === "application/vnd.ms-powerpoint"
     || metadata.mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+}
+
+// CODEX-REF: open-workspace-file-DOOUD1lA.js
+//   var _=new Map([["xlsm","xlsx"],["xlsx","xlsx"],["csv","csv"],["tsv","tsv"]]);
+// Maps the file suffix to the SheetJS parsing hint used by SpreadsheetPreview.
+function getSpreadsheetImportKind(path: string): SpreadsheetPreviewKind | null {
+  const extension = pathExtension(path);
+  if (extension === "xlsx" || extension === "xlsm") return "xlsx";
+  if (extension === "csv") return "csv";
+  if (extension === "tsv") return "tsv";
+  return null;
+}
+
+// CODEX-REF: host_read_file_bytes_base64 returns standard base64; the renderer
+// converts it back to an ArrayBuffer for SheetJS XLSX.read({type:"array"}).
+function decodeBase64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const length = binary.length;
+  const buffer = new ArrayBuffer(length);
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < length; i += 1) {
+    bytes[i] = binary.charCodeAt(i) & 0xff;
+  }
+  return buffer;
 }
 
 function isImagePath(path: string, metadata: LocalFileMetadata): boolean {

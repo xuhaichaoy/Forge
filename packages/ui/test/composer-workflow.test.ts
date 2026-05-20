@@ -158,7 +158,7 @@ function projectsAttachmentKindLabelsWithoutProtocolDrift(): void {
 
   assertDeepEqual(
     buildUserInputFromComposer("inspect", attachments).map((item) => item.type),
-    ["text", "mention", "localImage", "image", "mention"],
+    ["text", "localImage", "image"],
     "attachment kind labels should not invent durable UserInput types",
   );
 }
@@ -432,6 +432,7 @@ function exposesCodexCliSlashCommands(): void {
       "mcp",
       "apps",
       "plugins",
+      "worktrees",
       "logout",
       "quit",
       "exit",
@@ -486,6 +487,7 @@ function exposesCodexCliSlashCommands(): void {
       "debug-config",
       "rpc",
       "personality",
+      "worktrees",
       "ps",
       "stop",
     ],
@@ -579,6 +581,11 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
     "approvals should open approval settings",
   );
   assertDeepEqual(
+    applySlashCommand("worktrees", { input: "/worktrees" }),
+    { action: "openSettings", panel: "worktrees", clearInput: true },
+    "worktrees should open worktree settings",
+  );
+  assertDeepEqual(
     applySlashCommand("new", { input: "/new" }),
     { action: "createThread", clearInput: true },
     "new should create a fresh thread",
@@ -651,18 +658,33 @@ function exposesAttachActions(): void {
 function detectsActiveMentionTriggers(): void {
   assertDeepEqual(
     findActiveMentionTrigger("@"),
-    { query: "", from: 0, to: 1 },
+    { marker: "@", query: "", from: 0, to: 1 },
     "bare @ should open the inline mention picker",
   );
   assertDeepEqual(
     findActiveMentionTrigger("inspect @packages/ui"),
-    { query: "packages/ui", from: 8, to: 20 },
+    { marker: "@", query: "packages/ui", from: 8, to: 20 },
     "@ file query should be detected at the end of the draft",
   );
   assertDeepEqual(
     findActiveMentionTrigger("line one\n@composer"),
-    { query: "composer", from: 9, to: 18 },
+    { marker: "@", query: "composer", from: 9, to: 18 },
     "mention trigger should work on the active line",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("$"),
+    { marker: "$", query: "", from: 0, to: 1 },
+    "bare $ should open the inline skill/app picker",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("使用 $标书"),
+    { marker: "$", query: "标书", from: 3, to: 6 },
+    "$ skill query should be detected at the end of the draft",
+  );
+  assertDeepEqual(
+    findActiveMentionTrigger("cost$10"),
+    null,
+    "$ should not open skill autocomplete in the middle of a word",
   );
   assertDeepEqual(
     findActiveMentionTrigger("email a@b"),
@@ -671,11 +693,11 @@ function detectsActiveMentionTriggers(): void {
   );
   assertDeepEqual(
     findActiveMentionTrigger("inspect @composer then continue"),
-    null,
-    "completed words after the mention query should close autocomplete",
+    { marker: "@", query: "composer then continue", from: 8, to: 31 },
+    "Desktop-style @ mentions should keep spaces inside the active query",
   );
   assertDeepEqual(
-    removeMentionTriggerText("inspect @composer", { query: "composer", from: 8, to: 17 }),
+    removeMentionTriggerText("inspect @composer", { marker: "@", query: "composer", from: 8, to: 17 }),
     "inspect",
     "selecting a mention should remove the typed @ query from the prompt",
   );
@@ -781,6 +803,11 @@ function projectsDroppedAndPastedFilesIntoAttachments(): void {
     "non-standard file path should be read when the desktop host exposes it",
   );
   assertDeepEqual(
+    composerFilePath({ name: "report.pdf", type: "application/pdf" }),
+    null,
+    "bare File.name should not be treated as a readable local file path",
+  );
+  assertDeepEqual(
     composerAttachmentsFromPaths(["/tmp/screenshot.png", "/tmp/report.pdf", " /tmp/screenshot.png "]),
     [
       { type: "localImage", path: "/tmp/screenshot.png" },
@@ -865,13 +892,8 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
     [
       {
         type: "text",
-        text: "summarize this\n[$code-review](/skills/code-review/SKILL.md)",
+        text: "summarize this\n[composer-workflow.ts](packages/ui/src/state/composer-workflow.ts)\n[$code-review](/skills/code-review/SKILL.md)",
         text_elements: [],
-      },
-      {
-        type: "mention",
-        name: "composer-workflow.ts",
-        path: "packages/ui/src/state/composer-workflow.ts",
       },
       { type: "localImage", path: "/tmp/screenshot.png" },
       { type: "image", url: "https://example.test/diagram.png" },
@@ -902,28 +924,56 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
     [
       {
         type: "text",
-        text: "Use this pasted context.",
+        text: "Use this pasted context.\n[HiCodexApp.tsx](packages/ui/src/HiCodexApp.tsx)",
+        text_elements: [],
+      },
+    ] satisfies UserInput[],
+    "plain text attachments fold into text while file paths stay visible to the model as prompt links (projection extracts them into chips for display)",
+  );
+
+  assertDeepEqual(
+    buildUserInputFromComposer("看一下文件内容", [
+      { type: "filePath", path: "/tmp/report final.pdf" },
+    ]),
+    [
+      {
+        type: "text",
+        text: "看一下文件内容\n[report final.pdf](</tmp/report final.pdf>)",
+        text_elements: [],
+      },
+    ] satisfies UserInput[],
+    "local file attachments keep the path in text links so the agent can read them (projection upgrades the link to a file chip for display); paths with spaces are angle-bracket escaped for markdown",
+  );
+
+  assertDeepEqual(
+    buildUserInputFromComposer("use plugin", [
+      { type: "mention", name: "search", path: "plugin://search" },
+    ]),
+    [
+      {
+        type: "text",
+        text: "use plugin",
         text_elements: [],
       },
       {
         type: "mention",
-        name: "HiCodexApp.tsx",
-        path: "packages/ui/src/HiCodexApp.tsx",
+        name: "search",
+        path: "plugin://search",
       },
     ] satisfies UserInput[],
-    "plain text attachments should fold into text while file paths remain structured mentions",
+    "non-file mentions should remain structured without leaking protocol references into prompt text",
   );
 
   assertDeepEqual(
     buildUserInputFromComposer("", [
-      { type: "localImage", path: "file:///tmp/screen%20shot.png" },
+      { type: "localImage", path: "file:///tmp/screen%20shot.png", detail: "original" },
       { type: "image", url: "file:///tmp/diagram.png" },
-      { type: "image", url: "data:image/png;base64,AAA", name: "pasted.png" },
+      { type: "image", url: "data:image/png;base64,AAA", name: "pasted.png", detail: "high" },
     ]),
     [
-      { type: "localImage", path: "/tmp/screen shot.png" },
+      { type: "localImage", path: "/tmp/screen shot.png", detail: "original" },
       { type: "localImage", path: "/tmp/diagram.png" },
-      { type: "image", url: "data:image/png;base64,AAA" },
+      { type: "image", url: "data:image/png;base64,AAA", detail: "high" },
     ] satisfies UserInput[],
     "image attachments should use Desktop-compatible localImage path or data URL user inputs",
   );

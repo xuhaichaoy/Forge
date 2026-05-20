@@ -190,6 +190,7 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
   const { id, ...rest } = overrides;
   return {
     id,
+    sessionId: id,
     forkedFromId: null,
     preview: "",
     ephemeral: false,
@@ -328,7 +329,7 @@ function projectsThreadContextFromCodexConfig(): void {
       approvalPolicy: "on-request",
       approvalsReviewer: "auto_review",
       sandbox: "workspace-write",
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       baseInstructions: "Base",
       developerInstructions: "Dev",
@@ -362,7 +363,7 @@ function projectsThreadContextFromCodexConfig(): void {
       approvalPolicy: undefined,
       approvalsReviewer: "user",
       sandbox: "workspace-write",
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       reasoningEffort: "high",
       personality: "pragmatic",
@@ -376,7 +377,7 @@ function projectsThreadContextFromCodexConfig(): void {
       model: "gpt-5.2",
       modelProvider: "hicodex_local",
       approvalsReviewer: "user",
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       personality: "pragmatic",
       config: {
@@ -471,7 +472,7 @@ function projectsThreadContextFromCodexConfig(): void {
 
   assertDeepEqual(
     buildTurnStartParams("thread-permissions", [], "/workspace", {
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       sandbox: "workspace-write",
       environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
     }),
@@ -479,7 +480,7 @@ function projectsThreadContextFromCodexConfig(): void {
       threadId: "thread-permissions",
       input: [],
       cwd: "/workspace",
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
     },
     "turn context params should send v2 permissions and environments without a legacy sandboxPolicy conflict",
@@ -522,7 +523,7 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     model: "gpt-5.2",
     modelProvider: "hicodex_local",
     serviceTier: "flex",
-    permissions: { type: "profile", id: "dev" },
+    permissions: "dev",
     environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
   });
   assertRequest(
@@ -534,7 +535,7 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
       model: "gpt-5.2",
       modelProvider: "hicodex_local",
       serviceTier: "flex",
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
       threadSource: "user",
     },
@@ -660,7 +661,7 @@ function buildsThreadLifecycleRequests(): void {
     model: "gpt-5.2",
     modelProvider: "hicodex_local",
     sandbox: "workspace-write",
-    permissions: { type: "profile", id: "dev" },
+    permissions: "dev",
     environments: [{ environmentId: "remote", cwd: "/workspace" }],
     personality: "pragmatic",
     memories: {
@@ -677,7 +678,7 @@ function buildsThreadLifecycleRequests(): void {
       cwd: "/workspace",
       model: "gpt-5.2",
       modelProvider: "hicodex_local",
-      permissions: { type: "profile", id: "dev" },
+      permissions: "dev",
       personality: "pragmatic",
       config: {
         "memories.use_memories": false,
@@ -690,7 +691,7 @@ function buildsThreadLifecycleRequests(): void {
 
   const fork = createClientRecorder();
   void forkThread(fork.client, "thread-1", "", {
-    permissions: { type: "profile", id: "read-only" },
+    permissions: "read-only",
     environments: [],
     personality: "friendly",
   });
@@ -701,7 +702,7 @@ function buildsThreadLifecycleRequests(): void {
     {
       threadId: "thread-1",
       cwd: null,
-      permissions: { type: "profile", id: "read-only" },
+      permissions: "read-only",
       threadSource: "user",
     },
     "forkThread should include fork-supported user params without unsupported environments or personality",

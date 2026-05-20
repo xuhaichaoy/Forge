@@ -1,12 +1,14 @@
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const defaultProtocolDir = resolve(root, "../codex/codex-rs/app-server-protocol/schema/typescript");
+const codexRoot = resolve(root, "../codex/codex-rs");
 const source =
   process.env.HICODEX_CODEX_PROTOCOL_DIR ||
-  defaultProtocolDir;
+  generateExperimentalProtocolTypes();
 const target = resolve(root, "packages/codex-protocol/src/generated");
 
 if (!existsSync(source)) {
@@ -43,3 +45,40 @@ writeFileSync(
 );
 
 console.log(`Synced Codex protocol types from ${source}`);
+
+function generateExperimentalProtocolTypes() {
+  const outRoot = mkdtempSync(resolve(tmpdir(), "hicodex-codex-protocol-"));
+  const outDir = resolve(outRoot, "typescript");
+  const command = "cargo";
+  const commandArgs = [
+    "run",
+    "--manifest-path",
+    resolve(codexRoot, "Cargo.toml"),
+    "-p",
+    "codex-app-server-protocol",
+    "--bin",
+    "write_schema_fixtures",
+    "--",
+    "--schema-root",
+    outRoot,
+    "--experimental",
+  ];
+  const env = {
+    ...process.env,
+    CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR || resolve(tmpdir(), "hicodex-codex-rs-target"),
+  };
+  const result = spawnSync(command, commandArgs, {
+    cwd: codexRoot,
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0) {
+    rmSync(outRoot, { recursive: true, force: true });
+    const detail = [result.stderr, result.stdout].filter(Boolean).join("\n").trim();
+    throw new Error(
+      `Failed to generate experimental Codex protocol TypeScript from ${codexRoot}.${detail ? `\n${detail}` : ""}`,
+    );
+  }
+  return outDir;
+}
