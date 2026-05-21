@@ -19,6 +19,7 @@ import {
 } from "../state/render-groups";
 import {
   itemText,
+  itemType,
   mcpAppResourceUri,
 } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
@@ -61,19 +62,14 @@ function ToolActivityViewInner({
   threadId = null,
 }: ToolActivityViewProps) {
   /*
-   * Codex Desktop's `Jw` agent-body renderer (codex-local-conversation-thread.pretty.js:7881)
-   * maps standalone reasoning items to `F2 = null` — they are not surfaced as their own
-   * rows. Reasoning content is folded into the surrounding exploration group via `Ge` in
-   * split-items-into-render-groups, or silently dropped.
+   * Reasoning 单元渲染（恢复 DEVELOPMENT.md:116 规则）。
    *
-   * The live "Thinking…" UX is rendered by the separate `ZT` thinking-placeholder
-   * (`codex-local-conversation-thread.pretty.js:8335` / `:8384`), which `oT` (`:8000-8002`)
-   * activates while the turn is in_progress and no visible work / blocking request /
-   * assistant output is taking precedence. HiCodex's `desktopThinkingPlaceholderItem`
-   * (project-conversation.ts:540) injects a synthetic `type: "reasoning"` item marked with
-   * `_syntheticKind: "thinking-placeholder"` for exactly that purpose, so we let units
-   * carrying the placeholder render (showing the "Thinking" label) while skipping all
-   * other reasoning toolActivity units.
+   * 规则原文："Standalone reasoning items do not render as raw rows unless they
+   * are the synthetic thinking placeholder. Reasoning is folded into surrounding
+   * exploration/mergeable activity or skipped."
+   *
+   * 真实 reasoning ThreadItem 不渲染独立行；只有合成的 thinking-placeholder
+   * （由 desktopThinkingPlaceholderItem 注入）会渲染 ReasoningActivityView。
    */
   if (unit.summary.groupType === "reasoning") {
     const hasThinkingPlaceholder = unit.items.some((item) =>
@@ -235,6 +231,21 @@ function GenericToolActivityView({
           open={expanded}
           testId={toolActivityBodyTestId(unit)}
         >
+          {/*
+           * Working 聚合行（仅 worked-for 单元）— 把 summary.counts 转成
+           * "Ran N commands" / "Created N files" / "Explored {N files, M searches, K lists}"
+           * 之类文案。进行中用小写动词（running/created/editing/...），完成用大写动词
+           * （Ran/Created/Edited/...）。
+           */}
+          {isWorkedFor && (
+            <ul className="hc-worked-for-aggregates">
+              {workedForAggregateRows(unit).map((row, index) => (
+                <li className="hc-worked-for-aggregate-row" key={`${row.key}-${index}`}>
+                  <span className="hc-worked-for-aggregate-text">{row.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {(isWorkedFor ? workedForExpandedDetailItems(unit) : detailItems).map((item) => (
             <ToolActivityDetail
               item={item}
@@ -251,6 +262,123 @@ function GenericToolActivityView({
   );
 }
 
+/*
+ * 把 ToolActivitySummary.counts 转换成"聚合行"文案数组。
+ * 进/完动词大小写区分：进行中用小写动名词 (running/created/editing/...)，
+ * 完成用大写动词 (Ran/Created/Edited/...)。
+ */
+export interface WorkedForAggregateRow {
+  key: string;
+  text: string;
+}
+
+export function workedForAggregateRows(
+  unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>,
+): WorkedForAggregateRow[] {
+  const { counts, inProgress } = unit.summary;
+  const rows: WorkedForAggregateRow[] = [];
+
+  // 命令执行
+  const runningCommands = counts.runningCommands ?? 0;
+  const completedCommands = Math.max(counts.commands - runningCommands, 0);
+  if (inProgress && runningCommands > 0) {
+    rows.push({ key: "commands.running", text: countNoun(runningCommands, "running command", "running commands") });
+  }
+  if (completedCommands > 0) {
+    rows.push({ key: "commands.completed", text: actionCount("Ran", completedCommands, "command", "commands") });
+  }
+
+  // 文件创建
+  const runningCreated = counts.runningCreatedFiles ?? 0;
+  const completedCreated = Math.max(counts.createdFiles - runningCreated, 0);
+  if (inProgress && runningCreated > 0) {
+    rows.push({ key: "created.running", text: countNoun(runningCreated, "creating file", "creating files") });
+  }
+  if (completedCreated > 0) {
+    rows.push({ key: "created.completed", text: actionCount("Created", completedCreated, "file", "files") });
+  }
+
+  // 文件编辑
+  const runningEdited = counts.runningEditedFiles ?? 0;
+  const completedEdited = Math.max(counts.editedFiles - runningEdited, 0);
+  if (inProgress && runningEdited > 0) {
+    rows.push({ key: "edited.running", text: countNoun(runningEdited, "editing file", "editing files") });
+  }
+  if (completedEdited > 0) {
+    rows.push({ key: "edited.completed", text: actionCount("Edited", completedEdited, "file", "files") });
+  }
+
+  // 文件删除
+  const runningDeleted = counts.runningDeletedFiles ?? 0;
+  const completedDeleted = Math.max(counts.deletedFiles - runningDeleted, 0);
+  if (inProgress && runningDeleted > 0) {
+    rows.push({ key: "deleted.running", text: countNoun(runningDeleted, "deleting file", "deleting files") });
+  }
+  if (completedDeleted > 0) {
+    rows.push({ key: "deleted.completed", text: actionCount("Deleted", completedDeleted, "file", "files") });
+  }
+
+  // Exploration 聚合："Explored/Exploring {N files, M searches, K lists}"
+  if (counts.exploredFiles > 0 || counts.searches > 0 || counts.lists > 0) {
+    const detailParts: string[] = [];
+    if (counts.exploredFiles > 0) detailParts.push(countNoun(counts.exploredFiles, "file", "files"));
+    if (counts.searches > 0) detailParts.push(countNoun(counts.searches, "search", "searches"));
+    if (counts.lists > 0) detailParts.push(countNoun(counts.lists, "list", "lists"));
+    const details = detailParts.join(", ");
+    const verb = inProgress ? "Exploring" : "Explored";
+    rows.push({ key: "exploration", text: `${verb} ${details}` });
+  }
+
+  // Web 搜索
+  const runningWeb = counts.runningWebSearchCommands;
+  const completedWeb = Math.max(counts.webSearches - runningWeb, 0);
+  if (inProgress && runningWeb > 0) {
+    rows.push({ key: "webSearch.running", text: actionCount("Searching the web", runningWeb, "time", "times") });
+  }
+  if (completedWeb > 0) {
+    rows.push({ key: "webSearch.completed", text: actionCount("Searched the web", completedWeb, "time", "times") });
+  }
+
+  // MCP 工具调用
+  if (counts.mcpCalls > 0) {
+    const verb = inProgress ? "Calling" : "Called";
+    rows.push({ key: "mcp", text: actionCount(verb, counts.mcpCalls, "tool", "tools") });
+  }
+
+  // 审批结果聚合（approved/denied requests）
+  if (counts.approvedRequests && counts.approvedRequests > 0) {
+    rows.push({ key: "approved", text: actionCount("Approved", counts.approvedRequests, "request", "requests") });
+  }
+  if (counts.deniedRequests && counts.deniedRequests > 0) {
+    rows.push({ key: "denied", text: actionCount("Denied", counts.deniedRequests, "request", "requests") });
+  }
+
+  return rows;
+}
+
+/*
+ * Count helpers keep running noun phrases ("1 running command") separate from
+ * completed action phrases ("Ran 1 command").
+ */
+function countNoun(count: number, singular: string, plural: string): string {
+  return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+}
+
+function actionCount(verb: string, count: number, singular: string, plural: string): string {
+  return `${verb} ${countNoun(count, singular, plural)}`;
+}
+
+/*
+ * Reasoning 渲染 — 仅供 synthetic thinking-placeholder 使用。
+ *
+ * DEVELOPMENT.md:116 规则：standalone reasoning items 不直接渲染为 raw row。
+ * 真实 reasoning 内容被 split-items-into-render-groups 折进 exploration / mergeable
+ * activity 或丢弃；本 view 只接 synthetic thinking-placeholder（live "Thinking" 占位）。
+ *
+ * 用 reasoningActivityBody（兼容路径）拼接 placeholder 文本作为可展开 body；
+ * inProgress 时显示"Thinking"label，完成态不应该出现（thinking-placeholder 只在
+ * turn in_progress 时存在）。
+ */
 function ReasoningActivityView({
   unit,
 }: {
@@ -522,6 +650,9 @@ export function ToolBlock({
   inProgress = false,
   onOpenFileReference,
   onOpenDiff,
+  onPatchAction,
+  patchActionState,
+  patchActionInFlight,
   tone,
   value,
 }: {
@@ -532,6 +663,9 @@ export function ToolBlock({
   label: string;
   onOpenDiff?: () => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  onPatchAction?: (action: PatchAction, diff: string) => void;
+  patchActionState?: PatchActionState;
+  patchActionInFlight?: boolean;
   tone?: "terminal" | EventTone;
   value: string;
 }) {
@@ -542,6 +676,9 @@ export function ToolBlock({
         inProgress={inProgress}
         itemIds={itemIds}
         onOpenDiff={onOpenDiff}
+        onPatchAction={onPatchAction}
+        patchActionState={patchActionState}
+        patchActionInFlight={patchActionInFlight}
         value={value}
       />
     );
@@ -581,17 +718,42 @@ export interface TurnDiffViewModel {
   files: TurnDiffFileViewModel[];
 }
 
+/**
+ * Undo / Reapply patch 回调 — 由 `HiCodexApp.handlePatchAction` 接线，调用
+ * Tauri `host_apply_patch_action` 执行 git apply / --reverse，并在失败时把
+ * `PatchActionResult` 投给 `<UnifiedDiffFailureDialog/>`。
+ *
+ * Prop 仍声明为可选，方便 Storybook / 单测以静态 fixture 渲染 TurnDiffBlock
+ * 而不必拽起整个 Tauri stack；运行时 HiCodexApp 必传，按钮可见且可点击。
+ * 双击/重复点击保护：HiCodexApp 用 `useRef` 同步锁 + 全局 `patchActionInFlight`
+ * disable 所有 Undo/Reapply 按钮（避免并发 git apply）。
+ */
+export type PatchAction = "undo" | "reapply";
+export type PatchActionState = { action: PatchAction; diff: string } | null;
+
 function TurnDiffBlock({
   contentSearchUnitKey,
   inProgress,
   itemIds,
   onOpenDiff,
+  onPatchAction,
+  patchActionState,
+  patchActionInFlight,
   value,
 }: {
   contentSearchUnitKey?: string;
   inProgress: boolean;
   itemIds?: string;
   onOpenDiff?: () => void;
+  onPatchAction?: (action: PatchAction, diff: string) => void;
+  patchActionState?: PatchActionState;
+  /**
+   * Global in-flight flag — disables ALL Undo/Reapply buttons while any patch
+   * action is running. Backstops the synchronous `useRef` lock in HiCodexApp;
+   * the button-level `disabled` is the user-visible guarantee that prevents
+   * double-click before any git apply runs.
+   */
+  patchActionInFlight?: boolean;
   value: string;
 }) {
   const model = turnDiffViewModel(value);
@@ -602,6 +764,18 @@ function TurnDiffBlock({
   }, [value]);
 
   if (!model.hasChanges) return null;
+
+  /*
+   * Undo / Reapply toggles against the last patch action for this diff. The
+   * callback is optional for fixture-only renderers; HiCodexApp wires it to
+   * the Tauri `host_apply_patch_action` command at runtime.
+   */
+  const patchActionForThisDiff =
+    patchActionState && patchActionState.diff === value
+      ? patchActionState.action === "undo"
+        ? "reapply"
+        : "undo"
+      : "undo";
 
   if (inProgress) {
     return (
@@ -617,8 +791,21 @@ function TurnDiffBlock({
           </div>
           <div className="hc-turn-diff-spacer" />
           {onOpenDiff && (
-            <button className="hc-turn-diff-review" type="button" onClick={onOpenDiff}>
-              <span className="hc-turn-diff-review-full">Review changes</span>
+            <button
+              className="hc-turn-diff-review"
+              type="button"
+              onClick={onOpenDiff}
+              title="Review"
+              aria-label="Review changed files"
+            >
+              {/*
+               * Codex Desktop i18n (local-conversation-thread byte ~424049+):
+               *   codex.unifiedDiff.reviewChanges     = "Review here"
+               *   codex.unifiedDiff.reviewShort       = "Review"
+               *   codex.unifiedDiff.viewDiffTooltip   = "Review"
+               *   codex.unifiedDiff.reviewChangedFiles = "Review changed files" (aria-label)
+               */}
+              <span className="hc-turn-diff-review-full">Review here</span>
               <span className="hc-turn-diff-review-short">Review</span>
             </button>
           )}
@@ -636,7 +823,12 @@ function TurnDiffBlock({
       <div className="hc-turn-diff-header">
         <button
           aria-expanded={expanded}
-          aria-label={expanded ? "Collapse changed files" : "Expand changed files"}
+          /*
+           * Codex Desktop i18n: `codex.unifiedDiff.collapseFiles = "Collapse files"`
+           * (and the symmetric "Show {n} more files" toggle when there are many — not
+           * implemented here since HiCodex shows all files in a single expand).
+           */
+          aria-label={expanded ? "Collapse files" : "Expand files"}
           className="hc-turn-diff-toggle"
           type="button"
           onClick={() => setExpanded((value) => !value)}
@@ -648,6 +840,29 @@ function TurnDiffBlock({
           <ChevronRight aria-hidden className={expanded ? "is-open" : ""} size={14} />
         </button>
         <div className="hc-turn-diff-spacer" />
+        {/*
+         * `onPatchAction` is always provided by `HiCodexApp.tsx` at runtime
+         * (wired to the Tauri `host_apply_patch_action` command); the prop
+         * stays optional so fixture-only renderers (tests / Storybook) can
+         * skip the toolbar.
+         */}
+        {onPatchAction && (
+          <button
+            className="hc-turn-diff-patch-action"
+            /*
+             * Codex Desktop i18n: revertChangesTooltip = "Undo", reapplyChangesTooltip = "Reapply"
+             * (local-conversation-thread byte ~424049+). HiCodex tooltips align to single-word
+             * Codex values; aria-label adds verb context for screen readers.
+             */
+            title={patchActionForThisDiff === "undo" ? "Undo" : "Reapply"}
+            aria-label={patchActionForThisDiff === "undo" ? "Undo this patch" : "Reapply this patch"}
+            type="button"
+            disabled={patchActionInFlight}
+            onClick={() => onPatchAction(patchActionForThisDiff, value)}
+          >
+            {patchActionForThisDiff === "undo" ? "Undo" : "Reapply"}
+          </button>
+        )}
         {onOpenDiff && (
           <button className="hc-turn-diff-review" type="button" onClick={onOpenDiff}>
             <span className="hc-turn-diff-review-full">Review changes</span>

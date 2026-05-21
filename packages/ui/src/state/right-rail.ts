@@ -96,6 +96,15 @@ export function saveRightRailPinned(
   }
 }
 
+/*
+ * Earlier HiCodex versions defined `loadRightRailOpen`/`saveRightRailOpen`
+ * around a `rightRailOpen` atom (HiCodex's misread of Codex Desktop's
+ * `ea = A(P, !1)` RightPanel atom) and gated `showRightRail` on that boolean.
+ * That model inverted the Summary Rail semantics — Progress/Git/Outputs/Sources
+ * disappeared by default and only showed after the user clicked into a file
+ * preview. The current code derives visibility from `isPinned + displayMode
+ * + RightPanel (file preview)`; the storage key and accessors were removed.
+ */
 export function rightRailDisplayMode(contentWidthPx: number): RightRailDisplayMode {
   const sideSpace = rightRailSideSpace(contentWidthPx);
   if (sideSpace < DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX) return "overlay";
@@ -153,23 +162,11 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Xf —
-  // Codex Desktop's `Xf` function renders Outputs as `se = !M && jsx(cf, ...)` where
-  // `M = !E && b.kind === 'git'`, so Outputs is strictly suppressed whenever a git
-  // project owns the right rail — even if real artifacts exist. The empty body uses the
-  // `codex.localConversation.artifacts.empty` "No artifacts yet" row when shown.
-  //
-  // HiCodex deviation: in our agentic flows the assistant routinely writes files to
-  // locations outside the git working tree (e.g. /Users/<me>/Downloads/*.xlsx,
-  // generated images, /tmp scripts). Strictly mirroring Codex hides those artifacts
-  // entirely whenever the user happens to be inside a git project, which makes the
-  // generated file undiscoverable in the rail even though the inline file card is
-  // visible in the transcript. We therefore keep Codex behavior for the empty case
-  // (git project + no artifacts -> Outputs hidden) but force the section back on when
-  // at least one artifact was projected, so users can always reach their generated
-  // outputs. Non-git projects still get the always-on empty-state row like Codex.
-  const shouldShowOutputs =
-    input.showOutputs ?? (!hasBranchDetails || input.artifacts.length > 0);
+  // CODEX-REF: /private/tmp/codex-asar/pretty/local-conversation-thread-BX7YNcUw.pretty.js:7918-7952 —
+  // Codex Desktop renders the Git summary when `M` is truthy and renders Outputs
+  // only when `!M`, so the Outputs section is suppressed for Git-backed rails even
+  // if artifact entries exist.
+  const shouldShowOutputs = input.showOutputs ?? !hasBranchDetails;
   if (shouldShowOutputs) {
     sections.push(projectEntrySection("artifacts", "Outputs", input.artifacts, true));
   }

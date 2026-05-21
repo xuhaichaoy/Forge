@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Copy, Download } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 
@@ -44,19 +44,53 @@ export function PlanSummaryCard({
     downloadPlanMarkdown(content);
   };
 
+  /*
+   * Codex Desktop renderer emits `dispatchMessage("show-plan-summary", {planContent, conversationId})`
+   * (plan-summary-item-content-PLV-8wK8.js byte ~ye), but Codex's Electron main
+   * handler (`main-BwqrdVu3.js` `case "show-plan-summary": break;`) is a no-op
+   * stub — the action is wired in the UI but produces no user-visible effect.
+   * HiCodex aligns by exposing the same button + tooltip surface while leaving
+   * the click handler intentionally inert (no Tauri window/route opened).
+   */
+  const handleOpenInNewWindow = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+  };
+
   return (
     <>
       <article
         className={`hc-plan-summary-card ${completed ? "is-complete" : "is-writing"}`}
         data-content-search-unit-key={unit.key}
         data-item-ids={unit.item.id}
-        data-item-type="proposed-plan"
+        /*
+         * Reflect the actual item type — thread-item-view.tsx routes both
+         * `proposed-plan` and the protocol's standalone `plan` variant
+         * (v2/item.rs:236) through `PlanSummaryCard`. Hardcoding
+         * `"proposed-plan"` mis-tags real `plan` items in content-search and
+         * any data-attribute selectors.
+         */
+        data-item-type={typeof unit.item.type === "string" ? unit.item.type : "proposed-plan"}
       >
         <header className="hc-plan-summary-header">
           <h3 className="hc-plan-summary-title">{completed ? "Plan" : "Writing plan"}</h3>
           <div className="hc-plan-summary-actions" aria-label="Plan actions">
             {canUseContentActions && (
               <>
+                {/*
+                 * Codex Desktop i18n:
+                 *   localConversation.planSummary.openInNewWindow         = "Open"   (button label / aria-label)
+                 *   localConversation.planSummary.openInNewWindow.tooltip = "Open in new window"
+                 * Click handler is intentionally inert — Codex main process
+                 * (`show-plan-summary`) is a no-op stub, so HiCodex matches.
+                 */}
+                <button
+                  aria-label="Open"
+                  title="Open in new window"
+                  type="button"
+                  onClick={handleOpenInNewWindow}
+                >
+                  <ExternalLink aria-hidden size={14} />
+                </button>
                 <button
                   aria-label="Download plan"
                   title="Download plan"
@@ -77,8 +111,8 @@ export function PlanSummaryCard({
             )}
             <button
               aria-expanded={!collapsed}
-              aria-label={collapsed ? "Expand plan" : "Collapse plan"}
-              title={collapsed ? "Expand plan" : "Collapse plan"}
+              aria-label={collapsed ? "Expand plan summary" : "Collapse plan summary"}
+              title={collapsed ? "Expand" : "Collapse"}
               type="button"
               onClick={() => setCollapsed((value) => !value)}
             >
@@ -110,7 +144,11 @@ export function PlanSummaryCard({
 }
 
 export function planSummaryContent(item: ThreadItemUnit["item"]): string {
-  return stringField(item, "content");
+  /*
+   * Protocol plan items carry `text`; older local proposed-plan fixtures used
+   * `content`, so both are accepted here.
+   */
+  return stringField(item, "text") || stringField(item, "content");
 }
 
 export function planSummaryCompleted(item: ThreadItemUnit["item"]): boolean {

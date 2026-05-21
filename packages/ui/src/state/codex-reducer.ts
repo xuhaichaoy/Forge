@@ -728,6 +728,30 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
         : state;
       return upsertItem(reconciled, threadId, stampedItem, turnIdParam);
     }
+    /*
+     * Codex Desktop's `remote-conversation-page` dispatcher consumes exactly
+     * 5 item-level delta channels (docs §26.4). HiCodex used to subscribe to
+     * 4 extra protocol-defined channels — none of which had a downstream
+     * consumer in the renderer:
+     *
+     *   - `item/reasoning/summaryPartAdded` — `appendReasoningText` already
+     *     auto-expands the summary array via `updateReasoningParts`, making
+     *     a separate "pre-allocate slot" channel redundant. Matches Codex's
+     *     `Tn(arr, idx, default)` helper which expands on first delta arrival.
+     *   - `item/commandExecution/terminalInteraction` — writes
+     *     `terminalInteractions[]` on the item, but nothing in HiCodex
+     *     reads that field (verified 2026-05-21 grep).
+     *   - `item/fileChange/outputDelta` — flagged deprecated in the v2
+     *     protocol; modern app-server does not send it.
+     *   - `item/mcpToolCall/progress` — writes a `progress` text field that
+     *     no component renders (the right-rail `progress` section reads a
+     *     different `RailEntry[]` array).
+     *
+     * The 5 channels HiCodex now consumes match Codex exactly. The single
+     * intentional divergence is `item/fileChange/patchUpdated` below, kept
+     * because HiCodex renders `changes[]` incrementally via
+     * `tool-activity-detail.tsx:334` (Codex waits for `item/completed`).
+     */
     case "item/agentMessage/delta":
       return appendItemText(state, params, "agentMessage", "text", "delta");
     case "item/plan/delta":
@@ -736,18 +760,11 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return appendReasoningText(state, params, "content", "contentIndex");
     case "item/reasoning/summaryTextDelta":
       return appendReasoningText(state, params, "summary", "summaryIndex");
-    case "item/reasoning/summaryPartAdded":
-      return ensureReasoningPart(state, params, "summary", "summaryIndex");
     case "item/commandExecution/outputDelta":
       return appendItemText(state, params, "commandExecution", "aggregatedOutput", "delta");
-    case "item/commandExecution/terminalInteraction":
-      return appendCommandTerminalInteraction(state, params);
-    case "item/fileChange/outputDelta":
-      return appendItemText(state, params, "fileChange", "aggregatedOutput", "delta");
     case "item/fileChange/patchUpdated":
+      // HiCodex extension (not in Codex Desktop's 5-channel set).
       return mergeItemFields(state, params, "fileChange", { changes: params.changes });
-    case "item/mcpToolCall/progress":
-      return appendItemText(state, params, "mcpToolCall", "progress", "message");
     case "turn/plan/updated":
       return upsertTurnPlan(state, params);
     case "turn/diff/updated": {
@@ -1083,10 +1100,13 @@ function collectThreadItems(thread: Thread): AccumulatedThreadItem[] {
   return (thread.turns ?? []).flatMap((turn) => turnItemsWithWorkedFor(turn));
 }
 
-function turnItemsWithWorkedFor(turn: TurnLike | undefined): AccumulatedThreadItem[] {
+function turnItemsWithWorkedFor(
+  turn: TurnLike | undefined,
+  options: { hasExtraActivity?: boolean } = {},
+): AccumulatedThreadItem[] {
   if (!turn) return [];
   const items = turn.items ?? [];
-  const workedFor = workedForItemFromTurn(turn, items);
+  const workedFor = workedForItemFromTurn(turn, items, options.hasExtraActivity === true);
   const normalized = normalizeWorkedForItems(items, workedFor);
   return attachTurnMetadataToAll(normalized, turn.id, turnStatusText(turn.status));
 }
@@ -1094,8 +1114,32 @@ function turnItemsWithWorkedFor(turn: TurnLike | undefined): AccumulatedThreadIt
 function workedForItemFromTurn(
   turn: TurnLike,
   items: Array<AccumulatedThreadItem | ThreadItem>,
+  hasExtraActivity = false,
 ): AccumulatedThreadItem | null {
   if (!turn.id || items.some((item) => item.type === "worked-for")) return null;
+
+  /*
+   * Codex Desktop gates the worked-for divider on `xt = vt.length > 0` where
+   * `vt` is the post-`Ew(ot)` agent activity entries (`local-conversation-thread-BX7YNcUw.js`
+   * byte ~539133 in HS body): the entire `Yw` agent-body-collapsible — which
+   * carries the "Worked for {time}" via `kg`/`Ng` (byte ~221500 / ~223894) —
+   * is mounted only when this turn produced agent activity items. A pure-text
+   * turn (`user → reasoning? → assistant`) leaves `xt` false and Codex shows
+   * no divider; the assistant message sits flush against the user message.
+   *
+   * HiCodex previously synthesized worked-for whenever turn timing was known,
+   * which produced a spurious "Worked for {time}" row for plain Q&A turns
+   * (HiCodex recording 2026-05-21 at 07.57.04 t=12s). Match Codex by
+   * suppressing the synthetic item when no activity-type items are present.
+   *
+   * `hasExtraActivity` lets callers signal that activity items will be merged
+   * in AFTER worked-for synthesis (e.g. the `finishTurn` error path that
+   * appends a `stream-error` item via the outer `mergeItems` call). Those
+   * activity items would satisfy Codex's gate if they were already in the
+   * turn payload; the flag preserves that intent without forcing the
+   * synthesis logic to look at runtime state.
+   */
+  if (!hasExtraActivity && !hasAgentActivityItem(items)) return null;
 
   const startedAtMs = secondsTimestampToMs(turn.startedAt);
   const completedAtMs = secondsTimestampToMs(turn.completedAt);
@@ -1117,6 +1161,67 @@ function workedForItemFromTurn(
   };
 }
 
+/**
+ * True when `items` contains any agent-activity-type item — i.e. anything that
+ * Codex Desktop's `Ke` whitelist (split-items-into-render-groups-CBI0Av9T.js
+ * byte ~23017) routes into the agent body. Excludes user-message, the final
+ * assistant-message, reasoning (folded into exploration), and lifecycle-only
+ * items (model-changed, personality-changed, …) that Codex never collapses
+ * under the worked-for header.
+ */
+function hasAgentActivityItem(items: Array<AccumulatedThreadItem | ThreadItem>): boolean {
+  for (const item of items) {
+    const type = String((item as Record<string, unknown>).type ?? "");
+    if (AGENT_ACTIVITY_ITEM_TYPES.has(type)) return true;
+  }
+  return false;
+}
+
+/*
+ * Mirror of Codex Desktop `Ke` whitelist
+ * (split-items-into-render-groups-CBI0Av9T.js byte ~23017) — the set of
+ * ThreadItem types that flow into Codex's `agentItems` body and therefore
+ * count toward `xt = vt.length > 0` (which gates the worked-for header).
+ *
+ * Codex `Ke` TRUE branches: assistant-message, exec, patch, dynamic-tool-call,
+ * mcp-tool-call, automatic-approval-review, multi-agent-action, stream-error,
+ * system-error, context-compaction, reasoning, steered, user-input-response,
+ * worked-for, web-search (with non-empty query). We exclude:
+ *   - assistant-message (Codex `qe` pulls it out of agentItems as the final
+ *     answer; doesn't drive the body header)
+ *   - worked-for (the divider itself; would self-trigger)
+ *   - reasoning (Codex `We` folds it into the exploration buffer, drops it
+ *     when the buffer is empty — so reasoning alone never produces visible
+ *     activity)
+ *
+ * Codex `Ke` FALSE branches (routed to dedicated arrays, never into
+ * agentItems): todo-list, turn-diff, user-message, remote-task-created,
+ * proposed-plan, plan-implementation, mcp-server-elicitation,
+ * permission-request, userInput, personality-changed, forked-from-conversation,
+ * model-changed, model-rerouted, auto-review-interruption-warning,
+ * generated-image, automation-update — none of these count for the gate.
+ *
+ * HiCodex protocol uses lowerCamel `commandExecution` / `fileChange` aliases
+ * for the same activity classes Codex calls `exec` / `patch`; both forms are
+ * accepted so HiCodex-native payloads pass the same gate.
+ */
+const AGENT_ACTIVITY_ITEM_TYPES: ReadonlySet<string> = new Set([
+  "exec",
+  "commandExecution",
+  "patch",
+  "fileChange",
+  "web-search",
+  "mcp-tool-call",
+  "dynamic-tool-call",
+  "multi-agent-action",
+  "automatic-approval-review",
+  "stream-error",
+  "system-error",
+  "context-compaction",
+  "steered",
+  "user-input-response",
+]);
+
 function normalizeWorkedForItems(
   items: ThreadItem[],
   syntheticWorkedFor: AccumulatedThreadItem | null,
@@ -1125,20 +1230,45 @@ function normalizeWorkedForItems(
   const explicitWorkedFor = items.find(isWorkedForThreadItem) as AccumulatedThreadItem | undefined;
   const workedFor = explicitWorkedFor ?? syntheticWorkedFor;
   if (baseItems.length === 0 && workedFor?.status === "working") return baseItems as AccumulatedThreadItem[];
-  return insertWorkedForBeforeAssistant(baseItems, workedFor ?? null);
+  return insertWorkedForAfterLastUserMessage(baseItems, workedFor ?? null);
 }
 
-function insertWorkedForBeforeAssistant(
+function insertWorkedForAfterLastUserMessage(
   items: ThreadItem[],
   workedFor: AccumulatedThreadItem | null,
 ): AccumulatedThreadItem[] {
   if (!workedFor) return items as AccumulatedThreadItem[];
-  const assistantIndex = findLastIndex(items, isAssistantThreadItem);
-  if (assistantIndex < 0) return [...items, workedFor] as AccumulatedThreadItem[];
+  /*
+   * Codex Desktop `Yw` (local-conversation-thread byte ~550398) renders the
+   * agent-body-collapsible as `<Fragment>{HEADER}{BODY}</Fragment>` where
+   * HEADER carries the "Worked for {time}" label via `Pg` followed by a
+   * `w-full border-t` horizontal rule, and BODY is a `motion.div` containing
+   * activity entries + the final assistant message. The header always
+   * precedes the body — i.e. worked-for sits between the user message and
+   * the first activity row, not interleaved with activities or appended at
+   * the tail of the turn.
+   *
+   * HiCodex previously inserted worked-for before the LAST assistant message
+   * which produced two wrong placements:
+   *   1. In-progress / pure-activity turns (no assistant yet) → worked-for
+   *      fell off the end of the array via `[...items, workedFor]`, which is
+   *      what users saw after switching sessions: a stale snapshot replay
+   *      would land the divider at the bottom of the turn instead of above
+   *      the activity rows.
+   *   2. Completed turns with activities → divider was between activities
+   *      and the assistant message, the wrong side of the rule from Codex.
+   *
+   * Insert immediately AFTER the last user message of the turn so the row
+   * acts as Codex's header. If there is no user message yet (early stream
+   * before `item/started userMessage`), prepend to the front so the divider
+   * still leads the turn segment.
+   */
+  const lastUserIndex = findLastIndex(items, isUserMessageThreadItem);
+  if (lastUserIndex < 0) return [workedFor, ...items] as AccumulatedThreadItem[];
   return [
-    ...items.slice(0, assistantIndex),
+    ...items.slice(0, lastUserIndex + 1),
     workedFor,
-    ...items.slice(assistantIndex),
+    ...items.slice(lastUserIndex + 1),
   ] as AccumulatedThreadItem[];
 }
 
@@ -1147,11 +1277,6 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
     if (predicate(items[index] as T)) return index;
   }
   return -1;
-}
-
-function isAssistantThreadItem(item: ThreadItem | AccumulatedThreadItem): boolean {
-  const type = String((item as Record<string, unknown>).type ?? "");
-  return type === "agentMessage" || type === "assistant-message";
 }
 
 function isWorkedForThreadItem(item: ThreadItem | AccumulatedThreadItem): boolean {
@@ -2059,43 +2184,6 @@ function mergeItemFields(
   return threadRuntimePatch(state, threadId, { items: next });
 }
 
-function appendCommandTerminalInteraction(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
-  const threadId = String(params.threadId ?? "");
-  const itemId = String(params.itemId ?? "");
-  const stdin = String(params.stdin ?? "");
-  if (!threadId || !itemId || !stdin) return state;
-  const items = selectThreadRuntime(state, threadId).items;
-  let found = false;
-  const next = items.map((item) => {
-    if (item.id !== itemId) return item;
-    found = true;
-    const terminalInteractions = (item as Record<string, unknown>).terminalInteractions;
-    const previous = Array.isArray(terminalInteractions)
-      ? terminalInteractions
-      : [];
-    return {
-      ...item,
-      type: item.type || "commandExecution",
-      terminalInteractions: [
-        ...previous,
-        {
-          processId: String(params.processId ?? ""),
-          stdin,
-        },
-      ],
-    };
-  });
-  if (!found) {
-    next.push({
-      id: itemId,
-      type: "commandExecution",
-      command: "command",
-      terminalInteractions: [{ processId: String(params.processId ?? ""), stdin }],
-    });
-  }
-  return threadRuntimePatch(state, threadId, { items: next });
-}
-
 function appendReasoningText(
   state: CodexUiState,
   params: Record<string, unknown>,
@@ -2107,18 +2195,6 @@ function appendReasoningText(
   const delta = String(params.delta ?? "");
   if (!threadId || !itemId || !delta) return state;
   return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), delta, turnIdParam(params));
-}
-
-function ensureReasoningPart(
-  state: CodexUiState,
-  params: Record<string, unknown>,
-  field: "content" | "summary",
-  indexField: "contentIndex" | "summaryIndex",
-): CodexUiState {
-  const threadId = String(params.threadId ?? "");
-  const itemId = String(params.itemId ?? "");
-  if (!threadId || !itemId) return state;
-  return updateReasoningParts(state, threadId, itemId, field, numberParam(params, indexField), "", turnIdParam(params));
 }
 
 function updateReasoningParts(
@@ -2203,7 +2279,15 @@ function finishTurn(
   const errorText = turnErrorMessage(turnError);
   const order = ensureTurnInOrder(runtime.turnOrder, turnId || null);
   const terminalSegment = errorText
-    ? mergeItems(turnItemsWithWorkedFor(turn), [streamErrorItem(turnId, turnError, errorText)], order)
+    ? mergeItems(
+        // Tell worked-for synthesis the stream-error item is incoming —
+        // satisfies the agent-activity gate (Codex aligns by mounting the
+        // worked-for header for failed turns since stream-error renders
+        // inside `vt`).
+        turnItemsWithWorkedFor(turn, { hasExtraActivity: true }),
+        [streamErrorItem(turnId, turnError, errorText)],
+        order,
+      )
     : turnItemsWithWorkedFor(turn);
   const currentItems = runtime.items;
   const nextItems = turnId

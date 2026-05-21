@@ -64,6 +64,15 @@ export interface RefreshAccountStateOptions {
   now?: number;
 }
 
+export interface AccountCredentialSummary {
+  hasAuthFile: boolean;
+  authMode?: string | null;
+  hasApiKey: boolean;
+  hasTokens: boolean;
+  email?: string | null;
+  planType?: string | null;
+}
+
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export const initialAccountState: AccountState = Object.freeze({
@@ -230,10 +239,42 @@ export async function logoutAndRefreshAccountState(
   });
 }
 
-export function projectAccountViewModel(state: AccountState): AccountViewModel {
-  const identity = projectAccountIdentity(state.account);
+export function hasOpenAiCredentialSummary(summary: AccountCredentialSummary | null | undefined): boolean {
+  if (!summary?.hasAuthFile) return false;
+  const authMode = normalizeAuthMode(summary.authMode);
+  if (authMode === "chatgpt" || authMode === "chatgptauthtokens" || authMode === "agentidentity") {
+    return summary.hasTokens;
+  }
+  if (authMode === "apikey") {
+    return summary.hasApiKey;
+  }
+  return summary.hasTokens || summary.hasApiKey;
+}
+
+export function accountFromCredentialSummary(summary: AccountCredentialSummary | null | undefined): Account | null {
+  if (!hasOpenAiCredentialSummary(summary)) return null;
+  const authMode = normalizeAuthMode(summary?.authMode);
+  if (authMode === "apikey") {
+    return { type: "apiKey" };
+  }
+  if (summary?.hasTokens) {
+    return {
+      type: "chatgpt",
+      email: summary.email?.trim() ?? "",
+      planType: normalizePlanType(summary.planType),
+    };
+  }
+  return summary?.hasApiKey ? { type: "apiKey" } : null;
+}
+
+export function projectAccountViewModel(
+  state: AccountState,
+  credentialSummary?: AccountCredentialSummary | null,
+): AccountViewModel {
+  const account = state.account ?? accountFromCredentialSummary(credentialSummary);
+  const identity = projectAccountIdentity(account);
   const quota = projectQuotaSummary(state.rateLimits);
-  const signedIn = state.account !== null;
+  const signedIn = account !== null;
   return {
     signedIn,
     displayName: identity.displayName,
@@ -515,6 +556,31 @@ function humanizeIdentifier(value: string): string {
 function planTypeOrNull(value: unknown): PlanType | null {
   return typeof value === "string" ? value as PlanType : null;
 }
+
+function normalizePlanType(value: unknown): PlanType {
+  if (typeof value !== "string") return "unknown";
+  const normalized = value.trim().toLowerCase();
+  return knownPlanTypes.has(normalized) ? normalized as PlanType : "unknown";
+}
+
+function normalizeAuthMode(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase().replace(/[-_\s]/g, "") : "";
+}
+
+const knownPlanTypes = new Set<string>([
+  "free",
+  "go",
+  "plus",
+  "pro",
+  "prolite",
+  "team",
+  "self_serve_business_usage_based",
+  "business",
+  "enterprise_cbp_usage_based",
+  "enterprise",
+  "edu",
+  "unknown",
+]);
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;

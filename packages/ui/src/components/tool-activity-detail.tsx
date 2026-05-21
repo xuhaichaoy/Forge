@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Copy as CopyIcon, X } from "lucide-react";
+import { Check, ChevronRight, Copy as CopyIcon, LoaderCircle, TriangleAlert, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatUnknown, stringField } from "../lib/format";
 import {
@@ -23,6 +23,23 @@ import type { OpenThreadHandler } from "./open-thread";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
+
+/*
+ * MCP result.content[] 单个 block 的类型化表示（MCP spec 6 种 block：
+ * text / image / audio / resource_link / embedded_resource / unknown）。
+ */
+export type McpResultBlock =
+  | { kind: "text"; text: string; annotations?: string }
+  | { kind: "image"; mimeType: string; dataUrl: string; annotations?: string }
+  | { kind: "audio"; mimeType: string; dataUrl: string; annotations?: string }
+  /*
+   * Codex Desktop `case 'resource_link'` (local-conversation-thread byte ~378900):
+   * label priority is `title ?? name ?? uri`; rendered as muted, **non-clickable**
+   * "Read {resourceLinkName}" text — no `<a>` tag, no `target=_blank`.
+   */
+  | { kind: "resourceLink"; uri: string; name?: string; title?: string; annotations?: string }
+  | { kind: "embeddedResource"; mimeType?: string; uri?: string; text?: string; annotations?: string }
+  | { kind: "unknown"; raw: string };
 
 export interface McpAppFrameViewModel {
   csp: McpAppCspViewModel;
@@ -123,6 +140,8 @@ export type ToolActivityDetailViewModel =
       resultText: string;
       errorText: string;
       status: string;
+      /** Typed view of MCP result.content[] blocks. */
+      resultBlocks?: McpResultBlock[];
     }
   | {
       kind: "mcpApp";
@@ -322,12 +341,18 @@ export function ToolActivityDetail({
               <div className="hc-tool-detail-change" key={`${change.path}:${index}`}>
                 <div className="hc-tool-detail-change-title">
                   <span>{change.action}</span>
-                  <code>{change.path}</code>
+                  {/* HiCodex has no patch-file opener here yet; expose intent as a tooltip only. */}
+                  <code title={`${change.path} — Open in editor`}>{change.path}</code>
                 </div>
                 {change.diff && <CodeBlock diff text={change.diff} />}
               </div>
             ))
-          : <div className="hc-tool-detail-row">No file changes were provided.</div>}
+          : (
+            <div className="hc-tool-detail-row">
+              {/* Current protocol payloads do not expose a specific patch error code here. */}
+              No file changes were provided.
+            </div>
+          )}
       </section>
     );
   }
@@ -338,8 +363,18 @@ export function ToolActivityDetail({
           <span className="hc-tool-detail-title">{detail.name}</span>
           <small>{detail.toolKind}{detail.status ? ` · ${detail.status}` : ""}</small>
         </div>
-        {detail.argumentsText && <LabeledCode label="Parameters" text={detail.argumentsText} />}
-        {detail.resultText && <LabeledCode label="Result" text={detail.resultText} />}
+        {/* Parameters：MCP 工具用可折叠形式（长 JSON 默认折叠）。 */}
+        {detail.argumentsText && (
+          detail.toolKind === "MCP"
+            ? <CollapsibleLabeledCode label="Parameters" text={detail.argumentsText} />
+            : <LabeledCode label="Parameters" text={detail.argumentsText} />
+        )}
+        {/* content blocks 多类型渲染（MCP spec 6 种 block）。 */}
+        {detail.resultBlocks && detail.resultBlocks.length > 0 ? (
+          <McpResultBlocksView blocks={detail.resultBlocks} />
+        ) : (
+          detail.resultText && <LabeledCode label="Result" text={detail.resultText} />
+        )}
         {detail.errorText && <LabeledCode label="Error" text={detail.errorText} />}
       </section>
     );
@@ -373,6 +408,89 @@ export function ToolActivityDetail({
       <CodeBlock text={detail.text || "..."} />
     </section>
   );
+}
+
+/*
+ * MCP result.content[] 多 block 渲染器（MCP spec 6 种 block 类型分别渲染）。
+ * 每个 block 末尾可有 annotations 行（"Annotations: …"）。
+ */
+function McpResultBlocksView({ blocks }: { blocks: McpResultBlock[] }) {
+  return (
+    <div className="hc-mcp-result-blocks">
+      {blocks.map((block, index) => (
+        <McpResultBlockView block={block} index={index} key={`${block.kind}:${index}`} />
+      ))}
+    </div>
+  );
+}
+
+function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
+  switch (block.kind) {
+    case "text":
+      return (
+        <div className="hc-mcp-result-block hc-mcp-result-text">
+          <LabeledCode label={index === 0 ? "Result" : `Block ${index + 1}`} text={block.text} />
+          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+        </div>
+      );
+    case "image":
+      return (
+        <div className="hc-mcp-result-block hc-mcp-result-image">
+          <img alt="MCP image result" className="hc-mcp-result-image-thumb" src={block.dataUrl} />
+          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+        </div>
+      );
+    case "audio":
+      return (
+        <div className="hc-mcp-result-block hc-mcp-result-audio">
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <audio controls src={block.dataUrl} />
+          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+        </div>
+      );
+    case "resourceLink": {
+      /*
+       * Codex Desktop (`local-conversation-thread-BX7YNcUw.js` byte ~378900):
+       *   defaultMessage: `Read {resourceLinkName}`,
+       *   resourceLinkName: title ?? name ?? uri
+       * Rendered as a muted `<div>` — explicitly NOT clickable, no `<a href>`
+       * and no `target="_blank"`. HiCodex previously opened the URI as an
+       * external link in a new browser tab, which leaks app-server-controlled
+       * URIs to the OS and diverges from Codex's read-only semantics.
+       */
+      const label = block.title || block.name || block.uri;
+      return (
+        <div className="hc-mcp-result-block hc-mcp-result-resource-link">
+          <div className="hc-mcp-result-resource-link-text">Read {label}</div>
+          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+        </div>
+      );
+    }
+    case "embeddedResource":
+      return (
+        <div className="hc-mcp-result-block hc-mcp-result-embedded-resource">
+          {block.uri && (
+            <div className="hc-mcp-result-resource-meta">
+              <span>URI: </span><code>{block.uri}</code>
+            </div>
+          )}
+          {block.mimeType && (
+            <div className="hc-mcp-result-resource-meta">
+              <span>MIME type: </span><code>{block.mimeType}</code>
+            </div>
+          )}
+          {block.text && <LabeledCode label="Content" text={block.text} />}
+          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+        </div>
+      );
+    case "unknown":
+    default:
+      return (
+        <div className="hc-mcp-result-block hc-mcp-result-unknown">
+          <LabeledCode label="Raw block" text={block.raw} />
+        </div>
+      );
+  }
 }
 
 function McpAppToolDetail({
@@ -1344,6 +1462,15 @@ function ExecShellDetail({
   const bodyOpen = forceExpanded || detail.running || expanded;
   const output = detail.output || (!detail.running && detail.footer ? "No output" : "");
 
+  /* Keep running command output pinned to the newest line. */
+  const outputRef = useRef<HTMLPreElement | null>(null);
+  useEffect(() => {
+    if (!detail.running || !bodyOpen) return;
+    const el = outputRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [bodyOpen, detail.output, detail.running]);
+
   useEffect(() => {
     setExpanded(initialExecShellExpanded(detail));
   }, [detail.id]);
@@ -1402,7 +1529,7 @@ function ExecShellDetail({
       {bodyOpen && detail.cwd && <div className="hc-exec-shell-cwd">{detail.cwd}</div>}
       {bodyOpen && output && (
         <div className="hc-exec-shell-output-wrap">
-          <pre className="hc-exec-shell-output">
+          <pre className="hc-exec-shell-output" ref={outputRef}>
             <code>{output}</code>
           </pre>
           <ExecShellCopyButton
@@ -1413,13 +1540,42 @@ function ExecShellDetail({
           />
         </div>
       )}
-      {bodyOpen && detail.footer && (
-        <div className="hc-exec-shell-footer">
-          {detail.footer === "Success" && <Check aria-hidden size={12} />}
-          <span>{detail.footer}</span>
-        </div>
-      )}
+      {bodyOpen && renderExecFooter(detail)}
     </section>
+  );
+}
+
+/*
+ * Derive a compact footer state from the existing exec view model. Newer data
+ * can set a structured status; older fixtures still arrive as footer strings.
+ */
+function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>): ReactNode {
+  if (detail.running) {
+    return (
+      <div className="hc-exec-shell-footer" data-exec-status="in-progress">
+        <LoaderCircle aria-hidden className="animate-spin" size={12} />
+        <span>Running…</span>
+      </div>
+    );
+  }
+  if (!detail.footer) return null;
+  const isSuccess = detail.footer === "Success";
+  const isStopped = detail.footer === "Stopped";
+  const isExitCodeFailure = detail.footer.startsWith("Exit code ") && detail.footer !== "Exit code unknown";
+  const status = isStopped
+    ? "interrupted"
+    : isSuccess
+      ? "success"
+      : isExitCodeFailure
+        ? "failed"
+        : "unknown";
+  return (
+    <div className="hc-exec-shell-footer" data-exec-status={status}>
+      {isStopped && <TriangleAlert aria-hidden className="hc-exec-footer-icon-warn" size={12} />}
+      {isSuccess && <Check aria-hidden className="hc-exec-footer-icon-success" size={12} />}
+      {isExitCodeFailure && <XCircle aria-hidden className="hc-exec-footer-icon-error" size={12} />}
+      <span>{detail.footer}</span>
+    </div>
   );
 }
 
@@ -1564,6 +1720,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         status: status || "pending",
       };
     }
+    const resultBlocks = mcpResultBlocks(record.result);
     return {
       kind: "tool",
       id: item.id,
@@ -1574,6 +1731,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       resultText: toolResultText(record.result),
       errorText: formatUnknown(record.error),
       status,
+      ...(resultBlocks.length > 0 ? { resultBlocks } : {}),
     };
   }
   if (type === "dynamic-tool-call") {
@@ -1646,6 +1804,43 @@ function LabeledCode({ label, text }: { label: string; text: string }) {
     <div className="hc-tool-detail-section">
       <div className="hc-tool-detail-section-label">{label}</div>
       <CodeBlock text={text} />
+    </div>
+  );
+}
+
+/* Fold long tool arguments/results behind a short preview. */
+function CollapsibleLabeledCode({
+  label,
+  text,
+  defaultCollapsed = true,
+  collapseThresholdLines = 6,
+}: {
+  label: string;
+  text: string;
+  defaultCollapsed?: boolean;
+  collapseThresholdLines?: number;
+}) {
+  const lines = text.split(/\r?\n/);
+  const isLong = lines.length > collapseThresholdLines;
+  const [collapsed, setCollapsed] = useState(defaultCollapsed && isLong);
+  const displayed = collapsed ? lines.slice(0, collapseThresholdLines).join("\n") : text;
+  const hiddenCount = lines.length - collapseThresholdLines;
+  return (
+    <div className="hc-tool-detail-section">
+      <div className="hc-tool-detail-section-label">
+        <span>{label}</span>
+        {isLong && (
+          <button
+            aria-expanded={!collapsed}
+            className="hc-tool-detail-collapsible-toggle"
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? `Show ${hiddenCount} more lines` : "Show less"}
+          </button>
+        )}
+      </div>
+      <CodeBlock text={collapsed && isLong ? `${displayed}\n…` : text} />
     </div>
   );
 }
@@ -1960,6 +2155,106 @@ function webSearchFaviconDomain(hostname: string): string {
 
 function arrayStringItems(value: unknown): string[] {
   return Array.isArray(value) ? value.flatMap((item) => typeof item === "string" ? [item] : []) : [];
+}
+
+/* Parse MCP result.content[] into typed render blocks. */
+function mcpResultBlocks(value: unknown): McpResultBlock[] {
+  const record = recordObject(value);
+  const content = Array.isArray(record.content) ? record.content : [];
+  return content.flatMap((rawBlock): McpResultBlock[] => {
+    if (!rawBlock || typeof rawBlock !== "object") {
+      return [{ kind: "unknown", raw: formatUnknown(rawBlock) }];
+    }
+    const blockRecord = rawBlock as Record<string, unknown>;
+    const blockType = stringField(blockRecord, "type");
+    const annotations = formatAnnotations(blockRecord.annotations);
+    switch (blockType) {
+      case "text": {
+        const text = stringField(blockRecord, "text");
+        return text ? [{ kind: "text", text, annotations }] : [];
+      }
+      case "image": {
+        const mimeType = stringField(blockRecord, "mimeType") || "image/png";
+        const data = stringField(blockRecord, "data");
+        if (!data) return [{ kind: "unknown", raw: formatUnknown(blockRecord) }];
+        const dataUrl = data.startsWith("data:") ? data : `data:${mimeType};base64,${data}`;
+        return [{ kind: "image", mimeType, dataUrl, annotations }];
+      }
+      case "audio": {
+        const mimeType = stringField(blockRecord, "mimeType") || "audio/mpeg";
+        const data = stringField(blockRecord, "data");
+        if (!data) return [{ kind: "unknown", raw: formatUnknown(blockRecord) }];
+        const dataUrl = data.startsWith("data:") ? data : `data:${mimeType};base64,${data}`;
+        return [{ kind: "audio", mimeType, dataUrl, annotations }];
+      }
+      case "resource_link":
+      case "resourceLink": {
+        /*
+         * Codex prefers `title` over `name` when both are present
+         * (local-conversation-thread byte ~378900 `n.title ?? n.name ?? n.uri`).
+         */
+        const uri = stringField(blockRecord, "uri");
+        const name = stringField(blockRecord, "name");
+        const title = stringField(blockRecord, "title");
+        return uri ? [{ kind: "resourceLink", uri, name, title, annotations }] : [];
+      }
+      case "embedded_resource":
+      case "embeddedResource": {
+        /*
+         * Codex `case 'embedded_resource'` (byte 379383):
+         *   let e = n.resource.text ?? n.resource.blob ?? "";
+         * `blob` is base64-encoded binary; falling back keeps the content
+         * pane non-empty when the server returned a binary payload.
+         */
+        const resource = recordObject(blockRecord.resource);
+        const text = stringField(resource, "text") || stringField(resource, "blob") || undefined;
+        return [{
+          kind: "embeddedResource",
+          mimeType: stringField(resource, "mimeType") || undefined,
+          uri: stringField(resource, "uri") || undefined,
+          text,
+          annotations,
+        }];
+      }
+      default:
+        return [{ kind: "unknown", raw: formatUnknown(blockRecord) }];
+    }
+  });
+}
+
+function formatAnnotations(value: unknown): string | undefined {
+  /*
+   * Codex Desktop `ix(annotations)` (local-conversation-thread byte 383578)
+   * extracts three known MCP annotation fields — `audience`, `priority`,
+   * `lastModified` — and joins them with "; ". Any other JSON keys (which
+   * the MCP spec leaves implementation-defined) are intentionally dropped.
+   *
+   *   function ix(e) {
+   *     if (e == null) return null;
+   *     const t = [];
+   *     if (e.audience != null && e.audience.length > 0) t.push(`audience=${e.audience.join(", ")}`);
+   *     if (e.priority != null) t.push(`priority=${String(e.priority)}`);
+   *     if (e.lastModified != null) t.push(`lastModified=${e.lastModified}`);
+   *     return t.length === 0 ? null : t.join("; ");
+   *   }
+   *
+   * Previous HiCodex behavior dumped the entire annotations object via
+   * `formatUnknown` (multi-line JSON), which Codex never displays.
+   */
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const parts: string[] = [];
+  const audience = record.audience;
+  if (Array.isArray(audience) && audience.length > 0) {
+    parts.push(`audience=${audience.filter((entry) => typeof entry === "string").join(", ")}`);
+  }
+  if (record.priority != null) {
+    parts.push(`priority=${String(record.priority)}`);
+  }
+  if (record.lastModified != null) {
+    parts.push(`lastModified=${String(record.lastModified)}`);
+  }
+  return parts.length === 0 ? undefined : parts.join("; ");
 }
 
 function toolResultText(value: unknown): string {

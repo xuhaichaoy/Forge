@@ -153,3 +153,11 @@
   padding: 10px;
   background: #fffdfa;
 }
+
+.hc-empty-group {
+  padding: 6px 12px 6px 28px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--token-description-foreground, #8a8478);
+  font-style: italic;
+}

@@ -1748,7 +1748,11 @@ function groupsExplorationCommandActionsLikeCodexDesktop(): void {
   if (unit?.kind === "toolActivity") {
     assertEqual(unit.summary.groupType, "exploration", "exploration actions should keep Desktop's exploration group type");
     assertEqual(unit.summary.icon, "search", "exploration activity icon");
-    assertEqual(unit.summary.label, "Explored 1 file, 1 search, 1 list", "exploration summary label");
+    /* Codex Desktop `_v` (local-conversation-thread byte ~269682) uses
+     * `intl.formatList(parts, { type: "conjunction" })` → "X, Y, and Z" with a
+     * conjunction before the last segment. HiCodex matches via Intl.ListFormat
+     * — see explorationSummaryLabel in tool-activity-grouping.ts. */
+    assertEqual(unit.summary.label, "Explored 1 file, 1 search, and 1 list", "exploration summary label");
     assertEqual(unit.summary.counts.commands, 0, "exploration actions should not count as shell commands");
     assertEqual(unit.summary.counts.exploredFiles, 1, "read command action count");
     assertEqual(unit.summary.counts.searches, 1, "search command action count");

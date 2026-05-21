@@ -1,6 +1,8 @@
 import {
   accountRefreshScopeForNotification,
+  accountFromCredentialSummary,
   applyAccountNotification,
+  hasOpenAiCredentialSummary,
   initialAccountState,
   logoutAndRefreshAccountState,
   projectAccountMenuItems,
@@ -14,6 +16,7 @@ import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/Rat
 export default async function runAccountStateTests(): Promise<void> {
   await refreshesAccountAndRateLimitProjection();
   updatesRateLimitSnapshotFromNotification();
+  projectsCredentialSummaryWhenActiveProviderHasNoAccount();
   await logsOutThenRefreshesAccountState();
 }
 
@@ -123,6 +126,36 @@ function updatesRateLimitSnapshotFromNotification(): void {
   }, 1000);
   assertEqual(accountRefreshScopeForNotification({ method: "account/login/completed", params: { success: true } }), "all", "login completion should refresh account and quota");
   assertEqual(accountInvalidated.invalidated, true, "account update notification should invalidate state for a full refresh");
+}
+
+function projectsCredentialSummaryWhenActiveProviderHasNoAccount(): void {
+  const signedOutLocalProviderState = {
+    ...initialAccountState,
+    account: null,
+    requiresOpenaiAuth: false,
+    status: "ready" as const,
+  };
+  const summary = {
+    hasAuthFile: true,
+    authMode: "chatgpt",
+    hasApiKey: false,
+    hasTokens: true,
+    email: "ada@example.com",
+    planType: "pro",
+  };
+
+  assertEqual(hasOpenAiCredentialSummary(summary), true, "ChatGPT token summary should be a usable OpenAI credential");
+  assertDeepEqual(
+    accountFromCredentialSummary(summary),
+    { type: "chatgpt", email: "ada@example.com", planType: "pro" },
+    "ChatGPT summary should produce a sidebar account fallback",
+  );
+  const viewModel = projectAccountViewModel(signedOutLocalProviderState, summary);
+
+  assertEqual(viewModel.signedIn, true, "auth summary should keep the footer signed in under local providers");
+  assertEqual(viewModel.displayName, "ada", "auth summary should use the decoded email");
+  assertEqual(viewModel.authLabel, "ChatGPT", "auth summary should identify ChatGPT auth");
+  assertEqual(viewModel.planLabel, "Pro", "auth summary should expose the decoded plan");
 }
 
 async function logsOutThenRefreshesAccountState(): Promise<void> {

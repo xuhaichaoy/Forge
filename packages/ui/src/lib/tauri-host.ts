@@ -46,6 +46,8 @@ export interface CodexAuthSummary {
   authMode?: string | null;
   hasApiKey: boolean;
   hasTokens: boolean;
+  email?: string | null;
+  planType?: string | null;
 }
 
 export interface ThreadToolHistory {
@@ -135,6 +137,38 @@ export function createPendingWorktree(
   request: CreatePendingWorktreeRequest,
 ): Promise<PendingWorktree> {
   return invoke("host_create_pending_worktree", { request });
+}
+
+/*
+ * Patch revert / reapply bridge. Mirrors Codex Desktop's `revertChanges` /
+ * `reapplyChanges` toolbar handler — see docs/codex-source-evidence.md §34 and
+ * the `host_apply_patch_action` Tauri command for the host-side semantics.
+ *
+ * The result shape matches Codex `failure.result` so the renderer can hand it
+ * straight to `<UnifiedDiffFailureDialog/>` when `errorCode != null` or any of
+ * the three path lists is non-empty.
+ */
+export interface PatchActionRequest {
+  action: "revert" | "reapply";
+  diff: string;
+  cwd: string;
+}
+
+export interface PatchActionExecOutput {
+  output: string;
+}
+
+export interface PatchActionResult {
+  action: "revert" | "reapply";
+  appliedPaths: string[];
+  skippedPaths: string[];
+  conflictedPaths: string[];
+  execOutput?: PatchActionExecOutput | null;
+  errorCode?: string | null;
+}
+
+export function applyPatchAction(request: PatchActionRequest): Promise<PatchActionResult> {
+  return invoke<PatchActionResult>("host_apply_patch_action", { request });
 }
 
 export function listenEvents(handler: (event: HostEvent) => void): Promise<UnlistenFn> {
