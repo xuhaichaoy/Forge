@@ -22,6 +22,7 @@ import {
   PinOff,
   Square,
   Terminal,
+  X,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -66,6 +67,11 @@ export interface RightRailProps {
   onOpenDiff?: () => void;
   onOpenThreadId?: OpenThreadHandler;
   onPinnedChange?: (isPinned: boolean) => void;
+  /**
+   * Close the rail. Wired to the toolbar X button, mirrors the Codex Desktop
+   * `Fe(e, !1)` close path (apps-C0n7YO22.pretty.js::ua/la setters).
+   */
+  onClose?: () => void;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
 }
@@ -96,6 +102,7 @@ export function RightRail({
   onOpenDiff,
   onOpenThreadId,
   onPinnedChange,
+  onClose,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
 }: RightRailProps) {
@@ -139,18 +146,31 @@ export function RightRail({
 
   return (
     <aside className="hc-right-rail" data-display-mode={displayMode} data-pinned={isPinned ? "true" : "false"}>
-      {onPinnedChange && (
+      {(onPinnedChange || onClose) && (
         <div className="hc-right-rail-toolbar">
-          <button
-            aria-label={isPinned ? "Unpin summary panel" : "Pin summary panel"}
-            aria-pressed={isPinned}
-            className="hc-rail-section-action"
-            onClick={() => onPinnedChange(!isPinned)}
-            title={isPinned ? "Unpin summary panel" : "Pin summary panel"}
-            type="button"
-          >
-            {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
-          </button>
+          {onPinnedChange && (
+            <button
+              aria-label={isPinned ? "Unpin summary panel" : "Pin summary panel"}
+              aria-pressed={isPinned}
+              className="hc-rail-section-action"
+              onClick={() => onPinnedChange(!isPinned)}
+              title={isPinned ? "Unpin summary panel" : "Pin summary panel"}
+              type="button"
+            >
+              {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
+            </button>
+          )}
+          {onClose && (
+            <button
+              aria-label="Close summary panel"
+              className="hc-rail-section-action"
+              onClick={onClose}
+              title="Close summary panel"
+              type="button"
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       )}
       {sections.map((section) => (

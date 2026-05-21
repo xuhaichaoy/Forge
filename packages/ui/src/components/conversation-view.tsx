@@ -13,6 +13,7 @@ import {
   ToolActivityView,
   ToolBlock,
 } from "./event-unit";
+import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
 import { MessageUnitView } from "./message-unit";
 import type { OpenThreadHandler } from "./open-thread";
@@ -44,8 +45,10 @@ export {
   formatTurnDiffFileCount,
   turnDiffHeaderStatsVisible,
   turnDiffViewModel,
+  workedForAggregateRows,
   workedForExpandedDetailItems,
 } from "./event-unit";
+export type { PatchAction, PatchActionState } from "./event-unit";
 export {
   CodeSnippet,
   codeBlockTitle,
@@ -87,7 +90,18 @@ export interface ConversationViewProps {
   onOpenThreadId?: OpenThreadHandler;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
+  /**
+   * Patch action handler — see `event-unit.tsx` `TurnDiffBlock` props for the
+   * Codex Desktop revertChanges / reapplyChanges semantics. Wired by the app
+   * shell so HiCodexApp can call the Tauri host and surface the
+   * `UnifiedDiffFailureDialog` on partial / failed apply.
+   */
+  onPatchAction?: PatchActionHandler;
+  patchActionState?: PatchActionState;
+  patchActionInFlight?: boolean;
 }
+
+export type PatchActionHandler = (action: PatchAction, diff: string) => void;
 
 export function ConversationView({
   units,
@@ -101,6 +115,9 @@ export function ConversationView({
   onOpenThreadId,
   onMcpAppHostCall,
   onReadMcpResource,
+  onPatchAction,
+  patchActionState,
+  patchActionInFlight,
 }: ConversationViewProps) {
   const groups = useMemo(() => groupUnitsByTurn(units), [units]);
   const [turnCollapseState, setTurnCollapseState] = useState<Record<string, boolean>>({});
@@ -125,6 +142,9 @@ export function ConversationView({
       onOpenThreadId={onOpenThreadId}
       onMcpAppHostCall={onMcpAppHostCall}
       onReadMcpResource={onReadMcpResource}
+      onPatchAction={onPatchAction}
+      patchActionState={patchActionState}
+      patchActionInFlight={patchActionInFlight}
       threadId={threadId}
     />
   );
@@ -501,6 +521,9 @@ export function ConversationUnitView({
   onOpenAssistantArtifact,
   onOpenDiff,
   onForkTurn,
+  onPatchAction,
+  patchActionState,
+  patchActionInFlight,
 }: {
   unit: ConversationRenderUnit;
   isMostRecentTurn?: boolean;
@@ -513,6 +536,9 @@ export function ConversationUnitView({
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onOpenDiff?: () => void;
   onForkTurn?: (turnId: string) => void;
+  onPatchAction?: (action: PatchAction, diff: string) => void;
+  patchActionState?: PatchActionState;
+  patchActionInFlight?: boolean;
 }) {
   if (unit.kind === "message") {
     return (
@@ -553,6 +579,9 @@ export function ConversationUnitView({
       label={unit.label}
       onOpenDiff={onOpenDiff}
       onOpenFileReference={onOpenFileReference}
+      onPatchAction={onPatchAction}
+      patchActionState={patchActionState}
+      patchActionInFlight={patchActionInFlight}
       tone={unit.tone}
       value={unit.text}
     />

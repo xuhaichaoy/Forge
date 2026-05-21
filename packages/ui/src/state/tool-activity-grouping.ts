@@ -70,6 +70,7 @@ export function summarizeToolActivity(
   };
   const counts = {
     commands: 0,
+    runningCommands: 0,
     webSearchCommands: 0,
     runningWebSearchCommands: 0,
     runningFolderCreationCommands: 0,
@@ -91,6 +92,8 @@ export function summarizeToolActivity(
     reasoning: 0,
     plans: 0,
     other: 0,
+    approvedRequests: 0,
+    deniedRequests: 0,
   };
   const details: string[] = [];
   const activeDetails: string[] = [];
@@ -126,6 +129,7 @@ export function summarizeToolActivity(
         if (itemInProgress) pushActiveDetail(exploration.activeLabel);
       } else {
         counts.commands += 1;
+        if (itemInProgress) counts.runningCommands += 1;
         if (commandSearchesWebLikeCodexDesktop(item)) counts.webSearchCommands += 1;
         if (itemInProgress && commandCreatesFolderLikeCodexDesktop(item)) counts.runningFolderCreationCommands += 1;
         if (itemInProgress && commandSearchesWebLikeCodexDesktop(item)) counts.runningWebSearchCommands += 1;
@@ -175,9 +179,11 @@ export function summarizeToolActivity(
       const status = stringField(record, "status");
       if (status === "approved") {
         activityCounts.approvedRequests += 1;
+        counts.approvedRequests += 1;
         details.push("Approved request");
       } else if (status === "denied") {
         activityCounts.deniedRequests += 1;
+        counts.deniedRequests += 1;
         details.push("Denied request");
       } else {
         counts.other += 1;
@@ -668,12 +674,33 @@ function explorationSummaryLabel(
   const lists = counts.lists;
   if (reads === 0 && searches === 0 && lists === 0) return null;
   if (reads === 0 && searches === 0 && lists > 0) return inProgress ? "Listing files" : "Listed files";
-  const details = [
+  /*
+   * Codex Desktop `_v` (local-conversation-thread byte ~269682) builds counts via
+   * `intl.formatList(parts, { type: "conjunction" })` — i.e. with a localized
+   * conjunction before the last item ("3 files, 2 searches, and 1 list"). HiCodex
+   * mirrors that with Intl.ListFormat to match the comma+"and" punctuation Codex
+   * users see.
+   */
+  const parts = [
     reads > 0 ? formatCount(reads, "file") : "",
     searches > 0 ? formatCount(searches, "search") : "",
     lists > 0 ? formatCount(lists, "list") : "",
-  ].filter(Boolean).join(", ");
-  return `${inProgress ? "Exploring" : "Explored"} ${details}`;
+  ].filter(Boolean);
+  return `${inProgress ? "Exploring" : "Explored"} ${joinConjunction(parts)}`;
+}
+
+function joinConjunction(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts.join("");
+  if (typeof Intl !== "undefined" && typeof Intl.ListFormat === "function") {
+    try {
+      return new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format(parts);
+    } catch {
+      /* fall through to fallback below */
+    }
+  }
+  // Fallback for environments without Intl.ListFormat: "a, b, and c"
+  if (parts.length === 2) return `${parts[0]} and ${parts[1]}`;
+  return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
 
 interface PatchSummary {

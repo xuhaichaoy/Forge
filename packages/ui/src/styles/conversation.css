@@ -284,6 +284,57 @@
   outline-offset: 2px;
 }
 
+/*
+ * Right-side action group in the conversation top bar — currently hosts only
+ * the Summary Rail pin/unpin toggle (Codex Desktop `an` header button with
+ * actionId `local-thread-summary-panel-toggle`, i18n `Toggle pinned summary`).
+ */
+.hc-topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.hc-rail-trigger {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #5f625b;
+  cursor: pointer;
+}
+
+.hc-rail-trigger:hover,
+.hc-rail-trigger:focus-visible {
+  background: rgba(34, 38, 43, 0.08);
+  color: var(--hc-text-primary);
+}
+
+.hc-rail-trigger:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.hc-rail-trigger[aria-pressed="true"] {
+  color: var(--hc-text-primary);
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-trigger {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-trigger:hover,
+.hc-app[data-theme="dark"] .hc-rail-trigger:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hc-text-primary);
+}
+
 .hc-top-title {
   max-width: min(320px, 100%);
   overflow: hidden;

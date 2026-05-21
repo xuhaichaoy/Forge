@@ -946,3 +946,109 @@ textarea.hc-mcp-tool-control {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/*
+ * UnifiedDiff Failure Dialog (HiCodex equivalent of Codex `hS` byte ~422600).
+ * Tone tokens match Codex `vS` paths sub-list toneClassName values literally:
+ *   appliedPaths   → text-token-foreground            (hc-unified-diff-tone-applied)
+ *   skippedPaths   → text-token-description-foreground (hc-unified-diff-tone-skipped)
+ *   conflictedPaths → text-token-charts-red           (hc-unified-diff-tone-conflicted)
+ */
+.hc-unified-diff-failure-dialog {
+  /* Codex Dialog `max-h-[40vh] overflow-y-auto` is on the body inner; we
+   * apply the same vertical cap directly on the panel so the path lists
+   * scroll while header/footer stay pinned. */
+  max-height: min(40vh, 560px);
+  width: min(560px, 92vw);
+}
+
+.hc-unified-diff-failure-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-unified-diff-failure-icon {
+  /* Codex `<Ri className="icon-sm text-token-charts-red"/>` */
+  color: #c44a3f;
+}
+
+.hc-unified-diff-failure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.hc-unified-diff-failure-help {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #5f625d;
+}
+
+.hc-unified-diff-path-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hc-unified-diff-path-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.hc-unified-diff-path-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hc-unified-diff-path-row {
+  font-size: 12.5px;
+  line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+/* Codex tone tokens — direct values from app-main-D1mBPyLM.css */
+.hc-unified-diff-tone-applied,
+.hc-unified-diff-tone-applied .hc-unified-diff-path-name {
+  color: #2f3137;             /* text-token-foreground */
+}
+.hc-unified-diff-tone-skipped,
+.hc-unified-diff-tone-skipped .hc-unified-diff-path-name {
+  color: #6f716b;             /* text-token-description-foreground */
+}
+.hc-unified-diff-tone-conflicted,
+.hc-unified-diff-tone-conflicted .hc-unified-diff-path-name {
+  color: #c44a3f;             /* text-token-charts-red */
+}
+
+.hc-unified-diff-failure-exec summary {
+  font-size: 12.5px;
+  cursor: pointer;
+  color: #6f716b;
+  padding: 2px 0;
+}
+
+.hc-unified-diff-failure-exec-output {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: #f3f1ea;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4a4d48;
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

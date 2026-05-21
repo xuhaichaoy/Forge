@@ -24,8 +24,7 @@ export default function runRightRailTests(): void {
   keepsProgressEntriesUnclippedLikeCodexDesktop();
   summarizesProgressCompletionLikeCodexDesktop();
   hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop();
-  hidesOutputsForEmptyArtifactsInGitProjectLikeCodexDesktop();
-  showsOutputsForGitProjectArtifactsAsHiCodexDeviation();
+  hidesOutputsForGitProjectArtifactsLikeCodexDesktop();
   rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction();
   preservesSectionCountsAndEntryMeta();
   projectsBranchDiffAction();
@@ -184,12 +183,9 @@ function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
     sources: [],
   });
 
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Xf —
+  // CODEX-REF: /private/tmp/codex-asar/pretty/local-conversation-thread-BX7YNcUw.pretty.js:7918-7952 —
   // Codex Desktop keeps the Sources section in the panel even while Outputs is
-  // suppressed by the Git summary, so the expected order is ["Git", "Sources"]. This
-  // test pins the explicit `showOutputs: false` override path: callers can still force
-  // the Codex-strict behavior on top of the HiCodex deviation that auto-shows Outputs
-  // when artifacts exist in a git project.
+  // suppressed by the Git summary, so the expected order is ["Git", "Sources"].
   assertDeepEqual(
     sections.map((section) => section.title),
     ["Git", "Sources"],
@@ -197,36 +193,7 @@ function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
   );
 }
 
-function hidesOutputsForEmptyArtifactsInGitProjectLikeCodexDesktop(): void {
-  const sections = projectRightRailSections({
-    progress: [],
-    branchDetails: {
-      title: "Git",
-      emptyText: "empty",
-      rows: [
-        { id: "branch", label: "Branch", value: "codex/right-rail" },
-      ],
-      hasData: true,
-      diff: null,
-      gitStatus: null,
-    },
-    artifacts: [],
-    sources: [],
-  });
-
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Xf —
-  // When the Git summary is visible and there are no artifacts, Codex Desktop hides
-  // Outputs entirely (`se = !M && ...` collapses with `M === true`). HiCodex preserves
-  // that behavior for the empty case so the rail does not gain a redundant "No
-  // artifacts yet" row next to the Git summary panel.
-  assertDeepEqual(
-    sections.map((section) => section.id),
-    ["branchDetails", "sources"],
-    "git project without artifacts should hide Outputs like Codex Desktop",
-  );
-}
-
-function showsOutputsForGitProjectArtifactsAsHiCodexDeviation(): void {
+function hidesOutputsForGitProjectArtifactsLikeCodexDesktop(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
@@ -245,22 +212,13 @@ function showsOutputsForGitProjectArtifactsAsHiCodexDeviation(): void {
     sources: [],
   });
 
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Xf —
-  // Codex Desktop's `se = !M && jsx(cf, ...)` would suppress this Outputs section
-  // because `b.kind === 'git'`. HiCodex deviates from that for usability: the assistant
-  // frequently writes generated files outside the working tree (Downloads/xlsx, images,
-  // /tmp scripts) and our users need to reach those artifacts even when chatting inside
-  // a git project. We therefore force Outputs back on whenever at least one artifact is
-  // present, while still preserving the empty-case hide above.
+  // CODEX-REF: /private/tmp/codex-asar/pretty/local-conversation-thread-BX7YNcUw.pretty.js:7918-7952 —
+  // Codex Desktop hides Outputs entirely when the Git summary is visible; the artifact
+  // count is only used inside the Outputs section after `!M` allows that section to mount.
   assertDeepEqual(
     sections.map((section) => section.id),
-    ["branchDetails", "artifacts", "sources"],
-    "git project with artifacts should still show Outputs as a HiCodex deviation",
-  );
-  assertEqual(
-    sectionById(sections, "artifacts").allEntries[0]?.id,
-    "artifact-downloads",
-    "git-project Outputs section should carry the projected artifact entry",
+    ["branchDetails", "sources"],
+    "git project with artifacts should hide Outputs like Codex Desktop",
   );
 }
 

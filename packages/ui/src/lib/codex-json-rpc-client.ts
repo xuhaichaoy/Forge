@@ -16,7 +16,7 @@ import {
   type HostEvent,
   type HostStatus,
 } from "./tauri-host";
-import { formatError } from "./format";
+import { formatError, stripAnsiEscapes } from "./format";
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -278,10 +278,22 @@ export class CodexJsonRpcClient {
       case "json":
         this.handleMessage(event.value);
         break;
-      case "stderr":
-        this.emitDebugEvent({ kind: "host-event", level: "warn", message: event.line });
-        this.handlers.onLog?.(event.line, "warn");
+      case "stderr": {
+        /*
+         * Codex Desktop (`remote-conversation-page-CRbylpi9.js`) never routes
+         * the codex app-server's raw stderr to the UI; only structured `error`
+         * JSON-RPC notifications surface to the renderer via
+         * `t.params.error.message`. Match that policy: emit the line to the
+         * RPC debug pane for diagnostics (with ANSI escapes stripped so the
+         * pane stays readable), but do NOT call `onLog` — that path drives
+         * `state.logs` and `AppToastViewport`, which would otherwise leak raw
+         * `tracing-subscriber` output (e.g. `\x1b[31mERROR\x1b[0m
+         * codex_core::tools::router: error=...`) into the toast viewport.
+         */
+        const sanitized = stripAnsiEscapes(event.line);
+        this.emitDebugEvent({ kind: "host-event", level: "warn", message: sanitized });
         break;
+      }
       case "stdout":
       case "lifecycle":
         this.emitDebugEvent({

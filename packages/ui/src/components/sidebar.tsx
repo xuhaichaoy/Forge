@@ -100,6 +100,12 @@ export interface SidebarProps {
   onSortKeyChange?: (sortKey: SidebarSortKey) => void;
   organizeMode?: SidebarOrganizeMode;
   currentWorkspaceRoot?: string | null;
+  /**
+   * Workspace roots the user has selected; surfaced so freshly-picked folders
+   * appear as empty Project groups before the first thread is created
+   * (Codex Desktop sidebar-project-groups M-function parity).
+   */
+  selectedWorkspaceRoots?: string[];
   onOrganizeModeChange?: (organizeMode: SidebarOrganizeMode) => void;
   collapsedGroupKeys?: ReadonlySet<string>;
   onCollapsedGroupKeysChange?: (collapsedGroupKeys: string[]) => void;
@@ -148,6 +154,7 @@ export function Sidebar({
   onSortKeyChange,
   organizeMode,
   currentWorkspaceRoot,
+  selectedWorkspaceRoots,
   onOrganizeModeChange,
   collapsedGroupKeys,
   onCollapsedGroupKeysChange,
@@ -173,6 +180,7 @@ export function Sidebar({
   const threadGroups = projectSidebarThreadGroups(threads, {
     organizeMode: effectiveOrganizeMode,
     currentWorkspaceRoot,
+    selectedWorkspaceRoots,
   });
   const sectionLabel = effectiveOrganizeMode === "recent" ? "Chats" : "Projects";
   const sectionCollapseAction = projectSectionCollapseAction(
@@ -486,6 +494,9 @@ export function Sidebar({
               <Folder size={16} />
               <span className="hc-project-name">{group.label}</span>
             </button>
+            {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.length === 0 && (
+              <div className="hc-empty-group">暂无会话，从 + New chat 开始</div>
+            )}
             {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.map((thread) => {
               const relativeTime = sidebarThreadRelativeTime(thread);
               const statusState = sidebarThreadStatusState(thread);

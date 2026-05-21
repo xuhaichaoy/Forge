@@ -1185,3 +1185,63 @@ button.hc-tool-summary:hover svg:last-child,
 .hc-app[data-theme="dark"] .hc-tool-summary-action {
   color: var(--hc-text-secondary);
 }
+
+/*
+ * MCP result block layout — surfaced by `tool-activity-detail.tsx::McpResultBlock`
+ * renderer. Codex Desktop uses muted description-foreground tone and tight
+ * spacing for resource_link and embedded_resource blocks
+ * (`local-conversation-thread-BX7YNcUw.js` byte ~378900). HiCodex now renders
+ * resource_link as non-clickable text ("Read {title|name|uri}") so we drop the
+ * link affordance and lean on description-tone color for both forms.
+ */
+.hc-mcp-result-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-mcp-result-block + .hc-mcp-result-block {
+  margin-top: 6px;
+}
+
+.hc-mcp-result-resource-link-text {
+  color: var(--hc-text-secondary, #6f716b);
+  word-break: break-word;
+}
+
+.hc-mcp-result-resource-meta {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.hc-mcp-result-resource-meta > span {
+  color: var(--hc-text-secondary, #6f716b);
+  font-weight: 500;
+}
+
+.hc-mcp-result-resource-meta code {
+  background: var(--hc-surface-muted, #f3f1ea);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+.hc-mcp-result-annotations {
+  color: var(--hc-text-tertiary, #8a8c87);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.hc-mcp-result-image img,
+.hc-mcp-result-audio audio {
+  max-width: 100%;
+  border-radius: 6px;
+  display: block;
+}

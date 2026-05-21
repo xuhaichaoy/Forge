@@ -397,6 +397,208 @@ fn host_git_status(cwd: String) -> Result<HostGitStatus, String> {
     read_host_git_status(&cwd)
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PatchActionRequest {
+    /// "revert" → git apply --reverse；"reapply" → git apply (forward).
+    /// Mirrors Codex Desktop `failure.action` field (local-conversation-thread
+    /// byte ~422600).
+    action: String,
+    /// Unified-diff text exactly as it was streamed to the user (the same value
+    /// HiCodex stores on `turn/diff/updated` notifications).
+    diff: String,
+    /// Working directory the patch should be applied in (passed to `git -C`).
+    cwd: String,
+}
+
+#[derive(Debug, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PatchActionResult {
+    /// Echo back so the renderer dispatcher can disambiguate undo/reapply.
+    action: String,
+    /// Files git apply confirmed as cleanly applied. Codex `failure.result.appliedPaths`.
+    applied_paths: Vec<String>,
+    /// Files git left untouched. Codex `failure.result.skippedPaths`.
+    skipped_paths: Vec<String>,
+    /// Files git could not apply / reverse (whole-patch failure goes here).
+    /// Codex `failure.result.conflictedPaths`.
+    conflicted_paths: Vec<String>,
+    /// Raw `git apply` stderr (mapped to Codex `failure.result.execOutput.output`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exec_output: Option<PatchActionExecOutput>,
+    /// `"not-git-repo"` triggers the dedicated Codex copy
+    /// (`codex.unifiedDiff.revertPatchNotGitRepo` / `reapplyPatchNotGitRepo`);
+    /// other strings are passed through as-is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_code: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PatchActionExecOutput {
+    output: String,
+}
+
+/// Apply or reverse a unified-diff against the current working tree.
+///
+/// HiCodex equivalent of the host-side patch action Codex Desktop relies on
+/// for its `revertChanges` / `reapplyChanges` toolbar (the Undo/Reapply
+/// buttons rendered inside the turn-diff card). The transactional model
+/// matches Codex's `hS` Failure Dialog (`local-conversation-thread-BX7YNcUw.js`
+/// byte ~422600): success returns every file in the diff under `appliedPaths`;
+/// any whole-patch failure surfaces the entire path set under `conflictedPaths`
+/// so the renderer can open the failure dialog with the conflicted heading.
+/// We intentionally avoid `git apply --reject` partial mode (which would leave
+/// `.rej` files lying around) — the resulting UX matches Codex's stricter
+/// "all-or-nothing" behavior.
+#[tauri::command]
+fn host_apply_patch_action(request: PatchActionRequest) -> Result<PatchActionResult, String> {
+    let reverse = match request.action.as_str() {
+        "revert" => true,
+        "reapply" => false,
+        other => return Err(format!("invalid patch action: {other}")),
+    };
+    let cwd = request.cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let cwd_path = Path::new(cwd);
+    if !cwd_path.is_dir() {
+        return Err(format!("cwd is not a directory: {cwd}"));
+    }
+
+    let repo_root = match git_repo_root(cwd_path)? {
+        Some(root) => root,
+        None => {
+            return Ok(PatchActionResult {
+                action: request.action,
+                error_code: Some("not-git-repo".to_string()),
+                ..Default::default()
+            });
+        }
+    };
+    let repo_path = Path::new(&repo_root);
+
+    let diff_paths = parse_unified_diff_paths(&request.diff);
+
+    // Try clean apply. We deliberately omit `--reject` so a partial failure
+    // doesn't leave reject files on disk; Codex's Dialog reports the whole
+    // path set as conflicted in that case (no skipped vs conflicted split).
+    let mut args: Vec<&str> = vec!["apply"];
+    if reverse {
+        args.push("--reverse");
+    }
+    let output = git_apply_with_stdin(repo_path, &args, &request.diff)?;
+
+    if output.status.success() {
+        return Ok(PatchActionResult {
+            action: request.action,
+            applied_paths: diff_paths,
+            ..Default::default()
+        });
+    }
+
+    let stderr_text = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Ok(PatchActionResult {
+        action: request.action,
+        conflicted_paths: diff_paths,
+        exec_output: Some(PatchActionExecOutput {
+            output: if stderr_text.is_empty() {
+                format!("git apply exited with status {}", output.status)
+            } else {
+                stderr_text
+            },
+        }),
+        ..Default::default()
+    })
+}
+
+fn git_apply_with_stdin(
+    cwd: &Path,
+    args: &[&str],
+    diff: &str,
+) -> Result<std::process::Output, String> {
+    let mut child = Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("failed to spawn git apply: {error}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(diff.as_bytes())
+            .map_err(|error| format!("failed to write diff to git apply stdin: {error}"))?;
+    }
+    child
+        .wait_with_output()
+        .map_err(|error| format!("git apply wait failed: {error}"))
+}
+
+/// Extract distinct destination paths from a unified diff.
+///
+/// We look for `diff --git a/<path> b/<path>` headers; the `b/`-side path is
+/// the post-image filename which is what `git apply` actually addresses. Falls
+/// back to bare `+++ b/<path>` headers when the `diff --git` line is missing
+/// (rare but seen on partial protocol payloads).
+fn parse_unified_diff_paths(diff: &str) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut push_unique = |path: String, paths: &mut Vec<String>| {
+        if !path.is_empty() && seen.insert(path.clone()) {
+            paths.push(path);
+        }
+    };
+    for line in diff.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            if let Some(path) = diff_git_b_side_path(rest) {
+                push_unique(path, &mut paths);
+            }
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("+++ ") {
+            if let Some(stripped) = rest.strip_prefix("b/") {
+                push_unique(stripped.to_string(), &mut paths);
+            } else if rest != "/dev/null" {
+                push_unique(rest.to_string(), &mut paths);
+            }
+        }
+    }
+    paths
+}
+
+/// Parse the b-side path out of a `diff --git a/<x> b/<y>` line, accounting
+/// for the quoted-path form git produces when the filename contains spaces.
+fn diff_git_b_side_path(rest: &str) -> Option<String> {
+    // Quoted form: "a/foo bar" "b/baz qux"
+    if let Some(stripped) = rest.strip_prefix('"') {
+        if let Some(close_idx) = stripped.find("\" ") {
+            let after_a = &stripped[close_idx + 2..];
+            return Some(unquote_diff_path(after_a));
+        }
+    }
+    // Unquoted form: a/path b/path. Find the " b/" separator; everything after
+    // it is the b-side path (which may itself be quoted).
+    if let Some(idx) = rest.find(" b/") {
+        return Some(unquote_diff_path(&rest[idx + 3..]));
+    }
+    None
+}
+
+fn unquote_diff_path(value: &str) -> String {
+    let trimmed = value.trim();
+    if let Some(stripped) = trimmed.strip_prefix("b/") {
+        return stripped.trim().to_string();
+    }
+    if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        return inner.strip_prefix("b/").unwrap_or(inner).to_string();
+    }
+    trimmed.to_string()
+}
+
 #[tauri::command]
 fn host_create_pending_worktree(
     request: CreatePendingWorktreeRequest,
@@ -1845,6 +2047,7 @@ fn main() {
             host_read_file_bytes_base64,
             host_read_document_preview,
             host_git_status,
+            host_apply_patch_action,
             host_create_pending_worktree,
             host_find_rollout_for_thread,
             host_read_thread_tool_history,

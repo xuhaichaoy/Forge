@@ -17,6 +17,11 @@ import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { AutomationsPreviewPanel } from "./components/automations-preview-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
+import type { PatchAction, PatchActionState } from "./components/conversation-view";
+import {
+  UnifiedDiffFailureDialog,
+  type UnifiedDiffFailure,
+} from "./components/unified-diff-failure-dialog";
 import { McpToolCallForm } from "./components/mcp-tool-call-form";
 import { McpServerConfigForm } from "./components/mcp-server-config-form";
 import { McpFollowUpDialog, type McpFollowUpDialogOption } from "./components/mcp-follow-up-dialog";
@@ -34,6 +39,7 @@ import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
 import {
+  applyPatchAction,
   openExternalUrl,
   openFileReference,
   isTauriRuntime,
@@ -42,6 +48,7 @@ import {
   pickWorkspaceFolder,
   readCodexAuthSummary,
   type CodexAuthSummary,
+  type PatchActionResult,
 } from "./lib/tauri-host";
 import { applyUpdate, checkForUpdates } from "./lib/updater";
 import {
@@ -80,6 +87,7 @@ import {
   accountRefreshScopeForNotification,
   applyAccountNotification,
   beginAccountStateRefresh,
+  hasOpenAiCredentialSummary,
   initialAccountState,
   logoutAndRefreshAccountState,
   projectAccountViewModel,
@@ -146,8 +154,10 @@ import {
   mentionOptionsFromSkillsResponse,
 } from "./state/mention-options";
 import {
+  appRegistryEntriesFromResponse,
   isThreadStatusInProgress,
   projectConversation,
+  type AppRegistryEntry,
   type RailEntry,
 } from "./state/render-groups";
 import {
@@ -279,18 +289,6 @@ import {
   withWorkspaceDeveloperInstructions,
 } from "./state/thread-workflow";
 
-function hasOpenAiCredential(summary: CodexAuthSummary | null): boolean {
-  if (!summary?.hasAuthFile) return false;
-  const authMode = summary.authMode?.trim().toLowerCase() ?? "";
-  if (authMode === "chatgpt" || authMode === "chatgptauthtokens") {
-    return summary.hasTokens;
-  }
-  if (authMode === "apikey" || authMode === "api_key" || authMode === "api-key") {
-    return summary.hasApiKey;
-  }
-  return summary.hasTokens || summary.hasApiKey;
-}
-
 function hostFromBaseUrl(value: string | null | undefined, fallback: string): string {
   const trimmed = value?.trim();
   if (!trimmed) return fallback;
@@ -299,6 +297,20 @@ function hostFromBaseUrl(value: string | null | undefined, fallback: string): st
   } catch {
     return fallback;
   }
+}
+
+function isSuccessfulAccountLoginCompletedNotification(message: { method: string; params?: unknown }): boolean {
+  if (message.method !== "account/login/completed") return false;
+  const params = message.params;
+  return Boolean(params && typeof params === "object" && (params as { success?: unknown }).success === true);
+}
+
+function authModeFromAccountUpdatedNotification(message: { method: string; params?: unknown }): string | null {
+  if (message.method !== "account/updated") return null;
+  const params = message.params;
+  if (!params || typeof params !== "object") return null;
+  const authMode = (params as { authMode?: unknown }).authMode;
+  return typeof authMode === "string" && authMode.trim() ? authMode.trim() : null;
 }
 
 const BACKGROUND_AGENT_PANEL_WIDTH_PX = 520;
@@ -447,6 +459,19 @@ export function HiCodexApp() {
     setRightRailPinnedState(isPinned);
     saveRightRailPinned(rightRailPreferenceStorage(), isPinned);
   }, []);
+  /*
+   * Codex Desktop Summary Rail visibility (`cp` in
+   * `local-conversation-thread-BX7YNcUw.js` byte 153908) is derived state, not
+   * a user-toggleable atom:
+   *   shouldShow = isPinned && displayMode !== "overlay" && !isRightPanelOpen
+   * The previous HiCodex implementation kept a separate `rightRailOpen` flag
+   * (defaulting to false and force-opened by file-preview handlers) which
+   * mis-modeled Codex's `ea = A(P, !1)` RightPanel atom and inverted the
+   * Summary Rail semantics — Progress/Git/Outputs/Sources disappeared by
+   * default until the user clicked into a preview. The derived formula
+   * lives in `showRightRail` below; the storage-backed `rightRailOpen`
+   * state has been removed.
+   */
   const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
   /*
    * Tauri auto-update state (mirror of Codex Desktop's update banner). The
@@ -548,6 +573,7 @@ export function HiCodexApp() {
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
   const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
   const [appListChangedNonce, setAppListChangedNonce] = useState(0);
+  const [appRegistry, setAppRegistry] = useState<AppRegistryEntry[]>([]);
   const [accountState, setAccountState] = useState<AccountState>(initialAccountState);
   const [accountRefreshNonce, setAccountRefreshNonce] = useState(0);
   const [rpcDebugEvents, setRpcDebugEvents] = useState<RpcDebugEvent[]>([]);
@@ -562,6 +588,8 @@ export function HiCodexApp() {
   const appListRefreshMessageRef = useRef("App list changed.");
   const mcpServerStatusRefreshMessageRef = useRef("MCP startup status changed.");
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
+  const authRefreshTokenOnNextRefreshRef = useRef(false);
+  const accountRefreshTokenOnNextRefreshRef = useRef(false);
   const workspaceInitialized = useRef(false);
   const hasConnectedOnceRef = useRef(false);
   const needsReconnectRecoveryRef = useRef(false);
@@ -574,7 +602,10 @@ export function HiCodexApp() {
     accountStateRef.current = next;
     setAccountState(next);
   }, []);
-  const accountViewModel = useMemo(() => projectAccountViewModel(accountState), [accountState]);
+  const accountViewModel = useMemo(
+    () => projectAccountViewModel(accountState, codexAuthSummary),
+    [accountState, codexAuthSummary],
+  );
   const client = useMemo(() => {
     const rpc = new CodexJsonRpcClient({
       onHostStatus: (status) => dispatch({ type: "hostStatus", status }),
@@ -599,12 +630,19 @@ export function HiCodexApp() {
         const accountRefreshScope = accountRefreshScopeForNotification(message);
         if (accountRefreshScope) {
           setAccountProjectionState(applyAccountNotification(accountStateRef.current, message));
+          if (isSuccessfulAccountLoginCompletedNotification(message)) {
+            authRefreshTokenOnNextRefreshRef.current = true;
+            accountRefreshTokenOnNextRefreshRef.current = true;
+          }
           setAccountRefreshNonce((current) => current + 1);
         }
         // OAuth completion → re-query auth status so the picker's Sign-in
         // button + readyProviders flip immediately.
         if (message.method === "account/login/completed"
           || message.method === "account/updated") {
+          if (message.method === "account/updated") {
+            setOauthAuthMethod(authModeFromAccountUpdatedNotification(message));
+          }
           setAuthRefreshNonce((current) => current + 1);
         }
       },
@@ -623,14 +661,18 @@ export function HiCodexApp() {
     let cancelled = false;
     void (async () => {
       try {
+        const refreshToken = authRefreshTokenOnNextRefreshRef.current;
+        authRefreshTokenOnNextRefreshRef.current = false;
         const result = await client.request<{ authMethod?: string | null; requiresOpenaiAuth?: boolean | null }>(
           "getAuthStatus",
-          { includeToken: false, refreshToken: false },
+          { includeToken: false, refreshToken },
           15_000,
         );
         if (cancelled) return;
         const method = result?.authMethod ?? null;
-        setOauthAuthMethod(method);
+        if (method || result?.requiresOpenaiAuth !== false) {
+          setOauthAuthMethod(method);
+        }
         dispatch({
           type: "log",
           text: `getAuthStatus → authMethod=${method ?? "null"} requiresOpenaiAuth=${result?.requiresOpenaiAuth ?? "null"}`,
@@ -654,21 +696,51 @@ export function HiCodexApp() {
     if (!state.connected) return;
     let cancelled = false;
     const previous = accountStateRef.current;
+    const refreshToken = accountRefreshTokenOnNextRefreshRef.current;
+    accountRefreshTokenOnNextRefreshRef.current = false;
     setAccountProjectionState(beginAccountStateRefresh(previous));
-    void refreshAccountState(client, previous, { refreshToken: false })
+    void refreshAccountState(client, previous, { refreshToken })
       .then((next) => {
         if (!cancelled) setAccountProjectionState(next);
       });
     return () => { cancelled = true; };
   }, [accountRefreshNonce, client, setAccountProjectionState, state.connected]);
 
+  useEffect(() => {
+    if (!state.connected) {
+      setAppRegistry([]);
+      return;
+    }
+    let cancelled = false;
+    void loadAllApps(client, {
+      forceRefetch: appListChangedNonce > 0,
+      threadId: state.activeThreadId,
+    })
+      .then((apps) => {
+        if (!cancelled) setAppRegistry(appRegistryEntriesFromResponse(apps));
+      })
+      .catch(() => {
+        if (!cancelled) setAppRegistry([]);
+      });
+    return () => { cancelled = true; };
+  }, [appListChangedNonce, client, state.activeThreadId, state.connected]);
+
   const signOutAccount = useCallback(async () => {
     const previous = accountStateRef.current;
-    if (!previous.account || previous.refreshing) return;
+    if ((!previous.account && !hasOpenAiCredentialSummary(codexAuthSummary)) || previous.refreshing) return;
     setAccountProjectionState(beginAccountStateRefresh(previous));
     try {
       const next = await logoutAndRefreshAccountState(client, previous);
       setAccountProjectionState(next);
+      setOauthAuthMethod(null);
+      setCodexAuthSummary({
+        hasAuthFile: false,
+        authMode: null,
+        hasApiKey: false,
+        hasTokens: false,
+        email: null,
+        planType: null,
+      });
       setAuthRefreshNonce((current) => current + 1);
       dispatch({ type: "log", text: "Logged out from the current Codex account.", level: "info" });
     } catch (error) {
@@ -680,7 +752,7 @@ export function HiCodexApp() {
       });
       dispatch({ type: "log", text: `Logout failed: ${formatError(error)}`, level: "error" });
     }
-  }, [client, setAccountProjectionState]);
+  }, [client, codexAuthSummary, setAccountProjectionState]);
 
   useEffect(() => {
     if (!state.connected) return;
@@ -721,6 +793,96 @@ export function HiCodexApp() {
   const itemsByThread = useMemo(() => selectItemsByThread(state), [state.threadsRuntime]);
   const activeThreadRunning = Boolean(activeTurnId) || isThreadStatusInProgress(activeThread?.status);
   const worktreeStatusCwd = activeThread?.cwd?.trim() || workspace.trim();
+
+  /*
+   * Codex Desktop turn-diff Undo / Reapply state. Mirrors the local state
+   * `[g,_] = useState(null)` + `[z,B] = useState(...)` pattern around
+   * local-conversation-thread byte ~423000: `patchActionState` tracks which
+   * direction the toolbar button is currently in (undo ↔ reapply); `patchFailure`
+   * drives the `<UnifiedDiffFailureDialog/>` overlay. We hand the callback
+   * straight to `ConversationView`; it bubbles down to `TurnDiffBlock`'s
+   * `onPatchAction`.
+   */
+  const [patchActionState, setPatchActionState] = useState<PatchActionState>(null);
+  const [patchFailure, setPatchFailure] = useState<UnifiedDiffFailure | null>(null);
+  const [patchActionInFlight, setPatchActionInFlight] = useState(false);
+  /*
+   * Synchronous re-entrancy lock — `setPatchActionInFlight(true)` only updates
+   * state on the NEXT render, so a fast double-click can clear the `if
+   * (patchActionInFlight) return;` guard twice before React commits. A ref
+   * mutates immediately and blocks the second handler call before any git
+   * apply runs against the working tree.
+   */
+  const patchActionLockRef = useRef(false);
+  const handlePatchAction = useCallback(
+    (action: PatchAction, diff: string) => {
+      if (patchActionLockRef.current) return;
+      patchActionLockRef.current = true;
+      const cwd = worktreeStatusCwd;
+      if (!cwd) {
+        patchActionLockRef.current = false;
+        setPatchFailure({
+          action: action === "undo" ? "revert" : "reapply",
+          result: { appliedPaths: [], skippedPaths: [], conflictedPaths: [] },
+          errorCode: "not-git-repo",
+        });
+        return;
+      }
+      setPatchActionInFlight(true);
+      const apiAction = action === "undo" ? "revert" : "reapply";
+      applyPatchAction({ action: apiAction, diff, cwd })
+        .then((result: PatchActionResult) => {
+          const conflicted = result.conflictedPaths ?? [];
+          const skipped = result.skippedPaths ?? [];
+          const errorCode = result.errorCode ?? undefined;
+          const failed =
+            (errorCode != null && errorCode.length > 0)
+            || conflicted.length > 0
+            || skipped.length > 0;
+          if (failed) {
+            setPatchFailure({
+              action: result.action,
+              result: {
+                appliedPaths: result.appliedPaths ?? [],
+                skippedPaths: skipped,
+                conflictedPaths: conflicted,
+                execOutput: result.execOutput ?? null,
+              },
+              errorCode,
+            });
+            return;
+          }
+          // Clean apply / reverse — flip the toolbar button so the user can
+          // toggle back without re-mounting the row. Codex `setZ` symmetry.
+          setPatchActionState({ action, diff });
+        })
+        .catch((error: unknown) => {
+          /*
+           * Tauri rejections (host_apply_patch_action returned Err, or the
+           * IPC layer threw before reaching Rust) used to be swallowed,
+           * leaving the Failure Dialog with empty `execOutput`. Surface the
+           * actual error text via the same `execOutput.output` slot Codex
+           * Desktop uses for `git apply` stderr — readers see the Rust /
+           * Tauri error verbatim under the "Git apply error" panel.
+           */
+          const errorText = formatError(error);
+          setPatchFailure({
+            action: apiAction,
+            result: {
+              appliedPaths: [],
+              skippedPaths: [],
+              conflictedPaths: [],
+              execOutput: errorText ? { output: errorText } : null,
+            },
+          });
+        })
+        .finally(() => {
+          patchActionLockRef.current = false;
+          setPatchActionInFlight(false);
+        });
+    },
+    [worktreeStatusCwd],
+  );
   const activePendingRequests = useMemo(
     () => deriveActivePendingRequests(state.pendingRequests, {
       activeThreadId: state.activeThreadId,
@@ -808,6 +970,7 @@ export function HiCodexApp() {
   const activeDiff = activeThreadRuntime.turnDiff;
   const conversation = useMemo(
     () => projectConversation(activeItems, {
+      appRegistry,
       isThreadRunning: activeThreadRunning,
       mcpServerStatuses,
       progressPlan: activeProgressPlan,
@@ -816,7 +979,7 @@ export function HiCodexApp() {
       // codex-local-conversation-thread.pretty.js :8003).
       turnDiff: activeDiff,
     }),
-    [activeDiff, activeItems, activeProgressPlan, activeThreadRunning, mcpServerStatuses],
+    [activeDiff, activeItems, activeProgressPlan, activeThreadRunning, appRegistry, mcpServerStatuses],
   );
   const branchDetails = useMemo(
     () => projectBranchDetails({
@@ -1507,22 +1670,19 @@ export function HiCodexApp() {
   const readyProviders = useMemo(() => {
     const ready = new Set<string>();
     const active = state.threadContextDefaults?.modelProvider ?? "";
-    // The OAuth subscription provider must be gated by **live** auth status,
-    // not by being marked active in config.toml and not by the on-disk
-    // auth.json summary (which can show a stale ChatGPT token or an unrelated
-    // API key for a third-party gateway). `oauthAuthMethod` is the
-    // authoritative signal: codex-rs's `getAuthStatus` RPC only returns a
-    // non-null `authMethod` when the openai provider has a usable credential
-    // right now. Without this gate the inline "Sign in to ChatGPT" button
-    // silently disappears even though the user has not completed OAuth.
+    // `getAuthStatus` is provider-scoped: local gateways with
+    // `requires_openai_auth = false` report no OpenAI auth even when ChatGPT
+    // OAuth is complete. Keep the subscription provider ready when either the
+    // live RPC reports an auth method or the isolated Codex auth.json contains
+    // a ChatGPT/API-key credential.
     if (active && active !== DEFAULT_SUBSCRIPTION_PROVIDER_ID) {
       ready.add(active);
     }
-    if (oauthAuthMethod && oauthAuthMethod.length > 0) {
+    if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredentialSummary(codexAuthSummary)) {
       ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
     }
     return ready;
-  }, [state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
+  }, [codexAuthSummary, state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
 
   const {
     archiveSelectedThread,
@@ -1734,7 +1894,18 @@ export function HiCodexApp() {
     ? (filePreviewPanelLayout.fullWidth ? mainWidth : filePreviewPanelEffectiveWidthPx)
     : activeSidePanelEffectiveWidthPx;
   const rightRailLayoutWidthPx = Math.max(0, mainWidth - sidePanelRailOffsetPx);
-  const showRightRail = rightRailSections.length > 0 && rightRailShouldRender(rightRailLayoutWidthPx);
+  /*
+   * Codex Desktop `cp` (byte 153908): `shouldShow = !isHiddenByRightPanel && (isPinned && displayMode !== "overlay")`.
+   * `isHiddenByRightPanel` is true when a non-overlay rail is forced down by
+   * the big AppShell RightPanel (`rp` byte 153666). HiCodex's RightPanel
+   * equivalent is the file-preview side panel — `hasFilePreviewSelection`
+   * drives the same auto-hide rule. Empty sections collapse, matching the
+   * `rightRailSections.length > 0` term.
+   */
+  const showRightRail = rightRailPinned
+    && rightRailSections.length > 0
+    && rightRailShouldRender(rightRailLayoutWidthPx)
+    && !hasFilePreviewSelection;
   const rightRailMode = rightRailPinned ? rightRailDisplayMode(rightRailLayoutWidthPx) : "overlay";
   const mainLayoutStyle = {
     "--hc-right-panel-offset": `${Math.round(sidePanelRailOffsetPx)}px`,
@@ -2175,6 +2346,7 @@ export function HiCodexApp() {
       }
       try {
         const apps = await loadAllApps(client, { forceRefetch: true, threadId: state.activeThreadId });
+        setAppRegistry(appRegistryEntriesFromResponse(apps));
         const pluginsNeeded = commandPluginsOpen || settingsPluginsOpen;
         const plugins = pluginsNeeded
           ? await client.request<unknown>("plugin/list", {
@@ -2417,6 +2589,34 @@ export function HiCodexApp() {
     setFileReference,
     workspace,
   });
+
+  // CODEX-REF: app-main-DZOIl7aU.pretty.js:34020 — `JI`/`YI` open path: any
+  // file/source/artifact open triggers `Fe(e, !0)` and flips the right panel
+  // visibility atom (`ea = A(P, !1)`). In Codex Desktop opening a file/source/
+  // artifact tab triggers `setRightPanelOpen(true)`, which `cp` (`rp` predicate)
+  // turns into `isHiddenByRightPanel = true` — the Summary Rail auto-hides.
+  // HiCodex's RightPanel analogue is the file-preview side panel; the auto-
+  // hide rule is encoded in `showRightRail` above (`!hasFilePreviewSelection`),
+  // so the preview-open handlers no longer need to manually toggle the rail.
+  // The wrappers stay as a forwarding layer for symmetry with how Codex
+  // funnels these through the RightPanel atom dispatcher.
+  const previewConversationFileReferenceAndOpenRail = useCallback<
+    typeof previewConversationFileReference
+  >((reference) => {
+    return previewConversationFileReference(reference);
+  }, [previewConversationFileReference]);
+  const previewRailArtifactAndOpenRail = useCallback<typeof previewRailArtifact>((entry) => {
+    return previewRailArtifact(entry);
+  }, [previewRailArtifact]);
+  const previewRailFileReferenceAndOpenRail = useCallback<typeof previewRailFileReference>(
+    (reference) => {
+      return previewRailFileReference(reference);
+    },
+    [previewRailFileReference],
+  );
+  const openRailUrlAndOpenRail = useCallback<typeof openRailUrl>((url) => {
+    return openRailUrl(url);
+  }, [openRailUrl]);
 
   const rememberThreadScrollOffset = useCallback((distanceFromBottomPx: number) => {
     threadScrollOffsetsRef.current.set(activeThreadScrollKey, Math.max(0, distanceFromBottomPx));
@@ -2702,6 +2902,9 @@ export function HiCodexApp() {
         loadAllApps(client, { threadId: state.activeThreadId }),
       ]);
       if (skillResult.status === "rejected" && appResult.status === "rejected") throw skillResult.reason;
+      if (appResult.status === "fulfilled") {
+        setAppRegistry(appRegistryEntriesFromResponse(appResult.value));
+      }
       return dedupeComposerMentionOptions([
         ...(skillResult.status === "fulfilled" ? mentionOptionsFromSkillsResponse(skillResult.value, query) : []),
         ...(appResult.status === "fulfilled" ? mentionOptionsFromAppsResponse(appResult.value, query) : []),
@@ -2929,6 +3132,7 @@ export function HiCodexApp() {
           onSortKeyChange={setSidebarSortKey}
           organizeMode={sidebarPreferences.organizeMode}
           currentWorkspaceRoot={activeThread?.cwd || workspace}
+          selectedWorkspaceRoots={selectedWorkspaceRoots}
           onOrganizeModeChange={setSidebarOrganizeMode}
           collapsedGroupKeys={sidebarCollapsedGroupKeys}
           onCollapsedGroupKeysChange={setSidebarCollapsedGroupKeys}
@@ -2948,6 +3152,18 @@ export function HiCodexApp() {
           activeThread={activeThread}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={toggleSidebar}
+          /*
+           * Codex Desktop header carries `Toggle pinned summary` button
+           * (local-conversation-page-Bt6RhPKI.js byte ~3500, actionId
+           * `local-thread-summary-panel-toggle`). HiCodex shows it only when
+           * the active thread has rail content AND the viewport isn't in
+           * overlay mode — matching Codex `an` gating where the pin variant
+           * is only used for `displayMode !== "overlay"`.
+           */
+          rightRailToggleAvailable={rightRailSections.length > 0}
+          rightRailPinned={rightRailPinned}
+          canPinRightRail={rightRailShouldRender(rightRailLayoutWidthPx)}
+          onToggleRightRailPinned={() => setRightRailPinned(!rightRailPinned)}
         />
         {threadFindOpen && (
           <ThreadFindBar
@@ -3050,10 +3266,13 @@ export function HiCodexApp() {
               onOpenAssistantArtifact={openAssistantArtifact}
               onOpenDiff={openActiveDiffPanel}
               onForkTurn={forkActiveThreadFromTurn}
-              onOpenFileReference={previewConversationFileReference}
+              onOpenFileReference={previewConversationFileReferenceAndOpenRail}
               onOpenThreadId={openBackgroundAgentThread}
               onMcpAppHostCall={handleMcpAppHostCall}
               onReadMcpResource={readMcpResource}
+              onPatchAction={handlePatchAction}
+              patchActionState={patchActionState}
+              patchActionInFlight={patchActionInFlight}
             />
           </section>
         </ThreadScrollLayout>
@@ -3077,7 +3296,7 @@ export function HiCodexApp() {
             onInterrupt={interruptBackgroundAgentPanelTurn}
             onMessageDraftChange={setBackgroundAgentMessageDraft}
             onMcpAppHostCall={handleMcpAppHostCall}
-            onOpenFileReference={previewConversationFileReference}
+            onOpenFileReference={previewConversationFileReferenceAndOpenRail}
             onOpenThreadId={openBackgroundAgentThread}
             onReadMcpResource={readMcpResource}
             onSendMessage={sendBackgroundAgentPanelMessage}
@@ -3097,12 +3316,11 @@ export function HiCodexApp() {
             sections={rightRailSections}
             displayMode={rightRailMode}
             isPinned={rightRailPinned}
-            onOpenArtifactPreview={previewRailArtifact}
-            onOpenFileReference={previewRailFileReference}
-            onOpenUrl={openRailUrl}
+            onOpenArtifactPreview={previewRailArtifactAndOpenRail}
+            onOpenFileReference={previewRailFileReferenceAndOpenRail}
+            onOpenUrl={openRailUrlAndOpenRail}
             onOpenDiff={openActiveDiffPanel}
             onOpenThreadId={openBackgroundAgentThread}
-            onPinnedChange={setRightRailPinned}
             onCleanBackgroundTerminals={conversation.backgroundTerminals.length > 0
               ? () => void cleanBackgroundTerminals()
               : undefined}
@@ -3135,7 +3353,7 @@ export function HiCodexApp() {
           onCloseFileReference={() => setFileReference(null)}
           onOpenArtifactFileExternal={openRailArtifactFileExternal}
           onOpenFileReferenceExternal={openFileReferenceExternal}
-          onOpenUrl={openRailUrl}
+          onOpenUrl={openRailUrlAndOpenRail}
         />
       </main>
       ) : (
@@ -3225,6 +3443,12 @@ export function HiCodexApp() {
           request={{ prompt: mcpFollowUpDialog.prompt, source: mcpFollowUpDialog.source }}
           onClose={closeMcpFollowUpDialog}
           onSend={confirmMcpFollowUpDialog}
+        />
+      )}
+      {patchFailure && (
+        <UnifiedDiffFailureDialog
+          failure={patchFailure}
+          onClose={() => setPatchFailure(null)}
         />
       )}
       {modelPickerAnchor && (

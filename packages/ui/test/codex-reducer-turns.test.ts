@@ -21,6 +21,7 @@ export default function runCodexReducerTurnsTests(): void {
   threadStartedStaleSnapshotDoesNotOverwriteCompletedLiveItems();
   threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt();
   projectsTurnTimingAsWorkedForItems();
+  suppressesWorkedForForPureTextTurns();
   delaysWorkedForProjectionUntilTurnItemsExist();
   repositionsExplicitWorkedForItemsFromThreadSnapshots();
   startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage();
@@ -332,6 +333,7 @@ function upsertingRunningThreadSnapshotPreservesStreamingItems(): void {
       startedAt: 1,
       items: [
         userMessage("user-1", "Server replay"),
+        execActivity("exec-1", "ls"),
         agentMessage("agent-1", "Live"),
       ],
     },
@@ -353,10 +355,14 @@ function upsertingRunningThreadSnapshotPreservesStreamingItems(): void {
     (localUser as Record<string, unknown>).content,
     "reading a running thread snapshot should preserve local user message content",
   );
+  // Codex Desktop `Yw` renders worked-for as the agent-body HEADER (above
+  // activity rows + assistant message). HiCodex `insertWorkedForAfterLastUserMessage`
+  // inserts it immediately after the last user message so the snapshot replay
+  // preserves the same divider-on-top layout.
   assertDeepEqual(
     items(next, "thread-1").map((item) => item.id),
-    ["user-1", "worked-for:turn-1", "agent-1"],
-    "reading a running thread snapshot should keep worked-for before the assistant message like Codex Desktop",
+    ["user-1", "worked-for:turn-1", "exec-1", "agent-1"],
+    "reading a running thread snapshot should keep worked-for above activities like Codex Desktop",
   );
 }
 
@@ -507,6 +513,13 @@ function threadStartedWithoutVisibleItemsPreservesOptimisticFirstPrompt(): void 
 }
 
 function projectsTurnTimingAsWorkedForItems(): void {
+  /*
+   * Codex `xt = vt.length > 0` gate (`local-conversation-thread-BX7YNcUw.js`
+   * byte ~539133): worked-for is synthesized only when the turn produced
+   * agent-activity items. Include an exec to satisfy the gate so this test
+   * keeps validating timing→worked-for projection. A separate test below
+   * (`suppressesWorkedForForPureTextTurns`) asserts the suppression branch.
+   */
   const thread = threadWithTurns("thread-1", [
     {
       id: "turn-1",
@@ -514,7 +527,7 @@ function projectsTurnTimingAsWorkedForItems(): void {
       startedAt: 1,
       completedAt: 66,
       durationMs: 65_000,
-      items: [agentMessage("agent-1", "Done.")],
+      items: [execActivity("exec-1", "cat README.md"), agentMessage("agent-1", "Done.")],
     },
   ]);
 
@@ -529,6 +542,34 @@ function projectsTurnTimingAsWorkedForItems(): void {
   assertEqual(workedFor.startedAtMs, 1_000, "turn startedAt seconds should be converted to milliseconds");
   assertEqual(workedFor.completedAtMs, 66_000, "turn completedAt seconds should be converted to milliseconds");
   assertEqual(workedFor.durationMs, 65_000, "turn duration should be preserved on the worked-for item");
+}
+
+function suppressesWorkedForForPureTextTurns(): void {
+  /*
+   * Codex Desktop `xt = vt.length > 0` gating (`local-conversation-thread-BX7YNcUw.js`
+   * byte ~539133): pure-text turns (user → assistant, no exec/patch/web-search/…)
+   * mount no `Yw` agent-body-collapsible and therefore no worked-for divider.
+   * Recording 2026-05-21 at 07.57.04 t=12s showed HiCodex spuriously emitting
+   * "Worked for 5s" for plain Q&A turns; this test pins the post-fix behavior.
+   */
+  const thread = threadWithTurns("thread-1", [
+    {
+      id: "turn-1",
+      status: "completed",
+      startedAt: 1,
+      completedAt: 6,
+      durationMs: 5_000,
+      items: [userMessage("user-1", "Hello"), agentMessage("agent-1", "Hi there.")],
+    },
+  ]);
+
+  const state = reduceNotification(initialCodexUiState, {
+    method: "thread/started",
+    params: { thread },
+  });
+  const workedFor = items(state, "thread-1").find((item) => item.id === "worked-for:turn-1");
+
+  assertEqual(workedFor, undefined, "pure-text turns should not synthesize a worked-for divider (Codex alignment)");
 }
 
 function delaysWorkedForProjectionUntilTurnItemsExist(): void {
@@ -558,8 +599,12 @@ function delaysWorkedForProjectionUntilTurnItemsExist(): void {
     "turn/started should not put an empty worked-for row before user and assistant items",
   );
 
+  // Activity item (exec) satisfies the agent-activity gate so worked-for is
+  // synthesized; this test still validates positional insertion between
+  // user and assistant items.
   const withItems = [
     ["item/started", { threadId: "thread-1", turnId: "turn-1", item: userMessage("user-1", "Hello") }],
+    ["item/started", { threadId: "thread-1", turnId: "turn-1", item: execActivity("exec-1", "cat foo.md") }],
     ["item/started", { threadId: "thread-1", turnId: "turn-1", item: agentMessage("agent-1", "Hi") }],
   ].reduce(
     (current, [method, params]) =>
@@ -574,7 +619,11 @@ function delaysWorkedForProjectionUntilTurnItemsExist(): void {
         id: "turn-1",
         threadId: "thread-1",
         status: "completed",
-        items: [userMessage("user-1", "Server replay"), agentMessage("agent-1", "Hi")],
+        items: [
+          userMessage("user-1", "Server replay"),
+          execActivity("exec-1", "cat foo.md"),
+          agentMessage("agent-1", "Hi"),
+        ],
         startedAt: 1,
         completedAt: 6,
         durationMs: 5_000,
@@ -582,10 +631,14 @@ function delaysWorkedForProjectionUntilTurnItemsExist(): void {
     },
   });
 
+  // `insertWorkedForBeforeAssistant` (codex-reducer.ts) targets the last
+  // assistant message; the activity item flows into the agent body below
+  // the worked-for header, which is how Codex's `Yw` agent-body-collapsible
+  // wraps `vt` entries (collapsibleEntries) underneath the divider line.
   assertDeepEqual(
     items(completed, "thread-1").map((item) => item.id),
-    ["user-1", "worked-for:turn-1", "agent-1"],
-    "terminal turn snapshot should place worked-for between the user and assistant items",
+    ["user-1", "worked-for:turn-1", "exec-1", "agent-1"],
+    "terminal turn snapshot should place worked-for before activity and assistant items",
   );
 }
 
@@ -804,7 +857,9 @@ function completingTurnProjectsTurnTimingAsWorkedForItem(): void {
         id: "turn-1",
         threadId: "thread-1",
         status: "completed",
-        items: [agentMessage("agent-1", "Done.")],
+        // Include an activity item — pure-text turns do not synthesize
+        // worked-for per Codex gate (codex-reducer.ts hasAgentActivityItem).
+        items: [execActivity("exec-1", "ls"), agentMessage("agent-1", "Done.")],
         startedAt: 1,
         completedAt: 66,
         durationMs: 65_000,
@@ -1185,19 +1240,21 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
   }
 
   // Without an optimistic insert, the user item arrives last from the server,
-  // so within each turn it sits after wf/error. The regression we are fixing
-  // is that user-N must NOT spill out of its turn segment into the global tail.
+  // so within each turn it sits after the error item. The regression we are
+  // fixing is that user-N must NOT spill out of its turn segment into the
+  // global tail. Codex-aligned `xt = vt.length > 0` gate (codex-reducer.ts
+  // `hasAgentActivityItem`) suppresses worked-for when the `turn/failed`
+  // payload's items array is empty — the stream-error item lives in runtime
+  // state (added by the earlier `error` notification) but gets replaced via
+  // `replaceTurnSegment`, leaving each turn with [stream-error, user] only.
   const ids = items(state, "thread-1").map((item) => item.id);
   assertDeepEqual(
     ids,
     [
-      "worked-for:turn-1",
       "stream-error:turn-1",
       "user-1",
-      "worked-for:turn-2",
       "stream-error:turn-2",
       "user-2",
-      "worked-for:turn-3",
       "stream-error:turn-3",
       "user-3",
     ],
@@ -1206,7 +1263,7 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
 
   for (const suffix of ["1", "2", "3"]) {
     const indexBetweenTurns = ids.indexOf(`user-${suffix}`);
-    const nextTurnHead = ids.indexOf(`worked-for:turn-${Number(suffix) + 1}`);
+    const nextTurnHead = ids.indexOf(`stream-error:turn-${Number(suffix) + 1}`);
     if (nextTurnHead >= 0) {
       if (!(indexBetweenTurns < nextTurnHead)) {
         throw new Error(`user-${suffix} must appear before turn-${Number(suffix) + 1} starts`);
@@ -1449,17 +1506,18 @@ function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
   }
 
   const ids = items(state, "thread-1").map((item) => item.id);
+  // Codex-aligned gate (codex-reducer.ts `hasAgentActivityItem`): empty
+  // `turn/failed` payloads suppress worked-for synthesis. Stream-error rows
+  // from prior `error` notifications still live in runtime and lead each
+  // turn segment along with the optimistic user bubble.
   assertDeepEqual(
     ids,
     [
       "real-user-1",
-      "worked-for:turn-1",
       "stream-error:turn-1",
       "real-user-2",
-      "worked-for:turn-2",
       "stream-error:turn-2",
       "real-user-3",
-      "worked-for:turn-3",
       "stream-error:turn-3",
     ],
     "with optimistic insert each user bubble must lead its turn segment, matching Codex Desktop",
@@ -2518,6 +2576,23 @@ function agentMessage(id: string, text: string): ThreadItem {
     phase: null,
     memoryCitation: null,
   };
+}
+
+/**
+ * Minimal exec item that satisfies the agent-activity gate in
+ * `workedForItemFromTurn` (codex-reducer.ts) — used in timing/projection
+ * tests that need worked-for synthesis. Mirrors Codex's gate where
+ * `Yw` agent-body-collapsible only mounts when `vt.length > 0`.
+ */
+function execActivity(id: string, command: string): ThreadItem {
+  return {
+    type: "exec",
+    id,
+    command,
+    completed: true,
+    output: { exitCode: 0 },
+    parsedCmd: { type: "read", path: command },
+  } as unknown as ThreadItem;
 }
 
 function goalFixture(overrides: Record<string, unknown> = {}): Record<string, unknown> {

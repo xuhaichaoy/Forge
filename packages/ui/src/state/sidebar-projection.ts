@@ -43,6 +43,18 @@ export interface ThreadSortContext {
 export interface SidebarThreadGroupContext {
   organizeMode?: SidebarOrganizeMode;
   currentWorkspaceRoot?: string | null;
+  /**
+   * Workspace roots the user has selected (via "Use an existing folder" or
+   * prior session restore) that should appear in the project list even when
+   * no thread has been created in them yet.
+   *
+   * Mirrors Codex Desktop `sidebar-project-groups-DJO_ODNL.pretty.js::M`,
+   * which seeds local project groups from `e?.roots ?? []` with empty
+   * `threadKeys` before assigning threads in `F`. Without this seed, a
+   * freshly-selected workspace stays invisible in the sidebar until the
+   * first thread is created.
+   */
+  selectedWorkspaceRoots?: string[];
 }
 
 export interface SidebarThreadGroup {
@@ -101,18 +113,37 @@ export function projectSidebarThreadGroups(
       ? []
       : [{ key: "recent", label: "Recent", path: null, threads: [...threads] }];
   }
+  const seedRoots = normalizeSeedWorkspaceRoots(context.selectedWorkspaceRoots);
   if (organizeMode === "current_workspace") {
     const currentRoot = normalizeSidebarWorkspaceRoot(context.currentWorkspaceRoot);
     if (currentRoot) {
-      return projectCurrentWorkspaceThreadGroups(threads, currentRoot);
+      return projectCurrentWorkspaceThreadGroups(threads, currentRoot, seedRoots);
     }
   }
-  return projectLocalWorkspaceThreadGroups(threads);
+  return projectLocalWorkspaceThreadGroups(threads, seedRoots);
 }
 
-function projectLocalWorkspaceThreadGroups(threads: Thread[]): SidebarThreadGroup[] {
+function projectLocalWorkspaceThreadGroups(
+  threads: Thread[],
+  seedRoots: string[] = [],
+): SidebarThreadGroup[] {
   const groups: SidebarThreadGroup[] = [];
   const byKey = new Map<string, SidebarThreadGroup>();
+  // Seed empty groups from selected workspace roots first, mirroring
+  // Codex Desktop's `M(e, t, i) -> (e?.roots ?? []).map(...)` in
+  // sidebar-project-groups-DJO_ODNL.pretty.js.
+  for (const root of seedRoots) {
+    const key = threadProjectKeyForRoot(root);
+    if (byKey.has(key)) continue;
+    const group: SidebarThreadGroup = {
+      key,
+      label: workspaceRootLabel(root),
+      path: root,
+      threads: [],
+    };
+    byKey.set(key, group);
+    groups.push(group);
+  }
   for (const thread of threads) {
     const key = threadProjectKey(thread);
     let group = byKey.get(key);
@@ -126,7 +157,11 @@ function projectLocalWorkspaceThreadGroups(threads: Thread[]): SidebarThreadGrou
   return groups;
 }
 
-function projectCurrentWorkspaceThreadGroups(threads: Thread[], currentRoot: string): SidebarThreadGroup[] {
+function projectCurrentWorkspaceThreadGroups(
+  threads: Thread[],
+  currentRoot: string,
+  seedRoots: string[] = [],
+): SidebarThreadGroup[] {
   const currentThreads: Thread[] = [];
   const otherThreads: Thread[] = [];
   for (const thread of threads) {
@@ -134,7 +169,7 @@ function projectCurrentWorkspaceThreadGroups(threads: Thread[], currentRoot: str
     else otherThreads.push(thread);
   }
   const groups: SidebarThreadGroup[] = [];
-  if (currentThreads.length > 0) {
+  if (currentThreads.length > 0 || seedRoots.some((root) => threadProjectKeyForRoot(root) === currentRoot)) {
     groups.push({
       key: `current:${currentRoot}`,
       label: "Current workspace",
@@ -142,8 +177,34 @@ function projectCurrentWorkspaceThreadGroups(threads: Thread[], currentRoot: str
       threads: currentThreads,
     });
   }
-  groups.push(...projectLocalWorkspaceThreadGroups(otherThreads));
+  const remainingSeedRoots = seedRoots.filter((root) => threadProjectKeyForRoot(root) !== currentRoot);
+  groups.push(...projectLocalWorkspaceThreadGroups(otherThreads, remainingSeedRoots));
   return groups;
+}
+
+function normalizeSeedWorkspaceRoots(roots: string[] | undefined): string[] {
+  if (!roots || roots.length === 0) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of roots) {
+    const normalized = normalizeSidebarWorkspaceRoot(raw);
+    if (!normalized) continue;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(raw.trim());
+  }
+  return out;
+}
+
+function threadProjectKeyForRoot(root: string): string {
+  return normalizeSidebarWorkspaceRoot(root) ?? root;
+}
+
+export function workspaceRootLabel(root: string): string {
+  const trimmed = root?.trim() ?? "";
+  if (!trimmed || trimmed === "~" || trimmed === "/") return "Local";
+  const normalized = trimmed.replace(/[\\/]+$/, "");
+  return normalized.split(/[\\/]+/).filter(Boolean).pop() || trimmed;
 }
 
 /**
