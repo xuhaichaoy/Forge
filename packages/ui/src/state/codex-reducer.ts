@@ -745,9 +745,8 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
      *     reads that field (verified 2026-05-21 grep).
      *   - `item/fileChange/outputDelta` — flagged deprecated in the v2
      *     protocol; modern app-server does not send it.
-     *   - `item/mcpToolCall/progress` — writes a `progress` text field that
-     *     no component renders (the right-rail `progress` section reads a
-     *     different `RailEntry[]` array).
+     *   - `item/mcpToolCall/progress` — Desktop currently logs and ignores
+     *     this progress message instead of projecting a renderer field.
      *
      * The 5 channels HiCodex now consumes match Codex exactly. The single
      * intentional divergence is `item/fileChange/patchUpdated` below, kept

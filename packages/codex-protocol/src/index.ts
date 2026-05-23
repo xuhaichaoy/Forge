@@ -1,3 +1,5 @@
+import type { ModelServiceTier } from "./generated/v2/ModelServiceTier";
+
 export type JsonValue =
   | null
   | boolean
@@ -63,6 +65,7 @@ export type { ThreadGoalSetResponse } from "./generated/v2/ThreadGoalSetResponse
 
 export type { ThreadStatus } from "./generated/v2/ThreadStatus";
 export type { ThreadActiveFlag } from "./generated/v2/ThreadActiveFlag";
+export type { ModelServiceTier } from "./generated/v2/ModelServiceTier";
 
 export interface InitializeResponse {
   userAgent?: string;
@@ -83,6 +86,8 @@ export interface ModelConfig {
   temperature: number;
   maxTokens: number | null;
   supportsImageInput?: boolean;
+  serviceTiers?: ModelServiceTier[];
+  defaultServiceTier?: string | null;
 }
 
 export interface TeamSummary {

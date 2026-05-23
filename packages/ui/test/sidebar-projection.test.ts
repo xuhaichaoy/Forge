@@ -6,6 +6,7 @@ import {
   sidebarThreadHasVisibleStatus,
   sidebarThreadRelativeTime,
   sidebarThreadStatusState,
+  splitSidebarThreadsByPinned,
   threadProjectLabel,
   threadSortAt,
 } from "../src/state/sidebar-projection";
@@ -28,6 +29,7 @@ export default function runSidebarProjectionTests(): void {
   projectsSystemErrorThreadStatusLikeDesktopSidebar();
   projectsThreadProjectLabelFromCwd();
   projectsWorkspaceRootOptionsFromVisibleLocalThreads();
+  splitsPinnedThreadsBeforeProjectGrouping();
   groupsThreadsByLocalProjectWithoutReordering();
   groupsThreadsAsRecentWhenOrganizeModeRequestsRecent();
   groupsCurrentWorkspaceThreadsBeforeOtherLocalProjects();
@@ -184,6 +186,23 @@ function projectsWorkspaceRootOptionsFromVisibleLocalThreads(): void {
   assert(options.length === 1, `expected one local workspace root, got ${options.length}`);
   assert(options[0]?.root === "/workspace/app", `expected normalized root, got ${options[0]?.root}`);
   assert(options[0]?.label === "app", `expected cwd basename label, got ${options[0]?.label}`);
+}
+
+function splitsPinnedThreadsBeforeProjectGrouping(): void {
+  const threads = [
+    makeThread({ id: "newer", cwd: ("/work/a" as unknown) as Thread["cwd"], updatedAt: 300 }),
+    makeThread({ id: "older-pinned", cwd: ("/work/b" as unknown) as Thread["cwd"], updatedAt: 100 }),
+    makeThread({ id: "newer-pinned", cwd: ("/work/c" as unknown) as Thread["cwd"], updatedAt: 200 }),
+  ];
+  const split = splitSidebarThreadsByPinned(threads, new Set(["newer-pinned", "missing", "older-pinned"]));
+  assert(
+    split.pinnedThreads.map((thread) => thread.id).join(",") === "newer-pinned,older-pinned",
+    `expected pinned section to follow pinned id order, got ${split.pinnedThreads.map((thread) => thread.id).join(",")}`,
+  );
+  assert(
+    split.unpinnedThreads.map((thread) => thread.id).join(",") === "newer",
+    `expected unpinned section to preserve caller order, got ${split.unpinnedThreads.map((thread) => thread.id).join(",")}`,
+  );
 }
 
 function groupsThreadsByLocalProjectWithoutReordering(): void {

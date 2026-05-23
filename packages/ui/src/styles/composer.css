@@ -31,6 +31,123 @@
   display: none;
 }
 
+.hc-above-composer-suggestion-wrap {
+  display: flex;
+  justify-content: center;
+  padding-bottom: 6px;
+  pointer-events: none;
+}
+
+.hc-above-composer-suggestion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 100%;
+  min-width: 0;
+  gap: 16px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 24px;
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+  color: var(--hc-text-primary);
+  pointer-events: auto;
+}
+
+.hc-above-composer-suggestion-main,
+.hc-above-composer-suggestion-actions {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.hc-above-composer-suggestion-main {
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.hc-above-composer-suggestion-actions {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.hc-above-composer-suggestion-icon {
+  flex: 0 0 auto;
+  color: var(--hc-text-secondary);
+}
+
+.hc-above-composer-suggestion-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-above-composer-suggestion-meta {
+  display: none;
+  color: var(--hc-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.hc-above-composer-suggestion-meta kbd {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 6px;
+  background: var(--hc-surface-soft);
+  color: inherit;
+  font: inherit;
+}
+
+.hc-above-composer-suggestion-action,
+.hc-above-composer-suggestion-dismiss {
+  border: 0;
+  cursor: pointer;
+}
+
+.hc-above-composer-suggestion-action {
+  padding: 5px 10px;
+  border-radius: 16px;
+  background: var(--hc-text-strong);
+  color: var(--hc-surface-main);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.hc-above-composer-suggestion-action:hover {
+  filter: brightness(0.96);
+}
+
+.hc-above-composer-suggestion-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hc-text-secondary);
+}
+
+.hc-above-composer-suggestion-dismiss:hover {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+@media (min-width: 620px) {
+  .hc-above-composer-suggestion-meta {
+    display: inline-flex;
+  }
+}
+
 .hc-composer-field {
   position: relative;
   display: flex;
@@ -926,6 +1043,13 @@
   font-size: 10px;
   font-style: normal;
   text-transform: uppercase;
+}
+
+.hc-composer-menu-entry-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: cover;
 }
 
 .hc-composer-menu-row .hc-composer-menu-switch {

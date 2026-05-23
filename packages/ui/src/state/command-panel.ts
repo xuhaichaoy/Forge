@@ -4,6 +4,7 @@ import {
   projectMcpToolArgumentFields,
   type McpToolArgumentField,
 } from "./mcp-tool-arguments";
+import { mcpAppResourceUriFromMeta } from "./thread-item-fields";
 import type { HiCodexLocale } from "./i18n";
 import type { NotificationPreferences } from "./notification-preferences";
 import type { UiThemeMode } from "./theme";
@@ -161,6 +162,7 @@ export type CommandPanelEntryAction =
   | { type: "writePluginConfig"; title: string; pluginId: string; enabled: boolean; configWriteTarget?: ConfigWriteTarget }
   | { type: "checkoutPluginShare"; title: string; remotePluginId: string; pluginName: string }
   | { type: "setThreadMemoryMode"; title: string; threadId: string; mode: "enabled" | "disabled" }
+  | { type: "setThreadPinned"; title: string; threadId: string; pinned: boolean }
   | { type: "setUiTheme"; title: string; mode: UiThemeMode }
   | { type: "setUiLocale"; title: string; locale: HiCodexLocale }
   | { type: "setNotificationPreferences"; title: string; patch: Partial<NotificationPreferences> }
@@ -183,6 +185,8 @@ export interface CommandPanelEntry {
   id: string;
   title: string;
   kind: CommandPanelEntryKind;
+  groupKey?: string;
+  groupLabel?: string;
   status?: string;
   meta?: string;
   details?: string[];
@@ -191,12 +195,17 @@ export interface CommandPanelEntry {
   secondaryActions?: CommandPanelSecondaryAction[];
 }
 
+export type CommandPanelRenderedItem =
+  | { type: "group"; key: string; label: string }
+  | { type: "entry"; key: string; entry: CommandPanelEntry };
+
 export interface CommandPanelState {
   panel: CommandPanelKind;
   status: CommandPanelStatus;
   title: string;
   entries: CommandPanelEntry[];
   message: string;
+  searchable?: boolean;
 }
 
 const CONNECTOR_REFRESH_GUIDANCE = "Finish the browser flow, then refresh Apps or Plugins.";
@@ -210,11 +219,15 @@ export interface CommandPanelOptions {
   error?: string;
   message?: string;
   title?: string;
+  searchable?: boolean;
 }
 
 export interface FileSearchResult {
+  root?: string;
   path?: string;
   file_name?: string;
+  fsPath?: string;
+  relativePathWithoutFileName?: string;
   score?: number;
   match_type?: string;
 }
@@ -232,6 +245,46 @@ export function createCommandPanelState(
     title: options.title ?? panelTitle(panel),
     entries,
     message: options.message ?? panelMessage(panel, status, options.error),
+    ...(options.searchable ? { searchable: true } : {}),
+  };
+}
+
+export function commandPanelHasSearchInput(panel: CommandPanelState): boolean {
+  return panel.searchable === true || panel.entries.length > 0 || panel.panel === "files";
+}
+
+export function commandPanelShouldShowChatCreateEmptyState(panel: CommandPanelState, query: string): boolean {
+  return panel.searchable === true
+    && panel.title === "Search chats"
+    && panel.entries.length === 0
+    && query.trim().length === 0;
+}
+
+export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[]): CommandPanelRenderedItem[] {
+  const renderedItems: CommandPanelRenderedItem[] = [];
+  let currentGroupKey: string | null = null;
+  for (const entry of entries) {
+    const groupLabel = entry.groupLabel?.trim();
+    const groupKey = entry.groupKey?.trim() || groupLabel;
+    if (groupLabel && groupKey && groupKey !== currentGroupKey) {
+      renderedItems.push({ type: "group", key: `group:${groupKey}`, label: groupLabel });
+      currentGroupKey = groupKey;
+    }
+    if (!groupKey) {
+      currentGroupKey = null;
+    }
+    renderedItems.push({ type: "entry", key: entry.id, entry });
+  }
+  return renderedItems;
+}
+
+export function commandPanelChatCreateEntry(): CommandPanelEntry {
+  return {
+    id: "chat:create",
+    title: "Create chat",
+    kind: "thread",
+    meta: "Create a chat to get started!",
+    action: { type: "runSlashCommand", title: "Create chat", commandId: "new" },
   };
 }
 
@@ -256,21 +309,54 @@ export function projectCommandPanelEntries(value: {
 }
 
 export function projectFileSearchEntries(result: { files?: FileSearchResult[] }): CommandPanelEntry[] {
-  return (result.files ?? []).slice(0, 25).map((file, index) => ({
-    id: `file:${file.path ?? file.file_name ?? index}`,
-    title: file.file_name || file.path || "file",
-    kind: "file",
-    status: file.match_type,
-    meta: file.path,
-    details: [`score: ${file.score ?? "unknown"}`],
-    action: file.path
-      ? {
-          type: "attachMention",
-          name: file.file_name || file.path,
-          path: file.path,
-        }
-      : undefined,
-  }));
+  return (result.files ?? []).slice(0, 25).map((file, index) => {
+    const attachmentPath = fuzzyFileSearchFsPath(file);
+    const displayPath = fuzzyFileSearchDisplayPath(file, attachmentPath);
+    return {
+      id: `file:${attachmentPath ?? displayPath ?? file.file_name ?? index}`,
+      title: file.file_name || displayPath || attachmentPath || "file",
+      kind: "file",
+      status: file.match_type,
+      meta: displayPath ?? attachmentPath,
+      details: [`score: ${file.score ?? "unknown"}`],
+      action: attachmentPath
+        ? {
+            type: "attachMention",
+            name: file.file_name || displayPath || attachmentPath,
+            path: attachmentPath,
+          }
+        : undefined,
+    };
+  });
+}
+
+function fuzzyFileSearchFsPath(file: FileSearchResult): string | undefined {
+  if (file.fsPath) return file.fsPath;
+  if (!file.path) return undefined;
+  return joinRootRelativePath(file.root, file.path);
+}
+
+function fuzzyFileSearchDisplayPath(
+  file: FileSearchResult,
+  attachmentPath: string | undefined,
+): string | undefined {
+  if (!file.path) return attachmentPath;
+  if (file.root && !isAbsolutePath(file.path)) return normalizeSeparators(file.path);
+  return file.path;
+}
+
+export function joinRootRelativePath(root: string | undefined, path: string): string {
+  if (!root || isAbsolutePath(path)) return path;
+  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+  return `${root.replace(/[\\/]+$/, "")}${separator}${path.replace(/^[\\/]+/, "")}`;
+}
+
+function normalizeSeparators(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^\\\\/.test(path) || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 export function projectSkillManagementEntries(
@@ -357,7 +443,8 @@ export function projectMcpToolCallResultEntries(
   const content = Array.isArray(record.content) ? record.content : [];
   const structuredContent = record.structuredContent ?? record.structured_content;
   const isError = record.isError === true || record.is_error === true;
-  const entries = content.map((item, index) => ({
+  const resourceUri = mcpAppResourceUriFromMeta(record._meta);
+  const entries: CommandPanelEntry[] = content.map((item, index) => ({
     id: `mcp-result:${server}:${tool}:content:${index}`,
     title: mcpResultTitle(item, index),
     kind: "status" as const,
@@ -374,6 +461,21 @@ export function projectMcpToolCallResultEntries(
       status: isError ? "error" : "completed",
       meta: `${server}:${tool}`,
       details: textDetails(formatUnknown(structuredContent)),
+    });
+  }
+
+  if (resourceUri) {
+    entries.push({
+      id: `mcp-result:${server}:${tool}:mcp-app-resource`,
+      title: "MCP app resource",
+      kind: "mcpResource",
+      status: isError ? "error" : "resource",
+      meta: `${server} · ${resourceUri}`,
+      details: [
+        "Tool result advertises an MCP app resource.",
+        "Click to read the resource content.",
+      ],
+      action: { type: "readMcpResource", server, uri: resourceUri, title: "MCP app resource" },
     });
   }
 
@@ -1160,10 +1262,6 @@ Use this file to capture a focused workflow, domain rule, or repeatable task.
 2. Follow the project-specific steps here.
 3. Verify the result before responding.
 `;
-}
-
-function isAbsolutePath(value: string): boolean {
-  return value.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(value);
 }
 
 function joinFixedPath(root: string, ...parts: string[]): string {

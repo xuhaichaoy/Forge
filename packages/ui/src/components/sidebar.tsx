@@ -35,6 +35,7 @@ import {
   sidebarThreadHasVisibleStatus,
   sidebarThreadRelativeTime,
   sidebarThreadStatusState,
+  splitSidebarThreadsByPinned,
   type SidebarOrganizeMode,
   type SidebarSortKey,
   type SidebarThreadStatusState,
@@ -177,7 +178,10 @@ export function Sidebar({
   const [confirmingArchiveThreadId, setConfirmingArchiveThreadId] = useState<string | null>(null);
   const effectiveOrganizeMode = organizeMode ?? internalOrganizeMode;
   const effectiveCollapsedGroupKeys = collapsedGroupKeys ?? internalCollapsedGroupKeys;
-  const threadGroups = projectSidebarThreadGroups(threads, {
+  const { pinnedThreads, unpinnedThreads } = splitSidebarThreadsByPinned(threads, pinnedThreadIds);
+  const pinnedGroupKey = "pinned";
+  const pinnedGroupCollapsed = effectiveCollapsedGroupKeys.has(pinnedGroupKey);
+  const threadGroups = projectSidebarThreadGroups(unpinnedThreads, {
     organizeMode: effectiveOrganizeMode,
     currentWorkspaceRoot,
     selectedWorkspaceRoots,
@@ -188,6 +192,7 @@ export function Sidebar({
     effectiveCollapsedGroupKeys,
     previouslyExpandedGroupKeys,
   );
+  const showProjectSection = threadGroups.length > 0 || Boolean(onUseExistingFolder);
 
   const runThreadAction = (thread: Thread, action: (thread: Thread) => void | Promise<void>) => {
     setOpenThreadMenu(null);
@@ -322,6 +327,222 @@ export function Sidebar({
     );
   };
 
+  const renderThreadRows = (rows: Thread[]) => rows.map((thread) => {
+    const relativeTime = sidebarThreadRelativeTime(thread);
+    const statusState = sidebarThreadStatusState(thread);
+    const isPinned = pinnedThreadIds?.has(thread.id) ?? false;
+    const isUnread = statusState.unread;
+    const threadCwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
+    const title = getThreadTitle(thread);
+    const isActive = thread.id === activeThreadId;
+    const isConfirmingArchive = confirmingArchiveThreadId === thread.id;
+    return (
+      <div
+        key={thread.id}
+        className={cx("hc-sidebar-thread-row", threadRowClass, isActive && threadRowActiveClass)}
+        data-confirming-archive={isConfirmingArchive ? "true" : undefined}
+        onContextMenu={(event) => openContextMenu(event, thread)}
+        onPointerLeave={() => clearArchiveConfirmation(thread)}
+        onClick={(event) => {
+          if (isConfirmingArchive) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          closeThreadMenu();
+          setConfirmingArchiveThreadId(null);
+          void onSelectThread(thread);
+        }}
+        onKeyDown={(event) => {
+          if (event.currentTarget !== event.target) return;
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          if (isConfirmingArchive) {
+            event.stopPropagation();
+            return;
+          }
+          closeThreadMenu();
+          setConfirmingArchiveThreadId(null);
+          void onSelectThread(thread);
+        }}
+        role="button"
+        tabIndex={0}
+        aria-current={isActive ? "page" : undefined}
+        title={title}
+      >
+        <div className={cx(
+          "flex h-full w-full items-center text-sm leading-4",
+          isConfirmingArchive && "[mask-image:linear-gradient(to_left,transparent_0,transparent_72px,black_80px)]",
+        )}>
+          <div className="flex min-w-0 flex-1 items-center gap-2 pl-0.5">
+            {onToggleThreadPinned && (
+              <ThreadPinIndicator
+                isPinned={isPinned}
+                isUnread={isUnread}
+                onToggleThreadPinned={onToggleThreadPinned}
+                thread={thread}
+              />
+            )}
+            <div
+              className={threadRowContentClass}
+              data-thread-title-trigger
+            >
+              <span className="min-w-0 flex-1 truncate select-none" data-thread-title>
+                {title}
+              </span>
+            </div>
+          </div>
+          <div className={cx(
+            "ml-[3px] flex items-center justify-end gap-1",
+            (sidebarThreadHasVisibleStatus(statusState) || relativeTime) && "min-w-[26px]",
+          )}>
+            {(sidebarThreadHasVisibleStatus(statusState) || relativeTime) ? (
+              <div className="flex items-center gap-1 text-right text-sm leading-4 text-token-description-foreground tabular-nums group-focus-within:opacity-0 group-hover:opacity-0">
+                <ThreadStatusIndicator state={statusState} />
+                {relativeTime && <span className="truncate">{relativeTime}</span>}
+              </div>
+            ) : (
+              <span className="group-focus-within:w-5 group-hover:w-5" />
+            )}
+          </div>
+        </div>
+        <div className={cx(threadActionGroupClass, threadArchiveActionClass, isConfirmingArchive && "pl-1 opacity-100")} aria-label="Thread actions">
+          {isConfirmingArchive ? (
+            <button
+              type="button"
+              className={threadConfirmArchiveButtonClass}
+              title="Confirm"
+              aria-label="Confirm"
+              onClick={(event) => {
+                event.stopPropagation();
+                runThreadAction(thread, onArchiveThread);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              Confirm
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={threadIconButtonClass}
+              title="Archive chat"
+              aria-label="Archive chat"
+              onClick={(event) => {
+                event.stopPropagation();
+                requestArchiveConfirmation(thread);
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <Archive size={14} />
+            </button>
+          )}
+        </div>
+        {openThreadMenu && openMenuThreadId === thread.id && (
+          <div
+            className={threadMenuClass}
+            ref={threadMenuRef}
+            role="menu"
+            style={{
+              left: openThreadMenu.x,
+              maxHeight: `calc(100vh - ${threadMenuViewportMarginPx * 2}px)`,
+              top: openThreadMenu.y,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {onToggleThreadPinned && (
+              <button
+                type="button"
+                className={threadMenuItemClass}
+                role="menuitem"
+                onClick={() => {
+                  closeThreadMenu();
+                  void onToggleThreadPinned(thread, !isPinned);
+                }}
+              >
+                {isPinned ? "Unpin chat" : "Pin chat"}
+              </button>
+            )}
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              onClick={() => runThreadAction(thread, onRenameThread)}
+            >
+              Rename chat
+            </button>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              onClick={() => runThreadAction(thread, onArchiveThread)}
+            >
+              Archive chat
+            </button>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              disabled={isUnread || !onMarkThreadUnread}
+              onClick={() => runOptionalThreadAction(thread, onMarkThreadUnread)}
+            >
+              Mark as unread
+            </button>
+            <div className={threadMenuSeparatorClass}>
+                <div className="h-px w-full bg-token-menu-border" />
+            </div>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              disabled={!threadCwd || !onOpenThreadFolder}
+              onClick={() => runOptionalThreadAction(thread, onOpenThreadFolder)}
+            >
+              Open in Finder
+            </button>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              disabled={!threadCwd || !onCopyWorkingDirectory}
+              onClick={() => runOptionalThreadAction(thread, onCopyWorkingDirectory)}
+            >
+              Copy working directory
+            </button>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              disabled={!onCopySessionId}
+              onClick={() => runOptionalThreadAction(thread, onCopySessionId)}
+            >
+              Copy session ID
+            </button>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              disabled={!onCopyDeeplink}
+              onClick={() => runOptionalThreadAction(thread, onCopyDeeplink)}
+            >
+              Copy deeplink
+            </button>
+            <div className={threadMenuSeparatorClass}>
+                <div className="h-px w-full bg-token-menu-border" />
+            </div>
+            <button
+              type="button"
+              className={threadMenuItemClass}
+              role="menuitem"
+              onClick={() => runThreadAction(thread, onForkThread)}
+            >
+              Fork into local
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  });
+
   return (
     <aside className="hc-sidebar" id="hc-sidebar">
       {renderUpdateBadge()}
@@ -353,10 +574,31 @@ export function Sidebar({
       </div>
 
       <div className="hc-thread-list">
-        <div className={`hc-thread-section-header ${openSectionMenu ? "is-menu-open" : ""}`}>
-          <div className="hc-thread-section-label">{sectionLabel}</div>
-          <div className="hc-thread-section-actions" aria-label="Projects actions" ref={sectionActionsRef}>
-            {sectionCollapseAction && (
+        {pinnedThreads.length > 0 && (
+          <div className="hc-thread-group hc-thread-pinned-group">
+            <button
+              className="hc-project-row"
+              type="button"
+              aria-expanded={!pinnedGroupCollapsed}
+              onClick={() => toggleGroup(pinnedGroupKey)}
+              title="Pinned"
+            >
+              {pinnedGroupCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              <Pin size={16} />
+              <span className="hc-project-name">Pinned</span>
+            </button>
+            {!pinnedGroupCollapsed && renderThreadRows(pinnedThreads)}
+          </div>
+        )}
+        {pinnedThreads.length === 0 && threadGroups.length === 0 && (
+          <div className="hc-empty-panel">No chats yet</div>
+        )}
+        {showProjectSection && (
+          <>
+            <div className={`hc-thread-section-header ${openSectionMenu ? "is-menu-open" : ""}`}>
+              <div className="hc-thread-section-label">{sectionLabel}</div>
+              <div className="hc-thread-section-actions" aria-label="Projects actions" ref={sectionActionsRef}>
+                {sectionCollapseAction && (
               <button
                 type="button"
                 className="hc-sidebar-section-action"
@@ -366,86 +608,86 @@ export function Sidebar({
               >
                 {sectionCollapseAction === "collapse-all" ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
               </button>
-            )}
-            <button
-              type="button"
-              className="hc-sidebar-section-action"
-              title="Filter sidebar chats"
-              aria-label="Filter sidebar chats"
-              aria-haspopup="menu"
-              aria-expanded={openSectionMenu === "filter"}
-              onClick={() => {
-                setOpenThreadMenu(null);
-                setOpenSectionMenu((menu) => menu === "filter" ? null : "filter");
-              }}
-            >
-              <ListFilter size={13} />
-            </button>
-            {openSectionMenu === "filter" && (
-              <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
-                <div className="hc-thread-menu-title">Organize</div>
+                )}
                 <button
                   type="button"
-                  className="hc-thread-menu-item"
-                  role="menuitemradio"
-                  aria-checked={effectiveOrganizeMode === "project"}
-                  onClick={() => chooseOrganizeMode("project")}
+                  className="hc-sidebar-section-action"
+                  title="Filter sidebar chats"
+                  aria-label="Filter sidebar chats"
+                  aria-haspopup="menu"
+                  aria-expanded={openSectionMenu === "filter"}
+                  onClick={() => {
+                    setOpenThreadMenu(null);
+                    setOpenSectionMenu((menu) => menu === "filter" ? null : "filter");
+                  }}
                 >
-                  <Folder size={13} />
-                  <span>By project</span>
-                  {effectiveOrganizeMode === "project" && <Check size={13} className="hc-thread-menu-check" />}
+                  <ListFilter size={13} />
                 </button>
-                <button
-                  type="button"
-                  className="hc-thread-menu-item"
-                  role="menuitemradio"
-                  aria-checked={effectiveOrganizeMode === "current_workspace"}
-                  onClick={() => chooseOrganizeMode("current_workspace")}
-                >
-                  <Folder size={13} />
-                  <span>Current workspace first</span>
-                  {effectiveOrganizeMode === "current_workspace" && <Check size={13} className="hc-thread-menu-check" />}
-                </button>
-                <button
-                  type="button"
-                  className="hc-thread-menu-item"
-                  role="menuitemradio"
-                  aria-checked={effectiveOrganizeMode === "recent"}
-                  onClick={() => chooseOrganizeMode("recent")}
-                >
-                  <Clock size={13} />
-                  <span>Recent</span>
-                  {effectiveOrganizeMode === "recent" && <Check size={13} className="hc-thread-menu-check" />}
-                </button>
-                <div className={threadMenuSeparatorClass}>
-                  <div className="h-px w-full bg-token-menu-border" />
-                </div>
-                <div className="hc-thread-menu-title">Sort by</div>
-                <button
-                  type="button"
-                  className="hc-thread-menu-item"
-                  role="menuitemradio"
-                  aria-checked={sortKey === "updated_at"}
-                  onClick={() => chooseSortKey("updated_at")}
-                >
-                  <Clock size={13} />
-                  <span>Updated</span>
-                  {sortKey === "updated_at" && <Check size={13} className="hc-thread-menu-check" />}
-                </button>
-                <button
-                  type="button"
-                  className="hc-thread-menu-item"
-                  role="menuitemradio"
-                  aria-checked={sortKey === "created_at"}
-                  onClick={() => chooseSortKey("created_at")}
-                >
-                  <Calendar size={13} />
-                  <span>Created</span>
-                  {sortKey === "created_at" && <Check size={13} className="hc-thread-menu-check" />}
-                </button>
-              </div>
-            )}
-            {onUseExistingFolder && (
+                {openSectionMenu === "filter" && (
+                  <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
+                    <div className="hc-thread-menu-title">Organize</div>
+                    <button
+                      type="button"
+                      className="hc-thread-menu-item"
+                      role="menuitemradio"
+                      aria-checked={effectiveOrganizeMode === "project"}
+                      onClick={() => chooseOrganizeMode("project")}
+                    >
+                      <Folder size={13} />
+                      <span>By project</span>
+                      {effectiveOrganizeMode === "project" && <Check size={13} className="hc-thread-menu-check" />}
+                    </button>
+                    <button
+                      type="button"
+                      className="hc-thread-menu-item"
+                      role="menuitemradio"
+                      aria-checked={effectiveOrganizeMode === "current_workspace"}
+                      onClick={() => chooseOrganizeMode("current_workspace")}
+                    >
+                      <Folder size={13} />
+                      <span>Current workspace first</span>
+                      {effectiveOrganizeMode === "current_workspace" && <Check size={13} className="hc-thread-menu-check" />}
+                    </button>
+                    <button
+                      type="button"
+                      className="hc-thread-menu-item"
+                      role="menuitemradio"
+                      aria-checked={effectiveOrganizeMode === "recent"}
+                      onClick={() => chooseOrganizeMode("recent")}
+                    >
+                      <Clock size={13} />
+                      <span>Recent</span>
+                      {effectiveOrganizeMode === "recent" && <Check size={13} className="hc-thread-menu-check" />}
+                    </button>
+                    <div className={threadMenuSeparatorClass}>
+                      <div className="h-px w-full bg-token-menu-border" />
+                    </div>
+                    <div className="hc-thread-menu-title">Sort by</div>
+                    <button
+                      type="button"
+                      className="hc-thread-menu-item"
+                      role="menuitemradio"
+                      aria-checked={sortKey === "updated_at"}
+                      onClick={() => chooseSortKey("updated_at")}
+                    >
+                      <Clock size={13} />
+                      <span>Updated</span>
+                      {sortKey === "updated_at" && <Check size={13} className="hc-thread-menu-check" />}
+                    </button>
+                    <button
+                      type="button"
+                      className="hc-thread-menu-item"
+                      role="menuitemradio"
+                      aria-checked={sortKey === "created_at"}
+                      onClick={() => chooseSortKey("created_at")}
+                    >
+                      <Calendar size={13} />
+                      <span>Created</span>
+                      {sortKey === "created_at" && <Check size={13} className="hc-thread-menu-check" />}
+                    </button>
+                  </div>
+                )}
+                {onUseExistingFolder && (
               <>
                 <button
                   type="button"
@@ -475,13 +717,10 @@ export function Sidebar({
                   </div>
                 )}
               </>
-            )}
-          </div>
-        </div>
-        {threadGroups.length === 0 && (
-          <div className="hc-empty-panel">No chats yet</div>
-        )}
-        {threadGroups.map((group) => (
+                )}
+              </div>
+            </div>
+            {threadGroups.map((group) => (
           <div className="hc-thread-group" key={group.key}>
             <button
               className="hc-project-row"
@@ -497,223 +736,11 @@ export function Sidebar({
             {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.length === 0 && (
               <div className="hc-empty-group">暂无会话，从 + New chat 开始</div>
             )}
-            {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.map((thread) => {
-              const relativeTime = sidebarThreadRelativeTime(thread);
-              const statusState = sidebarThreadStatusState(thread);
-              const isPinned = pinnedThreadIds?.has(thread.id) ?? false;
-              const isUnread = statusState.unread;
-              const threadCwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
-              const title = getThreadTitle(thread);
-              const isActive = thread.id === activeThreadId;
-              const isConfirmingArchive = confirmingArchiveThreadId === thread.id;
-              return (
-                <div
-                  key={thread.id}
-                  className={cx("hc-sidebar-thread-row", threadRowClass, isActive && threadRowActiveClass)}
-                  data-confirming-archive={isConfirmingArchive ? "true" : undefined}
-                  onContextMenu={(event) => openContextMenu(event, thread)}
-                  onPointerLeave={() => clearArchiveConfirmation(thread)}
-                  onClick={(event) => {
-                    if (isConfirmingArchive) {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      return;
-                    }
-                    closeThreadMenu();
-                    setConfirmingArchiveThreadId(null);
-                    void onSelectThread(thread);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.currentTarget !== event.target) return;
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    if (isConfirmingArchive) {
-                      event.stopPropagation();
-                      return;
-                    }
-                    closeThreadMenu();
-                    setConfirmingArchiveThreadId(null);
-                    void onSelectThread(thread);
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  aria-current={isActive ? "page" : undefined}
-                  title={title}
-                >
-                  <div className={cx(
-                    "flex h-full w-full items-center text-sm leading-4",
-                    isConfirmingArchive && "[mask-image:linear-gradient(to_left,transparent_0,transparent_72px,black_80px)]",
-                  )}>
-                    <div className="flex min-w-0 flex-1 items-center gap-2 pl-0.5">
-                      {onToggleThreadPinned && (
-                        <ThreadPinIndicator
-                          isPinned={isPinned}
-                          isUnread={isUnread}
-                          onToggleThreadPinned={onToggleThreadPinned}
-                          thread={thread}
-                        />
-                      )}
-                      <div
-                        className={threadRowContentClass}
-                        data-thread-title-trigger
-                      >
-                        <span className="min-w-0 flex-1 truncate select-none" data-thread-title>
-                          {title}
-                        </span>
-                      </div>
-                    </div>
-                    <div className={cx(
-                      "ml-[3px] flex items-center justify-end gap-1",
-                      (sidebarThreadHasVisibleStatus(statusState) || relativeTime) && "min-w-[26px]",
-                    )}>
-                      {(sidebarThreadHasVisibleStatus(statusState) || relativeTime) ? (
-                        <div className="flex items-center gap-1 text-right text-sm leading-4 text-token-description-foreground tabular-nums group-focus-within:opacity-0 group-hover:opacity-0">
-                          <ThreadStatusIndicator state={statusState} />
-                          {relativeTime && <span className="truncate">{relativeTime}</span>}
-                        </div>
-                      ) : (
-                        <span className="group-focus-within:w-5 group-hover:w-5" />
-                      )}
-                    </div>
-                  </div>
-                  <div className={cx(threadActionGroupClass, threadArchiveActionClass, isConfirmingArchive && "pl-1 opacity-100")} aria-label="Thread actions">
-                    {isConfirmingArchive ? (
-                      <button
-                        type="button"
-                        className={threadConfirmArchiveButtonClass}
-                        title="Confirm"
-                        aria-label="Confirm"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          runThreadAction(thread, onArchiveThread);
-                        }}
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
-                        Confirm
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className={threadIconButtonClass}
-                        title="Archive chat"
-                        aria-label="Archive chat"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          requestArchiveConfirmation(thread);
-                        }}
-                        onPointerDown={(event) => event.stopPropagation()}
-                      >
-                        <Archive size={14} />
-                      </button>
-                    )}
-                  </div>
-                  {openThreadMenu && openMenuThreadId === thread.id && (
-                    <div
-                      className={threadMenuClass}
-                      ref={threadMenuRef}
-                      role="menu"
-                      style={{
-                        left: openThreadMenu.x,
-                        maxHeight: `calc(100vh - ${threadMenuViewportMarginPx * 2}px)`,
-                        top: openThreadMenu.y,
-                      }}
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      {onToggleThreadPinned && (
-                        <button
-                          type="button"
-                          className={threadMenuItemClass}
-                          role="menuitem"
-                          onClick={() => {
-                            closeThreadMenu();
-                            void onToggleThreadPinned(thread, !isPinned);
-                          }}
-                        >
-                          {isPinned ? "Unpin chat" : "Pin chat"}
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        onClick={() => runThreadAction(thread, onRenameThread)}
-                      >
-                        Rename chat
-                      </button>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        onClick={() => runThreadAction(thread, onArchiveThread)}
-                      >
-                        Archive chat
-                      </button>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        disabled={isUnread || !onMarkThreadUnread}
-                        onClick={() => runOptionalThreadAction(thread, onMarkThreadUnread)}
-                      >
-                        Mark as unread
-                      </button>
-                      <div className={threadMenuSeparatorClass}>
-                          <div className="h-px w-full bg-token-menu-border" />
-                      </div>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        disabled={!threadCwd || !onOpenThreadFolder}
-                        onClick={() => runOptionalThreadAction(thread, onOpenThreadFolder)}
-                      >
-                        Open in Finder
-                      </button>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        disabled={!threadCwd || !onCopyWorkingDirectory}
-                        onClick={() => runOptionalThreadAction(thread, onCopyWorkingDirectory)}
-                      >
-                        Copy working directory
-                      </button>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        disabled={!onCopySessionId}
-                        onClick={() => runOptionalThreadAction(thread, onCopySessionId)}
-                      >
-                        Copy session ID
-                      </button>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        disabled={!onCopyDeeplink}
-                        onClick={() => runOptionalThreadAction(thread, onCopyDeeplink)}
-                      >
-                        Copy deeplink
-                      </button>
-                      <div className={threadMenuSeparatorClass}>
-                          <div className="h-px w-full bg-token-menu-border" />
-                      </div>
-                      <button
-                        type="button"
-                        className={threadMenuItemClass}
-                        role="menuitem"
-                        onClick={() => runThreadAction(thread, onForkThread)}
-                      >
-                        Fork into local
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+            {!effectiveCollapsedGroupKeys.has(group.key) && renderThreadRows(group.threads)}
           </div>
-        ))}
+            ))}
+          </>
+        )}
       </div>
 
       <div className="hc-sidebar-footer">

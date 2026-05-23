@@ -4,15 +4,25 @@ export const DESKTOP_ONBOARDING_LAST_COMPLETED_KEY = "last_completed_onboarding"
 export const DESKTOP_PROJECTLESS_ONBOARDING_COMPLETED_KEY = "electron:onboarding-projectless-completed";
 export const DESKTOP_WELCOME_PENDING_KEY = "electron:onboarding-welcome-pending";
 export const DESKTOP_HIDE_FIRST_NEW_THREAD_PROMOS_KEY = "electron:onboarding-hide-first-new-thread-promos";
+export const DESKTOP_AMBIENT_SUGGESTIONS_ENABLED_KEY = "ambient-suggestions-enabled";
+export const DESKTOP_AMBIENT_SUGGESTIONS_CONSENT_SEEN_KEY = "has-seen-ambient-suggestions-connected-apps-consent";
+export const DESKTOP_AMBIENT_SUGGESTIONS_CONNECT_APPS_ROW_DISMISSED_KEY = "has-dismissed-ambient-suggestions-connect-apps-row";
 export const HICODEX_ONBOARDING_INSTALLATION_ID_KEY = "hicodex:onboarding-installation-id";
 
 export interface OnboardingSnapshot {
   installationId: string | null;
   firstLaunch: boolean | null;
+  ambientSuggestionsConnectAppsRowDismissed: boolean;
+  ambientSuggestionsConsentSeen: boolean;
+  ambientSuggestionsEnabled: boolean;
   hideFirstNewThreadPromos: boolean;
   lastCompletedOnboarding: number | null;
   projectlessCompleted: boolean | null;
   welcomePending: boolean;
+}
+
+export interface OnboardingCompletionOptions {
+  ambientSuggestionsEnabled?: boolean;
 }
 
 export interface HostOnboardingSignal {
@@ -79,6 +89,12 @@ export function loadOnboardingSnapshot(
   return {
     installationId: normalizedHostSignal.installationId,
     firstLaunch: normalizedHostSignal.firstLaunch,
+    ambientSuggestionsConnectAppsRowDismissed:
+      readStoredBoolean(storage, DESKTOP_AMBIENT_SUGGESTIONS_CONNECT_APPS_ROW_DISMISSED_KEY) ?? false,
+    ambientSuggestionsConsentSeen:
+      readStoredBoolean(storage, DESKTOP_AMBIENT_SUGGESTIONS_CONSENT_SEEN_KEY) ?? false,
+    ambientSuggestionsEnabled:
+      readStoredBoolean(storage, DESKTOP_AMBIENT_SUGGESTIONS_ENABLED_KEY) ?? true,
     hideFirstNewThreadPromos: readStoredBoolean(storage, DESKTOP_HIDE_FIRST_NEW_THREAD_PROMOS_KEY) ?? false,
     lastCompletedOnboarding: hostFirstLaunch ? null : readStoredNumber(storage, DESKTOP_ONBOARDING_LAST_COMPLETED_KEY),
     projectlessCompleted: hostFirstLaunch ? false : readStoredBoolean(storage, DESKTOP_PROJECTLESS_ONBOARDING_COMPLETED_KEY),
@@ -89,7 +105,9 @@ export function loadOnboardingSnapshot(
 export function completeProjectlessOnboarding(
   storage: BrowserStorageLike | null,
   completedAtMs: number = Date.now(),
+  options: OnboardingCompletionOptions = {},
 ): OnboardingSnapshot {
+  writeAmbientSuggestionPreference(storage, options.ambientSuggestionsEnabled);
   writeStoredBoolean(storage, DESKTOP_PROJECTLESS_ONBOARDING_COMPLETED_KEY, true);
   writeStoredBoolean(storage, DESKTOP_WELCOME_PENDING_KEY, false);
   writeStoredNumber(storage, DESKTOP_ONBOARDING_LAST_COMPLETED_KEY, Math.floor(completedAtMs / 1000));
@@ -99,7 +117,11 @@ export function completeProjectlessOnboarding(
   return loadOnboardingSnapshot(storage);
 }
 
-export function dismissFirstNewThreadPromos(storage: BrowserStorageLike | null): OnboardingSnapshot {
+export function dismissFirstNewThreadPromos(
+  storage: BrowserStorageLike | null,
+  options: OnboardingCompletionOptions = {},
+): OnboardingSnapshot {
+  writeAmbientSuggestionPreference(storage, options.ambientSuggestionsEnabled);
   writeStoredBoolean(storage, DESKTOP_HIDE_FIRST_NEW_THREAD_PROMOS_KEY, true);
   return loadOnboardingSnapshot(storage);
 }
@@ -209,6 +231,15 @@ function writeStoredBoolean(storage: BrowserStorageLike | null, key: string, val
   } catch {
     // The in-memory React snapshot still updates when browser storage is unavailable.
   }
+}
+
+function writeAmbientSuggestionPreference(
+  storage: BrowserStorageLike | null,
+  enabled: boolean | undefined,
+): void {
+  if (typeof enabled !== "boolean") return;
+  writeStoredBoolean(storage, DESKTOP_AMBIENT_SUGGESTIONS_ENABLED_KEY, enabled);
+  writeStoredBoolean(storage, DESKTOP_AMBIENT_SUGGESTIONS_CONSENT_SEEN_KEY, true);
 }
 
 function writeStoredNumber(storage: BrowserStorageLike | null, key: string, value: number): void {

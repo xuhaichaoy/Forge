@@ -85,6 +85,7 @@ export function useCommandPanelActions({
   setNotificationPreferences,
   runSlashCommand,
   openFileSearchPanel,
+  setThreadPinnedById,
   selectThreadById,
   workspace,
 }: {
@@ -106,6 +107,7 @@ export function useCommandPanelActions({
   setNotificationPreferences?: (patch: Partial<NotificationPreferences>) => NotificationPreferences;
   runSlashCommand?: (commandId: string) => void;
   openFileSearchPanel?: () => void;
+  setThreadPinnedById?: (threadId: string, pinned: boolean) => void;
   selectThreadById?: (threadId: string) => void | Promise<void>;
   workspace: string;
 }) {
@@ -1127,6 +1129,26 @@ export function useCommandPanelActions({
       void setThreadMemoryModeFromPanel(action, sink);
       return;
     }
+    if (action.type === "setThreadPinned") {
+      if (!setThreadPinnedById) {
+        sink("generic", {
+          status: "error",
+          title: action.title,
+          error: "Thread pinning is unavailable.",
+          entries: [],
+        });
+        return;
+      }
+      setThreadPinnedById(action.threadId, action.pinned);
+      setCommandPanel(null);
+      setActiveSettingsPanel(null);
+      dispatch({
+        type: "log",
+        text: `Chat ${action.pinned ? "pinned" : "unpinned"}.`,
+        level: "info",
+      });
+      return;
+    }
     if (action.type === "setUiTheme") {
       setUiThemeMode?.(action.mode);
       sink("theme", {
@@ -1288,6 +1310,7 @@ export function useCommandPanelActions({
     setNotificationPreferences,
     runSlashCommand,
     openFileSearchPanel,
+    setThreadPinnedById,
     selectThreadById,
     uninstallPluginFromPanel,
     writeAppConfigFromPanel,

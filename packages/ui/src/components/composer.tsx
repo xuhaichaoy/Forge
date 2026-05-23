@@ -1333,6 +1333,9 @@ function mentionOptionKey(option: ComposerMentionOption): string {
 }
 
 function mentionOptionIcon(option: ComposerMentionOption) {
+  if ((option.kind === "app" || option.kind === "plugin") && option.iconSmall?.trim()) {
+    return <img className="hc-composer-menu-entry-icon" alt="" src={option.iconSmall.trim()} draggable={false} />;
+  }
   if (option.kind === "skill") return <Sparkles size={15} />;
   if (option.kind === "app") return <PlugZap size={15} />;
   if (option.kind === "plugin") return <PlugZap size={15} />;

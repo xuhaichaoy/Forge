@@ -1,6 +1,8 @@
 import {
   dedupeComposerMentionOptions,
+  mentionOptionsFromAgentThreads,
   mentionOptionsFromAppsResponse,
+  mentionOptionsFromConfiguredAgentsResponse,
   mentionOptionsFromFuzzyFiles,
   mentionOptionsFromPluginsResponse,
   mentionOptionsFromSkillsResponse,
@@ -12,15 +14,17 @@ export default function runMentionOptionTests(): void {
   projectsAppMentionOptionsFromAppsList();
   projectsPluginMentionOptionsFromPluginList();
   filtersConnectorBackedPluginMentionsWithAppsList();
+  projectsLiveAgentMentionOptionsFromThreads();
+  projectsConfiguredAgentMentionOptionsFromConfig();
   dedupesMentionOptionsByKindAndPath();
 }
 
 function projectsFileMentionOptionsFromFuzzySearch(): void {
   const options = mentionOptionsFromFuzzyFiles([
     {
-      path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+      root: "/workspace",
+      path: "packages/ui/src/HiCodexApp.tsx",
       file_name: "HiCodexApp.tsx",
-      relativePathWithoutFileName: "packages/ui/src",
       score: 91,
     },
   ]);
@@ -150,6 +154,7 @@ function projectsAppMentionOptionsFromAppsList(): void {
           name: "figma",
           title: "Figma",
           description: "Design workspace",
+          logoUrl: "https://example.test/figma.png",
           isAccessible: true,
         },
         {
@@ -174,6 +179,7 @@ function projectsAppMentionOptionsFromAppsList(): void {
       path: "app://figma",
       detail: "figma",
       promptText: "[$figma](app://figma) ",
+      iconSmall: "https://example.test/figma.png",
     }],
     "app/list results should become selectable app mention options with Desktop prompt links",
   );
@@ -256,6 +262,82 @@ function filtersConnectorBackedPluginMentionsWithAppsList(): void {
     options,
     [],
     "plugin mentions should honor imported connector app accessibility when app/list is available",
+  );
+}
+
+function projectsLiveAgentMentionOptionsFromThreads(): void {
+  const options = mentionOptionsFromAgentThreads(
+    [
+      {
+        id: "root-thread",
+        threadSource: "user",
+        preview: "Root chat",
+      },
+      {
+        id: "agent-thread-1",
+        threadSource: "subagent",
+        agentNickname: "@Explorer",
+        agentRole: "researcher",
+        cwd: "/workspace",
+      },
+      {
+        id: "agent-thread-2",
+        threadSource: "subagent",
+        agentNickname: "Critic",
+        agentRole: "critic",
+      },
+    ],
+    "expl",
+  );
+
+  assertDeepEqual(
+    options,
+    [{
+      kind: "agent",
+      name: "explorer",
+      displayName: "Explorer",
+      description: "researcher",
+      scopeLabel: "Live agent",
+      path: "agent://agent-thread-1",
+      detail: "researcher",
+    }],
+    "subagent threads should become Desktop-style live agent mentions",
+  );
+}
+
+function projectsConfiguredAgentMentionOptionsFromConfig(): void {
+  const options = mentionOptionsFromConfiguredAgentsResponse(
+    {
+      config: {
+        agents: {
+          max_threads: 4,
+          researcher: {
+            description: "Research docs before implementing.",
+            config_file: "./agents/researcher.toml",
+            nickname_candidates: ["Hypatia"],
+          },
+          critic: {
+            description: "Review changes.",
+          },
+        },
+      },
+    },
+    "hyp",
+    ["critic"],
+  );
+
+  assertDeepEqual(
+    options,
+    [{
+      kind: "agent",
+      name: "researcher",
+      displayName: "researcher",
+      description: "Research docs before implementing.",
+      scopeLabel: "Custom agent",
+      path: "subagent://researcher",
+      detail: "Research docs before implementing.",
+    }],
+    "config/read agents should become Desktop-style configured agent mentions",
   );
 }
 
