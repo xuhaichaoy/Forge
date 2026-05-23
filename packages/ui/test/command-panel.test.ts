@@ -1,7 +1,11 @@
 import {
+  commandPanelChatCreateEntry,
   createCommandPanelState,
+  commandPanelHasSearchInput,
+  commandPanelShouldShowChatCreateEmptyState,
   projectCommandPanelEntries,
   projectFileSearchEntries,
+  groupCommandPanelEntriesForRendering,
   projectMcpResourceReadResultEntries,
   projectMcpServerEntries,
   projectMcpToolCallResultEntries,
@@ -13,23 +17,12 @@ import {
   projectSkillFileReadResultEntries,
   starterSkillTarget,
 } from "../src/state/command-panel";
+import type { CommandPanelEntry } from "../src/state/command-panel";
 import {
   buildMcpToolArguments,
   emptyMcpToolArgumentValues,
   projectMcpToolArgumentFields,
 } from "../src/state/mcp-tool-arguments";
-
-type CommandPanelEntry = {
-  id: string;
-  title: string;
-  kind: string;
-  status?: string;
-  meta?: string;
-  details?: string[];
-  disabled?: boolean;
-  action?: unknown;
-  secondaryActions?: Array<{ id: string; label: string; title?: string; tone?: string; action: unknown }>;
-};
 
 export default function runCommandPanelTests(): void {
   projectsMcpServerNamesToolsAndAuthStatus();
@@ -44,28 +37,95 @@ export default function runCommandPanelTests(): void {
   mergesConnectorAppsIntoPluginProjection();
   projectsRequiredAppsAfterPluginInstall();
   projectsFileSearchEntriesAsMentions();
+  groupsDesktopChatSearchEntriesForRendering();
+  keepsSearchInputVisibleForDesktopSearchModes();
   projectsAndBuildsMcpToolArguments();
   projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
   keepsDetailsHumanReadableWithoutRawJson();
 }
 
+function groupsDesktopChatSearchEntriesForRendering(): void {
+  const pinned: CommandPanelEntry = {
+    id: "thread:pinned",
+    title: "Pinned thread",
+    kind: "thread",
+    groupKey: "pinned-chats",
+    groupLabel: "Pinned chats",
+  };
+  const recent: CommandPanelEntry = {
+    id: "thread:recent",
+    title: "Recent thread",
+    kind: "thread",
+    groupKey: "recent-chats",
+    groupLabel: "Recent chats",
+  };
+  assertDeepEqual(
+    groupCommandPanelEntriesForRendering([pinned, recent]),
+    [
+      { type: "group", key: "group:pinned-chats", label: "Pinned chats" },
+      { type: "entry", key: "thread:pinned", entry: pinned },
+      { type: "group", key: "group:recent-chats", label: "Recent chats" },
+      { type: "entry", key: "thread:recent", entry: recent },
+    ],
+    "Desktop command menu chat results should render Pinned chats and Recent chats groups",
+  );
+}
+
+function keepsSearchInputVisibleForDesktopSearchModes(): void {
+  const panel = createCommandPanelState("generic", {
+    status: "empty",
+    title: "Search chats",
+    entries: [],
+    message: "No matching chats found.",
+    searchable: true,
+  });
+
+  assertEqual(
+    commandPanelHasSearchInput(panel),
+    true,
+    "Desktop chat search mode should keep the search input mounted even before rows are available",
+  );
+  assertDeepEqual(
+    commandPanelChatCreateEntry(),
+    {
+      id: "chat:create",
+      title: "Create chat",
+      kind: "thread",
+      meta: "Create a chat to get started!",
+      action: { type: "runSlashCommand", title: "Create chat", commandId: "new" },
+    },
+    "Desktop chat search empty-state button should start a new chat",
+  );
+  assertEqual(
+    commandPanelShouldShowChatCreateEmptyState(panel, ""),
+    true,
+    "Desktop empty chat search should offer a create-chat empty state before any rows exist",
+  );
+  assertEqual(
+    commandPanelShouldShowChatCreateEmptyState(panel, "missing chat"),
+    false,
+    "Desktop chat search should not show the create-chat empty state while the user is searching",
+  );
+}
+
 function projectsFileSearchEntriesAsMentions(): void {
   assertDeepEqual(
     projectFileSearchEntries({
       files: [{
-        path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+        root: "/workspace",
+        path: "packages/ui/src/HiCodexApp.tsx",
         file_name: "HiCodexApp.tsx",
         score: 91,
-        match_type: "fuzzy",
+        match_type: "file",
       }],
     }),
     [{
       id: "file:/workspace/packages/ui/src/HiCodexApp.tsx",
       title: "HiCodexApp.tsx",
       kind: "file",
-      status: "fuzzy",
-      meta: "/workspace/packages/ui/src/HiCodexApp.tsx",
+      status: "file",
+      meta: "packages/ui/src/HiCodexApp.tsx",
       details: ["score: 91"],
       action: {
         type: "attachMention",
@@ -589,6 +649,43 @@ function projectsMcpServerNamesToolsAndAuthStatus(): void {
       },
     ],
     "MCP tool call results should be projected into readable command panel rows",
+  );
+  assertDeepEqual(
+    projectMcpToolCallResultEntries("browser-use", "open", {
+      content: [{ type: "text", text: "Opened page" }],
+      _meta: { ui: { resourceUri: "ui://browser/widget.html" } },
+    }).map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      kind: entry.kind,
+      status: entry.status,
+      meta: entry.meta,
+      action: entry.action,
+    })),
+    [
+      {
+        id: "mcp-result:browser-use:open:content:0",
+        title: "Text result 1",
+        kind: "status",
+        status: "completed",
+        meta: "browser-use:open",
+        action: undefined,
+      },
+      {
+        id: "mcp-result:browser-use:open:mcp-app-resource",
+        title: "MCP app resource",
+        kind: "mcpResource",
+        status: "resource",
+        meta: "browser-use · ui://browser/widget.html",
+        action: {
+          type: "readMcpResource",
+          server: "browser-use",
+          uri: "ui://browser/widget.html",
+          title: "MCP app resource",
+        },
+      },
+    ],
+    "MCP tool call results should expose Desktop-style MCP app resource reads",
   );
 }
 
@@ -1546,7 +1643,7 @@ function keepsDetailsHumanReadableWithoutRawJson(): void {
   assertNotIncludes(renderedText, "secret-token", "entry detail text should not leak raw auth payload values");
 }
 
-function collectEntryText(entries: Array<Record<string, unknown>>): string {
+function collectEntryText(entries: object[]): string {
   const parts: string[] = [];
   for (const entry of entries) {
     for (const value of Object.values(entry)) {
@@ -1558,6 +1655,12 @@ function collectEntryText(entries: Array<Record<string, unknown>>): string {
     }
   }
   return parts.join("\n");
+}
+
+function assertEqual(actual: unknown, expected: unknown, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
 }
 
 function assertIncludes(actual: string, expected: string, message: string): void {

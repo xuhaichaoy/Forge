@@ -20,7 +20,15 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
+import {
+  commandPanelChatCreateEntry,
+  commandPanelHasSearchInput,
+  commandPanelShouldShowChatCreateEmptyState,
+  groupCommandPanelEntriesForRendering,
+  type CommandPanelEntry,
+  type CommandPanelEntryAction,
+  type CommandPanelState,
+} from "../state/command-panel";
 
 export interface CommandPanelProps {
   panel: CommandPanelState;
@@ -36,7 +44,8 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
     () => panel.panel === "files" ? panel.entries : filterCommandEntries(panel.entries, query),
     [panel.entries, panel.panel, query],
   );
-  const showSearchInput = panel.entries.length > 0 || panel.panel === "files";
+  const showSearchInput = commandPanelHasSearchInput(panel);
+  const showChatCreateEmptyState = commandPanelShouldShowChatCreateEmptyState(panel, query);
   useEffect(() => {
     setQuery("");
   }, [panel.panel, panel.title]);
@@ -88,6 +97,12 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
           </div>
         )}
 
+        {showChatCreateEmptyState && (
+          <CommandPanelChatCreateEmptyState
+            onCreate={() => onSelectEntry?.(commandPanelChatCreateEntry())}
+          />
+        )}
+
         <CommandPanelEntryList
           entries={visibleEntries}
           onSelectAction={onSelectAction}
@@ -103,6 +118,23 @@ function commandPanelSearchPlaceholder(panel: CommandPanelState): string {
   if (panel.title.toLowerCase().includes("chat")) return "Search chats";
   if (panel.title.toLowerCase().includes("command")) return "Search commands and chats";
   return "Search";
+}
+
+function CommandPanelChatCreateEmptyState({ onCreate }: { onCreate?: () => void }) {
+  return (
+    <div className="hc-command-panel-chat-empty" data-command-menu-empty-state="true">
+      <span>Create a chat to get started!</span>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onCreate?.();
+        }}
+      >
+        Create chat
+      </button>
+    </div>
+  );
 }
 
 function filterCommandEntries(entries: CommandPanelEntry[], query: string): CommandPanelEntry[] {
@@ -130,12 +162,17 @@ export function CommandPanelEntryList({
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
   if (entries.length === 0) return null;
+  const renderedItems = groupCommandPanelEntriesForRendering(entries);
   return (
     <div className="hc-command-panel-list">
-      {entries.map((entry) => (
+      {renderedItems.map((item) => item.type === "group" ? (
+        <div className="hc-command-panel-group" key={item.key} role="presentation">
+          {item.label}
+        </div>
+      ) : (
         <CommandPanelRow
-          entry={entry}
-          key={entry.id}
+          entry={item.entry}
+          key={item.key}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
         />

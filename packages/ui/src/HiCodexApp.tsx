@@ -3,10 +3,12 @@ import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-
 import { Loader2 } from "lucide-react";
 import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
 import { AppToastViewport } from "./components/app-toast-viewport";
+import { AboveComposerPlanSuggestion } from "./components/above-composer-plan-suggestion";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter } from "./components/composer-external-footer";
 import { HiCodexIntlProvider, useHiCodexIntl } from "./components/i18n-provider";
+import { insertPromptEditorText } from "./components/prompt-editor";
 import {
   DEFAULT_PROVIDERS,
   ModelPickerMenu,
@@ -147,8 +149,14 @@ import {
 import { buildConversationMarkdown } from "./state/conversation-markdown";
 import { threadIdFromCodexDeepLink } from "./state/deep-links";
 import {
+  WorkspaceFuzzyFileSearchController,
+  type WorkspaceFuzzyFileSearchSession,
+} from "./state/fuzzy-file-search-session";
+import {
   dedupeComposerMentionOptions,
+  mentionOptionsFromAgentThreads,
   mentionOptionsFromAppsResponse,
+  mentionOptionsFromConfiguredAgentsResponse,
   mentionOptionsFromFuzzyFiles,
   mentionOptionsFromPluginsResponse,
   mentionOptionsFromSkillsResponse,
@@ -252,6 +260,11 @@ import {
   rightRailShouldRender,
   saveRightRailPinned,
 } from "./state/right-rail";
+import {
+  loadPinnedThreadIds,
+  savePinnedThreadIds,
+  updatePinnedThreadIds,
+} from "./state/thread-pins";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import { appendRpcDebugEvent } from "./state/rpc-debug";
 import {
@@ -316,6 +329,8 @@ function authModeFromAccountUpdatedNotification(message: { method: string; param
 const BACKGROUND_AGENT_PANEL_WIDTH_PX = 520;
 const BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX = 320;
 const BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX = 48;
+const COMMAND_PANEL_PINNED_CHATS_GROUP = { key: "pinned-chats", label: "Pinned chats" };
+const COMMAND_PANEL_RECENT_CHATS_GROUP = { key: "recent-chats", label: "Recent chats" };
 
 function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
   if (containerWidthPx <= 0) return BACKGROUND_AGENT_PANEL_WIDTH_PX;
@@ -323,6 +338,19 @@ function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
     BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX,
     Math.min(BACKGROUND_AGENT_PANEL_WIDTH_PX, containerWidthPx - BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX),
   );
+}
+
+function commandPanelThreadGroup(threadId: string, pinnedThreadIds: Set<string>): Pick<CommandPanelEntry, "groupKey" | "groupLabel"> {
+  const group = pinnedThreadIds.has(threadId)
+    ? COMMAND_PANEL_PINNED_CHATS_GROUP
+    : COMMAND_PANEL_RECENT_CHATS_GROUP;
+  return { groupKey: group.key, groupLabel: group.label };
+}
+
+function orderCommandPanelThreadsByPinned<T extends { id: string }>(threads: T[], pinnedThreadIds: Set<string>): T[] {
+  const pinnedThreads = threads.filter((thread) => pinnedThreadIds.has(thread.id));
+  const recentThreads = threads.filter((thread) => !pinnedThreadIds.has(thread.id));
+  return [...pinnedThreads, ...recentThreads];
 }
 
 const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
@@ -472,7 +500,7 @@ export function HiCodexApp() {
    * lives in `showRightRail` below; the storage-backed `rightRailOpen`
    * state has been removed.
    */
-  const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => new Set());
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => loadPinnedThreadIds(browserStorage()));
   /*
    * Tauri auto-update state (mirror of Codex Desktop's update banner). The
    * `pendingUpdate` ref holds the Update plugin handle (the actual download
@@ -594,7 +622,17 @@ export function HiCodexApp() {
   const hasConnectedOnceRef = useRef(false);
   const needsReconnectRecoveryRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
+  const fileSearchControllerRef = useRef<WorkspaceFuzzyFileSearchController | null>(null);
+  const fileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
+  const fileSearchSessionRootsKeyRef = useRef("");
+  const fileSearchActiveQueryRef = useRef("");
   const commandMenuSearchRequestSeqRef = useRef(0);
+  const commandMenuFileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
+  const commandMenuFileSearchSessionRootsKeyRef = useRef("");
+  const commandMenuFileSearchActiveRef = useRef<{
+    query: string;
+    baseEntries: CommandPanelEntry[];
+  } | null>(null);
   const threadScrollOffsetsRef = useRef(new Map<string, number>());
   const mainRef = useRef<HTMLElement | null>(null);
   const mainWidth = useElementInlineSize(mainRef);
@@ -610,6 +648,7 @@ export function HiCodexApp() {
     const rpc = new CodexJsonRpcClient({
       onHostStatus: (status) => dispatch({ type: "hostStatus", status }),
       onNotification: (message) => {
+        fileSearchControllerRef.current?.handleNotification(message);
         dispatch({ type: "notification", message });
         const appListInvalidation = invalidateAppListForNotification(message.method);
         if (appListInvalidation) {
@@ -651,6 +690,7 @@ export function HiCodexApp() {
       onDebugEvent: (event) => setRpcDebugEvents((current) => appendRpcDebugEvent(current, event)),
     });
     clientRef.current = rpc;
+    fileSearchControllerRef.current = new WorkspaceFuzzyFileSearchController(rpc);
     return rpc;
   }, [setAccountProjectionState]);
 
@@ -2002,45 +2042,68 @@ export function HiCodexApp() {
 
   const openChatSearchPanel = useCallback(() => {
     const visibleThreads = projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey });
+    const orderedThreads = orderCommandPanelThreadsByPinned(visibleThreads, pinnedThreadIds);
     openCommandPanel("generic", {
       status: "ready",
       title: "Search chats",
       message: "",
-      entries: visibleThreads.map((thread): CommandPanelEntry => ({
+      entries: orderedThreads.map((thread): CommandPanelEntry => ({
         id: `thread:${thread.id}`,
         title: threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null),
         kind: "thread",
+        ...commandPanelThreadGroup(thread.id, pinnedThreadIds),
         meta: threadProjectLabel(thread),
         status: sidebarThreadRelativeTime(thread),
         action: { type: "selectThread", threadId: thread.id },
       })),
+      searchable: true,
     });
-  }, [openCommandPanel, sidebarPreferences.sortKey, state.threads, state.threadsRuntime]);
+  }, [openCommandPanel, pinnedThreadIds, sidebarPreferences.sortKey, state.threads, state.threadsRuntime]);
 
   const commandMenuEntries = useCallback((): CommandPanelEntry[] => {
     const visibleThreads = projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey });
+    const orderedThreads = orderCommandPanelThreadsByPinned(visibleThreads, pinnedThreadIds);
+    const workspaceRoot = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
+    const activeThreadPinned = activeThread ? pinnedThreadIds.has(activeThread.id) : false;
+    const fileSearchEntries: CommandPanelEntry[] = workspaceRoot ? [{
+      id: "command:search-files",
+      title: "Search files",
+      kind: "file",
+      meta: workspaceRoot,
+      status: "Files",
+      details: ["Search workspace files and attach a mention to the composer."],
+      action: { type: "openFileSearch", title: "Search files" },
+    }] : [];
+    const threadPinEntries: CommandPanelEntry[] = activeThread ? [{
+      id: "command:toggle-thread-pin",
+      title: "Pin/unpin chat",
+      kind: "thread",
+      meta: threadTitle(activeThread, state.threadsRuntime[activeThread.id]?.items ?? null),
+      status: activeThreadPinned ? "Pinned" : "Unpinned",
+      details: ["Toggle pinned state for the current chat."],
+      action: {
+        type: "setThreadPinned",
+        title: "Pin/unpin chat",
+        threadId: activeThread.id,
+        pinned: !activeThreadPinned,
+      },
+    }] : [];
     return [
       ...slashCommandEntries(composerMode),
-      {
-        id: "command:search-files",
-        title: "Search files",
-        kind: "file",
-        meta: activeThread?.cwd || workspace || state.hostStatus?.defaultCwd || "Workspace files",
-        status: "Files",
-        details: ["Search workspace files and attach a mention to the composer."],
-        action: { type: "openFileSearch", title: "Search files" },
-      },
-      ...visibleThreads.map((thread): CommandPanelEntry => ({
+      ...fileSearchEntries,
+      ...threadPinEntries,
+      ...orderedThreads.map((thread): CommandPanelEntry => ({
         id: `command-thread:${thread.id}`,
         title: threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null),
         kind: "thread",
+        ...commandPanelThreadGroup(thread.id, pinnedThreadIds),
         meta: threadProjectLabel(thread),
         status: sidebarThreadRelativeTime(thread),
         details: ["Past chat"],
         action: { type: "selectThread", threadId: thread.id },
       })),
     ];
-  }, [activeThread?.cwd, composerMode, sidebarPreferences.sortKey, state.hostStatus?.defaultCwd, state.threads, state.threadsRuntime, workspace]);
+  }, [activeThread, composerMode, pinnedThreadIds, sidebarPreferences.sortKey, state.hostStatus?.defaultCwd, state.threads, state.threadsRuntime, workspace]);
 
   const openCommandMenu = useCallback(() => {
     openCommandPanel("generic", {
@@ -2048,24 +2111,125 @@ export function HiCodexApp() {
       title: "Search commands and chats",
       message: "",
       entries: commandMenuEntries(),
+      searchable: true,
     });
   }, [commandMenuEntries, openCommandPanel]);
 
+  const stopFileSearchSession = useCallback(() => {
+    fileSearchRequestSeqRef.current += 1;
+    fileSearchActiveQueryRef.current = "";
+    fileSearchSessionRootsKeyRef.current = "";
+    const session = fileSearchSessionRef.current;
+    fileSearchSessionRef.current = null;
+    if (!session) return;
+    void session.stop().catch((error) => {
+      dispatch({ type: "log", text: `Failed to close fuzzy file search session: ${formatError(error)}`, level: "warn" });
+    });
+  }, []);
+
+  const stopCommandMenuFileSearchSession = useCallback(() => {
+    commandMenuSearchRequestSeqRef.current += 1;
+    commandMenuFileSearchActiveRef.current = null;
+    commandMenuFileSearchSessionRootsKeyRef.current = "";
+    const session = commandMenuFileSearchSessionRef.current;
+    commandMenuFileSearchSessionRef.current = null;
+    if (!session) return;
+    void session.stop().catch((error) => {
+      dispatch({ type: "log", text: `Failed to close command menu file search session: ${formatError(error)}`, level: "warn" });
+    });
+  }, []);
+
+  const getFileSearchSession = useCallback(async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
+    const rootsKey = roots.join("\0");
+    if (fileSearchSessionRef.current && fileSearchSessionRootsKeyRef.current === rootsKey) {
+      return fileSearchSessionRef.current;
+    }
+    const previousSession = fileSearchSessionRef.current;
+    fileSearchSessionRef.current = null;
+    fileSearchSessionRootsKeyRef.current = "";
+    if (previousSession) {
+      await previousSession.stop().catch((error) => {
+        dispatch({ type: "log", text: `Failed to close fuzzy file search session: ${formatError(error)}`, level: "warn" });
+      });
+    }
+    const controller = fileSearchControllerRef.current;
+    if (!controller) throw new Error("Fuzzy file search is unavailable.");
+    const session = await controller.createSession({
+      roots,
+      onUpdated: ({ query, files }) => {
+        if (query !== fileSearchActiveQueryRef.current) return;
+        const entries = projectFileSearchEntries({ files });
+        setCommandPanel((current) => current?.panel === "files"
+          ? createCommandPanelState("files", {
+              status: entries.length > 0 ? "ready" : "empty",
+              title: "Search files",
+              message: entries.length > 0
+                ? `${entries.length} matching file(s). Select one to mention it.`
+                : "No matching files found.",
+              entries,
+            })
+          : current);
+      },
+    });
+    fileSearchSessionRef.current = session;
+    fileSearchSessionRootsKeyRef.current = rootsKey;
+    return session;
+  }, []);
+
+  const getCommandMenuFileSearchSession = useCallback(async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
+    const rootsKey = roots.join("\0");
+    if (commandMenuFileSearchSessionRef.current && commandMenuFileSearchSessionRootsKeyRef.current === rootsKey) {
+      return commandMenuFileSearchSessionRef.current;
+    }
+    const previousSession = commandMenuFileSearchSessionRef.current;
+    commandMenuFileSearchSessionRef.current = null;
+    commandMenuFileSearchSessionRootsKeyRef.current = "";
+    if (previousSession) {
+      await previousSession.stop().catch((error) => {
+        dispatch({ type: "log", text: `Failed to close command menu file search session: ${formatError(error)}`, level: "warn" });
+      });
+    }
+    const controller = fileSearchControllerRef.current;
+    if (!controller) throw new Error("Fuzzy file search is unavailable.");
+    const session = await controller.createSession({
+      roots,
+      onUpdated: ({ query, files }) => {
+        const active = commandMenuFileSearchActiveRef.current;
+        if (!active || query !== active.query) return;
+        const fileEntries = projectFileSearchEntries({ files });
+        setCommandPanel((current) => isCommandMenuPanel(current)
+          ? createCommandPanelState("generic", {
+              status: "ready",
+              title: "Search commands and chats",
+              message: fileEntries.length > 0 ? `${fileEntries.length} workspace file result(s).` : "",
+              entries: [...active.baseEntries, ...fileEntries],
+              searchable: true,
+            })
+          : current);
+      },
+    });
+    commandMenuFileSearchSessionRef.current = session;
+    commandMenuFileSearchSessionRootsKeyRef.current = rootsKey;
+    return session;
+  }, []);
+
   const openFileSearchPanel = useCallback(() => {
     fileSearchRequestSeqRef.current += 1;
+    stopCommandMenuFileSearchSession();
     openCommandPanel("files", {
       status: "empty",
       title: "Search files",
       message: "Type to search workspace files.",
       entries: [],
     });
-  }, [openCommandPanel]);
+  }, [openCommandPanel, stopCommandMenuFileSearchSession]);
 
   const searchFilesFromCommandPanel = useCallback((query: string) => {
     const trimmedQuery = query.trim();
     const cwd = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
     const requestSeq = fileSearchRequestSeqRef.current + 1;
     fileSearchRequestSeqRef.current = requestSeq;
+    fileSearchActiveQueryRef.current = trimmedQuery;
     if (!trimmedQuery) {
       setCommandPanel((current) => current?.panel === "files"
         ? createCommandPanelState("files", {
@@ -2110,23 +2274,9 @@ export function HiCodexApp() {
             : current);
           return;
         }
-        const result = await client.request<{ files?: Array<{ path?: string; file_name?: string; score?: number; match_type?: string }> }>(
-          "fuzzyFileSearch",
-          { query: trimmedQuery, roots: [cwd], cancellationToken: null },
-          120_000,
-        );
+        const session = await getFileSearchSession([cwd]);
         if (fileSearchRequestSeqRef.current !== requestSeq) return;
-        const entries = projectFileSearchEntries(result);
-        setCommandPanel((current) => current?.panel === "files"
-          ? createCommandPanelState("files", {
-              status: entries.length > 0 ? "ready" : "empty",
-              title: "Search files",
-              message: entries.length > 0
-                ? `${entries.length} matching file(s). Select one to mention it.`
-                : "No matching files found.",
-              entries,
-            })
-          : current);
+        await session.update(trimmedQuery);
       } catch (error) {
         if (fileSearchRequestSeqRef.current !== requestSeq) return;
         setCommandPanel((current) => current?.panel === "files"
@@ -2139,7 +2289,7 @@ export function HiCodexApp() {
           : current);
       }
     })();
-  }, [activeThread?.cwd, client, ensureConnected, state.hostStatus?.defaultCwd, workspace]);
+  }, [activeThread?.cwd, ensureConnected, getFileSearchSession, state.hostStatus?.defaultCwd, workspace]);
 
   const searchCommandMenuFromPanel = useCallback((query: string) => {
     const trimmedQuery = query.trim();
@@ -2147,6 +2297,9 @@ export function HiCodexApp() {
     const cwd = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
     const requestSeq = commandMenuSearchRequestSeqRef.current + 1;
     commandMenuSearchRequestSeqRef.current = requestSeq;
+    commandMenuFileSearchActiveRef.current = trimmedQuery
+      ? { query: trimmedQuery, baseEntries }
+      : null;
     if (!trimmedQuery || !cwd) {
       setCommandPanel((current) => isCommandMenuPanel(current)
         ? createCommandPanelState("generic", {
@@ -2154,6 +2307,7 @@ export function HiCodexApp() {
             title: "Search commands and chats",
             message: "",
             entries: baseEntries,
+            searchable: true,
           })
         : current);
       return;
@@ -2161,21 +2315,9 @@ export function HiCodexApp() {
     void (async () => {
       try {
         if (!(await ensureConnected())) return;
-        const result = await client.request<{ files?: Array<{ path?: string; file_name?: string; score?: number; match_type?: string }> }>(
-          "fuzzyFileSearch",
-          { query: trimmedQuery, roots: [cwd], cancellationToken: null },
-          120_000,
-        );
+        const session = await getCommandMenuFileSearchSession([cwd]);
         if (commandMenuSearchRequestSeqRef.current !== requestSeq) return;
-        const fileEntries = projectFileSearchEntries(result);
-        setCommandPanel((current) => isCommandMenuPanel(current)
-          ? createCommandPanelState("generic", {
-              status: "ready",
-              title: "Search commands and chats",
-              message: fileEntries.length > 0 ? `${fileEntries.length} workspace file result(s).` : "",
-              entries: [...baseEntries, ...fileEntries],
-            })
-          : current);
+        await session.update(trimmedQuery);
       } catch {
         if (commandMenuSearchRequestSeqRef.current !== requestSeq) return;
         setCommandPanel((current) => isCommandMenuPanel(current)
@@ -2184,11 +2326,28 @@ export function HiCodexApp() {
               title: "Search commands and chats",
               message: "",
               entries: baseEntries,
+              searchable: true,
             })
           : current);
       }
     })();
-  }, [activeThread?.cwd, client, commandMenuEntries, ensureConnected, state.hostStatus?.defaultCwd, workspace]);
+  }, [activeThread?.cwd, commandMenuEntries, ensureConnected, getCommandMenuFileSearchSession, state.hostStatus?.defaultCwd, workspace]);
+
+  useEffect(() => {
+    if (!commandPanel) {
+      stopFileSearchSession();
+      stopCommandMenuFileSearchSession();
+      return;
+    }
+    if (commandPanel.panel !== "files") stopFileSearchSession();
+    if (!isCommandMenuPanel(commandPanel)) stopCommandMenuFileSearchSession();
+  }, [commandPanel, stopCommandMenuFileSearchSession, stopFileSearchSession]);
+
+  const closeCommandPanel = useCallback(() => {
+    stopFileSearchSession();
+    stopCommandMenuFileSearchSession();
+    setCommandPanel(null);
+  }, [stopCommandMenuFileSearchSession, stopFileSearchSession]);
 
   const loadSettingsPanel = useCallback(async (
     panel: SettingsPanelId,
@@ -2235,6 +2394,7 @@ export function HiCodexApp() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (focusComposerFromPlainTextKey(event)) return;
       if (!event.metaKey && !event.ctrlKey) return;
       if (event.shiftKey || event.altKey) return;
       const key = event.key.toLowerCase();
@@ -2244,8 +2404,8 @@ export function HiCodexApp() {
       else if (key === "b") toggleSidebar();
       else openCommandMenu();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [openCommandMenu, openThreadFindBar, toggleSidebar]);
 
   useEffect(() => {
@@ -2538,17 +2698,17 @@ export function HiCodexApp() {
     }
   }, []);
 
-  const toggleThreadPinned = useCallback((thread: Thread, pinned: boolean) => {
+  const setThreadPinnedById = useCallback((threadId: string, pinned: boolean) => {
     setPinnedThreadIds((current) => {
-      const next = new Set(current);
-      if (pinned) {
-        next.add(thread.id);
-      } else {
-        next.delete(thread.id);
-      }
+      const next = updatePinnedThreadIds(current, threadId, pinned);
+      savePinnedThreadIds(browserStorage(), next);
       return next;
     });
   }, []);
+
+  const toggleThreadPinned = useCallback((thread: Thread, pinned: boolean) => {
+    setThreadPinnedById(thread.id, pinned);
+  }, [setThreadPinnedById]);
 
   const markThreadUnread = useCallback((thread: Thread) => {
     dispatch({
@@ -2714,8 +2874,8 @@ export function HiCodexApp() {
     });
   }, [state.threads.length]);
 
-  const dismissOnboardingPromo = useCallback(() => {
-    setOnboardingSnapshot(dismissFirstNewThreadPromos(browserStorage()));
+  const dismissOnboardingPromo = useCallback((options?: { ambientSuggestionsEnabled?: boolean }) => {
+    setOnboardingSnapshot(dismissFirstNewThreadPromos(browserStorage(), options));
   }, []);
 
   const onboardingEmptyStateVisible = shouldShowOnboardingEmptyState({
@@ -2910,7 +3070,11 @@ export function HiCodexApp() {
         ...(appResult.status === "fulfilled" ? mentionOptionsFromAppsResponse(appResult.value, query) : []),
       ]).slice(0, 25);
     }
-    const [pluginResult, skillResult, fileResult] = await Promise.allSettled([
+    const liveAgentOptions = mentionOptionsFromAgentThreads(state.threads, query, {
+      excludedThreadIds: [state.activeThreadId],
+    });
+    const liveAgentRoles = state.threads.map((thread) => thread.agentRole);
+    const [pluginResult, skillResult, fileResult, configResult] = await Promise.allSettled([
       client.request<unknown>("plugin/list", {
         cwds: cwd ? [cwd] : null,
       }),
@@ -2921,24 +3085,34 @@ export function HiCodexApp() {
           })
         : Promise.resolve(null),
       trimmedQuery && cwd
-        ? client.request<{ files?: Array<Record<string, unknown>> }>(
-            "fuzzyFileSearch",
-            { query, roots: [cwd], cancellationToken: null },
-            120_000,
-          )
+        ? fileSearchControllerRef.current?.searchOnce({
+            roots: [cwd],
+            query,
+            timeoutMs: 120_000,
+          }) ?? Promise.resolve({ files: [] })
         : Promise.resolve({ files: [] }),
+      client.request<unknown>("config/read", {
+        includeLayers: false,
+        cwd: cwd || null,
+      }, 120_000),
     ]);
     if (
       pluginResult.status === "rejected"
       && skillResult.status === "rejected"
       && fileResult.status === "rejected"
+      && configResult.status === "rejected"
+      && liveAgentOptions.length === 0
     ) throw pluginResult.reason;
     return dedupeComposerMentionOptions([
+      ...liveAgentOptions,
+      ...(configResult.status === "fulfilled"
+        ? mentionOptionsFromConfiguredAgentsResponse(configResult.value, query, liveAgentRoles)
+        : []),
       ...(pluginResult.status === "fulfilled" ? mentionOptionsFromPluginsResponse(pluginResult.value, query) : []),
       ...(skillResult.status === "fulfilled" ? mentionOptionsFromSkillsResponse(skillResult.value, query) : []),
       ...(fileResult.status === "fulfilled" ? mentionOptionsFromFuzzyFiles(fileResult.value.files ?? []) : []),
     ]).slice(0, 25);
-  }, [activeThread?.cwd, client, ensureConnected, state.activeThreadId, state.hostStatus?.defaultCwd, workspace]);
+  }, [activeThread?.cwd, client, ensureConnected, state.activeThreadId, state.hostStatus?.defaultCwd, state.threads, workspace]);
 
   const selectComposerPlan = useCallback(() => {
     if (composerMode === "plan") {
@@ -2947,6 +3121,7 @@ export function HiCodexApp() {
     }
     void enableComposerPlanMode();
   }, [composerMode, enableComposerPlanMode, setActiveComposerMode]);
+  const hasPlanComposerMode = hasCollaborationModePreset(collaborationModes, "plan");
 
   const {
     callMcpToolFromPanel,
@@ -2972,6 +3147,7 @@ export function HiCodexApp() {
     setNotificationPreferences,
     runSlashCommand: runSlashCommandFromPanel,
     openFileSearchPanel,
+    setThreadPinnedById,
     selectThreadById,
     workspace,
   });
@@ -3193,7 +3369,15 @@ export function HiCodexApp() {
                 className="hc-above-composer-portal"
                 data-above-composer-portal="true"
                 data-above-composer-conversation-id={state.activeThreadId ?? undefined}
-              />
+              >
+                <AboveComposerPlanSuggestion
+                  composerText={input}
+                  conversationId={state.activeThreadId}
+                  hasPlanMode={hasPlanComposerMode}
+                  mode={composerMode}
+                  onPlanSelected={selectComposerPlan}
+                />
+              </div>
 
               <div
                 className="hc-above-composer-queue-portal"
@@ -3385,7 +3569,7 @@ export function HiCodexApp() {
       {commandPanel && (
         <CommandPanel
           panel={commandPanel}
-          onClose={() => setCommandPanel(null)}
+          onClose={closeCommandPanel}
           onSelectAction={(action) => selectCommandPanelAction(action)}
           onSelectEntry={selectCommandPanelEntry}
           onSearchQueryChange={commandPanel.panel === "files"
@@ -3527,6 +3711,39 @@ function isAppBackedPanel(panel: CommandPanelKind | null | undefined): panel is 
 
 function isCommandMenuPanel(panel: CommandPanelState | null | undefined): panel is CommandPanelState & { panel: "generic" } {
   return panel?.panel === "generic" && panel.title === "Search commands and chats";
+}
+
+function focusComposerFromPlainTextKey(event: KeyboardEvent): boolean {
+  if (!isPlainTextComposerKey(event)) return false;
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (isEditableKeyboardTarget(target)) return false;
+  if (target?.closest("[data-codex-terminal]")) return false;
+  if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]')) return false;
+  const composer = document.querySelector<HTMLElement>("[data-codex-composer]");
+  if (!composer) return false;
+  event.preventDefault();
+  insertPromptEditorText(composer, event.key);
+  return true;
+}
+
+function isPlainTextComposerKey(event: KeyboardEvent): boolean {
+  return !event.defaultPrevented
+    && !event.isComposing
+    && !event.metaKey
+    && !event.ctrlKey
+    && event.key !== " "
+    && event.key !== "\u00a0"
+    && event.key.length === 1;
+}
+
+function isEditableKeyboardTarget(target: HTMLElement | null): boolean {
+  if (!target) return false;
+  if (target.isContentEditable) return true;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input"
+    || tagName === "textarea"
+    || tagName === "select"
+    || target.closest("[contenteditable='true']") != null;
 }
 
 function isAppBackedPanelState(

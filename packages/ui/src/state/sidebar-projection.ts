@@ -64,6 +64,11 @@ export interface SidebarThreadGroup {
   threads: Thread[];
 }
 
+export interface SidebarPinnedThreadSplit {
+  pinnedThreads: Thread[];
+  unpinnedThreads: Thread[];
+}
+
 export interface SidebarWorkspaceRootOption {
   root: string;
   label: string;
@@ -89,6 +94,25 @@ export function projectSidebarThreads(
   const visible = hide ? threads.filter((thread) => !isSubagentThread(thread)) : [...threads];
   visible.sort((left, right) => threadSortAt(right, sortKey) - threadSortAt(left, sortKey));
   return visible;
+}
+
+export function splitSidebarThreadsByPinned(
+  threads: Thread[],
+  pinnedThreadIds: ReadonlySet<string> | null | undefined,
+): SidebarPinnedThreadSplit {
+  if (!pinnedThreadIds || pinnedThreadIds.size === 0) {
+    return { pinnedThreads: [], unpinnedThreads: [...threads] };
+  }
+  const byId = new Map(threads.map((thread) => [thread.id, thread]));
+  const pinnedThreads: Thread[] = [];
+  for (const threadId of pinnedThreadIds) {
+    const thread = byId.get(threadId);
+    if (thread) pinnedThreads.push(thread);
+  }
+  return {
+    pinnedThreads,
+    unpinnedThreads: threads.filter((thread) => !pinnedThreadIds.has(thread.id)),
+  };
 }
 
 export function threadSortAt(thread: Thread, sortKey: SidebarSortKey): number {

@@ -1,5 +1,8 @@
+import type { ModelConfig } from "@hicodex/codex-protocol";
 import { SETTINGS_SECTIONS, isRefreshableSettingsPanel } from "../src/components/model-settings-panel";
 import {
+  appearanceSettingsEntries,
+  desktopBackedLocalSettingsEntries,
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
   localSettingsEntries,
@@ -25,8 +28,10 @@ export default async function runSettingsPanelTests(): Promise<void> {
   exposesUnifiedSettingsSectionsWithoutLogin();
   marksServerBackedSectionsRefreshable();
   projectsImageGenerationCapabilities();
+  projectsDesktopBackedSettingsPanels();
   projectsNotificationPreferencesInGeneralSettings();
-  projectsThemeAndLocaleInGeneralSettings();
+  projectsServiceTierSpeedInGeneralSettings();
+  projectsThemeInAppearanceAndLocaleInGeneralSettings();
   migratesComposerWorkModeStorage();
   projectsHostAvailableWorktreeSelectable();
   projectsPendingWorktreePath();
@@ -59,19 +64,31 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
     SETTINGS_SECTIONS.map((section) => section.id),
     [
       "general",
+      "appearance",
+      "appshots",
+      "connections",
+      "git-settings",
       "models",
       "images",
+      "agent",
+      "personalization",
       "worktrees",
+      "local-environments",
       "permissions",
       "approvals",
+      "keyboard-shortcuts",
+      "usage",
+      "browser-use",
+      "computer-use",
       "mcp",
       "skills",
       "hooks",
       "apps",
       "plugins",
+      "data-controls",
       "experimental",
     ],
-    "settings center should expose runtime, model, permission, MCP, Skills, and extension management sections",
+    "settings center should expose Codex Desktop route slugs alongside existing HiCodex sections",
   );
 }
 
@@ -83,10 +100,80 @@ function marksServerBackedSectionsRefreshable(): void {
     "server-backed settings sections should expose a refresh action",
   );
   assertDeepEqual(
-    (["general", "models", "permissions", "approvals"] as SettingsPanelId[])
+    ([
+      "general",
+      "appearance",
+      "appshots",
+      "connections",
+      "git-settings",
+      "models",
+      "permissions",
+      "approvals",
+      "agent",
+      "personalization",
+      "keyboard-shortcuts",
+      "usage",
+      "browser-use",
+      "computer-use",
+      "local-environments",
+      "data-controls",
+    ] as SettingsPanelId[])
       .map((panel) => isRefreshableSettingsPanel(panel)),
-    [false, false, false, false],
+    [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
     "local settings sections should not expose a refresh action",
+  );
+}
+
+function projectsDesktopBackedSettingsPanels(): void {
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("keyboard-shortcuts", { connected: true }).map((entry) => [entry.id, entry.status]),
+    [["keyboard-shortcuts:desktop-surface", "Desktop route"]],
+    "keyboard shortcuts settings should expose the Desktop keymap route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("appshots", { connected: true }).map((entry) => [entry.id, entry.status]),
+    [["appshots:desktop-surface", "Desktop route"]],
+    "appshots settings should expose the Desktop route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("agent", { connected: true }).map((entry) => [entry.id, entry.status]),
+    [["agent:desktop-surface", "Desktop route"]],
+    "agent settings should expose the Desktop Configuration route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("connections", { connected: false })[0]?.status,
+    "Desktop route",
+    "connections settings should expose only the Desktop route until the remote-connections host bridge is backed locally",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("local-environments", { connected: true })[0]?.status,
+    "Desktop route",
+    "local environment settings should expose the Desktop route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("data-controls", { connected: true })[0]?.title,
+    "Archived chats",
+    "data controls settings should use Desktop's archived chats label",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("computer-use", { connected: true })[0]?.status,
+    "Desktop route",
+    "computer use settings should expose the Desktop route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("browser-use", { connected: true })[0]?.status,
+    "Desktop route",
+    "browser settings should expose the Desktop route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("usage", { connected: false })[0]?.status,
+    "Desktop route",
+    "usage settings should expose the Desktop route as source evidence",
+  );
+  assertDeepEqual(
+    desktopBackedLocalSettingsEntries("usage", { connected: false })[0]?.details?.includes("access hook: use-usage-settings-access"),
+    true,
+    "usage settings details should label the Desktop use-usage-settings-access hook accurately",
   );
 }
 
@@ -150,8 +237,89 @@ function projectsNotificationPreferencesInGeneralSettings(): void {
   );
 }
 
-function projectsThemeAndLocaleInGeneralSettings(): void {
+function projectsServiceTierSpeedInGeneralSettings(): void {
   const entries = generalSettingsEntries({
+    activeThreadId: "thread-1",
+    activeTurnId: null,
+    codexHome: "/tmp/codex-home",
+    connected: true,
+    defaultCwd: "/tmp/workspace",
+    model: "gpt-5.2",
+    modelProvider: "openai",
+    modelCount: 1,
+    models: [modelWithServiceTiers()],
+    pendingRequestCount: 0,
+    pid: 123,
+    serviceTier: "priority",
+    uiLocale: "en-US",
+    uiTheme: { mode: "system", resolved: "dark" },
+    workspace: "/tmp/workspace",
+    notificationPreferences: { turnCompletionPolicy: "always", sound: false },
+  });
+  const speed = entries.find((entry) => entry.id === "settings:service-tier");
+  assertDeepEqual(
+    [speed?.title, speed?.status, speed?.meta],
+    ["Speed", "Fast", "gpt-5.2"],
+    "general settings should expose Desktop's Speed control when the active model advertises service tiers",
+  );
+  assertDeepEqual(
+    speed?.secondaryActions?.map((action) => [action.id, action.label, action.action]),
+    [
+      [
+        "service-tier:default",
+        "Standard",
+        {
+          type: "writeConfig",
+          title: "Use Standard speed",
+          message: "Set speed to Standard.",
+          edits: [{ keyPath: "service_tier", value: "default", mergeStrategy: "replace" }],
+          reloadUserConfig: true,
+        },
+      ],
+      [
+        "service-tier:flex",
+        "Flex",
+        {
+          type: "writeConfig",
+          title: "Use Flex speed",
+          message: "Set speed to Flex.",
+          edits: [{ keyPath: "service_tier", value: "flex", mergeStrategy: "replace" }],
+          reloadUserConfig: true,
+        },
+      ],
+    ],
+    "service tier actions should write app-server service_tier request values through config/batchWrite",
+  );
+
+  const entriesWithoutModelTiers = generalSettingsEntries({
+    activeThreadId: null,
+    activeTurnId: null,
+    codexHome: null,
+    connected: false,
+    defaultCwd: null,
+    model: null,
+    modelCount: 0,
+    models: [],
+    pendingRequestCount: 0,
+    pid: null,
+    serviceTier: "priority",
+    uiLocale: "en-US",
+    uiTheme: { mode: "system", resolved: "light" },
+    workspace: "",
+    notificationPreferences: { turnCompletionPolicy: "backgroundOnly", sound: true },
+  });
+  assertDeepEqual(
+    entriesWithoutModelTiers.find((entry) => entry.id === "settings:service-tier"),
+    undefined,
+    "speed settings should stay hidden when model/list has no serviceTiers, matching Desktop's availableOptions gate",
+  );
+}
+
+function projectsThemeInAppearanceAndLocaleInGeneralSettings(): void {
+  const appearanceEntries = appearanceSettingsEntries({
+    uiTheme: { mode: "dark", resolved: "dark" },
+  });
+  const generalEntries = generalSettingsEntries({
     activeThreadId: null,
     activeTurnId: null,
     codexHome: null,
@@ -166,18 +334,44 @@ function projectsThemeAndLocaleInGeneralSettings(): void {
     workspace: "",
     notificationPreferences: { turnCompletionPolicy: "backgroundOnly", sound: true },
   });
-  const theme = entries.find((entry) => entry.id === "settings:theme");
-  const locale = entries.find((entry) => entry.id === "settings:locale");
+  const theme = appearanceEntries.find((entry) => entry.id === "settings:theme");
+  const generalTheme = generalEntries.find((entry) => entry.id === "settings:theme");
+  const locale = generalEntries.find((entry) => entry.id === "settings:locale");
   assertDeepEqual(
     [theme?.status, theme?.meta, theme?.secondaryActions?.map((action) => action.id)],
     ["Dark", "Resolved dark", ["theme:system", "theme:light"]],
-    "general settings should expose local theme controls",
+    "appearance settings should expose local theme controls",
+  );
+  assertDeepEqual(
+    generalTheme,
+    undefined,
+    "general settings should not duplicate the Appearance theme control",
   );
   assertDeepEqual(
     [locale?.status, locale?.meta, locale?.secondaryActions?.map((action) => action.id)],
     ["Chinese (Simplified)", "Saved locally", ["locale:en-US"]],
     "general settings should expose local i18n controls",
   );
+}
+
+function modelWithServiceTiers(): ModelConfig {
+  return {
+    id: "openai",
+    name: "OpenAI",
+    protocol: "openai",
+    baseUrl: "",
+    apiKey: "",
+    model: "gpt-5.2",
+    models: ["gpt-5.2"],
+    temperature: 0.2,
+    maxTokens: null,
+    supportsImageInput: true,
+    serviceTiers: [
+      { id: "priority", name: "Fast", description: "1.5x speed, increased usage" },
+      { id: "flex", name: "Flex", description: "Lower-cost background tier" },
+    ],
+    defaultServiceTier: "priority",
+  };
 }
 
 function projectsHostAvailableWorktreeSelectable(): void {

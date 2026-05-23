@@ -26,8 +26,11 @@ import {
   type McpServerStartupStatus,
 } from "./mcp-skills-management";
 import {
+  appearanceSettingsEntries,
+  desktopBackedLocalSettingsEntries,
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
+  isDesktopBackedLocalSettingsPanel,
   localSettingsEntries,
   modelSettingsEntries,
   settingsPanelCommandKind,
@@ -205,6 +208,29 @@ export async function loadSettingsPanelContent({
     return;
   }
 
+  if (panel === "appearance") {
+    setSettingsPanelState(createCommandPanelState("generic", {
+      status: "ready",
+      title: "Appearance",
+      message: "",
+      entries: appearanceSettingsEntries({ uiTheme }),
+    }));
+    return;
+  }
+
+  if (isDesktopBackedLocalSettingsPanel(panel)) {
+    const title = settingsPanelTitle(panel);
+    setSettingsPanelState(createCommandPanelState("generic", {
+      status: "ready",
+      title,
+      message: "",
+      entries: desktopBackedLocalSettingsEntries(panel, {
+        connected: state.connected,
+      }),
+    }));
+    return;
+  }
+
   if (panel === "general") {
     setSettingsPanelState(createCommandPanelState("generic", {
       status: "ready",
@@ -217,9 +243,12 @@ export async function loadSettingsPanelContent({
         connected: state.connected,
         defaultCwd: state.hostStatus?.defaultCwd ?? null,
         model: state.threadContextDefaults?.model ?? null,
+        modelProvider: state.threadContextDefaults?.modelProvider ?? null,
         modelCount: state.models.length,
+        models: state.models,
         pendingRequestCount: state.pendingRequests.length,
         pid: state.hostStatus?.pid ?? null,
+        serviceTier: state.threadContextDefaults?.serviceTier,
         uiLocale,
         uiTheme,
         workspace,

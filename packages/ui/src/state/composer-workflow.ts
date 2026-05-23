@@ -39,8 +39,19 @@ export type SlashCommandCategory =
   | "debug";
 
 export type SettingsPanelId =
+  | "agent"
+  | "appshots"
+  | "appearance"
+  | "connections"
+  | "data-controls"
+  | "git-settings"
+  | "local-environments"
   | "models"
   | "images"
+  | "keyboard-shortcuts"
+  | "usage"
+  | "computer-use"
+  | "browser-use"
   | "mcp"
   | "approvals"
   | "permissions"
@@ -50,6 +61,7 @@ export type SettingsPanelId =
   | "worktrees"
   | "apps"
   | "experimental"
+  | "personalization"
   | "team"
   | "general";
 
@@ -118,6 +130,21 @@ export interface SlashCommandContext {
 
 export type ComposerMode = "default" | "plan";
 export type FollowUpSubmitAction = "queue" | "steer";
+
+export const PLAN_KEYWORD_SUGGESTION_ID = "keyword-plan-mode";
+const PLAN_KEYWORD_PATTERN = /\bplan\b/i;
+
+export function shouldShowPlanKeywordSuggestion(input: {
+  composerText: string;
+  hasPlanMode: boolean;
+  isPlanMode: boolean;
+  isDismissed: boolean;
+  showPlanKeywordSuggestion?: boolean;
+}): boolean {
+  if (!input.showPlanKeywordSuggestion) return false;
+  if (!input.hasPlanMode || input.isPlanMode || input.isDismissed) return false;
+  return PLAN_KEYWORD_PATTERN.test(input.composerText);
+}
 
 export interface ComposerSendOptions {
   followUpSubmitAction?: FollowUpSubmitAction;

@@ -25,6 +25,7 @@ import {
   removeMentionTriggerText,
   removeComposerAttachment,
   selectAttachmentInputMode,
+  shouldShowPlanKeywordSuggestion,
   slashCommandsForComposerMode,
   splitComposerTransferFiles,
   updateAttachmentInputDraft,
@@ -56,6 +57,7 @@ export default function runComposerWorkflowTests(): void {
   projectsCodexDesktopComposerPlaceholders();
   projectsCodexDesktopComposerSubmitState();
   projectsCodexDesktopSubmitTooltips();
+  detectsPlanKeywordSuggestionVisibility();
   exposesCodexCliSlashCommands();
   filtersSlashCommandsByIdTitleAndAliases();
   updatesPlanCommandTextForComposerMode();
@@ -66,6 +68,57 @@ export default function runComposerWorkflowTests(): void {
   drivesAttachmentPickerWithoutWindowPrompt();
   projectsDroppedAndPastedFilesIntoAttachments();
   buildsUserInputFromComposerTextAndAttachments();
+}
+
+function detectsPlanKeywordSuggestionVisibility(): void {
+  assertDeepEqual(
+    [
+      shouldShowPlanKeywordSuggestion({
+        composerText: "please make a plan before editing",
+        hasPlanMode: true,
+        isPlanMode: false,
+        isDismissed: false,
+        showPlanKeywordSuggestion: true,
+      }),
+      shouldShowPlanKeywordSuggestion({
+        composerText: "please make a plan before editing",
+        hasPlanMode: false,
+        isPlanMode: false,
+        isDismissed: false,
+        showPlanKeywordSuggestion: true,
+      }),
+      shouldShowPlanKeywordSuggestion({
+        composerText: "please make a plan before editing",
+        hasPlanMode: true,
+        isPlanMode: true,
+        isDismissed: false,
+        showPlanKeywordSuggestion: true,
+      }),
+      shouldShowPlanKeywordSuggestion({
+        composerText: "please make a plan before editing",
+        hasPlanMode: true,
+        isPlanMode: false,
+        isDismissed: true,
+        showPlanKeywordSuggestion: true,
+      }),
+      shouldShowPlanKeywordSuggestion({
+        composerText: "please explain planner.ts",
+        hasPlanMode: true,
+        isPlanMode: false,
+        isDismissed: false,
+        showPlanKeywordSuggestion: true,
+      }),
+      shouldShowPlanKeywordSuggestion({
+        composerText: "please make a plan before editing",
+        hasPlanMode: true,
+        isPlanMode: false,
+        isDismissed: false,
+        showPlanKeywordSuggestion: false,
+      }),
+    ],
+    [true, false, false, false, false, false],
+    "plan keyword suggestion should follow Desktop keyword-plan-mode gates",
+  );
 }
 
 function projectsCodexDesktopComposerPlaceholders(): void {

@@ -10,6 +10,7 @@ import {
   buildLocalModelCatalogConfig,
   buildLocalModelCatalogEntries,
   buildLocalModelCatalogEntry,
+  buildModelConfigFromListEntry,
   buildModelConfigEdits,
   formatModelDisplayName,
   modelSlugsForConfig,
@@ -107,6 +108,21 @@ export default function runModelSettingsTests(): void {
     DEFAULT_SUBSCRIPTION_MODELS,
     ["gpt-5.5", "gpt-5.4"],
     "subscription fallback models match the Desktop picker defaults",
+  );
+  assertDeepEqual(
+    buildModelConfigFromListEntry({
+      id: "openai",
+      displayName: "GPT-5.2",
+      model: "gpt-5.2",
+      inputModalities: ["text", "image"],
+      serviceTiers: [
+        { id: " priority ", name: " Fast ", description: " 1.5x speed " },
+        { id: "", name: "Broken", description: "missing id" },
+      ],
+      defaultServiceTier: "priority",
+    }).serviceTiers,
+    [{ id: "priority", name: "Fast", description: "1.5x speed" }],
+    "model/list projection should preserve serviceTiers advertised by app-server",
   );
 
   assertDeepEqual(

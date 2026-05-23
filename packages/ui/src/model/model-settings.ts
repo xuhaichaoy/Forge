@@ -1,4 +1,4 @@
-import type { InputModality, JsonValue, ModelConfig } from "@hicodex/codex-protocol";
+import type { InputModality, JsonValue, ModelConfig, ModelServiceTier } from "@hicodex/codex-protocol";
 
 export type { ModelConfig };
 
@@ -51,6 +51,8 @@ export interface ModelListEntry {
   displayName?: string;
   model: string;
   inputModalities?: InputModality[];
+  serviceTiers?: ModelServiceTier[];
+  defaultServiceTier?: string | null;
 }
 
 export interface NormalizedModelConfig extends ModelConfig {
@@ -143,6 +145,7 @@ export function buildCodexModelProvider(model: ModelConfig): CodexModelProvider 
 }
 
 export function buildModelConfigFromListEntry(entry: ModelListEntry): ModelConfig {
+  const serviceTiers = normalizeModelServiceTiers(entry.serviceTiers);
   return {
     id: entry.id,
     name: entry.displayName ?? entry.model,
@@ -154,6 +157,8 @@ export function buildModelConfigFromListEntry(entry: ModelListEntry): ModelConfi
     temperature: 0.2,
     maxTokens: null,
     supportsImageInput: entry.inputModalities?.includes("image") ?? true,
+    serviceTiers,
+    defaultServiceTier: typeof entry.defaultServiceTier === "string" ? entry.defaultServiceTier : null,
   };
 }
 
@@ -244,4 +249,19 @@ function configRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function normalizeModelServiceTiers(value: ModelServiceTier[] | null | undefined): ModelServiceTier[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((tier) =>
+      typeof tier?.id === "string"
+      && tier.id.trim().length > 0
+      && typeof tier.name === "string"
+      && typeof tier.description === "string")
+    .map((tier) => ({
+      id: tier.id.trim(),
+      name: tier.name.trim() || tier.id.trim(),
+      description: tier.description.trim(),
+    }));
 }
