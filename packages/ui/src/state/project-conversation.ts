@@ -166,6 +166,9 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     activityGroupKey = null;
   };
 
+  // 把外层 projectConversation 的 options 在 pushConversationItem 闭包外别名，
+  // 避免 inner 同名 options 参数 shadow 它。appRegistry 用于 Sources logo 查询。
+  const projectionOptions = options;
   const pushConversationItem = (
     item: ThreadItem,
     options: { assistantArtifacts?: RailEntry[] } = {},
@@ -174,7 +177,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       return;
     }
     if (itemType(item) === "todo-list") {
-      const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates);
+      const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
       if (nextProgress) {
         progress = nextProgress;
       }
@@ -187,10 +190,28 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       units.push(threadItemRenderUnit(item));
       return;
     }
+    /*
+     * Plan ThreadItem 独立渲染。
+     *
+     * DEVELOPMENT.md:114 规则：hook activity 不应作为 standalone item，桌面端用
+     * user-message 上的 hookStats/hookRuns 字段表达；reasoning 也是同样规则。
+     * 因此这里只把 `plan` 走 threadItemRenderUnit（plan 是有独立卡的 ThreadItem
+     * variant），其余 hookPrompt/contextCompaction/enteredReviewMode/exitedReviewMode/
+     * imageView/imageGeneration 保留 HiCodex 既有路径（event-projection 处理）。
+     */
+    if (itemType(item) === "plan") {
+      const standaloneProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
+      if (standaloneProgress) {
+        progress = standaloneProgress;
+      }
+      flushActivity();
+      units.push(threadItemRenderUnit(item));
+      return;
+    }
     if (isBlockingOutOfBandItem(item, blockedMcpServers)) {
       return;
     }
-    const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates);
+    const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
     if (nextProgress) {
       progress = nextProgress;
     }
@@ -304,12 +325,65 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     }
     for (const item of split.automationUpdateItems) pushConversationItem(item);
     if (split.systemEventItem) pushConversationItem(split.systemEventItem);
+    const assistantArtifacts = split.assistantItem
+      ? assistantArtifactsForItem(split.assistantItem)
+      : [];
     if (split.assistantItem) {
       pushConversationItem(split.assistantItem, {
-        assistantArtifacts: assistantArtifactsForItem(split.assistantItem),
+        assistantArtifacts,
       });
     }
-    for (const item of split.toolOutputItems) pushConversationItem(item);
+    /*
+     * Codex Desktop `JC` gallery aggregation (local-conversation-thread byte
+     * ~540170): all `generated-image` items in `toolOutputItems` collapse
+     * into one `<JC images={Ut} conversationId={n}/>` carousel — never
+     * one-card-per-image. HiCodex previously routed each through the generic
+     * `pushConversationItem` path, which produced a stack of full-width
+     * markdown image cards (screenshot 2026-05-21 image #6).
+     *
+     * Mirror Codex `zC` (byte 498904): `Ut` = items with `src != null` after
+     * filtering out completed images when any assistant artifact is a `.pptx`
+     * (Codex `endResourcePaths.some(p => extension(p) === "pptx")`).
+     * `hasPending` triggers a placeholder spinner box and matches Codex
+     * `$e = oe.some(Vw)` (`src == null && status === "in_progress"`).
+     */
+    const generatedImages: ThreadItem[] = [];
+    let pendingGeneratedImage = false;
+    const nonImageOutputs: ThreadItem[] = [];
+    for (const item of split.toolOutputItems) {
+      const type = itemType(item);
+      if (type === "generated-image" || type === "imageGeneration") {
+        const src = imageItemSrc(item);
+        if (src) {
+          const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
+          if (nextProgress) {
+            progress = nextProgress;
+          }
+          generatedImages.push(item);
+        } else if (isGeneratedImagePending(item)) {
+          pendingGeneratedImage = true;
+        } else {
+          nonImageOutputs.push(item);
+        }
+        continue;
+      }
+      nonImageOutputs.push(item);
+    }
+    const visibleGeneratedImages = anyAssistantArtifactIsPptx(assistantArtifacts)
+      ? []
+      : generatedImages;
+    if (visibleGeneratedImages.length > 0 || pendingGeneratedImage) {
+      flushActivity();
+      const galleryTurnId = generatedImageGalleryTurnId(segment, visibleGeneratedImages, split);
+      units.push({
+        kind: "generatedImageGallery",
+        key: `gallery:${galleryTurnId}`,
+        images: visibleGeneratedImages,
+        hasPending: pendingGeneratedImage,
+        turnId: galleryTurnId,
+      });
+    }
+    for (const item of nonImageOutputs) pushConversationItem(item);
     for (const item of split.postAssistantItems) pushConversationItem(item);
     for (const item of split.mcpServerElicitationItems) pushConversationItem(item);
     if (split.proposedPlanItem) pushConversationItem(split.proposedPlanItem);
@@ -344,7 +418,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),
-    sources: Array.from(sources.values()),
+    sources: orderedSourcesLikeDesktop(sources),
   };
 }
 
@@ -412,6 +486,9 @@ function readUnitTurnId(unit: ConversationRenderUnit | undefined): string | null
       const raw = (item as Record<string, unknown>)._turnId;
       if (typeof raw === "string" && raw.length > 0) return raw;
     }
+  }
+  if (unit.kind === "generatedImageGallery") {
+    return unit.turnId;
   }
   return null;
 }
@@ -705,6 +782,74 @@ function hasBlockingRequest(split: DesktopTurnSplit): boolean {
     || split.mcpServerElicitationItems.some((item) => !isCompletedRecord(item))
     || split.permissionRequestItems.some((item) => !isCompletedRecord(item)),
   );
+}
+
+/**
+ * Source URL for a generated-image item — Codex `e.src` ON the item proper
+ * (see `ew` hook usage in `local-conversation-thread byte 509404`). HiCodex
+ * payloads may carry either a top-level `src` (preferred) or `path` /
+ * `imageUrl` aliases — accept the first non-empty string match.
+ */
+function imageItemSrc(item: ThreadItem): string {
+  const record = item as Record<string, unknown>;
+  for (const key of ["src", "imageUrl", "path", "url", "savedPath"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) return normalizeImageSource(value.trim());
+  }
+  const result = typeof record.result === "string" ? record.result.trim() : "";
+  if (result) return `data:image/png;base64,${result}`;
+  return "";
+}
+
+function normalizeImageSource(value: string): string {
+  if (/^(?:data|blob|https?|file):/i.test(value)) return value;
+  if (value.startsWith("/")) return `file://${encodeURI(value)}`;
+  return value;
+}
+
+function isGeneratedImagePending(item: ThreadItem): boolean {
+  if (imageItemSrc(item)) return false;
+  const status = String((item as Record<string, unknown>).status ?? "").trim();
+  if (itemType(item) !== "imageGeneration") return status === "in_progress" || status === "inProgress" || isItemInProgress(item);
+  return status === "in_progress" || status === "inProgress";
+}
+
+/**
+ * Codex `zC` PPTX exclusion — when any `endResourcePath` extension is
+ * `pptx`, the gallery is suppressed (the deck embeds the images). HiCodex
+ * has no `endResourcePaths`; the assistant's resolved artifacts (file paths
+ * surfaced by `assistantArtifactsForItem`) are the closest equivalent.
+ */
+function anyAssistantArtifactIsPptx(assistantArtifacts: RailEntry[]): boolean {
+  return assistantArtifacts.some((entry) => {
+    const path = entry.reference?.path || entry.meta || entry.title;
+    return /\.pptx$/i.test(path);
+  });
+}
+
+function orderedSourcesLikeDesktop(sources: Map<string, RailEntry>): RailEntry[] {
+  const entries = Array.from(sources.values());
+  const toolSources = entries.filter((entry) => entry.id !== "webSearch").reverse();
+  const webSearch = entries.find((entry) => entry.id === "webSearch");
+  return webSearch ? [...toolSources, webSearch] : toolSources;
+}
+
+/**
+ * Best-effort turn id for the gallery render-unit key. Prefers a stamped
+ * `_turnId` from any segment item; falls back to the first image's id or a
+ * deterministic count so the gallery key is stable per segment.
+ */
+function generatedImageGalleryTurnId(
+  segment: ThreadItem[],
+  images: ThreadItem[],
+  split: DesktopTurnSplit,
+): string {
+  const stamped = segment.map((item) => (item as ItemRecord)._turnId).find((id): id is string =>
+    typeof id === "string" && id.length > 0
+  );
+  if (stamped) return stamped;
+  const firstId = images[0]?.id ?? split.assistantItem?.id ?? null;
+  return typeof firstId === "string" && firstId.length > 0 ? firstId : "gallery";
 }
 
 function desktopThinkingPlaceholderItem(segment: ThreadItem[], split: DesktopTurnSplit): ThreadItem {

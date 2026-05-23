@@ -33,6 +33,7 @@ export default function runRenderGroupsTests(): void {
   filtersNonHighRiskModelReroutesLikeCodexDesktop();
   projectsContextCompactionSnapshotStatusFromTurnState();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
+  projectsOfficialImageGenerationTurnOutputIntoGallery();
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
   injectsInProgressDiffAfterLatestUserMessage();
@@ -1143,6 +1144,138 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
   assertTextIncludes(planImplementation.text, "Implement renderer parity", "plan implementation content");
 }
 
+function projectsOfficialImageGenerationTurnOutputIntoGallery(): void {
+  const completed = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "1",
+      content: [{ type: "inputText", text: "generate an image" }],
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "official-image-result-1",
+      _turnId: "1",
+      status: "completed",
+      revisedPrompt: null,
+      result: "OFFICIALPNG",
+    } as unknown as ThreadItem,
+  ]);
+
+  const completedGallery = completed.units.find((unit) => unit.kind === "generatedImageGallery");
+  if (completedGallery?.kind !== "generatedImageGallery") {
+    throw new Error("official imageGeneration result should render as a generated image gallery");
+  }
+  assertEqual(completedGallery.key, "gallery:1", "official imageGeneration gallery key should use the turn id");
+  assertEqual(completedGallery.turnId, "1", "official imageGeneration gallery should stay inside the turn group");
+  assertEqual(completedGallery.images[0]?.id, "official-image-result-1", "official imageGeneration result should not be dropped");
+  assertEqual(completedGallery.hasPending, false, "completed official imageGeneration should not keep pending state");
+  assertDeepEqual(
+    completed.artifacts.map((entry) => ({ title: entry.title, meta: entry.meta, status: entry.status })),
+    [{ title: "Generated image", meta: "data:image/png;base64,OFFICIALPNG", status: "completed" }],
+    "completed generated images should also surface in right rail Outputs like Codex Desktop resources",
+  );
+
+  const pending = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-3",
+      _turnId: "3",
+      content: [{ type: "inputText", text: "generate another image" }],
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "official-image-pending-1",
+      _turnId: "3",
+      status: "inProgress",
+      revisedPrompt: null,
+      result: "",
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+
+  const pendingGallery = pending.units.find((unit) => unit.kind === "generatedImageGallery");
+  if (pendingGallery?.kind !== "generatedImageGallery") {
+    throw new Error("pending official imageGeneration should render the gallery pending placeholder");
+  }
+  assertEqual(pendingGallery.key, "gallery:3", "pending imageGeneration gallery key should use the turn id");
+  assertEqual(pendingGallery.turnId, "3", "pending imageGeneration gallery should stay inside the turn group");
+  assertEqual(pendingGallery.images.length, 0, "pending imageGeneration should not add an empty completed image");
+  assertEqual(pendingGallery.hasPending, true, "inProgress imageGeneration should render the pending placeholder");
+
+  const emptyStatus = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-empty-status",
+      _turnId: "empty-status",
+      content: [{ type: "inputText", text: "generate another image" }],
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "official-image-empty-status",
+      _turnId: "empty-status",
+      status: "",
+      revisedPrompt: null,
+      result: "",
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+  assertEqual(
+    emptyStatus.units.some((unit) => unit.kind === "generatedImageGallery"),
+    false,
+    "empty-status imageGeneration should not be pending without Desktop in_progress status",
+  );
+
+  const suppressedByPptx = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-pptx",
+      _turnId: "pptx-turn",
+      content: [{ type: "inputText", text: "generate slides" }],
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "official-image-for-deck",
+      _turnId: "pptx-turn",
+      status: "completed",
+      revisedPrompt: null,
+      result: "DECKPNG",
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-pptx",
+      _turnId: "pptx-turn",
+      text: "Created [deck](slides/deck.pptx)",
+      phase: "final",
+      memoryCitation: null,
+    } as unknown as ThreadItem,
+  ]);
+  assertEqual(
+    suppressedByPptx.units.some((unit) => unit.kind === "generatedImageGallery"),
+    false,
+    "assistant end-resource .pptx should suppress completed generated-image gallery like Codex Desktop",
+  );
+
+  const failed = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-4",
+      _turnId: "4",
+      content: [{ type: "inputText", text: "generate a failing image" }],
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "official-image-failed-1",
+      _turnId: "4",
+      status: "failed",
+      revisedPrompt: null,
+      result: "",
+    } as unknown as ThreadItem,
+  ]);
+
+  const failedEvent = eventByKey(failed, "official-image-failed-1");
+  assertEqual(failedEvent.label, "Generated image", "failed imageGeneration should fall back to a status event");
+  assertTextIncludes(failedEvent.text, "Status: failed", "failed imageGeneration status should stay visible");
+}
+
 function splitsTurnItemsIntoCodexDesktopBuckets(): void {
   const split = splitTurnItems([
     {
@@ -1308,6 +1441,14 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
     } as unknown as ThreadItem,
   ]);
 
+  /*
+   * Codex Desktop `JC` gallery aggregates all `generated-image` items in a
+   * turn into a single `generatedImageGallery` render unit (per zC/Ut
+   * pipeline at local-conversation-thread byte ~540170). HiCodex mirrors
+   * this — the lone generated-image item previously emitted as
+   * `event:generated-image-1` now appears as
+   * `generatedImageGallery:gallery:<turnId>` regardless of count.
+   */
   assertDeepEqual(
     projection.units.map((unit) => unit.kind === "message" ? `${unit.role}:${unit.key}` : `${unit.kind}:${unit.key}`),
     [
@@ -1315,7 +1456,7 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
       "user:user-1",
       "threadItem:item:exec:command-1",
       "assistant:assistant-1",
-      "event:generated-image-1",
+      "generatedImageGallery:gallery:turn-1",
       "threadItem:item:proposed-plan:plan-1",
       "event:diff-1",
       "event:remote-1",

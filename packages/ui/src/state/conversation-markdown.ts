@@ -38,6 +38,23 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
     // item, so the markdown export omits it — completed turns will already
     // include the final unifiedDiff as a regular threadItem.
     if (unit.kind === "inProgressDiff") continue;
+    /*
+     * `generatedImageGallery` is HiCodex's per-turn collected image carousel
+     * (Codex `JC`). Markdown export renders each image as a separate
+     * `![Generated image](src)` link rather than the carousel container.
+     */
+    if (unit.kind === "generatedImageGallery") {
+      if (unit.images.length === 0) continue;
+      const imageLinks = unit.images
+        .map((image, index) => {
+          const source = imageSourceForMarkdown(image);
+          return source ? `![Generated image ${index + 1}](${markdownImageTarget(source)})` : "";
+        })
+        .filter(Boolean)
+        .join("\n\n");
+      if (imageLinks) sections.push(details("Generated images", imageLinks));
+      continue;
+    }
 
     const body = unit.kind === "event"
       ? normalizedText(unit.text || itemText(unit.item)).trim()
@@ -47,6 +64,19 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
   }
 
   return `${sections.join("\n\n").trimEnd()}\n`;
+}
+
+function imageSourceForMarkdown(image: Record<string, unknown>): string {
+  for (const key of ["src", "imageUrl", "path", "url", "savedPath"]) {
+    const value = image[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  const result = image.result;
+  return typeof result === "string" && result.trim().length > 0 ? `data:image/png;base64,${result.trim()}` : "";
+}
+
+function markdownImageTarget(value: string): string {
+  return /[\s()<>]/.test(value) ? `<${value.replaceAll(">", "%3E")}>` : value;
 }
 
 function details(summary: string, body: string): string {

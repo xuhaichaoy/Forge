@@ -230,9 +230,10 @@ export async function loadSettingsPanelContent({
   }
 
   if (panel === "permissions" || panel === "approvals") {
+    const title = panel === "permissions" ? "Permissions" : "Approvals";
     setSettingsPanelState(createCommandPanelState("generic", {
       status: "ready",
-      title: panel === "permissions" ? "Permissions" : "Approvals",
+      title,
       entries: localSettingsEntries(panel, {
         pendingRequestCount: state.pendingRequests.length,
         threadContextDefaults: state.threadContextDefaults,
@@ -240,6 +241,33 @@ export async function loadSettingsPanelContent({
       }),
       message: "",
     }));
+    if (!state.connected) return;
+    try {
+      const requirements = await client.request<unknown>("configRequirements/read", {}, 120_000);
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title,
+        entries: localSettingsEntries(panel, {
+          pendingRequestCount: state.pendingRequests.length,
+          threadContextDefaults: state.threadContextDefaults,
+          connected: true,
+          requirements,
+        }),
+        message: "Loaded runtime requirement gates from app-server.",
+      }));
+    } catch (error) {
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title,
+        entries: localSettingsEntries(panel, {
+          pendingRequestCount: state.pendingRequests.length,
+          threadContextDefaults: state.threadContextDefaults,
+          connected: true,
+          requirementsError: formatError(error),
+        }),
+        message: "Could not load runtime requirement gates.",
+      }));
+    }
     return;
   }
 

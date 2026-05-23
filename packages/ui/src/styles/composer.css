@@ -281,6 +281,39 @@
   transform: rotate(-8deg);
 }
 
+/*
+ * Codex `pp` richLink chip (prosemirror byte ~453826). Renders the
+ * `displayText` with the full `href` as tooltip; no brand color and an
+ * external-link arrow glyph as the lead-in icon so users can tell at a
+ * glance it's a URL chip rather than a workspace mention.
+ */
+.hc-prompt-mention.hc-prompt-rich-link {
+  color: #345a8a;
+  background: rgba(52, 90, 138, 0.08);
+}
+
+.hc-prompt-mention.hc-prompt-rich-link::before {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  content: "";
+  /* Lucide-style external-link arrow rendered as a mask so it inherits
+   * `color` and matches sibling mention iconography. */
+  background-color: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M15 3h6v6'/><path d='M10 14L21 3'/><path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M15 3h6v6'/><path d='M10 14L21 3'/><path d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/></svg>");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.hc-app[data-theme="dark"] .hc-prompt-mention.hc-prompt-rich-link {
+  color: #91b7e0;
+  background: rgba(145, 183, 224, 0.15);
+}
+
 .hc-composer-plus {
   display: grid;
   place-items: center;

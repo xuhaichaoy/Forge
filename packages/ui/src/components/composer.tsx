@@ -263,6 +263,14 @@ export function Composer({
         return;
       }
 
+      /*
+       * Codex Desktop scopes file drag/drop to the composer drop target:
+       * `composer-DXaiOlFj.pretty.js` registers drag/drop listeners on the
+       * composer element (`V`) and its inner composer surface, not the whole
+       * conversation window. Tauri native file-drop events arrive at the
+       * webview level, so HiCodex keeps this listener but applies the same
+       * composer hit-test before showing active state or accepting paths.
+       */
       const insideComposer = event.position
         ? isNativeDropInsideElement(composerFieldRef.current, event.position)
         : false;
@@ -273,6 +281,7 @@ export function Composer({
 
       if (event.type === "drop") {
         setDropActive(false);
+        if (event.paths.length === 0) return;
         if (!insideComposer) return;
         addAttachmentPaths(event.paths);
         requestComposerFocus(promptEditorRef.current);
@@ -492,7 +501,8 @@ export function Composer({
     const isSkill = option.kind === "skill";
     const isApp = option.kind === "app";
     const isPlugin = option.kind === "plugin";
-    if (isSkill || isApp || isPlugin) {
+    const isAgent = option.kind === "agent";
+    if (isSkill || isApp || isPlugin || isAgent) {
       if (trigger) {
         const inserted = replacePromptEditorTextRangeWithMention(promptEditorRef.current, {
           kind: option.kind,
@@ -500,6 +510,8 @@ export function Composer({
           displayName: mentionOptionDisplayName(option),
           path: option.path,
           description: option.description ?? option.detail,
+          iconSmall: option.iconSmall ?? undefined,
+          brandColor: option.brandColor ?? undefined,
         }, { from: trigger.from, to: trigger.to });
         if (!inserted) {
           onInputChange(replaceMentionTriggerText(input, trigger, mentionPromptReference(option)));
@@ -1333,7 +1345,8 @@ function mentionOptionPrefix(option: ComposerMentionOption): string {
 
 function mentionPromptReference(option: ComposerMentionOption): string {
   const name = option.name || mentionOptionName(option);
-  const prefix = option.kind === "plugin" ? "@" : "$";
+  // skill/app 用 $ 前缀；plugin/agent 用 @；file 走文件路径不走这里
+  const prefix = option.kind === "plugin" || option.kind === "agent" ? "@" : "$";
   return `[${prefix}${name}](${escapePromptPath(option.path)}) `;
 }
 

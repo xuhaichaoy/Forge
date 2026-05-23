@@ -137,10 +137,11 @@ function buildsPaginatedThreadListParams(): void {
     {
       archived: false,
       limit: 100,
+      modelProviders: [],
       sortKey: "updated_at",
       sortDirection: "desc",
     },
-    "first thread list page should request recent non-archived history",
+    "first thread list page should request recent non-archived history across provider overrides",
   );
   assertDeepEqual(
     buildThreadListParams("cursor-2"),
@@ -148,6 +149,7 @@ function buildsPaginatedThreadListParams(): void {
       archived: false,
       cursor: "cursor-2",
       limit: 100,
+      modelProviders: [],
       sortKey: "updated_at",
       sortDirection: "desc",
     },

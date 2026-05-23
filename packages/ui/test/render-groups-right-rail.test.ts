@@ -15,6 +15,7 @@ export default function runRenderGroupsRightRailTests(): void {
   resolvesBareImageLinksAgainstCommandOutputPaths();
   projectsGeneratedImageSourcesIntoArtifacts();
   excludesNodeReplSourcesButKeepsMcpAndWebSearchSources();
+  ordersMcpSourcesNewestFirstAndUsesPluginDisplayNames();
 }
 
 function usesLatestTodoListPlanForProgress(): void {
@@ -607,6 +608,57 @@ function excludesNodeReplSourcesButKeepsMcpAndWebSearchSources(): void {
       { id: "webSearch", title: "Web search", meta: null, status: null, action: null },
     ],
     "sources should exclude node_repl and dedupe MCP/web sources like Codex Desktop",
+  );
+}
+
+function ordersMcpSourcesNewestFirstAndUsesPluginDisplayNames(): void {
+  const projection = projectConversation([
+    {
+      type: "mcpToolCall",
+      id: "gmail-old",
+      server: "gmail",
+      tool: "send_email",
+      status: "completed",
+      arguments: {},
+      result: { ok: true },
+      error: null,
+    } as ThreadItem,
+    {
+      type: "mcpToolCall",
+      id: "linear-new",
+      server: "linear",
+      tool: "create_issue",
+      status: "completed",
+      arguments: {},
+      result: { ok: true },
+      error: null,
+    } as ThreadItem,
+  ], {
+    appRegistry: [
+      {
+        id: "app:gmail",
+        name: "Google Workspace",
+        pluginDisplayNames: ["Gmail"],
+        logoUrl: "https://example.com/gmail-light.png",
+        logoUrlDark: "https://example.com/gmail-dark.png",
+      },
+      {
+        id: "app:linear",
+        name: "Linear",
+        pluginDisplayNames: [],
+        logoUrl: null,
+        logoUrlDark: null,
+      },
+    ],
+  });
+
+  assertDeepEqual(
+    projection.sources.map((entry) => ({ id: entry.id, title: entry.title })),
+    [
+      { id: "app:linear", title: "Linear" },
+      { id: "app:gmail", title: "Gmail" },
+    ],
+    "MCP sources should match Desktop newest-first ordering and prefer pluginDisplayNames for titles",
   );
 }
 

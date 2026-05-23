@@ -38,6 +38,12 @@ export interface PromptEditorMentionInput {
   displayName?: string;
   path: string;
   description?: string;
+  /**
+   * Current-session registry metadata used only by the editor chip render path.
+   * It is not part of the app-server UserInput transcript payload.
+   */
+  iconSmall?: string;
+  brandColor?: string;
 }
 
 class PromptEditorEmitter {
@@ -505,6 +511,14 @@ export function movePromptEditorCursorToEnd(element: HTMLElement | null): void {
   selection.addRange(range);
 }
 
+/*
+ * 通用 mention NodeSpec — 复用给 5 种 mention 节点（atMention / agentMention /
+ * skillMention / appMention / pluginMention）。
+ *
+ * attrs 含 {name, displayName, path, fsPath, conversationId, description, iconSmall, brandColor}。
+ * iconSmall/brandColor 在 toDOM 中通过 data-icon-small / data-brand-color 序列化，
+ * parseDOM 反序列化时读回；style="color: …" 让 chip 带品牌色。
+ */
 const mentionNodeSpec: NodeSpec = {
   inline: true,
   group: "inline",
@@ -515,6 +529,8 @@ const mentionNodeSpec: NodeSpec = {
     name: { default: "" },
     displayName: { default: "" },
     path: { default: "" },
+    fsPath: { default: "" },
+    conversationId: { default: "" },
     description: { default: "" },
     iconSmall: { default: "" },
     brandColor: { default: "" },
@@ -528,6 +544,11 @@ const mentionNodeSpec: NodeSpec = {
         name: node.getAttribute("data-name") ?? "",
         displayName: node.getAttribute("data-display-name") ?? "",
         path: node.getAttribute("data-path") ?? "",
+        fsPath: node.getAttribute("data-fs-path") ?? "",
+        conversationId: node.getAttribute("data-conversation-id") ?? "",
+        description: node.getAttribute("data-description") ?? "",
+        iconSmall: node.getAttribute("data-icon-small") ?? "",
+        brandColor: node.getAttribute("data-brand-color") ?? "",
       };
     },
   }],
@@ -539,11 +560,87 @@ const mentionNodeSpec: NodeSpec = {
       "data-name": node.attrs.name,
       "data-display-name": node.attrs.displayName,
       "data-path": node.attrs.path,
+      ...(node.attrs.fsPath ? { "data-fs-path": node.attrs.fsPath } : {}),
+      ...(node.attrs.conversationId ? { "data-conversation-id": node.attrs.conversationId } : {}),
+      ...(node.attrs.description ? { "data-description": node.attrs.description } : {}),
+      ...(node.attrs.iconSmall ? { "data-icon-small": node.attrs.iconSmall } : {}),
+      ...(node.attrs.brandColor ? { "data-brand-color": node.attrs.brandColor } : {}),
       class: "hc-prompt-mention",
       "data-prompt-mention-kind": node.type.name,
       ...(node.attrs.description ? { title: node.attrs.description } : {}),
+      ...(node.attrs.brandColor ? { style: `color: ${node.attrs.brandColor}` } : {}),
     },
     promptMentionDisplayText(node),
+  ],
+};
+
+/*
+ * Codex `pp` (prosemirror-PI_17HLA.js byte ~453826) — richLink NodeSpec.
+ * External markdown links like `[label](https://example.com)` become an
+ * inline chip carrying displayText + href, rendered as non-clickable text
+ * with a tooltip showing the full URL.
+ *
+ *   pp = {
+ *     attrs: {
+ *       displayText: { validate: "string" },
+ *       href: { validate: "string" },
+ *       sourceAppId: { validate: "string" },
+ *     },
+ *     atom: true,
+ *     draggable: false,
+ *     group: "inline",
+ *     inline: true,
+ *     selectable: false,
+ *     toDOM: e => up({
+ *       dataAttributes: {
+ *         "rich-link-display-text": ...,
+ *         "rich-link-href": ...,
+ *         "rich-link-source-app-id": ...,
+ *       },
+ *       icon: Ie(sourceAppId) ?? se,
+ *       text: displayText,
+ *       tooltipText: href,
+ *     }),
+ *     ...
+ *   }
+ *
+ * Codex only builds this chip for http/https URLs whose host maps to a known
+ * external app source. Unsupported URL-like paths stay as literal markdown text.
+ */
+const richLinkNodeSpec: NodeSpec = {
+  inline: true,
+  group: "inline",
+  atom: true,
+  draggable: false,
+  selectable: false,
+  attrs: {
+    displayText: { default: "" },
+    href: { default: "" },
+    sourceAppId: { default: "" },
+  },
+  parseDOM: [{
+    tag: "span[data-prompt-rich-link]",
+    getAttrs: (node) => {
+      if (!(node instanceof HTMLElement)) return false;
+      return {
+        displayText: node.getAttribute("rich-link-display-text") ?? "",
+        href: node.getAttribute("rich-link-href") ?? "",
+        sourceAppId: node.getAttribute("rich-link-source-app-id") ?? "",
+      };
+    },
+  }],
+  toDOM: (node) => [
+    "span",
+    {
+      "data-prompt-rich-link": "true",
+      "rich-link-display-text": node.attrs.displayText,
+      "rich-link-href": node.attrs.href,
+      "rich-link-source-app-id": node.attrs.sourceAppId,
+      class: "hc-prompt-mention hc-prompt-rich-link",
+      // Tooltip = full URL (matches Codex `tooltipText: e.attrs.href`).
+      title: node.attrs.href,
+    },
+    node.attrs.displayText || node.attrs.href,
   ],
 };
 
@@ -562,11 +659,25 @@ const promptEditorSchema = new Schema({
     skillMention: mentionNodeSpec,
     appMention: mentionNodeSpec,
     pluginMention: mentionNodeSpec,
+    richLink: richLinkNodeSpec,
   },
   marks: {},
 });
 
 const placeholderPluginKey = new PluginKey<{ placeholder: string }>("prompt-placeholder");
+
+const EXTERNAL_LINK_SOURCE_HOSTS: Array<{ appId: string; hostnames: string[] }> = [
+  { appId: "google-calendar", hostnames: ["calendar.google.com"] },
+  { appId: "google-drive", hostnames: ["docs.google.com", "drive.google.com", "sheets.google.com", "slides.google.com"] },
+  { appId: "figma", hostnames: ["figma.com"] },
+  { appId: "github", hostnames: ["github.com"] },
+  { appId: "linear", hostnames: ["linear.app"] },
+  { appId: "gmail", hostnames: ["mail.google.com"] },
+  { appId: "notion", hostnames: ["notion.so"] },
+  { appId: "slack", hostnames: ["slack.com"] },
+];
+
+const URL_LIKE_PROMPT_PATH = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.|mailto:|tel:)/;
 
 function placeholderPlugin(placeholder: string): Plugin<{ placeholder: string }> {
   return new Plugin({
@@ -613,6 +724,28 @@ function promptTextToDoc({ schema, text }: { schema: Schema; text: string }): Pr
     : [paragraph.create()]);
 }
 
+export function promptEditorInlineNodesForTest(text: string): Array<{ type: string; attrs: Record<string, unknown>; text?: string }> {
+  const doc = promptTextToDoc({ schema: promptEditorSchema, text });
+  const nodes: Array<{ type: string; attrs: Record<string, unknown>; text?: string }> = [];
+  doc.descendants((node) => {
+    if (node.type.name === "paragraph") return true;
+    if (node.isText) {
+      nodes.push({ type: "text", attrs: {}, text: node.text ?? "" });
+      return false;
+    }
+    if (node.isInline) {
+      nodes.push({ type: node.type.name, attrs: { ...node.attrs } });
+      return false;
+    }
+    return true;
+  });
+  return nodes;
+}
+
+export function promptEditorPromptTextRoundTripForTest(text: string): string {
+  return docToPromptText(promptTextToDoc({ schema: promptEditorSchema, text })).content;
+}
+
 function promptInlineNodes(schema: Schema, line: string): Fragment | null {
   const nodes: ProseMirrorNode[] = [];
   const markdownLink = /\[([^\]]+)\]\(((?:\\.|[^)])+)\)/g;
@@ -637,14 +770,70 @@ function promptMentionNode(schema: Schema, label: string, path: string): ProseMi
   if (path.startsWith("app://")) {
     return schema.nodes.appMention.create({ label: `$${name}`, name, displayName: name, path });
   }
-  if (path.startsWith("skill://") || label.startsWith("$")) {
+  if (path.startsWith("skill://")) {
     return schema.nodes.skillMention.create({ label: `$${name}`, name, displayName: name, path });
   }
-  if (path.startsWith("agent://") || label.startsWith("@")) {
-    return schema.nodes.agentMention.create({ label, name, displayName: name, path });
+  if (isAgentMentionPath(path)) {
+    return schema.nodes.agentMention.create({
+      label,
+      name,
+      displayName: name,
+      path,
+      conversationId: conversationIdFromAgentPath(path),
+    });
   }
-  if (/^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.|mailto:|tel:)/.test(path)) return null;
-  return schema.nodes.atMention.create({ label, name: label, displayName: label, path });
+  const sourceAppId = externalLinkSourceAppId(path);
+  if (sourceAppId) {
+    return schema.nodes.richLink.create({
+      displayText: label,
+      href: path,
+      sourceAppId,
+    });
+  }
+  if (URL_LIKE_PROMPT_PATH.test(path)) return null;
+  if (label.startsWith("$")) {
+    return schema.nodes.skillMention.create({ label: `$${name}`, name, displayName: name, path });
+  }
+  return schema.nodes.atMention.create({ label, name: label, displayName: label, path, fsPath: path });
+}
+
+function externalLinkSourceAppId(href: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const hostname = url.hostname.toLowerCase();
+  for (const source of EXTERNAL_LINK_SOURCE_HOSTS) {
+    if (source.hostnames.some((candidate) => hostname === candidate || hostname.endsWith(`.${candidate}`))) {
+      return source.appId;
+    }
+  }
+  return null;
+}
+
+function isAgentMentionPath(path: string): boolean {
+  return /^(?:agent|subagent):\/\//i.test(path) || /(?:^|[?&#])(?:conversationId|conversation_id|threadId)=/i.test(path);
+}
+
+function conversationIdFromAgentPath(path: string): string {
+  try {
+    const url = new URL(path);
+    const fromQuery = url.searchParams.get("conversationId")
+      ?? url.searchParams.get("conversation_id")
+      ?? url.searchParams.get("threadId");
+    if (fromQuery) return fromQuery;
+    if (/^(?:agent|subagent):$/i.test(url.protocol)) {
+      const pathId = url.pathname.replace(/^\/+/, "").split("/", 1)[0] ?? "";
+      return url.hostname || pathId;
+    }
+  } catch {
+    const queryId = path.match(/(?:^|[?&#])(?:conversationId|conversation_id|threadId)=([^&#]+)/i)?.[1];
+    if (queryId) return decodeURIComponent(queryId);
+  }
+  return "";
 }
 
 function docToPromptText(doc: ProseMirrorNode): { content: string; metadata: Record<string, never> } {
@@ -673,6 +862,10 @@ function docFragmentToPromptText(fragment: Fragment): { content: string; metadat
       text += node.text;
       return;
     }
+    if (node.type.name === "richLink") {
+      text += promptRichLinkSerializedText(node);
+      return;
+    }
     if (isMentionNode(node)) {
       const path = String(node.attrs.path || "");
       const label = promptMentionSerializedLabel(node);
@@ -688,17 +881,32 @@ function promptMentionNodeFromInput(schema: Schema, mention: PromptEditorMention
   if (!path || !name) return null;
   const displayName = mention.displayName?.trim() || name;
   const description = mention.description?.trim() || "";
+  const iconSmall = mention.iconSmall?.trim() || "";
+  const brandColor = mention.brandColor?.trim() || "";
+  /*
+   * Keep editor-only registry metadata on the ProseMirror node so a live chip
+   * can round-trip through toDOM/parseDOM during the current edit session.
+   */
   switch (kind) {
     case "skill":
-      return schema.nodes.skillMention.create({ label: `$${name}`, name, displayName, path, description });
+      return schema.nodes.skillMention.create({ label: `$${name}`, name, displayName, path, description, iconSmall, brandColor });
     case "app":
-      return schema.nodes.appMention.create({ label: `$${name}`, name, displayName, path, description });
+      return schema.nodes.appMention.create({ label: `$${name}`, name, displayName, path, description, iconSmall, brandColor });
     case "plugin":
-      return schema.nodes.pluginMention.create({ label: `@${name}`, name, displayName, path, description });
+      return schema.nodes.pluginMention.create({ label: `@${name}`, name, displayName, path, description, iconSmall, brandColor });
     case "agent":
-      return schema.nodes.agentMention.create({ label: `@${name}`, name, displayName, path, description });
+      return schema.nodes.agentMention.create({
+        label: `@${name}`,
+        name,
+        displayName,
+        path,
+        conversationId: conversationIdFromAgentPath(path),
+        description,
+        iconSmall,
+        brandColor,
+      });
     case "file":
-      return schema.nodes.atMention.create({ label: displayName || name, name, displayName, path, description });
+      return schema.nodes.atMention.create({ label: displayName || name, name, displayName, path, fsPath: path, description, iconSmall, brandColor });
   }
 }
 
@@ -760,12 +968,19 @@ function promptTextOffsetToDocPos(doc: ProseMirrorNode, offset: number): number 
 
 function promptNodeSerializedText(node: ProseMirrorNode): string {
   if (node.isText) return node.text ?? "";
+  if (node.type.name === "richLink") return promptRichLinkSerializedText(node);
   if (isMentionNode(node)) {
     const label = promptMentionSerializedLabel(node);
     const path = String(node.attrs.path || "");
     return label && path ? `[${label}](${escapePromptPath(path)})` : "";
   }
   return "";
+}
+
+function promptRichLinkSerializedText(node: ProseMirrorNode): string {
+  const href = String(node.attrs.href || "");
+  const displayText = String(node.attrs.displayText || "") || href;
+  return href ? `[${displayText}](${escapePromptPath(href)})` : "";
 }
 
 function promptMentionSerializedLabel(node: ProseMirrorNode): string {

@@ -65,8 +65,7 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
       const path = stringField(record, "path");
       const label = stringField(record, "name") || path;
       if (!label && !path) return [];
-      // If the mention points at a local file path (no URL scheme), render as a
-      // file chip with a file-type icon. Otherwise stay a generic @mention.
+      // 本地文件路径 → file chip
       if (path && isLocalFilePath(path)) {
         return [{
           kind: "chip",
@@ -76,12 +75,34 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
           fileExtension: extensionOf(path),
         }];
       }
-      return [{ kind: "chip", chipKind: "mention", label: label || path, path }];
+      /*
+       * URL scheme dispatch is a view concern. Protocol UserInput.Mention only
+       * carries { name, path }, so replayed transcript chips render without
+       * registry-only metadata.
+       */
+      const trimmedPath = path?.trim() ?? "";
+      let chipKind: "app" | "plugin" | "agent" | "mention" = "mention";
+      if (/^app:\/\//i.test(trimmedPath)) chipKind = "app";
+      else if (/^plugin:\/\//i.test(trimmedPath)) chipKind = "plugin";
+      else if (/^(?:agent|subagent):\/\//i.test(trimmedPath)) chipKind = "agent";
+      return [{
+        kind: "chip",
+        chipKind,
+        label: label || path,
+        path,
+      }];
     }
     case "skill": {
       const path = stringField(record, "path");
       const label = stringField(record, "name") || path;
-      return label || path ? [{ kind: "chip", chipKind: "skill", label: label || path, path }] : [];
+      if (!label && !path) return [];
+      /* Protocol UserInput.Skill only carries { name, path }. */
+      return [{
+        kind: "chip",
+        chipKind: "skill",
+        label: label || path,
+        path,
+      }];
     }
     default: {
       const text = userInputPartText(part);

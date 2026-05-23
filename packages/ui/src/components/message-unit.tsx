@@ -328,10 +328,17 @@ function UserMessageUnit({
 }
 
 function shouldRenderUserMessageBubble(unit: MessageRenderUnit): boolean {
-  const hasAttachments = unit.userContent?.some((part) => part.kind !== "text") ?? false;
-  const hasText = (unit.userContent?.some((part) => part.kind === "text" && part.text.trim().length > 0) ?? false)
-    || unit.text.trim().length > 0;
-  return hasText || !hasAttachments;
+  /*
+   * Codex puts every non-image piece of the user message — prose plus
+   * `$skill` / `@path` chips — inside the bubble (`Lc`/`Oe`). Only the
+   * `n.images` strip lives outside. So the bubble renders whenever there
+   * is any non-image content. A pure-image message keeps the bubble
+   * suppressed (matches Codex hiding the bubble when `n.message` is
+   * empty).
+   */
+  const content = unit.userContent ?? [];
+  if (content.length === 0) return unit.text.trim().length > 0;
+  return content.some((part) => part.kind !== "image");
 }
 
 function UserEditForm({

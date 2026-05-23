@@ -114,12 +114,14 @@ export function localSettingsEntries(
     pendingRequestCount: number;
     threadContextDefaults: Parameters<typeof projectPermissionModeCommandEntries>[0];
     connected: boolean;
+    requirements?: unknown;
+    requirementsError?: string | null;
   },
 ): CommandPanelEntry[] {
   const permissionModeStatus = permissionModeFromThreadContext(context.threadContextDefaults);
   if (panel === "permissions") {
     return [
-      ...projectPermissionModeCommandEntries(context.threadContextDefaults),
+      ...projectPermissionModeCommandEntries(context.threadContextDefaults, context.requirements),
       ...(permissionModeStatus === "custom" ? [{
         id: "permissions:custom-status",
         title: "Custom/degraded permissions",
@@ -138,6 +140,14 @@ export function localSettingsEntries(
         status: context.connected ? "connected" : "offline",
         meta: "Permissions are enforced by app-server requests",
       },
+      ...(context.requirementsError ? [{
+        id: "permissions:requirements-error",
+        title: "Runtime requirements",
+        kind: "status" as const,
+        status: "unavailable",
+        meta: context.requirementsError,
+        details: ["configRequirements/read failed; showing local config-derived permission modes only."],
+      }] : []),
     ];
   }
 
@@ -167,6 +177,16 @@ export function localSettingsEntries(
       status: String(context.pendingRequestCount),
       meta: "Shown above the composer when app-server asks for a decision",
     },
+    ...projectPermissionModeCommandEntries(context.threadContextDefaults, context.requirements)
+      .filter((entry) => entry.id === "permissions:requirements"),
+    ...(context.requirementsError ? [{
+      id: "approvals:requirements-error",
+      title: "Runtime requirements",
+      kind: "status" as const,
+      status: "unavailable",
+      meta: context.requirementsError,
+      details: ["configRequirements/read failed; approval choices may still be restricted by app-server."],
+    }] : []),
   ];
 }
 

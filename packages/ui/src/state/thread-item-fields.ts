@@ -123,7 +123,7 @@ export function isThreadStatusInProgress(status: unknown): boolean {
 export function isItemInProgress(item: ThreadItem): boolean {
   const record = item as ItemRecord;
   const status = record.status;
-  if (status === "inProgress" || status === "running" || status === "pending" || status === "streaming") return true;
+  if (status === "inProgress" || status === "in_progress" || status === "running" || status === "pending" || status === "streaming") return true;
   if (itemType(item) === "worked-for") return status === "working";
   // Codex Desktop's split-items activity predicate treats reasoning as active
   // while the protocol item has not completed.

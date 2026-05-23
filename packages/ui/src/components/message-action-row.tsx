@@ -3,6 +3,7 @@ import {
   Copy,
 } from "lucide-react";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 
 export function MessageActionRow({
@@ -81,12 +82,28 @@ export function IconActionButton({
 }
 
 function CopyFeedbackToast() {
-  return (
+  /*
+   * `.hc-copy-toast` uses `position: fixed`, but the conversation scroll
+   * container (`hc-thread-scroll-body` in conversation.css:46) has
+   * `transform: translateX(...)` for inline-side-panel offsets. When a fixed
+   * descendant lives under a transformed ancestor, the CSS spec re-roots its
+   * coordinate system to that ancestor instead of the viewport — so the
+   * toast ended up trapped behind the user message bubble (HiCodex screenshot
+   * 2026-05-21 "复制提示被盖住"). Render into `document.body` via a portal so
+   * the toast escapes any transformed scroll container and stays anchored at
+   * the top of the actual viewport.
+   *
+   * SSR / non-browser fallback: returns the bare node so React can still
+   * render to string without portal infrastructure.
+   */
+  const toast = (
     <div className="hc-copy-toast" role="status" aria-live="polite">
       <span className="hc-copy-toast-icon" aria-hidden="true"><Check size={15} /></span>
       <span>Copied to clipboard</span>
     </div>
   );
+  if (typeof document === "undefined") return toast;
+  return createPortal(toast, document.body);
 }
 
 function formatMessageSentAt(sentAtMs: number): string {

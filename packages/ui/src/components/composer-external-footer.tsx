@@ -437,10 +437,20 @@ function formatPermissionsFooterTitle(
 }
 
 function formatReasoningEffort(value?: unknown): string {
+  /*
+   * Codex Desktop `T(e)` (reasoning-minimal-Dqbs-2JZ.js) — 6 labels:
+   *   composer.mode.local.reasoning.none.label    = "None"
+   *   composer.mode.local.reasoning.minimal.label = "Minimal"
+   *   composer.mode.local.reasoning.low.label     = "Low"
+   *   composer.mode.local.reasoning.medium.label  = "Medium"
+   *   composer.mode.local.reasoning.high.label    = "High"
+   *   composer.mode.local.reasoning.xhigh.label   = "Extra High"
+   * HiCodex previously rendered `none` as "No reasoning"; aligned to "None".
+   */
   if (typeof value !== "string") return "";
   const normalized = value.trim().toLowerCase();
   if (!normalized) return "";
-  if (normalized === "none") return "No reasoning";
+  if (normalized === "none") return "None";
   if (normalized === "minimal") return "Minimal";
   if (normalized === "xhigh" || normalized === "extra_high") return "Extra High";
   if (normalized === "high") return "High";

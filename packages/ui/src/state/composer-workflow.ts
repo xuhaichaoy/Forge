@@ -152,6 +152,10 @@ export type AttachActionId =
   | "plan"
   | "plugins";
 
+/*
+ * UI attachment state. buildUserInputFromComposer maps it back to the protocol
+ * UserInput surface: text/image/localImage/skill/mention.
+ */
 export type ComposerAttachment =
   | { type: "mention"; name: string; path: string }
   | { type: "localImage"; path: string; detail?: ImageDetail }
@@ -161,7 +165,8 @@ export type ComposerAttachment =
   | { type: "filePath"; path: string };
 
 export interface ComposerMentionOption {
-  kind?: "file" | "skill" | "app" | "plugin";
+  /* UI mention category. Protocol serialization still uses skill/mention. */
+  kind?: "file" | "skill" | "app" | "plugin" | "agent";
   name: string;
   displayName?: string;
   description?: string;
@@ -170,6 +175,9 @@ export interface ComposerMentionOption {
   detail?: string;
   promptText?: string;
   score?: number;
+  /** Current-session registry metadata for editor chip rendering. */
+  iconSmall?: string | null;
+  brandColor?: string | null;
 }
 
 export type ComposerMentionMarker = "@" | "$";

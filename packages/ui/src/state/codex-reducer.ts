@@ -649,6 +649,8 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
         ),
       };
     }
+    case "thread/settings/updated":
+      return applyThreadSettingsUpdatedNotification(state, params);
     case "thread/archived":
     case "thread/closed": {
       const threadId = String(params.threadId ?? "");
@@ -880,6 +882,119 @@ function applyThreadGoalClearedNotification(state: CodexUiState, params: Record<
     threadGoalTurnId: null,
     items: clearThreadGoalProjection(runtime.items),
   });
+}
+
+function applyThreadSettingsUpdatedNotification(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+): CodexUiState {
+  const threadId = stringParam(params, "threadId");
+  const settings = recordParam(params.threadSettings);
+  if (!threadId || !settings) return state;
+
+  const cwd = stringParam(settings, "cwd");
+  const modelProvider = stringParam(settings, "modelProvider");
+  const context = threadContextDefaultsFromThreadSettings(settings);
+  const collaborationMode = collaborationModeParam(settings.collaborationMode);
+  const runtime = selectThreadRuntime(state, threadId);
+  const nextRuntime = collaborationMode === undefined
+    ? runtime
+    : normalizeThreadRuntime({
+        ...runtime,
+        latestCollaborationMode: collaborationMode,
+        composerMode: null,
+      });
+  return withActiveComposerMode({
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.id === threadId
+        ? {
+            ...thread,
+            ...(cwd ? { cwd } : {}),
+            ...(modelProvider ? { modelProvider } : {}),
+          }
+        : thread,
+    ),
+    threadsRuntime: collaborationMode === undefined
+      ? state.threadsRuntime
+      : {
+          ...state.threadsRuntime,
+          [threadId]: nextRuntime,
+        },
+    threadContextDefaults: state.activeThreadId === threadId
+      ? mergeThreadContextDefaults(state.threadContextDefaults, context)
+      : state.threadContextDefaults,
+  });
+}
+
+function threadContextDefaultsFromThreadSettings(settings: Record<string, unknown>): ThreadContextDefaults {
+  return compactThreadContext({
+    model: stringParam(settings, "model"),
+    modelProvider: stringParam(settings, "modelProvider"),
+    serviceTier: settings.serviceTier,
+    approvalPolicy: settings.approvalPolicy,
+    approvalsReviewer: stringParam(settings, "approvalsReviewer"),
+    sandbox: sandboxModeFromSandboxPolicy(settings.sandboxPolicy),
+    permissions: permissionsFromActivePermissionProfile(settings.activePermissionProfile),
+    reasoningEffort: settings.effort,
+    reasoningSummary: settings.summary,
+    personality: personalityParam(settings.personality),
+  });
+}
+
+function mergeThreadContextDefaults(
+  current: ThreadContextDefaults | null,
+  settings: ThreadContextDefaults,
+): ThreadContextDefaults | null {
+  const preserved = compactThreadContext({
+    baseInstructions: current?.baseInstructions,
+    developerInstructions: current?.developerInstructions,
+    environments: current?.environments,
+    memories: current?.memories,
+  });
+  const next = compactThreadContext({ ...preserved, ...settings });
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+function compactThreadContext(context: ThreadContextDefaults): ThreadContextDefaults {
+  return Object.fromEntries(
+    Object.entries(context).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+  ) as ThreadContextDefaults;
+}
+
+function sandboxModeFromSandboxPolicy(value: unknown): unknown {
+  const policy = recordParam(value);
+  const type = stringParam(policy, "type");
+  switch (type) {
+    case "dangerFullAccess":
+      return "danger-full-access";
+    case "readOnly":
+      return "read-only";
+    case "workspaceWrite":
+      return "workspace-write";
+    case "externalSandbox":
+      return policy;
+    default:
+      return undefined;
+  }
+}
+
+function permissionsFromActivePermissionProfile(value: unknown): string | undefined {
+  return stringParam(value, "id") || undefined;
+}
+
+function personalityParam(value: unknown): ThreadContextDefaults["personality"] | undefined {
+  return value === "none" || value === "friendly" || value === "pragmatic" ? value : undefined;
+}
+
+function collaborationModeParam(value: unknown): CollaborationMode | null | undefined {
+  if (value === null) return null;
+  const mode = recordParam(value);
+  if (!mode) return undefined;
+  const kind = stringParam(mode, "mode");
+  if (kind !== "plan" && kind !== "default") return undefined;
+  if (!recordParam(mode.settings)) return undefined;
+  return mode as unknown as CollaborationMode;
 }
 
 function nextActiveThreadId(activeThreadId: string | null, threads: Thread[]): string | null {

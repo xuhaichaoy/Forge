@@ -52,9 +52,42 @@ export type CommandPanelEntryKind =
 
 export type CommandPanelEntryAction =
   | { type: "attachMention"; name: string; path: string }
-  | { type: "attachSkill"; name: string; path: string; promptText?: string }
-  | { type: "attachApp"; name: string; path: string; promptText: string }
-  | { type: "attachPlugin"; name: string; path: string; promptText: string }
+  | {
+      type: "attachSkill";
+      name: string;
+      path: string;
+      promptText?: string;
+      /*
+       * SkillInterface 字段 — 透传给 chip 渲染（协议字段名见
+       * packages/codex-protocol/src/generated/v2/SkillInterface.ts）。
+       */
+      iconSmall?: string | null;
+      brandColor?: string | null;
+    }
+  | {
+      type: "attachApp";
+      name: string;
+      path: string;
+      promptText: string;
+      /*
+       * AppInfo.logoUrl / logoUrlDark — 透传给 chip 渲染（协议字段名见
+       * packages/codex-protocol/src/generated/v2/AppInfo.ts）。
+       */
+      iconSmall?: string | null;
+      brandColor?: string | null;
+    }
+  | {
+      type: "attachPlugin";
+      name: string;
+      path: string;
+      promptText: string;
+      /*
+       * PluginInterface composerIcon(Url) / logo(Url) / brandColor — 透传给 chip
+       * 渲染（协议字段名见 packages/codex-protocol/src/generated/v2/PluginInterface.ts）。
+       */
+      iconSmall?: string | null;
+      brandColor?: string | null;
+    }
   | { type: "selectThread"; threadId: string }
   | {
       type: "writeConfig";
@@ -676,12 +709,30 @@ function pluginEntryFromProjectionContext(
       fieldText(effectivePlugin, "authPolicy") && `Auth: ${fieldText(effectivePlugin, "authPolicy")}`,
     ]),
     disabled: mentionable ? undefined : true,
-    action: mentionable ? {
-      type: "attachPlugin",
-      name: mentionName,
-      path: promptPath,
-      promptText: pluginPromptText(mentionName, promptPath, pluginDefaultPrompt(effectivePlugin)),
-    } : undefined,
+    /*
+     * PluginInterface 字段透传 — composerIcon(Url) / logo(Url) / brandColor。
+     * 协议字段名来自 packages/codex-protocol/src/generated/v2/PluginInterface.ts：
+     *   - composerIcon: 本地路径 / composerIconUrl: 远程 URL
+     *   - logo: 本地路径 / logoUrl: 远程 URL
+     *   - brandColor: hex 字符串
+     */
+    action: mentionable
+      ? (() => {
+          const pluginIconSmall = fieldText(interfaceInfo, "composerIcon")
+            || fieldText(interfaceInfo, "composerIconUrl")
+            || fieldText(interfaceInfo, "logo")
+            || fieldText(interfaceInfo, "logoUrl");
+          const pluginBrandColor = fieldText(interfaceInfo, "brandColor");
+          return {
+            type: "attachPlugin" as const,
+            name: mentionName,
+            path: promptPath,
+            promptText: pluginPromptText(mentionName, promptPath, pluginDefaultPrompt(effectivePlugin)),
+            ...(pluginIconSmall ? { iconSmall: pluginIconSmall } : {}),
+            ...(pluginBrandColor ? { brandColor: pluginBrandColor } : {}),
+          };
+        })()
+      : undefined,
     secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
   };
 }
@@ -852,6 +903,12 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
   const path = fieldText(skill, "path");
   const scope = fieldText(skill, "scope");
   const defaultPrompt = fieldText(interfaceInfo, "defaultPrompt");
+  /*
+   * SkillInterface 字段提取（iconSmall / brandColor）— 透传到 attachSkill action。
+   * 字段来自 `skills/list` RPC 响应（packages/codex-protocol/src/generated/v2/SkillInterface.ts）。
+   */
+  const iconSmall = fieldText(interfaceInfo, "iconSmall") || null;
+  const brandColor = fieldText(interfaceInfo, "brandColor") || null;
   const dependencies = arrayField(recordField(skill, "dependencies"), "tools")
     .map(skillDependencyLabel)
     .filter(Boolean);
@@ -877,7 +934,17 @@ function skillEntry(skill: Record<string, unknown>, cwd = ""): CommandPanelEntry
       cwd && `CWD: ${cwd}`,
     ]),
     disabled: hasEnabled && !enabled ? true : undefined,
-    action: path ? { type: "attachSkill", name, path, promptText: skillPromptText({ name, path, defaultPrompt }) } : undefined,
+    action: path
+      ? {
+          type: "attachSkill",
+          name,
+          path,
+          promptText: skillPromptText({ name, path, defaultPrompt }),
+          // 仅在有值时透传，避免无关字段污染 action 对象（测试 fixture 保持简洁）
+          ...(iconSmall ? { iconSmall } : {}),
+          ...(brandColor ? { brandColor } : {}),
+        }
+      : undefined,
     secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
   };
 }
@@ -1011,7 +1078,18 @@ function recommendedSkillEntry({
     ]),
     disabled: path && enabled ? undefined : true,
     action: path && enabled
-      ? { type: "attachSkill", name, path, promptText: skillPromptText({ name, path, defaultPrompt }) }
+      ? (() => {
+          const recommendedIconSmall = fieldText(interfaceInfo, "iconSmall");
+          const recommendedBrandColor = fieldText(interfaceInfo, "brandColor");
+          return {
+            type: "attachSkill" as const,
+            name,
+            path,
+            promptText: skillPromptText({ name, path, defaultPrompt }),
+            ...(recommendedIconSmall ? { iconSmall: recommendedIconSmall } : {}),
+            ...(recommendedBrandColor ? { brandColor: recommendedBrandColor } : {}),
+          };
+        })()
       : undefined,
     secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
   };
@@ -1252,7 +1330,25 @@ function projectAppEntries(value: unknown): CommandPanelEntry[] {
         connectorProtocolLimitedDetail(state),
       ]),
       disabled: state.accessible ? undefined : true,
-      action: state.accessible ? { type: "attachApp", name, path: promptPath, promptText: appPromptText(name, promptPath) } : undefined,
+      /*
+       * AppInfo 字段透传 — 协议字段名来自
+       * packages/codex-protocol/src/generated/v2/AppInfo.ts:10：
+       *   logoUrl / logoUrlDark / branding(AppBranding)
+       * 注：AppBranding 不含 brandColor 字段（仅 category/developer/website/...）
+       *   所以 attachApp 不带 brandColor。
+       */
+      action: state.accessible
+        ? (() => {
+            const appIconSmall = fieldText(app, "logoUrl") || fieldText(app, "logoUrlDark");
+            return {
+              type: "attachApp" as const,
+              name,
+              path: promptPath,
+              promptText: appPromptText(name, promptPath),
+              ...(appIconSmall ? { iconSmall: appIconSmall } : {}),
+            };
+          })()
+        : undefined,
       secondaryActions: secondaryActions.length > 0 ? secondaryActions : undefined,
     };
   });

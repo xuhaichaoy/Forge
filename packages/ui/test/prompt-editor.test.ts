@@ -1,6 +1,8 @@
 import {
   installPromptEditorViewStaleGuardsForTest,
   isStalePromptEditorViewError,
+  promptEditorInlineNodesForTest,
+  promptEditorPromptTextRoundTripForTest,
   setPromptEditorViewDetachedForTest,
   splitPromptEditorPasteFiles,
 } from "../src/components/prompt-editor";
@@ -17,6 +19,8 @@ export default function runPromptEditorTests(): void {
   skipsDetachedProseMirrorViewOperations();
   stillSurfacesUnrelatedProseMirrorViewOperations();
   splitsPastedImagesFromOtherFiles();
+  parsesPromptMarkdownMentionsLikeCodexDesktop();
+  preservesPromptRichLinkSerialization();
 }
 
 function detectsStaleProseMirrorViewErrorsAcrossRealms(): void {
@@ -144,6 +148,37 @@ function splitsPastedImagesFromOtherFiles(): void {
   assert(result.imageFiles[0] === png, "image mime file should be preserved");
   assert(result.imageFiles[1] === heic, "image extension file should be preserved");
   assert(result.otherFiles.length === 1 && result.otherFiles[0] === text, "non-image files should be grouped separately");
+}
+
+function parsesPromptMarkdownMentionsLikeCodexDesktop(): void {
+  const github = promptEditorInlineNodesForTest("[$repo](https://github.com/openai/codex)")[0];
+  assert(github?.type === "richLink", "known external URLs should parse as richLink before label-based skill mentions");
+  assert(github.attrs.sourceAppId === "github", "richLink should carry Codex external app source id");
+
+  const unsupportedUrl = promptEditorInlineNodesForTest("[link](https://example.com/docs)")[0];
+  assert(unsupportedUrl?.type === "text", "unsupported URL-like markdown links should stay literal text");
+
+  const file = promptEditorInlineNodesForTest("[README](README.md)")[0];
+  assert(file?.type === "atMention", "file markdown links should parse as atMention");
+  assert(file.attrs.fsPath === "README.md", "atMention should retain fsPath like Codex Desktop");
+
+  const atPrefixedFile = promptEditorInlineNodesForTest("[@README](README.md)")[0];
+  assert(atPrefixedFile?.type === "atMention", "@-prefixed local file links should not become agentMention");
+  assert(atPrefixedFile.attrs.fsPath === "README.md", "@-prefixed local file links should retain fsPath");
+
+  const agent = promptEditorInlineNodesForTest("[@thread](agent://abc123)")[0];
+  assert(agent?.type === "agentMention", "agent paths should parse as agentMention");
+  assert(agent.attrs.conversationId === "abc123", "agentMention should retain conversationId like Codex Desktop");
+
+  const githubAgentLabel = promptEditorInlineNodesForTest("[@repo](https://github.com/openai/codex)")[0];
+  assert(githubAgentLabel?.type === "richLink", "known external URLs should stay richLink even with @ labels");
+}
+
+function preservesPromptRichLinkSerialization(): void {
+  assert(
+    promptEditorPromptTextRoundTripForTest("[repo](https://github.com/openai/codex)") === "[repo](https://github.com/openai/codex)",
+    "richLink nodes should serialize back to prompt markdown",
+  );
 }
 
 function fakeEditorView(overrides: FakeEditorViewOverrides = {}): FakeEditorView {

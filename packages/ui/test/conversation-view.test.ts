@@ -15,6 +15,7 @@ import {
   shouldRenderSvgCodePreview,
   stripReasoningActivityHeading,
   svgCodePreviewDataUrl,
+  turnKeysForGroups,
   userImageSrc,
   virtualTurnRange,
   virtualTurnRangeFromBottom,
@@ -23,6 +24,7 @@ import {
   toolActivityDetailItems,
   turnDiffHeaderStatsVisible,
   turnDiffViewModel,
+  workedForAggregateRows,
 } from "../src/components/conversation-view";
 
 export default function runConversationViewTests(): void {
@@ -49,10 +51,28 @@ export default function runConversationViewTests(): void {
   projectsTurnDiffSummaryLikeCodexDesktop();
   projectsReasoningBodiesLikeCodexDesktop();
   keepsWorkedForRowsCompact();
+  summarizesRunningWorkedForCommandsSeparately();
+  summarizesWorkedForWebSearchCommandsSeparately();
   omitsReasoningRowsFromExplorationDetailsLikeDesktop();
   rendersWorkedForExpansionThroughToolDetails();
+  keepsVirtualTurnKeysUniqueWhenTurnSegmentsRepeat();
   computesDesktopVirtualTurnRangeWithMeasuredHeights();
   computesDesktopVirtualTurnRangeFromBottomDistance();
+}
+
+function keepsVirtualTurnKeysUniqueWhenTurnSegmentsRepeat(): void {
+  const groups = [
+    { turnId: "turn-1", units: [] },
+    { turnId: null, units: [] },
+    { turnId: "turn-1", units: [] },
+    { turnId: "turn-2", units: [] },
+    { turnId: "turn-1", units: [] },
+  ];
+  assertDeepEqual(
+    turnKeysForGroups(groups),
+    ["turn-1", "untracked:1", "turn-1:1", "turn-2", "turn-1:2"],
+    "virtual turn rows should keep stable unique keys when a turn is split by untracked units",
+  );
 }
 
 function projectsTurnDiffSummaryLikeCodexDesktop(): void {
@@ -762,6 +782,92 @@ function keepsWorkedForRowsCompact(): void {
     isToolActivityExpandable(toolActivity("web-search-group", true, 1)),
     false,
     "active web search groups should not expose an interactive expander",
+  );
+}
+
+function summarizesRunningWorkedForCommandsSeparately(): void {
+  const unit = {
+    kind: "toolActivity",
+    key: "worked-for:running",
+    items: [],
+    summary: {
+      groupType: "worked-for",
+      icon: "clock",
+      label: "Working",
+      activeDetail: null,
+      details: [],
+      inProgress: true,
+      totalDurationMs: null,
+      counts: {
+        commands: 2,
+        runningCommands: 1,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
+        exploredFiles: 0,
+        searches: 0,
+        lists: 0,
+        fileChanges: 0,
+        createdFiles: 0,
+        editedFiles: 0,
+        deletedFiles: 0,
+        mcpCalls: 0,
+        dynamicCalls: 0,
+        webSearches: 0,
+        reasoning: 0,
+        plans: 0,
+        other: 0,
+      },
+    },
+  } as Parameters<typeof workedForAggregateRows>[0];
+
+  assertDeepEqual(
+    workedForAggregateRows(unit).map((row) => row.text),
+    ["1 running command", "Ran 1 command"],
+    "worked-for aggregate should not mark a running command as completed",
+  );
+}
+
+function summarizesWorkedForWebSearchCommandsSeparately(): void {
+  const unit = {
+    kind: "toolActivity",
+    key: "worked-for:web-search",
+    items: [],
+    summary: {
+      groupType: "worked-for",
+      icon: "clock",
+      label: "Working",
+      activeDetail: null,
+      details: [],
+      inProgress: true,
+      totalDurationMs: null,
+      counts: {
+        commands: 2,
+        runningCommands: 1,
+        webSearchCommands: 1,
+        runningWebSearchCommands: 1,
+        runningFolderCreationCommands: 0,
+        exploredFiles: 0,
+        searches: 0,
+        lists: 0,
+        fileChanges: 0,
+        createdFiles: 0,
+        editedFiles: 0,
+        deletedFiles: 0,
+        mcpCalls: 0,
+        dynamicCalls: 0,
+        webSearches: 0,
+        reasoning: 0,
+        plans: 0,
+        other: 0,
+      },
+    },
+  } as Parameters<typeof workedForAggregateRows>[0];
+
+  assertDeepEqual(
+    workedForAggregateRows(unit).map((row) => row.text),
+    ["Ran 1 command", "Searching the web"],
+    "worked-for aggregate should not double-count running web search commands as ordinary commands",
   );
 }
 

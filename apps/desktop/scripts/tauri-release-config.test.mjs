@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -142,4 +143,13 @@ test("fails fast when release-only values are missing", () => {
     () => buildTauriReleaseConfig({}),
     (err) => err instanceof ReleaseConfigError && err.errors.length === 5,
   );
+});
+
+test("development Tauri app uses a distinct bundle identity", () => {
+  const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const devConfig = JSON.parse(readFileSync(new URL("../src-tauri/tauri.dev.conf.json", import.meta.url), "utf8"));
+  assert.match(packageJson.scripts["tauri:dev"], /--config src-tauri\/tauri\.dev\.conf\.json/);
+  assert.equal(devConfig.productName, "HiCodex Dev");
+  assert.equal(devConfig.identifier, "com.hicodex.desktop.dev");
+  assert.equal(devConfig.plugins["deep-link"].desktop.name, "com.hicodex.desktop.dev.codex");
 });

@@ -8,6 +8,7 @@ export default function runPermissionsModeTests(): void {
   derivesDesktopPermissionModesFromThreadContext();
   projectsModeRowsWithConfigWrites();
   writesGranularModeWithDesktopPolicyShape();
+  disablesModesBlockedByRuntimeRequirements();
 }
 
 function derivesDesktopPermissionModesFromThreadContext(): void {
@@ -109,6 +110,75 @@ function writesGranularModeWithDesktopPolicyShape(): void {
       },
     ],
     "granular mode should write Desktop's workspace-write granular policy shape",
+  );
+}
+
+function disablesModesBlockedByRuntimeRequirements(): void {
+  const entries = projectPermissionModeCommandEntries(
+    {
+      sandbox: "workspace-write",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+    },
+    {
+      requirements: {
+        allowedSandboxModes: ["read-only", "workspace-write"],
+        allowedApprovalPolicies: ["on-request"],
+        allowedApprovalsReviewers: ["user"],
+        allowedPermissions: [":read-only", ":workspace"],
+        allowManagedHooksOnly: true,
+        computerUse: { allowLockedComputerUse: false },
+        featureRequirements: { personality: true },
+      },
+    },
+  );
+
+  assertDeepEqual(
+    entries.map((entry) => ({ id: entry.id, status: entry.status, disabled: entry.disabled === true })),
+    [
+      { id: "permissions:mode:read-only", status: "select", disabled: false },
+      { id: "permissions:mode:auto", status: "current", disabled: true },
+      { id: "permissions:mode:granular", status: "blocked", disabled: true },
+      { id: "permissions:mode:full-access", status: "blocked", disabled: true },
+      { id: "permissions:current", status: "auto", disabled: false },
+      { id: "permissions:requirements", status: "active", disabled: false },
+    ],
+    "managed config requirements should disable permission presets that app-server will reject",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "permissions:mode:granular")?.action,
+    undefined,
+    "blocked permission presets should not expose config writes",
+  );
+  assertDeepEqual(
+    entries.find((entry) => entry.id === "permissions:requirements")?.details,
+    [
+      "allowed sandbox modes: read-only, workspace-write",
+      "allowed approval policies: on-request",
+      "allowed approval reviewers: user",
+      "allowed permission profiles: :read-only, :workspace",
+      "managed hooks only: yes",
+      "locked computer use: blocked",
+      "pinned features: personality=true",
+    ],
+    "requirements row should surface the durable app-server requirement gates",
+  );
+  assertDeepEqual(
+    projectPermissionModeCommandEntries(null, { requirements: null }).find((entry) => entry.id === "permissions:requirements")?.status,
+    "none",
+    "a null configRequirements/read payload should display as no managed constraints",
+  );
+  assertDeepEqual(
+    projectPermissionModeCommandEntries(
+      {
+        sandbox: "workspace-write",
+        approvalPolicy: "on-request",
+        approvalsReviewer: "user",
+      },
+      { requirements: { allowedApprovalsReviewers: ["auto_review"] } },
+    ).find((entry) => entry.id === "permissions:mode:read-only")?.status,
+    "blocked",
+    "managed approval-reviewer requirements should disable presets that write a forbidden reviewer",
   );
 }
 

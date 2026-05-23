@@ -47,6 +47,9 @@ export function mentionOptionsFromSkillsResponse(value: unknown, query: string):
       path: action.path,
       detail: entry.meta ?? "Skill",
       promptText: action.promptText,
+      /* Current-session registry metadata for the inline picker chip. */
+      iconSmall: action.iconSmall,
+      brandColor: action.brandColor,
     });
   }
   return options.slice(0, 25);
@@ -69,6 +72,8 @@ export function mentionOptionsFromAppsResponse(value: unknown, query: string): C
       path: action.path,
       detail: entry.meta ?? "App",
       promptText: action.promptText,
+      iconSmall: action.iconSmall,
+      brandColor: action.brandColor,
     });
   }
   return options.slice(0, 25);
@@ -95,6 +100,8 @@ export function mentionOptionsFromPluginsResponse(
       path: action.path,
       detail: entry.meta ?? "Plugin",
       promptText: action.promptText,
+      iconSmall: action.iconSmall,
+      brandColor: action.brandColor,
     });
   }
   return options.slice(0, 25);

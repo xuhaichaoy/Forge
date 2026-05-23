@@ -1,0 +1,11 @@
+{
+  "productName": "HiCodex Dev",
+  "identifier": "com.hicodex.desktop.dev",
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "name": "com.hicodex.desktop.dev.codex"
+      }
+    }
+  }
+}
