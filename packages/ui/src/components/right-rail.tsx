@@ -4,10 +4,6 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
-  FileArchive,
-  FileCode,
-  FileSpreadsheet,
-  FileText,
   GitBranch,
   GitCommitHorizontal,
   Github,
@@ -18,15 +14,13 @@ import {
   Monitor,
   Network,
   PencilLine,
-  Pin,
-  PinOff,
   Square,
   Terminal,
-  X,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { convertLocalFileSrc } from "../lib/tauri-host";
+import { fileIconFor } from "../lib/file-icon";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import type { BranchDetailsViewModel } from "../state/branch-details";
 import { DiffStatsDisplay } from "./diff-stats-display";
@@ -66,12 +60,6 @@ export interface RightRailProps {
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
   onOpenThreadId?: OpenThreadHandler;
-  onPinnedChange?: (isPinned: boolean) => void;
-  /**
-   * Close the rail. Wired to the toolbar X button, mirrors the Codex Desktop
-   * `Fe(e, !1)` close path (apps-C0n7YO22.pretty.js::ua/la setters).
-   */
-  onClose?: () => void;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
 }
@@ -101,8 +89,6 @@ export function RightRail({
   onOpenUrl,
   onOpenDiff,
   onOpenThreadId,
-  onPinnedChange,
-  onClose,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
 }: RightRailProps) {
@@ -146,33 +132,6 @@ export function RightRail({
 
   return (
     <aside className="hc-right-rail" data-display-mode={displayMode} data-pinned={isPinned ? "true" : "false"}>
-      {(onPinnedChange || onClose) && (
-        <div className="hc-right-rail-toolbar">
-          {onPinnedChange && (
-            <button
-              aria-label={isPinned ? "Unpin summary panel" : "Pin summary panel"}
-              aria-pressed={isPinned}
-              className="hc-rail-section-action"
-              onClick={() => onPinnedChange(!isPinned)}
-              title={isPinned ? "Unpin summary panel" : "Pin summary panel"}
-              type="button"
-            >
-              {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
-            </button>
-          )}
-          {onClose && (
-            <button
-              aria-label="Close summary panel"
-              className="hc-rail-section-action"
-              onClick={onClose}
-              title="Close summary panel"
-              type="button"
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      )}
       {sections.map((section) => (
         <RailSection
           key={section.id}
@@ -522,52 +481,66 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
       ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
       : <Bot size={14} />;
   }
-  if (sectionId === "sources") return <Network size={14} />;
+  if (sectionId === "sources") {
+    /*
+     * Sources panel logo 渲染。
+     * Desktop 行为：source.logoUrl / logoUrlDark 选择 + 加载失败 fallback 到 icon。
+     * 当前 HiCodex 没有主题信号传入此处，先用 light 优先策略；onError 时回退到
+     * generic Network/Globe icon。WebSearch 始终用 Globe。
+     */
+    if (entry.id === "webSearch") return <Globe size={14} />;
+    if (entry.logoUrl || entry.logoUrlDark) {
+      return <SourceLogo logoUrl={entry.logoUrl} logoUrlDark={entry.logoUrlDark} alt={entry.title} />;
+    }
+    return <Network size={14} />;
+  }
   const imageSrc = railEntryImageSrc(entry);
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
   if (entry.action?.kind === "url") return <Globe size={14} />;
   if (entry.reference && isImageArtifactPath(entry.reference.path)) return <ImageIcon size={14} />;
-  /*
-   * Codex Desktop picks the per-file icon via `ys(path)` at
-   * codex-local-conversation-thread.pretty.js :1584-1585 — a native-electron icon
-   * component factory (`use-native-apps.electron-CXkIGHcX.js`) that produces a
-   * colored file-type icon based on extension. HiCodex has no native-app icon
-   * assets, so we approximate the heuristic with lucide monochrome icons
-   * differentiated by extension class.
-   */
-  return fileExtensionIcon(entry.reference?.path);
+  /* File icons use the shared clean-room extension/MIME mapping helper. */
+  return fileIconFor({ path: entry.reference?.path, size: 14 });
 }
-
-function fileExtensionIcon(path: string | null | undefined): ReactNode {
-  if (!path) return <FileText size={14} />;
-  const ext = lowercasePathExtension(path);
-  if (SPREADSHEET_EXTENSIONS.has(ext)) return <FileSpreadsheet size={14} />;
-  if (ARCHIVE_EXTENSIONS.has(ext)) return <FileArchive size={14} />;
-  if (CODE_EXTENSIONS.has(ext)) return <FileCode size={14} />;
-  return <FileText size={14} />;
-}
-
-function lowercasePathExtension(path: string): string {
-  const slash = path.lastIndexOf("/");
-  const filename = slash >= 0 ? path.slice(slash + 1) : path;
-  const dot = filename.lastIndexOf(".");
-  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : "";
-}
-
-const SPREADSHEET_EXTENSIONS: ReadonlySet<string> = new Set([
-  "xlsx", "xls", "xlsm", "xlsb", "csv", "tsv", "ods", "numbers",
-]);
-const ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
-  "zip", "tar", "gz", "tgz", "rar", "7z", "bz2", "xz",
-]);
-const CODE_EXTENSIONS: ReadonlySet<string> = new Set([
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rb", "go", "rs",
-  "java", "kt", "swift", "c", "cpp", "h", "hpp", "cs", "php",
-  "sh", "bash", "zsh", "sql", "yaml", "yml", "toml", "json", "jsonl",
-]);
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
   return sectionId === "artifacts" || sectionId === "sources";
+}
+
+/**
+ * Source logo 加载组件 — light/dark URL 选择 + onError fallback。
+ * 当前 HiCodex 没有把主题信号传到 right-rail，使用 light 优先；失败时切到 dark，
+ * 仍失败回退 generic Network icon。
+ */
+function SourceLogo({
+  logoUrl,
+  logoUrlDark,
+  alt,
+}: {
+  logoUrl?: string | null;
+  logoUrlDark?: string | null;
+  alt: string;
+}): ReactNode {
+  const [failed, setFailed] = useState(false);
+  const [usingDark, setUsingDark] = useState(false);
+  if (failed) return <Network size={14} />;
+  const primary = usingDark ? logoUrlDark : logoUrl;
+  const fallback = usingDark ? logoUrl : logoUrlDark;
+  const src = primary || fallback || "";
+  if (!src) return <Network size={14} />;
+  return (
+    <img
+      alt={alt}
+      className="hc-rail-card-thumb"
+      src={src}
+      onError={() => {
+        if (!usingDark && logoUrlDark) {
+          setUsingDark(true);
+        } else {
+          setFailed(true);
+        }
+      }}
+    />
+  );
 }
 
 function progressEntryIcon(status: string | undefined): ReactNode {

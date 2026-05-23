@@ -271,7 +271,8 @@
   min-width: 8px;
 }
 
-.hc-turn-diff-review {
+.hc-turn-diff-review,
+.hc-turn-diff-patch-action {
   flex: 0 0 auto;
   border: 0;
   background: transparent;
@@ -282,10 +283,17 @@
   line-height: 1.45;
 }
 
-.hc-turn-diff-review:hover {
+.hc-turn-diff-review:hover,
+.hc-turn-diff-patch-action:hover:not(:disabled) {
   color: #27313d;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.hc-turn-diff-patch-action:disabled {
+  color: #a3a49e;
+  cursor: not-allowed;
+  text-decoration: none;
 }
 
 .hc-turn-diff-review-short {
@@ -885,6 +893,24 @@ button.hc-tool-summary:hover svg:last-child,
   font-size: 11px;
 }
 
+.hc-exec-shell-footer[data-exec-status="success"] {
+  color: #267348;
+}
+
+.hc-exec-shell-footer[data-exec-status="failed"],
+.hc-exec-footer-icon-error {
+  color: #9b3328;
+}
+
+.hc-exec-shell-footer[data-exec-status="interrupted"],
+.hc-exec-footer-icon-warn {
+  color: #9a6a18;
+}
+
+.hc-exec-footer-icon-success {
+  color: #267348;
+}
+
 .hc-tool-detail-stack {
   display: grid;
   gap: 8px;
@@ -1039,6 +1065,22 @@ button.hc-tool-summary:hover svg:last-child,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hc-tool-detail-collapsible-toggle {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #4f5855;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+}
+
+.hc-tool-detail-collapsible-toggle:hover {
+  color: #27313d;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .hc-tool-detail-command,
@@ -1244,4 +1286,223 @@ button.hc-tool-summary:hover svg:last-child,
   max-width: 100%;
   border-radius: 6px;
   display: block;
+}
+
+/*
+ * Generated image gallery (Codex `JC` parity). HiCodex collects all
+ * `generated-image` items in a turn into a single horizontal carousel —
+ * see `generated-image-gallery.tsx`. Matches Codex `flex gap-2
+ * transition-transform` inner row + `rounded-[16px]` thumbnails + black/45
+ * backdrop-blur overflow controls (`qC` Codex constant).
+ */
+.hc-generated-image-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.hc-generated-image-gallery-row {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+.hc-generated-image-gallery-track {
+  display: flex;
+  gap: 8px;
+  transition: transform 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-generated-image-gallery-track {
+    transition: none;
+  }
+}
+
+.hc-generated-image-gallery-thumb {
+  display: block;
+  flex-shrink: 0;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 0;
+  padding: 0;
+  background: var(--hc-surface-main, #faf9f5);
+}
+
+.hc-generated-image-gallery-thumb:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.hc-generated-image-gallery-thumb--empty {
+  display: grid;
+  place-items: center;
+  color: var(--hc-text-tertiary, #8a8c87);
+  background: var(--hc-surface-muted, #f3f1ea);
+}
+
+.hc-generated-image-thumb-img {
+  display: block;
+  height: 100%;
+}
+
+.hc-generated-image-thumb-img.is-square {
+  width: 100%;
+  object-fit: cover;
+}
+
+.hc-generated-image-thumb-img.is-natural {
+  width: auto;
+  object-fit: contain;
+}
+
+/*
+ * Pending placeholder — Codex `$e` branch renders a 24x24 (96px Tailwind
+ * h-24) outlined rounded box with a loading spinner.
+ */
+.hc-generated-image-gallery-pending {
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--hc-border-default, #dedbd1);
+  color: var(--hc-text-tertiary, #8a8c87);
+  background: var(--hc-surface-muted, #f3f1ea);
+}
+
+/*
+ * Overflow indicator + prev/next arrows. Codex uses `absolute right-2
+ * bottom-2` with hover/focus opacity transitions and `qC = rounded-full
+ * bg-black/45 font-medium text-white shadow-sm backdrop-blur-[12px]`.
+ */
+.hc-generated-image-gallery-overflow-count {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 8px 0 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  z-index: 1;
+}
+
+.hc-generated-image-gallery-row:hover .hc-generated-image-gallery-overflow-count,
+.hc-generated-image-gallery-row:focus-within .hc-generated-image-gallery-overflow-count {
+  opacity: 0;
+}
+
+.hc-generated-image-gallery-nav {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  z-index: 2;
+}
+
+.hc-generated-image-gallery-row:hover .hc-generated-image-gallery-nav,
+.hc-generated-image-gallery-row:focus-within .hc-generated-image-gallery-nav {
+  opacity: 1;
+}
+
+.hc-generated-image-gallery-nav-button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 0;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background-color 120ms ease;
+}
+
+.hc-generated-image-gallery-nav-button:enabled:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.hc-generated-image-gallery-nav-button:disabled {
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.45);
+  cursor: default;
+}
+
+/* Repurpose lucide ChevronDown by rotating into left/right arrows. */
+.hc-generated-image-gallery-nav-icon.is-prev {
+  transform: rotate(90deg);
+}
+
+.hc-generated-image-gallery-nav-icon.is-next {
+  transform: rotate(-90deg);
+}
+
+.hc-generated-image-gallery-overflow-count-arrow {
+  transform: rotate(-90deg);
+}
+
+.hc-app[data-theme="dark"] .hc-generated-image-gallery-thumb {
+  background: var(--hc-surface-main, #1a1a1a);
+}
+
+.hc-app[data-theme="dark"] .hc-generated-image-gallery-thumb--empty,
+.hc-app[data-theme="dark"] .hc-generated-image-gallery-pending {
+  background: var(--hc-surface-muted, #2a2a2a);
+}
+
+/*
+ * Lightbox prev/next arrows (added with A-4). Mirror the gallery overflow
+ * black/45 styling so the in-modal nav matches the in-gallery nav.
+ */
+.hc-preview-lightbox-viewport {
+  position: relative;
+}
+
+.hc-preview-lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 2;
+}
+
+.hc-preview-lightbox-nav:hover {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.hc-preview-lightbox-nav--prev {
+  left: 16px;
+}
+
+.hc-preview-lightbox-nav--next {
+  right: 16px;
 }

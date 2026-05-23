@@ -2,7 +2,7 @@ export type * from "./render-group-types";
 export { projectConversation, splitTurnItems } from "./project-conversation";
 export type { DesktopTurnSplit } from "./project-conversation";
 export { eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
-export { collectRailEntries, progressEntriesFromPlan } from "./rail-projection";
+export { appRegistryEntriesFromResponse, collectRailEntries, progressEntriesFromPlan } from "./rail-projection";
 export {
   assistantMessagePhase,
   assistantMessageText,

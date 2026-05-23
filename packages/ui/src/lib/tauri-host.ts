@@ -141,8 +141,8 @@ export function createPendingWorktree(
 
 /*
  * Patch revert / reapply bridge. Mirrors Codex Desktop's `revertChanges` /
- * `reapplyChanges` toolbar handler — see docs/codex-source-evidence.md §34 and
- * the `host_apply_patch_action` Tauri command for the host-side semantics.
+ * `reapplyChanges` toolbar handler — see docs/dev/codex-alignment-unified-diff.md
+ * and the `host_apply_patch_action` Tauri command for the host-side semantics.
  *
  * The result shape matches Codex `failure.result` so the renderer can hand it
  * straight to `<UnifiedDiffFailureDialog/>` when `errorCode != null` or any of

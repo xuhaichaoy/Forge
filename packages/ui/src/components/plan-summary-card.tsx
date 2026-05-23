@@ -1,5 +1,6 @@
 import { Check, ChevronDown, Copy, Download, ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { MouseEvent } from "react";
 
 import { stringField } from "../lib/format";
@@ -172,10 +173,21 @@ function downloadPlanMarkdown(content: string): void {
 }
 
 function CopyFeedbackToast() {
-  return (
+  /*
+   * Mirror of `message-action-row.tsx::CopyFeedbackToast`. `.hc-copy-toast`
+   * uses `position: fixed`, but the conversation scroll container
+   * (`hc-thread-scroll-body` conversation.css:46) has a `transform` applied
+   * for inline side-panel offsets — CSS re-roots fixed descendants to that
+   * ancestor, so the toast appeared trapped behind nearby messages
+   * (HiCodex screenshot 2026-05-21 "复制提示被盖住"). Portal to
+   * `document.body` so the toast escapes the transformed container.
+   */
+  const toast = (
     <div className="hc-copy-toast" role="status" aria-live="polite">
       <span className="hc-copy-toast-icon" aria-hidden="true"><Check size={15} /></span>
       <span>Copied to clipboard</span>
     </div>
   );
+  if (typeof document === "undefined") return toast;
+  return createPortal(toast, document.body);
 }

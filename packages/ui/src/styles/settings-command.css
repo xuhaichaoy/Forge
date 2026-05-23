@@ -998,7 +998,7 @@ textarea.hc-mcp-tool-control {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: 0;
 }
 
 .hc-unified-diff-path-list {

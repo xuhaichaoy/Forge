@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit --pretty false",
     "test": "node --test scripts/tauri-release-config.test.mjs",
     "release:config": "node scripts/tauri-release-config.mjs --check",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:build": "tauri build",
     "tauri:build:release": "node scripts/tauri-release-config.mjs --build"
   },

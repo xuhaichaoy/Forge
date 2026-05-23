@@ -39,13 +39,33 @@ export type ConversationRenderUnit =
       item: ThreadItem;
     }
   /*
-   * Codex `sT` portal (codex-local-conversation-thread.pretty.js :8003-8012)
-   * + `in-progress-fixed-content` slot (:8339): while a turn is in progress
-   * and the runtime has a live unified-diff stream, Codex renders the diff
-   * via `createPortal` into a fixed-position container above the rest of the
-   * process region. HiCodex has no portal infrastructure, so we approximate
-   * by rendering the diff as a distinct render unit at the top of the
-   * in-progress turn's agent stream.
+   * Codex Desktop `JC` gallery (local-conversation-thread-BX7YNcUw.js byte
+   * ~506222) groups ALL generated-image items in a turn into a single
+   * horizontal carousel of thumbnails — rather than one giant card per
+   * image. HiCodex previously routed each `generated-image` to a separate
+   * markdown ToolBlock, producing a stack of full-width image cards. This
+   * unit captures the per-turn collected set so the renderer can emit
+   * Codex's `<JC images={Ut} conversationId={n}/>` layout.
+   *
+   * - `images`: Codex `Ut = visibleCompletedGeneratedImages` — every item
+   *   passing the `Hw(e.src != null)` filter, post `zC` PPTX exclusion.
+   * - `hasPending`: Codex `$e = oe.some(Vw)` — at least one image is still
+   *   `status === "in_progress"` with no `src`. Drives the 24×24
+   *   placeholder spinner box rendered below the carousel.
+   * - The container only mounts when `Wt = images.length > 0 || hasPending`
+   *   (Codex `shouldRenderGeneratedImageOutputs`). Empty unit is suppressed
+   *   in the project layer so the renderer doesn't need to re-check.
+   */
+  | {
+      kind: "generatedImageGallery";
+      key: string;
+      images: ThreadItem[];
+      hasPending: boolean;
+      turnId: string | null;
+    }
+  /*
+   * Live unified-diff stream for a running turn. HiCodex renders it as a
+   * distinct unit at the top of the in-progress turn's agent stream.
    */
   | {
       kind: "inProgressDiff";
@@ -89,8 +109,9 @@ export interface ToolActivitySummary {
   details: string[];
   inProgress: boolean;
   totalDurationMs: number | null;
-  counts: {
+    counts: {
     commands: number;
+    runningCommands?: number;
     webSearchCommands: number;
     runningWebSearchCommands: number;
     runningFolderCreationCommands: number;
@@ -112,6 +133,9 @@ export interface ToolActivitySummary {
     reasoning: number;
     plans: number;
     other: number;
+    /* Approval review counts used by the worked-for aggregate rows. */
+    approvedRequests?: number;
+    deniedRequests?: number;
   };
 }
 
@@ -145,6 +169,13 @@ export interface RailEntry {
   diffStats?: RailDiffStats;
   reference?: RailEntryReference;
   action?: RailEntryAction;
+  /**
+   * Tool source logo URLs（Sources panel 专用）。
+   * rail-projection.ts 在 collectRailEntries 时按 mcpServerName 查 app 注册表填充。
+   * 渲染层（right-rail SourceLogo）加载失败时回退到 Network icon。
+   */
+  logoUrl?: string | null;
+  logoUrlDark?: string | null;
 }
 
 export interface RailDiffStats {
@@ -179,7 +210,11 @@ export type UserMessageContentPart =
     }
   | {
       kind: "chip";
-      chipKind: "mention" | "skill" | "file";
+      /**
+       * UI-only chip category. Protocol payloads still serialize skills and
+       * non-file mentions as UserInput.Skill / UserInput.Mention { name, path }.
+       */
+      chipKind: "mention" | "skill" | "app" | "plugin" | "agent" | "file";
       label: string;
       path: string;
       /**
@@ -187,6 +222,10 @@ export type UserMessageContentPart =
        * Renderer uses it to pick a file-type icon (Word/Excel/PDF/etc).
        */
       fileExtension?: string;
+      /** Optional registry metadata for the current UI render. */
+      iconSmall?: string | null;
+      brandColor?: string | null;
+      displayName?: string | null;
     };
 
 export interface UserMessageTextElement {
@@ -215,13 +254,32 @@ export interface ConversationProjectionOptions {
     plan: unknown[];
   } | null;
   /**
-   * Live in-progress unified-diff stream from `turn/diff/updated` events
-   * (codex-reducer.ts `turn/diff/updated` handler). Mirrors Codex's `sT` portal
-   * input (codex-local-conversation-thread.pretty.js :8003). When non-empty
-   * and the thread is running, the projection emits an `inProgressDiff`
-   * render unit above the in-progress turn's agent stream.
+   * Live in-progress unified-diff stream from `turn/diff/updated` events.
+   * When non-empty and the thread is running, the projection emits an
+   * `inProgressDiff` render unit above the in-progress turn's agent stream.
    */
   turnDiff?: string;
+  /**
+   * App registry data (from `app/list` RPC). Used to look up logoUrl/logoUrlDark
+   * for MCP tool sources. Matching mirrors Codex Desktop's server/tool/function
+   * alias heuristic from `split-items-into-render-groups-*`.
+   */
+  appRegistry?: AppRegistryEntry[] | null;
+}
+
+/**
+ * App 注册表条目（用于 MCP source logo 查询）。
+ * 字段对应协议层 `app/list` 响应（packages/codex-protocol/src/generated/v2/AppInfo.ts）。
+ *
+ * AppInfo supplies `pluginDisplayNames`, so HiCodex can reproduce Desktop's
+ * name/id/plugin alias matching without inventing a protocol-only tool table.
+ */
+export interface AppRegistryEntry {
+  id: string;
+  name?: string | null;
+  pluginDisplayNames?: string[];
+  logoUrl?: string | null;
+  logoUrlDark?: string | null;
 }
 
 export type ConversationDetailLevel = "STEPS_COMMANDS" | "STEPS_PROSE";

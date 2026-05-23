@@ -280,12 +280,23 @@ export function workedForAggregateRows(
 
   // 命令执行
   const runningCommands = counts.runningCommands ?? 0;
-  const completedCommands = Math.max(counts.commands - runningCommands, 0);
-  if (inProgress && runningCommands > 0) {
-    rows.push({ key: "commands.running", text: countNoun(runningCommands, "running command", "running commands") });
+  const webSearchCommands = counts.webSearchCommands ?? 0;
+  const runningWebSearchCommands = counts.runningWebSearchCommands ?? 0;
+  const ordinaryCommands = Math.max(counts.commands - webSearchCommands, 0);
+  const runningOrdinaryCommands = Math.max(runningCommands - runningWebSearchCommands, 0);
+  const completedCommands = Math.max(ordinaryCommands - runningOrdinaryCommands, 0);
+  const completedWebSearchCommands = Math.max(webSearchCommands - runningWebSearchCommands, 0);
+  if (inProgress && runningOrdinaryCommands > 0) {
+    rows.push({ key: "commands.running", text: countNoun(runningOrdinaryCommands, "running command", "running commands") });
+  }
+  if (completedWebSearchCommands > 0) {
+    rows.push({ key: "webSearchCommands.completed", text: webSearchCommandCount("Searched web", completedWebSearchCommands) });
   }
   if (completedCommands > 0) {
     rows.push({ key: "commands.completed", text: actionCount("Ran", completedCommands, "command", "commands") });
+  }
+  if (inProgress && runningWebSearchCommands > 0) {
+    rows.push({ key: "webSearchCommands.running", text: webSearchCommandCount("Searching the web", runningWebSearchCommands) });
   }
 
   // 文件创建
@@ -330,13 +341,11 @@ export function workedForAggregateRows(
   }
 
   // Web 搜索
-  const runningWeb = counts.runningWebSearchCommands;
-  const completedWeb = Math.max(counts.webSearches - runningWeb, 0);
-  if (inProgress && runningWeb > 0) {
-    rows.push({ key: "webSearch.running", text: actionCount("Searching the web", runningWeb, "time", "times") });
-  }
-  if (completedWeb > 0) {
-    rows.push({ key: "webSearch.completed", text: actionCount("Searched the web", completedWeb, "time", "times") });
+  if (counts.webSearches > 0) {
+    rows.push({
+      key: "webSearch.completed",
+      text: actionCount(inProgress ? "Searching the web" : "Searched the web", counts.webSearches, "time", "times"),
+    });
   }
 
   // MCP 工具调用
@@ -366,6 +375,10 @@ function countNoun(count: number, singular: string, plural: string): string {
 
 function actionCount(verb: string, count: number, singular: string, plural: string): string {
   return `${verb} ${countNoun(count, singular, plural)}`;
+}
+
+function webSearchCommandCount(verb: string, count: number): string {
+  return count === 1 ? verb : `${verb} ${count} times`;
 }
 
 /*

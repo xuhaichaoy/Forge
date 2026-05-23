@@ -1553,7 +1553,7 @@ function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "
   if (detail.running) {
     return (
       <div className="hc-exec-shell-footer" data-exec-status="in-progress">
-        <LoaderCircle aria-hidden className="animate-spin" size={12} />
+        <LoaderCircle aria-hidden className="hc-spin" size={12} />
         <span>Running…</span>
       </div>
     );

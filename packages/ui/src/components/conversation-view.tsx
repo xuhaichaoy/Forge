@@ -15,6 +15,7 @@ import {
 } from "./event-unit";
 import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
+import { GeneratedImageGallery } from "./generated-image-gallery";
 import { MessageUnitView } from "./message-unit";
 import type { OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
@@ -371,7 +372,7 @@ function VirtualizedTurnList({
   const [scrollState, setScrollState] = useState({ distanceFromBottom: 0, viewportHeight: 900 });
   const [heightVersion, setHeightVersion] = useState(0);
   const count = groups.length;
-  const turnKeys = useMemo(() => groups.map((group, index) => turnKeyForGroup(group, index)), [groups]);
+  const turnKeys = useMemo(() => turnKeysForGroups(groups), [groups]);
 
   useLayoutEffect(() => {
     const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
@@ -488,6 +489,16 @@ function VirtualizedTurnList({
   );
 }
 
+export function turnKeysForGroups(groups: ReturnType<typeof groupUnitsByTurn>): string[] {
+  const seenTurnIds = new Map<string, number>();
+  return groups.map((group, index) => {
+    if (!group.turnId) return turnKeyForGroup(group, index);
+    const occurrence = seenTurnIds.get(group.turnId) ?? 0;
+    seenTurnIds.set(group.turnId, occurrence + 1);
+    return occurrence === 0 ? group.turnId : `${group.turnId}:${occurrence}`;
+  });
+}
+
 function turnKeyForGroup(group: ReturnType<typeof groupUnitsByTurn>[number], index: number): string {
   return group.turnId ?? `untracked:${index}`;
 }
@@ -569,6 +580,9 @@ export function ConversationUnitView({
   }
   if (unit.kind === "inProgressDiff") {
     return <InProgressDiffView diff={unit.diff} />;
+  }
+  if (unit.kind === "generatedImageGallery") {
+    return <GeneratedImageGallery images={unit.images} hasPending={unit.hasPending} />;
   }
   return (
     <ToolBlock

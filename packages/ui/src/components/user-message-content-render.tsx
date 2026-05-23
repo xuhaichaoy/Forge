@@ -1,17 +1,16 @@
 import {
+  AppWindow,
   AtSign,
-  File,
-  FileArchive,
-  FileCode,
+  Bot,
   FileImage,
-  FileSpreadsheet,
-  FileText,
+  PlugZap,
   Sparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
+import { fileIconFor } from "../lib/file-icon";
 import type { ConversationRenderUnit, UserMessageContentPart } from "../state/render-groups";
 import type { FileReference } from "./file-reference-types";
 
@@ -19,6 +18,28 @@ export type UserMessageMarkdownRenderer = (
   text: string,
   onOpenFileReference?: (reference: FileReference) => void,
 ) => ReactNode;
+
+/*
+ * Codex Desktop renders a user message as ONE bubble (`Lc`/`Oe` in
+ * `user-message-attachments-C4kFKr_t.js:10408`) whose body is a single
+ * `whitespace-pre-wrap` div (`T`/`ke` in `reply-pigVihi-.js:14212`) that
+ * inlines `$skill` and `@path` chips alongside the prose. Only the
+ * standalone `n.attachments` and `n.images` arrays escape the bubble into
+ * a sibling strip.
+ *
+ * HiCodex's protocol surfaces chips as their own `userContent` parts
+ * (skill/file/mention/agent/plugin/app), so we don't re-parse them out of
+ * the text. Instead the views below split content into two channels:
+ *
+ *   - `UserMessageAttachmentStrip` — images only (mirrors `n.images`).
+ *   - `UserMessageTextContentView` — text parts and every non-image chip,
+ *     rendered in original order so chips flow inline with the surrounding
+ *     prose (mirrors `T`/`ke`).
+ *
+ * `UserMessageContentView` keeps the legacy wrapper that pairs both, but
+ * the live call site (`message-unit.tsx`) places the image strip OUTSIDE
+ * the bubble and the text view INSIDE so the layout matches Codex.
+ */
 
 export function UserMessageContentView({
   unit,
@@ -29,8 +50,8 @@ export function UserMessageContentView({
   onOpenFileReference?: (reference: FileReference) => void;
   renderMarkdown: UserMessageMarkdownRenderer;
 }) {
-  const content = unit.userContent?.filter((part) => part.kind !== "text" || part.text.trim().length > 0) ?? [];
-  if (content.length === 0) {
+  const hasContent = (unit.userContent?.length ?? 0) > 0;
+  if (!hasContent) {
     return <>{renderMarkdown(unit.text, onOpenFileReference)}</>;
   }
   return (
@@ -49,25 +70,31 @@ export function UserMessageContentView({
   );
 }
 
+/*
+ * Mirrors Codex's `n.images` strip — only image parts escape the bubble
+ * into the standalone attachment row. Every other chip kind flows inline
+ * inside the bubble via `UserMessageTextContentView`.
+ */
 export function UserMessageAttachmentStrip({
   unit,
-  onOpenFileReference,
-  renderMarkdown,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "message" }>;
+  /*
+   * `onOpenFileReference` / `renderMarkdown` are still accepted for the
+   * legacy `UserMessageContentView` call signature but the strip only
+   * renders image parts; both props are intentionally unused here.
+   */
   onOpenFileReference?: (reference: FileReference) => void;
-  renderMarkdown: UserMessageMarkdownRenderer;
+  renderMarkdown?: UserMessageMarkdownRenderer;
 }) {
-  const attachments = unit.userContent?.filter((part) => part.kind !== "text") ?? [];
-  if (attachments.length === 0) return null;
+  const images = (unit.userContent ?? []).filter((part) => part.kind === "image");
+  if (images.length === 0) return null;
   return (
     <div className="hc-user-message-attachments">
-      {attachments.map((part, index) => (
-        <UserMessageContentPartView
+      {images.map((part, index) => (
+        <UserMessageImagePartView
           key={userContentPartKey(part, index)}
-          part={part}
-          onOpenFileReference={onOpenFileReference}
-          renderMarkdown={renderMarkdown}
+          part={part as Extract<UserMessageContentPart, { kind: "image" }>}
         />
       ))}
     </div>
@@ -83,91 +110,240 @@ export function UserMessageTextContentView({
   onOpenFileReference?: (reference: FileReference) => void;
   renderMarkdown: UserMessageMarkdownRenderer;
 }) {
-  const textParts = unit.userContent?.filter((part) => part.kind === "text" && part.text.trim().length > 0) ?? [];
-  if (textParts.length === 0) {
+  const inlineParts = (unit.userContent ?? []).filter((part) => {
+    if (part.kind === "image") return false;
+    if (part.kind === "text") return part.text.trim().length > 0;
+    return true;
+  });
+  if (inlineParts.length === 0) {
     return <>{renderMarkdown(unit.text, onOpenFileReference)}</>;
   }
   return (
-    <>
-      {textParts.map((part, index) => (
+    <div className="hc-user-message-inline">
+      {inlineParts.map((part, index) => (
         <UserMessageContentPartView
           key={userContentPartKey(part, index)}
           part={part}
           onOpenFileReference={onOpenFileReference}
-          renderMarkdown={renderMarkdown}
         />
       ))}
-    </>
+    </div>
   );
 }
 
 function UserMessageContentPartView({
   part,
   onOpenFileReference,
-  renderMarkdown,
 }: {
   part: UserMessageContentPart;
   onOpenFileReference?: (reference: FileReference) => void;
-  renderMarkdown: UserMessageMarkdownRenderer;
 }) {
   if (part.kind === "text") {
+    /*
+     * Codex's `T`/`ke` (`reply-pigVihi-.js:14212`) renders text inside a
+     * `whitespace-pre-wrap` container and still parses inline code/links
+     * before flowing sibling chips. We keep the wrapper inline so chips
+     * preserve their original order, but parse the text content instead of
+     * emitting raw markdown.
+     */
     return (
-      <div className="hc-user-message-text" data-text-elements={part.textElements.length || undefined}>
-        {renderMarkdown(part.text, onOpenFileReference)}
-      </div>
+      <span
+        className="hc-user-message-text"
+        data-text-elements={part.textElements.length || undefined}
+      >
+        {renderUserMessageInlineMarkdown(part.text)}
+      </span>
     );
   }
   if (part.kind === "image") {
     return <UserMessageImagePartView part={part} />;
   }
-  let icon: ReactNode;
-  let label: string;
-  if (part.chipKind === "file") {
-    icon = fileIconFor(part.fileExtension);
-    label = part.label;
-  } else if (part.chipKind === "mention") {
-    icon = <AtSign size={13} />;
-    label = `@${part.label}`;
-  } else {
-    icon = <Sparkles size={13} />;
-    label = `$${part.label}`;
+  return <UserMessageChipView part={part} onOpenFileReference={onOpenFileReference} />;
+}
+
+export type UserMessageInlineMarkdownSegment =
+  | { kind: "text"; text: string }
+  | { kind: "code"; text: string }
+  | { kind: "link"; label: string; href: string };
+
+export function userMessageInlineMarkdownSegmentsForTest(text: string): UserMessageInlineMarkdownSegment[] {
+  return userMessageInlineMarkdownSegments(text);
+}
+
+function userMessageInlineMarkdownSegments(text: string): UserMessageInlineMarkdownSegment[] {
+  const segments: UserMessageInlineMarkdownSegment[] = [];
+  let index = 0;
+  const pushText = (value: string) => {
+    if (!value) return;
+    const previous = segments[segments.length - 1];
+    if (previous?.kind === "text") previous.text += value;
+    else segments.push({ kind: "text", text: value });
+  };
+
+  while (index < text.length) {
+    const codeIndex = text.indexOf("`", index);
+    const linkIndex = text.indexOf("[", index);
+    const candidates = [codeIndex, linkIndex].filter((value) => value >= 0);
+    const next = candidates.length > 0 ? Math.min(...candidates) : -1;
+    if (next < 0) {
+      pushText(text.slice(index));
+      break;
+    }
+    pushText(text.slice(index, next));
+
+    if (next === codeIndex) {
+      const end = text.indexOf("`", next + 1);
+      if (end < 0) {
+        pushText(text.slice(next));
+        break;
+      }
+      segments.push({ kind: "code", text: text.slice(next + 1, end) });
+      index = end + 1;
+      continue;
+    }
+
+    const link = parseUserMessageMarkdownLink(text, next);
+    if (!link) {
+      pushText(text.slice(next, next + 1));
+      index = next + 1;
+      continue;
+    }
+    if (isUnsafeUserMessageHref(link.href)) {
+      pushText(text.slice(next, link.endIndex));
+    } else {
+      segments.push({ kind: "link", label: link.label, href: link.href });
+    }
+    index = link.endIndex;
   }
-  if ((part.chipKind === "mention" || part.chipKind === "file") && part.path && onOpenFileReference) {
+
+  return segments;
+}
+
+function renderUserMessageInlineMarkdown(text: string): ReactNode[] {
+  return userMessageInlineMarkdownSegments(text).map((segment, index) => {
+    if (segment.kind === "code") {
+      return <code key={index}>{segment.text}</code>;
+    }
+    if (segment.kind === "link") {
+      return (
+        <a
+          className={isExternalUserMessageHref(segment.href) ? "hc-markdown-link is-external" : "hc-markdown-link"}
+          href={segment.href}
+          key={index}
+          rel={isExternalUserMessageHref(segment.href) ? "noreferrer" : undefined}
+          target={isExternalUserMessageHref(segment.href) ? "_blank" : undefined}
+          title={segment.href}
+        >
+          <span className="hc-markdown-link-label">{segment.label}</span>
+        </a>
+      );
+    }
+    return segment.text;
+  });
+}
+
+function parseUserMessageMarkdownLink(
+  text: string,
+  startIndex: number,
+): { label: string; href: string; endIndex: number } | null {
+  const labelEnd = text.indexOf("]", startIndex + 1);
+  if (labelEnd <= startIndex + 1 || text[labelEnd + 1] !== "(") return null;
+  let cursor = labelEnd + 2;
+  let href = "";
+  while (cursor < text.length) {
+    const char = text[cursor];
+    if (char === "\\") {
+      const next = text[cursor + 1];
+      if (!next) return null;
+      href += next;
+      cursor += 2;
+      continue;
+    }
+    if (char === ")") {
+      return {
+        label: text.slice(startIndex + 1, labelEnd),
+        href,
+        endIndex: cursor + 1,
+      };
+    }
+    href += char;
+    cursor += 1;
+  }
+  return null;
+}
+
+function isUnsafeUserMessageHref(value: string): boolean {
+  return /^\s*(?:javascript|data):/i.test(value);
+}
+
+function isExternalUserMessageHref(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function UserMessageChipView({
+  part,
+  onOpenFileReference,
+}: {
+  part: Extract<UserMessageContentPart, { kind: "chip" }>;
+  onOpenFileReference?: (reference: FileReference) => void;
+}) {
+  const { icon, label, prefix } = chipVisual(part);
+  const displayLabel = `${prefix}${label}`;
+  const style = part.brandColor ? { color: part.brandColor } : undefined;
+  const className = `hc-user-chip hc-user-chip-${part.chipKind}`;
+
+  // 可点击：file / mention 类带 path 且提供了 onOpenFileReference
+  const isInteractive = (part.chipKind === "mention" || part.chipKind === "file") && Boolean(part.path) && Boolean(onOpenFileReference);
+  if (isInteractive) {
     return (
       <button
-        className={`hc-user-chip hc-user-chip-button${part.chipKind === "file" ? " hc-user-chip-file" : ""}`}
+        className={`${className} hc-user-chip-button`}
         title={part.path}
         type="button"
-        onClick={() => onOpenFileReference({ path: part.path, lineStart: 1 })}
+        style={style}
+        onClick={() => onOpenFileReference?.({ path: part.path, lineStart: 1 })}
       >
         {icon}
-        <span>{label}</span>
+        <span>{displayLabel}</span>
       </button>
     );
   }
   return (
-    <span
-      className={`hc-user-chip${part.chipKind === "file" ? " hc-user-chip-file" : ""}`}
-      title={part.path || part.label}
-    >
+    <span className={className} title={part.path || label} style={style}>
       {icon}
-      <span>{label}</span>
+      <span>{displayLabel}</span>
     </span>
   );
 }
 
-function fileIconFor(extension: string | undefined): ReactNode {
-  const ext = (extension ?? "").toLowerCase();
-  if (!ext) return <File size={13} />;
-  if (["doc", "docx", "rtf", "odt", "pages"].includes(ext)) return <FileText size={13} className="hc-user-chip-icon-word" />;
-  if (["xls", "xlsx", "csv", "tsv", "ods", "numbers"].includes(ext)) return <FileSpreadsheet size={13} className="hc-user-chip-icon-excel" />;
-  if (["pdf"].includes(ext)) return <FileText size={13} className="hc-user-chip-icon-pdf" />;
-  if (["ppt", "pptx", "key", "odp"].includes(ext)) return <FileText size={13} className="hc-user-chip-icon-ppt" />;
-  if (["zip", "tar", "gz", "rar", "7z"].includes(ext)) return <FileArchive size={13} />;
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "heic"].includes(ext)) return <FileImage size={13} />;
-  if (["txt", "md", "log"].includes(ext)) return <FileText size={13} />;
-  if (["ts", "tsx", "js", "jsx", "py", "rs", "go", "java", "json", "yaml", "yml", "html", "css", "scss"].includes(ext)) return <FileCode size={13} />;
-  return <File size={13} />;
+function chipVisual(
+  part: Extract<UserMessageContentPart, { kind: "chip" }>,
+): { icon: ReactNode; label: string; prefix: string } {
+  const label = part.displayName ?? part.label;
+
+  const iconImg = part.iconSmall
+    ? <img alt="" className="hc-user-chip-icon-img" src={part.iconSmall} />
+    : null;
+
+  switch (part.chipKind) {
+    case "file":
+      return {
+        icon: iconImg ?? fileIconFor({ path: part.path || part.label, size: 13 }),
+        label,
+        prefix: "",
+      };
+    case "skill":
+      return { icon: iconImg ?? <Sparkles size={13} />, label, prefix: "$" };
+    case "app":
+      return { icon: iconImg ?? <AppWindow size={13} />, label, prefix: "$" };
+    case "plugin":
+      return { icon: iconImg ?? <PlugZap size={13} />, label, prefix: "@" };
+    case "agent":
+      return { icon: iconImg ?? <Bot size={13} />, label, prefix: "@" };
+    case "mention":
+    default:
+      return { icon: iconImg ?? <AtSign size={13} />, label, prefix: "@" };
+  }
 }
 
 function UserMessageImagePartView({

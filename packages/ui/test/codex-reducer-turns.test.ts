@@ -16,6 +16,7 @@ export default function runCodexReducerTurnsTests(): void {
   dedupesServerRequestsByRequestId();
   tracksLatestCollaborationModeByThread();
   tracksComposerModeDraftsInReducer();
+  threadSettingsUpdatedRefreshesActiveThreadContextAndComposerMode();
   startsThreadWithCollectedTurnItemsAndActiveTurn();
   startsThreadWithRunningOrActiveTurnStatuses();
   threadStartedStaleSnapshotDoesNotOverwriteCompletedLiveItems();
@@ -282,6 +283,95 @@ function tracksComposerModeDraftsInReducer(): void {
     "plan",
     "active composer mode should follow latest collaboration mode when no draft exists",
   );
+}
+
+function threadSettingsUpdatedRefreshesActiveThreadContextAndComposerMode(): void {
+  const state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+    threadContextDefaults: {
+      model: "old-model",
+      modelProvider: "old-provider",
+      serviceTier: "old-tier",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+      sandbox: "read-only",
+      permissions: ":old",
+      reasoningEffort: "minimal",
+      reasoningSummary: "none",
+      personality: "friendly",
+      baseInstructions: "base instructions",
+      memories: { useMemories: true, generateMemories: false },
+    },
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        latestCollaborationMode: null,
+        composerMode: null,
+      }),
+    },
+  };
+
+  const next = reduceNotification(state, {
+    method: "thread/settings/updated",
+    params: {
+      threadId: "thread-1",
+      threadSettings: {
+        cwd: "/workspace/updated",
+        approvalPolicy: "never",
+        approvalsReviewer: "auto_review",
+        sandboxPolicy: {
+          type: "workspaceWrite",
+          writableRoots: ["/workspace/updated"],
+          networkAccess: true,
+          excludeTmpdirEnvVar: false,
+          excludeSlashTmp: false,
+        },
+        activePermissionProfile: { id: ":workspace", extends: null },
+        model: "gpt-5.2-codex",
+        modelProvider: "openai",
+        serviceTier: "priority",
+        effort: "high",
+        summary: "detailed",
+        collaborationMode: {
+          mode: "plan",
+          settings: {
+            model: "gpt-5.2-codex",
+            reasoning_effort: "high",
+            developer_instructions: null,
+          },
+        },
+        personality: "pragmatic",
+      },
+    },
+  });
+
+  assertEqual(next.threads[0]?.cwd, "/workspace/updated", "thread/settings/updated should refresh thread cwd metadata");
+  assertEqual(next.threads[0]?.modelProvider, "openai", "thread/settings/updated should refresh thread model provider metadata");
+  assertDeepEqual(
+    next.threadContextDefaults,
+    {
+      baseInstructions: "base instructions",
+      memories: { useMemories: true, generateMemories: false },
+      model: "gpt-5.2-codex",
+      modelProvider: "openai",
+      serviceTier: "priority",
+      approvalPolicy: "never",
+      approvalsReviewer: "auto_review",
+      sandbox: "workspace-write",
+      permissions: ":workspace",
+      reasoningEffort: "high",
+      reasoningSummary: "detailed",
+      personality: "pragmatic",
+    },
+    "thread/settings/updated should refresh active-thread defaults without leaking stale values",
+  );
+  assertEqual(
+    selectThreadComposerMode(next, "thread-1"),
+    "plan",
+    "thread/settings/updated should update the thread collaboration-derived composer mode",
+  );
+  assertEqual(next.composerMode, "plan", "active thread settings should update the global composer mode");
 }
 
 function upsertsExistingThreadWithoutMovingItToTheTop(): void {

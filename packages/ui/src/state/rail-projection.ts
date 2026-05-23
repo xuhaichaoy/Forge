@@ -2,6 +2,7 @@ import { stringField } from "../lib/format";
 
 import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import type {
+  AppRegistryEntry,
   ItemRecord,
   RailEntry,
   RailEntryReference,
@@ -15,15 +16,61 @@ import {
   itemType,
   mcpServerName,
   mcpSourceTitle,
+  mcpToolName,
   shouldProjectArtifactsFromItem,
   statusText,
 } from "./thread-item-fields";
+
+export function appRegistryEntriesFromResponse(value: unknown): AppRegistryEntry[] {
+  return responseItems(value).flatMap((item) => {
+    const id = stringField(item, "id");
+    if (!id) return [];
+    return [{
+      id,
+      name: stringField(item, "name") || id,
+      pluginDisplayNames: stringArrayField(item, "pluginDisplayNames"),
+      logoUrl: stringField(item, "logoUrl") || null,
+      logoUrlDark: stringField(item, "logoUrlDark") || null,
+    }];
+  });
+}
+
+/**
+ * Codex Desktop source matching (`split-items-into-render-groups-*`):
+ * compare server name, tool name, and `${server}__${tool}` parts against app
+ * aliases: name, id, id without connector prefix, and plugin display names.
+ */
+function lookupAppSource(
+  server: string,
+  tool: string,
+  appRegistry: AppRegistryEntry[] | null | undefined,
+): AppRegistryEntry | null {
+  if (!appRegistry || appRegistry.length === 0 || !server) return null;
+  const serverTokens = normalizedTokens(server);
+  const toolTokens = normalizedTokens(tool);
+  const functionPartTokens = `${server}__${tool}`
+    .split("__")
+    .map(normalizedTokens)
+    .filter((tokens) => tokens.length > 0);
+  for (const app of appRegistry) {
+    const aliases = appAliasTokens(app);
+    const matchesServer = aliases.some((alias) => tokensEqual(alias, serverTokens));
+    const matchesTool = aliases.some((alias) => tokensStartWith(toolTokens, alias));
+    const matchesFunctionPart = functionPartTokens.some((part) =>
+      aliases.some((alias) => tokensStartWith(part, alias)));
+    if (matchesServer || matchesTool || matchesFunctionPart) {
+      return app;
+    }
+  }
+  return null;
+}
 
 export function collectRailEntries(
   item: ThreadItem,
   artifacts: Map<string, RailEntry>,
   sources: Map<string, RailEntry>,
   fileCandidates?: ArtifactFileCandidateIndex,
+  appRegistry?: AppRegistryEntry[] | null,
 ): RailEntry[] | null {
   const record = item as ItemRecord;
   const plan = itemType(item) === "todo-list" && Array.isArray(record.plan) ? record.plan : null;
@@ -68,9 +115,14 @@ export function collectRailEntries(
     const server = mcpServerName(item);
     if (server !== "node_repl") {
       const sourceId = `mcp-server:${server || "mcp"}`;
-      setSource(sources, sourceId, {
-        id: sourceId,
-        title: mcpSourceTitle(server),
+      const tool = mcpToolName(item);
+      const appSource = lookupAppSource(server, tool, appRegistry);
+      const sourceKey = appSource?.id || sourceId;
+      setSource(sources, sourceKey, {
+        id: sourceKey,
+        title: appSource ? appSourceDisplayTitle(appSource) : mcpSourceTitle(server),
+        logoUrl: appSource?.logoUrl ?? null,
+        logoUrlDark: appSource?.logoUrlDark ?? null,
       });
     }
   }
@@ -214,7 +266,6 @@ export function artifactsFromText(
         id: target,
         title: reference.path.split("/").filter(Boolean).pop() ?? reference.path,
         meta: target,
-        status: "referenced",
         reference,
         action: { kind: "file", reference },
       });
@@ -264,8 +315,13 @@ export function setArtifact(artifacts: Map<string, RailEntry>, entry: RailEntry)
 }
 
 function setSource(sources: Map<string, RailEntry>, key: string, entry: RailEntry): void {
-  if (sources.has(key)) return;
+  sources.delete(key);
   sources.set(key, entry);
+}
+
+function appSourceDisplayTitle(app: AppRegistryEntry): string {
+  const pluginNames = app.pluginDisplayNames?.filter((name) => name.trim().length > 0) ?? [];
+  return pluginNames.length > 0 ? pluginNames.join(", ") : app.name || app.id;
 }
 
 export function artifactKey(entry: RailEntry): string {
@@ -385,6 +441,49 @@ function isRenderableArtifactEntry(entry: RailEntry): boolean {
   if (entry.action?.kind === "file") return hasArtifactDisplaySignal(fileArtifactPath(entry));
   if (entry.action?.kind === "url") return hasArtifactDisplaySignal(entry.action.url);
   return true;
+}
+
+function responseItems(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter(isRecord);
+  if (isRecord(value) && Array.isArray(value.data)) return value.data.filter(isRecord);
+  return [];
+}
+
+function stringArrayField(record: Record<string, unknown>, field: string): string[] {
+  const value = record[field];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function appAliasTokens(app: AppRegistryEntry): string[][] {
+  const values = [
+    app.name ?? "",
+    app.id,
+    app.id.replace(/^connector[_-]/i, ""),
+    ...(app.pluginDisplayNames ?? []),
+  ];
+  const aliases = values.map(normalizedTokens).filter((tokens) => tokens.length > 0);
+  return aliases.filter((tokens, index) => aliases.findIndex((candidate) => tokensEqual(candidate, tokens)) === index);
+}
+
+function normalizedTokens(value: string | null | undefined): string[] {
+  return (value ?? "")
+    .trim()
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter((part) => part.length > 0);
+}
+
+function tokensEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((part, index) => part === right[index]);
+}
+
+function tokensStartWith(value: string[], prefix: string[]): boolean {
+  return prefix.length > 0 && value.length >= prefix.length && prefix.every((part, index) => part === value[index]);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 function hasArtifactDisplaySignal(value: string): boolean {

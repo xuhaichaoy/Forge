@@ -248,9 +248,32 @@
   align-self: flex-end;
 }
 
+/*
+ * Codex `T`/`ke` renders user text inside a `whitespace-pre-wrap` flow
+ * (`reply-pigVihi-.js:14212`). Mirror that here so inline `$skill` /
+ * `@path` chips flow on the same line as the surrounding prose instead
+ * of stacking as block siblings.
+ */
 .hc-user-message-text {
-  flex: 1 1 100%;
+  display: inline;
   min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.hc-user-message-inline {
+  display: block;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.hc-user-message-inline .hc-user-chip {
+  vertical-align: middle;
+  margin-inline: 1px;
 }
 
 .hc-user-message-collapse {
@@ -388,6 +411,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hc-user-chip-icon-img {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+  object-fit: contain;
 }
 
 .hc-user-chip-icon-word { color: #2b579a; }

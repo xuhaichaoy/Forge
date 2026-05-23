@@ -169,10 +169,17 @@ export async function refreshThreads(
 }
 
 export function buildThreadListParams(cursor: string | null = null): Record<string, unknown> {
+  /*
+   * app-server narrows omitted `modelProviders` to the configured default
+   * provider. HiCodex can start threads with a picker override such as
+   * `openai::gpt-5.5` without rewriting config.toml, so list all providers to
+   * keep those chats visible after a renderer reload.
+   */
   return compactParams({
     archived: false,
     cursor,
     limit: THREAD_LIST_PAGE_SIZE,
+    modelProviders: [],
     sortKey: "updated_at",
     sortDirection: "desc",
   });
