@@ -34,6 +34,15 @@ export type CommandPanelKind =
   | "diff"
   | "generic";
 
+// codex: app-main-DG-Mf4Wj.js — cmdk Hd atom (root/chats/files modes).
+// The Codex command dialog tracks a sub-mode separately from its panel kind
+// so a single dialog can swap between command list / chat picker / file
+// picker placeholders (`Type command` / `Search chats` / `Search files`) and
+// drive the two-stage Esc behavior. We surface the same notion here as a
+// derived value so existing CommandPanelState (panel + title) stays the
+// source of truth.
+export type CommandPanelSubMode = "root" | "chats" | "files";
+
 export type CommandPanelEntryKind =
   | "mcpServer"
   | "mcpTool"
@@ -164,6 +173,21 @@ export type CommandPanelEntryAction =
   | { type: "setThreadMemoryMode"; title: string; threadId: string; mode: "enabled" | "disabled" }
   | { type: "setThreadPinned"; title: string; threadId: string; pinned: boolean }
   | { type: "setUiTheme"; title: string; mode: UiThemeMode }
+  // CODEX-REF: settings.general.appearance.codeFontSize.row — Codex Desktop
+  // commits a number 8-24 on blur. HiCodex uses +/- secondaryActions instead
+  // of a number input, but the payload shape (size: number) is identical.
+  | { type: "setCodeFontSize"; title: string; size: number }
+  // CODEX-REF: settings.general.appearance.reducedMotion.label — 3-way toggle
+  // (system / on / off). Mode string matches the option message IDs.
+  | { type: "setReducedMotion"; title: string; mode: "system" | "on" | "off" }
+  // CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js mutation
+  // `set-codex-command-keybinding` (type=set/replace). Accelerator string is
+  // already normalized to "CmdOrCtrl+K" shape by the capture component;
+  // `null` clears the binding (user explicitly unbound the command).
+  | { type: "setKeyboardShortcut"; title: string; commandId: string; accelerator: string | null }
+  // CODEX-REF: same chunk — `set-codex-command-keybinding` type=reset; drops
+  // the user override so the command falls back to its descriptor default.
+  | { type: "resetKeyboardShortcut"; title: string; commandId: string }
   | { type: "setUiLocale"; title: string; locale: HiCodexLocale }
   | { type: "setNotificationPreferences"; title: string; patch: Partial<NotificationPreferences> }
   | { type: "runSlashCommand"; title: string; commandId: string }
@@ -193,6 +217,13 @@ export interface CommandPanelEntry {
   disabled?: boolean;
   action?: CommandPanelEntryAction;
   secondaryActions?: CommandPanelSecondaryAction[];
+  // codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+  // Optional pre-resolved accelerator label rendered as a trailing <kbd> in
+  // CommandPanelRow. Callers that already know the descriptor (e.g. when
+  // emitting bespoke menu entries with a fixed COMMAND_IDS mapping) can fill
+  // this directly; otherwise CommandPanel falls back to
+  // `commandPanelEntryAcceleratorLabel(entry.id)` for the lookup.
+  acceleratorLabel?: string;
 }
 
 export type CommandPanelRenderedItem =
@@ -260,6 +291,71 @@ export function commandPanelShouldShowChatCreateEmptyState(panel: CommandPanelSt
     && query.trim().length === 0;
 }
 
+// codex: app-main-DG-Mf4Wj.js — cmdk Hd atom (root/chats/files modes).
+// Maps a CommandPanelKind to the Codex sub-mode used by the upstream dialog.
+// `files` always maps to the file picker; every other kind starts in `root`
+// because chat picking is tracked via the searchable "Search chats" title
+// rather than a dedicated CommandPanelKind value.
+export function commandPanelSubModeFromKind(kind: CommandPanelKind | null): CommandPanelSubMode {
+  if (kind === "files") return "files";
+  return "root";
+}
+
+// codex: app-main-DG-Mf4Wj.js — derive the cmdk Hd value from a live
+// CommandPanelState. We treat the dedicated "Search chats" panel (used by
+// openChatSearchPanel) as the `chats` sub-mode so the placeholder, Esc, and
+// back-button behaviors match Codex without adding a new field to
+// CommandPanelState.
+export function commandPanelSubModeFromPanel(panel: CommandPanelState | null): CommandPanelSubMode {
+  if (!panel) return "root";
+  if (panel.panel === "files") return "files";
+  if (panel.title === "Search chats") return "chats";
+  return "root";
+}
+
+// codex: app-main-DG-Mf4Wj.js — three placeholders that ride with the Hd
+// atom: root → "Type command", chats → "Search chats", files → "Search files".
+export function commandPanelSubModePlaceholder(subMode: CommandPanelSubMode): string {
+  switch (subMode) {
+    case "files":
+      return "Search files";
+    case "chats":
+      return "Search chats";
+    case "root":
+    default:
+      return "Type command";
+  }
+}
+
+// codex: app-main-DG-Mf4Wj.js — Esc handler `XD(t), t.set(eu,!1)`. First Esc
+// clears any query and/or steps the sub-mode back to root; second Esc closes
+// the dialog. The caller owns the local query state (CommandPanel manages
+// its own input), so we return the next-state intent and let the component
+// apply it.
+export interface CommandPanelEscapeInput {
+  subMode: CommandPanelSubMode;
+  query: string;
+}
+
+export interface CommandPanelEscapeResult {
+  shouldClose: boolean;
+  // Whether the caller should clear its local query string. Together with the
+  // sub-mode reset this matches Codex's first-Esc behavior.
+  clearQuery: boolean;
+  // The sub-mode the panel should land in after the keystroke (only meaningful
+  // when shouldClose is false).
+  nextSubMode: CommandPanelSubMode;
+}
+
+export function commandPanelHandleEscape(input: CommandPanelEscapeInput): CommandPanelEscapeResult {
+  const hasQuery = input.query.length > 0;
+  const inSubMode = input.subMode !== "root";
+  if (inSubMode || hasQuery) {
+    return { shouldClose: false, clearQuery: hasQuery, nextSubMode: "root" };
+  }
+  return { shouldClose: true, clearQuery: false, nextSubMode: "root" };
+}
+
 export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[]): CommandPanelRenderedItem[] {
   const renderedItems: CommandPanelRenderedItem[] = [];
   let currentGroupKey: string | null = null;
@@ -276,6 +372,105 @@ export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[
     renderedItems.push({ type: "entry", key: entry.id, entry });
   }
   return renderedItems;
+}
+
+// codex: app-main-DG-Mf4Wj.js — command menu group taxonomy. The Codex dialog
+// renders top-level sections in this fixed order, mirroring the
+// `commandMenuGroupKey` taxonomy declared by the command catalog (see
+// state/commands.ts COMMAND_DESCRIPTORS / state/command-registry.ts
+// CommandGroup). Sections without entries are skipped at render time.
+const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; title: string }> = [
+  { key: "thread",     title: "Thread" },
+  { key: "panels",     title: "Panels" },
+  { key: "navigation", title: "Navigation" },
+  { key: "workspace",  title: "Workspace" },
+  { key: "skills",     title: "Skills" },
+  { key: "configure",  title: "Configure" },
+  { key: "app",        title: "App" },
+];
+
+// codex: app-main-DG-Mf4Wj.js — bucket the command menu's kind-typed
+// entries under the taxonomy when an entry doesn't already declare a
+// `commandMenuGroupKey`. Anything we can't classify is forwarded to the
+// catch-all "Other" section so chat-specific groups (pinned-chats /
+// recent-chats) keep their existing rendering.
+function defaultGroupKeyForKind(kind: CommandPanelEntryKind): string {
+  switch (kind) {
+    case "thread":
+    case "diff":
+      return "thread";
+    case "file":
+      return "workspace";
+    case "skill":
+      return "skills";
+    case "mcpServer":
+    case "mcpTool":
+    case "mcpResource":
+    case "mcpResourceTemplate":
+    case "hook":
+    case "experimentalFeature":
+    case "collaborationMode":
+    case "theme":
+    case "status":
+      return "configure";
+    case "app":
+    case "plugin":
+      return "app";
+    default:
+      return "other";
+  }
+}
+
+export interface CommandGroupSection {
+  groupKey: string;
+  title: string;
+  entries: CommandPanelEntry[];
+}
+
+// codex: app-main-DG-Mf4Wj.js — split flat command menu entries into the
+// Codex command menu's top-level sections. Pinned / Recent chats (which
+// already carry a per-entry groupLabel) are emitted in a leading "Other"
+// section preserving their original order so the existing
+// groupCommandPanelEntriesForRendering pass still produces sub-headers.
+export function groupCommandPanelEntries(entries: CommandPanelEntry[]): CommandGroupSection[] {
+  const bucketed = new Map<string, CommandPanelEntry[]>();
+  const otherKey = "other";
+  const knownKeys = new Set<string>(GROUP_TITLE_ORDER.map((item) => item.key));
+
+  for (const entry of entries) {
+    const declared = entry.groupKey?.trim();
+    // Per-entry groupLabel (pinned-chats / recent-chats) signals an
+    // existing sub-group that the renderer already handles. These keys are
+    // not part of the taxonomy, so we surface them in the leading "Other"
+    // bucket without dropping their per-entry headers.
+    const taxonomyKey = declared && knownKeys.has(declared)
+      ? declared
+      : entry.groupLabel
+        ? otherKey
+        : declared || defaultGroupKeyForKind(entry.kind);
+    const finalKey = knownKeys.has(taxonomyKey) ? taxonomyKey : otherKey;
+    const bucket = bucketed.get(finalKey);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      bucketed.set(finalKey, [entry]);
+    }
+  }
+
+  const sections: CommandGroupSection[] = [];
+  // Emit the "Other" bucket first so pinned / recent chats stay at the
+  // top of the panel (matching Codex's chat-first ordering).
+  const otherEntries = bucketed.get(otherKey);
+  if (otherEntries && otherEntries.length > 0) {
+    sections.push({ groupKey: otherKey, title: "Other", entries: otherEntries });
+  }
+  for (const { key, title } of GROUP_TITLE_ORDER) {
+    const groupEntries = bucketed.get(key);
+    if (groupEntries && groupEntries.length > 0) {
+      sections.push({ groupKey: key, title, entries: groupEntries });
+    }
+  }
+  return sections;
 }
 
 export function commandPanelChatCreateEntry(): CommandPanelEntry {
@@ -1905,7 +2100,9 @@ function panelTitle(panel: CommandPanelKind): string {
     case "plugins":
       return "Plugins";
     case "experimental":
-      return "Experimental features";
+      // codex: settings.general.experimentalFeatures defaultMessage
+      // `Experimental features (Beta)` (verified in asar chunks).
+      return "Experimental features (Beta)";
     case "collaboration":
       return "Collaboration modes";
     case "status":
@@ -1923,7 +2120,9 @@ function panelTitle(panel: CommandPanelKind): string {
 
 function panelMessage(panel: CommandPanelKind, status: CommandPanelStatus, error?: string): string {
   if (status === "error") return error || `${panelTitle(panel)} failed.`;
-  if (status === "loading") return `Loading ${panelTitle(panel)}...`;
+  // codex: upstream loading messages use Unicode `…` (U+2026), e.g.
+  // `Loading experimental features…` — keep the ellipsis byte-for-byte aligned.
+  if (status === "loading") return `Loading ${panelTitle(panel)}…`;
   if (status === "empty") return `No ${panelTitle(panel).toLowerCase()} found.`;
   return "";
 }

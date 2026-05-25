@@ -13,6 +13,7 @@
   },
   "include": [
     "src/lib/format.ts",
+    "src/lib/rrule-format.ts",
     "src/lib/tauri-host.ts",
     "src/model/**/*.ts",
     "src/state/**/*.ts",

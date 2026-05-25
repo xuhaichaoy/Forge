@@ -1,0 +1,157 @@
+/*
+ * Styles for the side-panel new-tab landing page (4-6 action cards + optional
+ * suggested artifacts section).
+ *
+ * Source — Codex Desktop classes inlined in `nt(...)` and `lt(...)` at
+ * `/private/tmp/codex-asar/pretty/thread-app-shell-chrome-BVkAxLhy.pretty.js`.
+ * Codex uses Tailwind utility classes; HiCodex doesn't ship Tailwind so we
+ * translate to vanilla CSS with the existing `hc-*` naming convention.
+ *
+ * Mapping (Tailwind → CSS):
+ *   bg-token-main-surface-primary  → var(--hc-surface-panel, #fffdfa)
+ *   bg-token-bg-secondary          → var(--hc-surface-secondary, #f5f4ef)
+ *   text-token-text-primary        → var(--hc-text-primary, #1d1f1c)
+ *   text-token-text-secondary      → var(--hc-text-secondary, #6f716b)
+ *   border-token-border-default    → var(--hc-border-default, #d6d2c6)
+ *   token-border-xstrong (focus)   → var(--hc-border-strong, #8a877d)
+ */
+
+.hc-side-panel-new-tab {
+  /* codex line 971-973: flex h-full min-h-0 flex-col overflow-x-hidden overflow-y-auto bg-token-main-surface-primary p-6 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--hc-surface-panel, #fffdfa);
+  padding: 24px;
+}
+
+.hc-side-panel-new-tab__inner {
+  /* codex line 974-976: mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  margin-inline: auto;
+  width: 100%;
+  max-width: 42rem; /* tailwind max-w-2xl */
+  justify-content: center;
+}
+
+.hc-side-panel-new-tab__grid {
+  /* codex line 905-908: grid w-full grid-cols-1 justify-center justify-items-center gap-3 */
+  display: grid;
+  width: 100%;
+  grid-template-columns: 1fr;
+  justify-content: center;
+  justify-items: center;
+  gap: 12px;
+}
+
+.hc-side-panel-new-tab__empty {
+  /* codex line 911-918: rounded-lg border border-token-border-default p-3 text-sm text-token-text-secondary */
+  border-radius: 8px;
+  border: 1px solid var(--hc-border-default, #d6d2c6);
+  padding: 12px;
+  font-size: 13px;
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-side-panel-new-tab__suggested {
+  /* codex line 929-940: <div className="pb-3"><h3 ...>Suggested</h3></div> */
+  padding-bottom: 12px;
+}
+
+.hc-side-panel-new-tab__suggested-heading {
+  /* codex line 931-937: text-base font-semibold text-token-text-secondary */
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+/* ---------------------------------------------------------- action card */
+
+.hc-side-panel-action-card {
+  /* codex line 1048-1052:
+       cursor-interaction min-h-32 w-full max-w-[330px] rounded-xl
+       bg-token-bg-secondary px-4 py-6 text-center
+       hover:bg-token-list-hover-background
+       focus-visible:outline focus-visible:outline-2 focus-visible:outline-token-border-xstrong
+  */
+  display: block;
+  width: 100%;
+  max-width: 330px;
+  min-height: 128px; /* tailwind min-h-32 = 8rem */
+  border: 0;
+  border-radius: 12px;
+  background: var(--hc-surface-secondary, #f5f4ef);
+  padding: 24px 16px;
+  text-align: center;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background-color 120ms ease-in-out;
+}
+
+.hc-side-panel-action-card:hover {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
+}
+
+.hc-side-panel-action-card:focus-visible {
+  outline: 2px solid var(--hc-border-strong, #8a877d);
+  outline-offset: 2px;
+}
+
+.hc-side-panel-action-card__layout {
+  /* codex line 1093: flex min-w-0 flex-col items-center gap-3 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.hc-side-panel-action-card__icon {
+  /* codex line 1058-1061: flex size-7 shrink-0 items-center justify-center text-token-text-secondary */
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 28px;  /* tailwind size-7 = 1.75rem */
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-side-panel-action-card__copy {
+  /* codex line 1086: flex min-w-0 flex-col items-center gap-1 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hc-side-panel-action-card__title {
+  /* codex line 1067-1071: w-max max-w-full truncate text-base font-semibold text-token-text-primary */
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--hc-text-primary, #1d1f1c);
+}
+
+.hc-side-panel-action-card__description {
+  /* codex line 1077-1081: w-max max-w-full truncate text-sm text-token-text-secondary */
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--hc-text-secondary, #6f716b);
+}

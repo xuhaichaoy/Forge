@@ -162,6 +162,7 @@ export function ModelPickerMenu({
       ref={menuRef}
       className="hc-model-picker-menu"
       role="menu"
+      data-state="open"
       style={{
         position: "fixed",
         top: position.top,

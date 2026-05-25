@@ -50,6 +50,7 @@ import { projectNotificationSettingsEntry } from "../state/settings-panel-workfl
 import { loadPluginManagementEntries } from "../state/settings-panel-loader";
 import { refreshThreadContextDefaults } from "../state/thread-workflow";
 import { themeModeLabel, type UiThemeMode } from "../state/theme";
+import { reducedMotionLabel, type ReducedMotionMode } from "../state/appearance";
 
 const MCP_RELOAD_RESTART_MESSAGE =
   "Reloaded MCP config. New threads use refreshed servers; running threads may need a thread restart or another MCP reload before tool changes appear.";
@@ -81,6 +82,10 @@ export function useCommandPanelActions({
   setMcpToolForm,
   setUiLocale,
   setUiThemeMode,
+  setUiCodeFontSize,
+  setUiReducedMotion,
+  setUiKeyboardShortcut,
+  resetUiKeyboardShortcut,
   notificationPreferences,
   setNotificationPreferences,
   runSlashCommand,
@@ -103,6 +108,26 @@ export function useCommandPanelActions({
   setMcpToolForm: Dispatch<SetStateAction<McpToolFormAction | null>>;
   setUiLocale?: (locale: HiCodexLocale) => void;
   setUiThemeMode?: (mode: UiThemeMode) => void;
+  /*
+   * CODEX-REF: settings.general.appearance.codeFontSize.row mutation. Wires
+   * the +/- secondaryAction buttons to the HiCodexApp-owned setter.
+   */
+  setUiCodeFontSize?: (size: number) => void;
+  /*
+   * CODEX-REF: settings.general.appearance.reducedMotion.label mutation.
+   * 3-way toggle System/On/Off.
+   */
+  setUiReducedMotion?: (mode: ReducedMotionMode) => void;
+  /*
+   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js
+   * `set-codex-command-keybinding` (type=set/replace + type=remove via null).
+   */
+  setUiKeyboardShortcut?: (commandId: string, accelerator: string | null) => void;
+  /*
+   * CODEX-REF: same chunk, `set-codex-command-keybinding` type=reset.
+   * Drops the override so the descriptor default takes effect again.
+   */
+  resetUiKeyboardShortcut?: (commandId: string) => void;
   notificationPreferences?: NotificationPreferences;
   setNotificationPreferences?: (patch: Partial<NotificationPreferences>) => NotificationPreferences;
   runSlashCommand?: (commandId: string) => void;
@@ -1166,6 +1191,73 @@ export function useCommandPanelActions({
       dispatch({ type: "log", text: `${themeModeLabel(action.mode)} theme selected.`, level: "info" });
       return;
     }
+    /*
+     * CODEX-REF: settings.general.appearance.codeFontSize.row mutation.
+     * Codex Desktop persists onBlur of a number input; HiCodex commits each
+     * +/- button click directly, sharing the same `size: number` payload.
+     */
+    if (action.type === "setCodeFontSize") {
+      setUiCodeFontSize?.(action.size);
+      sink("generic", {
+        status: "ready",
+        title: action.title,
+        message: `Code font size set to ${action.size} px.`,
+        entries: [{
+          id: `code-font-size:${action.size}:saved`,
+          title: `${action.size} px`,
+          kind: "status",
+          status: "selected",
+          meta: "Saved locally",
+        }],
+      });
+      dispatch({ type: "log", text: `Code font size set to ${action.size} px.`, level: "info" });
+      return;
+    }
+    /*
+     * CODEX-REF: settings.general.appearance.reducedMotion.label mutation —
+     * mode is one of "system" / "on" / "off" matching the Codex option IDs.
+     */
+    if (action.type === "setReducedMotion") {
+      setUiReducedMotion?.(action.mode);
+      const label = reducedMotionLabel(action.mode);
+      sink("generic", {
+        status: "ready",
+        title: action.title,
+        message: `Reduced motion: ${label}.`,
+        entries: [{
+          id: `reduced-motion:${action.mode}:saved`,
+          title: label,
+          kind: "status",
+          status: "selected",
+          meta: "Saved locally",
+        }],
+      });
+      dispatch({ type: "log", text: `Reduced motion: ${label}.`, level: "info" });
+      return;
+    }
+    /*
+     * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — type=set/replace
+     * mutation. Accelerator is null when the user intentionally unbinds the
+     * command. The setter mirrors React state + module singleton in
+     * keymap-overrides.ts so accelerator resolvers see the new value
+     * immediately (no Tauri command needed, webview-scoped).
+     */
+    if (action.type === "setKeyboardShortcut") {
+      setUiKeyboardShortcut?.(action.commandId, action.accelerator);
+      const description = action.accelerator
+        ? `Set ${action.commandId} to ${action.accelerator}.`
+        : `Unbound ${action.commandId}.`;
+      dispatch({ type: "log", text: description, level: "info" });
+      return;
+    }
+    /*
+     * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — type=reset mutation.
+     */
+    if (action.type === "resetKeyboardShortcut") {
+      resetUiKeyboardShortcut?.(action.commandId);
+      dispatch({ type: "log", text: `Reset ${action.commandId} keybinding.`, level: "info" });
+      return;
+    }
     if (action.type === "setUiLocale") {
       setUiLocale?.(action.locale);
       const label = localeLabel(action.locale);
@@ -1306,6 +1398,10 @@ export function useCommandPanelActions({
     setMcpToolForm,
     setUiLocale,
     setUiThemeMode,
+    setUiCodeFontSize,
+    setUiReducedMotion,
+    setUiKeyboardShortcut,
+    resetUiKeyboardShortcut,
     notificationPreferences,
     setNotificationPreferences,
     runSlashCommand,

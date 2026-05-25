@@ -71,6 +71,7 @@ export type SlashCommandRequest =
   | "startReview"
   | "showDiff"
   | "showStatus"
+  | "toggleStatusFooter"
   | "forkThread"
   | "renameThread"
   | "reloadMcp"
@@ -156,9 +157,14 @@ export function composerPlaceholderText(input: {
   hasConversation: boolean;
   hasBackgroundAgentsPanel?: boolean;
 }): string {
+  // codex: placeholder strings align verbatim to upstream ICU defaults —
+  //   composer.placeholder.newTask.locally.v2              = "Ask Codex anything. @ to use plugins or mention files"
+  //   composer.placeholder.localFollowUp.locallyWithAgents = "Ask for follow up changes or @ to tag an agent"
+  //   composer.placeholder.localFollowUp.locally           = "Ask for follow-up changes"
+  // (Upstream intentionally drops the hyphen in the with-agents variant.)
   if (!input.hasConversation) return "Ask Codex anything. @ to use plugins or mention files";
   return input.hasBackgroundAgentsPanel
-    ? "Ask for follow-up changes or @ to tag an agent"
+    ? "Ask for follow up changes or @ to tag an agent"
     : "Ask for follow-up changes";
 }
 
@@ -413,7 +419,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("raw", "Raw mode", "Toggle raw transcript mode.", "debug", "pending", ["scrollback"], "on | off", true),
   command("diff", "Diff", "Show the current git diff.", "workspace", "direct", ["changes"]),
   command("mention", "Mention", "Add a file mention to the composer.", "workspace", "direct", ["file", "@"]),
-  command("status", "Status", "Show active thread, workspace, model, and sidecar status.", "workspace", "direct", ["session"]),
+  command("status", "Status", "Toggle context usage.", "workspace", "direct", ["session"]),
   command("debug-config", "Debug config", "Inspect effective Codex config layers.", "debug", "direct", ["config"]),
   command("rpc", "RPC inspector", "Inspect recent JSON-RPC and host events.", "debug", "direct", ["json-rpc", "inspector"]),
   command("title", "Terminal title", "Configure terminal title behavior.", "settings", "pending", ["terminal"], undefined, true),
@@ -442,12 +448,39 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("help", "Help", "Show available composer commands.", "settings", "desktop", ["commands", "?"]),
 ];
 
+/*
+ * codex: composer-D0cvMZjq.js — composer attach menu lists ~6 entries
+ * (file picker, mention, plain text, image URL, plan toggle, plugins). Codex
+ * orders frequently-used attachment entries before mode toggles. HiCodex
+ * mirrors the order; `localImage` is intentionally absent because it is
+ * already covered by paste/drag-drop in the composer field itself
+ * (HiCodex `composer.tsx` `onPaste` + `onDrop` listeners), matching Codex's
+ * implicit local-image path.
+ */
 export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
   {
     id: "filePath",
     title: "Add photos & files",
     description: "Attach local images or files.",
     placeholder: "",
+  },
+  {
+    id: "mention",
+    title: "Mention a file or app",
+    description: "Insert an @-mention reference.",
+    placeholder: "Type to search for files, agents, skills, apps, or plugins",
+  },
+  {
+    id: "plainText",
+    title: "Add plain text",
+    description: "Paste plain text as a separate attachment.",
+    placeholder: "Paste or type text…",
+  },
+  {
+    id: "imageUrl",
+    title: "Add image from URL",
+    description: "Reference an image hosted online.",
+    placeholder: "https://…",
   },
   {
     id: "plan",
@@ -737,15 +770,85 @@ export function filterSlashCommands<T extends Pick<SlashCommand, "id" | "title">
 ) {
   const normalized = normalizeSlashQuery(query);
   if (!normalized) return commands;
-  return commands.filter((command) => {
-    const haystack = [
-      command.id,
-      command.title,
-      command.description,
-      ...(command.aliases ?? []),
-    ].join(" ").toLowerCase();
-    return haystack.includes(normalized);
+  /*
+   * codex: slash-command-item-BG_2m44T.js — Codex Desktop ranks slash matches
+   * via a score function (sourced from `dist-BzssiQ2D.js` / `score-query-match`).
+   * Plain substring filtering misses typos / split-token queries and returns
+   * results in arbitrary registration order. We mirror Codex's behaviour with
+   * a weighted scorer: exact id > prefix > substring > subsequence (fuzzy).
+   */
+  const scored: Array<{ command: T; score: number; index: number }> = [];
+  for (let index = 0; index < commands.length; index++) {
+    const command = commands[index]!;
+    const score = scoreSlashCommandMatch(normalized, command);
+    if (score > 0) scored.push({ command, score, index });
+  }
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.index - b.index;
   });
+  return scored.map((entry) => entry.command);
+}
+
+/*
+ * codex: slash-command-item-BG_2m44T.js — per-field score with weights.
+ * Returns 0 when no haystack field has any match. Field weights mirror Codex's
+ * priority: id > title > alias > description.
+ */
+function scoreSlashCommandMatch(
+  needle: string,
+  command: Pick<SlashCommand, "id" | "title"> & { aliases?: string[]; description?: string },
+): number {
+  const fields: Array<{ value: string; weight: number }> = [
+    { value: command.id, weight: 3 },
+    { value: command.title, weight: 2.5 },
+    ...((command.aliases ?? []).map((alias) => ({ value: alias, weight: 2 }))),
+    { value: command.description ?? "", weight: 1 },
+  ];
+  let best = 0;
+  for (const { value, weight } of fields) {
+    if (!value) continue;
+    const fieldScore = scoreFuzzyField(needle, value) * weight;
+    if (fieldScore > best) best = fieldScore;
+  }
+  return best;
+}
+
+/*
+ * codex: dist-BzssiQ2D.js — `score-query-match` style ranker.
+ *
+ * Tiers (higher is better):
+ *   exact equality          : 1000
+ *   prefix match            : 800 - (haystack.length - needle.length)
+ *   substring match         : 500 - matchIndex
+ *   subsequence (fuzzy) hit : 200 - totalGap, clamped to [50, ...]
+ * Returns 0 when the needle is not even a subsequence of haystack.
+ */
+function scoreFuzzyField(needle: string, haystack: string): number {
+  const n = needle.toLowerCase();
+  const h = haystack.toLowerCase();
+  if (h === n) return 1000;
+  if (h.startsWith(n)) return 800 - Math.max(0, h.length - n.length);
+  const idx = h.indexOf(n);
+  if (idx >= 0) return 500 - idx;
+  // Subsequence: scan needle chars left-to-right; bail when a char is missing.
+  let hi = 0;
+  let gaps = 0;
+  for (let i = 0; i < n.length; i++) {
+    const c = n.charCodeAt(i);
+    let found = -1;
+    while (hi < h.length) {
+      if (h.charCodeAt(hi) === c) {
+        found = hi;
+        hi++;
+        break;
+      }
+      hi++;
+    }
+    if (found < 0) return 0;
+    gaps += found - (i === 0 ? found : hi - 1);
+  }
+  return Math.max(50, 200 - gaps);
 }
 
 export function slashCommandsForComposerMode(
@@ -812,7 +915,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "diff":
       return { action: "request", request: "showDiff", clearInput: true };
     case "status":
-      return { action: "request", request: "showStatus", clearInput: true };
+      return { action: "request", request: "toggleStatusFooter", clearInput: true };
     case "help":
       return { action: "showCommands", clearInput: true };
     case "skills":
@@ -908,6 +1011,7 @@ export function buildUserInputFromComposer(
   attachments: ComposerAttachment[] = [],
 ): UserInput[] {
   const textParts = [input.trim()];
+  const leadingPromptLinks: string[] = [];
   const structuredInputs: UserInput[] = [];
 
   for (const attachment of attachments) {
@@ -940,8 +1044,12 @@ export function buildUserInputFromComposer(
       case "skill":
         {
           const promptLink = skillAttachmentPromptLink(attachment);
-          if (promptLink && !textParts.some((part) => part.includes(promptLink))) {
-            textParts.push(promptLink);
+          if (
+            promptLink
+            && !textParts.some((part) => part.includes(promptLink))
+            && !leadingPromptLinks.includes(promptLink)
+          ) {
+            leadingPromptLinks.push(promptLink);
           }
         }
         break;
@@ -965,7 +1073,7 @@ export function buildUserInputFromComposer(
     }
   }
 
-  const text = textParts.filter(Boolean).join("\n");
+  const text = [...leadingPromptLinks, ...textParts].filter(Boolean).join("\n");
   return [
     ...(text ? [{ type: "text" as const, text, text_elements: [] }] : []),
     ...structuredInputs,

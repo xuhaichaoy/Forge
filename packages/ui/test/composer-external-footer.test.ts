@@ -97,8 +97,8 @@ function rendersContextChipsWithOverflowHooks(): void {
     "work-mode should not remain as a persistent footer chip",
   );
   assert(
-    !html.includes("main"),
-    "branch should not remain as a persistent footer chip",
+    html.includes("hc-composer-footer-branch") && html.includes("main"),
+    "footer should render the current branch chip",
   );
   assert(
     html.includes('data-interactive="true"'),

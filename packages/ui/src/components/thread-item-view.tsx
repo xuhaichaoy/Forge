@@ -2,18 +2,22 @@ import {
   CheckCircle2,
   ChevronRight,
   Circle,
+  GitFork,
   LoaderCircle,
   Terminal,
   TriangleAlert,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { isItemInProgress, itemType } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
+import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 import { PlanSummaryCard } from "./plan-summary-card";
 import {
   initialExecShellExpanded,
+  type McpAppHostCallHandler,
+  type ReadMcpResourceHandler,
   normalizeDesktopShellCommand,
   ToolActivityDetail,
   toolActivityDetailViewModel,
@@ -22,12 +26,29 @@ import {
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
 export function ThreadItemView({
+  onMcpAppHostCall,
+  onReadMcpResource,
+  threadId = null,
   unit,
 }: {
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
+  threadId?: string | null;
   unit: ThreadItemUnit;
 }) {
   const type = itemType(unit.item);
   if (type === "exec") return <ExecThreadItemView unit={unit} />;
+  if (type === "mcp-tool-call") {
+    return (
+      <McpToolCallThreadItemView
+        unit={unit}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
+      />
+    );
+  }
+  if (type === "mcp-server-elicitation") return <McpServerElicitationThreadItemView unit={unit} />;
   if (type === "todo-list") return <TodoListThreadItemView unit={unit} />;
   if (type === "proposed-plan") return <PlanSummaryCard unit={unit} />;
   /*
@@ -45,19 +66,61 @@ export function ThreadItemView({
   return <DynamicToolCallThreadItemView unit={unit} />;
 }
 
+function McpToolCallThreadItemView({
+  onMcpAppHostCall,
+  onReadMcpResource,
+  threadId,
+  unit,
+}: {
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
+  threadId: string | null;
+  unit: ThreadItemUnit;
+}) {
+  return (
+    <div
+      className="hc-thread-item-row"
+      data-content-search-unit-key={unit.key}
+      data-item-ids={unit.item.id}
+      data-item-type="mcp-tool-call"
+    >
+      <ToolActivityDetail
+        item={unit.item}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
+      />
+    </div>
+  );
+}
+
 function TodoListThreadItemView({
   unit,
 }: {
   unit: ThreadItemUnit;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const plan = todoPlanItems(unit.item);
   const [expanded, setExpanded] = useState(true);
-  const summary = todoListSummaryLabel(unit.item);
+  const activePlanItemRef = useRef<HTMLLIElement | null>(null);
+  const summary = todoListSummaryLabel(unit.item, formatMessage);
+  const activePlanIndex = plan.findIndex((entry) => normalizedTodoStatus(entry.status) === "inProgress");
   const completed = plan.length > 0 && plan.every((entry) => normalizedTodoStatus(entry.status) === "completed");
+
+  // codex: local-conversation-thread-CecHj6JI.js#tv — Desktop tracks the
+  // current `in_progress` plan index and calls `scrollIntoView({block:
+  // "center", behavior: "smooth"})` when that index changes.
+  useEffect(() => {
+    if (!expanded || activePlanIndex < 0) return;
+    activePlanItemRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [activePlanIndex, expanded]);
 
   return (
     <div
-      className="hc-thread-item-row"
+      // codex: local-conversation-thread-CecHj6JI.js#Uv — wrapper has the
+      // `group` modifier so the chevron's `group-hover:opacity-100` rule can
+      // light up on row hover when the card is collapsed.
+      className="hc-thread-item-row group"
       data-content-search-unit-key={unit.key}
       data-item-ids={unit.item.id}
       data-item-type="todo-list"
@@ -73,24 +136,46 @@ function TodoListThreadItemView({
             {completed ? <CheckCircle2 size={14} /> : <Circle size={14} />}
           </span>
           <span className="hc-inline-plan-summary">{summary}</span>
+          {/* codex: local-conversation-thread-CecHj6JI.js#Uv — chevron uses
+              `opacity-0 group-hover:opacity-100` when collapsed and stays at
+              `rotate-180 opacity-100` when expanded. */}
           <ChevronRight
             aria-hidden
-            className={`hc-thread-item-chevron shrink-0 text-stone-400 transition-transform duration-200 ${expanded ? "is-open" : ""}`}
+            className={`hc-thread-item-chevron hc-inline-plan-chevron shrink-0 text-stone-400 transition-[opacity,transform] duration-200 ${
+              expanded ? "is-open" : ""
+            }`}
             size={14}
           />
         </button>
         <AnimatedDisclosure
           className="hc-thread-item-disclosure"
-          innerClassName="hc-thread-item-body"
+          innerClassName="hc-inline-plan-body"
           open={expanded}
         >
-          <ol className="hc-inline-plan-list">
+          {/* codex: local-conversation-thread-CecHj6JI.js#Uv — body uses
+              `vertical-scroll-fade-mask max-h-40 space-y-1 overflow-y-auto
+              [--edge-fade-distance:2rem]`. We mirror the mask + max-height via
+              the existing `hc-inline-plan-list` class with an extra `.is-fade`
+              modifier so the fade only applies inside the todo card. */}
+          <ol className="hc-inline-plan-list is-fade">
             {plan.map((entry, index) => (
-              <li className="hc-inline-plan-row" key={`${entry.step}:${index}`}>
-                <span className="hc-inline-plan-status" aria-hidden="true">
-                  {todoStatusIcon(entry.status)}
+              <li
+                className="hc-inline-plan-row"
+                key={`${entry.step}:${index}`}
+                ref={index === activePlanIndex ? activePlanItemRef : null}
+              >
+                <span className="hc-inline-plan-prefix">
+                  <span className="hc-inline-plan-status" aria-hidden="true">
+                    {todoStatusIcon(entry.status)}
+                  </span>
+                  <span className="hc-inline-plan-index">
+                    {formatMessage({
+                      id: "codex.todoPlan.stepIndexPrefix",
+                      defaultMessage: "{index}.",
+                      description: "Prefix numbering for a plan step, including a trailing period",
+                    }, { index: index + 1 })}
+                  </span>
                 </span>
-                <span className="hc-inline-plan-index">{index + 1}.</span>
                 <span
                   className="hc-inline-plan-step"
                   data-status={normalizedTodoStatus(entry.status)}
@@ -106,12 +191,37 @@ function TodoListThreadItemView({
   );
 }
 
-export function todoListSummaryLabel(item: ThreadItemUnit["item"]): string {
+// codex: local-conversation-thread-CecHj6JI.js#tv — the inline todo-list
+// ThreadItem header always uses
+// `localConversationPage.planItemsCompleted`: "{completedItems} out of
+// {totalItems, plural, one {# task completed} other {# tasks completed}}".
+// The separate `codex.plan.todoListCreated` copy belongs to a different
+// collapsed activity component and should not be used for this standalone row.
+export function todoListSummaryLabel(
+  item: ThreadItemUnit["item"],
+  formatMessage: HiCodexIntlContextValue["formatMessage"] = fallbackTodoListFormatMessage,
+): string {
   const plan = todoPlanItems(item);
+  const total = plan.length;
   const completed = plan.reduce((count, entry) =>
     count + (normalizedTodoStatus(entry.status) === "completed" ? 1 : 0), 0);
-  const taskLabel = plan.length === 1 ? "task" : "tasks";
-  return `${completed} out of ${plan.length} ${taskLabel} completed`;
+  return formatMessage({
+    id: "localConversationPage.planItemsCompleted",
+    defaultMessage: "{completedItems} out of {totalItems, plural, one {# task completed} other {# tasks completed}}",
+    description: "Title for a plan that the model generates font-medium",
+  }, { completedItems: completed, totalItems: total });
+}
+
+function fallbackTodoListFormatMessage(
+  descriptor: Parameters<HiCodexIntlContextValue["formatMessage"]>[0],
+  values: Parameters<HiCodexIntlContextValue["formatMessage"]>[1] = {},
+): string {
+  return descriptor.defaultMessage
+    .replace(/\{totalItems,\s*plural,\s*one\s*\{# task completed\}\s*other\s*\{# tasks completed\}\s*\}/g, () => {
+      const total = Number(values.totalItems ?? 0);
+      return `${values.totalItems ?? 0} ${total === 1 ? "task" : "tasks"} completed`;
+    })
+    .replace(/\{completedItems\}/g, String(values.completedItems ?? 0));
 }
 
 function todoPlanItems(item: ThreadItemUnit["item"]): Array<{ step: string; status: string }> {
@@ -224,6 +334,7 @@ function DynamicToolCallThreadItemView({
 }) {
   const running = isItemInProgress(unit.item);
   const label = dynamicToolCallLabel(unit.item);
+  const appControl = isManageCodexThreadsItem(unit.item);
   return (
     <div
       className="hc-thread-item-row group"
@@ -231,8 +342,28 @@ function DynamicToolCallThreadItemView({
       data-item-ids={unit.item.id}
       data-item-type="dynamic-tool-call"
     >
-      <div className="hc-thread-item-inline text-[13px] leading-5 text-stone-500">
+      <div className={`hc-thread-item-inline text-[13px] leading-5 text-stone-500 ${appControl ? "gap-2" : ""}`}>
+        {appControl && <GitFork aria-hidden className="shrink-0 text-stone-400" size={14} />}
         <span className={`truncate ${running ? "animate-pulse" : ""}`}>{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function McpServerElicitationThreadItemView({
+  unit,
+}: {
+  unit: ThreadItemUnit;
+}) {
+  return (
+    <div
+      className="hc-thread-item-row group"
+      data-content-search-unit-key={unit.key}
+      data-item-ids={stringField(unit.item as Record<string, unknown>, "id") || stringField(unit.item as Record<string, unknown>, "requestId")}
+      data-item-type="mcp-server-elicitation"
+    >
+      <div className="hc-thread-item-inline text-[13px] leading-5 text-stone-500">
+        <span className="hc-thinking-shimmer-text truncate">Awaiting approval</span>
       </div>
     </div>
   );
@@ -382,6 +513,11 @@ function manageCodexThreadsLabel(record: Record<string, unknown>, running: boole
   return running
     ? MANAGE_CODEX_THREADS_RUNNING_LABELS[action] ?? null
     : MANAGE_CODEX_THREADS_COMPLETED_LABELS[action] ?? null;
+}
+
+function isManageCodexThreadsItem(item: ThreadItemUnit["item"]): boolean {
+  const record = item as Record<string, unknown>;
+  return manageCodexThreadsLabel(record, isItemInProgress(item)) !== null;
 }
 
 const MANAGE_CODEX_THREADS_COMPLETED_LABELS: Record<string, string> = {

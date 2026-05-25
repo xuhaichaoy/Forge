@@ -26,7 +26,7 @@ export function projectBackgroundAgentRailEntries(items: ThreadItem[]): RailEntr
       const previous = entries.get(threadId);
       const receiver = multiAgentReceiverInfo(record, threadId);
       const state = multiAgentState(record, threadId);
-      const displayName = stripLeadingAt(receiver.title || previous?.displayName || shortId(threadId));
+      const displayName = stripLeadingAt(receiver.title || previous?.displayName || agentFallbackName(threadId));
       const role = receiver.role || previous?.role || "";
       const model = receiver.model || multiAgentSpawnModel(record) || previous?.model || "";
       const status = normalizeBackgroundAgentStatus(
@@ -230,18 +230,20 @@ function multiAgentState(record: ItemRecord, threadId: string): AgentState {
 }
 
 function multiAgentRole(thread: Record<string, unknown>): string {
-  const role = stringField(thread, "agentRole").trim();
+  const role = (stringField(thread, "agentRole") || threadSpawnSourceField(thread, "agent_role", "agentRole")).trim();
   return role && role !== "default" ? role : "";
 }
 
 function receiverTitle(receiver: Record<string, unknown>, thread: Record<string, unknown> | null): string {
   return (
     stringField(receiver, "agentNickname")
+    || threadSpawnSourceField(receiver, "agent_nickname", "agentNickname")
     || stringField(receiver, "agentName")
     || stringField(receiver, "displayName")
     || stringField(receiver, "name")
     || (thread
       ? stringField(thread, "agentNickname")
+        || threadSpawnSourceField(thread, "agent_nickname", "agentNickname")
         || stringField(thread, "agentName")
         || stringField(thread, "displayName")
         || stringField(thread, "name")
@@ -249,6 +251,20 @@ function receiverTitle(receiver: Record<string, unknown>, thread: Record<string,
         || stringField(thread, "preview")
       : "")
   ).trim();
+}
+
+function threadSpawnSourceField(thread: Record<string, unknown>, snakeKey: string, camelKey: string): string {
+  const source = thread.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return "";
+  const sourceRecord = source as Record<string, unknown>;
+  const direct = stringField(sourceRecord, camelKey);
+  if (direct) return direct;
+  const subAgent = sourceRecord.subAgent;
+  if (!subAgent || typeof subAgent !== "object" || Array.isArray(subAgent)) return "";
+  const threadSpawn = (subAgent as Record<string, unknown>).thread_spawn;
+  if (!threadSpawn || typeof threadSpawn !== "object" || Array.isArray(threadSpawn)) return "";
+  return stringField(threadSpawn as Record<string, unknown>, snakeKey)
+    || stringField(threadSpawn as Record<string, unknown>, camelKey);
 }
 
 function multiAgentSpawnModel(record: ItemRecord): string {
@@ -293,6 +309,6 @@ function stripLeadingAt(value: string): string {
   return trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
 }
 
-function shortId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+function agentFallbackName(id: string): string {
+  return id ? `agent-${id.slice(0, 8)}` : "agent";
 }

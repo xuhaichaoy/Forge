@@ -1,0 +1,231 @@
+/*
+ * Side-panel host + tab bar styles.
+ *
+ * Source — Codex Desktop classes inlined in:
+ *   • `Vt(...)` body wrapper at app-shell-Bh-lgoQk.pretty.js:692-695
+ *     `flex h-full min-h-0 flex-col bg-token-main-surface-primary`
+ *   • `Ht(...)` tab strip wrapper at line 923-928
+ *     `hide-scrollbar relative flex h-full min-w-0 flex-1 scroll-px-1
+ *      items-center overflow-x-auto overflow-y-hidden`
+ *   • `Pt(...)` pill wrapper at line 402
+ *     `group/tab relative flex h-7 max-w-39 shrink-0 items-center
+ *      overflow-hidden rounded-lg bg-token-main-surface-primary px-2 py-1`
+ *
+ * `hc-*` naming + var-driven theming matches the rest of the HiCodex stylesheet.
+ */
+
+.hc-side-panel-host {
+  /*
+   * Positioning mirrors HiCodex's existing FilePreviewPanel (`hc-file-preview-panel`
+   * in styles/base.css:510-524) — absolute right-aligned within the relatively-
+   * positioned `<main className="hc-main">`. Codex's `RightPanelOutlet`
+   * (app-shell-Bh-lgoQk:2777-2809) is laid out by the AppShell grid; HiCodex's
+   * `hc-main` is a flex column so we overlay rather than reserve a column.
+   */
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--hc-surface-panel, #fffdfa);
+  border-left: 1px solid var(--hc-border-default, #d6d2c6);
+  box-shadow: -8px 0 24px -8px rgba(34, 38, 43, 0.10);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.hc-side-panel-host__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--hc-border-default, #d6d2c6);
+  gap: 6px;
+}
+
+.hc-side-panel-host__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hc-side-panel-host__empty,
+.hc-side-panel-host__active {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* codex Vt line 681: `relative min-h-0 flex-1` */
+  position: relative;
+}
+
+.hc-side-panel-host__tab-panel {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  outline: none;
+}
+
+/* -------------------------------------------------------------- tab strip */
+
+.hc-side-panel-tab-bar {
+  /* codex line 952-959: `flex` outer with [before, strip, after] */
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  border-bottom: 1px solid var(--hc-border-default, #d6d2c6);
+  background: var(--hc-surface-panel, #fffdfa);
+  padding-inline: 4px;
+  gap: 4px;
+}
+
+.hc-side-panel-tab-bar__before,
+.hc-side-panel-tab-bar__after {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.hc-side-panel-tab-bar__strip {
+  /* codex line 923-928: scrollable middle */
+  display: flex;
+  align-items: center;
+  flex: 1 1 0%;
+  min-width: 0;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.hc-side-panel-tab-bar__strip::-webkit-scrollbar {
+  display: none;
+}
+
+.hc-side-panel-tab-bar__after-sticky {
+  /* codex line 902-904: `sticky right-0 shrink-0 bg-token-main-surface-primary` */
+  position: sticky;
+  right: 0;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  background: var(--hc-surface-panel, #fffdfa);
+  padding-inline: 4px;
+  gap: 2px;
+  z-index: 1;
+}
+
+/*
+ * Tab-bar utility buttons ("+", close). Codex `I` (Button) with
+ *   `color: 'ghost', size: 'toolbar', uniform: true`
+ * (thread-app-shell-chrome-BVkAxLhy:1746). HiCodex matches the ghost-toolbar
+ * size with a compact rounded hit target.
+ */
+.hc-side-panel-tab-bar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--hc-text-secondary, #6f716b);
+  cursor: pointer;
+  padding: 0;
+}
+
+.hc-side-panel-tab-bar-button:hover {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
+  color: var(--hc-text-primary, #1d1f1c);
+}
+
+/* --------------------------------------------------------------- tab pill */
+
+.hc-side-panel-tab-pill {
+  /* codex line 402: `group/tab relative flex h-7 max-w-39 shrink-0 items-center
+                     overflow-hidden rounded-lg bg-token-main-surface-primary px-2 py-1`
+     max-w-39 ≈ 9.75rem (≈ 156px). */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 28px;
+  max-width: 156px;
+  border-radius: 8px;
+  background: transparent;
+  padding-inline: 6px;
+  gap: 4px;
+}
+
+.hc-side-panel-tab-pill[data-active="true"] {
+  background: var(--hc-surface-secondary, #f5f4ef);
+}
+
+.hc-side-panel-tab-pill:hover {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
+}
+
+.hc-side-panel-tab-pill__button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  gap: 6px;
+}
+
+.hc-side-panel-tab-pill__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-side-panel-tab-pill__title {
+  /* codex tab title wrapper at app-shell-Bh-lgoQk:line 305-310 region:
+     truncate text-sm */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hc-text-primary, #1d1f1c);
+}
+
+.hc-side-panel-tab-pill[data-is-preview="true"] .hc-side-panel-tab-pill__title {
+  font-style: italic;
+}
+
+.hc-side-panel-tab-pill__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-secondary, #6f716b);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hc-side-panel-tab-pill__close:hover {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.1));
+  color: var(--hc-text-primary, #1d1f1c);
+}

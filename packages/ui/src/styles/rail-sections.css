@@ -80,6 +80,33 @@
   cursor: not-allowed;
 }
 
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#Vl — Environment section header
+ * worktree menu trigger. Wider than the generic 24x24 action button because it
+ * carries the current worktree label inline (Monitor icon + label + chevron).
+ */
+.hc-rail-worktree-trigger {
+  display: inline-flex;
+  width: auto;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  height: 22px;
+  font-size: 12px;
+  font: inherit;
+  color: #6f716b;
+  letter-spacing: 0;
+}
+
+.hc-rail-worktree-trigger-label {
+  display: inline-block;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hc-rail-section-chevron {
   flex: 0 0 auto;
   color: #7c7e78;

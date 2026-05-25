@@ -6,3 +6,5 @@ export interface OpenThreadOptions {
 }
 
 export type OpenThreadHandler = (threadId: string, options?: OpenThreadOptions) => void;
+
+export type OpenRemoteTaskHandler = (taskId: string) => void;

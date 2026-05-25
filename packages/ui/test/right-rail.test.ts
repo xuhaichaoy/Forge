@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RightRail } from "../src/components/right-rail";
+import { __resetSectionCollapseStateForTesting } from "../src/hooks/use-section-collapse";
 import { projectBranchDetails } from "../src/state/branch-details";
 import {
   RAIL_LIST_PREVIEW_LIMIT,
@@ -17,18 +18,22 @@ import {
 } from "../src/state/right-rail";
 
 export default function runRightRailTests(): void {
+  __resetSectionCollapseStateForTesting();
   keepsCodexDesktopSectionOrder();
   hidesEmptySections();
   keepsPopulatedBranchDetails();
+  collapsesCompletedProgressByDefaultLikeCodexDesktop();
+  usesDesktopBackgroundTaskTitles();
   clipsRailEntriesByDefaultAndExpandsAllEntries();
-  keepsProgressEntriesUnclippedLikeCodexDesktop();
-  summarizesProgressCompletionLikeCodexDesktop();
+  clipsProgressEntriesLikeCodexDesktop();
+  omitsProgressCompletionSummaryLikeCodexDesktop();
   hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop();
   hidesOutputsForGitProjectArtifactsLikeCodexDesktop();
   rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction();
   preservesSectionCountsAndEntryMeta();
   projectsBranchDiffAction();
   projectsDesktopGitSurfaceWithoutExtraStatusRows();
+  rendersDesktopStatusFooterTrigger();
   loadsAndPersistsRightRailPinnedPreference();
   computesDesktopRightRailDisplayModeAndContentShift();
   hidesRightRailWhileDesktopModeIsOverlay();
@@ -37,6 +42,11 @@ export default function runRightRailTests(): void {
 function keepsCodexDesktopSectionOrder(): void {
   const sections = projectRightRailSections({
     progress: [railEntry("progress-1", "Read guide", "completed", "Plan")],
+    automations: [railEntry("automation-list-1", "Nightly review", "active", "Next run soon")],
+    // codex: pe:automation — new per-conversation single-automation summary
+    // sits between progress and the legacy `automations` list (Desktop order
+    // progress→automation→environment).
+    automation: { id: "auto-1", name: "Weekly digest", rruleSummary: "every Monday at 9am" },
     branchDetails: {
       entries: [],
     },
@@ -44,18 +54,48 @@ function keepsCodexDesktopSectionOrder(): void {
     sideChats: [railEntry("side-chat:side-1", "Side chat", "idle", "Uses gpt-5.2")],
     backgroundAgents: [railEntry("agent-1", "Explorer (explorer)", "active", "Uses gpt-5.4")],
     backgroundTerminals: [railEntry("terminal-1", "npm run dev", "running", "/workspace/project")],
+    // codex: _e:browser-tabs — new structured browser-tab summary replaces the
+    // legacy RailEntry[] form.
+    browser: { title: "Codex docs", displayUrl: "platform.openai.com", isActive: true, tabId: "tab-1" },
     sources: [railEntry("source-1", "github:list_prs", "completed", "MCP tool")],
+    status: [railEntry("status-1", "42 tokens/s", "running", "18% used")],
   });
 
   assertDeepEqual(
     sections.map((section) => section.title),
-    ["Progress", "Outputs", "Side chats", "Background tasks", "Sources"],
+    [
+      "Progress",
+      "Automations",
+      "Automations",
+      "Outputs",
+      "Side chats",
+      "Subagents and tasks",
+      "Browser",
+      "Sources",
+      "Status",
+    ],
     "right rail section order should match Codex Desktop",
   );
   assertEqual(
     sectionById(sections, "backgroundTasks").count,
     2,
     "background tasks should combine background agents and terminals",
+  );
+  // codex: pe:automation/_e:browser-tabs — assert the new sections actually
+  // emit a single-entry payload from the structured projection inputs.
+  assertEqual(sectionById(sections, "automation").count, 1, "automation section should be single-entry");
+  assertEqual(sectionById(sections, "automation").entries[0]?.title, "Weekly digest", "automation entry uses provided name");
+  assertEqual(sectionById(sections, "browser").count, 1, "browser section should be single-entry");
+  assertEqual(sectionById(sections, "browser").entries[0]?.title, "Codex docs", "browser entry uses tab title");
+  assertEqual(
+    sectionById(sections, "browser").entries[0]?.meta,
+    "platform.openai.com",
+    "browser entry meta carries displayUrl",
+  );
+  assertEqual(
+    sectionById(sections, "browser").entries[0]?.status,
+    "active",
+    "browser entry status mirrors isActive",
   );
 }
 
@@ -88,7 +128,7 @@ function keepsPopulatedBranchDetails(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
-      title: "Git",
+      title: "Environment",
       emptyText: "empty",
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
@@ -104,11 +144,77 @@ function keepsPopulatedBranchDetails(): void {
   // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js he —
   // Codex Desktop always emits the Sources panel section alongside Git; an empty
   // sources list renders the "No sources yet" empty state row.
-  assertEqual(sections.length, 2, "populated branch details should project Git and Sources sections");
-  assertEqual(sections[0]?.title, "Git", "branch details section should keep Desktop Git title");
+  assertEqual(sections.length, 2, "populated branch details should project Environment and Sources sections");
+  assertEqual(sections[0]?.title, "Environment", "branch details section should keep Desktop Environment title");
   assertEqual(sections[0]?.allEntries[0]?.id, "changes", "Git section should start with the Desktop Changes entry");
   assertEqual(sections[1]?.id, "sources", "Sources section should follow Git like Codex Desktop");
   assertEqual(sections[1]?.allEntries.length, 0, "Sources section should expose zero entries for the empty state");
+}
+
+function collapsesCompletedProgressByDefaultLikeCodexDesktop(): void {
+  const sections = projectRightRailSections({
+    progress: [
+      railEntry("progress-1", "Read Desktop bundle", "completed", "latest todo-list"),
+      railEntry("progress-2", "Patch right rail", "completed", "latest todo-list"),
+    ],
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    sources: [],
+  });
+
+  assertEqual(sectionById(sections, "progress").defaultCollapsed, true, "completed progress should default collapsed");
+  const html = renderToStaticMarkup(createElement(RightRail, { sections }));
+  assertStringIncludes(html, "aria-expanded=\"false\"", "completed progress should render collapsed by default");
+  assertStringExcludes(html, "hc-rail-section-count", "collapsed progress should not render a title count");
+
+  const aliasStatusSections = projectRightRailSections({
+    progress: [
+      railEntry("progress-1", "Read Desktop bundle", "done", "latest todo-list"),
+    ],
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    sources: [],
+  });
+  assertEqual(
+    sectionById(aliasStatusSections, "progress").defaultCollapsed,
+    undefined,
+    "progress should only treat Desktop's completed status as completed",
+  );
+}
+
+function usesDesktopBackgroundTaskTitles(): void {
+  const onlyAgents = projectRightRailSections({
+    progress: [],
+    branchDetails: { entries: [] },
+    artifacts: [],
+    backgroundAgents: [railEntry("agent-1", "Explorer", "active", "Uses gpt-5")],
+    backgroundTerminals: [],
+    sources: [],
+  });
+  const onlyTerminals = projectRightRailSections({
+    progress: [],
+    branchDetails: { entries: [] },
+    artifacts: [],
+    backgroundAgents: [],
+    backgroundTerminals: [railEntry("background-terminal:1", "npm test", "running", "/workspace")],
+    sources: [],
+  });
+  const mixed = projectRightRailSections({
+    progress: [],
+    branchDetails: { entries: [] },
+    artifacts: [],
+    backgroundAgents: [railEntry("agent-1", "Explorer", "active", "Uses gpt-5")],
+    backgroundTerminals: [railEntry("background-terminal:1", "npm test", "running", "/workspace")],
+    sources: [],
+  });
+
+  assertEqual(sectionById(onlyAgents, "backgroundTasks").title, "Subagents", "agent-only background section title");
+  assertEqual(sectionById(onlyTerminals, "backgroundTasks").title, "Tasks", "terminal-only background section title");
+  assertEqual(sectionById(mixed, "backgroundTasks").title, "Subagents and tasks", "mixed background section title");
 }
 
 function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
@@ -125,8 +231,10 @@ function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
   assertEqual(expanded.entries[entries.length - 1], entries[entries.length - 1], "expanded preview should keep last entry");
 }
 
-function keepsProgressEntriesUnclippedLikeCodexDesktop(): void {
-  const progressEntries = makeEntries(RAIL_LIST_PREVIEW_LIMIT + 3, "progress");
+function clipsProgressEntriesLikeCodexDesktop(): void {
+  const progressEntries = Array.from({ length: RAIL_LIST_PREVIEW_LIMIT + 3 }, (_, index) =>
+    railEntry(`progress-${index + 1}`, `progress ${index + 1}`, "pending", `progress meta ${index + 1}`),
+  );
 
   const sections = projectRightRailSections({
     progress: progressEntries,
@@ -138,13 +246,15 @@ function keepsProgressEntriesUnclippedLikeCodexDesktop(): void {
   });
 
   const progress = sectionById(sections, "progress");
-  assertEqual(progress.entries.length, progressEntries.length, "progress should project every plan item");
+  assertEqual(progress.entries.length, RAIL_LIST_PREVIEW_LIMIT, "progress should preview six plan items by default");
   assertEqual(progress.allEntries.length, progressEntries.length, "progress should keep every source entry");
-  assertEqual(progress.canToggle, false, "progress should not use preview toggles");
-  assertEqual(progress.remainingCount, 0, "progress should not hide entries behind a remaining count");
+  assertEqual(progress.canToggle, true, "progress should use the Desktop expandable list");
+  assertEqual(progress.remainingCount, 3, "progress should report remaining plan items behind Show more");
+  const html = renderToStaticMarkup(createElement(RightRail, { sections }));
+  assertStringIncludes(html, "hc-rail-more-button", "progress should render the Desktop expandable list affordance");
 }
 
-function summarizesProgressCompletionLikeCodexDesktop(): void {
+function omitsProgressCompletionSummaryLikeCodexDesktop(): void {
   const sections = projectRightRailSections({
     progress: [
       railEntry("progress-1", "Read Desktop bundle", "completed", "latest todo-list"),
@@ -158,18 +268,17 @@ function summarizesProgressCompletionLikeCodexDesktop(): void {
     sources: [],
   });
 
-  assertEqual(
-    sectionById(sections, "progress").summary,
-    "1 out of 3 tasks completed",
-    "progress summary should match Codex Desktop completed-task copy",
-  );
+  assertEqual(sectionById(sections, "progress").summary, undefined, "progress should not project a right-rail summary");
+  const html = renderToStaticMarkup(createElement(RightRail, { sections }));
+  assertStringExcludes(html, "hc-rail-section-summary", "progress should render plan rows without a summary line");
+  assertStringIncludes(html, "hc-rail-card-title-progress", "progress rows should use the Desktop three-line text style");
 }
 
 function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
-      title: "Git",
+      title: "Environment",
       emptyText: "empty",
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
@@ -188,7 +297,7 @@ function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
   // suppressed by the Git summary, so the expected order is ["Git", "Sources"].
   assertDeepEqual(
     sections.map((section) => section.title),
-    ["Git", "Sources"],
+    ["Environment", "Sources"],
     "Desktop hides Outputs but keeps Sources when the Git summary section is active",
   );
 }
@@ -197,7 +306,7 @@ function hidesOutputsForGitProjectArtifactsLikeCodexDesktop(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
-      title: "Git",
+      title: "Environment",
       emptyText: "empty",
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
@@ -303,7 +412,7 @@ function projectsBranchDiffAction(): void {
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: {
-      title: "Git",
+      title: "Environment",
       emptyText: "empty",
       rows: [],
       hasData: true,
@@ -442,6 +551,32 @@ function hidesRightRailWhileDesktopModeIsOverlay(): void {
   assertEqual(rightRailShouldRender(1_096), true, "right rail should render once the Desktop display mode leaves overlay");
 }
 
+function rendersDesktopStatusFooterTrigger(): void {
+  const html = renderToStaticMarkup(createElement(RightRail, {
+    sections: projectRightRailSections({
+      progress: [],
+      branchDetails: { entries: [] },
+      artifacts: [],
+      sources: [],
+    }),
+    statusFooter: { tokensUsed: 28_300, contextWindow: 249_000, tokensPerSecond: 42 },
+    onCompactThread: () => undefined,
+  }));
+
+  assertStringIncludes(html, "42 tokens/s", "status footer should show Desktop token-speed label");
+  assertStringIncludes(html, "11% used", "status footer should show Desktop context percent label");
+  assertStringIncludes(
+    html,
+    "28,300 / 249,000 tokens used",
+    "status footer should keep full token count in the trigger tooltip",
+  );
+  assertStringExcludes(
+    html,
+    "hc-rail-status-footer-compact",
+    "status footer should not render HiCodex's old always-visible Compact button",
+  );
+}
+
 function railEntry(id: string, title: string, status: string, meta: string) {
   return { id, title, status, meta };
 }
@@ -454,7 +589,17 @@ function makeEntries(count: number, prefix: string) {
 
 function sectionById(
   sections: ReturnType<typeof projectRightRailSections>,
-  id: "progress" | "branchDetails" | "artifacts" | "sideChats" | "backgroundTasks" | "sources",
+  id:
+    | "progress"
+    | "automation"
+    | "automations"
+    | "branchDetails"
+    | "artifacts"
+    | "sideChats"
+    | "backgroundTasks"
+    | "browser"
+    | "sources"
+    | "status",
 ) {
   const section = sections.find((candidate) => candidate.id === id);
   assertNotNull(section, `expected ${id} section`);

@@ -16,6 +16,13 @@ export interface BranchDetailsRow {
   value: string;
   status?: string;
   details?: string[];
+  /*
+   * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget — click
+   * opens the PR's GitHub page. branchDetailsEntries() lifts this into a
+   * RailEntryAction `{ kind: "url", url }` so right-rail's existing url handler
+   * (onOpenUrl) takes over.
+   */
+  actionUrl?: string;
 }
 
 export interface BranchDetailsDiff {
@@ -35,6 +42,20 @@ export interface BranchDetailsProjectionInput {
   thread: Thread | null | undefined;
   diff?: BranchDetailsDiffInput | null;
   gitStatus?: BranchDetailsGitStatusInput | null;
+  /*
+   * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget —
+   * caller fetches via `host_gh_pr_status` (gh CLI). When absent, the row
+   * is not emitted.
+   */
+  pullRequest?: BranchDetailsPullRequest | null;
+}
+
+export interface BranchDetailsPullRequest {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  state: string;
 }
 
 export interface BranchDetailsDiffInput {
@@ -142,6 +163,20 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
       value: "Commit",
     });
   }
+  // codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget — when
+  // the gh CLI returns an active PR for the current branch, surface it between
+  // the Commit row and the GitHub status row. Click opens the PR URL.
+  const pullRequest = input.pullRequest ?? null;
+  if (pullRequest && pullRequest.number > 0) {
+    rows.push({
+      id: "pull-request",
+      label: "Pull request",
+      value: `${pullRequest.title} #${pullRequest.number}`,
+      status: pullRequestStatusFromPr(pullRequest),
+      actionUrl: pullRequest.url,
+    });
+  }
+
   // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js mf —
   // Codex Desktop ALWAYS renders the GitHub status row in the Git summary section,
   // falling back to "GitHub CLI unavailable" when no `ghStatus` payload is around.
@@ -157,14 +192,39 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   }
 
   return {
-    title: "Git",
-    emptyText: "Git details will appear when the app server provides thread Git or diff data.",
+    /*
+     * Section title mirrors Codex Desktop's `environmentSummary` ICU entry.
+     * Verified literally in
+     *   /private/tmp/codex-asar/webview/assets/local-conversation-thread-CecHj6JI.js
+     *   `id: "codex.localConversation.environmentSummary.title",
+     *    defaultMessage: "Environment",
+     *    description: "Title for the thread summary side panel environment
+     *                  and branch details section"`
+     * (Codex.app 26.519.41501). HiCodex keeps the internal section id as
+     * `branchDetails` for historical reasons; the user-visible title is the
+     * Desktop-aligned "Environment".
+     */
+    title: "Environment",
+    emptyText: "Environment details will appear when the app server provides thread Git or diff data.",
     rows,
     diff,
     gitStatus,
     githubStatus,
     hasData: hasThreadGitContext || hasGitStatusData || hasExplicitGithubStatus || diff !== null,
   };
+}
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR status badge —
+ * maps the gh CLI `state` / `isDraft` pair to a short status token reused by
+ * the rail row's right-side chip ("Draft" / "Merged" / "Closed" / "Open").
+ */
+function pullRequestStatusFromPr(pr: BranchDetailsPullRequest): string {
+  if (pr.isDraft) return "Draft";
+  const normalized = pr.state.toUpperCase();
+  if (normalized === "MERGED") return "Merged";
+  if (normalized === "CLOSED") return "Closed";
+  return "Open";
 }
 
 function explicitGithubStatusProvided(input: BranchDetailsGitStatusInput | null): boolean {

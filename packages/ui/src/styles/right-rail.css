@@ -1,0 +1,371 @@
+/*
+ * codex: local-conversation-thread/_l:browserRow & Ce:mu — P0 right-rail
+ * styles: browser-title shimmer overlay (active browser tab) and the status
+ * footer sticky at the rail bottom.
+ *
+ * Kept in a small dedicated file so the shimmer keyframes don't leak into
+ * tool-activity reasoning's `hc-thinking-shimmer` (different cadence) and so
+ * the footer styles can move with the footer component when refactored.
+ */
+
+/* codex: _l — Desktop runs a gradient sweep across the browser tab title
+ * while the tab is active. HiCodex mirrors the effect with a CSS-only
+ * continuous sweep, scoped to `.loading-shimmer` so other rail-card titles
+ * are unaffected. */
+.hc-rail-card-title.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    #6f716b 0%,
+    #6f716b 35%,
+    rgba(0, 0, 0, 0.65) 50%,
+    #6f716b 65%,
+    #6f716b 100%
+  );
+  background-size: 220% 100%;
+  background-position: -120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: hc-rail-shimmer 4s steps(48, end) infinite;
+}
+
+@keyframes hc-rail-shimmer {
+  0% { background-position: -120% 0; }
+  25% { background-position: 120% 0; }
+  100% { background-position: 120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-rail-card-title.loading-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: inherit;
+  }
+}
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#mu — Status footer.
+ * Sticky-bottom status popover trigger: token speed on the left, context
+ * percent on the right. The full token count is tooltip-only; Compact lives in
+ * the small popover menu.
+ */
+.hc-rail-status-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: auto;
+  padding: 4px 0 8px;
+  background: var(--hc-surface-panel, #fffdfa);
+}
+
+.hc-rail-status-footer-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: calc(100% - 32px);
+  min-width: 0;
+  margin: 0 16px;
+  gap: 10px;
+  border: 0;
+  border-radius: 4px;
+  padding: 4px 0;
+  background: transparent;
+  font-size: 12px;
+  color: #6f716b;
+  cursor: pointer;
+}
+
+.hc-rail-status-footer-trigger::before {
+  content: "";
+  position: absolute;
+  inset: -4px -8px;
+  z-index: -1;
+  border-radius: 4px;
+}
+
+.hc-rail-status-footer-trigger:hover::before,
+.hc-rail-status-footer-trigger[aria-expanded="true"]::before {
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-rail-status-footer-cluster {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hc-rail-status-footer-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hc-rail-status-footer-icon {
+  flex: 0 0 auto;
+  color: #5d5d5d;
+}
+
+.hc-rail-status-context-donut {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background:
+    conic-gradient(#5d5d5d var(--hc-context-usage-percent, 0%), rgba(93, 93, 93, 0.2) 0);
+}
+
+.hc-rail-status-context-donut::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: var(--hc-surface-panel, #fffdfa);
+}
+
+.hc-rail-status-footer-menu {
+  position: absolute;
+  right: 12px;
+  bottom: calc(100% + 4px);
+  width: 180px;
+  border: 1px solid var(--hc-border-subtle, rgba(34, 38, 43, 0.12));
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--hc-surface-panel, #fffdfa);
+  box-shadow: 0 10px 24px rgba(20, 24, 29, 0.14);
+}
+
+.hc-rail-status-footer-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hc-rail-status-footer-menu-item:hover:not(:disabled) {
+  background: rgba(34, 38, 43, 0.06);
+  color: #27313d;
+}
+
+.hc-rail-status-footer-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* codex: local-conversation-thread-CecHj6JI.js#Hl — sticky section header.
+ * Desktop's `Hl` section-header element is `sticky top-0 z-10` over
+ * `bg-token-dropdown-background` so the title remains visible while the rail
+ * body scrolls beneath it. HiCodex already pins the header in
+ * `rail-sections.css` with `z-index: 1`; this override raises the stacking
+ * context above rail-card hover overlays (and the status-footer's sticky
+ * bottom) and swaps the hardcoded panel color for the themed surface token so
+ * dark mode keeps the same masking behavior. The rail scroll container is
+ * `.hc-right-rail { overflow-y: auto }` (see base.css), which is the ancestor
+ * the sticky positioning attaches to. */
+.hc-rail-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--hc-surface-panel);
+}
+
+/*
+ * codex: animations-y0LC3gHS.js#yo + app-shell-state-HP0T5lEX.js#h (setRightPanel)
+ * — Codex Desktop opens/closes its AppShell RightPanel through motion-one with
+ * `F:{type:'spring',duration:.5,bounce:.1}` and shares the same 500ms
+ * cubic-bezier(0.19,1,0.22,1) ease-out used by `yo` for disclosure
+ * transitions across the conversation thread.
+ *
+ * HiCodex's summary right-rail is `position: absolute` and the React tree
+ * mounts/unmounts the `<RightRail>` aside from `HiCodexApp` based on
+ * `showRightRail`. We can't drive an exit animation while the node is being
+ * destroyed (that would require an exit-phase wrapper in HiCodexApp), so on
+ * mount we play an enter animation that slides the rail in from its right
+ * offset and fades it up — mirroring the codex spring open. The transition
+ * variables match `.hc-codex-transition` (500ms / cubic-bezier(0.19,1,0.22,1)).
+ *
+ * @property registration is on a different name from the sidebar
+ * (`--hc-sidebar-width`) so there's no global registration conflict; user
+ * agents that don't support @property fall back to treating the variable as
+ * an untyped custom property — the width still applies, only the implicit
+ * transition is skipped.
+ */
+@property --hc-right-rail-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 300px;
+}
+
+/* codex: animations-y0LC3gHS.js#yo — when the rail width changes (responsive
+ * breakpoints, future resize handle), interpolate through the same 500ms
+ * cubic-bezier as the sidebar collapse so the layout shifts feel cohesive. */
+.hc-right-rail {
+  transition:
+    transform var(--hc-codex-transition),
+    opacity var(--hc-codex-transition),
+    width var(--hc-codex-transition);
+  /* codex: app-shell-state-HP0T5lEX.js#h — entry phase slides in from the
+   * outside edge and fades to full opacity. Matches motion-one spring
+   * `{type:'spring',duration:.5,bounce:.1}` characteristics with our shared
+   * cubic-bezier ease-out approximation. */
+  animation: hc-right-rail-open var(--hc-codex-transition) both;
+  will-change: transform, opacity;
+}
+
+@keyframes hc-right-rail-open {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* codex: local-conversation-thread/an gating — when the rail is rendered but
+ * not pinned (overlay/auto-hide states), fade content and disable pointer
+ * events. The mount path today always passes `isPinned=true` because
+ * HiCodexApp gates on `rightRailPinned`; this rule keeps the visual contract
+ * for future code paths that may render the rail in an unpinned/closing
+ * state during a transition. */
+.hc-right-rail[data-pinned="false"] {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(16px);
+}
+
+/* codex: prefers-reduced-motion — Codex Desktop's motion-one calls respect
+ * the OS reduce-motion flag by snapping to the final keyframe instantly.
+ * Disable both the entry animation and the property-driven transitions so
+ * the rail appears in place with no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .hc-right-rail {
+    transition: none;
+    animation: none;
+  }
+}
+
+/*
+ * TODO codex: HiCodexApp.tsx#showRightRail gates `<RightRail>` mount/unmount.
+ * To play a close animation matching Codex Desktop's setRightPanel(false)
+ * spring, the rail needs an exit-phase wrapper that delays unmount until
+ * the transition completes (e.g. tracking a `closing` state with
+ * `transitionend` cleanup, similar to framer-motion AnimatePresence). That
+ * change is intentionally deferred — it lives in HiCodexApp which is
+ * out-of-scope for this pass.
+ *
+ * TODO codex: overlay mode (`data-display-mode="overlay"`) may want a
+ * different enter trajectory (e.g. fade-only without translate) since the
+ * panel hovers above content rather than sliding into a reserved gutter.
+ * Current implementation uses the same enter keyframe for both modes; refine
+ * if codex shows distinct motion for the overlay branch.
+ */
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status row styles.
+ * Mirrors Codex Desktop's `gh-cli-status-*` row (Environment section, row 4):
+ *   [icon] [title #number] [badge]
+ * The row is a single full-width button so the entire surface is clickable;
+ * Codex Desktop wires the click to `openExternalUrl(pr.url)`.
+ */
+.hc-pr-status-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hc-pr-status-row:hover {
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-pr-status-row-icon {
+  display: inline-flex;
+  flex: 0 0 14px;
+  align-items: center;
+  justify-content: center;
+  color: #6f716b;
+}
+
+.hc-pr-status-row-title {
+  display: inline-flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 4px;
+  overflow: hidden;
+  align-items: baseline;
+}
+
+.hc-pr-status-row-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2a2d2b;
+  font-weight: 600;
+}
+
+.hc-pr-status-row-number {
+  flex: 0 0 auto;
+  color: #6f716b;
+  font-weight: 500;
+}
+
+/* codex: ga#status-badge — Desktop encodes each state with a distinct chip
+ * tone. The colors mirror GitHub's PR state palette (Open: green, Merged:
+ * purple, Closed: red, Draft: gray). */
+.hc-pr-status-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgba(34, 38, 43, 0.08);
+  color: #4b4e49;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.hc-pr-status-badge[data-tone="open"] {
+  background: rgba(31, 136, 61, 0.14);
+  color: #1f883d;
+}
+
+.hc-pr-status-badge[data-tone="merged"] {
+  background: rgba(130, 80, 223, 0.16);
+  color: #8250df;
+}
+
+.hc-pr-status-badge[data-tone="closed"] {
+  background: rgba(207, 34, 46, 0.14);
+  color: #cf222e;
+}
+
+.hc-pr-status-badge[data-tone="draft"] {
+  background: rgba(110, 119, 129, 0.16);
+  color: #6e7781;
+}

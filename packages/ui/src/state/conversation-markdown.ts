@@ -16,10 +16,21 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
   for (const unit of input.units) {
     if (unit.kind === "message") {
       const text = normalizedText(unit.text).trim();
-      if (!text) continue;
-      sections.push(unit.role === "user"
-        ? `## User\n\n${blockquote(text)}`
-        : `## Assistant\n\n${text}`);
+      if (text) {
+        sections.push(unit.role === "user"
+          ? `## User\n\n${blockquote(text)}`
+          : `## Assistant\n\n${text}`);
+      }
+      if (unit.role === "assistant") {
+        for (const after of unit.assistantAfter ?? []) {
+          const section = after.kind === "generatedImageGallery"
+            ? generatedImageGalleryMarkdown(after)
+            : after.kind === "assistantEndResources"
+              ? assistantEndResourcesMarkdown(after)
+              : null;
+          if (section) sections.push(section);
+        }
+      }
       continue;
     }
 
@@ -33,26 +44,19 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
       continue;
     }
 
-    // `inProgressDiff` is a transient render unit emitted only while a turn
-    // is streaming (mirror of Codex `sT` portal). It has no persistent source
-    // item, so the markdown export omits it — completed turns will already
-    // include the final unifiedDiff as a regular threadItem.
-    if (unit.kind === "inProgressDiff") continue;
     /*
      * `generatedImageGallery` is HiCodex's per-turn collected image carousel
      * (Codex `JC`). Markdown export renders each image as a separate
      * `![Generated image](src)` link rather than the carousel container.
      */
     if (unit.kind === "generatedImageGallery") {
-      if (unit.images.length === 0) continue;
-      const imageLinks = unit.images
-        .map((image, index) => {
-          const source = imageSourceForMarkdown(image);
-          return source ? `![Generated image ${index + 1}](${markdownImageTarget(source)})` : "";
-        })
-        .filter(Boolean)
-        .join("\n\n");
-      if (imageLinks) sections.push(details("Generated images", imageLinks));
+      const section = generatedImageGalleryMarkdown(unit);
+      if (section) sections.push(section);
+      continue;
+    }
+    if (unit.kind === "assistantEndResources") {
+      const section = assistantEndResourcesMarkdown(unit);
+      if (section) sections.push(section);
       continue;
     }
 
@@ -64,6 +68,33 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
   }
 
   return `${sections.join("\n\n").trimEnd()}\n`;
+}
+
+function assistantEndResourcesMarkdown(unit: Extract<ConversationRenderUnit, { kind: "assistantEndResources" }>): string | null {
+  if (unit.resources.length === 0) return null;
+  const body = unit.resources.map((resource) => {
+    switch (resource.type) {
+      case "file":
+        return `- ${resource.path}`;
+      case "website":
+        return `- ${resource.target}`;
+      case "google-drive":
+        return `- [${resource.title}](${resource.url})`;
+    }
+  }).join("\n");
+  return details("Resources", body);
+}
+
+function generatedImageGalleryMarkdown(unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>): string | null {
+  if (unit.images.length === 0) return null;
+  const imageLinks = unit.images
+    .map((image, index) => {
+      const source = imageSourceForMarkdown(image);
+      return source ? `![Generated image ${index + 1}](${markdownImageTarget(source)})` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+  return imageLinks ? details("Generated images", imageLinks) : null;
 }
 
 function imageSourceForMarkdown(image: Record<string, unknown>): string {

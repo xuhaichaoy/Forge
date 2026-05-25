@@ -128,6 +128,7 @@ export function McpFollowUpDialog({
       <section
         className="hc-thread-dialog-panel hc-mcp-follow-up-dialog"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label="Send follow-up?"
         onKeyDown={closeOnEscape}

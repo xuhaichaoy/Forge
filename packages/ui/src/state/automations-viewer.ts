@@ -1,10 +1,19 @@
+import { humanizeRrule } from "../lib/rrule-format";
+import type { RailEntry } from "./render-groups";
+// codex: local-conversation-thread-CecHj6JI.js#pe — single-entry per-conversation
+// automation summary input shape lives on `right-rail.ts`; the projection
+// converts the heartbeat schedule view into that shape.
+import type { RightRailAutomationInput } from "./right-rail";
+
 export type AutomationsSurfaceStatus = "loading" | "offline" | "unsupported" | "empty" | "ready" | "error";
 
 export interface AutomationScheduleView {
   id: string;
+  kind?: string | null;
   title: string;
   status: string;
   schedule: string;
+  targetThreadId?: string | null;
   timezone?: string | null;
   nextRunAt?: string | null;
 }
@@ -153,6 +162,80 @@ export function projectHeartbeatAutomationEligibility(
   return { isEligible: true, reason: null };
 }
 
+// codex: local-conversation-thread-CecHj6JI.js#pe — `B = lo({ automations,
+// conversationId })` selects the single active heartbeat automation that
+// targets the current thread, and `au` renders it as Clock-icon + name +
+// rrule summary, with the "Next run: …" string driven by `nextRunAtMs`.
+// HiCodex reuses the same filter as `projectAutomationRailEntries` (kind ==
+// heartbeat && status == ACTIVE && targetThreadId == conversationId) and
+// returns the first match collapsed into the `RightRailAutomationInput`
+// shape consumed by `projectRightRailSections({ automation: … })`.
+export function projectActiveThreadAutomation(
+  model: AutomationsSurfaceModel,
+  conversationId: string | null | undefined,
+): RightRailAutomationInput | null {
+  const targetThreadId = conversationId?.trim() ?? "";
+  if (!targetThreadId || model.schedules.length === 0) return null;
+  const match = model.schedules.find((automation) => (
+    automation.kind === "heartbeat"
+    && automation.status === "ACTIVE"
+    && automation.targetThreadId === targetThreadId
+  ));
+  if (!match) return null;
+  // codex: au row — `name` defaults to "Automation" when the schedule view's
+  // `title` is missing (matches Desktop's empty-name fallback). `rruleSummary`
+  // mirrors Desktop's `$i(rawRrule)` humanization: we feed the raw rrule/cron
+  // schedule through `humanizeRrule` so the rail shows "every Monday at 9" /
+  // "every weekday" instead of the literal "FREQ=WEEKLY;BYDAY=MO" body. The
+  // helper falls back to the trimmed raw string when parsing fails (e.g. cron
+  // expressions) and returns null for missing input so we can omit the field.
+  const nextRunAtMs = parseIsoTimestampMs(match.nextRunAt);
+  // codex: $i(rawRrule) — humanize via rrule.toText()
+  const rruleSummary = humanizeRrule(match.schedule);
+  return {
+    id: match.id,
+    name: match.title || "Automation",
+    ...(rruleSummary ? { rruleSummary } : {}),
+    ...(nextRunAtMs != null ? { nextRunAtMs } : {}),
+  };
+}
+
+// codex: au row — `Next run: …` tooltip needs an epoch-ms number, but the
+// payload usually arrives as an ISO-8601 string. Returning null on bad input
+// lets the renderer omit the tooltip cleanly instead of showing "Invalid
+// Date".
+function parseIsoTimestampMs(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export function projectAutomationRailEntries(
+  model: AutomationsSurfaceModel,
+  conversationId: string | null | undefined,
+): RailEntry[] {
+  /*
+   * CODEX-REF: /private/tmp/codex-asar/pretty/use-is-pull-request-merge-helper-enabled-yqBhsVRr.pretty.js
+   * `lo({ automations, conversationId })` selects only heartbeat automations
+   * whose `status === "ACTIVE"` and `targetThreadId === conversationId`.
+   * CODEX-REF: /private/tmp/codex-asar/pretty/local-conversation-thread-CecHj6JI.pretty.js
+   * `au` renders that active heartbeat row with `name` plus an RRULE summary.
+   */
+  const targetThreadId = conversationId?.trim() ?? "";
+  if (!targetThreadId || model.schedules.length === 0) return [];
+  return model.schedules
+    .filter((automation) => (
+      automation.kind === "heartbeat"
+      && automation.status === "ACTIVE"
+      && automation.targetThreadId === targetThreadId
+    ))
+    .map((automation) => ({
+      id: `automation:${automation.id}`,
+      title: automation.title,
+      ...(automation.schedule ? { meta: automation.schedule } : {}),
+    }));
+}
+
 function automationSchedulesFromPayload(payload: unknown): AutomationScheduleView[] | null {
   const items = payloadArray(payload);
   if (!items) return null;
@@ -177,15 +260,20 @@ function automationScheduleFromRecord(value: unknown, index: number): Automation
     || stringField(record, "automation_id")
     || `automation-${index + 1}`;
   const title = stringField(record, "title") || stringField(record, "name") || id;
-  const schedule = stringField(record, "schedule")
+  const schedule = stringField(record, "rrule")
+    || stringField(record, "schedule")
     || stringField(record, "cron")
     || stringField(record, "cronExpression")
     || "unspecified schedule";
+  const kind = stringField(record, "kind");
+  const targetThreadId = stringField(record, "targetThreadId") || stringField(record, "target_thread_id");
   return {
     id,
+    ...(kind ? { kind } : {}),
     title,
     status: stringField(record, "status") || "unknown",
     schedule,
+    ...(targetThreadId ? { targetThreadId } : {}),
     timezone: stringField(record, "timezone") || stringField(record, "timeZone") || null,
     nextRunAt: stringField(record, "nextRunAt") || stringField(record, "next_run_at") || null,
   };

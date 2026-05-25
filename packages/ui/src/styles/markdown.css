@@ -7,18 +7,20 @@
   list-style: none;
 }
 
-.hc-markdown .hc-task-list li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
+.hc-markdown .hc-task-list .task-list-item {
+  list-style: none;
 }
 
-.hc-markdown .hc-task-list input {
-  flex: 0 0 auto;
+.hc-markdown .hc-task-list .task-list-item > input {
   width: 14px;
   height: 14px;
-  margin: 3px 0 0;
+  margin: 3px 8px 0 0;
+  vertical-align: top;
   accent-color: #2d5562;
+}
+
+.hc-markdown .hc-task-list .task-list-item > p:first-of-type {
+  display: inline;
 }
 
 .hc-markdown blockquote {
@@ -611,11 +613,44 @@
   stroke-width: 4px;
 }
 
+/* codex: --markdown-wide-block-max-width 56rem — tables/code blocks can be
+ * wider than the 48rem text column. Upstream `app-main-*.css` lifts wide
+ * blocks past the text column with this token (see base.css:42-46); we apply
+ * the same to `.hc-markdown-table-wrap` so tables physically extend past the
+ * paragraph column while still centering. Negative `margin-inline` of
+ * `(48rem - 56rem) / 2 = -4rem` per side lets the wrap break out of the
+ * 48rem thread body by 4rem on each side up to the 56rem ceiling; `min(...)`
+ * with `100%` keeps narrow viewports honest so the wrap never overflows the
+ * actual scroll body. `overflow-x: auto` is preserved so very wide tables
+ * still scroll horizontally inside the 56rem envelope.
+ */
 .hc-markdown-table-wrap {
-  max-width: 100%;
-  margin: 16px 0;
+  width: min(100%, var(--markdown-wide-block-max-width, 56rem));
+  max-width: var(--markdown-wide-block-max-width, 56rem);
+  margin: 16px auto;
+  margin-inline: max(
+    calc((var(--thread-content-max-width, 48rem) - var(--markdown-wide-block-max-width, 56rem)) / 2),
+    0px
+  );
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+/* codex: --markdown-wide-block-max-width 56rem — code blocks (.hc-code-snippet
+ * `figure`) and lazy/legacy markdown code containers (`.hc-markdown-code-lazy`)
+ * extend to the same wide-block envelope so syntax-highlighted snippets are
+ * not artificially cramped to the 48rem text column. Tables and code blocks
+ * are the two wide-block element classes Codex Desktop allows past the text
+ * column; everything else (paragraphs, lists) stays at 48rem.
+ */
+.hc-markdown .hc-code-snippet,
+.hc-markdown .hc-markdown-code-lazy {
+  width: min(100%, var(--markdown-wide-block-max-width, 56rem));
+  max-width: var(--markdown-wide-block-max-width, 56rem);
+  margin-inline: max(
+    calc((var(--thread-content-max-width, 48rem) - var(--markdown-wide-block-max-width, 56rem)) / 2),
+    0px
+  );
 }
 
 .hc-markdown table {
@@ -803,17 +838,21 @@
   list-style: none;
 }
 
-.hc-memory-citations a {
+.hc-memory-citations button {
   display: block;
   width: 100%;
+  border: 0;
   border-radius: 6px;
   padding: 6px 8px;
+  background: transparent;
   color: inherit;
+  font: inherit;
+  cursor: pointer;
   text-align: left;
   text-decoration: none;
 }
 
-.hc-memory-citations a:hover {
+.hc-memory-citations button:hover {
   background: rgba(34, 38, 43, 0.05);
   text-decoration: none;
 }

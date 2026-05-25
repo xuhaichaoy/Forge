@@ -406,7 +406,7 @@ function FilePreviewStateView({
   workspaceRoot?: string | null;
 }) {
   if (state.status === "loading") {
-    return <div className="hc-file-preview-empty">Preparing preview...</div>;
+    return <div className="hc-file-preview-empty">Preparing preview…</div>;
   }
   if (state.status === "error" || state.status === "binary") {
     return <div className="hc-file-preview-empty">{state.message}</div>;

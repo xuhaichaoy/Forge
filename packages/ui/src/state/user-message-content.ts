@@ -8,6 +8,16 @@ export function userMessageText(item: ThreadItem): string {
   return content.map(userInputPartText).filter(Boolean).join("\n");
 }
 
+export function userMessageCopyText(item: ThreadItem): string {
+  const record = item as Record<string, unknown>;
+  const content = Array.isArray(record.content) ? record.content : [];
+  return content
+    .map((part) => projectUserInputPart(part).filter(isCopyableUserMessagePart).map(copyableUserMessagePartText).join(""))
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
 export function projectUserMessageContent(item: ThreadItem): UserMessageContentPart[] {
   const record = item as Record<string, unknown>;
   const content = Array.isArray(record.content) ? record.content : [];
@@ -72,6 +82,7 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
           chipKind: "file",
           label: label || basenameOf(path) || path,
           path,
+          presentation: "inline",
           fileExtension: extensionOf(path),
         }];
       }
@@ -109,6 +120,47 @@ function projectUserInputPart(part: unknown): UserMessageContentPart[] {
       return text ? [{ kind: "text", text, textElements: [] }] : [];
     }
   }
+}
+
+function isCopyableUserMessagePart(part: UserMessageContentPart): boolean {
+  if (part.kind === "image") return false;
+  if (part.kind === "chip" && part.chipKind === "file" && part.presentation === "attachment") return false;
+  return true;
+}
+
+function copyableUserMessagePartText(part: UserMessageContentPart): string {
+  if (part.kind === "text") return part.text;
+  if (part.kind === "image") return "";
+  const label = part.label.trim();
+  const path = part.path?.trim() ?? "";
+  if (!path) return label;
+  switch (part.chipKind) {
+    case "skill":
+    case "app":
+      return `[${escapePromptLinkLabel(promptLinkLabel("$", label))}](${escapePromptLinkPath(path)})`;
+    case "plugin":
+    case "agent":
+      return `[${escapePromptLinkLabel(promptLinkLabel("@", label))}](${escapePromptLinkPath(path)})`;
+    case "file":
+    case "mention":
+      return `[${escapePromptLinkLabel(label || basenameOf(path))}](${escapePromptLinkPath(path)})`;
+  }
+}
+
+function promptLinkLabel(marker: "$" | "@", label: string): string {
+  const trimmed = label.trim().replace(/^[@$]/, "");
+  return `${marker}${trimmed || (marker === "$" ? "skill" : "mention")}`;
+}
+
+function escapePromptLinkPath(path: string): string {
+  if (/[\s()<>]/.test(path)) {
+    return `<${path.replace(/\\/g, "\\\\").replace(/>/g, "\\>")}>`;
+  }
+  return path.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function escapePromptLinkLabel(label: string): string {
+  return label.replace(/\\/g, "\\\\").replace(/\]/g, "\\]");
 }
 
 function imageUrlField(record: Record<string, unknown>): string {
@@ -221,13 +273,23 @@ function splitTextWithFileLinks(text: string, baseElements: UserMessageTextEleme
     if (before) {
       parts.push({ kind: "text", text: before, textElements: sliceTextElements(baseElements, cursor, matchStart) });
     }
-    parts.push({
-      kind: "chip",
-      chipKind: "file",
-      label: label.trim() || basenameOf(path),
-      path,
-      fileExtension: extensionOf(path),
-    });
+    if (isSkillPromptLink(label, path)) {
+      parts.push({
+        kind: "chip",
+        chipKind: "skill",
+        label: skillPromptLabel(label),
+        path,
+      });
+    } else {
+      parts.push({
+        kind: "chip",
+        chipKind: "file",
+        label: label.trim() || basenameOf(path),
+        path,
+        presentation: "attachment",
+        fileExtension: extensionOf(path),
+      });
+    }
     cursor = matchStart + whole.length;
   }
   if (parts.length === 0) {
@@ -241,6 +303,14 @@ function splitTextWithFileLinks(text: string, baseElements: UserMessageTextEleme
   // extraction (`\n[link]\n` -> drops both newlines so the chip doesn't end up
   // wrapped by blank lines).
   return parts.filter((part) => part.kind !== "text" || part.text.replace(/\s+/g, "").length > 0);
+}
+
+function isSkillPromptLink(label: string, path: string): boolean {
+  return label.trim().startsWith("$") && /(?:^|\/)SKILL\.md$/i.test(path.trim());
+}
+
+function skillPromptLabel(label: string): string {
+  return label.trim().replace(/^\$+/, "").trim() || label.trim();
 }
 
 function sliceTextElements(

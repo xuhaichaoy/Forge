@@ -1,10 +1,15 @@
 import {
   commandPanelChatCreateEntry,
-  createCommandPanelState,
+  commandPanelHandleEscape,
   commandPanelHasSearchInput,
   commandPanelShouldShowChatCreateEmptyState,
+  commandPanelSubModeFromKind,
+  commandPanelSubModeFromPanel,
+  commandPanelSubModePlaceholder,
+  createCommandPanelState,
   projectCommandPanelEntries,
   projectFileSearchEntries,
+  groupCommandPanelEntries,
   groupCommandPanelEntriesForRendering,
   projectMcpResourceReadResultEntries,
   projectMcpServerEntries,
@@ -43,6 +48,153 @@ export default function runCommandPanelTests(): void {
   projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
   keepsDetailsHumanReadableWithoutRawJson();
+  derivesCommandPanelSubModeAndPlaceholder();
+  handlesCommandPanelEscapeAsTwoStage();
+  splitsCommandMenuEntriesIntoTaxonomySections();
+}
+
+function splitsCommandMenuEntriesIntoTaxonomySections(): void {
+  const pinned: CommandPanelEntry = {
+    id: "thread:pinned",
+    title: "Pinned thread",
+    kind: "thread",
+    groupKey: "pinned-chats",
+    groupLabel: "Pinned chats",
+  };
+  const slashNew: CommandPanelEntry = {
+    id: "command:new",
+    title: "/new",
+    kind: "status",
+    groupKey: "thread",
+  };
+  const searchFiles: CommandPanelEntry = {
+    id: "command:search-files",
+    title: "Search files",
+    kind: "file",
+    groupKey: "workspace",
+  };
+  const settings: CommandPanelEntry = {
+    id: "command:settings",
+    // codex: matches commands.ts title which mirrors `codex.command.settings`
+    // defaultMessage `Settings`.
+    title: "Settings",
+    kind: "status",
+    groupKey: "configure",
+  };
+  const skill: CommandPanelEntry = {
+    id: "skill:code-review",
+    title: "Code review",
+    kind: "skill",
+  };
+
+  const sections = groupCommandPanelEntries([pinned, slashNew, searchFiles, settings, skill]);
+  assertDeepEqual(
+    sections.map((section) => ({
+      groupKey: section.groupKey,
+      title: section.title,
+      ids: section.entries.map((entry) => entry.id),
+    })),
+    [
+      { groupKey: "other",     title: "Other",     ids: ["thread:pinned"] },
+      { groupKey: "thread",    title: "Thread",    ids: ["command:new"] },
+      { groupKey: "workspace", title: "Workspace", ids: ["command:search-files"] },
+      { groupKey: "skills",    title: "Skills",    ids: ["skill:code-review"] },
+      { groupKey: "configure", title: "Configure", ids: ["command:settings"] },
+    ],
+    "command menu entries should split into the Codex taxonomy sections with pinned/recent chats leading",
+  );
+
+  assertDeepEqual(
+    groupCommandPanelEntries([]),
+    [],
+    "empty entry list should produce no command menu sections",
+  );
+}
+
+function derivesCommandPanelSubModeAndPlaceholder(): void {
+  assertEqual(
+    commandPanelSubModePlaceholder("root"),
+    "Type command",
+    "root sub-mode should show the Codex Type command placeholder",
+  );
+  assertEqual(
+    commandPanelSubModePlaceholder("chats"),
+    "Search chats",
+    "chats sub-mode should show the Codex Search chats placeholder",
+  );
+  assertEqual(
+    commandPanelSubModePlaceholder("files"),
+    "Search files",
+    "files sub-mode should show the Codex Search files placeholder",
+  );
+
+  assertEqual(
+    commandPanelSubModeFromKind("files"),
+    "files",
+    "files panel kind should map to the files sub-mode",
+  );
+  assertEqual(
+    commandPanelSubModeFromKind("generic"),
+    "root",
+    "non-files panel kinds default to the root sub-mode",
+  );
+  assertEqual(
+    commandPanelSubModeFromKind(null),
+    "root",
+    "null panel kind should resolve to the root sub-mode",
+  );
+
+  const chatPanel = createCommandPanelState("generic", {
+    status: "ready",
+    title: "Search chats",
+    entries: [],
+    searchable: true,
+  });
+  assertEqual(
+    commandPanelSubModeFromPanel(chatPanel),
+    "chats",
+    "Search chats panel state should derive the chats sub-mode",
+  );
+  const filePanel = createCommandPanelState("files", { status: "empty", entries: [] });
+  assertEqual(
+    commandPanelSubModeFromPanel(filePanel),
+    "files",
+    "files panel state should derive the files sub-mode",
+  );
+  const rootPanel = createCommandPanelState("generic", {
+    status: "ready",
+    title: "Search commands and chats",
+    entries: [],
+    searchable: true,
+  });
+  assertEqual(
+    commandPanelSubModeFromPanel(rootPanel),
+    "root",
+    "root command menu panel should remain in the root sub-mode",
+  );
+}
+
+function handlesCommandPanelEscapeAsTwoStage(): void {
+  assertDeepEqual(
+    commandPanelHandleEscape({ subMode: "root", query: "" }),
+    { shouldClose: true, clearQuery: false, nextSubMode: "root" },
+    "Esc on a clean root command menu should close the dialog (XD(t),t.set(eu,!1) second stage)",
+  );
+  assertDeepEqual(
+    commandPanelHandleEscape({ subMode: "root", query: "abc" }),
+    { shouldClose: false, clearQuery: true, nextSubMode: "root" },
+    "First Esc should clear an active root query before closing",
+  );
+  assertDeepEqual(
+    commandPanelHandleEscape({ subMode: "chats", query: "" }),
+    { shouldClose: false, clearQuery: false, nextSubMode: "root" },
+    "First Esc in the chats sub-mode should drop back to root, not close",
+  );
+  assertDeepEqual(
+    commandPanelHandleEscape({ subMode: "files", query: "main" }),
+    { shouldClose: false, clearQuery: true, nextSubMode: "root" },
+    "First Esc in a sub-mode with a live query should clear the query and exit the sub-mode",
+  );
 }
 
 function groupsDesktopChatSearchEntriesForRendering(): void {
@@ -1530,7 +1682,9 @@ function createsEmptyLoadingAndErrorPanelStates(): void {
       status: "loading",
       title: "MCP servers",
       entries: [],
-      message: "Loading MCP servers...",
+      // Source uses U+2026 ellipsis (see command-panel.ts:2117 comment
+      // "keep the ellipsis byte-for-byte aligned"). Align expectation.
+      message: "Loading MCP servers…",
     },
     "loading panel state should preserve panel identity and expose a loading message",
   );

@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
+  ConversationUnitView,
   codeBlockTitle,
   formatTurnDiffFileCount,
   highlightCodeSegments,
@@ -7,10 +10,12 @@ import {
   mermaidDiagramKind,
   mermaidFlowchartPreviewModel,
   memoryCitationEntries,
+  memoryCitationFileReference,
   parseMarkdownBlocks,
   parseMarkdownInline,
   reasoningActivityBody,
   sanitizeMermaidCode,
+  shouldShowToolActivityInlineDetail,
   shouldRenderMermaidPreview,
   shouldRenderSvgCodePreview,
   stripReasoningActivityHeading,
@@ -26,11 +31,20 @@ import {
   turnDiffViewModel,
   workedForAggregateRows,
 } from "../src/components/conversation-view";
+import { GeneratedImageGallery } from "../src/components/generated-image-gallery";
+import { HiCodexIntlProvider } from "../src/components/i18n-provider";
 
 export default function runConversationViewTests(): void {
   parsesMarkdownBlocksForModelOutput();
+  parsesIndentedBlocksLikeDesktopMarked();
+  parsesSetextHeadingsLikeDesktopMarkdown();
+  parsesTildeFencedCodeLikeDesktopMarkdown();
   preservesOrderedListStartLikeDesktopMarkdown();
+  parsesNestedListsLikeDesktopMarkdown();
+  parsesLooseAndMultilineListsLikeDesktopMarkdown();
+  parsesBlockquoteChildrenLikeDesktopMarkdown();
   parsesInlineCodeAndLinks();
+  parsesNestedLinksAndEscapesLikeDesktopMarkdown();
   parsesInlineEmphasisLikeAssistantMarkdown();
   parsesSanitizedBasicInlineHtmlLikeDesktopMarkdown();
   parsesMathBlocksAndInlineMathLikeDesktopMarkdown();
@@ -40,6 +54,19 @@ export default function runConversationViewTests(): void {
   parsesGfmTaskListRuleAndImageBlocks();
   groupsConsecutiveMarkdownImagesLikeDesktopMediaGrid();
   normalizesMemoryCitationEntries();
+  resolvesMemoryCitationFilesFromCodexMemoriesRoot();
+  rendersMemoryCitationsBeforeArtifactExtrasLikeDesktop();
+  rendersPluralMemoryCitationSummaryLikeDesktop();
+  localizesMemoryCitationLabelsLikeDesktop();
+  preservesFullMemoryCitationPathLikeDesktop();
+  rendersMemoryCitationSourcesAsButtonsLikeDesktop();
+  rendersMemoryCitationsOnCommentaryAssistantRowsLikeDesktop();
+  localizesReviewCommentLabelsLikeDesktop();
+  rendersTrailingAutomationCitationsInlineLikeDesktop();
+  rendersItemAutomationCitationsInlineLikeDesktop();
+  rendersItemAutomationCitationsAsOpenableButtonsLikeDesktop();
+  rendersAutomationCitationsInFallbackRowWhenLastBlockIsNotParagraph();
+  rendersParentThreadAttachmentOnUserMessagesLikeDesktop();
   normalizesLocalUserImageSources();
   formatsCodeBlockTitlesLikeCodexSnippetHeaders();
   highlightsCodeBlocksWithDesktopScopes();
@@ -47,12 +74,24 @@ export default function runConversationViewTests(): void {
   previewsCommonMermaidFlowchartsLikeCodexDesktop();
   keepsOnlyDesktopActiveRowsExpandedByDefault();
   keepsDesktopToolActivityViewStates();
+  rendersMultiAgentActionWithDesktopHeader();
+  rendersPendingMcpCallsWithDesktopCompactHeader();
+  keepsActiveSkillDefinitionReadDetailsHiddenLikeDesktop();
+  rendersSteeredEventsAsDesktopStatusRows();
+  rendersContextCompactionAsDesktopDividerStatusRows();
+  rendersSyntheticDividerStatusIconsLikeDesktop();
+  rendersAutomationUpdatesAsDesktopCompactRows();
+  rendersUserInputResponsesAsDesktopSummaryRows();
+  rendersErrorEventsAsDesktopLightweightRows();
+  keepsActiveWebSearchSummarySingleLineLikeDesktop();
   keepsMcpAppToolRowsExpandedLikeDesktop();
   projectsTurnDiffSummaryLikeCodexDesktop();
   projectsReasoningBodiesLikeCodexDesktop();
   keepsWorkedForRowsCompact();
   summarizesRunningWorkedForCommandsSeparately();
   summarizesWorkedForWebSearchCommandsSeparately();
+  rendersStandaloneGeneratedImageActionRowLikeCodexDesktop();
+  rendersGeneratedImagePlaceholderSpinnerLikeCodexDesktop();
   omitsReasoningRowsFromExplorationDetailsLikeDesktop();
   rendersWorkedForExpansionThroughToolDetails();
   keepsVirtualTurnKeysUniqueWhenTurnSegmentsRepeat();
@@ -102,14 +141,22 @@ function projectsTurnDiffSummaryLikeCodexDesktop(): void {
       linesAdded: 2,
       linesRemoved: 2,
       files: [
-        { path: "packages/ui/src/a.ts", linesAdded: 2, linesRemoved: 1 },
-        { path: "packages/ui/src/b.ts", linesAdded: 0, linesRemoved: 1 },
+        { path: "packages/ui/src/a.ts", linesAdded: 2, linesRemoved: 1, renderedLineEstimate: 5 },
+        { path: "packages/ui/src/b.ts", linesAdded: 0, linesRemoved: 1, renderedLineEstimate: 2 },
       ],
     },
     "turn diff summary should match Desktop's file count and +/- row",
   );
-  assertEqual(formatTurnDiffFileCount(1), "1 file changed", "single file diff label");
-  assertEqual(formatTurnDiffFileCount(2), "2 files changed", "multi file diff label");
+  // codex: local-conversation-thread `Pv` header i18n
+  //   codex.unifiedDiff.editedFiles plural { one: "Edited 1 file", other: "Edited {count} files" }
+  //   codex.unifiedDiff.editedFile = "Edited {filename}"
+  assertEqual(formatTurnDiffFileCount(1), "Edited 1 file", "single file diff label");
+  assertEqual(formatTurnDiffFileCount(2), "Edited 2 files", "multi file diff label");
+  assertEqual(
+    formatTurnDiffFileCount(1, "packages/ui/src/a.ts"),
+    "Edited a.ts",
+    "single file diff label with filename",
+  );
   assertEqual(
     turnDiffHeaderStatsVisible(1, true),
     true,
@@ -117,8 +164,8 @@ function projectsTurnDiffSummaryLikeCodexDesktop(): void {
   );
   assertEqual(
     turnDiffHeaderStatsVisible(1, false),
-    false,
-    "completed Desktop turn diff header should omit totals for a single changed file",
+    true,
+    "completed Desktop turn diff header should keep +/- totals for a single changed file",
   );
   assertEqual(
     turnDiffHeaderStatsVisible(2, false),
@@ -137,7 +184,7 @@ function projectsTurnDiffSummaryLikeCodexDesktop(): void {
   ].join("\n");
   assertDeepEqual(
     turnDiffViewModel(quotedPathDiff).files,
-    [{ path: "packages/ui/src/file with spaces.ts", linesAdded: 1, linesRemoved: 1 }],
+    [{ path: "packages/ui/src/file with spaces.ts", linesAdded: 1, linesRemoved: 1, renderedLineEstimate: 3 }],
     "turn diff parser should match Desktop's quoted diff path support",
   );
 
@@ -150,8 +197,119 @@ function projectsTurnDiffSummaryLikeCodexDesktop(): void {
   ].join("\n");
   assertDeepEqual(
     turnDiffViewModel(fallbackDiff).files,
-    [{ path: "src/fallback.ts", linesAdded: 1, linesRemoved: 1 }],
+    [{ path: "src/fallback.ts", linesAdded: 1, linesRemoved: 1, renderedLineEstimate: 3 }],
     "turn diff parser should fall back to non-git unified diff headers like Desktop",
+  );
+
+  const repeatedPathDiff = [
+    "diff --git a/src/repeated.ts b/src/repeated.ts",
+    "index 111..222 100644",
+    "--- a/src/repeated.ts",
+    "+++ b/src/repeated.ts",
+    "@@ -1 +1 @@",
+    "-old",
+    "+new",
+    "diff --git a/src/repeated.ts b/src/repeated.ts",
+    "index 222..333 100644",
+    "--- a/src/repeated.ts",
+    "+++ b/src/repeated.ts",
+    "@@ -4 +4 @@",
+    "-older",
+    "+newer",
+  ].join("\n");
+  assertDeepEqual(
+    turnDiffViewModel(repeatedPathDiff).files,
+    [{ path: "src/repeated.ts", linesAdded: 2, linesRemoved: 2, renderedLineEstimate: 6 }],
+    "turn diff parser should merge repeated file sections like Codex Desktop",
+  );
+
+  const singleFileHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "turn-diff-single",
+      item: { id: "turn-diff-single", type: "turn-diff" },
+      label: "Diff",
+      text: fallbackDiff,
+      format: "diff",
+    },
+    onOpenDiff: () => undefined,
+  }));
+  assertEqual(singleFileHtml.includes("Edited fallback.ts"), true, "single-file turn diff title should use Desktop filename label");
+  assertEqual(singleFileHtml.includes("Details"), true, "single-file turn diff detail row should use Desktop Details label");
+  assertEqual(
+    singleFileHtml.includes("<span class=\"hc-turn-diff-file-path\">src/fallback.ts</span>"),
+    false,
+    "single-file turn diff detail row should not repeat the file path",
+  );
+  assertEqual(
+    (singleFileHtml.match(/hc-turn-diff-stats/g) ?? []).length,
+    1,
+    "single-file turn diff should only render header +/- stats, not duplicate them in the Details row",
+  );
+}
+
+function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "generatedImageGallery",
+      key: "gallery:turn-image",
+      turnId: "turn-image",
+      hasPending: false,
+      images: [
+        {
+          id: "image-1",
+          type: "generated-image",
+          src: "data:image/png;base64,AAAA",
+          status: "completed",
+        },
+      ],
+    },
+    onForkTurn: () => undefined,
+  }));
+
+  assertEqual(
+    html.includes("hc-generated-image-output"),
+    true,
+    "standalone generated-image output should use the Desktop tool-outputs wrapper",
+  );
+  assertEqual(
+    html.includes("Artifacts available"),
+    true,
+    "standalone generated-image output should count as artifacts in the action row",
+  );
+  assertEqual(
+    html.includes("Fork from this point"),
+    true,
+    "completed standalone generated-image output should expose the Desktop fork action",
+  );
+}
+
+function rendersGeneratedImagePlaceholderSpinnerLikeCodexDesktop(): void {
+  const html = renderToStaticMarkup(createElement(GeneratedImageGallery, {
+    images: [
+      {
+        id: "image-without-preview",
+        type: "generated-image",
+        status: "completed",
+      },
+    ],
+    hasPending: false,
+  }));
+
+  assertEqual(
+    html.includes("hc-generated-image-gallery-thumb--empty"),
+    true,
+    "generated-image item without preview src should render the Desktop empty thumbnail",
+  );
+  assertEqual(
+    html.includes("hc-spin"),
+    true,
+    "Desktop empty generated-image thumbnail should use a loading spinner",
+  );
+  assertEqual(
+    html.includes('aria-hidden="false"'),
+    false,
+    "Desktop empty generated-image thumbnail should not emit a false aria-hidden attribute",
   );
 }
 
@@ -179,6 +337,61 @@ function parsesMarkdownBlocksForModelOutput(): void {
   assertDeepEqual(blocks[4], { kind: "blockquote", text: "quoted note" }, "blockquote block");
 }
 
+function parsesIndentedBlocksLikeDesktopMarked(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "   ### Result ###",
+      "",
+      "   > quoted note",
+      "",
+      "   ```json",
+      "{\"ok\":true}",
+      "   ```",
+      "",
+      "    - not a list",
+    ].join("\n")),
+    [
+      { kind: "heading", level: 3, text: "Result" },
+      { kind: "blockquote", text: "quoted note" },
+      { kind: "code", language: "json", text: "{\"ok\":true}" },
+      { kind: "code", language: "", text: "- not a list" },
+    ],
+    "CommonMark block indentation and ATX closing hashes should match Desktop marked output",
+  );
+}
+
+function parsesSetextHeadingsLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "Result title",
+      "============",
+      "",
+      "Next section",
+      "------------",
+      "",
+      "---",
+    ].join("\n")),
+    [
+      { kind: "heading", level: 1, text: "Result title" },
+      { kind: "heading", level: 2, text: "Next section" },
+      { kind: "hr" },
+    ],
+    "setext headings should match Desktop marked output instead of rendering paragraph plus rule",
+  );
+}
+
+function parsesTildeFencedCodeLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "~~~ts",
+      "const ok = true;",
+      "~~~",
+    ].join("\n")),
+    [{ kind: "code", language: "ts", text: "const ok = true;" }],
+    "tilde fenced code blocks should match Desktop marked output",
+  );
+}
+
 function preservesOrderedListStartLikeDesktopMarkdown(): void {
   assertDeepEqual(
     parseMarkdownBlocks(["3. third", "4. fourth"].join("\n")),
@@ -189,6 +402,165 @@ function preservesOrderedListStartLikeDesktopMarkdown(): void {
     parseMarkdownBlocks(["1. first", "2. second"].join("\n")),
     [{ kind: "list", ordered: true, items: ["first", "second"] }],
     "ordered markdown lists starting at one should not need an explicit start",
+  );
+}
+
+function parsesNestedListsLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "- parent",
+      "  - child",
+      "    1. grand",
+      "- next",
+    ].join("\n")),
+    [
+      {
+        kind: "list",
+        ordered: false,
+        items: [
+          {
+            text: "parent",
+            children: [
+              {
+                kind: "list",
+                ordered: false,
+                items: [
+                  {
+                    text: "child",
+                    children: [
+                      {
+                        kind: "list",
+                        ordered: true,
+                        items: ["grand"],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          "next",
+        ],
+      },
+    ],
+    "nested lists should preserve Desktop marked hierarchy instead of flattening child bullets",
+  );
+}
+
+function parsesLooseAndMultilineListsLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "- first line",
+      "  continuation line",
+      "- second",
+    ].join("\n")),
+    [
+      {
+        kind: "list",
+        ordered: false,
+        items: ["first line\ncontinuation line", "second"],
+      },
+    ],
+    "tight list item continuation should stay inside the item like Desktop marked",
+  );
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "- first",
+      "",
+      "  continued paragraph",
+      "  - nested",
+      "- second",
+    ].join("\n")),
+    [
+      {
+        kind: "list",
+        ordered: false,
+        items: [
+          {
+            text: "first",
+            children: [
+              { kind: "paragraph", text: "continued paragraph" },
+              { kind: "list", ordered: false, items: ["nested"] },
+            ],
+          },
+          "second",
+        ],
+        loose: true,
+      },
+    ],
+    "loose list item paragraphs and nested children should match Desktop marked hierarchy",
+  );
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "- first",
+      "",
+      "- second",
+    ].join("\n")),
+    [
+      {
+        kind: "list",
+        ordered: false,
+        items: ["first", "second"],
+        loose: true,
+      },
+    ],
+    "blank lines between list items should make the whole list loose like Desktop marked",
+  );
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "- first",
+      "# heading",
+    ].join("\n")),
+    [
+      { kind: "list", ordered: false, items: ["first"] },
+      { kind: "heading", level: 1, text: "heading" },
+    ],
+    "unindented block starts should terminate list items like Desktop marked",
+  );
+}
+
+function parsesBlockquoteChildrenLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "> ## Note",
+      "> - item",
+      ">   - child",
+    ].join("\n")),
+    [
+      {
+        kind: "blockquote",
+        text: "## Note\n- item\n  - child",
+        children: [
+          { kind: "heading", level: 2, text: "Note" },
+          {
+            kind: "list",
+            ordered: false,
+            items: [
+              {
+                text: "item",
+                children: [
+                  { kind: "list", ordered: false, items: ["child"] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    "blockquote contents should keep Desktop marked block children instead of plain inline text",
+  );
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "> quote",
+      "continued",
+      "",
+      "- outside",
+    ].join("\n")),
+    [
+      { kind: "blockquote", text: "quote\ncontinued" },
+      { kind: "list", ordered: false, items: ["outside"] },
+    ],
+    "blockquote lazy paragraph continuation should match Desktop marked without absorbing following blocks",
   );
 }
 
@@ -214,6 +586,64 @@ function parsesInlineCodeAndLinks(): void {
       { kind: "text", text: ", not <div>." },
     ],
     "email autolinks should render while HTML tags stay plain text",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Use ``code ` tick`` and ` code ` plus `a\nb`."),
+    [
+      { kind: "text", text: "Use " },
+      { kind: "code", text: "code ` tick" },
+      { kind: "text", text: " and " },
+      { kind: "code", text: "code" },
+      { kind: "text", text: " plus " },
+      { kind: "code", text: "a b" },
+      { kind: "text", text: "." },
+    ],
+    "inline code spans should match Desktop marked backtick-run and whitespace normalization",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Open [Docs](https://example.com (Docs title))."),
+    [
+      { kind: "text", text: "Open " },
+      { kind: "link", text: "Docs", href: "https://example.com", title: "Docs title" },
+      { kind: "text", text: "." },
+    ],
+    "inline links should support Desktop marked parenthesized titles",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Visit https://example.com/a_(b). See www.example.org/docs and dev@example.com."),
+    [
+      { kind: "text", text: "Visit " },
+      { kind: "link", text: "https://example.com/a_(b)", href: "https://example.com/a_(b)" },
+      { kind: "text", text: ". See " },
+      { kind: "link", text: "www.example.org/docs", href: "http://www.example.org/docs" },
+      { kind: "text", text: " and " },
+      { kind: "link", text: "dev@example.com", href: "mailto:dev@example.com" },
+      { kind: "text", text: "." },
+    ],
+    "GFM bare URLs, www links, and email addresses should match Desktop marked output",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("Close https://example.com/path)."),
+    [
+      { kind: "text", text: "Close " },
+      { kind: "link", text: "https://example.com/path", href: "https://example.com/path" },
+      { kind: "text", text: ")." },
+    ],
+    "GFM bare URLs should trim unmatched trailing right parens like Desktop marked",
+  );
+}
+
+function parsesNestedLinksAndEscapesLikeDesktopMarkdown(): void {
+  assertDeepEqual(
+    parseMarkdownInline("Escaped \\*not em\\* and [a [b]](https://example.com/a_(b)) plus [local](</tmp/a b.md> \"Doc\")."),
+    [
+      { kind: "text", text: "Escaped *not em* and " },
+      { kind: "link", text: "a [b]", href: "https://example.com/a_(b)" },
+      { kind: "text", text: " plus " },
+      { kind: "link", text: "local", href: "/tmp/a b.md", title: "Doc" },
+      { kind: "text", text: "." },
+    ],
+    "nested labels, destination parentheses, angle destinations, titles, and escaped emphasis should match Desktop marked output",
   );
 }
 
@@ -343,30 +773,81 @@ function parsesPipeTablesLikeAssistantMarkdown(): void {
     ],
     "pipe table block",
   );
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "| A | B | C |",
+      "| :-- | --: | :-: |",
+      "| l | r | c |",
+    ].join("\n")),
+    [
+      {
+        kind: "table",
+        headers: ["A", "B", "C"],
+        rows: [["l", "r", "c"]],
+        aligns: ["left", "right", "center"],
+      },
+    ],
+    "pipe table alignment should match Desktop marked output",
+  );
+  assertDeepEqual(
+    parseMarkdownBlocks([
+      "| A\\|B | C |",
+      "| --- | --- |",
+      "| x\\|y | z |",
+    ].join("\n")),
+    [
+      {
+        kind: "table",
+        headers: ["A|B", "C"],
+        rows: [["x|y", "z"]],
+      },
+    ],
+    "escaped table pipes should stay inside cells like Desktop marked",
+  );
 }
 
 function parsesGfmTaskListRuleAndImageBlocks(): void {
   const blocks = parseMarkdownBlocks([
     "- [x] Read Desktop Markdown",
     "- [ ] Patch renderer",
+    "- Keep plain item",
+    "  - [ ] Nested task",
     "",
     "---",
     "",
     "![Diagram](</tmp/render flow.png> \"Flow\")",
+    "![Small](small.png (Small title))",
   ].join("\n"));
 
   assertDeepEqual(
     blocks,
     [
       {
-        kind: "taskList",
+        kind: "list",
+        ordered: false,
         items: [
-          { checked: true, text: "Read Desktop Markdown" },
-          { checked: false, text: "Patch renderer" },
+          { text: "Read Desktop Markdown", checked: true, task: true },
+          { text: "Patch renderer", checked: false, task: true },
+          {
+            text: "Keep plain item",
+            children: [
+              {
+                kind: "list",
+                ordered: false,
+                items: [{ text: "Nested task", checked: false, task: true }],
+              },
+            ],
+          },
         ],
       },
       { kind: "hr" },
-      { kind: "image", alt: "Diagram", src: "/tmp/render flow.png", title: "Flow" },
+      {
+        kind: "imageGrid",
+        images: [
+          { kind: "image", alt: "Diagram", src: "/tmp/render flow.png", title: "Flow" },
+          { kind: "image", alt: "Small", src: "small.png", title: "Small title" },
+        ],
+      },
     ],
     "GFM task list, rule, and image blocks",
   );
@@ -409,6 +890,475 @@ function normalizesMemoryCitationEntries(): void {
     ],
     "memory citation entries",
   );
+}
+
+function resolvesMemoryCitationFilesFromCodexMemoriesRoot(): void {
+  assertDeepEqual(
+    memoryCitationFileReference(
+      { path: "MEMORY.md", lineStart: 3, lineEnd: 5, note: "used context" },
+      "/Users/me/.codex/memories/",
+    ),
+    { path: "/Users/me/.codex/memories/MEMORY.md", lineStart: 3, lineEnd: 5 },
+    "relative memory citations should resolve from the Codex memories root",
+  );
+  assertDeepEqual(
+    memoryCitationFileReference(
+      { path: "/tmp/MEMORY.md", lineStart: 1, lineEnd: 1, note: "" },
+      "/Users/me/.codex/memories",
+    ),
+    { path: "/tmp/MEMORY.md", lineStart: 1, lineEnd: 1 },
+    "absolute memory citations should not be re-rooted",
+  );
+}
+
+function rendersMemoryCitationsBeforeArtifactExtrasLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-memory-citation-and-artifact",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-1",
+        text: "Done.",
+        phase: "final_answer",
+        memoryCitation: {
+          entries: [
+            {
+              path: "MEMORY.md",
+              lineStart: 2,
+              lineEnd: 4,
+              note: "memory note",
+            },
+          ],
+        },
+      },
+      artifacts: [
+        {
+          id: "artifact-1",
+          title: "artifact-output.md",
+          meta: "/tmp/artifact-output.md",
+          reference: { path: "/tmp/artifact-output.md", lineStart: 1 },
+        },
+      ],
+    },
+    memoryCitationRoot: "/Users/me/.codex/memories",
+  }));
+
+  const memoryIndex = html.indexOf("1 memory citation");
+  const artifactIndex = html.indexOf("artifact-output.md");
+  assertEqual(memoryIndex >= 0, true, "fixture should render memory citations");
+  assertEqual(artifactIndex >= 0, true, "fixture should render artifact extras");
+  assertEqual(
+    memoryIndex < artifactIndex,
+    true,
+    "assistant memory citations should render before artifact extras like Codex Desktop",
+  );
+}
+
+function rendersPluralMemoryCitationSummaryLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-two-memory-citations",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-two-memory-citations",
+        text: "Done.",
+        phase: "final_answer",
+        memoryCitation: {
+          entries: [
+            { path: "MEMORY.md", lineStart: 2, lineEnd: 4, note: "" },
+            { path: "rollout_summaries/run.jsonl", lineStart: 7, lineEnd: 7, note: "" },
+          ],
+        },
+      },
+    },
+  }));
+
+  assertEqual(
+    html.includes("2 memory citations"),
+    true,
+    "memory citation summary should use Desktop's plural label",
+  );
+}
+
+function localizesMemoryCitationLabelsLikeDesktop(): void {
+  const unit = createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-zh-memory-citations",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-zh-memory-citations",
+        text: "Done.",
+        phase: "final_answer",
+        memoryCitation: {
+          entries: [
+            { path: "MEMORY.md", lineStart: 2, lineEnd: 4, note: "" },
+            { path: "rollout_summaries/run.jsonl", lineStart: 7, lineEnd: 7, note: "" },
+          ],
+        },
+      },
+    },
+  });
+  const html = renderToStaticMarkup(createElement(
+    HiCodexIntlProvider,
+    { locale: "zh-CN", children: unit },
+  ));
+
+  assertEqual(html.includes("2 条记忆引用"), true, "Desktop zh-CN memory citation summary should localize");
+  assertEqual(html.includes("2-4 行"), true, "Desktop zh-CN memory citation range label should localize");
+  assertEqual(html.includes("第 7 行"), true, "Desktop zh-CN single memory citation line label should localize");
+  assertEqual(html.includes("Open MEMORY.md"), false, "memory citation aria label should not stay hard-coded English");
+}
+
+function preservesFullMemoryCitationPathLikeDesktop(): void {
+  const longPath = "rollout_summaries/2026-05-23T10-20-30-very-long-memory-citation-path-that-should-not-be-shortened-in-markup.jsonl";
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-long-memory-citation-path",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-long-memory-citation",
+        text: "Done.",
+        phase: "final_answer",
+        memoryCitation: {
+          entries: [
+            { path: longPath, lineStart: 12, lineEnd: 15, note: "" },
+          ],
+        },
+      },
+    },
+  }));
+
+  assertEqual(
+    html.includes(longPath),
+    true,
+    "Desktop memory citations keep the full source path in markup and rely on CSS truncation",
+  );
+  assertEqual(
+    html.includes("...citation-path"),
+    false,
+    "memory citation path should not be string-shortened before render",
+  );
+}
+
+function rendersMemoryCitationSourcesAsButtonsLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-button-memory-citation",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-button-memory-citation",
+        text: "Done.",
+        phase: "final_answer",
+        memoryCitation: {
+          entries: [
+            { path: "MEMORY.md", lineStart: 2, lineEnd: 4, note: "" },
+          ],
+        },
+      },
+    },
+  }));
+
+  assertEqual(
+    html.includes("<button"),
+    true,
+    "Desktop memory citation sources render through the inline file-reference button path",
+  );
+  assertEqual(
+    html.includes('href="MEMORY.md:2"'),
+    false,
+    "memory citation sources should not render as href anchors",
+  );
+}
+
+function rendersMemoryCitationsOnCommentaryAssistantRowsLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-commentary-with-memory-citation",
+      role: "assistant",
+      assistantPhase: "commentary",
+      text: "I checked prior context.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-commentary-memory",
+        text: "I checked prior context.",
+        phase: "commentary",
+        memoryCitation: {
+          entries: [
+            { path: "MEMORY.md", lineStart: 2, lineEnd: 4, note: "" },
+            { path: "rollout_summaries/run.jsonl", lineStart: 7, lineEnd: 7, note: "" },
+          ],
+        },
+      },
+    },
+  }));
+
+  assertEqual(
+    html.includes("2 memory citations"),
+    true,
+    "Desktop renders memory citations from assistant-message rows independently of final-output chrome",
+  );
+}
+
+function localizesReviewCommentLabelsLikeDesktop(): void {
+  const comments = [
+    { title: "Guard branch", body: "Handle the missing value.", path: "src/app.ts", line: 4, priority: "P1" },
+    { title: "Null check", body: "Avoid crash.", path: "src/app.ts", line: 8, priority: "P2" },
+    { title: "Return path", body: "Keep result stable.", path: "src/result.ts", line: 12 },
+    { title: "Cleanup", body: "Remove stale branch.", path: "src/cleanup.ts", line: 16 },
+  ];
+  const html = renderToStaticMarkup(createElement(
+    HiCodexIntlProvider,
+    {
+      locale: "zh-CN",
+      children: createElement(ConversationUnitView, {
+        unit: {
+          kind: "message",
+          key: "assistant-with-review-comments",
+          role: "assistant",
+          assistantPhase: "final_answer",
+          text: "Review complete.",
+          item: {
+            type: "agentMessage",
+            id: "assistant-review-comments",
+            text: "Review complete.",
+            phase: "final_answer",
+          },
+          assistantAfter: [
+            {
+              kind: "assistantReviewComments",
+              key: "review-comments:assistant-review-comments",
+              comments,
+            },
+          ],
+        },
+        onOpenFileReference: () => undefined,
+      }),
+    },
+  ));
+
+  assertEqual(html.includes("4 comments"), true, "Desktop zh-CN review comment count currently keeps the English count label");
+  assertEqual(html.includes("再显示 1 条评论"), true, "Desktop zh-CN review comment show-more label should localize");
+  assertEqual(
+    html.includes("在src/app.ts:4中查看Guard branch"),
+    true,
+    "Desktop zh-CN review comment open aria label should localize",
+  );
+  assertEqual(
+    html.includes("Show 1 more comment"),
+    false,
+    "review comment show-more label should not stay hard-coded English",
+  );
+}
+
+function rendersTrailingAutomationCitationsInlineLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-inline-automation-citation",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: 'Done. :citation{id=auto-1 title="Morning run" url="https://example.com/run"}',
+      item: {
+        type: "agentMessage",
+        id: "assistant-inline-automation",
+        text: 'Done. :citation{id=auto-1 title="Morning run" url="https://example.com/run"}',
+        phase: "final_answer",
+      },
+    },
+  }));
+
+  const paragraphIndex = html.indexOf("<p>Done.");
+  const inlineIndex = html.indexOf("hc-automation-citation-inline-list");
+  assertEqual(html.includes("Morning run"), true, "fixture should render the automation citation chip");
+  assertEqual(inlineIndex >= 0, true, "trailing paragraph citations should render inline");
+  assertEqual(
+    html.includes("hc-automation-citation-row"),
+    false,
+    "trailing paragraph citations should not also render in the fallback row",
+  );
+  assertEqual(
+    paragraphIndex >= 0 && paragraphIndex < inlineIndex,
+    true,
+    "inline automation citations should remain inside the rendered paragraph flow",
+  );
+}
+
+function rendersItemAutomationCitationsInlineLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-item-automation-citation",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-item-automation",
+        text: "Done.",
+        phase: "final_answer",
+        completed: true,
+        automationCitations: [
+          {
+            type: "automation-update",
+            id: "automation-update-1",
+            callId: "automation-call-1",
+            arguments: {
+              id: "automation-123",
+              mode: "create",
+              name: "Morning run",
+              rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+            },
+            result: {
+              mode: "create",
+              automationId: "automation-123",
+            },
+          },
+        ],
+      },
+    },
+  }));
+
+  assertEqual(html.includes("Created"), true, "assistant item automationCitations should render the action label");
+  assertEqual(html.includes("Morning run"), true, "assistant item automationCitations should render the automation name");
+  assertEqual(html.includes("Daily at"), true, "assistant item automationCitations should render Desktop's readable schedule");
+  assertEqual(html.includes("lucide-clock"), true, "automation citations should use Desktop's clock icon");
+  assertEqual(html.includes("lucide-sparkles"), false, "automation citations should not use a decorative sparkle icon");
+  assertEqual(
+    html.includes("hc-automation-citation-chip-separator"),
+    true,
+    "Desktop automation citation cards separate the action label from the automation title",
+  );
+  assertEqual(
+    html.includes("Created Morning run"),
+    false,
+    "automation citation action and title should not be collapsed into one flat label",
+  );
+  assertEqual(
+    html.includes("hc-automation-citation-inline-list"),
+    true,
+    "item automation citations should use Desktop's trailing paragraph inline path",
+  );
+  assertEqual(
+    html.includes("hc-automation-citation-row"),
+    false,
+    "item automation citations should not also render in the fallback row when inline fits",
+  );
+}
+
+function rendersItemAutomationCitationsAsOpenableButtonsLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-openable-item-automation-citation",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-openable-item-automation",
+        text: "Done.",
+        phase: "final_answer",
+        completed: true,
+        automationCitations: [
+          {
+            type: "automation-update",
+            id: "automation-update-1",
+            callId: "automation-call-1",
+            arguments: {
+              id: "automation-123",
+              mode: "create",
+              name: "Morning run",
+              rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+            },
+            result: {
+              mode: "create",
+              automationId: "automation-123",
+            },
+          },
+        ],
+      },
+    },
+    onOpenAutomation: () => undefined,
+  }));
+
+  assertEqual(
+    html.includes('<button aria-label="Automation: Created · Morning run"'),
+    true,
+    "Desktop automation citations render as buttons when an automation open route is available",
+  );
+  assertEqual(
+    html.includes('data-citation-id="automation-123"'),
+    true,
+    "openable automation citations should preserve the automation id on the chip",
+  );
+}
+
+function rendersAutomationCitationsInFallbackRowWhenLastBlockIsNotParagraph(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-row-automation-citation",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: '- Done :citation{id=auto-2 title="List run"}',
+      item: {
+        type: "agentMessage",
+        id: "assistant-row-automation",
+        text: '- Done :citation{id=auto-2 title="List run"}',
+        phase: "final_answer",
+      },
+    },
+  }));
+
+  assertEqual(html.includes("List run"), true, "fixture should render the fallback citation chip");
+  assertEqual(
+    html.includes("hc-automation-citation-inline-list"),
+    false,
+    "non-paragraph terminal blocks should not receive inline automation citations",
+  );
+  assertEqual(
+    html.includes("hc-automation-citation-row"),
+    true,
+    "non-paragraph terminal blocks should use the Desktop fallback row",
+  );
+}
+
+function rendersParentThreadAttachmentOnUserMessagesLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "user-1",
+      role: "user",
+      item: { id: "user-1", type: "userMessage", content: "Continue from parent" },
+      text: "Continue from parent",
+      parentThreadAttachment: { sourceConversationId: "parent-thread-1" },
+    },
+  }));
+
+  assertEqual(html.includes("hc-parent-thread-attachment"), true, "parent thread attachment should render as a user attachment chip");
+  assertEqual(html.includes("Parent chat"), true, "parent thread attachment should show Desktop's label");
+  assertEqual(html.includes("Continue from parent"), true, "user message text should still render");
 }
 
 function normalizesLocalUserImageSources(): void {
@@ -594,6 +1544,389 @@ function keepsDesktopToolActivityViewStates(): void {
     initialToolActivityViewState(toolActivity("multi-agent-group", true)),
     "expanded",
     "running multi-agent group should start expanded",
+  );
+}
+
+function rendersMultiAgentActionWithDesktopHeader(): void {
+  const base = toolActivity("multi-agent-group", true, 1, "multi-agent-action");
+  const unit = {
+    ...base,
+    items: [
+      {
+        id: "agent-action-1",
+        type: "multi-agent-action",
+        action: "spawnAgent",
+        status: "inProgress",
+        receiverThreadIds: ["agent-1234567890abcdef"],
+        agentsStates: {
+          "agent-1234567890abcdef": { status: "running", message: "reading files" },
+        },
+      },
+    ],
+    summary: {
+      ...base.summary,
+      label: "Spawning 1 agent",
+      details: ["Spawning agent-agent-12"],
+      inProgress: true,
+    },
+  };
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, { unit }));
+
+  assertEqual(
+    html.includes('data-testid="multi-agent-action-header"'),
+    true,
+    "multi-agent activity should expose Desktop's dedicated header test id",
+  );
+  assertEqual(
+    html.includes('data-testid="multi-agent-action-rows"'),
+    true,
+    "running multi-agent activity should render Desktop rows expanded",
+  );
+  assertEqual(
+    html.includes("hc-tool-summary-icon"),
+    false,
+    "multi-agent header should not use the generic tool summary icon DOM",
+  );
+  assertEqual(
+    html.includes("Spawning 1 agent"),
+    true,
+    "multi-agent header should show Desktop action/count text",
+  );
+  assertEqual(
+    html.includes("agent-agent-12"),
+    true,
+    "multi-agent rows should include the target agent label",
+  );
+}
+
+function rendersPendingMcpCallsWithDesktopCompactHeader(): void {
+  const base = toolActivity("pending-mcp-tool-calls", true, 2, "mcpToolCall");
+  const unit = {
+    ...base,
+    items: [
+      {
+        id: "mcp-pending-1",
+        type: "mcpToolCall",
+        invocation: { server: "github", tool: "list_prs", arguments: { state: "open" } },
+        status: "inProgress",
+        result: null,
+        error: null,
+      },
+      {
+        id: "mcp-pending-2",
+        type: "mcpToolCall",
+        invocation: { server: "github", tool: "list_issues", arguments: { state: "open" } },
+        status: "inProgress",
+        result: null,
+        error: null,
+      },
+    ],
+    summary: {
+      ...base.summary,
+      icon: "mcp" as const,
+      label: "Waiting on MCP tool",
+      inProgress: true,
+    },
+  };
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, { unit }));
+
+  assertEqual(
+    html.includes('data-testid="pending-mcp-tool-calls-body"'),
+    true,
+    "pending MCP groups should keep Desktop's dedicated collapsed body node",
+  );
+  assertEqual(
+    html.includes("hc-tool-summary-icon"),
+    false,
+    "pending MCP header should not reuse the generic tool summary icon DOM",
+  );
+  assertEqual(
+    html.includes("Waiting on MCP tool"),
+    false,
+    "pending MCP header should show the active tool label instead of the local generic summary",
+  );
+  assertEqual(
+    html.includes("Calling list_issues"),
+    true,
+    "pending MCP header should follow the latest active MCP tool",
+  );
+  assertEqual(
+    html.includes('data-view-state="collapsed"'),
+    true,
+    "pending MCP groups should start collapsed like Codex Desktop",
+  );
+}
+
+function keepsActiveSkillDefinitionReadDetailsHiddenLikeDesktop(): void {
+  const unit = {
+    ...toolActivity("collapsed-tool-activity", true, 0),
+    items: [
+      {
+        id: "skill-active-read",
+        type: "commandExecution",
+        cwd: "/workspace",
+        status: "running",
+        parsedCmd: { type: "read", path: "/workspace/.codex/skills/code-review/SKILL.md", isFinished: false },
+      },
+    ],
+  };
+
+  assertDeepEqual(
+    toolActivityDetailItems(unit),
+    [],
+    "Desktop returns null detail content for active skill definition reads in command detail mode",
+  );
+  assertEqual(
+    isToolActivityExpandable(unit),
+    false,
+    "active skill definition read rows should not expose an empty details expander",
+  );
+}
+
+function rendersSteeredEventsAsDesktopStatusRows(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "steered-1",
+      item: { id: "steered-1", type: "steered" },
+      label: "Steered conversation",
+      text: "Steered conversation",
+      format: "status",
+    },
+  }));
+
+  assertEqual(html.includes("hc-status-event"), true, "steered event should render as Desktop's compact status row");
+  assertEqual(html.includes("Steered conversation"), true, "steered event should show Desktop's status label");
+  assertEqual(html.includes("hc-tool-label"), false, "steered event should not render the generic tool-card label");
+  assertEqual(html.includes("<pre>"), false, "steered event should not render a generic event body");
+}
+
+function rendersContextCompactionAsDesktopDividerStatusRows(): void {
+  const completedHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "context-1",
+      item: { id: "context-1", type: "context-compaction", completed: true },
+      label: "Context automatically compacted",
+      text: "Context automatically compacted",
+      format: "context-status",
+    },
+  }));
+
+  assertEqual(completedHtml.includes("hc-status-event-divider"), true, "context compaction should render as Desktop's divider row");
+  assertEqual(completedHtml.includes("hc-status-event-rule"), true, "context compaction divider should include side rules");
+  assertEqual(completedHtml.includes("hc-status-event-icon"), true, "completed context compaction should include Desktop's completed icon");
+  assertEqual(completedHtml.includes("Context automatically compacted"), true, "completed context compaction should show Desktop's label");
+  assertEqual(completedHtml.includes("hc-tool-label"), false, "context compaction should not render the generic tool-card label");
+
+  const runningHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "context-2",
+      item: { id: "context-2", type: "context-compaction", completed: false },
+      label: "Automatically compacting context",
+      text: "Automatically compacting context",
+      format: "context-status",
+    },
+  }));
+
+  assertEqual(runningHtml.includes('data-running="true"'), true, "running context compaction should expose running state");
+  assertEqual(runningHtml.includes("hc-status-event-icon"), false, "running context compaction should not show completed icon");
+  assertEqual(runningHtml.includes("hc-thinking-shimmer-text"), true, "running context compaction should use Desktop's thinking-shimmer text affordance");
+  assertEqual(runningHtml.includes("Automatically compacting context"), true, "running context compaction should show Desktop's active label");
+}
+
+function rendersSyntheticDividerStatusIconsLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "remote-task-1",
+      item: { id: "remote-task-1", type: "remote-task-created", taskId: "task-1" },
+      label: "Created task in Codex Cloud",
+      text: "Created task in Codex Cloud",
+      format: "divider-status",
+    },
+    onOpenRemoteTask: () => undefined,
+  }));
+
+  assertEqual(html.includes("hc-status-event-divider"), true, "remote task rows should render as Desktop divider rows");
+  assertEqual(html.includes('data-item-type="remote-task-created"'), true, "remote task rows should expose a type hook for Desktop's stronger divider rule");
+  assertEqual(html.includes("hc-status-event-kind-icon"), true, "remote task rows should include Desktop's inline status icon");
+  assertEqual(html.includes("hc-status-event-inline-link"), true, "remote task rows should expose Desktop's inline task link");
+  assertEqual(html.includes("Created task in Codex Cloud"), true, "remote task row should show Desktop's label");
+
+  const forkedHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "forked-from-conversation-1",
+      item: { id: "forked-from-conversation-1", type: "forked-from-conversation", sourceConversationId: "parent-1" },
+      label: "Forked from conversation",
+      text: "Forked from conversation",
+      format: "divider-status",
+    },
+    onOpenConversationThreadId: () => undefined,
+  }));
+
+  assertEqual(forkedHtml.includes("hc-status-event-fork-link"), true, "forked conversation rows should expose Desktop's parent-thread link");
+
+  const autoReviewWarningHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "auto-review-warning-1",
+      item: { id: "auto-review-warning-1", type: "auto-review-interruption-warning" },
+      label: "Turn ended by Auto-review",
+      text: "Turn ended by Auto-review",
+      format: "divider-status",
+    },
+  }));
+
+  assertEqual(autoReviewWarningHtml.includes("hc-status-event-kind-icon"), true, "auto-review interruption rows should keep Desktop's leading warning icon");
+  assertEqual(autoReviewWarningHtml.includes("hc-status-event-warning"), true, "auto-review interruption rows should expose Desktop's trailing warning affordance");
+  assertEqual(autoReviewWarningHtml.includes('role="tooltip"'), true, "auto-review interruption warning should render Desktop-style tooltip content");
+  assertEqual(
+    autoReviewWarningHtml.includes("Auto-review stopped this turn after repeated denials."),
+    true,
+    "auto-review interruption warning should include Desktop's next-step guidance",
+  );
+
+  const modelChangedHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "model-changed-1",
+      item: { id: "model-changed-1", type: "model-changed", fromModel: "gpt-5.1", toModel: "gpt-5.2" },
+      label: "Model changed from GPT-5.1 to GPT-5.2.",
+      text: "Model changed from GPT-5.1 to GPT-5.2.",
+      format: "divider-status",
+    },
+  }));
+
+  assertEqual(modelChangedHtml.includes("hc-status-event-warning"), true, "model-changed rows should expose Desktop's trailing warning affordance");
+  assertEqual(modelChangedHtml.includes('role="tooltip"'), true, "model-changed warning should render Desktop-style tooltip content");
+  assertEqual(modelChangedHtml.includes("Changing models mid-conversation will degrade performance."), true, "model-changed warning should include Desktop's first tooltip line");
+
+  const reroutedHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "model-rerouted-1",
+      item: { id: "model-rerouted-1", type: "model-rerouted", reason: "highRiskCyberActivity", toModel: "gpt-5.2" },
+      label: "Your request was routed to GPT-5.2.",
+      text: "Your request was routed to GPT-5.2.",
+      format: "divider-status",
+    },
+  }));
+
+  assertEqual(reroutedHtml.includes("hc-status-event-kind-icon"), false, "model-rerouted rows should not include a leading status icon");
+  assertEqual(reroutedHtml.includes("hc-status-event-warning"), true, "high-risk model reroute rows should expose Desktop's trailing warning affordance");
+  assertEqual(reroutedHtml.includes('role="tooltip"'), true, "high-risk model reroute warning should render Desktop-style tooltip content");
+  assertEqual(reroutedHtml.includes('href="https://chatgpt.com/cyber"'), true, "high-risk reroute warning should include Desktop's review URL link");
+}
+
+function rendersAutomationUpdatesAsDesktopCompactRows(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "automation-update-1",
+      item: { id: "automation-update-1", type: "automation-update" },
+      label: "Created · Morning run",
+      text: "Created · Morning run",
+      format: "automation-update",
+    },
+  }));
+
+  assertEqual(html.includes("hc-automation-update-event"), true, "automation-update should render as Desktop's compact automation row");
+  assertEqual(html.includes("Created · Morning run"), true, "automation-update row should show Desktop's action and title");
+  assertEqual(html.includes("lucide-clock"), true, "automation-update should use Desktop's clock icon");
+  assertEqual(html.includes("hc-tool-label"), false, "automation-update should not render the generic tool-card label");
+  assertEqual(html.includes("<pre>"), false, "automation-update should not render a generic event body");
+}
+
+function rendersUserInputResponsesAsDesktopSummaryRows(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "user-input-response-1",
+      item: { id: "user-input-response-1", type: "user-input-response", completed: true },
+      label: "Asked 2 questions",
+      text: "Asked 2 questions",
+      details: "Proceed?\nYes, Use current thread\n\nScope?\nCurrent file",
+      format: "user-input-response",
+    },
+  }));
+
+  assertEqual(html.includes("hc-user-input-response-event"), true, "user-input-response should render as Desktop's compact summary row");
+  assertEqual(html.includes('data-has-details="true"'), true, "completed user-input-response with answers should expose expandable state");
+  assertEqual(html.includes('aria-expanded="false"'), true, "user-input-response details should start collapsed");
+  assertEqual(html.includes("Asked 2 questions"), true, "user-input-response row should show Desktop's summary");
+  assertEqual(html.includes("hc-tool-label"), false, "user-input-response should not render the generic tool-card label");
+  assertEqual(html.includes("<pre>"), false, "user-input-response should not render a generic event body");
+
+  const pendingHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "user-input-response-pending-1",
+      item: { id: "user-input-response-pending-1", type: "user-input-response", completed: false },
+      label: "Asking questions",
+      text: "Asking questions",
+      format: "user-input-response",
+    },
+  }));
+
+  assertEqual(pendingHtml.includes('data-running="true"'), true, "pending user-input-response should expose running state");
+  assertEqual(pendingHtml.includes("hc-user-input-response-spinner"), true, "pending user-input-response should show Desktop's active wait indicator");
+  assertEqual(pendingHtml.includes("Asking questions"), true, "pending user-input-response should show Desktop's active summary");
+}
+
+function rendersErrorEventsAsDesktopLightweightRows(): void {
+  const streamHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "stream-error-1",
+      item: { id: "stream-error-1", type: "stream-error" },
+      label: "Stream error",
+      text: "Connection dropped",
+      details: "Retry the turn.",
+      tone: "error",
+      format: "stream-error",
+    },
+  }));
+
+  assertEqual(streamHtml.includes("hc-stream-error-event"), true, "stream-error should render as Desktop's lightweight row");
+  assertEqual(streamHtml.includes('data-has-details="true"'), true, "stream-error with additionalDetails should expose expandable state");
+  assertEqual(streamHtml.includes('aria-expanded="false"'), true, "stream-error details should start collapsed");
+  assertEqual(streamHtml.includes("Connection dropped"), true, "stream-error row should show the Desktop visible content");
+  assertEqual(streamHtml.includes("hc-tool-label"), false, "stream-error should not render the generic tool-card label");
+  assertEqual(streamHtml.includes("<pre>"), false, "stream-error should not render a generic event body");
+
+  const systemHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "system-error-1",
+      item: { id: "system-error-1", type: "system-error" },
+      label: "System error",
+      text: "Sandbox failed",
+      details: "Sandbox raw detail",
+      tone: "error",
+      format: "system-error",
+    },
+  }));
+
+  assertEqual(systemHtml.includes("hc-system-error-event"), true, "system-error should render as Desktop's lightweight row");
+  assertEqual(systemHtml.includes("Sandbox failed"), true, "system-error row should show the Desktop visible content");
+  assertEqual(systemHtml.includes("Sandbox raw detail"), false, "system-error should not render raw detail text");
+  assertEqual(systemHtml.includes("hc-tool-label"), false, "system-error should not render the generic tool-card label");
+  assertEqual(systemHtml.includes("<pre>"), false, "system-error should not render a generic event body");
+}
+
+function keepsActiveWebSearchSummarySingleLineLikeDesktop(): void {
+  assertEqual(
+    shouldShowToolActivityInlineDetail(toolActivity("web-search-group", true), "Searched web for Codex Desktop"),
+    false,
+    "active web search should not append a duplicate completed detail beside the Desktop summary line",
+  );
+  assertEqual(
+    shouldShowToolActivityInlineDetail(toolActivity("exploration", true), "Reading src/app.ts"),
+    true,
+    "other active non-collapsed tool rows may still expose inline detail",
   );
 }
 

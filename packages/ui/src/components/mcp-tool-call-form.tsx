@@ -44,6 +44,7 @@ export function McpToolCallForm({ action, onClose, onSubmit }: McpToolCallFormPr
       <section
         className="hc-command-panel hc-mcp-tool-form"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label={action.title}
         onMouseDown={(event) => event.stopPropagation()}

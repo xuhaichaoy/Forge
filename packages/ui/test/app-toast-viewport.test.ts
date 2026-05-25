@@ -5,6 +5,7 @@ import type { LogLine } from "../src/state/codex-reducer";
 
 export default function runAppToastViewportTests(): void {
   projectsRecentUserFacingLogsOnly();
+  filtersInternalHostLifecycleAndTransportLogsLikeDesktop();
   rendersToastViewportForProjectedLogs();
 }
 
@@ -20,6 +21,22 @@ function projectsRecentUserFacingLogsOnly(): void {
     projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
     ["newest-error", "visible-info"],
     "toast projection should keep recent user-facing logs and skip internal lifecycle noise",
+  );
+}
+
+function filtersInternalHostLifecycleAndTransportLogsLikeDesktop(): void {
+  const logs: LogLine[] = [
+    logFixture("transport-fallback", "Falling back from WebSockets to HTTPS transport.\nstream disconnected before completion: tls handshake eof", "warn", 10_000),
+    logFixture("service-ready", "training_api ready", "info", 9_900),
+    logFixture("service-starting", "codex_apps starting", "info", 9_800),
+    logFixture("attach", "attaching to existing Codex app-server", "warn", 9_700),
+    logFixture("visible-error", "Save failed", "error", 9_600),
+  ];
+
+  assertDeepEqual(
+    projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
+    ["visible-error"],
+    "toast projection should hide internal host lifecycle and transport diagnostics like Codex Desktop",
   );
 }
 

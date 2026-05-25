@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   Bell,
   Boxes,
   CheckCircle2,
@@ -19,16 +20,26 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   commandPanelChatCreateEntry,
+  commandPanelHandleEscape,
   commandPanelHasSearchInput,
   commandPanelShouldShowChatCreateEmptyState,
+  commandPanelSubModeFromPanel,
+  commandPanelSubModePlaceholder,
+  groupCommandPanelEntries,
   groupCommandPanelEntriesForRendering,
   type CommandPanelEntry,
   type CommandPanelEntryAction,
   type CommandPanelState,
+  type CommandPanelSubMode,
 } from "../state/command-panel";
+// codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+// Used by CommandPanelRow to resolve the trailing <kbd> hint when the entry
+// does not carry a pre-baked acceleratorLabel (callers in HiCodexApp emit
+// raw entry IDs and let the panel derive the label).
+import { commandPanelEntryAcceleratorLabel } from "../state/commands";
 
 export interface CommandPanelProps {
   panel: CommandPanelState;
@@ -46,20 +57,70 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
   );
   const showSearchInput = commandPanelHasSearchInput(panel);
   const showChatCreateEmptyState = commandPanelShouldShowChatCreateEmptyState(panel, query);
+  // codex: app-main-DG-Mf4Wj.js — cmdk Hd atom (root/chats/files). The
+  // CommandPanel is the sole consumer; we derive the sub-mode from the live
+  // panel state so existing call sites (openChatSearchPanel / openFileSearchPanel)
+  // automatically participate without touching their factories.
+  const subMode = commandPanelSubModeFromPanel(panel);
   useEffect(() => {
     setQuery("");
   }, [panel.panel, panel.title]);
+  // codex: app-main-DG-Mf4Wj.js — Esc XD(t),t.set(eu,!1) 两段式。First Esc
+  // clears the active query / drops out of a sub-mode (Codex closes any
+  // active list filter and returns to root). Second Esc closes the dialog.
+  // Implemented as a key handler on the dialog so it intercepts before the
+  // host-level Esc listeners (e.g. thread find bar) react.
+  const handleDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Escape") return;
+    const result = commandPanelHandleEscape({ subMode, query });
+    event.preventDefault();
+    event.stopPropagation();
+    if (result.shouldClose) {
+      onClose();
+      return;
+    }
+    if (result.clearQuery) {
+      setQuery("");
+      onSearchQueryChange?.("");
+    }
+    // Returning to root is implicit when sub-mode is derived from panel
+    // state: callers like searchChats/searchFiles install a sub-mode panel,
+    // and Codex (`searchChats:close`/`searchFiles:close` in app-main) flips
+    // Hd back to root by re-opening the root command menu. We surface the
+    // intent via onSelectAction({ type: "runSlashCommand" }) callers if
+    // needed; the immediate clear above is enough to match the visible
+    // first-Esc behavior.
+  };
   return (
     <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
       <section
         className="hc-command-panel"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label={panel.title}
         onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={handleDialogKeyDown}
       >
         <header>
           <div>
+            {subMode !== "root" && (
+              // codex: app-main-DG-Mf4Wj.js — back affordance for sub-mode
+              // panels (chats/files). Clicking it asks the host to drop the
+              // sub-mode panel; the host typically closes the panel so the
+              // user can reopen the root command menu via ⌘K.
+              <button
+                aria-label="Back to command menu"
+                className="hc-icon-button"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onClose();
+                }}
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
             {panelIcon(panel.panel)}
             <span>{panel.title}</span>
           </div>
@@ -80,7 +141,7 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
             <span>Search</span>
             <input
               autoFocus
-              placeholder={commandPanelSearchPlaceholder(panel)}
+              placeholder={commandPanelSubModePlaceholder(subMode)}
               value={query}
               onChange={(event) => {
                 const nextQuery = event.target.value;
@@ -107,17 +168,11 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
           entries={visibleEntries}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
+          subMode={subMode}
         />
       </section>
     </div>
   );
-}
-
-function commandPanelSearchPlaceholder(panel: CommandPanelState): string {
-  if (panel.panel === "files") return "Search files";
-  if (panel.title.toLowerCase().includes("chat")) return "Search chats";
-  if (panel.title.toLowerCase().includes("command")) return "Search commands and chats";
-  return "Search";
 }
 
 function CommandPanelChatCreateEmptyState({ onCreate }: { onCreate?: () => void }) {
@@ -156,15 +211,68 @@ export function CommandPanelEntryList({
   entries,
   onSelectEntry,
   onSelectAction,
+  subMode = "root",
+}: {
+  entries: CommandPanelEntry[];
+  onSelectEntry?: (entry: CommandPanelEntry) => void;
+  onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
+  subMode?: CommandPanelSubMode;
+}) {
+  if (entries.length === 0) return null;
+  // codex: app-main-DG-Mf4Wj.js — chats / files sub-modes only render their
+  // flat result list; section headings (Thread / Panels / ...) are gated on
+  // the root command menu, matching Codex's cmdk Hd atom behavior.
+  if (subMode !== "root") {
+    return (
+      <div className="hc-command-panel-list">
+        <CommandPanelGroupedEntries
+          entries={entries}
+          onSelectAction={onSelectAction}
+          onSelectEntry={onSelectEntry}
+        />
+      </div>
+    );
+  }
+  // codex: app-main-DG-Mf4Wj.js — command menu top-level taxonomy. Section
+  // titles come from GROUP_TITLE_ORDER inside groupCommandPanelEntries; the
+  // existing per-entry group headers (Pinned chats / Recent chats) are
+  // emitted inside each section by groupCommandPanelEntriesForRendering.
+  const sections = groupCommandPanelEntries(entries);
+  return (
+    <div className="hc-command-panel-list">
+      {sections.map((section) => (
+        <div className="hc-command-panel-section" key={`section:${section.groupKey}`}>
+          {section.groupKey !== "other" && (
+            <div className="hc-command-panel-section-title" role="presentation">
+              <span>{section.title}</span>
+              <span className="hc-command-panel-section-count" aria-hidden="true">
+                {section.entries.length}
+              </span>
+            </div>
+          )}
+          <CommandPanelGroupedEntries
+            entries={section.entries}
+            onSelectAction={onSelectAction}
+            onSelectEntry={onSelectEntry}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CommandPanelGroupedEntries({
+  entries,
+  onSelectEntry,
+  onSelectAction,
 }: {
   entries: CommandPanelEntry[];
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
-  if (entries.length === 0) return null;
   const renderedItems = groupCommandPanelEntriesForRendering(entries);
   return (
-    <div className="hc-command-panel-list">
+    <>
       {renderedItems.map((item) => item.type === "group" ? (
         <div className="hc-command-panel-group" key={item.key} role="presentation">
           {item.label}
@@ -177,7 +285,7 @@ export function CommandPanelEntryList({
           onSelectEntry={onSelectEntry}
         />
       ))}
-    </div>
+    </>
   );
 }
 
@@ -191,6 +299,11 @@ function CommandPanelRow({
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
   const actionable = Boolean(entry.action && !entry.disabled && onSelectEntry);
+  // codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut. Prefer a
+  // caller-supplied label; otherwise derive it from the entry id so existing
+  // call sites (slashCommandEntries / commandMenuEntries) automatically
+  // surface accelerators for known shortcuts without changes.
+  const acceleratorLabel = entry.acceleratorLabel ?? commandPanelEntryAcceleratorLabel(entry.id);
   const content = (
     <>
       <div className="hc-command-panel-row-main">
@@ -200,6 +313,17 @@ function CommandPanelRow({
         </div>
         <div className="hc-command-panel-row-trailing">
           {entry.status && <span className="hc-command-status">{entry.status}</span>}
+          {acceleratorLabel && (
+            // codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+            // Trailing keyboard hint mirrors Codex's command palette layout
+            // (status pill / kbd / secondary action stack share the trailing
+            // flex column). Aria-hidden because the host already exposes the
+            // shortcut via the command registry and macOS VoiceOver reads
+            // the unicode glyphs awkwardly.
+            <kbd className="hc-command-panel-row-accelerator" aria-hidden="true">
+              {acceleratorLabel}
+            </kbd>
+          )}
           {entry.secondaryActions && entry.secondaryActions.length > 0 && (
             <div className="hc-command-secondary-actions">
               {entry.secondaryActions.map((secondary) => (

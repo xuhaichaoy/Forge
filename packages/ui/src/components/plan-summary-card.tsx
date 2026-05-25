@@ -85,14 +85,6 @@ export function PlanSummaryCard({
                  * (`show-plan-summary`) is a no-op stub, so HiCodex matches.
                  */}
                 <button
-                  aria-label="Open"
-                  title="Open in new window"
-                  type="button"
-                  onClick={handleOpenInNewWindow}
-                >
-                  <ExternalLink aria-hidden size={14} />
-                </button>
-                <button
                   aria-label="Download plan"
                   title="Download plan"
                   type="button"
@@ -107,6 +99,16 @@ export function PlanSummaryCard({
                   onClick={handleCopy}
                 >
                   {copied ? <Check aria-hidden size={14} /> : <Copy aria-hidden size={14} />}
+                </button>
+                <button
+                  aria-label="Open"
+                  className="hc-plan-summary-open"
+                  title="Open in new window"
+                  type="button"
+                  onClick={handleOpenInNewWindow}
+                >
+                  <span>Open</span>
+                  <ExternalLink aria-hidden size={14} />
                 </button>
               </>
             )}

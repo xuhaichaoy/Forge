@@ -1,5 +1,8 @@
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { Thread } from "@hicodex/codex-protocol";
+// codex: electron-menu-shortcuts-DQYPVyfu.js — Codex header buttons surface
+// the accelerator in their tooltip. HiCodex mirrors that on sidebar toggle.
+import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 
 export interface ConversationChromeProps {
   title: string;
@@ -23,6 +26,17 @@ export interface ConversationChromeProps {
   rightRailPinned?: boolean;
   canPinRightRail?: boolean;
   onToggleRightRailPinned?: () => void;
+  /*
+   * codex: app-shell-Bh-lgoQk.js#cn — sidebar trigger group renders
+   * navigateBack / navigateForward arrow buttons next to the sidebar toggle.
+   * Codex reads `on` / `sn` history atoms (`canGoBack` / `canGoForward`) to
+   * compute disabled state. HiCodex passes through the same booleans from
+   * `state.threadHistoryStack` + `state.threadHistoryIndex`.
+   */
+  canNavigateBack?: boolean;
+  canNavigateForward?: boolean;
+  onNavigateBack?: () => void;
+  onNavigateForward?: () => void;
 }
 
 export function ConversationChrome({
@@ -34,14 +48,27 @@ export function ConversationChrome({
   rightRailPinned = false,
   canPinRightRail = false,
   onToggleRightRailPinned,
+  canNavigateBack = false,
+  canNavigateForward = false,
+  onNavigateBack,
+  onNavigateForward,
 }: ConversationChromeProps) {
   const displayTitle = title.replace(/\s+/g, " ").trim() || (activeThread ? "Untitled chat" : "New chat");
   const sidebarLabel = sidebarOpen ? "Hide sidebar" : "Show sidebar";
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#toggleSidebar — ⌘B hint in tooltip.
+  const sidebarAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.toggleSidebar);
+  const sidebarTitle = sidebarAccelerator ? `Toggle sidebar (${sidebarAccelerator})` : "Toggle sidebar";
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack / #navigateForward — ⌘[/] hints.
+  const backAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.navigateBack);
+  const forwardAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.navigateForward);
+  const backTitle = backAccelerator ? `Back (${backAccelerator})` : "Back";
+  const forwardTitle = forwardAccelerator ? `Forward (${forwardAccelerator})` : "Forward";
   const SidebarIcon = sidebarOpen ? PanelLeftClose : PanelLeftOpen;
   const showRightRailToggle = rightRailToggleAvailable
     && canPinRightRail
     && Boolean(onToggleRightRailPinned);
   const RightRailIcon = rightRailPinned ? PanelRightClose : PanelRightOpen;
+  const showNavButtons = Boolean(onNavigateBack) || Boolean(onNavigateForward);
   return (
     <header className="hc-topbar">
       <div className="hc-topbar-main">
@@ -51,11 +78,36 @@ export function ConversationChrome({
             className="hc-sidebar-trigger"
             aria-controls="hc-sidebar"
             aria-label={sidebarLabel}
-            title="Toggle sidebar"
+            title={sidebarTitle}
             onClick={onToggleSidebar}
           >
             <SidebarIcon size={16} aria-hidden="true" />
           </button>
+        )}
+        {showNavButtons && (
+          // codex: app-shell-Bh-lgoQk.js#cn — back/forward arrows in sidebar trigger group.
+          <div className="hc-topbar-nav-group" role="group" aria-label="Navigation history">
+            <button
+              type="button"
+              className="hc-topbar-nav-button"
+              aria-label={backTitle}
+              title={backTitle}
+              disabled={!canNavigateBack || !onNavigateBack}
+              onClick={onNavigateBack}
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="hc-topbar-nav-button"
+              aria-label={forwardTitle}
+              title={forwardTitle}
+              disabled={!canNavigateForward || !onNavigateForward}
+              onClick={onNavigateForward}
+            >
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          </div>
         )}
         <div className="hc-top-title" title={displayTitle}>{displayTitle}</div>
       </div>

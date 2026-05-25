@@ -1,6 +1,6 @@
 # Codex Alignment — HiCodex vs Codex Desktop Gap Matrix
 
-Actionable status of HiCodex's intermediate-output parity with Codex Desktop, last reconciled 2026-05-20.
+Actionable status of HiCodex's intermediate-output parity with Codex Desktop, last reconciled 2026-05-24.
 
 This is the index doc for what is **done**, what is **deliberate divergence**, and what remains open work. Each row links to the per-topic deep dive.
 
@@ -24,7 +24,7 @@ See [dispatcher doc](./codex-alignment-dispatcher.md) for the channel list and r
 
 ## B. Reasoning + Thinking placeholder
 
-All B1–B3, B5–B6, B8, B10 entries were retracted after the 2026-05-20 deep dive (see [reasoning doc](./codex-alignment-reasoning.md)). The agent timeline in Codex never renders reasoning ThreadItems — the `Ux` / `qx` render path is dead code. HiCodex's synthetic `desktopThinkingPlaceholderItem` is more user-explicit than Codex but does not violate the parity rule.
+All B1–B3, B5–B6, B8, B10 entries were retracted after the 2026-05-20 deep dive (see [reasoning doc](./codex-alignment-reasoning.md)). The agent timeline in Codex never renders reasoning ThreadItems — the `Ux` / `qx` render path is dead code. HiCodex's synthetic `desktopThinkingPlaceholderItem` mirrors Codex's live placeholder path and is only rendered while the turn is in progress.
 
 Remaining items:
 
@@ -32,7 +32,7 @@ Remaining items:
 | --- | --- | --- | --- | :-: |
 | B4 | Composer ReasoningEffort selector (6 labels None/Minimal/Low/Medium/High/Extra High) | implemented in Codex `reasoning-minimal-*.js` chunk | scope = Composer parity (not intermediate-output) | 🟡 reclassified |
 | B7 | Exploration counts conjunction | `Intl.formatList({ type: 'conjunction' })` -> "X, Y, and Z" | `tool-activity-grouping.ts::joinConjunction` aligned | ✅ |
-| B9 | Reasoning-complete remnant | Codex placeholder disappears (`BC` returns `none`) | HiCodex leaves a `Thought for {time}` row | 🔴 deliberate divergence — HiCodex chose to keep elapsed visible |
+| B9 | Reasoning-complete remnant | Codex placeholder disappears (`BC` / `Iy` returns `none`) | HiCodex drops completed reasoning and does not leave a `Thought for {time}` row | ✅ |
 
 ## C. Plan summary card
 
@@ -66,7 +66,7 @@ See [unified diff doc](./codex-alignment-unified-diff.md).
 | E2 (UI) | Failure Dialog with 13 strings, 3 tone classes, max-h-40vh | clean-room `UnifiedDiffFailureDialog` implemented | ✅ |
 | E2 (backend) | `host_apply_patch_action` Tauri command running `git apply` / `git apply --reverse` with non-git detection | implemented in `apps/desktop/src-tauri/src/main.rs` | ✅ |
 | E2 (state) | `applyPatchAction` bridge + Dialog wiring | `tauri-host.ts` + `HiCodexApp.tsx` + `conversation-view.tsx` + `event-unit.tsx::ToolBlock` | ✅ |
-| E-inline | Edited-file detail list (per-file rows, line counts, show-more, large-file placeholder) | Codex renders full list | HiCodex inline card omits the detail list | 🔴 visual gap |
+| E-inline | Edited-file detail list (per-file rows, line counts, show-more, large-file placeholder) | Codex renders full list; single-file detail row uses `Details` and omits duplicate stats | HiCodex inline card matches | ✅ |
 
 ## F. Turn container / Worked-for divider
 
@@ -80,9 +80,9 @@ See [image generation doc](./codex-alignment-image-generation.md).
 
 | ID | Item | Codex | HiCodex | Status |
 | --- | --- | --- | --- | :-: |
-| G1 | Turn-level inline gallery (`MAX_GALLERY_ROW = 4`, hover prev/next, overflow badge) | implemented | not implemented; HiCodex emits markdown image + right-rail artifact | 🔴 |
-| G2 | Right-rail Artifacts 6-item cap + Show more/less | `Qd = 6` + `showMore`/`showLess` | `rail-projection.ts` projects artifacts; cap needs re-verification | 🟡 |
-| G3 | Full-screen lightbox (Prev / Next / Close) | implemented | not yet implemented | 🟡 |
+| G1 | Turn-level inline gallery (`MAX_GALLERY_ROW = 4`, hover prev/next, overflow badge) | implemented | `GeneratedImageGallery` + turn projection implemented | ✅ |
+| G2 | Right-rail Artifacts 6-item cap + Show more/less | `Qd = 6` + `showMore`/`showLess` | `RAIL_LIST_PREVIEW_LIMIT = 6` verified | ✅ |
+| G3 | Full-screen lightbox (Prev / Next / Close) | implemented | `ImagePreviewLightbox` controlled mode with nav/close/zoom implemented | ✅ |
 
 ## H. Plan / Todo summary
 
@@ -93,18 +93,20 @@ See [image generation doc](./codex-alignment-image-generation.md).
 
 ## I. Remaining open work
 
-After the 2026-05-20 reconciliation, only three categories of work remain on the intermediate-output parity track:
+After the 2026-05-24 reasoning, inline-diff, and generated-image reconciliation, no source-backed main-content intermediate-output gap remains in this matrix. Keep live visual verification as a separate audit before claiming complete product parity.
 
 | Item | Blocker | Note |
 | --- | --- | --- |
-| C6 (multi-window detail page) | Tauri multi-window architecture (new entry + `WebviewWindowBuilder`) | Codex itself ships a stub; current HiCodex stub-alignment is sufficient. |
-| G1 / G3 (turn-level gallery + lightbox) | UI work, no backend dependency | Tracked for a future visual-polish pass. |
-| E-inline (edited-file detail list inside inline diff card) | UI work | Tracked alongside G1/G3. |
+| None currently listed | Re-audit against a fresh Codex Desktop ASAR after app updates | This table is evidence-backed for the inspected local Desktop build only. |
 
 All "Codex-source-backed pure UI / string alignment" work is closed.
 
 ## Quick history
 
+- 2026-05-24: Codex Desktop ASAR re-checked for assistant memory citations. HiCodex now renders citation source rows through the Desktop-style file-reference button path rather than fallback `href` anchors, while keeping the localized summary/line labels, full-path truncation, and note layout aligned.
+- 2026-05-24: Codex Desktop ASAR re-checked for automation citation chips. HiCodex now keeps chips static until an automation id and open route are available, then routes the button through the Automations panel instead of logging a debug-only click.
+- 2026-05-24: Codex Desktop ASAR re-checked for inline diff detail rows. HiCodex now renders the edited-file detail list, show-more/collapse behavior, large-file placeholder, and Desktop's single-file `Details` row without duplicate per-row stats.
+- 2026-05-24: Codex Desktop ASAR re-checked for reasoning placeholder and generated-image surfaces. HiCodex drops completed reasoning remnants, renders the turn-level generated-image gallery, keeps the right-rail 6-item Artifacts cap, and opens generated images in the Desktop-style lightbox.
 - 2026-05-20: Codex Desktop re-extracted; reasoning (`B1`–`B3`), collab agent (`D`), and several `B5`–`B6`/`B8`/`B10` entries retracted after evidence review showed Codex either does not render the surface (`Ux` dead code) or already matches HiCodex semantics.
 - E2 (Failure Dialog + `host_apply_patch_action`) shipped in the same pass.
 - A1 reducer convergence (4 channels retired) shipped in the same pass.

@@ -15,6 +15,8 @@ export default function runCodexReducerRightRailTests(): void {
   preservesArtifactFilePathFactsFromItemNotifications();
   storesTurnDiffsAndClearsThemWhenThreadsAreRemoved();
   ignoresUnknownNotifications();
+  projectsThreadTokenUsageIntoStatusFooter();
+  ignoresTokenUsageNotificationsMissingThreadId();
 }
 
 function storesLatestTurnPlanAsProjectionFact(): void {
@@ -245,6 +247,171 @@ function ignoresUnknownNotifications(): void {
   });
 
   assertEqual(next, state, "unknown notifications should preserve reducer state identity");
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#mu — verifies the
+// `thread/tokenUsage/updated` notification feeds the runtime slice that the
+// RightRail status footer (and projection input) reads.
+function projectsThreadTokenUsageIntoStatusFooter(): void {
+  let state = stateWithThread("thread-tokens");
+
+  state = reduceNotification(state, {
+    method: "thread/tokenUsage/updated",
+    params: {
+      threadId: "thread-tokens",
+      turnId: "turn-tokens-1",
+      tokenUsage: {
+        total: {
+          totalTokens: 1234,
+          inputTokens: 1000,
+          cachedInputTokens: 200,
+          outputTokens: 234,
+          reasoningOutputTokens: 0,
+        },
+        last: {
+          totalTokens: 200,
+          inputTokens: 150,
+          cachedInputTokens: 0,
+          outputTokens: 50,
+          reasoningOutputTokens: 0,
+        },
+        modelContextWindow: 128000,
+      },
+    },
+  });
+
+  const runtime = selectThreadRuntime(state, "thread-tokens");
+  assertEqual(
+    runtime.tokenUsage?.usedTokens,
+    200,
+    "thread/tokenUsage/updated should write Desktop last-turn usedTokens onto runtime",
+  );
+  assertEqual(
+    runtime.tokenUsage?.contextWindow,
+    128000,
+    "thread/tokenUsage/updated should mirror modelContextWindow onto runtime",
+  );
+
+  // Subsequent updates without modelContextWindow should still refresh the
+  // counter; protocol marks the field nullable, so footer keeps rendering.
+  state = reduceNotification(state, {
+    method: "thread/tokenUsage/updated",
+    params: {
+      threadId: "thread-tokens",
+      turnId: "turn-tokens-2",
+      tokenUsage: {
+        total: {
+          totalTokens: 1500,
+          inputTokens: 1200,
+          cachedInputTokens: 200,
+          outputTokens: 300,
+          reasoningOutputTokens: 0,
+        },
+        last: {
+          totalTokens: 266,
+          inputTokens: 200,
+          cachedInputTokens: 0,
+          outputTokens: 66,
+          reasoningOutputTokens: 0,
+        },
+        modelContextWindow: null,
+      },
+    },
+  });
+
+  const refreshed = selectThreadRuntime(state, "thread-tokens");
+  assertEqual(
+    refreshed.tokenUsage?.usedTokens,
+    266,
+    "thread/tokenUsage/updated should refresh Desktop last-turn usedTokens across turns",
+  );
+  assertEqual(
+    refreshed.tokenUsage?.contextWindow,
+    null,
+    "thread/tokenUsage/updated should preserve null modelContextWindow",
+  );
+
+  // Projection input shape consumed by HiCodexApp / `<RightRail statusFooter>`.
+  const footer = refreshed.tokenUsage
+    ? { tokensUsed: refreshed.tokenUsage.usedTokens, contextWindow: refreshed.tokenUsage.contextWindow ?? undefined }
+    : undefined;
+  assertDeepEqual(
+    footer,
+    { tokensUsed: 266, contextWindow: undefined },
+    "RightRail statusFooter input should match HiCodexApp's projection mapping",
+  );
+
+  // `projectRightRailSections` accepts the statusFooter field (no throw,
+  // returns array). HiCodexApp passes the same value through the projection
+  // input + the `<RightRail statusFooter>` prop.
+  const sections = projectRightRailSections({
+    progress: [],
+    automations: [],
+    branchDetails: { entries: [] },
+    artifacts: [],
+    sources: [],
+    statusFooter: footer,
+  });
+  assertEqual(
+    Array.isArray(sections),
+    true,
+    "projectRightRailSections should accept the statusFooter projection input",
+  );
+}
+
+// codex: empty `threadId` / missing payload must leave the runtime untouched
+// so a malformed notification can't blank out a previously rendered footer.
+function ignoresTokenUsageNotificationsMissingThreadId(): void {
+  let state = stateWithThread("thread-noop");
+  state = reduceNotification(state, {
+    method: "thread/tokenUsage/updated",
+    params: {
+      threadId: "thread-noop",
+      turnId: "turn-noop",
+      tokenUsage: {
+        total: {
+          totalTokens: 42,
+          inputTokens: 32,
+          cachedInputTokens: 0,
+          outputTokens: 10,
+          reasoningOutputTokens: 0,
+        },
+        last: {
+          totalTokens: 12,
+          inputTokens: 10,
+          cachedInputTokens: 0,
+          outputTokens: 2,
+          reasoningOutputTokens: 0,
+        },
+        modelContextWindow: 8192,
+      },
+    },
+  });
+  assertEqual(
+    selectThreadRuntime(state, "thread-noop").tokenUsage?.usedTokens,
+    12,
+    "baseline thread/tokenUsage/updated should populate runtime",
+  );
+
+  const after = reduceNotification(state, {
+    method: "thread/tokenUsage/updated",
+    params: { threadId: "", tokenUsage: {} },
+  });
+  assertEqual(
+    selectThreadRuntime(after, "thread-noop").tokenUsage?.usedTokens,
+    12,
+    "thread/tokenUsage/updated with empty threadId should not blank existing counter",
+  );
+
+  const withoutPayload = reduceNotification(state, {
+    method: "thread/tokenUsage/updated",
+    params: { threadId: "thread-noop" },
+  });
+  assertEqual(
+    selectThreadRuntime(withoutPayload, "thread-noop").tokenUsage?.usedTokens,
+    12,
+    "thread/tokenUsage/updated without tokenUsage payload should not blank existing counter",
+  );
 }
 
 function stateWithThread(...threadIds: string[]): CodexUiState {

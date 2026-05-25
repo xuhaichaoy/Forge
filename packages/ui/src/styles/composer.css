@@ -13,6 +13,11 @@
   background: transparent;
 }
 
+.hc-composer-surface {
+  position: relative;
+  min-width: 0;
+}
+
 .hc-above-composer-portal,
 .hc-above-composer-queue-portal {
   position: relative;
@@ -21,20 +26,51 @@
   background: var(--hc-surface-main);
 }
 
+.hc-above-composer-suggestion-portal {
+  /*
+   * codex: composer-D0cvMZjq.pretty.js renders the suggestion target as
+   * `@container pointer-events-none absolute inset-x-0 bottom-full z-20 mb-2
+   * flex justify-center`, separate from the normal above-composer portal.
+   */
+  container: above-composer-suggestion / inline-size;
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+}
+
 .hc-thread-scroll-footer .hc-above-composer-portal,
 .hc-thread-scroll-footer .hc-above-composer-queue-portal {
   background: transparent;
 }
 
 .hc-above-composer-portal:empty,
-.hc-above-composer-queue-portal:empty {
+.hc-above-composer-queue-portal:empty,
+.hc-above-composer-suggestion-portal:empty {
   display: none;
+}
+
+.hc-live-turn-diff-portal {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.hc-live-turn-diff-portal .hc-turn-diff,
+.hc-live-turn-diff-portal .hc-turn-diff-progress {
+  margin-bottom: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .hc-above-composer-suggestion-wrap {
   display: flex;
+  width: 100%;
+  max-width: 100%;
   justify-content: center;
-  padding-bottom: 6px;
   pointer-events: none;
 }
 
@@ -48,10 +84,12 @@
   padding: 6px 8px 6px 12px;
   border: 1px solid var(--hc-border-subtle);
   border-radius: 24px;
-  background: var(--hc-surface-panel);
-  box-shadow: var(--hc-shadow-panel);
+  background: color-mix(in srgb, var(--vscode-dropdown-background, var(--hc-surface-panel)) 90%, transparent);
+  box-shadow: 0 4px 6px -1px rgba(34, 38, 43, 0.12), 0 2px 4px -2px rgba(34, 38, 43, 0.10);
   color: var(--hc-text-primary);
+  overflow: hidden;
   pointer-events: auto;
+  backdrop-filter: blur(4px);
 }
 
 .hc-above-composer-suggestion-main,
@@ -114,9 +152,10 @@
 
 .hc-above-composer-suggestion-action {
   padding: 5px 10px;
-  border-radius: 16px;
-  background: var(--hc-text-strong);
-  color: var(--hc-surface-main);
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 8px;
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
   font-size: 12px;
   font-weight: 600;
   line-height: 16px;
@@ -142,7 +181,7 @@
   color: var(--hc-text-primary);
 }
 
-@media (min-width: 620px) {
+@container above-composer-suggestion (width >= 500px) {
   .hc-above-composer-suggestion-meta {
     display: inline-flex;
   }
@@ -398,6 +437,37 @@
   transform: rotate(-8deg);
 }
 
+.hc-prompt-mention[data-prompt-mention-kind="skillMention"] {
+  position: relative;
+  display: inline;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0.125em 0 calc(16px + 3px);
+  color: var(--hc-inline-mention-color, #2d7ec8);
+  font-weight: 600;
+  line-height: inherit;
+}
+
+.hc-prompt-mention[data-prompt-mention-kind="skillMention"]::before {
+  position: absolute;
+  top: 50%;
+  left: 0.125em;
+  display: block;
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 0;
+  background-color: currentColor;
+  content: "";
+  transform: translateY(-50%);
+  -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'><path d='M10.1 1.8 15.1 4.9c.55.34.9.96.9 1.62v6.86c0 .68-.36 1.31-.94 1.66l-5.17 3.18c-.61.37-1.38.35-1.97-.06L4.8 16.03A1.9 1.9 0 0 1 4 14.46V6.58c0-.67.35-1.29.92-1.64l4.02-2.48c.35-.22.78-.46 1.16-.66Z'/><path d='M4.9 6.15 8.6 8.65l6.46-3.74M8.6 8.65v8.66M15.1 8.15l-5.06 3.1'/></svg>");
+  mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.45' stroke-linecap='round' stroke-linejoin='round'><path d='M10.1 1.8 15.1 4.9c.55.34.9.96.9 1.62v6.86c0 .68-.36 1.31-.94 1.66l-5.17 3.18c-.61.37-1.38.35-1.97-.06L4.8 16.03A1.9 1.9 0 0 1 4 14.46V6.58c0-.67.35-1.29.92-1.64l4.02-2.48c.35-.22.78-.46 1.16-.66Z'/><path d='M4.9 6.15 8.6 8.65l6.46-3.74M8.6 8.65v8.66M15.1 8.15l-5.06 3.1'/></svg>");
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 /*
  * Codex `pp` richLink chip (prosemirror byte ~453826). Renders the
  * `displayText` with the full `href` as tooltip; no brand color and an
@@ -429,6 +499,11 @@
 .hc-app[data-theme="dark"] .hc-prompt-mention.hc-prompt-rich-link {
   color: #91b7e0;
   background: rgba(145, 183, 224, 0.15);
+}
+
+.hc-app[data-theme="dark"] .hc-prompt-mention[data-prompt-mention-kind="skillMention"] {
+  background: transparent;
+  color: var(--hc-inline-mention-color, #8ecbff);
 }
 
 .hc-composer-plus {
@@ -550,14 +625,15 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 — middle column is rendered as
- *   <div className="flex items-center">{d==="cloud" ? <jR/> : null}</div>
- * For HiCodex (local-only) the slot stays empty, but we keep the cell to
- * preserve the 3-column grid alignment.
+ * CODEX-REF: composer-external-footer-Di2cUHzK.pretty.js lines 810-858 —
+ * local branch is a mode-adjacent footer control; keep this center slot
+ * shrinkable so the static branch chip can truncate like Desktop.
  */
 .hc-composer-external-footer-center {
   display: flex;
+  min-width: 0;
   align-items: center;
+  overflow: hidden;
 }
 
 /*
@@ -716,6 +792,197 @@
 
 .hc-composer-footer-permissions {
   max-width: min(190px, 22vw);
+}
+
+.hc-composer-footer-branch {
+  max-width: min(160px, 22vw);
+}
+
+/* codex: composer-footer-branch-switcher-CamXBKfA.js — branch picker UI.
+   Wrapper exists so the chip + portal anchor share a `position: relative`
+   context even though the menu itself is portal-rendered to <body>. */
+.hc-composer-footer-branch-switcher {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.hc-composer-footer-chip.hc-composer-footer-branch[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.hc-composer-branch-menu {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 100%;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hc-composer-branch-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: #6f716b;
+  background: #f6f4ee;
+}
+
+.hc-composer-branch-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #27313d;
+  font-size: 12px;
+}
+
+.hc-composer-branch-list {
+  display: grid;
+  max-height: 320px;
+  overflow-y: auto;
+  gap: 2px;
+}
+
+.hc-composer-branch-empty {
+  padding: 8px;
+  color: #7c7f78;
+  font-size: 12px;
+}
+
+.hc-composer-branch-error {
+  color: #b1431d;
+}
+
+.hc-composer-branch-item {
+  /* Inherits .hc-thread-menu-item base styles. */
+  font-size: 12px;
+}
+
+.hc-composer-branch-item[data-current="true"] {
+  font-weight: 600;
+}
+
+.hc-composer-branch-item-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-composer-branch-item-suffix {
+  margin-left: auto;
+  color: #7c7f78;
+  font-size: 11px;
+}
+
+.hc-composer-branch-error-row {
+  padding: 6px 8px;
+  border-top: 1px solid #e6e2d6;
+  color: #b1431d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* codex: branch-picker-extension — `Default` chip rendered alongside the
+   repository's default branch. Codex Desktop uses a muted gray pill; we mirror
+   that with the existing footer palette. */
+.hc-branch-picker-default-chip {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #ece9df;
+  color: #5d6258;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  line-height: 1.4;
+}
+
+/* codex: branch-picker-extension — when the default chip and the "current"
+   suffix coexist we nudge the suffix off the auto-left margin to keep the
+   chip glued to the right edge. */
+.hc-branch-picker-default-chip + .hc-composer-branch-item-suffix {
+  margin-left: 6px;
+}
+
+/* codex: branch-picker-extension — section heading above the "Remote branches"
+   list. Muted, small, non-interactive. */
+.hc-branch-picker-section-heading {
+  padding: 6px 8px 2px;
+  color: #7c7f78;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  user-select: none;
+}
+
+/* codex: branch-picker-extension — footer "Create new branch…" button +
+   inline create form. Full-width, sits below the branch list. */
+.hc-branch-picker-create-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #27313d;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.hc-branch-picker-create-button:hover:not([disabled]) {
+  background: #f6f4ee;
+}
+
+.hc-branch-picker-create-button[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.hc-branch-picker-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.hc-branch-picker-create-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d8d3c2;
+  border-radius: 6px;
+  background: #fbfaf5;
+  color: #27313d;
+  font-size: 12px;
+  outline: none;
+}
+
+.hc-branch-picker-create-input:focus {
+  border-color: #6f716b;
+}
+
+.hc-branch-picker-create-error {
+  border-top: 0;
 }
 
 .hc-composer-footer-intelligence {
@@ -1247,4 +1514,184 @@
   .hc-composer-footer-intelligence {
     max-width: 180px;
   }
+}
+
+/* ========================================================================
+ * codex: local-conversation-page Zt + above-composer-panel-row p/m/C
+ * Above-composer Working/Latest-turn expandable drawer.
+ * ====================================================================== */
+
+.hc-above-composer-panel-container {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* codex: container `order-2 flex min-w-0 flex-col` */
+}
+
+.hc-above-composer-panel {
+  position: relative;
+  min-width: 0;
+  overflow: clip;
+  /* codex: panel chrome `bg-token-input-background/70 border-x border-t backdrop-blur-sm` */
+  background: var(--hc-surface-composer);
+  border-left: 1px solid var(--hc-border-default);
+  border-right: 1px solid var(--hc-border-default);
+  border-top: 1px solid var(--hc-border-default);
+  backdrop-filter: blur(4px);
+  color: var(--hc-text-primary);
+}
+
+.hc-above-composer-panel--first-rounded {
+  /* codex: `first:rounded-t-2xl` when no stacked content above */
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+}
+
+.hc-panel-row {
+  /* codex: PanelRow `group flex min-w-0 items-center justify-between gap-2 py-0.5 text-sm` */
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hc-panel-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-panel-row-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+}
+
+.hc-panel-row-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1;
+}
+
+.hc-panel-row-meta {
+  margin-left: 4px;
+  color: var(--hc-text-secondary);
+}
+
+.hc-panel-row-trailing {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Working drawer ----------------------------------------------------------- */
+
+.hc-working-turn-drawer-header {
+  /* codex: Zt header button `flex w-full items-center justify-between gap-2 px-3 py-row-y` */
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hc-working-turn-drawer-header:hover {
+  background: var(--hc-surface-hover);
+}
+
+.hc-working-turn-drawer-header:focus-visible {
+  outline: 1px solid var(--hc-border-strong, var(--hc-border-default));
+  outline-offset: -1px;
+}
+
+.hc-working-turn-drawer-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-working-turn-drawer-chevron {
+  /* codex: Ge `icon-2xs text-current transition-transform duration-300` */
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease;
+  color: var(--hc-text-secondary);
+}
+
+.hc-working-turn-drawer-chevron[data-expanded="true"] {
+  transform: rotate(90deg);
+}
+
+.hc-working-turn-drawer-body {
+  /* codex: motion.div animate height 0<->auto, opacity 0<->1, pointer-events gated on expanded */
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-height 0.3s ease, opacity 0.2s ease;
+}
+
+.hc-working-turn-drawer-body[data-expanded="true"] {
+  /* codex: maxHeightByState.expanded = "18rem" */
+  max-height: 18rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hc-working-turn-drawer-scroll {
+  /* codex: AutoScrollContainer `px-3 pt-0.5 pb-3 [--edge-fade-distance:1rem]` */
+  padding: 2px 12px 12px;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.hc-working-turn-drawer-summary {
+  /* MVP placeholder for threadPreview; replace with full event-unit render later. */
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--hc-text-secondary);
+}
+
+.hc-working-turn-drawer-summary-row {
+  padding: 2px 0;
+}
+
+.hc-working-turn-drawer-summary-type {
+  font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+/* codex: composer-D0cvMZjq.js#U_ — StatusTextPanel aria-live polite block. */
+.hc-status-text-panel-body {
+  /* codex: U_ — `max-h-30dvh overflow-y-auto px-3 py-2 text-size-chat` */
+  max-height: 30dvh;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--hc-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

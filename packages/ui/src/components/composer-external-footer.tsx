@@ -1,3 +1,26 @@
+// codex: accelerator-hint audit (2026-05) — surveyed every interactive
+// element in this footer against `COMMAND_DESCRIPTORS` in `state/commands.ts`:
+//   * `+` add-menu / project switcher (`title="Project and work mode"`):
+//     Codex Desktop opens the same picker via the footer chip only; no
+//     keybinding exists in `electron-menu-shortcuts-DQYPVyfu.js` and HiCodex
+//     does not expose `openProjectMenu` in COMMAND_IDS — skipped.
+//   * Permissions chip (`title="Change permissions"`): Codex Desktop renders
+//     this as `composer.permissions.changePermissions` with no accelerator,
+//     and HiCodex has no `openPermissions` command — skipped.
+//   * Branch chip: now interactive via `ComposerFooterBranchSwitcher` (host
+//     `host_git_list_branches` + `host_git_checkout_branch`); Codex Desktop
+//     does not assign a global accelerator to the branch picker either
+//     (cf. `composer-footer-branch-switcher-CamXBKfA.js`), so no accelerator
+//     hint applies — skipped.
+//   * Model / intelligence chip (`title="Select model"`): Codex Desktop
+//     wires this to the model picker without an accelerator (cf.
+//     `composer-D0cvMZjq.js` defaultMessage `Select model`); HiCodex has no
+//     `openModelPicker` entry yet — skipped.
+// Conclusion: there is no footer button with a 1:1 mapping to an existing
+// keybinding. Re-run this audit when `openModelPicker`, `openPermissions`,
+// or similar entries land in `state/commands.ts`, then thread tooltips
+// through `descriptorAcceleratorLabel(commandId)` (already exported by
+// `state/commands.ts`).
 import { ChevronDown, Cpu, Folder, Plus, Search, ShieldCheck } from "lucide-react";
 import {
   useCallback,
@@ -17,6 +40,8 @@ import {
   type WorktreeModeOption,
 } from "../state/worktrees";
 import { WorktreeModeMenuItems } from "./worktree-mode-menu";
+// codex: composer-footer-branch-switcher-CamXBKfA.js — chip + dropdown.
+import { ComposerFooterBranchSwitcher } from "./composer-footer-branch-switcher";
 
 export interface ComposerWorkspaceRootOption {
   root: string;
@@ -46,9 +71,21 @@ export interface ComposerExternalFooterProps {
    * interactive when `onOpenModelPicker` is provided.
    */
   onOpenModelPicker?: (anchor: HTMLElement) => void;
+  /**
+   * codex: composer-footer-branch-switcher-CamXBKfA.js — fired after a
+   * successful `git checkout` so the host can refresh `Thread.gitBranch` /
+   * other branch-dependent caches.
+   */
+  onBranchSwitched?: (branchName: string) => void;
+  /**
+   * codex: composer-footer-branch-switcher-CamXBKfA.js — surface git checkout
+   * failures through the dispatch log (caller decides toast vs. inline).
+   */
+  onBranchSwitchError?: (message: string) => void;
 }
 
 export function ComposerExternalFooter({
+  branch,
   cwd,
   model,
   workMode = "local",
@@ -63,12 +100,15 @@ export function ComposerExternalFooter({
   sandboxMode,
   onOpenPermissions,
   onOpenModelPicker,
+  onBranchSwitched,
+  onBranchSwitchError,
 }: ComposerExternalFooterProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const projectTriggerRef = useRef<HTMLButtonElement | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
+  const branchLabel = formatBranchFooterLabel(branch);
   const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
   const permissionsLabel = formatPermissionsFooterLabel({ approvalPolicy, approvalsReviewer, sandboxMode });
   const permissionsTitle = formatPermissionsFooterTitle({ approvalPolicy, approvalsReviewer, sandboxMode }, permissionsLabel);
@@ -138,6 +178,7 @@ export function ComposerExternalFooter({
                 id="hc-composer-project-menu"
                 className="hc-thread-menu hc-composer-project-menu hc-app-popover-menu"
                 role="menu"
+                data-state="open"
               >
                 <label className="hc-composer-project-search">
                   <Search size={13} />
@@ -213,12 +254,26 @@ export function ComposerExternalFooter({
         </button>
       </div>
       {/*
-       * CODEX-REF: composer-DXaiOlFj.js line ~975700 — middle grid cell:
-       *   <div className="flex items-center">{d==="cloud" ? <jR/> : null}</div>
-       * Empty for local-only HiCodex but kept so the 3-column grid alignment
-       * stays consistent with Codex.
+       * codex: composer-footer-branch-switcher-CamXBKfA.js — chip + dropdown.
+       * Replaces the previous readonly span. The switcher renders the same
+       * `hc-composer-footer-branch` chip (so existing CSS / SSR snapshots keep
+       * matching) but turns it into a button that opens a portal-positioned
+       * branch picker driven by `host_git_list_branches` /
+       * `host_git_checkout_branch`. When the workspace is not a git repo /
+       * the host bridge is unavailable, the switcher falls back to the
+       * read-only label or hides itself entirely (mirrors Codex's "chip only
+       * shows when we know what to show" behavior).
        */}
-      <div className="hc-composer-external-footer-center" aria-hidden="true" />
+      <div className="hc-composer-external-footer-center" aria-hidden={branchLabel ? undefined : true}>
+        {branchLabel && (
+          <ComposerFooterBranchSwitcher
+            cwd={cwd}
+            currentBranch={branchLabel}
+            onBranchSwitched={onBranchSwitched}
+            onError={onBranchSwitchError}
+          />
+        )}
+      </div>
       {/*
        * CODEX-REF: composer-DXaiOlFj.js line ~975700 — right grid cell:
        *   <div className="flex w-full min-w-0 items-center justify-end gap-2">
@@ -372,6 +427,10 @@ function filterWorkspaceRoots(
     option.label.toLowerCase().includes(needle)
     || option.root.toLowerCase().includes(needle)
   ));
+}
+
+function formatBranchFooterLabel(value?: string | null): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function normalizedWorkspaceRoot(value: string): string {

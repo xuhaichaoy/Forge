@@ -2,6 +2,7 @@ import { ArrowUp, AtSign, FileText, ListChecks, Loader2, Paperclip, PlugZap, Plu
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { convertLocalFileSrc, listenNativeFileDropEvents } from "../lib/tauri-host";
+import { AboveComposerPlanSuggestion } from "./above-composer-plan-suggestion";
 import { focusPromptEditorElement, PromptEditor, replacePromptEditorTextRangeWithMention } from "./prompt-editor";
 import {
   CLOSED_ATTACHMENT_PICKER_STATE,
@@ -66,7 +67,9 @@ const CLOSED_MENTION_PICKER_STATE: MentionPickerState = {
 export interface ComposerProps {
   input: string;
   attachments: ComposerAttachment[];
+  conversationId?: string | null;
   mode?: ComposerMode;
+  hasPlanMode?: boolean;
   layoutMode?: ComposerLayoutMode;
   placeholder?: string;
   onInputChange: (value: string) => void;
@@ -78,6 +81,7 @@ export interface ComposerProps {
   onMentionSearch?: (query: string, marker: ComposerMentionMarker) => Promise<ComposerMentionOption[]>;
   onPlanSelected?: () => void;
   onOpenPlugins?: () => void;
+  showPlanKeywordSuggestion?: boolean;
   pendingRequestContent?: ReactNode;
   onSend: (options?: ComposerSendOptions) => void;
   onInterrupt: () => void;
@@ -87,7 +91,9 @@ export interface ComposerProps {
 export function Composer({
   input,
   attachments,
+  conversationId = null,
   mode = "default",
+  hasPlanMode = false,
   layoutMode = "multiline",
   placeholder: placeholderText,
   onInputChange,
@@ -99,6 +105,7 @@ export function Composer({
   onMentionSearch,
   onPlanSelected,
   onOpenPlugins,
+  showPlanKeywordSuggestion = true,
   pendingRequestContent,
   onSend,
   onInterrupt,
@@ -132,7 +139,28 @@ export function Composer({
   const placeholder = placeholderText ?? "Ask Codex anything. @ to use plugins or mention files";
   const mentionOpen = mentionPicker.status !== "closed";
   const hasComposerPopover = slashOpen || attachmentPicker.status !== "closed" || mentionOpen;
-  const mentionOptions = mentionPicker.options.slice(0, 8);
+  /*
+   * codex: composer-D0cvMZjq.pretty.js#Xv — the plan keyword suggestion is
+   * mounted into a composer-local floating target only when `!Jr`; Desktop's
+   * `Jr = Pt || Ye || Xe || rn != null || Gr` suppresses the suggestion for
+   * pending-request replacement surfaces and for the active composer overlay
+   * state (`Gr`). HiCodex maps `Gr` to slash/mention/attachment popovers.
+   */
+  const shouldRenderPlanSuggestion = showPlanKeywordSuggestion && pendingRequestContent == null && !hasComposerPopover;
+  /*
+   * codex: at-mention-list-with-sources-CE0mtxMW.js#o(e) — Codex Desktop renders
+   * mention results grouped into sections (Live agents / Custom agents / Skills /
+   * Apps / Plugins / Files) via `use-at-mention-sections#r({sections})`.
+   * HiCodex preserves the underlying score-based ranking but lays the rows out
+   * in a stable per-kind order so users can scan by category. Flat keyboard
+   * navigation is preserved by reading from `mentionOptions` (already in the
+   * grouped order).
+   */
+  const mentionOptions = useMemo(
+    () => groupedMentionOptions(mentionPicker.options.slice(0, 8)),
+    [mentionPicker.options],
+  );
+  const mentionSections = useMemo(() => mentionSectionsFromOptions(mentionOptions), [mentionOptions]);
   const selectedMention = mentionOptions[Math.min(
     mentionPicker.activeIndex,
     Math.max(0, mentionOptions.length - 1),
@@ -553,6 +581,22 @@ export function Composer({
     <form
       ref={composerRef}
       className="hc-composer"
+      /*
+       * Do NOT mark the form with `data-codex-composer`. Codex Desktop and
+       * HiCodex both expect `document.querySelector("[data-codex-composer]")`
+       * to return the ProseMirror editor view's DOM node so
+       * `insertPromptEditorText` can resolve a `pmViewDesc` and dispatch the
+       * keystroke through the editor (`prompt-editor.tsx::insertPromptEditorText`).
+       * `prompt-editor.tsx:358` already sets `dom.dataset.codexComposer = "true"`
+       * on the live editor view; setting it on the wrapping form too caused the
+       * selector to return the form first (DOM tree order) and the fallback
+       * path appended raw text nodes outside the editor. Keep the marker on the
+       * editor view only.
+       *
+       * `hooks/use-hotkey.ts::DEFAULT_IGNORE_WITHIN` still works because
+       * `event.target.closest("[data-codex-composer]")` walks upward and the
+       * editor view inside the form satisfies the closest() match.
+       */
       data-runtime-status={submitState.threadRuntimeStatus}
       data-drop-active={dropActive}
       onPaste={(event) => {
@@ -620,12 +664,31 @@ export function Composer({
         sendComposer();
       }}
     >
-      <div
-        ref={composerFieldRef}
-        className="hc-composer-field"
-        data-layout={isSingleLineLayout ? "single" : "multiline"}
-        data-mode={pendingRequestContent ? "request" : "input"}
-      >
+      <div className="hc-composer-surface">
+        {/*
+         * codex: composer-D0cvMZjq.pretty.js — `AboveComposerSuggestions` is
+         * rendered into a sibling `Cn` target with
+         * `pointer-events-none absolute inset-x-0 bottom-full z-20 mb-2 flex
+         * justify-center`, separate from `data-above-composer-portal`.
+         */}
+        <div className="hc-above-composer-suggestion-portal" data-codex-above-composer-suggestion-portal="true">
+          {onPlanSelected ? (
+            <AboveComposerPlanSuggestion
+              composerText={input}
+              conversationId={conversationId}
+              hasPlanMode={hasPlanMode}
+              mode={mode}
+              onPlanSelected={onPlanSelected}
+              showPlanKeywordSuggestion={shouldRenderPlanSuggestion}
+            />
+          ) : null}
+        </div>
+        <div
+          ref={composerFieldRef}
+          className="hc-composer-field"
+          data-layout={isSingleLineLayout ? "single" : "multiline"}
+          data-mode={pendingRequestContent ? "request" : "input"}
+        >
         {pendingRequestContent ? (
           <div className="hc-composer-request-region">
             {pendingRequestContent}
@@ -684,7 +747,17 @@ export function Composer({
             )}
 
             {slashOpen && slashCommands.length > 0 && (
-              <div ref={slashMenuRef} className="hc-composer-menu" role="listbox" aria-label="Slash commands">
+              /*
+               * `data-state="open"` mirrors the Radix-style marker the
+               * focus-routing selector expects. HiCodex's
+               * `HiCodexApp.tsx::focusComposerFromPlainTextKey` (and the
+               * upstream Codex Desktop equivalent in `composer-D0cvMZjq.js`)
+               * queries `[role="listbox"][data-state="open"]` — and the
+               * `dialog`/`menu` variants below — to suppress type-to-focus
+               * while a popover is mounted. Each popover here is rendered
+               * only while open, so the marker can be hard-coded.
+               */
+              <div ref={slashMenuRef} className="hc-composer-menu" role="listbox" aria-label="Slash commands" data-state="open">
                 {slashCommands.map((command) => {
                   const active = command.id === selectedSlashCommand?.id;
                   return (
@@ -712,26 +785,40 @@ export function Composer({
             )}
 
             {mentionOpen && (
-              <div className="hc-composer-menu mention" role="listbox" aria-label={mentionMenuLabel}>
-                <div className="hc-composer-menu-section-label">{mentionMenuLabel}</div>
-                {mentionOptions.map((option) => (
-                  <button
-                    className="hc-composer-menu-row"
-                    data-active={mentionOptionKey(option) === (selectedMention ? mentionOptionKey(selectedMention) : "")}
-                    key={mentionOptionKey(option)}
-                    type="button"
-                    role="option"
-                    aria-selected={mentionOptionKey(option) === (selectedMention ? mentionOptionKey(selectedMention) : "")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => selectMention(option)}
-                  >
-                    {mentionOptionIcon(option)}
-                    <span>
-                      <strong>{mentionOptionDisplayName(option)}</strong>
-                      <small>{mentionOptionDetail(option)}</small>
-                    </span>
-                    <em>{mentionOptionScope(option)}</em>
-                  </button>
+              <div className="hc-composer-menu mention" role="listbox" aria-label={mentionMenuLabel} data-state="open">
+                {/*
+                 * codex: at-mention-list-with-sources-CE0mtxMW.js#o(e) —
+                 * sectioned layout. Each section header is rendered above the
+                 * rows that belong to it (Codex `r({sections})`). The flat
+                 * keyboard index still works because `mentionOptions` is in
+                 * section-render order.
+                 */}
+                {mentionSections.length === 0 && mentionOptions.length > 0 && (
+                  <div className="hc-composer-menu-section-label">{mentionMenuLabel}</div>
+                )}
+                {mentionSections.map((section) => (
+                  <div key={section.kind} className="hc-composer-menu-section">
+                    <div className="hc-composer-menu-section-label">{section.title}</div>
+                    {section.options.map((option) => (
+                      <button
+                        className="hc-composer-menu-row"
+                        data-active={mentionOptionKey(option) === (selectedMention ? mentionOptionKey(selectedMention) : "")}
+                        key={mentionOptionKey(option)}
+                        type="button"
+                        role="option"
+                        aria-selected={mentionOptionKey(option) === (selectedMention ? mentionOptionKey(selectedMention) : "")}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectMention(option)}
+                      >
+                        {mentionOptionIcon(option)}
+                        <span>
+                          <strong>{mentionOptionDisplayName(option)}</strong>
+                          <small>{mentionOptionDetail(option)}</small>
+                        </span>
+                        <em>{mentionOptionScope(option)}</em>
+                      </button>
+                    ))}
+                  </div>
                 ))}
                 {mentionPicker.status === "idle" && (
                   <div className="hc-composer-menu-empty">Type to search mentions</div>
@@ -739,7 +826,7 @@ export function Composer({
                 {mentionPicker.status === "loading" && mentionOptions.length === 0 && (
                   <div className="hc-composer-menu-empty">
                     <Loader2 className="hc-spin" size={13} />
-                    {mentionPicker.trigger?.marker === "$" ? "Loading skills and apps..." : "Searching mentions..."}
+                    {mentionPicker.trigger?.marker === "$" ? "Loading skills and apps…" : "Searching mentions..."}
                   </div>
                 )}
                 {mentionPicker.status === "ready" && mentionOptions.length === 0 && (
@@ -756,7 +843,7 @@ export function Composer({
             )}
 
             {attachmentPicker.status === "menu" && (
-              <div className="hc-composer-menu attach" role="menu" aria-label="Attach context">
+              <div className="hc-composer-menu attach" role="menu" aria-label="Attach context" data-state="open">
                 {attachActions.map((action) => {
                   const isPlanAction = action.id === "plan";
                   const checked = isPlanAction && mode === "plan";
@@ -789,7 +876,7 @@ export function Composer({
             )}
 
             {attachmentPicker.status === "input" && inputAttachAction && (
-              <div className="hc-attachment-input-panel" role="dialog" aria-label={inputAttachAction.title}>
+              <div className="hc-attachment-input-panel" role="dialog" aria-label={inputAttachAction.title} data-state="open">
                 <div className="hc-attachment-input-heading">
                   {attachIcon(inputAttachAction.id)}
                   <span>
@@ -1041,6 +1128,7 @@ export function Composer({
             </span>
           </>
         )}
+        </div>
       </div>
       {imagePreview && (
         <div
@@ -1050,7 +1138,7 @@ export function Composer({
             if (event.target === event.currentTarget) setImagePreview(null);
           }}
         >
-          <div className="hc-image-preview-dialog" role="dialog" aria-modal="true" aria-label={imagePreview.label}>
+          <div className="hc-image-preview-dialog" role="dialog" aria-modal="true" aria-label={imagePreview.label} data-state="open">
             <div className="hc-image-preview-header">
               <span title={imagePreview.label}>{imagePreview.label}</span>
               <button type="button" aria-label="Close preview" title="Close" onClick={() => setImagePreview(null)}>
@@ -1309,6 +1397,65 @@ function mentionSearchError(error: unknown): string {
   return typeof error === "string" ? error : "Unable to search mentions";
 }
 
+/*
+ * codex: at-mention-list-with-sources-CE0mtxMW.js#o(e) — section order
+ * (Live agents / Custom agents / Skills / Apps / Plugins / Files). HiCodex
+ * does not distinguish Live vs Custom agents, so they collapse into one
+ * "Agents" section; the rest mirrors Codex.
+ */
+const MENTION_SECTION_ORDER: ReadonlyArray<{ kind: NonNullable<ComposerMentionOption["kind"]>; title: string }> = [
+  { kind: "agent", title: "Agents" },
+  { kind: "skill", title: "Skills" },
+  { kind: "app", title: "Apps" },
+  { kind: "plugin", title: "Plugins" },
+  { kind: "file", title: "Files" },
+];
+
+interface MentionSection {
+  kind: NonNullable<ComposerMentionOption["kind"]>;
+  title: string;
+  options: ComposerMentionOption[];
+}
+
+/* Reorder options so that section-grouped layout still drives a contiguous
+ * flat array (keyboard nav uses `mentionPicker.activeIndex` against this list).
+ * Within each kind, original score-based ordering is preserved. Options
+ * without a recognized kind are appended at the end, kept ungrouped. */
+function groupedMentionOptions(options: ComposerMentionOption[]): ComposerMentionOption[] {
+  if (options.length === 0) return options;
+  const buckets = new Map<string, ComposerMentionOption[]>();
+  const ungrouped: ComposerMentionOption[] = [];
+  for (const option of options) {
+    const kind = option.kind;
+    if (kind && MENTION_SECTION_ORDER.some((entry) => entry.kind === kind)) {
+      const bucket = buckets.get(kind);
+      if (bucket) bucket.push(option);
+      else buckets.set(kind, [option]);
+    } else {
+      ungrouped.push(option);
+    }
+  }
+  const ordered: ComposerMentionOption[] = [];
+  for (const entry of MENTION_SECTION_ORDER) {
+    const bucket = buckets.get(entry.kind);
+    if (bucket) ordered.push(...bucket);
+  }
+  ordered.push(...ungrouped);
+  return ordered;
+}
+
+function mentionSectionsFromOptions(options: ComposerMentionOption[]): MentionSection[] {
+  if (options.length === 0) return [];
+  const sections: MentionSection[] = [];
+  for (const entry of MENTION_SECTION_ORDER) {
+    const filtered = options.filter((option) => option.kind === entry.kind);
+    if (filtered.length > 0) {
+      sections.push({ kind: entry.kind, title: entry.title, options: filtered });
+    }
+  }
+  return sections;
+}
+
 function mentionOptionName(option: ComposerMentionOption): string {
   const name = option.name.trim();
   if (name) return name;
@@ -1418,8 +1565,27 @@ function isNativeDropInsideElement(
   position: { x: number; y: number },
 ): boolean {
   if (!element || typeof window === "undefined") return false;
-  const scale = window.devicePixelRatio || 1;
+  /*
+   * Tauri 2.x labels `onDragDropEvent`'s position as `PhysicalPosition`, but
+   * the underlying wry value is platform-dependent:
+   *   - macOS (wkwebview): `NSDraggingInfo.draggingLocation()` is in NSView
+   *     local points = CSS pixels. Tauri still wraps it as PhysicalPosition,
+   *     so dividing by devicePixelRatio on Retina halves the y coordinate and
+   *     the composer hit-test silently fails.
+   *   - Windows (webview2): `ScreenToClient` returns physical pixels under
+   *     HiDPI awareness — DPR division is required.
+   * Detect macOS and skip the scale.
+   */
+  const scale = isMacOSPlatform() ? 1 : (window.devicePixelRatio || 1);
   return isPointInsideRect(position.x / scale, position.y / scale, element.getBoundingClientRect());
+}
+
+function isMacOSPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const platform = navigator.platform ?? "";
+  if (platform.startsWith("Mac")) return true;
+  const ua = navigator.userAgent ?? "";
+  return /Mac|iPhone|iPad|iPod/.test(ua);
 }
 
 function readImageFileAttachment(file: File): Promise<ComposerAttachment | null> {

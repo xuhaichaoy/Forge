@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
 import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
-import { Loader2 } from "lucide-react";
+import { FolderOpen, Loader2, Plus, X } from "lucide-react";
 import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
 import { AppToastViewport } from "./components/app-toast-viewport";
-import { AboveComposerPlanSuggestion } from "./components/above-composer-plan-suggestion";
+import { AboveComposerPanelContainer } from "./components/above-composer-panel";
+import { FilesTabContent } from "./components/files-tab-content";
+// codex: thread-app-shell-chrome-BVkAxLhy nt()/lt()/tt() — right-side
+// "Side Panel + New Tab" landing page (4 cards) shown when the panel is open
+// but no tab is active. Currently we wire only the Files card (HiCodex's
+// equivalent of Codex's `de(...)`).
+import { SidePanelNewTabPage, type SidePanelNewTabAction } from "./components/side-panel-new-tab-page";
+// codex: app-shell-Bh-lgoQk Vt()/Ht() — outer container that hosts the tab
+// strip and either the active tab's content or the empty-state landing page.
+import { SidePanelHost } from "./components/side-panel-host";
+import { useSidePanelTabHost } from "./hooks/use-side-panel-tab-host";
+// codex: keyboard-shortcuts-settings-C5AEKt2i.js — standalone dialog rendering
+// all `COMMAND_DESCRIPTORS` with their platform-formatted accelerator.
+import { KeyboardShortcutsDialog } from "./components/keyboard-shortcuts-dialog";
+import { StatusTextPanel } from "./components/status-text-panel";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter } from "./components/composer-external-footer";
@@ -21,6 +35,10 @@ import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import type { PatchAction, PatchActionState } from "./components/conversation-view";
 import {
+  LiveTurnDiffPortal,
+  shouldRenderLiveTurnDiffPortal,
+} from "./components/live-turn-diff-portal";
+import {
   UnifiedDiffFailureDialog,
   type UnifiedDiffFailure,
 } from "./components/unified-diff-failure-dialog";
@@ -33,6 +51,7 @@ import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
 import { FilePreviewPanel } from "./components/file-preview-panel";
 import { RightRail } from "./components/right-rail";
+import { RemoteTaskView } from "./components/remote-task-view";
 import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
 import { ThreadActionDialog } from "./components/thread-action-dialog";
@@ -42,6 +61,7 @@ import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-cli
 import { formatError } from "./lib/format";
 import {
   applyPatchAction,
+  ghPrStatus,
   openExternalUrl,
   openFileReference,
   isTauriRuntime,
@@ -50,6 +70,7 @@ import {
   pickWorkspaceFolder,
   readCodexAuthSummary,
   type CodexAuthSummary,
+  type GhPrInfo,
   type PatchActionResult,
 } from "./lib/tauri-host";
 import { applyUpdate, checkForUpdates } from "./lib/updater";
@@ -68,6 +89,10 @@ import {
 import { useBackgroundAgentPanel } from "./hooks/use-background-agent-panel";
 import { useSkillsPanelRefresh } from "./hooks/use-skills-panel-refresh";
 import { useThreadActions } from "./hooks/use-thread-actions";
+// codex: app-shell-Bh-lgoQk.js#cn — back/forward boundary helpers backing the
+// ConversationChrome arrow buttons. Reducer keeps the stack in
+// state.threadHistoryStack / state.threadHistoryIndex (see thread-history.ts).
+import { canNavigateBackInHistory, canNavigateForwardInHistory } from "./state/thread-history";
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
   DEFAULT_SUBSCRIPTION_PROVIDER_ID,
@@ -97,7 +122,14 @@ import {
   type AccountState,
 } from "./state/account-state";
 import { buildApprovalResult } from "./state/approval-requests";
-import { projectAutomationsSurface } from "./state/automations-viewer";
+// codex: local-conversation-thread-CecHj6JI.js#pe — `projectActiveThreadAutomation`
+// selects the single heartbeat automation that targets the active thread so the
+// right-rail `automation` section can render its Clock + name + rrule body.
+import {
+  projectActiveThreadAutomation,
+  projectAutomationRailEntries,
+  projectAutomationsSurface,
+} from "./state/automations-viewer";
 import { resolveHiCodexBuildInfo } from "./state/build-info";
 import { projectBranchDetails } from "./state/branch-details";
 import {
@@ -146,6 +178,16 @@ import {
   type CommandPanelKind,
   type CommandPanelState,
 } from "./state/command-panel";
+// codex: electron-menu-shortcuts-DQYPVyfu.js — hotkey + command registry wiring.
+import { useHotkey } from "./hooks/use-hotkey";
+import {
+  commandAccelerator,
+  commandAccelerators,
+  getCommand,
+  registerCommand,
+  unregisterCommand,
+} from "./state/command-registry";
+import { COMMAND_DESCRIPTORS, COMMAND_IDS } from "./state/commands";
 import { buildConversationMarkdown } from "./state/conversation-markdown";
 import { threadIdFromCodexDeepLink } from "./state/deep-links";
 import {
@@ -275,6 +317,36 @@ import {
   type ResolvedUiTheme,
   type UiThemeMode,
 } from "./state/theme";
+/*
+ * CODEX-REF: Appearance preferences beyond Theme — Code font size (Codex
+ * settings.general.appearance.codeFontSize.row) and Reduce motion (Codex
+ * settings.general.appearance.reducedMotion.label). The setters mirror the
+ * existing setUiThemeMode pattern: setState → save to desktop.hicodex.*
+ * localStorage namespace. See [[appearance]] / packages/ui/src/state/appearance.ts.
+ */
+import {
+  clampCodeFontSize,
+  loadUiAppearance,
+  saveUiCodeFontSize,
+  saveUiReducedMotion,
+  type ReducedMotionMode,
+  type UiAppearancePreferences,
+} from "./state/appearance";
+/*
+ * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — user keymap overrides
+ * state. Boot-loaded from localStorage, mutated by Edit/Reset/Unbind flows
+ * from the Settings panel, and mirrored into the module-level singleton so
+ * accelerator resolvers (useHotkey, descriptorAcceleratorLabel) see the
+ * latest value without prop drilling.
+ */
+import {
+  loadKeymapOverrides,
+  saveKeymapOverrides,
+  setActiveKeymapOverrides,
+  withKeymapOverride,
+  withoutKeymapOverride,
+  type KeymapOverrides,
+} from "./state/keymap-overrides";
 import {
   applyThreadFindMarks,
   clampThreadFindIndex,
@@ -397,6 +469,10 @@ export function HiCodexApp() {
   );
   const [pendingWorktree, setPendingWorktree] = useState<PendingWorktree | null>(null);
   const [worktreeHostGitStatus, setWorktreeHostGitStatus] = useState<HostGitStatus | null>(null);
+  // codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget — cached
+  // gh CLI PR status keyed off `worktreeStatusCwd`. Empty when there is no PR
+  // on the active branch (silently hides the row).
+  const [pullRequestStatus, setPullRequestStatus] = useState<GhPrInfo | null>(null);
   const [workspaceDeveloperInstructions, setWorkspaceDeveloperInstructions] = useState<{
     workspace: string;
     value: string | null;
@@ -408,6 +484,23 @@ export function HiCodexApp() {
   const [uiThemeMode, setUiThemeModeState] = useState<UiThemeMode>(() => (
     loadUiThemeMode(browserStorage())
   ));
+  // CODEX-REF: loadUiAppearance reads desktop.hicodex.appearance.codeFontSize
+  // and desktop.hicodex.appearance.reducedMotion (see hicodex-desktop-namespace).
+  const [uiAppearance, setUiAppearanceState] = useState<UiAppearancePreferences>(() => (
+    loadUiAppearance(browserStorage())
+  ));
+  /*
+   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js. Boot-loaded snapshot
+   * is also pushed into the module-level singleton (see setActiveKeymapOverrides
+   * useEffect below) so accelerator resolvers in command-registry.ts and
+   * commands.ts see overrides immediately, including for commands registered
+   * during this render pass via useHotkey.
+   */
+  const [keymapOverrides, setKeymapOverridesState] = useState<KeymapOverrides>(() => {
+    const initial = loadKeymapOverrides(browserStorage());
+    setActiveKeymapOverrides(initial);
+    return initial;
+  });
   const [notificationPreferences, setNotificationPreferencesState] = useState<NotificationPreferences>(() => (
     loadNotificationPreferences(browserStorage())
   ));
@@ -424,6 +517,51 @@ export function HiCodexApp() {
   const setUiThemeMode = useCallback((mode: UiThemeMode) => {
     setUiThemeModeState(mode);
     saveUiThemeMode(browserStorage(), mode);
+  }, []);
+  /*
+   * CODEX-REF: settings.general.appearance.codeFontSize.row commit. Codex
+   * Desktop persists onBlur; HiCodex commits each +/- click. clamp matches
+   * the documented 8-24 px range from appearance-settings-BLTO9KX5.js §4.
+   */
+  const setUiCodeFontSize = useCallback((size: number) => {
+    const clamped = clampCodeFontSize(size);
+    setUiAppearanceState((prev) => prev.codeFontSize === clamped ? prev : { ...prev, codeFontSize: clamped });
+    saveUiCodeFontSize(browserStorage(), clamped);
+  }, []);
+  /*
+   * CODEX-REF: settings.general.appearance.reducedMotion.label commit. Mode
+   * string matches Codex option IDs system/on/off.
+   */
+  const setUiReducedMotion = useCallback((mode: ReducedMotionMode) => {
+    setUiAppearanceState((prev) => prev.reducedMotion === mode ? prev : { ...prev, reducedMotion: mode });
+    saveUiReducedMotion(browserStorage(), mode);
+  }, []);
+  /*
+   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js set/replace mutation.
+   * Persists override, updates React state for the panel to re-render, and
+   * synchronously pushes the new snapshot into the module singleton so
+   * useHotkey closures rebind without waiting for the next effect tick.
+   */
+  const setUiKeyboardShortcut = useCallback((commandId: string, accelerator: string | null) => {
+    setKeymapOverridesState((prev) => {
+      const next = withKeymapOverride(prev, commandId, accelerator);
+      setActiveKeymapOverrides(next);
+      saveKeymapOverrides(browserStorage(), next);
+      return next;
+    });
+  }, []);
+  /*
+   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js reset mutation. Drops
+   * the override so the descriptor default takes effect again.
+   */
+  const resetUiKeyboardShortcut = useCallback((commandId: string) => {
+    setKeymapOverridesState((prev) => {
+      const next = withoutKeymapOverride(prev, commandId);
+      if (next === prev) return prev;
+      setActiveKeymapOverrides(next);
+      saveKeymapOverrides(browserStorage(), next);
+      return next;
+    });
   }, []);
   const setUiLocale = useCallback((locale: HiCodexLocale) => {
     setUiLocaleState(locale);
@@ -450,11 +588,34 @@ export function HiCodexApp() {
     root.classList.toggle("dark", resolvedUiTheme === "dark");
     root.classList.toggle("electron-dark", resolvedUiTheme === "dark");
   }, [resolvedUiTheme, uiLocale, uiThemeMode]);
+  /*
+   * CODEX-REF: Apply Code font size + Reduce motion to the DOM root.
+   *
+   *   - --codex-chat-code-font-size is the existing token defined in base.css
+   *     :65; overriding it on `documentElement.style` lets every consumer of
+   *     that variable (chat code blocks, inline `code`, diff hunks) update
+   *     live without restart.
+   *   - data-hc-reduce-motion="on" / "off" lets base.css forcibly enable or
+   *     suppress transitions and animations regardless of the OS
+   *     prefers-reduced-motion media query. "system" leaves the value unset so
+   *     the media query alone decides — matching Codex Desktop §8 behaviour.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.style.setProperty("--codex-chat-code-font-size", `${uiAppearance.codeFontSize}px`);
+    if (uiAppearance.reducedMotion === "system") {
+      delete root.dataset.hcReduceMotion;
+    } else {
+      root.dataset.hcReduceMotion = uiAppearance.reducedMotion;
+    }
+  }, [uiAppearance.codeFontSize, uiAppearance.reducedMotion]);
   const [sidebarPreferences, setSidebarPreferencesState] = useState<SidebarPreferences>(() => (
     loadSidebarPreferences(sidebarPreferenceStorage())
   ));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeAppTab, setActiveAppTab] = useState<AppNavigationTab>("workbench");
+  const [activeRemoteTaskId, setActiveRemoteTaskId] = useState<string | null>(null);
   const openWorkbenchTab = useCallback(() => {
     setActiveAppTab("workbench");
   }, []);
@@ -487,6 +648,7 @@ export function HiCodexApp() {
     setRightRailPinnedState(isPinned);
     saveRightRailPinned(rightRailPreferenceStorage(), isPinned);
   }, []);
+  const [statusFooterVisible, setStatusFooterVisible] = useState(false);
   /*
    * Codex Desktop Summary Rail visibility (`cp` in
    * `local-conversation-thread-BX7YNcUw.js` byte 153908) is derived state, not
@@ -959,6 +1121,18 @@ export function HiCodexApp() {
     state.activeThreadId,
     state.connected,
   ]);
+  const automationRailEntries = useMemo(
+    () => projectAutomationRailEntries(automationsModel, state.activeThreadId),
+    [automationsModel, state.activeThreadId],
+  );
+  // codex: local-conversation-thread-CecHj6JI.js#pe — single-entry automation
+  // summary input for the right-rail `automation` section. Pulls the active
+  // heartbeat automation targeting the current thread (same filter as the
+  // legacy `automations` list, but collapsed to one row with rrule + next run).
+  const activeThreadAutomation = useMemo(
+    () => projectActiveThreadAutomation(automationsModel, state.activeThreadId),
+    [automationsModel, state.activeThreadId],
+  );
   const pendingRequestAwaitingByThread = useMemo(
     () => summarizePendingRequestAwaitingByThread(state.pendingRequests, { itemsByThread }),
     [itemsByThread, state.pendingRequests],
@@ -1008,26 +1182,38 @@ export function HiCodexApp() {
     [imageGenerationSettings],
   );
   const activeDiff = activeThreadRuntime.turnDiff;
+  const showLiveTurnDiffPortal = shouldRenderLiveTurnDiffPortal({
+    diff: activeDiff,
+    isThreadRunning: activeThreadRunning,
+    hasBlockingRequest: activePendingRequests.length > 0,
+  });
   const conversation = useMemo(
     () => projectConversation(activeItems, {
       appRegistry,
       isThreadRunning: activeThreadRunning,
       mcpServerStatuses,
+      parentThreadAttachmentSourceConversationId: activeThread?.forkedFromId ?? null,
       progressPlan: activeProgressPlan,
-      // Feed the live turn-diff stream so projectConversation can emit the
-      // `inProgressDiff` render unit (mirror of Codex `sT` portal at
-      // codex-local-conversation-thread.pretty.js :8003).
-      turnDiff: activeDiff,
     }),
-    [activeDiff, activeItems, activeProgressPlan, activeThreadRunning, appRegistry, mcpServerStatuses],
+    [activeItems, activeProgressPlan, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
   );
   const branchDetails = useMemo(
     () => projectBranchDetails({
       thread: activeThread,
       diff: activeDiff ? { diff: activeDiff } : null,
       gitStatus: worktreeHostGitStatus,
+      // codex: local-conversation-thread-CecHj6JI.js#J row 4 PR widget input.
+      pullRequest: pullRequestStatus
+        ? {
+            number: pullRequestStatus.number,
+            title: pullRequestStatus.title,
+            url: pullRequestStatus.url,
+            isDraft: pullRequestStatus.isDraft,
+            state: pullRequestStatus.state,
+          }
+        : null,
     }),
-    [activeDiff, activeThread, worktreeHostGitStatus],
+    [activeDiff, activeThread, pullRequestStatus, worktreeHostGitStatus],
   );
   useEffect(() => {
     if (!worktreeStatusCwd || !isTauriRuntime()) {
@@ -1049,6 +1235,34 @@ export function HiCodexApp() {
       cancelled = true;
     };
   }, [dispatch, worktreeStatusCwd]);
+  /*
+   * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget —
+   * fetches PR status via `gh pr status` and caches it for `projectBranchDetails`.
+   * Runs alongside the readCurrentHostGitStatus effect and is gated on the
+   * same `worktreeStatusCwd`. Failures are silent (the row simply doesn't
+   * render); they're logged once for triage but don't surface a banner.
+   */
+  useEffect(() => {
+    if (!worktreeStatusCwd || !isTauriRuntime()) {
+      setPullRequestStatus(null);
+      return;
+    }
+    let cancelled = false;
+    void ghPrStatus(worktreeStatusCwd)
+      .then((response) => {
+        if (cancelled) return;
+        setPullRequestStatus(response.pr);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // codex: PR row is best-effort; gh CLI absence / network failure should
+        // not block the rail — silently clear and skip the log noise.
+        setPullRequestStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [worktreeStatusCwd]);
   const composerWorkModeOptions = useMemo(
     () => projectWorktreeModeOptions({
       hostGitStatus: worktreeHostGitStatus,
@@ -1897,13 +2111,42 @@ export function HiCodexApp() {
     void refreshAutomationsPanel();
   }, [closeBackgroundAgentPanel, closeFilePreviewPanel, refreshAutomationsPanel]);
 
+  const openAutomationFromConversation = useCallback((_automationId: string) => {
+    openAutomationsPanel();
+  }, [openAutomationsPanel]);
+
   const composerPlaceholder = composerPlaceholderText({
     hasConversation: conversation.units.length > 0,
     hasBackgroundAgentsPanel: backgroundAgentPanel != null,
   });
+  // codex: local-conversation-thread-CecHj6JI.js#mu — status footer payload.
+  // Reads the `tokenUsage` slice the reducer writes from
+  // `thread/tokenUsage/updated`. Desktop keeps this hidden by default behind
+  // the `/status` "Toggle context usage" command (`local-conversation-status-
+  // section-visible`); HiCodex mirrors that local toggle instead of showing
+  // the status row whenever token counters exist.
+  const tokenUsageSnapshot = activeThreadRuntime.tokenUsage ?? null;
+  const tokenSpeedSnapshot = activeThreadRuntime.tokenSpeed ?? null;
+  const rightRailStatusFooter = useMemo(
+    () => (statusFooterVisible && tokenUsageSnapshot
+      ? {
+          tokensUsed: tokenUsageSnapshot.usedTokens,
+          contextWindow: tokenUsageSnapshot.contextWindow ?? undefined,
+          tokensPerSecond: activeThreadRunning && tokenSpeedSnapshot?.turnId === activeTurnId
+            ? tokenSpeedSnapshot.tokensPerSecond
+            : 0,
+        }
+      : undefined),
+    [activeThreadRunning, activeTurnId, statusFooterVisible, tokenSpeedSnapshot, tokenUsageSnapshot],
+  );
   const rightRailSections = useMemo(
     () => projectRightRailSections({
       progress: conversation.progress,
+      // codex: local-conversation-thread-CecHj6JI.js#pe — single-row
+      // `automation` section (Clock icon + name + rrule + "Next run: …"
+      // tooltip). Sits between Progress and the legacy `automations` list.
+      ...(activeThreadAutomation ? { automation: activeThreadAutomation } : {}),
+      automations: automationRailEntries,
       branchDetails,
       artifacts: conversation.artifacts,
       showOutputs: !branchDetails.hasData,
@@ -1911,8 +2154,20 @@ export function HiCodexApp() {
       backgroundAgents: conversation.backgroundAgents,
       backgroundTerminals: conversation.backgroundTerminals,
       sources: conversation.sources,
+      // codex: local-conversation-thread-CecHj6JI.js#mu — passed through for
+      // typing/documentation. `projectRightRailSections` does not render the
+      // footer itself; `<RightRail statusFooter=… />` below consumes the
+      // same value.
+      ...(rightRailStatusFooter ? { statusFooter: rightRailStatusFooter } : {}),
     }),
-    [branchDetails, conversation, sideChatRailEntries],
+    [
+      activeThreadAutomation,
+      automationRailEntries,
+      branchDetails,
+      conversation,
+      rightRailStatusFooter,
+      sideChatRailEntries,
+    ],
   );
   const filePreviewPanelLayout = useFilePreviewPanelLayout({
     containerWidthPx: mainWidth,
@@ -1941,8 +2196,19 @@ export function HiCodexApp() {
    * equivalent is the file-preview side panel — `hasFilePreviewSelection`
    * drives the same auto-hide rule. Empty sections collapse, matching the
    * `rightRailSections.length > 0` term.
+   *
+   * codex: new-thread-panel-page-CXtx8nq0.js `d()` — the empty/new-chat page
+   * renders only `<main>` + composer; the summary rail components (`Lu`/`dS`
+   * in local-conversation-thread-CecHj6JI.js) live exclusively inside the
+   * conversation page tree. HiCodex flattens both pages into one app shell,
+   * so we additionally gate on `activeThread` to keep the Environment +
+   * Sources rail from leaking into the new-chat onboarding view (the host
+   * git status is read from the workspace even without a thread, which would
+   * otherwise paint the rail with branchDetails the moment a user opens
+   * the app in a git workspace).
    */
   const showRightRail = rightRailPinned
+    && Boolean(activeThread)
     && rightRailSections.length > 0
     && rightRailShouldRender(rightRailLayoutWidthPx)
     && !hasFilePreviewSelection;
@@ -1967,6 +2233,26 @@ export function HiCodexApp() {
     }
     void selectWorkbenchThread(thread);
   }, [selectWorkbenchThread, state.threads]);
+  const openRemoteTaskExternal = useCallback((taskId: string) => {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      dispatch({ type: "log", text: "remote task id is missing", level: "warn" });
+      return;
+    }
+    void openExternalUrl(`https://chatgpt.com/codex/tasks/${encodeURIComponent(normalizedTaskId)}`)
+      .catch((error) => {
+        dispatch({ type: "log", text: `Failed to open remote task ${normalizedTaskId}: ${formatError(error)}`, level: "error" });
+      });
+  }, [dispatch]);
+  const openRemoteTask = useCallback((taskId: string) => {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      dispatch({ type: "log", text: "remote task id is missing", level: "warn" });
+      return;
+    }
+    setActiveRemoteTaskId(normalizedTaskId);
+    setActiveAppTab("remoteTask");
+  }, [dispatch]);
 
   const openDeepLinkUrl = useCallback(async (url: string | null | undefined) => {
     const appConnectCallback = claimAppConnectOAuthCallback(url);
@@ -2369,6 +2655,7 @@ export function HiCodexApp() {
       state,
       uiLocale,
       uiTheme: uiThemeSnapshot,
+      uiAppearance,
       workMode: composerWorkMode,
       workspace,
     });
@@ -2384,6 +2671,7 @@ export function HiCodexApp() {
     state,
     uiLocale,
     uiThemeSnapshot,
+    uiAppearance,
     workspace,
   ]);
 
@@ -2392,21 +2680,252 @@ export function HiCodexApp() {
     void loadSettingsPanel(activeSettingsPanel, { forceReload: true });
   }, [activeSettingsPanel, loadSettingsPanel]);
 
+  /*
+   * codex: app-shell-tab-controller-B2eCi4Le `x({ panelId: 'right', panelOpen$, setPanelOpen })`
+   * factory (line 60-285) + `RightPanelOutlet`/`RightPanelTabs`/`RightPanelTabsEmptyState`
+   * slot wiring at app-shell-Bh-lgoQk:2768-2821 + `nt()` 4-card landing page at
+   * thread-app-shell-chrome-BVkAxLhy:498-984.
+   *
+   * `sidePanel` mirrors Codex's right-panel tab controller singleton. The Files
+   * card on the landing page opens a `file-tree` tab whose Component is HiCodex's
+   * existing `WorkspaceFilesPanel` wrapped as `FilesTabContent`. Other Codex
+   * cards (Browser/Terminal/Timeline/Side chat/Review) are intentionally
+   * omitted — per thread-app-shell-chrome:528-537 the cards are gated by
+   * feature flags that HiCodex doesn't have an evidence-backed implementation
+   * for yet, so showing them would be dead UI.
+   */
+  const sidePanel = useSidePanelTabHost({ panelId: "right" });
+  /*
+   * Stable tabId for the Files tab. Codex auto-generates `component:${UUID}`
+   * for tabs without explicit id (app-shell-tab-controller-B2eCi4Le:340-346),
+   * which dedupes per Component reference. HiCodex pins the id so the ⌘⇧E
+   * shortcut can deterministically check tab presence by id.
+   */
+  const FILES_TAB_ID = "file-tree";
+
+  // codex: electron-menu-shortcuts-DQYPVyfu.js (`toggleFileTreePanel` default = ⌘⇧E)
+  // The legacy `workspaceFilesPanelOpen` flag is gone; the shortcut now routes
+  // through the side-panel tab host. Behaviour matches Codex's
+  // `toggleFileTreePanel` (an open-or-focus action that lands on the Files
+  // tab) — opening if the tab isn't present, activating it if it is, closing
+  // the panel only when the user explicitly hits the close button.
+  //
+  // The actual "create new Files tab" closure lives in a ref so it can be
+  // re-assigned later in the component body once `openFileReferenceExternal`
+  // (from `useArtifactPreviewActions`, declared further down) is in scope.
+  // Defining the toggle here keeps the command-registration effect happy
+  // (which expects `toggleWorkspaceFilesPanel` as a dep above its use) while
+  // avoiding a TDZ on the later-declared destructured value.
+  const openFilesTabRef = useRef<(() => void) | null>(null);
+  const toggleWorkspaceFilesPanel = useCallback(() => {
+    const snapshot = sidePanel.controller.getSnapshot();
+    const filesTabExists = snapshot.tabsById[FILES_TAB_ID] != null;
+    const filesActive = snapshot.activeTabId === FILES_TAB_ID;
+    if (sidePanel.panelOpen && filesActive) {
+      sidePanel.setPanelOpen(false);
+      return;
+    }
+    if (filesTabExists) {
+      sidePanel.controller.activateTab(FILES_TAB_ID);
+      sidePanel.setPanelOpen(true);
+      return;
+    }
+    openFilesTabRef.current?.();
+  }, [sidePanel]);
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#showKeyboardShortcuts (default = ⌘⇧/) +
+  // keyboard-shortcuts-settings-C5AEKt2i.js — dialog state.
+  const [keyboardShortcutsOpen, setKeyboardShortcutsOpen] = useState(false);
+
+  // codex: use-hotkey-CACQ2uHR.js — composer auto-focus on plain-text keypresses
+  // stays a non-hotkey listener (it is not modifier-gated).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (focusComposerFromPlainTextKey(event)) return;
-      if (!event.metaKey && !event.ctrlKey) return;
-      if (event.shiftKey || event.altKey) return;
-      const key = event.key.toLowerCase();
-      if (key !== "k" && key !== "f" && key !== "b") return;
-      event.preventDefault();
-      if (key === "f") openThreadFindBar();
-      else if (key === "b") toggleSidebar();
-      else openCommandMenu();
+      focusComposerFromPlainTextKey(event);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [openCommandMenu, openThreadFindBar, toggleSidebar]);
+  }, []);
+
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#n — derive prev/next thread IDs
+  // from the visible thread list so the hotkey handlers can dispatch instantly.
+  const previousThreadId = useMemo<string | null>(() => {
+    if (!state.activeThreadId) return null;
+    const index = state.threads.findIndex((t) => t.id === state.activeThreadId);
+    if (index <= 0) return null;
+    return state.threads[index - 1]?.id ?? null;
+  }, [state.activeThreadId, state.threads]);
+  const nextThreadId = useMemo<string | null>(() => {
+    if (!state.activeThreadId) return null;
+    const index = state.threads.findIndex((t) => t.id === state.activeThreadId);
+    if (index < 0 || index >= state.threads.length - 1) return null;
+    return state.threads[index + 1]?.id ?? null;
+  }, [state.activeThreadId, state.threads]);
+
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#n — register the ported command
+  // descriptors with handlers that thunk into the existing HiCodexApp callbacks.
+  // Handlers are read via getCommand() inside useHotkey closures so they always
+  // see the latest registry entry without re-binding listeners.
+  useEffect(() => {
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.openCommandMenu)!,
+      () => openCommandMenu(),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.findInThread)!,
+      () => openThreadFindBar(),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.toggleSidebar)!,
+      () => toggleSidebar(),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.toggleFileTreePanel)!,
+      () => toggleWorkspaceFilesPanel(),
+    );
+    // codex: TODO — searchChats fallback reuses openChatSearchPanel until a
+    // dedicated `chats` sub-mode is wired into the command menu.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.searchChats)!,
+      () => openChatSearchPanel(),
+    );
+    // codex: app-main-DG-Mf4Wj.js — searchFiles opens the cmdk Hd="files"
+    // sub-mode. openFileSearchPanel installs a `files` CommandPanelState
+    // which CommandPanel reads via commandPanelSubModeFromPanel() to swap
+    // to the "Search files" placeholder and the file-list empty state.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.searchFiles)!,
+      () => openFileSearchPanel(),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.newThread)!,
+      () => { void createWorkbenchThread(); },
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.previousThread)!,
+      () => {
+        if (previousThreadId) selectThreadById(previousThreadId);
+      },
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.nextThread)!,
+      () => {
+        if (nextThreadId) selectThreadById(nextThreadId);
+      },
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.settings)!,
+      () => { void loadSettingsPanel("general"); },
+    );
+    return () => {
+      // codex: electron-menu-shortcuts-DQYPVyfu.js#n — only unregister the
+      // IDs this effect owns so the second-wave effect (archive/rename/pin/
+      // navigate/copy/threadN) keeps its registrations when this effect
+      // re-runs due to dependency churn.
+      unregisterCommand(COMMAND_IDS.openCommandMenu);
+      unregisterCommand(COMMAND_IDS.findInThread);
+      unregisterCommand(COMMAND_IDS.toggleSidebar);
+      unregisterCommand(COMMAND_IDS.toggleFileTreePanel);
+      unregisterCommand(COMMAND_IDS.searchChats);
+      unregisterCommand(COMMAND_IDS.searchFiles);
+      unregisterCommand(COMMAND_IDS.newThread);
+      unregisterCommand(COMMAND_IDS.previousThread);
+      unregisterCommand(COMMAND_IDS.nextThread);
+      unregisterCommand(COMMAND_IDS.settings);
+    };
+  }, [
+    createWorkbenchThread,
+    loadSettingsPanel,
+    nextThreadId,
+    openChatSearchPanel,
+    openCommandMenu,
+    openFileSearchPanel,
+    openThreadFindBar,
+    previousThreadId,
+    selectThreadById,
+    toggleSidebar,
+    toggleWorkspaceFilesPanel,
+  ]);
+
+  // codex: use-hotkey-CACQ2uHR.js — one useHotkey call per ported command. The
+  // accelerator string is resolved through the registry so users overriding a
+  // descriptor still bind through the same path.
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#openCommandMenu — bind both
+  // CmdOrCtrl+K and CmdOrCtrl+Shift+P (Codex's platformDefaultKeybindings
+  // ships both accelerators for openCommandMenu on macOS and default).
+  const openCommandMenuAccelerators = useMemo(() => {
+    const all = commandAccelerators(COMMAND_IDS.openCommandMenu);
+    return all.length > 0 ? all : ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"];
+  }, []);
+  useHotkey({
+    accelerator: openCommandMenuAccelerators,
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.openCommandMenu)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.findInThread) ?? "CmdOrCtrl+F",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.findInThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.toggleSidebar) ?? "CmdOrCtrl+B",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.toggleSidebar)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.toggleFileTreePanel) ?? "CmdOrCtrl+Shift+E",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.toggleFileTreePanel)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.searchChats) ?? "CmdOrCtrl+G",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.searchChats)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.searchFiles) ?? "CmdOrCtrl+P",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.searchFiles)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.newThread) ?? "CmdOrCtrl+N",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.newThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.previousThread) ?? "CmdOrCtrl+Shift+[",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.previousThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.nextThread) ?? "CmdOrCtrl+Shift+]",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.nextThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.settings) ?? "CmdOrCtrl+,",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.settings)?.handler?.(event);
+    },
+  });
 
   useEffect(() => {
     if (!isTauriRuntime()) return;
@@ -2732,6 +3251,340 @@ export function HiCodexApp() {
     }));
   }, [activeThread, conversation.units, copyTextToClipboard]);
 
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread1..thread9 — slot helper.
+  // Resolves the Nth visible thread in `state.threads` (Codex's keyboard
+  // shortcuts target the same ordered list rendered in the sidebar) and
+  // delegates to the existing `selectThreadById` path so we share its
+  // workbench-tab + thread-read side-effects.
+  const activateThreadBySlot = useCallback((slotIndex: number) => {
+    const thread = state.threads[slotIndex];
+    if (!thread) {
+      dispatch({
+        type: "log",
+        text: `Thread slot ${slotIndex + 1} is empty`,
+        level: "info",
+      });
+      return;
+    }
+    selectThreadById(thread.id);
+  }, [selectThreadById, state.threads]);
+
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#archiveThread/renameThread/
+  // toggleThreadPin/copy* — register the second wave of Codex desktop
+  // shortcuts. Mirrors the existing register/unregister pattern; handlers
+  // closed-over from this scope reference the latest state via React refs
+  // inside useCallback.
+  useEffect(() => {
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.archiveThread)!,
+      () => {
+        if (!activeThread) {
+          dispatch({ type: "log", text: "No active thread to archive", level: "info" });
+          return;
+        }
+        void archiveSelectedThread(activeThread);
+      },
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.renameThread)!,
+      () => {
+        if (!activeThread) {
+          dispatch({ type: "log", text: "No active thread to rename", level: "info" });
+          return;
+        }
+        openRenameThreadDialog(activeThread);
+      },
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.toggleThreadPin)!,
+      () => {
+        if (!activeThread) {
+          dispatch({ type: "log", text: "No active thread to pin", level: "info" });
+          return;
+        }
+        const pinned = pinnedThreadIds.has(activeThread.id);
+        toggleThreadPinned(activeThread, !pinned);
+      },
+    );
+    // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack — Codex
+    // Desktop dispatches `host-message` (run-command-BTaSF5aM.js) to fire
+    // `history.back/forward` against its webview. HiCodex has no router,
+    // so we drive an in-app thread history stack maintained in the
+    // reducer (`./state/thread-history.ts`). Boundary checks live in the
+    // reducer so the handler can stay a no-op on either end of the stack.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.navigateBack)!,
+      () => dispatch({ type: "navigateBackInHistory" }),
+    );
+    // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateForward — mirror
+    // of navigateBack against the same thread history stack.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.navigateForward)!,
+      () => dispatch({ type: "navigateForwardInHistory" }),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copySessionId)!,
+      () => copySessionId(),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyWorkingDirectory)!,
+      () => copyWorkingDirectory(),
+    );
+    // codex: TODO — Codex Desktop's copyConversationPath copies the
+    // rollout JSONL path. HiCodex's `Thread.path` is sometimes absent
+    // (sqlite-cached snapshots); if available we copy it, otherwise we
+    // log so the binding still resolves.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyConversationPath)!,
+      () => {
+        const path = activeThread?.path?.trim();
+        if (!path) {
+          dispatch({
+            type: "log",
+            text: "copyConversationPath not yet implemented in HiCodex (rollout path unavailable)",
+            level: "info",
+          });
+          return;
+        }
+        void copyTextToClipboard("Conversation path", path);
+      },
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyDeeplink)!,
+      () => {
+        if (!activeThread) {
+          dispatch({ type: "log", text: "No active thread to copy deeplink", level: "info" });
+          return;
+        }
+        copyThreadDeeplink(activeThread);
+      },
+    );
+    // codex: electron-menu-shortcuts-DQYPVyfu.js#copyConversationMarkdown.
+    // Wires the existing `copyConversationMarkdown` callback (which already
+    // owns the Markdown serialization via `buildConversationMarkdown`) into
+    // the shared command registry so menu/command-palette entries can dispatch
+    // it. The callback was previously defined but never registered.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyConversationMarkdown)!,
+      () => copyConversationMarkdown(),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread1)!,
+      () => activateThreadBySlot(0),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread2)!,
+      () => activateThreadBySlot(1),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread3)!,
+      () => activateThreadBySlot(2),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread4)!,
+      () => activateThreadBySlot(3),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread5)!,
+      () => activateThreadBySlot(4),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread6)!,
+      () => activateThreadBySlot(5),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread7)!,
+      () => activateThreadBySlot(6),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread8)!,
+      () => activateThreadBySlot(7),
+    );
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.thread9)!,
+      () => activateThreadBySlot(8),
+    );
+    // codex: electron-menu-shortcuts-DQYPVyfu.js#showKeyboardShortcuts — ⌘⇧/.
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.showKeyboardShortcuts)!,
+      () => setKeyboardShortcutsOpen(true),
+    );
+    return () => {
+      unregisterCommand(COMMAND_IDS.archiveThread);
+      unregisterCommand(COMMAND_IDS.renameThread);
+      unregisterCommand(COMMAND_IDS.toggleThreadPin);
+      unregisterCommand(COMMAND_IDS.navigateBack);
+      unregisterCommand(COMMAND_IDS.navigateForward);
+      unregisterCommand(COMMAND_IDS.copySessionId);
+      unregisterCommand(COMMAND_IDS.copyWorkingDirectory);
+      unregisterCommand(COMMAND_IDS.copyConversationPath);
+      unregisterCommand(COMMAND_IDS.copyDeeplink);
+      unregisterCommand(COMMAND_IDS.copyConversationMarkdown);
+      unregisterCommand(COMMAND_IDS.thread1);
+      unregisterCommand(COMMAND_IDS.thread2);
+      unregisterCommand(COMMAND_IDS.thread3);
+      unregisterCommand(COMMAND_IDS.thread4);
+      unregisterCommand(COMMAND_IDS.thread5);
+      unregisterCommand(COMMAND_IDS.thread6);
+      unregisterCommand(COMMAND_IDS.thread7);
+      unregisterCommand(COMMAND_IDS.thread8);
+      unregisterCommand(COMMAND_IDS.thread9);
+      unregisterCommand(COMMAND_IDS.showKeyboardShortcuts);
+    };
+  }, [
+    activateThreadBySlot,
+    activeThread,
+    archiveSelectedThread,
+    copyConversationMarkdown,
+    copySessionId,
+    copyTextToClipboard,
+    copyThreadDeeplink,
+    copyWorkingDirectory,
+    openRenameThreadDialog,
+    pinnedThreadIds,
+    toggleThreadPinned,
+  ]);
+
+  // codex: use-hotkey-CACQ2uHR.js — one useHotkey call per ported command
+  // from the second wave (archive/rename/pin/navigate/copy/threadN).
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.archiveThread) ?? "CmdOrCtrl+Shift+A",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.archiveThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.renameThread) ?? "CmdOrCtrl+Alt+R",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.renameThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.toggleThreadPin) ?? "CmdOrCtrl+Alt+P",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.toggleThreadPin)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.navigateBack) ?? "CmdOrCtrl+[",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.navigateBack)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.navigateForward) ?? "CmdOrCtrl+]",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.navigateForward)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.copySessionId) ?? "CmdOrCtrl+Alt+C",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.copySessionId)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.copyWorkingDirectory) ?? "CmdOrCtrl+Shift+C",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.copyWorkingDirectory)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.copyConversationPath) ?? "CmdOrCtrl+Alt+Shift+C",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.copyConversationPath)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.copyDeeplink) ?? "CmdOrCtrl+Alt+L",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.copyDeeplink)?.handler?.(event);
+    },
+  });
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread1..thread9 — 9 top-level
+  // useHotkey calls (no loop / no conditional) so React's rules-of-hooks
+  // ordering is preserved and each binding owns its own listener.
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread1) ?? "CmdOrCtrl+1",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread1)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread2) ?? "CmdOrCtrl+2",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread2)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread3) ?? "CmdOrCtrl+3",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread3)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread4) ?? "CmdOrCtrl+4",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread4)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread5) ?? "CmdOrCtrl+5",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread5)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread6) ?? "CmdOrCtrl+6",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread6)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread7) ?? "CmdOrCtrl+7",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread7)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread8) ?? "CmdOrCtrl+8",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread8)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.thread9) ?? "CmdOrCtrl+9",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.thread9)?.handler?.(event);
+    },
+  });
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#showKeyboardShortcuts — ⌘⇧/.
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.showKeyboardShortcuts) ?? "CmdOrCtrl+Shift+/",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.showKeyboardShortcuts)?.handler?.(event);
+    },
+  });
+
   const {
     openAssistantArtifact,
     openFileReferenceExternal,
@@ -2749,6 +3602,65 @@ export function HiCodexApp() {
     setFileReference,
     workspace,
   });
+  const memoryCitationRoot = useMemo(() => {
+    const codexHome = state.hostStatus?.codexHome?.trim();
+    return codexHome ? `${codexHome.replace(/[\\/]+$/, "")}/memories` : null;
+  }, [state.hostStatus?.codexHome]);
+
+  /*
+   * Late binding of the Files-tab opener (referenced from the early-defined
+   * `toggleWorkspaceFilesPanel` via `openFilesTabRef`). Closure captures the
+   * current `worktreeStatusCwd` + `openFileReferenceExternal` each render, so
+   * the next ⌘⇧E / Files-card click always sees fresh values.
+   *
+   * codex: card onSelect at thread-app-shell-chrome:636-639 — Files card calls
+   *   `Qe = () => U != null && (de(p, null, { hostId, target, workspaceRoot: U }), l?.());`
+   * where `de(...)` ultimately resolves to a
+   * `controller.openTab(workspaceDirectoryTree, { props: { root: U, onSelectFile: ... } })`.
+   * HiCodex collapses this into a direct `openTab(FilesTabContent, { ... })`.
+   */
+  useEffect(() => {
+    openFilesTabRef.current = () => {
+      if (!worktreeStatusCwd) return;
+      sidePanel.controller.openTab({
+        id: FILES_TAB_ID,
+        Component: FilesTabContent,
+        title: "Files",
+        tooltip: "Workspace files",
+        icon: <FolderOpen size={14} aria-hidden="true" />,
+        props: {
+          workspaceRoot: worktreeStatusCwd,
+          onSelectFile: (relPath: string) => {
+            const root = worktreeStatusCwd.replace(/\/$/, "");
+            openFileReferenceExternal({ path: `${root}/${relPath}`, lineStart: 1, lineEnd: 1 });
+          },
+        },
+      });
+    };
+  }, [sidePanel, worktreeStatusCwd, openFileReferenceExternal]);
+
+  /*
+   * codex: thread-app-shell-chrome-BVkAxLhy:498-984 `nt()` landing-page action
+   * list, gated by per-feature visibility (lines 528-537). HiCodex only emits
+   * cards whose underlying behaviour is implemented:
+   *   • Files — wired to `openFilesTabRef.current()` above.
+   *   • Browser / Terminal / Timeline / Side chat / Review — omitted: no
+   *     evidence-backed HiCodex implementation, per the "如果拿不到依据就不要做"
+   *     directive. Adding them as no-op cards would be dead UI.
+   */
+  const sidePanelNewTabActions = useMemo<readonly SidePanelNewTabAction[]>(() => {
+    const actions: SidePanelNewTabAction[] = [];
+    if (worktreeStatusCwd) {
+      actions.push({
+        id: "open-file",
+        title: "Files",
+        description: "Browse project files",
+        icon: <FolderOpen size={18} aria-hidden="true" />,
+        onSelect: () => openFilesTabRef.current?.(),
+      });
+    }
+    return actions;
+  }, [worktreeStatusCwd]);
 
   // CODEX-REF: app-main-DZOIl7aU.pretty.js:34020 — `JI`/`YI` open path: any
   // file/source/artifact open triggers `Fe(e, !0)` and flips the right panel
@@ -2782,24 +3694,36 @@ export function HiCodexApp() {
     threadScrollOffsetsRef.current.set(activeThreadScrollKey, Math.max(0, distanceFromBottomPx));
   }, [activeThreadScrollKey]);
 
-  const openActiveDiffPanel = useCallback(() => {
-    const diff = activeDiff.trim();
-    openCommandPanel("diff", {
-      status: diff ? "ready" : "empty",
-      message: diff ? `${diff.split("\n").length} diff line(s)` : "No active thread diff is available.",
-      entries: diff
-        ? [
-            {
-              id: "diff:active-thread",
-              title: "Active thread diff",
-              kind: "diff",
-              meta: activeThread ? threadTitle(activeThread) : undefined,
-              details: diff.split("\n").slice(0, 80),
-            },
-          ]
-        : [],
-    });
-  }, [activeDiff, activeThread, openCommandPanel]);
+  /*
+   * codex: `wa(o)` Review-changes deep-link; the optional `filePath` is the
+   * `wa(o, { path })` overload — per-file Review row in TurnDiffBlock.
+   */
+  const openActiveDiffPanel = useCallback(
+    (filePath?: string) => {
+      const diff = activeDiff.trim();
+      const focusedPath = typeof filePath === "string" && filePath.trim().length > 0 ? filePath.trim() : null;
+      openCommandPanel("diff", {
+        status: diff ? "ready" : "empty",
+        message: diff
+          ? focusedPath
+            ? `Reviewing ${focusedPath}`
+            : `${diff.split("\n").length} diff line(s)`
+          : "No active thread diff is available.",
+        entries: diff
+          ? [
+              {
+                id: focusedPath ? `diff:active-thread:${focusedPath}` : "diff:active-thread",
+                title: focusedPath ?? "Active thread diff",
+                kind: "diff",
+                meta: activeThread ? threadTitle(activeThread) : undefined,
+                details: diff.split("\n").slice(0, 80),
+              },
+            ]
+          : [],
+      });
+    },
+    [activeDiff, activeThread, openCommandPanel],
+  );
 
   const cleanBackgroundTerminals = useCallback(async () => {
     const threadId = state.activeThreadId;
@@ -2935,6 +3859,7 @@ export function HiCodexApp() {
       logs: state.logs,
       rpcDebugEvents,
       buildInfo,
+      onToggleStatusFooter: () => setStatusFooterVisible((visible) => !visible),
     })
   ), [
     accountState,
@@ -2954,6 +3879,7 @@ export function HiCodexApp() {
     state.models.length,
     state.pendingRequests.length,
     state.logs,
+    setStatusFooterVisible,
     rpcDebugEvents,
     effectiveThreadContextDefaults,
     state.threads,
@@ -3143,6 +4069,10 @@ export function HiCodexApp() {
     setMcpToolForm,
     setUiLocale,
     setUiThemeMode,
+    setUiCodeFontSize,
+    setUiReducedMotion,
+    setUiKeyboardShortcut,
+    resetUiKeyboardShortcut,
     notificationPreferences,
     setNotificationPreferences,
     runSlashCommand: runSlashCommandFromPanel,
@@ -3254,6 +4184,7 @@ export function HiCodexApp() {
   }, [imageGenerationDraft]);
 
   const workbenchVisible = activeAppTab === "workbench";
+  const remoteTaskVisible = activeAppTab === "remoteTask" && activeRemoteTaskId !== null;
   const sidebarVisible = workbenchVisible && sidebarOpen;
   const appClassName = workbenchVisible && showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app";
 
@@ -3274,7 +4205,14 @@ export function HiCodexApp() {
         onOpenSettings={() => void loadSettingsPanel("general")}
       />
 
-      {sidebarVisible && (
+      {/*
+        * codex: app-shell-state-HP0T5lEX.js#_t — sidebar collapse animation.
+        * Codex Desktop keeps the sidebar mounted and animates width via a
+        * motion-one spring. HiCodex pins mount to `workbenchVisible` (not
+        * `sidebarOpen`) so open/close runs as CSS transitions on
+        * `--hc-sidebar-width` / `.hc-sidebar`, not React mount/unmount.
+        */}
+      {workbenchVisible && (
         <Sidebar
           threads={projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey })}
           activeThreadId={state.activeThreadId}
@@ -3335,11 +4273,20 @@ export function HiCodexApp() {
            * the active thread has rail content AND the viewport isn't in
            * overlay mode — matching Codex `an` gating where the pin variant
            * is only used for `displayMode !== "overlay"`.
+           *
+           * The toggle is also suppressed in the new-chat empty state
+           * (`!activeThread`): Codex's `new-thread-panel-page-CXtx8nq0.js`
+           * has no summary rail at all, so its header has nothing to toggle.
            */
-          rightRailToggleAvailable={rightRailSections.length > 0}
+          rightRailToggleAvailable={Boolean(activeThread) && rightRailSections.length > 0}
           rightRailPinned={rightRailPinned}
           canPinRightRail={rightRailShouldRender(rightRailLayoutWidthPx)}
           onToggleRightRailPinned={() => setRightRailPinned(!rightRailPinned)}
+          // codex: app-shell-Bh-lgoQk.js#cn — sidebar trigger group back/forward arrows.
+          canNavigateBack={canNavigateBackInHistory(state.threadHistoryStack, state.threadHistoryIndex)}
+          canNavigateForward={canNavigateForwardInHistory(state.threadHistoryStack, state.threadHistoryIndex)}
+          onNavigateBack={() => dispatch({ type: "navigateBackInHistory" })}
+          onNavigateForward={() => dispatch({ type: "navigateForwardInHistory" })}
         />
         {threadFindOpen && (
           <ThreadFindBar
@@ -3359,7 +4306,7 @@ export function HiCodexApp() {
           initialOffset={initialThreadScrollOffset}
           onScroll={rememberThreadScrollOffset}
           inlineEndInset={threadInlineEndInset}
-          contentVersion={`${conversation.units.length}:${activeThreadRunning}:${activePendingRequests.length}:${activeQueuedFollowUps.length}`}
+          contentVersion={`${conversation.units.length}:${activeThreadRunning}:${activePendingRequests.length}:${activeQueuedFollowUps.length}:${showLiveTurnDiffPortal ? activeDiff.length : 0}`}
           footer={(
             <div
               className="hc-thread-composer-region"
@@ -3370,30 +4317,66 @@ export function HiCodexApp() {
                 data-above-composer-portal="true"
                 data-above-composer-conversation-id={state.activeThreadId ?? undefined}
               >
-                <AboveComposerPlanSuggestion
-                  composerText={input}
-                  conversationId={state.activeThreadId}
-                  hasPlanMode={hasPlanComposerMode}
-                  mode={composerMode}
-                  onPlanSelected={selectComposerPlan}
+                {/*
+                 * codex: composer-D0cvMZjq.js — Codex packs ALL 7 above-composer
+                 * slots (QueuedMessages / GoalBanner / BackgroundSubagents /
+                 * WindowsSandbox / HooksReview / aboveComposerHeaderContent /
+                 * StatusText) into a single `createPortal(<vs>{children}</vs>, So)`
+                 * so the rounded-corner stacking (`first:rounded-t-2xl` gated by
+                 * `HasPortalContentContext`) renders as one continuous card.
+                 * HiCodex currently wires queued follow-ups plus a placeholder
+                 * StatusText slot through this shared container.
+                 */}
+                <LiveTurnDiffPortal
+                  diff={activeDiff}
+                  isThreadRunning={activeThreadRunning}
+                  hasBlockingRequest={activePendingRequests.length > 0}
+                  onOpenDiff={openActiveDiffPanel}
                 />
+                <AboveComposerPanelContainer hasAboveComposerPortalContent={showLiveTurnDiffPortal}>
+                  <QueuedFollowUpStack
+                    messages={activeQueuedFollowUps}
+                    isQueueingEnabled={followUpQueueingEnabled}
+                    onSendNow={sendQueuedFollowUpNow}
+                    onEdit={editQueuedFollowUp}
+                    onDelete={deleteQueuedFollowUp}
+                    onQueueingChange={setFollowUpQueueingEnabled}
+                    onReorder={reorderQueuedFollowUp}
+                  />
+                  {/*
+                   * codex: composer-D0cvMZjq.js#U_ — StatusTextPanel (above-composer
+                   * slot 7). Aria-live polite text used by Codex for steered-message
+                   * echo / generic transient turn-status notices. HiCodex currently
+                   * has no equivalent data source wired (no steer feature, no
+                   * sandbox banner), so `text` stays undefined and the panel renders
+                   * nothing. Slot is in place for future wiring.
+                   */}
+                  <StatusTextPanel text={undefined} />
+                  {/*
+                   * Codex Desktop does not mount the latest-turn preview drawer in
+                   * the normal local-thread composer. The drawer is wired through
+                   * local-conversation-page-WH4PtB4a.pretty.js `pn`, and `cn`
+                   * renders `pn` only when the side-panel state hides the main
+                   * composer (`g = d && f`; `showComposer = !g`). Keeping it out of
+                   * this default footer prevents the stray full-width
+                   * "Worked for ..." bar above the input.
+                   */}
+                </AboveComposerPanelContainer>
               </div>
 
+              {/*
+               * codex: composer-D0cvMZjq.js — Codex also exposes a second portal
+               * target `data-above-composer-queue-portal` (`$o`) for asymmetric
+               * future slots. Codex bundle has no `createPortal` writing into it
+               * (verified via grep); HiCodex keeps the anchor for forward
+               * compatibility but currently leaves it empty.
+               */}
               <div
                 className="hc-above-composer-queue-portal"
                 data-above-composer-queue-portal="true"
                 data-above-composer-conversation-id={state.activeThreadId ?? undefined}
-              >
-                <QueuedFollowUpStack
-                  messages={activeQueuedFollowUps}
-                  isQueueingEnabled={followUpQueueingEnabled}
-                  onSendNow={sendQueuedFollowUpNow}
-                  onEdit={editQueuedFollowUp}
-                  onDelete={deleteQueuedFollowUp}
-                  onQueueingChange={setFollowUpQueueingEnabled}
-                  onReorder={reorderQueuedFollowUp}
-                />
-              </div>
+              />
+
 
               <Composer
                 input={input}
@@ -3406,6 +4389,8 @@ export function HiCodexApp() {
                 onAttachmentError={(message) => dispatch({ type: "log", text: message, level: "warn" })}
                 onBrowseFiles={browseComposerFiles}
                 onMentionSearch={searchComposerMentions}
+                conversationId={state.activeThreadId}
+                hasPlanMode={hasPlanComposerMode}
                 onPlanSelected={selectComposerPlan}
                 onOpenPlugins={() => void loadSettingsPanel("plugins")}
                 pendingRequestContent={activePendingRequests.length > 0 ? (
@@ -3451,7 +4436,11 @@ export function HiCodexApp() {
               onOpenDiff={openActiveDiffPanel}
               onForkTurn={forkActiveThreadFromTurn}
               onOpenFileReference={previewConversationFileReferenceAndOpenRail}
+              onOpenAutomation={openAutomationFromConversation}
+              memoryCitationRoot={memoryCitationRoot}
               onOpenThreadId={openBackgroundAgentThread}
+              onOpenConversationThreadId={selectThreadById}
+              onOpenRemoteTask={openRemoteTask}
               onMcpAppHostCall={handleMcpAppHostCall}
               onReadMcpResource={readMcpResource}
               onPatchAction={handlePatchAction}
@@ -3481,6 +4470,8 @@ export function HiCodexApp() {
             onMessageDraftChange={setBackgroundAgentMessageDraft}
             onMcpAppHostCall={handleMcpAppHostCall}
             onOpenFileReference={previewConversationFileReferenceAndOpenRail}
+            onOpenAutomation={openAutomationFromConversation}
+            memoryCitationRoot={memoryCitationRoot}
             onOpenThreadId={openBackgroundAgentThread}
             onReadMcpResource={readMcpResource}
             onSendMessage={sendBackgroundAgentPanelMessage}
@@ -3509,6 +4500,90 @@ export function HiCodexApp() {
               ? () => void cleanBackgroundTerminals()
               : undefined}
             backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
+            // codex: local-conversation-thread-CecHj6JI.js#mu — status footer
+            // (token-speed line + compact-thread button). `statusFooter` is
+            // populated by `thread/tokenUsage/updated` via
+            // `ThreadRuntimeSlice.tokenUsage`; `RightRailStatusFooter`
+            // self-hides when both `tokensUsed` and `onCompactThread` are
+            // absent, so leaving the prop undefined matches Desktop's "no
+            // footer until first counter" behaviour. `onBrowserOpen` stays
+            // unwired until the browser-tabs slice lands.
+            statusFooter={rightRailStatusFooter}
+            // codex: au row onClick — open automation editor modal. HiCodex
+            // routes the click through `openAutomationsPanel`, which closes
+            // sibling side panels and refreshes the automations payload before
+            // showing the read-only panel.
+            // TODO: codex: au row onClick should focus/select that specific
+            // automation inside the panel; currently the panel opens to the
+            // full list.
+            onAutomationOpen={(_automationId) => openAutomationsPanel()}
+            isResponseInProgress={activeThreadRunning}
+            onCompactThread={state.activeThreadId ? () => void runSlashRequest("compactThread") : undefined}
+          />
+        )}
+
+        {/*
+          * codex: thread-app-shell-chrome-BVkAxLhy:1714-1791 right-panel
+          * outlet + tabs + sticky "+" + close button. HiCodex consolidates
+          * the wiring into `<SidePanelHost>` (state in `useSidePanelTabHost`).
+          *
+          * Empty state = `<SidePanelNewTabPage>` (`nt()` 4-card landing
+          * page); active tab content = the tab's Component (currently only
+          * `FilesTabContent`, opened by the Files card or by ⌘⇧E).
+          *
+          * Hidden when `sidePanel.panelOpen === false`. Codex line 681:
+          *   `activeTab == null ? <div>{emptyState}</div> : <Component .../>`
+          * — the empty state is rendered by the host itself, we only need to
+          * pass it as a child.
+          */}
+        {sidePanel.panelOpen && (
+          <SidePanelHost
+            controller={sidePanel.controller}
+            tabs={sidePanel.tabs}
+            activeTab={sidePanel.activeTab}
+            activeTabReactKey={sidePanel.activeTabReactKey}
+            emptyState={<SidePanelNewTabPage actions={sidePanelNewTabActions} />}
+            afterTabsStickySlot={
+              <>
+                {/*
+                  * codex: thread-app-shell-chrome-BVkAxLhy:1740-1751 sticky "+"
+                  * button. onClick is `() => { activateTab(null); openPanel(true); }`
+                  * — clears the active tab so the empty-state landing page
+                  * (4 cards) returns to view. Idempotent when already in
+                  * empty state (matches the "looks unresponsive" observation
+                  * the user reported on Codex Desktop).
+                  */}
+                <button
+                  type="button"
+                  className="hc-side-panel-tab-bar-button"
+                  aria-label="Open side panel tab"
+                  title="Open side panel tab"
+                  onClick={() => {
+                    sidePanel.controller.activateTab(null);
+                    sidePanel.setPanelOpen(true);
+                  }}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                </button>
+                {/*
+                  * codex: thread-app-shell-chrome-BVkAxLhy:1755-1771 close button.
+                  * Codex puts this in the AppShell `HeaderAction` slot at
+                  * slotPosition='right' / order=300, but the rendered button
+                  * itself is the same — `() => Me(i)` (close panel). HiCodex
+                  * places it inline next to "+" to avoid threading a new slot
+                  * through ConversationChrome.
+                  */}
+                <button
+                  type="button"
+                  className="hc-side-panel-tab-bar-button"
+                  aria-label="Close side panel"
+                  title="Close side panel"
+                  onClick={() => sidePanel.setPanelOpen(false)}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              </>
+            }
           />
         )}
 
@@ -3540,6 +4615,12 @@ export function HiCodexApp() {
           onOpenUrl={openRailUrlAndOpenRail}
         />
       </main>
+      ) : remoteTaskVisible ? (
+        <RemoteTaskView
+          taskId={activeRemoteTaskId}
+          onBack={openWorkbenchTab}
+          onOpenExternal={openRemoteTaskExternal}
+        />
       ) : (
         <KnowledgeBaseView />
       )}
@@ -3563,6 +4644,20 @@ export function HiCodexApp() {
             selectCommandPanelAction(entry.action, openSettingsPanelContent);
           }}
           onSelectPanel={(panel) => void loadSettingsPanel(panel)}
+          // CODEX-REF: inline keyboard shortcuts editor needs direct setter
+          // wiring to the keymap-overrides module so capture-mode keystrokes
+          // commit immediately without round-tripping through the command
+          // action dispatch pipeline.
+          keymapOverrides={keymapOverrides}
+          onSetKeyboardShortcut={setUiKeyboardShortcut}
+          onResetKeyboardShortcut={resetUiKeyboardShortcut}
+          // CODEX-REF: inline appearance editor — same rationale (number input
+          // commits onBlur, can't ride the CommandPanelEntry action pipeline).
+          uiTheme={uiThemeSnapshot}
+          uiAppearance={uiAppearance}
+          onSetUiTheme={setUiThemeMode}
+          onSetCodeFontSize={setUiCodeFontSize}
+          onSetReducedMotion={setUiReducedMotion}
         />
       )}
 
@@ -3652,6 +4747,14 @@ export function HiCodexApp() {
           onClose={() => setModelPickerAnchor(null)}
         />
       )}
+        {/*
+          * codex: keyboard-shortcuts-settings-C5AEKt2i.js — standalone
+          * keyboard shortcuts dialog, triggered by ⌘⇧/.
+          */}
+        <KeyboardShortcutsDialog
+          open={keyboardShortcutsOpen}
+          onClose={() => setKeyboardShortcutsOpen(false)}
+        />
         <AppToastViewport logs={state.logs} />
       </div>
     </HiCodexIntlProvider>

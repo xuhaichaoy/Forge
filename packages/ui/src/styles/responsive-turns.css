@@ -260,12 +260,15 @@
 }
 
 .hc-inline-plan-card {
-  width: min(100%, 620px);
-  overflow: hidden;
-  border: 1px solid rgba(34, 38, 43, 0.14);
-  border-radius: 8px;
-  background: rgba(255, 253, 250, 0.72);
+  width: 100%;
+  overflow: clip;
+  border-inline: 1px solid rgba(34, 38, 43, 0.14);
+  border-top: 1px solid rgba(34, 38, 43, 0.14);
+  border-radius: 16px 16px 0 0;
+  background: color-mix(in srgb, var(--hc-surface-composer) 70%, transparent);
+  color: var(--hc-text-primary);
   backdrop-filter: blur(4px);
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .hc-inline-plan-header {
@@ -273,13 +276,15 @@
   width: 100%;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 6px;
   border: 0;
   background: transparent;
-  padding: 8px 10px;
+  padding: 6px 8px 6px 12px;
   color: #504f49;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 400;
   line-height: 20px;
   text-align: left;
   cursor: pointer;
@@ -312,23 +317,40 @@
   gap: 8px;
   overflow-y: auto;
   margin: 0;
-  padding: 8px 10px 10px;
-  border-top: 1px solid rgba(34, 38, 43, 0.10);
+  padding: 0;
   list-style: none;
 }
 
 .hc-inline-plan-row {
-  display: grid;
-  grid-template-columns: 18px auto minmax(0, 1fr);
+  display: flex;
   align-items: start;
-  gap: 4px;
+  gap: 8px;
   color: #4b4d48;
   font-size: 13px;
   line-height: 18px;
 }
 
+.hc-inline-plan-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--hc-surface-composer) 70%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.hc-inline-plan-prefix {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 2px;
+}
+
 .hc-inline-plan-status {
   display: inline-grid;
+  width: 18px;
+  height: 16px;
   place-items: center;
   color: #77786f;
 }
@@ -351,6 +373,48 @@
   text-decoration: line-through;
   text-decoration-color: rgba(119, 122, 115, 0.7);
   text-decoration-thickness: 1px;
+}
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#Uv — collapsed chevron uses
+ * `opacity-0 group-hover:opacity-100`; expanded uses `rotate-180 opacity-100`.
+ * The host wrapper carries `.group`, mirroring Codex's Tailwind group modifier
+ * so the chevron only appears on row hover/focus while the card is collapsed.
+ */
+.hc-inline-plan-chevron {
+  opacity: 0;
+  transition: opacity 180ms ease, transform 200ms ease;
+}
+
+.hc-thread-item-row.group:hover .hc-inline-plan-chevron,
+.hc-thread-item-row.group:focus-within .hc-inline-plan-chevron,
+.hc-inline-plan-chevron.is-open {
+  opacity: 1;
+}
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#Uv — body uses Codex's
+ * `vertical-scroll-fade-mask` utility with `--edge-fade-distance:2rem`. We
+ * recreate the linear-gradient mask here so the topmost/bottommost rows fade
+ * into the card background when the list overflows.
+ */
+.hc-inline-plan-list.is-fade {
+  --edge-fade-distance: 2rem;
+  max-height: 10rem;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--edge-fade-distance),
+    #000 calc(100% - var(--edge-fade-distance)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--edge-fade-distance),
+    #000 calc(100% - var(--edge-fade-distance)),
+    transparent 100%
+  );
 }
 
 .hc-plan-summary-card {
@@ -405,6 +469,14 @@
   background: transparent;
   color: var(--hc-text-secondary);
   cursor: pointer;
+}
+
+.hc-plan-summary-actions button.hc-plan-summary-open {
+  display: inline-flex;
+  width: auto;
+  gap: 4px;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .hc-plan-summary-actions button:hover,

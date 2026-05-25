@@ -29,6 +29,16 @@ const HICODEX_MESSAGES: Record<HiCodexLocale, Record<string, string>> = {
     "hc.command.theme.message": "Choose the UI appearance. The selection is saved locally.",
     "hc.command.theme.toggleDark": "Switch to dark theme",
     "hc.command.theme.toggleLight": "Switch to light theme",
+    "assistantMessage.memoryCitations.summary": "{count, plural, one {1 memory citation} other {# memory citations}}",
+    "assistantMessage.memoryCitations.openCitation": "Open {path}, {lineLabel}",
+    "assistantMessage.memoryCitations.singleLineLabel": "line {line}",
+    "assistantMessage.memoryCitations.lineRangeLabel": "lines {lineStart}-{lineEnd}",
+    "localConversation.reviewComments.count": "{count, plural, one {# comment} other {# comments}}",
+    "localConversation.reviewComments.openComment": "View {title} in {location}",
+    "localConversation.reviewComments.showMore": "{count, plural, one {Show # more comment} other {Show # more comments}}",
+    "localConversation.reviewComments.collapse": "Collapse comments",
+    "localConversationPage.planItemsCompleted": "{completedItems} out of {totalItems, plural, one {# task completed} other {# tasks completed}}",
+    "codex.todoPlan.stepIndexPrefix": "{index}.",
   },
   "zh-CN": {
     "hc.app.name": "HiCodex",
@@ -36,6 +46,16 @@ const HICODEX_MESSAGES: Record<HiCodexLocale, Record<string, string>> = {
     "hc.command.theme.message": "选择界面外观。该选择会保存在本机。",
     "hc.command.theme.toggleDark": "切换到深色主题",
     "hc.command.theme.toggleLight": "切换到浅色主题",
+    "assistantMessage.memoryCitations.summary": "{count, plural, one {1 条记忆引用} other {# 条记忆引用}}",
+    "assistantMessage.memoryCitations.openCitation": "打开 {path}，{lineLabel}",
+    "assistantMessage.memoryCitations.singleLineLabel": "第 {line} 行",
+    "assistantMessage.memoryCitations.lineRangeLabel": "{lineStart}-{lineEnd} 行",
+    "localConversation.reviewComments.count": "{count, plural, one {# comment} other {# comments}}",
+    "localConversation.reviewComments.openComment": "在{location}中查看{title}",
+    "localConversation.reviewComments.showMore": "{count, plural, one {再显示 # 条评论} other {再显示 # 条评论}}",
+    "localConversation.reviewComments.collapse": "收起评论",
+    "localConversationPage.planItemsCompleted": "共 {totalItems, plural, other {# 个任务}}，已经完成 {completedItems} 个",
+    "codex.todoPlan.stepIndexPrefix": "{index}.",
   },
 };
 
@@ -112,8 +132,21 @@ export function formatI18nMessage(
   const template = bundle.messages[descriptor.id]
     ?? HICODEX_MESSAGES[HICODEX_DEFAULT_LOCALE][descriptor.id]
     ?? descriptor.defaultMessage;
-  return template.replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) => {
+  return formatIcuPluralFragments(template, values).replace(/\{([A-Za-z0-9_]+)\}/g, (match, key: string) => {
     const value = values[key];
     return value == null ? match : String(value);
   });
+}
+
+function formatIcuPluralFragments(template: string, values: I18nValues): string {
+  return template.replace(
+    /\{([A-Za-z0-9_]+),\s*plural,\s*(?:one\s*\{([^{}]*)\}\s*)?other\s*\{([^{}]*)\}\s*\}/g,
+    (match, key: string, one: string | undefined, other: string) => {
+      const rawValue = values[key];
+      const numericValue = typeof rawValue === "number" ? rawValue : Number(rawValue);
+      if (!Number.isFinite(numericValue)) return match;
+      const selected = numericValue === 1 && one !== undefined ? one : other;
+      return selected.replace(/#/g, String(rawValue));
+    },
+  );
 }

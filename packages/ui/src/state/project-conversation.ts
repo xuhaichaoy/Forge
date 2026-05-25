@@ -2,15 +2,24 @@ import type {
   ConversationProjection,
   ConversationProjectionOptions,
   ConversationRenderUnit,
+  AssistantEndResource,
+  AssistantEndResourcesRenderUnit,
+  AssistantAfterRenderUnit,
+  GeneratedImageGalleryRenderUnit,
   ItemRecord,
   RailEntry,
   ThreadItem,
   ToolActivityGroupType,
 } from "./render-group-types";
+import {
+  assistantEndResourcesForTurn,
+  endResourcesCoverEditedFiles,
+} from "./assistant-end-resources";
 import { assistantArtifactsForTurn } from "./assistant-artifacts";
+import { extractAssistantReviewComments } from "./assistant-review-comments";
 import { projectBackgroundAgentRailEntries } from "./background-agents";
 import { projectBackgroundTerminalRailEntries } from "./background-terminals";
-import { eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
+import { eventDetails, eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
 import {
   collectRailEntries,
   progressEntriesFromPlan,
@@ -39,7 +48,7 @@ import {
   toolActivityRenderKey,
 } from "./tool-activity-grouping";
 import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
-import { projectUserMessageContent, userMessageText } from "./user-message-content";
+import { projectUserMessageContent, userMessageCopyText, userMessageText } from "./user-message-content";
 
 export function projectConversation(rawItems: ThreadItem[], options: ConversationProjectionOptions = {}): ConversationProjection {
   const items = withMcpAppResourceUris(rawItems, options.mcpServerStatuses);
@@ -54,6 +63,8 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   let activityGroupType: ToolActivityGroupType | null = null;
   let activityGroupKey: string | null = null;
   const conversationDetailLevel = options.conversationDetailLevel ?? "STEPS_COMMANDS";
+  const parentThreadAttachmentSourceConversationId = options.parentThreadAttachmentSourceConversationId?.trim() || null;
+  let parentThreadAttachmentUsed = false;
 
   /*
    * Codex Desktop `W` function (split-items-into-render-groups-C1Yh6v3t.js) aggregates
@@ -144,6 +155,9 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       activityGroupKey = null;
       return;
     }
+    const groupTypeOverride = activityGroupType === "pending-mcp-tool-calls" && activity.length === 1
+      ? "collapsed-tool-activity"
+      : activityGroupType ?? undefined;
     const summary = summarizeToolActivity(activity, {
       conversationDetailLevel: options.conversationDetailLevel ?? "STEPS_COMMANDS",
       workedForCollapsedByDefault: activity.some((item) => workedForCollapsedByDefaultIds.has(item.id)),
@@ -151,8 +165,11 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
        * If `pushActivityItem` promoted the bucket to a cross-type
        * `collapsed-tool-activity` (Codex `W` :line-2 segment aggregation), preserve that
        * group type so the summary builder produces the cross-type count label.
+       * Desktop only emits `pending-mcp-tool-calls` when consecutive pending MCP
+       * calls roll up to more than one item; a single pending call stays in its
+       * item-level activity row.
        */
-      groupTypeOverride: activityGroupType ?? undefined,
+      groupTypeOverride,
     });
     const renderIndex = units.length;
     units.push({
@@ -171,7 +188,11 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   const projectionOptions = options;
   const pushConversationItem = (
     item: ThreadItem,
-    options: { assistantArtifacts?: RailEntry[] } = {},
+    options: {
+      assistantArtifacts?: RailEntry[];
+      assistantAfter?: AssistantAfterRenderUnit[];
+      parentThreadAttachmentSourceConversationId?: string | null;
+    } = {},
   ) => {
     if (shouldSkipConversationItem(item)) {
       return;
@@ -181,8 +202,6 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       if (nextProgress) {
         progress = nextProgress;
       }
-      flushActivity();
-      units.push(threadItemRenderUnit(item));
       return;
     }
     if (itemType(item) === "proposed-plan") {
@@ -208,6 +227,12 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       units.push(threadItemRenderUnit(item));
       return;
     }
+    if (itemType(item) === "mcp-server-elicitation") {
+      if (isCompletedRecord(item)) return;
+      flushActivity();
+      units.push(threadItemRenderUnit(item));
+      return;
+    }
     if (isBlockingOutOfBandItem(item, blockedMcpServers)) {
       return;
     }
@@ -223,7 +248,11 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         role: "user",
         item,
         text: userMessageText(item),
+        copyText: userMessageCopyText(item),
         userContent: projectUserMessageContent(item),
+        ...(options.parentThreadAttachmentSourceConversationId
+          ? { parentThreadAttachment: { sourceConversationId: options.parentThreadAttachmentSourceConversationId } }
+          : {}),
       });
       return;
     }
@@ -243,6 +272,9 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         ...(options.assistantArtifacts && options.assistantArtifacts.length > 0
           ? { artifacts: options.assistantArtifacts }
           : {}),
+        ...(options.assistantAfter && options.assistantAfter.length > 0
+          ? { assistantAfter: options.assistantAfter }
+          : {}),
         assistantPhase: assistantMessagePhase(item),
         renderPlaceholder,
       });
@@ -256,6 +288,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         item,
         label: eventLabel(item),
         text: eventText(item),
+        details: eventDetails(item),
         tone: eventTone(item),
         format: eventFormat(item),
       });
@@ -277,6 +310,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       item,
       label: eventLabel(item),
       text: eventText(item),
+      details: eventDetails(item),
       tone: eventTone(item),
       format: eventFormat(item),
     });
@@ -312,7 +346,13 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     const split = splitTurnItems(segment, turnStatus);
 
     for (const item of split.modelChangedItems) pushConversationItem(item);
-    for (const item of split.userItems) pushConversationItem(item);
+    for (const item of split.userItems) {
+      const parentSourceConversationId = !parentThreadAttachmentUsed && parentThreadAttachmentSourceConversationId
+        ? parentThreadAttachmentSourceConversationId
+        : null;
+      pushConversationItem(item, { parentThreadAttachmentSourceConversationId: parentSourceConversationId });
+      if (parentSourceConversationId) parentThreadAttachmentUsed = true;
+    }
     for (const item of split.modelReroutedItems) pushConversationItem(item);
     for (const item of split.agentItems) {
       pushConversationItem(
@@ -325,14 +365,19 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     }
     for (const item of split.automationUpdateItems) pushConversationItem(item);
     if (split.systemEventItem) pushConversationItem(split.systemEventItem);
+    const assistantText = split.assistantItem ? assistantMessageText(split.assistantItem) : null;
     const assistantArtifacts = split.assistantItem
       ? assistantArtifactsForItem(split.assistantItem)
       : [];
-    if (split.assistantItem) {
-      pushConversationItem(split.assistantItem, {
-        assistantArtifacts,
-      });
-    }
+    const endResources = turnStatus !== "in_progress"
+      ? assistantEndResourcesForTurn({
+          items: split.assistantItem
+            ? segment.slice(0, segment.indexOf(split.assistantItem) + 1)
+            : segment,
+        assistantText,
+        cwd: segmentCwd(segment),
+      })
+      : [];
     /*
      * Codex Desktop `JC` gallery aggregation (local-conversation-thread byte
      * ~540170): all `generated-image` items in `toolOutputItems` collapse
@@ -369,18 +414,67 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       }
       nonImageOutputs.push(item);
     }
-    const visibleGeneratedImages = anyAssistantArtifactIsPptx(assistantArtifacts)
+    const visibleGeneratedImages = endResourcesIncludePptx(endResources)
       ? []
       : generatedImages;
+    const shouldRenderStaticTurnDiff = Boolean(
+      split.unifiedDiffItem
+        && turnStatus !== "in_progress"
+        && !hasBlockingRequest(split)
+        && conversationDetailLevel !== "STEPS_PROSE",
+    ) && !endResourcesCoverEditedFiles({
+      resources: endResources,
+      items: segment,
+      cwd: segmentCwd(segment),
+    });
+    const endResourcesUnit = endResources.length > 0
+      ? assistantEndResourcesRenderUnit({
+          key: `end-resources:${split.assistantItem?.id ?? generatedImageGalleryTurnId(segment, visibleGeneratedImages, split) ?? "turn"}`,
+          resources: endResources,
+          cwd: segmentCwd(segment),
+          turnId: generatedImageGalleryTurnId(segment, visibleGeneratedImages, split),
+        })
+      : null;
+    const assistantAfter: AssistantAfterRenderUnit[] = [];
     if (visibleGeneratedImages.length > 0 || pendingGeneratedImage) {
-      flushActivity();
       const galleryTurnId = generatedImageGalleryTurnId(segment, visibleGeneratedImages, split);
-      units.push({
+      const galleryUnit: GeneratedImageGalleryRenderUnit = {
         kind: "generatedImageGallery",
         key: `gallery:${galleryTurnId}`,
         images: visibleGeneratedImages,
         hasPending: pendingGeneratedImage,
         turnId: galleryTurnId,
+      };
+      if (split.assistantItem) {
+        assistantAfter.push(galleryUnit);
+      } else {
+        flushActivity();
+        units.push(galleryUnit);
+      }
+    }
+    if (split.assistantItem && endResourcesUnit) {
+      assistantAfter.push(endResourcesUnit);
+    }
+    if (split.assistantItem && turnStatus !== "in_progress") {
+      const reviewComments = extractAssistantReviewComments(
+        assistantText ?? "",
+        segmentCwd(segment),
+      ).comments;
+      if (reviewComments.length > 0) {
+        assistantAfter.push({
+          kind: "assistantReviewComments",
+          key: `review-comments:${split.assistantItem.id}`,
+          comments: reviewComments,
+        });
+      }
+    }
+    if (split.assistantItem && shouldRenderStaticTurnDiff && split.unifiedDiffItem) {
+      assistantAfter.push(assistantAfterEventRenderUnit(split.unifiedDiffItem));
+    }
+    if (split.assistantItem) {
+      pushConversationItem(split.assistantItem, {
+        assistantArtifacts,
+        assistantAfter,
       });
     }
     for (const item of nonImageOutputs) pushConversationItem(item);
@@ -390,17 +484,20 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     if (shouldRenderDesktopThinkingPlaceholder(split, turnStatus)) {
       pushConversationItem(desktopThinkingPlaceholderItem(segment, split));
     }
-    if (split.planImplementationItem) pushConversationItem(split.planImplementationItem);
     if (
       split.unifiedDiffItem
-      && !hasBlockingRequest(split)
-      && conversationDetailLevel !== "STEPS_PROSE"
+      && !split.assistantItem
+      && shouldRenderStaticTurnDiff
     ) {
       pushConversationItem(split.unifiedDiffItem);
     }
     for (const item of split.remoteTaskCreatedItems) pushConversationItem(item);
     for (const item of split.personalityChangedItems) pushConversationItem(item);
     for (const item of split.forkedFromConversationItems) pushConversationItem(item);
+    if (!split.assistantItem && endResourcesUnit) {
+      flushActivity();
+      units.push(endResourcesUnit);
+    }
   }
 
   flushActivity({ isCurrentToolActivity: options.isThreadRunning === true });
@@ -409,88 +506,14 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     ? progressEntriesFromPlan(options.progressPlan.plan, options.progressPlan.id ?? "turn-plan")
     : null;
 
-  const unitsWithStreaming = withStreamingAssistantState(units, options.isThreadRunning === true);
-  const unitsWithInProgressDiff = injectInProgressDiffUnit(unitsWithStreaming, options);
-
   return {
-    units: unitsWithInProgressDiff,
+    units: withStreamingAssistantState(units, options.isThreadRunning === true),
     progress: coalesceProgress(explicitProgress ?? progress),
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),
     sources: orderedSourcesLikeDesktop(sources),
   };
-}
-
-/*
- * Codex `sT` portal logic (codex-local-conversation-thread.pretty.js :8003-8012)
- * gates the in-progress diff on:
- *   - portal target exists (c2 = Ws(n2))
- *   - !hasBlockingRequest
- *   - has unified-diff data
- *   - conversationDetailLevel !== "STEPS_PROSE"
- * and renders it via createPortal so it appears at a fixed position above the
- * process region. HiCodex has no portal mechanism, so we splice an
- * `inProgressDiff` render unit immediately after the last user message of the
- * in-progress turn — visually it sits at the top of that turn's agent stream
- * (above tool activity, thinking placeholder, and assistant output), matching
- * Codex's "above-the-process-region" visual intent.
- */
-function injectInProgressDiffUnit(
-  units: ConversationRenderUnit[],
-  options: ConversationProjectionOptions,
-): ConversationRenderUnit[] {
-  const diff = (options.turnDiff ?? "").trim();
-  if (!diff) return units;
-  if (options.isThreadRunning !== true) return units;
-  if (options.conversationDetailLevel === "STEPS_PROSE") return units;
-  // Find the LAST user message in the latest turn. We only inject the diff
-  // if we can find that user message AND its turnId — without a turnId the
-  // synthetic unit would form its own `null`-turn group, splitting an
-  // existing turn's render block in two (which would yield duplicate React
-  // keys via `turnKeyForGroup` falling back to the same `turnId` on both
-  // halves).
-  const lastUserIndex = findLastIndex(
-    units,
-    (unit) => unit.kind === "message" && unit.role === "user",
-  );
-  if (lastUserIndex < 0) return units;
-  const inheritedTurnId = readUnitTurnId(units[lastUserIndex]);
-  if (!inheritedTurnId) return units;
-  // Make sure no unit AFTER the user message belongs to a DIFFERENT turn —
-  // if it does, the latest turn hasn't actually started yet (we're between
-  // turns) so injecting would split groups. Skip in that case.
-  for (let i = lastUserIndex + 1; i < units.length; i++) {
-    const otherTurnId = readUnitTurnId(units[i]);
-    if (otherTurnId && otherTurnId !== inheritedTurnId) {
-      return units;
-    }
-  }
-  const diffUnit: ConversationRenderUnit = {
-    kind: "inProgressDiff",
-    key: `in-progress-diff:${inheritedTurnId}`,
-    diff,
-    turnId: inheritedTurnId,
-  };
-  return [...units.slice(0, lastUserIndex + 1), diffUnit, ...units.slice(lastUserIndex + 1)];
-}
-
-function readUnitTurnId(unit: ConversationRenderUnit | undefined): string | null {
-  if (!unit) return null;
-  if (unit.kind === "message" || unit.kind === "event" || unit.kind === "threadItem") {
-    const raw = (unit.item as Record<string, unknown>)._turnId;
-    return typeof raw === "string" && raw.length > 0 ? raw : null;
-  }
-  if (unit.kind === "toolActivity") {
-    for (const item of unit.items) {
-      const raw = (item as Record<string, unknown>)._turnId;
-      if (typeof raw === "string" && raw.length > 0) return raw;
-    }
-  }
-  if (unit.kind === "generatedImageGallery") {
-    return unit.turnId;
-  }
-  return null;
 }
 
 function withMcpAppResourceUris(items: ThreadItem[], mcpServerStatuses: unknown): ThreadItem[] {
@@ -607,10 +630,9 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
       continue;
     }
     if (type === "mcp-server-elicitation") {
-      if (!isCompletedRecord(item)) {
-        const server = mcpElicitationServer(item);
-        if (server) blockedMcpServers.add(server);
-      }
+      if (isCompletedRecord(item)) continue;
+      const server = mcpElicitationServer(item);
+      if (server) blockedMcpServers.add(server);
       mcpServerElicitationItems.push(item);
       continue;
     }
@@ -659,9 +681,7 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
   );
   const finalAgentItem = filteredAgentItems[filteredAgentItems.length - 1];
   const finalAssistantCandidate = finalAgentItem && isAssistantMessage(finalAgentItem) ? finalAgentItem : null;
-  const finalAssistantItem = shouldSplitFinalAssistantItem(finalAssistantCandidate, turnStatus)
-    ? finalAssistantCandidate
-    : null;
+  const finalAssistantItem = finalAssistantCandidate;
   const finalAssistantHasContent = finalAssistantItem ? hasAssistantOutput(finalAssistantItem) : false;
 
   if (finalAssistantItem) {
@@ -682,12 +702,19 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
     renderAgentItems = renderAgentItems.slice(0, -1);
   }
 
-  assistantItem = finalAssistantItem;
+  // codex: split-items-into-render-groups-Dbyy4o9H.js#fe — when a completed
+  // assistant message closes the turn, trailing `automation-update` items do
+  // not render as standalone transcript rows. Desktop clones the assistant
+  // item with `automationCitations: p`, and the assistant-message renderer
+  // later decides whether those citations fit inline or need the fallback row.
+  assistantItem = finalAssistantItem && isCompletedRecord(finalAssistantItem) && automationUpdateItems.length > 0
+    ? { ...finalAssistantItem, automationCitations: automationUpdateItems }
+    : finalAssistantItem;
 
   return {
     userItems,
     agentItems: renderAgentItems,
-    automationUpdateItems: assistantItem == null ? automationUpdateItems : [],
+    automationUpdateItems: finalAssistantItem == null ? automationUpdateItems : [],
     assistantItem,
     toolOutputItems,
     postAssistantItems,
@@ -706,11 +733,6 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
     approvalItem,
     userInputItem,
   };
-}
-
-function shouldSplitFinalAssistantItem(item: ThreadItem | null, turnStatus: string): item is ThreadItem {
-  if (!item) return false;
-  return turnStatus !== "in_progress" || assistantMessagePhase(item) !== "commentary";
 }
 
 function moveWorkedForItemsAfterRunningAgentOutput(items: ThreadItem[]): ThreadItem[] {
@@ -733,9 +755,13 @@ function moveWorkedForItemsAfterRunningAgentOutput(items: ThreadItem[]): ThreadI
 }
 
 function shouldSkipConversationItem(item: ThreadItem): boolean {
-  if (itemType(item) === "hook") return true;
-  if (itemType(item) === "model-rerouted") return !isHighRiskCyberActivityModelReroute(item);
-  if (itemType(item) !== "multi-agent-action") return false;
+  const type = itemType(item);
+  if (type === "hook") return true;
+  if (type === "plan-implementation") return true;
+  if (type === "permission-request") return true;
+  if (type === "userInput" || type === "user-input") return true;
+  if (type === "model-rerouted") return !isHighRiskCyberActivityModelReroute(item);
+  if (type !== "multi-agent-action") return false;
   const record = item as ItemRecord;
   return record.tool === "wait" || record.action === "wait";
 }
@@ -815,15 +841,14 @@ function isGeneratedImagePending(item: ThreadItem): boolean {
 }
 
 /**
- * Codex `zC` PPTX exclusion — when any `endResourcePath` extension is
- * `pptx`, the gallery is suppressed (the deck embeds the images). HiCodex
- * has no `endResourcePaths`; the assistant's resolved artifacts (file paths
- * surfaced by `assistantArtifactsForItem`) are the closest equivalent.
+ * Codex `zC` / `Fy` PPTX exclusion — when any end-resource path has a
+ * `pptx` extension, the generated-image gallery is suppressed because the
+ * deck embeds those images.
  */
-function anyAssistantArtifactIsPptx(assistantArtifacts: RailEntry[]): boolean {
-  return assistantArtifacts.some((entry) => {
-    const path = entry.reference?.path || entry.meta || entry.title;
-    return /\.pptx$/i.test(path);
+function endResourcesIncludePptx(resources: AssistantEndResource[]): boolean {
+  return resources.some((resource) => {
+    const path = resource.type === "file" ? resource.path : resource.type === "website" ? resource.target : "";
+    return /\.pptx(?:[#?].*)?$/i.test(path);
   });
 }
 
@@ -877,6 +902,7 @@ function shouldKeepSingleActivityAsThreadItem(
   if (!item) return false;
   const type = itemType(item);
   if (type === "automatic-approval-review") return true;
+  if (type === "mcp-tool-call") return true;
   return (
     type === "exec"
     && context.conversationDetailLevel !== "STEPS_PROSE"
@@ -899,10 +925,70 @@ function threadItemRenderUnit(
   };
 }
 
+function assistantAfterEventRenderUnit(item: ThreadItem): Extract<AssistantAfterRenderUnit, { kind: "assistantAfterEvent" }> {
+  return {
+    kind: "assistantAfterEvent",
+    key: item.id,
+    item,
+    label: eventLabel(item),
+    text: eventText(item),
+    details: eventDetails(item),
+    tone: eventTone(item),
+    format: eventFormat(item),
+  };
+}
+
+function assistantEndResourcesRenderUnit({
+  key,
+  resources,
+  cwd,
+  turnId,
+}: {
+  key: string;
+  resources: AssistantEndResourcesRenderUnit["resources"];
+  cwd: string | null;
+  turnId: string | null;
+}): AssistantEndResourcesRenderUnit {
+  return {
+    kind: "assistantEndResources",
+    key,
+    resources,
+    cwd,
+    turnId,
+  };
+}
+
+function segmentCwd(segment: ThreadItem[]): string | null {
+  for (const item of segment) {
+    const cwd = stringField(item, "cwd");
+    if (cwd) return cwd;
+    const params = recordField(item, "params");
+    const paramsCwd = stringField(params, "cwd");
+    if (paramsCwd) return paramsCwd;
+  }
+  return null;
+}
+
+function stringField(value: unknown, key: string): string {
+  if (!value || typeof value !== "object") return "";
+  const raw = (value as Record<string, unknown>)[key];
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
+function recordField(value: unknown, key: string): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = (value as Record<string, unknown>)[key];
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : null;
+}
+
 function threadItemRenderKey(item: ThreadItem): string {
   const type = itemType(item);
   const id = typeof item.id === "string" && item.id.length > 0
     ? item.id
+    : typeof (item as Record<string, unknown>).requestId === "string" && String((item as Record<string, unknown>).requestId).length > 0
+      ? String((item as Record<string, unknown>).requestId)
     : typeof (item as Record<string, unknown>).callId === "string" && String((item as Record<string, unknown>).callId).length > 0
       ? String((item as Record<string, unknown>).callId)
       : "unknown";
@@ -926,7 +1012,7 @@ function conversationSegments(items: ThreadItem[]): ThreadItem[][] {
   const segments: ThreadItem[][] = [];
   let current: ThreadItem[] = [];
   for (const item of items) {
-    if (isUserMessage(item) && current.length > 0) {
+    if (isUserMessage(item) && !hasHeartbeatTrigger(item) && current.length > 0) {
       segments.push(current);
       current = [];
     }

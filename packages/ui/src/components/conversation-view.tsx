@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { FileText, GitFork } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { isItemInProgress } from "../state/thread-item-fields";
@@ -16,8 +17,10 @@ import {
 import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
 import { GeneratedImageGallery } from "./generated-image-gallery";
+import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
+import { IconActionButton, MessageActionRow } from "./message-action-row";
 import { MessageUnitView } from "./message-unit";
-import type { OpenThreadHandler } from "./open-thread";
+import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
 import { ThreadItemView } from "./thread-item-view";
 import {
@@ -58,6 +61,7 @@ export {
   mermaidDiagramKind,
   mermaidFlowchartPreviewModel,
   memoryCitationEntries,
+  memoryCitationFileReference,
   parseMarkdownBlocks,
   parseMarkdownInline,
   sanitizeMermaidCode,
@@ -85,10 +89,15 @@ export interface ConversationViewProps {
   threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
-  onOpenDiff?: () => void;
+  // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
+  onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenAutomation?: (automationId: string) => void;
+  memoryCitationRoot?: string | null;
   onOpenThreadId?: OpenThreadHandler;
+  onOpenConversationThreadId?: OpenThreadHandler;
+  onOpenRemoteTask?: OpenRemoteTaskHandler;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
   /**
@@ -113,7 +122,11 @@ export function ConversationView({
   onOpenDiff,
   onForkTurn,
   onOpenFileReference,
+  onOpenAutomation,
+  memoryCitationRoot,
   onOpenThreadId,
+  onOpenConversationThreadId,
+  onOpenRemoteTask,
   onMcpAppHostCall,
   onReadMcpResource,
   onPatchAction,
@@ -140,7 +153,11 @@ export function ConversationView({
       onOpenDiff={onOpenDiff}
       onForkTurn={onForkTurn}
       onOpenFileReference={onOpenFileReference}
+      onOpenAutomation={onOpenAutomation}
+      memoryCitationRoot={memoryCitationRoot}
       onOpenThreadId={onOpenThreadId}
+      onOpenConversationThreadId={onOpenConversationThreadId}
+      onOpenRemoteTask={onOpenRemoteTask}
       onMcpAppHostCall={onMcpAppHostCall}
       onReadMcpResource={onReadMcpResource}
       onPatchAction={onPatchAction}
@@ -524,7 +541,11 @@ export function ConversationUnitView({
   unit,
   isMostRecentTurn = false,
   onOpenFileReference,
+  onOpenAutomation,
+  memoryCitationRoot,
   onOpenThreadId,
+  onOpenConversationThreadId,
+  onOpenRemoteTask,
   onMcpAppHostCall,
   onReadMcpResource,
   threadId = null,
@@ -539,13 +560,18 @@ export function ConversationUnitView({
   unit: ConversationRenderUnit;
   isMostRecentTurn?: boolean;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenAutomation?: (automationId: string) => void;
+  memoryCitationRoot?: string | null;
   onOpenThreadId?: OpenThreadHandler;
+  onOpenConversationThreadId?: OpenThreadHandler;
+  onOpenRemoteTask?: OpenRemoteTaskHandler;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
   threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
-  onOpenDiff?: () => void;
+  // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
+  onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
@@ -559,12 +585,26 @@ export function ConversationUnitView({
         onEditLastUserMessage={onEditLastUserMessage}
         onOpenAssistantArtifact={onOpenAssistantArtifact}
         onForkTurn={onForkTurn}
+        onOpenThreadId={onOpenThreadId}
         onOpenFileReference={onOpenFileReference}
+        onOpenAutomation={onOpenAutomation}
+        onOpenDiff={onOpenDiff}
+        onPatchAction={onPatchAction}
+        patchActionState={patchActionState}
+        patchActionInFlight={patchActionInFlight}
+        memoryCitationRoot={memoryCitationRoot}
       />
     );
   }
   if (unit.kind === "threadItem") {
-    return <ThreadItemView unit={unit} />;
+    return (
+      <ThreadItemView
+        unit={unit}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
+      />
+    );
   }
   if (unit.kind === "toolActivity") {
     return (
@@ -578,21 +618,30 @@ export function ConversationUnitView({
       />
     );
   }
-  if (unit.kind === "inProgressDiff") {
-    return <InProgressDiffView diff={unit.diff} />;
-  }
   if (unit.kind === "generatedImageGallery") {
-    return <GeneratedImageGallery images={unit.images} hasPending={unit.hasPending} />;
+    return (
+      <GeneratedImageGalleryOutput
+        unit={unit}
+        onForkTurn={onForkTurn}
+      />
+    );
+  }
+  if (unit.kind === "assistantEndResources") {
+    return <AssistantEndResourceCards resources={unit.resources} onOpenArtifact={onOpenAssistantArtifact} />;
   }
   return (
     <ToolBlock
       contentSearchUnitKey={unit.key}
+      details={unit.details}
       format={unit.format}
       inProgress={isItemInProgress(unit.item)}
+      item={unit.item}
       itemIds={unit.item.id}
       label={unit.label}
       onOpenDiff={onOpenDiff}
+      onOpenConversationThreadId={onOpenConversationThreadId}
       onOpenFileReference={onOpenFileReference}
+      onOpenRemoteTask={onOpenRemoteTask}
       onPatchAction={onPatchAction}
       patchActionState={patchActionState}
       patchActionInFlight={patchActionInFlight}
@@ -602,23 +651,31 @@ export function ConversationUnitView({
   );
 }
 
-/*
- * Visual approximation of Codex's `sT` in-progress diff portal
- * (codex-local-conversation-thread.pretty.js :8003-8012). Codex renders a full
- * unified-diff component (`QC`, marked `isInProgress`) via createPortal into a
- * fixed slot above the process region. HiCodex has no portal infrastructure;
- * we render the diff text inside the conversation flow with a sticky-styled
- * card that visually conveys "live preview". The diff is treated as code, no
- * syntax highlighting — same as Codex's fallback when QC streams partial data.
- */
-function InProgressDiffView({ diff }: { diff: string }) {
+function GeneratedImageGalleryOutput({
+  unit,
+  onForkTurn,
+}: {
+  unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>;
+  onForkTurn?: (turnId: string) => void;
+}) {
+  const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);
   return (
-    <aside className="hc-in-progress-diff" aria-label="Live diff preview" data-testid="in-progress-diff">
-      <header className="hc-in-progress-diff-header">
-        <span className="hc-in-progress-diff-dot" aria-hidden />
-        <span className="hc-in-progress-diff-label">Live diff preview</span>
-      </header>
-      <pre className="hc-in-progress-diff-body"><code>{diff}</code></pre>
-    </aside>
+    <div className="hc-message assistant hc-generated-image-output" data-role="assistant">
+      <GeneratedImageGallery images={unit.images} hasPending={unit.hasPending} />
+      <MessageActionRow copyText="" hasActionChildren sentAtMs={null}>
+        <span className="hc-message-action-status" title="Artifacts available" aria-label="Artifacts available">
+          <FileText size={13} />
+        </span>
+        {canFork && unit.turnId && (
+          <IconActionButton
+            ariaLabel="Fork from this point"
+            title="Fork"
+            onClick={() => onForkTurn?.(unit.turnId ?? "")}
+          >
+            <GitFork size={13} />
+          </IconActionButton>
+        )}
+      </MessageActionRow>
+    </div>
   );
 }

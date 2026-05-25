@@ -1,4 +1,8 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
 import { assistantResourceCardViewModels } from "../src/components/assistant-resource-cards";
+import { AssistantEndResourceCards, assistantEndResourceCardViewModels } from "../src/components/assistant-end-resource-cards";
 import {
   assistantArtifactMediaSources,
   assistantResourceCardEntriesForMessage,
@@ -8,11 +12,15 @@ import {
 import {
   shouldRenderMessageActionRow,
 } from "../src/components/message-action-row";
+import { extractAssistantReviewComments } from "../src/state/assistant-review-comments";
 import {
   DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN,
   MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
   MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE,
   assistantAutoReviewSummary,
+  assistantCompletedThreadGoal,
+  assistantHookStatsSummary,
+  desktopAssistantCopyText,
   markdownFadeTextSegments,
   markdownImagePreviewAdjacentIndexes,
   markdownIndexedFadeSegmentCount,
@@ -20,9 +28,11 @@ import {
   desktopMarkdownCodeBlockWrapMode,
   parseMarkdownInline,
   parseMarkdownBlocks,
+  parseMarkdownDocument,
   parseMarkdownPromptLink,
   safeMarkdownHref,
   shouldRenderUserMessageActionStrip,
+  MessageUnitView,
 } from "../src/components/message-unit";
 
 export default function runMessageUnitTests(): void {
@@ -32,19 +42,40 @@ export default function runMessageUnitTests(): void {
   rendersRowsWithSecondaryActions();
   rendersUserActionStripForMetadataOnlyRows();
   formatsAssistantSpreadsheetResourceCards();
+  formatsAssistantWebsiteAndGoogleDriveEndResources();
+  limitsAssistantEndResourceCardsLikeCodexDesktop();
+  rendersAssistantActionRowForEndResourcesLikeCodexDesktop();
   formatsAssistantImageResourceCards();
   parsesInlineMarkdownImagesBeforeLinks();
   rejectsUnsafeMarkdownLinks();
   parsesAssistantPromptLinksLikeDesktop();
   summarizesAssistantAutoReviewStats();
+  // codex: local-conversation-thread-CecHj6JI.js#uh — coverage for the new
+  // assistant action row slots (hookStats `zs`, completedThreadGoal `dh`,
+  // sentAtMs trailing slot) so regressions show up in the test runner.
+  rendersAssistantTimestampFromCompletedAtMs();
+  summarizesAssistantHookStatsLikeCodexDesktop();
+  rendersCompletedThreadGoalChipLikeCodexDesktop();
   parsesStandaloneImagesWithSpacesInTargets();
   resolvesAssistantImageSourcesWithLooseFilenameSpacing();
   hidesResourceCardsForWorkedCommentaryRows();
   indexesStreamingMarkdownFadeSegmentsLikeDesktop();
+  rendersSoftAndHardLineBreaksLikeDesktopMarkdown();
+  rendersNestedListsLikeDesktopMarkdown();
+  rendersLooseListsLikeDesktopMarkdown();
+  rendersMixedTaskListsLikeDesktopMarkdown();
+  rendersBlockquoteChildrenLikeDesktopMarkdown();
+  rendersTableAlignmentLikeDesktopMarkdown();
+  rendersBareLinksLikeDesktopMarkdown();
+  rendersReferenceLinksLikeDesktopMarkdown();
   limitsMarkdownCodeWrapToggleToDesktopTextLanguages();
   usesDesktopLazyCodeBlockViewportMargin();
   computesDesktopImagePreviewNavigation();
   usesScopedMarkdownImagePreviewClass();
+  formatsAssistantCopyTextLikeDesktop();
+  extractsAssistantReviewCommentDirectivesLikeDesktop();
+  routesMermaidCodeBlocksToTheDiagramRenderer();
+  parsesKatexBlockAndInlineMathLikeDesktop();
 }
 
 function hidesFinalOutputChromeForCommentaryRows(): void {
@@ -121,6 +152,86 @@ function formatsAssistantSpreadsheetResourceCards(): void {
     ]).map((card) => ({ title: card.title, typeLabel: card.typeLabel })),
     [{ title: "beijing_weather_next_7_days.csv", typeLabel: "Spreadsheet · csv" }],
     "assistant file resources should use Desktop-style spreadsheet labels",
+  );
+}
+
+function formatsAssistantWebsiteAndGoogleDriveEndResources(): void {
+  assertDeepEqual(
+    assistantEndResourceCardViewModels([
+      { type: "file", path: "docs/report.pdf" },
+      { type: "website", target: "http://localhost:3000/report" },
+      {
+        type: "google-drive",
+        url: "https://docs.google.com/spreadsheets/d/example/edit",
+        title: "Revenue model",
+        resourceKind: "spreadsheet",
+      },
+    ]).map((card) => ({ title: card.title, typeLabel: card.typeLabel, meta: card.meta })),
+    [
+      { title: "report.pdf", typeLabel: "Document · PDF", meta: "docs/report.pdf" },
+      { title: "localhost:3000/report", typeLabel: "Website", meta: "http://localhost:3000/report" },
+      { title: "Revenue model", typeLabel: "Sheets", meta: "https://docs.google.com/spreadsheets/d/example/edit" },
+    ],
+    "Desktop end resources should render website and Google Drive cards in the assistant after-content surface",
+  );
+}
+
+function limitsAssistantEndResourceCardsLikeCodexDesktop(): void {
+  const html = renderToStaticMarkup(createElement(AssistantEndResourceCards, {
+    resources: [
+      { type: "file", path: "one.csv" },
+      { type: "file", path: "two.pdf" },
+      { type: "file", path: "three.pptx" },
+      { type: "file", path: "four.xlsx" },
+    ],
+  }));
+
+  assertEqual(html.includes("one.csv"), true, "first end resource should render");
+  assertEqual(html.includes("three.pptx"), true, "third end resource should render");
+  assertEqual(html.includes("four.xlsx"), false, "fourth end resource should be hidden until expanded");
+  assertEqual(html.includes("Show 1 more"), true, "Desktop end resources should expose the show-more footer after three rows");
+}
+
+function rendersAssistantActionRowForEndResourcesLikeCodexDesktop(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-resource-action",
+      role: "assistant",
+      item: {
+        id: "assistant-resource-action",
+        type: "agentMessage",
+        _turnId: "turn-resource-action",
+        completed: true,
+      },
+      text: "",
+      assistantPhase: "final_answer",
+      assistantAfter: [
+        {
+          kind: "assistantEndResources",
+          key: "end-resources:assistant-resource-action",
+          cwd: "/workspace/project",
+          turnId: "turn-resource-action",
+          resources: [{ type: "website", target: "http://localhost:3000/report" }],
+        },
+      ],
+    },
+  }));
+
+  assertEqual(
+    html.includes("hc-message-actions"),
+    true,
+    "assistant messages with end resources should render Desktop's artifact action row even without copy text",
+  );
+  assertEqual(
+    html.includes("Artifacts available"),
+    true,
+    "assistant end resources should count as artifacts in the action row",
+  );
+  assertEqual(
+    html.includes("Copy message"),
+    false,
+    "empty assistant text should not add a copy button just because resources exist",
   );
 }
 
@@ -205,6 +316,79 @@ function usesScopedMarkdownImagePreviewClass(): void {
     MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
     "hc-markdown-image-preview-dialog",
     "markdown image preview should not share composer attachment preview classes",
+  );
+}
+
+function formatsAssistantCopyTextLikeDesktop(): void {
+  const content = [
+    "Done 【/workspace/src/app.ts†L1】 and 【F:relative%20note.md†L4-L6】.",
+    "",
+    ':code-comment{title="Keep" body="Desktop copy keeps raw review directives." file="src/app.ts"}',
+    ':citation{automation_id="web" index="0"}',
+  ].join("\n");
+
+  assertEqual(
+    desktopAssistantCopyText(content),
+    [
+      "Done /workspace/src/app.ts and relative note.md:4-6.",
+      "",
+      ':code-comment{title="Keep" body="Desktop copy keeps raw review directives." file="src/app.ts"}',
+      ':citation{automation_id="web" index="0"}',
+    ].join("\n"),
+    "assistant copy text should mirror Desktop raw content plus file-line citation normalization",
+  );
+  assertEqual(
+    desktopAssistantCopyText("See 【relative.md†L2】"),
+    "See 【relative.md†L2】",
+    "Desktop leaves non-forced relative file-line citations unchanged in copy text",
+  );
+}
+
+function extractsAssistantReviewCommentDirectivesLikeDesktop(): void {
+  const extraction = extractAssistantReviewComments(
+    [
+      "Review complete.",
+      "",
+      ":code-comment{title=\"Guard branch\" body=\"Handle the missing value.\" file=\"src/app.ts\" priority=2 start=4 end=6}",
+      "",
+      "Next item.",
+    ].join("\n"),
+    "/workspace/project",
+  );
+
+  assertEqual(
+    extraction.cleanedContent,
+    ["Review complete.", "", "Next item."].join("\n"),
+    "code-comment directives should be stripped before assistant markdown renders",
+  );
+  assertDeepEqual(
+    extraction.comments,
+    [
+      {
+        title: "Guard branch",
+        body: "Handle the missing value.",
+        path: "/workspace/project/src/app.ts",
+        line: 6,
+        startLine: 4,
+        priority: "P2",
+      },
+    ],
+    "code-comment directives should become Desktop-style review comment metadata",
+  );
+
+  const inlineExtraction = extractAssistantReviewComments(
+    'Review inline :code-comment{title="Inline" body="Ignored." file="src/app.ts" priority=1}',
+    "/workspace/project",
+  );
+  assertEqual(
+    inlineExtraction.cleanedContent,
+    'Review inline :code-comment{title="Inline" body="Ignored." file="src/app.ts" priority=1}',
+    "Desktop only extracts code-comment directives that start a line",
+  );
+  assertDeepEqual(
+    inlineExtraction.comments,
+    [],
+    "inline code-comment text should not become a model-authored review comment",
   );
 }
 
@@ -412,6 +596,404 @@ function indexesStreamingMarkdownFadeSegmentsLikeDesktop(): void {
     markdownIndexedFadeSegmentCount(parseMarkdownBlocks("Hello **bold text**\n\n- item one\n- item two"), null),
     7,
     "Desktop indexed fade should count markdown text tokens across paragraphs, formatting, and list items",
+  );
+}
+
+function rendersSoftAndHardLineBreaksLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-line-breaks",
+      role: "assistant",
+      item: {
+        id: "assistant-line-breaks",
+        type: "agentMessage",
+        _turnId: "turn-line-breaks",
+        completed: true,
+      },
+      text: "soft\nwrap\n\nhard  \nbreak",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(html.includes("soft<br"), false, "Desktop markdown should not turn soft paragraph newlines into hard breaks");
+  assertEqual(html.includes("soft\nwrap"), true, "soft paragraph newlines should remain collapsible whitespace");
+  assertEqual(html.includes("hard<br/>break"), true, "two trailing spaces should render Desktop-style hard breaks");
+}
+
+function rendersNestedListsLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-nested-lists",
+      role: "assistant",
+      item: {
+        id: "assistant-nested-lists",
+        type: "agentMessage",
+        _turnId: "turn-nested-lists",
+        completed: true,
+      },
+      text: "- parent\n  - child\n    1. grand\n- next",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(
+    html.includes("parent<ul><li>child<ol><li>grand</li></ol></li></ul>"),
+    true,
+    "Desktop markdown should keep nested list hierarchy in rendered assistant content",
+  );
+  assertEqual(html.includes("<li>next</li>"), true, "sibling list items should remain at the top level");
+}
+
+function rendersLooseListsLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-loose-lists",
+      role: "assistant",
+      item: {
+        id: "assistant-loose-lists",
+        type: "agentMessage",
+        _turnId: "turn-loose-lists",
+        completed: true,
+      },
+      text: "- first\n\n  continued paragraph\n  - nested\n- second",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(
+    html.includes("<li><p>first</p><p>continued paragraph</p><ul><li>nested</li></ul></li>"),
+    true,
+    "loose list items should render Desktop-style paragraphs plus nested children",
+  );
+  assertEqual(
+    html.includes("<li><p>second</p></li>"),
+    true,
+    "all items in a loose Desktop list should render their text in paragraphs",
+  );
+}
+
+function rendersMixedTaskListsLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-mixed-task-lists",
+      role: "assistant",
+      item: {
+        id: "assistant-mixed-task-lists",
+        type: "agentMessage",
+        _turnId: "turn-mixed-task-lists",
+        completed: true,
+      },
+      text: "- [x] done\n- next\n  - [ ] child",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(
+    html.includes('<ul class="hc-task-list contains-task-list">'),
+    true,
+    "Desktop task lists should remain regular lists with a contains-task-list class",
+  );
+  assertEqual(
+    html.includes('<li class="task-list-item"><input aria-label="Completed task" readOnly="" type="checkbox" checked=""/>done</li>'),
+    true,
+    "checked task items should render a disabled checkbox before the item text",
+  );
+  assertEqual(
+    html.includes('<li>next<ul class="hc-task-list contains-task-list"><li class="task-list-item"><input aria-label="Pending task" readOnly="" type="checkbox"/>child</li></ul></li>'),
+    true,
+    "plain sibling items and nested task lists should stay inside the same Desktop list hierarchy",
+  );
+}
+
+function rendersBlockquoteChildrenLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-blockquote-children",
+      role: "assistant",
+      item: {
+        id: "assistant-blockquote-children",
+        type: "agentMessage",
+        _turnId: "turn-blockquote-children",
+        completed: true,
+      },
+      text: "> ## Note\n> - item\n>   - child",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(html.includes("<blockquote><h2>Note</h2><ul>"), true, "blockquote heading should render as a nested markdown block");
+  assertEqual(
+    html.includes("item<ul><li>child</li></ul>"),
+    true,
+    "blockquote list contents should preserve Desktop marked hierarchy",
+  );
+}
+
+function rendersTableAlignmentLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-table-align",
+      role: "assistant",
+      item: {
+        id: "assistant-table-align",
+        type: "agentMessage",
+        _turnId: "turn-table-align",
+        completed: true,
+      },
+      text: "| A | B | C |\n| :-- | --: | :-: |\n| l | r | c |",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(html.includes('<th align="left">A</th>'), true, "left table alignment should reach header cells");
+  assertEqual(html.includes('<td align="right">r</td>'), true, "right table alignment should reach body cells");
+  assertEqual(html.includes('<td align="center">c</td>'), true, "center table alignment should reach body cells");
+}
+
+function rendersBareLinksLikeDesktopMarkdown(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-bare-links",
+      role: "assistant",
+      item: {
+        id: "assistant-bare-links",
+        type: "agentMessage",
+        _turnId: "turn-bare-links",
+        completed: true,
+      },
+      text: "Visit https://example.com/a_(b). See www.example.org/docs and dev@example.com.",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(
+    html.includes('href="https://example.com/a_(b)"'),
+    true,
+    "Desktop markdown should link bare http URLs without trailing punctuation",
+  );
+  assertEqual(
+    html.includes('href="http://www.example.org/docs"'),
+    true,
+    "Desktop markdown should link bare www URLs with an http href",
+  );
+  assertEqual(
+    html.includes('href="mailto:dev@example.com"'),
+    true,
+    "Desktop markdown should link bare email addresses",
+  );
+}
+
+function rendersReferenceLinksLikeDesktopMarkdown(): void {
+  const document = parseMarkdownDocument([
+    "[ref]: https://example.com \"Example\"",
+    "",
+    "See [the ref][ref], [ref][], and [REF].",
+  ].join("\n"));
+  assertDeepEqual(
+    document.blocks,
+    [{ kind: "paragraph", text: "See [the ref][ref], [ref][], and [REF]." }],
+    "Desktop markdown should collect reference definitions without rendering them as blocks",
+  );
+  assertDeepEqual(
+    parseMarkdownInline("See [the ref][ref], [ref][], and [REF].", { references: document.references }),
+    [
+      { kind: "text", text: "See " },
+      { kind: "link", text: "the ref", href: "https://example.com", title: "Example" },
+      { kind: "text", text: ", " },
+      { kind: "link", text: "ref", href: "https://example.com", title: "Example" },
+      { kind: "text", text: ", and " },
+      { kind: "link", text: "REF", href: "https://example.com", title: "Example" },
+      { kind: "text", text: "." },
+    ],
+    "full, collapsed, and shortcut reference links should resolve through Desktop's normalized label map",
+  );
+  assertDeepEqual(
+    parseMarkdownDocument([
+      "Before",
+      "[ref]: https://example.com",
+      "After [ref].",
+    ].join("\n")).references.size,
+    0,
+    "Desktop keeps definition-looking lines inside an open paragraph instead of collecting them",
+  );
+
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-reference-links",
+      role: "assistant",
+      item: {
+        id: "assistant-reference-links",
+        type: "agentMessage",
+        _turnId: "turn-reference-links",
+        completed: true,
+      },
+      text: [
+        "See [ref].",
+        "",
+        "[ref]: https://example.com \"Example\"",
+        "",
+        "![alt][img]",
+        "",
+        "[img]: https://example.com/a.png \"Alt title\"",
+      ].join("\n"),
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(html.includes("[ref]: https://example.com"), false, "reference definitions should not render as visible paragraph text");
+  assertEqual(html.includes('href="https://example.com"'), true, "shortcut reference links should render with the collected href");
+  assertEqual(html.includes('title="Example"'), true, "reference link titles should reach the anchor like Desktop markdown");
+  assertEqual(html.includes('src="https://example.com/a.png"'), true, "reference images should render with the collected src");
+  assertEqual(html.includes('title="Alt title"'), true, "reference image titles should reach the image element");
+}
+
+// codex: mermaid-diagram-p7A5YYxA.js — verifies fenced ```mermaid blocks are
+// preserved with `language === "mermaid"` so `CodeSnippet` swaps in the
+// dynamic `MermaidDiagram` instead of the syntax-highlighted code path.
+function routesMermaidCodeBlocksToTheDiagramRenderer(): void {
+  const blocks = parseMarkdownBlocks("```mermaid\ngraph TD; A-->B\n```");
+  assertEqual(blocks.length, 1, "mermaid fence should produce exactly one block");
+  const block = blocks[0];
+  if (!block || block.kind !== "code") {
+    throw new Error("mermaid fence should parse as a code block, got " + (block?.kind ?? "none"));
+  }
+  assertEqual(block.language, "mermaid", "mermaid fence language must reach CodeSnippet so the diagram renderer activates");
+  assertEqual(block.text, "graph TD; A-->B", "mermaid fence body must be preserved verbatim");
+}
+
+// codex: katex-7--VtpAh.js — verifies the parser recognises block `$$..$$`
+// and inline `$..$` while rejecting currency-style `$5` so KaTeX renders only
+// real math expressions.
+function parsesKatexBlockAndInlineMathLikeDesktop(): void {
+  const blockMath = parseMarkdownBlocks("$$\nE = mc^2\n$$");
+  assertEqual(blockMath.length, 1, "$$..$$ should produce a single math block");
+  const blockMathBlock = blockMath[0];
+  if (!blockMathBlock || blockMathBlock.kind !== "math") {
+    throw new Error("$$..$$ should parse as a math block, got " + (blockMathBlock?.kind ?? "none"));
+  }
+  assertEqual(blockMathBlock.text, "E = mc^2", "math block body should be trimmed and preserved");
+
+  const inline = parseMarkdownInline("inline $a+b$ math");
+  const mathSegment = inline.find((segment) => segment.kind === "math");
+  if (!mathSegment || mathSegment.kind !== "math") {
+    throw new Error("inline `$a+b$` should yield a math segment");
+  }
+  assertEqual(mathSegment.text, "a+b", "inline math should expose the bare TeX source");
+
+  const currency = parseMarkdownInline("a coffee costs $5 today");
+  const currencyHasMath = currency.some((segment) => segment.kind === "math");
+  assertEqual(currencyHasMath, false, "bare `$5` currency should not be misread as inline math");
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#uh — the trailing slot of the
+// assistant action row binds to `n.completedAt*1000` for assistant items
+// (`item/completed.completedAtMs` in HiCodex). Verify the action row renders
+// the timestamp span when the reducer stamps `completedAtMs` onto the
+// assistant item; the previous implementation only checked legacy
+// `sentAtMs`/`createdAtMs` fields that the reducer never wrote.
+function rendersAssistantTimestampFromCompletedAtMs(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-timestamp",
+      role: "assistant",
+      item: {
+        id: "assistant-timestamp",
+        type: "agentMessage",
+        _turnId: "turn-timestamp",
+        completed: true,
+        text: "Sample reply.",
+        completedAtMs: 1716557400000,
+      },
+      text: "Sample reply.",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(
+    html.includes("hc-message-time"),
+    true,
+    "assistant action row should render the sentAt timestamp span when completedAtMs is populated by the reducer",
+  );
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#uh — `t[17]===a?...:(0,$.jsx)(zs,{stats:a})`.
+// `assistantHookStatsSummary` is the data adapter that converts the protocol
+// payload into the chip's popover rows.
+function summarizesAssistantHookStatsLikeCodexDesktop(): void {
+  const summary = assistantHookStatsSummary({
+    hookStats: {
+      count: 3,
+      blockedCount: 1,
+      errorCount: 0,
+      entries: [
+        { kind: "PreCommand", text: "block dangerous rm" },
+        { kind: "PostCommand", text: "" },
+      ],
+    },
+  });
+  assertDeepEqual(
+    summary,
+    {
+      label: "3 hooks",
+      title: "Hooks summary",
+      rows: [
+        { label: "Ran", value: "3" },
+        { label: "Blocked", value: "1" },
+      ],
+      entries: [
+        { kind: "PreCommand", text: "block dangerous rm" },
+        { kind: "PostCommand", text: "" },
+      ],
+    },
+    "assistant hookStats summary should mirror Codex Desktop's chip popover shape",
+  );
+
+  assertEqual(
+    assistantHookStatsSummary({}),
+    null,
+    "missing hookStats payload should suppress the chip",
+  );
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#dh — `n.timeUsedSeconds*1e3` →
+// "Goal achieved in {totalTime}". Confirm the chip text mirrors Codex Desktop
+// and that in-progress goals do not light the chip up.
+function rendersCompletedThreadGoalChipLikeCodexDesktop(): void {
+  assertDeepEqual(
+    assistantCompletedThreadGoal({
+      completedThreadGoal: {
+        status: "complete",
+        objective: "Ship the assistant action row",
+        timeUsedSeconds: 90,
+      },
+    }),
+    {
+      label: "Goal achieved in 1 min 30 s",
+      objective: "Ship the assistant action row",
+      durationLabel: "1 min 30 s",
+    },
+    "completed thread goal payload should produce Codex Desktop's chip label",
+  );
+
+  assertEqual(
+    assistantCompletedThreadGoal({
+      completedThreadGoal: {
+        status: "in_progress",
+        objective: "Still working",
+        timeUsedSeconds: 30,
+      },
+    }),
+    null,
+    "in-progress goals should not surface the completed-goal chip (Codex passes `null` via `W?null:w`)",
   );
 }
 

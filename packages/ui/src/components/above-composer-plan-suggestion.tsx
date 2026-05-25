@@ -12,6 +12,7 @@ interface AboveComposerPlanSuggestionProps {
   hasPlanMode: boolean;
   mode: ComposerMode;
   onPlanSelected: () => void;
+  showPlanKeywordSuggestion?: boolean;
 }
 
 export function AboveComposerPlanSuggestion({
@@ -20,6 +21,7 @@ export function AboveComposerPlanSuggestion({
   hasPlanMode,
   mode,
   onPlanSelected,
+  showPlanKeywordSuggestion = true,
 }: AboveComposerPlanSuggestionProps) {
   const suggestionScope = conversationId ?? "__new-thread__";
   const [dismissedByScope, setDismissedByScope] = useState<Record<string, string[]>>({});
@@ -27,11 +29,11 @@ export function AboveComposerPlanSuggestion({
   const isDismissed = dismissed.includes(PLAN_KEYWORD_SUGGESTION_ID);
   const shouldShow = shouldShowPlanKeywordSuggestion({
     composerText,
-  hasPlanMode,
-  isPlanMode: mode === "plan",
-  isDismissed,
-  showPlanKeywordSuggestion: true,
-});
+    hasPlanMode,
+    isPlanMode: mode === "plan",
+    isDismissed,
+    showPlanKeywordSuggestion,
+  });
 
   useEffect(() => {
     if (mode !== "plan" || !isDismissed) return;

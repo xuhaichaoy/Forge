@@ -290,7 +290,10 @@ export function projectAccountViewModel(
     error: state.error,
     signOutAction: {
       type: "account/signOut",
-      label: "Sign out",
+      // codex: profile dropdown sign-out label — ICU id `codex.profileDropdown.logOut`
+      // defaultMessage:`Log out` (also `codex.command.logOut`, distinct from the
+      // longer command description `codex.commandDescription.logOut`:`Sign out of Codex`).
+      label: "Log out",
       disabled: !signedIn || state.refreshing,
       ...(!signedIn ? { reason: "No Codex account is signed in." } : {}),
     },

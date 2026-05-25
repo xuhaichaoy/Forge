@@ -2,6 +2,20 @@ export const HICODEX_DESKTOP_CONFIG_ROOT = "desktop.hicodex";
 
 export const HICODEX_DESKTOP_CONFIG_KEYS = {
   appearanceTheme: desktopHiCodexKey("appearanceTheme"),
+  // CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — Codex Desktop persists
+  // user keymap overrides via the host bridge `set-codex-command-keybinding`.
+  // HiCodex ships a webview-only implementation: { [commandId]: accelerator | null }
+  // saved under desktop.hicodex.keymap as JSON. `null` means "explicitly unbound";
+  // a missing key falls back to the command descriptor's default keybinding.
+  keymapOverrides: desktopHiCodexKey("keymap"),
+  // CODEX-REF: settings.general.appearance.codeFontSize.row — Codex Desktop
+  // persists code font size as a number 8-24 (appearance-settings-BLTO9KX5.js
+  // section 4). HiCodex namespaces it under desktop.hicodex.* for parity with
+  // appearanceTheme.
+  appearanceCodeFontSize: desktopHiCodexKey("appearance", "codeFontSize"),
+  // CODEX-REF: settings.general.appearance.reducedMotion.label — Codex Desktop
+  // exposes a 3-way toggle (system / on / off). HiCodex stores the same triple.
+  appearanceReducedMotion: desktopHiCodexKey("appearance", "reducedMotion"),
   composerWorkMode: desktopHiCodexKey("composer", "workMode"),
   imageGeneration: desktopHiCodexKey("imageGeneration"),
   locale: desktopHiCodexKey("locale"),

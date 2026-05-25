@@ -7,6 +7,7 @@ import {
   stripRawThinkingMarkup,
   type AccumulatedThreadItem as ThreadItem,
 } from "../src/state/render-groups";
+import { automationScheduleSummary } from "../src/state/automation-schedule-summary";
 
 const TEST_SKILL_PATH = "/workspace/.codex/skills/code-review";
 
@@ -20,9 +21,12 @@ export default function runRenderGroupsTests(): void {
   rendersAssistantStreamingPlaceholderFromDesktopFlag();
   rendersDesktopThinkingPlaceholderForActiveEmptyTurn();
   suppressesDesktopThinkingPlaceholderWhileToolsRun();
+  attachesParentThreadChipToFirstUserMessageLikeDesktop();
+  treatsRunningCommentaryTailAsAssistantItemLikeCodexDesktop();
   groupsReasoningSummaryAndContentIntoToolActivity();
   marksIncompleteReasoningAsThinkingLikeCodexDesktop();
   showsThinkingPlaceholderWhileReasoningStreams();
+  dropsCompletedReasoningWithoutThoughtRemnantLikeCodexDesktop();
   splitsReasoningFromCollapsedToolActivity();
   groupsPendingMcpCallsSeparately();
   hydratesMcpAppResourceUriFromServerStatusLikeCodexDesktop();
@@ -31,13 +35,25 @@ export default function runRenderGroupsTests(): void {
   projectsDesktopLifecycleEventsSemantically();
   projectsErrorDetailFieldsAsDisclosures();
   filtersNonHighRiskModelReroutesLikeCodexDesktop();
+  rendersRawParentContextForkEventsAsDesktopForkRows();
+  formatsAutomationRrulesLikeCodexDesktop();
   projectsContextCompactionSnapshotStatusFromTurnState();
   projectsDiffAndGeneratedImageEventsWithRenderableFormats();
   projectsOfficialImageGenerationTurnOutputIntoGallery();
   splitsTurnItemsIntoCodexDesktopBuckets();
   projectsTurnBucketsInCodexDesktopOrder();
-  injectsInProgressDiffAfterLatestUserMessage();
-  rendersTurnDiffWhenNoBlockingRequestLikeCodexDesktop();
+  attachesAutomationUpdatesToCompletedAssistantLikeCodexDesktop();
+  keepsLiveTurnDiffOutOfTranscriptProjection();
+  attachesTurnDiffToAssistantAfterLikeCodexDesktop();
+  attachesEndResourcesAndSuppressesCoveredTurnDiffLikeCodexDesktop();
+  rendersEndResourcesWithoutAssistantLikeCodexDesktop();
+  suppressesGeneratedImagesForPptxEndResourceWithoutAssistantLikeDesktop();
+  skipsEditedMarkdownEndResourceUnlessLinkedLikeCodexDesktop();
+  parsesDesktopMarkdownEndResourceLinks();
+  ignoresUnsafeWebsiteFallbacksLikeCodexDesktop();
+  attachesReviewCommentsToAssistantAfterLikeCodexDesktop();
+  rendersTurnDiffWithoutAssistantAsStandaloneLikeCodexDesktop();
+  hidesStaticTurnDiffWhileTurnIsRunningLikeCodexDesktop();
   projectsFinalAssistantArtifactsIntoMessageUnits();
   keepsFinalAssistantArtifactsOffCommentaryMessages();
   keepsPreviousArtifactsOutOfLaterAssistantMessages();
@@ -47,11 +63,12 @@ export default function runRenderGroupsTests(): void {
   usesWorkedForAsTurnCollapseDividerBeforeAssistant();
   keepsWorkedForExpandedUntilFinalAssistantStarts();
   keepsRunningWorkedForAfterRehydratedAssistantCommentary();
-  keepsTodoListInMainConversationAndProjectsProgress();
+  keepsTodoListOutOfMainConversationAndProjectsProgress();
   rendersProposedPlanAsInlineCardOnly();
   keepsBlockingRequestsOutOfTranscriptButSuppressesThinking();
   hidesPendingApprovalItemsFromOrdinaryActivity();
   groupsExplorationCommandActionsLikeCodexDesktop();
+  preservesDesktopPathTextInToolActivitySummaries();
   labelsSkillExplorationActionsLikeCodexDesktop();
   dedupesExplorationReadCountsByCwdLikeCodexDesktop();
   keepsReasoningInsideActiveExplorationLikeCodexDesktop();
@@ -116,6 +133,15 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
       ].join("\n"),
       "user message text should flatten only textual input",
     );
+    assertEqual(
+      first.copyText,
+      [
+        "Add render group tests @render-groups",
+        "[render-groups.ts](packages/ui/src/state/render-groups.ts)",
+        `[$code-review](${TEST_SKILL_PATH})`,
+      ].join("\n"),
+      "user message copy text should serialize visible bubble content separately from raw editable text",
+    );
     assertDeepEqual(
       first.userContent,
       [
@@ -129,6 +155,7 @@ function projectsUserAndAssistantMessagesAsStableMessageGroups(): void {
           chipKind: "file",
           label: "render-groups.ts",
           path: "packages/ui/src/state/render-groups.ts",
+          presentation: "inline",
           fileExtension: "ts",
         },
         {
@@ -237,16 +264,7 @@ function projectsFinalAssistantArtifactsIntoMessageUnits(): void {
   }
 }
 
-function injectsInProgressDiffAfterLatestUserMessage(): void {
-  const diff = [
-    "diff --git a/packages/ui/src/app.ts b/packages/ui/src/app.ts",
-    "index 111..222 100644",
-    "--- a/packages/ui/src/app.ts",
-    "+++ b/packages/ui/src/app.ts",
-    "@@ -1 +1 @@",
-    "-old",
-    "+new",
-  ].join("\n");
+function keepsLiveTurnDiffOutOfTranscriptProjection(): void {
   const projection = projectConversation([
     {
       type: "userMessage",
@@ -264,18 +282,14 @@ function injectsInProgressDiffAfterLatestUserMessage(): void {
     } as ThreadItem,
   ], {
     isThreadRunning: true,
-    turnDiff: diff,
   });
 
   assertEqual(projection.units[0]?.kind, "message", "user message should stay first");
-  const liveDiffIndex = projection.units.findIndex((unit) => unit.kind === "inProgressDiff");
-  assertEqual(liveDiffIndex, 1, "live diff should be inserted immediately after the user message");
-  const liveDiff = projection.units[liveDiffIndex];
-  if (liveDiff?.kind !== "inProgressDiff") {
-    throw new Error("live diff should render as an inProgressDiff unit");
-  }
-  assertEqual(liveDiff.diff, diff, "live diff unit should carry the streamed diff");
-  assertEqual(liveDiff.turnId, "turn-live-diff", "live diff should stay in the active turn group");
+  assertEqual(
+    projection.units.some((unit) => unit.key.includes("in-progress-diff")),
+    false,
+    "live diff belongs to the above-composer portal, not the transcript projection",
+  );
   assertEqual(
     projection.units.some((unit) => unit.kind === "message" && unit.key === "agent-live-diff"),
     true,
@@ -609,6 +623,103 @@ function suppressesDesktopThinkingPlaceholderWhileToolsRun(): void {
   }
 }
 
+function attachesParentThreadChipToFirstUserMessageLikeDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-1",
+      content: "Start from the parent context",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-1",
+      _turnId: "turn-1",
+      text: "Working.",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+    {
+      type: "userMessage",
+      id: "user-2",
+      _turnId: "turn-2",
+      content: "Continue",
+    } as ThreadItem,
+  ], { parentThreadAttachmentSourceConversationId: "parent-thread-1" });
+
+  const first = projection.units[0];
+  if (first?.kind !== "message" || first.role !== "user") {
+    throw new Error("first user message should be present");
+  }
+  assertEqual(
+    first.parentThreadAttachment?.sourceConversationId ?? null,
+    "parent-thread-1",
+    "Desktop shows the parent chat attachment on the first user message in a forked subagent thread",
+  );
+
+  const second = projection.units.find((unit) => unit.kind === "message" && unit.role === "user" && unit.key === "user-2");
+  if (second?.kind !== "message" || second.role !== "user") {
+    throw new Error("second user message should be present");
+  }
+  assertEqual(
+    second.parentThreadAttachment ?? null,
+    null,
+    "parent chat attachment should only appear on the first user message",
+  );
+}
+
+function treatsRunningCommentaryTailAsAssistantItemLikeCodexDesktop(): void {
+  const items: ThreadItem[] = [
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: "Check the renderer",
+      _turnId: "turn-1",
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      command: "rg local-conversation-thread",
+      status: "completed",
+      exitCode: 0,
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-commentary-1",
+      text: "I found the Desktop split function.",
+      phase: "commentary",
+      completed: false,
+      _turnId: "turn-1",
+      _turnStatus: "in_progress",
+    } as ThreadItem,
+  ];
+
+  const split = splitTurnItems(items, "in_progress");
+  assertDeepEqual(
+    split.agentItems.map((item) => item.id),
+    ["command-1"],
+    "Desktop splits the running commentary tail out of the agent activity bucket",
+  );
+  assertEqual(split.assistantItem?.id ?? null, "assistant-commentary-1", "running commentary tail should be the assistant item");
+
+  const projection = projectConversation(items, { isThreadRunning: true });
+  assertDeepEqual(
+    projection.units.map((unit) =>
+      unit.kind === "message"
+        ? `${unit.role}:${unit.item.id}`
+        : `${unit.kind}:${unit.key}`
+    ),
+    [
+      "user:user-1",
+      "threadItem:item:exec:command-1",
+      "assistant:assistant-commentary-1",
+    ],
+    "assistant commentary with visible output should suppress the separate Thinking placeholder",
+  );
+}
+
 function groupsReasoningSummaryAndContentIntoToolActivity(): void {
   // Codex Desktop's `Jw` agent-body renderer
   // (local-conversation-thread.pretty.js:7881) maps `entry.item.type === "reasoning"`
@@ -677,6 +788,38 @@ function showsThinkingPlaceholderWhileReasoningStreams(): void {
   }
 }
 
+function dropsCompletedReasoningWithoutThoughtRemnantLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: "Explain the implementation",
+      _turnId: "turn-1",
+      _turnStatus: "completed",
+    } as ThreadItem,
+    {
+      type: "reasoning",
+      id: "reasoning-complete",
+      summary: ["Checked the renderer"],
+      content: ["This should stay out of the transcript"],
+      completed: true,
+      duration_ms: 2400,
+      _turnId: "turn-1",
+      _turnStatus: "completed",
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) =>
+      unit.kind === "message"
+        ? `${unit.role}:${unit.item.id}`
+        : `${unit.kind}:${unit.key}`
+    ),
+    ["user:user-1"],
+    "completed reasoning should not leave a Thought/Thought for remnant after the turn completes",
+  );
+}
+
 function marksIncompleteReasoningAsThinkingLikeCodexDesktop(): void {
   // Real (non-synthetic) reasoning items, even when streaming, are not surfaced
   // in agent body per Codex `Jw` :7881. The live "Thinking" UX is driven instead
@@ -726,7 +869,7 @@ function splitsReasoningFromCollapsedToolActivity(): void {
 }
 
 function groupsPendingMcpCallsSeparately(): void {
-  const projection = projectConversation([
+  const single = projectConversation([
     {
       type: "mcpToolCall",
       id: "mcp-pending-1",
@@ -747,14 +890,45 @@ function groupsPendingMcpCallsSeparately(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 2, "pending MCP calls should be split from ordinary activity");
-  const pending = projection.units[0];
-  if (pending?.kind === "toolActivity") {
-    assertEqual(pending.summary.groupType, "pending-mcp-tool-calls", "pending MCP group type");
-    assertEqual(pending.summary.label, "Calling github:list_prs", "pending MCP label should use active tool");
-    assertEqual(pending.summary.inProgress, true, "pending MCP should be marked in progress");
+  assertEqual(single.units.length, 2, "single pending MCP call should stay split from ordinary activity");
+  const singlePending = single.units[0];
+  if (singlePending?.kind === "threadItem") {
+    assertEqual(singlePending.item.id, "mcp-pending-1", "single pending MCP should stay as the original Desktop item row");
   } else {
-    throw new Error("pending MCP should render as tool activity");
+    throw new Error("single pending MCP should render as a thread item");
+  }
+
+  const multiple = projectConversation([
+    {
+      type: "mcpToolCall",
+      id: "mcp-pending-1",
+      server: "github",
+      tool: "list_prs",
+      status: "inProgress",
+      arguments: { state: "open" },
+      result: null,
+      error: null,
+    } as ThreadItem,
+    {
+      type: "mcpToolCall",
+      id: "mcp-pending-2",
+      server: "github",
+      tool: "list_issues",
+      status: "inProgress",
+      arguments: { state: "open" },
+      result: null,
+      error: null,
+    } as ThreadItem,
+  ]);
+
+  assertEqual(multiple.units.length, 1, "consecutive pending MCP calls should aggregate");
+  const pendingGroup = multiple.units[0];
+  if (pendingGroup?.kind === "toolActivity") {
+    assertEqual(pendingGroup.summary.groupType, "pending-mcp-tool-calls", "multiple pending MCP group type");
+    assertEqual(pendingGroup.summary.inProgress, true, "pending MCP group should be marked in progress");
+    assertEqual(pendingGroup.items.length, 2, "pending MCP group should retain both calls");
+  } else {
+    throw new Error("multiple pending MCP calls should render as tool activity");
   }
 }
 
@@ -789,12 +963,11 @@ function hydratesMcpAppResourceUriFromServerStatusLikeCodexDesktop(): void {
     },
   });
 
-  assertEqual(projection.units.length, 1, "MCP app calls should stay as the active tool activity");
+  assertEqual(projection.units.length, 1, "single MCP app calls should stay as the original Desktop item row");
   const unit = projection.units[0];
-  if (unit?.kind !== "toolActivity") throw new Error("MCP app call should render as tool activity");
-  assertEqual(unit.summary.groupType, "collapsed-tool-activity", "Desktop MCP apps should not become pending MCP groups");
+  if (unit?.kind !== "threadItem") throw new Error("MCP app call should render as a thread item");
   assertEqual(
-    (unit.items[0] as Record<string, unknown> | undefined)?.mcpAppResourceUri,
+    (unit.item as Record<string, unknown>).mcpAppResourceUri,
     "ui://browser/widget.html",
     "Desktop server tool metadata should hydrate the MCP app resource URI before rendering",
   );
@@ -837,7 +1010,7 @@ function suppressesPendingMcpCallCoveredByElicitation(): void {
   const projection = projectConversation([
     {
       type: "mcp-server-elicitation",
-      id: "elicitation-1",
+      requestId: "elicitation-1",
       completed: false,
       elicitation: { kind: "generic", serverName: "github" },
     } as unknown as ThreadItem,
@@ -855,13 +1028,54 @@ function suppressesPendingMcpCallCoveredByElicitation(): void {
 
   assertEqual(
     projection.units.length,
-    0,
-    "pending MCP call covered by an elicitation should not duplicate the composer-level request",
+    1,
+    "pending MCP elicitation should render the Desktop awaiting-approval transcript row",
   );
+  assertEqual(projection.units[0]?.kind, "threadItem", "pending MCP elicitation should be a thread item row");
+  if (projection.units[0]?.kind === "threadItem") {
+    assertEqual(projection.units[0].key, "item:mcp-server-elicitation:elicitation-1", "pending MCP elicitation row key should use requestId");
+  }
   assertEqual(
     projection.sources.length,
     0,
     "suppressed pending MCP call should not create a source entry",
+  );
+
+  const connectorProjection = projectConversation([
+    {
+      type: "mcp-server-elicitation",
+      id: "connector-auth-1",
+      completed: false,
+      elicitation: {
+        kind: "connectorAuth",
+        connector: { connector_id: "gmail", connector_name: "Gmail" },
+      },
+    } as unknown as ThreadItem,
+    {
+      type: "mcpToolCall",
+      id: "mcp-pending-gmail",
+      server: "gmail",
+      tool: "search_mail",
+      status: "inProgress",
+      arguments: { query: "invoice" },
+      result: null,
+      error: null,
+    } as ThreadItem,
+  ]);
+
+  assertEqual(
+    connectorProjection.units.length,
+    1,
+    "Desktop connectorAuth elicitations should suppress covered pending MCP calls",
+  );
+  assertEqual(connectorProjection.units[0]?.kind, "threadItem", "connectorAuth elicitation should render as the blocking row");
+  if (connectorProjection.units[0]?.kind === "threadItem") {
+    assertEqual(connectorProjection.units[0].item.id, "connector-auth-1", "connectorAuth row item");
+  }
+  assertEqual(
+    connectorProjection.sources.length,
+    0,
+    "connectorAuth-suppressed pending MCP call should not create a source entry",
   );
 }
 
@@ -888,10 +1102,26 @@ function projectsDesktopLifecycleEventsSemantically(): void {
       response: { decision: "approved" },
     } as unknown as ThreadItem,
     {
+      type: "userInput",
+      id: "user-input-completed-1",
+      completed: true,
+      questions: [{ question: "Proceed?", options: ["Yes", "No"] }],
+    } as unknown as ThreadItem,
+    {
       type: "user-input-response",
       id: "user-input-response-1",
+      completed: true,
       questionsAndAnswers: [
         { question: "Proceed?", answers: ["Yes", "Use current thread"] },
+      ],
+    } as unknown as ThreadItem,
+    {
+      type: "user-input-response",
+      id: "user-input-response-pending-1",
+      completed: false,
+      questionsAndAnswers: [
+        { question: "Proceed?", answers: [] },
+        { question: "Scope?", answers: [] },
       ],
     } as unknown as ThreadItem,
     {
@@ -913,6 +1143,22 @@ function projectsDesktopLifecycleEventsSemantically(): void {
       completed: false,
     } as unknown as ThreadItem,
     {
+      type: "contextCompaction",
+      id: "context-manual-1",
+      source: "manual",
+      completed: true,
+    } as unknown as ThreadItem,
+    {
+      type: "steered",
+      id: "steered-1",
+      completed: true,
+    } as unknown as ThreadItem,
+    {
+      type: "personality-changed",
+      id: "personality-1",
+      personality: "friendly",
+    } as unknown as ThreadItem,
+    {
       type: "remote-task-created",
       id: "remote-task-1",
       taskId: "task-123",
@@ -924,57 +1170,97 @@ function projectsDesktopLifecycleEventsSemantically(): void {
       toModel: "gpt-5.4",
       reason: "highRiskCyberActivity",
     } as unknown as ThreadItem,
+    {
+      type: "forked-from-conversation",
+      id: "forked-from-conversation-1",
+      sourceConversationId: "parent-thread-1",
+    } as unknown as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 8, "pending permission request should stay out of the transcript");
+  assertEqual(projection.units.length, 11, "request items should stay out of the transcript while response/result items remain visible");
   assertDeepEqual(
     projection.units.map((unit) => unit.kind === "event" ? unit.label : unit.kind),
     [
-      "MCP server elicitation",
-      "Permission request",
-      "User input response",
+      "Asked 1 question",
+      "Asking questions",
       "Stream error",
       "System error",
-      "Context compaction",
-      "Remote task created",
-      "Model rerouted",
+      "Automatically compacting context",
+      "Context compacted",
+      "Steered conversation",
+      "Switched to Friendly personality",
+      "Created task in Codex Cloud",
+      "Your request was routed to GPT-5.4.",
+      "Forked from conversation",
     ],
     "Desktop lifecycle item labels should be semantic",
   );
 
-  const elicitation = eventByKey(projection, "elicitation-completed-1");
-  assertTextIncludes(elicitation.text, "Status: completed", "completed MCP elicitation status");
-  assertTextIncludes(elicitation.text, "Action: allow", "completed MCP elicitation action");
-
-  const permission = eventByKey(projection, "permission-completed-1");
-  assertTextIncludes(permission.text, "Reason: Needs write access", "permission reason");
-  assertTextIncludes(permission.text, "Response: granted", "permission response should match Desktop markdown semantics");
-
   const userInput = eventByKey(projection, "user-input-response-1");
-  assertTextIncludes(userInput.text, "- Proceed?", "user input response question");
-  assertTextIncludes(userInput.text, "  - Use current thread", "user input response answer");
+  assertEqual(userInput.format, "user-input-response", "completed user input response should use Desktop's summary row format");
+  assertEqual(userInput.text, "Asked 1 question", "completed user input response summary");
+  assertTextIncludes(userInput.details ?? "", "Proceed?", "user input response details should contain the question");
+  assertTextIncludes(userInput.details ?? "", "Yes, Use current thread", "user input response details should contain comma-joined answers");
+
+  const pendingUserInput = eventByKey(projection, "user-input-response-pending-1");
+  assertEqual(pendingUserInput.format, "user-input-response", "pending user input response should use Desktop's in-progress summary row format");
+  assertEqual(pendingUserInput.text, "Asking questions", "pending user input response summary");
+  assertEqual(pendingUserInput.details ?? "", "", "pending user input response should not expose completed Q/A details");
 
   const streamError = eventByKey(projection, "stream-error-1");
   assertEqual(streamError.tone, "error", "stream errors should carry error tone");
-  assertEqual(streamError.format, "markdown", "stream errors with details should render through markdown disclosure");
-  assertTextIncludes(streamError.text, "Connection dropped", "stream error content");
-  assertTextIncludes(streamError.text, "<details><summary>Details</summary>", "stream error details should be behind disclosure");
-  assertTextIncludes(streamError.text, "Retry the turn.", "stream error details");
+  assertEqual(streamError.format, "stream-error", "stream errors should use Desktop's lightweight stream-error row");
+  assertEqual(streamError.text, "Connection dropped", "stream error content");
+  assertEqual(streamError.details, "Retry the turn.", "stream error details should stay separate from visible text");
 
   const systemError = eventByKey(projection, "system-error-1");
   assertEqual(systemError.tone, "error", "system errors should carry error tone");
-  assertEqual(systemError.format, "markdown", "system errors with raw detail should render through markdown disclosure");
-  assertTextIncludes(systemError.text, "Sandbox failed", "system error content");
-  assertTextIncludes(systemError.text, "<details><summary>Details</summary>", "system error raw detail should be behind disclosure");
-  assertTextIncludes(systemError.text, "Sandbox profile denied /tmp/hicodex-write.", "system error raw detail");
+  assertEqual(systemError.format, "system-error", "system errors should use Desktop's plain system-error row");
+  assertEqual(systemError.text, "Sandbox failed", "system error content");
+  assertEqual(systemError.details ?? "", "", "system errors should not expose raw details in the transcript row");
 
   const context = eventByKey(projection, "context-1");
-  assertTextIncludes(context.text, "Source: auto", "context compaction source");
-  assertTextIncludes(context.text, "Status: running", "context compaction status");
+  assertEqual(context.format, "context-status", "context compaction should render as Desktop's divider status row");
+  assertEqual(context.text, "Automatically compacting context", "automatic in-progress context compaction label");
 
-  assertTextIncludes(eventByKey(projection, "remote-task-1").text, "Task ID: task-123", "remote task id");
-  assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "gpt-5.3 -> gpt-5.4", "model reroute transition");
-  assertTextIncludes(eventByKey(projection, "model-rerouted-1").text, "Reason: highRiskCyberActivity", "model reroute reason");
+  const manualContext = eventByKey(projection, "context-manual-1");
+  assertEqual(manualContext.format, "context-status", "manual context compaction should render as Desktop's divider status row");
+  assertEqual(manualContext.text, "Context compacted", "manual completed context compaction label");
+
+  const steered = eventByKey(projection, "steered-1");
+  assertEqual(steered.format, "status", "steered items should use Desktop's compact status-row format");
+  assertEqual(steered.text, "Steered conversation", "steered text should match Desktop's visible status label");
+
+  const personality = eventByKey(projection, "personality-1");
+  assertEqual(personality.format, "divider-status", "personality changes should render as Desktop's divider status row");
+  assertEqual(personality.text, "Switched to Friendly personality", "personality changed label");
+
+  const remoteTask = eventByKey(projection, "remote-task-1");
+  assertEqual(remoteTask.format, "divider-status", "remote task created should render as Desktop's divider status row");
+  assertEqual(remoteTask.text, "Created task in Codex Cloud", "remote task created label");
+
+  const modelRerouted = eventByKey(projection, "model-rerouted-1");
+  assertEqual(modelRerouted.format, "divider-status", "model reroutes should render as Desktop's divider status row");
+  assertEqual(modelRerouted.text, "Your request was routed to GPT-5.4.", "model reroute label");
+
+  const forked = eventByKey(projection, "forked-from-conversation-1");
+  assertEqual(forked.format, "divider-status", "forked conversation events should render as Desktop's divider status row");
+  assertEqual(forked.text, "Forked from conversation", "forked conversation label");
+}
+
+function formatsAutomationRrulesLikeCodexDesktop(): void {
+  assertEqual(automationScheduleSummary("FREQ=HOURLY"), "Hourly", "hourly automation summary");
+  assertEqual(automationScheduleSummary("FREQ=MINUTELY;INTERVAL=30"), "Every 30m", "minutely automation summary");
+  assertTextIncludes(
+    automationScheduleSummary("FREQ=DAILY;BYHOUR=9;BYMINUTE=0") ?? "",
+    "Daily at",
+    "daily automation summary should use Desktop's readable schedule form",
+  );
+  assertEqual(
+    automationScheduleSummary("FREQ=MONTHLY;BYMONTHDAY=1"),
+    "Custom schedule",
+    "unsupported compact schedule should fall back like Desktop",
+  );
 }
 
 function projectsErrorDetailFieldsAsDisclosures(): void {
@@ -1000,19 +1286,19 @@ function projectsErrorDetailFieldsAsDisclosures(): void {
   ]);
 
   const camel = eventByKey(projection, "camel-stream-error");
-  assertEqual(camel.format, "markdown", "camel-case stream error details should use markdown disclosure");
-  assertTextIncludes(camel.text, "<details><summary>Details</summary>", "camel-case stream details disclosure");
-  assertTextIncludes(camel.text, "Camel detail", "camel-case stream details content");
+  assertEqual(camel.format, "stream-error", "camel-case stream error details should use Desktop's stream-error format");
+  assertEqual(camel.text, "Stream stopped", "camel-case stream error visible text");
+  assertEqual(camel.details, "Camel detail", "camel-case stream details content");
 
   const snake = eventByKey(projection, "snake-stream-error");
-  assertEqual(snake.format, "markdown", "snake-case stream error details should use markdown disclosure");
-  assertTextIncludes(snake.text, "<details><summary>Details</summary>", "snake-case stream details disclosure");
-  assertTextIncludes(snake.text, "Snake detail", "snake-case stream details content");
+  assertEqual(snake.format, "stream-error", "snake-case stream error details should use Desktop's stream-error format");
+  assertEqual(snake.text, "Stream failed", "snake-case stream error visible text");
+  assertEqual(snake.details, "Snake detail", "snake-case stream details content");
 
   const raw = eventByKey(projection, "raw-system-error");
-  assertEqual(raw.format, "markdown", "raw system error details should use markdown disclosure");
-  assertTextIncludes(raw.text, "<details><summary>Details</summary>", "raw system details disclosure");
-  assertTextIncludes(raw.text, "\"code\": \"E_SANDBOX\"", "raw system details content");
+  assertEqual(raw.format, "system-error", "raw system error details should use Desktop's system-error format");
+  assertEqual(raw.text, "System failed", "raw system error visible text");
+  assertEqual(raw.details ?? "", "", "raw system details should not render in Desktop's system-error row");
 }
 
 function filtersNonHighRiskModelReroutesLikeCodexDesktop(): void {
@@ -1040,6 +1326,25 @@ function filtersNonHighRiskModelReroutesLikeCodexDesktop(): void {
   );
 }
 
+function rendersRawParentContextForkEventsAsDesktopForkRows(): void {
+  const projection = projectConversation([
+    {
+      type: "forked-from-conversation",
+      id: "fork-parent-context",
+      kind: "parent-context",
+      sourceConversationId: "parent-1",
+    } as unknown as ThreadItem,
+  ]);
+
+  const forked = eventByKey(projection, "fork-parent-context");
+  assertEqual(forked.format, "divider-status", "raw forked events should still render as Desktop divider rows");
+  assertEqual(
+    forked.text,
+    "Forked from conversation",
+    "Desktop's parent-context label belongs to the user attachment chip, not the raw fork event",
+  );
+}
+
 function projectsContextCompactionSnapshotStatusFromTurnState(): void {
   const projection = projectConversation([
     {
@@ -1050,8 +1355,8 @@ function projectsContextCompactionSnapshotStatusFromTurnState(): void {
   ]);
 
   const context = eventByKey(projection, "context-snapshot");
-  assertTextIncludes(context.text, "Source: automatic", "context compaction snapshots should use Desktop's default source");
-  assertTextIncludes(context.text, "Status: completed", "context compaction snapshots should inherit completed turn status");
+  assertEqual(context.format, "context-status", "context compaction snapshots should render as Desktop's divider row");
+  assertEqual(context.text, "Context automatically compacted", "context compaction snapshots should inherit completed turn status");
 }
 
 function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
@@ -1089,8 +1394,13 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
     {
       type: "automation-update",
       id: "automation-update-1",
+      arguments: {
+        mode: "create",
+        name: "Morning run",
+        rrule: "FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+      },
       result: {
-        mode: "recording",
+        mode: "create",
         automationId: "automation-123",
       },
     } as unknown as ThreadItem,
@@ -1102,7 +1412,7 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
     } as unknown as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 6, "renderable Desktop event items should stay visible");
+  assertEqual(projection.units.length, 5, "renderable Desktop event items should stay visible");
   const diff = eventByKey(projection, "turn-diff-1");
   assertEqual(diff.label, "Diff", "turn diff label");
   assertEqual(diff.format, "diff", "turn diff should use diff rendering");
@@ -1136,12 +1446,15 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
   );
 
   const automation = eventByKey(projection, "automation-update-1");
-  assertTextIncludes(automation.text, "Mode: recording", "automation update mode");
-  assertTextIncludes(automation.text, "Automation ID: automation-123", "automation update id");
+  assertTextIncludes(automation.label, "Created · Morning run · Daily at", "automation update label");
+  assertTextIncludes(automation.text, "Created · Morning run · Daily at", "automation update visible text");
+  assertEqual(automation.format, "automation-update", "automation update should use Desktop's compact automation row");
 
-  const planImplementation = eventByKey(projection, "plan-implementation-1");
-  assertTextIncludes(planImplementation.text, "Status: running", "plan implementation running status");
-  assertTextIncludes(planImplementation.text, "Implement renderer parity", "plan implementation content");
+  assertEqual(
+    projection.units.some((unit) => unit.key === "plan-implementation-1"),
+    false,
+    "Desktop returns null for plan-implementation thread items",
+  );
 }
 
 function projectsOfficialImageGenerationTurnOutputIntoGallery(): void {
@@ -1456,16 +1769,146 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
       "user:user-1",
       "threadItem:item:exec:command-1",
       "assistant:assistant-1",
-      "generatedImageGallery:gallery:turn-1",
+      "event:warning-1",
       "threadItem:item:proposed-plan:plan-1",
-      "event:diff-1",
       "event:remote-1",
     ],
     "projectConversation should render split Desktop buckets in VT order",
   );
+  const modelChanged = eventByKey(projection, "model-changed-1");
+  assertEqual(modelChanged.format, "divider-status", "model changes should render as Desktop's divider status row");
+  assertEqual(modelChanged.text, "Model changed from GPT-5.3 to GPT-5.4.", "model changed label");
+
+  const assistant = projection.units.find((unit) => unit.kind === "message" && unit.role === "assistant");
+  if (assistant?.kind !== "message" || assistant.role !== "assistant") {
+    throw new Error("assistant message should be present");
+  }
+  assertEqual(
+    assistant.assistantAfter?.[0]?.kind,
+    "generatedImageGallery",
+    "generated image gallery should be attached as assistantAfter",
+  );
+  assertEqual(
+    assistant.assistantAfter?.[1]?.kind,
+    "assistantAfterEvent",
+    "turn diff should attach to assistantAfter when assistant output exists",
+  );
+  assertEqual(
+    assistant.assistantAfter?.[1]?.key,
+    "diff-1",
+    "assistantAfter turn diff should keep the original diff key",
+  );
+  assertEqual(
+    assistant.assistantAfter?.[0]?.key,
+    "gallery:turn-1",
+    "assistantAfter gallery should keep the turn-scoped key",
+  );
+  const warning = eventByKey(projection, "warning-1");
+  assertEqual(warning.label, "Turn ended by Auto-review", "auto-review interruption warning label");
+  assertEqual(warning.format, "divider-status", "auto-review interruption warning should use Desktop's divider status row");
+  assertEqual(warning.text, "Turn ended by Auto-review", "auto-review interruption warning visible text");
+
+  const remote = eventByKey(projection, "remote-1");
+  assertEqual(remote.format, "divider-status", "remote task rows should use Desktop's divider status row");
+  assertEqual(remote.text, "Created task in Codex Cloud", "remote task row visible text");
 }
 
-function rendersTurnDiffWhenNoBlockingRequestLikeCodexDesktop(): void {
+function keepsHeartbeatUserMessagesInsideTheCurrentDesktopTurn(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-heartbeat",
+      content: [{ type: "text", text: "Run the check" }],
+    } as ThreadItem,
+    {
+      type: "commandExecution",
+      id: "command-1",
+      _turnId: "turn-heartbeat",
+      command: "npm test",
+      status: "completed",
+      exitCode: 0,
+    } as ThreadItem,
+    {
+      type: "userMessage",
+      id: "heartbeat-user-1",
+      _turnId: "turn-heartbeat",
+      heartbeatTrigger: { automationId: "automation-heartbeat-1" },
+      content: [{ type: "text", text: "Heartbeat check" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-1",
+      _turnId: "turn-heartbeat",
+      text: "Checks passed.",
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.kind === "message" ? `${unit.role}:${unit.key}` : `${unit.kind}:${unit.key}`),
+    [
+      "user:user-1",
+      "user:heartbeat-user-1",
+      "threadItem:item:exec:command-1",
+      "assistant:assistant-1",
+    ],
+    "heartbeat-trigger user messages should stay in the same Desktop turn instead of starting a new segment",
+  );
+}
+
+function attachesAutomationUpdatesToCompletedAssistantLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-automation",
+      _turnId: "turn-automation",
+      content: "Create an automation.",
+    } as ThreadItem,
+    {
+      type: "automation-update",
+      id: "automation-update-create",
+      _turnId: "turn-automation",
+      callId: "automation-call-1",
+      arguments: {
+        id: "automation-123",
+        mode: "create",
+        name: "Morning run",
+      },
+      result: {
+        mode: "create",
+        automationId: "automation-123",
+      },
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-automation",
+      _turnId: "turn-automation",
+      text: "Done.",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  assertEqual(
+    projection.units.length,
+    2,
+    "trailing automation updates should not render as standalone rows once a completed assistant closes the turn",
+  );
+  const assistant = projection.units[1];
+  assertEqual(assistant?.kind, "message", "completed assistant should stay as the final message unit");
+  if (assistant?.kind === "message") {
+    const automationCitations = (assistant.item as { automationCitations?: unknown[] }).automationCitations ?? [];
+    assertEqual(automationCitations.length, 1, "assistant item should carry Desktop automationCitations");
+    assertEqual(
+      (automationCitations[0] as { id?: string } | undefined)?.id,
+      "automation-update-create",
+      "automation citation should preserve the source update item",
+    );
+  }
+}
+
+function attachesTurnDiffToAssistantAfterLikeCodexDesktop(): void {
   const projection = projectConversation([
     {
       type: "userMessage",
@@ -1490,8 +1933,428 @@ function rendersTurnDiffWhenNoBlockingRequestLikeCodexDesktop(): void {
 
   assertDeepEqual(
     projection.units.map((unit) => unit.key),
-    ["user-1", "assistant-1", "diff-1"],
-    "turn-diff should render when the turn has no blocking request and is not in prose mode",
+    ["user-1", "assistant-1"],
+    "turn-diff should attach to the assistant after-content when a final assistant exists",
+  );
+  const assistant = projection.units[1];
+  if (assistant?.kind !== "message" || assistant.role !== "assistant") {
+    throw new Error("assistant message should be present");
+  }
+  assertDeepEqual(
+    assistant.assistantAfter?.map((unit) => unit.kind),
+    ["assistantAfterEvent"],
+    "assistant after-content should include the static turn diff",
+  );
+  assertEqual(
+    assistant.assistantAfter?.[0]?.key ?? null,
+    "diff-1",
+    "assistant after diff should preserve the original turn-diff key",
+  );
+}
+
+function attachesEndResourcesAndSuppressesCoveredTurnDiffLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-resource",
+      _turnId: "turn-resource",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Create a report" }],
+    } as unknown as ThreadItem,
+    {
+      type: "fileChange",
+      id: "file-change-report",
+      _turnId: "turn-resource",
+      status: "completed",
+      changes: [{ path: "reports/summary.xlsx", kind: { type: "add" }, diff: "+a,b" }],
+    } as unknown as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-resource",
+      _turnId: "turn-resource",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-resource",
+      _turnId: "turn-resource",
+      _turnStatus: "completed",
+      text: "Created `reports/summary.xlsx`.",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.key),
+    ["user-resource", "collapsed-tool-activity:file-change-report", "assistant-resource"],
+    "covered edited-file resources should suppress the turn-diff row while preserving patch activity",
+  );
+  const assistant = projection.units[2];
+  if (assistant?.kind !== "message" || assistant.role !== "assistant") {
+    throw new Error("assistant resource message should be present");
+  }
+  assertDeepEqual(
+    assistant.assistantAfter?.map((unit) => unit.kind),
+    ["assistantEndResources"],
+    "Desktop end resources should render as assistant after-content before review comments and diff",
+  );
+  const resources = assistant.assistantAfter?.[0];
+  if (resources?.kind !== "assistantEndResources") {
+    throw new Error("assistant end resources should be present");
+  }
+  assertDeepEqual(
+    resources.resources,
+    [{ type: "file", path: "reports/summary.xlsx" }],
+    "end resources should include the edited file once",
+  );
+}
+
+function rendersEndResourcesWithoutAssistantLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-resource",
+      _turnId: "turn-resource",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Create a page" }],
+    } as unknown as ThreadItem,
+    {
+      type: "fileChange",
+      id: "file-change-page",
+      _turnId: "turn-resource",
+      status: "completed",
+      changes: [{ path: "dist/index.html", kind: { type: "add" }, diff: "+<html />" }],
+    } as unknown as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-resource",
+      _turnId: "turn-resource",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => `${unit.kind}:${unit.key}`),
+    ["message:user-resource", "toolActivity:collapsed-tool-activity:file-change-page", "assistantEndResources:end-resources:turn-resource"],
+    "Desktop renders end resources as a standalone trailing row when no assistant item exists",
+  );
+  const resourceUnit = projection.units[2];
+  if (resourceUnit?.kind !== "assistantEndResources") {
+    throw new Error("standalone end resource unit should be present");
+  }
+  assertDeepEqual(
+    resourceUnit.resources,
+    [{ type: "website", target: "dist/index.html" }],
+    "a single edited HTML file should become Desktop's website resource fallback",
+  );
+}
+
+function suppressesGeneratedImagesForPptxEndResourceWithoutAssistantLikeDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-pptx-no-assistant",
+      _turnId: "turn-pptx-no-assistant",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Generate a deck" }],
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "image-for-deck-no-assistant",
+      _turnId: "turn-pptx-no-assistant",
+      status: "completed",
+      result: "DECKPNG",
+    } as unknown as ThreadItem,
+    {
+      type: "fileChange",
+      id: "file-change-deck",
+      _turnId: "turn-pptx-no-assistant",
+      status: "completed",
+      changes: [{ path: "slides/deck.pptx", kind: { type: "add" }, diff: "+pptx" }],
+    } as unknown as ThreadItem,
+  ]);
+
+  assertEqual(
+    projection.units.some((unit) => unit.kind === "generatedImageGallery"),
+    false,
+    "Desktop suppresses generated-image galleries when a .pptx end resource exists even without a final assistant",
+  );
+  const resourceUnit = projection.units.find((unit) => unit.kind === "assistantEndResources");
+  if (resourceUnit?.kind !== "assistantEndResources") {
+    throw new Error("standalone pptx end resource should be present");
+  }
+  assertDeepEqual(
+    resourceUnit.resources,
+    [{ type: "file", path: "slides/deck.pptx" }],
+    "pptx end resource should still render as the standalone output",
+  );
+}
+
+function skipsEditedMarkdownEndResourceUnlessLinkedLikeCodexDesktop(): void {
+  const editedOnly = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-md",
+      _turnId: "turn-md",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Write notes" }],
+    } as unknown as ThreadItem,
+    {
+      type: "fileChange",
+      id: "file-change-md",
+      _turnId: "turn-md",
+      status: "completed",
+      changes: [{ path: "docs/notes.md", kind: { type: "add" }, diff: "+notes" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-md",
+      _turnId: "turn-md",
+      _turnStatus: "completed",
+      text: "Updated the notes.",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+  const editedAssistant = editedOnly.units.find((unit) => unit.kind === "message" && unit.role === "assistant");
+  if (editedAssistant?.kind !== "message" || editedAssistant.role !== "assistant") {
+    throw new Error("edited markdown assistant should be present");
+  }
+  assertEqual(
+    editedAssistant.assistantAfter?.some((unit) => unit.kind === "assistantEndResources") ?? false,
+    false,
+    "Desktop does not create an end-resource card for a directly edited md/mdx file",
+  );
+
+  const linked = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-md-linked",
+      _turnId: "turn-md-linked",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Write notes" }],
+    } as unknown as ThreadItem,
+    {
+      type: "fileChange",
+      id: "file-change-md-linked",
+      _turnId: "turn-md-linked",
+      status: "completed",
+      changes: [{ path: "docs/notes.md", kind: { type: "add" }, diff: "+notes" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-md-linked",
+      _turnId: "turn-md-linked",
+      _turnStatus: "completed",
+      text: "Updated [notes](docs/notes.md).",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+  const linkedAssistant = linked.units.find((unit) => unit.kind === "message" && unit.role === "assistant");
+  if (linkedAssistant?.kind !== "message" || linkedAssistant.role !== "assistant") {
+    throw new Error("linked markdown assistant should be present");
+  }
+  const linkedResources = linkedAssistant.assistantAfter?.find((unit) => unit.kind === "assistantEndResources");
+  if (linkedResources?.kind !== "assistantEndResources") {
+    throw new Error("linked markdown resource should be present");
+  }
+  assertDeepEqual(
+    linkedResources.resources,
+    [{ type: "file", path: "docs/notes.md" }],
+    "Desktop still creates end resources for md/mdx files explicitly linked from assistant markdown",
+  );
+}
+
+function parsesDesktopMarkdownEndResourceLinks(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-resource-links",
+      _turnId: "turn-resource-links",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Create linked resources" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-resource-links",
+      _turnId: "turn-resource-links",
+      _turnStatus: "completed",
+      text: [
+        "Created [Budget [Q1]](reports/budget(2026).xlsx \"Budget\").",
+        "Also `[Deck](<slides/final%20deck.pptx>)`.",
+        "",
+        "```",
+        "[ignored](reports/ignored.xlsx)",
+        "```",
+      ].join("\n"),
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  const assistant = projection.units[1];
+  if (assistant?.kind !== "message" || assistant.role !== "assistant") {
+    throw new Error("assistant resource-links message should be present");
+  }
+  const resources = assistant.assistantAfter?.find((unit) => unit.kind === "assistantEndResources");
+  if (resources?.kind !== "assistantEndResources") {
+    throw new Error("assistant resource links should produce end resources");
+  }
+  assertDeepEqual(
+    resources.resources,
+    [
+      { type: "file", path: "reports/budget(2026).xlsx" },
+      { type: "file", path: "slides/final deck.pptx" },
+    ],
+    "Desktop markdown end-resource parsing should support nested labels, destination parentheses, angle destinations, inline-code links, and fenced-code exclusion",
+  );
+}
+
+function ignoresUnsafeWebsiteFallbacksLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-website",
+      _turnId: "turn-website",
+      content: [{ type: "text", text: "Preview a website" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-website",
+      _turnId: "turn-website",
+      _turnStatus: "completed",
+      text: "Preview http://localhost:3000/report(foo) when ready.",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  const assistant = projection.units[1];
+  if (assistant?.kind !== "message" || assistant.role !== "assistant") {
+    throw new Error("assistant website message should be present");
+  }
+  assertEqual(
+    assistant.assistantAfter?.some((unit) => unit.kind === "assistantEndResources") ?? false,
+    false,
+    "Desktop website fallback ignores URLs whose path/query/hash contains brackets or parentheses",
+  );
+}
+
+function attachesReviewCommentsToAssistantAfterLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-review",
+      cwd: "/workspace/project",
+      content: [{ type: "text", text: "Review projection" }],
+    } as unknown as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-1",
+      _turnId: "turn-review",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-review",
+      _turnId: "turn-review",
+      _turnStatus: "completed",
+      text: [
+        "Review complete.",
+        "",
+        ":code-comment{title=\"Guard branch\" body=\"Handle the missing value.\" file=\"src/app.ts\" priority=1 start=4 end=6}",
+      ].join("\n"),
+      completed: true,
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.key),
+    ["user-1", "assistant-review"],
+    "review comments should attach to the assistant after-content instead of adding transcript rows",
+  );
+  const assistant = projection.units[1];
+  if (assistant?.kind !== "message" || assistant.role !== "assistant") {
+    throw new Error("assistant review message should be present");
+  }
+  assertDeepEqual(
+    assistant.assistantAfter?.map((unit) => unit.kind),
+    ["assistantReviewComments", "assistantAfterEvent"],
+    "assistant after-content should follow Desktop's review-comments-before-diff order",
+  );
+  const reviewUnit = assistant.assistantAfter?.[0];
+  if (reviewUnit?.kind !== "assistantReviewComments") {
+    throw new Error("assistant review comments should be the first after-content unit");
+  }
+  assertDeepEqual(
+    reviewUnit.comments,
+    [
+      {
+        title: "Guard branch",
+        body: "Handle the missing value.",
+        path: "/workspace/project/src/app.ts",
+        line: 6,
+        startLine: 4,
+        priority: "P1",
+      },
+    ],
+    "review comments should parse Desktop code-comment directives and resolve paths against cwd",
+  );
+}
+
+function rendersTurnDiffWithoutAssistantAsStandaloneLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-1",
+      content: [{ type: "text", text: "Patch projection" }],
+    } as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-1",
+      _turnId: "turn-1",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.units.map((unit) => unit.key),
+    ["user-1", "diff-1"],
+    "turn-diff should remain standalone when the turn has no assistant item",
+  );
+}
+
+function hidesStaticTurnDiffWhileTurnIsRunningLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      _turnId: "turn-1",
+      content: [{ type: "text", text: "Patch projection" }],
+    } as ThreadItem,
+    {
+      type: "turn-diff",
+      id: "diff-1",
+      _turnId: "turn-1",
+      unifiedDiff: "+changed",
+    } as unknown as ThreadItem,
+  ], {
+    isThreadRunning: true,
+  });
+
+  assertEqual(
+    projection.units.some((unit) => unit.key === "diff-1"),
+    false,
+    "running turns should not render the static turn-diff card",
+  );
+  assertEqual(
+    projection.units.some((unit) => unit.key.includes("in-progress-diff")),
+    false,
+    "running live diff is owned by the above-composer portal, not render groups",
   );
 }
 
@@ -1536,6 +2399,11 @@ function keepsCurrentTailExecRowsAsActivityWhileTurnIsRunning(): void {
   if (unit?.kind === "toolActivity") {
     assertEqual(unit.summary.groupType, "collapsed-tool-activity", "running tail exec should keep the ordinary activity group");
     assertEqual(unit.items[0]?.id, "command-1", "running activity should preserve the command item");
+    assertDeepEqual(
+      unit.summary.labelParts,
+      { action: "Running", detail: "npm run build" },
+      "running tail exec should keep Desktop commandRunningWithDetail action/detail styling",
+    );
   }
 }
 
@@ -1723,11 +2591,17 @@ function keepsRunningWorkedForAfterRehydratedAssistantCommentary(): void {
   );
 }
 
-function keepsTodoListInMainConversationAndProjectsProgress(): void {
+function keepsTodoListOutOfMainConversationAndProjectsProgress(): void {
   const projection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-1",
+      content: [{ type: "text", text: "Track progress" }],
+    } as ThreadItem,
     {
       type: "todo-list",
       id: "todo-1",
+      _turnId: "turn-1",
       plan: [
         { step: "Inspect Codex Desktop output", status: "completed" },
         { step: "Patch HiCodex projection", status: "in_progress" },
@@ -1736,14 +2610,15 @@ function keepsTodoListInMainConversationAndProjectsProgress(): void {
     {
       type: "agentMessage",
       id: "assistant-1",
+      _turnId: "turn-1",
       text: "Projection updated.",
       phase: "final",
       memoryCitation: null,
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 2, "todo-list should render as an inline plan card plus the assistant message");
-  assertEqual(projection.units[0]?.kind, "threadItem", "todo-list should render as a main conversation thread item");
+  assertEqual(projection.units.length, 2, "todo-list should not add a main conversation row");
+  assertEqual(projection.units[0]?.kind, "message", "user message should remain in the main conversation");
   assertEqual(projection.units[1]?.kind, "message", "assistant message should remain in the main conversation");
   assertDeepEqual(
     projection.progress.map((entry) => entry.title),
@@ -1904,6 +2779,48 @@ function groupsExplorationCommandActionsLikeCodexDesktop(): void {
   }
 }
 
+function preservesDesktopPathTextInToolActivitySummaries(): void {
+  const longPath = `./packages/ui/src/state/${"nested/".repeat(12)}tool-activity-grouping.ts`;
+  const normalizedLongPath = `packages/ui/src/state/${"nested/".repeat(12)}tool-activity-grouping.ts`;
+  const exploration = {
+    type: "commandExecution",
+    id: "long-search-1",
+    command: `rg Codex ${longPath}`,
+    status: "completed",
+    commandActions: [
+      { type: "search", command: `rg Codex ${longPath}`, query: "Codex", path: longPath },
+    ],
+    aggregatedOutput: `${normalizedLongPath}:1:Codex`,
+    exitCode: 0,
+  } as unknown as ThreadItem;
+  const activePatch = {
+    type: "fileChange",
+    id: "patch-long-1",
+    status: "running",
+    success: null,
+    changes: [
+      { path: "./packages\\ui\\src\\state\\tool-activity-grouping.ts", kind: { type: "update", move_path: null }, diff: "@@" },
+    ],
+  } as unknown as ThreadItem;
+
+  assertEqual(
+    formatItemDetail(exploration),
+    `Searched for Codex in ${normalizedLongPath}`,
+    "expanded exploration details should preserve Desktop's full normalized search path text",
+  );
+
+  const projection = projectConversation([activePatch], { isThreadRunning: true });
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "toolActivity", "active patch should render as a tool activity row");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(
+      unit.summary.label,
+      "Editing packages/ui/src/state/tool-activity-grouping.ts",
+      "active patch summaries should normalize path text and leave visual truncation to CSS",
+    );
+  }
+}
+
 function labelsSkillExplorationActionsLikeCodexDesktop(): void {
   const cwd = "/workspace/project";
   const skillDefinition = {
@@ -1971,9 +2888,20 @@ function labelsSkillExplorationActionsLikeCodexDesktop(): void {
   assertEqual(unit?.kind, "toolActivity", "active skill read should render as tool activity");
   if (unit?.kind === "toolActivity") {
     assertEqual(
+      unit.summary.groupType,
+      "collapsed-tool-activity",
+      "active skill definition reads should stay out of Desktop exploration groups",
+    );
+    assertEqual(unit.summary.icon, "skill", "active skill definition reads should use the Desktop skill activity icon");
+    assertEqual(
       unit.summary.label,
       "Reading Code Review skill",
       "active skill definition reads should use Codex Desktop's Reading skill label",
+    );
+    assertDeepEqual(
+      unit.summary.labelParts,
+      { action: "Reading", detail: "Code Review skill" },
+      "active skill definition reads should keep Desktop's action/detail label split",
     );
   }
 }
@@ -2372,11 +3300,27 @@ function formatsExpandedToolDetailsSemantically(): void {
       { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
     ],
   } as unknown as ThreadItem;
+  const search = {
+    type: "commandExecution",
+    id: "search-1",
+    command: "rg Button packages/ui",
+    status: "completed",
+    commandActions: [
+      { type: "search", command: "rg Button packages/ui", query: "Button", path: "packages/ui" },
+    ],
+    aggregatedOutput: "packages/ui/src/button.tsx",
+    exitCode: 0,
+  } as unknown as ThreadItem;
 
   assertEqual(
     formatItemDetail(exploration),
-    "Read src/app.ts",
-    "expanded exploration detail should use semantic read wording",
+    "Read app.ts",
+    "expanded exploration detail should use Desktop's read display name",
+  );
+  assertEqual(
+    formatItemDetail(search),
+    "Searched for Button in packages/ui",
+    "expanded exploration search detail should include both query and path like Codex Desktop",
   );
   assertEqual(
     formatItemDetail(patch),
@@ -2524,7 +3468,7 @@ function rendersInProgressMultiAgentActionsAsDesktopActivity(): void {
     assertEqual(unit.summary.label, "Spawning 1 agent", "in-progress multi-agent header");
     assertDeepEqual(
       unit.summary.details,
-      ["Spawning agent-ac...3456"],
+      ["Spawning agent-agent-ac"],
       "in-progress multi-agent rows should use Desktop row verbs",
     );
   }
@@ -2642,8 +3586,8 @@ function groupsCompletedMultiAgentActionsLikeCodexDesktop(): void {
     assertDeepEqual(
       spawned.summary.details,
       [
-        "Created agent-12...cdef with the instructions: Inspect render groups",
-        "Created agent-fe...4321 with the instructions: Inspect composer",
+        "Created agent-agent-12 with the instructions: Inspect render groups",
+        "Created agent-agent-fe with the instructions: Inspect composer",
       ],
       "spawn group rows should preserve per-agent instructions",
     );
@@ -2654,7 +3598,7 @@ function groupsCompletedMultiAgentActionsLikeCodexDesktop(): void {
     assertEqual(messaged.summary.label, "Messaged 1 agent", "sendInput group label");
     assertDeepEqual(
       messaged.summary.details,
-      ["Messaged agent-12...cdef: Continue"],
+      ["Messaged agent-agent-12: Continue"],
       "sendInput group should include the prompt row",
     );
   }

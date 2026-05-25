@@ -2,6 +2,7 @@ import {
   installPromptEditorViewStaleGuardsForTest,
   isStalePromptEditorViewError,
   promptEditorInlineNodesForTest,
+  promptEditorPasteInlineNodesForTest,
   promptEditorPromptTextRoundTripForTest,
   setPromptEditorViewDetachedForTest,
   splitPromptEditorPasteFiles,
@@ -20,6 +21,7 @@ export default function runPromptEditorTests(): void {
   stillSurfacesUnrelatedProseMirrorViewOperations();
   splitsPastedImagesFromOtherFiles();
   parsesPromptMarkdownMentionsLikeCodexDesktop();
+  parsesPastedPromptLinksLikeCodexDesktop();
   preservesPromptRichLinkSerialization();
 }
 
@@ -172,6 +174,19 @@ function parsesPromptMarkdownMentionsLikeCodexDesktop(): void {
 
   const githubAgentLabel = promptEditorInlineNodesForTest("[@repo](https://github.com/openai/codex)")[0];
   assert(githubAgentLabel?.type === "richLink", "known external URLs should stay richLink even with @ labels");
+}
+
+function parsesPastedPromptLinksLikeCodexDesktop(): void {
+  const path = "/Users/haichao/Library/Application Support/HiCodex/codex-home/skills/拆标/SKILL.md";
+  const pasted = `[$拆标](<${path}>) 拆一下标`;
+  const nodes = promptEditorPasteInlineNodesForTest(pasted);
+
+  assert(nodes[0]?.type === "skillMention", "pasted $...SKILL.md prompt link should become a skillMention");
+  assert(nodes[0].attrs.label === "$拆标", "pasted skillMention should keep the $ label");
+  assert(nodes[0].attrs.name === "拆标", "pasted skillMention should keep the skill name");
+  assert(nodes[0].attrs.displayName === "拆标", "pasted skillMention should keep the display name");
+  assert(nodes[0].attrs.path === path, "pasted skillMention should unwrap the angle-bracket path");
+  assert(nodes[1]?.type === "text" && nodes[1].text === " 拆一下标", "pasted skill link should keep trailing prose");
 }
 
 function preservesPromptRichLinkSerialization(): void {

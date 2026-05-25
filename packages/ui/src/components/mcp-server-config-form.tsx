@@ -68,6 +68,7 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
       <section
         className="hc-command-panel hc-mcp-tool-form"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label={action.title}
         onMouseDown={(event) => event.stopPropagation()}
@@ -84,7 +85,18 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
         <form onSubmit={submit}>
           <div className="hc-mcp-tool-form-body">
             <div className="hc-mcp-tool-form-summary">
-              <strong>{action.mode === "edit" ? "Edit server config" : "New MCP server"}</strong>
+              {/*
+               * Codex Desktop i18n (mcp-settings chunk):
+               *   settings.mcp.detail.titleExisting = "Update {name} MCP"
+               *   settings.mcp.detail.titleNew      = "Connect to a custom MCP"
+               */}
+              <strong>
+                {action.mode === "edit"
+                  ? values.name
+                    ? `Update ${values.name} MCP`
+                    : "Update MCP"
+                  : "Connect to a custom MCP"}
+              </strong>
               <span>Saved to Codex config.toml under mcp_servers.&lt;name&gt;.</span>
             </div>
             <div className="hc-mcp-tool-fields">
@@ -106,23 +118,32 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                   value={values.transport}
                   onChange={(event) => setValue("transport", event.currentTarget.value as McpServerConfigFormValues["transport"])}
                 >
-                  <option value="stdio">stdio</option>
-                  <option value="streamable_http">streamable HTTP</option>
+                  {/* codex: settings.mcp.detail.transport.{stdio,http} = "STDIO" / "Streamable HTTP" */}
+                  <option value="stdio">STDIO</option>
+                  <option value="streamable_http">Streamable HTTP</option>
                 </select>
               </label>
 
               {isStdio ? (
                 <>
+                  {/*
+                   * Codex Desktop i18n (mcp-settings chunk, settings.mcp.detail.*):
+                   *   command            = "Command to launch"
+                   *   args               = "Arguments"
+                   *   cwd                = "Working directory"
+                   *   envVarPassthrough  = "Environment variable passthrough"
+                   *   envVars            = "Environment variables"
+                   */}
                   <TextField
                     error={errors.command}
-                    label="Command"
+                    label="Command to launch"
                     onChange={(value) => setValue("command", value)}
                     placeholder="npx"
                     required
                     value={values.command}
                   />
                   <TextAreaField
-                    label="Args"
+                    label="Arguments"
                     onChange={(value) => setValue("args", value)}
                     placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/workspace"
                     value={values.args}
@@ -135,13 +156,13 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                   />
                   <TextAreaField
                     error={errors.env}
-                    label="Environment"
+                    label="Environment variable passthrough"
                     onChange={(value) => setValue("env", value)}
                     placeholder="TOKEN=env-value"
                     value={values.env}
                   />
                   <TextAreaField
-                    label="Env vars"
+                    label="Environment variables"
                     onChange={(value) => setValue("envVars", value)}
                     placeholder="GITHUB_TOKEN"
                     value={values.envVars}
@@ -163,16 +184,21 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                     placeholder="LINEAR_API_KEY"
                     value={values.bearerTokenEnvVar}
                   />
+                  {/*
+                   * Codex Desktop i18n (mcp-settings chunk, settings.mcp.detail.http.*):
+                   *   headers     = "Headers"
+                   *   envHeaders  = "Headers from environment variables"
+                   */}
                   <TextAreaField
                     error={errors.httpHeaders}
-                    label="HTTP headers"
+                    label="Headers"
                     onChange={(value) => setValue("httpHeaders", value)}
                     placeholder="X-Header=value"
                     value={values.httpHeaders}
                   />
                   <TextAreaField
                     error={errors.envHttpHeaders}
-                    label="Env HTTP headers"
+                    label="Headers from environment variables"
                     onChange={(value) => setValue("envHttpHeaders", value)}
                     placeholder="Authorization=LINEAR_API_KEY"
                     value={values.envHttpHeaders}
@@ -241,9 +267,10 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
               <X size={15} />
               <span>Cancel</span>
             </button>
+            {/* codex: settings.mcp.detail.save = "Save" */}
             <button className="hc-button hc-mcp-tool-submit" type="submit">
               <Save size={15} />
-              <span>Save server</span>
+              <span>Save</span>
             </button>
           </footer>
         </form>

@@ -5,17 +5,34 @@ import {
   type SidebarSortKey,
 } from "./sidebar-projection";
 
+/*
+ * Storage keys mirror Codex Desktop's `sidebar-*` localStorage namespace.
+ * Verified literally against
+ *   /private/tmp/codex-asar/webview/assets/sidebar-signals-DI3M13c-.js
+ *   /private/tmp/codex-asar/webview/assets/sidebar-project-group-signals-B2IlZT8R.js
+ *   /private/tmp/codex-asar/webview/assets/sidebar-project-groups-DUHIVRJe.js
+ * (Codex.app 26.519.41501, asar mtime 2026-05-23 17:11).
+ */
 export const SIDEBAR_ORGANIZE_MODE_STORAGE_KEY = "sidebar-organize-mode-v1";
 export const SIDEBAR_SORT_KEY_STORAGE_KEY = "thread-sort-key";
-export const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-groups";
+export const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-sections-v1";
 export const SIDEBAR_SECTION_ORDER_STORAGE_KEY = "sidebar-section-order-v1";
 
 const LEGACY_SIDEBAR_PREFERENCES_STORAGE_KEY = "hicodex:sidebar-preferences";
+/*
+ * Earlier HiCodex builds wrote collapsed-section state under
+ * `sidebar-collapsed-groups`, which never matched any Codex Desktop key.
+ * Keep the legacy name only long enough to migrate existing local state
+ * into the Desktop-aligned `sidebar-collapsed-sections-v1` slot on the
+ * next load/save cycle.
+ */
+const LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-groups";
 const DEFAULT_SIDEBAR_SECTION_ORDER = ["projects"];
 
 export interface SidebarPreferenceStorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export type SidebarCollapsedGroups = Record<string, true>;
@@ -56,7 +73,14 @@ export function loadSidebarPreferences(
   if (sortKey) next.sortKey = sortKey;
 
   const collapsedGroups = readStoredJson(storage, SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY);
-  if (collapsedGroups !== undefined) next.collapsedGroups = normalizeSidebarCollapsedGroups(collapsedGroups);
+  if (collapsedGroups !== undefined) {
+    next.collapsedGroups = normalizeSidebarCollapsedGroups(collapsedGroups);
+  } else {
+    const legacyCollapsedGroups = readStoredJson(storage, LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY);
+    if (legacyCollapsedGroups !== undefined) {
+      next.collapsedGroups = normalizeSidebarCollapsedGroups(legacyCollapsedGroups);
+    }
+  }
 
   const sectionOrder = readStoredJson(storage, SIDEBAR_SECTION_ORDER_STORAGE_KEY);
   if (sectionOrder !== undefined) next.sectionOrder = normalizeSidebarSectionOrder(sectionOrder);
@@ -74,6 +98,7 @@ export function saveSidebarPreferences(
   safeSetItem(storage, SIDEBAR_SORT_KEY_STORAGE_KEY, normalized.sortKey);
   safeSetItem(storage, SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(normalized.collapsedGroups));
   safeSetItem(storage, SIDEBAR_SECTION_ORDER_STORAGE_KEY, JSON.stringify(normalized.sectionOrder));
+  safeRemoveItem(storage, LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY);
 }
 
 export function normalizeSidebarPreferences(
@@ -187,6 +212,15 @@ function safeSetItem(storage: SidebarPreferenceStorageLike, key: string, value: 
     storage.setItem(key, value);
   } catch {
     // Sidebar preferences remain in memory when browser storage is unavailable.
+  }
+}
+
+function safeRemoveItem(storage: SidebarPreferenceStorageLike, key: string): void {
+  if (typeof storage.removeItem !== "function") return;
+  try {
+    storage.removeItem(key);
+  } catch {
+    // Same tolerance as safeSetItem: storage failures do not break preference flow.
   }
 }
 

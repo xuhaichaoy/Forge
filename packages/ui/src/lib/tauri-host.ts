@@ -139,6 +139,123 @@ export function createPendingWorktree(
   return invoke("host_create_pending_worktree", { request });
 }
 
+// codex: composer-footer-branch-switcher-CamXBKfA.js — branch picker host API.
+// `lastCommitMs` mirrors the `committerdate:unix * 1000` we emit on the Rust
+// side; the renderer uses it to sort recents to the top.
+// codex: branch-picker-extension — `isRemote` flips on for entries surfaced
+// by the optional `git branch -r` pass (see `listGitBranches` options below).
+export interface GitBranchInfo {
+  name: string;
+  lastCommitMs: number | null;
+  isCurrent: boolean;
+  isRemote: boolean;
+}
+
+export interface GitBranchesResponse {
+  current: string | null;
+  branches: GitBranchInfo[];
+}
+
+// codex: branch-picker-extension — opt-in flag mirroring Codex Desktop's
+// "Remote branches" section toggle. When omitted/false the host returns only
+// local refs (the original behaviour); when true it emits local + remote refs
+// in one response so the renderer can render the two sections without a
+// second round-trip.
+export interface ListGitBranchesOptions {
+  includeRemote?: boolean;
+}
+
+/**
+ * codex: composer-footer-branch-switcher-CamXBKfA.js — `useGitCurrentBranch`
+ * + `useGitRecentBranches` collapsed into a single call. When `cwd` is not a
+ * git repository the host returns `{ current: null, branches: [] }` so the
+ * renderer can hide the chip silently.
+ *
+ * codex: branch-picker-extension — pass `{ includeRemote: true }` to also
+ * include `git branch -r` entries (each carries `isRemote: true`).
+ */
+export function listGitBranches(
+  cwd: string,
+  options?: ListGitBranchesOptions,
+): Promise<GitBranchesResponse> {
+  return invoke<GitBranchesResponse>("host_git_list_branches", {
+    cwd,
+    includeRemote: options?.includeRemote === true,
+  });
+}
+
+/**
+ * codex: composer-footer-branch-switcher-CamXBKfA.js — picker click handler.
+ * Rejects when git refuses the checkout (uncommitted changes, missing branch,
+ * etc.) so callers can surface the inline error.
+ */
+export function checkoutGitBranch(cwd: string, branchName: string): Promise<void> {
+  return invoke("host_git_checkout_branch", { cwd, branchName });
+}
+
+// codex: branch-picker-extension — Codex Desktop `useGitDefaultBranch` hook.
+// Returns the short name of the repository's default branch (typically the
+// target of `origin/HEAD`); falls back to git's `init.defaultBranch` config so
+// local-only repos still surface a default chip.
+export interface GitDefaultBranchResponse {
+  defaultBranch: string | null;
+}
+
+export function getGitDefaultBranch(cwd: string): Promise<GitDefaultBranchResponse> {
+  return invoke<GitDefaultBranchResponse>("host_git_default_branch", { cwd });
+}
+
+// codex: branch-picker-extension — Codex Desktop "Create new branch" action.
+// `basedOn` lets callers create a tracking branch from a remote (`git
+// checkout -b feature-x origin/feature-x`); when omitted git creates the new
+// branch from HEAD. Rejects on duplicate names, invalid characters, etc.
+export function createGitBranch(
+  cwd: string,
+  branchName: string,
+  basedOn?: string,
+): Promise<void> {
+  return invoke("host_git_create_branch", {
+    request: { cwd, branchName, basedOn: basedOn ?? null },
+  });
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
+// Mirrors Codex Desktop's `pullRequestStatus` widget that renders inside the
+// Environment section (row 4). The host runs `gh pr status --json ...` in
+// `cwd`; the renderer projects the result into the row UI.
+export interface GhPrInfo {
+  number: number;
+  title: string;
+  url: string;
+  isDraft: boolean;
+  /**
+   * gh's `mergeable` enum (e.g. "MERGEABLE", "CONFLICTING", "UNKNOWN").
+   * Null when gh omits the field — Codex Desktop's widget tolerates null and
+   * falls through to its default copy in that case.
+   */
+  mergeable: string | null;
+  /** `OPEN` / `CLOSED` / `MERGED` — drives the status badge color. */
+  state: string;
+  headRefName: string;
+}
+
+export interface GhPrStatusResponse {
+  /** `git branch --show-current` snapshot so the renderer can hide the row when detached. */
+  currentBranch: string | null;
+  /** Null when the current branch has no PR (Codex hides the widget in that case). */
+  pr: GhPrInfo | null;
+}
+
+/**
+ * codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
+ * Returns the current branch's PR via `gh pr status`. Throws when gh is
+ * missing or the cwd is not a git repository so callers can decide between
+ * silent-hide and surfaced-error UX.
+ */
+export function ghPrStatus(cwd: string): Promise<GhPrStatusResponse> {
+  return invoke<GhPrStatusResponse>("host_gh_pr_status", { cwd });
+}
+
 /*
  * Patch revert / reapply bridge. Mirrors Codex Desktop's `revertChanges` /
  * `reapplyChanges` toolbar handler — see docs/dev/codex-alignment-unified-diff.md
@@ -351,4 +468,29 @@ function normalizedExternalUrl(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * codex: workspace-directory-tree-CHHgPVoD :_e — single non-recursive list of a
+ * directory's direct children. Renderer drives recursion via expand events;
+ * Codex Desktop keys the corresponding query on `{ hostId, root, dirPath,
+ * includeHidden, refreshKey }` and applies `staleTime = FIVE_SECONDS`.
+ */
+export type WorkspaceDirEntry = {
+  type: "directory" | "file";
+  path: string;
+  name: string;
+};
+
+export async function workspaceListDir(params: {
+  root: string;
+  dirPath: string;
+  includeHidden: boolean;
+}): Promise<WorkspaceDirEntry[]> {
+  const response = await invoke<{ entries: WorkspaceDirEntry[] }>("host_workspace_list_dir", {
+    root: params.root,
+    dirPath: params.dirPath,
+    includeHidden: params.includeHidden,
+  });
+  return response.entries;
 }

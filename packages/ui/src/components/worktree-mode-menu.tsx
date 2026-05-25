@@ -64,6 +64,7 @@ export function WorktreeModeMenu({
           className="hc-thread-menu hc-app-popover-menu"
           id="hc-worktree-mode-menu"
           role="menu"
+          data-state="open"
         >
           {options.map((option) => (
             <WorktreeModeMenuItem

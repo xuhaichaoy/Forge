@@ -13,13 +13,13 @@ There are two unrelated places generated images can appear in Codex Desktop:
 
 The earlier claim "Codex does not render inline generated images, only the right rail" was incorrect. The accurate statement: **no independent ThreadItem card, but YES a turn-level gallery in addition to the right-rail Artifacts list**.
 
-HiCodex currently exposes generated images via:
+HiCodex exposes generated images via:
 
-- `project-conversation.ts` placing them into `toolOutputItems`.
-- `event-projection.ts` emitting a markdown image into the assistant message.
+- `project-conversation.ts` aggregating turn-scoped `generated-image` / `imageGeneration` items into one `generatedImageGallery` render unit.
 - `right-rail.tsx` rendering them as right-rail artifacts.
+- `event-projection.ts` emitting a markdown image only for legacy/orphan items outside normal turn grouping.
 
-HiCodex does NOT currently have a turn-level inline gallery equivalent.
+HiCodex now has the turn-level inline gallery equivalent.
 
 ## 2. Filename pattern
 
@@ -65,7 +65,7 @@ Render rules:
 - Pending images: `flex h-24 w-24 ...` loading placeholder tile.
 - Preview source: `previewSrc`; local file data is fetched through the `app://` bridge.
 
-HiCodex implementation status: this surface is not implemented; see [gap matrix](./codex-alignment-gap-matrix.md) G1.
+HiCodex implementation status: implemented by `project-conversation.ts` + `generated-image-gallery.tsx`; see [gap matrix](./codex-alignment-gap-matrix.md) G1.
 
 ## 6. Full-screen lightbox
 
@@ -73,9 +73,11 @@ A separate component handles full-screen preview with prev/next/close affordance
 
 - Container: `group/generated-image-gallery-controls relative overflow-hidden`.
 - Close: `Close image preview` (`codex.localConversation.closeGeneratedImagePreview`).
-- Prev: `Previous images` (`codex.localConversation.generatedImageGallery.previousImages`).
-- Next: `Next images` (`codex.localConversation.generatedImageGallery.nextImages`).
+- Carousel prev/next: `Previous images` / `Next images` (`codex.localConversation.generatedImageGallery.*`).
+- Lightbox prev/next: `Previous image` / `Next image` (`imagePreviewDialog.previousImage` / `imagePreviewDialog.nextImage`).
 - `imageNumber` counter is 1-based (`displayIndex + 1`).
+
+HiCodex implementation status: `GeneratedImageGallery` uses `ImagePreviewLightbox` controlled mode with no visible card header, `Close image preview`, generic image-preview prev/next labels, `Download image`, zoom controls, `no-referrer`, and the thread-content max-width cap.
 
 ## 7. ThreadItem types that DO NOT render as transcript cards
 

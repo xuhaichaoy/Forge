@@ -40,6 +40,7 @@ export function ThreadActionDialog({
       <section
         className="hc-thread-dialog-panel"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label={action.kind === "rename" ? "Rename chat" : "Archive chat?"}
         onMouseDown={(event) => event.stopPropagation()}

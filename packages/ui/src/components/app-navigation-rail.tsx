@@ -1,9 +1,9 @@
 import { BookOpen, LayoutDashboard, Settings } from "lucide-react";
 
-export type AppNavigationTab = "workbench" | "knowledge";
+export type AppNavigationTab = "workbench" | "knowledge" | "remoteTask";
 
 const appNavigationItems: Array<{
-  id: AppNavigationTab;
+  id: Exclude<AppNavigationTab, "remoteTask">;
   label: string;
   Icon: typeof LayoutDashboard;
 }> = [

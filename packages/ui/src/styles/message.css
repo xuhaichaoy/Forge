@@ -6,7 +6,7 @@
 
 .hc-message {
   min-width: 0;
-  line-height: var(--codex-chat-line-height);
+  line-height: var(--hc-chat-line-height);
 }
 
 .hc-message.user {
@@ -58,6 +58,16 @@
   border-color: rgba(34, 38, 43, 0.16);
   background: rgba(255, 253, 250, 0.96);
   box-shadow: 0 8px 18px rgba(34, 38, 43, 0.07);
+}
+
+.hc-assistant-resource-card.is-show-more {
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 12px;
+  color: #636862;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.3;
 }
 
 .hc-assistant-resource-card-icon {
@@ -126,6 +136,157 @@
   color: #8b8f89;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.hc-assistant-review-comments {
+  display: flex;
+  width: min(100%, 560px);
+  max-width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  margin-top: 10px;
+  border: 1px solid rgba(34, 38, 43, 0.10);
+  border-radius: 8px;
+  background: rgba(255, 253, 250, 0.86);
+  box-shadow: 0 4px 14px rgba(34, 38, 43, 0.05);
+}
+
+.hc-assistant-review-comments-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  color: #22262b;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.hc-assistant-review-comments-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(34, 38, 43, 0.06);
+  color: #646862;
+}
+
+.hc-assistant-review-comments-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-top: 1px solid rgba(34, 38, 43, 0.10);
+}
+
+.hc-assistant-review-comment-row,
+.hc-assistant-review-comments-toggle {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.hc-assistant-review-comment-row,
+.hc-assistant-review-comments-toggle {
+  cursor: pointer;
+}
+
+button.hc-assistant-review-comment-row:hover,
+button.hc-assistant-review-comment-row:focus-visible,
+.hc-assistant-review-comments-toggle:hover,
+.hc-assistant-review-comments-toggle:focus-visible {
+  background: rgba(34, 38, 43, 0.045);
+  outline: none;
+}
+
+.hc-assistant-review-comment-row-content {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  color: #22262b;
+  font-size: var(--codex-chat-font-size);
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.hc-assistant-review-comment-priority-slot {
+  display: flex;
+  width: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+}
+
+.hc-assistant-review-comment-priority {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  border: 1px solid rgba(34, 38, 43, 0.14);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #6a6e68;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.hc-assistant-review-comment-title {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.hc-assistant-review-comment-location {
+  min-width: 6rem;
+  flex: 1 1 6rem;
+  overflow: hidden;
+  color: #6f716b;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-assistant-review-comments-toggle {
+  display: flex;
+  height: 36px;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: #4f5650;
+  font-size: var(--codex-chat-font-size);
+  line-height: 1.3;
+}
+
+.hc-assistant-review-comments-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-assistant-review-comments-toggle svg {
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+
+.hc-assistant-review-comments-toggle svg.is-open {
+  transform: rotate(90deg);
 }
 
 .hc-assistant-placeholder {
@@ -248,6 +409,43 @@
   align-self: flex-end;
 }
 
+.hc-parent-thread-attachment {
+  display: inline-flex;
+  max-width: 77%;
+  min-width: 0;
+  align-items: center;
+  align-self: flex-end;
+  gap: 6px;
+  border: 1px solid rgba(34, 38, 43, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 253, 250, 0.8);
+  color: #4d514a;
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 5px 8px;
+}
+
+button.hc-parent-thread-attachment {
+  cursor: pointer;
+}
+
+button.hc-parent-thread-attachment:hover {
+  border-color: rgba(34, 38, 43, 0.22);
+  color: #22262b;
+}
+
+.hc-parent-thread-attachment svg {
+  flex: none;
+}
+
+.hc-parent-thread-attachment span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /*
  * Codex `T`/`ke` renders user text inside a `whitespace-pre-wrap` flow
  * (`reply-pigVihi-.js:14212`). Mirror that here so inline `$skill` /
@@ -274,6 +472,11 @@
 .hc-user-message-inline .hc-user-chip {
   vertical-align: middle;
   margin-inline: 1px;
+}
+
+.hc-user-message-inline .hc-user-chip-skill {
+  margin-inline: 0;
+  vertical-align: baseline;
 }
 
 .hc-user-message-collapse {
@@ -401,9 +604,51 @@
   border-color: rgba(45, 85, 98, 0.25);
 }
 
-/* File-type attachment chip: bordered pill with a colored file icon, matches Codex Desktop's user-message-attachments shape. */
 .hc-user-chip-file {
   max-width: 18rem;
+}
+
+.hc-user-chip-skill {
+  display: inline;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0.125em;
+  color: var(--hc-inline-mention-color, #2d7ec8);
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+}
+
+.hc-user-chip-skill-icon-slot {
+  position: relative;
+  display: inline-block;
+  width: 16px;
+  height: 1lh;
+  margin-right: 3px;
+  vertical-align: bottom;
+}
+
+.hc-user-chip-skill-icon-slot > svg,
+.hc-user-chip-skill-icon-slot > img {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+}
+
+.hc-user-chip-skill-label {
+  min-width: 0;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.hc-user-chip-skill-icon {
+  display: block;
 }
 
 .hc-user-chip-file > span {
@@ -411,6 +656,26 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hc-user-attachment-pill {
+  max-width: 18rem;
+  border-color: rgba(34, 38, 43, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 253, 250, 0.82);
+  color: #4d514a;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 5px 8px;
+}
+
+.hc-user-message-attachments .hc-user-attachment-pill {
+  margin: 0;
+}
+
+button.hc-user-attachment-pill:hover {
+  border-color: rgba(34, 38, 43, 0.22);
+  color: #22262b;
 }
 
 .hc-user-chip-icon-img {
@@ -430,7 +695,7 @@
   min-width: 0;
   width: 100%;
   font-size: var(--codex-chat-font-size);
-  line-height: var(--codex-chat-line-height);
+  line-height: var(--hc-chat-line-height);
 }
 
 .hc-markdown.is-indexed-fade .hc-markdown-fade-in,
@@ -712,6 +977,16 @@
   color: #6f716b;
 }
 
+/* codex: local-conversation-thread-CecHj6JI.js#dh — completed goal chip mirrors
+   Codex's "Goal achieved in {totalTime}" pill (divider + icon + label). */
+.hc-message-goal-chip {
+  max-width: 220px;
+  overflow: hidden;
+  color: #6f716b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hc-user-message-action-strip {
   display: flex;
   align-items: center;
@@ -913,6 +1188,46 @@
   color: var(--hc-text-secondary);
 }
 
+.hc-app[data-theme="dark"] .hc-assistant-review-comments {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-header {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-icon {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-list {
+  border-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] button.hc-assistant-review-comment-row:hover,
+.hc-app[data-theme="dark"] button.hc-assistant-review-comment-row:focus-visible,
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle:hover,
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle:focus-visible {
+  background: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-review-comment-row-content {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-review-comment-priority {
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-review-comment-location,
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle {
+  color: var(--hc-text-secondary);
+}
+
 .hc-app[data-theme="dark"] .hc-assistant-placeholder {
   color: var(--hc-text-secondary);
 }
@@ -924,6 +1239,10 @@
 .hc-app[data-theme="dark"] .hc-user-message-bubble {
   background: var(--hc-surface-soft);
   color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-chip-skill {
+  color: var(--hc-inline-mention-color, #8ecbff);
 }
 
 .hc-app[data-theme="dark"] .hc-user-edit-form {
@@ -980,4 +1299,108 @@
 .hc-app[data-theme="dark"] .hc-auto-review-command-list code {
   background: var(--hc-surface-soft);
   color: var(--hc-text-primary);
+}
+
+/* codex: local-conversation-thread-CecHj6JI.js#sh — `<div className="mt-3 flex
+ * flex-wrap gap-1.5">{citations.map(<Jm>)}</div>`. The row sits just below
+ * the markdown body; chips are pill-shaped with a faint border and reuse
+ * `--hc-surface-hover` for the hover state so they feel like the rest of the
+ * action chips in the assistant row.
+ */
+.hc-automation-citation-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.hc-automation-citation-row-item {
+  display: inline-flex;
+}
+
+.hc-automation-citation-inline-list {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-inline-start: 6px;
+  vertical-align: baseline;
+}
+
+.hc-automation-citation-inline-item {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.hc-automation-citation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+  font-size: 12px;
+  line-height: 1.2;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+button.hc-automation-citation-chip {
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.hc-automation-citation-chip:hover,
+.hc-automation-citation-chip:focus-visible {
+  background: var(--hc-surface-hover);
+}
+
+.hc-automation-citation-chip-icon {
+  flex-shrink: 0;
+  color: var(--hc-text-secondary);
+}
+
+.hc-automation-citation-chip-action {
+  flex-shrink: 0;
+  color: var(--hc-text-secondary);
+}
+
+.hc-automation-citation-chip-separator {
+  flex-shrink: 0;
+  margin-inline: -2px;
+  color: var(--hc-text-tertiary);
+}
+
+.hc-automation-citation-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.hc-automation-citation-chip-meta {
+  color: var(--hc-text-secondary);
+  font-size: 11px;
+  padding-left: 4px;
+  border-left: 1px solid var(--hc-border-default);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 96px;
+}
+
+.hc-app[data-theme="dark"] .hc-automation-citation-chip {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-automation-citation-chip:hover,
+.hc-app[data-theme="dark"] .hc-automation-citation-chip:focus-visible {
+  background: var(--hc-surface-hover);
 }

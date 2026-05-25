@@ -13,6 +13,7 @@ export default function runPendingRequestStackTests(): void {
   detectsCommandsAndPaths();
   keepsPlainLanguageDetailsAsText();
   preservesCommandPreviewText();
+  rendersExecPolicyOptionCommandAsTruncatedCode();
   detectsSafeEnterSubmitScope();
   selectsRadioOptionsWithNumberKeysWithoutSubmitting();
   rendersMcpAndToolRequestsAsGenericComposerCards();
@@ -36,6 +37,22 @@ function preservesCommandPreviewText(): void {
   const heredoc = "/bin/zsh -lc 'cat > ~/Downloads/hicodex_demo.html <<\\'HTML\\'\n<div>preview</div>\nHTML'";
   assertEqual(commandPreviewText({ command: heredoc }), heredoc, "multiline command preview should stay as one preview block");
   assertEqual(commandPreviewText({ command: ["npm", "run", "typecheck"] }), "npm run typecheck", "argv commands should join for preview");
+}
+
+function rendersExecPolicyOptionCommandAsTruncatedCode(): void {
+  const html = renderToStaticMarkup(createElement(PendingRequestStack, {
+    pendingRequests: [
+      request("approval", "item/commandExecution/requestApproval", {
+        command: "npm test",
+        proposedExecpolicyAmendment: ["npm", "test", "--", "--very-long-filter"],
+      }),
+    ],
+    onRespond: () => undefined,
+  }));
+
+  assertIncludes(html, "hc-request-option-code", "execpolicy option should render the command as a code preview");
+  assertIncludes(html, 'data-code-layout="inline"', "single-line execpolicy previews should use Desktop's inline truncation layout");
+  assertIncludes(html, "Yes, and don&#x27;t ask again for commands that start with</span><code", "prefix and command should not be one unbroken text node");
 }
 
 function detectsSafeEnterSubmitScope(): void {

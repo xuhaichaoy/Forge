@@ -33,11 +33,55 @@
 .hc-settings-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  /*
+   * CODEX-REF: Codex Desktop nav container uses gap-0 inside the parent;
+   * row gap lives on the group descendant (`L` component className `gap-0`,
+   * outer container `gap-4` to separate groups). Mirror that here.
+   * settings-page-TI1bCoqP.js around byte offset of the `e=>(0,X.jsx)(L,...)`
+   * group renderer.
+   */
+  gap: 0;
   overflow: auto;
   padding: 10px;
   border-right: 1px solid #dedbd1;
   background: #f4f2ec;
+}
+
+/*
+ * CODEX-REF: One `<L>` group per Codex `_e` entry. Inside the group, items
+ * sit tight (`gap-0` in Codex); we use a small 4px gap so the rounded hover
+ * background of adjacent items doesn't visually merge.
+ */
+.hc-settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/*
+ * CODEX-REF: Codex separates groups with `gap-4` (~16px) on the outer flex.
+ * We approximate with margin-top on the second+ group.
+ */
+.hc-settings-nav-group + .hc-settings-nav-group {
+  margin-top: 14px;
+}
+
+/*
+ * CODEX-REF: Group heading rendered by `<a {...e.heading}/>` inside `L`'s
+ * `title` slot (settings-page-TI1bCoqP.js: `title: v||e.heading==null?null:
+ * (0,X.jsx)(a,{...e.heading})`). The visible string is the resolved
+ * `defaultMessage` of `settings.nav.heading.app` / `.host` — i.e. "App" / "Host".
+ * The actual Codex Desktop typography for the `L` title isn't exposed in this
+ * chunk's className strings (likely styled inside the `L` component itself);
+ * we use a conventional settings-nav heading look: small caps-ish weight,
+ * muted, left-aligned with the icon column of the buttons below.
+ */
+.hc-settings-nav-group-heading {
+  padding: 6px 8px 4px;
+  color: #8b8e85;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 .hc-settings-nav-item {
@@ -465,6 +509,34 @@
   line-height: 1.2;
 }
 
+/* codex: app-main-DG-Mf4Wj.js — command menu top-level sections (Thread /
+   Panels / Navigation / Workspace / Skills / Configure / App). */
+.hc-command-panel-section {
+  display: grid;
+  gap: 8px;
+}
+
+.hc-command-panel-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 2px 2px;
+  color: #5f6159;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.hc-command-panel-section-count {
+  color: #97968d;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .hc-command-panel-chat-empty {
   display: flex;
   min-height: 144px;
@@ -565,6 +637,40 @@
   font-size: 10px;
   font-weight: 750;
   text-transform: uppercase;
+}
+
+/*
+ * codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+ * Trailing kbd hint mirrors the muted glyph row that Codex renders next to
+ * each command palette item (⌘K, ⌘,, etc.). Mute by default so the hint
+ * stays unobtrusive next to the status pill / secondary actions, and lift
+ * opacity to 1 on row hover/focus/active to echo Codex's emphasis.
+ */
+.hc-command-panel-row-accelerator {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 5px;
+  border: 1px solid #d6d3c8;
+  background: #f3f1e8;
+  color: #6f716b;
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  opacity: 0.65;
+  transition: opacity 0.12s ease;
+}
+
+.hc-command-panel-row[data-actionable="true"]:hover .hc-command-panel-row-accelerator,
+.hc-command-panel-row[data-actionable="true"]:focus-visible .hc-command-panel-row-accelerator,
+.hc-command-panel-row[data-actionable="true"][data-active="true"] .hc-command-panel-row-accelerator {
+  opacity: 1;
+}
+
+.hc-command-panel-row[data-disabled="true"] .hc-command-panel-row-accelerator {
+  opacity: 0.4;
 }
 
 .hc-command-secondary-actions {
@@ -1090,4 +1196,512 @@ textarea.hc-mcp-tool-control {
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/*
+ * codex: keyboard-shortcuts-settings-C5AEKt2i.js — full keyboard shortcuts
+ * panel. HiCodex renders it as a stand-alone modal (vs Codex's Settings tab).
+ */
+.hc-keyboard-shortcuts-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  max-height: min(640px, 88vh);
+  border-radius: 14px;
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+  color: var(--hc-text-primary);
+  overflow: hidden;
+}
+
+.hc-keyboard-shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--hc-border-subtle);
+}
+
+.hc-keyboard-shortcuts-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hc-keyboard-shortcuts-close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--hc-text-secondary);
+  cursor: pointer;
+}
+
+.hc-keyboard-shortcuts-close:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-keyboard-shortcuts-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--hc-border-subtle);
+  color: var(--hc-text-secondary);
+}
+
+.hc-keyboard-shortcuts-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.hc-keyboard-shortcuts-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.hc-keyboard-shortcuts-section {
+  padding: 4px 16px 8px;
+}
+
+.hc-keyboard-shortcuts-section-title {
+  margin: 8px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hc-text-secondary);
+}
+
+.hc-keyboard-shortcuts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hc-keyboard-shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 6px;
+  border-radius: 6px;
+}
+
+.hc-keyboard-shortcuts-row:hover {
+  background: var(--hc-surface-hover);
+}
+
+.hc-keyboard-shortcuts-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.hc-keyboard-shortcuts-row-title {
+  font-size: 13px;
+  color: var(--hc-text-primary);
+}
+
+.hc-keyboard-shortcuts-row-desc {
+  font-size: 12px;
+  color: var(--hc-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-keyboard-shortcuts-row-kbd {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 6px;
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+  font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.hc-keyboard-shortcuts-row-kbd--empty {
+  background: transparent;
+  border-style: dashed;
+  color: var(--hc-text-secondary);
+  opacity: 0.5;
+}
+
+.hc-keyboard-shortcuts-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--hc-text-secondary);
+  font-size: 13px;
+}
+
+/*
+ * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js capture mode visuals.
+ * Codex captures inline inside the row; HiCodex uses a modal so the styles
+ * are bespoke. Color tokens reuse the existing settings palette.
+ */
+.hc-key-capture-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 90vw);
+  border-radius: 12px;
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+  color: var(--hc-text-primary);
+  overflow: hidden;
+}
+
+.hc-key-capture-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--hc-border-subtle);
+}
+
+.hc-key-capture-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hc-key-capture-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hc-key-capture-command {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hc-text-primary);
+}
+
+.hc-key-capture-current {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hc-text-secondary);
+}
+
+.hc-key-capture-kbd {
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--hc-surface-subtle, #ebe7dc);
+  color: var(--hc-text-primary);
+  font-family: var(--hc-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.hc-key-capture-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 6px;
+  background: var(--hc-surface-default, #fffdfa);
+  color: var(--hc-text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.hc-key-capture-input:focus {
+  border-color: var(--hc-text-accent, #2d5562);
+}
+
+.hc-key-capture-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--hc-text-secondary);
+}
+
+.hc-key-capture-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--hc-border-subtle);
+}
+
+/*
+ * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js inline editor.
+ * 3-column table where the middle column swaps into a capture input
+ * (colSpan=2) when a row enters edit mode. Hover reveals pencil/trash/undo
+ * icon actions. The conflict warning renders inline beneath the capture
+ * input, never blocking commit.
+ */
+.hc-keyboard-settings {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hc-keyboard-settings-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hc-border-subtle);
+  color: var(--hc-text-secondary);
+}
+
+.hc-keyboard-settings-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.hc-keyboard-settings-section {
+  padding: 8px 16px 4px;
+}
+
+.hc-keyboard-settings-section-title {
+  margin: 8px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hc-text-secondary);
+}
+
+.hc-keyboard-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.hc-keyboard-settings-row {
+  border-bottom: 1px solid var(--hc-border-subtle, rgba(0,0,0,0.04));
+}
+
+.hc-keyboard-settings-row > td {
+  padding: 8px 6px;
+  vertical-align: middle;
+}
+
+.hc-keyboard-settings-cell-command {
+  width: 50%;
+}
+
+.hc-keyboard-settings-cell-keybinding {
+  width: 30%;
+  white-space: nowrap;
+}
+
+.hc-keyboard-settings-cell-actions {
+  width: 20%;
+  text-align: right;
+}
+
+.hc-keyboard-settings-cell-capture {
+  width: 50%;
+}
+
+.hc-keyboard-settings-command-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hc-text-primary);
+}
+
+.hc-keyboard-settings-command-desc {
+  font-size: 11px;
+  color: var(--hc-text-secondary);
+  margin-top: 2px;
+}
+
+.hc-keyboard-settings-kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--hc-surface-subtle, #ebe7dc);
+  color: var(--hc-text-primary);
+  font-family: var(--hc-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.hc-keyboard-settings-kbd--empty {
+  background: transparent;
+  color: var(--hc-text-secondary);
+  opacity: 0.5;
+}
+
+.hc-keyboard-settings-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.hc-keyboard-settings-row:hover .hc-keyboard-settings-actions,
+.hc-keyboard-settings-row:focus-within .hc-keyboard-settings-actions {
+  opacity: 1;
+}
+
+.hc-keyboard-settings-icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--hc-text-secondary);
+  cursor: pointer;
+}
+
+.hc-keyboard-settings-icon-button:hover {
+  background: var(--hc-surface-hover, rgba(0,0,0,0.05));
+  color: var(--hc-text-primary);
+}
+
+.hc-keyboard-settings-capture-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--hc-text-accent, #2d5562);
+  border-radius: 4px;
+  background: var(--hc-surface-default, #fffdfa);
+  color: var(--hc-text-primary);
+  font: inherit;
+  outline: none;
+}
+
+.hc-keyboard-settings-conflict {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #b35a00;
+}
+
+.hc-keyboard-settings-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--hc-text-secondary);
+  font-size: 13px;
+}
+
+/*
+ * CODEX-REF: appearance-settings-BLTO9KX5.js inline editor layout. Codex
+ * renders each setting as a row of `<label> + control`, separated by a thin
+ * divider. HiCodex tokens reuse the existing hc-* palette.
+ */
+.hc-appearance-settings {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 8px;
+}
+
+.hc-appearance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hc-border-subtle, rgba(0,0,0,0.04));
+}
+
+.hc-appearance-row:last-child {
+  border-bottom: 0;
+}
+
+.hc-appearance-row-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hc-appearance-row-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--hc-text-primary);
+}
+
+.hc-appearance-row-desc {
+  font-size: 11px;
+  color: var(--hc-text-secondary);
+  margin-top: 2px;
+}
+
+.hc-appearance-row-control {
+  flex: 0 0 auto;
+}
+
+.hc-segmented-toggle {
+  display: inline-flex;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--hc-surface-subtle, #ebe7dc);
+}
+
+.hc-segmented-toggle-option {
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hc-segmented-toggle-option[data-selected="true"] {
+  background: var(--hc-surface-default, #fffdfa);
+  color: var(--hc-text-primary);
+}
+
+.hc-segmented-toggle-option:not([data-selected="true"]):hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-appearance-number-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hc-appearance-number-input input {
+  width: 60px;
+  padding: 5px 8px;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 6px;
+  background: var(--hc-surface-default, #fffdfa);
+  color: var(--hc-text-primary);
+  font: inherit;
+  text-align: right;
+  outline: none;
+}
+
+.hc-appearance-number-input input:focus {
+  border-color: var(--hc-text-accent, #2d5562);
+}
+
+.hc-appearance-number-input-unit {
+  font-size: 12px;
+  color: var(--hc-text-secondary);
 }

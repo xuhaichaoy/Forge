@@ -128,14 +128,19 @@ export function summarizeToolActivity(
         details.push(exploration.label);
         if (itemInProgress) pushActiveDetail(exploration.activeLabel);
       } else {
+        const skillReadLabelParts = runningSkillDefinitionReadLabelParts(item);
+        const commandActivityLabel = skillReadLabelParts
+          ? labelFromParts(skillReadLabelParts)
+          : commandLabel(item);
         counts.commands += 1;
         if (itemInProgress) counts.runningCommands += 1;
         if (commandSearchesWebLikeCodexDesktop(item)) counts.webSearchCommands += 1;
         if (itemInProgress && commandCreatesFolderLikeCodexDesktop(item)) counts.runningFolderCreationCommands += 1;
         if (itemInProgress && commandSearchesWebLikeCodexDesktop(item)) counts.runningWebSearchCommands += 1;
-        details.push(commandLabel(item));
+        details.push(commandActivityLabel);
         if (itemInProgress) {
-          if (commandSearchesWebLikeCodexDesktop(item)) pushActiveDetail("Searching the web");
+          if (skillReadLabelParts) pushActiveDetail(commandActivityLabel);
+          else if (commandSearchesWebLikeCodexDesktop(item)) pushActiveDetail("Searching the web");
           else if (commandCreatesFolderLikeCodexDesktop(item)) pushActiveDetail("Creating folder");
           else pushActiveDetail(commandLabel(item));
         }
@@ -232,6 +237,7 @@ export function summarizeToolActivity(
     : groupType === "worked-for"
       ? groupLabel
     : activeDetail ?? itemLevelLabel ?? groupLabel;
+  const directSkillReadLabelParts = directRunningSkillDefinitionReadLabelParts(items);
   const labelParts = directItemLabelParts(items, {
     conversationDetailLevel: options.conversationDetailLevel,
     groupType,
@@ -241,7 +247,7 @@ export function summarizeToolActivity(
 
   return {
     groupType,
-    icon: activityIcon(groupType, counts),
+    icon: directSkillReadLabelParts ? "skill" : activityIcon(groupType, counts),
     label,
     ...(labelParts ? { labelParts } : {}),
     activeDetail,
@@ -274,16 +280,18 @@ function directItemLabelParts(
     activeDetail: string | null;
   },
 ): { action: string; detail: string } | undefined {
-  if (activeDetail) return undefined;
   if (conversationDetailLevel !== "STEPS_COMMANDS" || groupType !== "collapsed-tool-activity") {
     return undefined;
   }
   if (items.length !== 1) return undefined;
   const item = items[0];
   if (!item || itemType(item) !== "exec" || explorationSummary(item)) return undefined;
+  const skillReadLabelParts = runningSkillDefinitionReadLabelParts(item);
+  if (skillReadLabelParts) return skillReadLabelParts;
   if (commandSearchesWebLikeCodexDesktop(item)) return undefined;
   if (!inProgress && !isCompletedRecord(item as ItemRecord)) return undefined;
   const parts = commandLabelParts(item);
+  if (activeDetail && (!parts || labelFromParts(parts) !== activeDetail)) return undefined;
   return parts ?? undefined;
 }
 
@@ -396,6 +404,7 @@ interface ExplorationSummary {
 function explorationSummary(item: ThreadItem): ExplorationSummary | null {
   const actions = commandActions(item).map(normalizeCommandAction).filter((action) => action !== null);
   if (actions.length === 0) return null;
+  if (runningSkillDefinitionReadAction(actions, item)) return null;
 
   const readKeys = dedupe(actions.flatMap((action) => action.type === "read" ? [explorationReadKey(action.path, item)] : []));
   const reads = readKeys.length;
@@ -466,7 +475,7 @@ function commandActions(item: ThreadItem): Record<string, unknown>[] {
 }
 
 type NormalizedCommandAction =
-  | { type: "read"; path: string; finished: boolean | null }
+  | { type: "read"; path: string; name: string; finished: boolean | null }
   | { type: "search"; path: string; query: string; finished: boolean | null }
   | { type: "listFiles"; path: string; finished: boolean | null };
 
@@ -474,7 +483,8 @@ function normalizeCommandAction(action: Record<string, unknown>): NormalizedComm
   const type = stringField(action, "type");
   const finished = typeof action.isFinished === "boolean" ? action.isFinished : null;
   if (type === "read") {
-    return { type: "read", path: stringField(action, "path") || stringField(action, "name") || "file", finished };
+    const name = stringField(action, "name");
+    return { type: "read", path: stringField(action, "path") || name || "file", name, finished };
   }
   if (type === "search") {
     return {
@@ -490,19 +500,65 @@ function normalizeCommandAction(action: Record<string, unknown>): NormalizedComm
   return null;
 }
 
+function directRunningSkillDefinitionReadLabelParts(
+  items: ThreadItem[],
+): { action: string; detail: string } | null {
+  if (items.length !== 1) return null;
+  const item = items[0];
+  return item && itemType(item) === "exec" ? runningSkillDefinitionReadLabelParts(item) : null;
+}
+
+function runningSkillDefinitionReadLabelParts(item: ThreadItem): { action: string; detail: string } | null {
+  const action = runningSkillDefinitionReadAction(
+    commandActions(item).map(normalizeCommandAction).filter((candidate) => candidate !== null),
+    item,
+  );
+  if (!action) return null;
+  const skillInfo = skillPathInfoForAction(action, item);
+  return skillInfo ? { action: "Reading", detail: `${skillInfo.skillName} skill` } : null;
+}
+
+export function isRunningSkillDefinitionRead(item: ThreadItem): boolean {
+  return Boolean(runningSkillDefinitionReadAction(
+    commandActions(item).map(normalizeCommandAction).filter((candidate) => candidate !== null),
+    item,
+  ));
+}
+
+function runningSkillDefinitionReadAction(
+  actions: NormalizedCommandAction[],
+  item: ThreadItem,
+): Extract<NormalizedCommandAction, { type: "read" }> | null {
+  for (const action of actions) {
+    if (action.type !== "read" || action.finished !== false) continue;
+    const skillInfo = skillPathInfoForAction(action, item);
+    if (skillInfo?.isSkillDefinitionFile) return action;
+  }
+  return null;
+}
+
+function labelFromParts(parts: { action: string; detail: string }): string {
+  return `${parts.action} ${parts.detail}`;
+}
+
 function explorationActionLabel(action: NormalizedCommandAction, inProgress: boolean, item: ThreadItem): string {
   const skillLabel = skillExplorationLabel(action, item, inProgress);
   if (skillLabel) return skillLabel;
   if (action.type === "read") {
-    return `${inProgress ? "Reading" : "Read"} ${displayPath(action.path)}`;
+    return `${inProgress ? "Reading" : "Read"} ${displayPath(inProgress ? action.path : action.name || action.path)}`;
   }
   if (action.type === "search") {
-    if (action.path) return `${inProgress ? "Searching" : "Searched"} files in ${displayPath(action.path)}`;
-    if (action.query) return `${inProgress ? "Searching" : "Searched"} for ${action.query}`;
-    return `${inProgress ? "Searching" : "Searched"} files`;
+    if (inProgress) {
+      if (action.path) return `Searching files in ${displayPath(action.path)} folder`;
+      if (action.query) return `Searching for ${action.query}`;
+      return "Searching files";
+    }
+    if (action.query && action.path) return `Searched for ${action.query} in ${displayPath(action.path)}`;
+    if (action.query) return `Searched for ${action.query}`;
+    return "Searched files";
   }
   return action.path
-    ? `${inProgress ? "Listing" : "Listed"} files in ${displayPath(action.path)}`
+    ? `${inProgress ? "Listing" : "Listed"} files in ${displayPath(action.path)}${inProgress ? " folder" : ""}`
     : `${inProgress ? "Listing" : "Listed"} files`;
 }
 
@@ -528,22 +584,22 @@ function skillExplorationLabel(
     : `Searched in ${skillInfo.skillName} skill`;
 }
 
-interface SkillPathInfo {
+export interface DesktopSkillPathInfo {
   skillName: string;
   isSkillDefinitionFile: boolean;
 }
 
-function skillPathInfoForAction(action: NormalizedCommandAction, item: ThreadItem): SkillPathInfo | null {
+function skillPathInfoForAction(action: NormalizedCommandAction, item: ThreadItem): DesktopSkillPathInfo | null {
   if (!action.path) return null;
-  return parseDesktopSkillPathInfo(normalizedActionPath(action.path, item));
+  return desktopSkillPathInfoForCommandPath(action.path, stringField(item as ItemRecord, "cwd"));
 }
 
-function normalizedActionPath(path: string, item: ThreadItem): string {
+export function desktopSkillPathInfoForCommandPath(path: string, cwd = ""): DesktopSkillPathInfo | null {
   const normalizedPath = normalizeSearchPath(path);
-  if (!normalizedPath) return "";
-  if (isAbsoluteSearchPath(normalizedPath)) return normalizeSearchPathSegments(normalizedPath);
-  const cwd = normalizeSearchPath(stringField(item as ItemRecord, "cwd"));
-  return normalizeSearchPathSegments(cwd ? `${cwd}/${normalizedPath}` : normalizedPath);
+  if (!normalizedPath) return null;
+  if (isAbsoluteSearchPath(normalizedPath)) return parseDesktopSkillPathInfo(normalizeSearchPathSegments(normalizedPath));
+  const normalizedCwd = normalizeSearchPath(cwd);
+  return parseDesktopSkillPathInfo(normalizeSearchPathSegments(normalizedCwd ? `${normalizedCwd}/${normalizedPath}` : normalizedPath));
 }
 
 const DESKTOP_SKILL_ROOT_SEGMENTS = new Set([".codex", ".agents"]);
@@ -553,13 +609,13 @@ const DESKTOP_PLUGINS_SEGMENT = "plugins";
 const DESKTOP_PLUGIN_CACHE_SEGMENT = "cache";
 const DESKTOP_SKILL_DEFINITION_FILE = "skill.md";
 
-function parseDesktopSkillPathInfo(path: string): SkillPathInfo | null {
+function parseDesktopSkillPathInfo(path: string): DesktopSkillPathInfo | null {
   const parts = normalizeSearchPathSegments(path).split("/").filter(Boolean);
   if (parts.length === 0) return null;
   return parseDesktopCodexSkillPath(parts) ?? parseDesktopPluginSkillPath(parts);
 }
 
-function parseDesktopCodexSkillPath(parts: string[]): SkillPathInfo | null {
+function parseDesktopCodexSkillPath(parts: string[]): DesktopSkillPathInfo | null {
   for (let index = 0; index < parts.length; index += 1) {
     const current = parts[index]?.toLowerCase();
     const next = parts[index + 1]?.toLowerCase();
@@ -575,7 +631,7 @@ function parseDesktopCodexSkillPath(parts: string[]): SkillPathInfo | null {
   return null;
 }
 
-function parseDesktopPluginSkillPath(parts: string[]): SkillPathInfo | null {
+function parseDesktopPluginSkillPath(parts: string[]): DesktopSkillPathInfo | null {
   for (let index = 0; index < parts.length; index += 1) {
     if (parts[index]?.toLowerCase() !== DESKTOP_PLUGINS_SEGMENT) continue;
     const pluginId = desktopPluginIdFromPath(parts, index);
@@ -596,7 +652,7 @@ function desktopPluginIdFromPath(parts: string[], pluginsIndex: number): string 
   return next.toLowerCase() === DESKTOP_PLUGIN_CACHE_SEGMENT ? parts[pluginsIndex + 3] ?? null : next;
 }
 
-function desktopSkillPathInfo(skillId: string, relativePathSegments: string[]): SkillPathInfo {
+function desktopSkillPathInfo(skillId: string, relativePathSegments: string[]): DesktopSkillPathInfo {
   const firstSegment = relativePathSegments[0]?.toLowerCase();
   return {
     skillName: desktopSkillDisplayName(skillId.replaceAll("_", "-")),
@@ -907,9 +963,9 @@ function fileChangeSegment(verb: string, count: number, noun: string): string {
 }
 
 function displayPath(path: string): string {
-  const trimmed = path.trim().replace(/^\.\//, "");
+  const trimmed = path.trim().replace(/^\.\/+/u, "").replace(/\\/gu, "/");
   if (!trimmed) return "file";
-  return trimmed.length > 80 ? `...${trimmed.slice(-77)}` : trimmed;
+  return trimmed;
 }
 
 function lowerInitial(value: string): string {
@@ -1035,7 +1091,6 @@ export function isBlockingOutOfBandItem(item: ThreadItem, blockedMcpServers: Set
   if (type === "userInput" || type === "user-input") return !isCompletedRecord(item);
   if (type === "mcp-server-elicitation") return !isCompletedRecord(item);
   if (type === "permission-request") return !isCompletedRecord(item);
-  if (type === "auto-review-interruption-warning") return true;
   if (isPendingApprovalItem(item)) return true;
   if (type === "mcp-tool-call" && isItemInProgress(item)) {
     const server = mcpServerName(item);
@@ -1128,8 +1183,8 @@ function normalizedSearchDomain(domain: string): string | null {
   }
 }
 
-function shortId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+function agentFallbackName(id: string): string {
+  return id ? `agent-${id.slice(0, 8)}` : "agent";
 }
 
 function multiAgentGroupLabelForItems(items: ThreadItem[]): string {
@@ -1147,7 +1202,9 @@ function multiAgentActionRowLabel(item: ThreadItem): string {
   const action = multiAgentAction(item);
   const status = multiAgentStatus(item);
   const receivers = multiAgentReceiverThreadIds(item);
-  const target = receivers.length > 0 ? receivers.map(shortId).join(", ") : "agent";
+  const target = receivers.length > 0
+    ? receivers.map((id) => stripLeadingAt(multiAgentReceiverTitle(item, id) || agentFallbackName(id))).join(", ")
+    : "agent";
   const prompt = stringField(item as ItemRecord, "prompt").trim();
   const verb = multiAgentRowVerb(action, status);
   if (prompt && action === "spawnAgent" && status === "completed") {
@@ -1189,6 +1246,47 @@ function multiAgentReceiverThreadIds(item: ThreadItem): string[] {
     }
   }
   return Array.from(ids).sort();
+}
+
+function multiAgentReceiverTitle(item: ThreadItem, threadId: string): string {
+  const record = item as ItemRecord;
+  if (!Array.isArray(record.receiverThreads)) return "";
+  for (const receiver of record.receiverThreads) {
+    if (!receiver || typeof receiver !== "object") continue;
+    const receiverRecord = receiver as Record<string, unknown>;
+    const id = stringField(receiverRecord, "threadId") || stringField(receiverRecord, "id");
+    if (id !== threadId) continue;
+    const thread = receiverRecord.thread;
+    const threadRecord = thread && typeof thread === "object" ? thread as Record<string, unknown> : null;
+    return (
+      stringField(receiverRecord, "agentNickname")
+      || threadSpawnSourceField(receiverRecord, "agent_nickname", "agentNickname")
+      || (threadRecord
+        ? stringField(threadRecord, "agentNickname")
+          || threadSpawnSourceField(threadRecord, "agent_nickname", "agentNickname")
+        : "")
+    ).trim();
+  }
+  return "";
+}
+
+function threadSpawnSourceField(thread: Record<string, unknown>, snakeKey: string, camelKey: string): string {
+  const source = thread.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return "";
+  const sourceRecord = source as Record<string, unknown>;
+  const direct = stringField(sourceRecord, camelKey);
+  if (direct) return direct;
+  const subAgent = sourceRecord.subAgent;
+  if (!subAgent || typeof subAgent !== "object" || Array.isArray(subAgent)) return "";
+  const threadSpawn = (subAgent as Record<string, unknown>).thread_spawn;
+  if (!threadSpawn || typeof threadSpawn !== "object" || Array.isArray(threadSpawn)) return "";
+  return stringField(threadSpawn as Record<string, unknown>, snakeKey)
+    || stringField(threadSpawn as Record<string, unknown>, camelKey);
+}
+
+function stripLeadingAt(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
 }
 
 function multiAgentAction(item: ThreadItem): string {
