@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Copy as CopyIcon, LoaderCircle, TriangleAlert, X, XCircle } from "lucide-react";
+import { Check, ChevronRight, Copy as CopyIcon, TriangleAlert, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatUnknown, stringField } from "../lib/format";
 import {
@@ -19,6 +19,8 @@ import {
   mcpToolName,
   type AccumulatedThreadItem,
 } from "../state/render-groups";
+import { desktopSkillPathInfoForCommandPath } from "../state/tool-activity-grouping";
+import { AnimatedDisclosure } from "./animated-disclosure";
 import type { OpenThreadHandler } from "./open-thread";
 
 type ThreadItem = AccumulatedThreadItem;
@@ -138,6 +140,7 @@ export type ToolActivityDetailViewModel =
       toolKind: "MCP" | "Tool";
       argumentsText: string;
       resultText: string;
+      structuredResultText?: string;
       errorText: string;
       status: string;
       /** Typed view of MCP result.content[] blocks. */
@@ -169,6 +172,14 @@ export type ToolActivityDetailViewModel =
       source: string;
       label: string;
       status: string;
+    }
+  | {
+      kind: "autoReview";
+      id: string;
+      running: boolean;
+      title: string;
+      body: string;
+      highRiskDenied: boolean;
     }
   | {
       kind: "webSearch";
@@ -333,6 +344,9 @@ export function ToolActivityDetail({
   if (detail.kind === "exec") {
     return <ExecShellDetail detail={detail} forceExpanded={forceExecExpanded} />;
   }
+  if (detail.kind === "autoReview") {
+    return <AutoReviewDetail detail={detail} />;
+  }
   if (detail.kind === "patch") {
     return (
       <section className={`hc-tool-detail-stack patch ${detail.running ? "is-running" : ""}`}>
@@ -363,18 +377,20 @@ export function ToolActivityDetail({
           <span className="hc-tool-detail-title">{detail.name}</span>
           <small>{detail.toolKind}{detail.status ? ` · ${detail.status}` : ""}</small>
         </div>
-        {/* Parameters：MCP 工具用可折叠形式（长 JSON 默认折叠）。 */}
-        {detail.argumentsText && (
-          detail.toolKind === "MCP"
-            ? <CollapsibleLabeledCode label="Parameters" text={detail.argumentsText} />
-            : <LabeledCode label="Parameters" text={detail.argumentsText} />
+        {detail.toolKind !== "MCP" && detail.argumentsText && (
+          <LabeledCode label="Parameters" text={detail.argumentsText} />
         )}
         {/* content blocks 多类型渲染（MCP spec 6 种 block）。 */}
         {detail.resultBlocks && detail.resultBlocks.length > 0 ? (
           <McpResultBlocksView blocks={detail.resultBlocks} />
         ) : (
-          detail.resultText && <LabeledCode label="Result" text={detail.resultText} />
+          detail.resultText
+            ? <LabeledCode label="Result" text={detail.resultText} />
+            : detail.toolKind === "MCP" && !detail.structuredResultText && !detail.errorText
+              ? <p className="hc-tool-detail-row">Tool returned no content</p>
+              : null
         )}
+        {detail.structuredResultText && <CodeBlock text={detail.structuredResultText} />}
         {detail.errorText && <LabeledCode label="Error" text={detail.errorText} />}
       </section>
     );
@@ -424,13 +440,57 @@ function McpResultBlocksView({ blocks }: { blocks: McpResultBlock[] }) {
   );
 }
 
+function AutoReviewDetail({ detail }: { detail: Extract<ToolActivityDetailViewModel, { kind: "autoReview" }> }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <section className={`hc-tool-detail-stack auto-review ${detail.running ? "is-running" : ""}`}>
+      <button
+        aria-expanded={expanded}
+        className="group/collapsed-tool-activity group/summary inline-flex w-fit max-w-full cursor-interaction items-center gap-1 self-start text-left"
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          {detail.highRiskDenied && (
+            <TriangleAlert aria-hidden className="icon-xs shrink-0 text-token-editor-warning-foreground" />
+          )}
+          <span
+            className={`block min-w-0 max-w-full truncate ${
+              detail.highRiskDenied
+                ? "text-token-editor-warning-foreground"
+                : "text-token-foreground/30 group-hover/collapsed-tool-activity:text-token-foreground"
+            } ${detail.running ? "hc-status-event-shimmer" : ""}`}
+          >
+            {detail.title}
+          </span>
+        </span>
+        <span
+          className={`inline-chevron flex-shrink-0 text-token-input-placeholder-foreground opacity-0 group-hover/summary:opacity-100 ${
+            expanded ? "opacity-100" : ""
+          }`}
+        >
+          <ChevronRight aria-hidden className={`icon-2xs text-current transition-transform duration-300 ${expanded ? "rotate-90" : ""}`} />
+        </span>
+      </button>
+      <AnimatedDisclosure
+        className="hc-tool-details-motion"
+        innerClassName="hc-tool-details"
+        open={expanded}
+      >
+        <p className="hc-tool-detail-prose max-w-[80ch] whitespace-pre-wrap pt-1 text-size-chat leading-relaxed">
+          {detail.body}
+        </p>
+      </AnimatedDisclosure>
+    </section>
+  );
+}
+
 function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
   switch (block.kind) {
     case "text":
       return (
         <div className="hc-mcp-result-block hc-mcp-result-text">
-          <LabeledCode label={index === 0 ? "Result" : `Block ${index + 1}`} text={block.text} />
-          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+          <LabeledCode label="plaintext" text={mcpTextBlockDisplayText(block)} />
         </div>
       );
     case "image":
@@ -471,26 +531,34 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
         <div className="hc-mcp-result-block hc-mcp-result-embedded-resource">
           {block.uri && (
             <div className="hc-mcp-result-resource-meta">
-              <span>URI: </span><code>{block.uri}</code>
+              <span>URI</span><code>{block.uri}</code>
             </div>
           )}
           {block.mimeType && (
             <div className="hc-mcp-result-resource-meta">
-              <span>MIME type: </span><code>{block.mimeType}</code>
+              <span>MIME type</span><code>{block.mimeType}</code>
+            </div>
+          )}
+          {block.annotations && (
+            <div className="hc-mcp-result-resource-meta">
+              <span>Annotations</span><span>{block.annotations}</span>
             </div>
           )}
           {block.text && <LabeledCode label="Content" text={block.text} />}
-          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
         </div>
       );
     case "unknown":
     default:
       return (
         <div className="hc-mcp-result-block hc-mcp-result-unknown">
-          <LabeledCode label="Raw block" text={block.raw} />
+          <CodeBlock text={block.raw} />
         </div>
       );
   }
+}
+
+function mcpTextBlockDisplayText(block: Extract<McpResultBlock, { kind: "text" }>): string {
+  return block.annotations ? `${block.text}\nAnnotations: ${block.annotations}` : block.text;
 }
 
 function McpAppToolDetail({
@@ -609,7 +677,6 @@ function McpAppToolDetail({
       ) : (
         <div className="hc-tool-detail-row">MCP app returned no HTML content</div>
       )}
-      {detail.argumentsText && <LabeledCode label="Parameters" text={detail.argumentsText} />}
       {!frame && fallbackText && <LabeledCode label={detail.errorText ? "Error" : "Result"} text={fallbackText} />}
     </section>
   );
@@ -1528,6 +1595,11 @@ function ExecShellDetail({
       </div>
       {bodyOpen && detail.cwd && <div className="hc-exec-shell-cwd">{detail.cwd}</div>}
       {bodyOpen && output && (
+        /*
+         * Codex Desktop only sets `data-thread-find-skip` on the collapsed
+         * exec-shell wrapper. Once stdout/stderr is visible, the shell output is
+         * searchable by the in-thread find walker.
+         */
         <div className="hc-exec-shell-output-wrap">
           <pre className="hc-exec-shell-output" ref={outputRef}>
             <code>{output}</code>
@@ -1551,12 +1623,7 @@ function ExecShellDetail({
  */
 function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>): ReactNode {
   if (detail.running) {
-    return (
-      <div className="hc-exec-shell-footer" data-exec-status="in-progress">
-        <LoaderCircle aria-hidden className="hc-spin" size={12} />
-        <span>Running…</span>
-      </div>
-    );
+    return <div aria-hidden="true" className="hc-exec-shell-footer" data-exec-status="in-progress" />;
   }
   if (!detail.footer) return null;
   const isSuccess = detail.footer === "Success";
@@ -1705,7 +1772,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         toolResponseMetadata: resultRecord._meta ?? null,
         argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
         resultText: toolResultText(result),
-        errorText: formatUnknown(record.error),
+        errorText: mcpToolErrorText(record),
         status,
       };
     }
@@ -1720,7 +1787,9 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         status: status || "pending",
       };
     }
-    const resultBlocks = mcpResultBlocks(record.result);
+    const rawResultBlocks = mcpResultBlocks(record.result);
+    const structuredResultText = mcpStructuredResultText(record.result);
+    const resultBlocks = mcpDisplayResultBlocks(rawResultBlocks, structuredResultText);
     return {
       kind: "tool",
       id: item.id,
@@ -1729,7 +1798,8 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       toolKind: "MCP",
       argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
       resultText: toolResultText(record.result),
-      errorText: formatUnknown(record.error),
+      ...(structuredResultText ? { structuredResultText } : {}),
+      errorText: mcpToolErrorText(record),
       status,
       ...(resultBlocks.length > 0 ? { resultBlocks } : {}),
     };
@@ -1750,11 +1820,12 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
   }
   if (type === "automatic-approval-review") {
     return {
-      kind: "text",
+      kind: "autoReview",
       id: item.id,
       running,
-      title: "Auto-review",
-      text: autoReviewText(record),
+      title: autoReviewTitle(record),
+      body: autoReviewBody(record),
+      highRiskDenied: stringField(record, "status") === "denied" && stringField(record, "riskLevel") === "high",
     };
   }
   if (type === "web-search") {
@@ -1791,12 +1862,29 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
   };
 }
 
-function autoReviewText(record: ItemRecord): string {
-  return [
-    `Status: ${stringField(record, "status") || "pending"}`,
-    stringField(record, "riskLevel") ? `Risk: ${stringField(record, "riskLevel")}` : "",
-    stringField(record, "rationale") ? `Rationale: ${stringField(record, "rationale")}` : "",
-  ].filter(Boolean).join("\n");
+function autoReviewTitle(record: ItemRecord): string {
+  const status = stringField(record, "status");
+  if (status === "approved") return "Auto-review approved";
+  if (status === "denied") return stringField(record, "riskLevel") === "high" ? "Auto-review denied high risk" : "Auto-review denied";
+  if (status === "timedOut") return "Auto-review timed out";
+  if (status === "aborted") return "Auto-review stopped";
+  return "Auto-reviewing";
+}
+
+function autoReviewBody(record: ItemRecord): string {
+  const rationale = stringField(record, "rationale").trim();
+  if (rationale) return rationale;
+  const status = stringField(record, "status");
+  if (status === "inProgress") {
+    return "A carefully prompted reviewer agent is reviewing this request before Codex runs it.";
+  }
+  if (status === "aborted") {
+    return "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it.";
+  }
+  if (status === "timedOut") {
+    return "A carefully prompted reviewer agent timed out before Codex ran this request.";
+  }
+  return "A carefully prompted reviewer agent reviewed this request.";
 }
 
 function LabeledCode({ label, text }: { label: string; text: string }) {
@@ -1955,9 +2043,11 @@ function stripDesktopShellQuotes(value: string): string {
 function execSummaryLabel(record: ItemRecord, running: boolean): string {
   const action = execSummaryAction(record);
   if (!action) return "";
+  const skillLabel = execSkillSummaryLabel(action, stringField(record, "cwd"), running);
+  if (skillLabel) return skillLabel;
   if (action.type === "read") {
     if (running && !action.finished) return "";
-    return `${action.finished === false ? "Reading" : "Read"} ${displayPath(action.path)}`;
+    return `${action.finished === false ? "Reading" : "Read"} ${displayPath(action.name || action.path)}`;
   }
   if (action.type === "search") {
     const verb = running || action.finished === false ? "Searching" : "Searched";
@@ -1975,8 +2065,29 @@ function execSummaryLabel(record: ItemRecord, running: boolean): string {
   return "";
 }
 
+function execSkillSummaryLabel(action: ExecSummaryAction, cwd: string, running: boolean): string {
+  if (action.type === "read") {
+    const skillInfo = desktopSkillPathInfoForCommandPath(action.path, cwd);
+    if (!skillInfo) return "";
+    if (skillInfo.isSkillDefinitionFile && (running || action.finished === false)) {
+      return `Reading ${skillInfo.skillName} skill`;
+    }
+    return `Read ${skillInfo.skillName} skill`;
+  }
+  if (action.type === "list_files") {
+    const skillInfo = desktopSkillPathInfoForCommandPath(action.path, cwd);
+    return skillInfo ? `Listed files in ${skillInfo.skillName} skill` : "";
+  }
+  const skillInfo = desktopSkillPathInfoForCommandPath(action.path, cwd);
+  if (!skillInfo) return "";
+  const query = action.query.trim();
+  return query
+    ? `Searched for ${query} in ${skillInfo.skillName} skill`
+    : `Searched in ${skillInfo.skillName} skill`;
+}
+
 type ExecSummaryAction =
-  | { type: "read"; path: string; finished: boolean | null }
+  | { type: "read"; path: string; name: string; finished: boolean | null }
   | { type: "search"; path: string; query: string; finished: boolean | null }
   | { type: "list_files"; path: string; finished: boolean | null };
 
@@ -1998,7 +2109,7 @@ function normalizeExecSummaryAction(record: Record<string, unknown>): ExecSummar
   const finished = typeof record.isFinished === "boolean" ? record.isFinished : null;
   if (type === "read") {
     const path = stringField(record, "path") || stringField(record, "name");
-    return path ? { type, path, finished } : null;
+    return path ? { type, path, name: stringField(record, "name"), finished } : null;
   }
   if (type === "search") {
     return {
@@ -2019,9 +2130,9 @@ function normalizeExecSummaryAction(record: Record<string, unknown>): ExecSummar
 }
 
 function displayPath(path: string): string {
-  const trimmed = path.trim().replace(/^\.\//, "");
+  const trimmed = path.trim().replace(/^\.\/+/u, "").replace(/\\/gu, "/");
   if (!trimmed) return "file";
-  return trimmed.length > 80 ? `...${trimmed.slice(-77)}` : trimmed;
+  return trimmed;
 }
 
 function execExitCode(record: ItemRecord): number | null {
@@ -2199,7 +2310,8 @@ function mcpResultBlocks(value: unknown): McpResultBlock[] {
         return uri ? [{ kind: "resourceLink", uri, name, title, annotations }] : [];
       }
       case "embedded_resource":
-      case "embeddedResource": {
+      case "embeddedResource":
+      case "resource": {
         /*
          * Codex `case 'embedded_resource'` (byte 379383):
          *   let e = n.resource.text ?? n.resource.blob ?? "";
@@ -2213,9 +2325,11 @@ function mcpResultBlocks(value: unknown): McpResultBlock[] {
           mimeType: stringField(resource, "mimeType") || undefined,
           uri: stringField(resource, "uri") || undefined,
           text,
-          annotations,
+          annotations: formatAnnotations(resource.annotations),
         }];
       }
+      case "unknown":
+        return [{ kind: "unknown", raw: formatUnknown(blockRecord.raw ?? blockRecord) }];
       default:
         return [{ kind: "unknown", raw: formatUnknown(blockRecord) }];
     }
@@ -2260,13 +2374,53 @@ function formatAnnotations(value: unknown): string | undefined {
 function toolResultText(value: unknown): string {
   if (value === null || value === undefined) return "";
   const record = recordObject(value);
-  if (stringField(record, "type") === "error") return stringField(record, "error") || formatUnknown(value);
-  const content = Array.isArray(record.content)
-    ? record.content.map(toolResultContentText).filter(Boolean).join("\n\n")
-    : "";
+  if (stringField(record, "type") === "error") return "";
+  const isProtocolMcpResult = Array.isArray(record.content)
+    || "structuredContent" in record
+    || "structured_content" in record
+    || "_meta" in record;
+  if (isProtocolMcpResult) {
+    return Array.isArray(record.content)
+      ? record.content.map(toolResultContentText).filter(Boolean).join("\n\n")
+      : "";
+  }
+  return formatUnknown(value);
+}
+
+function mcpToolErrorText(record: Record<string, unknown>): string {
+  const result = recordObject(record.result);
+  if (stringField(result, "type") === "error") {
+    return stringField(result, "error") || stringField(recordObject(result.rawError), "message") || formatUnknown(result);
+  }
+  const error = record.error;
+  if (error === null || error === undefined) return "";
+  const message = stringField(recordObject(error), "message");
+  return message || formatUnknown(error);
+}
+
+function mcpStructuredResultText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const record = recordObject(value);
   const structured = record.structuredContent ?? record.structured_content;
-  const structuredText = structured === null || structured === undefined ? "" : formatUnknown(structured);
-  return [content, structuredText].filter(Boolean).join("\n\n") || formatUnknown(value);
+  if (structured === null || structured === undefined) return "";
+  return formatUnknown(structured);
+}
+
+function mcpDisplayResultBlocks(blocks: McpResultBlock[], structuredResultText: string): McpResultBlock[] {
+  if (!structuredResultText || blocks.length !== 1) return blocks;
+  const [block] = blocks;
+  if (block?.kind !== "text" || block.annotations) return blocks;
+  return parseJsonText(block.text) === structuredResultText ? [] : blocks;
+}
+
+function parseJsonText(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) return "";
+  try {
+    return formatUnknown(JSON.parse(trimmed));
+  } catch {
+    return "";
+  }
 }
 
 export function mcpAppToolOutputFromResult(value: unknown): unknown {
@@ -2584,7 +2738,7 @@ function multiAgentStatus(record: ItemRecord): string {
 
 function multiAgentAgentPart(record: ItemRecord, threadId: string): MultiAgentRowPart {
   const receiver = multiAgentReceiverInfo(record, threadId);
-  const label = stripLeadingAt(receiver.title || shortId(threadId));
+  const label = stripLeadingAt(receiver.title || agentFallbackName(threadId));
   const roleLabel = receiver.role ? `${label} (${receiver.role})` : label;
   const model = receiver.model || multiAgentSpawnModel(record);
   return {
@@ -2617,19 +2771,20 @@ function multiAgentReceiverInfo(record: ItemRecord, threadId: string): { model: 
 }
 
 function multiAgentRole(thread: Record<string, unknown>): string {
-  const raw = stringField(thread, "agentRole");
-  const role = raw.trim();
+  const role = (stringField(thread, "agentRole") || threadSpawnSourceField(thread, "agent_role", "agentRole")).trim();
   return role && role !== "default" ? role : "";
 }
 
 function receiverTitle(receiver: Record<string, unknown>, thread: Record<string, unknown> | null): string {
   return (
     stringField(receiver, "agentNickname")
+    || threadSpawnSourceField(receiver, "agent_nickname", "agentNickname")
     || stringField(receiver, "agentName")
     || stringField(receiver, "displayName")
     || stringField(receiver, "name")
     || (thread
       ? stringField(thread, "agentNickname")
+        || threadSpawnSourceField(thread, "agent_nickname", "agentNickname")
         || stringField(thread, "agentName")
         || stringField(thread, "displayName")
         || stringField(thread, "name")
@@ -2637,6 +2792,20 @@ function receiverTitle(receiver: Record<string, unknown>, thread: Record<string,
         || stringField(thread, "preview")
       : "")
   ).trim();
+}
+
+function threadSpawnSourceField(thread: Record<string, unknown>, snakeKey: string, camelKey: string): string {
+  const source = thread.source;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return "";
+  const sourceRecord = source as Record<string, unknown>;
+  const direct = stringField(sourceRecord, camelKey);
+  if (direct) return direct;
+  const subAgent = sourceRecord.subAgent;
+  if (!subAgent || typeof subAgent !== "object" || Array.isArray(subAgent)) return "";
+  const threadSpawn = (subAgent as Record<string, unknown>).thread_spawn;
+  if (!threadSpawn || typeof threadSpawn !== "object" || Array.isArray(threadSpawn)) return "";
+  return stringField(threadSpawn as Record<string, unknown>, snakeKey)
+    || stringField(threadSpawn as Record<string, unknown>, camelKey);
 }
 
 function multiAgentSpawnModel(record: ItemRecord): string {
@@ -2711,8 +2880,8 @@ function stripLeadingAt(value: string): string {
   return value.trim().startsWith("@") ? value.trim().slice(1) : value.trim();
 }
 
-function shortId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
+function agentFallbackName(id: string): string {
+  return id ? `agent-${id.slice(0, 8)}` : "agent";
 }
 
 function patchChanges(record: ItemRecord): Record<string, unknown>[] {

@@ -12,9 +12,11 @@ export interface HiCodexIntlContextValue {
   formatMessage: (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 }
 
+const DEFAULT_I18N_BUNDLE = createI18nBundle("en-US");
+
 const HiCodexIntlContext = createContext<HiCodexIntlContextValue>({
   locale: "en-US",
-  formatMessage: (descriptor) => descriptor.defaultMessage,
+  formatMessage: (descriptor, values) => formatI18nMessage(DEFAULT_I18N_BUNDLE, descriptor, values),
 });
 
 export function HiCodexIntlProvider({

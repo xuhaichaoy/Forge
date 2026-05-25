@@ -373,7 +373,7 @@ function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: string })
   return (
     <div className="hc-artifact-preview-pdf-frame">
       {status === "loading" && (
-        <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />
+        <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />
       )}
       {status === "error" && (
         <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />
@@ -392,7 +392,7 @@ function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: string })
 function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
   if (preview.status === "idle") return null;
   if (preview.status === "loading") {
-    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />;
+    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />;
   }
   if (preview.status === "error") {
     return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
@@ -414,7 +414,7 @@ function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
 function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPreviewState }) {
   if (preview.status === "idle") return null;
   if (preview.status === "loading") {
-    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />;
+    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />;
   }
   if (preview.status === "error") {
     return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
@@ -462,7 +462,7 @@ function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPrevi
 function ArtifactDocumentPreviewView({ preview }: { preview: DocumentPreviewState }) {
   if (preview.status === "idle") return null;
   if (preview.status === "loading") {
-    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview..." }} />;
+    return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />;
   }
   if (preview.status === "error") {
     return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
@@ -492,7 +492,7 @@ function artifactPreviewState(
 ): { status: "error" | "loading" | "too-large"; message: string } | null {
   if (!hasReference) return null;
   if (metadataPreview.status === "idle" || metadataPreview.status === "loading") {
-    return { status: "loading", message: "Preparing preview..." };
+    return { status: "loading", message: "Preparing preview…" };
   }
   if (metadataPreview.status === "error") {
     return { status: "error", message: "Couldn't load this preview" };

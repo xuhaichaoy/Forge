@@ -26,6 +26,8 @@ export interface BackgroundAgentPanelProps {
   onMessageDraftChange?: (value: string) => void;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenAutomation?: (automationId: string) => void;
+  memoryCitationRoot?: string | null;
   onOpenThreadId?: OpenThreadHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
   onSendMessage?: () => void | Promise<void>;
@@ -50,6 +52,8 @@ export function BackgroundAgentPanel({
   onMessageDraftChange,
   onMcpAppHostCall,
   onOpenFileReference,
+  onOpenAutomation,
+  memoryCitationRoot,
   onOpenThreadId,
   onReadMcpResource,
   onSendMessage,
@@ -122,6 +126,8 @@ export function BackgroundAgentPanel({
             threadId={threadId}
             onMcpAppHostCall={onMcpAppHostCall}
             onOpenFileReference={onOpenFileReference}
+            onOpenAutomation={onOpenAutomation}
+            memoryCitationRoot={memoryCitationRoot}
             onOpenThreadId={onOpenThreadId}
             onReadMcpResource={onReadMcpResource}
             emptyState={(

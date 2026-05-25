@@ -18,6 +18,11 @@ import { composerModeFromCollaborationMode } from "./collaboration-modes";
 import type { ComposerMode } from "./composer-workflow";
 import type { McpServerStartupStatus } from "./mcp-skills-management";
 import type { AccumulatedThreadItem } from "./render-groups";
+import {
+  canNavigateBackInHistory,
+  canNavigateForwardInHistory,
+  pushThreadHistoryEntry,
+} from "./thread-history";
 import { isThreadStatusInProgress } from "./thread-item-fields";
 
 export interface PendingServerRequest {
@@ -64,6 +69,37 @@ export interface TurnPlanSnapshot {
   updatedAt: number;
 }
 
+// codex: local-conversation-thread-CecHj6JI.js#mu — RightRail status footer
+// reads `usedTokens` / `contextWindow` from the `thread/tokenUsage/updated`
+// notification (ThreadTokenUsage). `usedTokens` mirrors Desktop's "tokens
+// used" counter (last-turn input + output) and `contextWindow` is
+// `modelContextWindow` (null until the server has model metadata).
+export interface ThreadTokenUsageSnapshot {
+  usedTokens: number;
+  contextWindow: number | null;
+}
+
+export interface ThreadTokenSpeedSnapshot {
+  tokensPerSecond: number;
+  turnId: string | null;
+}
+
+interface ThreadTokenSpeedSample {
+  outputTokens: number;
+  timeMs: number;
+}
+
+interface ThreadTokenSpeedTracker {
+  completedDurationMs: number | null;
+  estimatedOutputBytes: number;
+  estimatedOutputTokens: number;
+  lastLiveSpeedPublishedAtMs: number | null;
+  latestTokenUsage: Record<string, unknown> | null;
+  samples: ThreadTokenSpeedSample[];
+  startedAtMs: number;
+  turnId: string;
+}
+
 export interface ThreadRuntimeSlice {
   activeTurnId: string | null;
   items: AccumulatedThreadItem[];
@@ -84,6 +120,13 @@ export interface ThreadRuntimeSlice {
   threadGoal: ThreadGoal | null;
   threadGoalTurnId: string | null;
   terminalTurnIds: string[];
+  // codex: local-conversation-thread-CecHj6JI.js#mu — populated by the
+  // `thread/tokenUsage/updated` notification; absent until the server emits
+  // the first counter for this thread. Optional so older fixtures that do
+  // not need the footer continue to type-check.
+  tokenUsage?: ThreadTokenUsageSnapshot | null;
+  tokenSpeed?: ThreadTokenSpeedSnapshot | null;
+  tokenSpeedTracker?: ThreadTokenSpeedTracker | null;
 }
 
 export interface CodexUiState {
@@ -99,6 +142,11 @@ export interface CodexUiState {
   models: ModelConfig[];
   threadContextDefaults: ThreadContextDefaults | null;
   mcpServerStartupStatuses: Record<string, McpServerStartupStatus>;
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+  // in-app thread history stack (browser-style back/forward over the
+  // sequence of activated threads). See `./thread-history.ts`.
+  threadHistoryStack: string[];
+  threadHistoryIndex: number;
 }
 
 export type CodexUiAction =
@@ -129,7 +177,11 @@ export type CodexUiAction =
       cwd?: string | null;
     }
   | { type: "bindOptimisticTurn"; threadId: string; localTurnId: string; turnId: string }
-  | { type: "dropOptimisticUserMessage"; threadId: string; localId: string };
+  | { type: "dropOptimisticUserMessage"; threadId: string; localId: string }
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+  // dispatched by the ported menu commands (CmdOrCtrl+[ / CmdOrCtrl+]).
+  | { type: "navigateBackInHistory" }
+  | { type: "navigateForwardInHistory" };
 
 export const initialCodexUiState: CodexUiState = {
   connected: false,
@@ -144,6 +196,10 @@ export const initialCodexUiState: CodexUiState = {
   models: [],
   threadContextDefaults: null,
   mcpServerStartupStatuses: {},
+  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+  // empty history; first `setActiveThread` populates the stack.
+  threadHistoryStack: [],
+  threadHistoryIndex: -1,
 };
 
 const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
@@ -158,6 +214,13 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   threadGoal: null,
   threadGoalTurnId: null,
   terminalTurnIds: [],
+  // codex: local-conversation-thread-CecHj6JI.js#mu — null until the first
+  // `thread/tokenUsage/updated` notification lands; RightRail status footer
+  // stays hidden while this is falsy (mirrors Desktop's `tokensUsed != null`
+  // gate inside `mu`).
+  tokenUsage: null,
+  tokenSpeed: { tokensPerSecond: 0, turnId: null },
+  tokenSpeedTracker: null,
 });
 
 export function selectThreadRuntime(
@@ -220,12 +283,61 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       return withActiveComposerMode({
         ...state,
         threads: action.threads,
+        threadsRuntime: enrichMultiAgentReceiverThreadsInRuntimes(state.threadsRuntime, action.threads),
         activeThreadId: nextActiveThreadId(state.activeThreadId, action.threads),
       });
     case "upsertThread":
       return upsertThreadState(state, action.thread, action.select === true);
-    case "setActiveThread":
-      return withActiveComposerMode({ ...state, activeThreadId: action.threadId });
+    case "setActiveThread": {
+      // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+      // every explicit thread switch participates in the navigation
+      // history (browser-style back stack). Forward branch is truncated
+      // and consecutive duplicates of the same id are coalesced — see
+      // `./thread-history.ts`.
+      const historyPatch = pushThreadHistoryEntry(
+        state.threadHistoryStack,
+        state.threadHistoryIndex,
+        action.threadId,
+      );
+      return withActiveComposerMode({
+        ...state,
+        activeThreadId: action.threadId,
+        threadHistoryStack: historyPatch.threadHistoryStack,
+        threadHistoryIndex: historyPatch.threadHistoryIndex,
+      });
+    }
+    case "navigateBackInHistory": {
+      // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack — separate
+      // from `setActiveThread` because the history cursor moves without
+      // pushing a new entry; otherwise pressing Back would immediately
+      // bury the entry we just navigated to.
+      if (!canNavigateBackInHistory(state.threadHistoryStack, state.threadHistoryIndex)) {
+        return state;
+      }
+      const newIndex = state.threadHistoryIndex - 1;
+      const targetId = state.threadHistoryStack[newIndex];
+      if (!targetId) return state;
+      return withActiveComposerMode({
+        ...state,
+        activeThreadId: targetId,
+        threadHistoryIndex: newIndex,
+      });
+    }
+    case "navigateForwardInHistory": {
+      // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateForward — mirror
+      // of the back case; no-op at the head of the stack.
+      if (!canNavigateForwardInHistory(state.threadHistoryStack, state.threadHistoryIndex)) {
+        return state;
+      }
+      const newIndex = state.threadHistoryIndex + 1;
+      const targetId = state.threadHistoryStack[newIndex];
+      if (!targetId) return state;
+      return withActiveComposerMode({
+        ...state,
+        activeThreadId: targetId,
+        threadHistoryIndex: newIndex,
+      });
+    }
     case "removeThread": {
       const nextThreads = state.threads.filter((thread) => thread.id !== action.threadId);
       const { [action.threadId]: _removed, ...threadsRuntime } = state.threadsRuntime;
@@ -308,6 +420,12 @@ function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined
     threadGoal,
     threadGoalTurnId,
     terminalTurnIds,
+    // codex: local-conversation-thread-CecHj6JI.js#mu — preserve the latest
+    // token-usage snapshot across patch cycles; the reducer rewrites it only
+    // when `thread/tokenUsage/updated` arrives.
+    tokenUsage: runtime?.tokenUsage ?? null,
+    tokenSpeed: runtime?.tokenSpeed ?? { tokensPerSecond: 0, turnId: null },
+    tokenSpeedTracker: runtime?.tokenSpeedTracker ?? null,
   };
 }
 
@@ -594,7 +712,11 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       const nextTurnOrder = turnOrderFromThread(thread, runtime.turnOrder);
       const nextItems = snapshotItems.length > 0
         ? shouldMergeSnapshot
-          ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
+          ? mergeLiveThreadSnapshotItems(
+              currentItems,
+              snapshotItems,
+              staleActiveSnapshot ? terminalTurnIds : undefined,
+            )
           : snapshotItems
         : runtime.items;
       const optimisticTurnState = snapshotItems.length > 0
@@ -607,25 +729,27 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
             turnOrder: nextTurnOrder,
             pending: runtime.pendingOptimisticTurns,
           };
+      const nextThreads = upsertThread(state.threads, threadWithNonRegressingStatus(
+        thread,
+        state.threads.find((item) => item.id === thread.id),
+        staleActiveSnapshot,
+        Boolean(activeTurns[thread.id]),
+      ));
+      const nextThreadsRuntime = enrichMultiAgentReceiverThreadsInRuntimes({
+        ...state.threadsRuntime,
+        [thread.id]: normalizeThreadRuntime({
+          ...runtime,
+          activeTurnId: nextActiveTurnId ?? null,
+          turnOrder: optimisticTurnState.turnOrder,
+          pendingOptimisticTurns: optimisticTurnState.pending,
+          items: snapshotItems.length > 0 ? nextItems ?? [] : runtime.items,
+        }),
+      }, nextThreads);
       return withActiveComposerMode({
         ...state,
-        threads: upsertThread(state.threads, threadWithNonRegressingStatus(
-          thread,
-          state.threads.find((item) => item.id === thread.id),
-          staleActiveSnapshot,
-          Boolean(activeTurns[thread.id]),
-        )),
+        threads: nextThreads,
         activeThreadId: state.activeThreadId ?? thread.id,
-        threadsRuntime: {
-          ...state.threadsRuntime,
-          [thread.id]: normalizeThreadRuntime({
-            ...runtime,
-            activeTurnId: nextActiveTurnId ?? null,
-            turnOrder: optimisticTurnState.turnOrder,
-            pendingOptimisticTurns: optimisticTurnState.pending,
-            items: snapshotItems.length > 0 ? nextItems ?? [] : runtime.items,
-          }),
-        },
+        threadsRuntime: nextThreadsRuntime,
       });
     }
     case "thread/status/changed": {
@@ -670,7 +794,11 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return prependLog(state, `thread unarchived: ${shortThreadId(threadId)}`);
     }
     case "thread/tokenUsage/updated":
-      return state;
+      // codex: local-conversation-thread-CecHj6JI.js#mu — projects the
+      // `ThreadTokenUsage` payload (last-turn breakdown + `modelContextWindow`)
+      // into `ThreadRuntimeSlice.tokenUsage` so `RightRail`'s status footer
+      // can render the "X / Y tokens used" line and context-window tooltip.
+      return applyThreadTokenUsageUpdatedNotification(state, params);
     case "thread/compacted":
       return applyThreadCompactedNotification(state, params);
     case "thread/goal/updated":
@@ -686,6 +814,7 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
         : state;
       const runtime = selectThreadRuntime(baseState, threadId);
       const order = ensureTurnInOrder(runtime.turnOrder, turn?.id ?? null);
+      const tokenSpeedPatch = turn?.id ? startedTokenSpeedPatch(turn.id) : {};
       return withActiveComposerMode({
         ...baseState,
         activeThreadId: baseState.activeThreadId ?? threadId,
@@ -693,6 +822,7 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
           ...baseState.threadsRuntime,
           [threadId]: normalizeThreadRuntime({
             ...runtime,
+            ...tokenSpeedPatch,
             activeTurnId: turn?.id ?? runtime.activeTurnId,
             turnOrder: order,
             terminalTurnIds: turn?.id
@@ -754,13 +884,13 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
      * `tool-activity-detail.tsx:334` (Codex waits for `item/completed`).
      */
     case "item/agentMessage/delta":
-      return appendItemText(state, params, "agentMessage", "text", "delta");
+      return updateLiveTokenSpeed(appendItemText(state, params, "agentMessage", "text", "delta"), params);
     case "item/plan/delta":
-      return appendItemText(state, params, "plan", "text", "delta");
+      return updateLiveTokenSpeed(appendItemText(state, params, "plan", "text", "delta"), params);
     case "item/reasoning/textDelta":
-      return appendReasoningText(state, params, "content", "contentIndex");
+      return updateLiveTokenSpeed(appendReasoningText(state, params, "content", "contentIndex"), params);
     case "item/reasoning/summaryTextDelta":
-      return appendReasoningText(state, params, "summary", "summaryIndex");
+      return updateLiveTokenSpeed(appendReasoningText(state, params, "summary", "summaryIndex"), params);
     case "item/commandExecution/outputDelta":
       return appendItemText(state, params, "commandExecution", "aggregatedOutput", "delta");
     case "item/fileChange/patchUpdated":
@@ -840,6 +970,193 @@ function applyErrorNotification(state: CodexUiState, params: Record<string, unkn
       }),
     },
   };
+}
+
+// codex: git-branch-picker-dropdown-content/me + local-conversation-thread
+// status footer — context usage is calculated from `last.totalTokens` and
+// `modelContextWindow`. The cumulative `total` object is not the number Desktop
+// shows in the right-rail status row.
+function applyThreadTokenUsageUpdatedNotification(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+): CodexUiState {
+  const threadId = stringParam(params, "threadId");
+  if (!threadId) return state;
+  const tokenUsage = recordParam(params.tokenUsage);
+  if (!tokenUsage) return state;
+  const usedTokens = pickTokenTotal(tokenUsage);
+  if (usedTokens === null) return state;
+  const contextWindowRaw = tokenUsage.modelContextWindow;
+  const contextWindow = typeof contextWindowRaw === "number" && Number.isFinite(contextWindowRaw)
+    ? contextWindowRaw
+    : null;
+  const turnId = turnIdParam(params);
+  const runtime = selectThreadRuntime(state, threadId);
+  const tokenSpeedTracker = runtime.tokenSpeedTracker?.turnId === turnId
+    ? { ...runtime.tokenSpeedTracker, latestTokenUsage: tokenUsage }
+    : runtime.tokenSpeedTracker ?? null;
+  return threadRuntimePatch(state, threadId, {
+    tokenUsage: { usedTokens, contextWindow },
+    tokenSpeedTracker,
+  });
+}
+
+// codex: No(tokenUsageInfo) in the Desktop bundle reads
+// `tokenUsage.last.totalTokens` for context usage. Fall back to the cumulative
+// shape only for older app-server payloads that do not include `last`.
+function pickTokenTotal(tokenUsage: Record<string, unknown>): number | null {
+  const last = recordParam(tokenUsage.last);
+  if (last) {
+    const lastTotal = numberField(last, "totalTokens");
+    if (lastTotal !== null) return lastTotal;
+  }
+  const total = recordParam(tokenUsage.total);
+  if (total) {
+    const totalTokens = numberField(total, "totalTokens");
+    if (totalTokens !== null) return totalTokens;
+    const input = numberField(total, "inputTokens");
+    const output = numberField(total, "outputTokens");
+    if (input !== null || output !== null) {
+      return (input ?? 0) + (output ?? 0);
+    }
+  }
+  return numberField(tokenUsage, "usedTokens");
+}
+
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+const TOKEN_SPEED_SAMPLE_WINDOW_MS = 2_000;
+const TOKEN_SPEED_PUBLISH_INTERVAL_MS = 100;
+const TOKEN_SPEED_BYTES_PER_TOKEN = 4;
+
+function startedTokenSpeedPatch(turnId: string): Pick<ThreadRuntimeSlice, "tokenSpeed" | "tokenSpeedTracker"> {
+  const tracker = newTokenSpeedTracker(turnId, Date.now());
+  return {
+    tokenSpeed: { tokensPerSecond: 0, turnId },
+    tokenSpeedTracker: tracker,
+  };
+}
+
+function newTokenSpeedTracker(turnId: string, now: number): ThreadTokenSpeedTracker {
+  return {
+    completedDurationMs: null,
+    estimatedOutputBytes: 0,
+    estimatedOutputTokens: 0,
+    lastLiveSpeedPublishedAtMs: null,
+    latestTokenUsage: null,
+    samples: [{ outputTokens: 0, timeMs: now }],
+    startedAtMs: now,
+    turnId,
+  };
+}
+
+function updateLiveTokenSpeed(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = stringParam(params, "threadId");
+  const turnId = turnIdParam(params);
+  const delta = stringParam(params, "delta");
+  if (!threadId || !turnId || !delta) return state;
+  const bytes = tokenSpeedDeltaBytes(delta);
+  if (bytes === 0) return state;
+
+  const runtime = selectThreadRuntime(state, threadId);
+  const now = Date.now();
+  const tracker = runtime.tokenSpeedTracker?.turnId === turnId
+    ? { ...runtime.tokenSpeedTracker }
+    : newTokenSpeedTracker(turnId, now);
+
+  tracker.estimatedOutputBytes += bytes;
+  tracker.estimatedOutputTokens = tracker.estimatedOutputBytes / TOKEN_SPEED_BYTES_PER_TOKEN;
+  tracker.samples = [...tracker.samples, { outputTokens: tracker.estimatedOutputTokens, timeMs: now }];
+  while (
+    tracker.samples.length > 1
+    && (tracker.samples[1]?.timeMs ?? 0) < now - TOKEN_SPEED_SAMPLE_WINDOW_MS
+  ) {
+    tracker.samples.shift();
+  }
+
+  const shouldPublish = tracker.lastLiveSpeedPublishedAtMs == null
+    || now - tracker.lastLiveSpeedPublishedAtMs >= TOKEN_SPEED_PUBLISH_INTERVAL_MS;
+  if (!shouldPublish) {
+    return threadRuntimePatch(state, threadId, { tokenSpeedTracker: tracker });
+  }
+
+  tracker.lastLiveSpeedPublishedAtMs = now;
+  const first = tracker.samples[0];
+  const last = tracker.samples[tracker.samples.length - 1];
+  const elapsedMs = first && last ? last.timeMs - first.timeMs : 0;
+  const tokensPerSecond = elapsedMs > 0 && first && last
+    ? (last.outputTokens - first.outputTokens) / (elapsedMs / 1_000)
+    : fallbackTokenSpeed(tracker, now);
+
+  return threadRuntimePatch(state, threadId, {
+    tokenSpeed: { tokensPerSecond: finiteTokenSpeed(tokensPerSecond), turnId },
+    tokenSpeedTracker: tracker,
+  });
+}
+
+function completedTokenSpeedPatch(
+  runtime: ThreadRuntimeSlice,
+  turnId: string,
+  turn: TurnLike | undefined,
+): Partial<Pick<ThreadRuntimeSlice, "tokenSpeed" | "tokenSpeedTracker">> {
+  const tracker = runtime.tokenSpeedTracker;
+  if (!tracker || tracker.turnId !== turnId) return {};
+  const durationMs = turnDurationMs(turn);
+  const nextTracker = { ...tracker, completedDurationMs: durationMs };
+  if (!nextTracker.latestTokenUsage || durationMs == null || durationMs <= 0) {
+    return { tokenSpeedTracker: nextTracker };
+  }
+  const outputTokens = tokenUsageOutputTokens(nextTracker.latestTokenUsage);
+  if (outputTokens == null) return { tokenSpeedTracker: nextTracker };
+  return {
+    tokenSpeed: { tokensPerSecond: finiteTokenSpeed(outputTokens / (durationMs / 1_000)), turnId },
+    tokenSpeedTracker: nextTracker,
+  };
+}
+
+function tokenSpeedDeltaBytes(delta: string): number {
+  try {
+    return new TextEncoder().encode(delta).length;
+  } catch {
+    return delta.length;
+  }
+}
+
+function fallbackTokenSpeed(tracker: ThreadTokenSpeedTracker, now: number): number {
+  const elapsedMs = now - tracker.startedAtMs;
+  return elapsedMs > 0 ? tracker.estimatedOutputTokens / (elapsedMs / 1_000) : 0;
+}
+
+function finiteTokenSpeed(value: number): number {
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function turnDurationMs(turn: TurnLike | undefined): number | null {
+  if (!turn) return null;
+  if (typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs) && turn.durationMs >= 0) {
+    return turn.durationMs;
+  }
+  if (
+    typeof turn.startedAt === "number"
+    && Number.isFinite(turn.startedAt)
+    && typeof turn.completedAt === "number"
+    && Number.isFinite(turn.completedAt)
+    && turn.completedAt >= turn.startedAt
+  ) {
+    return (turn.completedAt - turn.startedAt) * 1_000;
+  }
+  return null;
+}
+
+function tokenUsageOutputTokens(tokenUsage: Record<string, unknown>): number | null {
+  const last = recordParam(tokenUsage.last);
+  if (!last) return null;
+  const output = numberField(last, "outputTokens") ?? 0;
+  const reasoning = numberField(last, "reasoningOutputTokens") ?? 0;
+  return output + reasoning;
 }
 
 function applyThreadCompactedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
@@ -1029,7 +1346,11 @@ function upsertThreadState(
     : runtime.turnOrder;
   const nextItems = hasSnapshotItems
     ? shouldMergeSnapshot
-      ? mergeLiveThreadSnapshotItems(currentItems, snapshotItems)
+      ? mergeLiveThreadSnapshotItems(
+          currentItems,
+          snapshotItems,
+          staleActiveSnapshot ? terminalTurnIds : undefined,
+        )
       : snapshotItems
     : undefined;
   const optimisticTurnState = hasSnapshotItems
@@ -1042,25 +1363,27 @@ function upsertThreadState(
         turnOrder: baseTurnOrder ?? [],
         pending: runtime.pendingOptimisticTurns,
       };
+  const nextThreads = upsertThread(state.threads, threadWithNonRegressingStatus(
+    thread,
+    state.threads.find((item) => item.id === thread.id),
+    staleActiveSnapshot,
+    Boolean(activeTurns[thread.id]),
+  ));
+  const nextThreadsRuntime = enrichMultiAgentReceiverThreadsInRuntimes({
+    ...state.threadsRuntime,
+    [thread.id]: normalizeThreadRuntime({
+      ...runtime,
+      activeTurnId: nextActiveTurnId ?? null,
+      turnOrder: baseTurnOrder ? optimisticTurnState.turnOrder : runtime.turnOrder,
+      pendingOptimisticTurns: hasSnapshotItems ? optimisticTurnState.pending : runtime.pendingOptimisticTurns,
+      items: hasSnapshotItems ? nextItems ?? [] : runtime.items,
+    }),
+  }, nextThreads);
   return withActiveComposerMode({
     ...state,
-    threads: upsertThread(state.threads, threadWithNonRegressingStatus(
-      thread,
-      state.threads.find((item) => item.id === thread.id),
-      staleActiveSnapshot,
-      Boolean(activeTurns[thread.id]),
-    )),
+    threads: nextThreads,
     activeThreadId: select ? thread.id : state.activeThreadId ?? thread.id,
-    threadsRuntime: {
-      ...state.threadsRuntime,
-      [thread.id]: normalizeThreadRuntime({
-        ...runtime,
-        activeTurnId: nextActiveTurnId ?? null,
-        turnOrder: baseTurnOrder ? optimisticTurnState.turnOrder : runtime.turnOrder,
-        pendingOptimisticTurns: hasSnapshotItems ? optimisticTurnState.pending : runtime.pendingOptimisticTurns,
-        items: hasSnapshotItems ? nextItems ?? [] : runtime.items,
-      }),
-    },
+    threadsRuntime: nextThreadsRuntime,
   });
 }
 
@@ -1405,11 +1728,54 @@ function secondsTimestampToMs(value: unknown): number | null {
 function mergeLiveThreadSnapshotItems(
   current: AccumulatedThreadItem[],
   snapshot: Array<AccumulatedThreadItem | ThreadItem>,
+  protectedTurnIds?: Set<string>,
 ): AccumulatedThreadItem[] {
   const snapshotWithLocalInputs = preserveLocalInputsInConfirmedUserMessages(current, snapshot);
   const swept = dropConfirmedOptimisticPlaceholders(current, snapshotWithLocalInputs);
   const aligned = realignSnapshotIdsToStreamedTwins(swept, snapshotWithLocalInputs);
-  return dedupeConfirmedUserMessagesByContent(mergeItemsInIncomingOrder(swept, aligned));
+  const protectedAligned = substituteProtectedTerminalSnapshotItems(swept, aligned, protectedTurnIds);
+  return dedupeConfirmedUserMessagesByContent(mergeItemsInIncomingOrder(swept, protectedAligned));
+}
+
+function substituteProtectedTerminalSnapshotItems(
+  current: AccumulatedThreadItem[],
+  snapshot: Array<AccumulatedThreadItem | ThreadItem>,
+  protectedTurnIds: Set<string> | undefined,
+): Array<AccumulatedThreadItem | ThreadItem> {
+  if (!protectedTurnIds || protectedTurnIds.size === 0) return snapshot;
+  const currentByTurnId = new Map<string, AccumulatedThreadItem[]>();
+  for (const item of current) {
+    const turnId = turnIdOf(item);
+    if (!turnId || !protectedTurnIds.has(turnId)) continue;
+    let items = currentByTurnId.get(turnId);
+    if (!items) {
+      items = [];
+      currentByTurnId.set(turnId, items);
+    }
+    items.push(item);
+  }
+  if (currentByTurnId.size === 0) return snapshot;
+
+  const emittedTurnIds = new Set<string>();
+  let changed = false;
+  const next: Array<AccumulatedThreadItem | ThreadItem> = [];
+  for (const item of snapshot) {
+    const turnId = turnIdOf(item);
+    if (!turnId) {
+      next.push(item);
+      continue;
+    }
+    const protectedItems = currentByTurnId.get(turnId);
+    if (!protectedItems) {
+      next.push(item);
+      continue;
+    }
+    changed = true;
+    if (emittedTurnIds.has(turnId)) continue;
+    next.push(...protectedItems);
+    emittedTurnIds.add(turnId);
+  }
+  return changed ? next : snapshot;
 }
 
 /**
@@ -1692,7 +2058,11 @@ function isTurnStatusInProgress(status: unknown): boolean {
 
 function isTerminalTurnStatus(status: unknown): boolean {
   const value = turnStatusText(status);
-  return value === "completed" || value === "failed" || value === "interrupted";
+  return value === "completed"
+    || value === "failed"
+    || value === "interrupted"
+    || value === "cancelled"
+    || value === "canceled";
 }
 
 function upsertItem(
@@ -1706,12 +2076,90 @@ function upsertItem(
   const order = turnId
     ? ensureTurnInOrder(runtime.turnOrder, turnId)
     : runtime.turnOrder;
-  const stamped = turnId ? attachTurnId(item, turnId) : item;
+  const enriched = enrichMultiAgentReceiverThreads(item, state.threads);
+  const stamped = turnId ? attachTurnId(enriched, turnId) : enriched;
   const next = mergeItems(current, [stamped], order);
   return threadRuntimePatch(state, threadId, {
     turnOrder: turnId ? order : runtime.turnOrder,
     items: next,
   });
+}
+
+function enrichMultiAgentReceiverThreadsInRuntimes(
+  runtimes: Record<string, ThreadRuntimeSlice>,
+  threads: Thread[],
+): Record<string, ThreadRuntimeSlice> {
+  const next: Record<string, ThreadRuntimeSlice> = {};
+  for (const [threadId, runtime] of Object.entries(runtimes)) {
+    next[threadId] = normalizeThreadRuntime({
+      ...runtime,
+      items: runtime.items.map((item) => enrichMultiAgentReceiverThreads(item, threads)),
+    });
+  }
+  return next;
+}
+
+function enrichMultiAgentReceiverThreads<T extends AccumulatedThreadItem | ThreadItem>(
+  item: T,
+  threads: Thread[],
+): T {
+  const record = item as Record<string, unknown>;
+  if (record.type !== "collabAgentToolCall") return item;
+  const receiverIds = collabReceiverThreadIds(record);
+  if (receiverIds.length === 0) return item;
+  const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
+  const existingById = collabReceiverThreadsById(record);
+  const receiverThreads = receiverIds.map((threadId) => {
+    const existing = existingById.get(threadId);
+    const thread = threadsById.get(threadId) ?? receiverThreadObject(existing);
+    return {
+      ...(existing ?? {}),
+      threadId,
+      thread: thread ?? null,
+    };
+  });
+  return { ...(item as object), receiverThreads } as unknown as T;
+}
+
+function collabReceiverThreadIds(record: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  if (Array.isArray(record.receiverThreadIds)) {
+    for (const value of record.receiverThreadIds) {
+      if (typeof value === "string" && value.trim()) ids.add(value.trim());
+    }
+  }
+  if (Array.isArray(record.receiverThreads)) {
+    for (const receiver of record.receiverThreads) {
+      if (!receiver || typeof receiver !== "object" || Array.isArray(receiver)) continue;
+      const receiverRecord = receiver as Record<string, unknown>;
+      const id = stringParam(receiverRecord, "threadId") || stringParam(receiverRecord, "id");
+      if (id.trim()) ids.add(id.trim());
+    }
+  }
+  const states = record.agentsStates;
+  if (states && typeof states === "object" && !Array.isArray(states)) {
+    for (const id of Object.keys(states)) {
+      if (id.trim()) ids.add(id.trim());
+    }
+  }
+  return Array.from(ids);
+}
+
+function collabReceiverThreadsById(record: Record<string, unknown>): Map<string, Record<string, unknown>> {
+  const byId = new Map<string, Record<string, unknown>>();
+  if (!Array.isArray(record.receiverThreads)) return byId;
+  for (const receiver of record.receiverThreads) {
+    if (!receiver || typeof receiver !== "object" || Array.isArray(receiver)) continue;
+    const receiverRecord = receiver as Record<string, unknown>;
+    const id = stringParam(receiverRecord, "threadId") || stringParam(receiverRecord, "id");
+    if (id.trim()) byId.set(id.trim(), receiverRecord);
+  }
+  return byId;
+}
+
+function receiverThreadObject(receiver: Record<string, unknown> | undefined): Thread | null {
+  const thread = receiver?.thread;
+  return thread && typeof thread === "object" && !Array.isArray(thread) ? thread as Thread : null;
 }
 
 /**
@@ -2407,6 +2855,7 @@ function finishTurn(
   const nextItems = turnId
     ? replaceTurnSegment(currentItems, turnId, terminalSegment, order)
     : mergeItemsInIncomingOrder(currentItems, terminalSegment);
+  const tokenSpeedPatch = turnId ? completedTokenSpeedPatch(runtime, turnId, turn) : {};
   return {
     ...state,
     threads: state.threads.map((thread) =>
@@ -2416,6 +2865,7 @@ function finishTurn(
       ...state.threadsRuntime,
       [threadId]: normalizeThreadRuntime({
         ...runtime,
+        ...tokenSpeedPatch,
         activeTurnId: nextActiveTurnId,
         turnOrder: order,
         terminalTurnIds: turnId

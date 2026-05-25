@@ -46,9 +46,9 @@ The renderer reads from `summary`, not `content`. `content` is stored only for p
 
 ### HiCodex implementation rule
 
-HiCodex injects a synthetic placeholder via `desktopThinkingPlaceholderItem` (`project-conversation.ts`) and renders it through `ReasoningActivityView` (`event-unit.tsx`). This is **more explicit than Codex** about showing thinking progress and does not violate the dead-code rule above — it is a HiCodex-only surface, not a port of `Ux`/`qx`.
+HiCodex injects a synthetic live placeholder via `desktopThinkingPlaceholderItem` (`project-conversation.ts`) and renders it through `ReasoningActivityView` (`event-unit.tsx`) only while the turn is in progress. This mirrors Codex's real placeholder path rather than the dead-code `Ux`/`qx` ReasoningItem path.
 
-The label projection in `tool-activity-grouping.ts` (`Thinking` / `Thought for {time}` / `Thought`) re-uses the Codex i18n string defaults; the strings themselves are durable copy regardless of whether Codex still renders them.
+The label projection in `tool-activity-grouping.ts` still carries the Codex i18n string defaults (`Thinking` / `Thought for {time}` / `Thought`) for helper and defensive paths, but completed reasoning items are dropped by the turn projection and do not leave a visible `Thought` row.
 
 ## 2. The real "Thinking" UX path
 
@@ -89,9 +89,9 @@ The "Working for {time}" timer that appears once tools start is a separate "work
 
 The thinking placeholder uses a `cadencedShimmer` mask animation: 4000ms cycle, 1000ms shimmer window, 600ms initial delay. HiCodex implements an equivalent CSS animation (`hc-thinking-shimmer`).
 
-### HiCodex deviation
+### HiCodex alignment
 
-HiCodex's `desktopThinkingPlaceholderItem` lingers as a `Thought for {time}` row after reasoning completes; Codex's placeholder vanishes immediately when the classifier returns `none`. This is a deliberate HiCodex choice to keep thinking elapsed visible — see gap matrix B9.
+HiCodex's `desktopThinkingPlaceholderItem` is guarded by `turnStatus === "in_progress"`, so it vanishes when the turn completes just like Codex's `Iy` classifier returning `{ type: 'none' }`. Completed real reasoning ThreadItems are dropped by `pushActivityItem`; they remain in reducer state for protocol fidelity but do not render as transcript rows.
 
 ## 3. Exploration card (`_v` / `Cv`)
 

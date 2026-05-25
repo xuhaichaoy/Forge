@@ -250,10 +250,59 @@
 }
 
 .hc-request-option-copy strong {
+  display: block;
   min-width: 0;
   color: #2a2d2b;
   font-weight: 520;
   overflow-wrap: anywhere;
+}
+
+.hc-request-option-copy strong[data-has-code="true"] {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hc-request-option-copy strong[data-code-layout="block"] {
+  display: grid;
+  align-items: start;
+  gap: 2px;
+}
+
+.hc-request-option-label-text {
+  min-width: 0;
+}
+
+.hc-request-option-code {
+  min-width: 0;
+  /*
+   * `flex-basis: 0` (instead of `auto`) so the long inline command preview
+   * doesn't claim a huge intrinsic basis. With `auto`, a very long shell
+   * command's nowrap width became the shrink weight, which pushed all
+   * compression onto the sibling label — squeezing "Yes, and don't ask again
+   * for commands that start with" down to ~1ch and (with the inherited
+   * `overflow-wrap: anywhere` from `.hc-request-option-copy strong`) breaking
+   * it character-by-character into a vertical column.
+   */
+  flex: 1 1 0;
+  overflow: hidden;
+  border-radius: 6px;
+  color: #6f716b;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono, monospace;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-request-option-copy strong[data-code-layout="block"] .hc-request-option-code {
+  display: -webkit-box;
+  width: 100%;
+  max-height: 2.9em;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .hc-request-option-copy small {
@@ -401,6 +450,10 @@
 .hc-app[data-theme="dark"] .hc-request-detail-row code {
   background: rgba(255, 255, 255, 0.07);
   color: rgba(255, 255, 255, 0.80);
+}
+
+.hc-app[data-theme="dark"] .hc-request-option-code {
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .hc-app[data-theme="dark"] .hc-request-command-preview {

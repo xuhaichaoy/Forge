@@ -1,9 +1,12 @@
 import {
   Bot,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
+  Clock,
+  Gauge,
   GitBranch,
   GitCommitHorizontal,
   Github,
@@ -11,6 +14,7 @@ import {
   ImageIcon,
   LoaderCircle,
   MessageSquareText,
+  Minimize2,
   Monitor,
   Network,
   PencilLine,
@@ -18,7 +22,10 @@ import {
   Terminal,
 } from "lucide-react";
 import { useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
+// codex: local-conversation-thread-CecHj6JI.js#Bl — persisted across remounts
+// (in-memory only, matches Desktop atomFamily semantics)
+import { useSectionCollapse } from "../hooks/use-section-collapse";
 import { convertLocalFileSrc } from "../lib/tauri-host";
 import { fileIconFor } from "../lib/file-icon";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
@@ -31,6 +38,7 @@ import {
   clipRailEntries,
   type RightRailDisplayMode,
   type RightRailSection as RightRailSectionViewModel,
+  type RightRailStatusFooterInput,
 } from "../state/right-rail";
 
 /*
@@ -62,10 +70,29 @@ export interface RightRailProps {
   onOpenThreadId?: OpenThreadHandler;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
+  // codex: local-conversation-thread/pe:automation — automation panel CTA;
+  // Desktop's `au` row routes to the automation detail view.
+  onAutomationOpen?: (automationId: string) => void;
+  // codex: local-conversation-thread/_e:browser-tabs — browser panel CTA;
+  // Desktop's `_l` row opens the active browser-use tab in the sandbox view.
+  onBrowserOpen?: (tabId: string | undefined) => void;
+  // codex: local-conversation-thread-CecHj6JI.js#mu — status footer payload.
+  // Desktop renders a single status popover trigger (`tokens/s` + `% used`);
+  // the full token count is tooltip-only and Compact is a menu item.
+  statusFooter?: RightRailStatusFooterInput;
+  isResponseInProgress?: boolean;
+  onCompactThread?: () => void;
+  // codex: local-conversation-thread-CecHj6JI.js#Vl — Environment section
+  // accordion accepts an `after` slot in the header (worktree menu trigger
+  // alongside diff stats). HiCodex exposes the worktree-menu open callback as
+  // an optional prop; when absent the trigger renders nothing (pure noop) so
+  // existing call sites are unaffected.
+  onOpenWorktreeMenu?: () => void;
 }
 
 export interface RailSectionProps {
   count: number;
+  defaultCollapsed?: boolean;
   id: RightRailSectionViewModel["id"];
   summary?: string;
   title: string;
@@ -91,6 +118,18 @@ export function RightRail({
   onOpenThreadId,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
+  // codex: local-conversation-thread/pe:automation,_e:browser-tabs,Ce:mu —
+  // P0 right-rail data + callbacks. HiCodexApp wires these once the
+  // corresponding feature lights up.
+  onAutomationOpen,
+  onBrowserOpen,
+  statusFooter,
+  isResponseInProgress = false,
+  onCompactThread,
+  // codex: local-conversation-thread-CecHj6JI.js#Vl — environment section
+  // header `after` slot CTA (worktree menu opener); silent when caller does
+  // not wire it so the rail keeps current behavior for non-worktree shells.
+  onOpenWorktreeMenu,
 }: RightRailProps) {
   const canOpenEntry = (entry: RailEntry) =>
     isRailEntryActionAvailable(entry, {
@@ -109,6 +148,28 @@ export function RightRail({
   };
   const openSideChatEntry = (entry: RailEntry) => {
     openRailSideChatEntry(entry, { onOpenThreadId });
+  };
+  // codex: local-conversation-thread/pe:au — automation row click opens the
+  // automation detail panel; the id is encoded as `automation:<id>` by
+  // `automationRailEntry`.
+  const canOpenAutomationEntry = () => Boolean(onAutomationOpen);
+  const openAutomationEntry = (entry: RailEntry) => {
+    if (!onAutomationOpen) return;
+    const automationId = entry.id.startsWith("automation:")
+      ? entry.id.slice("automation:".length)
+      : entry.id;
+    onAutomationOpen(automationId);
+  };
+  // codex: local-conversation-thread/_e:_l — browser row click opens the
+  // active browser-use tab; tabId is encoded as `browser:<tabId>` by
+  // `browserRailEntry` (or `browser:active` when unknown).
+  const canOpenBrowserEntry = () => Boolean(onBrowserOpen);
+  const openBrowserEntry = (entry: RailEntry) => {
+    if (!onBrowserOpen) return;
+    const tabId = entry.id.startsWith("browser:")
+      ? entry.id.slice("browser:".length)
+      : undefined;
+    onBrowserOpen(tabId === "active" ? undefined : tabId);
   };
   /*
    * Click flow for the Artifact / file cards:
@@ -136,9 +197,25 @@ export function RightRail({
         <RailSection
           key={section.id}
           count={section.count}
+          defaultCollapsed={section.defaultCollapsed}
           id={section.id}
           summary={section.summary}
           title={section.title}
+          /*
+           * codex: local-conversation-thread-CecHj6JI.js#Vl — Environment
+           * section accordion accepts an `after` prop in its header. Codex
+           * Desktop renders the worktree menu trigger (Monitor/Cloud/Worktree
+           * icon + chevron-down + current worktree label) there alongside the
+           * branch diff stats. HiCodex's branch diff stats already live inside
+           * `BranchDetailsCard` as a row trailing; the header slot is reserved
+           * for the worktree menu trigger when `onOpenWorktreeMenu` is wired.
+           */
+          headerAction={section.id === "branchDetails" && onOpenWorktreeMenu
+            ? <WorktreeMenuTrigger
+                worktreeLabel={branchDetailsWorktreeLabel(section.branchDetails)}
+                onOpen={onOpenWorktreeMenu}
+              />
+            : undefined}
         >
           {section.id === "branchDetails" && section.branchDetails
             ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
@@ -159,22 +236,164 @@ export function RightRail({
                   entries={section.allEntries}
                   sectionId={section.id}
                   backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
+                  /* codex: pe:automation,_e:browser-tabs — route the new P0
+                   * single-entry sections through dedicated open handlers so
+                   * `<RightRail onAutomationOpen=… onBrowserOpen=…>` is the
+                   * one source of truth. */
                   canOpenEntry={section.id === "artifacts"
                     ? canOpenArtifactEntry
-                    : section.id === "sources" ? undefined : canOpenEntry}
+                    : section.id === "automation"
+                      ? canOpenAutomationEntry
+                      : section.id === "browser"
+                        ? canOpenBrowserEntry
+                        : section.id === "sources" ? undefined : canOpenEntry}
                   onCleanBackgroundTerminals={section.id === "backgroundTasks" && hasBackgroundTerminalEntries(section.allEntries)
                     ? onCleanBackgroundTerminals
                     : undefined}
                   onOpenEntry={section.id === "artifacts"
                     ? openArtifactEntry
-                    : section.id === "sideChats" ? openSideChatEntry
-                    : section.id === "sources" ? undefined : openEntry}
+                    : section.id === "automation"
+                      ? openAutomationEntry
+                      : section.id === "browser"
+                        ? openBrowserEntry
+                        : section.id === "sideChats" ? openSideChatEntry
+                        : section.id === "sources" ? undefined : openEntry}
                 />
               )}
         </RailSection>
       ))}
+      {/* codex: local-conversation-thread-CecHj6JI.js#mu — status footer. */}
+      {statusFooter && (
+        <RightRailStatusFooter
+          tokensUsed={statusFooter?.tokensUsed}
+          contextWindow={statusFooter?.contextWindow}
+          tokensPerSecond={statusFooter?.tokensPerSecond}
+          isResponseInProgress={isResponseInProgress}
+          onCompactThread={onCompactThread}
+        />
+      )}
     </aside>
   );
+}
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#mu — Status footer.
+ * Renders Desktop's status popover trigger: token speed on the left, context
+ * percent on the right, and a Compact menu item inside the popover.
+ */
+export interface RightRailStatusFooterProps {
+  tokensUsed?: number;
+  contextWindow?: number;
+  tokensPerSecond?: number;
+  isResponseInProgress: boolean;
+  onCompactThread?: () => void;
+}
+
+export function RightRailStatusFooter({
+  tokensUsed,
+  contextWindow,
+  tokensPerSecond = 0,
+  isResponseInProgress,
+  onCompactThread,
+}: RightRailStatusFooterProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const contextUsage = rightRailContextUsage(tokensUsed, contextWindow);
+  const roundedTokensPerSecond = Math.round(Math.max(0, tokensPerSecond));
+  const tokensLabel = contextUsage.available
+    ? `${formatStatusNumber(contextUsage.usedTokens)} / ${formatStatusNumber(contextUsage.contextWindow)} tokens used`
+    : undefined;
+  const percentLabel = `${Math.round(contextUsage.percent ?? 0)}% used`;
+  const compactDisabled = isResponseInProgress || !onCompactThread;
+  const compactTitle = isResponseInProgress
+    ? "Compact is disabled while a task is in progress"
+    : "Compact thread";
+  const speedIconStyle = {
+    transform: `rotate(${-90 + Math.max(0, Math.min(tokensPerSecond / 300, 1)) * 270}deg)`,
+    transformOrigin: "center",
+  } as CSSProperties;
+  const donutStyle = {
+    "--hc-context-usage-percent": `${Math.max(0, Math.min(contextUsage.percent ?? 0, 100))}%`,
+  } as CSSProperties;
+  return (
+    <div
+      className="hc-rail-status-footer"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setMenuOpen(false);
+        }
+      }}
+    >
+      <button
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        aria-label={`Thread status: ${roundedTokensPerSecond} tokens/s, ${percentLabel}`}
+        className="hc-rail-status-footer-trigger"
+        onClick={() => setMenuOpen((open) => !open)}
+        title={tokensLabel}
+        type="button"
+      >
+        <span className="hc-rail-status-footer-cluster">
+          <Gauge aria-hidden="true" className="hc-rail-status-footer-icon" size={14} style={speedIconStyle} />
+          <span className="hc-rail-status-footer-label">{roundedTokensPerSecond} tokens/s</span>
+        </span>
+        <span className="hc-rail-status-footer-cluster">
+          <span className="hc-rail-status-footer-label">{percentLabel}</span>
+          <span
+            aria-label={contextUsage.available ? `Context usage: ${Math.round(contextUsage.percent ?? 0)}%` : "Context usage unavailable"}
+            className="hc-rail-status-context-donut"
+            role="img"
+            style={donutStyle}
+          />
+        </span>
+      </button>
+      {menuOpen && (
+        <div className="hc-rail-status-footer-menu" role="menu">
+          <button
+            className="hc-rail-status-footer-menu-item"
+            disabled={compactDisabled}
+            onClick={() => {
+              if (compactDisabled) return;
+              setMenuOpen(false);
+              onCompactThread?.();
+            }}
+            role="menuitem"
+            title={compactTitle}
+            type="button"
+          >
+            <Minimize2 size={14} />
+            <span>Compact</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatStatusNumber(value: number): string {
+  return Math.round(value).toLocaleString();
+}
+
+function rightRailContextUsage(
+  tokensUsed: number | null | undefined,
+  contextWindow: number | null | undefined,
+): { available: true; contextWindow: number; percent: number; usedTokens: number } | { available: false; percent: null } {
+  if (
+    tokensUsed == null
+    || contextWindow == null
+    || !Number.isFinite(tokensUsed)
+    || !Number.isFinite(contextWindow)
+    || contextWindow <= 0
+    || tokensUsed < 0
+  ) {
+    return { available: false, percent: null };
+  }
+  const usedTokens = Math.min(tokensUsed, contextWindow);
+  return {
+    available: true,
+    contextWindow,
+    percent: (usedTokens / contextWindow) * 100,
+    usedTokens,
+  };
 }
 
 /*
@@ -275,6 +494,55 @@ function BranchDetailsCard({
   );
 }
 
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#Vl/tu — Environment section
+ * header `after` slot: worktree menu trigger. Desktop's `tu(u)` aggregator
+ * threads `{worktreeLabel, worktreeMode}` into the section header next to the
+ * diff stats; clicking the chip opens the worktree mode menu (Local / Cloud /
+ * Worktree …). HiCodex re-uses the lightweight chip styling from the composer
+ * worktree menu and surfaces a single trigger button — the menu itself lives
+ * in `worktree-mode-menu.tsx` and is opened by the caller (HiCodexApp) when
+ * `onOpenWorktreeMenu` fires.
+ */
+function WorktreeMenuTrigger({
+  worktreeLabel,
+  onOpen,
+}: {
+  worktreeLabel: string;
+  onOpen: () => void;
+}): ReactNode {
+  return (
+    <button
+      aria-haspopup="menu"
+      aria-label={`Open worktree menu (${worktreeLabel})`}
+      className="hc-rail-section-action hc-rail-worktree-trigger"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      title={worktreeLabel}
+      type="button"
+    >
+      <Monitor size={12} />
+      <span className="hc-rail-worktree-trigger-label">{worktreeLabel}</span>
+      <ChevronDown size={12} />
+    </button>
+  );
+}
+
+/*
+ * codex: local-conversation-thread-CecHj6JI.js#tu — `tu(u)` Environment data
+ * aggregator exposes `currentWorktreeName`/`worktreeLabel`; HiCodex pulls the
+ * same surface label from the branchDetails local row when available and
+ * falls back to "Local" (Desktop's default chip text when no worktree is
+ * active).
+ */
+function branchDetailsWorktreeLabel(details: BranchDetailsViewModel | undefined): string {
+  if (!details) return "Local";
+  const localRow = details.rows.find((row) => row.id === "local");
+  return localRow?.value || localRow?.label || "Local";
+}
+
 function branchChangesMeta(details: BranchDetailsViewModel): string {
   if (details.diff) return details.diff.summary;
   const changedFiles = details.gitStatus?.changedFiles;
@@ -284,8 +552,14 @@ function branchChangesMeta(details: BranchDetailsViewModel): string {
   return "Review changed files";
 }
 
-export function RailSection({ count, id, summary, title, children, headerAction = null }: RailSectionProps) {
-  const [expanded, setExpanded] = useState(true);
+export function RailSection({ count, defaultCollapsed = false, id, summary, title, children, headerAction = null }: RailSectionProps) {
+  // codex: local-conversation-thread-CecHj6JI.js#Bl — persisted across remounts
+  // (in-memory only, matches Desktop atomFamily semantics). The hook seeds
+  // from `defaultCollapsed` on the first read for a given key and then writes
+  // through to a module-level Map on toggle, so users keep their collapse
+  // choice when the rail unmounts (thread switch, panel hide, etc.).
+  const [collapsed, setCollapsed] = useSectionCollapse(id, defaultCollapsed);
+  const expanded = !collapsed;
   const contentId = `hc-rail-section-content-${id}`;
   return (
     <section className="hc-rail-section">
@@ -295,11 +569,11 @@ export function RailSection({ count, id, summary, title, children, headerAction 
           aria-expanded={expanded}
           className="hc-rail-section-toggle"
           type="button"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setCollapsed(expanded)}
         >
           <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
           <span className="hc-rail-section-title">{title}</span>
-          {!expanded && count > 0 && <span className="hc-rail-section-count">{count}</span>}
+          {!expanded && count > 0 && id !== "progress" && <span className="hc-rail-section-count">{count}</span>}
         </button>
         {headerAction}
       </div>
@@ -434,9 +708,27 @@ function RailEntryContent({
   trailingAction?: ReactNode;
 }) {
   const title = displayTitle ?? entry.title;
-  const showSecondary = sectionId === "branchDetails";
-  const tooltip = entry.meta ?? title;
+  // codex: au/_l — automation and browser rows render a sublabel under the
+  // title (rrule summary / displayUrl), matching Desktop's two-line `<es>`.
+  const showSecondary = sectionId === "branchDetails"
+    || sectionId === "automations"
+    || sectionId === "automation"
+    || sectionId === "browser";
+  // codex: au — Desktop sets the row tooltip to "Next run: …" (entry.status
+  // for automation rows) rather than the rrule summary, so use status when
+  // present for automation rows; fall back to meta/title otherwise.
+  const tooltip = sectionId === "automation" && entry.status
+    ? entry.status
+    : entry.meta ?? title;
   const diffStats = sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
+  // codex: _l — browser title shimmer while the tab is active. HiCodex toggles
+  // a CSS class instead of recreating Desktop's keyframe-driven highlight
+  // overlay; visual cue is identical (animated gradient sweep).
+  const titleClassName = [
+    "hc-rail-card-title",
+    sectionId === "progress" ? "hc-rail-card-title-progress" : null,
+    sectionId === "browser" && entry.status === "active" ? "loading-shimmer" : null,
+  ].filter(Boolean).join(" ");
   return (
     <div className="hc-rail-card-main">
       <span className="hc-rail-card-icon" aria-hidden="true">
@@ -444,11 +736,13 @@ function RailEntryContent({
       </span>
       <div className="hc-rail-card-copy">
         <div className="hc-rail-card-title-row">
-          <div className="hc-rail-card-title" title={tooltip}>{title}</div>
+          <div className={titleClassName} title={tooltip}>{title}</div>
           {diffStats && <RailDiffStats stats={diffStats} />}
         </div>
         {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
-        {showSecondary && entry.status && <div className="hc-rail-card-status">{entry.status}</div>}
+        {showSecondary && entry.status && sectionId !== "browser" && (
+          <div className="hc-rail-card-status">{entry.status}</div>
+        )}
         {showSecondary && entry.details?.map((detail) => (
           <div className="hc-rail-card-status" key={detail}>{detail}</div>
         ))}
@@ -469,6 +763,10 @@ function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }
 
 function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "progress") return progressEntryIcon(entry.status);
+  // codex: local-conversation-thread/au — automation row uses Clock (`na`),
+  // not CalendarClock — that latter is the legacy `automations` plural list.
+  if (sectionId === "automation") return <Clock size={14} />;
+  if (sectionId === "automations") return <CalendarClock size={14} />;
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
   if (sectionId === "sideChats") {
     return normalizeProgressStatus(entry.status) === "inProgress"
@@ -480,6 +778,14 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
     return entry.status === "active"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
       : <Bot size={14} />;
+  }
+  if (sectionId === "browser") {
+    // codex: _l — Desktop's active state shows the `ma` spinner; idle uses
+    // the static `wa` Globe. HiCodex normalizes "active" (set by
+    // browserRailEntry) to inProgress for the same spinner output.
+    return normalizeProgressStatus(entry.status) === "inProgress"
+      ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
+      : <Globe size={14} />;
   }
   if (sectionId === "sources") {
     /*
@@ -494,6 +800,7 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
     }
     return <Network size={14} />;
   }
+  if (sectionId === "status") return progressEntryIcon(entry.status);
   const imageSrc = railEntryImageSrc(entry);
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
   if (entry.action?.kind === "url") return <Globe size={14} />;
@@ -503,7 +810,7 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
 }
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
-  return sectionId === "artifacts" || sectionId === "sources";
+  return sectionId === "progress" || sectionId === "artifacts" || sectionId === "sources";
 }
 
 /**

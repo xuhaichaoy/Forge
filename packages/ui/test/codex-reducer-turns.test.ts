@@ -43,6 +43,7 @@ export default function runCodexReducerTurnsTests(): void {
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
   turnsFailedTurnErrorsIntoStreamErrorItems();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
+  clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsCancelled();
   keepsLateUserMessageInsideItsOriginatingTurnSegment();
   optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted();
   itemCompletedReconcilesSameTurnOptimisticUserMessageWhenContentShapeDiffers();
@@ -59,10 +60,15 @@ export default function runCodexReducerTurnsTests(): void {
   upsertingLiveSnapshotWithRolloutReplayAgentMessageDoesNotDuplicateConfirmed();
   upsertingLiveSnapshotWithRolloutReplayReasoningDoesNotDuplicateConfirmed();
   upsertingLiveSnapshotWithCompletedCollabToolCallReplacesStartedTwin();
+  setThreadsHydratesCollabReceiverThreadMetadata();
   finishingTurnWithRolloutReplayUserMessageDoesNotDuplicateConfirmed();
   finishingTurnDoesNotDedupeSamePromptAcrossTurns();
   lateInProgressThreadSnapshotDoesNotReactivateCompletedTurn();
+  lateInProgressThreadSnapshotDoesNotReactivateCancelledTurn();
   redispatchingTheSameOptimisticUserMessageIsIdempotent();
+  setActiveThreadPushesThreadHistoryStack();
+  navigateBackAndForwardInHistoryMovesCursorWithoutPushing();
+  navigateBackAtHeadIsNoOpAndForwardBranchIsTruncatedOnNewSwitch();
 }
 
 function refreshThreadListPreservesDraftNewThreadState(): void {
@@ -1270,6 +1276,10 @@ function clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted(): void {
   assertTerminalTurnStatus("turn/interrupted", "interrupted", "idle");
 }
 
+function clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsCancelled(): void {
+  assertTerminalTurnStatus("turn/cancelled", "cancelled", "idle");
+}
+
 function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
   // Reproduces the regression where three consecutive failing turns put the
   // user message at the very bottom because items were appended to a flat,
@@ -2282,6 +2292,53 @@ function upsertingLiveSnapshotWithCompletedCollabToolCallReplacesStartedTwin(): 
   );
 }
 
+function setThreadsHydratesCollabReceiverThreadMetadata(): void {
+  const childThread = {
+    ...threadWithTurns("019e57e100006da4", []),
+    agentNickname: "@Weather",
+    agentRole: "researcher",
+  };
+  const state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": {
+        ...selectThreadRuntime(initialCodexUiState, null),
+        items: [
+          {
+            type: "collabAgentToolCall",
+            id: "spawn-1",
+            tool: "spawnAgent",
+            status: "completed",
+            receiverThreadIds: ["019e57e100006da4"],
+            prompt: "Check weather",
+            agentsStates: {},
+          } as unknown as AccumulatedThreadItem,
+        ],
+      },
+    },
+  };
+
+  const next = codexUiReducer(state, {
+    type: "setThreads",
+    threads: [threadWithTurns("thread-1", []), childThread],
+  });
+  const item = items(next, "thread-1")[0] as Record<string, unknown>;
+  const receiverThreads = item.receiverThreads as Array<Record<string, unknown>>;
+  const receiverThread = receiverThreads[0]?.thread as Record<string, unknown> | undefined;
+  assertEqual(
+    receiverThread?.agentNickname,
+    "@Weather",
+    "thread list refresh should hydrate collab receiver nickname like Desktop threadsById",
+  );
+  assertEqual(
+    receiverThread?.agentRole,
+    "researcher",
+    "thread list refresh should hydrate collab receiver role like Desktop threadsById",
+  );
+}
+
 function finishingTurnWithRolloutReplayUserMessageDoesNotDuplicateConfirmed(): void {
   // Same hazard, but at `turn/completed`. After the live merge above, if the
   // duplicate ever crept in, `replaceTurnSegment` must collapse the segment
@@ -2470,6 +2527,56 @@ function lateInProgressThreadSnapshotDoesNotReactivateCompletedTurn(): void {
   );
 }
 
+function lateInProgressThreadSnapshotDoesNotReactivateCancelledTurn(): void {
+  const cancelledItems: AccumulatedThreadItem[] = [
+    { ...userMessage("user-cancelled", "stop"), _turnId: "turn-cancelled", _turnStatus: "cancelled" },
+    { ...agentMessage("agent-cancelled", "Stopped."), _turnId: "turn-cancelled", _turnStatus: "cancelled" },
+  ];
+  const state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [])],
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        activeTurnId: null,
+        items: cancelledItems,
+      }),
+    },
+  };
+
+  const refreshed = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-1", [
+      {
+        id: "turn-cancelled",
+        status: "inProgress",
+        startedAt: 1,
+        items: [
+          userMessage("user-cancelled", "stop"),
+          agentMessage("agent-cancelled", "Stopping"),
+        ],
+      },
+    ]),
+    select: true,
+  });
+
+  assertEqual(
+    runtime(refreshed, "thread-1").activeTurnId,
+    null,
+    "late stale thread/read must not reactivate a cancelled turn",
+  );
+  assertEqual(
+    threadStatus(refreshed, "thread-1"),
+    "idle",
+    "late stale thread/read must not regress a cancelled turn's thread status to active",
+  );
+  assertEqual(
+    agentText(refreshed, "thread-1", "agent-cancelled"),
+    "Stopped.",
+    "late stale thread/read must preserve the terminal cancelled transcript",
+  );
+}
+
 function upsertingMetadataOnlyThreadPreservesOptimisticPrompt(): void {
   const optimistic = codexUiReducer(
     {
@@ -2545,6 +2652,106 @@ function reduceNotification(state: CodexUiState, message: JsonRpcNotification): 
   return codexUiReducer(state, { type: "notification", message });
 }
 
+function setActiveThreadPushesThreadHistoryStack(): void {
+  let state = codexUiReducer(initialCodexUiState, {
+    type: "setActiveThread",
+    threadId: "thread-a",
+  });
+  assertDeepEqual(
+    state.threadHistoryStack,
+    ["thread-a"],
+    "first setActiveThread should seed the navigation history stack",
+  );
+  assertEqual(state.threadHistoryIndex, 0, "history cursor should point at the seeded entry");
+
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-b" });
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-c" });
+  assertDeepEqual(
+    state.threadHistoryStack,
+    ["thread-a", "thread-b", "thread-c"],
+    "consecutive thread switches should append to the navigation history stack",
+  );
+  assertEqual(state.threadHistoryIndex, 2, "history cursor should advance to the newest entry");
+
+  // codex: selecting the same thread again should not push a duplicate entry
+  // (otherwise Back/Forward would feel stuck).
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-c" });
+  assertDeepEqual(
+    state.threadHistoryStack,
+    ["thread-a", "thread-b", "thread-c"],
+    "re-selecting the active thread should coalesce instead of duplicating history",
+  );
+  assertEqual(state.threadHistoryIndex, 2, "cursor should not move when coalescing duplicates");
+}
+
+function navigateBackAndForwardInHistoryMovesCursorWithoutPushing(): void {
+  let state = initialCodexUiState;
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-a" });
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-b" });
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-c" });
+
+  state = codexUiReducer(state, { type: "navigateBackInHistory" });
+  assertEqual(state.activeThreadId, "thread-b", "navigateBackInHistory should activate the previous entry");
+  assertEqual(state.threadHistoryIndex, 1, "navigateBackInHistory should move the cursor left");
+  assertDeepEqual(
+    state.threadHistoryStack,
+    ["thread-a", "thread-b", "thread-c"],
+    "navigateBackInHistory must not push a new entry",
+  );
+
+  state = codexUiReducer(state, { type: "navigateForwardInHistory" });
+  assertEqual(state.activeThreadId, "thread-c", "navigateForwardInHistory should activate the next entry");
+  assertEqual(state.threadHistoryIndex, 2, "navigateForwardInHistory should move the cursor right");
+
+  // codex: at the head of the stack, forward is a no-op.
+  const afterForwardAtHead = codexUiReducer(state, { type: "navigateForwardInHistory" });
+  assertEqual(
+    afterForwardAtHead.threadHistoryIndex,
+    2,
+    "navigateForwardInHistory at the head of the stack should be a no-op",
+  );
+  assertEqual(
+    afterForwardAtHead.activeThreadId,
+    "thread-c",
+    "navigateForwardInHistory at the head must not change the active thread",
+  );
+}
+
+function navigateBackAtHeadIsNoOpAndForwardBranchIsTruncatedOnNewSwitch(): void {
+  // codex: at the bottom of the stack (single entry), Back is a no-op.
+  let state = codexUiReducer(initialCodexUiState, {
+    type: "setActiveThread",
+    threadId: "thread-a",
+  });
+  const backAtBottom = codexUiReducer(state, { type: "navigateBackInHistory" });
+  assertEqual(
+    backAtBottom.threadHistoryIndex,
+    0,
+    "navigateBackInHistory at the bottom of the stack should be a no-op",
+  );
+  assertEqual(
+    backAtBottom.activeThreadId,
+    "thread-a",
+    "navigateBackInHistory at the bottom must not change the active thread",
+  );
+
+  // codex: setActiveThread while the cursor is in the middle of the stack
+  // should truncate any forward branch — matches browser history semantics.
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-b" });
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-c" });
+  state = codexUiReducer(state, { type: "navigateBackInHistory" });
+  state = codexUiReducer(state, { type: "navigateBackInHistory" });
+  assertEqual(state.activeThreadId, "thread-a", "cursor should be back at thread-a before the branch switch");
+
+  state = codexUiReducer(state, { type: "setActiveThread", threadId: "thread-d" });
+  assertDeepEqual(
+    state.threadHistoryStack,
+    ["thread-a", "thread-d"],
+    "switching threads mid-history should truncate the forward branch",
+  );
+  assertEqual(state.threadHistoryIndex, 1, "cursor should point at the new entry after truncation");
+}
+
 function threadWithTurns(
   id: string,
   turns: Array<{
@@ -2605,6 +2812,8 @@ function turnFixture(turn: {
 function turnStatusFixture(status: unknown): Thread["turns"][number]["status"] {
   return status === "completed"
     || status === "interrupted"
+    || status === "cancelled"
+    || status === "canceled"
     || status === "failed"
     || status === "inProgress"
     || status === "running"

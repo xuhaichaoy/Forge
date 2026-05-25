@@ -34,6 +34,8 @@ export interface PendingRequestOption {
   value: string;
   label: string;
   description: string;
+  codePreview?: string;
+  ariaLabel?: string;
 }
 
 const APPROVAL_DECISION_QUESTION_ID = "approvalDecision";
@@ -217,6 +219,10 @@ function commandApprovalQuestions(params: unknown): PendingRequestQuestion[] {
 }
 
 function fileChangeApprovalQuestions(_params: unknown): PendingRequestQuestion[] {
+  // codex: prompt + menu labels align to upstream ICU defaults —
+  //   patchApprovalRequest.prompt              = "Do you want to make these changes?"
+  //   execApprovalRequest.menu.runOnce         = "Yes"
+  //   execApprovalRequest.menu.runAlways       = "Yes, and don't ask again this session"
   return [approvalDecisionQuestion("Do you want to make these changes?", [
     { value: "accept", label: "Yes", description: "Approve this patch application." },
     { value: "acceptForSession", label: "Yes, and don't ask again this session", description: "Approve patch applications until app-server restarts." },
@@ -240,6 +246,15 @@ function approvalDecisionQuestion(
 }
 
 function commandApprovalOptions(params: unknown): PendingRequestOption[] {
+  // codex: option labels align verbatim to upstream ICU defaults —
+  //   network branch:
+  //     execApprovalRequest.network.menu.allowOnce       = "Yes, just this once"
+  //     execApprovalRequest.network.menu.allowForSession = "Yes, and allow this host for this conversation"
+  //     execApprovalRequest.network.menu.allowAlways     = "Yes, and allow this host in the future"
+  //   exec branch:
+  //     execApprovalRequest.menu.runOnce                          = "Yes"
+  //     execApprovalRequest.menu.runAlwaysWithAmendment.prefix    = "Yes, and don't ask again for commands that start with"
+  //     execApprovalRequest.menu.runAlways                        = "Yes, and don't ask again this session"
   const filterAvailable = (options: PendingRequestOption[]) =>
     filterAvailableCommandDecisionOptions(params, options);
   if (networkApprovalContext(params)) {
@@ -262,8 +277,10 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
     amendment
       ? {
           value: "acceptWithExecpolicyAmendment",
-          label: `Yes, and don't ask again for commands that start with ${execPolicyAmendmentText(amendment)}`,
+          label: "Yes, and don't ask again for commands that start with",
           description: "Approve commands with the same prefix.",
+          codePreview: execPolicyAmendmentText(amendment),
+          ariaLabel: `Yes, and don't ask again for commands that start with ${execPolicyAmendmentText(amendment)}`,
         }
       : {
           value: "acceptForSession",
@@ -274,6 +291,9 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
 }
 
 function commandApprovalTitle(params: unknown): string {
+  // codex: prompt strings align verbatim to upstream ICU defaults —
+  //   execApprovalRequest.network.prompt = `Do you want to approve network access to "{host}"?`
+  //   execApprovalRequest.prompt         = "Do you want to run this command?"
   const network = networkApprovalContext(params);
   if (network) {
     const host = stringField(network, "host");

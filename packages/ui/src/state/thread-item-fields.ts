@@ -129,6 +129,12 @@ export function isItemInProgress(item: ThreadItem): boolean {
   // while the protocol item has not completed.
   if (itemType(item) === "reasoning") return record.completed === false;
   if (itemType(item) === "proposed-plan") return record.completed === false;
+  if (itemType(item) === "user-input-response") return record.completed === false;
+  if (itemType(item) === "context-compaction") {
+    return record.completed !== true
+      && status !== "completed"
+      && record._turnStatus !== "completed";
+  }
   if (itemType(item) === "exec") {
     if (record.executionStatus === "interrupted") return false;
     const parsedCmd = recordObject(record.parsedCmd);
@@ -141,7 +147,8 @@ export function isItemInProgress(item: ThreadItem): boolean {
     return status === "pending" || status === "streaming" || status === "inProgress";
   }
   if (itemType(item) === "web-search") return record.completed === false;
-  if (item.type === "mcpToolCall" || item.type === "dynamicToolCall") {
+  if (itemType(item) === "mcp-tool-call" || itemType(item) === "dynamic-tool-call") {
+    if (typeof record.completed === "boolean") return !record.completed;
     return status !== "completed" && status !== "failed" && status !== "errored" && status !== "cancelled";
   }
   return false;
@@ -227,7 +234,14 @@ export function mcpElicitationServer(item: ThreadItem): string {
   const approval = elicitation.approval && typeof elicitation.approval === "object"
     ? elicitation.approval as Record<string, unknown>
     : null;
-  return approval ? stringField(approval, "connector_id") || stringField(approval, "connectorId") : "";
+  const approvalConnector = approval
+    ? stringField(approval, "connector_id") || stringField(approval, "connectorId")
+    : "";
+  if (approvalConnector) return approvalConnector;
+  const connector = elicitation.connector && typeof elicitation.connector === "object"
+    ? elicitation.connector as Record<string, unknown>
+    : null;
+  return connector ? stringField(connector, "connector_id") || stringField(connector, "connectorId") : "";
 }
 export function recordObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

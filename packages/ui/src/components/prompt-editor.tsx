@@ -155,6 +155,10 @@ export class PromptEditorController {
         if (pastedFiles.imageFiles.length > 0 || pastedFiles.otherFiles.length > 0) return true;
         const text = event.clipboardData?.getData("text/plain");
         if (text == null || text.length === 0) return false;
+        if (isPromptText(text)) {
+          insertPromptTextAtSelection(editorView, text);
+          return true;
+        }
         insertPlainTextAtSelection(editorView, text);
         return true;
       },
@@ -618,8 +622,12 @@ const richLinkNodeSpec: NodeSpec = {
     href: { default: "" },
     sourceAppId: { default: "" },
   },
+  // codex: parseDOM selector mirrors upstream verbatim — upstream uses the
+  // presence of all three `rich-link-*` attributes as the discriminator
+  // (no separate marker attribute):
+  //   tag: `span[rich-link-display-text][rich-link-href][rich-link-source-app-id]`
   parseDOM: [{
-    tag: "span[data-prompt-rich-link]",
+    tag: "span[rich-link-display-text][rich-link-href][rich-link-source-app-id]",
     getAttrs: (node) => {
       if (!(node instanceof HTMLElement)) return false;
       return {
@@ -632,7 +640,6 @@ const richLinkNodeSpec: NodeSpec = {
   toDOM: (node) => [
     "span",
     {
-      "data-prompt-rich-link": "true",
       "rich-link-display-text": node.attrs.displayText,
       "rich-link-href": node.attrs.href,
       "rich-link-source-app-id": node.attrs.sourceAppId,
@@ -744,6 +751,24 @@ export function promptEditorInlineNodesForTest(text: string): Array<{ type: stri
 
 export function promptEditorPromptTextRoundTripForTest(text: string): string {
   return docToPromptText(promptTextToDoc({ schema: promptEditorSchema, text })).content;
+}
+
+export function promptEditorPasteInlineNodesForTest(text: string): Array<{ type: string; attrs: Record<string, unknown>; text?: string }> {
+  const doc = promptTextToDoc({ schema: promptEditorSchema, text });
+  const nodes: Array<{ type: string; attrs: Record<string, unknown>; text?: string }> = [];
+  doc.descendants((node) => {
+    if (node.type.name === "paragraph") return true;
+    if (node.isText) {
+      nodes.push({ type: "text", attrs: {}, text: node.text ?? "" });
+      return false;
+    }
+    if (node.isInline) {
+      nodes.push({ type: node.type.name, attrs: { ...node.attrs } });
+      return false;
+    }
+    return true;
+  });
+  return nodes;
 }
 
 function promptInlineNodes(schema: Schema, line: string): Fragment | null {
@@ -984,9 +1009,25 @@ function promptRichLinkSerializedText(node: ProseMirrorNode): string {
 }
 
 function promptMentionSerializedLabel(node: ProseMirrorNode): string {
+  // codex: mirrors upstream prompt-editor markdown writer verbatim —
+  //   let n = e.type.name === `pluginMention` ? `@` : `$`;
+  //   let r = e.type.name === `appMention`    ? `app`
+  //         : e.type.name === `pluginMention` ? `plugin`
+  //                                           : `skill`;
+  //   let i = typeof e.attrs.name === `string` ? e.attrs.name : r;
+  //   t += `[${n}${i}](${o(e.attrs.path)})`
+  // (Upstream falls back to the type-tag — "skill"/"app"/"plugin" — when
+  //  the attribute is missing, rather than skipping the mention.)
   const name = String(node.attrs.name || "").replace(/^[@$]/, "");
-  if (node.type.name === "skillMention" || node.type.name === "appMention") return name ? `$${name}` : "";
-  if (node.type.name === "pluginMention") return name ? `@${name}` : "";
+  if (node.type.name === "skillMention" || node.type.name === "appMention" || node.type.name === "pluginMention") {
+    const marker = node.type.name === "pluginMention" ? "@" : "$";
+    const fallback = node.type.name === "appMention"
+      ? "app"
+      : node.type.name === "pluginMention"
+        ? "plugin"
+        : "skill";
+    return `${marker}${name || fallback}`;
+  }
   if (node.type.name === "agentMention") {
     const displayName = String(node.attrs.displayName || name).replace(/^@/, "");
     return displayName ? `@${displayName}` : "";
@@ -1036,6 +1077,13 @@ function insertPlainTextAtSelection(view: EditorView, text: string): void {
   if (isEditorViewDestroyed(view)) return;
   const nodes = lines.slice(1).map((line) => schema.nodes.paragraph.create(null, line ? schema.text(line) : null));
   safeDispatchEditorTransaction(view, view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)).scrollIntoView());
+}
+
+function insertPromptTextAtSelection(view: EditorView, text: string): void {
+  if (isEditorViewDestroyed(view)) return;
+  if (!text) return;
+  const doc = promptTextToDoc({ schema: view.state.schema, text });
+  safeDispatchEditorTransaction(view, view.state.tr.replaceSelection(new Slice(doc.content, 1, 1)).scrollIntoView());
 }
 
 export function splitPromptEditorPasteFiles<T extends PromptEditorPasteFileLike>(

@@ -37,6 +37,7 @@ import {
   settingsPanelTitle,
 } from "./settings-panel-workflow";
 import type { UiThemeSnapshot } from "./theme";
+import type { UiAppearancePreferences } from "./appearance";
 import {
   DEFAULT_WORKTREE_HOST_API,
   projectWorktreesSettingsEntries,
@@ -63,6 +64,12 @@ export interface LoadSettingsPanelContentOptions {
   notificationPreferences?: NotificationPreferences;
   uiLocale?: HiCodexLocale;
   uiTheme?: UiThemeSnapshot;
+  /*
+   * CODEX-REF: appearance-settings-BLTO9KX5.js §4 + §8. Adding Code font size
+   * and Reduce motion entries to the Appearance panel; loader forwards the
+   * current snapshot so the entries render with live values.
+   */
+  uiAppearance?: UiAppearancePreferences;
   workMode?: ComposerWorkMode;
   pendingWorktree?: PendingWorktree | null;
   worktreeHostApi?: WorktreeHostApi;
@@ -137,6 +144,7 @@ export async function loadSettingsPanelContent({
   notificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
   uiLocale,
   uiTheme,
+  uiAppearance,
   workMode = "local",
   pendingWorktree = null,
   worktreeHostApi = DEFAULT_WORKTREE_HOST_API,
@@ -208,12 +216,41 @@ export async function loadSettingsPanelContent({
     return;
   }
 
+  /*
+   * CODEX-REF: appearance-settings-BLTO9KX5.js. The panel is now rendered by
+   * AppearanceSettingsPanel directly inside SettingsPanel — bespoke 3-row
+   * inline editor with segmented toggles + number input — rather than via a
+   * flat CommandPanelEntry list. Loader still sets a minimal panel state so
+   * downstream consumers don't see a stale entry list from the previous
+   * activeSettingsPanel.
+   */
   if (panel === "appearance") {
     setSettingsPanelState(createCommandPanelState("generic", {
       status: "ready",
       title: "Appearance",
       message: "",
-      entries: appearanceSettingsEntries({ uiTheme }),
+      entries: [],
+    }));
+    return;
+  }
+
+  /*
+   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js. The panel is now
+   * rendered by KeyboardShortcutsSettingsPanel (inline 3-column table +
+   * capture-in-row) directly inside SettingsPanel, bypassing the
+   * CommandPanelEntry pipeline entirely because Codex's row layout is a
+   * 3-column table with capture-mode column swap that doesn't map onto a
+   * flat entry list. The loader still sets a minimal panel state so
+   * SettingsCommandContent doesn't render its empty-state fallback if the
+   * branch is ever bypassed; the component path takes priority in
+   * model-settings-panel.tsx.
+   */
+  if (panel === "keyboard-shortcuts") {
+    setSettingsPanelState(createCommandPanelState("generic", {
+      status: "ready",
+      title: "Keyboard shortcuts",
+      message: "",
+      entries: [],
     }));
     return;
   }

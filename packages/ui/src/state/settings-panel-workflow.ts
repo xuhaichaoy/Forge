@@ -27,50 +27,172 @@ import {
   type UiThemeMode,
   type UiThemeSnapshot,
 } from "./theme";
+import {
+  CODE_FONT_SIZE_MAX,
+  CODE_FONT_SIZE_MIN,
+  CODE_FONT_SIZE_STEP,
+  DEFAULT_UI_APPEARANCE,
+  REDUCED_MOTION_MODES,
+  clampCodeFontSize,
+  reducedMotionDescription,
+  reducedMotionLabel,
+  type ReducedMotionMode,
+  type UiAppearancePreferences,
+} from "./appearance";
+import {
+  COMMAND_DESCRIPTORS,
+  descriptorAcceleratorLabel,
+} from "./commands";
+import {
+  EMPTY_KEYMAP_OVERRIDES,
+  resolveKeymapOverride,
+  type KeymapOverrides,
+} from "./keymap-overrides";
 
+/*
+ * CODEX-REF: Codex Desktop settings webview chunks
+ * (Cursor ChatGPT extension `openai.chatgpt-26.519.32039-darwin-arm64/webview/assets/`).
+ *
+ * Section order, labels, and per-slug icon come from `settings-page-TI1bCoqP.js`
+ * (the `he` slug→icon map and the `_e` group descriptor) and `settings-shared-CsG0KAep.js`
+ * (the `settings.nav.<slug>` defaultMessage table). `settings-sections-vXm0Gtl_.js`
+ * defines the canonical slug order. Codex Desktop renders NO subtitle/description
+ * under each nav entry — `settings-shared-CsG0KAep.js` function `h(e)` returns a
+ * subtitle JSX only for the `mcp-settings` case (defaultMessage: "Connect external
+ * tools and data sources."). All other sections have no description text.
+ *
+ * HiCodex keeps its own slug names (`mcp`, `hooks`, `plugins`, `skills`, `general`)
+ * instead of Codex's `mcp-settings` / `general-settings` style because the
+ * SettingsPanelId union in composer-workflow.ts and the panel-ID branches in
+ * settings-panel-loader.ts are wired to these short slugs. The user-visible label
+ * still mirrors Codex Desktop.
+ *
+ * HiCodex-only sections (`models`, `images`, `permissions`, `approvals`, `apps`,
+ * `experimental`) have no Codex Desktop counterpart — they are kept where HiCodex
+ * had them and use HiCodex-original descriptions.
+ */
 type SettingsSectionIcon =
+  // HiCodex-original tokens
   | "general"
   | "models"
   | "images"
   | "permissions"
-  | "mcp"
-  | "skills"
-  | "hooks"
   | "apps"
-  | "plugins"
-  | "worktrees"
-  | "experimental";
+  | "experimental"
+  // Codex Desktop sections (settings-page-TI1bCoqP.js `he` map)
+  | "appearance"        // Codex sun icon
+  | "appshots"          // Codex appshot-window icon
+  | "connections"       // Codex globe icon
+  | "git"               // Codex branch icon (slug git-settings)
+  | "usage"             // Codex speedometer icon
+  | "agent"             // Codex shield-code icon (slug agent / "Configuration")
+  | "personalization"   // Codex face icon
+  | "keyboard"          // Codex inline keyboard SVG
+  | "browser"           // Codex app-window icon (slug browser-use)
+  | "computer"          // Codex cursor icon (slug computer-use)
+  | "environments"      // Codex dock icon (slug local-environments)
+  | "worktrees"         // Codex worktree icon
+  | "mcp"               // Codex mcp icon (slug mcp-settings)
+  | "skills"            // Codex skills icon (slug skills-settings)
+  | "hooks"             // Codex hooks icon (slug hooks-settings)
+  | "plugins"           // Codex apps icon (slug plugins-settings); HiCodex token "plugins"
+  | "archive";          // Codex archive icon (slug data-controls)
+
+/*
+ * CODEX-REF: Section grouping mirrors Codex Desktop `_e` descriptor in
+ * settings-page-TI1bCoqP.js at byte offset 8414:
+ *   _e=[
+ *     {key:`app`,heading:Z.appHeading,slugs:[`general-settings`,`profile`,
+ *           `appearance`,`appshots`,`connections`,`git-settings`,`usage`]},
+ *     {key:`connection`,heading:Z.hostHeading,slugs:[`agent`,`personalization`,
+ *           `keyboard-shortcuts`,`mcp-settings`,`hooks-settings`,`browser-use`,
+ *           `computer-use`,`local-environments`,`worktrees`,`data-controls`]}
+ *   ]
+ * Heading strings come from Z at byte 7504:
+ *   Z={appHeading:{id:`settings.nav.heading.app`,defaultMessage:`App`},
+ *      hostHeading:{id:`settings.nav.heading.host`,defaultMessage:`Host`}}
+ *
+ * Codex `_e` defines exactly 2 groups; HiCodex has no third group either.
+ * HiCodex-only sections (models / images / permissions / approvals / apps /
+ * experimental) that have no Codex Desktop counterpart are folded into the
+ * Codex group whose semantic they most match:
+ *   - models, images   → app   (local client-side endpoint config)
+ *   - permissions      → host  (agent runtime policy)
+ *   - approvals        → host  (agent runtime policy)
+ *   - apps             → host  (sits next to plugins / skills)
+ *   - experimental     → host  (feature gates, adjacent to data-controls)
+ */
+export type SettingsSectionGroup = "app" | "host";
+
+export const SETTINGS_SECTION_GROUP_HEADINGS: Record<SettingsSectionGroup, string | null> = {
+  // Codex Desktop: settings.nav.heading.app defaultMessage "App"
+  app: "App",
+  // Codex Desktop: settings.nav.heading.host defaultMessage "Host"
+  host: "Host",
+};
 
 export const SETTINGS_SECTIONS: Array<{
   id: SettingsPanelId;
   title: string;
   description: string;
   icon: SettingsSectionIcon;
+  group: SettingsSectionGroup;
 }> = [
-  { id: "general", title: "General", description: "Runtime and workspace", icon: "general" },
-  { id: "appearance", title: "Appearance", description: "Desktop route: appearance", icon: "general" },
-  { id: "appshots", title: "Appshots", description: "Desktop route: appshots", icon: "general" },
-  { id: "connections", title: "Connections", description: "Desktop route: connections", icon: "general" },
-  { id: "git-settings", title: "Git", description: "Desktop route: git-settings", icon: "general" },
-  { id: "models", title: "Models", description: "Provider and model profile", icon: "models" },
-  { id: "images", title: "Images", description: "Image generation endpoint", icon: "images" },
-  { id: "agent", title: "Configuration", description: "Desktop route: agent", icon: "general" },
-  { id: "personalization", title: "Personalization", description: "Desktop route: personalization", icon: "general" },
-  { id: "worktrees", title: "Worktrees", description: "Local, worktree, cloud modes", icon: "worktrees" },
-  { id: "local-environments", title: "Environments", description: "Desktop route: local-environments", icon: "general" },
-  { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions" },
-  { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions" },
-  { id: "keyboard-shortcuts", title: "Keyboard shortcuts", description: "Desktop route: keyboard-shortcuts", icon: "general" },
-  { id: "usage", title: "Usage & billing", description: "Desktop route: usage", icon: "general" },
-  { id: "browser-use", title: "Browser", description: "Desktop route: browser-use", icon: "general" },
-  { id: "computer-use", title: "Computer use", description: "Desktop route: computer-use", icon: "general" },
-  { id: "mcp", title: "MCP", description: "Servers, tools, resources", icon: "mcp" },
-  { id: "skills", title: "Skills", description: "Attach, recommend, create", icon: "skills" },
-  { id: "hooks", title: "Hooks", description: "Lifecycle hooks", icon: "hooks" },
-  { id: "apps", title: "Apps", description: "Connected apps", icon: "apps" },
-  { id: "plugins", title: "Plugins", description: "Installed plugin surfaces", icon: "plugins" },
-  { id: "data-controls", title: "Archived chats", description: "Desktop route: data-controls", icon: "general" },
-  { id: "experimental", title: "Experimental", description: "Feature gates", icon: "experimental" },
+  // === App group (Codex _e[0].slugs order, sans Codex-only `profile`;
+  // HiCodex-only models/images inserted near the end before usage to stay
+  // adjacent to general/appearance/connections client-side settings) ===
+  // Codex Desktop label "General" (settings-shared-CsG0KAep.js: settings.nav.general-settings)
+  { id: "general", title: "General", description: "Runtime and workspace", icon: "general", group: "app" },
+  // Codex Desktop label "Appearance" (settings.nav.appearance) — no subtitle
+  { id: "appearance", title: "Appearance", description: "", icon: "appearance", group: "app" },
+  // Codex Desktop label "Appshots" (settings.nav.appshots) — no subtitle
+  { id: "appshots", title: "Appshots", description: "", icon: "appshots", group: "app" },
+  // Codex Desktop label "Connections" (settings.nav.connections) — no subtitle
+  { id: "connections", title: "Connections", description: "", icon: "connections", group: "app" },
+  // Codex Desktop label "Git" (settings.nav.git-settings) — no subtitle
+  { id: "git-settings", title: "Git", description: "", icon: "git", group: "app" },
+  // HiCodex-only: local model endpoint config — no Codex counterpart, lives in app
+  { id: "models", title: "Models", description: "Provider and model profile", icon: "models", group: "app" },
+  // HiCodex-only: local image generation endpoint — no Codex counterpart, lives in app
+  { id: "images", title: "Images", description: "Image generation endpoint", icon: "images", group: "app" },
+  // Codex Desktop label "Usage & billing" (settings.nav.usage) — no subtitle
+  { id: "usage", title: "Usage & billing", description: "", icon: "usage", group: "app" },
+
+  // === Host group (Codex _e[1].slugs order, with HiCodex-only items folded
+  // into semantic-adjacent positions) ===
+  // Codex Desktop label "Configuration" (settings.nav.agent) — no subtitle
+  { id: "agent", title: "Configuration", description: "", icon: "agent", group: "host" },
+  // Codex Desktop label "Personalization" (settings.nav.personalization) — no subtitle
+  { id: "personalization", title: "Personalization", description: "", icon: "personalization", group: "host" },
+  // Codex Desktop label "Keyboard shortcuts" (settings.nav.keyboard-shortcuts) — no subtitle
+  { id: "keyboard-shortcuts", title: "Keyboard shortcuts", description: "", icon: "keyboard", group: "host" },
+  // Codex Desktop label "MCP servers" with subtitle "Connect external tools and data sources."
+  // (settings-shared-CsG0KAep.js `h(e)` for the mcp-settings case)
+  { id: "mcp", title: "MCP servers", description: "Connect external tools and data sources.", icon: "mcp", group: "host" },
+  // Codex Desktop label "Hooks" (settings.nav.hooks-settings) — no subtitle
+  { id: "hooks", title: "Hooks", description: "", icon: "hooks", group: "host" },
+  // Codex Desktop label "Plugins" (settings.nav.plugins-settings) — gated in Codex but always shown in HiCodex
+  { id: "plugins", title: "Plugins", description: "", icon: "plugins", group: "host" },
+  // Codex Desktop label "Skills" (settings.nav.skills-settings) — gated in Codex but always shown in HiCodex
+  { id: "skills", title: "Skills", description: "", icon: "skills", group: "host" },
+  // HiCodex-only: agent runtime policy — fits next to other agent-scope settings
+  { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions", group: "host" },
+  // HiCodex-only: agent approval policy — same rationale as permissions
+  { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions", group: "host" },
+  // HiCodex-only: connected apps — semantic neighbor to plugins/skills
+  { id: "apps", title: "Apps", description: "Connected apps", icon: "apps", group: "host" },
+  // Codex Desktop label "Browser" (settings.nav.browser-use) — no subtitle
+  { id: "browser-use", title: "Browser", description: "", icon: "browser", group: "host" },
+  // Codex Desktop label "Computer use" (settings.nav.computer-use) — no subtitle
+  { id: "computer-use", title: "Computer use", description: "", icon: "computer", group: "host" },
+  // Codex Desktop label "Environments" (settings.nav.local-environments) — no subtitle
+  { id: "local-environments", title: "Environments", description: "", icon: "environments", group: "host" },
+  // Codex Desktop label "Worktrees" (settings.nav.worktrees) — no subtitle
+  { id: "worktrees", title: "Worktrees", description: "Local, worktree, cloud modes", icon: "worktrees", group: "host" },
+  // HiCodex-only: feature gates — sits with other lifecycle / data settings near data-controls
+  { id: "experimental", title: "Experimental", description: "Feature gates", icon: "experimental", group: "host" },
+  // Codex Desktop label "Archived chats" (settings.nav.data-controls) — no subtitle (last in Codex _e order)
+  { id: "data-controls", title: "Archived chats", description: "", icon: "archive", group: "host" },
 ];
 
 export function isRefreshableSettingsPanel(panel: SettingsPanelId): boolean {
@@ -158,13 +280,21 @@ export function settingsPanelTitle(panel: SettingsPanelId): string {
   }
 }
 
+/*
+ * `keyboard-shortcuts` was previously routed through desktopBackedLocalSettingsEntries
+ * as a "Desktop route" placeholder; it is now served by keyboardShortcutsSettingsEntries
+ * below (CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — read-only port of the
+ * Codex Desktop 3-column command list). Rebind / key-capture / conflict detection
+ * are NOT implemented here — Codex's panel allows in-place rebind via two host
+ * bridges (codex-command-keymap-state, set-codex-command-keybinding) that HiCodex
+ * does not yet have; until those land the panel stays read-only.
+ */
 export type DesktopBackedLocalSettingsPanel =
   | "agent"
   | "appshots"
   | "connections"
   | "data-controls"
   | "git-settings"
-  | "keyboard-shortcuts"
   | "local-environments"
   | "personalization"
   | "usage"
@@ -179,7 +309,6 @@ export function isDesktopBackedLocalSettingsPanel(
     || panel === "connections"
     || panel === "data-controls"
     || panel === "git-settings"
-    || panel === "keyboard-shortcuts"
     || panel === "local-environments"
     || panel === "personalization"
     || panel === "usage"
@@ -266,12 +395,7 @@ const DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE: Record<DesktopBackedLocalSettingsPan
     chunk: "git-settings-8uEhvzRM.js",
     evidence: [],
   },
-  "keyboard-shortcuts": {
-    title: "Keyboard shortcuts",
-    slug: "keyboard-shortcuts",
-    chunk: "keyboard-shortcuts-settings-RVscBDKb.js",
-    evidence: ["host query: codex-command-keymap-state"],
-  },
+  // `keyboard-shortcuts` moved out of this map — see keyboardShortcutsSettingsEntries below.
   "local-environments": {
     title: "Environments",
     slug: "local-environments",
@@ -292,12 +416,173 @@ const DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE: Record<DesktopBackedLocalSettingsPan
   },
 };
 
+/*
+ * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js section grouping. Codex
+ * Desktop groups its 3-column command list by `commandMenuGroupKey`,
+ * rendering one section heading per group. HiCodex mirrors the same taxonomy
+ * already used in components/keyboard-shortcuts-dialog.tsx so the Settings
+ * panel and the ⌘⇧/ dialog stay visually consistent. Order of GROUP_TITLE
+ * dictates section order; anything not in the list falls under "Other".
+ */
+const KEYBOARD_SHORTCUTS_GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [
+  { key: "thread", title: "Thread" },
+  { key: "panels", title: "Panels" },
+  { key: "navigation", title: "Navigation" },
+  { key: "workspace", title: "Workspace" },
+  { key: "skills", title: "Skills" },
+  { key: "configure", title: "Configure" },
+  { key: "app", title: "App" },
+];
+
+/*
+ * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js renders an editable 3-column
+ * grid (Command / Keybinding / Actions) backed by two host bridges
+ * (`codex-command-keymap-state` query, `set-codex-command-keybinding` mutation).
+ * HiCodex ships a READ-ONLY port: one CommandPanelEntry per registered
+ * COMMAND_DESCRIPTORS entry, with the platform-resolved accelerator surfaced
+ * via the `status` field. Rebinding, key-capture, conflict detection, and
+ * "reset to default" are intentionally NOT implemented yet — they need a new
+ * Tauri-side keymap store + a key-capture component. The current panel
+ * mirrors the same data the ⌘⇧/ KeyboardShortcutsDialog already shows.
+ */
+/*
+ * CODEX-REF: kept as a pure read-only projector for callers that want a
+ * flat CommandPanelEntry view of the command catalogue (e.g. cmdk-style
+ * search). The Settings panel no longer consumes this; it renders the
+ * KeyboardShortcutsSettingsPanel component directly with bespoke
+ * 3-column / inline-capture UI mirroring keyboard-shortcuts-settings-CPv8uZNY.js.
+ * No secondaryActions because the inline panel owns the row-action affordances.
+ */
+export function keyboardShortcutsSettingsEntries(
+  overrides: KeymapOverrides = EMPTY_KEYMAP_OVERRIDES,
+): CommandPanelEntry[] {
+  const groupLabel = (key: string): string => {
+    const known = KEYBOARD_SHORTCUTS_GROUP_TITLE.find((entry) => entry.key === key);
+    if (known) return known.title;
+    if (!key) return "Other";
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  };
+  const groupOrder = (key: string): number => {
+    const index = KEYBOARD_SHORTCUTS_GROUP_TITLE.findIndex((entry) => entry.key === key);
+    return index < 0 ? KEYBOARD_SHORTCUTS_GROUP_TITLE.length : index;
+  };
+  const sorted = COMMAND_DESCRIPTORS.slice().sort((a, b) => {
+    const ag = a.commandMenuGroupKey ?? a.group;
+    const bg = b.commandMenuGroupKey ?? b.group;
+    const groupDelta = groupOrder(ag) - groupOrder(bg);
+    if (groupDelta !== 0) return groupDelta;
+    return 0;
+  });
+  return sorted.map((descriptor) => {
+    const groupKey = descriptor.commandMenuGroupKey ?? descriptor.group;
+    const accelerator = descriptorAcceleratorLabel(descriptor.id);
+    const override = resolveKeymapOverride(descriptor.id, overrides);
+    const hasOverride = override !== undefined;
+    return {
+      id: `keyboard-shortcut:${descriptor.id}`,
+      title: descriptor.title,
+      kind: "status",
+      status: accelerator ?? "—",
+      meta: hasOverride ? "Custom" : (descriptor.description ?? undefined),
+      groupKey,
+      groupLabel: groupLabel(groupKey),
+    };
+  });
+}
+
 export function appearanceSettingsEntries(context: {
   uiTheme?: UiThemeSnapshot;
+  uiAppearance?: UiAppearancePreferences;
 }): CommandPanelEntry[] {
+  const appearance = context.uiAppearance ?? DEFAULT_UI_APPEARANCE;
   return [
     projectThemeSettingsEntry(context.uiTheme ?? { mode: "system", resolved: "light" }),
+    // CODEX-REF: §4 of appearance-settings-BLTO9KX5.js — "Code font size" row
+    // (id settings.general.appearance.codeFontSize.row, unit "px").
+    projectCodeFontSizeSettingsEntry(appearance.codeFontSize),
+    // CODEX-REF: §8 of appearance-settings-BLTO9KX5.js — "Reduce motion" 3-way
+    // toggle (id settings.general.appearance.reducedMotion.label).
+    projectReducedMotionSettingsEntry(appearance.reducedMotion),
   ];
+}
+
+/*
+ * CODEX-REF: appearance-settings-BLTO9KX5.js §4. Codex Desktop renders a
+ * number input bound to client config `codeFontSize` (range 8-24, unit "px",
+ * onBlur commit). HiCodex exposes the value via the status field and uses
+ * +/- secondaryActions to step the size by 1px — that maps to the same
+ * `setCodeFontSize` action HiCodex dispatches via the command-panel pipeline.
+ */
+export function projectCodeFontSizeSettingsEntry(size: number): CommandPanelEntry {
+  const clamped = clampCodeFontSize(size);
+  const decrement = clamped > CODE_FONT_SIZE_MIN ? clamped - CODE_FONT_SIZE_STEP : null;
+  const increment = clamped < CODE_FONT_SIZE_MAX ? clamped + CODE_FONT_SIZE_STEP : null;
+  return {
+    id: "settings:code-font-size",
+    title: "Code font size",
+    kind: "status",
+    // CODEX-REF: settings.general.appearance.codeFontSize.units defaultMessage "px"
+    status: `${clamped} px`,
+    meta: `Range ${CODE_FONT_SIZE_MIN}-${CODE_FONT_SIZE_MAX} px`,
+    details: [
+      "Sets `--codex-chat-code-font-size` on the document root.",
+      "Local shell preference; does not require app-server refresh.",
+    ],
+    secondaryActions: [
+      ...(decrement !== null ? [{
+        id: `code-font-size:${decrement}`,
+        label: "−",
+        title: `Use ${decrement} px code font`,
+        action: {
+          type: "setCodeFontSize" as const,
+          title: `Use ${decrement} px code font`,
+          size: decrement,
+        },
+      }] : []),
+      ...(increment !== null ? [{
+        id: `code-font-size:${increment}`,
+        label: "+",
+        title: `Use ${increment} px code font`,
+        action: {
+          type: "setCodeFontSize" as const,
+          title: `Use ${increment} px code font`,
+          size: increment,
+        },
+      }] : []),
+    ],
+  };
+}
+
+/*
+ * CODEX-REF: appearance-settings-BLTO9KX5.js §8. Codex Desktop renders a
+ * segmented control with three buttons whose labels resolve from
+ *   settings.general.appearance.reducedMotion.{system,on,off}
+ * Default option is `system`; mode strings match the message IDs.
+ */
+export function projectReducedMotionSettingsEntry(mode: ReducedMotionMode): CommandPanelEntry {
+  return {
+    id: "settings:reduced-motion",
+    title: "Reduce motion",
+    kind: "status",
+    status: reducedMotionLabel(mode),
+    meta: "Saved locally",
+    details: [
+      reducedMotionDescription(mode),
+      "Applies via the `data-hc-reduce-motion` attribute on the document root.",
+    ],
+    secondaryActions: REDUCED_MOTION_MODES
+      .filter((nextMode) => nextMode !== mode)
+      .map((nextMode) => ({
+        id: `reduced-motion:${nextMode}`,
+        label: reducedMotionLabel(nextMode),
+        title: `Use ${reducedMotionLabel(nextMode).toLowerCase()} reduced motion`,
+        action: {
+          type: "setReducedMotion" as const,
+          title: `Use ${reducedMotionLabel(nextMode).toLowerCase()} reduced motion`,
+          mode: nextMode,
+        },
+      })),
+  };
 }
 
 export function localSettingsEntries(

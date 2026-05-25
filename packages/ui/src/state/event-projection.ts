@@ -1,6 +1,8 @@
 import { formatUnknown, stringField } from "../lib/format";
+import { formatModelDisplayName } from "../model/model-settings";
 
 import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
+import { automationScheduleSummary } from "./automation-schedule-summary";
 import type { EventFormat, EventTone, ItemRecord, ThreadItem } from "./render-group-types";
 import {
   formatCount,
@@ -14,21 +16,24 @@ import {
 export function eventLabel(item: ThreadItem): string {
   if (hiCodexImageToolOutputUrl(item)) return "Generated image";
   const type = itemType(item);
+  const record = item as ItemRecord;
   if (type === "userInput" || type === "user-input") return isCompletedRecord(item) ? "User input request" : "User input requested";
-  if (type === "user-input-response") return "User input response";
+  if (type === "user-input-response") return userInputResponseSummary(record);
   if (type === "mcp-server-elicitation") return "MCP server elicitation";
   if (type === "permission-request") return "Permission request";
   if (type === "turn-diff") return "Diff";
-  if (type === "automation-update") return "Automation update";
+  if (type === "automation-update") return automationUpdateSummary(record);
+  if (type === "auto-review-interruption-warning") return "Turn ended by Auto-review";
   if (type === "automatic-approval-review") return "Auto-review";
   if (type === "multi-agent-action") return "Subagent action";
   if (type === "plan-implementation") return "Plan implementation";
-  if (type === "remote-task-created") return "Remote task created";
-  if (type === "context-compaction") return "Context compaction";
-  if (type === "personality-changed") return "Personality changed";
-  if (type === "forked-from-conversation") return "Forked conversation";
-  if (type === "model-changed") return "Model changed";
-  if (type === "model-rerouted") return "Model rerouted";
+  if (type === "remote-task-created") return "Created task in Codex Cloud";
+  if (type === "context-compaction") return contextCompactionLabel(item);
+  if (type === "personality-changed") return personalityChangedLabel(record);
+  if (type === "forked-from-conversation") return forkedConversationLabel(record);
+  if (type === "model-changed") return modelChangedLabel(record);
+  if (type === "model-rerouted") return modelReroutedLabel(record);
+  if (type === "steered") return "Steered conversation";
   if (type === "system-error") return "System error";
   if (type === "stream-error") return "Stream error";
   if (type === "dynamic-tool-call") return "Tool call";
@@ -48,9 +53,7 @@ export function eventText(item: ThreadItem): string {
   if (type === "userInput" || type === "user-input") {
     return eventLines(userInputQuestionLines(record)) || itemText(item) || formatUnknown(item);
   }
-  if (type === "user-input-response") {
-    return eventLines(questionAnswerLines(record.questionsAndAnswers)) || itemText(item) || formatUnknown(item);
-  }
+  if (type === "user-input-response") return userInputResponseSummary(record);
   if (type === "mcp-server-elicitation") {
     return eventLines([
       `Status: ${completedStatus(item, "pending")}`,
@@ -68,11 +71,10 @@ export function eventText(item: ThreadItem): string {
     return stringField(record, "unifiedDiff") || stringField(record, "diff") || itemText(item) || formatUnknown(item);
   }
   if (type === "automation-update") {
-    const result = recordObject(record.result);
-    return eventLines([
-      `Mode: ${stringField(result, "mode") || "pending"}`,
-      `Automation ID: ${stringField(result, "automationId") || stringField(result, "automation_id") || "pending"}`,
-    ]);
+    return automationUpdateSummary(record);
+  }
+  if (type === "auto-review-interruption-warning") {
+    return "Turn ended by Auto-review";
   }
   if (type === "automatic-approval-review") {
     return eventLines([
@@ -97,34 +99,29 @@ export function eventText(item: ThreadItem): string {
     ]);
   }
   if (type === "remote-task-created") {
-    return eventLines([`Task ID: ${stringField(record, "taskId") || stringField(record, "task_id") || "unknown"}`]);
+    return "Created task in Codex Cloud";
   }
   if (type === "context-compaction") {
-    return eventLines([
-      keyValueLine("Source", record.source ?? "automatic"),
-      `Status: ${completedStatus(item, "running")}`,
-    ]);
+    return contextCompactionLabel(item);
   }
   if (type === "personality-changed") {
-    return eventLines([keyValueLine("Personality", record.personality)]);
+    return personalityChangedLabel(record);
   }
-  if (type === "forked-from-conversation") {
-    return eventLines([`Source conversation: ${stringField(record, "sourceConversationId") || stringField(record, "source_conversation_id") || "unknown"}`]);
-  }
+  if (type === "forked-from-conversation") return forkedConversationLabel(record);
   if (type === "model-changed") {
-    return modelTransitionText(record) || itemText(item) || formatUnknown(item);
+    return modelChangedLabel(record);
   }
   if (type === "model-rerouted") {
-    return eventLines([
-      modelTransitionText(record),
-      keyValueLine("Reason", record.reason),
-    ]) || itemText(item) || formatUnknown(item);
+    return modelReroutedLabel(record);
+  }
+  if (type === "steered") {
+    return "Steered conversation";
   }
   if (type === "system-error") {
-    return errorTextWithDetails(item) || formatUnknown(item);
+    return errorSummaryText(item) || formatUnknown(item);
   }
   if (type === "stream-error") {
-    return errorTextWithDetails(item) || formatUnknown(item);
+    return errorSummaryText(item) || formatUnknown(item);
   }
   if (type === "dynamic-tool-call") {
     return eventLines([
@@ -169,46 +166,40 @@ export function eventFormat(item: ThreadItem): EventFormat | undefined {
   if (hiCodexImageToolOutputUrl(item)) return "markdown";
   const type = itemType(item);
   if (type === "turn-diff") return "diff";
-  if ((type === "system-error" || type === "stream-error") && hasDistinctErrorDetails(item)) return "markdown";
+  if (type === "stream-error") return "stream-error";
+  if (type === "system-error") return "system-error";
+  if (type === "user-input-response") return "user-input-response";
+  if (type === "automation-update") return "automation-update";
+  if (type === "steered") return "status";
+  if (type === "context-compaction") return "context-status";
+  if (
+    type === "auto-review-interruption-warning"
+    || type === "model-changed"
+    || type === "model-rerouted"
+    || type === "personality-changed"
+    || type === "remote-task-created"
+    || type === "forked-from-conversation"
+  ) return "divider-status";
   if ((type === "generated-image" || type === "imageGeneration") && imageEventSource(item as ItemRecord)) {
     return "markdown";
   }
   return undefined;
 }
 
-function errorTextWithDetails(item: ThreadItem): string {
-  const summary = errorSummaryText(item);
-  const details = errorDetailsText(item);
-  if (!hasDistinctErrorDetails(item)) return summary;
-  return eventLines([
-    summary,
-    "",
-    "<details><summary>Details</summary>",
-    "",
-    fencedCodeBlock(details),
-    "",
-    "</details>",
-  ]);
-}
-
-function hasDistinctErrorDetails(item: ThreadItem): boolean {
+export function eventDetails(item: ThreadItem): string | undefined {
+  if (itemType(item) === "user-input-response") {
+    const record = item as ItemRecord;
+    if (record.completed !== true) return undefined;
+    return questionAnswerDetailText(record.questionsAndAnswers) || undefined;
+  }
+  if (itemType(item) !== "stream-error") return undefined;
   const summary = errorSummaryText(item).trim();
-  const details = errorDetailsText(item).trim();
-  return Boolean(details && details !== summary);
-}
-
-function errorDetailsText(item: ThreadItem): string {
   const record = item as ItemRecord;
-  return firstScalarText([
+  const details = firstScalarText([
     record.additionalDetails,
     record.additional_details,
-    record.rawDetail,
-    record.raw_detail,
-    record.rawDetails,
-    record.raw_details,
-    record.detail,
-    record.details,
-  ]);
+  ]).trim();
+  return details && details !== summary ? details : undefined;
 }
 
 function firstScalarText(values: unknown[]): string {
@@ -219,28 +210,10 @@ function firstScalarText(values: unknown[]): string {
   return "";
 }
 
-function fencedCodeBlock(value: string): string {
-  const longestFence = Math.max(2, ...Array.from(value.matchAll(/`+/g), (match) => match[0].length));
-  const fence = "`".repeat(longestFence + 1);
-  return `${fence}\n${value}\n${fence}`;
-}
-
 function userInputQuestionLines(record: ItemRecord): string[] {
   return recordArray(record.questions).flatMap((question) => {
     const text = stringField(question, "question") || stringField(question, "label") || scalarText(question);
     return text ? [`- ${text}`] : [];
-  });
-}
-
-function questionAnswerLines(value: unknown): string[] {
-  return recordArray(value).flatMap((questionAndAnswer) => {
-    const question = stringField(questionAndAnswer, "question");
-    const answers = Array.isArray(questionAndAnswer.answers)
-      ? questionAndAnswer.answers.map(scalarText).filter(Boolean)
-      : [];
-    const lines = question ? [`- ${question}`] : [];
-    lines.push(...answers.map((answer) => `  - ${answer}`));
-    return lines;
   });
 }
 
@@ -253,17 +226,105 @@ function completedStatus(item: ThreadItem, incompleteStatus: string): string {
   return stringField(item, "status") || incompleteStatus;
 }
 
+function contextCompactionLabel(item: ThreadItem): string {
+  const record = item as ItemRecord;
+  const source = stringField(record, "source");
+  const completed = contextCompactionCompleted(item);
+  if (source === "manual") {
+    return completed ? "Context compacted" : "Compacting context";
+  }
+  return completed ? "Context automatically compacted" : "Automatically compacting context";
+}
+
+function contextCompactionCompleted(item: ThreadItem): boolean {
+  const record = item as ItemRecord;
+  if (record.completed === true) return true;
+  if (stringField(record, "status") === "completed") return true;
+  return stringField(record, "_turnStatus") === "completed";
+}
+
 function permissionResponseText(value: unknown): string {
   if (value === null || value === undefined) return "none";
   if (typeof value === "string") return value.trim() || "granted";
   return "granted";
 }
 
-function modelTransitionText(record: ItemRecord): string {
+function modelChangedLabel(record: ItemRecord): string {
   const from = stringField(record, "fromModel") || stringField(record, "from_model");
   const to = stringField(record, "toModel") || stringField(record, "to_model");
-  if (!from && !to) return "";
-  return `${from || "unknown"} -> ${to || "unknown"}`;
+  return `Model changed from ${modelDisplayName(from)} to ${modelDisplayName(to)}.`;
+}
+
+function modelReroutedLabel(record: ItemRecord): string {
+  const to = stringField(record, "toModel") || stringField(record, "to_model");
+  return `Your request was routed to ${modelDisplayName(to)}.`;
+}
+
+function modelDisplayName(value: string): string {
+  const trimmed = value.trim();
+  return trimmed ? formatModelDisplayName(trimmed) : "Custom";
+}
+
+function personalityChangedLabel(record: ItemRecord): string {
+  const label = stringField(record, "personality") === "friendly" ? "Friendly" : "Pragmatic";
+  return `Switched to ${label} personality`;
+}
+
+function forkedConversationLabel(_record: ItemRecord): string {
+  return "Forked from conversation";
+}
+
+function userInputResponseSummary(record: ItemRecord): string {
+  const count = recordArray(record.questionsAndAnswers).length;
+  if (record.completed !== true) return count === 1 ? "Asking question" : "Asking questions";
+  return `Asked ${count} ${count === 1 ? "question" : "questions"}`;
+}
+
+function automationUpdateSummary(record: ItemRecord): string {
+  const args = recordObject(record.arguments);
+  const result = recordObject(record.result);
+  const snapshot = recordObject(result.snapshot);
+  const mode = stringField(result, "mode") || stringField(args, "mode") || stringField(record, "mode");
+  const action = automationActionLabel(mode, stringField(result, "deleteStatus") || stringField(result, "delete_status"));
+  const id = stringField(result, "automationId")
+    || stringField(result, "automation_id")
+    || stringField(args, "id")
+    || stringField(record, "id");
+  const title = stringField(args, "name")
+    || stringField(record, "name")
+    || stringField(snapshot, "name")
+    || deletedAutomationTitle(mode, id)
+    || "Untitled automation";
+  const rawSchedule = stringField(args, "rrule") || stringField(record, "rrule") || stringField(snapshot, "rrule");
+  const schedule = automationScheduleSummary(rawSchedule) ?? "";
+  return [action, title, schedule].filter(Boolean).join(" · ");
+}
+
+function automationActionLabel(mode: string, deleteStatus: string): string {
+  if (mode === "create") return "Created";
+  if (mode === "update") return "Updated";
+  if (mode === "delete") return deleteStatus === "not_found" ? "Missing" : "Deleted";
+  if (mode === "suggested-create") return "Proposed";
+  if (mode === "suggested-update") return "Proposed update";
+  return "Automation";
+}
+
+function deletedAutomationTitle(mode: string, id: string): string {
+  if (mode !== "delete") return "";
+  const trimmed = id.trim();
+  if (!trimmed) return "";
+  if (/^[0-9a-f]{8}-[0-9a-f-]+$/i.test(trimmed)) return trimmed;
+  return trimmed.replace(/[-_]+/g, " ");
+}
+
+function questionAnswerDetailText(value: unknown): string {
+  return recordArray(value).map((questionAndAnswer) => {
+    const question = stringField(questionAndAnswer, "question") || "Question";
+    const answers = Array.isArray(questionAndAnswer.answers)
+      ? questionAndAnswer.answers.map(scalarText).filter(Boolean)
+      : [];
+    return [question, answers.length > 0 ? answers.join(", ") : "No answer provided"].join("\n");
+  }).filter(Boolean).join("\n\n");
 }
 
 function dynamicToolName(record: ItemRecord): string {

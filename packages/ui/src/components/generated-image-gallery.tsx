@@ -1,4 +1,4 @@
-import { ChevronDown, Image as ImageIcon, Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
 import type { ThreadItem } from "../state/render-groups";
@@ -255,7 +255,9 @@ export function GeneratedImageGallery({
         <ImagePreviewLightbox
           src={selectedSrc}
           alt={`Generated image ${selectedIndex + 1}`}
+          imageReferrerPolicy="no-referrer"
           title={`Generated image ${selectedIndex + 1}`}
+          viewportClassName="hc-preview-lightbox-viewport--thread-content"
           onClose={handleClosePreview}
           onPreviousImage={selectedIndex > 0 ? handlePreviousImageInLightbox : undefined}
           onNextImage={selectedIndex < images.length - 1 ? handleNextImageInLightbox : undefined}
@@ -295,9 +297,8 @@ function GalleryThumbnail({
       <div
         className="hc-generated-image-gallery-thumb hc-generated-image-gallery-thumb--empty"
         style={{ width: heightPx, height: heightPx }}
-        aria-hidden={hiddenInCarousel}
       >
-        <ImageIcon aria-hidden size={18} />
+        <Loader2 aria-hidden className="hc-spin" size={16} />
       </div>
     );
   }
@@ -361,6 +362,7 @@ function GalleryOverflowControls({
           aria-label="Previous images"
           disabled={!canGoPrev}
           onClick={onPrev}
+          onPointerUp={(event) => event.currentTarget.blur()}
         >
           <ChevronDown aria-hidden className="hc-generated-image-gallery-nav-icon is-prev" size={14} />
         </button>
@@ -370,6 +372,7 @@ function GalleryOverflowControls({
           aria-label="Next images"
           disabled={!canGoNext}
           onClick={onNext}
+          onPointerUp={(event) => event.currentTarget.blur()}
         >
           <ChevronDown aria-hidden className="hc-generated-image-gallery-nav-icon is-next" size={14} />
         </button>

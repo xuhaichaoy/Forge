@@ -1,16 +1,24 @@
 import {
   Brain,
+  Check,
   ChevronRight,
-  Clock3,
+  Cloud,
+  Clock,
   FileSearch,
+  FileText,
+  GitFork,
   Globe2,
   ListTodo,
+  LoaderCircle,
   Network,
   PencilLine,
+  Sparkles,
   Terminal,
+  TriangleAlert,
   Wrench,
 } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
+import { stringField } from "../lib/format";
 import {
   type ConversationRenderUnit,
   type EventFormat,
@@ -18,10 +26,15 @@ import {
   type ToolActivityIcon,
 } from "../state/render-groups";
 import {
+  isItemInProgress,
   itemText,
   itemType,
   mcpAppResourceUri,
+  mcpServerName,
+  mcpSourceTitle,
+  mcpToolName,
 } from "../state/thread-item-fields";
+import { isRunningSkillDefinitionRead } from "../state/tool-activity-grouping";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import type { FileReference } from "./file-reference-types";
 import { CodeSnippet, Markdownish } from "./message-unit";
@@ -30,7 +43,7 @@ import {
   type McpAppHostCallHandler,
   type ReadMcpResourceHandler,
 } from "./tool-activity-detail";
-import type { OpenThreadHandler } from "./open-thread";
+import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 
 type ToolActivityViewState = "collapsed" | "expanded" | "preview";
 
@@ -78,6 +91,28 @@ function ToolActivityViewInner({
     if (!hasThinkingPlaceholder) return null;
     return <ReasoningActivityView unit={unit} />;
   }
+  if (unit.summary.groupType === "multi-agent-group") {
+    return (
+      <MultiAgentActivityView
+        unit={unit}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onOpenThreadId={onOpenThreadId}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
+      />
+    );
+  }
+  if (unit.summary.groupType === "pending-mcp-tool-calls") {
+    return (
+      <PendingMcpToolCallsActivityView
+        unit={unit}
+        onMcpAppHostCall={onMcpAppHostCall}
+        onOpenThreadId={onOpenThreadId}
+        onReadMcpResource={onReadMcpResource}
+        threadId={threadId}
+      />
+    );
+  }
 
   return (
     <GenericToolActivityView
@@ -87,6 +122,174 @@ function ToolActivityViewInner({
       onOpenThreadId={onOpenThreadId}
       threadId={threadId}
     />
+  );
+}
+
+function PendingMcpToolCallsActivityView({
+  unit,
+  onMcpAppHostCall,
+  onReadMcpResource,
+  onOpenThreadId,
+  threadId,
+}: {
+  unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
+  onOpenThreadId?: OpenThreadHandler;
+  threadId: string | null;
+}) {
+  const [viewState, setViewState] = useState<ToolActivityViewState>("collapsed");
+  const detailItems = toolActivityDetailItems(unit);
+  const expanded = viewState !== "collapsed";
+  const activeItem = pendingMcpHeaderItem(unit.items);
+  const fallbackItem = unit.items.at(-1) ?? null;
+  const headerItem = activeItem ?? fallbackItem;
+  const headerLabel = activeItem
+    ? pendingMcpActiveLabel(activeItem)
+    : `Used ${pendingMcpSourceList(unit.items)}`;
+
+  useEffect(() => {
+    setViewState("collapsed");
+  }, [unit.key]);
+
+  return (
+    <article
+      className={`hc-tool-block activity hc-pending-mcp-tool-calls ${unit.summary.inProgress ? "is-running" : ""}`}
+      data-content-search-unit-key={unit.key}
+      data-group-type={unit.summary.groupType}
+      data-item-ids={unit.items.map((item) => item.id).join(" ")}
+      data-view-state={viewState}
+    >
+      <button
+        aria-expanded={expanded}
+        className="hc-pending-mcp-tool-calls-header"
+        type="button"
+        onClick={() => setViewState((value) => nextToolActivityViewState(value))}
+      >
+        {headerItem && (
+          <span className="hc-pending-mcp-tool-calls-source-icon" aria-hidden>
+            <Network size={12} />
+          </span>
+        )}
+        <span className={`hc-pending-mcp-tool-calls-label ${activeItem ? "hc-status-event-shimmer" : ""}`}>
+          {headerLabel}
+        </span>
+        <ChevronRight className={`hc-pending-mcp-tool-calls-chevron ${expanded ? "is-open" : ""}`} size={14} />
+      </button>
+      <div
+        aria-hidden={!expanded || undefined}
+        className="hc-pending-mcp-tool-calls-body"
+        data-testid="pending-mcp-tool-calls-body"
+      >
+        <div className="hc-pending-mcp-tool-calls-body-inner">
+          {detailItems.map((item) => (
+            <ToolActivityDetail
+              item={item}
+              key={item.id}
+              onMcpAppHostCall={onMcpAppHostCall}
+              onOpenThreadId={onOpenThreadId}
+              onReadMcpResource={onReadMcpResource}
+              threadId={threadId}
+            />
+          ))}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function pendingMcpHeaderItem(items: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"]) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item && isItemInProgress(item)) return item;
+  }
+  return null;
+}
+
+function pendingMcpActiveLabel(item: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"][number]): string {
+  const tool = mcpToolName(item).trim() || "tool";
+  return `Calling ${tool}`;
+}
+
+function pendingMcpSourceList(items: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"]): string {
+  const sources: string[] = [];
+  for (const item of items) {
+    const server = mcpServerName(item);
+    const source = mcpSourceTitle(server);
+    if (!sources.includes(source)) sources.push(source);
+  }
+  if (sources.length === 0) return "MCP";
+  if (sources.length === 1) return sources[0] ?? "MCP";
+  const last = sources.at(-1);
+  return `${sources.slice(0, -1).join(", ")} and ${last}`;
+}
+
+function MultiAgentActivityView({
+  unit,
+  onMcpAppHostCall,
+  onReadMcpResource,
+  onOpenThreadId,
+  threadId,
+}: {
+  unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
+  onMcpAppHostCall?: McpAppHostCallHandler;
+  onReadMcpResource?: ReadMcpResourceHandler;
+  onOpenThreadId?: OpenThreadHandler;
+  threadId: string | null;
+}) {
+  const defaultViewState = initialToolActivityViewState(unit);
+  const [viewState, setViewState] = useState<ToolActivityViewState>(defaultViewState);
+  const detailItems = toolActivityDetailItems(unit);
+  const expanded = unit.summary.inProgress || viewState !== "collapsed";
+  const summaryLabel = useToolActivitySummaryLabel(unit);
+
+  useEffect(() => {
+    setViewState(defaultViewState);
+  }, [defaultViewState, unit.key]);
+
+  return (
+    <article
+      className={`hc-tool-block activity hc-multi-agent-action ${unit.summary.inProgress ? "is-running" : ""}`}
+      data-content-search-unit-key={unit.key}
+      data-group-type={unit.summary.groupType}
+      data-item-ids={unit.items.map((item) => item.id).join(" ")}
+      data-view-state={expanded ? "expanded" : "collapsed"}
+    >
+      <button
+        aria-expanded={expanded}
+        className="hc-multi-agent-action-header"
+        data-testid="multi-agent-action-header"
+        type="button"
+        onClick={() => {
+          if (!unit.summary.inProgress) setViewState((value) => nextToolActivityViewState(value));
+        }}
+      >
+        <span className={`hc-multi-agent-action-title ${unit.summary.inProgress ? "hc-status-event-shimmer" : ""}`}>
+          {summaryLabel}
+        </span>
+        <ChevronRight className={`hc-multi-agent-action-chevron ${expanded ? "is-open" : ""}`} size={14} />
+      </button>
+      {detailItems.length > 0 && (
+        <AnimatedDisclosure
+          className="hc-tool-details-motion"
+          dataViewState={expanded ? "expanded" : "collapsed"}
+          innerClassName="hc-tool-details"
+          open={expanded}
+          testId="multi-agent-action-rows"
+        >
+          {detailItems.map((item) => (
+            <ToolActivityDetail
+              item={item}
+              key={item.id}
+              onMcpAppHostCall={onMcpAppHostCall}
+              onOpenThreadId={onOpenThreadId}
+              onReadMcpResource={onReadMcpResource}
+              threadId={threadId}
+            />
+          ))}
+        </AnimatedDisclosure>
+      )}
+    </article>
   );
 }
 
@@ -530,12 +733,13 @@ function ToolActivitySummaryLabel({
 
 function ToolActivityIconMark({ icon }: { icon: ToolActivityIcon }) {
   const props = { className: "hc-tool-summary-icon", size: 14 };
-  if (icon === "clock") return <Clock3 {...props} />;
+  if (icon === "clock") return <Clock {...props} />;
   if (icon === "edit") return <PencilLine {...props} />;
   if (icon === "mcp") return <Network {...props} />;
   if (icon === "plan") return <ListTodo {...props} />;
   if (icon === "reasoning") return <Brain {...props} />;
   if (icon === "search") return <FileSearch {...props} />;
+  if (icon === "skill") return <Sparkles {...props} />;
   if (icon === "web-search") return <Globe2 {...props} />;
   if (icon === "terminal") return <Terminal {...props} />;
   return <Wrench {...props} />;
@@ -616,7 +820,8 @@ export function shouldShowToolActivityInlineDetail(
       && unit.summary.inProgress
       && unit.summary.groupType !== "worked-for"
       && unit.summary.groupType !== "multi-agent-group"
-      && unit.summary.groupType !== "collapsed-tool-activity",
+      && unit.summary.groupType !== "collapsed-tool-activity"
+      && unit.summary.groupType !== "web-search-group",
   );
 }
 
@@ -640,7 +845,7 @@ export function toolActivityDetailItems(unit: Extract<ConversationRenderUnit, { 
    * serialize the raw ThreadItem as JSON, producing the `"type": "reasoning"` blocks
    * the user reported.
    */
-  return unit.items.filter((item) => item.type !== "reasoning");
+  return unit.items.filter((item) => item.type !== "reasoning" && !isRunningSkillDefinitionRead(item));
 }
 
 function workedForActivityItem(items: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"]) {
@@ -657,12 +862,16 @@ function formatWorkedDuration(ms: number): string {
 
 export function ToolBlock({
   contentSearchUnitKey,
+  details,
   format = "text",
+  item,
   itemIds,
   label,
   inProgress = false,
   onOpenFileReference,
+  onOpenConversationThreadId,
   onOpenDiff,
+  onOpenRemoteTask,
   onPatchAction,
   patchActionState,
   patchActionInFlight,
@@ -670,18 +879,24 @@ export function ToolBlock({
   value,
 }: {
   contentSearchUnitKey?: string;
+  details?: string;
   format?: EventFormat;
   inProgress?: boolean;
+  item?: Extract<ConversationRenderUnit, { kind: "event" }>["item"];
   itemIds?: string;
   label: string;
+  onOpenConversationThreadId?: OpenThreadHandler;
   onOpenDiff?: () => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenRemoteTask?: OpenRemoteTaskHandler;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
   patchActionInFlight?: boolean;
   tone?: "terminal" | EventTone;
   value: string;
 }) {
+  const [streamErrorExpanded, setStreamErrorExpanded] = useState(false);
+  const [userInputExpanded, setUserInputExpanded] = useState(false);
   if (format === "diff") {
     return (
       <TurnDiffBlock
@@ -694,6 +909,161 @@ export function ToolBlock({
         patchActionInFlight={patchActionInFlight}
         value={value}
       />
+    );
+  }
+  if (format === "status" || format === "divider-status" || format === "context-status") {
+    const dividerStatus = format === "divider-status" || format === "context-status";
+    const contextStatus = format === "context-status";
+    const statusContent = dividerStatus
+      ? statusDividerContent({
+          contextStatus,
+          inProgress,
+          item,
+          label,
+          onOpenConversationThreadId,
+          onOpenRemoteTask,
+        })
+      : label;
+    return (
+      <article
+        className={`hc-status-event ${dividerStatus ? "hc-status-event-divider" : ""}`}
+        data-content-search-unit-key={contentSearchUnitKey}
+        data-item-ids={itemIds}
+        data-item-type={item ? itemType(item) : undefined}
+        data-running={dividerStatus && inProgress ? "true" : undefined}
+      >
+        {dividerStatus && <span className="hc-status-event-rule" aria-hidden="true" />}
+        <span className="hc-status-event-label">
+          {statusContent}
+        </span>
+        {dividerStatus && <span className="hc-status-event-rule" aria-hidden="true" />}
+      </article>
+    );
+  }
+  if (format === "automation-update") {
+    return (
+      <article
+        className="hc-automation-update-event"
+        data-content-search-unit-key={contentSearchUnitKey}
+        data-item-ids={itemIds}
+      >
+        <Clock aria-hidden className="hc-automation-update-icon" size={14} />
+        <span className="hc-automation-update-text">{value || label}</span>
+      </article>
+    );
+  }
+  if (format === "user-input-response") {
+    if (inProgress) {
+      return (
+        <article
+          className="hc-user-input-response-event is-pending"
+          data-content-search-unit-key={contentSearchUnitKey}
+          data-item-ids={itemIds}
+          data-running="true"
+        >
+          <div className="hc-user-input-response-summary">
+            <LoaderCircle aria-hidden className="hc-user-input-response-spinner" size={14} />
+            <span className="hc-user-input-response-summary-text">{value || label}</span>
+          </div>
+        </article>
+      );
+    }
+    const hasDetails = Boolean(details?.trim());
+    const rows = hasDetails ? userInputResponseDetailRows(details ?? "") : [];
+    const summaryContent = (
+      <>
+        <span className="hc-user-input-response-summary-text">{value || label}</span>
+        {hasDetails && <ChevronRight aria-hidden className={userInputExpanded ? "is-open" : ""} size={14} />}
+      </>
+    );
+    return (
+      <article
+        className="hc-user-input-response-event"
+        data-content-search-unit-key={contentSearchUnitKey}
+        data-has-details={hasDetails || undefined}
+        data-item-ids={itemIds}
+      >
+        {hasDetails ? (
+          <button
+            aria-expanded={userInputExpanded}
+            className="hc-user-input-response-summary"
+            type="button"
+            onClick={() => setUserInputExpanded((value) => !value)}
+          >
+            {summaryContent}
+          </button>
+        ) : (
+          <div className="hc-user-input-response-summary">
+            {summaryContent}
+          </div>
+        )}
+        {hasDetails && (
+          <AnimatedDisclosure
+            className="hc-user-input-response-details-motion"
+            innerClassName="hc-user-input-response-details"
+            open={userInputExpanded}
+          >
+            {rows.map((row, index) => (
+              <div className="hc-user-input-response-detail" key={`${row.question}-${index}`}>
+                <span className="hc-user-input-response-question">{row.question}</span>
+                <span className="hc-user-input-response-answer">{row.answer}</span>
+              </div>
+            ))}
+          </AnimatedDisclosure>
+        )}
+      </article>
+    );
+  }
+  if (format === "stream-error") {
+    const hasDetails = Boolean(details?.trim());
+    const summaryContent = (
+      <>
+        <span className="hc-error-event-text">{value || label}</span>
+        {hasDetails && <ChevronRight aria-hidden className={streamErrorExpanded ? "is-open" : ""} size={14} />}
+      </>
+    );
+    return (
+      <article
+        className="hc-error-event hc-stream-error-event"
+        data-content-search-unit-key={contentSearchUnitKey}
+        data-has-details={hasDetails || undefined}
+        data-item-ids={itemIds}
+      >
+        {hasDetails ? (
+          <button
+            aria-expanded={streamErrorExpanded}
+            className="hc-error-event-summary"
+            type="button"
+            onClick={() => setStreamErrorExpanded((value) => !value)}
+          >
+            {summaryContent}
+          </button>
+        ) : (
+          <div className="hc-error-event-summary">
+            {summaryContent}
+          </div>
+        )}
+        {hasDetails && (
+          <AnimatedDisclosure
+            className="hc-error-event-details-motion"
+            innerClassName="hc-error-event-details"
+            open={streamErrorExpanded}
+          >
+            {details}
+          </AnimatedDisclosure>
+        )}
+      </article>
+    );
+  }
+  if (format === "system-error") {
+    return (
+      <article
+        className="hc-error-event hc-system-error-event"
+        data-content-search-unit-key={contentSearchUnitKey}
+        data-item-ids={itemIds}
+      >
+        <div className="hc-error-event-text">{value || label}</div>
+      </article>
     );
   }
 
@@ -717,10 +1087,191 @@ export function ToolBlock({
   );
 }
 
+function statusDividerIcon(type: string) {
+  const className = "hc-status-event-kind-icon";
+  if (type === "auto-review-interruption-warning") return <TriangleAlert className={className} size={14} aria-hidden="true" />;
+  if (type === "model-changed") return <Brain className={className} size={14} aria-hidden="true" />;
+  if (type === "personality-changed") return <Sparkles className={className} size={14} aria-hidden="true" />;
+  if (type === "remote-task-created") return <Cloud className={className} size={14} aria-hidden="true" />;
+  if (type === "forked-from-conversation") return <GitFork className={className} size={14} aria-hidden="true" />;
+  return null;
+}
+
+function statusDividerContent({
+  contextStatus,
+  inProgress,
+  item,
+  label,
+  onOpenConversationThreadId,
+  onOpenRemoteTask,
+}: {
+  contextStatus: boolean;
+  inProgress: boolean;
+  item?: Extract<ConversationRenderUnit, { kind: "event" }>["item"];
+  label: string;
+  onOpenConversationThreadId?: OpenThreadHandler;
+  onOpenRemoteTask?: OpenRemoteTaskHandler;
+}) {
+  if (contextStatus) {
+    return (
+      <>
+        {!inProgress && <Check className="hc-status-event-icon" size={12} aria-hidden="true" />}
+        {inProgress ? <span className="hc-thinking-shimmer-text">{label}</span> : label}
+      </>
+    );
+  }
+  const type = item ? itemType(item) : "";
+  if (type === "remote-task-created") {
+    const taskId = item ? stringField(item, "taskId") || stringField(item, "task_id") : "";
+    const canOpen = Boolean(taskId && onOpenRemoteTask);
+    return (
+      <>
+        {statusDividerIcon(type)}
+        <span className="hc-status-event-rich-text" aria-label={label}>
+          Created{" "}
+          <button
+            className="hc-status-event-inline-link"
+            disabled={!canOpen}
+            type="button"
+            onClick={canOpen ? () => onOpenRemoteTask?.(taskId) : undefined}
+          >
+            task
+          </button>
+          {" "}in Codex Cloud
+        </span>
+      </>
+    );
+  }
+  if (type === "forked-from-conversation") {
+    const sourceConversationId = item
+      ? stringField(item, "sourceConversationId") || stringField(item, "source_conversation_id")
+      : "";
+    const canOpen = Boolean(sourceConversationId && onOpenConversationThreadId);
+    return (
+      <>
+        {statusDividerIcon(type)}
+        <button
+          className="hc-status-event-inline-link hc-status-event-fork-link"
+          disabled={!canOpen}
+          type="button"
+          onClick={canOpen ? () => onOpenConversationThreadId?.(sourceConversationId) : undefined}
+        >
+          {label}
+        </button>
+      </>
+    );
+  }
+  const warning = item ? statusDividerWarning(type, item) : null;
+  return (
+    <>
+      {statusDividerIcon(type)}
+      {label}
+      {item && warning && <StatusEventWarning item={item} type={type} warning={warning} />}
+    </>
+  );
+}
+
+interface StatusEventWarningModel {
+  ariaLabel: string;
+  content: ReactNode;
+  title: string;
+}
+
+function StatusEventWarning({
+  item,
+  type,
+  warning,
+}: {
+  item: Extract<ConversationRenderUnit, { kind: "event" }>["item"];
+  type: string;
+  warning: StatusEventWarningModel;
+}) {
+  const tooltipId = statusEventTooltipId(type, item);
+  return (
+    <span className="hc-status-event-warning-wrap">
+      <span
+        aria-describedby={tooltipId}
+        aria-label={warning.ariaLabel}
+        className="hc-status-event-warning"
+        role="img"
+        tabIndex={0}
+        title={warning.title}
+      >
+        <TriangleAlert size={12} aria-hidden="true" />
+      </span>
+      <span className="hc-status-event-tooltip" id={tooltipId} role="tooltip">
+        {warning.content}
+      </span>
+    </span>
+  );
+}
+
+function statusEventTooltipId(type: string, item: Extract<ConversationRenderUnit, { kind: "event" }>["item"]): string {
+  const rawId = stringField(item, "id") || `${type}-warning`;
+  return `hc-status-event-tooltip-${rawId.replace(/[^A-Za-z0-9_-]+/g, "-")}`;
+}
+
+function statusDividerWarning(
+  type: string,
+  item: Extract<ConversationRenderUnit, { kind: "event" }>["item"],
+): StatusEventWarningModel | null {
+  if (type === "auto-review-interruption-warning") {
+    const line = "Auto-review stopped this turn after repeated denials. Add more context or choose a different permission mode to continue.";
+    return {
+      ariaLabel: "Auto-review interruption guidance",
+      content: <span>{line}</span>,
+      title: line,
+    };
+  }
+  if (type === "model-changed") {
+    const line1 = "Changing models mid-conversation will degrade performance.";
+    const line2 = "Context may automatically compact.";
+    return {
+      ariaLabel: "Model change warning",
+      content: (
+        <>
+          <span>{line1}</span>
+          <span>{line2}</span>
+        </>
+      ),
+      title: `${line1}\n${line2}`,
+    };
+  }
+  if (type === "model-rerouted" && stringField(item, "reason") === "highRiskCyberActivity") {
+    const line1 = "Heads up, your request was re-routed to reduce cyber-abuse risk.";
+    const line2Prefix = "Think this is a mistake? Request a review at ";
+    const line2Suffix = " or report via /feedback";
+    return {
+      ariaLabel: "Model reroute warning",
+      content: (
+        <>
+          <span>{line1}</span>
+          <span>
+            {line2Prefix}
+            <a href="https://chatgpt.com/cyber" rel="noreferrer" target="_blank">chatgpt.com/cyber</a>
+            {line2Suffix}
+          </span>
+        </>
+      ),
+      title: `${line1}\n${line2Prefix}chatgpt.com/cyber${line2Suffix}`,
+    };
+  }
+  return null;
+}
+
+function userInputResponseDetailRows(details: string): Array<{ question: string; answer: string }> {
+  return details.split(/\n{2,}/).flatMap((block) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    return [{ question: lines[0] ?? "Question", answer: lines.slice(1).join("\n") || "No answer provided" }];
+  });
+}
+
 export interface TurnDiffFileViewModel {
   path: string;
   linesAdded: number;
   linesRemoved: number;
+  renderedLineEstimate: number;
 }
 
 export interface TurnDiffViewModel {
@@ -744,7 +1295,21 @@ export interface TurnDiffViewModel {
 export type PatchAction = "undo" | "reapply";
 export type PatchActionState = { action: PatchAction; diff: string } | null;
 
-function TurnDiffBlock({
+/**
+ * codex: local-conversation-thread-8naCrWKH `Av = 3` — default collapse
+ * threshold. The header shows `Edited N files`, the body shows the first 3
+ * file rows; further rows are revealed by the "Show N more files" footer.
+ */
+const TURN_DIFF_COLLAPSE_THRESHOLD = 3;
+
+/**
+ * codex: `gv = 5000` + `_v`/`vv` — files whose
+ * `max(unifiedLineCount, additions+deletions) > 5000` are rendered as a
+ * "Too large to render inline" row instead of inline hunks.
+ */
+const TURN_DIFF_INLINE_RENDER_CUTOFF = 5000;
+
+export function TurnDiffBlock({
   contentSearchUnitKey,
   inProgress,
   itemIds,
@@ -757,7 +1322,12 @@ function TurnDiffBlock({
   contentSearchUnitKey?: string;
   inProgress: boolean;
   itemIds?: string;
-  onOpenDiff?: () => void;
+  /**
+   * codex: local-conversation-thread `Fv` Review button + `wa(o, { path })`
+   * deep-link. When a path is supplied the host should open the diff scoped to
+   * that file (single-file review).
+   */
+  onOpenDiff?: (filePath?: string) => void;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
   /**
@@ -770,10 +1340,14 @@ function TurnDiffBlock({
   value: string;
 }) {
   const model = turnDiffViewModel(value);
-  const [expanded, setExpanded] = useState(false);
+  // codex: `Pv` local state `y` — show only the first `Av` files until expanded.
+  const [filesExpanded, setFilesExpanded] = useState(false);
+  // codex: per-file `es` disclosure — inline hunks for any file the user opened.
+  const [openInlineFiles, setOpenInlineFiles] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    setExpanded(false);
+    setFilesExpanded(false);
+    setOpenInlineFiles(new Set());
   }, [value]);
 
   if (!model.hasChanges) return null;
@@ -790,16 +1364,21 @@ function TurnDiffBlock({
         : "undo"
       : "undo";
 
+  const singleFileName = model.fileCount === 1 && model.files.length === 1 ? model.files[0]!.path : null;
+  const titleLabel = formatTurnDiffFileCount(model.fileCount, singleFileName);
+  const singleFileDetailsLabel = singleFileName == null ? null : "Details";
+
   if (inProgress) {
+    const progressTitleLabel = formatTurnDiffFilesChanged(model.fileCount);
     return (
       <article
-        className="hc-tool-block hc-turn-diff"
+        className="hc-tool-block activity hc-turn-diff-progress"
         data-content-search-unit-key={contentSearchUnitKey}
         data-item-ids={itemIds}
       >
-        <div className="hc-turn-diff-header">
+        <div className="hc-turn-diff-progress-row">
           <div className="hc-turn-diff-progress-summary">
-            <span className="hc-turn-diff-title is-muted">{formatTurnDiffFileCount(model.fileCount)}</span>
+            <span className="hc-turn-diff-progress-title">{progressTitleLabel}</span>
             <TurnDiffStats added={model.linesAdded} removed={model.linesRemoved} />
           </div>
           <div className="hc-turn-diff-spacer" />
@@ -807,16 +1386,17 @@ function TurnDiffBlock({
             <button
               className="hc-turn-diff-review"
               type="button"
-              onClick={onOpenDiff}
+              onClick={() => onOpenDiff()}
               title="Review"
               aria-label="Review changed files"
             >
               {/*
                * Codex Desktop i18n (local-conversation-thread byte ~424049+):
-               *   codex.unifiedDiff.reviewChanges     = "Review here"
-               *   codex.unifiedDiff.reviewShort       = "Review"
-               *   codex.unifiedDiff.viewDiffTooltip   = "Review"
-               *   codex.unifiedDiff.reviewChangedFiles = "Review changed files" (aria-label)
+               *   codex.unifiedDiff.reviewChanges       = "Review here"
+               *   codex.unifiedDiff.reviewShort         = "Review"
+               *   codex.unifiedDiff.viewDiffTooltip     = "Review"
+               *   codex.unifiedDiff.reviewChangedFiles  = "Review changed files" (aria-label)
+               *   codex.unifiedDiff.reviewChangesHover  = "Review changes" (hover/header subtitle)
                */}
               <span className="hc-turn-diff-review-full">Review here</span>
               <span className="hc-turn-diff-review-short">Review</span>
@@ -827,31 +1407,50 @@ function TurnDiffBlock({
     );
   }
 
+  const visibleFiles = filesExpanded
+    ? model.files
+    : model.files.slice(0, TURN_DIFF_COLLAPSE_THRESHOLD);
+  const remaining = Math.max(model.files.length - visibleFiles.length, 0);
+  const diffByFile = splitDiffByFile(value);
+
+  const handleHeaderReview = () => onOpenDiff?.();
+  const handlePerFileReview = (path: string) => onOpenDiff?.(path);
+
   return (
     <article
       className="hc-tool-block hc-turn-diff"
       data-content-search-unit-key={contentSearchUnitKey}
       data-item-ids={itemIds}
     >
-      <div className="hc-turn-diff-header">
-        <button
-          aria-expanded={expanded}
-          /*
-           * Codex Desktop i18n: `codex.unifiedDiff.collapseFiles = "Collapse files"`
-           * (and the symmetric "Show {n} more files" toggle when there are many — not
-           * implemented here since HiCodex shows all files in a single expand).
-           */
-          aria-label={expanded ? "Collapse files" : "Expand files"}
-          className="hc-turn-diff-toggle"
-          type="button"
-          onClick={() => setExpanded((value) => !value)}
-        >
-          <span className="hc-turn-diff-title">{formatTurnDiffFileCount(model.fileCount)}</span>
-          {turnDiffHeaderStatsVisible(model.fileCount, false) && (
+      {/*
+       * codex: `Pv` `group/turn-diff-header` wrapper. The whole header is
+       * covered by `Iv`, an invisible button that triggers Review on click.
+       * Inner buttons stop propagation so Undo/Reapply still work.
+       */}
+      <div className="hc-turn-diff-header hc-turn-diff-header--with-hover">
+        {onOpenDiff && (
+          // codex: `Iv` — absolute overlay button covering the entire header.
+          <button
+            type="button"
+            className="hc-turn-diff-header-overlay"
+            aria-label="Review changed files"
+            onClick={handleHeaderReview}
+          />
+        )}
+        {/* codex: `Pv` 60px header icon — file glyph inside rounded square */}
+        <span className="hc-turn-diff-header-icon" aria-hidden="true">
+          <FileText size={18} />
+        </span>
+        <div className="hc-turn-diff-header-text">
+          <span className="hc-turn-diff-title">{titleLabel}</span>
+          {/* codex: default subtitle = DiffStats; hover/focus replaces with "Review changes →" */}
+          <span className="hc-turn-diff-subtitle turn-diff-default-subtitle">
             <TurnDiffStats added={model.linesAdded} removed={model.linesRemoved} />
-          )}
-          <ChevronRight aria-hidden className={expanded ? "is-open" : ""} size={14} />
-        </button>
+          </span>
+          <span className="hc-turn-diff-subtitle turn-diff-hover-subtitle" aria-hidden="true">
+            Review changes →
+          </span>
+        </div>
         <div className="hc-turn-diff-spacer" />
         {/*
          * `onPatchAction` is always provided by `HiCodexApp.tsx` at runtime
@@ -871,37 +1470,184 @@ function TurnDiffBlock({
             aria-label={patchActionForThisDiff === "undo" ? "Undo this patch" : "Reapply this patch"}
             type="button"
             disabled={patchActionInFlight}
-            onClick={() => onPatchAction(patchActionForThisDiff, value)}
+            onClick={(event) => {
+              // codex: `Pv` inner buttons stopPropagation so the `Iv` overlay
+              // does not also trigger Review.
+              event.stopPropagation();
+              // codex: `ln(o, {eventName:"codex_undo_clicked", metadata:{source:"turn_diff"}})`
+              if (patchActionForThisDiff === "undo" && typeof console !== "undefined") {
+                console.info("codex_undo_clicked", { source: "turn_diff" });
+              }
+              onPatchAction(patchActionForThisDiff, value);
+            }}
           >
             {patchActionForThisDiff === "undo" ? "Undo" : "Reapply"}
           </button>
         )}
         {onOpenDiff && (
-          <button className="hc-turn-diff-review" type="button" onClick={onOpenDiff}>
+          <button
+            className="hc-turn-diff-review"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleHeaderReview();
+            }}
+          >
             <span className="hc-turn-diff-review-full">Review changes</span>
             <span className="hc-turn-diff-review-short">Review</span>
           </button>
         )}
       </div>
-      <AnimatedDisclosure
-        className="hc-turn-diff-motion"
-        innerClassName="hc-turn-diff-body"
-        open={expanded}
-      >
-        {model.files.length > 0 && (
-          <div className="hc-turn-diff-files">
-            {model.files.map((file) => (
+
+      <div className="hc-turn-diff-files">
+        {visibleFiles.map((file) => {
+          const tooLarge = isTurnDiffFileTooLargeToRender(file);
+          const fileDiff = diffByFile.get(file.path) ?? "";
+          const inlineOpen = openInlineFiles.has(file.path);
+          const rowLabel = singleFileDetailsLabel ?? file.path;
+          const showFileStats = singleFileDetailsLabel == null;
+          const reviewControl = onOpenDiff ? (
+            <span
+              role="button"
+              tabIndex={0}
+              className="hc-turn-diff-file-review"
+              aria-label="Show file in review"
+              title="Show in review"
+              onClick={(event) => {
+                event.stopPropagation();
+                handlePerFileReview(file.path);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                event.stopPropagation();
+                handlePerFileReview(file.path);
+              }}
+            >
+              Review
+            </span>
+          ) : null;
+          if (tooLarge) {
+            return (
               <div className="hc-turn-diff-file" key={file.path}>
-                <span>{file.path}</span>
-                <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />
+                <div className="hc-turn-diff-file-row">
+                  <span className="hc-turn-diff-file-path">{rowLabel}</span>
+                  {showFileStats && <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />}
+                  <span className="hc-turn-diff-file-too-large">
+                    {/* codex: `Rv` — large-file row label */}
+                    Too large to render inline
+                  </span>
+                  {reviewControl}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-        <CodeSnippet language="diff" text={value || ""} />
-      </AnimatedDisclosure>
+            );
+          }
+          return (
+            <div className="hc-turn-diff-file" key={file.path}>
+              <button
+                type="button"
+                className="hc-turn-diff-file-row"
+                aria-expanded={inlineOpen}
+                onClick={() => {
+                  setOpenInlineFiles((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(file.path)) next.delete(file.path);
+                    else next.add(file.path);
+                    return next;
+                  });
+                }}
+              >
+                {/* codex: `es` disclosure chevron — rotates when row is open */}
+                <ChevronRight
+                  aria-hidden
+                  size={12}
+                  className={inlineOpen ? "is-open" : ""}
+                />
+                <span className="hc-turn-diff-file-path">{rowLabel}</span>
+                {showFileStats && <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />}
+                {reviewControl}
+              </button>
+              {!tooLarge && inlineOpen && fileDiff.length > 0 ? (
+                <div className="hc-turn-diff-file-inline">
+                  {/* codex: `es` inline diff body — CodeSnippet `diff` language */}
+                  <CodeSnippet language="diff" text={fileDiff} />
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      {/*
+       * codex: `Lv` — Show N more files / Collapse files toggle.
+       * Threshold is `Av = 3`. Codex i18n keys:
+       *   codex.unifiedDiff.showMoreFiles = "Show {count} more files"
+       *   codex.unifiedDiff.collapseFiles  = "Collapse files"
+       */}
+      {remaining > 0 ? (
+        <button
+          type="button"
+          className="hc-turn-diff-expand-files"
+          aria-expanded={false}
+          onClick={() => setFilesExpanded(true)}
+        >
+          <span>{remaining === 1 ? "Show 1 more file" : `Show ${remaining} more files`}</span>
+          <ChevronRight aria-hidden size={12} className="hc-turn-diff-expand-files-chevron" />
+        </button>
+      ) : filesExpanded && model.files.length > TURN_DIFF_COLLAPSE_THRESHOLD ? (
+        <button
+          type="button"
+          className="hc-turn-diff-expand-files"
+          aria-expanded={true}
+          onClick={() => setFilesExpanded(false)}
+        >
+          <span>Collapse files</span>
+          <ChevronRight
+            aria-hidden
+            size={12}
+            className="hc-turn-diff-expand-files-chevron is-open"
+          />
+        </button>
+      ) : null}
     </article>
   );
+}
+
+/**
+ * codex: `_v`/`vv` — `max(unifiedLineCount, additions+deletions) > gv`.
+ */
+function isTurnDiffFileTooLargeToRender(file: TurnDiffFileViewModel): boolean {
+  return Math.max(file.renderedLineEstimate, file.linesAdded + file.linesRemoved) > TURN_DIFF_INLINE_RENDER_CUTOFF;
+}
+
+/**
+ * codex: `es` per-file inline diff body — recover the diff fragment for each
+ * file out of the merged unified diff. We rely on the same `diff --git a/.. b/..`
+ * marker `turnDiffGitPath` recognizes; each fragment runs from one marker line
+ * up to (but not including) the next marker.
+ */
+function splitDiffByFile(diff: string): Map<string, string> {
+  const result = new Map<string, string>();
+  const lines = diff.split("\n");
+  let currentPath: string | null = null;
+  let buffer: string[] = [];
+  const flush = () => {
+    if (currentPath != null && buffer.length > 0) {
+      result.set(currentPath, buffer.join("\n"));
+    }
+  };
+  for (const line of lines) {
+    const headerPath = turnDiffGitPath(line);
+    if (headerPath != null) {
+      flush();
+      currentPath = headerPath;
+      buffer = [line];
+      continue;
+    }
+    if (currentPath != null) buffer.push(line);
+  }
+  flush();
+  return result;
 }
 
 function TurnDiffStats({ added, removed }: { added: number; removed: number }) {
@@ -913,12 +1659,37 @@ function TurnDiffStats({ added, removed }: { added: number; removed: number }) {
   );
 }
 
-export function formatTurnDiffFileCount(fileCount: number): string {
+/**
+ * codex: local-conversation-thread `Pv` header — i18n keys
+ *   codex.unifiedDiff.editedFiles plural { one: "Edited 1 file", other: "Edited {count} files" }
+ *   codex.unifiedDiff.editedFile = "Edited {filename}"
+ *
+ * Accepts an optional `singleFileName`; when fileCount === 1 and a filename is
+ * supplied, returns the file-specific label. Otherwise falls back to the
+ * plural-aware count label.
+ */
+export function formatTurnDiffFileCount(fileCount: number, singleFileName?: string | null): string {
+  if (fileCount === 1) {
+    if (typeof singleFileName === "string" && singleFileName.trim().length > 0) {
+      // codex: codex.unifiedDiff.editedFile defaultMessage="Edited {filename}"
+      return `Edited ${turnDiffBasename(singleFileName)}`;
+    }
+    return "Edited 1 file";
+  }
+  return `Edited ${fileCount} files`;
+}
+
+export function formatTurnDiffFilesChanged(fileCount: number): string {
   return fileCount === 1 ? "1 file changed" : `${fileCount} files changed`;
 }
 
+function turnDiffBasename(path: string): string {
+  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+  return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
 export function turnDiffHeaderStatsVisible(fileCount: number, inProgress: boolean): boolean {
-  return inProgress || fileCount > 1;
+  return inProgress || fileCount > 0;
 }
 
 export function turnDiffViewModel(diff: string): TurnDiffViewModel {
@@ -943,6 +1714,7 @@ export function turnDiffViewModel(diff: string): TurnDiffViewModel {
 function turnDiffFiles(diff: string): TurnDiffFileViewModel[] {
   const files: TurnDiffFileViewModel[] = [];
   let current: TurnDiffFileViewModel | null = null;
+  let inHunk = false;
   for (const line of diff.split("\n")) {
     const gitPath = turnDiffGitPath(line);
     if (gitPath) {
@@ -950,15 +1722,45 @@ function turnDiffFiles(diff: string): TurnDiffFileViewModel[] {
         path: gitPath,
         linesAdded: 0,
         linesRemoved: 0,
+        renderedLineEstimate: 0,
       };
       files.push(current);
+      inHunk = false;
       continue;
     }
     if (!current) continue;
-    if (line.startsWith("+") && !line.startsWith("+++")) current.linesAdded += 1;
-    else if (line.startsWith("-") && !line.startsWith("---")) current.linesRemoved += 1;
+    if (line.startsWith("@@")) {
+      current.renderedLineEstimate += 1;
+      inHunk = true;
+      continue;
+    }
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) {
+      current.linesAdded += 1;
+      if (inHunk) current.renderedLineEstimate += 1;
+    } else if (line.startsWith("-")) {
+      current.linesRemoved += 1;
+      if (inHunk) current.renderedLineEstimate += 1;
+    } else if (inHunk && (line.startsWith(" ") || line.startsWith("\\"))) {
+      current.renderedLineEstimate += 1;
+    }
   }
-  return files.length > 0 ? files : fallbackUnifiedDiffFiles(diff);
+  return files.length > 0 ? mergeTurnDiffFiles(files) : fallbackUnifiedDiffFiles(diff);
+}
+
+function mergeTurnDiffFiles(files: TurnDiffFileViewModel[]): TurnDiffFileViewModel[] {
+  const byPath = new Map<string, TurnDiffFileViewModel>();
+  for (const file of files) {
+    const existing = byPath.get(file.path);
+    if (!existing) {
+      byPath.set(file.path, { ...file });
+      continue;
+    }
+    existing.linesAdded += file.linesAdded;
+    existing.linesRemoved += file.linesRemoved;
+    existing.renderedLineEstimate += file.renderedLineEstimate;
+  }
+  return Array.from(byPath.values());
 }
 
 function turnDiffGitPath(line: string): string | null {
@@ -1016,20 +1818,35 @@ function parseQuotedDiffPath(value: string, startIndex: number): { path: string;
 function fallbackUnifiedDiffFiles(diff: string): TurnDiffFileViewModel[] {
   const files: TurnDiffFileViewModel[] = [];
   let current: TurnDiffFileViewModel | null = null;
+  let inHunk = false;
   for (const line of diff.split("\n")) {
     if (line.startsWith("+++ ")) {
       const path = normalizeDiffHeaderPath(line.slice(4));
       if (path && path !== "/dev/null") {
-        current = { path, linesAdded: 0, linesRemoved: 0 };
+        current = { path, linesAdded: 0, linesRemoved: 0, renderedLineEstimate: 0 };
         files.push(current);
+        inHunk = false;
       }
       continue;
     }
     if (!current) continue;
-    if (line.startsWith("+") && !line.startsWith("+++")) current.linesAdded += 1;
-    else if (line.startsWith("-") && !line.startsWith("---")) current.linesRemoved += 1;
+    if (line.startsWith("@@")) {
+      current.renderedLineEstimate += 1;
+      inHunk = true;
+      continue;
+    }
+    if (line.startsWith("---")) continue;
+    if (line.startsWith("+")) {
+      current.linesAdded += 1;
+      if (inHunk) current.renderedLineEstimate += 1;
+    } else if (line.startsWith("-")) {
+      current.linesRemoved += 1;
+      if (inHunk) current.renderedLineEstimate += 1;
+    } else if (inHunk && (line.startsWith(" ") || line.startsWith("\\"))) {
+      current.renderedLineEstimate += 1;
+    }
   }
-  return files;
+  return mergeTurnDiffFiles(files);
 }
 
 function normalizeDiffHeaderPath(value: string): string {

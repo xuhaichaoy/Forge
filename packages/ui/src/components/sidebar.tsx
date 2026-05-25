@@ -41,6 +41,9 @@ import {
   type SidebarThreadStatusState,
 } from "../state/sidebar-projection";
 import { threadTitle } from "../state/thread-workflow";
+// codex: electron-menu-shortcuts-DQYPVyfu.js — sidebar nav entries surface
+// the accelerator next to the label (matches Desktop tooltip + menu format).
+import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 
 const threadRowClass =
   "group relative flex h-token-nav-row cursor-interaction rounded-lg px-row-x py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--vscode-focusBorder)]";
@@ -442,6 +445,14 @@ export function Sidebar({
             className={threadMenuClass}
             ref={threadMenuRef}
             role="menu"
+            /*
+             * `data-state="open"` so HiCodex's global type-to-focus selector
+             * (`HiCodexApp.tsx::focusComposerFromPlainTextKey`,
+             * `[role="menu"][data-state="open"]`) treats this popover as
+             * active. Mirrors the Radix-style marker Codex Desktop uses on
+             * every interactive popover. Mount equals open here.
+             */
+            data-state="open"
             style={{
               left: openThreadMenu.x,
               maxHeight: `calc(100vh - ${threadMenuViewportMarginPx * 2}px)`,
@@ -547,15 +558,19 @@ export function Sidebar({
     <aside className="hc-sidebar" id="hc-sidebar">
       {renderUpdateBadge()}
       <div className="hc-sidebar-nav">
+        {/* codex: electron-menu-shortcuts-DQYPVyfu.js#newThread / searchChats — */}
+        {/* sidebar nav entries surface their command accelerator alongside the label. */}
         <SidebarNavItem
           icon={connecting ? <Loader2 className="hc-spin" size={17} /> : <MessageSquarePlus size={17} />}
           label={connected ? "New chat" : "Connect"}
+          accelerator={connected ? descriptorAcceleratorLabel(COMMAND_IDS.newThread) : null}
           onClick={() => void (connected ? onCreateThread() : onConnect())}
           disabled={connecting}
         />
         <SidebarNavItem
           icon={<Search size={17} />}
           label="Search"
+          accelerator={descriptorAcceleratorLabel(COMMAND_IDS.searchChats)}
           onClick={() => void onOpenSearch()}
         />
         <SidebarNavItem
@@ -624,7 +639,7 @@ export function Sidebar({
                   <ListFilter size={13} />
                 </button>
                 {openSectionMenu === "filter" && (
-                  <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
+                  <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu" data-state="open">
                     <div className="hc-thread-menu-title">Organize</div>
                     <button
                       type="button"
@@ -704,7 +719,7 @@ export function Sidebar({
                   <FolderPlus size={13} />
                 </button>
                 {openSectionMenu === "add-project" && (
-                  <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu">
+                  <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu" data-state="open">
                     <button
                       type="button"
                       className="hc-thread-menu-item"
@@ -754,7 +769,13 @@ export function Sidebar({
             onClick={onToggleTheme}
           />
         )}
-        <SidebarNavItem icon={<Settings size={17} />} label="Settings" onClick={onOpenSettings} />
+        {/* codex: electron-menu-shortcuts-DQYPVyfu.js#settings — ⌘, */}
+        <SidebarNavItem
+          icon={<Settings size={17} />}
+          label="Settings"
+          accelerator={descriptorAcceleratorLabel(COMMAND_IDS.settings)}
+          onClick={onOpenSettings}
+        />
       </div>
     </aside>
   );
@@ -898,7 +919,7 @@ function SidebarAccountSummary({
         <ChevronRight className="hc-sidebar-account-chevron" size={14} aria-hidden="true" />
       </button>
       {open && (
-        <div className="hc-sidebar-account-menu" role="menu">
+        <div className="hc-sidebar-account-menu" role="menu" data-state="open">
           {items.map((item) => item.action
             ? (
                 <button
@@ -973,23 +994,35 @@ function SidebarNavItem({
   disabled = false,
   icon,
   label,
+  // codex: electron-menu-shortcuts-DQYPVyfu.js — Codex Desktop sidebar nav entries
+  // render the platform-formatted accelerator alongside the label (matching the
+  // tooltip surfaced in its command menu).
+  accelerator,
   onClick,
 }: {
   active?: boolean;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
+  accelerator?: string | null;
   onClick: () => void;
 }) {
+  const acceleratorHint = typeof accelerator === "string" && accelerator.length > 0 ? accelerator : null;
   return (
     <button
       className={`hc-sidebar-nav-item ${active ? "is-active" : ""}`}
       disabled={disabled}
       onClick={onClick}
       type="button"
+      title={acceleratorHint ? `${label} (${acceleratorHint})` : label}
     >
       <span className="hc-sidebar-nav-icon" aria-hidden="true">{icon}</span>
       <span className="hc-sidebar-nav-label">{label}</span>
+      {acceleratorHint && (
+        <kbd className="hc-sidebar-nav-accelerator" aria-hidden="true">
+          {acceleratorHint}
+        </kbd>
+      )}
     </button>
   );
 }

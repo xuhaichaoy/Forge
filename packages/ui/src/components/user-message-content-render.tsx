@@ -4,10 +4,10 @@ import {
   Bot,
   FileImage,
   PlugZap,
-  Sparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
 import { fileIconFor } from "../lib/file-icon";
@@ -25,16 +25,17 @@ export type UserMessageMarkdownRenderer = (
  * `whitespace-pre-wrap` div (`T`/`ke` in `reply-pigVihi-.js:14212`) that
  * inlines `$skill` and `@path` chips alongside the prose. Only the
  * standalone `n.attachments` and `n.images` arrays escape the bubble into
- * a sibling strip.
+ * one sibling strip.
  *
  * HiCodex's protocol surfaces chips as their own `userContent` parts
  * (skill/file/mention/agent/plugin/app), so we don't re-parse them out of
  * the text. Instead the views below split content into two channels:
  *
- *   - `UserMessageAttachmentStrip` — images only (mirrors `n.images`).
- *   - `UserMessageTextContentView` — text parts and every non-image chip,
- *     rendered in original order so chips flow inline with the surrounding
- *     prose (mirrors `T`/`ke`).
+ *   - `UserMessageAttachmentStrip` — images plus file attachment pills
+ *     (mirrors Desktop's unified n.attachments/n.images strip).
+ *   - `UserMessageTextContentView` — text parts and inline prompt chips,
+ *     rendered in original order so $skill / @path chips flow with the
+ *     surrounding prose (mirrors `T`/`ke`).
  *
  * `UserMessageContentView` keeps the legacy wrapper that pairs both, but
  * the live call site (`message-unit.tsx`) places the image strip OUTSIDE
@@ -71,30 +72,31 @@ export function UserMessageContentView({
 }
 
 /*
- * Mirrors Codex's `n.images` strip — only image parts escape the bubble
- * into the standalone attachment row. Every other chip kind flows inline
- * inside the bubble via `UserMessageTextContentView`.
+ * Mirrors Codex's unified user attachment strip: file attachment pills and
+ * images share the same right-aligned row above the text bubble.
  */
 export function UserMessageAttachmentStrip({
   unit,
+  onOpenFileReference,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "message" }>;
-  /*
-   * `onOpenFileReference` / `renderMarkdown` are still accepted for the
-   * legacy `UserMessageContentView` call signature but the strip only
-   * renders image parts; both props are intentionally unused here.
-   */
   onOpenFileReference?: (reference: FileReference) => void;
+  /*
+   * `renderMarkdown` is still accepted for the legacy
+   * `UserMessageContentView` call signature but the strip renders only
+   * structured attachment parts.
+   */
   renderMarkdown?: UserMessageMarkdownRenderer;
 }) {
-  const images = (unit.userContent ?? []).filter((part) => part.kind === "image");
-  if (images.length === 0) return null;
+  const attachments = userMessageAttachmentParts(unit);
+  if (attachments.length === 0) return null;
   return (
     <div className="hc-user-message-attachments">
-      {images.map((part, index) => (
-        <UserMessageImagePartView
+      {attachments.map((part, index) => (
+        <UserMessageAttachmentPartView
           key={userContentPartKey(part, index)}
-          part={part as Extract<UserMessageContentPart, { kind: "image" }>}
+          part={part}
+          onOpenFileReference={onOpenFileReference}
         />
       ))}
     </div>
@@ -110,12 +112,10 @@ export function UserMessageTextContentView({
   onOpenFileReference?: (reference: FileReference) => void;
   renderMarkdown: UserMessageMarkdownRenderer;
 }) {
-  const inlineParts = (unit.userContent ?? []).filter((part) => {
-    if (part.kind === "image") return false;
-    if (part.kind === "text") return part.text.trim().length > 0;
-    return true;
-  });
+  const content = unit.userContent ?? [];
+  const inlineParts = userMessageInlineParts(content);
   if (inlineParts.length === 0) {
+    if (content.length > 0) return null;
     return <>{renderMarkdown(unit.text, onOpenFileReference)}</>;
   }
   return (
@@ -129,6 +129,45 @@ export function UserMessageTextContentView({
       ))}
     </div>
   );
+}
+
+export function hasInlineUserMessageContent(
+  unit: Extract<ConversationRenderUnit, { kind: "message" }>,
+): boolean {
+  const content = unit.userContent ?? [];
+  if (content.length === 0) return unit.text.trim().length > 0;
+  return userMessageInlineParts(content).length > 0;
+}
+
+export function userMessageAttachmentPartsForTest(
+  parts: UserMessageContentPart[],
+): UserMessageContentPart[] {
+  return userMessageAttachmentParts({ userContent: parts });
+}
+
+export function userMessageInlinePartsForTest(
+  parts: UserMessageContentPart[],
+): UserMessageContentPart[] {
+  return userMessageInlineParts(parts);
+}
+
+function userMessageAttachmentParts(
+  unit: Pick<Extract<ConversationRenderUnit, { kind: "message" }>, "userContent">,
+): UserMessageContentPart[] {
+  return (unit.userContent ?? []).filter(isUserMessageAttachmentPart);
+}
+
+function userMessageInlineParts(parts: UserMessageContentPart[]): UserMessageContentPart[] {
+  return parts.filter((part) => {
+    if (isUserMessageAttachmentPart(part)) return false;
+    if (part.kind === "text") return part.text.trim().length > 0;
+    return true;
+  });
+}
+
+function isUserMessageAttachmentPart(part: UserMessageContentPart): boolean {
+  if (part.kind === "image") return true;
+  return part.kind === "chip" && part.chipKind === "file" && part.presentation !== "inline";
 }
 
 function UserMessageContentPartView({
@@ -159,6 +198,28 @@ function UserMessageContentPartView({
     return <UserMessageImagePartView part={part} />;
   }
   return <UserMessageChipView part={part} onOpenFileReference={onOpenFileReference} />;
+}
+
+function UserMessageAttachmentPartView({
+  part,
+  onOpenFileReference,
+}: {
+  part: UserMessageContentPart;
+  onOpenFileReference?: (reference: FileReference) => void;
+}) {
+  if (part.kind === "image") {
+    return <UserMessageImagePartView part={part} />;
+  }
+  if (part.kind === "chip" && part.chipKind === "file") {
+    return (
+      <UserMessageChipView
+        part={part}
+        onOpenFileReference={onOpenFileReference}
+        variant="attachment"
+      />
+    );
+  }
+  return null;
 }
 
 export type UserMessageInlineMarkdownSegment =
@@ -283,14 +344,25 @@ function isExternalUserMessageHref(value: string): boolean {
 function UserMessageChipView({
   part,
   onOpenFileReference,
+  variant = "inline",
 }: {
   part: Extract<UserMessageContentPart, { kind: "chip" }>;
   onOpenFileReference?: (reference: FileReference) => void;
+  variant?: "inline" | "attachment";
 }) {
   const { icon, label, prefix } = chipVisual(part);
   const displayLabel = `${prefix}${label}`;
-  const style = part.brandColor ? { color: part.brandColor } : undefined;
-  const className = `hc-user-chip hc-user-chip-${part.chipKind}`;
+  const style = part.brandColor && part.chipKind !== "skill" ? { color: part.brandColor } : undefined;
+  const className = `hc-user-chip hc-user-chip-${part.chipKind}${variant === "attachment" ? " hc-user-attachment-pill" : ""}`;
+
+  if (part.chipKind === "skill") {
+    return (
+      <span className={className} title={part.path || label}>
+        <span className="hc-user-chip-skill-icon-slot">{icon}</span>
+        <span className="hc-user-chip-skill-label">{displayLabel}</span>
+      </span>
+    );
+  }
 
   // 可点击：file / mention 类带 path 且提供了 onOpenFileReference
   const isInteractive = (part.chipKind === "mention" || part.chipKind === "file") && Boolean(part.path) && Boolean(onOpenFileReference);
@@ -333,7 +405,7 @@ function chipVisual(
         prefix: "",
       };
     case "skill":
-      return { icon: iconImg ?? <Sparkles size={13} />, label, prefix: "$" };
+      return { icon: iconImg ?? <SkillMentionIcon />, label, prefix: "" };
     case "app":
       return { icon: iconImg ?? <AppWindow size={13} />, label, prefix: "$" };
     case "plugin":
@@ -344,6 +416,33 @@ function chipVisual(
     default:
       return { icon: iconImg ?? <AtSign size={13} />, label, prefix: "@" };
   }
+}
+
+function SkillMentionIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="hc-user-chip-skill-icon"
+      fill="none"
+      viewBox="0 0 20 20"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M10.1 1.8 15.1 4.9c.55.34.9.96.9 1.62v6.86c0 .68-.36 1.31-.94 1.66l-5.17 3.18c-.61.37-1.38.35-1.97-.06l-3.12-2.13A1.9 1.9 0 0 1 4 14.46V6.58c0-.67.35-1.29.92-1.64l4.02-2.48c.35-.22.78-.46 1.16-.66Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+      <path
+        d="M4.9 6.15 8.6 8.65l6.46-3.74M8.6 8.65v8.66M15.1 8.15l-5.06 3.1"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.35"
+      />
+    </svg>
+  );
 }
 
 function UserMessageImagePartView({
@@ -362,6 +461,36 @@ function UserMessageImagePartView({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [previewOpen]);
+
+  /*
+   * The preview modal must escape the message's render tree because the thread
+   * scroll content wrapper (`.hc-thread-scroll-content` in conversation.css)
+   * carries `transform: translateX(...)` — even when the variable is `0`, the
+   * `transform` value (not `none`) creates a containing block for fixed-position
+   * descendants. Rendered inline, our `position: fixed` backdrop would re-anchor
+   * to the transformed wrapper and then be clipped by the scroll container's
+   * `overflow-y: auto`, showing only the slice intersecting the visible scroll
+   * area (the "image opens completely truncated" bug). The same fix is already
+   * applied in `image-preview-lightbox.tsx:239-244`.
+   */
+  const overlay = previewOpen ? (
+    <div
+      className="hc-image-preview-backdrop"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) setPreviewOpen(false);
+      }}
+    >
+      <div aria-label={part.label} aria-modal="true" className="hc-image-preview-dialog" role="dialog" data-state="open">
+        <div className="hc-image-preview-header">
+          <span>{part.label}</span>
+          <button aria-label="Close image preview" type="button" onClick={() => setPreviewOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
+        <img alt={part.label} referrerPolicy="no-referrer" src={src} />
+      </div>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -388,24 +517,7 @@ function UserMessageImagePartView({
               />
             )}
       </button>
-      {previewOpen && (
-        <div
-          className="hc-image-preview-backdrop"
-          onMouseDown={(event) => {
-            if (event.currentTarget === event.target) setPreviewOpen(false);
-          }}
-        >
-          <div aria-label={part.label} aria-modal="true" className="hc-image-preview-dialog" role="dialog">
-            <div className="hc-image-preview-header">
-              <span>{part.label}</span>
-              <button aria-label="Close image preview" type="button" onClick={() => setPreviewOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <img alt={part.label} referrerPolicy="no-referrer" src={src} />
-          </div>
-        </div>
-      )}
+      {overlay && (typeof document !== "undefined" ? createPortal(overlay, document.body) : overlay)}
     </>
   );
 }

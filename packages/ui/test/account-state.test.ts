@@ -90,7 +90,8 @@ async function refreshesAccountAndRateLimitProjection(): Promise<void> {
       { id: "plan", label: "Plan", value: "Pro", tone: "neutral", action: null, disabled: false },
       { id: "quota", label: "Usage", value: "Codex: 42% used", tone: "success", action: null, disabled: false },
       { id: "quotaDetail", label: "Usage detail", value: "Credits 12.50 | Primary window 300m", tone: "success", action: null, disabled: false },
-      { id: "signOut", label: "Sign out", value: null, tone: "neutral", action: "account/signOut", disabled: false },
+      // codex: sign-out label aligns to upstream `codex.profileDropdown.logOut` = "Log out"
+      { id: "signOut", label: "Log out", value: null, tone: "neutral", action: "account/signOut", disabled: false },
     ],
     "account menu should expose identity, plan, quota, and sign-out affordances",
   );

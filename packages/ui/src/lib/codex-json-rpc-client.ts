@@ -281,34 +281,43 @@ export class CodexJsonRpcClient {
       case "stderr": {
         /*
          * Codex Desktop (`remote-conversation-page-CRbylpi9.js`) never routes
-         * the codex app-server's raw stderr to the UI; only structured `error`
-         * JSON-RPC notifications surface to the renderer via
-         * `t.params.error.message`. Match that policy: emit the line to the
-         * RPC debug pane for diagnostics (with ANSI escapes stripped so the
-         * pane stays readable), but do NOT call `onLog` — that path drives
-         * `state.logs` and `AppToastViewport`, which would otherwise leak raw
-         * `tracing-subscriber` output (e.g. `\x1b[31mERROR\x1b[0m
-         * codex_core::tools::router: error=...`) into the toast viewport.
+         * raw app-server streams to UI toasts; only structured `error`
+         * JSON-RPC notifications and explicit product toast signals reach the
+         * renderer. Keep host stream lines in the RPC debug pane only, or
+         * app-server diagnostics such as `training_api ready` and transport
+         * fallback messages leak into the bottom-right toast viewport.
          */
         const sanitized = stripAnsiEscapes(event.line);
         this.emitDebugEvent({ kind: "host-event", level: "warn", message: sanitized });
         break;
       }
-      case "stdout":
+      case "stdout": {
+        this.emitDebugEvent({
+          kind: "host-event",
+          level: "info",
+          message: event.line,
+          payload: event,
+        });
+        break;
+      }
       case "lifecycle":
         this.emitDebugEvent({
           kind: "host-event",
           level: "info",
-          message: "line" in event ? event.line : event.message,
+          message: event.message,
           payload: event,
         });
-        this.handlers.onLog?.("line" in event ? event.line : event.message);
-        if (event.type === "lifecycle") {
-          if (isFatalLifecycleMessage(event.message)) {
-            this.markTransportClosed(`Codex app-server connection closed: ${event.message}`);
-          }
-          void this.refreshStatus().catch((error) => this.handlers.onLog?.(formatError(error), "warn"));
+        if (isFatalLifecycleMessage(event.message)) {
+          this.markTransportClosed(`Codex app-server connection closed: ${event.message}`);
         }
+        void this.refreshStatus().catch((error) => {
+          this.emitDebugEvent({
+            kind: "host-error",
+            level: "warn",
+            message: formatError(error),
+            payload: { source: "host-status-refresh" },
+          });
+        });
         break;
       case "error":
         this.emitDebugEvent({ kind: "host-error", level: "error", message: event.message, payload: event });

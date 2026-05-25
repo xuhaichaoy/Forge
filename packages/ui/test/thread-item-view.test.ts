@@ -18,8 +18,10 @@ export default function runThreadItemViewTests(): void {
   formatsDesktopAutoReviewTitles();
   formatsDesktopAutoReviewBodies();
   formatsDesktopDynamicToolCallLabels();
+  rendersDynamicAppControlToolCallWithDesktopIcon();
   rendersInlineTodoListPlanCard();
   rendersProposedPlanSummaryCard();
+  rendersPendingMcpElicitationLikeDesktop();
 }
 
 function formatsDesktopExecThreadItemSummaries(): void {
@@ -98,6 +100,11 @@ function formatsDesktopDynamicToolCallLabels(): void {
     "known running dynamic tool labels should match Desktop wording",
   );
   assertEqual(
+    dynamicToolCallLabel({ type: "dynamic-tool-call", tool: "load_workspace_dependencies", completed: false, id: "dynamic-hyphen-1" } as never),
+    "Loading workspace dependencies",
+    "hyphenated dynamic tool calls should use Desktop's completed=false active state",
+  );
+  assertEqual(
     dynamicToolCallLabel({ type: "dynamicToolCall", tool: "read_thread_terminal", status: "completed", id: "dynamic-2" } as never),
     "Read thread terminal",
     "known completed dynamic tool labels should match Desktop wording",
@@ -131,6 +138,42 @@ function formatsDesktopDynamicToolCallLabels(): void {
   );
 }
 
+function rendersDynamicAppControlToolCallWithDesktopIcon(): void {
+  const html = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:dynamic-tool-call:dynamic-app-control-1",
+      item: {
+        type: "dynamicToolCall",
+        id: "dynamic-app-control-1",
+        tool: "manage_codex_threads",
+        status: "running",
+        arguments: { type: "threads.create" },
+      },
+    } as never,
+  }));
+  assertStringIncludes(html, "Creating new thread", "app-control dynamic tool should keep Desktop wording");
+  assertStringIncludes(html, "lucide-git-fork", "app-control dynamic tool should render a Desktop-style leading icon");
+
+  const genericHtml = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:dynamic-tool-call:dynamic-generic-1",
+      item: {
+        type: "dynamicToolCall",
+        id: "dynamic-generic-1",
+        tool: "custom_tool",
+        status: "running",
+      },
+    } as never,
+  }));
+  assertEqual(
+    genericHtml.includes("lucide-git-fork"),
+    false,
+    "generic dynamic tool calls should stay text-only like Desktop fallback rows",
+  );
+}
+
 function rendersInlineTodoListPlanCard(): void {
   const item = {
     type: "todo-list",
@@ -144,6 +187,27 @@ function rendersInlineTodoListPlanCard(): void {
     todoListSummaryLabel(item as never),
     "1 out of 2 tasks completed",
     "todo-list summary should match Desktop plan copy",
+  );
+  assertEqual(
+    todoListSummaryLabel({
+      type: "todo-list",
+      id: "todo-0",
+      plan: [
+        { step: "Inspect", status: "pending" },
+        { step: "Patch", status: "pending" },
+      ],
+    } as never),
+    "0 out of 2 tasks completed",
+    "inline todo-list summary should not use the separate Desktop activity-created copy",
+  );
+  assertEqual(
+    todoListSummaryLabel({
+      type: "todo-list",
+      id: "todo-single",
+      plan: [{ step: "Inspect", status: "pending" }],
+    } as never),
+    "0 out of 1 task completed",
+    "inline todo-list summary should keep Desktop singular task wording",
   );
   const html = renderToStaticMarkup(createElement(ThreadItemView, {
     unit: {
@@ -181,6 +245,7 @@ function rendersProposedPlanSummaryCard(): void {
   assertStringIncludes(completeHtml, "<h3 class=\"hc-plan-summary-title\">Plan</h3>", "completed proposed plan title");
   assertStringIncludes(completeHtml, "Download plan", "completed proposed plan should expose PLAN.md download");
   assertStringIncludes(completeHtml, "Copy plan", "completed proposed plan should expose copy");
+  assertStringIncludes(completeHtml, "<span>Open</span>", "completed proposed plan should show Desktop's visible Open button label");
   assertStringIncludes(completeHtml, "<h2", "proposed-plan markdown should render as markdown");
 
   const writingItem = {
@@ -201,6 +266,25 @@ function rendersProposedPlanSummaryCard(): void {
   assertStringIncludes(writingHtml, "Expand plan", "collapsed proposed plan should expose an expand affordance");
 }
 
+function rendersPendingMcpElicitationLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:mcp-server-elicitation:elicitation-1",
+      item: {
+        type: "mcp-server-elicitation",
+        requestId: "elicitation-1",
+        completed: false,
+      },
+    } as never,
+  }));
+  assertStringIncludes(html, "data-item-type=\"mcp-server-elicitation\"", "pending MCP elicitation should render a transcript row");
+  assertStringIncludes(html, "data-item-ids=\"elicitation-1\"", "pending MCP elicitation should expose requestId as its item id");
+  assertStringIncludes(html, "hc-thinking-shimmer-text", "pending MCP elicitation should use the Desktop shimmer text affordance");
+  assertStringIncludes(html, "Awaiting approval", "pending MCP elicitation should use Desktop awaiting approval copy");
+  assertStringNotIncludes(html, "hc-inline-plan-spinner", "pending MCP elicitation should not render a standalone spinner");
+}
+
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
@@ -210,5 +294,11 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 function assertStringIncludes(actual: string, expected: string, message: string): void {
   if (!actual.includes(expected)) {
     throw new Error(`${message}: missing ${expected}`);
+  }
+}
+
+function assertStringNotIncludes(actual: string, expected: string, message: string): void {
+  if (actual.includes(expected)) {
+    throw new Error(`${message}: found ${expected}`);
   }
 }

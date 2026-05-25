@@ -5,6 +5,70 @@ export type AccumulatedThreadItem = {
 
 export type ThreadItem = AccumulatedThreadItem;
 
+export interface GeneratedImageGalleryRenderUnit {
+  kind: "generatedImageGallery";
+  key: string;
+  images: ThreadItem[];
+  hasPending: boolean;
+  turnId: string | null;
+}
+
+export interface AssistantAfterEventRenderUnit {
+  kind: "assistantAfterEvent";
+  key: string;
+  item: ThreadItem;
+  label: string;
+  text: string;
+  details?: string;
+  tone?: EventTone;
+  format?: EventFormat;
+}
+
+export type AssistantGoogleDriveResourceKind = "document" | "spreadsheet" | "presentation" | "drive";
+
+export type AssistantEndResource =
+  | { type: "file"; path: string }
+  | { type: "website"; target: string }
+  | {
+      type: "google-drive";
+      url: string;
+      title: string;
+      resourceKind: AssistantGoogleDriveResourceKind;
+    };
+
+export interface AssistantEndResourcesRenderUnit {
+  kind: "assistantEndResources";
+  key: string;
+  resources: AssistantEndResource[];
+  cwd: string | null;
+  turnId: string | null;
+}
+
+export interface AssistantReviewComment {
+  title: string;
+  body: string;
+  path: string;
+  line: number;
+  startLine?: number;
+  priority?: string;
+}
+
+export interface AssistantReviewCommentsRenderUnit {
+  kind: "assistantReviewComments";
+  key: string;
+  comments: AssistantReviewComment[];
+}
+
+export type AssistantAfterRenderUnit =
+  | GeneratedImageGalleryRenderUnit
+  | AssistantEndResourcesRenderUnit
+  | AssistantAfterEventRenderUnit
+  | AssistantReviewCommentsRenderUnit;
+
+export interface ParentThreadAttachment {
+  sourceConversationId: string;
+}
+
 export type ConversationRenderUnit =
   | {
       kind: "message";
@@ -12,9 +76,12 @@ export type ConversationRenderUnit =
       role: "user" | "assistant";
       item: ThreadItem;
       text: string;
+      copyText?: string;
       userContent?: UserMessageContentPart[];
+      parentThreadAttachment?: ParentThreadAttachment;
       artifacts?: RailEntry[];
       assistantPhase?: AssistantMessagePhase;
+      assistantAfter?: AssistantAfterRenderUnit[];
       isStreaming?: boolean;
       renderPlaceholder?: boolean;
     }
@@ -30,6 +97,7 @@ export type ConversationRenderUnit =
       item: ThreadItem;
       label: string;
       text: string;
+      details?: string;
       tone?: EventTone;
       format?: EventFormat;
     }
@@ -56,33 +124,21 @@ export type ConversationRenderUnit =
    *   (Codex `shouldRenderGeneratedImageOutputs`). Empty unit is suppressed
    *   in the project layer so the renderer doesn't need to re-check.
    */
-  | {
-      kind: "generatedImageGallery";
-      key: string;
-      images: ThreadItem[];
-      hasPending: boolean;
-      turnId: string | null;
-    }
-  /*
-   * Live unified-diff stream for a running turn. HiCodex renders it as a
-   * distinct unit at the top of the in-progress turn's agent stream.
-   */
-  | {
-      kind: "inProgressDiff";
-      key: string;
-      diff: string;
-      /**
-       * `_turnId` of the surrounding turn segment so `groupUnitsByTurn`
-       * (turn-collapse.tsx:72) keeps the live-diff card inside the same
-       * TurnCollapseFrame as the user message it belongs to. Synthetic
-       * (no source item) — populated by `injectInProgressDiffUnit`
-       * (project-conversation.ts) when it splices the unit in.
-       */
-      turnId: string | null;
-    };
+  | GeneratedImageGalleryRenderUnit
+  | AssistantEndResourcesRenderUnit;
 
 export type EventTone = "info" | "warning" | "error";
-export type EventFormat = "text" | "markdown" | "diff";
+export type EventFormat =
+  | "text"
+  | "markdown"
+  | "diff"
+  | "status"
+  | "automation-update"
+  | "divider-status"
+  | "context-status"
+  | "user-input-response"
+  | "stream-error"
+  | "system-error";
 
 export interface ToolActivityLabelParts {
   action: string;
@@ -147,6 +203,7 @@ export type ToolActivityIcon =
   | "plan"
   | "reasoning"
   | "search"
+  | "skill"
   | "terminal"
   | "web-search";
 
@@ -218,6 +275,11 @@ export type UserMessageContentPart =
       label: string;
       path: string;
       /**
+       * UI-only placement hint. Desktop keeps prompt references inline but
+       * renders file attachments in the media strip above the user bubble.
+       */
+      presentation?: "inline" | "attachment";
+      /**
        * Filename extension (lowercase, no leading dot) for chipKind === "file".
        * Renderer uses it to pick a file-type icon (Word/Excel/PDF/etc).
        */
@@ -253,12 +315,7 @@ export interface ConversationProjectionOptions {
     id?: string | null;
     plan: unknown[];
   } | null;
-  /**
-   * Live in-progress unified-diff stream from `turn/diff/updated` events.
-   * When non-empty and the thread is running, the projection emits an
-   * `inProgressDiff` render unit above the in-progress turn's agent stream.
-   */
-  turnDiff?: string;
+  parentThreadAttachmentSourceConversationId?: string | null;
   /**
    * App registry data (from `app/list` RPC). Used to look up logoUrl/logoUrlDark
    * for MCP tool sources. Matching mirrors Codex Desktop's server/tool/function

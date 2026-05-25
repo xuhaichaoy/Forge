@@ -131,7 +131,8 @@ function projectsCodexDesktopComposerPlaceholders(): void {
     [
       "Ask Codex anything. @ to use plugins or mention files",
       "Ask for follow-up changes",
-      "Ask for follow-up changes or @ to tag an agent",
+      // codex: composer.placeholder.localFollowUp.locallyWithAgents drops the hyphen
+      "Ask for follow up changes or @ to tag an agent",
     ],
     "composer placeholders should follow Desktop new-task and local follow-up wording",
   );
@@ -685,8 +686,8 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
   );
   assertDeepEqual(
     applySlashCommand("status", { input: "/status" }),
-    { action: "request", request: "showStatus", clearInput: true },
-    "status should request current workspace status",
+    { action: "request", request: "toggleStatusFooter", clearInput: true },
+    "status should toggle the Desktop context-usage footer",
   );
   assertDeepEqual(
     applySlashCommand("ps", { input: "/ps" }),
@@ -703,7 +704,17 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
 function exposesAttachActions(): void {
   assertDeepEqual(
     DEFAULT_ATTACH_ACTIONS.map((action) => action.title),
-    ["Add photos & files", "Plan mode", "Plugins"],
+    // codex: composer-D0cvMZjq.js — Codex's attach menu surfaces ~6 entries
+    // (file picker / mention / plain text / image URL / plan toggle / plugins).
+    // localImage stays implicit via paste/drag-drop in the composer field.
+    [
+      "Add photos & files",
+      "Mention a file or app",
+      "Add plain text",
+      "Add image from URL",
+      "Plan mode",
+      "Plugins",
+    ],
     "DEFAULT_ATTACH_ACTIONS should match the Codex Desktop plus menu",
   );
 }
@@ -945,7 +956,7 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
     [
       {
         type: "text",
-        text: "summarize this\n[composer-workflow.ts](packages/ui/src/state/composer-workflow.ts)\n[$code-review](/skills/code-review/SKILL.md)",
+        text: "[$code-review](/skills/code-review/SKILL.md)\nsummarize this\n[composer-workflow.ts](packages/ui/src/state/composer-workflow.ts)",
         text_elements: [],
       },
       { type: "localImage", path: "/tmp/screenshot.png" },

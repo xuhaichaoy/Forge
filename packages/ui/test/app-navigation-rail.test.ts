@@ -5,6 +5,7 @@ import { AppNavigationRail } from "../src/components/app-navigation-rail";
 export default function runAppNavigationRailTests(): void {
   rendersProjectTabs();
   marksActiveTab();
+  leavesProjectTabsInactiveForRemoteTaskRoute();
   rendersSettingsActionWhenProvided();
 }
 
@@ -29,6 +30,16 @@ function marksActiveTab(): void {
   assertIncludes(html, "data-active=\"true\"", "active app tab should carry the active styling flag");
 }
 
+function leavesProjectTabsInactiveForRemoteTaskRoute(): void {
+  const html = renderToStaticMarkup(createElement(AppNavigationRail, {
+    activeTab: "remoteTask",
+    onTabChange: () => undefined,
+  }));
+
+  assertEqual(html.includes("aria-current=\"page\""), false, "remote task route should not mark a project tab active");
+  assertEqual(html.includes("data-active=\"true\""), false, "remote task route should not carry project-tab active styling");
+}
+
 function rendersSettingsActionWhenProvided(): void {
   const html = renderToStaticMarkup(createElement(AppNavigationRail, {
     activeTab: "workbench",
@@ -42,5 +53,11 @@ function rendersSettingsActionWhenProvided(): void {
 function assertIncludes(actual: string, expected: string, message: string): void {
   if (!actual.includes(expected)) {
     throw new Error(`${message}: expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+  }
+}
+
+function assertEqual(actual: unknown, expected: unknown, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
   }
 }

@@ -501,10 +501,7 @@ function QuestionField({
                     selected ? value.filter((item) => item !== option.value) : [...value, option.value],
                   )}
                 />
-                <span className="hc-request-option-copy">
-                  <strong>{option.label}</strong>
-                  {option.description && <small>{option.description}</small>}
-                </span>
+                <OptionCopy option={option} />
               </label>
             );
           })}
@@ -522,13 +519,11 @@ function QuestionField({
                 aria-checked={selected}
                 disabled={disabled}
                 key={option.value}
+                aria-label={option.ariaLabel}
                 onClick={() => onChange([option.value])}
               >
                 <span className="hc-request-option-index">{optionIndex + 1}.</span>
-                <span className="hc-request-option-copy">
-                  <strong>{option.label}</strong>
-                  {option.description && <small>{option.description}</small>}
-                </span>
+                <OptionCopy option={option} />
               </button>
             );
           })}
@@ -557,6 +552,24 @@ function QuestionField({
         </div>
       )}
     </div>
+  );
+}
+
+function OptionCopy({ option }: { option: PendingRequestQuestion["options"][number] }) {
+  const codePreview = option.codePreview?.trim() ?? "";
+  const codeLayout = codePreview.includes("\n") || codePreview.includes("\r") ? "block" : "inline";
+  return (
+    <span className="hc-request-option-copy">
+      <strong data-has-code={codePreview ? true : undefined} data-code-layout={codePreview ? codeLayout : undefined}>
+        <span className="hc-request-option-label-text">{option.label}</span>
+        {codePreview && (
+          <code className="hc-request-option-code" title={codePreview}>
+            {codePreview}
+          </code>
+        )}
+      </strong>
+      {option.description && <small>{option.description}</small>}
+    </span>
   );
 }
 

@@ -65,6 +65,7 @@ export function UnifiedDiffFailureDialog({
       <section
         className="hc-thread-dialog-panel hc-unified-diff-failure-dialog"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label={titleText}
         onMouseDown={(event) => event.stopPropagation()}

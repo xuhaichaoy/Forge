@@ -38,10 +38,10 @@ export function getUnitTurnId(unit: ConversationRenderUnit): string | null {
       if (id) return id;
     }
   }
-  if (unit.kind === "inProgressDiff") {
+  if (unit.kind === "generatedImageGallery") {
     return unit.turnId;
   }
-  if (unit.kind === "generatedImageGallery") {
+  if (unit.kind === "assistantEndResources") {
     return unit.turnId;
   }
   return null;
@@ -163,11 +163,17 @@ export function shouldPreventTurnAutoCollapse(units: ConversationRenderUnit[]): 
       if (unit.summary.inProgress) return true;
       return unit.items.some(itemPreventsAutoCollapse);
     }
-    if (unit.kind === "inProgressDiff") return true; // live diff = active turn, never collapse
     if (unit.kind === "generatedImageGallery") {
       // Pending image generation keeps the turn active (Codex `$e` placeholder).
       if (unit.hasPending) return true;
       return unit.images.some(itemPreventsAutoCollapse);
+    }
+    if (unit.kind === "assistantEndResources") return false;
+    if (unit.kind === "message" && unit.role === "assistant") {
+      return (unit.assistantAfter ?? []).some((after) =>
+        after.kind === "generatedImageGallery"
+        && (after.hasPending || after.images.some(itemPreventsAutoCollapse))
+      );
     }
     return itemPreventsAutoCollapse(unit.item);
   });
@@ -335,11 +341,16 @@ function isTurnCancelled(units: ConversationRenderUnit[]): boolean {
     if (unit.kind === "toolActivity") {
       return unit.items.some(itemIsCancelled);
     }
-    if (unit.kind === "inProgressDiff") return false; // synthetic, no source item
     if (unit.kind === "generatedImageGallery") {
       // Gallery aggregates generated-image items. A cancelled turn's images
       // still carry the cancelled turn-status stamp, so inspect each.
       return unit.images.some(itemIsCancelled);
+    }
+    if (unit.kind === "assistantEndResources") return false;
+    if (unit.kind === "message" && unit.role === "assistant") {
+      return (unit.assistantAfter ?? []).some((after) =>
+        after.kind === "generatedImageGallery" && after.images.some(itemIsCancelled)
+      );
     }
     return itemIsCancelled(unit.item);
   });

@@ -72,6 +72,7 @@ export interface SlashRequestWorkflowContext {
   logs?: LogLine[];
   rpcDebugEvents?: RpcDebugEvent[];
   buildInfo?: HiCodexBuildInfo;
+  onToggleStatusFooter?: () => void;
 }
 
 export async function runSlashRequestWorkflow(
@@ -104,6 +105,7 @@ export async function runSlashRequestWorkflow(
     logs = [],
     rpcDebugEvents = [],
     buildInfo,
+    onToggleStatusFooter,
   } = context;
 
   try {
@@ -114,6 +116,11 @@ export async function runSlashRequestWorkflow(
         message: themePanelMessage(uiTheme),
         entries: projectThemeCommandEntries(uiTheme),
       });
+      return;
+    }
+
+    if (request === "toggleStatusFooter") {
+      onToggleStatusFooter?.();
       return;
     }
 
@@ -597,10 +604,16 @@ function projectMemoryCommandEntries(
     title: "New chats",
     kind: "status",
     status: memorySummary(preferences.useMemories, preferences.generateMemories),
-    meta: "Applies to chats started from this composer",
+    // codex: subtitle aligned to upstream
+    //   composer.memoriesSlashCommand.newThreadDialogSubtitle =
+    //     "These switches apply to the chat started from this composer"
+    meta: "These switches apply to the chat started from this composer",
+    // codex: detail bullets align to upstream ICU defaults —
+    //   composer.memoriesSlashCommand.useMemoriesDescription      = "Let Codex bring existing memories into this chat's context"
+    //   composer.memoriesSlashCommand.generateMemoriesDescription = "Allow Codex to use this chat when creating new memories later"
     details: [
-      "Use memories: let Codex bring existing memories into the chat context.",
-      "Generate memories: allow Codex to use this chat when creating new memories later.",
+      "Use memories: Let Codex bring existing memories into this chat's context",
+      "Generate memories: Allow Codex to use this chat when creating new memories later",
     ],
     secondaryActions: [
       memoryConfigAction("use", !preferences.useMemories),
@@ -611,12 +624,18 @@ function projectMemoryCommandEntries(
   if (activeThreadId) {
     entries.push({
       id: `memories:thread:${activeThreadId}`,
-      title: "Current chat memory generation",
+      // codex: panel title aligned to upstream
+      //   composer.memoriesSlashCommand.dialogTitle = "Chat memories"
+      title: "Chat memories",
       kind: "status",
-      status: "thread mode",
+      // codex: subtitle aligned to upstream
+      //   composer.memoriesSlashCommand.existingThreadDialogSubtitle = "These switches apply to the current chat"
+      status: "These switches apply to the current chat",
       meta: `thread ${activeThreadId}`,
+      // codex: first bullet aligns to upstream
+      //   composer.memoriesSlashCommand.useMemoriesStartedDescription = "Cannot be changed after conversation has started"
       details: [
-        "Use memories cannot be changed after a chat has started.",
+        "Use memories: Cannot be changed after conversation has started",
         "Generate memories controls whether this chat remains eligible for future memory generation.",
       ],
       secondaryActions: [
@@ -963,7 +982,7 @@ async function handleMentionSearch(
     });
     return;
   }
-  openCommandPanel("generic", { status: "loading", title: "Files", entries: [], message: "Searching files..." });
+  openCommandPanel("generic", { status: "loading", title: "Files", entries: [], message: "Searching files…" });
   const result = await client.request<{ files?: Array<{ path?: string; file_name?: string; score?: number; match_type?: string }> }>(
     "fuzzyFileSearch",
     { query, roots: [cwd], cancellationToken: null },

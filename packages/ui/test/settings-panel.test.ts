@@ -5,6 +5,7 @@ import {
   desktopBackedLocalSettingsEntries,
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
+  keyboardShortcutsSettingsEntries,
   localSettingsEntries,
 } from "../src/state/settings-panel-workflow";
 import {
@@ -29,6 +30,7 @@ export default async function runSettingsPanelTests(): Promise<void> {
   marksServerBackedSectionsRefreshable();
   projectsImageGenerationCapabilities();
   projectsDesktopBackedSettingsPanels();
+  exposesKeyboardShortcutsCommandList();
   projectsNotificationPreferencesInGeneralSettings();
   projectsServiceTierSpeedInGeneralSettings();
   projectsThemeInAppearanceAndLocaleInGeneralSettings();
@@ -60,9 +62,17 @@ function migratesComposerWorkModeStorage(): void {
 }
 
 function exposesUnifiedSettingsSectionsWithoutLogin(): void {
+  // CODEX-REF: Order mirrors the `_e` group descriptor in Codex Desktop
+  // settings-page-TI1bCoqP.js (byte ~8414):
+  //   _e[0] (key:"app",  heading:"App")  slugs: general-settings, profile, appearance, appshots, connections, git-settings, usage
+  //   _e[1] (key:"connection", heading:"Host") slugs: agent, personalization, keyboard-shortcuts, mcp-settings, hooks-settings, browser-use, computer-use, local-environments, worktrees, data-controls
+  // HiCodex omits Codex-only `profile`, inserts mcp/hooks/plugins/skills near their Codex counterparts
+  // (Codex hides plugins-settings/skills-settings via the `l` flag in xe(); HiCodex keeps both visible),
+  // and appends a HiCodex-only group of sections that have no Codex Desktop counterpart.
   assertDeepEqual(
     SETTINGS_SECTIONS.map((section) => section.id),
     [
+      // App group (Codex _e[0].slugs + HiCodex-only models/images folded in)
       "general",
       "appearance",
       "appshots",
@@ -70,23 +80,24 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
       "git-settings",
       "models",
       "images",
+      "usage",
+      // Host group (Codex _e[1].slugs + HiCodex-only permissions/approvals/apps/experimental folded in)
       "agent",
       "personalization",
-      "worktrees",
-      "local-environments",
+      "keyboard-shortcuts",
+      "mcp",
+      "hooks",
+      "plugins",
+      "skills",
       "permissions",
       "approvals",
-      "keyboard-shortcuts",
-      "usage",
+      "apps",
       "browser-use",
       "computer-use",
-      "mcp",
-      "skills",
-      "hooks",
-      "apps",
-      "plugins",
-      "data-controls",
+      "local-environments",
+      "worktrees",
       "experimental",
+      "data-controls",
     ],
     "settings center should expose Codex Desktop route slugs alongside existing HiCodex sections",
   );
@@ -125,11 +136,9 @@ function marksServerBackedSectionsRefreshable(): void {
 }
 
 function projectsDesktopBackedSettingsPanels(): void {
-  assertDeepEqual(
-    desktopBackedLocalSettingsEntries("keyboard-shortcuts", { connected: true }).map((entry) => [entry.id, entry.status]),
-    [["keyboard-shortcuts:desktop-surface", "Desktop route"]],
-    "keyboard shortcuts settings should expose the Desktop keymap route as source evidence",
-  );
+  // keyboard-shortcuts panel is no longer "Desktop route" placeholder — it has
+  // a real read-only implementation in keyboardShortcutsSettingsEntries; see
+  // exposesKeyboardShortcutsCommandList below.
   assertDeepEqual(
     desktopBackedLocalSettingsEntries("appshots", { connected: true }).map((entry) => [entry.id, entry.status]),
     [["appshots:desktop-surface", "Desktop route"]],
@@ -175,6 +184,34 @@ function projectsDesktopBackedSettingsPanels(): void {
     true,
     "usage settings details should label the Desktop use-usage-settings-access hook accurately",
   );
+}
+
+function exposesKeyboardShortcutsCommandList(): void {
+  // CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — Codex Desktop builds
+  // the panel directly from the registered command catalog. HiCodex mirrors
+  // the same data via COMMAND_DESCRIPTORS; the entry list must be non-empty,
+  // group-tagged, and use the prefixed id pattern so renderer lookups stay
+  // unambiguous.
+  const entries = keyboardShortcutsSettingsEntries();
+  if (entries.length === 0) {
+    throw new Error("keyboardShortcutsSettingsEntries should not be empty");
+  }
+  for (const entry of entries) {
+    if (!entry.id.startsWith("keyboard-shortcut:")) {
+      throw new Error(`keyboard shortcut entry id should be prefixed: ${entry.id}`);
+    }
+    if (entry.kind !== "status") {
+      throw new Error(`keyboard shortcut entry kind should be "status": ${entry.id}`);
+    }
+    if (!entry.groupKey || !entry.groupLabel) {
+      throw new Error(`keyboard shortcut entry should carry groupKey + groupLabel: ${entry.id}`);
+    }
+    // CODEX-REF: settings.shortcuts.row.keybinding falls back to an em dash
+    // when a command has no platform default — status must always be a string.
+    if (typeof entry.status !== "string" || entry.status.length === 0) {
+      throw new Error(`keyboard shortcut entry status should be a non-empty string: ${entry.id}`);
+    }
+  }
 }
 
 function projectsImageGenerationCapabilities(): void {

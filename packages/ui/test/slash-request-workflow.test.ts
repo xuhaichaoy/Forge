@@ -13,6 +13,7 @@ export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await setsReadsAndClearsThreadGoalsThroughAppServer();
   await listsBackgroundTerminalsFromActiveItems();
   await cleansBackgroundTerminalsThroughAppServer();
+  await togglesDesktopStatusFooter();
   await showsPersonalityOptionsFromThreadContext();
   await showsMemoriesOptionsFromThreadContext();
   await showsDebugConfigFromConfigLayers();
@@ -409,6 +410,20 @@ async function cleansBackgroundTerminalsThroughAppServer(): Promise<void> {
   );
 }
 
+async function togglesDesktopStatusFooter(): Promise<void> {
+  const workflow = createWorkflowRecorder([]);
+  let toggles = 0;
+  await runSlashRequestWorkflow("toggleStatusFooter", undefined, {
+    ...workflow.context,
+    onToggleStatusFooter: () => {
+      toggles += 1;
+    },
+  });
+
+  assertDeepEqual(toggles, 1, "status request should toggle the context-usage footer");
+  assertDeepEqual(workflow.panels, [], "status footer toggle should not open the old status command panel");
+}
+
 async function showsPersonalityOptionsFromThreadContext(): Promise<void> {
   const workflow = createWorkflowRecorder([]);
 
@@ -497,10 +512,10 @@ async function showsMemoriesOptionsFromThreadContext(): Promise<void> {
             title: "New chats",
             kind: "status",
             status: "use off · generate on",
-            meta: "Applies to chats started from this composer",
+            meta: "These switches apply to the chat started from this composer",
             details: [
-              "Use memories: let Codex bring existing memories into the chat context.",
-              "Generate memories: allow Codex to use this chat when creating new memories later.",
+              "Use memories: Let Codex bring existing memories into this chat's context",
+              "Generate memories: Allow Codex to use this chat when creating new memories later",
             ],
             secondaryActions: [
               {
@@ -533,12 +548,12 @@ async function showsMemoriesOptionsFromThreadContext(): Promise<void> {
           },
           {
             id: "memories:thread:thread-1",
-            title: "Current chat memory generation",
+            title: "Chat memories",
             kind: "status",
-            status: "thread mode",
+            status: "These switches apply to the current chat",
             meta: "thread thread-1",
             details: [
-              "Use memories cannot be changed after a chat has started.",
+              "Use memories: Cannot be changed after conversation has started",
               "Generate memories controls whether this chat remains eligible for future memory generation.",
             ],
             secondaryActions: [

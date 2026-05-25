@@ -1,17 +1,28 @@
 import {
   AppWindow,
+  Archive,
   Boxes,
+  Camera,
   CheckCircle2,
+  Cog,
+  Container,
   FlaskConical,
+  Gauge,
   GitBranch,
+  Globe,
   ImageIcon,
+  Keyboard,
   KeyRound,
   Loader2,
+  MonitorPlay,
+  MousePointer2,
   Plug,
   RefreshCw,
   Server,
   Settings,
   ShieldCheck,
+  Smile,
+  Sun,
   Wrench,
   X,
 } from "lucide-react";
@@ -24,9 +35,19 @@ import {
 import type { SettingsPanelId } from "../state/composer-workflow";
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 import { IMAGE_GENERATION_SIZE_OPTIONS, type ImageGenerationSettings } from "../state/image-generation-tool";
-import { SETTINGS_SECTIONS, isRefreshableSettingsPanel } from "../state/settings-panel-workflow";
+import {
+  SETTINGS_SECTIONS,
+  SETTINGS_SECTION_GROUP_HEADINGS,
+  isRefreshableSettingsPanel,
+  type SettingsSectionGroup,
+} from "../state/settings-panel-workflow";
+import { AppearanceSettingsPanel } from "./appearance-settings-panel";
 import { CommandPanelEntryList } from "./command-panel";
+import { KeyboardShortcutsSettingsPanel } from "./keyboard-shortcuts-settings-panel";
 import { McpSkillsManagementPanel } from "./mcp-skills-management-panel";
+import type { KeymapOverrides } from "../state/keymap-overrides";
+import type { ReducedMotionMode, UiAppearancePreferences } from "../state/appearance";
+import type { UiThemeMode, UiThemeSnapshot } from "../state/theme";
 
 export interface SettingsPanelProps {
   activePanel: SettingsPanelId;
@@ -43,6 +64,25 @@ export interface SettingsPanelProps {
   onSelectPanel: (panel: SettingsPanelId) => void;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
+  /*
+   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — inline keyboard
+   * shortcuts editor needs direct setter/state access (vs going through the
+   * action dispatch pipeline) so capture latency stays sub-16ms.
+   */
+  keymapOverrides?: KeymapOverrides;
+  onSetKeyboardShortcut?: (commandId: string, accelerator: string | null) => void;
+  onResetKeyboardShortcut?: (commandId: string) => void;
+  /*
+   * CODEX-REF: appearance-settings-BLTO9KX5.js — inline appearance editor.
+   * Same rationale as keyboard-shortcuts: Codex renders a column of bespoke
+   * controls (segmented toggle + number input + segmented toggle) that
+   * doesn't map onto a flat CommandPanelEntry list.
+   */
+  uiTheme?: UiThemeSnapshot;
+  uiAppearance?: UiAppearancePreferences;
+  onSetUiTheme?: (mode: UiThemeMode) => void;
+  onSetCodeFontSize?: (size: number) => void;
+  onSetReducedMotion?: (mode: ReducedMotionMode) => void;
 }
 
 export function SettingsPanel({
@@ -60,6 +100,14 @@ export function SettingsPanel({
   onSelectPanel,
   onSelectEntry,
   onSelectAction,
+  keymapOverrides,
+  onSetKeyboardShortcut,
+  onResetKeyboardShortcut,
+  uiTheme,
+  uiAppearance,
+  onSetUiTheme,
+  onSetCodeFontSize,
+  onSetReducedMotion,
 }: SettingsPanelProps) {
   const activeSection = SETTINGS_SECTIONS.find((section) => section.id === activePanel) ?? SETTINGS_SECTIONS[0];
   const refreshable = isRefreshableSettingsPanel(activePanel);
@@ -68,6 +116,7 @@ export function SettingsPanel({
       <section
         className="hc-settings-panel hc-settings-center"
         role="dialog"
+        data-state="open"
         aria-modal="true"
         aria-label="Settings"
         onMouseDown={(event) => event.stopPropagation()}
@@ -80,22 +129,45 @@ export function SettingsPanel({
         </header>
 
         <div className="hc-settings-shell">
+          {/*
+           * CODEX-REF: Grouped nav mirrors Codex Desktop `ye()` +
+           * `$` renderer (settings-page-TI1bCoqP.js byte 13085 / 14000-ish):
+           * `_e.map(e => <Group heading={e.heading}>{e.slugs.map(...)}</Group>)`.
+           * Codex emits one `<L>` wrapper per group with the heading rendered
+           * by `<a {...e.heading}/>` only when present (HiCodex-only group
+           * skips its heading per SETTINGS_SECTION_GROUP_HEADINGS.hicodex = null).
+           */}
           <nav className="hc-settings-nav" aria-label="Settings sections">
-            {SETTINGS_SECTIONS.map((section) => (
-              <button
-                aria-current={section.id === activePanel ? "page" : undefined}
-                className="hc-settings-nav-item"
-                key={section.id}
-                type="button"
-                onClick={() => onSelectPanel(section.id)}
-              >
-                {settingsSectionIcon(section.icon)}
-                <span>
-                  <strong>{section.title}</strong>
-                  <small>{section.description}</small>
-                </span>
-              </button>
-            ))}
+            {(["app", "host"] as const).map((group: SettingsSectionGroup) => {
+              const heading = SETTINGS_SECTION_GROUP_HEADINGS[group];
+              const sections = SETTINGS_SECTIONS.filter((section) => section.group === group);
+              if (sections.length === 0) return null;
+              return (
+                <div className="hc-settings-nav-group" data-group={group} key={group}>
+                  {heading ? <div className="hc-settings-nav-group-heading">{heading}</div> : null}
+                  {sections.map((section) => (
+                    <button
+                      aria-current={section.id === activePanel ? "page" : undefined}
+                      className="hc-settings-nav-item"
+                      key={section.id}
+                      type="button"
+                      onClick={() => onSelectPanel(section.id)}
+                    >
+                      {settingsSectionIcon(section.icon)}
+                      <span>
+                        <strong>{section.title}</strong>
+                        {/*
+                         * CODEX-REF: Codex Desktop renders no subtitle/description
+                         * per section — settings-shared-CsG0KAep.js function
+                         * `h(e)` returns null for every slug except mcp-settings.
+                         */}
+                        {section.description ? <small>{section.description}</small> : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
           </nav>
 
           <div className="hc-settings-content">
@@ -104,7 +176,7 @@ export function SettingsPanel({
                 {settingsSectionIcon(activeSection.icon)}
                 <span>
                   <strong>{activeSection.title}</strong>
-                  <small>{activeSection.description}</small>
+                  {activeSection.description ? <small>{activeSection.description}</small> : null}
                 </span>
               </div>
               {refreshable && (
@@ -141,6 +213,34 @@ export function SettingsPanel({
                 onReload={onRefreshPanel}
                 onSelectAction={onSelectAction}
                 onSelectEntry={onSelectEntry}
+              />
+            ) : activePanel === "appearance" ? (
+              /*
+               * CODEX-REF: appearance-settings-BLTO9KX5.js — bespoke inline
+               * appearance editor. Replaces the prior CommandPanelEntry-based
+               * implementation so the number input (Code font size, §4) and
+               * segmented toggles (Theme §1, Reduce motion §8) can render
+               * faithfully.
+               */
+              <AppearanceSettingsPanel
+                uiTheme={uiTheme ?? { mode: "system", resolved: "light" }}
+                uiAppearance={uiAppearance ?? { codeFontSize: 12, reducedMotion: "system" }}
+                onSetUiTheme={onSetUiTheme ?? (() => undefined)}
+                onSetCodeFontSize={onSetCodeFontSize ?? (() => undefined)}
+                onSetReducedMotion={onSetReducedMotion ?? (() => undefined)}
+              />
+            ) : activePanel === "keyboard-shortcuts" ? (
+              /*
+               * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — bespoke
+               * inline editor. Bypasses the SettingsCommandContent /
+               * CommandPanelEntryList pipeline because Codex's row layout is
+               * a 3-column table with capture-mode column swap, which
+               * doesn't map onto a flat CommandPanelEntry list.
+               */
+              <KeyboardShortcutsSettingsPanel
+                keymapOverrides={keymapOverrides ?? {}}
+                onSetShortcut={onSetKeyboardShortcut ?? (() => undefined)}
+                onResetShortcut={onResetKeyboardShortcut ?? (() => undefined)}
               />
             ) : (
               <SettingsCommandContent
@@ -264,30 +364,69 @@ function ImageGenerationSettingsForm({
   );
 }
 
+/*
+ * CODEX-REF: Codex Desktop's per-slug icon map lives in
+ * settings-page-TI1bCoqP.js as `he={"general-settings":W, profile:te, appearance:ce, ...}`,
+ * where each value is a component imported from a sibling icon chunk
+ * (sun-CfFwd2oT.js, globe-CPIoAMyp.js, branch-Bhwe6Vu0.js, speedometer-W2jfJtk8.js,
+ * shield-code-DLZlAt9J.js, face-BuWsKmtO.js, app-window-CBYOQVdK.js,
+ * cursor-BNjgKwEb.js, dock-CLjksee1.js, worktree-DXxxMSG9.js,
+ * apps-vpywPR4t.js, archive-qv7JHIns.js, appshot-window-D6A3e73T.js,
+ * mcp-ccQ7uilC.js, hooks-ln892pH-.js, skills-CGDeQHsa.js, keyboard inline SVG).
+ * Each Lucide pick below targets the closest visual/semantic match
+ * (HiCodex does not bundle Codex's bespoke icon set).
+ */
 function settingsSectionIcon(icon: (typeof SETTINGS_SECTIONS)[number]["icon"]) {
   switch (icon) {
+    // HiCodex-original icon tokens (no Codex Desktop counterpart)
     case "models":
       return <KeyRound size={15} />;
     case "images":
       return <ImageIcon size={15} />;
     case "permissions":
       return <ShieldCheck size={15} />;
-    case "mcp":
-      return <Server size={15} />;
-    case "skills":
-      return <Boxes size={15} />;
-    case "hooks":
-      return <Wrench size={15} />;
     case "apps":
       return <AppWindow size={15} />;
-    case "plugins":
-      return <Plug size={15} />;
-    case "worktrees":
-      return <GitBranch size={15} />;
     case "experimental":
       return <FlaskConical size={15} />;
+    // Codex Desktop sections — Lucide equivalents of the chunk-named icons
+    case "appearance":
+      return <Sun size={15} />;             // Codex `sun-CfFwd2oT.js`
+    case "appshots":
+      return <Camera size={15} />;          // Codex `appshot-window-D6A3e73T.js`
+    case "connections":
+      return <Globe size={15} />;           // Codex `globe-CPIoAMyp.js`
+    case "git":
+      return <GitBranch size={15} />;       // Codex `branch-Bhwe6Vu0.js`
+    case "usage":
+      return <Gauge size={15} />;           // Codex `speedometer-W2jfJtk8.js`
+    case "agent":
+      return <Cog size={15} />;             // Codex `shield-code-DLZlAt9J.js` — Cog matches the "Configuration" label
+    case "personalization":
+      return <Smile size={15} />;           // Codex `face-BuWsKmtO.js`
+    case "keyboard":
+      return <Keyboard size={15} />;        // Codex inline keyboard SVG
+    case "browser":
+      return <MonitorPlay size={15} />;     // Codex `app-window-CBYOQVdK.js` (avoid clash with `apps` slot)
+    case "computer":
+      return <MousePointer2 size={15} />;   // Codex `cursor-BNjgKwEb.js`
+    case "environments":
+      return <Container size={15} />;       // Codex `dock-CLjksee1.js`
+    case "worktrees":
+      return <GitBranch size={15} />;       // Codex `worktree-DXxxMSG9.js`
+    case "mcp":
+      return <Server size={15} />;          // Codex `mcp-ccQ7uilC.js`
+    case "skills":
+      return <Boxes size={15} />;           // Codex `skills-CGDeQHsa.js`
+    case "hooks":
+      return <Wrench size={15} />;          // Codex `hooks-ln892pH-.js`
+    case "plugins":
+      return <Plug size={15} />;            // Codex `apps-vpywPR4t.js` (HiCodex token "plugins")
+    case "archive":
+      return <Archive size={15} />;         // Codex `archive-qv7JHIns.js`
+    case "general":
     default:
-      return <CheckCircle2 size={15} />;
+      return <Settings size={15} />;        // Codex `settings.cog-9OxJ4FsH.js`
   }
 }
 

@@ -35,9 +35,10 @@ export function projectToastLogs(
 }
 
 function isToastWorthyLog(log: LogLine): boolean {
-  if (log.level !== "info") return true;
   const text = log.text.trim();
   if (!text) return false;
+  if (INTERNAL_LOG_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (log.level !== "info") return true;
   return !INTERNAL_INFO_PREFIXES.some((prefix) => text.startsWith(prefix));
 }
 
@@ -46,4 +47,13 @@ const INTERNAL_INFO_PREFIXES = [
   "initialized Codex app-server",
   "getAuthStatus",
   "thread is not materialized yet",
+];
+
+const INTERNAL_LOG_PATTERNS = [
+  /^attaching to existing Codex app-server$/i,
+  /^attached to initialized Codex app-server$/i,
+  /^initialized Codex app-server$/i,
+  /^[a-z][\w-]* (?:starting|ready|stopping|stopped|restarting)$/i,
+  /^Falling back from WebSockets to HTTPS transport\./i,
+  /^stream disconnected before completion:/i,
 ];

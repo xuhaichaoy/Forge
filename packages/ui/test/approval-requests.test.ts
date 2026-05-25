@@ -127,6 +127,17 @@ export default function runApprovalRequestTests(): void {
     "command approval should expose Desktop's execpolicy amendment option when proposed",
   );
   assertDeepEqual(
+    pendingRequestDetail(execPolicyCommandRequest).questions[0]?.options[1],
+    {
+      value: "acceptWithExecpolicyAmendment",
+      label: "Yes, and don't ask again for commands that start with",
+      description: "Approve commands with the same prefix.",
+      codePreview: "npm test",
+      ariaLabel: "Yes, and don't ask again for commands that start with npm test",
+    },
+    "command execpolicy option should split Desktop's prefix text from the truncated command preview",
+  );
+  assertDeepEqual(
     buildApprovalResult(execPolicyCommandRequest, true, { approvalDecision: ["acceptWithExecpolicyAmendment"] }),
     { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["npm", "test"] } } },
     "command execpolicy choice should return the proposed app-server decision object",

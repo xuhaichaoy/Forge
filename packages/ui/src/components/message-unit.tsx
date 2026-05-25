@@ -11,20 +11,37 @@ import { renderToString as renderKatexToString } from "katex";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
-import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
+import type { AssistantReviewComment, ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
+import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 import {
   assistantArtifactMediaSources,
   assistantResourceCardEntriesForMessage,
   resolveAssistantMarkdownMediaSource,
   shouldRenderAssistantMessageChrome,
 } from "./assistant-message-artifacts";
+import { AssistantEndResourceCards, assistantEndResourceCardViewModels } from "./assistant-end-resource-cards";
 import { AssistantResourceCards } from "./assistant-resource-cards";
+// codex: local-conversation-thread-CecHj6JI.js#sh — automation citation
+// extraction + chip row. Codex's assistant body interleaves `:citation{...}`
+// leaf directives into the markdown and runs `P=N` over the result to
+// hoist them into either the trailing paragraph (`L`) or the fallback chip
+// row (`R`). HiCodex mirrors that with the helpers in
+// `state/automation-citations` plus the chip components below.
+import { AutomationCitationChip, AutomationCitationChipRow } from "./automation-citation";
+import {
+  automationCitationsFromItems,
+  extractAutomationCitations,
+  type CitationDirective,
+} from "../state/automation-citations";
+import { extractAssistantReviewComments } from "../state/assistant-review-comments";
 import {
   CodeSnippet,
   desktopMarkdownCodeBlockWrapMode,
 } from "./code-snippet";
 import type { FileReference } from "./file-reference-types";
+import { GeneratedImageGallery } from "./generated-image-gallery";
+import { TurnDiffBlock, type PatchAction, type PatchActionState } from "./event-unit";
 import {
   IconActionButton,
   MessageActionRow,
@@ -34,9 +51,12 @@ import { focusPromptEditorElement, PromptEditor } from "./prompt-editor";
 import {
   UserMessageAttachmentStrip,
   UserMessageTextContentView,
+  hasInlineUserMessageContent,
 } from "./user-message-content-render";
+import type { OpenThreadHandler } from "./open-thread";
 
 type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
+type FormatMessage = HiCodexIntlContextValue["formatMessage"];
 
 export type { FileReference } from "./file-reference-types";
 export {
@@ -51,6 +71,7 @@ export { shouldRenderMessageActionRow } from "./message-action-row";
 export const DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN = "600px 0px";
 export const MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE = "data-markdown-image-preview-trigger";
 export const MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS = "hc-markdown-image-preview-dialog";
+const DESKTOP_FILE_LINE_CITATION_PATTERN = /【([^†】\n]+)†L(\d+)(?:-L(\d+))?】/g;
 
 export interface MarkdownImagePreviewItem {
   alt: string;
@@ -63,20 +84,70 @@ export interface MarkdownImagePreviewState {
   items: MarkdownImagePreviewItem[];
 }
 
+export function desktopAssistantCopyText(content: string): string {
+  return content.trim().replace(
+    DESKTOP_FILE_LINE_CITATION_PATTERN,
+    (fullText, rawPath: string, rawLineStart: string, rawLineEnd: string | undefined) => {
+      const path = desktopCopyCitationPath(rawPath.trim());
+      if (path === null) return fullText;
+      const lineStart = Number.parseInt(rawLineStart, 10);
+      const lineEnd = rawLineEnd === undefined ? undefined : Number.parseInt(rawLineEnd, 10);
+      if (lineEnd !== undefined && lineEnd !== lineStart) return `${path}:${lineStart}-${lineEnd}`;
+      return lineStart === 1 ? path : `${path}:${lineStart}`;
+    },
+  );
+}
+
+function desktopCopyCitationPath(rawPath: string): string | null {
+  const forceFile = rawPath.startsWith("F:");
+  const decodedPath = desktopDecodeCitationPath(forceFile ? rawPath.slice(2).trim() : rawPath);
+  if (forceFile) return decodedPath.length > 0 ? decodedPath : null;
+  return isDesktopAbsolutePath(decodedPath) ? decodedPath : null;
+}
+
+function desktopDecodeCitationPath(path: string): string {
+  try {
+    return decodeURI(path);
+  } catch {
+    return path;
+  }
+}
+
+function isDesktopAbsolutePath(path: string): boolean {
+  return (path.startsWith("/") && !path.startsWith("//"))
+    || /^[A-Za-z]:[\\/]/.test(path)
+    || /^\\\\[^\\]+\\[^\\]+/.test(path)
+    || /^\/\/[^/]+\/[^/]+/.test(path);
+}
+
 function MessageUnitViewInner({
   unit,
   isMostRecentTurn = false,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
   onForkTurn,
+  onOpenThreadId,
   onOpenFileReference,
+  onOpenAutomation,
+  onOpenDiff,
+  onPatchAction,
+  patchActionState,
+  patchActionInFlight,
+  memoryCitationRoot,
 }: {
   unit: MessageRenderUnit;
   isMostRecentTurn?: boolean;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
+  onOpenThreadId?: OpenThreadHandler;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenAutomation?: (automationId: string) => void;
+  onOpenDiff?: (filePath?: string) => void;
+  onPatchAction?: (action: PatchAction, diff: string) => void;
+  patchActionState?: PatchActionState;
+  patchActionInFlight?: boolean;
+  memoryCitationRoot?: string | null;
 }) {
   const assistantPhase = unit.role === "assistant" ? unit.assistantPhase ?? "unknown" : undefined;
   const streaming = unit.role === "assistant" && unit.isStreaming === true;
@@ -114,7 +185,16 @@ function MessageUnitViewInner({
       : []),
     [assistantArtifacts, assistantPhase, unit.role, unit.text],
   );
+  const hasAssistantEndResources = unit.role === "assistant"
+    && (unit.assistantAfter ?? []).some((after) => after.kind === "assistantEndResources");
   const primaryAssistantArtifact = assistantArtifacts[0];
+  const assistantAfterHasArtifacts = unit.role === "assistant"
+    ? assistantAfterContainsArtifacts(unit.assistantAfter ?? [])
+    : false;
+  const primaryAssistantAfterArtifact = unit.role === "assistant"
+    ? firstAssistantAfterArtifactEntry(unit.assistantAfter ?? [])
+    : undefined;
+  const primaryActionArtifact = primaryAssistantArtifact ?? primaryAssistantAfterArtifact;
   const onEdit = unit.role === "user"
     && isMostRecentTurn
     && !turnInProgress
@@ -123,14 +203,71 @@ function MessageUnitViewInner({
     && !unit.text.startsWith("PLEASE IMPLEMENT THIS PLAN:")
       ? (message: string) => onEditLastUserMessage(turnId, message)
       : undefined;
-  const citation = showAssistantChrome
+  const citation = unit.role === "assistant"
     ? (
         <MemoryCitationView
           citation={(unit.item as { memoryCitation?: unknown }).memoryCitation}
+          memoryCitationRoot={memoryCitationRoot}
           onOpenFileReference={onOpenFileReference}
         />
       )
     : null;
+  // codex: local-conversation-thread-CecHj6JI.js#sh — merge the two Desktop
+  // citation sources before handing text to Markdownish: raw `:citation{}`
+  // leaf directives already embedded in markdown, plus the `automationCitations`
+  // array that split-items attaches to completed assistant messages. Item-level
+  // citations behave like Desktop's generated trailing directives (`lh`).
+  const assistantCitations = useMemo(
+    () => {
+      if (unit.role !== "assistant") return null;
+      const extracted = extractAutomationCitations(unit.text);
+      const itemCitations = automationCitationsFromItems(
+        (unit.item as { automationCitations?: unknown }).automationCitations,
+      );
+      if (itemCitations.length === 0) return extracted;
+      return {
+        ...extracted,
+        trailingCitations: [...extracted.trailingCitations, ...itemCitations],
+      };
+    },
+    [unit.item, unit.role, unit.text],
+  );
+  const onAutomationCitationOpen = onOpenAutomation
+    ? (citationDirective: CitationDirective) => {
+        const automationId = citationDirective.openAutomationId?.trim();
+        if (automationId) onOpenAutomation(automationId);
+      }
+    : undefined;
+  // codex: local-conversation-thread-CecHj6JI.js#sh — assistant body uses the
+  // sanitized markdown (`cleanedContent`) so the raw directive token never
+  // shows up in the rendered prose; falls back to the original text when no
+  // citation extraction ran (non-assistant message or no `:citation` token).
+  const assistantReviewExtraction = useMemo(
+    () => unit.role === "assistant"
+      ? extractAssistantReviewComments(assistantCitations?.cleanedContent ?? unit.text)
+      : null,
+    [assistantCitations, unit.role, unit.text],
+  );
+  const assistantMarkdownText = assistantReviewExtraction?.cleanedContent ?? assistantCitations?.cleanedContent ?? unit.text;
+  const assistantCopyText = useMemo(
+    () => unit.role === "assistant" && !streaming ? desktopAssistantCopyText(unit.text) : "",
+    [streaming, unit.role, unit.text],
+  );
+  const canInlineAutomationCitations = assistantCitations
+    ? assistantCitations.trailingCitations.length > 0
+      && markdownAllowsTrailingAutomationInline(assistantMarkdownText)
+    : false;
+  // codex: local-conversation-thread-CecHj6JI.js#sh — Codex picks `D` (the
+  // citation list) and combines `O` (the "trailing-paragraph fits" flag)
+  // into the chip-row decision. HiCodex mirrors that by withholding trailing
+  // citations from the row only when Markdownish can append them to the final
+  // paragraph. Loose citations always stay in the fallback row.
+  const automationCitationChips = assistantCitations
+    ? [
+        ...assistantCitations.loose,
+        ...(canInlineAutomationCitations ? [] : assistantCitations.trailingCitations),
+      ]
+    : [];
   return (
     <article
       className={`hc-message ${unit.role}${assistantPhase ? ` phase-${assistantPhase}` : ""}${streaming ? " is-streaming" : ""}`}
@@ -144,6 +281,7 @@ function MessageUnitViewInner({
             <UserMessageUnit
               onEdit={onEdit}
               onOpenFileReference={onOpenFileReference}
+              onOpenThreadId={onOpenThreadId}
               sentAtMs={sentAtMs}
               unit={unit}
             />
@@ -158,20 +296,52 @@ function MessageUnitViewInner({
               : (
                   <>
                     <Markdownish
-                      text={unit.text}
+                      text={assistantMarkdownText}
                       fadeType={streaming ? "indexed" : "none"}
                       mediaSources={assistantMediaSources}
+                      onOpenAutomationCitation={onAutomationCitationOpen}
+                      onOpenFileReference={onOpenFileReference}
+                      trailingAutomationCitations={canInlineAutomationCitations
+                        ? assistantCitations?.trailingCitations
+                        : undefined}
+                    />
+                    {/* codex: local-conversation-thread-CecHj6JI.js#sh — `R` in the
+                      * Codex render sequence `[L, R, z, B, W]` (markdown body,
+                      * citation chip row, memory citations, artifacts/extras,
+                      * action row). HiCodex emits the row immediately after the
+                      * markdown so reading order matches Codex's `mt-3` block. */}
+                    <AutomationCitationChipRow
+                      citations={automationCitationChips}
+                      onOpen={onAutomationCitationOpen}
+                    />
+                    {citation}
+                    <AssistantAfterGalleries units={unit.assistantAfter ?? []} />
+                    <AssistantAfterEndResources
+                      units={unit.assistantAfter ?? []}
+                      onOpenArtifact={onOpenAssistantArtifact}
+                    />
+                    {!hasAssistantEndResources && (
+                      <AssistantResourceCards entries={assistantResourceCards} onOpenArtifact={onOpenAssistantArtifact} />
+                    )}
+                    <AssistantAfterReviewComments
+                      units={unit.assistantAfter ?? []}
                       onOpenFileReference={onOpenFileReference}
                     />
-                    <AssistantResourceCards entries={assistantResourceCards} onOpenArtifact={onOpenAssistantArtifact} />
-                    {citation}
+                    <AssistantAfterEvents
+                      units={unit.assistantAfter ?? []}
+                      onOpenDiff={onOpenDiff}
+                      onPatchAction={onPatchAction}
+                      patchActionState={patchActionState}
+                      patchActionInFlight={patchActionInFlight}
+                    />
                     {showAssistantChrome && (
                       <AssistantMessageActions
-                        copyText={streaming ? "" : unit.text}
+                        copyText={assistantCopyText}
                         artifacts={assistantArtifacts}
+                        hasArtifacts={assistantAfterHasArtifacts}
                         item={unit.item}
-                        onOpenArtifact={primaryAssistantArtifact && onOpenAssistantArtifact
-                          ? () => onOpenAssistantArtifact(primaryAssistantArtifact)
+                        onOpenArtifact={primaryActionArtifact && onOpenAssistantArtifact
+                          ? () => onOpenAssistantArtifact(primaryActionArtifact)
                           : undefined}
                         onFork={onFork}
                         sentAtMs={sentAtMs}
@@ -207,6 +377,12 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
       && prev.onOpenAssistantArtifact === next.onOpenAssistantArtifact
       && prev.onForkTurn === next.onForkTurn
       && prev.onOpenFileReference === next.onOpenFileReference
+      && prev.onOpenAutomation === next.onOpenAutomation
+      && prev.onOpenDiff === next.onOpenDiff
+      && prev.onPatchAction === next.onPatchAction
+      && prev.patchActionState === next.patchActionState
+      && prev.patchActionInFlight === next.patchActionInFlight
+      && prev.memoryCitationRoot === next.memoryCitationRoot
     );
   }
   if (prev.isMostRecentTurn !== next.isMostRecentTurn) return false;
@@ -214,6 +390,12 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (prev.onOpenAssistantArtifact !== next.onOpenAssistantArtifact) return false;
   if (prev.onForkTurn !== next.onForkTurn) return false;
   if (prev.onOpenFileReference !== next.onOpenFileReference) return false;
+  if (prev.onOpenAutomation !== next.onOpenAutomation) return false;
+  if (prev.onOpenDiff !== next.onOpenDiff) return false;
+  if (prev.onPatchAction !== next.onPatchAction) return false;
+  if (prev.patchActionState !== next.patchActionState) return false;
+  if (prev.patchActionInFlight !== next.patchActionInFlight) return false;
+  if (prev.memoryCitationRoot !== next.memoryCitationRoot) return false;
   const a = prev.unit;
   const b = next.unit;
   if (a.kind !== b.kind || a.role !== b.role || a.key !== b.key) return false;
@@ -223,6 +405,16 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
     if (a.assistantPhase !== b.assistantPhase) return false;
     if (a.isStreaming !== b.isStreaming) return false;
     if (a.renderPlaceholder !== b.renderPlaceholder) return false;
+    const aAfter = a.assistantAfter ?? null;
+    const bAfter = b.assistantAfter ?? null;
+    if (aAfter !== bAfter) {
+      const aLen = aAfter?.length ?? 0;
+      const bLen = bAfter?.length ?? 0;
+      if (aLen !== bLen) return false;
+      for (let i = 0; i < aLen; i += 1) {
+        if (aAfter?.[i] !== bAfter?.[i]) return false;
+      }
+    }
     const aArtifacts = a.artifacts ?? null;
     const bArtifacts = b.artifacts ?? null;
     if (aArtifacts !== bArtifacts) {
@@ -240,15 +432,254 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   return true;
 });
 
+function AssistantAfterGalleries({ units }: { units: NonNullable<MessageRenderUnit["assistantAfter"]> }) {
+  const galleries = units.filter((unit) => unit.kind === "generatedImageGallery");
+  if (galleries.length === 0) return null;
+  return (
+    <>
+      {galleries.map((unit) => (
+        <GeneratedImageGallery
+          hasPending={unit.hasPending}
+          images={unit.images}
+          key={unit.key}
+        />
+      ))}
+    </>
+  );
+}
+
+function AssistantAfterEndResources({
+  units,
+  onOpenArtifact,
+}: {
+  units: NonNullable<MessageRenderUnit["assistantAfter"]>;
+  onOpenArtifact?: (entry: RailEntry) => void;
+}) {
+  const resourceUnits = units.filter((unit) => unit.kind === "assistantEndResources");
+  if (resourceUnits.length === 0) return null;
+  return (
+    <>
+      {resourceUnits.map((unit) => (
+        <AssistantEndResourceCards
+          key={unit.key}
+          resources={unit.resources}
+          onOpenArtifact={onOpenArtifact}
+        />
+      ))}
+    </>
+  );
+}
+
+function AssistantAfterReviewComments({
+  units,
+  onOpenFileReference,
+}: {
+  units: NonNullable<MessageRenderUnit["assistantAfter"]>;
+  onOpenFileReference?: (reference: FileReference) => void;
+}) {
+  const { formatMessage } = useHiCodexIntl();
+  const reviewUnits = units.filter((unit) => unit.kind === "assistantReviewComments");
+  const comments = reviewUnits.flatMap((unit) => unit.comments).sort(compareReviewCommentsByPriority);
+  const [expanded, setExpanded] = useState(false);
+  if (comments.length === 0) return null;
+
+  const visibleComments = expanded ? comments : comments.slice(0, 3);
+  const hiddenCount = comments.length - visibleComments.length;
+  const countLabel = formatMessage({
+    id: "localConversation.reviewComments.count",
+    defaultMessage: "{count, plural, one {# comment} other {# comments}}",
+    description: "Title for the turn-end card summarizing model-authored code review comments",
+  }, { count: comments.length });
+
+  return (
+    <div className="hc-assistant-review-comments">
+      <div className="hc-assistant-review-comments-header">
+        <span className="hc-assistant-review-comments-icon">
+          <FileText size={16} />
+        </span>
+        <span>{countLabel}</span>
+      </div>
+      <div className="hc-assistant-review-comments-list">
+        {visibleComments.map((comment, index) => (
+          <AssistantReviewCommentRow
+            comment={comment}
+            index={index}
+            key={`${comment.path}:${comment.startLine ?? comment.line}:${comment.line}:${comment.title}:${index}`}
+            onOpenFileReference={onOpenFileReference}
+            formatMessage={formatMessage}
+          />
+        ))}
+        {hiddenCount > 0 && (
+          <button
+            type="button"
+            aria-expanded={false}
+            className="hc-assistant-review-comments-toggle"
+            onClick={() => setExpanded(true)}
+          >
+            <span>{formatMessage({
+              id: "localConversation.reviewComments.showMore",
+              defaultMessage: "{count, plural, one {Show # more comment} other {Show # more comments}}",
+              description: "Button label that expands hidden model-authored code review comments",
+            }, { count: hiddenCount })}</span>
+            <ChevronRight size={13} />
+          </button>
+        )}
+        {expanded && comments.length > 3 && (
+          <button
+            type="button"
+            aria-expanded
+            className="hc-assistant-review-comments-toggle"
+            onClick={() => setExpanded(false)}
+          >
+            <span>{formatMessage({
+              id: "localConversation.reviewComments.collapse",
+              defaultMessage: "Collapse comments",
+              description: "Button label that collapses expanded model-authored code review comments",
+            })}</span>
+            <ChevronRight className="is-open" size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function assistantAfterContainsArtifacts(units: NonNullable<MessageRenderUnit["assistantAfter"]>): boolean {
+  return units.some((unit) => {
+    if (unit.kind === "assistantEndResources") return unit.resources.length > 0;
+    if (unit.kind === "generatedImageGallery") return unit.images.length > 0 || unit.hasPending;
+    return false;
+  });
+}
+
+function firstAssistantAfterArtifactEntry(units: NonNullable<MessageRenderUnit["assistantAfter"]>): RailEntry | undefined {
+  for (const unit of units) {
+    if (unit.kind !== "assistantEndResources") continue;
+    const [first] = assistantEndResourceCardViewModels(unit.resources);
+    if (first) return first.entry;
+  }
+  return undefined;
+}
+
+function AssistantReviewCommentRow({
+  comment,
+  formatMessage,
+  index,
+  onOpenFileReference,
+}: {
+  comment: AssistantReviewComment;
+  formatMessage: FormatMessage;
+  index: number;
+  onOpenFileReference?: (reference: FileReference) => void;
+}) {
+  const location = reviewCommentLocation(comment);
+  const content = (
+    <span className="hc-assistant-review-comment-row-content">
+      <span className="hc-assistant-review-comment-priority-slot">
+        {comment.priority && (
+          <span className="hc-assistant-review-comment-priority">{comment.priority}</span>
+        )}
+      </span>
+      <span className="hc-assistant-review-comment-title">{comment.title}</span>
+      <span className="hc-assistant-review-comment-location" title={location}>
+        <span dir="ltr">{location}</span>
+      </span>
+    </span>
+  );
+  if (!onOpenFileReference) {
+    return (
+      <div className="hc-assistant-review-comment-row" data-index={index}>
+        {content}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={formatMessage({
+        id: "localConversation.reviewComments.openComment",
+        defaultMessage: "View {title} in {location}",
+        description: "Accessible label for opening one model-authored code review comment from a conversation turn",
+      }, { title: comment.title, location })}
+      className="hc-assistant-review-comment-row"
+      data-index={index}
+      onClick={() => onOpenFileReference(reviewCommentFileReference(comment))}
+    >
+      {content}
+    </button>
+  );
+}
+
+function compareReviewCommentsByPriority(a: AssistantReviewComment, b: AssistantReviewComment): number {
+  return reviewCommentPrioritySortValue(a) - reviewCommentPrioritySortValue(b);
+}
+
+function reviewCommentPrioritySortValue(comment: AssistantReviewComment): number {
+  const value = comment.priority?.match(/^P(\d)$/i)?.[1];
+  return value ? Number(value) : Number.MAX_SAFE_INTEGER;
+}
+
+function reviewCommentLocation(comment: AssistantReviewComment): string {
+  return `${comment.path}:${comment.line}`;
+}
+
+function reviewCommentFileReference(comment: AssistantReviewComment): FileReference {
+  const lineStart = comment.startLine ?? comment.line;
+  return {
+    path: comment.path,
+    lineStart,
+    ...(comment.startLine && comment.line !== comment.startLine ? { lineEnd: comment.line } : {}),
+  };
+}
+
+function AssistantAfterEvents({
+  units,
+  onOpenDiff,
+  onPatchAction,
+  patchActionState,
+  patchActionInFlight,
+}: {
+  units: NonNullable<MessageRenderUnit["assistantAfter"]>;
+  onOpenDiff?: (filePath?: string) => void;
+  onPatchAction?: (action: PatchAction, diff: string) => void;
+  patchActionState?: PatchActionState;
+  patchActionInFlight?: boolean;
+}) {
+  const events = units.filter((unit) => unit.kind === "assistantAfterEvent");
+  if (events.length === 0) return null;
+  return (
+    <>
+      {events.map((unit) => {
+        if (unit.format !== "diff") return null;
+        return (
+          <TurnDiffBlock
+            contentSearchUnitKey={unit.key}
+            inProgress={false}
+            itemIds={unit.item.id}
+            key={unit.key}
+            onOpenDiff={onOpenDiff}
+            onPatchAction={onPatchAction}
+            patchActionState={patchActionState}
+            patchActionInFlight={patchActionInFlight}
+            value={unit.text}
+          />
+        );
+      })}
+    </>
+  );
+}
+
 function UserMessageUnit({
   unit,
   onEdit,
   onOpenFileReference,
+  onOpenThreadId,
   sentAtMs,
 }: {
   unit: MessageRenderUnit;
   onEdit?: (message: string) => void | Promise<void>;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenThreadId?: OpenThreadHandler;
   sentAtMs: number | null;
 }) {
   const [editing, setEditing] = useState(false);
@@ -305,6 +736,12 @@ function UserMessageUnit({
 
   return (
     <>
+      {unit.parentThreadAttachment && (
+        <ParentThreadAttachmentChip
+          sourceConversationId={unit.parentThreadAttachment.sourceConversationId}
+          onOpenThreadId={onOpenThreadId}
+        />
+      )}
       <UserMessageAttachmentStrip
         unit={unit}
         onOpenFileReference={onOpenFileReference}
@@ -318,7 +755,7 @@ function UserMessageUnit({
         </div>
       )}
       <UserMessageActions
-        copyText={unit.text}
+        copyText={unit.copyText ?? unit.text}
         meta={userMessageMetaChips(unit.item)}
         onEdit={onEdit ? () => setEditing(true) : undefined}
         sentAtMs={sentAtMs}
@@ -327,18 +764,40 @@ function UserMessageUnit({
   );
 }
 
+function ParentThreadAttachmentChip({
+  sourceConversationId,
+  onOpenThreadId,
+}: {
+  sourceConversationId: string;
+  onOpenThreadId?: OpenThreadHandler;
+}) {
+  const content = (
+    <>
+      <GitFork aria-hidden size={14} />
+      <span>Parent chat</span>
+    </>
+  );
+  if (!onOpenThreadId) {
+    return <div className="hc-parent-thread-attachment">{content}</div>;
+  }
+  return (
+    <button
+      className="hc-parent-thread-attachment"
+      type="button"
+      onClick={() => onOpenThreadId(sourceConversationId)}
+    >
+      {content}
+    </button>
+  );
+}
+
 function shouldRenderUserMessageBubble(unit: MessageRenderUnit): boolean {
   /*
-   * Codex puts every non-image piece of the user message — prose plus
-   * `$skill` / `@path` chips — inside the bubble (`Lc`/`Oe`). Only the
-   * `n.images` strip lives outside. So the bubble renders whenever there
-   * is any non-image content. A pure-image message keeps the bubble
-   * suppressed (matches Codex hiding the bubble when `n.message` is
-   * empty).
+   * Codex puts prose plus inline prompt chips (`$skill` / `@path`) inside
+   * the bubble. File attachments and images live in the sibling strip
+   * above it, so pure attachment messages do not create an empty bubble.
    */
-  const content = unit.userContent ?? [];
-  if (content.length === 0) return unit.text.trim().length > 0;
-  return content.some((part) => part.kind !== "image");
+  return hasInlineUserMessageContent(unit);
 }
 
 function UserEditForm({
@@ -561,6 +1020,7 @@ export function shouldRenderUserMessageActionStrip({
 function AssistantMessageActions({
   artifacts,
   copyText,
+  hasArtifacts: hasArtifactsHint = false,
   item,
   onOpenArtifact,
   onFork,
@@ -568,14 +1028,30 @@ function AssistantMessageActions({
 }: {
   artifacts: RailEntry[];
   copyText: string;
+  hasArtifacts?: boolean;
   item: Record<string, unknown>;
   onOpenArtifact?: () => void;
   onFork?: () => void;
   sentAtMs: number | null;
 }) {
-  const hasArtifacts = assistantHasArtifacts(item, artifacts);
+  const hasArtifacts = hasArtifactsHint || assistantHasArtifacts(item, artifacts);
   const autoReviewSummary = assistantAutoReviewSummary(item);
-  const hasActionChildren = hasArtifacts || Boolean(onFork) || Boolean(autoReviewSummary);
+  // codex: local-conversation-thread-CecHj6JI.js#uh — derive `hookStats` (zs)
+  // and `completedThreadGoal` (dh) chips from the assistant item so the
+  // assistant action row matches Codex's [copy, EC, fork, autoReview, hookStats,
+  // goal, sentAt] ordering. Both helpers return `null` today because the
+  // HiCodex reducer has not yet aggregated hook runs / projected the completed
+  // thread goal onto the trailing assistant item — see the AUDIT notes on
+  // `assistantHookStatsSummary` / `assistantCompletedThreadGoal` for the
+  // exact data plumbing TODO. The chip rendering keeps working as soon as the
+  // reducer surfaces those fields.
+  const hookStatsSummary = assistantHookStatsSummary(item);
+  const goalSummary = assistantCompletedThreadGoal(item);
+  const hasActionChildren = hasArtifacts
+    || Boolean(onFork)
+    || Boolean(autoReviewSummary)
+    || Boolean(hookStatsSummary)
+    || Boolean(goalSummary);
   return (
     <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={sentAtMs}>
       {hasArtifacts && (
@@ -597,8 +1073,169 @@ function AssistantMessageActions({
         </IconActionButton>
       )}
       {autoReviewSummary && <AssistantAutoReviewAction summary={autoReviewSummary} />}
+      {/* codex: local-conversation-thread-CecHj6JI.js#uh — `t[17]===a?...:(0,$.jsx)(zs,{stats:a})` hookStats chip */}
+      {hookStatsSummary && <AssistantHookStatsAction summary={hookStatsSummary} />}
+      {/* codex: local-conversation-thread-CecHj6JI.js#uh — `t[19]===o?...:(0,$.jsx)(dh,{goal:o})` completedThreadGoal chip */}
+      {goalSummary && <AssistantCompletedGoalAction summary={goalSummary} />}
     </MessageActionRow>
   );
+}
+
+interface AssistantHookStatsSummary {
+  label: string;
+  title: string;
+  rows: Array<{ label: string; value: string }>;
+  entries: Array<{ kind: string; text: string }>;
+}
+
+interface AssistantCompletedGoalSummary {
+  label: string;
+  objective: string;
+  durationLabel: string;
+}
+
+// codex: user-message-attachments-DrGt3PGR.js#_e/#ve — hookStats chip with a
+// summary tooltip listing ran/blocked/error counts plus optional entries.
+function AssistantHookStatsAction({ summary }: { summary: AssistantHookStatsSummary }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="hc-auto-review-action">
+      <button
+        aria-expanded={open}
+        className="hc-message-action-status text hc-auto-review-trigger"
+        onClick={() => setOpen((value) => !value)}
+        title={summary.title}
+        type="button"
+      >
+        {summary.label}
+      </button>
+      {open && (
+        <span className="hc-auto-review-popover" role="dialog" data-state="open" aria-label={summary.title}>
+          <span className="hc-auto-review-popover-title">{summary.title}</span>
+          {summary.rows.length > 0 && (
+            <span className="hc-auto-review-popover-rows">
+              {summary.rows.map((row) => (
+                <span className="hc-auto-review-popover-row" key={`${row.label}:${row.value}`}>
+                  <span>{row.label}</span>
+                  <span>{row.value}</span>
+                </span>
+              ))}
+            </span>
+          )}
+          {summary.entries.length > 0 && (
+            <span className="hc-auto-review-command-list">
+              {summary.entries.map((entry, index) => (
+                <code key={`${index}:${entry.kind}:${entry.text}`}>{`${entry.kind}: ${entry.text}`}</code>
+              ))}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#dh — render the completed thread
+// goal as a non-interactive chip. Codex shows "Goal achieved in {totalTime}"
+// (using `Ti(timeUsedSeconds*1000)`) plus a small icon and divider; we mirror
+// the label + tooltip carrying the objective text.
+function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompletedGoalSummary }) {
+  return (
+    <span
+      aria-label={summary.objective ? `Goal complete: ${summary.objective}` : "Goal complete"}
+      className="hc-message-action-status text hc-message-goal-chip"
+      title={summary.objective || summary.label}
+    >
+      {summary.label}
+    </span>
+  );
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#sh — destructures `hookStats:s`
+// off the assistant render unit; here we recover the same shape from the raw
+// assistant item so HiCodexApp does not need to thread an extra prop.
+//
+// AUDIT (2026-05): the HiCodex protocol (`packages/codex-protocol/src/generated`)
+// does not yet expose hook aggregation on `ThreadItem`. The `hook/started` /
+// `hook/completed` notifications are received by the reducer
+// (state/codex-reducer.ts:1259-1264) but they are funneled into the log channel
+// only — no `hookStats` field is materialised onto the assistant item that
+// closes the turn. Until the reducer learns to aggregate per-turn hook runs
+// and project them onto the trailing assistant message (the way `_threadGoal`
+// is projected onto the matching user message via
+// `projectThreadGoalOntoUserMessages`), this helper reads from a field that
+// will never be present and returns `null`. The chip is implemented and ready
+// to light up once the reducer slice exists; do not delete the helper. See
+// docs/DEVELOPMENT.md for the longer note tying this to Codex's user-message
+// `hookStats`/`hookRuns` rule.
+export function assistantHookStatsSummary(item: Record<string, unknown>): AssistantHookStatsSummary | null {
+  const raw = (item as { hookStats?: unknown }).hookStats;
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const count = numericField(record, "count");
+  const blocked = numericField(record, "blockedCount") || numericField(record, "blocked");
+  const errorCount = numericField(record, "errorCount") || numericField(record, "errors");
+  const entriesRaw = Array.isArray(record.entries) ? record.entries : [];
+  const entries: Array<{ kind: string; text: string }> = [];
+  for (const entry of entriesRaw) {
+    if (!entry || typeof entry !== "object") continue;
+    const er = entry as Record<string, unknown>;
+    const kind = typeof er.kind === "string" ? er.kind.trim() : "";
+    const text = typeof er.text === "string" ? er.text.trim() : "";
+    if (!kind && !text) continue;
+    entries.push({ kind: kind || "hook", text: text.length > 240 ? `${text.slice(0, 237)}...` : text });
+    if (entries.length >= 6) break;
+  }
+  if (count === 0 && blocked === 0 && errorCount === 0 && entries.length === 0) return null;
+  // Codex's chip is icon-only with a tooltip — mirror with a short label plus a
+  // structured popover so users can still tell hooks ran on hover/focus.
+  const total = count > 0 ? count : entries.length;
+  const label = total === 1 ? "1 hook" : `${total} hooks`;
+  const rows: Array<{ label: string; value: string }> = [];
+  if (count > 0) rows.push({ label: "Ran", value: String(count) });
+  if (blocked > 0) rows.push({ label: "Blocked", value: String(blocked) });
+  if (errorCount > 0) rows.push({ label: "Errors", value: String(errorCount) });
+  return { label, title: "Hooks summary", rows, entries };
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#dh — `n.timeUsedSeconds*1e3 ->
+// Ti(...)` → "Goal achieved in {totalTime}". HiCodex only renders the chip
+// when the goal status is `complete`/`completed` (Codex passes `null` for
+// in-progress goals via `W?null:w`).
+//
+// AUDIT (2026-05): the HiCodex reducer maintains a per-thread `threadGoal`
+// slice (state/codex-reducer.ts:99-100, sourced from `thread/goal/updated` —
+// `ThreadGoal` is fully typed by the protocol in
+// `packages/codex-protocol/src/generated/v2/ThreadGoal.ts`) and projects it
+// onto the matching user message via `projectThreadGoalOntoUserMessages` as
+// `_threadGoal`. It does NOT currently project the goal onto the trailing
+// assistant message even when the goal status reaches `complete`. Codex's
+// assistant action row reads `n.completedThreadGoal` directly off the
+// assistant render unit; HiCodex would need an analogous projection
+// (`completedThreadGoal` / `_completedThreadGoal` on the last assistant item
+// of the completed turn) to light up this chip. Both shapes are accepted
+// below so the chip lights up automatically once that projection is wired.
+export function assistantCompletedThreadGoal(item: Record<string, unknown>): AssistantCompletedGoalSummary | null {
+  const raw = (item as { completedThreadGoal?: unknown; _completedThreadGoal?: unknown }).completedThreadGoal
+    ?? (item as { _completedThreadGoal?: unknown })._completedThreadGoal;
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const status = typeof record.status === "string" ? record.status.trim().toLowerCase() : "";
+  if (status && status !== "complete" && status !== "completed") return null;
+  const objective = typeof record.objective === "string" ? record.objective.trim() : "";
+  const seconds = numericField(record, "timeUsedSeconds");
+  const durationLabel = seconds > 0 ? formatGoalDuration(seconds * 1000) : "";
+  const label = durationLabel ? `Goal achieved in ${durationLabel}` : "Goal complete";
+  return { label, objective, durationLabel };
+}
+
+function formatGoalDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return "";
+  if (durationMs < 1000) return `${Math.round(durationMs)} ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1000).toFixed(durationMs < 10_000 ? 1 : 0)} s`;
+  const minutes = Math.floor(durationMs / 60_000);
+  const seconds = Math.round((durationMs % 60_000) / 1000);
+  return seconds > 0 ? `${minutes} min ${seconds} s` : `${minutes} min`;
 }
 
 function assistantHasArtifacts(item: Record<string, unknown>, artifacts: RailEntry[] = []): boolean {
@@ -624,7 +1261,7 @@ function AssistantAutoReviewAction({ summary }: { summary: AssistantAutoReviewSu
         {summary.label}
       </button>
       {open && (
-        <span className="hc-auto-review-popover" role="dialog" aria-label={summary.title}>
+        <span className="hc-auto-review-popover" role="dialog" data-state="open" aria-label={summary.title}>
           <span className="hc-auto-review-popover-title">{summary.title}</span>
           {summary.rows.length > 0 && (
             <span className="hc-auto-review-popover-rows">
@@ -727,9 +1364,31 @@ function truncateAutoReviewDetail(value: string): string {
   return value.length > 180 ? `${value.slice(0, 177).trimEnd()}...` : value;
 }
 
+// codex: local-conversation-thread-CecHj6JI.js#uh — the assistant action row
+// receives `sentAtMs` as the last slot of `[copy, EC, fork, autoReview,
+// hookStats, goal, sentAt]`. Codex reads `n.completedAt*1000` for assistant
+// items and `n.sentAt` for user items. HiCodex's reducer:
+//   * stamps `completedAtMs` (and `startedAtMs`) onto items via
+//     `itemWithLifecycleTiming` (state/codex-reducer.ts:1897) when
+//     `item/completed` notifications land — that is the assistant timestamp.
+//   * stamps `createdAt: Date.now()` onto optimistic user messages
+//     (state/codex-reducer.ts:473) — that is the user timestamp until the
+//     server confirmation lands.
+// The previous implementation only checked `sentAtMs`/`createdAtMs`, neither of
+// which is ever written, so the action row's timestamp span was effectively
+// dead code. Add the real fields the reducer populates so the chip renders.
 function messageSentAtMs(item: Record<string, unknown>): number | null {
-  const value = item.sentAtMs ?? item.createdAtMs;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  const candidates: unknown[] = [
+    item.sentAtMs,
+    item.completedAtMs,
+    item.startedAtMs,
+    item.createdAtMs,
+    item.createdAt,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
 }
 
 function messageTurnId(item: Record<string, unknown>): string | null {
@@ -746,12 +1405,16 @@ export function Markdownish({
   fadeType = "none",
   text,
   mediaSources,
+  onOpenAutomationCitation,
   onOpenFileReference,
+  trailingAutomationCitations,
 }: {
   fadeType?: MarkdownFadeType;
   text: string;
   mediaSources?: Map<string, string>;
+  onOpenAutomationCitation?: (citation: CitationDirective) => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  trailingAutomationCitations?: CitationDirective[];
 }) {
   /*
    * Parsing is pure; cache the result by `text` so the streaming loop only
@@ -761,12 +1424,13 @@ export function Markdownish({
    * assistant message — a significant CPU spike that on mid-tier machines
    * dropped frames and surfaced as visible flicker.
    */
-  const blocks = useMemo(() => parseMarkdownBlocks(text), [text]);
+  const markdownDocument = useMemo(() => parseMarkdownDocument(text), [text]);
+  const { blocks, references } = markdownDocument;
   const segmenter = useRef<MarkdownWordSegmenter | null>(createMarkdownWordSegmenter());
   const previousFadeSegmentCount = useRef(0);
   const markdownRootRef = useRef<HTMLDivElement | null>(null);
   const fadeEnabled = fadeType === "indexed";
-  const fadeSegmentCount = fadeEnabled ? markdownIndexedFadeSegmentCount(blocks, segmenter.current) : 0;
+  const fadeSegmentCount = fadeEnabled ? markdownIndexedFadeSegmentCount(blocks, segmenter.current, references) : 0;
   const fadeContext = fadeEnabled
     ? {
         nextIndex: 0,
@@ -800,17 +1464,37 @@ export function Markdownish({
     >
       {blocks.length === 0
         ? <p>{"\u00a0"}</p>
-        : blocks.map((block, index) => (
-            <MarkdownBlockView
-              block={block}
-              fadeContext={fadeContext}
-              key={index}
-              mediaSources={mediaSources}
-              onOpenFileReference={onOpenFileReference}
-            />
-          ))}
+        : blocks.map((block, index) => {
+            const inlineAutomationCitations = index === blocks.length - 1 && block.kind === "paragraph"
+              ? trailingAutomationCitations
+              : undefined;
+            return (
+              <MarkdownBlockView
+                block={block}
+                fadeContext={fadeContext}
+                inlineAutomationCitations={inlineAutomationCitations}
+                key={index}
+                mediaSources={mediaSources}
+                onOpenAutomationCitation={onOpenAutomationCitation}
+                onOpenFileReference={onOpenFileReference}
+                references={references}
+              />
+            );
+          })}
     </div>
   );
+}
+
+function markdownAllowsTrailingAutomationInline(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0 || /^\s*:{2,3}[a-zA-Z0-9-]+(?:\s|\{|\[|$)/m.test(text)) {
+    return false;
+  }
+  try {
+    return parseMarkdownBlocks(text).at(-1)?.kind === "paragraph";
+  } catch {
+    return true;
+  }
 }
 
 export interface MarkdownRichCopyPayload {
@@ -965,25 +1649,33 @@ function createMarkdownWordSegmenter(): MarkdownWordSegmenter | null {
 export function markdownIndexedFadeSegmentCount(
   blocks: MarkdownBlock[],
   segmenter: MarkdownWordSegmenter | null = createMarkdownWordSegmenter(),
+  references?: MarkdownReferenceDefinitions,
 ): number {
-  return blocks.reduce((count, block) => count + markdownBlockFadeSegmentCount(block, segmenter), 0);
+  return blocks.reduce((count, block) => count + markdownBlockFadeSegmentCount(block, segmenter, references), 0);
 }
 
-function markdownBlockFadeSegmentCount(block: MarkdownBlock, segmenter: MarkdownWordSegmenter | null): number {
+function markdownBlockFadeSegmentCount(
+  block: MarkdownBlock,
+  segmenter: MarkdownWordSegmenter | null,
+  references?: MarkdownReferenceDefinitions,
+): number {
   switch (block.kind) {
     case "heading":
     case "paragraph":
+      return markdownInlineFadeSegmentCount(block.text, segmenter, { references });
     case "blockquote":
-      return markdownInlineFadeSegmentCount(block.text, segmenter);
+      return block.children
+        ? block.children.reduce((count, child) => count + markdownBlockFadeSegmentCount(child, segmenter, references), 0)
+        : markdownInlineFadeSegmentCount(block.text, segmenter, { references });
     case "details":
-      return markdownInlineFadeSegmentCount(block.summary, segmenter);
+      return markdownInlineFadeSegmentCount(block.summary, segmenter, { references });
     case "list":
-      return block.items.reduce((count, item) => count + markdownInlineFadeSegmentCount(item, segmenter), 0);
+      return block.items.reduce((count, item) => count + markdownListItemFadeSegmentCount(item, segmenter, references), 0);
     case "taskList":
-      return block.items.reduce((count, item) => count + markdownInlineFadeSegmentCount(item.text, segmenter), 0);
+      return block.items.reduce((count, item) => count + markdownInlineFadeSegmentCount(item.text, segmenter, { references }), 0);
     case "table":
       return [...block.headers, ...block.rows.flat()].reduce(
-        (count, cell) => count + markdownInlineFadeSegmentCount(cell, segmenter),
+        (count, cell) => count + markdownInlineFadeSegmentCount(cell, segmenter, { references }),
         0,
       );
     case "code":
@@ -995,8 +1687,22 @@ function markdownBlockFadeSegmentCount(block: MarkdownBlock, segmenter: Markdown
   }
 }
 
-function markdownInlineFadeSegmentCount(text: string, segmenter: MarkdownWordSegmenter | null): number {
-  return parseMarkdownInline(text).reduce((count, segment) => {
+function markdownListItemFadeSegmentCount(
+  item: MarkdownListItemValue,
+  segmenter: MarkdownWordSegmenter | null,
+  references?: MarkdownReferenceDefinitions,
+): number {
+  if (typeof item === "string") return markdownInlineFadeSegmentCount(item, segmenter, { references });
+  return markdownInlineFadeSegmentCount(item.text, segmenter, { references })
+    + (item.children ?? []).reduce((count, child) => count + markdownBlockFadeSegmentCount(child, segmenter, references), 0);
+}
+
+function markdownInlineFadeSegmentCount(
+  text: string,
+  segmenter: MarkdownWordSegmenter | null,
+  options: MarkdownInlineParseOptions = {},
+): number {
+  return parseMarkdownInline(text, options).reduce((count, segment) => {
     if (segment.kind === "text") return count + markdownFadeTextSegments(segment.text, segmenter).length;
     if (
       segment.kind === "del"
@@ -1005,7 +1711,11 @@ function markdownInlineFadeSegmentCount(text: string, segmenter: MarkdownWordSeg
       || segment.kind === "link"
       || segment.kind === "strong"
     ) {
-      return count + markdownInlineFadeSegmentCount(segment.text, segmenter);
+      return count + markdownInlineFadeSegmentCount(
+        segment.text,
+        segmenter,
+        segment.kind === "link" ? { ...options, inLink: true } : options,
+      );
     }
     return count;
   }, 0);
@@ -1050,13 +1760,13 @@ function renderMarkdownFadeText(text: string, context: MarkdownFadeContext, keyB
 export type MarkdownBlock =
   | { kind: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
   | { kind: "paragraph"; text: string }
-  | { kind: "blockquote"; text: string }
+  | { children?: MarkdownBlock[]; kind: "blockquote"; text: string }
   | { kind: "code"; language: string; text: string }
   | { kind: "details"; open: boolean; summary: string; text: string }
   | { kind: "math"; text: string }
-  | { kind: "list"; ordered: boolean; items: string[]; start?: number }
+  | { kind: "list"; loose?: boolean; ordered: boolean; items: MarkdownListItemValue[]; start?: number }
   | { kind: "taskList"; items: MarkdownTaskListItem[] }
-  | { kind: "table"; headers: string[]; rows: string[][] }
+  | { aligns?: MarkdownTableAlign[]; kind: "table"; headers: string[]; rows: string[][] }
   | { kind: "hr" }
   | MarkdownImageBlock
   | { kind: "imageGrid"; images: MarkdownImageBlock[] };
@@ -1073,19 +1783,47 @@ export interface MarkdownTaskListItem {
   text: string;
 }
 
+export interface MarkdownNestedListItem {
+  checked?: boolean;
+  children?: MarkdownBlock[];
+  task?: boolean;
+  text: string;
+}
+
+export type MarkdownListItemValue = string | MarkdownNestedListItem;
+
+export type MarkdownTableAlign = "center" | "left" | "right" | null;
+
 export type MarkdownInlineSegment =
   | { kind: "text"; text: string }
   | { kind: "code"; text: string }
   | { kind: "htmlBreak" }
   | { kind: "htmlSpan"; tag: MarkdownBasicHtmlTag; text: string }
   | { kind: "image"; alt: string; src: string; title: string | null }
-  | { kind: "link"; text: string; href: string }
+  | { kind: "link"; text: string; href: string; title?: string | null }
   | MarkdownPromptLinkSegment
   | { kind: "fileCitation"; path: string; lineStart: number; lineEnd: number }
   | { kind: "math"; text: string }
   | { kind: "strong"; text: string }
   | { kind: "em"; text: string }
   | { kind: "del"; text: string };
+
+interface MarkdownInlineParseOptions {
+  inLink?: boolean;
+  references?: MarkdownReferenceDefinitions;
+}
+
+export interface MarkdownReferenceDefinition {
+  href: string;
+  title: string | null;
+}
+
+export type MarkdownReferenceDefinitions = Map<string, MarkdownReferenceDefinition>;
+
+export interface MarkdownDocument {
+  blocks: MarkdownBlock[];
+  references: MarkdownReferenceDefinitions;
+}
 
 export interface MarkdownPromptLinkSegment {
   href: string;
@@ -1112,8 +1850,21 @@ export interface MemoryCitationEntryView {
   note: string;
 }
 
-export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
+export function parseMarkdownDocument(text: string): MarkdownDocument {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const references: MarkdownReferenceDefinitions = new Map();
+  const blocks = parseMarkdownBlockLines(lines, references);
+  return { blocks, references };
+}
+
+export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
+  return parseMarkdownDocument(text).blocks;
+}
+
+function parseMarkdownBlockLines(
+  lines: string[],
+  references: MarkdownReferenceDefinitions,
+): MarkdownBlock[] {
   const blocks: MarkdownBlock[] = [];
   let index = 0;
 
@@ -1124,17 +1875,33 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       continue;
     }
 
-    const fence = line.match(/^```([^`]*)\s*$/);
+    const referenceDefinition = parseMarkdownReferenceDefinition(lines, index);
+    if (referenceDefinition) {
+      const key = markdownReferenceKey(referenceDefinition.label);
+      if (key && !references.has(key)) {
+        references.set(key, { href: referenceDefinition.href, title: referenceDefinition.title });
+      }
+      index = referenceDefinition.nextIndex;
+      continue;
+    }
+
+    const indentedCode = parseMarkdownIndentedCodeBlock(lines, index);
+    if (indentedCode) {
+      blocks.push(indentedCode.block);
+      index = indentedCode.nextIndex;
+      continue;
+    }
+
+    const fence = parseMarkdownFenceLine(line);
     if (fence) {
-      const language = fence[1]?.trim() ?? "";
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && !/^```\s*$/.test(lines[index] ?? "")) {
+      while (index < lines.length && !isMarkdownClosingFence(lines[index] ?? "", fence.fenceChar, fence.fenceMarker.length)) {
         codeLines.push(lines[index] ?? "");
         index += 1;
       }
       if (index < lines.length) index += 1;
-      blocks.push({ kind: "code", language, text: codeLines.join("\n") });
+      blocks.push({ kind: "code", language: fence.language, text: codeLines.join("\n") });
       continue;
     }
 
@@ -1152,14 +1919,21 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       continue;
     }
 
-    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    const heading = line.match(/^ {0,3}(#{1,6})(?=\s|$)(.*)$/);
     if (heading) {
       blocks.push({
         kind: "heading",
         level: heading[1].length as 1 | 2 | 3 | 4 | 5 | 6,
-        text: heading[2] ?? "",
+        text: markdownAtxHeadingText(heading[2] ?? ""),
       });
       index += 1;
+      continue;
+    }
+
+    const setextHeading = parseMarkdownSetextHeading(lines, index);
+    if (setextHeading) {
+      blocks.push(setextHeading.block);
+      index = setextHeading.nextIndex;
       continue;
     }
 
@@ -1169,12 +1943,12 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       continue;
     }
 
-    const image = parseMarkdownImageLine(line);
+    const image = parseMarkdownImageLine(line, references);
     if (image) {
       index += 1;
       const images = [image];
       while (index < lines.length) {
-        const nextImage = parseMarkdownImageLine(lines[index] ?? "");
+        const nextImage = parseMarkdownImageLine(lines[index] ?? "", references);
         if (!nextImage) break;
         images.push(nextImage);
         index += 1;
@@ -1190,41 +1964,33 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
       continue;
     }
 
-    const taskListMatch = parseMarkdownTaskListItem(line);
-    if (taskListMatch) {
-      const items: MarkdownTaskListItem[] = [];
-      while (index < lines.length) {
-        const item = parseMarkdownTaskListItem(lines[index] ?? "");
-        if (!item) break;
-        items.push(item);
-        index += 1;
-      }
-      blocks.push({ kind: "taskList", items });
+    const listBlock = parseMarkdownListBlock(lines, index, 0, references);
+    if (listBlock) {
+      blocks.push(listBlock.block);
+      index = listBlock.nextIndex;
       continue;
     }
 
-    const listMatch = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
-    if (listMatch) {
-      const ordered = /^\d+[.)]$/.test(listMatch[2] ?? "");
-      const start = ordered ? Number.parseInt((listMatch[2] ?? "1").replace(/[.)]$/, ""), 10) : 1;
-      const items: string[] = [];
-      while (index < lines.length) {
-        const item = (lines[index] ?? "").match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/);
-        if (!item || /^\d+[.)]$/.test(item[2] ?? "") !== ordered) break;
-        items.push(item[3] ?? "");
-        index += 1;
-      }
-      blocks.push(ordered && start > 1 ? { kind: "list", ordered, items, start } : { kind: "list", ordered, items });
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
+    if (isMarkdownBlockquoteLine(line)) {
       const quoteLines: string[] = [];
-      while (index < lines.length && /^>\s?/.test(lines[index] ?? "")) {
-        quoteLines.push((lines[index] ?? "").replace(/^>\s?/, ""));
+      while (index < lines.length) {
+        const quoteLine = lines[index] ?? "";
+        if (isMarkdownBlockquoteLine(quoteLine)) {
+          quoteLines.push(stripMarkdownBlockquoteMarker(quoteLine));
+          index += 1;
+          continue;
+        }
+        if (!isMarkdownLazyBlockquoteContinuation(quoteLine, lines[index + 1] ?? "")) break;
+        quoteLines.push(quoteLine);
         index += 1;
       }
-      blocks.push({ kind: "blockquote", text: quoteLines.join("\n") });
+      const quoteText = quoteLines.join("\n");
+      const quoteChildren = parseMarkdownBlockLines(quoteLines, references);
+      blocks.push(
+        shouldRenderBlockquoteChildren(quoteChildren)
+          ? { kind: "blockquote", text: quoteText, children: quoteChildren }
+          : { kind: "blockquote", text: quoteText },
+      );
       continue;
     }
 
@@ -1239,25 +2005,29 @@ export function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   return blocks;
 }
 
-export function parseMarkdownInline(text: string): MarkdownInlineSegment[] {
+export function parseMarkdownInline(
+  text: string,
+  options: MarkdownInlineParseOptions = {},
+): MarkdownInlineSegment[] {
   const segments: MarkdownInlineSegment[] = [];
   let index = 0;
 
   while (index < text.length) {
-    const token = nextInlineToken(text, index);
+    const token = nextInlineToken(text, index, options);
     if (!token) {
       pushTextSegment(segments, text.slice(index));
       break;
     }
     pushTextSegment(segments, text.slice(index, token.index));
     if (token.kind === "code") {
-      const end = text.indexOf("`", token.index + 1);
-      if (end < 0) {
-        pushTextSegment(segments, text.slice(token.index));
-        break;
+      const code = parseMarkdownCodeSpan(text, token.index);
+      if (!code) {
+        pushTextSegment(segments, text.slice(token.index, token.index + 1));
+        index = token.index + 1;
+        continue;
       }
-      segments.push({ kind: "code", text: text.slice(token.index + 1, end) });
-      index = end + 1;
+      segments.push({ kind: "code", text: code.text });
+      index = code.endIndex;
       continue;
     }
 
@@ -1287,6 +2057,18 @@ export function parseMarkdownInline(text: string): MarkdownInlineSegment[] {
       }
       segments.push({ kind: "link", text: autolink.text, href: autolink.href });
       index = autolink.endIndex;
+      continue;
+    }
+
+    if (token.kind === "bareLink") {
+      const bareLink = parseMarkdownBareLink(text, token.index);
+      if (!bareLink) {
+        pushTextSegment(segments, text.slice(token.index, token.index + 1));
+        index = token.index + 1;
+        continue;
+      }
+      segments.push({ kind: "link", text: bareLink.text, href: bareLink.href });
+      index = bareLink.endIndex;
       continue;
     }
 
@@ -1333,7 +2115,7 @@ export function parseMarkdownInline(text: string): MarkdownInlineSegment[] {
     }
 
     if (token.kind === "image") {
-      const image = parseMarkdownImageInline(text, token.index);
+      const image = parseMarkdownImageInline(text, token.index, options.references);
       if (!image) {
         pushTextSegment(segments, text.slice(token.index, token.index + 1));
         index = token.index + 1;
@@ -1345,30 +2127,26 @@ export function parseMarkdownInline(text: string): MarkdownInlineSegment[] {
     }
 
     if (token.kind === "link") {
-      const closeLabel = text.indexOf("]", token.index + 1);
-      const openHref = closeLabel >= 0 ? text.indexOf("(", closeLabel + 1) : -1;
-      const closeHref = openHref >= 0 ? text.indexOf(")", openHref + 1) : -1;
-      if (closeLabel < 0 || openHref !== closeLabel + 1 || closeHref < 0) {
+      const link = parseMarkdownLinkInline(text, token.index, options.references);
+      if (!link) {
         pushTextSegment(segments, text.slice(token.index, token.index + 1));
         index = token.index + 1;
         continue;
       }
-      const label = text.slice(token.index + 1, closeLabel);
-      const href = normalizeMarkdownHref(text.slice(openHref + 1, closeHref));
-      if (!label || !href) {
-        pushTextSegment(segments, text.slice(token.index, closeHref + 1));
+      if (!link.label || !link.href) {
+        pushTextSegment(segments, text.slice(token.index, link.endIndex));
       } else {
-        const promptLink = markdownPromptLinkFromHref(label, href);
-        const safeHref = promptLink ? href : safeMarkdownHref(href);
+        const promptLink = markdownPromptLinkFromHref(link.label, link.href);
+        const safeHref = promptLink ? link.href : safeMarkdownHref(link.href);
         if (promptLink) {
           segments.push(promptLink);
         } else if (safeHref) {
-          segments.push({ kind: "link", text: label, href: safeHref });
+          segments.push(markdownLinkSegment(link.label, safeHref, link.title));
         } else {
-          pushTextSegment(segments, text.slice(token.index, closeHref + 1));
+          pushTextSegment(segments, text.slice(token.index, link.endIndex));
         }
       }
-      index = closeHref + 1;
+      index = link.endIndex;
       continue;
     }
 
@@ -1411,12 +2189,24 @@ export function memoryCitationEntries(citation: unknown): MemoryCitationEntryVie
   });
 }
 
+export function memoryCitationFileReference(
+  entry: MemoryCitationEntryView,
+  memoryCitationRoot?: string | null,
+): FileReference {
+  return {
+    path: resolveMemoryCitationPath(entry.path, memoryCitationRoot),
+    lineStart: entry.lineStart,
+    lineEnd: entry.lineEnd,
+  };
+}
+
 function parseMarkdownTable(lines: string[], index: number): { block: MarkdownBlock; nextIndex: number } | null {
   const headerLine = lines[index] ?? "";
   const separatorLine = lines[index + 1] ?? "";
   if (!headerLine.includes("|") || !isTableSeparatorRow(separatorLine)) return null;
   const headers = splitTableRow(headerLine);
   if (headers.length === 0) return null;
+  const aligns = normalizeTableAligns(tableSeparatorAligns(separatorLine), headers.length);
 
   const rows: string[][] = [];
   let nextIndex = index + 2;
@@ -1429,7 +2219,12 @@ function parseMarkdownTable(lines: string[], index: number): { block: MarkdownBl
     nextIndex += 1;
   }
 
-  return { block: { kind: "table", headers, rows }, nextIndex };
+  return {
+    block: aligns.some((align) => align != null)
+      ? { kind: "table", headers, rows, aligns }
+      : { kind: "table", headers, rows },
+    nextIndex,
+  };
 }
 
 function parseMarkdownMathBlock(lines: string[], index: number): { block: MarkdownBlock; nextIndex: number } | null {
@@ -1487,13 +2282,31 @@ function parseMarkdownDetailsBlock(lines: string[], index: number): { block: Mar
 function isTableSeparatorRow(line: string): boolean {
   if (!line.includes("|")) return false;
   const cells = splitTableRow(line);
-  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.replace(/\s+/g, "")));
 }
 
 function splitTableRow(line: string): string[] {
   const trimmed = line.trim();
-  const withoutOuterPipes = trimmed.replace(/^\|/, "").replace(/\|$/, "");
-  return withoutOuterPipes.split("|").map((cell) => cell.trim());
+  const cells: string[] = [];
+  let cell = "";
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index] ?? "";
+    if (char !== "|") {
+      cell += char;
+      continue;
+    }
+    if (isEscapedMarkdownIndex(trimmed, index)) {
+      cell = cell.endsWith("\\") ? cell.slice(0, -1) : cell;
+      cell += "|";
+      continue;
+    }
+    cells.push(cell);
+    cell = "";
+  }
+  cells.push(cell);
+  if (cells[0]?.trim() === "") cells.shift();
+  if (cells.at(-1)?.trim() === "") cells.pop();
+  return cells.map((cell) => cell.trim());
 }
 
 function normalizeTableRow(cells: string[], width: number): string[] {
@@ -1502,8 +2315,322 @@ function normalizeTableRow(cells: string[], width: number): string[] {
   return normalized;
 }
 
+function tableSeparatorAligns(line: string): MarkdownTableAlign[] {
+  return splitTableRow(line).map((cell) => {
+    const compact = cell.replace(/\s+/g, "");
+    if (/^:-+:$/.test(compact)) return "center";
+    if (/^-+:$/.test(compact)) return "right";
+    if (/^:-+$/.test(compact)) return "left";
+    return null;
+  });
+}
+
+function normalizeTableAligns(aligns: MarkdownTableAlign[], width: number): MarkdownTableAlign[] {
+  const normalized = aligns.slice(0, width);
+  while (normalized.length < width) normalized.push(null);
+  return normalized;
+}
+
+function parseMarkdownIndentedCodeBlock(
+  lines: string[],
+  index: number,
+): { block: Extract<MarkdownBlock, { kind: "code" }>; nextIndex: number } | null {
+  if (!isMarkdownIndentedCodeLine(lines[index] ?? "")) return null;
+  const codeLines: string[] = [];
+  let nextIndex = index;
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex] ?? "";
+    if (line.trim().length === 0) {
+      codeLines.push("");
+      nextIndex += 1;
+      continue;
+    }
+    if (!isMarkdownIndentedCodeLine(line)) break;
+    codeLines.push(line.replace(/^(?: {4}| {0,3}\t)/, ""));
+    nextIndex += 1;
+  }
+  return {
+    block: { kind: "code", language: "", text: codeLines.join("\n").replace(/\n+$/u, "") },
+    nextIndex,
+  };
+}
+
+function isMarkdownIndentedCodeLine(line: string): boolean {
+  return /^(?: {4}| {0,3}\t)/.test(line);
+}
+
+function parseMarkdownFenceLine(
+  line: string,
+): { fenceChar: string; fenceMarker: string; language: string } | null {
+  const match = line.match(/^ {0,3}([`~]{3,})(.*)$/);
+  if (!match) return null;
+  const fenceMarker = match[1] ?? "";
+  const fenceChar = fenceMarker[0] ?? "";
+  if (!fenceChar || !fenceMarker.split("").every((char) => char === fenceChar)) return null;
+  const rawLanguage = match[2] ?? "";
+  if (fenceChar === "`" && rawLanguage.includes("`")) return null;
+  return {
+    fenceChar,
+    fenceMarker,
+    language: rawLanguage.trim(),
+  };
+}
+
+function markdownAtxHeadingText(rawText: string): string {
+  const text = rawText.trim();
+  if (!text.endsWith("#")) return text;
+  const withoutClosingHashes = text.replace(/#+$/u, "");
+  return withoutClosingHashes.length === 0 || /\s$/u.test(withoutClosingHashes)
+    ? withoutClosingHashes.trim()
+    : text;
+}
+
+function parseMarkdownSetextHeading(
+  lines: string[],
+  index: number,
+): { block: Extract<MarkdownBlock, { kind: "heading" }>; nextIndex: number } | null {
+  const text = lines[index]?.trim();
+  const marker = lines[index + 1] ?? "";
+  if (!text || !/^\s{0,3}(=+|-+)\s*$/.test(marker)) return null;
+  if (!isMarkdownSetextHeadingText(text)) return null;
+  return {
+    block: {
+      kind: "heading",
+      level: marker.trim().startsWith("=") ? 1 : 2,
+      text,
+    },
+    nextIndex: index + 2,
+  };
+}
+
+function isMarkdownSetextHeadingText(text: string): boolean {
+  if (parseMarkdownImageLine(text) || parseMarkdownTaskListItem(text)) return false;
+  if (/^>\s?/.test(text)) return false;
+  if (parseMarkdownListItemLine(text)) return false;
+  if (/^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(text)) return false;
+  return true;
+}
+
+function isMarkdownClosingFence(line: string, fenceChar: string, minimumLength: number): boolean {
+  const match = line.match(/^ {0,3}([`~]+)[ \t]*$/);
+  const closingMarker = match?.[1] ?? "";
+  return closingMarker.length >= minimumLength && closingMarker.split("").every((char) => char === fenceChar);
+}
+
+interface ParsedMarkdownListItemLine {
+  contentIndent: number;
+  indent: number;
+  ordered: boolean;
+  start: number;
+  text: string;
+}
+
+function parseMarkdownListBlock(
+  lines: string[],
+  index: number,
+  minimumIndent = 0,
+  references?: MarkdownReferenceDefinitions,
+): { block: Extract<MarkdownBlock, { kind: "list" }>; nextIndex: number } | null {
+  const first = parseMarkdownListItemLine(lines[index] ?? "", { allowIndented: true });
+  if (!first || first.indent < minimumIndent || first.indent > 3 && minimumIndent === 0) return null;
+  const ordered = first.ordered;
+  const start = ordered ? first.start : 1;
+  const listIndent = first.indent;
+  const items: MarkdownListItemValue[] = [];
+  let nextIndex = index;
+  let loose = false;
+
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex] ?? "";
+    const item = parseMarkdownListItemLine(line, { allowIndented: true });
+    if (!item || item.indent !== listIndent || item.ordered !== ordered) break;
+    const parsedItem = parseMarkdownListItem(lines, nextIndex, listIndent, ordered, references);
+    if (!parsedItem) break;
+    items.push(parsedItem.item);
+    loose = loose || parsedItem.loose;
+    nextIndex = parsedItem.nextIndex;
+  }
+
+  if (items.length === 0) return null;
+  const block: Extract<MarkdownBlock, { kind: "list" }> = {
+    kind: "list",
+    ordered,
+    items,
+    ...(ordered && start > 1 ? { start } : {}),
+    ...(loose ? { loose } : {}),
+  };
+  return { block, nextIndex };
+}
+
+function parseMarkdownListItem(
+  lines: string[],
+  index: number,
+  listIndent: number,
+  ordered: boolean,
+  references: MarkdownReferenceDefinitions | undefined,
+): { item: MarkdownListItemValue; loose: boolean; nextIndex: number } | null {
+  const first = parseMarkdownListItemLine(lines[index] ?? "", { allowIndented: true });
+  if (!first || first.indent !== listIndent || first.ordered !== ordered) return null;
+  const contentLines = [first.text];
+  let nextIndex = index + 1;
+  let loose = false;
+
+  while (nextIndex < lines.length) {
+    const line = lines[nextIndex] ?? "";
+    const item = parseMarkdownListItemLine(line, { allowIndented: true });
+    if (item && item.indent === listIndent && item.ordered === ordered) break;
+    if (item && item.indent < listIndent) break;
+
+    if (line.trim().length === 0) {
+      const nextContentIndex = nextNonBlankMarkdownLine(lines, nextIndex + 1);
+      if (nextContentIndex < 0) break;
+      const nextContentLine = lines[nextContentIndex] ?? "";
+      const nextItem = parseMarkdownListItemLine(nextContentLine, { allowIndented: true });
+      if (nextItem && nextItem.indent === listIndent && nextItem.ordered === ordered) {
+        loose = true;
+        contentLines.push("");
+        nextIndex += 1;
+        break;
+      }
+      if (markdownLineIndentWidth(nextContentLine) >= first.contentIndent || (nextItem && nextItem.indent > listIndent)) {
+        loose = true;
+        contentLines.push("");
+        nextIndex += 1;
+        continue;
+      }
+      break;
+    }
+
+    if (
+      markdownLineIndentWidth(line) < first.contentIndent
+      && isMarkdownListBreakingBlock(line)
+    ) {
+      break;
+    }
+
+    contentLines.push(stripMarkdownIndent(line, first.contentIndent));
+    nextIndex += 1;
+  }
+
+  trimTrailingBlankMarkdownLines(contentLines);
+  return {
+    item: markdownListItemFromContentLines(contentLines, references),
+    loose,
+    nextIndex,
+  };
+}
+
+function markdownListItemFromContentLines(
+  lines: string[],
+  references: MarkdownReferenceDefinitions | undefined,
+): MarkdownListItemValue {
+  const blocks = parseMarkdownBlockLines(lines, references ?? new Map());
+  const first = blocks[0];
+  if (!first) return "";
+  if (first.kind === "paragraph") {
+    const children = blocks.slice(1);
+    const task = parseMarkdownTaskListItemText(first.text);
+    if (!task && children.length === 0) return first.text;
+    return {
+      text: task?.text ?? first.text,
+      ...(children.length > 0 ? { children } : {}),
+      ...(task ? { checked: task.checked, task: true } : {}),
+    };
+  }
+  return { text: "", children: blocks };
+}
+
+function shouldRenderBlockquoteChildren(children: MarkdownBlock[]): boolean {
+  return children.length > 1 || children.some((child) => child.kind !== "paragraph");
+}
+
+function parseMarkdownListItemLine(
+  line: string,
+  options: { allowIndented?: boolean } = {},
+): ParsedMarkdownListItemLine | null {
+  const match = line.match(/^([ \t]*)([-*+]|\d{1,9}[.)])([ \t]+)(.*)$/);
+  if (!match) return null;
+  const indent = markdownIndentWidth(match[1] ?? "");
+  if (indent > 3 && options.allowIndented !== true) return null;
+  const marker = match[2] ?? "";
+  const ordered = /^\d{1,9}[.)]$/.test(marker);
+  const contentIndent = indent + marker.length + markdownIndentWidth(match[3] ?? "");
+  return {
+    contentIndent,
+    indent,
+    ordered,
+    start: ordered ? Number.parseInt(marker.replace(/[.)]$/u, ""), 10) : 1,
+    text: match[4] ?? "",
+  };
+}
+
+function nextNonBlankMarkdownLine(lines: string[], index: number): number {
+  let cursor = index;
+  while (cursor < lines.length) {
+    if ((lines[cursor] ?? "").trim().length > 0) return cursor;
+    cursor += 1;
+  }
+  return -1;
+}
+
+function markdownLineIndentWidth(line: string): number {
+  return markdownIndentWidth(line.match(/^[ \t]*/)?.[0] ?? "");
+}
+
+function stripMarkdownIndent(line: string, width: number): string {
+  let cursor = 0;
+  let remaining = width;
+  while (cursor < line.length && remaining > 0) {
+    const char = line[cursor] ?? "";
+    if (char === " ") {
+      remaining -= 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === "\t") {
+      remaining -= Math.min(remaining, 4);
+      cursor += 1;
+      continue;
+    }
+    break;
+  }
+  return line.slice(cursor);
+}
+
+function trimTrailingBlankMarkdownLines(lines: string[]): void {
+  while (lines.length > 0 && (lines[lines.length - 1] ?? "").trim().length === 0) {
+    lines.pop();
+  }
+}
+
+function isMarkdownListBreakingBlock(line: string): boolean {
+  return parseMarkdownFenceLine(line) !== null
+    || /^ {0,3}#{1,6}(?=\s|$)/.test(line)
+    || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
+    || /^\s*(\$\$|\\\[)/.test(line)
+    || /^<details(?:\s+open)?\s*>/i.test(line.trim());
+}
+
+function isMarkdownBlockquoteLine(line: string): boolean {
+  return /^ {0,3}>\s?/.test(line);
+}
+
+function stripMarkdownBlockquoteMarker(line: string): string {
+  return line.replace(/^ {0,3}>\s?/, "");
+}
+
+function isMarkdownLazyBlockquoteContinuation(line: string, nextLine = ""): boolean {
+  return line.trim().length > 0 && !isMarkdownBlockBoundary(line, nextLine);
+}
+
+function markdownIndentWidth(indent: string): number {
+  let width = 0;
+  for (const char of indent) width += char === "\t" ? 4 : 1;
+  return width;
+}
+
 function parseMarkdownTaskListItem(line: string): MarkdownTaskListItem | null {
-  const match = line.match(/^\s{0,3}[-*+]\s+\[([ xX])]\s+(.+)$/);
+  const match = line.match(/^ {0,3}[-*+]\s+\[([ xX])]\s+(.+)$/);
   if (!match) return null;
   return {
     checked: (match[1] ?? "").toLowerCase() === "x",
@@ -1511,9 +2638,21 @@ function parseMarkdownTaskListItem(line: string): MarkdownTaskListItem | null {
   };
 }
 
-function parseMarkdownImageLine(line: string): MarkdownImageBlock | null {
+function parseMarkdownTaskListItemText(text: string): MarkdownTaskListItem | null {
+  const match = text.match(/^\[([ xX])\]\s+([\s\S]*)$/u);
+  if (!match) return null;
+  return {
+    checked: (match[1] ?? "").toLowerCase() === "x",
+    text: match[2] ?? "",
+  };
+}
+
+function parseMarkdownImageLine(
+  line: string,
+  references?: MarkdownReferenceDefinitions,
+): MarkdownImageBlock | null {
   const trimmed = line.trim();
-  const image = parseMarkdownImageInline(trimmed, 0);
+  const image = parseMarkdownImageInline(trimmed, 0, references);
   if (!image || image.endIndex !== trimmed.length) return null;
   return {
     kind: "image",
@@ -1526,16 +2665,50 @@ function parseMarkdownImageLine(line: string): MarkdownImageBlock | null {
 function parseMarkdownImageInline(
   text: string,
   startIndex: number,
+  references?: MarkdownReferenceDefinitions,
 ): { alt: string; src: string; title: string | null; endIndex: number } | null {
   if (!text.startsWith("![", startIndex)) return null;
-  const closeLabel = text.indexOf("]", startIndex + 2);
+  const closeLabel = findMarkdownLabelEnd(text, startIndex + 1);
   const openHref = closeLabel >= 0 ? text.indexOf("(", closeLabel + 1) : -1;
-  if (closeLabel < 0 || openHref !== closeLabel + 1) return null;
+  if (closeLabel < 0) return null;
+  const label = markdownUnescapeText(text.slice(startIndex + 2, closeLabel));
+  if (openHref !== closeLabel + 1) {
+    const reference = parseMarkdownReferenceTarget(text, closeLabel + 1, label, references);
+    if (!reference) return null;
+    const src = normalizeMarkdownHref(reference.href);
+    if (!src) return null;
+    return {
+      alt: label,
+      src,
+      title: reference.title,
+      endIndex: reference.endIndex,
+    };
+  }
+  const destination = parseMarkdownImageDestination(text, openHref);
+  if (!destination) return null;
+  const src = normalizeMarkdownHref(destination.href);
+  if (!src) return null;
+  return {
+    alt: label,
+    src,
+    title: destination.title,
+    endIndex: destination.endIndex,
+  };
+}
 
-  let cursor = openHref + 1;
+function parseMarkdownImageDestination(
+  text: string,
+  openParenIndex: number,
+): { endIndex: number; href: string; title: string | null } | null {
+  if (text[openParenIndex] !== "(") return null;
+  let cursor = openParenIndex + 1;
   let bracketDepth = 0;
   while (cursor < text.length) {
     const char = text[cursor] ?? "";
+    if (char === "\\" && cursor + 1 < text.length) {
+      cursor += 2;
+      continue;
+    }
     if (char === "(") bracketDepth += 1;
     if (char === ")") {
       if (bracketDepth === 0) break;
@@ -1544,24 +2717,238 @@ function parseMarkdownImageInline(
     cursor += 1;
   }
   if (cursor >= text.length) return null;
-
-  const rawTarget = text.slice(openHref + 1, cursor).trim();
-  const titleMatch = rawTarget.match(/^(<[^>\n]+>|[^\s\n]+)\s+["']([^"'\n]*)["']$/);
-  const rawSrc = titleMatch?.[1] ?? rawTarget;
-  const src = normalizeMarkdownHref(rawSrc);
-  if (!src) return null;
+  const rawTarget = text.slice(openParenIndex + 1, cursor).trim();
+  const titleMatch = parseMarkdownDestinationTitle(rawTarget);
   return {
-    alt: text.slice(startIndex + 2, closeLabel),
-    src,
-    title: titleMatch?.[2] ?? null,
     endIndex: cursor + 1,
+    href: markdownUnescapeText(titleMatch?.href ?? rawTarget),
+    title: titleMatch?.title ?? null,
   };
+}
+
+function parseMarkdownLinkInline(
+  text: string,
+  startIndex: number,
+  references?: MarkdownReferenceDefinitions,
+): { endIndex: number; href: string; label: string; title: string | null } | null {
+  if (text[startIndex] !== "[") return null;
+  const closeLabel = findMarkdownLabelEnd(text, startIndex);
+  const openHref = closeLabel >= 0 ? text.indexOf("(", closeLabel + 1) : -1;
+  if (closeLabel < 0) return null;
+  const label = markdownUnescapeText(text.slice(startIndex + 1, closeLabel));
+  if (openHref !== closeLabel + 1) {
+    const reference = parseMarkdownReferenceTarget(text, closeLabel + 1, label, references);
+    return reference
+      ? { endIndex: reference.endIndex, href: normalizeMarkdownHref(reference.href), label, title: reference.title }
+      : null;
+  }
+  const destination = parseMarkdownLinkDestination(text, openHref);
+  if (!destination) return null;
+  return {
+    endIndex: destination.endIndex,
+    href: normalizeMarkdownHref(destination.href),
+    label,
+    title: destination.title,
+  };
+}
+
+function findMarkdownLabelEnd(text: string, openBracketIndex: number): number {
+  if (text[openBracketIndex] !== "[") return -1;
+  let depth = 0;
+  let cursor = openBracketIndex + 1;
+  while (cursor < text.length) {
+    const char = text[cursor] ?? "";
+    if (char === "\\" && cursor + 1 < text.length) {
+      cursor += 2;
+      continue;
+    }
+    if (char === "[") {
+      depth += 1;
+      cursor += 1;
+      continue;
+    }
+    if (char === "]") {
+      if (depth === 0) return cursor;
+      depth -= 1;
+    }
+    cursor += 1;
+  }
+  return -1;
+}
+
+function parseMarkdownLinkDestination(
+  text: string,
+  openParenIndex: number,
+): { endIndex: number; href: string; title: string | null } | null {
+  if (text[openParenIndex] !== "(") return null;
+  let cursor = openParenIndex + 1;
+  while (/[ \t\n]/u.test(text[cursor] ?? "")) cursor += 1;
+  const hrefStart = cursor;
+  let href = "";
+  if (text[cursor] === "<") {
+    const closeAngle = text.indexOf(">", cursor + 1);
+    if (closeAngle < 0) return null;
+    href = text.slice(hrefStart, closeAngle + 1);
+    cursor = closeAngle + 1;
+  } else {
+    let depth = 0;
+    while (cursor < text.length) {
+      const char = text[cursor] ?? "";
+      if (char === "\\" && cursor + 1 < text.length) {
+        cursor += 2;
+        continue;
+      }
+      if (char === "(") {
+        depth += 1;
+        cursor += 1;
+        continue;
+      }
+      if (char === ")") {
+        if (depth === 0) break;
+        depth -= 1;
+        cursor += 1;
+        continue;
+      }
+      if (depth === 0 && /[ \t\n]/u.test(char)) break;
+      cursor += 1;
+    }
+    href = markdownUnescapeText(text.slice(hrefStart, cursor));
+  }
+  while (/[ \t\n]/u.test(text[cursor] ?? "")) cursor += 1;
+  const title = parseMarkdownLinkTitle(text, cursor);
+  if (title) {
+    cursor = title.endIndex;
+    while (/[ \t\n]/u.test(text[cursor] ?? "")) cursor += 1;
+  }
+  if (text[cursor] !== ")") return null;
+  return { endIndex: cursor + 1, href, title: title?.value ?? null };
+}
+
+function parseMarkdownLinkTitle(text: string, startIndex: number): { endIndex: number; value: string } | null {
+  const open = text[startIndex] ?? "";
+  if (open !== "\"" && open !== "'" && open !== "(") return null;
+  const close = open === "(" ? ")" : open;
+  let cursor = startIndex + 1;
+  while (cursor < text.length) {
+    const char = text[cursor] ?? "";
+    if (char === "\\" && cursor + 1 < text.length) {
+      cursor += 2;
+      continue;
+    }
+    if (char === close) {
+      return { endIndex: cursor + 1, value: markdownUnescapeText(text.slice(startIndex + 1, cursor)) };
+    }
+    cursor += 1;
+  }
+  return null;
+}
+
+function parseMarkdownDestinationTitle(value: string): { href: string; title: string } | null {
+  const match = value.match(/^(<[^>\n]+>|[\s\S]+?)\s+(?:"([^"\n]*)"|'([^'\n]*)'|\(([^()\n]*)\))$/u);
+  if (!match) return null;
+  return {
+    href: match[1] ?? "",
+    title: markdownUnescapeText(match[2] ?? match[3] ?? match[4] ?? ""),
+  };
+}
+
+function parseMarkdownReferenceTarget(
+  text: string,
+  afterLabelIndex: number,
+  label: string,
+  references: MarkdownReferenceDefinitions | undefined,
+): { endIndex: number; href: string; title: string | null } | null {
+  if (!references || references.size === 0) return null;
+  let key = markdownReferenceKey(label);
+  let endIndex = afterLabelIndex;
+  if (text[afterLabelIndex] === "[") {
+    const closeReference = findMarkdownLabelEnd(text, afterLabelIndex);
+    if (closeReference < 0) return null;
+    const referenceLabel = text.slice(afterLabelIndex + 1, closeReference);
+    key = referenceLabel.length === 0 ? key : markdownReferenceKey(referenceLabel);
+    endIndex = closeReference + 1;
+  }
+  const definition = references.get(key);
+  return definition ? { ...definition, endIndex } : null;
+}
+
+function parseMarkdownReferenceDefinition(
+  lines: string[],
+  index: number,
+): { href: string; label: string; nextIndex: number; title: string | null } | null {
+  const line = lines[index] ?? "";
+  const match = line.match(/^ {0,3}\[((?:\\[\s\S]|[^\[\]\\])+)\]:(.*)$/u);
+  if (!match) return null;
+  const label = markdownUnescapeText(match[1] ?? "");
+  let cursorLine = index + 1;
+  let rest = match[2] ?? "";
+  if (rest.trim().length === 0) {
+    const nextLine = lines[cursorLine] ?? "";
+    if (!/^[ \t]+\S/u.test(nextLine)) return null;
+    rest = nextLine;
+    cursorLine += 1;
+  }
+  const destination = parseMarkdownReferenceDestination(rest);
+  if (!destination) return null;
+  let title: string | null = null;
+  const sameLineTitle = parseMarkdownReferenceDefinitionTitle(destination.rest);
+  if (sameLineTitle) {
+    title = sameLineTitle.value;
+  } else if (destination.rest.trim().length > 0) {
+    return null;
+  } else {
+    const nextLine = lines[cursorLine] ?? "";
+    if (/^[ \t]+\S/u.test(nextLine)) {
+      const nextLineTitle = parseMarkdownReferenceDefinitionTitle(nextLine);
+      if (nextLineTitle) {
+        title = nextLineTitle.value;
+        cursorLine += 1;
+      }
+    }
+  }
+  return {
+    href: normalizeMarkdownHref(markdownUnescapeText(destination.href)),
+    label,
+    nextIndex: cursorLine,
+    title,
+  };
+}
+
+function parseMarkdownReferenceDestination(value: string): { href: string; rest: string } | null {
+  const text = value.trimStart();
+  if (text.length === 0) return null;
+  if (text.startsWith("<")) {
+    const closeAngle = text.indexOf(">");
+    if (closeAngle < 0) return null;
+    return {
+      href: text.slice(0, closeAngle + 1),
+      rest: text.slice(closeAngle + 1),
+    };
+  }
+  const match = text.match(/^(\S+)([\s\S]*)$/u);
+  return match ? { href: match[1] ?? "", rest: match[2] ?? "" } : null;
+}
+
+function parseMarkdownReferenceDefinitionTitle(value: string): { value: string } | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const first = trimmed[0] ?? "";
+  const last = trimmed[trimmed.length - 1] ?? "";
+  if ((first === "\"" && last === "\"") || (first === "'" && last === "'") || (first === "(" && last === ")")) {
+    return { value: markdownUnescapeText(trimmed.slice(1, -1)) };
+  }
+  return null;
+}
+
+function markdownReferenceKey(value: string): string {
+  return markdownUnescapeText(value).trim().replace(/\s+/gu, " ").toLowerCase();
 }
 
 type InlineToken =
   | { kind: "code"; index: number }
   | { kind: "fileCitation"; index: number }
   | { kind: "autolink"; index: number }
+  | { kind: "bareLink"; index: number }
   | { kind: "math"; index: number }
   | { kind: "promptLink"; index: number }
   | { kind: "html"; index: number }
@@ -1571,29 +2958,39 @@ type InlineToken =
   | { kind: "strong"; index: number; marker: "**" | "__" }
   | { kind: "em"; index: number; marker: "*" | "_" };
 
-function nextInlineToken(text: string, index: number): InlineToken | null {
+function nextInlineToken(
+  text: string,
+  index: number,
+  options: MarkdownInlineParseOptions = {},
+): InlineToken | null {
   const candidates: InlineToken[] = [];
-  const codeIndex = text.indexOf("`", index);
+  const codeIndex = findUnescapedIndex(text, "`", index);
   if (codeIndex >= 0) candidates.push({ kind: "code", index: codeIndex });
-  const fileCitationIndex = text.indexOf("\u3010", index);
+  const fileCitationIndex = findUnescapedIndex(text, "\u3010", index);
   if (fileCitationIndex >= 0) candidates.push({ kind: "fileCitation", index: fileCitationIndex });
-  const autolinkIndex = findMarkdownAutolinkStart(text, index);
-  if (autolinkIndex >= 0) candidates.push({ kind: "autolink", index: autolinkIndex });
+  if (!options.inLink) {
+    const autolinkIndex = findMarkdownAutolinkStart(text, index);
+    if (autolinkIndex >= 0) candidates.push({ kind: "autolink", index: autolinkIndex });
+    const bareLinkIndex = findMarkdownBareLinkStart(text, index);
+    if (bareLinkIndex >= 0) candidates.push({ kind: "bareLink", index: bareLinkIndex });
+  }
   const mathIndex = findMarkdownInlineMathStart(text, index);
   if (mathIndex >= 0) candidates.push({ kind: "math", index: mathIndex });
   const promptLinkIndex = findMarkdownPromptLinkStart(text, index);
   if (promptLinkIndex >= 0) candidates.push({ kind: "promptLink", index: promptLinkIndex });
   const htmlIndex = findBasicInlineHtmlStart(text, index);
   if (htmlIndex >= 0) candidates.push({ kind: "html", index: htmlIndex });
-  const imageIndex = text.indexOf("![", index);
-  if (imageIndex >= 0) candidates.push({ kind: "image", index: imageIndex });
-  const linkIndex = text.indexOf("[", index);
-  if (linkIndex >= 0) candidates.push({ kind: "link", index: linkIndex });
-  const delIndex = text.indexOf("~~", index);
+  if (!options.inLink) {
+    const imageIndex = findUnescapedIndex(text, "![", index);
+    if (imageIndex >= 0) candidates.push({ kind: "image", index: imageIndex });
+    const linkIndex = findUnescapedIndex(text, "[", index);
+    if (linkIndex >= 0) candidates.push({ kind: "link", index: linkIndex });
+  }
+  const delIndex = findUnescapedIndex(text, "~~", index);
   if (delIndex >= 0) candidates.push({ kind: "del", index: delIndex, marker: "~~" });
-  const strongStarIndex = text.indexOf("**", index);
+  const strongStarIndex = findUnescapedIndex(text, "**", index);
   if (strongStarIndex >= 0) candidates.push({ kind: "strong", index: strongStarIndex, marker: "**" });
-  const strongUnderscoreIndex = text.indexOf("__", index);
+  const strongUnderscoreIndex = findUnescapedIndex(text, "__", index);
   if (strongUnderscoreIndex >= 0) candidates.push({ kind: "strong", index: strongUnderscoreIndex, marker: "__" });
   const emStarIndex = findSingleMarkerStart(text, index, "*");
   if (emStarIndex >= 0) candidates.push({ kind: "em", index: emStarIndex, marker: "*" });
@@ -1607,20 +3004,21 @@ function tokenPriority(token: InlineToken): number {
   if (token.kind === "code") return 0;
   if (token.kind === "fileCitation") return 1;
   if (token.kind === "autolink") return 2;
-  if (token.kind === "math") return 3;
-  if (token.kind === "promptLink") return 4;
-  if (token.kind === "html") return 5;
-  if (token.kind === "image") return 6;
-  if (token.kind === "link") return 7;
-  if (token.kind === "del") return 8;
-  if (token.kind === "strong") return 9;
-  return 10;
+  if (token.kind === "bareLink") return 3;
+  if (token.kind === "math") return 4;
+  if (token.kind === "promptLink") return 5;
+  if (token.kind === "html") return 6;
+  if (token.kind === "image") return 7;
+  if (token.kind === "link") return 8;
+  if (token.kind === "del") return 9;
+  if (token.kind === "strong") return 10;
+  return 11;
 }
 
 function findSingleMarkerStart(text: string, index: number, marker: "*" | "_"): number {
   let cursor = index;
   while (cursor < text.length) {
-    const next = text.indexOf(marker, cursor);
+    const next = findUnescapedIndex(text, marker, cursor);
     if (next < 0) return -1;
     if (text[next - 1] !== marker && text[next + 1] !== marker && !isWordInternalUnderscore(text, next, marker)) {
       return next;
@@ -1633,7 +3031,7 @@ function findSingleMarkerStart(text: string, index: number, marker: "*" | "_"): 
 function findInlineMarkerEnd(text: string, index: number, marker: string, kind: InlineToken["kind"]): number {
   let cursor = index;
   while (cursor < text.length) {
-    const next = text.indexOf(marker, cursor);
+    const next = findUnescapedIndex(text, marker, cursor);
     if (next < 0) return -1;
     if ((kind !== "em" || marker !== "_" || !isWordInternalUnderscore(text, next, "_")) && next > index) {
       return next;
@@ -1646,6 +3044,64 @@ function findInlineMarkerEnd(text: string, index: number, marker: string, kind: 
 function isWordInternalUnderscore(text: string, index: number, marker: "*" | "_"): boolean {
   if (marker !== "_") return false;
   return /[A-Za-z0-9]/.test(text[index - 1] ?? "") && /[A-Za-z0-9]/.test(text[index + 1] ?? "");
+}
+
+function findUnescapedIndex(text: string, search: string, fromIndex: number): number {
+  let cursor = text.indexOf(search, fromIndex);
+  while (cursor >= 0) {
+    if (!isEscapedMarkdownIndex(text, cursor)) return cursor;
+    cursor = text.indexOf(search, cursor + 1);
+  }
+  return -1;
+}
+
+function findUnescapedIndexInsensitive(text: string, search: string, fromIndex: number): number {
+  const lowerText = text.toLowerCase();
+  const lowerSearch = search.toLowerCase();
+  let cursor = lowerText.indexOf(lowerSearch, fromIndex);
+  while (cursor >= 0) {
+    if (!isEscapedMarkdownIndex(text, cursor)) return cursor;
+    cursor = lowerText.indexOf(lowerSearch, cursor + 1);
+  }
+  return -1;
+}
+
+function parseMarkdownCodeSpan(text: string, startIndex: number): { endIndex: number; text: string } | null {
+  if (text[startIndex] !== "`") return null;
+  const markerLength = markdownBacktickRunLength(text, startIndex);
+  let cursor = startIndex + markerLength;
+  while (cursor < text.length) {
+    const next = text.indexOf("`", cursor);
+    if (next < 0) return null;
+    const runLength = markdownBacktickRunLength(text, next);
+    if (runLength === markerLength) {
+      const raw = text.slice(startIndex + markerLength, next).replace(/\r?\n|\r/gu, " ");
+      const hasNonSpace = /\S/u.test(raw);
+      const hasEdgeSpaces = /^\s/u.test(raw) && /\s$/u.test(raw);
+      return {
+        endIndex: next + markerLength,
+        text: hasNonSpace && hasEdgeSpaces ? raw.slice(1, -1) : raw,
+      };
+    }
+    cursor = next + runLength;
+  }
+  return null;
+}
+
+function markdownBacktickRunLength(text: string, index: number): number {
+  let cursor = index;
+  while (text[cursor] === "`") cursor += 1;
+  return cursor - index;
+}
+
+function isEscapedMarkdownIndex(text: string, index: number): boolean {
+  let slashCount = 0;
+  let cursor = index - 1;
+  while (cursor >= 0 && text[cursor] === "\\") {
+    slashCount += 1;
+    cursor -= 1;
+  }
+  return slashCount % 2 === 1;
 }
 
 function positiveInteger(value: unknown): number | null {
@@ -1675,10 +3131,10 @@ function normalizeFileCitationPath(value: string): string {
 }
 
 function findMarkdownAutolinkStart(text: string, index: number): number {
-  let cursor = text.indexOf("<", index);
+  let cursor = findUnescapedIndex(text, "<", index);
   while (cursor >= 0) {
     if (parseMarkdownAutolink(text, cursor)) return cursor;
-    cursor = text.indexOf("<", cursor + 1);
+    cursor = findUnescapedIndex(text, "<", cursor + 1);
   }
   return -1;
 }
@@ -1701,11 +3157,88 @@ function parseMarkdownAutolink(
   return null;
 }
 
+function findMarkdownBareLinkStart(text: string, index: number): number {
+  let cursor = index;
+  while (cursor < text.length) {
+    const protocolIndex = findNextMarkdownBareUrlProtocolIndex(text, cursor);
+    const wwwIndex = findUnescapedIndex(text, "www.", cursor);
+    const emailIndex = findNextMarkdownBareEmailIndex(text, cursor);
+    const next = minPositiveIndex(minPositiveIndex(protocolIndex, wwwIndex), emailIndex);
+    if (next < 0) return -1;
+    if (parseMarkdownBareLink(text, next)) return next;
+    cursor = next + 1;
+  }
+  return -1;
+}
+
+function findNextMarkdownBareUrlProtocolIndex(text: string, index: number): number {
+  let best = -1;
+  for (const protocol of ["http://", "https://", "ftp://"]) {
+    const match = findUnescapedIndexInsensitive(text, protocol, index);
+    if (match >= 0 && (best < 0 || match < best)) best = match;
+  }
+  return best;
+}
+
+function findNextMarkdownBareEmailIndex(text: string, index: number): number {
+  const email = /[A-Za-z0-9._+-]+@[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]*[A-Za-z0-9])+(?![-_])/g;
+  email.lastIndex = index;
+  for (let match = email.exec(text); match != null; match = email.exec(text)) {
+    const start = match.index;
+    const previous = text[start - 1] ?? "";
+    if (isEscapedMarkdownIndex(text, start)) continue;
+    if (/[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]/u.test(previous)) continue;
+    return start;
+  }
+  return -1;
+}
+
+function parseMarkdownBareLink(text: string, startIndex: number): { endIndex: number; href: string; text: string } | null {
+  const emailMatch = text.slice(startIndex).match(/^[A-Za-z0-9._+-]+@[A-Za-z0-9-_]+(?:\.[A-Za-z0-9-_]*[A-Za-z0-9])+(?![-_])/);
+  if (emailMatch) {
+    const email = emailMatch[0];
+    return { endIndex: startIndex + email.length, href: `mailto:${email}`, text: email };
+  }
+
+  const urlMatch = text.slice(startIndex).match(/^(?:(?:https?|ftp):\/\/|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*/i);
+  if (!urlMatch) return null;
+  const rawText = trimMarkdownBareUrl(urlMatch[0]);
+  if (!rawText) return null;
+  const href = safeMarkdownHref(rawText.startsWith("www.") ? `http://${rawText}` : rawText);
+  return href ? { endIndex: startIndex + rawText.length, href, text: rawText } : null;
+}
+
+function trimMarkdownBareUrl(value: string): string {
+  let text = value;
+  while (text.length > 0) {
+    const last = text[text.length - 1] ?? "";
+    if (/[?!.,:;*_'"~]/u.test(last)) {
+      text = text.slice(0, -1);
+      continue;
+    }
+    if (last === ")" && markdownParenBalance(text) < 0) {
+      text = text.slice(0, -1);
+      continue;
+    }
+    break;
+  }
+  return text;
+}
+
+function markdownParenBalance(text: string): number {
+  let balance = 0;
+  for (const char of text) {
+    if (char === "(") balance += 1;
+    if (char === ")") balance -= 1;
+  }
+  return balance;
+}
+
 function findMarkdownInlineMathStart(text: string, index: number): number {
   let cursor = index;
   while (cursor < text.length) {
-    const dollarIndex = text.indexOf("$", cursor);
-    const parenIndex = text.indexOf("\\(", cursor);
+    const dollarIndex = findUnescapedIndex(text, "$", cursor);
+    const parenIndex = findUnescapedIndex(text, "\\(", cursor);
     const next = minPositiveIndex(dollarIndex, parenIndex);
     if (next < 0) return -1;
     if (parseMarkdownInlineMath(text, next)) return next;
@@ -1731,7 +3264,7 @@ function parseMarkdownInlineMath(text: string, startIndex: number): { text: stri
   if (/\s/.test(text[startIndex + 1] ?? "")) return null;
   let cursor = startIndex + 1;
   while (cursor < text.length) {
-    const closeIndex = text.indexOf("$", cursor);
+    const closeIndex = findUnescapedIndex(text, "$", cursor);
     if (closeIndex < 0) return null;
     if (text[closeIndex - 1] !== "\\" && text[closeIndex - 1] !== " " && text[closeIndex + 1] !== "$") {
       const value = text.slice(startIndex + 1, closeIndex).trim();
@@ -1745,8 +3278,8 @@ function parseMarkdownInlineMath(text: string, startIndex: number): { text: stri
 function findMarkdownPromptLinkStart(text: string, index: number): number {
   let cursor = index;
   while (cursor < text.length) {
-    const skillIndex = text.indexOf("$", cursor);
-    const routeIndex = text.indexOf("@", cursor);
+    const skillIndex = findUnescapedIndex(text, "$", cursor);
+    const routeIndex = findUnescapedIndex(text, "@", cursor);
     const next = minPositiveIndex(skillIndex, routeIndex);
     if (next < 0) return -1;
     if (parseMarkdownPromptLink(text, next)) return next;
@@ -1823,10 +3356,10 @@ function normalizedMarkdownPromptLinkLabel(label: string, href: string, promptKi
 }
 
 function findBasicInlineHtmlStart(text: string, index: number): number {
-  let cursor = text.indexOf("<", index);
+  let cursor = findUnescapedIndex(text, "<", index);
   while (cursor >= 0) {
     if (parseBasicInlineHtml(text, cursor)) return cursor;
-    cursor = text.indexOf("<", cursor + 1);
+    cursor = findUnescapedIndex(text, "<", cursor + 1);
   }
   return -1;
 }
@@ -1857,23 +3390,55 @@ function parseBasicInlineHtml(
 function MarkdownBlockView({
   block,
   fadeContext,
+  inlineAutomationCitations,
   mediaSources,
+  onOpenAutomationCitation,
   onOpenFileReference,
+  references,
 }: {
   block: MarkdownBlock;
   fadeContext?: MarkdownFadeContext | null;
+  inlineAutomationCitations?: CitationDirective[];
   mediaSources?: Map<string, string>;
+  onOpenAutomationCitation?: (citation: CitationDirective) => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  references?: MarkdownReferenceDefinitions;
 }) {
   switch (block.kind) {
     case "heading": {
-      return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference, mediaSources, fadeContext)}</Heading>;
+      return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference, mediaSources, fadeContext, { references })}</Heading>;
     }
     case "paragraph":
-      return <p>{renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext)}</p>;
+      return (
+        <p>
+          {renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext, { references })}
+          <InlineAutomationCitations citations={inlineAutomationCitations} onOpen={onOpenAutomationCitation} />
+        </p>
+      );
     case "blockquote":
-      return <blockquote>{renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext)}</blockquote>;
+      return (
+        <blockquote>
+          {block.children
+            ? block.children.map((child, index) => (
+                <MarkdownBlockView
+                  block={child}
+                  fadeContext={fadeContext}
+                  key={`${child.kind}-${index}`}
+                  mediaSources={mediaSources}
+                  onOpenFileReference={onOpenFileReference}
+                  references={references}
+                />
+              ))
+            : renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext, { references })}
+        </blockquote>
+      );
     case "code":
+      // codex: mermaid-diagram-p7A5YYxA.js — codeblock lang=mermaid renderer.
+      // `LazyMarkdownCodeBlock` defers to `CodeSnippet`, which detects
+      // `language === "mermaid"` and dynamic-imports the mermaid core to
+      // `mermaid.render(id, source)` the SVG; render failures fall back to a
+      // raw `<pre><code class="language-mermaid">` block so the surrounding
+      // message keeps rendering.
       return (
         <LazyMarkdownCodeBlock block={block} />
       );
@@ -1882,7 +3447,7 @@ function MarkdownBlockView({
         <details className="hc-markdown-details" open={block.open}>
           <summary>
             <ChevronRight size={13} />
-            <span>{renderInline(block.summary, onOpenFileReference, mediaSources, fadeContext)}</span>
+            <span>{renderInline(block.summary, onOpenFileReference, mediaSources, fadeContext, { references })}</span>
           </summary>
           <div className="hc-markdown-details-body">
             <Markdownish text={block.text} mediaSources={mediaSources} onOpenFileReference={onOpenFileReference} />
@@ -1890,18 +3455,31 @@ function MarkdownBlockView({
         </details>
       );
     case "math":
+      // codex: katex-7--VtpAh.js — inline $ + block $$ KaTeX rendering.
+      // Block-level math (`$$...$$` or `\[...\]`) goes through `MathDisplay`,
+      // which calls `renderKatexToString` with `displayMode=true`; KaTeX
+      // parse failures fall back to the raw source so the message still
+      // renders. Inline `$...$` / `\(...\)` is handled by `MathInline` in
+      // `renderInline` below with `displayMode=false`.
       return <MathDisplay text={block.text} />;
     case "list": {
+      const className = markdownListContainsTaskItems(block.items) ? "hc-task-list contains-task-list" : undefined;
       const children = (
         <>
           {block.items.map((item, index) => (
-            <li key={index}>
-              {renderInline(item, onOpenFileReference, mediaSources, fadeContext)}
-            </li>
+            <MarkdownListItemView
+              fadeContext={fadeContext}
+              item={item}
+              key={index}
+              loose={block.loose === true}
+              mediaSources={mediaSources}
+              onOpenFileReference={onOpenFileReference}
+              references={references}
+            />
           ))}
         </>
       );
-      return block.ordered ? <ol start={block.start}>{children}</ol> : <ul>{children}</ul>;
+      return block.ordered ? <ol className={className} start={block.start}>{children}</ol> : <ul className={className}>{children}</ul>;
     }
     case "taskList":
       return (
@@ -1910,7 +3488,7 @@ function MarkdownBlockView({
             <li key={index}>
               <input aria-label={item.checked ? "Completed task" : "Pending task"} checked={item.checked} readOnly type="checkbox" />
               <span>
-                {renderInline(item.text, onOpenFileReference, mediaSources, fadeContext)}
+                {renderInline(item.text, onOpenFileReference, mediaSources, fadeContext, { references })}
               </span>
             </li>
           ))}
@@ -1923,7 +3501,7 @@ function MarkdownBlockView({
             <thead>
               <tr>
                 {block.headers.map((header, index) => (
-                  <th key={index}>{renderInline(header, onOpenFileReference, mediaSources, fadeContext)}</th>
+                  <th align={block.aligns?.[index] ?? undefined} key={index}>{renderInline(header, onOpenFileReference, mediaSources, fadeContext, { references })}</th>
                 ))}
               </tr>
             </thead>
@@ -1931,7 +3509,7 @@ function MarkdownBlockView({
               {block.rows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
                   {normalizeTableRow(row, block.headers.length).map((cell, cellIndex) => (
-                    <td key={cellIndex}>{renderInline(cell, onOpenFileReference, mediaSources, fadeContext)}</td>
+                    <td align={block.aligns?.[cellIndex] ?? undefined} key={cellIndex}>{renderInline(cell, onOpenFileReference, mediaSources, fadeContext, { references })}</td>
                   ))}
                 </tr>
               ))}
@@ -1952,6 +3530,75 @@ function MarkdownBlockView({
         </div>
       );
   }
+}
+
+function MarkdownListItemView({
+  fadeContext,
+  item,
+  loose,
+  mediaSources,
+  onOpenFileReference,
+  references,
+}: {
+  fadeContext?: MarkdownFadeContext | null;
+  item: MarkdownListItemValue;
+  loose?: boolean;
+  mediaSources?: Map<string, string>;
+  onOpenFileReference?: (reference: FileReference) => void;
+  references?: MarkdownReferenceDefinitions;
+}) {
+  const text = typeof item === "string" ? item : item.text;
+  const children = typeof item === "string" ? [] : item.children ?? [];
+  const task = typeof item !== "string" && item.task === true;
+  const checked = typeof item !== "string" && item.checked === true;
+  return (
+    <li className={task ? "task-list-item" : undefined}>
+      {task && (
+        <input aria-label={checked ? "Completed task" : "Pending task"} checked={checked} readOnly type="checkbox" />
+      )}
+      {loose
+        ? text.length > 0 && (
+            <p>{renderInlineWithBreaks(text, onOpenFileReference, mediaSources, fadeContext, { references })}</p>
+          )
+        : renderInline(text, onOpenFileReference, mediaSources, fadeContext, { references })}
+      {children.map((child, index) => (
+        <MarkdownBlockView
+          block={child}
+          fadeContext={fadeContext}
+          key={`${child.kind}-${index}`}
+          mediaSources={mediaSources}
+          onOpenFileReference={onOpenFileReference}
+          references={references}
+        />
+      ))}
+    </li>
+  );
+}
+
+function markdownListContainsTaskItems(items: MarkdownListItemValue[]): boolean {
+  return items.some((item) => typeof item !== "string" && item.task === true);
+}
+
+function InlineAutomationCitations({
+  citations,
+  onOpen,
+}: {
+  citations?: CitationDirective[];
+  onOpen?: (citation: CitationDirective) => void;
+}) {
+  if (!citations || citations.length === 0) return null;
+  return (
+    <span className="hc-automation-citation-inline-list">
+      {citations.map((citation, index) => (
+        <span className="hc-automation-citation-inline-item" key={`${citation.id}-${index}`}>
+          <AutomationCitationChip
+            citation={citation}
+            onOpen={onOpen && citation.openAutomationId?.trim() ? () => onOpen(citation) : undefined}
+          />
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function LazyMarkdownCodeBlock({ block }: { block: Extract<MarkdownBlock, { kind: "code" }> }) {
@@ -2048,7 +3695,7 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
   }
   const previewDialog = previewItem && typeof document !== "undefined"
     ? createPortal(
-        <div className={MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS} role="dialog" aria-modal="true" aria-label={previewItem.alt || "Image preview"}>
+        <div className={MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS} role="dialog" data-state="open" aria-modal="true" aria-label={previewItem.alt || "Image preview"}>
           <button className="hc-markdown-image-preview-backdrop" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)} />
           {previewIndexes.previous !== null && (
             <button
@@ -2170,6 +3817,10 @@ function markdownMediaKind(src: string): "image" | "video" {
   return "image";
 }
 
+// codex: katex-7--VtpAh.js — block $$ / \[...\] KaTeX renderer. Mirrors
+// Codex's `MathDisplay` wrapper around `katex.renderToString(...,
+// { displayMode: true, throwOnError: false })`; render failures fall back to
+// the raw source so a malformed equation cannot blow up the whole message.
 function MathDisplay({ text }: { text: string }) {
   const html = renderKatexHtml(text, true);
   return (
@@ -2181,6 +3832,10 @@ function MathDisplay({ text }: { text: string }) {
   );
 }
 
+// codex: katex-7--VtpAh.js — inline `$...$` / `\(...\)` KaTeX renderer.
+// `displayMode: false`; same fallback strategy as `MathDisplay`. The
+// surrounding tokenizer (`parseMarkdownInlineMath`) rejects `$5` / `$ x` so
+// currency strings are not misread as math openings.
 function MathInline({ text }: { text: string }) {
   const html = renderKatexHtml(text, false);
   return html
@@ -2224,58 +3879,104 @@ function Heading({ children, level }: { children: ReactNode; level: 1 | 2 | 3 | 
 
 function MemoryCitationView({
   citation,
+  memoryCitationRoot,
   onOpenFileReference,
 }: {
   citation: unknown;
+  memoryCitationRoot?: string | null;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const entries = memoryCitationEntries(citation);
   if (entries.length === 0) return null;
   return (
     <details className="hc-memory-citations">
       <summary>
         <ChevronRight size={12} />
-        <span>{memoryCitationSummary(entries.length)}</span>
+        <span>{memoryCitationSummary(entries.length, formatMessage)}</span>
       </summary>
       <ol>
-        {entries.map((entry, index) => (
-          <li key={`${entry.path}:${entry.lineStart}-${entry.lineEnd}:${index}`}>
-            <a
-              aria-label={`Open ${displayCitationPath(entry.path)}, ${memoryCitationLineLabel(entry)}`}
-              href={citationHref(entry)}
-              onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference)}
-            >
-              <span className="hc-memory-citation-main">
-                <span className="hc-memory-citation-path" title={entry.path}>
-                  {displayCitationPath(entry.path)}
+        {entries.map((entry, index) => {
+          const lineLabel = memoryCitationLineLabel(entry, formatMessage);
+          const displayPath = displayCitationPath(entry.path);
+          const fileReference = memoryCitationFileReference(entry, memoryCitationRoot);
+          return (
+            <li key={`${entry.path}:${entry.lineStart}-${entry.lineEnd}:${index}`}>
+              <button
+                type="button"
+                aria-label={formatMessage({
+                  id: "assistantMessage.memoryCitations.openCitation",
+                  defaultMessage: "Open {path}, {lineLabel}",
+                  description: "Accessible label for opening one memory citation source file",
+                }, { path: displayPath, lineLabel })}
+                onClick={() => onOpenFileReference?.(fileReference)}
+              >
+                <span className="hc-memory-citation-main">
+                  <span className="hc-memory-citation-path" title={entry.path}>
+                    {displayPath}
+                  </span>
+                  <span className="hc-memory-citation-lines">{lineLabel}</span>
                 </span>
-                <span className="hc-memory-citation-lines">{memoryCitationLineLabel(entry)}</span>
-              </span>
-              {entry.note.length > 0 && <span className="hc-memory-citation-note">{entry.note}</span>}
-            </a>
-          </li>
-        ))}
+                {entry.note.length > 0 && <span className="hc-memory-citation-note">{entry.note}</span>}
+              </button>
+            </li>
+          );
+        })}
       </ol>
     </details>
   );
 }
 
-function memoryCitationSummary(count: number): string {
-  return count === 1 ? "1 memory citation" : `${count} memory citations`;
+function memoryCitationSummary(count: number, formatMessage: FormatMessage): string {
+  return formatMessage({
+    id: "assistantMessage.memoryCitations.summary",
+    defaultMessage: "{count, plural, one {1 memory citation} other {# memory citations}}",
+    description: "Collapsed disclosure label for citations that explain which memory files informed an assistant message",
+  }, { count });
 }
 
-function memoryCitationLineLabel(entry: Pick<MemoryCitationEntryView, "lineStart" | "lineEnd">): string {
-  return entry.lineStart === entry.lineEnd ? `line ${entry.lineStart}` : `lines ${entry.lineStart}-${entry.lineEnd}`;
+function memoryCitationLineLabel(
+  entry: Pick<MemoryCitationEntryView, "lineStart" | "lineEnd">,
+  formatMessage?: FormatMessage,
+): string {
+  if (entry.lineStart === entry.lineEnd) {
+    return formatMessage
+      ? formatMessage({
+          id: "assistantMessage.memoryCitations.singleLineLabel",
+          defaultMessage: "line {line}",
+          description: "Single line label for one memory citation source",
+        }, { line: entry.lineStart })
+      : `line ${entry.lineStart}`;
+  }
+  return formatMessage
+    ? formatMessage({
+        id: "assistantMessage.memoryCitations.lineRangeLabel",
+        defaultMessage: "lines {lineStart}-{lineEnd}",
+        description: "Line range label for one memory citation source",
+      }, { lineStart: entry.lineStart, lineEnd: entry.lineEnd })
+    : `lines ${entry.lineStart}-${entry.lineEnd}`;
 }
 
 function displayCitationPath(path: string): string {
-  const normalized = path.trim();
-  if (normalized.length <= 80) return normalized;
-  return `...${normalized.slice(-77)}`;
+  return path.trim();
 }
 
-function citationHref(entry: MemoryCitationEntryView): string {
+function citationHref(entry: Pick<FileReference, "path" | "lineStart">): string {
   return `${entry.path}:${entry.lineStart}`;
+}
+
+function resolveMemoryCitationPath(path: string, memoryCitationRoot?: string | null): string {
+  const normalizedPath = path.trim();
+  const normalizedRoot = memoryCitationRoot?.trim().replace(/[\\/]+$/, "") ?? "";
+  if (!normalizedRoot || isAbsoluteFilePath(normalizedPath)) return normalizedPath;
+  return `${normalizedRoot}/${normalizedPath.replace(/^[\\/]+/, "")}`;
+}
+
+function isAbsoluteFilePath(path: string): boolean {
+  return path.startsWith("/")
+    || path.startsWith("\\\\")
+    || path.startsWith("file://")
+    || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 function handleFileReferenceClick(
@@ -2300,12 +4001,26 @@ function renderInlineWithBreaks(
   onOpenFileReference?: (reference: FileReference) => void,
   mediaSources?: Map<string, string>,
   fadeContext?: MarkdownFadeContext | null,
+  options: MarkdownInlineParseOptions = {},
 ): ReactNode[] {
   const lines = text.split("\n");
   return lines.flatMap((line, index) => {
-    const rendered = renderInline(line, onOpenFileReference, mediaSources, fadeContext);
-    return index === 0 ? rendered : [<br key={`br-${index}`} />, ...rendered];
+    const previousLine = index > 0 ? lines[index - 1] ?? "" : "";
+    const separator = index === 0 ? [] : [markdownLineHasHardBreak(previousLine) ? <br key={`br-${index}`} /> : "\n"];
+    const hardBreak = markdownLineHasHardBreak(line);
+    const rendered = renderInline(
+      hardBreak ? line.replace(/(?: {2,}|\\)$/u, "") : line,
+      onOpenFileReference,
+      mediaSources,
+      fadeContext,
+      options,
+    );
+    return [...separator, ...rendered];
   });
+}
+
+function markdownLineHasHardBreak(line: string): boolean {
+  return /(?: {2,}|\\)$/u.test(line);
 }
 
 function renderInline(
@@ -2313,19 +4028,22 @@ function renderInline(
   onOpenFileReference?: (reference: FileReference) => void,
   mediaSources?: Map<string, string>,
   fadeContext?: MarkdownFadeContext | null,
+  options: MarkdownInlineParseOptions = {},
 ): ReactNode[] {
-  return parseMarkdownInline(text).map((segment, index) => {
+  return parseMarkdownInline(text, options).map((segment, index) => {
     if (segment.kind === "code") {
       const promptLink = markdownPromptLinkFromCodeText(segment.text);
       return promptLink ? <MarkdownPromptLink key={index} segment={promptLink} /> : <code key={index}>{segment.text}</code>;
     }
     if (segment.kind === "htmlBreak") return <br key={index} />;
-    if (segment.kind === "htmlSpan") return renderBasicInlineHtmlSegment(segment, index, onOpenFileReference, mediaSources, fadeContext);
+    if (segment.kind === "htmlSpan") {
+      return renderBasicInlineHtmlSegment(segment, index, onOpenFileReference, mediaSources, fadeContext, options);
+    }
     if (segment.kind === "promptLink") return <MarkdownPromptLink key={index} segment={segment} />;
     if (segment.kind === "link") {
       return (
-        <MarkdownLink href={segment.href} key={index}>
-          {renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext)}
+        <MarkdownLink href={segment.href} key={index} title={segment.title}>
+          {renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, { ...options, inLink: true })}
         </MarkdownLink>
       );
     }
@@ -2348,7 +4066,7 @@ function renderInline(
       return (
         <a
           className="hc-file-citation-marker"
-          href={citationHref({ ...entry, note: "" })}
+          href={citationHref(entry)}
           key={index}
           onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference)}
         >
@@ -2357,9 +4075,9 @@ function renderInline(
       );
     }
     if (segment.kind === "math") return <MathInline key={index} text={segment.text} />;
-    if (segment.kind === "strong") return <strong key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext)}</strong>;
-    if (segment.kind === "em") return <em key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext)}</em>;
-    if (segment.kind === "del") return <del key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext)}</del>;
+    if (segment.kind === "strong") return <strong key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options)}</strong>;
+    if (segment.kind === "em") return <em key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options)}</em>;
+    if (segment.kind === "del") return <del key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options)}</del>;
     if (fadeContext) return renderMarkdownFadeText(segment.text, fadeContext, index);
     return segment.text;
   });
@@ -2382,8 +4100,9 @@ function renderBasicInlineHtmlSegment(
   onOpenFileReference?: (reference: FileReference) => void,
   mediaSources?: Map<string, string>,
   fadeContext?: MarkdownFadeContext | null,
+  options: MarkdownInlineParseOptions = {},
 ): ReactNode {
-  const children = renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext);
+  const children = renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options);
   if (segment.tag === "b" || segment.tag === "strong") return <strong key={key}>{children}</strong>;
   if (segment.tag === "del" || segment.tag === "s") return <del key={key}>{children}</del>;
   if (segment.tag === "em" || segment.tag === "i") return <em key={key}>{children}</em>;
@@ -2394,26 +4113,33 @@ function renderBasicInlineHtmlSegment(
 
 function isMarkdownBlockBoundary(line: string, nextLine = ""): boolean {
   return line.trim().length === 0
-    || /^```/.test(line)
+    || parseMarkdownIndentedCodeBlock([line], 0) !== null
+    || parseMarkdownFenceLine(line) !== null
     || /^\s*(\$\$|\\\[)/.test(line)
     || /^<details(?:\s+open)?\s*>/i.test(line.trim())
-    || /^#{1,6}\s+/.test(line)
+    || /^ {0,3}#{1,6}(?=\s|$)/.test(line)
     || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
     || parseMarkdownImageLine(line) !== null
     || parseMarkdownTaskListItem(line) !== null
-    || /^(\s*)([-*+]|\d+[.)])\s+/.test(line)
-    || /^>\s?/.test(line)
+    || parseMarkdownListItemLine(line) !== null
+    || isMarkdownBlockquoteLine(line)
     || (line.includes("|") && isTableSeparatorRow(nextLine));
 }
 
 function pushTextSegment(segments: MarkdownInlineSegment[], text: string): void {
   if (text.length === 0) return;
+  const value = markdownUnescapeText(text);
+  if (value.length === 0) return;
   const previous = segments[segments.length - 1];
   if (previous?.kind === "text") {
-    previous.text += text;
+    previous.text += value;
     return;
   }
-  segments.push({ kind: "text", text });
+  segments.push({ kind: "text", text: value });
+}
+
+function markdownLinkSegment(text: string, href: string, title: string | null = null): Extract<MarkdownInlineSegment, { kind: "link" }> {
+  return title === null ? { kind: "link", text, href } : { kind: "link", text, href, title };
 }
 
 function normalizeMarkdownHref(value: string): string {
@@ -2422,13 +4148,17 @@ function normalizeMarkdownHref(value: string): string {
   return trimmed;
 }
 
+function markdownUnescapeText(text: string): string {
+  return text.replace(/\\([\\`*{}\[\]()#+\-.!_>~|])/g, "$1");
+}
+
 export function safeMarkdownHref(value: string): string | null {
   const href = normalizeMarkdownHref(value);
   if (!href || /[\u0000-\u001F\u007F]/u.test(href)) return null;
   if (href.startsWith("//")) return null;
   const scheme = href.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
   if (!scheme) return href;
-  if (scheme === "http" || scheme === "https") {
+  if (scheme === "http" || scheme === "https" || scheme === "ftp") {
     try {
       new URL(href);
       return href;
@@ -2461,7 +4191,7 @@ function markdownPromptLinkDisplayLabel(segment: MarkdownPromptLinkSegment): str
   return segment.label;
 }
 
-function MarkdownLink({ children, href }: { children: ReactNode; href: string }) {
+function MarkdownLink({ children, href, title }: { children: ReactNode; href: string; title?: string | null }) {
   const external = isExternalHref(href);
   return (
     <a
@@ -2469,7 +4199,7 @@ function MarkdownLink({ children, href }: { children: ReactNode; href: string })
       href={href}
       rel={external ? "noreferrer" : undefined}
       target={external ? "_blank" : undefined}
-      title={href}
+      title={title ?? undefined}
     >
       {external && (
         <span className="hc-markdown-link-icon" aria-hidden="true">

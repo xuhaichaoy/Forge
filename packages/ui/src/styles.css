@@ -7,3 +7,9 @@
 @import "./styles/responsive-turns.css";
 /* CODEX-REF: open-workspace-file-DOOUD1lA.js — simplified spreadsheet preview replacement for Codex's Popcorn Workbook. */
 @import "./styles/spreadsheet-preview.css";
+/* codex: workspace-directory-tree-CHHgPVoD — right-side workspace files panel. */
+@import "./styles/workspace-files.css";
+/* codex: thread-app-shell-chrome-BVkAxLhy nt()/lt()/tt() — side-panel new-tab landing page. */
+@import "./styles/side-panel-new-tab.css";
+/* codex: app-shell-Bh-lgoQk Vt()/Ht()/Pt() — side-panel host + tab bar + pill. */
+@import "./styles/side-panel-host.css";

@@ -125,7 +125,7 @@ function updatesExistingAgentStatusFromLaterActions(): void {
   ]);
 
   assertEqual(entries.length, 1, "later multi-agent rows should update the same agent entry");
-  assertEqual(entries[0]?.title, "agent-12...cdef", "agent row should keep a stable short-id fallback title");
+  assertEqual(entries[0]?.title, "agent-agent-12", "agent row should keep Desktop's stable fallback title");
   assertEqual(entries[0]?.status, "completed", "latest agent state should win");
   assertDeepEqual(
     entries[0]?.details,

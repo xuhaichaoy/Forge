@@ -96,9 +96,10 @@ export function useBackgroundAgentPanel({
   const backgroundAgentConversation = useMemo(
     () => projectConversation(backgroundAgentItems, {
       isThreadRunning: backgroundAgentRunning,
+      parentThreadAttachmentSourceConversationId: backgroundAgentThread?.forkedFromId ?? null,
       progressPlan: backgroundAgentRuntime?.turnPlan ?? null,
     }),
-    [backgroundAgentItems, backgroundAgentRuntime?.turnPlan, backgroundAgentRunning],
+    [backgroundAgentItems, backgroundAgentRuntime?.turnPlan, backgroundAgentRunning, backgroundAgentThread?.forkedFromId],
   );
   const backgroundAgentTitle = backgroundAgentThread
     ? backgroundAgentPanel?.displayName

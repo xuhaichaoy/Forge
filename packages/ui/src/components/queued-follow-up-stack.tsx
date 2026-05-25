@@ -112,7 +112,7 @@ export function QueuedFollowUpStack({
                 <MoreHorizontal size={13} />
               </button>
               {openMenuId === message.id && (
-                <div className="hc-thread-menu hc-queued-followup-menu hc-app-popover-menu" role="menu">
+                <div className="hc-thread-menu hc-queued-followup-menu hc-app-popover-menu" role="menu" data-state="open">
                   <button
                     type="button"
                     className="hc-thread-menu-item"

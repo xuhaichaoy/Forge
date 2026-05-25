@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   execShellCopyText,
   initialExecShellExpanded,
@@ -17,6 +19,7 @@ import {
   mcpAppWidgetStateFromValue,
   multiAgentAgentColor,
   normalizeDesktopShellCommand,
+  ToolActivityDetail,
   toolActivityDetailViewModel,
 } from "../src/components/tool-activity-detail";
 
@@ -24,8 +27,12 @@ export default function runToolActivityDetailTests(): void {
   buildsExecDetails();
   normalizesDesktopShellCommands();
   keepsCompletedExecShellCollapsedLikeDesktop();
+  rendersRunningExecShellFooterBlankLikeDesktop();
+  keepsVisibleExecShellSearchableLikeDesktop();
   buildsDesktopShellCopyText();
   buildsDesktopLightweightExecRows();
+  preservesDesktopPathTextInExecSummaryRows();
+  labelsSkillExecSummaryRowsLikeDesktop();
   buildsPatchDetails();
   buildsMcpDetails();
   buildsMcpAppDetails();
@@ -51,15 +58,32 @@ function buildsDesktopLightweightExecRows(): void {
       command: "sed -n '1,20p' src/app.ts",
       cwd: "/workspace",
       status: "completed",
-      parsedCmd: { type: "read", path: "src/app.ts", isFinished: true },
+      parsedCmd: { type: "read", name: "app.ts", path: "src/app.ts", isFinished: true },
     }),
     {
       kind: "execSummary",
       id: "read-1",
       running: false,
+      label: "Read app.ts",
+    },
+    "read commands should render Desktop's filename-oriented detail row",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "read-path-fallback-1",
+      command: "sed -n '1,20p' src/app.ts",
+      cwd: "/workspace",
+      status: "completed",
+      parsedCmd: { type: "read", path: "src/app.ts", isFinished: true },
+    }),
+    {
+      kind: "execSummary",
+      id: "read-path-fallback-1",
+      running: false,
       label: "Read src/app.ts",
     },
-    "read commands should render as Desktop lightweight command rows",
+    "read detail rows should fall back to the normalized path when the Desktop name field is unavailable",
   );
   assertDeepEqual(
     toolActivityDetailViewModel({
@@ -94,6 +118,165 @@ function buildsDesktopLightweightExecRows(): void {
       label: "Listing files in packages/ui",
     },
     "running list commands should render as Desktop lightweight command rows",
+  );
+}
+
+function preservesDesktopPathTextInExecSummaryRows(): void {
+  const longPath = `./packages/ui/src/components/${"nested/".repeat(12)}tool-activity-detail.tsx`;
+  const normalizedLongPath = `packages/ui/src/components/${"nested/".repeat(12)}tool-activity-detail.tsx`;
+
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "long-search-1",
+      command: `rg Codex ${longPath}`,
+      cwd: "/workspace",
+      status: "completed",
+      parsedCmd: { type: "search", query: "Codex", path: longPath, isFinished: true },
+    }),
+    {
+      kind: "execSummary",
+      id: "long-search-1",
+      running: false,
+      label: `Searched for Codex in ${normalizedLongPath}`,
+    },
+    "long search paths should preserve Desktop's full normalized text and leave visual truncation to CSS",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "slash-list-1",
+      command: "rg --files ./packages\\ui\\src",
+      cwd: "/workspace",
+      status: "running",
+      parsedCmd: { type: "list_files", path: "./packages\\ui\\src", isFinished: false },
+    }),
+    {
+      kind: "execSummary",
+      id: "slash-list-1",
+      running: true,
+      label: "Listing files in packages/ui/src",
+    },
+    "exec summary paths should normalize leading ./ and backslashes like Codex Desktop",
+  );
+}
+
+function labelsSkillExecSummaryRowsLikeDesktop(): void {
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "skill-read-1",
+      command: "sed -n '1,80p' /workspace/.codex/skills/code-review/SKILL.md",
+      cwd: "/workspace",
+      status: "completed",
+      parsedCmd: { type: "read", path: "/workspace/.codex/skills/code-review/SKILL.md", isFinished: true },
+    }),
+    {
+      kind: "execSummary",
+      id: "skill-read-1",
+      running: false,
+      label: "Read Code Review skill",
+    },
+    "completed skill definition reads should render Desktop's semantic skill summary row",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "skill-active-read-1",
+      command: "sed -n '1,80p' /workspace/.codex/skills/code-review/SKILL.md",
+      cwd: "/workspace",
+      status: "running",
+      parsedCmd: { type: "read", path: "/workspace/.codex/skills/code-review/SKILL.md", isFinished: false },
+    }),
+    {
+      kind: "execSummary",
+      id: "skill-active-read-1",
+      running: true,
+      label: "Reading Code Review skill",
+    },
+    "in-progress skill definition reads should keep Desktop's skill wording when rendered as a summary row",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "skill-list-1",
+      command: "rg --files /workspace/.codex/skills/code-review/scripts",
+      cwd: "/workspace",
+      status: "completed",
+      parsedCmd: { type: "list_files", path: "/workspace/.codex/skills/code-review/scripts", isFinished: true },
+    }),
+    {
+      kind: "execSummary",
+      id: "skill-list-1",
+      running: false,
+      label: "Listed files in Code Review skill",
+    },
+    "skill directory listings should render Desktop's semantic skill summary row",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "commandExecution",
+      id: "skill-search-1",
+      command: "rg TODO /workspace/.codex/skills/code-review",
+      cwd: "/workspace",
+      status: "completed",
+      parsedCmd: { type: "search", query: "TODO", path: "/workspace/.codex/skills/code-review", isFinished: true },
+    }),
+    {
+      kind: "execSummary",
+      id: "skill-search-1",
+      running: false,
+      label: "Searched for TODO in Code Review skill",
+    },
+    "skill searches should render Desktop's semantic skill summary row",
+  );
+}
+
+function rendersRunningExecShellFooterBlankLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "commandExecution",
+      id: "exec-running-render",
+      command: "npm run dev",
+      status: "running",
+      aggregatedOutput: "starting",
+    },
+  }));
+
+  assertEqual(
+    html.includes('data-exec-status="in-progress"'),
+    true,
+    "running exec shell should keep Desktop's in-progress footer spacer",
+  );
+  assertEqual(
+    html.includes("Running"),
+    false,
+    "running exec shell footer should not render extra status text inside the shell",
+  );
+}
+
+function keepsVisibleExecShellSearchableLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    forceExecExpanded: true,
+    item: {
+      type: "commandExecution",
+      id: "exec-expanded-searchable",
+      command: "npm run test",
+      status: "completed",
+      aggregatedOutput: "test output",
+      exitCode: 0,
+    },
+  }));
+
+  assertEqual(
+    html.includes("test output"),
+    true,
+    "expanded exec shell fixture should render visible output",
+  );
+  assertEqual(
+    html.includes("data-thread-find-skip"),
+    false,
+    "visible exec shell output should stay searchable like Codex Desktop",
   );
 }
 
@@ -262,6 +445,277 @@ function buildsMcpDetails(): void {
     },
     "MCP detail should expose name, parameters, and result",
   );
+  const html = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-render-1",
+      server: "github",
+      tool: "list_prs",
+      status: "completed",
+      arguments: { state: "open" },
+      result: { content: [], structuredContent: null, _meta: null },
+      error: null,
+    },
+  }));
+  assertEqual(
+    html.includes("Parameters"),
+    false,
+    "ordinary MCP detail content should not show arguments in the main expanded surface like Desktop",
+  );
+  assertEqual(
+    html.includes("Tool returned no content"),
+    true,
+    "ordinary MCP detail content should use Desktop's no-content fallback",
+  );
+  const textBlockHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-text-block-1",
+      server: "github",
+      tool: "list_prs",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{
+          type: "text",
+          text: "Opened pull requests",
+          annotations: { audience: ["assistant"], priority: 0.4, extra: "ignored" },
+        }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    textBlockHtml.includes("plaintext"),
+    true,
+    "MCP text result blocks should use Desktop's plaintext code-container title",
+  );
+  assertEqual(
+    textBlockHtml.includes("Result"),
+    false,
+    "MCP text result blocks should not use HiCodex's old Result label",
+  );
+  assertEqual(
+    textBlockHtml.includes("Annotations: audience=assistant; priority=0.4"),
+    true,
+    "MCP text annotations should be appended to the text block like Desktop",
+  );
+  const embeddedHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-embedded-block-1",
+      server: "github",
+      tool: "read_resource",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{
+          type: "embedded_resource",
+          resource: {
+            uri: "file://report.txt",
+            mimeType: "text/plain",
+            text: "report body",
+            annotations: { audience: ["user"], lastModified: "2026-05-24" },
+          },
+        }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    embeddedHtml.includes("URI"),
+    true,
+    "MCP embedded resources should render Desktop's URI label",
+  );
+  assertEqual(
+    embeddedHtml.indexOf("Annotations") >= 0 && embeddedHtml.indexOf("Annotations") < embeddedHtml.indexOf("Content"),
+    true,
+    "MCP embedded resource annotations should appear before content like Desktop",
+  );
+  const unknownHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-unknown-block-1",
+      server: "github",
+      tool: "unknown_block",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{ type: "mystery", value: 1 }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    unknownHtml.includes("Raw block"),
+    false,
+    "unknown MCP result blocks should not show HiCodex's old Raw block title",
+  );
+  const desktopUnknownHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-desktop-unknown-block-1",
+      server: "github",
+      tool: "unknown_block",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{ type: "unknown", raw: { payload: 1 } }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    desktopUnknownHtml.includes("&quot;payload&quot;: 1") && !desktopUnknownHtml.includes("&quot;raw&quot;"),
+    true,
+    "Desktop unknown MCP blocks should render the normalized raw payload",
+  );
+  const resourceAliasHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-resource-alias-1",
+      server: "github",
+      tool: "read_resource",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{ type: "resource", resource: { uri: "file://alias.txt", text: "alias body" } }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    resourceAliasHtml.includes("file://alias.txt") && resourceAliasHtml.includes("alias body"),
+    true,
+    "MCP resource content aliases should render through Desktop's embedded resource path",
+  );
+  const structuredOnlyHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-structured-only-1",
+      server: "github",
+      tool: "list_prs",
+      status: "completed",
+      arguments: {},
+      result: { content: [], structuredContent: { count: 2 }, _meta: null },
+      error: null,
+    },
+  }));
+  assertEqual(
+    structuredOnlyHtml.includes("Tool returned no content"),
+    false,
+    "MCP structuredContent-only results should render JSON instead of Desktop's no-content fallback",
+  );
+  assertEqual(
+    structuredOnlyHtml.includes("Result"),
+    false,
+    "MCP structuredContent JSON should not use HiCodex's old Result label",
+  );
+  assertEqual(
+    structuredOnlyHtml.includes("&quot;count&quot;: 2"),
+    true,
+    "MCP structuredContent should render as a standalone JSON code block",
+  );
+  const structuredWithTextHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-structured-with-text-1",
+      server: "github",
+      tool: "list_prs",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{ type: "text", text: "Found pull requests" }],
+        structuredContent: { count: 2 },
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    structuredWithTextHtml.includes("Found pull requests") && structuredWithTextHtml.includes("&quot;count&quot;: 2"),
+    true,
+    "MCP content blocks and structuredContent should both render like Desktop when they differ",
+  );
+  const duplicateJsonHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-duplicate-json-1",
+      server: "github",
+      tool: "list_prs",
+      status: "completed",
+      arguments: {},
+      result: {
+        content: [{ type: "text", text: "{\"count\":2}" }],
+        structuredContent: { count: 2 },
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    duplicateJsonHtml.includes("plaintext"),
+    false,
+    "MCP single JSON text content should be de-duped when it equals structuredContent like Desktop",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "mcpToolCall",
+      id: "mcp-error-1",
+      server: "github",
+      tool: "list_prs",
+      status: "failed",
+      arguments: {},
+      result: null,
+      error: { message: "GitHub token expired" },
+    }),
+    {
+      kind: "tool",
+      id: "mcp-error-1",
+      running: false,
+      name: "github:list_prs",
+      toolKind: "MCP",
+      argumentsText: "{}",
+      resultText: "",
+      errorText: "GitHub token expired",
+      status: "failed",
+    },
+    "native v2 MCP errors should render Desktop's message text instead of JSON",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "mcpToolCall",
+      id: "mcp-union-error-1",
+      server: "github",
+      tool: "list_prs",
+      status: "failed",
+      arguments: {},
+      result: { type: "error", kind: "protocol", error: "GitHub token expired", rawError: { message: "raw" } },
+      error: null,
+    }),
+    {
+      kind: "tool",
+      id: "mcp-union-error-1",
+      running: false,
+      name: "github:list_prs",
+      toolKind: "MCP",
+      argumentsText: "{}",
+      resultText: "",
+      errorText: "GitHub token expired",
+      status: "failed",
+    },
+    "Desktop MCP error-union results should keep the visible error message",
+  );
 }
 
 function buildsMcpAppDetails(): void {
@@ -378,11 +832,29 @@ function buildsMcpAppDetails(): void {
         ui: { resourceUri: "ui://figma/selection.html" },
       },
       argumentsText: "{}",
-      resultText: "{\n  \"content\": [],\n  \"structuredContent\": null,\n  \"_meta\": {\n    \"ui\": {\n      \"resourceUri\": \"ui://figma/selection.html\"\n    }\n  }\n}",
+      resultText: "",
       errorText: "",
       status: "completed",
     },
     "MCP app resource URI should be detected from Desktop-style result metadata",
+  );
+  const html = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-app-render-1",
+      server: "browser-use",
+      tool: "open",
+      status: "completed",
+      arguments: { url: "https://example.com" },
+      mcpAppResourceUri: "ui://browser/widget.html",
+      result: { content: [], structuredContent: null, _meta: null },
+      error: null,
+    },
+  }));
+  assertEqual(
+    html.includes("Parameters"),
+    false,
+    "MCP app rows should keep arguments out of the main content area like Desktop",
   );
 }
 
@@ -917,13 +1389,38 @@ function buildsAutoReviewDetails(): void {
       rationale: "Command matches policy",
     }),
     {
-      kind: "text",
+      kind: "autoReview",
       id: "auto-review-1",
       running: false,
-      title: "Auto-review",
-      text: "Status: approved\nRisk: low\nRationale: Command matches policy",
+      title: "Auto-review approved",
+      body: "Command matches policy",
+      highRiskDenied: false,
     },
-    "auto-review detail should preserve status, risk, and rationale",
+    "auto-review detail should use Desktop's collapsed title and rationale body",
+  );
+  const html = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "automatic-approval-review",
+      id: "auto-review-render-1",
+      status: "denied",
+      riskLevel: "high",
+      rationale: "",
+    },
+  }));
+  assertEqual(
+    html.includes("Auto-review denied high risk"),
+    true,
+    "auto-review detail should render Desktop's high-risk denied title",
+  );
+  assertEqual(
+    html.includes("Status: denied"),
+    false,
+    "auto-review detail should not render HiCodex's old status/risk code body",
+  );
+  assertEqual(
+    html.includes('aria-expanded="false"'),
+    true,
+    "auto-review detail body should start collapsed like Desktop's activity disclosure",
   );
 }
 
@@ -1008,7 +1505,7 @@ function buildsMultiAgentDetails(): void {
             {
               kind: "agent",
               color: multiAgentAgentColor("agent-1234567890abcdef"),
-              label: "agent-12...cdef",
+              label: "agent-agent-12",
               threadId: "agent-1234567890abcdef",
               title: null,
               model: null,
@@ -1017,7 +1514,7 @@ function buildsMultiAgentDetails(): void {
             { kind: "text", text: ": " },
             { kind: "prompt", text: "Continue" },
           ],
-          text: "Failed to message agent-12...cdef: Continue",
+          text: "Failed to message agent-agent-12: Continue",
         },
       ],
     },
@@ -1050,7 +1547,7 @@ function buildsMultiAgentDetails(): void {
             {
               kind: "agent",
               color: multiAgentAgentColor("agent-fedcba0987654321"),
-              label: "agent-fe...4321",
+              label: "agent-agent-fe",
               threadId: "agent-fedcba0987654321",
               title: null,
               model: null,
@@ -1058,7 +1555,7 @@ function buildsMultiAgentDetails(): void {
             },
             { kind: "text", text: " (running: reading files)" },
           ],
-          text: "Spawning agent-fe...4321 (running: reading files)",
+          text: "Spawning agent-agent-fe (running: reading files)",
         },
       ],
     },
@@ -1091,14 +1588,14 @@ function buildsMultiAgentDetails(): void {
             {
               kind: "agent",
               color: multiAgentAgentColor("agent-fedcba0987654321"),
-              label: "agent-fe...4321",
+              label: "agent-agent-fe",
               threadId: "agent-fedcba0987654321",
               title: null,
               model: null,
               role: null,
             },
           ],
-          text: "Closed agent-fe...4321",
+          text: "Closed agent-agent-fe",
         },
         {
           key: "meta-prompt-agent-3",
@@ -1160,6 +1657,63 @@ function buildsMultiAgentDetails(): void {
       ],
     },
     "multi-agent detail should use receiver thread nickname, role, color, and model title",
+  );
+  assertDeepEqual(
+    toolActivityDetailViewModel({
+      type: "collabAgentToolCall",
+      id: "agent-5",
+      tool: "spawnAgent",
+      status: "completed",
+      senderThreadId: "parent",
+      receiverThreadIds: ["019e57e100006da4"],
+      receiverThreads: [
+        {
+          threadId: "019e57e100006da4",
+          thread: {
+            source: {
+              subAgent: {
+                thread_spawn: {
+                  parent_thread_id: "parent",
+                  depth: 1,
+                  agent_nickname: "@Weather",
+                  agent_role: "researcher",
+                },
+              },
+            },
+          },
+        },
+      ],
+      prompt: "Check forecast",
+      model: null,
+      reasoningEffort: null,
+      agentsStates: {},
+    }),
+    {
+      kind: "multiAgent",
+      id: "agent-5",
+      running: false,
+      rows: [
+        {
+          key: "row-agent-5-019e57e100006da4",
+          parts: [
+            { kind: "text", text: "Created " },
+            {
+              kind: "agent",
+              color: multiAgentAgentColor("019e57e100006da4"),
+              label: "Weather (researcher)",
+              threadId: "019e57e100006da4",
+              title: null,
+              model: null,
+              role: "researcher",
+            },
+            { kind: "text", text: " with the instructions: " },
+            { kind: "prompt", text: "Check forecast" },
+          ],
+          text: "Created Weather (researcher) with the instructions: Check forecast",
+        },
+      ],
+    },
+    "multi-agent detail should read Desktop thread_spawn nickname and role from thread source",
   );
 }
 

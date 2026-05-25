@@ -397,6 +397,474 @@ fn host_git_status(cwd: String) -> Result<HostGitStatus, String> {
     read_host_git_status(&cwd)
 }
 
+// codex: composer-footer-branch-switcher-CamXBKfA.js — branch picker host APIs.
+// Mirrors the Desktop branch switcher's data model (`use-git-current-branch`,
+// `use-git-recent-branches`, `use-git-default-branch`): one shot returns the
+// current branch + every local branch with its last-commit epoch so the
+// renderer can sort recents to the top without a separate `reflog` call.
+// codex: branch-picker-extension — `is_remote` flips on for the `git branch -r`
+// scan so the renderer can render the remote section as a dedicated heading.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitBranchInfo {
+    name: String,
+    last_commit_ms: Option<i64>,
+    is_current: bool,
+    /// True when the entry came from `git branch -r` (e.g. `origin/feature-x`).
+    /// codex: composer-footer-branch-switcher-CamXBKfA.js — "Remote branches"
+    /// section is keyed off this flag in the renderer.
+    is_remote: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitBranchesResponse {
+    current: Option<String>,
+    branches: Vec<GitBranchInfo>,
+}
+
+// codex: branch-picker-extension — `host_git_default_branch` payload mirrors
+// Codex Desktop's `useGitDefaultBranch` hook. We surface a single optional
+// string so the renderer can render the "Default" chip without inventing a
+// per-branch field on the branches list.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitDefaultBranchResponse {
+    default_branch: Option<String>,
+}
+
+// codex: composer-footer-branch-switcher-CamXBKfA.js — list local branches.
+// Returns ({ current, branches[] }) so the picker can render "current" first
+// then sort the rest by `lastCommitMs` desc (matches Codex's recents order).
+// `cwd` may be anywhere inside the worktree; we resolve to repo root before
+// calling git so worktrees / nested invocations behave the same.
+// codex: branch-picker-extension — `include_remote` opts into a second
+// `git branch -r --list` pass; the response merges local + remote into a
+// single `branches[]` so the renderer can group via `isRemote`.
+#[tauri::command]
+fn host_git_list_branches(
+    cwd: String,
+    include_remote: Option<bool>,
+) -> Result<GitBranchesResponse, String> {
+    let cwd = cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let cwd_path = Path::new(cwd);
+    let Some(repo_root) = git_repo_root(cwd_path)? else {
+        // codex: not-a-git-repo → renderer hides the chip via `current=None`
+        return Ok(GitBranchesResponse {
+            current: None,
+            branches: Vec::new(),
+        });
+    };
+    let repo_path = Path::new(&repo_root);
+
+    // Custom format keeps a single round-trip: `<name>\t<committerdate-epoch>`.
+    // `--list` keeps it local-only (Codex's picker only shows local branches in
+    // the static mode we mirror here; remotes are wired in via include_remote).
+    let output = run_git(
+        repo_path,
+        &[
+            "branch",
+            "--list",
+            "--sort=-committerdate",
+            "--format=%(refname:short)%09%(committerdate:unix)",
+        ],
+    )?;
+    if !output.status.success() {
+        return Err(format_git_failure("failed to list git branches", &output));
+    }
+
+    let current = git_stdout_optional(repo_path, &["branch", "--show-current"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut branches: Vec<GitBranchInfo> = Vec::new();
+    for raw_line in stdout.lines() {
+        let line = raw_line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+        // Trim the "*" / "+" markers `git branch` would normally print; the
+        // custom format strips them but be defensive against detached-HEAD
+        // entries like "(HEAD detached at <sha>)" which we skip.
+        if line.starts_with('(') {
+            continue;
+        }
+        let (name_part, epoch_part) = match line.find('\t') {
+            Some(idx) => (&line[..idx], Some(&line[idx + 1..])),
+            None => (line, None),
+        };
+        let name = name_part.trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let last_commit_ms = epoch_part
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .and_then(|value| value.parse::<i64>().ok())
+            .map(|seconds| seconds.saturating_mul(1000));
+        let is_current = current.as_deref() == Some(name.as_str());
+        branches.push(GitBranchInfo {
+            name,
+            last_commit_ms,
+            is_current,
+            is_remote: false,
+        });
+    }
+
+    // codex: branch-picker-extension — opt-in remote scan. We skip the
+    // `origin/HEAD` symbolic ref (e.g. `origin/HEAD -> origin/main`) since it
+    // is not a real branch the user would want to check out.
+    if include_remote.unwrap_or(false) {
+        let remote_output = run_git(
+            repo_path,
+            &[
+                "branch",
+                "-r",
+                "--list",
+                "--sort=-committerdate",
+                "--format=%(refname:short)%09%(committerdate:unix)",
+            ],
+        )?;
+        if !remote_output.status.success() {
+            return Err(format_git_failure(
+                "failed to list git remote branches",
+                &remote_output,
+            ));
+        }
+        let remote_stdout = String::from_utf8_lossy(&remote_output.stdout);
+        for raw_line in remote_stdout.lines() {
+            let line = raw_line.trim_end();
+            if line.is_empty() {
+                continue;
+            }
+            if line.starts_with('(') {
+                continue;
+            }
+            let (name_part, epoch_part) = match line.find('\t') {
+                Some(idx) => (&line[..idx], Some(&line[idx + 1..])),
+                None => (line, None),
+            };
+            let name = name_part.trim().to_string();
+            if name.is_empty() {
+                continue;
+            }
+            // codex: skip the symbolic head pointer; the rendered list would
+            // otherwise show "origin/HEAD -> origin/main" which would not
+            // round-trip through `git checkout -b`.
+            if name.contains("->") || name.ends_with("/HEAD") {
+                continue;
+            }
+            let last_commit_ms = epoch_part
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .and_then(|value| value.parse::<i64>().ok())
+                .map(|seconds| seconds.saturating_mul(1000));
+            branches.push(GitBranchInfo {
+                name,
+                last_commit_ms,
+                is_current: false,
+                is_remote: true,
+            });
+        }
+    }
+
+    Ok(GitBranchesResponse { current, branches })
+}
+
+// codex: branch-picker-extension — Codex Desktop's `useGitDefaultBranch`.
+// Resolves to whatever `origin/HEAD` points at (the common case for a cloned
+// repo) and falls back to the user's `init.defaultBranch` git config if the
+// remote symbolic ref isn't set (e.g. local-only repos).
+#[tauri::command]
+fn host_git_default_branch(cwd: String) -> Result<GitDefaultBranchResponse, String> {
+    let cwd = cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let cwd_path = Path::new(cwd);
+    let Some(repo_root) = git_repo_root(cwd_path)? else {
+        return Ok(GitDefaultBranchResponse {
+            default_branch: None,
+        });
+    };
+    let repo_path = Path::new(&repo_root);
+    // `--short` strips the `refs/remotes/origin/` prefix, leaving e.g. "main".
+    let symbolic = git_stdout_optional(
+        repo_path,
+        &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+    )
+    .unwrap_or(None);
+    let default_branch = match symbolic {
+        Some(value) => {
+            // Trim the leading `origin/` so the renderer can match against the
+            // local branch list. Codex Desktop's `useGitDefaultBranch` exposes
+            // the bare branch name (e.g. "main"), not the remote ref.
+            let trimmed = value
+                .split_once('/')
+                .map(|(_, rest)| rest.to_string())
+                .unwrap_or(value);
+            Some(trimmed)
+        }
+        None => {
+            // codex: fall back to git's user config when origin/HEAD is unset.
+            git_stdout_optional(repo_path, &["config", "init.defaultBranch"]).unwrap_or(None)
+        }
+    };
+    Ok(GitDefaultBranchResponse { default_branch })
+}
+
+// codex: branch-picker-extension — Codex Desktop "Create new branch" action.
+// Mirrors `git checkout -b <name> [<basedOn>]`. `basedOn` is forwarded as a
+// final positional so the renderer can support "create from remote" (passing
+// e.g. `origin/feature-x`) without inventing a separate command.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateGitBranchRequest {
+    cwd: String,
+    branch_name: String,
+    #[serde(default)]
+    based_on: Option<String>,
+}
+
+#[tauri::command]
+fn host_git_create_branch(request: CreateGitBranchRequest) -> Result<(), String> {
+    let cwd = request.cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let branch_name = request.branch_name.trim();
+    if branch_name.is_empty() {
+        return Err("branch name is empty".to_string());
+    }
+    if branch_name.starts_with('-') {
+        return Err("branch name must not start with '-'".to_string());
+    }
+    if branch_name
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err("branch name contains unsupported whitespace".to_string());
+    }
+    let cwd_path = Path::new(cwd);
+    let repo_root =
+        git_repo_root(cwd_path)?.ok_or_else(|| format!("not a git repository: {cwd}"))?;
+    let repo_path = Path::new(&repo_root);
+    // codex: build args dynamically — keeping `&str` borrows tied to owned
+    // trimmed strings so the slice still references valid memory.
+    let based_on = request
+        .based_on
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if let Some(value) = based_on {
+        if value.starts_with('-') {
+            return Err("base branch must not start with '-'".to_string());
+        }
+    }
+    let mut args: Vec<&str> = vec!["checkout", "-b", branch_name];
+    if let Some(value) = based_on {
+        args.push(value);
+    }
+    let output = run_git(repo_path, &args)?;
+    if !output.status.success() {
+        return Err(format_git_failure("failed to create branch", &output));
+    }
+    Ok(())
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
+// Mirrors Codex Desktop's `pullRequestStatus` widget (Environment section row
+// 4) which surfaces the current branch's GitHub PR. Codex Desktop uses a
+// dedicated `gh-cli-status-*` chunk under the hood; HiCodex shells out to the
+// `gh` CLI in the renderer's cwd to keep the host bridge minimal.
+//
+// IPC shape (after serde rename_all = "camelCase"):
+//   { currentBranch: string | null, pr: { number, title, url, isDraft,
+//     mergeable, state, headRefName } | null }
+//
+// Returns Ok with `pr: None` when gh reports "no pull requests" or the cwd is
+// not a git repo (Codex hides the widget in those cases); returns Err for the
+// hard-failure cases (gh not installed, gh exited unexpectedly) so the
+// renderer can choose between silent-hide and surfaced-error.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPrInfo {
+    number: u64,
+    title: String,
+    url: String,
+    is_draft: bool,
+    /// `MERGEABLE` / `CONFLICTING` / `UNKNOWN` — gh's `--json mergeable` value.
+    /// Kept as Option<String> so a missing field falls through to null in JSON
+    /// (Codex's `mergeable` ternary tolerates null).
+    mergeable: Option<String>,
+    /// `OPEN` / `CLOSED` / `MERGED` — drives Codex's status badge color.
+    state: String,
+    head_ref_name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPrStatusResponse {
+    current_branch: Option<String>,
+    pr: Option<GhPrInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPrStatusPayload {
+    #[serde(default)]
+    current_branch: Option<GhPrEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhPrEntry {
+    number: u64,
+    title: String,
+    url: String,
+    #[serde(default)]
+    is_draft: bool,
+    #[serde(default)]
+    mergeable: Option<String>,
+    state: String,
+    head_ref_name: String,
+}
+
+// codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
+// Runs `gh pr status --json ...` inside `cwd` and projects the
+// `currentBranch` entry into the camelCase IPC shape the renderer expects.
+// Error contract:
+//   - gh missing from PATH → Err("gh CLI not installed")
+//   - cwd not a git repo → Err("not a git repository")
+//   - any other gh failure → Err with gh's stderr
+//   - "no pull requests for current branch" → Ok({ ..., pr: None })
+#[tauri::command]
+fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, String> {
+    let cwd = cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let cwd_path = Path::new(cwd);
+    if !cwd_path.is_dir() {
+        return Err(format!("cwd is not a directory: {cwd}"));
+    }
+    // codex: ga — Codex Desktop short-circuits when the workspace isn't a git
+    // repo (its widget pulls a `currentBranch` first); we mirror that so the
+    // renderer can keep a single error path.
+    let repo_root = git_repo_root(cwd_path)?;
+    if repo_root.is_none() {
+        return Err("not a git repository".to_string());
+    }
+    // Resolve the current branch so the renderer can decide whether to show
+    // the row even when `pr` is None (e.g. "no PR for <branch>" copy).
+    let current_branch =
+        git_stdout_optional(cwd_path, &["branch", "--show-current"]).unwrap_or(None);
+
+    let output = match Command::new("gh")
+        .arg("pr")
+        .arg("status")
+        .arg("--json")
+        .arg("number,title,url,isDraft,mergeable,state,headRefName")
+        .current_dir(cwd_path)
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            // ErrorKind::NotFound is the canonical "binary missing" signal on
+            // every OS we ship; surface that as the dedicated Codex copy.
+            if error.kind() == std::io::ErrorKind::NotFound {
+                return Err("gh CLI not installed".to_string());
+            }
+            return Err(format!("failed to run gh: {error}"));
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr_lower = stderr.to_ascii_lowercase();
+        // codex: ga — gh prints "no pull requests" on stderr when the branch
+        // has no PR; Codex Desktop treats that as `pullRequestStatus = null`,
+        // not as an error.
+        if stderr_lower.contains("no pull request")
+            || stderr_lower.contains("no open pull requests")
+        {
+            return Ok(GhPrStatusResponse {
+                current_branch,
+                pr: None,
+            });
+        }
+        if stderr_lower.contains("not a git repository") {
+            return Err("not a git repository".to_string());
+        }
+        let detail = stderr.trim();
+        return Err(if detail.is_empty() {
+            format!("gh pr status exited with status {}", output.status)
+        } else {
+            format!("gh pr status failed: {detail}")
+        });
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        return Ok(GhPrStatusResponse {
+            current_branch,
+            pr: None,
+        });
+    }
+    let payload: GhPrStatusPayload = serde_json::from_str(trimmed)
+        .map_err(|error| format!("gh pr status returned invalid JSON: {error}"))?;
+    let pr = payload.current_branch.map(|entry| GhPrInfo {
+        number: entry.number,
+        title: entry.title,
+        url: entry.url,
+        is_draft: entry.is_draft,
+        mergeable: entry.mergeable,
+        state: entry.state,
+        head_ref_name: entry.head_ref_name,
+    });
+    Ok(GhPrStatusResponse {
+        current_branch,
+        pr,
+    })
+}
+
+// codex: composer-footer-branch-switcher-CamXBKfA.js — switch to an existing
+// local branch. We deliberately do NOT pass `-f`: if the working tree has
+// uncommitted changes that would be overwritten, git's stderr propagates up
+// to the renderer so it can show the failure inline (matches Codex's "Switch
+// failed: please commit or stash" toast).
+#[tauri::command]
+fn host_git_checkout_branch(cwd: String, branch_name: String) -> Result<(), String> {
+    let cwd = cwd.trim();
+    if cwd.is_empty() {
+        return Err("cwd is empty".to_string());
+    }
+    let branch_name = branch_name.trim();
+    if branch_name.is_empty() {
+        return Err("branch name is empty".to_string());
+    }
+    if branch_name.starts_with('-') {
+        return Err("branch name must not start with '-'".to_string());
+    }
+    if branch_name
+        .chars()
+        .any(|ch| ch.is_control() || ch.is_whitespace())
+    {
+        return Err("branch name contains unsupported whitespace".to_string());
+    }
+    let cwd_path = Path::new(cwd);
+    let repo_root =
+        git_repo_root(cwd_path)?.ok_or_else(|| format!("not a git repository: {cwd}"))?;
+    let repo_path = Path::new(&repo_root);
+    let output = run_git(repo_path, &["checkout", branch_name])?;
+    if !output.status.success() {
+        return Err(format_git_failure("failed to checkout branch", &output));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PatchActionRequest {
@@ -2003,6 +2471,129 @@ fn log_unsupported_native_shell_boundaries() {
     );
 }
 
+// ============================================================================
+// codex: use-workspace-file-search-C73UkUkc — the hard-coded directory excludes
+// used when walking a workspace. Mirrors Codex Desktop's exclusion set so
+// `node_modules`, `.git`, build outputs, etc. never show up in the file tree.
+// ============================================================================
+const WORKSPACE_DIR_EXCLUDES: &[&str] = &[
+    ".git",
+    ".hg",
+    ".next",
+    ".pnpm-store",
+    ".svn",
+    ".turbo",
+    ".yarn",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+];
+
+#[derive(Serialize)]
+struct WorkspaceDirEntry {
+    // codex: workspace-directory-tree :j entries shape — `{ type, path }` with
+    // `type ∈ {'directory','file'}`. We also send `name` so the renderer does
+    // not have to split the path again.
+    #[serde(rename = "type")]
+    kind: &'static str,
+    path: String,
+    name: String,
+}
+
+#[derive(Serialize)]
+struct WorkspaceListDirResponse {
+    entries: Vec<WorkspaceDirEntry>,
+}
+
+#[tauri::command]
+fn host_workspace_list_dir(
+    root: String,
+    dir_path: String,
+    include_hidden: bool,
+) -> Result<WorkspaceListDirResponse, String> {
+    // codex: workspace-directory-tree-CHHgPVoD :_e — non-recursive direct-children
+    // listing keyed on (root, dirPath). Renderer drives recursion via expand.
+    let root_trimmed = root.trim();
+    if root_trimmed.is_empty() {
+        return Err("workspace root is empty".to_string());
+    }
+    let root_path = Path::new(root_trimmed);
+    if !root_path.is_dir() {
+        return Err(format!("workspace root is not a directory: {root_trimmed}"));
+    }
+
+    let dir_trimmed = dir_path.trim();
+    let abs_dir = if dir_trimmed.is_empty() {
+        root_path.to_path_buf()
+    } else {
+        // Reject `..` segments outright to avoid escaping the workspace root.
+        if dir_trimmed
+            .split(['/', '\\'])
+            .any(|segment| segment == "..")
+        {
+            return Err("workspace path cannot contain '..' segments".to_string());
+        }
+        root_path.join(dir_trimmed)
+    };
+    if !abs_dir.is_dir() {
+        return Err(format!("not a directory: {}", abs_dir.display()));
+    }
+
+    let mut entries: Vec<WorkspaceDirEntry> = Vec::new();
+    let read_iter = fs::read_dir(&abs_dir)
+        .map_err(|error| format!("failed to read directory: {error}"))?;
+    for raw_entry in read_iter {
+        let entry =
+            raw_entry.map_err(|error| format!("failed to read directory entry: {error}"))?;
+        let file_name = entry.file_name();
+        let name = file_name.to_string_lossy().to_string();
+
+        // codex: use-workspace-file-search excluded names — applied to directories
+        // (we still allow hidden files when `include_hidden` is true so users can
+        // see `.npmrc`, `.gitignore`, etc.).
+        if !include_hidden && name.starts_with('.') {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        let is_dir = file_type.is_dir();
+        if is_dir && WORKSPACE_DIR_EXCLUDES.contains(&name.as_str()) {
+            continue;
+        }
+
+        // Build the relative-to-root path with POSIX separators so the renderer
+        // can use string comparison consistently across platforms.
+        let abs_child = entry.path();
+        let rel_path = abs_child
+            .strip_prefix(root_path)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| name.clone());
+
+        entries.push(WorkspaceDirEntry {
+            kind: if is_dir { "directory" } else { "file" },
+            path: rel_path,
+            name,
+        });
+    }
+
+    // codex: workspace-directory-tree :_e default ordering — directories first,
+    // then case-insensitive by name. Keeps the renderer stable across runs.
+    entries.sort_by(|a, b| {
+        let dir_a = a.kind == "directory";
+        let dir_b = b.kind == "directory";
+        match (dir_a, dir_b) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
+    });
+
+    Ok(WorkspaceListDirResponse { entries })
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(
@@ -2047,13 +2638,19 @@ fn main() {
             host_read_file_bytes_base64,
             host_read_document_preview,
             host_git_status,
+            host_git_list_branches,
+            host_git_checkout_branch,
+            host_git_default_branch,
+            host_git_create_branch,
+            host_gh_pr_status,
             host_apply_patch_action,
             host_create_pending_worktree,
             host_find_rollout_for_thread,
             host_read_thread_tool_history,
             host_notify_turn_completed,
             host_handle_deep_link_url,
-            host_generate_image
+            host_generate_image,
+            host_workspace_list_dir
         ])
         .run(tauri::generate_context!())
         .expect("error while running HiCodex desktop");

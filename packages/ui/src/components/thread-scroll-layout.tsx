@@ -36,6 +36,14 @@ export interface ThreadScrollHeightDelta {
   viewportDistanceFromBottomPx: number;
 }
 
+/**
+ * Codex Desktop parity: API method names align verbatim to upstream scroll
+ * controller surface found in `local-conversation-thread-CecHj6JI.js`:
+ *   - scrollToBottom
+ *   - scrollToDistanceFromBottomPx
+ *   - scrollDistanceFromBottom  (here exposed as `threadScrollDistanceFromBottom`)
+ * Upstream uses manual DOM + ResizeObserver (no Virtuoso / react-window).
+ */
 export interface ThreadScrollController {
   addScrollListener: (listener: (distanceFromBottomPx: number) => void) => () => void;
   adjustForMeasuredTurnHeightDelta: (delta: ThreadScrollHeightDelta) => void;

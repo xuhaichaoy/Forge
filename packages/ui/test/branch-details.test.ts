@@ -239,11 +239,11 @@ function returnsEmptyStateWithoutData() {
     diff: null,
   });
 
-  assertEqual(view.title, "Git", "title should match Codex Desktop");
+  assertEqual(view.title, "Environment", "title should match Codex Desktop");
   assertEqual(
     view.emptyText,
-    "Git details will appear when the app server provides thread Git or diff data.",
-    "empty text should explain unavailable Git details",
+    "Environment details will appear when the app server provides thread Git or diff data.",
+    "empty text should explain unavailable environment details",
   );
   assertEqual(view.rows.length, 0, "empty state should not include rows");
   assertEqual(view.diff, null, "empty state should not include diff");

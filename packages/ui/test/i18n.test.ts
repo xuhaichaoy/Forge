@@ -13,6 +13,7 @@ import {
 export default function runI18nTests(): void {
   resolvesDesktopStyleLocaleFallbacks();
   formatsMessagesWithLocalFallbacks();
+  formatsDesktopPluralMessages();
   persistsLocalePreference();
   rendersProviderConsumerWithLocalizedMessages();
 }
@@ -34,6 +35,55 @@ function formatsMessagesWithLocalFallbacks(): void {
     formatI18nMessage(zh, { id: "hc.test.value", defaultMessage: "Hello {name}" }, { name: "Codex" }),
     "Hello Codex",
     "unknown messages should fall back and interpolate",
+  );
+}
+
+function formatsDesktopPluralMessages(): void {
+  const en = createI18nBundle("en-US");
+  const zh = createI18nBundle("zh-CN");
+  const descriptor = {
+    id: "assistantMessage.memoryCitations.summary",
+    defaultMessage: "{count, plural, one {1 memory citation} other {# memory citations}}",
+  };
+
+  assertEqual(formatI18nMessage(en, descriptor, { count: 1 }), "1 memory citation", "English singular ICU label");
+  assertEqual(formatI18nMessage(en, descriptor, { count: 2 }), "2 memory citations", "English plural ICU label");
+  assertEqual(formatI18nMessage(zh, descriptor, { count: 2 }), "2 条记忆引用", "Chinese plural ICU label");
+  assertEqual(
+    formatI18nMessage(
+      zh,
+      {
+        id: "localConversation.reviewComments.showMore",
+        defaultMessage: "{count, plural, one {Show # more comment} other {Show # more comments}}",
+      },
+      { count: 2 },
+    ),
+    "再显示 2 条评论",
+    "Chinese review comment show-more ICU label",
+  );
+  assertEqual(
+    formatI18nMessage(
+      zh,
+      {
+        id: "localConversationPage.planItemsCompleted",
+        defaultMessage: "{completedItems} out of {totalItems, plural, one {# task completed} other {# tasks completed}}",
+      },
+      { completedItems: 1, totalItems: 3 },
+    ),
+    "共 3 个任务，已经完成 1 个",
+    "Chinese inline todo-list completed summary should match Codex Desktop zh-CN copy",
+  );
+  assertEqual(
+    formatI18nMessage(
+      zh,
+      {
+        id: "codex.todoPlan.stepIndexPrefix",
+        defaultMessage: "{index}.",
+      },
+      { index: 2 },
+    ),
+    "2.",
+    "Chinese todo-list step index prefix should match Codex Desktop zh-CN copy",
   );
 }
 

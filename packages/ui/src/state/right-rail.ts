@@ -15,11 +15,18 @@ const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 400;
 
 export type RightRailSectionId =
   | "progress"
+  // codex: local-conversation-thread/pe:automation — per-conversation single
+  // automation summary (sectionKey "automation"), distinct from the legacy
+  // multi-entry "automations" list.
+  | "automation"
+  | "automations"
   | "branchDetails"
   | "artifacts"
   | "sideChats"
   | "backgroundTasks"
-  | "sources";
+  | "browser"
+  | "sources"
+  | "status";
 export type RightRailDisplayMode = "overlay" | "shift" | "gutter";
 
 export interface RightRailSection {
@@ -31,18 +38,66 @@ export interface RightRailSection {
   allEntries: RailEntry[];
   remainingCount: number;
   canToggle: boolean;
+  defaultCollapsed?: boolean;
   branchDetails?: BranchDetailsViewModel;
+}
+
+// codex: local-conversation-thread/pe:automation — single automation summary
+// payload `lo({automations, conversationId})` with rrule humanized via `$i(...)`
+// and "Next run: …" tooltip in the `au` body. HiCodex mirrors the structured
+// fields without inheriting Desktop's full rrule library; rruleSummary is
+// pre-humanized by the caller.
+export interface RightRailAutomationInput {
+  id: string;
+  name: string;
+  rruleSummary?: string;
+  nextRunAtMs?: number | null;
+}
+
+// codex: local-conversation-thread/_e:browser-tabs — single browser tab summary
+// `f = browserUseSummary` with `_l` body rendering title + displayUrl two-line
+// row plus shimmer-on-active. HiCodex collapses the multi-tab list into the
+// one-active-tab summary used by Desktop.
+export interface RightRailBrowserInput {
+  title: string;
+  displayUrl: string;
+  isActive: boolean;
+  tabId?: string;
+}
+
+// codex: local-conversation-thread/Ce:mu — status footer payload (token-speed
+// line + context-window usage tooltip + compact-thread button). The projection
+// input carries the raw counters so HiCodexApp can pipe the same shape into
+// both `projectRightRailSections` and the `<RightRail statusFooter=… />` prop.
+export interface RightRailStatusFooterInput {
+  tokensUsed?: number;
+  contextWindow?: number;
+  tokensPerSecond?: number;
 }
 
 export interface RightRailProjectionInput {
   progress: RailEntry[];
+  // codex: local-conversation-thread/pe:automation — new per-conversation
+  // automation summary (distinct from the legacy `automations` RailEntry list).
+  automation?: RightRailAutomationInput;
+  automations?: RailEntry[];
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
   artifacts: RailEntry[];
   showOutputs?: boolean;
   sideChats?: RailEntry[];
   backgroundAgents?: RailEntry[];
   backgroundTerminals?: RailEntry[];
+  // codex: local-conversation-thread/_e:browser-tabs — replaces the legacy
+  // pre-built RailEntry[] with the structured single-tab summary that mirrors
+  // Desktop's `_l` body.
+  browser?: RightRailBrowserInput;
   sources: RailEntry[];
+  status?: RailEntry[];
+  // codex: local-conversation-thread/Ce:mu — status footer counters. Kept on
+  // the projection input for documentation/typing; HiCodexApp forwards the
+  // same value to `<RightRail statusFooter=… />` since the footer is rendered
+  // outside the `RightRailSection[]` list.
+  statusFooter?: RightRailStatusFooterInput;
 }
 
 export interface BranchDetailsEntryInput {
@@ -142,7 +197,36 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   const sections: RightRailSection[] = [];
 
   if (input.progress.length > 0) {
-    sections.push(projectEntrySection("progress", "Progress", input.progress, false, progressSummary(input.progress)));
+    sections.push(projectEntrySection(
+      "progress",
+      "Progress",
+      input.progress,
+      true,
+      undefined,
+      allProgressEntriesCompleted(input.progress),
+    ));
+  }
+
+  // codex: local-conversation-thread/pe:automation — single-entry section with
+  // `na` (Clock) icon, label=name, meta=rrule summary, status carries the
+  // humanized "Next run: …" string used as title in Desktop. Sort: directly
+  // after progress, before automations/branchDetails (Desktop order
+  // progress→automation→environment).
+  if (input.automation) {
+    const entry = automationRailEntry(input.automation);
+    sections.push({
+      id: "automation",
+      title: "Automations",
+      count: 1,
+      entries: [entry],
+      allEntries: [entry],
+      remainingCount: 0,
+      canToggle: false,
+    });
+  }
+
+  if (input.automations && input.automations.length > 0) {
+    sections.push(projectEntrySection("automations", "Automations", input.automations, false));
   }
 
   const branchInput = input.branchDetails;
@@ -150,9 +234,16 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   const branchEntries = branchDetails ? branchDetailsEntries(branchDetails) : (branchInput as BranchDetailsEntryInput).entries;
   const hasBranchDetails = branchDetails ? branchDetails.hasData : branchEntries.length > 0;
   if (hasBranchDetails) {
+    // codex: local-conversation-thread-CecHj6JI.js#J — environment section
+    // title (i18n `codex.localConversation.environmentSummary.title`). The
+    // section keyed `branchDetails` here is what Desktop labels "Environment";
+    // the title default falls back to "Environment" while still honoring an
+    // explicit override coming in via `branchDetails.title`/entry-input title.
+    // TODO: codex: local-conversation-thread-CecHj6JI.js#J — PR row (ga) +
+    // gh-status row require GitHub CLI integration; HiCodex no data source yet.
     sections.push({
       id: "branchDetails",
-      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Git",
+      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Environment",
       count: branchEntries.length,
       entries: branchEntries,
       allEntries: branchEntries,
@@ -180,7 +271,29 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     ...(input.backgroundTerminals ?? []),
   ];
   if (backgroundTasks.length > 0) {
-    sections.push(projectEntrySection("backgroundTasks", "Background tasks", backgroundTasks, false));
+    sections.push(projectEntrySection(
+      "backgroundTasks",
+      backgroundTasksTitle(input.backgroundAgents ?? [], input.backgroundTerminals ?? []),
+      backgroundTasks,
+      false,
+    ));
+  }
+
+  // codex: local-conversation-thread/_e:browser-tabs — single-entry section
+  // with `ma`(active)/`wa`(Globe) icon and shimmer-on-active title. HiCodex
+  // captures the active/idle bit in `entry.status` so the renderer can route
+  // it through the existing browser-row icon logic and add the shimmer class.
+  if (input.browser) {
+    const entry = browserRailEntry(input.browser);
+    sections.push({
+      id: "browser",
+      title: "Browser",
+      count: 1,
+      entries: [entry],
+      allEntries: [entry],
+      remainingCount: 0,
+      canToggle: false,
+    });
   }
 
   // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js he —
@@ -191,6 +304,10 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   // mid-conversation), or whenever real sources are present.
   if (input.sources.length > 0 || sections.length > 0) {
     sections.push(projectEntrySection("sources", "Sources", input.sources, true));
+  }
+
+  if (input.status && input.status.length > 0) {
+    sections.push(projectEntrySection("status", "Status", input.status, false));
   }
 
   return sections;
@@ -220,6 +337,7 @@ function projectEntrySection(
   entries: RailEntry[],
   clippedByDefault: boolean,
   summary?: string,
+  defaultCollapsed?: boolean,
 ): RightRailSection {
   const clipped = clippedByDefault
     ? clipRailEntries(entries)
@@ -237,17 +355,24 @@ function projectEntrySection(
     allEntries: entries,
     remainingCount: clipped.remainingCount,
     canToggle: clipped.canToggle,
+    ...(defaultCollapsed ? { defaultCollapsed } : {}),
   };
 }
 
-function progressSummary(entries: RailEntry[]): string {
-  const completed = entries.reduce((count, entry) => count + (isCompletedProgressStatus(entry.status) ? 1 : 0), 0);
-  const taskLabel = entries.length === 1 ? "task" : "tasks";
-  return `${completed} out of ${entries.length} ${taskLabel} completed`;
+function isCompletedProgressStatus(status: string | undefined): boolean {
+  return status === "completed";
 }
 
-function isCompletedProgressStatus(status: string | undefined): boolean {
-  return status === "completed" || status === "complete" || status === "done";
+function allProgressEntriesCompleted(entries: RailEntry[]): boolean {
+  return entries.length > 0 && entries.every((entry) => isCompletedProgressStatus(entry.status));
+}
+
+function backgroundTasksTitle(backgroundAgents: RailEntry[], backgroundTerminals: RailEntry[]): string {
+  const hasBackgroundAgents = backgroundAgents.length > 0;
+  const hasBackgroundTerminals = backgroundTerminals.length > 0;
+  if (hasBackgroundAgents && hasBackgroundTerminals) return "Subagents and tasks";
+  if (hasBackgroundAgents) return "Subagents";
+  return "Tasks";
 }
 
 function isBranchDetailsViewModel(value: RightRailProjectionInput["branchDetails"]): value is BranchDetailsViewModel {
@@ -261,6 +386,9 @@ function branchDetailsEntries(details: BranchDetailsViewModel): RailEntry[] {
     ...(row.value ? { meta: row.value } : {}),
     status: row.status ?? "available",
     ...(row.details && row.details.length > 0 ? { details: row.details } : {}),
+    // codex: local-conversation-thread-CecHj6JI.js#J row 4 PR — actionUrl lifts
+    // into a `url` action so right-rail's onOpenUrl handler opens GitHub.
+    ...(row.actionUrl ? { action: { kind: "url" as const, url: row.actionUrl } } : {}),
   }));
   return [
     {
@@ -285,4 +413,52 @@ function branchChangesMeta(details: BranchDetailsViewModel): string {
 
 function rightRailSideSpace(contentWidthPx: number): number {
   return (Math.max(0, contentWidthPx) - DESKTOP_THREAD_LAYOUT_WIDTH_PX) / 2;
+}
+
+// codex: local-conversation-thread/au:automationRow — single automation row:
+// `<es>` shell with `na`(Clock), label = automation.name, sublabel = rrule
+// humanized via `$i(rrule)`, title="Next run: …" tooltip computed off
+// nextRunAtMs. HiCodex packs the same fields into the RailEntry slots that
+// `right-rail.tsx::railEntryIcon` / `RailEntryContent` already understand.
+function automationRailEntry(input: RightRailAutomationInput): RailEntry {
+  const nextRun = formatNextRunAt(input.nextRunAtMs);
+  return {
+    id: `automation:${input.id}`,
+    title: input.name,
+    ...(input.rruleSummary ? { meta: input.rruleSummary } : {}),
+    ...(nextRun ? { status: `Next run: ${nextRun}` } : {}),
+  };
+}
+
+// codex: local-conversation-thread/_l:browserRow — single browser-tab row:
+// `<es>` shell with `ma`(active spinner)/`wa`(Globe) icon, title + displayUrl
+// two-line layout, shimmer overlay on the title when `isActive`.
+function browserRailEntry(input: RightRailBrowserInput): RailEntry {
+  return {
+    id: input.tabId ? `browser:${input.tabId}` : "browser:active",
+    title: input.title,
+    meta: input.displayUrl,
+    status: input.isActive ? "active" : "idle",
+  };
+}
+
+// codex: local-conversation-thread/au:automationRow — `Next run:` tooltip
+// timestamp formatting. Desktop uses the user's locale + an "X minutes/hours
+// from now" rrule helper; HiCodex shows the localized date/time, which keeps
+// the tooltip readable without pulling in a full rrule library.
+function formatNextRunAt(nextRunAtMs: number | null | undefined): string {
+  if (nextRunAtMs == null || !Number.isFinite(nextRunAtMs)) return "";
+  try {
+    return new Date(nextRunAtMs).toLocaleString();
+  } catch {
+    return "";
+  }
+}
+
+export function formatTokensCount(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return `${Math.round(value)}`;
 }

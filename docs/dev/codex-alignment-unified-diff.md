@@ -22,13 +22,13 @@ Codex Desktop renders:
 
 The inline card layout:
 
-- Header: `Review changes` action + edited file count + per-file row.
-- Per-file: filename + +linesAdded / -linesDeleted + Show-in-review action + (when applicable) Undo / Reapply tooltips.
+- Header: `Review changes` action + edited file count + stats.
+- Per-file: filename, or `Details` for the single-file completed detail row; multi-file rows show +linesAdded / -linesDeleted + Show-in-review action + (when applicable) Undo / Reapply tooltips.
 - Show-more / Collapse for long file lists.
 - "Too large to render inline" placeholder for oversize diffs.
 - `inlineLargeFile` substitution when the file body exceeds the inline-render threshold.
 
-HiCodex `hc-turn-diff` inline card (in `event-unit.tsx::ToolBlock`) implements the action / collapse / undo / reapply parts but does not render the full edited-file detail list.
+HiCodex `hc-turn-diff` inline card (in `event-unit.tsx::ToolBlock`) implements the Desktop card, including the edited-file detail list, first-three-row preview, show-more/collapse behavior, large-file placeholder, and single-file `Details` row without duplicate per-row stats.
 
 ## 3. Failure Dialog structure
 
@@ -160,4 +160,4 @@ codex.unifiedDiff.details                        = Details
 - Inline card: `event-unit.tsx::ToolBlock` consumes the prop chain through `conversation-view.tsx`.
 - CSS: `settings-command.css` extension for dialog styling.
 
-Gaps (see [gap matrix](./codex-alignment-gap-matrix.md) section E): inline card detail list (edited file count, per-file rows, show-more), large-file inline placeholder, full toast coverage for partial/no-changes paths.
+Gaps (see [gap matrix](./codex-alignment-gap-matrix.md) section E): full toast coverage for partial/no-changes paths.

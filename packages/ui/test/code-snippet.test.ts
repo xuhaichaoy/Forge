@@ -1,4 +1,7 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
+  CodeSnippet,
   highlightCodeSegments,
   highlightCodeSegmentsWithShiki,
   mermaidThemeVariables,
@@ -10,6 +13,7 @@ export default async function runCodeSnippetTests(): Promise<void> {
   await highlightsAdditionalLanguagesWithShiki();
   await fallsBackWhenShikiIsUnavailable();
   keepsMermaidThemeVariablesModeAware();
+  rendersCopyButtonInActionBar();
 }
 
 function highlightsDesktopVisibleLanguages(): void {
@@ -147,6 +151,25 @@ async function fallsBackWhenShikiIsUnavailable(): Promise<void> {
     );
   } finally {
     restore();
+  }
+}
+
+// codex: code-snippet-CQ14r_m1.js — copy button in code block toolbar.
+// Renders CodeSnippet to static markup and asserts the toolbar Copy button
+// surfaces with the upstream Desktop-aligned aria-label so callers (markdown
+// fences, tool detail) always expose copy affordance to keyboard users.
+function rendersCopyButtonInActionBar(): void {
+  const html = renderToStaticMarkup(
+    createElement(CodeSnippet, { language: "ts", text: "const value = 1;\n" }),
+  );
+  if (!html.includes("aria-label=\"Copy code\"")) {
+    throw new Error(`expected Copy code button in CodeSnippet markup, got: ${html}`);
+  }
+  if (!html.includes("hc-code-actions")) {
+    throw new Error("expected hc-code-actions toolbar in CodeSnippet markup");
+  }
+  if (!html.includes("const") || !html.includes("value")) {
+    throw new Error("expected snippet text to be rendered in markup");
   }
 }
 

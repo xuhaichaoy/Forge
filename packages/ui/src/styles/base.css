@@ -47,9 +47,42 @@
   --thread-content-padding-inline: 16px;
   --thread-body-padding-inline: 24px;
   --thread-content-top-inset: 0px;
+  /*
+   * `--codex-chat-font-size` and `--codex-chat-code-font-size` are kept under
+   * the upstream `--codex-` namespace because both literals exist in
+   * `/private/tmp/codex-asar/webview/assets/` (verified `var(--codex-chat-font-size, 13px)`
+   * and `--codex-chat-code-font-size` are real Desktop tokens) so HiCodex
+   * `var(--codex-chat-font-size)` references actually point at Desktop-aligned
+   * values when the same selector cascades.
+   *
+   * `--hc-chat-line-height` lives under the HiCodex `--hc-` namespace because
+   * Codex Desktop's CSS has no `--codex-chat-line-height` token (`rg -- "--codex-chat-"`
+   * in the asar only returns the two font-size variables above). Per
+   * DEVELOPMENT.md §13 the `--hc-*` namespace is the right home for tokens
+   * that do not have an upstream counterpart.
+   */
   --codex-chat-font-size: 13px;
   --codex-chat-code-font-size: 12px;
-  --codex-chat-line-height: 1.86;
+  --hc-chat-line-height: 1.86;
+  /*
+   * `--hc-font-mono` / `--hc-font-sans` mirror Codex Desktop's
+   * `--font-mono-default` / `--font-sans-default` stacks verified literally
+   * in `/private/tmp/codex-asar/webview/assets/`:
+   *   --font-mono-default: ui-monospace, "SFMono-Regular", "SF Mono", Menlo,
+   *                        Consolas, "Liberation Mono", monospace
+   *   --font-sans-default: -apple-system, BlinkMacSystemFont, "Segoe UI",
+   *                        sans-serif
+   * Upstream wraps them in `var(--vscode-editor-font-family, ...)` /
+   * `var(--vscode-font-family, ...)` to defer to the VS Code embed; HiCodex
+   * runs in Tauri (no VS Code host), so we use the default stack directly.
+   * Two HiCodex sites already reference `var(--hc-font-mono)` /
+   * `var(--hc-font-sans)` (`composer.css::hc-code-snippet-code`,
+   * `base.css::hc-app`) but without a definition the inline fallback there
+   * was a partial subset of the Desktop stack; defining the token here gives
+   * those rules the full upstream-aligned font stack.
+   */
+  --hc-font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --hc-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --conversation-block-gap: 12px;
   /* Codex Desktop's `:root` in `app-main-*.css` defines:
    *   --conversation-block-gap: 12px;
@@ -358,18 +391,48 @@ button {
   grid-template-columns: var(--hc-app-rail-width) var(--hc-sidebar-width) minmax(0, 1fr);
 }
 
+/*
+ * codex: animations-y0LC3gHS.js#yo + app-shell-state-HP0T5lEX.js#_t — register
+ * --hc-sidebar-width as a typed property so it participates in transitions and
+ * the sidebar collapse runs through the same 500ms cubic-bezier(0.19,1,0.22,1)
+ * ease-out Codex Desktop uses across disclosure animations.
+ */
+@property --hc-sidebar-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 300px;
+}
+
+.hc-app,
+.hc-app--with-right-rail {
+  transition: --hc-sidebar-width var(--hc-codex-transition);
+}
+
 .hc-app[data-sidebar-open="false"],
 .hc-app--with-right-rail[data-sidebar-open="false"] {
   --hc-sidebar-width: 0px;
-  grid-template-columns: var(--hc-app-rail-width) minmax(0, 1fr);
 }
 
 .hc-sidebar {
   min-width: 0;
   min-height: 0;
+  /*
+   * codex: app-shell-state-HP0T5lEX.js#_t — keep inner content from spilling
+   * when --hc-sidebar-width interpolates to 0. The grid column drives layout;
+   * `overflow: hidden` prevents the nav rail from briefly drawing outside the
+   * collapsed track during the cubic-bezier ease-out.
+   */
+  overflow: hidden;
   background: var(--hc-surface-sidebar);
   border-right: 1px solid var(--hc-border-subtle);
   view-transition-name: sidebar;
+  /* codex: animations-y0LC3gHS.js#yo — fade content alongside width collapse. */
+  transition: opacity var(--hc-codex-transition);
+}
+
+.hc-app[data-sidebar-open="false"] .hc-sidebar {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .hc-sidebar {
@@ -703,76 +766,145 @@ button {
   position: fixed;
   inset: 0;
   z-index: 90;
-  display: grid;
-  place-items: center;
-  background: rgba(15, 18, 22, 0.72);
-  padding: 28px;
-  cursor: zoom-out;
-}
-
-.hc-preview-lightbox-dialog {
-  display: grid;
-  width: min(1120px, 94vw);
-  max-height: 92vh;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-  border: 1px solid rgba(255, 253, 250, 0.18);
-  border-radius: 8px;
-  background: #111418;
-  color: #fffdfa;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+  background: rgba(0, 0, 0, 0.9);
   cursor: default;
 }
 
-.hc-preview-lightbox-header {
+.hc-preview-lightbox-dialog {
+  position: relative;
   display: flex;
-  min-width: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 10px 9px 14px;
-  border-bottom: 1px solid rgba(255, 253, 250, 0.12);
-  font-size: 13px;
-  font-weight: 650;
+  justify-content: center;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 48px 16px 32px;
+  color: #fffdfa;
+  box-shadow: none;
+  cursor: default;
 }
 
-.hc-preview-lightbox-header span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.hc-preview-lightbox-dialog--with-nav {
+  padding-right: 64px;
+  padding-left: 64px;
 }
 
-.hc-preview-lightbox-close {
+@media (min-width: 640px) {
+  .hc-preview-lightbox-dialog {
+    padding-right: 32px;
+    padding-left: 32px;
+  }
+
+  .hc-preview-lightbox-dialog--with-nav {
+    padding-right: 80px;
+    padding-left: 80px;
+  }
+}
+
+.hc-preview-lightbox-toolbar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  align-items: center;
+  gap: 8px;
+}
+
+.hc-preview-lightbox-toolbar-button {
+  display: inline-flex;
+  width: 36px;
+  height: 36px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 7px;
-  background: rgba(255, 253, 250, 0.08);
-  color: #fffdfa;
+  border-radius: 999px;
+  background: rgba(255, 253, 250, 0.94);
+  color: #111418;
   cursor: pointer;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  text-decoration: none;
 }
 
-.hc-preview-lightbox-close:hover {
-  background: rgba(255, 253, 250, 0.16);
+.hc-preview-lightbox-toolbar-button:hover {
+  background: #fffdfa;
+  color: #111418;
+  text-decoration: none;
 }
 
 .hc-preview-lightbox-viewport {
-  display: grid;
+  display: flex;
+  width: 100%;
   min-height: 0;
-  place-items: center;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  justify-content: flex-start;
   overflow: auto;
-  padding: 18px;
+  padding: 0;
+  touch-action: none;
+}
+
+.hc-preview-lightbox-viewport--thread-content {
+  max-width: min(90vw, calc(var(--thread-content-max-width) + 16rem));
 }
 
 .hc-preview-lightbox-viewport img {
   display: block;
+  margin: auto;
   max-width: 100%;
-  max-height: calc(92vh - 88px);
+  max-height: 100%;
+  border-radius: 8px;
   object-fit: contain;
+}
+
+.hc-preview-lightbox-zoom-controls {
+  position: relative;
+  z-index: 10;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin-top: 20px;
+  border-radius: 999px;
+  background: rgba(255, 253, 250, 0.94);
+  padding: 4px;
+  color: #111418;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+}
+
+.hc-preview-lightbox-zoom-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(17, 20, 24, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.hc-preview-lightbox-zoom-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.hc-preview-lightbox-zoom-controls button:not(:disabled):hover {
+  background: rgba(17, 20, 24, 0.14);
+}
+
+.hc-preview-lightbox-zoom-controls span {
+  min-width: 52px;
+  padding: 0 6px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .hc-file-preview-document-view {
@@ -1189,6 +1321,41 @@ button {
   place-items: center;
   flex: 0 0 auto;
   color: currentColor;
+}
+
+/* codex: electron-menu-shortcuts-DQYPVyfu.js — sidebar nav accelerator chip. */
+.hc-sidebar-nav-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-sidebar-nav-accelerator {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(34, 38, 43, 0.08);
+  color: var(--hc-text-secondary);
+  font-family: var(--hc-font-sans, inherit);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.hc-sidebar-nav-item:hover .hc-sidebar-nav-accelerator,
+.hc-sidebar-nav-item:focus-visible .hc-sidebar-nav-accelerator {
+  opacity: 1;
+}
+
+.hc-sidebar-nav-item:disabled .hc-sidebar-nav-accelerator {
+  display: none;
 }
 
 .hc-sidebar-nav-label {
@@ -2044,4 +2211,29 @@ button.hc-sidebar-account-menu-item small {
   color: #8a8b84;
   font-size: 11px;
   line-height: 1.4;
+}
+
+/*
+ * CODEX-REF: Reduce motion override — Codex Desktop Appearance §8
+ * (settings.general.appearance.reducedMotion.{system,on,off}).
+ *
+ * `data-hc-reduce-motion="on"` forcibly suppresses transitions and animations
+ * regardless of the OS prefers-reduced-motion media query, matching Codex's
+ * "On" option. `data-hc-reduce-motion` unset (i.e. mode "system") leaves the
+ * @media (prefers-reduced-motion: reduce) rules to govern. "off" cannot
+ * forcibly enable animations against the OS preference without rewriting
+ * every existing @media block, so HiCodex treats "off" identically to
+ * "system" for now — Codex behaviour is matched only for the "system" and
+ * "on" arms; "off" is a no-op compared to system on machines that already
+ * have OS reduced motion enabled.
+ */
+:root[data-hc-reduce-motion="on"] *,
+:root[data-hc-reduce-motion="on"] *::before,
+:root[data-hc-reduce-motion="on"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-delay: 0ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
 }
