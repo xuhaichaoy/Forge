@@ -1,7 +1,7 @@
 /*
- * CODEX-REF: composer-D0cvMZjq.js — Reasoning effort picker dropdown.
+ * CODEX-REF: composer-*.js — Reasoning effort picker dropdown.
  *
- *   Effort label switch (`vg(e, t)` at offset ~314200):
+ *   Effort label switch:
  *     case `none`:    composer.mode.local.reasoning.none.label    = "None"
  *     case `minimal`: composer.mode.local.reasoning.minimal.label = "Minimal"
  *     case `low`:     composer.mode.local.reasoning.low.label     = "Low"
@@ -9,16 +9,16 @@
  *     case `high`:    composer.mode.local.reasoning.high.label    = "High"
  *     case `xhigh`:   composer.mode.local.reasoning.xhigh.label   = "Extra High"
  *
- *   Dropdown structure (`Fa` popover at offset ~202900):
- *     Fa.Title  — header `<FormattedMessage id="composer.intelligenceDropdown.title" defaultMessage="Reasoning"/>`
- *     Fa.Item   — one per supported effort
- *                 attr `data-reasoning-selected="true"` when active
- *                 RightIcon = `oa` (checkmark) when active
- *                 onSelect = analytics(`codex_composer_reasoning_effort_changed`)
- *                            + f(model, effort) (setModelAndReasoningEffort)
- *                            + R() (close)
+ *   Dropdown structure (popover):
+ *     header — `<FormattedMessage id="composer.intelligenceDropdown.title" defaultMessage="Reasoning"/>`
+ *     item   — one per supported effort
+ *              attr `data-reasoning-selected="true"` when active
+ *              checkmark right-icon when active
+ *              onSelect = analytics(`codex_composer_reasoning_effort_changed`)
+ *                         + setModelAndReasoningEffort(model, effort)
+ *                         + close()
  *
- *   Disabled when (`u === 'error' || l?.models == null`).
+ *   Disabled when the model status is error or no models are available.
  */
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -67,9 +67,10 @@ export function ReasoningPickerMenu({
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   /*
-   * Position popover above the anchor button, like Codex `Ia` with `side: "top"`.
-   * Footer chip is bottom-aligned in HiCodex, so we anchor menu's bottom to the
-   * anchor's top with a small gap and use `transform: translateY(-100%)`.
+   * Position popover above the anchor button, like Codex's dropdown with
+   * `side: "top"`. Footer chip is bottom-aligned in HiCodex, so we anchor the
+   * menu's bottom to the anchor's top with a small gap and use
+   * `transform: translateY(-100%)`.
    */
   useLayoutEffect(() => {
     if (anchor == null) return;
@@ -136,7 +137,7 @@ export function ReasoningPickerMenu({
       }}
     >
       {/*
-       * CODEX-REF: composer-D0cvMZjq.js — Fa.Title with FormattedMessage
+       * CODEX-REF: composer-*.js — dropdown title with FormattedMessage
        *   id `composer.intelligenceDropdown.title`, defaultMessage `Reasoning`.
        */}
       <div className="hc-reasoning-picker-menu-header">Reasoning</div>

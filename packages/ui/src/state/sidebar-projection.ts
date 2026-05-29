@@ -1,7 +1,7 @@
 import type { Thread } from "@hicodex/codex-protocol";
 
 /**
- * Codex Desktop's `local-environments-BnGVEzfq.js` keys per-thread sort time
+ * Codex Desktop's `local-environments-*.js` keys per-thread sort time
  * by `(updatedAt ?? createdAt) * 1000`, then sorts descending. Empty groups
  * collapse and never appear in the rail. We mirror that here at the data
  * layer so the sidebar component stays a dumb renderer.
@@ -14,7 +14,7 @@ export const DEFAULT_SIDEBAR_SORT_KEY: SidebarSortKey = "updated_at";
 export const DEFAULT_SIDEBAR_ORGANIZE_MODE: SidebarOrganizeMode = "project";
 
 /**
- * Codex Desktop's `is-subagent-conversation-Ce7kusa7.js` returns true when
+ * Codex Desktop's `is-subagent-conversation-*.js` returns true when
  * the conversation has a parent thread id. The shipped backend exposes that
  * through `threadSource === "subagent"` (see `ThreadSource.ts`); both
  * `agentNickname` and `agentRole` also light up when a thread was spawned
@@ -48,9 +48,9 @@ export interface SidebarThreadGroupContext {
    * prior session restore) that should appear in the project list even when
    * no thread has been created in them yet.
    *
-   * Mirrors Codex Desktop `sidebar-project-groups-DJO_ODNL.pretty.js::M`,
-   * which seeds local project groups from `e?.roots ?? []` with empty
-   * `threadKeys` before assigning threads in `F`. Without this seed, a
+   * Mirrors Codex Desktop `sidebar-project-groups-*.js`, whose group builder
+   * seeds local project groups from `e?.roots ?? []` with empty
+   * `threadKeys` before assigning threads. Without this seed, a
    * freshly-selected workspace stays invisible in the sidebar until the
    * first thread is created.
    */
@@ -154,8 +154,8 @@ function projectLocalWorkspaceThreadGroups(
   const groups: SidebarThreadGroup[] = [];
   const byKey = new Map<string, SidebarThreadGroup>();
   // Seed empty groups from selected workspace roots first, mirroring
-  // Codex Desktop's `M(e, t, i) -> (e?.roots ?? []).map(...)` in
-  // sidebar-project-groups-DJO_ODNL.pretty.js.
+  // Codex Desktop's group builder `(e?.roots ?? []).map(...)` in
+  // sidebar-project-groups-*.js.
   for (const root of seedRoots) {
     const key = threadProjectKeyForRoot(root);
     if (byKey.has(key)) continue;
@@ -337,7 +337,7 @@ function numericField(thread: Thread, key: "createdAt" | "updatedAt"): number {
 }
 
 /*
- * CODEX-REF: app-server-manager-signals-Csopz8aM.js — Codex sidebar 判断
+ * CODEX-REF: app-server-manager-signals-*.js — Codex sidebar 判断
  * thread 是否活动**只看** `m.thread.status.type !== "active"` 一处（明确的
  * server-pushed status 是 truth source）。`finishTurn` (state/codex-reducer.ts:3042)
  * 已经把 thread.status 切到 `{ type: "idle" }` 当 turn/completed 通知到达，

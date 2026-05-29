@@ -1,5 +1,5 @@
 /*
- * codex: local-conversation-thread/_l:browserRow & Ce:mu — P0 right-rail
+ * codex: local-conversation-thread-*.js — P0 right-rail
  * styles: browser-title shimmer overlay (active browser tab) and the status
  * footer sticky at the rail bottom.
  *
@@ -9,7 +9,7 @@
  */
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js _l (Browser row, byte 29184) —
+ * CODEX-REF: local-conversation-thread-*.js (Browser row) —
  * Codex 桌面版用 `loading-shimmer-pure-text` class 在 active browser tab title 上
  * 跑 gradient 渐变扫光。HiCodex 以 CSS 连续扫光对齐(避免与 tool-activity
  * `hc-thinking-shimmer` 节奏冲突),class 名严格对齐 Codex。
@@ -48,14 +48,14 @@
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#mu — Status footer.
+ * codex: local-conversation-thread-*.js — Status footer.
  * Sticky-bottom status popover trigger: token speed on the left, context
  * percent on the right. The full token count is tooltip-only; Compact lives in
  * the small popover menu.
  */
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js — status section (`Ce` =
- * `T ? <mu conversationId={v} status={p} /> : null`) 裸渲染。`mu` 容器
+ * CODEX-REF: local-conversation-thread-*.js — status section 裸渲染（仅在有
+ * 状态时渲染 `<status conversationId status />`）。status 容器
  * className `relative mx-4 flex min-w-0 cursor-interaction items-center
  * justify-between text-sm text-token-text-tertiary before:absolute ...`——**无
  * padding-y、无 background、无 sticky**，间距由父 sections wrapper `gap-3` (12px)
@@ -174,8 +174,8 @@
   cursor: not-allowed;
 }
 
-/* codex: local-conversation-thread-CecHj6JI.js#Hl — sticky section header.
- * Desktop's `Hl` section-header element is `sticky top-0 z-10` over
+/* codex: local-conversation-thread-*.js — sticky section header.
+ * Desktop's section-header element is `sticky top-0 z-10` over
  * `bg-token-dropdown-background` so the title remains visible while the rail
  * body scrolls beneath it. HiCodex already pins the header in
  * `rail-sections.css` with `z-index: 1`; this override raises the stacking
@@ -192,10 +192,10 @@
 }
 
 /*
- * codex: animations-y0LC3gHS.js#yo + app-shell-state-HP0T5lEX.js#h (setRightPanel)
+ * codex: animations-*.js + app-shell-state-*.js (setRightPanel)
  * — Codex Desktop opens/closes its AppShell RightPanel through motion-one with
  * `F:{type:'spring',duration:.5,bounce:.1}` and shares the same 500ms
- * cubic-bezier(0.19,1,0.22,1) ease-out used by `yo` for disclosure
+ * cubic-bezier(0.19,1,0.22,1) ease-out used for disclosure
  * transitions across the conversation thread.
  *
  * HiCodex's summary right-rail is `position: absolute` and the React tree
@@ -218,7 +218,7 @@
   initial-value: 300px;
 }
 
-/* codex: animations-y0LC3gHS.js#yo — when the rail width changes (responsive
+/* codex: animations-*.js — when the rail width changes (responsive
  * breakpoints, future resize handle), interpolate through the same 500ms
  * cubic-bezier as the sidebar collapse so the layout shifts feel cohesive. */
 .hc-right-rail {
@@ -226,7 +226,7 @@
     transform var(--hc-codex-transition),
     opacity var(--hc-codex-transition),
     width var(--hc-codex-transition);
-  /* codex: app-shell-state-HP0T5lEX.js#h — entry phase slides in from the
+  /* codex: app-shell-state-*.js (setRightPanel) — entry phase slides in from the
    * outside edge and fades to full opacity. Matches motion-one spring
    * `{type:'spring',duration:.5,bounce:.1}` characteristics with our shared
    * cubic-bezier ease-out approximation. */
@@ -245,8 +245,8 @@
   }
 }
 
-/* codex: local-conversation-thread/an gating — when the rail is rendered but
- * not pinned (overlay/auto-hide states), fade content and disable pointer
+/* codex: local-conversation-thread-*.js pinned-state gating — when the rail is
+ * rendered but not pinned (overlay/auto-hide states), fade content and disable pointer
  * events. The mount path today always passes `isPinned=true` because
  * HiCodexApp gates on `rightRailPinned`; this rule keeps the visual contract
  * for future code paths that may render the rail in an unpinned/closing
@@ -285,7 +285,7 @@
  */
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status row styles.
+ * codex: local-conversation-thread-*.js — PR status row styles.
  * Mirrors Codex Desktop's `gh-cli-status-*` row (Environment section, row 4):
  *   [icon] [title #number] [badge]
  * The row is a single full-width button so the entire surface is clickable;
@@ -341,7 +341,7 @@
   font-weight: 500;
 }
 
-/* codex: ga#status-badge — Desktop encodes each state with a distinct chip
+/* codex: PR status badge — Desktop encodes each state with a distinct chip
  * tone. The colors mirror GitHub's PR state palette (Open: green, Merged:
  * purple, Closed: red, Draft: gray). */
 .hc-pr-status-badge {

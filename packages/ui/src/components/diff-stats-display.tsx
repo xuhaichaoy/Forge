@@ -1,4 +1,4 @@
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/diff-unified-DjSR1Ba3.js function R (= Sc) —
+// CODEX-REF: diff-unified-*.js — the diff stats renderer.
 // Codex Desktop renders +N -N diff stats as two `shrink-0 leading-none` spans inside an
 // `inline-flex items-center gap-1 leading-none align-middle disambiguated-digits tabular-nums
 // tracking-tight` wrapper. The added span uses
@@ -26,7 +26,7 @@ export function DiffStatsDisplay({
 }
 
 function formatCount(value: number): string {
-  // CODEX-REF: diff-unified-DjSR1Ba3.js — Codex uses intl.formatNumber which yields locale
+  // CODEX-REF: diff-unified-*.js — Codex uses intl.formatNumber which yields locale
   // thousands separators. `toLocaleString` mirrors that behaviour for the active locale.
   if (!Number.isFinite(value) || value < 0) return "0";
   return Math.trunc(value).toLocaleString();

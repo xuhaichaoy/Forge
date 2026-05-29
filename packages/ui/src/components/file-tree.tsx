@@ -1,6 +1,6 @@
 /*
- * codex: file-tree-search-input-Cg1SVtq4.pretty.js (tree renderer `x`) +
- *        workspace-directory-tree-CHHgPVoD.pretty.js :_e (selection + expand state).
+ * codex: file-tree-search-input-*.pretty.js (tree renderer) +
+ *        workspace-directory-tree-*.pretty.js (selection + expand state).
  *
  * Codex Desktop uses a hand-rolled virtual scroller keyed on a packed
  * `depthAndFlags` integer plus chunked visible-row sums so that ~10k-node
@@ -9,11 +9,11 @@
  * can be swapped in later.
  *
  * TODO: replace the recursive renderer with a packed-tree virtual scroller —
- *   see file-tree-search-input :x for the chunked visible-count sums.
+ *   see file-tree-search-input for the chunked visible-count sums.
  * TODO: right-click context menu (Copy path, Open in split, Reveal in OS) —
- *   Codex Desktop wires it through context-menu-TJfRSX1h.js.
+ *   Codex Desktop wires it through context-menu-*.js.
  * TODO: single-click preview vs double-click open — Codex `isPreview: true|false`
- *   on the selection callback (workspace-directory-tree :Me/:Ne/:Pe/:Fe).
+ *   on the selection callback (workspace-directory-tree).
  */
 import { ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
@@ -35,7 +35,7 @@ export interface FileTreeProps {
 }
 
 export function FileTree(props: FileTreeProps) {
-  // codex: _e — search mode renders a flat result list; browse mode renders the tree.
+  // codex: workspace-directory-tree — search mode renders a flat result list; browse mode renders the tree.
   if (props.searchMatches != null) {
     return <SearchResultsList entries={props.searchMatches} {...props} />;
   }
@@ -110,7 +110,7 @@ function SearchResultsList({
   selectedPath,
   onSelect,
 }: { entries: WorkspaceDirEntry[] } & FileTreeProps) {
-  // codex: _e — search results are rendered flat with parent paths dimmed.
+  // codex: workspace-directory-tree — search results are rendered flat with parent paths dimmed.
   if (entries.length === 0) {
     return <div className="hc-file-tree-empty">No matching files</div>;
   }
@@ -161,7 +161,7 @@ function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, 
       onClick={onClick}
     >
       <span className="hc-file-tree-indent" aria-hidden="true">
-        {/* codex: _e indent — width derived from `depth`. */}
+        {/* codex: workspace-directory-tree indent — width derived from `depth`. */}
         {Array.from({ length: depth }, (_, i) => (
           <span key={i} className="hc-file-tree-indent-unit" />
         ))}

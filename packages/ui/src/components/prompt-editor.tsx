@@ -579,7 +579,7 @@ const mentionNodeSpec: NodeSpec = {
 };
 
 /*
- * Codex `pp` (prosemirror-PI_17HLA.js byte ~453826) — richLink NodeSpec.
+ * Codex `pp` (prosemirror-*.js) — richLink NodeSpec.
  * External markdown links like `[label](https://example.com)` become an
  * inline chip carrying displayText + href, rendered as non-clickable text
  * with a tooltip showing the full URL.

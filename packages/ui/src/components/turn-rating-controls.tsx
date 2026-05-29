@@ -83,7 +83,6 @@ export function TurnRatingControls({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [details, setDetails] = useState("");
-  const [submitted, setSubmitted] = useState(false);
 
   if (!threadId || !turnId || !onSubmit) return null;
 
@@ -93,14 +92,12 @@ export function TurnRatingControls({
       setDetailsOpen(false);
       setSelectedOptionId(null);
       setDetails("");
-      setSubmitted(false);
       return;
     }
     setSelectedRating(rating);
     setDetailsOpen(true);
     setSelectedOptionId(null);
     setDetails("");
-    setSubmitted(false);
     void onSubmit({ eventKind: "turn_rating", threadId, turnId, rating });
   };
 
@@ -122,7 +119,9 @@ export function TurnRatingControls({
         selected_option: selectedOptionId,
       },
     });
-    setSubmitted(true);
+    // Desktop closes the feedback popover on submit and keeps the chosen thumb
+    // selected; it renders no post-submit confirmation node (no such string in
+    // plan-summary-item-content-*.js). Re-verified vs Codex Desktop v26.519.81530.
     setDetailsOpen(false);
   };
 
@@ -174,7 +173,6 @@ export function TurnRatingControls({
           </form>
         </span>
       )}
-      {submitted && <span className="hc-turn-rating-submitted">Feedback sent</span>}
     </span>
   );
 }
@@ -202,7 +200,19 @@ function TurnRatingButton({
         onClick();
       }}
     >
-      <ThumbsUp aria-hidden className={rating === "thumbs_down" ? "is-down" : ""} size={13} />
+      {/*
+        Desktop swaps to a filled thumb glyph when the rating is selected and
+        an outline glyph otherwise (plan-summary-item-content-*.js selects the
+        icon by selection state, rendered at `icon-xs` with `rotate-180` for
+        thumbs_down). We mirror that via lucide's `fill` prop, keeping the
+        `is-down` rotation class for thumbs_down.
+      */}
+      <ThumbsUp
+        aria-hidden
+        className={rating === "thumbs_down" ? "is-down" : ""}
+        fill={pressed ? "currentColor" : "none"}
+        size={13}
+      />
     </button>
   );
 }

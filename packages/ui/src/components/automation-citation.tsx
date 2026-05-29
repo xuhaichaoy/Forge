@@ -1,10 +1,10 @@
-// codex: local-conversation-thread-CecHj6JI.js#Jm — Codex renders each
-// automation citation as a small interactive card driven by mode/status (the
-// `Jm` component). HiCodex collapses the card into a chip — same content
+// codex: local-conversation-thread-*.js — Codex renders each automation
+// citation as a small interactive card driven by mode/status (the automation
+// citation card). HiCodex collapses the card into a chip — same content
 // shape, simpler styling — but keeps the icon + title + optional metadata
 // layout so the visual scan reads the same as Codex's `mt-3 flex flex-wrap
-// gap-1.5` row of `<Jm>` instances (`ch` in the bundle, which spreads
-// `e.arguments` onto `Jm`).
+// gap-1.5` row of citation cards (the bundle spreads `e.arguments` onto each
+// card).
 
 import { Clock } from "lucide-react";
 import type { CitationDirective } from "../state/automation-citations";
@@ -14,7 +14,7 @@ export interface AutomationCitationChipProps {
   onOpen?: () => void;
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#Jm — single chip render. The
+// codex: local-conversation-thread-*.js — single chip render. The
 // Codex card surfaces `name||"Untitled automation"` as the primary line and
 // (optionally) the schedule/status as a subtitle. We mirror the primary line
 // (title || id) and the optional url subtitle; the rest of the bag goes into
@@ -42,11 +42,11 @@ export function AutomationCitationChip({ citation, onOpen }: AutomationCitationC
   );
 
   /*
-   * Codex's `Jm` becomes a real button only when it has an action handler;
-   * the static "view-only" form is rendered as a div with the same chrome so
-   * focus rings/keyboard semantics don't lie about clickability. Match that
-   * here — give the caller two affordances depending on whether onOpen is
-   * provided.
+   * Codex's citation card becomes a real button only when it has an action
+   * handler; the static "view-only" form is rendered as a div with the same
+   * chrome so focus rings/keyboard semantics don't lie about clickability.
+   * Match that here — give the caller two affordances depending on whether
+   * onOpen is provided.
    */
   if (onOpen) {
     return (
@@ -88,16 +88,16 @@ export function AutomationCitationChip({ citation, onOpen }: AutomationCitationC
 
 export interface AutomationCitationChipRowProps {
   citations: CitationDirective[];
-  // codex: local-conversation-thread-CecHj6JI.js#sh — Codex passes the same
+  // codex: local-conversation-thread-*.js — Codex passes the same
   // `onAutomationCitationOpen` callback to every chip in the row (the spread
-  // `{...e.arguments}` includes it on each `<Jm>`); HiCodex follows suit.
+  // `{...e.arguments}` includes it on each citation card); HiCodex follows suit.
   onOpen?: (citation: CitationDirective) => void;
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#sh — `R = D.length > 0 ? <div
-// className="mt-3 flex flex-wrap gap-1.5">{D.map(ch)}</div> : null`. The
-// outer div is the fallback chip row HiCodex uses when citations don't fit
-// the trailing-paragraph inline path.
+// codex: local-conversation-thread-*.js — the citation row is
+// `citations.length > 0 ? <div className="mt-3 flex flex-wrap gap-1.5">{…}</div>
+// : null`. The outer div is the fallback chip row HiCodex uses when citations
+// don't fit the trailing-paragraph inline path.
 export function AutomationCitationChipRow({ citations, onOpen }: AutomationCitationChipRowProps) {
   if (citations.length === 0) return null;
   return (

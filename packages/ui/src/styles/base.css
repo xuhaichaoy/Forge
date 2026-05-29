@@ -49,15 +49,15 @@
   --thread-content-top-inset: 0px;
   /*
    * `--codex-chat-font-size` and `--codex-chat-code-font-size` are kept under
-   * the upstream `--codex-` namespace because both literals exist in
-   * `/private/tmp/codex-asar/webview/assets/` (verified `var(--codex-chat-font-size, 13px)`
+   * the upstream `--codex-` namespace because both literals exist in Codex
+   * Desktop's assets (verified `var(--codex-chat-font-size, 13px)`
    * and `--codex-chat-code-font-size` are real Desktop tokens) so HiCodex
    * `var(--codex-chat-font-size)` references actually point at Desktop-aligned
    * values when the same selector cascades.
    *
    * `--hc-chat-line-height` lives under the HiCodex `--hc-` namespace because
    * Codex Desktop's CSS has no `--codex-chat-line-height` token (`rg -- "--codex-chat-"`
-   * in the asar only returns the two font-size variables above). Per
+   * in the assets only returns the two font-size variables above). Per
    * DEVELOPMENT.md §13 the `--hc-*` namespace is the right home for tokens
    * that do not have an upstream counterpart.
    */
@@ -67,7 +67,7 @@
   /*
    * `--hc-font-mono` / `--hc-font-sans` mirror Codex Desktop's
    * `--font-mono-default` / `--font-sans-default` stacks verified literally
-   * in `/private/tmp/codex-asar/webview/assets/`:
+   * in Codex Desktop's assets:
    *   --font-mono-default: ui-monospace, "SFMono-Regular", "SF Mono", Menlo,
    *                        Consolas, "Liberation Mono", monospace
    *   --font-sans-default: -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -87,18 +87,16 @@
   /* Codex Desktop's `:root` in `app-main-*.css` defines:
    *   --conversation-block-gap: 12px;
    *   --conversation-tool-assistant-gap: 16px;
-   * (The JS consumers `local-conversation-thread.pretty.js:4270/7829/8238` write
+   * (The JS consumers in `local-conversation-thread-*.js` write
    * `var(--conversation-tool-assistant-gap, 8px)` with 8px as a *fallback*, which
    * earlier audits misread as the effective value. The CSS variable IS defined,
    * so 16px is the real Desktop gap.) */
   --conversation-tool-assistant-gap: 16px;
-  /* Codex Desktop's framer-motion transition `yo` — sourced from
-   * `animations-y0LC3gHS.js` (module body `var e={duration:.5,ease:[.19,1,.22,1]}`,
-   * imported into pretty conversation thread chunk at `:89` as `t as yo`).
+  /* Codex Desktop's framer-motion disclosure transition — sourced from
+   * `animations-*.js` (module body `var e={duration:.5,ease:[.19,1,.22,1]}`).
    * Framer-motion `duration` is seconds → 500ms. The cubic-bezier `[.19,1,.22,1]` is
    * a sharp ease-out used uniformly for disclosure / collapse animations across
-   * `local-conversation-thread.pretty.js:1645, 3325, 3783, 4143, 5890, 6031, 6576,
-   * 6803, 6919, 6976, 7334, 7572, 7774, 8410`. */
+   * `local-conversation-thread-*.js`. */
   --hc-codex-transition-duration: 500ms;
   --hc-codex-transition-ease: cubic-bezier(0.19, 1, 0.22, 1);
   --hc-codex-transition: var(--hc-codex-transition-duration) var(--hc-codex-transition-ease);
@@ -392,7 +390,7 @@ button {
 }
 
 /*
- * codex: animations-y0LC3gHS.js#yo + app-shell-state-HP0T5lEX.js#_t — register
+ * codex: animations-*.js + app-shell-state-*.js — register
  * --hc-sidebar-width as a typed property so it participates in transitions and
  * the sidebar collapse runs through the same 500ms cubic-bezier(0.19,1,0.22,1)
  * ease-out Codex Desktop uses across disclosure animations.
@@ -417,7 +415,7 @@ button {
   min-width: 0;
   min-height: 0;
   /*
-   * codex: app-shell-state-HP0T5lEX.js#_t — keep inner content from spilling
+   * codex: app-shell-state-*.js — keep inner content from spilling
    * when --hc-sidebar-width interpolates to 0. The grid column drives layout;
    * `overflow: hidden` prevents the nav rail from briefly drawing outside the
    * collapsed track during the cubic-bezier ease-out.
@@ -426,7 +424,7 @@ button {
   background: var(--hc-surface-sidebar);
   border-right: 1px solid var(--hc-border-subtle);
   view-transition-name: sidebar;
-  /* codex: animations-y0LC3gHS.js#yo — fade content alongside width collapse. */
+  /* codex: animations-*.js — fade content alongside width collapse. */
   transition: opacity var(--hc-codex-transition);
 }
 
@@ -442,7 +440,7 @@ button {
 }
 
 /*
- * Codex Desktop rail container (`Mf` inner div, `local-conversation-thread.pretty.js:2099/2117`):
+ * Codex Desktop rail container (inner div, `local-conversation-thread-*.js`):
  *   "relative group/summary-panel flex h-fit max-h-full flex-col gap-3 overflow-y-auto
  *    rounded-3xl border border-token-border-default py-3 shadow-md backdrop-blur-sm"
  *   + bg toggles between `bg-token-dropdown-background` (overlay, fully opaque)
@@ -456,8 +454,8 @@ button {
  *
  * D4 — horizontal padding model: Codex uses `py-3` only (no horizontal padding on the
  * container itself) and pushes horizontal padding into each child:
- *   - Section header (`Jd` :1666): `ps-4 pe-2` (16px left, 8px right)
- *   - Section content (`Kd` :1645): `px-4` (16px)
+ *   - Section header: `ps-4 pe-2` (16px left, 8px right)
+ *   - Section content: `px-4` (16px)
  *   - Section `::after` separator inset-x-4 (16px from each rail edge)
  * Artifact / file-reference preview panels are siblings of sections and previously
  * relied on the container's 12px horizontal padding for breathing room; we restore
@@ -475,7 +473,7 @@ button {
   min-height: 0;
   flex-direction: column;
   /*
-   * CODEX-REF: local-conversation-thread-CecHj6JI.js offset ~102937 — 外壳两层
+   * CODEX-REF: local-conversation-thread-*.js — 外壳两层
    * 结构：外壳 `overflow-hidden`，内层 sections wrapper `overflow-y-auto`。HiCodex
    * 严格对齐：外壳 overflow-hidden + 内层 `.hc-right-rail-sections` 承担滚动 +
    * 内层提供 `gap-3` (12px between sections) + 内层 `pb-3` (12px bottom padding)。
@@ -494,7 +492,7 @@ button {
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js offset ~102937 — sections
+ * CODEX-REF: local-conversation-thread-*.js — sections
  * wrapper className: `flex h-fit max-h-full min-h-0 flex-col gap-3 overflow-y-auto pb-3`。
  * 这一层承担 sections 间距 (gap-3 = 12px)、可滚动 (overflow-y-auto)、底部
  * padding (pb-3 = 12px)。status footer 作为最后一个普通 section 渲染于此 wrapper 内。
@@ -521,7 +519,7 @@ button {
 
 /*
  * File preview panel (HiCodex equivalent of Codex Desktop's AppShell
- * RightPanel `vn` at `app-shell.formatted.js:518` when hosting
+ * RightPanel in `app-shell.formatted.js` when hosting
  * `FilePreviewPage`). This is the resizable big panel that opens on
  * artifact / file clicks — distinct from `.hc-right-rail` (the summary
  * card). See `right-rail.tsx` / `file-preview-panel.tsx` for the
@@ -529,7 +527,7 @@ button {
  *
  * Visual: solid main-surface background, no rounded corners, no shadow on
  * the side it borders the conversation, single 1 px left border (matches
- * Codex `vn` inner `border-l border-token-border-default` at :528 when not
+ * the RightPanel inner `border-l border-token-border-default` when not
  * full-width).
  */
 .hc-file-preview-panel {
@@ -560,7 +558,7 @@ button {
 }
 
 /*
- * Drag handle — Codex `app-shell-panel-animation-DTiWlXE1.js function T` for
+ * Drag handle — Codex `app-shell-panel-animation-*.js` resize-handle for
  * `edge: "left"`:
  *   <div class="group absolute touch-none select-none z-40 top-0 bottom-0
  *               left-0 w-4 -translate-x-2 cursor-col-resize active:cursor-col-resize">
@@ -1348,7 +1346,7 @@ button {
   color: currentColor;
 }
 
-/* codex: electron-menu-shortcuts-DQYPVyfu.js — sidebar nav accelerator chip. */
+/* codex: electron-menu-shortcuts-*.js — sidebar nav accelerator chip. */
 .hc-sidebar-nav-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -1845,9 +1843,9 @@ button.hc-sidebar-account-menu-item small {
 }
 
 /*
- * CODEX-REF: composer-D0cvMZjq.js — Fa popover for Reasoning effort picker
- *   (header className via Fa.Title; items via Fa.Item with data-reasoning-selected).
- * HiCodex 复用 popover 视觉风格（与 model-picker-menu 一致 — Fa 是 Codex 的 dropdown
+ * CODEX-REF: composer-*.js — popover for Reasoning effort picker
+ *   (header className via the dropdown title; items carry data-reasoning-selected).
+ * HiCodex 复用 popover 视觉风格（与 model-picker-menu 一致 — Codex 用 dropdown
  * 库，HiCodex 没引入 lib，纯 CSS 复刻）。
  */
 .hc-reasoning-picker-menu {

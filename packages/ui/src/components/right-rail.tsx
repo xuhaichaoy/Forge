@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-// codex: local-conversation-thread-CecHj6JI.js#Bl — persisted across remounts
+// codex: local-conversation-thread-*.js — persisted across remounts
 // (in-memory only, matches Desktop atomFamily semantics)
 import { useSectionCollapse } from "../hooks/use-section-collapse";
 import { convertLocalFileSrc } from "../lib/tauri-host";
@@ -41,17 +41,16 @@ import {
 } from "../state/right-rail";
 
 /*
- * Codex Desktop's right-rail summary panel (`Mf` at
- * `local-conversation-thread.formatted.js:2058`) is a **fixed-size floating
+ * Codex Desktop's right-rail summary panel (local-conversation-thread-*.js)
+ * is a **fixed-size floating
  * card** — `rounded-3xl border border-token-border-default py-3 shadow-md
- * backdrop-blur-sm` (line 2099). It is NOT user-resizable; clicking an
+ * backdrop-blur-sm`. It is NOT user-resizable; clicking an
  * Artifact / file entry does **not** render an inline preview here. Instead
- * it calls `openWorkspaceFile({..., openInSidePanel: true, scope: v2})`
- * (line 2066), which opens the AppShell **RightPanel** (`vn` at
- * `app-shell.formatted.js:518`) and routes it to `/file-preview` (a
- * lazy-loaded `FilePreviewPage` registered at
- * `app-main.formatted.js:10019`). That big right panel is the one with the
- * `Le` resize handle, default 600 px, min 320 px, full-width toggle.
+ * it calls `openWorkspaceFile({..., openInSidePanel: true, scope: v2})`,
+ * which opens the AppShell **RightPanel** (app-shell-*.js) and routes it to
+ * `/file-preview` (a lazy-loaded `FilePreviewPage` registered in
+ * app-main-*.js). That big right panel is the one with the
+ * resize handle, default 600 px, min 320 px, full-width toggle.
  *
  * Earlier versions of this file conflated the two by adding resize/fullwidth
  * to the summary rail and inlining `ArtifactPreviewPanel` here. Reverted: the
@@ -69,19 +68,19 @@ export interface RightRailProps {
   onOpenThreadId?: OpenThreadHandler;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
-  // codex: local-conversation-thread/pe:automation — automation panel CTA;
-  // Desktop's `au` row routes to the automation detail view.
+  // codex: local-conversation-thread-*.js — automation panel CTA;
+  // Desktop's automation row routes to the automation detail view.
   onAutomationOpen?: (automationId: string) => void;
-  // codex: local-conversation-thread/_e:browser-tabs — browser panel CTA;
-  // Desktop's `_l` row opens the active browser-use tab in the sandbox view.
+  // codex: local-conversation-thread-*.js — browser panel CTA;
+  // Desktop's browser row opens the active browser-use tab in the sandbox view.
   onBrowserOpen?: (tabId: string | undefined) => void;
-  // codex: local-conversation-thread-CecHj6JI.js#mu — status footer payload.
+  // codex: local-conversation-thread-*.js — status footer payload.
   // Desktop renders a single status popover trigger (`tokens/s` + `% used`);
   // the full token count is tooltip-only and Compact is a menu item.
   statusFooter?: RightRailStatusFooterInput;
   isResponseInProgress?: boolean;
   onCompactThread?: () => void;
-  // codex: local-conversation-thread-CecHj6JI.js#Vl — Environment section
+  // codex: local-conversation-thread-*.js — Environment section
   // accordion accepts an `after` slot in the header (worktree menu trigger
   // alongside diff stats). HiCodex exposes the worktree-menu open callback as
   // an optional prop; when absent the trigger renders nothing (pure noop) so
@@ -117,7 +116,7 @@ export function RightRail({
   onOpenThreadId,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
-  // codex: local-conversation-thread/pe:automation,_e:browser-tabs,Ce:mu —
+  // codex: local-conversation-thread-*.js —
   // P0 right-rail data + callbacks. HiCodexApp wires these once the
   // corresponding feature lights up.
   onAutomationOpen,
@@ -125,7 +124,7 @@ export function RightRail({
   statusFooter,
   isResponseInProgress = false,
   onCompactThread,
-  // codex: local-conversation-thread-CecHj6JI.js#Vl — environment section
+  // codex: local-conversation-thread-*.js — environment section
   // header `after` slot CTA (worktree menu opener); silent when caller does
   // not wire it so the rail keeps current behavior for non-worktree shells.
   onOpenWorktreeMenu,
@@ -148,7 +147,7 @@ export function RightRail({
   const openSideChatEntry = (entry: RailEntry) => {
     openRailSideChatEntry(entry, { onOpenThreadId });
   };
-  // codex: local-conversation-thread/pe:au — automation row click opens the
+  // codex: local-conversation-thread-*.js — automation row click opens the
   // automation detail panel; the id is encoded as `automation:<id>` by
   // `automationRailEntry`.
   const canOpenAutomationEntry = () => Boolean(onAutomationOpen);
@@ -159,7 +158,7 @@ export function RightRail({
       : entry.id;
     onAutomationOpen(automationId);
   };
-  // codex: local-conversation-thread/_e:_l — browser row click opens the
+  // codex: local-conversation-thread-*.js — browser row click opens the
   // active browser-use tab; tabId is encoded as `browser:<tabId>` by
   // `browserRailEntry` (or `browser:active` when unknown).
   const canOpenBrowserEntry = () => Boolean(onBrowserOpen);
@@ -174,11 +173,11 @@ export function RightRail({
    * Click flow for the Artifact / file cards:
    *   - If the entry is previewable (`shouldOpenArtifactPreview`), parent
    *     opens `<FilePreviewPanel>` via `onOpenArtifactPreview`. Matches the
-   *     Codex `Or({..., openInSidePanel: true, ...})` route at
-   *     `local-conversation-thread.formatted.js:2066`.
+   *     Codex `openWorkspaceFile({..., openInSidePanel: true, ...})` route in
+   *     local-conversation-thread-*.js.
    *   - Otherwise fall back to the generic "open file in editor" / "open
-   *     URL" / "open diff" handlers (Codex `open-workspace-file`'s
-   *     non-side-panel branch at `open-workspace-file.formatted.js:84-92`).
+   *     URL" / "open diff" handlers (Codex open-workspace-file-*.js
+   *     non-side-panel branch).
    */
   const canOpenArtifactEntry = (entry: RailEntry) =>
     canOpenEntry(entry) || Boolean(onOpenArtifactPreview && shouldOpenArtifactPreview(entry));
@@ -193,11 +192,11 @@ export function RightRail({
   return (
     <aside className="hc-right-rail" data-display-mode={displayMode} data-pinned={isPinned ? "true" : "false"}>
       {/*
-       * CODEX-REF: local-conversation-thread-CecHj6JI.js — sections wrapper
+       * CODEX-REF: local-conversation-thread-*.js — sections wrapper
        * className `flex h-fit max-h-full min-h-0 flex-col gap-3 overflow-y-auto pb-3`。
        * 外壳是 `overflow-hidden`，sections 在内层 wrapper 内 scroll。status footer
-       * 作为最后一个普通 section 渲染于 sections wrapper 内（Codex 把 status `Ce`/
-       * `mu` 当普通 section 渲染于 sections 数组）——无 sticky-bottom。
+       * 作为最后一个普通 section 渲染于 sections wrapper 内（Codex 把 status section
+       * 当普通 section 渲染于 sections 数组）——无 sticky-bottom。
        */}
       <div className="hc-right-rail-sections">
       {sections.map((section) => (
@@ -209,7 +208,7 @@ export function RightRail({
           summary={section.summary}
           title={section.title}
           /*
-           * codex: local-conversation-thread-CecHj6JI.js#Vl — Environment
+           * codex: local-conversation-thread-*.js — Environment
            * section accordion accepts an `after` prop in its header. Codex
            * Desktop renders the worktree menu trigger (Monitor/Cloud/Worktree
            * icon + chevron-down + current worktree label) there alongside the
@@ -218,12 +217,12 @@ export function RightRail({
            * for the worktree menu trigger when `onOpenWorktreeMenu` is wired.
            */
           /*
-           * CODEX-REF: local-conversation-thread-CecHj6JI.js ru (byte 69229) —
-           * Environment section 的 header `after` slot 总是渲染 `Ml` (byte 45117)
+           * CODEX-REF: local-conversation-thread-*.js —
+           * Environment section 的 header `after` slot 总是渲染
            * Choose environment 按钮(path B disabled state:settings-cog icon
            * 7x7 px,tooltip "Choose environment",disabled when canChangeEnvironment
            * 为假)。HiCodex 没有 environments 数据流,此处仅纯 UI 占位符严格对齐
-           * Codex `jl` 容器 className(7x7、rounded-sm、bg-transparent、tertiary)。
+           * Codex 容器 className(7x7、rounded-sm、bg-transparent、tertiary)。
            * WorktreeMenuTrigger 已 deprecate(onOpenWorktreeMenu 无调用方,dead prop)。
            */
           headerAction={section.id === "branchDetails"
@@ -233,14 +232,14 @@ export function RightRail({
           {section.id === "branchDetails" && section.branchDetails
             ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
             : section.id === "sources" && section.allEntries.length === 0
-              /* CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js jf —
+              /* CODEX-REF: local-conversation-thread-*.js —
                * Codex Desktop renders Sources with a `py-1 text-base
                * text-token-description-foreground` "No sources yet" row whenever the
                * tool-source list is empty rather than hiding the entire section. */
               ? <div className="hc-rail-empty-state">No sources yet</div>
             : section.id === "artifacts" && section.allEntries.length === 0
-              /* CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js ef —
-               * Codex Desktop's `ef` artifact list body renders a
+              /* CODEX-REF: local-conversation-thread-*.js —
+               * Codex Desktop's artifact list body renders a
                * `codex.localConversation.artifacts.empty` "No artifacts yet" row when
                * the artifact list is empty, matching the Sources empty-state behavior. */
               ? <div className="hc-rail-empty-state">No artifacts yet</div>
@@ -249,7 +248,7 @@ export function RightRail({
                   entries={section.allEntries}
                   sectionId={section.id}
                   backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
-                  /* codex: pe:automation,_e:browser-tabs — route the new P0
+                  /* codex: local-conversation-thread-*.js — route the new P0
                    * single-entry sections through dedicated open handlers so
                    * `<RightRail onAutomationOpen=… onBrowserOpen=…>` is the
                    * one source of truth. */
@@ -276,9 +275,9 @@ export function RightRail({
         </RailSection>
       ))}
       {/*
-       * CODEX-REF: local-conversation-thread-CecHj6JI.js#mu — status footer
-       * 渲染在 sections wrapper 内末尾（Codex 当作 sectionKey `Ce` / `mu` 的
-       * 普通 section）。HiCodex 之前 sticky-bottom 已删除（见 right-rail.css
+       * CODEX-REF: local-conversation-thread-*.js — status footer
+       * 渲染在 sections wrapper 内末尾（Codex 当作普通 status section 渲染）。
+       * HiCodex 之前 sticky-bottom 已删除（见 right-rail.css
        * `.hc-rail-status-footer` 的 position 已改为 static）。
        */}
       {statusFooter && (
@@ -296,7 +295,7 @@ export function RightRail({
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#mu — Status footer.
+ * codex: local-conversation-thread-*.js — Status footer.
  * Renders Desktop's status popover trigger: token speed on the left, context
  * percent on the right, and a Compact menu item inside the popover.
  */
@@ -416,24 +415,24 @@ function rightRailContextUsage(
 }
 
 /*
- * Codex Desktop's rail sections are *text-only* — every `Kd` call site at
- * codex-local-conversation-thread.pretty.js :1806 / :2103 / :2107 / :2109 / :2111
- * / :2113 / :2115 passes a bare `<X i18n .../>` to the `title` prop. Section
+ * Codex Desktop's rail sections are *text-only* — every section call site in
+ * local-conversation-thread-*.js passes a bare `<X i18n .../>` to the `title`
+ * prop. Section
  * header icons were a HiCodex-original embellishment; removed for parity.
  */
 
-// CODEX-REF: local-conversation-thread-CecHj6JI.js `ru` (Environment section, byte 69229) —
+// CODEX-REF: local-conversation-thread-*.js (Environment section) —
 // 当前 Codex 桌面版 Environment section 内仅以下 row 顺序:
-//   1. Ul  — Changes        (file-with-plus icon + `<Do linesAdded linesRemoved>` trailing,
-//                            zero 时仍渲染 `+0 -0`,无 fallback 字符串)
-//   2. eu  — worktree / thread-handoff trigger(`Cs` 包装,仅 conversationId 存在时渲染;
-//            HiCodex 用 "Local" 行承载相同语义)
-//   3. iu  — branch picker  (branch-graph icon + label=currentBranch + chevron-right;
-//            HiCodex 当前没 currentBranch 数据流,跳过该独立 row)
-//   4. ga  — git actions    (commit/push action rows;HiCodex 没数据流,跳过)
-//   5. Kl  — GitHub status  (icon + 多状态 label;HiCodex 用 "GitHub" 行对齐)
+//   1. Changes        (file-with-plus icon + diff-stats trailing,
+//                      zero 时仍渲染 `+0 -0`,无 fallback 字符串)
+//   2. worktree / thread-handoff trigger(仅 conversationId 存在时渲染;
+//      HiCodex 用 "Local" 行承载相同语义)
+//   3. branch picker  (branch-graph icon + label=currentBranch + chevron-right;
+//      HiCodex 当前没 currentBranch 数据流,跳过该独立 row)
+//   4. git actions    (commit/push action rows;HiCodex 没数据流,跳过)
+//   5. GitHub status  (icon + 多状态 label;HiCodex 用 "GitHub" 行对齐)
 // 注:Codex 没有独立 "Branch" 和 "Commit" row(HiCodex 旧 5-row 设计来自已不存在的
-// `BX7YNcUw.js` 旧 bundle 引用)。本次砍掉独立 Branch / Commit row 以严格对齐 CecHj6JI。
+// 旧 bundle 引用)。本次砍掉独立 Branch / Commit row 以严格对齐当前 Desktop。
 function BranchDetailsCard({
   details,
   canOpenEntry,
@@ -465,7 +464,7 @@ function BranchDetailsCard({
   const canOpenChanges = canOpenEntry(changesEntry);
   const linesAdded = details.gitStatus?.linesAdded ?? 0;
   const linesRemoved = details.gitStatus?.linesRemoved ?? 0;
-  // CODEX-REF: diff-stats-C-S_JU1b.js `l` (= Do) —
+  // CODEX-REF: diff-stats-*.js —
   // Codex always renders `+N -N` chips when diffStats != null, including the zero
   // case (`+0 -0`). 之前 HiCodex 的 zero-state fallback 到 "0 changed files" 字符串没
   // 源码依据(Codex bundle 全文检索无此字符串),已对齐 always +N -N。
@@ -475,7 +474,7 @@ function BranchDetailsCard({
 
   return (
     <div className="hc-rail-list">
-      {/* CODEX-REF: local-conversation-thread-CecHj6JI.js Ul (byte 55985) — Changes row */}
+      {/* CODEX-REF: local-conversation-thread-*.js — Changes row */}
       <SummaryPanelRow
         icon={<PencilLine size={14} />}
         label="Changes"
@@ -483,7 +482,7 @@ function BranchDetailsCard({
         onClick={canOpenChanges ? () => onOpenEntry(changesEntry) : undefined}
         title={changesEntry.meta}
       />
-      {/* CODEX-REF: local-conversation-thread-CecHj6JI.js eu (byte 66019) — worktree trigger
+      {/* CODEX-REF: local-conversation-thread-*.js — worktree trigger
           row;HiCodex 没接 worktree handoff 数据流,沿用旧 localRow 数据承载 label。 */}
       {localRow ? (
         <SummaryPanelRow
@@ -493,7 +492,7 @@ function BranchDetailsCard({
           trailing={<ChevronDown size={12} />}
         />
       ) : null}
-      {/* CODEX-REF: local-conversation-thread-CecHj6JI.js Kl (byte 56814) — GitHub status row */}
+      {/* CODEX-REF: local-conversation-thread-*.js — GitHub status row */}
       <SummaryPanelRow
         icon={<Github size={14} />}
         label={githubLabel}
@@ -504,13 +503,13 @@ function BranchDetailsCard({
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js Ml (byte 45117) — Choose
- * environment 按钮 placeholder。Codex `jl` 容器 className:
+ * CODEX-REF: local-conversation-thread-*.js — Choose
+ * environment 按钮 placeholder。Codex 容器 className:
  *   `flex h-7 w-7 shrink-0 cursor-interaction items-center justify-center
  *    rounded-sm border-0 bg-transparent p-0 text-token-text-tertiary
  *    hover:bg-token-list-hover-background data-[state=open]:bg-token-list-hover-background`
  * path B(无 environment selected,canChangeEnvironment 假)只渲染 settings-cog
- * `<Ya className="icon-sm"/>` + tooltip + disabled。HiCodex 没 environments 数据流,
+ * icon (`icon-sm`) + tooltip + disabled。HiCodex 没 environments 数据流,
  * 此处 disabled 占位严格对齐 Codex path B 视觉。
  */
 function EnvironmentSelectorPlaceholder(): ReactNode {
@@ -528,8 +527,8 @@ function EnvironmentSelectorPlaceholder(): ReactNode {
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#Vl/tu — Environment section
- * header `after` slot: worktree menu trigger. Desktop's `tu(u)` aggregator
+ * codex: local-conversation-thread-*.js — Environment section
+ * header `after` slot: worktree menu trigger. Desktop's Environment data aggregator
  * threads `{worktreeLabel, worktreeMode}` into the section header next to the
  * diff stats; clicking the chip opens the worktree mode menu (Local / Cloud /
  * Worktree …). HiCodex re-uses the lightweight chip styling from the composer
@@ -564,7 +563,7 @@ function WorktreeMenuTrigger({
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#tu — `tu(u)` Environment data
+ * codex: local-conversation-thread-*.js — Environment data
  * aggregator exposes `currentWorktreeName`/`worktreeLabel`; HiCodex pulls the
  * same surface label from the branchDetails local row when available and
  * falls back to "Local" (Desktop's default chip text when no worktree is
@@ -586,7 +585,7 @@ function branchChangesMeta(details: BranchDetailsViewModel): string {
 }
 
 export function RailSection({ count, defaultCollapsed = false, id, summary, title, children, headerAction = null }: RailSectionProps) {
-  // codex: local-conversation-thread-CecHj6JI.js#Bl — persisted across remounts
+  // codex: local-conversation-thread-*.js — persisted across remounts
   // (in-memory only, matches Desktop atomFamily semantics). The hook seeds
   // from `defaultCollapsed` on the first read for a given key and then writes
   // through to a module-level Map on toggle, so users keep their collapse
@@ -611,14 +610,14 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
         {headerAction}
       </div>
       {/*
-       * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl (byte ~53727) — Codex
-       * 用 framer-motion `<Jn.div>` + AnimatePresence 做折叠展开:
+       * CODEX-REF: local-conversation-thread-*.js — Codex
+       * 用 framer-motion div + AnimatePresence 做折叠展开:
        *   initial / exit: { height: 0, opacity: 0, marginTop: 0 }
        *   animate:        { height: "auto", opacity: 1, marginTop: 2 }
-       *   transition:     da = { duration: 0.5, ease: [.19, 1, .22, 1] }
+       *   transition:     { duration: 0.5, ease: [.19, 1, .22, 1] }
        *   className:      "relative z-0 overflow-hidden"
        * HiCodex 用 CSS grid-rows trick + opacity + margin-top 等价实现 height-auto
-       * 动画(无 framer-motion 依赖),transition spec 严格对齐 Codex `da`。
+       * 动画(无 framer-motion 依赖),transition spec 严格对齐 Codex 的 disclosure 缓动。
        */}
       <div
         aria-hidden={!expanded}
@@ -659,7 +658,7 @@ export function RailList({
       };
   let generatedImageCount = 0;
   /*
-   * CODEX-REF: local-conversation-thread-CecHj6JI.js ul ({artifacts} listClassName):
+   * CODEX-REF: local-conversation-thread-*.js ({artifacts} listClassName):
    *   `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
    * Artifact lists use `max-height: 28rem` so a long artifact list scrolls
    * independently inside the section rather than pushing all other sections out
@@ -767,17 +766,17 @@ function RailEntryContent({
   const title = displayTitle ?? entry.title;
   const isBrowser = sectionId === "browser";
   const browserActive = isBrowser && entry.status === "active";
-  // codex: au — automation 行 sublabel (rrule summary) 是二行 layout;
+  // codex: automation row — sublabel (rrule summary) 是二行 layout;
   // browser 单独走 inline baseline gap-2,见下方 branch。
   const showSecondary = sectionId === "branchDetails" || sectionId === "automation";
-  // codex: au — Desktop sets the row tooltip to "Next run: …" (entry.status
+  // codex: automation row — Desktop sets the row tooltip to "Next run: …" (entry.status
   // for automation rows) rather than the rrule summary, so use status when
   // present for automation rows; fall back to meta/title otherwise.
   const tooltip = sectionId === "automation" && entry.status
     ? entry.status
     : entry.meta ?? title;
   const diffStats = sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
-  // codex: _l — Browser title shimmer while the tab is active。Codex 把整段
+  // codex: browser row — Browser title shimmer while the tab is active。Codex 把整段
   // (title + displayUrl) 用 `loading-shimmer-pure-text` 包裹,见 isBrowser 分支。
   const titleClassName = [
     "hc-rail-card-title",
@@ -791,11 +790,11 @@ function RailEntryContent({
       <div className="hc-rail-card-copy">
         {isBrowser ? (
           /*
-           * CODEX-REF: local-conversation-thread-CecHj6JI.js _l (Browser row, byte 29184) —
+           * CODEX-REF: local-conversation-thread-*.js (Browser row) —
            * title 和 displayUrl 同一行 baseline-aligned。源码 className 精确:
            *   active:  `flex min-w-0 items-baseline gap-2` 包在
            *            `<span class="loading-shimmer-pure-text w-full max-w-full min-w-0">` 内
-           *   inactive: 同样 `flex items-baseline gap-2` 作为 labelClassName 传给 es
+           *   inactive: 同样 `flex items-baseline gap-2` 作为 labelClassName 传给 label 组件
            * 子 span:
            *   title:      `max-w-[60%] min-w-0 shrink truncate`
            *   displayUrl: `max-w-[40%] min-w-0 shrink truncate text-sm`
@@ -850,8 +849,8 @@ function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }
 
 function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "progress") return progressEntryIcon(entry.status);
-  // CODEX-REF: local-conversation-thread/au — Codex 仅渲染 single automation
-  // row 用 Clock (`na`) 图标。Legacy multi-list "automations" 分支及 CalendarClock
+  // CODEX-REF: local-conversation-thread-*.js — Codex 仅渲染 single automation
+  // row 用 Clock 图标。Legacy multi-list "automations" 分支及 CalendarClock
   // 图标已删除以严格对齐 Codex（无 multi-list automation section）。
   if (sectionId === "automation") return <Clock size={14} />;
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
@@ -867,8 +866,8 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
       : <Bot size={14} />;
   }
   if (sectionId === "browser") {
-    // codex: _l — Desktop's active state shows the `ma` spinner; idle uses
-    // the static `wa` Globe. HiCodex normalizes "active" (set by
+    // codex: browser row — Desktop's active state shows a spinner; idle uses
+    // a static Globe. HiCodex normalizes "active" (set by
     // browserRailEntry) to inProgress for the same spinner output.
     return normalizeProgressStatus(entry.status) === "inProgress"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />

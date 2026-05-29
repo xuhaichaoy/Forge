@@ -119,7 +119,7 @@ export function useCommandPanelActions({
    */
   setUiReducedMotion?: (mode: ReducedMotionMode) => void;
   /*
-   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js
+   * CODEX-REF: keyboard-shortcuts-settings-*.js
    * `set-codex-command-keybinding` (type=set/replace + type=remove via null).
    */
   setUiKeyboardShortcut?: (commandId: string, accelerator: string | null) => void;
@@ -1236,7 +1236,7 @@ export function useCommandPanelActions({
       return;
     }
     /*
-     * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — type=set/replace
+     * CODEX-REF: keyboard-shortcuts-settings-*.js — type=set/replace
      * mutation. Accelerator is null when the user intentionally unbinds the
      * command. The setter mirrors React state + module singleton in
      * keymap-overrides.ts so accelerator resolvers see the new value
@@ -1251,7 +1251,7 @@ export function useCommandPanelActions({
       return;
     }
     /*
-     * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — type=reset mutation.
+     * CODEX-REF: keyboard-shortcuts-settings-*.js — type=reset mutation.
      */
     if (action.type === "resetKeyboardShortcut") {
       resetUiKeyboardShortcut?.(action.commandId);

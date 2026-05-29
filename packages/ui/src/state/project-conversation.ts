@@ -67,17 +67,19 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   let parentThreadAttachmentUsed = false;
 
   /*
-   * Codex Desktop `W` function (split-items-into-render-groups-C1Yh6v3t.js) aggregates
-   * exploration / patch / exec / mcp-tool-call / web-search into one segment
-   * bucket per `G` predicate, then wraps that bucket as a single `collapsed-tool-activity`
-   * with cross-type counts (webSearchCount, commandCount, exploredFileCount, …). The
-   * `Ge` function additionally folds reasoning items into the current exploration buffer.
+   * codex: split-items-into-render-groups-*.js — Codex Desktop's segment
+   * aggregator folds exploration / patch / exec / mcp-tool-call / web-search
+   * into one segment bucket per its mergeable predicate, then wraps that bucket
+   * as a single `collapsed-tool-activity` with cross-type counts
+   * (webSearchCount, commandCount, exploredFileCount, …). It additionally folds
+   * reasoning items into the current exploration buffer.
    *
-   * We approximate the same behavior here: groupTypes that Codex's `G` accepts are mapped
-   * onto the same merged bucket so consecutive items don't split into separate render
-   * rows. Reasoning still joins the current merged bucket (or a standalone exploration
-   * if already in one). Standalone groupTypes (`worked-for` / `multi-agent-group` /
-   * `pending-mcp-tool-calls` / `todo-list`) keep their independent bucket.
+   * We approximate the same behavior here: groupTypes that Codex's predicate
+   * accepts are mapped onto the same merged bucket so consecutive items don't
+   * split into separate render rows. Reasoning still joins the current merged
+   * bucket (or a standalone exploration if already in one). Standalone
+   * groupTypes (`worked-for` / `multi-agent-group` / `pending-mcp-tool-calls` /
+   * `todo-list`) keep their independent bucket.
    */
   const MERGEABLE_ACTIVITY_GROUP_TYPES: ReadonlySet<ToolActivityGroupType> = new Set([
     "collapsed-tool-activity",
@@ -91,12 +93,12 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       && MERGEABLE_ACTIVITY_GROUP_TYPES.has(activityGroupType);
     const incomingIsMergeable = MERGEABLE_ACTIVITY_GROUP_TYPES.has(baseGroupType);
 
-    // Codex `Ge` :7782 — real reasoning items are silently absorbed into the active
-    // exploration buffer (so the buffer keeps building) and `Jw` :7881 then renders
-    // each reasoning entry as `null`. Synthetic `thinking-placeholder` items, however,
-    // ARE the live "Thinking" UX (Codex `ZT` :8384) and must end up in their own
-    // `reasoning`-typed bucket so `ToolActivityView` routes them to
-    // `ReasoningActivityView`.
+    // codex: split-items-into-render-groups-*.js — real reasoning items are
+    // silently absorbed into the active exploration buffer (so the buffer keeps
+    // building) and the reasoning render path then renders each reasoning entry
+    // as `null`. Synthetic `thinking-placeholder` items, however, ARE the live
+    // "Thinking" UX and must end up in their own `reasoning`-typed bucket so
+    // `ToolActivityView` routes them to `ReasoningActivityView`.
     if (baseGroupType === "reasoning") {
       const isThinkingPlaceholder = (item as Record<string, unknown>)._syntheticKind === "thinking-placeholder";
       if (isThinkingPlaceholder) {
@@ -116,7 +118,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       return;
     }
 
-    // Mergeable item joining a mergeable bucket (Codex `W` :line-2 segment aggregation).
+    // Mergeable item joining a mergeable bucket (Codex segment aggregation).
     if (currentIsMergeable && incomingIsMergeable) {
       if (activityGroupType !== baseGroupType) {
         // Heterogeneous mix — promote the bucket to `collapsed-tool-activity` so the
@@ -163,7 +165,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       workedForCollapsedByDefault: activity.some((item) => workedForCollapsedByDefaultIds.has(item.id)),
       /*
        * If `pushActivityItem` promoted the bucket to a cross-type
-       * `collapsed-tool-activity` (Codex `W` :line-2 segment aggregation), preserve that
+       * `collapsed-tool-activity` (Codex segment aggregation), preserve that
        * group type so the summary builder produces the cross-type count label.
        * Desktop only emits `pending-mcp-tool-calls` when consecutive pending MCP
        * calls roll up to more than one item; a single pending call stays in its
@@ -381,18 +383,18 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       })
       : [];
     /*
-     * Codex Desktop `JC` gallery aggregation (local-conversation-thread byte
-     * ~540170): all `generated-image` items in `toolOutputItems` collapse
-     * into one `<JC images={Ut} conversationId={n}/>` carousel — never
-     * one-card-per-image. HiCodex previously routed each through the generic
-     * `pushConversationItem` path, which produced a stack of full-width
-     * markdown image cards (screenshot 2026-05-21 image #6).
+     * codex: local-conversation-thread-*.js — gallery aggregation: all
+     * `generated-image` items in `toolOutputItems` collapse into one
+     * `<images conversationId={…}/>` carousel — never one-card-per-image.
+     * HiCodex previously routed each through the generic `pushConversationItem`
+     * path, which produced a stack of full-width markdown image cards
+     * (screenshot 2026-05-21 image #6).
      *
-     * Mirror Codex `zC` (byte 498904): `Ut` = items with `src != null` after
+     * Mirror the gallery image filter: items with `src != null` after
      * filtering out completed images when any assistant artifact is a `.pptx`
      * (Codex `endResourcePaths.some(p => extension(p) === "pptx")`).
-     * `hasPending` triggers a placeholder spinner box and matches Codex
-     * `$e = oe.some(Vw)` (`src == null && status === "in_progress"`).
+     * `hasPending` triggers a placeholder spinner box and matches Codex's
+     * `src == null && status === "in_progress"` predicate.
      */
     const generatedImages: ThreadItem[] = [];
     let pendingGeneratedImage = false;
@@ -713,11 +715,12 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
     renderAgentItems = renderAgentItems.slice(0, -1);
   }
 
-  // codex: split-items-into-render-groups-Dbyy4o9H.js#fe — when a completed
+  // codex: split-items-into-render-groups-*.js — when a completed
   // assistant message closes the turn, trailing `automation-update` items do
   // not render as standalone transcript rows. Desktop clones the assistant
-  // item with `automationCitations: p`, and the assistant-message renderer
-  // later decides whether those citations fit inline or need the fallback row.
+  // item with the trailing `automationCitations`, and the assistant-message
+  // renderer later decides whether those citations fit inline or need the
+  // fallback row.
   assistantItem = finalAssistantItem && isCompletedRecord(finalAssistantItem) && automationUpdateItems.length > 0
     ? { ...finalAssistantItem, automationCitations: automationUpdateItems }
     : finalAssistantItem;
@@ -787,20 +790,19 @@ function shouldRenderDesktopThinkingPlaceholder(
   turnStatus: string,
 ): boolean {
   /*
-   * Mirrors Codex Desktop `oT` (local-conversation-thread.pretty.js :8000-8002)
-   * combined with `Ge` (split-items-into-render-groups-C1Yh6v3t.js): the live
-   * "Thinking" placeholder is shown when the turn is in progress AND nothing
-   * else (exploring/planning/blocking request/active web search/assistant with
-   * output / running non-reasoning agent step) is already telling the user the
-   * model is busy.
+   * codex: local-conversation-thread-*.js + split-items-into-render-groups-*.js
+   * — the live "Thinking" placeholder is shown when the turn is in progress AND
+   * nothing else (exploring/planning/blocking request/active web search/
+   * assistant with output / running non-reasoning agent step) is already
+   * telling the user the model is busy.
    *
-   * In particular, Codex's `Ge` explicitly sets
-   * `isAnyNonExploringAgentItemInProgress = false` when the last agent item is
-   * an in-progress reasoning event (the `if (e.item.type === 'reasoning' && ...)
-   * o = false` branch). Reasoning items are folded into the exploration buffer
-   * or dropped — they never count as "an agent item in progress" that should
-   * suppress the thinking row. Without this carve-out, HiCodex's
-   * `event-unit.tsx` (`Jw`-parity: real reasoning units return `null`) would
+   * In particular, Codex's render-group splitter treats
+   * "any non-exploring agent item in progress" as false when the last agent
+   * item is an in-progress reasoning event. Reasoning items are folded into the
+   * exploration buffer or dropped — they never count as "an agent item in
+   * progress" that should suppress the thinking row. Without this carve-out,
+   * HiCodex's
+   * `event-unit.tsx` (real reasoning units return `null`) would
    * leave the entire process area visually empty while the model is reasoning.
    */
   if (turnStatus !== "in_progress") return false;
@@ -822,9 +824,9 @@ function hasBlockingRequest(split: DesktopTurnSplit): boolean {
 }
 
 /**
- * Source URL for a generated-image item — Codex `e.src` ON the item proper
- * (see `ew` hook usage in `local-conversation-thread byte 509404`). HiCodex
- * payloads may carry either a top-level `src` (preferred) or `path` /
+ * Source URL for a generated-image item — Codex reads `e.src` ON the item
+ * proper (see the generated-image hook usage in local-conversation-thread-*.js).
+ * HiCodex payloads may carry either a top-level `src` (preferred) or `path` /
  * `imageUrl` aliases — accept the first non-empty string match.
  */
 function imageItemSrc(item: ThreadItem): string {
@@ -852,9 +854,9 @@ function isGeneratedImagePending(item: ThreadItem): boolean {
 }
 
 /**
- * Codex `zC` / `Fy` PPTX exclusion — when any end-resource path has a
- * `pptx` extension, the generated-image gallery is suppressed because the
- * deck embeds those images.
+ * Codex PPTX exclusion — when any end-resource path has a `pptx` extension,
+ * the generated-image gallery is suppressed because the deck embeds those
+ * images.
  */
 function endResourcesIncludePptx(resources: AssistantEndResource[]): boolean {
   return resources.some((resource) => {

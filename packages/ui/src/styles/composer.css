@@ -28,7 +28,7 @@
 
 .hc-above-composer-suggestion-portal {
   /*
-   * codex: composer-D0cvMZjq.pretty.js renders the suggestion target as
+   * codex: composer-*.js renders the suggestion target as
    * `@container pointer-events-none absolute inset-x-0 bottom-full z-20 mb-2
    * flex justify-center`, separate from the normal above-composer portal.
    */
@@ -197,7 +197,7 @@
   background: var(--hc-surface-composer);
   box-shadow: 0 0 0 1px var(--hc-border-subtle), 0 4px 16px rgba(0, 0, 0, 0.05);
   /*
-   * Codex Desktop composer (`composer-Bszob1mP.css`) uses
+   * Codex Desktop composer (`composer-*.css`) uses
    * `backdrop-filter: blur(8px)` — half of what HiCodex previously had. The
    * heavier 16px blur made the composer feel too "glassy" / out of place
    * compared to the rest of the chrome which uses `backdrop-blur-sm` (4px on
@@ -469,7 +469,7 @@
 }
 
 /*
- * Codex `pp` richLink chip (prosemirror byte ~453826). Renders the
+ * Codex `pp` richLink chip (prosemirror-*.js). Renders the
  * `displayText` with the full `href` as tooltip; no brand color and an
  * external-link arrow glyph as the lead-in icon so users can tell at a
  * glance it's a URL chip rather than a workspace mention.
@@ -590,7 +590,7 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 (search `composer-footer grid grid-cols`)
+ * CODEX-REF: composer-*.js (search `composer-footer grid grid-cols`)
  * Codex renders the composer footer as a strict 3-column grid:
  *   grid-cols-[minmax(0,auto)_auto_minmax(0,1fr)] items-center gap-[5px]
  * Only the trailing column flexes; left/middle columns hug their content.
@@ -612,7 +612,7 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 — left column hosts the `vz`
+ * CODEX-REF: composer-*.js — left column hosts the `vz`
  * component (the `+` add menu + permissions cluster). Codex wraps it in a
  * `flex items-center` so multiple chips align horizontally.
  */
@@ -625,7 +625,7 @@
 }
 
 /*
- * CODEX-REF: composer-external-footer-Di2cUHzK.pretty.js lines 810-858 —
+ * CODEX-REF: composer-external-footer-*.js —
  * local branch is a mode-adjacent footer control; keep this center slot
  * shrinkable so the static branch chip can truncate like Desktop.
  */
@@ -637,7 +637,7 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 — right column:
+ * CODEX-REF: composer-*.js — right column:
  *   <div className="flex w-full min-w-0 items-center justify-end gap-2">
  *     <div className="flex min-w-0 flex-1 justify-end"> ... model/context ... </div>
  *     <div className="flex shrink-0 items-center gap-2"> mic + send </div>
@@ -654,7 +654,7 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 — inner flex wrapper around the
+ * CODEX-REF: composer-*.js — inner flex wrapper around the
  * model/context chip stack: `flex min-w-0 flex-1 justify-end`.
  */
 .hc-composer-external-footer-context-flex {
@@ -667,7 +667,7 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 — the actions cluster (mic +
+ * CODEX-REF: composer-*.js — the actions cluster (mic +
  * send) sits in `flex shrink-0 items-center gap-2` so it is never crushed
  * when the model label is long.
  */
@@ -798,7 +798,7 @@
   max-width: min(160px, 22vw);
 }
 
-/* codex: composer-footer-branch-switcher-CamXBKfA.js — branch picker UI.
+/* codex: composer-footer-branch-switcher-*.js — branch picker UI.
    Wrapper exists so the chip + portal anchor share a `position: relative`
    context even though the menu itself is portal-rendered to <body>. */
 .hc-composer-footer-branch-switcher {
@@ -990,7 +990,7 @@
 }
 
 /*
- * CODEX-REF: composer-D0cvMZjq.js — Reasoning trigger chip sits next to the
+ * CODEX-REF: composer-*.js — Reasoning trigger chip sits next to the
  * intelligence (model) chip in composer footer; shows current effort label.
  */
 .hc-composer-footer-reasoning {
@@ -1490,7 +1490,7 @@
 }
 
 /*
- * CODEX-REF: composer-DXaiOlFj.js line ~975700 — Codex keeps the 3-column grid
+ * CODEX-REF: composer-*.js — Codex keeps the 3-column grid
  * at every width. The narrow-viewport adjustments below only tighten gap /
  * padding and shrink chip caps; they MUST NOT switch the footer to
  * `flex-direction: column` (that was the bug that broke single-line layout).
@@ -1696,9 +1696,9 @@
   font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
-/* codex: composer-D0cvMZjq.js#U_ — StatusTextPanel aria-live polite block. */
+/* codex: composer-*.js — StatusTextPanel aria-live polite block. */
 .hc-status-text-panel-body {
-  /* codex: U_ — `max-h-30dvh overflow-y-auto px-3 py-2 text-size-chat` */
+  /* codex: StatusTextPanel body — `max-h-30dvh overflow-y-auto px-3 py-2 text-size-chat` */
   max-height: 30dvh;
   overflow-y: auto;
   padding: 8px 12px;

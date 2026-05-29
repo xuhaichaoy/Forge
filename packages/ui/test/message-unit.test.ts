@@ -933,11 +933,11 @@ function rendersAssistantTurnRatingWhenSubmitterAvailable(): void {
   );
 }
 
-// CODEX-REF: local-conversation-thread-CecHj6JI.js — assistant message action
-// row container className `mt-1.5 flex h-5 items-center justify-start gap-0.5`
-// 的 children 只有 copy button (`oo`) 和 artifacts indicator (`Ec`)，**无 per-
-// message timestamp**。HiCodex 之前渲染 `<span className="hc-message-time">`
-// 是凭空加的；2026-05-24 强制对齐时删除，本测试调整为 expect 不渲染时间戳。
+// Codex Desktop's assistant message action row renders a per-message timestamp
+// as its trailing hover/focus affordance (re-verified vs Codex Desktop
+// v26.519.81530). The earlier "no timestamp" removal was a misread of the
+// action row; the timestamp is restored, derived from the item's
+// completedAtMs / startedAtMs and revealed alongside the other action buttons.
 function rendersAssistantTimestampFromCompletedAtMs(): void {
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
     unit: {
@@ -959,8 +959,8 @@ function rendersAssistantTimestampFromCompletedAtMs(): void {
 
   assertEqual(
     html.includes("hc-message-time"),
-    false,
-    "assistant action row should NOT render any timestamp span (Codex 对齐：action row 只含 copy + artifacts indicator)",
+    true,
+    "assistant action row should render a trailing timestamp span derived from completedAtMs",
   );
 }
 

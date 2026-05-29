@@ -7,8 +7,7 @@ import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 
 /*
- * CODEX-REF: copy-button-DR8WdMwT.js — Codex Desktop's copy affordance.
- * Spec at /tmp/codex-message-action-row-spec.md.
+ * CODEX-REF: copy-button-*.js — Codex Desktop's copy affordance.
  *
  * Aligned with Codex:
  *   - aria-label strings ("Copy" / "Copied") match Codex's i18n
@@ -30,20 +29,26 @@ import type { MouseEvent, ReactNode } from "react";
 const COPIED_RESET_TIMEOUT_MS = 2000;
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js — action row 仅 copy +
- * artifacts indicator，无 timestamp 概念。`sentAtMs` prop 和 formatMessageSentAt
- * 函数已删除（dead code 清理）。HiCodex 不再接收/计算/渲染时间戳。
+ * Codex Desktop's message action row renders a per-message timestamp as its
+ * LAST child (after copy / artifacts / fork / etc.), revealed on hover/focus
+ * alongside the other action affordances. Re-verified vs Codex Desktop
+ * v26.519.81530: the assistant action row component appends a trailing
+ * timestamp span (sentAtMs) inside the same hover-revealed actions container.
+ * It lives inside `.hc-message-actions`, which is itself a hover/focus
+ * affordance, so the timestamp inherits the same reveal behavior.
  */
 export function MessageActionRow({
   children,
   copyText,
   hasActionChildren = false,
   persistent = false,
+  sentAtMs = null,
 }: {
   children?: ReactNode;
   copyText: string;
   hasActionChildren?: boolean;
   persistent?: boolean;
+  sentAtMs?: number | null;
 }) {
   const trimmedCopyText = copyText.trim();
   const [copied, setCopied] = useState(false);
@@ -60,7 +65,7 @@ export function MessageActionRow({
       <div className="hc-message-actions" data-persistent={persistent || undefined}>
         {trimmedCopyText.length > 0 && (
           /*
-           * CODEX-REF: copy-button-DR8WdMwT.js — aria-label swaps between
+           * CODEX-REF: copy-button-*.js — aria-label swaps between
            * "Copy" (copyButton.copyAriaLabel) and "Copied" (copyButton.copiedAriaLabel).
            * Tooltip text (`title`) uses the same pair; Codex's CopyButton
            * wraps the button in a <Tooltip tooltipContent={...}/> for the
@@ -72,6 +77,9 @@ export function MessageActionRow({
           </button>
         )}
         {children}
+        {sentAtMs !== null && (
+          <span className="hc-message-time">{formatMessageSentAt(sentAtMs)}</span>
+        )}
       </div>
       {copied && <CopyFeedbackToast />}
     </>
@@ -129,7 +137,7 @@ function CopyFeedbackToast() {
    * SSR / non-browser fallback: returns the bare node so React can still
    * render to string without portal infrastructure.
    */
-  // CODEX-REF: copy-button-DR8WdMwT.js — the inline-swap label is just
+  // CODEX-REF: copy-button-*.js — the inline-swap label is just
   // "Copied" (defaultMessage of `copyButton.copied`); HiCodex's toast uses
   // the same single word so terminology stays consistent with the button
   // aria-label swap above.
@@ -144,6 +152,39 @@ function CopyFeedbackToast() {
 }
 
 /*
- * CODEX-REF: action row 不渲染 timestamp，formatMessageSentAt + calendarDayDelta
- * 已删除（dead code 清理）。
+ * Per-message timestamp formatter — three calendar buckets matching Codex
+ * Desktop (re-verified vs v26.519.81530): same day → time only; within the
+ * prior 6 days → weekday + time; otherwise → month/day + time. Uses the
+ * locale's Intl.DateTimeFormat so it follows the user's 12/24h preference.
  */
+function formatMessageSentAt(sentAtMs: number): string {
+  const date = new Date(sentAtMs);
+  if (!Number.isFinite(date.getTime())) return "";
+  const now = new Date();
+  const dayDelta = calendarDayDelta(date, now);
+  if (dayDelta < 0 && dayDelta > -7) {
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "long",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+  if (dayDelta !== 0) {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function calendarDayDelta(left: Date, right: Date): number {
+  const leftDay = new Date(left.getFullYear(), left.getMonth(), left.getDate()).getTime();
+  const rightDay = new Date(right.getFullYear(), right.getMonth(), right.getDate()).getTime();
+  return Math.round((leftDay - rightDay) / 86_400_000);
+}

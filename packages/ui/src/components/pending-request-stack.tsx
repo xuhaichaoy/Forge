@@ -56,14 +56,12 @@ export function ApprovalCard({
   const [responding, setResponding] = useState(false);
   const respondingRef = useRef(false);
   /*
-   * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en`
-   *   let [y, b] = useState(0);                        // current step index
-   *   let z = a.length > 1;                            // hasMultipleQuestions
-   *   let H = y >= a.length - 1;                       // isLastQuestion
-   *   let te = `${y+1} of ${a.length}`;                // "1 of 3" progress
-   *   let {question:U, options:W, isOther:ne} = a[y];  // current question only
+   * CODEX-REF: pending-request-item-panel-*.js — the request-input panel tracks
+   * a current step index in useState; derives hasMultipleQuestions (questions
+   * length > 1), isLastQuestion, and a "1 of 3" progress label; and destructures
+   * only the current question (question / options / isOther).
    * Codex 一次只渲染一道 question + 顶部 stepper（多 question 时）+ 数字键
-   * 选 option 后自动 next-or-submit (Pe)、左右箭头切换 question (we)。HiCodex
+   * 选 option 后自动 next-or-submit、左右箭头切换 question。HiCodex
    * 严格对齐 — 不再 map 全部 question 铺开。
    */
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -125,16 +123,15 @@ export function ApprovalCard({
   };
   const kind = requestKind(request.method);
   /*
-   * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en` 顶部 header:
-   *   We = div.className "flex min-w-0 flex-col gap-2"
-   *        children = div.className "text-base font-medium" with text G
-   *        where G = r (外层 header prop) || U (a[y].question)
-   *   qe = div.className "flex items-start justify-between ... pt-4 pr-3 pb-2 pl-4"
-   *        children = [We, Ke]
-   *        where Ke is the stepper (rendered only when multi-question)
-   * Codex `en` header **不渲染** threadId / turnId / itemId / details / body
-   * preview——只显示当前 question title + stepper（多 question 时）。HiCodex
-   * 之前对 user-input request 也塞了这些技术 ID，是 approval/command/mcp 等
+   * CODEX-REF: pending-request-item-panel-*.js — panel header:
+   *   title container `flex min-w-0 flex-col gap-2`
+   *     child `text-base font-medium` whose text is the outer header prop
+   *     (when supplied) else the current question text
+   *   row `flex items-start justify-between ... pt-4 pr-3 pb-2 pl-4`
+   *     children = [title container, stepper] (stepper only when multi-question)
+   * The Codex header does **not** render threadId / turnId / itemId / details /
+   * body preview — only the current question title + stepper（多 question 时）。
+   * HiCodex 之前对 user-input request 也塞了这些技术 ID，是 approval/command/mcp 等
    * 其他 request kind 的通用渲染冗余落到了 user-input。
    * (注释里避免嵌套 / star star /，TS/CSS 都不支持嵌套块注释。)
    *
@@ -143,9 +140,10 @@ export function ApprovalCard({
    */
   const isUserInput = kind === "user-input";
   /*
-   * CODEX-REF: en `G = r || U`（r=外层 header prop, U=a[y].question）—— 单一标题
-   * 来源。HiCodex 之前 panel-title 和 QuestionField heading 同时渲染同一份 question
-   * 文本造成重复。对齐方案：panel-title 显示 header 或 question（header 优先），
+   * CODEX-REF: pending-request-item-panel-*.js — single title source: outer
+   * header prop falling back to the current question text. HiCodex 之前
+   * panel-title 和 QuestionField heading 同时渲染同一份 question 文本造成重复。
+   * 对齐方案：panel-title 显示 header 或 question（header 优先），
    * QuestionField 隐藏自己的 heading（通过 hideHeading prop）。
    */
   const panelTitle = isUserInput
@@ -166,10 +164,10 @@ export function ApprovalCard({
       tabIndex={0}
       onKeyDown={(event) => {
         /*
-         * CODEX-REF: en `Ie` keyboard handler —
+         * CODEX-REF: pending-request-item-panel-*.js — keyboard handler:
          *   - Escape → onEscapeDismiss
-         *   - 1-9 → select option index N AND (z ? next : submit)
-         *   - ArrowLeft/ArrowRight (multi-question only) → we(y±1)
+         *   - 1-9 → select option index N AND (multi-question ? next : submit)
+         *   - ArrowLeft/ArrowRight (multi-question only) → step ±1
          *   - Enter (not in editable) → next-or-submit
          */
         if (event.defaultPrevented) return;
@@ -179,16 +177,16 @@ export function ApprovalCard({
           respond(false);
           return;
         }
-        // CODEX-REF: en — left/right 切换 question（仅 multi-question 时）
+        // CODEX-REF: pending-request-item-panel-*.js — left/right 切换 question（仅 multi-question 时）
         if (hasMultipleQuestions && !isEditableEventTarget(event.target)
           && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
           event.preventDefault();
           goToQuestion(questionIndex + (event.key === "ArrowRight" ? 1 : -1));
           return;
         }
-        // CODEX-REF: en — 数字键选 option after which Pe({nextAnswers}) jumps
-        // to next question or submits (when last). HiCodex 用当前 questionIndex
-        // 而不是 questions[0]。
+        // CODEX-REF: pending-request-item-panel-*.js — 数字键选 option, after which
+        // it jumps to the next question or submits (when last). HiCodex 用当前
+        // questionIndex 而不是 questions[0]。
         const shortcut = pendingRequestOptionShortcut({
           key: event.key,
           questions: currentQuestion ? [currentQuestion] : detail.questions,
@@ -199,7 +197,7 @@ export function ApprovalCard({
           event.preventDefault();
           const nextAnswers = { ...answers, [shortcut.questionId]: [shortcut.value] };
           setAnswers(nextAnswers);
-          // Codex Pe: not last → 跳下一题；is last → submit
+          // Codex next-or-submit: not last → 跳下一题；is last → submit
           if (!isLastQuestion) {
             goToQuestion(questionIndex + 1);
           } else if (canSubmitWithAnswers(nextAnswers)) {
@@ -215,7 +213,7 @@ export function ApprovalCard({
           shiftKey: event.shiftKey,
         })) {
           event.preventDefault();
-          // CODEX-REF: en Enter — 非最后一题跳 next，最后一题 submit
+          // CODEX-REF: pending-request-item-panel-*.js — Enter: 非最后一题跳 next，最后一题 submit
           if (!isLastQuestion && totalQuestions > 1) {
             goToQuestion(questionIndex + 1);
           } else {
@@ -240,10 +238,10 @@ export function ApprovalCard({
       {currentQuestion && (
         <div className="hc-request-questions">
           {/*
-           * CODEX-REF: en — 顶部 header 容器
+           * CODEX-REF: pending-request-item-panel-*.js — 顶部 header 容器
            *   `flex items-start justify-between border-token-border/70 pt-4 pr-3 pb-2 pl-4`
            * 左侧是 question title `text-base font-medium`，右侧（仅多 question 时）
-           * 是 "← {y+1} of {a.length} →" 步进器。HiCodex 当前 QuestionField 内
+           * 是 "← {step} of {total} →" 步进器。HiCodex 当前 QuestionField 内
            * 自带 heading（question.header + question.question），所以这里只在
            * multi-question 时补一个 stepper 显示进度。
            */}
@@ -280,10 +278,10 @@ export function ApprovalCard({
             value={answers[currentQuestion.id] ?? currentQuestion.defaultAnswers}
             onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: value }))}
             /*
-             * CODEX-REF: en — panel 顶部 header 已经渲染 question 文本（G）。
-             * 隐藏 QuestionField 自带的 heading 避免与 panel-title 重复。如果
-             * QuestionField 在非 user-input 场景被调用，hideHeading 默认 false，
-             * 保留原有渲染不影响其它 RequestKind。
+             * CODEX-REF: pending-request-item-panel-*.js — panel 顶部 header 已经
+             * 渲染 question 文本。隐藏 QuestionField 自带的 heading 避免与
+             * panel-title 重复。如果 QuestionField 在非 user-input 场景被调用，
+             * hideHeading 默认 false，保留原有渲染不影响其它 RequestKind。
              */
             hideHeading={isUserInput}
           />
@@ -415,10 +413,10 @@ function RequestBodyPreview({
   return null;
 }
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/composer-DXaiOlFj.js — lW(e)
+// CODEX-REF: composer-*.js — command-preview renderer.
 // Codex 渲染：<div min-h-0 overflow-y-auto px-2 pt-2 pb-2 font-mono font-medium>
-//   <span block break-words whitespace-pre-wrap style={ZU /* line-clamp 3 */}>{cmd}</span></div>
-// + 独立 footer <div flex shrink-0 justify-end p-1><Ya>{展开/收起}</Ya></div>
+//   <span block break-words whitespace-pre-wrap style={line-clamp 3}>{cmd}</span></div>
+// + 独立 footer <div flex shrink-0 justify-end p-1><button>{展开/收起}</button></div>
 // HiCodex 这里改用 useMeasuredTextCollapse 三态 hook：靠 ResizeObserver 测真实
 // 文本高度而不是用启发式行数/字数；展开后是内层容器滚动而非把卡片撑高。
 function CommandPreview({ text }: { text: string }) {
@@ -452,7 +450,7 @@ function CommandPreview({ text }: { text: string }) {
   );
 }
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/composer-DXaiOlFj.js — lW
+// CODEX-REF: composer-*.js — command-preview renderer.
 // Codex 直接把 cmd 的 raw text 交给 <span whitespace-pre-wrap> 渲染，靠 CSS 真实换行；
 // 对于 `bash -lc <heredoc>` 这种结构，HiCodex 特判 cmd[2]，避免被 join(" ") 拼成单行字符串
 // 后 heredoc 里的 "\n" 显示成转义符。其它形式继续 join(" ")。
@@ -596,21 +594,21 @@ function QuestionField({
   value: string[];
   onChange: (value: string[]) => void;
   /*
-   * CODEX-REF: en — 顶部 panel header 已经显示 question 文本，QuestionField 自带
-   * heading 与之重复。caller (`ApprovalCard` user-input 分支) 传 `hideHeading=true`
-   * 让 QuestionField 跳过 `.hc-request-question-heading` 渲染。
+   * CODEX-REF: pending-request-item-panel-*.js — 顶部 panel header 已经显示
+   * question 文本，QuestionField 自带 heading 与之重复。caller
+   * (`ApprovalCard` user-input 分支) 传 `hideHeading=true` 让 QuestionField
+   * 跳过 `.hc-request-question-heading` 渲染。
    */
   hideHeading?: boolean;
 }) {
   const currentValue = value[0] ?? "";
   /*
-   * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en`
-   *   let K = ne === !0;  // isOther
-   *   let q = W.length > 0;  // 有 options
-   *   // K && q  → options + freeform textarea 并存
-   *   // K && !q → freeform textarea only
-   *   // !K && q → options only (radio)
-   * 选中 option 与 freeform 互斥（`xe(id)` 清除 freeform，`Te` 改 textarea 清除
+   * CODEX-REF: pending-request-item-panel-*.js — question field render modes,
+   * keyed on isOther and whether the question has options:
+   *   isOther && hasOptions  → options + freeform textarea 并存
+   *   isOther && !hasOptions → freeform textarea only
+   *   !isOther && hasOptions → options only (radio)
+   * 选中 option 与 freeform 互斥（选 option 清除 freeform，改 textarea 清除
    * selectedOptionId）。HiCodex 用单维 string[] 表达答案：当 value 命中某 option
    * 时视为 selected；否则视为 freeform。
    */
@@ -670,7 +668,8 @@ function QuestionField({
           </div>
           {isOther && (
             /*
-             * CODEX-REF: en — `K && q` 时 options 后追加 freeform input。
+             * CODEX-REF: pending-request-item-panel-*.js — when isOther && hasOptions,
+             * options 后追加 freeform input。
              * Codex placeholder i18n: `requestInputPanel.otherPlaceholder`
              * = "No, and tell Codex what to do differently"。HiCodex 用通用兜底。
              * 输入时清除 selected option（用 freeform 替代）。

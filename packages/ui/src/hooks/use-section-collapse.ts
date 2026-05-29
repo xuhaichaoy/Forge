@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
-/* codex: local-conversation-thread-CecHj6JI.js#Bl — atomFamily collapse state.
- * Desktop uses `Bl = Ft(Lt, ...)` to back each RailSection's collapse boolean
- * with a Jotai atomFamily keyed by sectionId, so collapsing/expanding a
+/* codex: local-conversation-thread-*.js — atomFamily collapse state.
+ * Desktop backs each RailSection's collapse boolean with a Jotai atomFamily
+ * keyed by sectionId, so collapsing/expanding a
  * section persists across unmount/remount within the running session (and is
  * not written to localStorage). HiCodex reproduces the same semantics with a
  * module-level Map plus a tiny pub/sub so multiple instances of the same

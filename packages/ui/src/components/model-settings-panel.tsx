@@ -69,7 +69,7 @@ export interface SettingsPanelProps {
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
   /*
-   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — inline keyboard
+   * CODEX-REF: keyboard-shortcuts-settings-*.js — inline keyboard
    * shortcuts editor needs direct setter/state access (vs going through the
    * action dispatch pipeline) so capture latency stays sub-16ms.
    */
@@ -77,7 +77,7 @@ export interface SettingsPanelProps {
   onSetKeyboardShortcut?: (commandId: string, accelerator: string | null) => void;
   onResetKeyboardShortcut?: (commandId: string) => void;
   /*
-   * CODEX-REF: appearance-settings-BLTO9KX5.js — inline appearance editor.
+   * CODEX-REF: appearance-settings-*.js — inline appearance editor.
    * Same rationale as keyboard-shortcuts: Codex renders a column of bespoke
    * controls (segmented toggle + number input + segmented toggle) that
    * doesn't map onto a flat CommandPanelEntry list.
@@ -134,8 +134,8 @@ export function SettingsPanel({
 
         <div className="hc-settings-shell">
           {/*
-           * CODEX-REF: Grouped nav mirrors Codex Desktop `ye()` +
-           * `$` renderer (settings-page-TI1bCoqP.js byte 13085 / 14000-ish):
+           * CODEX-REF: Grouped nav mirrors Codex Desktop's settings-page
+           * group renderer (settings-page-*.js):
            * `_e.map(e => <Group heading={e.heading}>{e.slugs.map(...)}</Group>)`.
            * Codex emits one `<L>` wrapper per group with the heading rendered
            * by `<a {...e.heading}/>` only when present (HiCodex-only group
@@ -162,8 +162,8 @@ export function SettingsPanel({
                         <strong>{section.title}</strong>
                         {/*
                          * CODEX-REF: Codex Desktop renders no subtitle/description
-                         * per section — settings-shared-CsG0KAep.js function
-                         * `h(e)` returns null for every slug except mcp-settings.
+                         * per section — settings-shared-*.js returns null for
+                         * every slug except mcp-settings.
                          */}
                         {section.description ? <small>{section.description}</small> : null}
                       </span>
@@ -220,7 +220,7 @@ export function SettingsPanel({
               />
             ) : activePanel === "appearance" ? (
               /*
-               * CODEX-REF: appearance-settings-BLTO9KX5.js — bespoke inline
+               * CODEX-REF: appearance-settings-*.js — bespoke inline
                * appearance editor. Replaces the prior CommandPanelEntry-based
                * implementation so the number input (Code font size, §4) and
                * segmented toggles (Theme §1, Reduce motion §8) can render
@@ -235,7 +235,7 @@ export function SettingsPanel({
               />
             ) : activePanel === "keyboard-shortcuts" ? (
               /*
-               * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — bespoke
+               * CODEX-REF: keyboard-shortcuts-settings-*.js — bespoke
                * inline editor. Bypasses the SettingsCommandContent /
                * CommandPanelEntryList pipeline because Codex's row layout is
                * a 3-column table with capture-mode column swap, which
@@ -540,13 +540,13 @@ function ImageGenerationSettingsForm({
 
 /*
  * CODEX-REF: Codex Desktop's per-slug icon map lives in
- * settings-page-TI1bCoqP.js as `he={"general-settings":W, profile:te, appearance:ce, ...}`,
+ * settings-page-*.js as `he={"general-settings":W, profile:te, appearance:ce, ...}`,
  * where each value is a component imported from a sibling icon chunk
- * (sun-CfFwd2oT.js, globe-CPIoAMyp.js, branch-Bhwe6Vu0.js, speedometer-W2jfJtk8.js,
- * shield-code-DLZlAt9J.js, face-BuWsKmtO.js, app-window-CBYOQVdK.js,
- * cursor-BNjgKwEb.js, dock-CLjksee1.js, worktree-DXxxMSG9.js,
- * apps-vpywPR4t.js, archive-qv7JHIns.js, appshot-window-D6A3e73T.js,
- * mcp-ccQ7uilC.js, hooks-ln892pH-.js, skills-CGDeQHsa.js, keyboard inline SVG).
+ * (sun-*.js, globe-*.js, branch-*.js, speedometer-*.js,
+ * shield-code-*.js, face-*.js, app-window-*.js,
+ * cursor-*.js, dock-*.js, worktree-*.js,
+ * apps-*.js, archive-*.js, appshot-window-*.js,
+ * mcp-*.js, hooks-*.js, skills-*.js, keyboard inline SVG).
  * Each Lucide pick below targets the closest visual/semantic match
  * (HiCodex does not bundle Codex's bespoke icon set).
  */
@@ -565,42 +565,42 @@ function settingsSectionIcon(icon: (typeof SETTINGS_SECTIONS)[number]["icon"]) {
       return <FlaskConical size={15} />;
     // Codex Desktop sections — Lucide equivalents of the chunk-named icons
     case "appearance":
-      return <Sun size={15} />;             // Codex `sun-CfFwd2oT.js`
+      return <Sun size={15} />;             // Codex `sun-*.js`
     case "appshots":
-      return <Camera size={15} />;          // Codex `appshot-window-D6A3e73T.js`
+      return <Camera size={15} />;          // Codex `appshot-window-*.js`
     case "connections":
-      return <Globe size={15} />;           // Codex `globe-CPIoAMyp.js`
+      return <Globe size={15} />;           // Codex `globe-*.js`
     case "git":
-      return <GitBranch size={15} />;       // Codex `branch-Bhwe6Vu0.js`
+      return <GitBranch size={15} />;       // Codex `branch-*.js`
     case "usage":
-      return <Gauge size={15} />;           // Codex `speedometer-W2jfJtk8.js`
+      return <Gauge size={15} />;           // Codex `speedometer-*.js`
     case "agent":
-      return <Cog size={15} />;             // Codex `shield-code-DLZlAt9J.js` — Cog matches the "Configuration" label
+      return <Cog size={15} />;             // Codex `shield-code-*.js` — Cog matches the "Configuration" label
     case "personalization":
-      return <Smile size={15} />;           // Codex `face-BuWsKmtO.js`
+      return <Smile size={15} />;           // Codex `face-*.js`
     case "keyboard":
       return <Keyboard size={15} />;        // Codex inline keyboard SVG
     case "browser":
-      return <MonitorPlay size={15} />;     // Codex `app-window-CBYOQVdK.js` (avoid clash with `apps` slot)
+      return <MonitorPlay size={15} />;     // Codex `app-window-*.js` (avoid clash with `apps` slot)
     case "computer":
-      return <MousePointer2 size={15} />;   // Codex `cursor-BNjgKwEb.js`
+      return <MousePointer2 size={15} />;   // Codex `cursor-*.js`
     case "environments":
-      return <Container size={15} />;       // Codex `dock-CLjksee1.js`
+      return <Container size={15} />;       // Codex `dock-*.js`
     case "worktrees":
-      return <GitBranch size={15} />;       // Codex `worktree-DXxxMSG9.js`
+      return <GitBranch size={15} />;       // Codex `worktree-*.js`
     case "mcp":
-      return <Server size={15} />;          // Codex `mcp-ccQ7uilC.js`
+      return <Server size={15} />;          // Codex `mcp-*.js`
     case "skills":
-      return <Boxes size={15} />;           // Codex `skills-CGDeQHsa.js`
+      return <Boxes size={15} />;           // Codex `skills-*.js`
     case "hooks":
-      return <Wrench size={15} />;          // Codex `hooks-ln892pH-.js`
+      return <Wrench size={15} />;          // Codex `hooks-*.js`
     case "plugins":
-      return <Plug size={15} />;            // Codex `apps-vpywPR4t.js` (HiCodex token "plugins")
+      return <Plug size={15} />;            // Codex `apps-*.js` (HiCodex token "plugins")
     case "archive":
-      return <Archive size={15} />;         // Codex `archive-qv7JHIns.js`
+      return <Archive size={15} />;         // Codex `archive-*.js`
     case "general":
     default:
-      return <Settings size={15} />;        // Codex `settings.cog-9OxJ4FsH.js`
+      return <Settings size={15} />;        // Codex `settings.cog-*.js`
   }
 }
 

@@ -5,8 +5,8 @@ import type { ThreadItem } from "../state/render-groups";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
 
 /*
- * Codex Desktop `JC` gallery (local-conversation-thread-BX7YNcUw.js byte
- * ~506222) — horizontal carousel of generated-image thumbnails. HiCodex's
+ * Codex Desktop `JC` gallery (local-conversation-thread-*.js) — horizontal
+ * carousel of generated-image thumbnails. HiCodex's
  * single-card-per-image markdown rendering produced a stack of full-width
  * blue-sky cards (screenshot 2026-05-21 #6) that diverged sharply from
  * Codex's compact 4-up thumbnail row (screenshot #7). This component
@@ -38,7 +38,7 @@ interface GalleryLayout {
 }
 
 /**
- * Codex `GC` (byte 505673, 385 chars). Computes whether the natural-aspect
+ * Codex `GC`. Computes whether the natural-aspect
  * row of images can fit in the measured container width — if so, render
  * each thumbnail at its native aspect ratio. If not, switch to a square
  * 4-up carousel with overflow paging.
@@ -118,7 +118,7 @@ export function GeneratedImageGallery({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   /*
-   * Codex `T = cc(callback)` (byte 506222) uses ResizeObserver on the
+   * Codex `T = cc(callback)` uses ResizeObserver on the
    * gallery container; we mirror that with a single observer that floors
    * the contentRect width (same as Codex `Math.floor(e.contentRect.width)`).
    */
@@ -242,10 +242,11 @@ export function GeneratedImageGallery({
       {hasPending && (
         // Codex pending placeholder (`$e` branch): 24×24 outlined box with a
         // loading spinner. Sits *below* the carousel of completed images.
+        // Intentionally aria-free: Codex renders this as a bare wrapper with no
+        // role/aria-label (no "Generating image" string exists in the Codex
+        // chunks), so we match that bare markup.
         <div
           className="hc-generated-image-gallery-pending"
-          role="status"
-          aria-label="Generating image"
           style={{ width: GALLERY_PENDING_SIZE_PX, height: GALLERY_PENDING_SIZE_PX }}
         >
           <Loader2 aria-hidden className="hc-spin" size={20} />
@@ -268,7 +269,7 @@ export function GeneratedImageGallery({
 }
 
 /*
- * Codex `YC` (byte 509404) — single thumbnail button. `naturalWidth/Height`
+ * Codex `YC` — single thumbnail button. `naturalWidth/Height`
  * onLoad propagates back via `onAspectRatioChange` so the parent re-runs
  * `GC` with accurate ratios.
  */
@@ -328,7 +329,7 @@ function GalleryThumbnail({
 }
 
 /*
- * Codex `XC` (byte 511102) — overflow indicator + prev/next paging.
+ * Codex `XC` — overflow indicator + prev/next paging.
  * Codex uses absolute right-2 bottom-2 with hover/focus opacity transitions.
  */
 function GalleryOverflowControls({
@@ -355,7 +356,14 @@ function GalleryOverflowControls({
           <span className="hc-generated-image-gallery-overflow-count-value">{overflowCount}</span>
         </div>
       )}
-      <div className="hc-generated-image-gallery-nav" role="group" aria-label="Generated image carousel">
+      {/*
+        Intentionally aria-free wrapper: Codex renders the nav as a bare
+        positioned div with no role/aria-label (no "Generated image carousel"
+        string exists in the Codex chunks). Only the two nav buttons carry
+        aria-labels (ICU ids `generatedImageGallery.previousImages` /
+        `generatedImageGallery.nextImages`).
+      */}
+      <div className="hc-generated-image-gallery-nav">
         <button
           type="button"
           className="hc-generated-image-gallery-nav-button"

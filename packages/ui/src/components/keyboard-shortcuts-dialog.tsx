@@ -1,8 +1,8 @@
 /*
- * codex: keyboard-shortcuts-settings-C5AEKt2i.js + keyboard-shortcuts-search-input-YNLcd75V.js
+ * codex: keyboard-shortcuts-settings-*.js + keyboard-shortcuts-search-input-*.js
  *
  * Codex Desktop ships a Settings → Keyboard Shortcuts page that lists every
- * command from `electron-menu-shortcuts-DQYPVyfu.js` together with its
+ * command from `electron-menu-shortcuts-*.js` together with its
  * platform-specific accelerator. HiCodex mirrors the same surface but as a
  * standalone modal because HiCodex's settings panel is a smaller dialog.
  *
@@ -24,7 +24,7 @@ export interface KeyboardShortcutsDialogProps {
 }
 
 /*
- * codex: keyboard-shortcuts-settings-C5AEKt2i.js — Codex groups commands under
+ * codex: keyboard-shortcuts-settings-*.js — Codex groups commands under
  * the same taxonomy as the command menu. HiCodex reuses the descriptor's
  * `commandMenuGroupKey` so the list mirrors the command palette taxonomy.
  */
@@ -47,7 +47,7 @@ interface Section {
 export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDialogProps) {
   const [query, setQuery] = useState("");
 
-  // codex: keyboard-shortcuts-search-input-YNLcd75V.js — substring filter on
+  // codex: keyboard-shortcuts-search-input-*.js — substring filter on
   // title / description / accelerator label (case-insensitive).
   const sections = useMemo(() => buildSections(query), [query]);
 
@@ -136,7 +136,7 @@ export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDial
 }
 
 /*
- * codex: keyboard-shortcuts-settings-C5AEKt2i.js — groups commands by
+ * codex: keyboard-shortcuts-settings-*.js — groups commands by
  * `commandMenuGroupKey` (falling back to `group`). Within each section the
  * order follows the registration order in COMMAND_DESCRIPTORS so the list
  * matches the menu.

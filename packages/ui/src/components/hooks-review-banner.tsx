@@ -1,17 +1,17 @@
 /*
- * codex: composer-D0cvMZjq.js#T_ — HooksReviewBanner above-composer slot 5.
+ * codex: composer-*.js — HooksReviewBanner above-composer slot 5.
  *
  * In Codex Desktop this banner sits between the BackgroundSubagents slot and
  * the WindowsSandbox / aboveComposerHeaderContent slots inside the shared
- * `createPortal(<vs>{children}</vs>, So)` stack. Gating expression in the
+ * above-composer `createPortal` stack. Gating expression in the
  * minified bundle is (paraphrased):
  *
- *     pl && fl > 0 && !vs
+ *     activeThread.isNew && hooksNeedingReview.length > 0 && !dismissedForThread
  *
  * where:
- *   - `pl`  → activeThread.isNew (only render for fresh / first-turn threads)
- *   - `fl`  → hooksNeedingReview.length (count of untrusted/modified hooks)
- *   - `vs`  → dismissed-for-this-thread flag held in component state
+ *   - activeThread.isNew      → only render for fresh / first-turn threads
+ *   - hooksNeedingReview.length → count of untrusted/modified hooks
+ *   - dismissedForThread      → dismissed-for-this-thread flag held in component state
  *
  * Codex pulls `fl` from the `hooks/list` response (`HooksListResponse.data[].hooks`)
  * by filtering entries where `trustStatus === "untrusted" || "modified"` (see
@@ -53,13 +53,13 @@ import type { ReactElement } from "react";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
 
 export interface HooksReviewBannerProps {
-  // codex: composer-D0cvMZjq.js#T_ — `fl` (count of hooks needing review).
+  // codex: composer-*.js — count of hooks needing review.
   count: number;
-  // codex: composer-D0cvMZjq.js#T_ — "Trust all" action button handler.
+  // codex: composer-*.js — "Trust all" action button handler.
   onTrustAll?: () => void;
-  // codex: composer-D0cvMZjq.js#T_ — "Review" button handler (opens /hooks panel).
+  // codex: composer-*.js — "Review" button handler (opens /hooks panel).
   onReview?: () => void;
-  // codex: composer-D0cvMZjq.js#T_ — `vs` setter (dismiss-for-thread).
+  // codex: composer-*.js — dismiss-for-thread setter.
   onDismiss?: () => void;
 }
 
@@ -72,8 +72,9 @@ export interface HooksReviewBannerProps {
  * exact wiring gap and reducer locations).
  */
 export function HooksReviewBanner(props: HooksReviewBannerProps): ReactElement | null {
-  // codex: composer-D0cvMZjq.js#T_ — count <= 0 → no render (matches `fl > 0` gate).
-  // TODO(hicodex): replace this guard with the real `pl && fl > 0 && !vs`
+  // codex: composer-*.js — count <= 0 → no render (matches the `> 0` count gate).
+  // TODO(hicodex): replace this guard with the real
+  // `activeThread.isNew && hooksNeedingReview.length > 0 && !dismissedForThread`
   // expression once `state.hooksNeedingReview` and the dismiss flag exist.
   if (!props || props.count <= 0) return null;
 
@@ -90,7 +91,7 @@ export function HooksReviewBanner(props: HooksReviewBannerProps): ReactElement |
   return (
     <AboveComposerPanel className="hc-hooks-review-banner">
       {/*
-       * codex: composer-D0cvMZjq.js#T_ — PanelRow with ShieldCheck icon,
+       * codex: composer-*.js — PanelRow with ShieldCheck icon,
        * "{count} hook(s) need review" title, and two trailing buttons.
        */}
       <PanelRow
@@ -102,7 +103,7 @@ export function HooksReviewBanner(props: HooksReviewBannerProps): ReactElement |
         )}
         actions={(
           <>
-            {/* codex: composer-D0cvMZjq.js#T_ — Trust-all action (primary). */}
+            {/* codex: composer-*.js — Trust-all action (primary). */}
             <button
               type="button"
               className="hc-hooks-review-banner-action hc-hooks-review-banner-action--primary"
@@ -110,7 +111,7 @@ export function HooksReviewBanner(props: HooksReviewBannerProps): ReactElement |
             >
               Trust all
             </button>
-            {/* codex: composer-D0cvMZjq.js#T_ — Review action (opens panel). */}
+            {/* codex: composer-*.js — Review action (opens panel). */}
             <button
               type="button"
               className="hc-hooks-review-banner-action"

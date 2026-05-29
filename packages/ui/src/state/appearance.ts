@@ -3,7 +3,7 @@ import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex
 
 /*
  * CODEX-REF: Two settings beyond Theme mode from Codex Desktop Appearance
- * panel (appearance-settings-BLTO9KX5.js, captured in /tmp/codex-appearance-spec.md):
+ * panel (appearance-settings-*.js):
  *
  *   §4 Code font size — settings.general.appearance.codeFontSize.row,
  *       unit "px" (id settings.general.appearance.codeFontSize.units),

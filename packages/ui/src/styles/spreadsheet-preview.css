@@ -1,4 +1,4 @@
-/* CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js
+/* CODEX-REF: open-workspace-file-*.js
  * Codex Desktop renders xlsx through its Popcorn Workbook component
  * (heavyweight .NET WASM viewer with grid virtualization, styles, and charts).
  * HiCodex's reduced preview uses a plain <table> emitted by SheetJS

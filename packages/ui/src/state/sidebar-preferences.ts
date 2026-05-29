@@ -8,10 +8,9 @@ import {
 /*
  * Storage keys mirror Codex Desktop's `sidebar-*` localStorage namespace.
  * Verified literally against
- *   /private/tmp/codex-asar/webview/assets/sidebar-signals-DI3M13c-.js
- *   /private/tmp/codex-asar/webview/assets/sidebar-project-group-signals-B2IlZT8R.js
- *   /private/tmp/codex-asar/webview/assets/sidebar-project-groups-DUHIVRJe.js
- * (Codex.app 26.519.41501, asar mtime 2026-05-23 17:11).
+ *   sidebar-signals-*.js
+ *   sidebar-project-group-signals-*.js
+ *   sidebar-project-groups-*.js
  */
 export const SIDEBAR_ORGANIZE_MODE_STORAGE_KEY = "sidebar-organize-mode-v1";
 export const SIDEBAR_SORT_KEY_STORAGE_KEY = "thread-sort-key";

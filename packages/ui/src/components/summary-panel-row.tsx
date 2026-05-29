@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/check-lg-CRmuPmFE.js function nt (= gs/Kl) —
+// CODEX-REF: check-lg-*.js — summary-row component.
 // Codex Desktop renders every Git summary row (Changes / Local / Branch / Commit / GitHub status)
 // and the Sources empty state inside a single 28px-high container. The container is `flex
 // items-center gap-2 h-7 w-full min-w-0` with an inner `flex min-w-0 flex-1 items-center gap-2`

@@ -1,14 +1,14 @@
-/* codex: electron-menu-shortcuts-DQYPVyfu.js — command catalog subset. */
+/* codex: electron-menu-shortcuts-*.js — command catalog subset. */
 // HiCodex migrates the keyboard shortcut entries that already have a
 // handler (or a sensible fallback) inside HiCodexApp. Descriptors are
 // declared without handlers; HiCodexApp registers handlers at mount.
 //
 // `title` and `description` strings on each descriptor mirror the upstream
 // `codex.command.<id>` / `codex.commandDescription.<id>` ICU defaultMessage
-// (verified literally against `/private/tmp/codex-asar/webview/assets/`
-// chunks). Keep them in lockstep with Codex Desktop: changes here must be
-// cross-checked with `rg "codex\\.command(?:Description)?\\.<id>"
-// /private/tmp/codex-asar/webview/assets/`.
+// (verified literally against the Codex Desktop bundle chunks). Keep them in
+// lockstep with Codex Desktop: changes here must be cross-checked with
+// `rg "codex\\.command(?:Description)?\\.<id>"` against the
+// `electron-menu-shortcuts-*.js` chunk.
 // The exceptions are `thread1`..`thread9` (no upstream
 // `codex.command.thread*` / `codex.commandDescription.thread*` ICU exists,
 // so HiCodex keeps the "Switch to thread N" / "Activate the Nth thread in
@@ -18,7 +18,7 @@ import type { CommandDescriptor } from "./command-registry";
 import { formatAccelerator, isMacPlatform } from "./command-registry";
 import { resolveKeymapOverride } from "./keymap-overrides";
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#n — command IDs ported here.
+// codex: electron-menu-shortcuts-*.js — command IDs ported here.
 export const COMMAND_IDS = {
   openCommandMenu: "openCommandMenu",
   findInThread: "findInThread",
@@ -30,28 +30,28 @@ export const COMMAND_IDS = {
   previousThread: "previousThread",
   nextThread: "nextThread",
   settings: "settings",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#archiveThread
+  // codex: electron-menu-shortcuts-*.js#archiveThread
   archiveThread: "archiveThread",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#renameThread
+  // codex: electron-menu-shortcuts-*.js#renameThread
   renameThread: "renameThread",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#toggleThreadPin
+  // codex: electron-menu-shortcuts-*.js#toggleThreadPin
   toggleThreadPin: "toggleThreadPin",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack
+  // codex: electron-menu-shortcuts-*.js#navigateBack
   navigateBack: "navigateBack",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateForward
+  // codex: electron-menu-shortcuts-*.js#navigateForward
   navigateForward: "navigateForward",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copySessionId
+  // codex: electron-menu-shortcuts-*.js#copySessionId
   copySessionId: "copySessionId",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyWorkingDirectory
+  // codex: electron-menu-shortcuts-*.js#copyWorkingDirectory
   copyWorkingDirectory: "copyWorkingDirectory",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyConversationPath
+  // codex: electron-menu-shortcuts-*.js#copyConversationPath
   copyConversationPath: "copyConversationPath",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyDeeplink
+  // codex: electron-menu-shortcuts-*.js#copyDeeplink
   copyDeeplink: "copyDeeplink",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyConversationMarkdown — no
+  // codex: electron-menu-shortcuts-*.js#copyConversationMarkdown — no
   // upstream default accelerator (string verified absent in chunk grep).
   copyConversationMarkdown: "copyConversationMarkdown",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread1..thread9 — slot-based switches.
+  // codex: electron-menu-shortcuts-*.js#thread1..thread9 — slot-based switches.
   thread1: "thread1",
   thread2: "thread2",
   thread3: "thread3",
@@ -61,13 +61,13 @@ export const COMMAND_IDS = {
   thread7: "thread7",
   thread8: "thread8",
   thread9: "thread9",
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#showKeyboardShortcuts — ⌘⇧/.
+  // codex: electron-menu-shortcuts-*.js#showKeyboardShortcuts — ⌘⇧/.
   showKeyboardShortcuts: "showKeyboardShortcuts",
 } as const;
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#n — declarative catalog.
+// codex: electron-menu-shortcuts-*.js — declarative catalog.
 export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n openCommandMenu — ⌘K / ⌘⇧P.
+  // codex: electron-menu-shortcuts-*.js openCommandMenu — ⌘K / ⌘⇧P.
   {
     id: COMMAND_IDS.openCommandMenu,
     title: "Open command menu",
@@ -81,7 +81,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n findInThread — ⌘F.
+  // codex: electron-menu-shortcuts-*.js findInThread — ⌘F.
   {
     id: COMMAND_IDS.findInThread,
     title: "Find",
@@ -94,7 +94,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+F"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n openSidebar — toggleSidebar ⌘B.
+  // codex: electron-menu-shortcuts-*.js openSidebar — toggleSidebar ⌘B.
   {
     id: COMMAND_IDS.toggleSidebar,
     title: "Toggle sidebar",
@@ -107,7 +107,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+B"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n toggleFileTreePanel — ⌘⇧E.
+  // codex: electron-menu-shortcuts-*.js toggleFileTreePanel — ⌘⇧E.
   {
     id: COMMAND_IDS.toggleFileTreePanel,
     title: "Toggle workspace files panel",
@@ -120,7 +120,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Shift+E"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n searchChats — ⌘G.
+  // codex: electron-menu-shortcuts-*.js searchChats — ⌘G.
   {
     id: COMMAND_IDS.searchChats,
     title: "Search chats",
@@ -133,7 +133,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+G"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n searchFiles — ⌘P.
+  // codex: electron-menu-shortcuts-*.js searchFiles — ⌘P.
   {
     id: COMMAND_IDS.searchFiles,
     title: "Search files",
@@ -146,7 +146,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+P"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n newThread — ⌘N.
+  // codex: electron-menu-shortcuts-*.js newThread — ⌘N.
   {
     id: COMMAND_IDS.newThread,
     title: "New chat",
@@ -159,7 +159,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+N"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n previousThread — ⌘⇧[.
+  // codex: electron-menu-shortcuts-*.js previousThread — ⌘⇧[.
   {
     id: COMMAND_IDS.previousThread,
     title: "Previous chat",
@@ -172,7 +172,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Shift+["],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n nextThread — ⌘⇧].
+  // codex: electron-menu-shortcuts-*.js nextThread — ⌘⇧].
   {
     id: COMMAND_IDS.nextThread,
     title: "Next chat",
@@ -185,7 +185,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Shift+]"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#n settings — ⌘,.
+  // codex: electron-menu-shortcuts-*.js settings — ⌘,.
   {
     id: COMMAND_IDS.settings,
     title: "Settings",
@@ -198,7 +198,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+,"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#archiveThread — ⌘⇧A.
+  // codex: electron-menu-shortcuts-*.js#archiveThread — ⌘⇧A.
   {
     id: COMMAND_IDS.archiveThread,
     title: "Archive chat",
@@ -211,7 +211,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Shift+A"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#renameThread — ⌘⌥R.
+  // codex: electron-menu-shortcuts-*.js#renameThread — ⌘⌥R.
   {
     id: COMMAND_IDS.renameThread,
     title: "Rename thread",
@@ -224,7 +224,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Alt+R"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#toggleThreadPin — ⌘⌥P.
+  // codex: electron-menu-shortcuts-*.js#toggleThreadPin — ⌘⌥P.
   {
     id: COMMAND_IDS.toggleThreadPin,
     title: "Toggle pin",
@@ -237,7 +237,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Alt+P"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack — ⌘[.
+  // codex: electron-menu-shortcuts-*.js#navigateBack — ⌘[.
   {
     id: COMMAND_IDS.navigateBack,
     title: "Back",
@@ -250,7 +250,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+["],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateForward — ⌘].
+  // codex: electron-menu-shortcuts-*.js#navigateForward — ⌘].
   {
     id: COMMAND_IDS.navigateForward,
     title: "Forward",
@@ -263,7 +263,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+]"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copySessionId — ⌘⌥C.
+  // codex: electron-menu-shortcuts-*.js#copySessionId — ⌘⌥C.
   {
     id: COMMAND_IDS.copySessionId,
     title: "Copy session ID",
@@ -276,7 +276,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Alt+C"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyWorkingDirectory — ⌘⇧C.
+  // codex: electron-menu-shortcuts-*.js#copyWorkingDirectory — ⌘⇧C.
   {
     id: COMMAND_IDS.copyWorkingDirectory,
     title: "Copy working directory",
@@ -289,7 +289,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Shift+C"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyConversationPath — ⌘⌥⇧C.
+  // codex: electron-menu-shortcuts-*.js#copyConversationPath — ⌘⌥⇧C.
   {
     id: COMMAND_IDS.copyConversationPath,
     title: "Copy conversation path",
@@ -302,7 +302,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Alt+Shift+C"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyDeeplink — ⌘⌥L.
+  // codex: electron-menu-shortcuts-*.js#copyDeeplink — ⌘⌥L.
   {
     id: COMMAND_IDS.copyDeeplink,
     title: "Copy deeplink",
@@ -315,7 +315,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Alt+L"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#copyConversationMarkdown — no
+  // codex: electron-menu-shortcuts-*.js#copyConversationMarkdown — no
   // upstream default keybinding (chunk only carries titleIntlId/descriptionIntlId).
   // Codex ICU `threadHeader.copyConversationMarkdown` defaultMessage `Copy as Markdown`.
   // HiCodex offers it as a command-menu entry; menu items beyond the active
@@ -328,7 +328,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     scope: "electron-only",
     availableIn: ["electron"],
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread1 — ⌘1.
+  // codex: electron-menu-shortcuts-*.js#thread1 — ⌘1.
   {
     id: COMMAND_IDS.thread1,
     title: "Switch to thread 1",
@@ -341,7 +341,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+1"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread2 — ⌘2.
+  // codex: electron-menu-shortcuts-*.js#thread2 — ⌘2.
   {
     id: COMMAND_IDS.thread2,
     title: "Switch to thread 2",
@@ -354,7 +354,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+2"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread3 — ⌘3.
+  // codex: electron-menu-shortcuts-*.js#thread3 — ⌘3.
   {
     id: COMMAND_IDS.thread3,
     title: "Switch to thread 3",
@@ -367,7 +367,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+3"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread4 — ⌘4.
+  // codex: electron-menu-shortcuts-*.js#thread4 — ⌘4.
   {
     id: COMMAND_IDS.thread4,
     title: "Switch to thread 4",
@@ -380,7 +380,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+4"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread5 — ⌘5.
+  // codex: electron-menu-shortcuts-*.js#thread5 — ⌘5.
   {
     id: COMMAND_IDS.thread5,
     title: "Switch to thread 5",
@@ -393,7 +393,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+5"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread6 — ⌘6.
+  // codex: electron-menu-shortcuts-*.js#thread6 — ⌘6.
   {
     id: COMMAND_IDS.thread6,
     title: "Switch to thread 6",
@@ -406,7 +406,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+6"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread7 — ⌘7.
+  // codex: electron-menu-shortcuts-*.js#thread7 — ⌘7.
   {
     id: COMMAND_IDS.thread7,
     title: "Switch to thread 7",
@@ -419,7 +419,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+7"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread8 — ⌘8.
+  // codex: electron-menu-shortcuts-*.js#thread8 — ⌘8.
   {
     id: COMMAND_IDS.thread8,
     title: "Switch to thread 8",
@@ -432,7 +432,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+8"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#thread9 — ⌘9.
+  // codex: electron-menu-shortcuts-*.js#thread9 — ⌘9.
   {
     id: COMMAND_IDS.thread9,
     title: "Switch to thread 9",
@@ -445,7 +445,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+9"],
     },
   },
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#showKeyboardShortcuts — ⌘⇧/.
+  // codex: electron-menu-shortcuts-*.js#showKeyboardShortcuts — ⌘⇧/.
   {
     id: COMMAND_IDS.showKeyboardShortcuts,
     title: "Show keyboard shortcuts",
@@ -462,7 +462,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
 ];
 
 /*
- * codex: electron-menu-shortcuts-DQYPVyfu.js#O — static descriptor → label.
+ * codex: electron-menu-shortcuts-*.js — static descriptor → label.
  *
  * `commandAcceleratorLabel` from command-registry reads the *registered*
  * registry which is populated by HiCodexApp's mount effect. UI components
@@ -472,7 +472,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
  * `commandAcceleratorLabel`.
  */
 export function descriptorAcceleratorLabel(commandId: string): string | undefined {
-  // CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — user keymap override
+  // CODEX-REF: keyboard-shortcuts-settings-*.js — user keymap override
   // takes priority over the descriptor default. Override semantics:
   //   - string  → format the override and return it
   //   - null    → user explicitly unbound the command; return undefined so
@@ -489,7 +489,7 @@ export function descriptorAcceleratorLabel(commandId: string): string | undefine
   return formatAccelerator(accelerator, isMacPlatform());
 }
 
-// codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+// codex: app-main-*.js — cmdk command-item right-side shortcut.
 // Maps a CommandPanelEntry.id to the matching COMMAND_IDS descriptor so the
 // command palette can render an accelerator hint (kbd) on the right side of
 // each row. The Codex command dialog drives this via its descriptor catalog;
@@ -508,7 +508,7 @@ const COMMAND_PANEL_ENTRY_ID_TO_COMMAND_ID: Readonly<Record<string, string>> = {
   "command:toggle-thread-pin": COMMAND_IDS.toggleThreadPin,
 };
 
-// codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut helper.
+// codex: app-main-*.js — cmdk command-item right-side shortcut helper.
 // Resolves a CommandPanelEntry.id to its accelerator label, returning
 // undefined when the entry does not correspond to a registered shortcut.
 // Two-step lookup: explicit map first (for slash-command / synthetic IDs),

@@ -2,7 +2,7 @@
 // element in this footer against `COMMAND_DESCRIPTORS` in `state/commands.ts`:
 //   * `+` add-menu / project switcher (`title="Project and work mode"`):
 //     Codex Desktop opens the same picker via the footer chip only; no
-//     keybinding exists in `electron-menu-shortcuts-DQYPVyfu.js` and HiCodex
+//     keybinding exists in `electron-menu-shortcuts-*.js` and HiCodex
 //     does not expose `openProjectMenu` in COMMAND_IDS — skipped.
 //   * Permissions chip (`title="Change permissions"`): Codex Desktop renders
 //     this as `composer.permissions.changePermissions` with no accelerator,
@@ -10,11 +10,11 @@
 //   * Branch chip: now interactive via `ComposerFooterBranchSwitcher` (host
 //     `host_git_list_branches` + `host_git_checkout_branch`); Codex Desktop
 //     does not assign a global accelerator to the branch picker either
-//     (cf. `composer-footer-branch-switcher-CamXBKfA.js`), so no accelerator
+//     (cf. `composer-footer-branch-switcher-*.js`), so no accelerator
 //     hint applies — skipped.
 //   * Model / intelligence chip (`title="Select model"`): Codex Desktop
 //     wires this to the model picker without an accelerator (cf.
-//     `composer-D0cvMZjq.js` defaultMessage `Select model`); HiCodex has no
+//     `composer-*.js` defaultMessage `Select model`); HiCodex has no
 //     `openModelPicker` entry yet — skipped.
 // Conclusion: there is no footer button with a 1:1 mapping to an existing
 // keybinding. Re-run this audit when `openModelPicker`, `openPermissions`,
@@ -40,7 +40,7 @@ import {
   type WorktreeModeOption,
 } from "../state/worktrees";
 import { WorktreeModeMenuItems } from "./worktree-mode-menu";
-// codex: composer-footer-branch-switcher-CamXBKfA.js — chip + dropdown.
+// codex: composer-footer-branch-switcher-*.js — chip + dropdown.
 import { ComposerFooterBranchSwitcher } from "./composer-footer-branch-switcher";
 
 export interface ComposerWorkspaceRootOption {
@@ -72,20 +72,20 @@ export interface ComposerExternalFooterProps {
    */
   onOpenModelPicker?: (anchor: HTMLElement) => void;
   /**
-   * CODEX-REF: composer-D0cvMZjq.js — footer 上的 Reasoning trigger 是独立 chip
+   * CODEX-REF: composer-*.js — footer 上的 Reasoning trigger 是独立 chip
    * 显示当前 effort label ("Low" / "Medium" / "High" / "Extra High")，点击弹出
-   * `Fa` popover。HiCodex 把这个 chip 挂在现有 intelligence chip 旁，回调由
-   * HiCodexApp 用 setReasoningPickerAnchor 接住。omit 时不渲染（向后兼容）。
+   * reasoning-effort popover。HiCodex 把这个 chip 挂在现有 intelligence chip 旁，
+   * 回调由 HiCodexApp 用 setReasoningPickerAnchor 接住。omit 时不渲染（向后兼容）。
    */
   onOpenReasoningPicker?: (anchor: HTMLElement) => void;
   /**
-   * codex: composer-footer-branch-switcher-CamXBKfA.js — fired after a
+   * codex: composer-footer-branch-switcher-*.js — fired after a
    * successful `git checkout` so the host can refresh `Thread.gitBranch` /
    * other branch-dependent caches.
    */
   onBranchSwitched?: (branchName: string) => void;
   /**
-   * codex: composer-footer-branch-switcher-CamXBKfA.js — surface git checkout
+   * codex: composer-footer-branch-switcher-*.js — surface git checkout
    * failures through the dispatch log (caller decides toast vs. inline).
    */
   onBranchSwitchError?: (message: string) => void;
@@ -119,7 +119,7 @@ export function ComposerExternalFooter({
   const branchLabel = formatBranchFooterLabel(branch);
   const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
   /*
-   * CODEX-REF: composer-D0cvMZjq.js — Reasoning trigger chip 永远渲染（Codex
+   * CODEX-REF: composer-*.js — Reasoning trigger chip 永远渲染（Codex
    * 即使 modelSettings.reasoningEffort 缺省也显示 default label 触发按钮，
    * disabled 仅当 models data fetch error / 没拿到 models）。HiCodex 这里
    * 没有 effort 时回退到 default "medium" (与 Codex/Codex CLI 默认一致)，
@@ -166,7 +166,7 @@ export function ComposerExternalFooter({
   }
 
   return (
-    // CODEX-REF: composer-DXaiOlFj.js line ~975700 — the composer footer is a
+    // CODEX-REF: composer-*.js — the composer footer is a
     // strict 3-column grid:
     //   <div className="composer-footer grid grid-cols-[minmax(0,auto)_auto_minmax(0,1fr)] items-center gap-[5px]">
     //     <vz .../>                              {/* left: + add menu + permissions */}
@@ -182,9 +182,9 @@ export function ComposerExternalFooter({
     // cluster slot in this strip is intentionally empty here.
     <div className="hc-composer-external-footer" aria-label="Composer context">
       {/*
-       * CODEX-REF: composer-DXaiOlFj.js line ~975700 — left column hosts the
+       * CODEX-REF: composer-*.js — left column hosts the
        * `+` add-menu trigger followed by the permissions chip (Codex packs
-       * both into the `vz` component rendered into the first grid cell).
+       * both into a single component rendered into the first grid cell).
        */}
       <div className="hc-composer-external-footer-left">
         <div className="hc-composer-footer-project">
@@ -265,7 +265,7 @@ export function ComposerExternalFooter({
           )}
         </div>
         {/*
-         * CODEX-REF: composer-DXaiOlFj.js line ~975700 — Codex renders the
+         * CODEX-REF: composer-*.js — Codex renders the
          * permissions dropdown immediately after the `+` button inside the
          * left grid cell, so the trigger sits on the same baseline as the add
          * menu.
@@ -284,7 +284,7 @@ export function ComposerExternalFooter({
         </button>
       </div>
       {/*
-       * codex: composer-footer-branch-switcher-CamXBKfA.js — chip + dropdown.
+       * codex: composer-footer-branch-switcher-*.js — chip + dropdown.
        * Replaces the previous readonly span. The switcher renders the same
        * `hc-composer-footer-branch` chip (so existing CSS / SSR snapshots keep
        * matching) but turns it into a button that opens a portal-positioned
@@ -305,7 +305,7 @@ export function ComposerExternalFooter({
         )}
       </div>
       {/*
-       * CODEX-REF: composer-DXaiOlFj.js line ~975700 — right grid cell:
+       * CODEX-REF: composer-*.js — right grid cell:
        *   <div className="flex w-full min-w-0 items-center justify-end gap-2">
        *     <div className="flex min-w-0 flex-1 justify-end"> model/context </div>
        *     <div className="flex shrink-0 items-center gap-2"> mic + send </div>
@@ -330,10 +330,10 @@ export function ComposerExternalFooter({
             </button>
           )}
           {/*
-           * CODEX-REF: composer-D0cvMZjq.js — Reasoning effort trigger chip
-           * （Fa popover anchor）。Codex 截图 dropdown 选项 Low/Medium/High/
-           * Extra High，trigger button 显示当前 effort label。HiCodex 用独立
-           * chip 与 model chip 并列；点击 onOpenReasoningPicker(anchor)
+           * CODEX-REF: composer-*.js — Reasoning effort trigger chip
+           * （reasoning-effort popover anchor）。Codex 截图 dropdown 选项
+           * Low/Medium/High/Extra High，trigger button 显示当前 effort label。
+           * HiCodex 用独立 chip 与 model chip 并列；点击 onOpenReasoningPicker(anchor)
            * 由 HiCodexApp 持有 setReasoningPickerAnchor 接住。
            */}
           {reasoningChipLabel && (
@@ -549,7 +549,7 @@ function formatPermissionsFooterTitle(
 
 function formatReasoningEffort(value?: unknown): string {
   /*
-   * Codex Desktop `T(e)` (reasoning-minimal-Dqbs-2JZ.js) — 6 labels:
+   * codex: reasoning-minimal-*.js — reasoning-effort label formatter, 6 labels:
    *   composer.mode.local.reasoning.none.label    = "None"
    *   composer.mode.local.reasoning.minimal.label = "Minimal"
    *   composer.mode.local.reasoning.low.label     = "Low"

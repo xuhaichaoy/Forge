@@ -280,7 +280,7 @@ export class CodexJsonRpcClient {
         break;
       case "stderr": {
         /*
-         * Codex Desktop (`remote-conversation-page-CRbylpi9.js`) never routes
+         * Codex Desktop (`remote-conversation-page-*.js`) never routes
          * raw app-server streams to UI toasts; only structured `error`
          * JSON-RPC notifications and explicit product toast signals reach the
          * renderer. Keep host stream lines in the RPC debug pane only, or

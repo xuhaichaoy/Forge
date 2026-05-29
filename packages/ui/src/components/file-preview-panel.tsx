@@ -12,7 +12,7 @@ import {
 import type { ReactNode } from "react";
 import { CodeSnippet } from "./code-snippet";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
-// CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js — spreadsheet route
+// CODEX-REF: open-workspace-file-*.js — spreadsheet route
 // (xlsx/xlsm/csv/tsv) renders through HiCodex's simplified SheetJS preview.
 import { SpreadsheetPreview, type SpreadsheetPreviewKind } from "./spreadsheet-preview";
 import {
@@ -48,8 +48,8 @@ import {
 const FILE_PREVIEW_READ_MAX_BYTES = 240_000;
 
 /*
- * HiCodex's equivalent of Codex Desktop's AppShell RightPanel (`vn` at
- * `app-shell.formatted.js:518`) while hosting FilePreviewPage. The summary
+ * HiCodex's equivalent of Codex Desktop's AppShell RightPanel
+ * (`app-shell-*.js`) while hosting FilePreviewPage. The summary
  * rail stays fixed-size; this panel is the large resizable file preview.
  */
 export interface FilePreviewPanelResizeAffordance {
@@ -95,7 +95,7 @@ type FilePreviewLoadState =
   | { status: "ready"; path: string; text: string; language: string; truncatedLineCount: number; truncatedCharCount: number; metadata: LocalFileMetadata }
   | { status: "document"; path: string; preview: DocumentPreview; metadata: LocalFileMetadata }
   | { status: "image"; path: string; src: string; metadata: LocalFileMetadata | null }
-  // CODEX-REF: open-workspace-file-DOOUD1lA.js — xlsx/xlsm/csv/tsv state for the
+  // CODEX-REF: open-workspace-file-*.js — xlsx/xlsm/csv/tsv state for the
   // SheetJS-backed simplified preview (no formula recalc, no charts).
   | { status: "spreadsheet"; path: string; data: ArrayBuffer; importKind: SpreadsheetPreviewKind; metadata: LocalFileMetadata }
   | { status: "binary"; message: string; metadata: LocalFileMetadata | null }
@@ -330,7 +330,7 @@ function FilePreviewPanelBody({
           }
           return;
         }
-        // CODEX-REF: open-workspace-file-DOOUD1lA.js — xlsx/xlsm/csv/tsv route.
+        // CODEX-REF: open-workspace-file-*.js — xlsx/xlsm/csv/tsv route.
         // Codex Desktop renders these in the Popcorn Workbook component; the
         // HiCodex simplified version pulls bytes via host_read_file_bytes_base64
         // and lets SheetJS in the renderer do the parsing. This branch sits
@@ -425,7 +425,7 @@ function FilePreviewStateView({
     return <DocumentPreviewView preview={state.preview} />;
   }
   if (state.status === "spreadsheet") {
-    // CODEX-REF: open-workspace-file-DOOUD1lA.js — simplified SheetJS render path.
+    // CODEX-REF: open-workspace-file-*.js — simplified SheetJS render path.
     return (
       <SpreadsheetPreview
         className="hc-file-preview-spreadsheet"
@@ -700,7 +700,7 @@ function isDocumentPath(path: string, metadata: LocalFileMetadata): boolean {
 
 function isKnownBinaryDocumentPath(path: string, metadata: LocalFileMetadata): boolean {
   const extension = pathExtension(path);
-  // CODEX-REF: open-workspace-file-DOOUD1lA.js — xlsx/xlsm are now routed to
+  // CODEX-REF: open-workspace-file-*.js — xlsx/xlsm are now routed to
   // the SheetJS preview before this check fires, so we keep them out of this
   // binary-fallback set. xls (legacy BIFF) still falls back here because
   // SheetJS's xls path needs extra codepages we don't bundle.
@@ -710,7 +710,7 @@ function isKnownBinaryDocumentPath(path: string, metadata: LocalFileMetadata): b
     || metadata.mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 }
 
-// CODEX-REF: open-workspace-file-DOOUD1lA.js
+// CODEX-REF: open-workspace-file-*.js
 //   var _=new Map([["xlsm","xlsx"],["xlsx","xlsx"],["csv","csv"],["tsv","tsv"]]);
 // Maps the file suffix to the SheetJS parsing hint used by SpreadsheetPreview.
 function getSpreadsheetImportKind(path: string): SpreadsheetPreviewKind | null {

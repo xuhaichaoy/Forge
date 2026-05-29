@@ -1,11 +1,11 @@
-// codex: local-conversation-thread-CecHj6JI.js#sh — Codex's assistant body
-// runs `P=N` on the markdown right before rendering: it scans for the leaf
-// directive `:citation{...}` (the directive name `G` in the bundle), pulls
+// codex: local-conversation-thread-*.js — Codex's assistant body
+// transforms the markdown right before rendering: it scans for the leaf
+// directive `:citation{...}`, pulls
 // each one's `index=`/`automation_id=` attrs into a chip view, and either
 // inlines them into the trailing paragraph or, when the trailing block is
-// not a `_h(content)` paragraph, falls back to a flex chip row
-// (`<div className="mt-3 flex flex-wrap gap-1.5">...{citations.map(<Jm>)}</div>`).
-// This module is the HiCodex equivalent of `P=N`: it extracts directives off
+// not a content paragraph, falls back to a flex chip row
+// (`<div className="mt-3 flex flex-wrap gap-1.5">...</div>`).
+// This module is the HiCodex equivalent: it extracts directives off
 // the raw markdown so message-unit.tsx can drive the same two-state render.
 
 import { automationScheduleSummary } from "./automation-schedule-summary";
@@ -31,11 +31,11 @@ export interface CitationExtractionResult {
   loose: CitationDirective[];
 }
 
-// codex: split-items-into-render-groups-Dbyy4o9H.js#fe + local-conversation-thread-CecHj6JI.js#sh —
+// codex: split-items-into-render-groups-*.js + local-conversation-thread-*.js —
 // completed assistant messages receive an `automationCitations` array made of
 // `automation-update` items. Desktop then creates temporary `:citation{}`
-// directives from their indexes (`lh`) and resolves each directive back to the
-// original update item (`vh`) before rendering `Jm`. HiCodex normalizes those
+// directives from their indexes and resolves each directive back to the
+// original update item before rendering the citation chip. HiCodex normalizes those
 // update items into the same chip data shape used for text-authored citation
 // directives, while preserving the original string attrs for future routing.
 export function automationCitationsFromItems(value: unknown): CitationDirective[] {
@@ -46,7 +46,7 @@ export function automationCitationsFromItems(value: unknown): CitationDirective[
   });
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#P=N — leaf directive regex per
+// codex: local-conversation-thread-*.js — leaf directive regex per
 // remark-directive spec (`:name{attrs}`). Greedy on name (only letters), the
 // attribute body cannot contain `{` or `}`. We deliberately don't try to
 // support the container variant (`:::citation ... :::`) since Codex's
@@ -64,7 +64,7 @@ const DIRECTIVE_PATTERN = /:citation\{([^{}]*)\}/g;
  */
 const ATTR_PATTERN = /([A-Za-z_][\w-]*)=(?:"([^"]*)"|'([^']*)'|([^\s"'=]+))/g;
 
-// codex: local-conversation-thread-CecHj6JI.js#P=N — Codex's `Jm` component
+// codex: local-conversation-thread-*.js — Codex's citation chip component
 // reads `index`, `id`, `automationId` (camel + snake), `title`, `name`, `url`,
 // and `source` off the directive payload. HiCodex normalizes the spelling
 // variants here so consumers only have to look at one canonical shape.
@@ -81,7 +81,7 @@ function parseDirectiveAttrs(body: string): Record<string, string> {
   return attrs;
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#Jm — Codex normalizes the chip
+// codex: local-conversation-thread-*.js — Codex normalizes the chip
 // view from `id|automation_id|automationId` plus `title|name`. Mirror that so
 // the resulting `CitationDirective` is always usable by the renderer even when
 // the directive author used different spelling.
@@ -100,8 +100,8 @@ function directiveFromAttrs(attrs: Record<string, string>): CitationDirective | 
   if (url) directive.url = url;
   if (source) directive.source = source;
   // Preserve the full attribute bag so future renderers (or onOpen handlers)
-  // can read fields like `mode=create`/`status=ok` that Codex's `Jm` also
-  // forwards into its tooltip without listing every key here.
+  // can read fields like `mode=create`/`status=ok` that Codex's citation chip
+  // also forwards into its tooltip without listing every key here.
   directive.attrs = attrs;
   return directive;
 }
@@ -216,7 +216,7 @@ function collectDirectiveHits(markdown: string): DirectiveHit[] {
 
 /*
  * Compute the byte offset where the document's TRAILING paragraph begins.
- * Codex's `sh` checks "is the last block a `_h(content)` paragraph?" — its
+ * Codex's assistant renderer checks "is the last block a content paragraph?" — its
  * equivalent here is: starting from the end of the document, walk back over
  * blank lines, then take every contiguous non-blank, non-fenced, non-special
  * line as the trailing paragraph. A leading blank line (or BOF) terminates
@@ -282,7 +282,7 @@ function isStructuralLine(line: string): boolean {
     || /^\|/.test(line.trim());
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#P=N — main entrypoint. The
+// codex: local-conversation-thread-*.js — main entrypoint. The
 // caller passes the raw assistant markdown; we hand back the stripped text
 // (so Markdownish never tries to render the directive as raw `:citation{...}`
 // text) plus the two citation buckets the renderer needs.

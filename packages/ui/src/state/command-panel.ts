@@ -34,7 +34,7 @@ export type CommandPanelKind =
   | "diff"
   | "generic";
 
-// codex: app-main-DG-Mf4Wj.js — cmdk Hd atom (root/chats/files modes).
+// codex: app-main-*.js — cmdk Hd atom (root/chats/files modes).
 // The Codex command dialog tracks a sub-mode separately from its panel kind
 // so a single dialog can swap between command list / chat picker / file
 // picker placeholders (`Type command` / `Search chats` / `Search files`) and
@@ -180,7 +180,7 @@ export type CommandPanelEntryAction =
   // CODEX-REF: settings.general.appearance.reducedMotion.label — 3-way toggle
   // (system / on / off). Mode string matches the option message IDs.
   | { type: "setReducedMotion"; title: string; mode: "system" | "on" | "off" }
-  // CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js mutation
+  // CODEX-REF: keyboard-shortcuts-settings-*.js mutation
   // `set-codex-command-keybinding` (type=set/replace). Accelerator string is
   // already normalized to "CmdOrCtrl+K" shape by the capture component;
   // `null` clears the binding (user explicitly unbound the command).
@@ -217,7 +217,7 @@ export interface CommandPanelEntry {
   disabled?: boolean;
   action?: CommandPanelEntryAction;
   secondaryActions?: CommandPanelSecondaryAction[];
-  // codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+  // codex: app-main-*.js — cmdk Ym.Item right-side shortcut.
   // Optional pre-resolved accelerator label rendered as a trailing <kbd> in
   // CommandPanelRow. Callers that already know the descriptor (e.g. when
   // emitting bespoke menu entries with a fixed COMMAND_IDS mapping) can fill
@@ -291,7 +291,7 @@ export function commandPanelShouldShowChatCreateEmptyState(panel: CommandPanelSt
     && query.trim().length === 0;
 }
 
-// codex: app-main-DG-Mf4Wj.js — cmdk Hd atom (root/chats/files modes).
+// codex: app-main-*.js — cmdk Hd atom (root/chats/files modes).
 // Maps a CommandPanelKind to the Codex sub-mode used by the upstream dialog.
 // `files` always maps to the file picker; every other kind starts in `root`
 // because chat picking is tracked via the searchable "Search chats" title
@@ -301,7 +301,7 @@ export function commandPanelSubModeFromKind(kind: CommandPanelKind | null): Comm
   return "root";
 }
 
-// codex: app-main-DG-Mf4Wj.js — derive the cmdk Hd value from a live
+// codex: app-main-*.js — derive the cmdk Hd value from a live
 // CommandPanelState. We treat the dedicated "Search chats" panel (used by
 // openChatSearchPanel) as the `chats` sub-mode so the placeholder, Esc, and
 // back-button behaviors match Codex without adding a new field to
@@ -313,7 +313,7 @@ export function commandPanelSubModeFromPanel(panel: CommandPanelState | null): C
   return "root";
 }
 
-// codex: app-main-DG-Mf4Wj.js — three placeholders that ride with the Hd
+// codex: app-main-*.js — three placeholders that ride with the Hd
 // atom: root → "Type command", chats → "Search chats", files → "Search files".
 export function commandPanelSubModePlaceholder(subMode: CommandPanelSubMode): string {
   switch (subMode) {
@@ -327,7 +327,7 @@ export function commandPanelSubModePlaceholder(subMode: CommandPanelSubMode): st
   }
 }
 
-// codex: app-main-DG-Mf4Wj.js — Esc handler `XD(t), t.set(eu,!1)`. First Esc
+// codex: app-main-*.js — command-dialog Esc handler. First Esc
 // clears any query and/or steps the sub-mode back to root; second Esc closes
 // the dialog. The caller owns the local query state (CommandPanel manages
 // its own input), so we return the next-state intent and let the component
@@ -374,7 +374,7 @@ export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[
   return renderedItems;
 }
 
-// codex: app-main-DG-Mf4Wj.js — command menu group taxonomy. The Codex dialog
+// codex: app-main-*.js — command menu group taxonomy. The Codex dialog
 // renders top-level sections in this fixed order, mirroring the
 // `commandMenuGroupKey` taxonomy declared by the command catalog (see
 // state/commands.ts COMMAND_DESCRIPTORS / state/command-registry.ts
@@ -389,7 +389,7 @@ const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; title: string }> = [
   { key: "app",        title: "App" },
 ];
 
-// codex: app-main-DG-Mf4Wj.js — bucket the command menu's kind-typed
+// codex: app-main-*.js — bucket the command menu's kind-typed
 // entries under the taxonomy when an entry doesn't already declare a
 // `commandMenuGroupKey`. Anything we can't classify is forwarded to the
 // catch-all "Other" section so chat-specific groups (pinned-chats /
@@ -427,7 +427,7 @@ export interface CommandGroupSection {
   entries: CommandPanelEntry[];
 }
 
-// codex: app-main-DG-Mf4Wj.js — split flat command menu entries into the
+// codex: app-main-*.js — split flat command menu entries into the
 // Codex command menu's top-level sections. Pinned / Recent chats (which
 // already carry a per-entry groupLabel) are emitted in a leading "Other"
 // section preserving their original order so the existing

@@ -736,18 +736,21 @@ function explorationSummaryLabel(
   if (reads === 0 && searches === 0 && lists === 0) return null;
   if (reads === 0 && searches === 0 && lists > 0) return inProgress ? "Listing files" : "Listed files";
   /*
-   * Codex Desktop `_v` (local-conversation-thread byte ~269682) builds counts via
-   * `intl.formatList(parts, { type: "conjunction" })` — i.e. with a localized
-   * conjunction before the last item ("3 files, 2 searches, and 1 list"). HiCodex
-   * mirrors that with Intl.ListFormat to match the comma+"and" punctuation Codex
-   * users see.
+   * Codex Desktop joins the exploration header counts with a plain ", " and NO
+   * conjunction word — the ICU string `localConversationTurn.exploration.accordion
+   * .count.separator` has defaultMessage exactly ", " (described as "Separator
+   * between counts in the exploration header"). So 3 parts render
+   * "Explored 1 file, 2 searches, 3 lists", not the Oxford-comma "..., and ..."
+   * form. (The `formatList({type:"conjunction"})` join in the same chunk is used
+   * only for the cross-type web-search/MCP summary — see `completedActivitySummaryLabel`
+   * — and is intentionally left on `joinConjunction`.) Order stays files -> searches -> lists.
    */
   const parts = [
     reads > 0 ? formatCount(reads, "file") : "",
     searches > 0 ? formatCount(searches, "search") : "",
     lists > 0 ? formatCount(lists, "list") : "",
   ].filter(Boolean);
-  return `${inProgress ? "Exploring" : "Explored"} ${joinConjunction(parts)}`;
+  return `${inProgress ? "Exploring" : "Explored"} ${parts.join(", ")}`;
 }
 
 function joinConjunction(parts: readonly string[]): string {

@@ -140,7 +140,7 @@ export function Composer({
   const mentionOpen = mentionPicker.status !== "closed";
   const hasComposerPopover = slashOpen || attachmentPicker.status !== "closed" || mentionOpen;
   /*
-   * codex: composer-D0cvMZjq.pretty.js#Xv — the plan keyword suggestion is
+   * codex: composer-*.js — the plan keyword suggestion is
    * mounted into a composer-local floating target only when `!Jr`; Desktop's
    * `Jr = Pt || Ye || Xe || rn != null || Gr` suppresses the suggestion for
    * pending-request replacement surfaces and for the active composer overlay
@@ -148,7 +148,7 @@ export function Composer({
    */
   const shouldRenderPlanSuggestion = showPlanKeywordSuggestion && pendingRequestContent == null && !hasComposerPopover;
   /*
-   * codex: at-mention-list-with-sources-CE0mtxMW.js#o(e) — Codex Desktop renders
+   * codex: at-mention-list-with-sources-*.js — Codex Desktop renders
    * mention results grouped into sections (Live agents / Custom agents / Skills /
    * Apps / Plugins / Files) via `use-at-mention-sections#r({sections})`.
    * HiCodex preserves the underlying score-based ranking but lays the rows out
@@ -293,7 +293,7 @@ export function Composer({
 
       /*
        * Codex Desktop scopes file drag/drop to the composer drop target:
-       * `composer-DXaiOlFj.pretty.js` registers drag/drop listeners on the
+       * `composer-*.js` registers drag/drop listeners on the
        * composer element (`V`) and its inner composer surface, not the whole
        * conversation window. Tauri native file-drop events arrive at the
        * webview level, so HiCodex keeps this listener but applies the same
@@ -666,7 +666,7 @@ export function Composer({
     >
       <div className="hc-composer-surface">
         {/*
-         * codex: composer-D0cvMZjq.pretty.js — `AboveComposerSuggestions` is
+         * codex: composer-*.js — `AboveComposerSuggestions` is
          * rendered into a sibling `Cn` target with
          * `pointer-events-none absolute inset-x-0 bottom-full z-20 mb-2 flex
          * justify-center`, separate from `data-above-composer-portal`.
@@ -751,7 +751,7 @@ export function Composer({
                * `data-state="open"` mirrors the Radix-style marker the
                * focus-routing selector expects. HiCodex's
                * `HiCodexApp.tsx::focusComposerFromPlainTextKey` (and the
-               * upstream Codex Desktop equivalent in `composer-D0cvMZjq.js`)
+               * upstream Codex Desktop equivalent in `composer-*.js`)
                * queries `[role="listbox"][data-state="open"]` — and the
                * `dialog`/`menu` variants below — to suppress type-to-focus
                * while a popover is mounted. Each popover here is rendered
@@ -787,7 +787,7 @@ export function Composer({
             {mentionOpen && (
               <div className="hc-composer-menu mention" role="listbox" aria-label={mentionMenuLabel} data-state="open">
                 {/*
-                 * codex: at-mention-list-with-sources-CE0mtxMW.js#o(e) —
+                 * codex: at-mention-list-with-sources-*.js —
                  * sectioned layout. Each section header is rendered above the
                  * rows that belong to it (Codex `r({sections})`). The flat
                  * keyboard index still works because `mentionOptions` is in
@@ -1398,7 +1398,7 @@ function mentionSearchError(error: unknown): string {
 }
 
 /*
- * codex: at-mention-list-with-sources-CE0mtxMW.js#o(e) — section order
+ * codex: at-mention-list-with-sources-*.js — section order
  * (Live agents / Custom agents / Skills / Apps / Plugins / Files). HiCodex
  * does not distinguish Live vs Custom agents, so they collapse into one
  * "Agents" section; the rest mirrors Codex.

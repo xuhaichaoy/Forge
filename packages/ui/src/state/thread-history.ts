@@ -1,4 +1,4 @@
-// codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+// codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
 // Codex Desktop relies on browser history (`history.back/forward`) when its
 // renderer is mounted as a webview. HiCodex is a Tauri/Electron shell where
 // the UI is not a router, so we instead model an in-app thread navigation
@@ -29,7 +29,7 @@ export function pushThreadHistoryEntry(
     return { threadHistoryStack: stack, threadHistoryIndex: index };
   }
   // codex: truncate any "forward" branch beyond the cursor before pushing —
-  // matches browser history semantics (run-command-BTaSF5aM.js dispatches
+  // matches browser history semantics (run-command-*.js dispatches
   // host-message → history.back/forward, which exhibits the same behavior).
   const truncated = index >= 0 && index < stack.length - 1
     ? stack.slice(0, index + 1)

@@ -1,6 +1,6 @@
 import { humanizeRrule } from "../lib/rrule-format";
 import type { RailEntry } from "./render-groups";
-// codex: local-conversation-thread-CecHj6JI.js#pe — single-entry per-conversation
+// codex: local-conversation-thread-*.js — single-entry per-conversation
 // automation summary input shape lives on `right-rail.ts`; the projection
 // converts the heartbeat schedule view into that shape.
 import type { RightRailAutomationInput } from "./right-rail";
@@ -162,9 +162,9 @@ export function projectHeartbeatAutomationEligibility(
   return { isEligible: true, reason: null };
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#pe — `B = lo({ automations,
-// conversationId })` selects the single active heartbeat automation that
-// targets the current thread, and `au` renders it as Clock-icon + name +
+// codex: local-conversation-thread-*.js — the per-conversation automation
+// selector picks the single active heartbeat automation that targets the
+// current thread, and the rail row renders it as Clock-icon + name +
 // rrule summary, with the "Next run: …" string driven by `nextRunAtMs`.
 // 过滤逻辑：kind == heartbeat && status == ACTIVE && targetThreadId ==
 // conversationId，返回 first match collapsed 为 `RightRailAutomationInput`
@@ -181,15 +181,16 @@ export function projectActiveThreadAutomation(
     && automation.targetThreadId === targetThreadId
   ));
   if (!match) return null;
-  // codex: au row — `name` defaults to "Automation" when the schedule view's
-  // `title` is missing (matches Desktop's empty-name fallback). `rruleSummary`
-  // mirrors Desktop's `$i(rawRrule)` humanization: we feed the raw rrule/cron
-  // schedule through `humanizeRrule` so the rail shows "every Monday at 9" /
-  // "every weekday" instead of the literal "FREQ=WEEKLY;BYDAY=MO" body. The
-  // helper falls back to the trimmed raw string when parsing fails (e.g. cron
-  // expressions) and returns null for missing input so we can omit the field.
+  // codex: automation rail row — `name` defaults to "Automation" when the
+  // schedule view's `title` is missing (matches Desktop's empty-name fallback).
+  // `rruleSummary` mirrors Desktop's rrule humanization: we feed the raw
+  // rrule/cron schedule through `humanizeRrule` so the rail shows "every Monday
+  // at 9" / "every weekday" instead of the literal "FREQ=WEEKLY;BYDAY=MO" body.
+  // The helper falls back to the trimmed raw string when parsing fails (e.g.
+  // cron expressions) and returns null for missing input so we can omit the
+  // field.
   const nextRunAtMs = parseIsoTimestampMs(match.nextRunAt);
-  // codex: $i(rawRrule) — humanize via rrule.toText()
+  // codex: humanize the rrule via rrule.toText()
   const rruleSummary = humanizeRrule(match.schedule);
   return {
     id: match.id,
@@ -199,9 +200,9 @@ export function projectActiveThreadAutomation(
   };
 }
 
-// codex: au row — `Next run: …` tooltip needs an epoch-ms number, but the
-// payload usually arrives as an ISO-8601 string. Returning null on bad input
-// lets the renderer omit the tooltip cleanly instead of showing "Invalid
+// codex: automation rail row — `Next run: …` tooltip needs an epoch-ms number,
+// but the payload usually arrives as an ISO-8601 string. Returning null on bad
+// input lets the renderer omit the tooltip cleanly instead of showing "Invalid
 // Date".
 function parseIsoTimestampMs(raw: string | null | undefined): number | null {
   if (!raw) return null;
@@ -210,9 +211,9 @@ function parseIsoTimestampMs(raw: string | null | undefined): number | null {
 }
 
 /*
- * CODEX-REF: Codex 仅渲染 single automation（`pe = au`），无 multi-list
- * automation section。legacy `projectAutomationRailEntries` 已删除（dead
- * export 无 consumer，并对应于 HiCodex 之前的 multi-list 设计偏差）。
+ * CODEX-REF: Codex 仅渲染 single automation（per-conversation 单条 rail row），
+ * 无 multi-list automation section。legacy `projectAutomationRailEntries` 已删除
+ * （dead export 无 consumer，并对应于 HiCodex 之前的 multi-list 设计偏差）。
  * `projectActiveThreadAutomation` 是 single automation 的唯一 projection。
  */
 

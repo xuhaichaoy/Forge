@@ -252,14 +252,13 @@ function ownerDocumentForParentNode(root: ParentNode): Document | null {
 }
 
 /*
- * Honour the `data-thread-find-skip` opt-out marker. Codex Desktop's
- * `local-conversation-thread-CecHj6JI.js` (Codex.app 26.519.41501) sets
- * `data-thread-find-skip` on subtrees the find bar should never traverse
- * (e.g. composer drafts, pending request scaffolding); HiCodex's
- * DEVELOPMENT.md §13 lists the attribute as part of the find plumbing,
- * but the previous walker only filtered tag names and live form controls
- * so the opt-out was effectively a no-op. Mirror Desktop by rejecting any
- * text node whose ancestor opts out.
+ * Honour the `data-thread-find-skip` opt-out marker. codex:
+ * local-conversation-thread-*.js sets `data-thread-find-skip` on subtrees the
+ * find bar should never traverse (e.g. composer drafts, pending request
+ * scaffolding); HiCodex's DEVELOPMENT.md §13 lists the attribute as part of the
+ * find plumbing, but the previous walker only filtered tag names and live form
+ * controls so the opt-out was effectively a no-op. Mirror Desktop by rejecting
+ * any text node whose ancestor opts out.
  */
 export function isSearchableThreadFindTextNodeParent(element: HTMLElement): boolean {
   if (element.closest("mark.hc-thread-find-mark")) return false;

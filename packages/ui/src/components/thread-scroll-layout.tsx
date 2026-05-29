@@ -38,7 +38,7 @@ export interface ThreadScrollHeightDelta {
 
 /**
  * Codex Desktop parity: API method names align verbatim to upstream scroll
- * controller surface found in `local-conversation-thread-CecHj6JI.js`:
+ * controller surface found in `local-conversation-thread-*.js`:
  *   - scrollToBottom
  *   - scrollToDistanceFromBottomPx
  *   - scrollDistanceFromBottom  (here exposed as `threadScrollDistanceFromBottom`)

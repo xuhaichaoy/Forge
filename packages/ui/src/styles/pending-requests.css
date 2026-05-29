@@ -10,7 +10,7 @@
   padding: 0;
 }
 
-/* CODEX-REF: /tmp/codex_asar_extract/webview/assets/composer-DXaiOlFj.js — xU
+/* CODEX-REF: composer-*.js — 请求卡片
    Codex 卡片用 flex column + body 滚动 / footer 独立的结构，让 Cancel/Allow
    按钮永远贴在卡片底部可见。HiCodex 这里加 max-height 视口约束 + body 滚动， */
 .hc-request-input-panel {
@@ -26,7 +26,7 @@
   box-shadow: 0 1px 2px rgba(28, 31, 35, 0.04), 0 10px 30px rgba(28, 31, 35, 0.06);
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — xU body className "flex flex-col gap-2 px-4 pt-4 pb-3"
+/* CODEX-REF: composer-*.js — 请求卡片 body className "flex flex-col gap-2 px-4 pt-4 pb-3"
    滚动区域；min-height: 0 + flex 1 让内部 overflow 才能真正生效 */
 .hc-request-panel-content {
   display: flex;
@@ -81,7 +81,7 @@
   font-size: 11px;
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — lW
+/* CODEX-REF: composer-*.js — 命令预览
    Codex 命令预览：外层 flex column；内层 min-h-0 overflow-y-auto font-mono；
    <span block break-words whitespace-pre-wrap> + 独立 footer button。
    HiCodex 用相同结构：外壳不再设 max-height（避免撑高卡片），改由 content
@@ -99,7 +99,7 @@
   line-height: 1.55;
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — lW 内层 "min-h-0 overflow-y-auto px-2 pt-2 pb-2" */
+/* CODEX-REF: composer-*.js — 命令预览内层 "min-h-0 overflow-y-auto px-2 pt-2 pb-2" */
 .hc-request-command-preview-content {
   flex: 1 1 auto;
   min-height: 0;
@@ -108,7 +108,7 @@
   padding: 8px 10px;
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — lW 内层 <span block break-words whitespace-pre-wrap>
+/* CODEX-REF: composer-*.js — 命令预览内层 <span block break-words whitespace-pre-wrap>
    靠 whitespace-pre-wrap 渲染 bash -lc heredoc 里的真实 \n 换行 */
 .hc-request-command-preview-text {
   display: block;
@@ -119,7 +119,7 @@
   line-height: 1.5;
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — ZU {display:-webkit-box;maxHeight:"3lh";WebkitLineClamp:3;...} */
+/* CODEX-REF: composer-*.js — 折叠态 {display:-webkit-box;maxHeight:"3lh";WebkitLineClamp:3;...} */
 .hc-request-command-preview-text[data-collapsed="true"] {
   display: -webkit-box;
   max-height: 3lh;
@@ -128,7 +128,7 @@
   -webkit-line-clamp: 3;
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — lW footer "flex shrink-0 justify-end p-1" */
+/* CODEX-REF: composer-*.js — 命令预览 footer "flex shrink-0 justify-end p-1" */
 .hc-request-command-preview-footer {
   display: flex;
   flex-shrink: 0;
@@ -177,7 +177,7 @@
 }
 
 /*
- * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en` —
+ * CODEX-REF: pending-request-item-panel-*.js —
  * 多 question 时的 step navigator。Codex 渲染：
  *   div.className = "flex shrink-0 items-center gap-1 text-xs text-token-description-foreground"
  *   children = [
@@ -301,7 +301,7 @@
 }
 
 /*
- * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js offset ~90335 —
+ * CODEX-REF: pending-request-item-panel-*.js —
  * runAlwaysWithAmendment 短模式 JSX 的外层是 `<span className="flex w-full min-w-0
  * items-center gap-1">`，label 由 `<FormattedMessage>` 直接产出纯文本，**没有任何
  * overflow-wrap / min-w-0 / break-anywhere 类**。HiCodex 之前在 `.strong` 上叠
@@ -328,7 +328,7 @@
 }
 
 /*
- * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js — label 由 `<FormattedMessage>`
+ * CODEX-REF: pending-request-item-panel-*.js — label 由 `<FormattedMessage>`
  * 直接渲染为文本节点，**不设 min-width: 0**。保留 min-content 作为底线，让 label 永远
  * 至少占下一个英文单词的宽度，避免与 sibling code 抢压缩空间。剩下版式由父级 `display:
  * flex; align-items: center` + code 的 `flex: 1 1 0` 自行平衡。
@@ -385,7 +385,7 @@
 }
 
 /*
- * CODEX-REF: en — isOther freeform input (options 后追加的 textarea)。
+ * CODEX-REF: pending-request-item-panel-*.js — isOther freeform input (options 后追加的 textarea)。
  * Codex 渲染的 textarea 容器没有 number-prefix（"N."），就是裸 textarea
  * 撑满宽度。HiCodex 给 `.hc-request-other-freeform` 单独 modifier 移除
  * grid 中 24px 的 number-prefix 列。
@@ -432,7 +432,7 @@
   line-height: 1.35;
 }
 
-/* CODEX-REF: composer-DXaiOlFj.js — xU footer
+/* CODEX-REF: composer-*.js — 请求卡片 footer
    "border-t border-token-border-default px-2 py-2 flex shrink-0 justify-end"
    独立 footer，永远不会被压扁 / 推出视口 */
 .hc-request-panel-actions {

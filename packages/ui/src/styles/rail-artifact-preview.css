@@ -1,6 +1,5 @@
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl — right-rail section
- * className:
+ * CODEX-REF: local-conversation-thread-*.js — right-rail section className:
  *   `relative z-0 flex flex-col pb-3 after:absolute after:inset-x-4 after:bottom-0
  *    after:h-[0.5px] after:bg-token-border-default after:content-[''] last:pb-0
  *    last:after:hidden`
@@ -9,7 +8,7 @@
  * 末尾 `last:pb-0 last:after:hidden` 去掉最后 section 的 padding 和分隔线。
  */
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl — section element className:
+ * CODEX-REF: local-conversation-thread-*.js — section element className:
  *   `relative z-0 flex flex-col pb-3 ...`
  * `z-index: 0` creates a stacking context so sticky headers (z-10) within the section
  * don't bleed above siblings. `flex flex-col` ensures the header + collapsible
@@ -42,7 +41,7 @@
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js ul — artifact list container:
+ * CODEX-REF: local-conversation-thread-*.js — artifact list container:
  *   listClassName: `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
  * `max-h-[28rem]` = 448px cap so a long artifact list scrolls independently inside
  * the section rather than pushing all other sections out of view.

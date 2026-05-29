@@ -10,7 +10,7 @@ import type { CommandDescriptor } from "../state/command-registry";
 import { resolveKeymapOverride, type KeymapOverrides } from "../state/keymap-overrides";
 
 /*
- * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — inline (non-modal)
+ * CODEX-REF: keyboard-shortcuts-settings-*.js — inline (non-modal)
  * keyboard shortcuts editor. Replaces the prior HiCodex modal-style
  * KeyCaptureDialog with the same UX Codex Desktop ships:
  *
@@ -32,7 +32,7 @@ import { resolveKeymapOverride, type KeymapOverrides } from "../state/keymap-ove
  * useHotkey listener whose event target falls within the capture sub-tree.
  *
  * Source spec: /tmp/codex-keyboard-row-spec.md (verbatim string + SVG
- * extraction from keyboard-shortcuts-settings-CPv8uZNY.js).
+ * extraction from keyboard-shortcuts-settings-*.js).
  */
 
 const GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [

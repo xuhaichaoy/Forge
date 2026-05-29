@@ -69,7 +69,7 @@ export interface TurnPlanSnapshot {
   updatedAt: number;
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#mu — RightRail status footer
+// codex: local-conversation-thread-*.js — RightRail status footer
 // reads `usedTokens` / `contextWindow` from the `thread/tokenUsage/updated`
 // notification (ThreadTokenUsage). `usedTokens` mirrors Desktop's "tokens
 // used" counter (last-turn input + output) and `contextWindow` is
@@ -121,7 +121,7 @@ export interface ThreadRuntimeSlice {
   threadGoalTurnId: string | null;
   hookRunsByTurn?: Record<string, unknown[]>;
   terminalTurnIds: string[];
-  // codex: local-conversation-thread-CecHj6JI.js#mu — populated by the
+  // codex: local-conversation-thread-*.js — populated by the
   // `thread/tokenUsage/updated` notification; absent until the server emits
   // the first counter for this thread. Optional so older fixtures that do
   // not need the footer continue to type-check.
@@ -143,7 +143,7 @@ export interface CodexUiState {
   models: ModelConfig[];
   threadContextDefaults: ThreadContextDefaults | null;
   mcpServerStartupStatuses: Record<string, McpServerStartupStatus>;
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+  // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
   // in-app thread history stack (browser-style back/forward over the
   // sequence of activated threads). See `./thread-history.ts`.
   threadHistoryStack: string[];
@@ -179,7 +179,7 @@ export type CodexUiAction =
     }
   | { type: "bindOptimisticTurn"; threadId: string; localTurnId: string; turnId: string }
   | { type: "dropOptimisticUserMessage"; threadId: string; localId: string }
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+  // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
   // dispatched by the ported menu commands (CmdOrCtrl+[ / CmdOrCtrl+]).
   | { type: "navigateBackInHistory" }
   | { type: "navigateForwardInHistory" };
@@ -197,7 +197,7 @@ export const initialCodexUiState: CodexUiState = {
   models: [],
   threadContextDefaults: null,
   mcpServerStartupStatuses: {},
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+  // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
   // empty history; first `setActiveThread` populates the stack.
   threadHistoryStack: [],
   threadHistoryIndex: -1,
@@ -216,10 +216,10 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   threadGoalTurnId: null,
   hookRunsByTurn: {},
   terminalTurnIds: [],
-  // codex: local-conversation-thread-CecHj6JI.js#mu — null until the first
+  // codex: local-conversation-thread-*.js — null until the first
   // `thread/tokenUsage/updated` notification lands; RightRail status footer
   // stays hidden while this is falsy (mirrors Desktop's `tokensUsed != null`
-  // gate inside `mu`).
+  // gate inside the status-footer component).
   tokenUsage: null,
   tokenSpeed: { tokensPerSecond: 0, turnId: null },
   tokenSpeedTracker: null,
@@ -291,7 +291,7 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
     case "upsertThread":
       return upsertThreadState(state, action.thread, action.select === true);
     case "setActiveThread": {
-      // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack/Forward —
+      // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
       // every explicit thread switch participates in the navigation
       // history (browser-style back stack). Forward branch is truncated
       // and consecutive duplicates of the same id are coalesced — see
@@ -309,7 +309,7 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       });
     }
     case "navigateBackInHistory": {
-      // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack — separate
+      // codex: electron-menu-shortcuts-*.js#navigateBack — separate
       // from `setActiveThread` because the history cursor moves without
       // pushing a new entry; otherwise pressing Back would immediately
       // bury the entry we just navigated to.
@@ -326,7 +326,7 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       });
     }
     case "navigateForwardInHistory": {
-      // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateForward — mirror
+      // codex: electron-menu-shortcuts-*.js#navigateForward — mirror
       // of the back case; no-op at the head of the stack.
       if (!canNavigateForwardInHistory(state.threadHistoryStack, state.threadHistoryIndex)) {
         return state;
@@ -430,7 +430,7 @@ function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined
     threadGoalTurnId,
     hookRunsByTurn,
     terminalTurnIds,
-    // codex: local-conversation-thread-CecHj6JI.js#mu — preserve the latest
+    // codex: local-conversation-thread-*.js — preserve the latest
     // token-usage snapshot across patch cycles; the reducer rewrites it only
     // when `thread/tokenUsage/updated` arrives.
     tokenUsage: runtime?.tokenUsage ?? null,
@@ -804,7 +804,7 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return prependLog(state, `thread unarchived: ${shortThreadId(threadId)}`);
     }
     case "thread/tokenUsage/updated":
-      // codex: local-conversation-thread-CecHj6JI.js#mu — projects the
+      // codex: local-conversation-thread-*.js — projects the
       // `ThreadTokenUsage` payload (last-turn breakdown + `modelContextWindow`)
       // into `ThreadRuntimeSlice.tokenUsage` so `RightRail`'s status footer
       // can render the "X / Y tokens used" line and context-window tooltip.
@@ -906,6 +906,35 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "item/fileChange/patchUpdated":
       // HiCodex extension (not in Codex Desktop's 5-channel set).
       return mergeItemFields(state, params, "fileChange", { changes: params.changes });
+    case "model/rerouted": {
+      /*
+       * Codex Desktop's app-server-manager onNotification handler for
+       * `model/rerouted` synthesizes a client-side timeline item
+       * ({ type:"modelRerouted", fromModel, toModel, reason }) and pushes it
+       * into the active turn; the renderer only surfaces reroutes whose reason
+       * is "highRiskCyberActivity" (see event-unit.tsx). HiCodex previously
+       * only logged the notification, so a live reroute never reached the
+       * transcript — it appeared only when a thread/read snapshot already held
+       * the item. Re-verified vs Codex Desktop v26.519.81530.
+       */
+      const threadId = String(params.threadId ?? "");
+      if (!threadId) return state;
+      const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
+      const fromModel = stringParam(params, "fromModel");
+      const toModel = stringParam(params, "toModel");
+      const reason = stringParam(params, "reason");
+      const id = stringParam(params, "itemId") || `model-rerouted:${turnIdParam || threadId}`;
+      const item = {
+        type: "modelRerouted",
+        id,
+        fromModel,
+        toModel,
+        reason,
+        completed: true,
+      } as unknown as ThreadItem;
+      const logged = prependLog(state, `model rerouted ${fromModel} -> ${toModel}${reason ? `: ${reason}` : ""}`, "warn");
+      return upsertItem(logged, threadId, item, turnIdParam);
+    }
     case "turn/plan/updated":
       return upsertTurnPlan(state, params);
     case "turn/diff/updated": {
@@ -982,7 +1011,7 @@ function applyErrorNotification(state: CodexUiState, params: Record<string, unkn
   };
 }
 
-// codex: git-branch-picker-dropdown-content/me + local-conversation-thread
+// codex: git-branch-picker-dropdown-content + local-conversation-thread
 // status footer — context usage is calculated from `last.totalTokens` and
 // `modelContextWindow`. The cumulative `total` object is not the number Desktop
 // shows in the right-rail status row.
@@ -1011,7 +1040,7 @@ function applyThreadTokenUsageUpdatedNotification(
   });
 }
 
-// codex: No(tokenUsageInfo) in the Desktop bundle reads
+// codex: the Desktop bundle's token-usage-info selector reads
 // `tokenUsage.last.totalTokens` for context usage. Fall back to the cumulative
 // shape only for older app-server payloads that do not include `last`.
 function pickTokenTotal(tokenUsage: Record<string, unknown>): number | null {
@@ -1432,12 +1461,8 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
       const details = stringParam(params, "details");
       return prependLog(state, details ? `${summary}: ${details}` : summary, "warn");
     }
-    case "model/rerouted": {
-      const fromModel = stringParam(params, "fromModel");
-      const toModel = stringParam(params, "toModel");
-      const reason = stringParam(params, "reason");
-      return prependLog(state, `model rerouted ${fromModel} -> ${toModel}${reason ? `: ${reason}` : ""}`, "warn");
-    }
+    // `model/rerouted` is intercepted by applyNotification (synthesizes a
+    // modelRerouted timeline item); it no longer falls through to logging here.
     case "model/verification":
       return prependLog(state, `model verification required: ${formatUnknownForLog(params.verifications)}`, "warn");
     case "mcpServer/startupStatus/updated": {
@@ -1586,13 +1611,13 @@ function workedForItemFromTurn(
   if (!turn.id || items.some((item) => item.type === "worked-for")) return null;
 
   /*
-   * Codex Desktop gates the worked-for divider on `xt = vt.length > 0` where
-   * `vt` is the post-`Ew(ot)` agent activity entries (`local-conversation-thread-BX7YNcUw.js`
-   * byte ~539133 in HS body): the entire `Yw` agent-body-collapsible — which
-   * carries the "Worked for {time}" via `kg`/`Ng` (byte ~221500 / ~223894) —
+   * codex: local-conversation-thread-*.js — Codex Desktop gates the worked-for
+   * divider on whether the turn produced any agent-activity entries: the
+   * agent-body-collapsible — which carries the "Worked for {time}" label —
    * is mounted only when this turn produced agent activity items. A pure-text
-   * turn (`user → reasoning? → assistant`) leaves `xt` false and Codex shows
-   * no divider; the assistant message sits flush against the user message.
+   * turn (`user → reasoning? → assistant`) produces no activity entries and
+   * Codex shows no divider; the assistant message sits flush against the user
+   * message.
    *
    * HiCodex previously synthesized worked-for whenever turn timing was known,
    * which produced a spurious "Worked for {time}" row for plain Q&A turns
@@ -1630,8 +1655,8 @@ function workedForItemFromTurn(
 
 /**
  * True when `items` contains any agent-activity-type item — i.e. anything that
- * Codex Desktop's `Ke` whitelist (split-items-into-render-groups-CBI0Av9T.js
- * byte ~23017) routes into the agent body. Excludes user-message, the final
+ * Codex Desktop's agent-body whitelist (split-items-into-render-groups-*.js)
+ * routes into the agent body. Excludes user-message, the final
  * assistant-message, reasoning (folded into exploration), and lifecycle-only
  * items (model-changed, personality-changed, …) that Codex never collapses
  * under the worked-for header.
@@ -1645,23 +1670,23 @@ function hasAgentActivityItem(items: Array<AccumulatedThreadItem | ThreadItem>):
 }
 
 /*
- * Mirror of Codex Desktop `Ke` whitelist
- * (split-items-into-render-groups-CBI0Av9T.js byte ~23017) — the set of
- * ThreadItem types that flow into Codex's `agentItems` body and therefore
- * count toward `xt = vt.length > 0` (which gates the worked-for header).
+ * codex: split-items-into-render-groups-*.js — mirror of Codex Desktop's
+ * agent-body whitelist: the set of ThreadItem types that flow into Codex's
+ * `agentItems` body and therefore count toward the agent-activity gate (which
+ * in turn gates the worked-for header).
  *
- * Codex `Ke` TRUE branches: assistant-message, exec, patch, dynamic-tool-call,
+ * Whitelist TRUE branches: assistant-message, exec, patch, dynamic-tool-call,
  * mcp-tool-call, automatic-approval-review, multi-agent-action, stream-error,
  * system-error, context-compaction, reasoning, steered, user-input-response,
  * worked-for, web-search (with non-empty query). We exclude:
- *   - assistant-message (Codex `qe` pulls it out of agentItems as the final
+ *   - assistant-message (Codex pulls it out of agentItems as the final
  *     answer; doesn't drive the body header)
  *   - worked-for (the divider itself; would self-trigger)
- *   - reasoning (Codex `We` folds it into the exploration buffer, drops it
+ *   - reasoning (Codex folds it into the exploration buffer, drops it
  *     when the buffer is empty — so reasoning alone never produces visible
  *     activity)
  *
- * Codex `Ke` FALSE branches (routed to dedicated arrays, never into
+ * Whitelist FALSE branches (routed to dedicated arrays, never into
  * agentItems): todo-list, turn-diff, user-message, remote-task-created,
  * proposed-plan, plan-implementation, mcp-server-elicitation,
  * permission-request, userInput, personality-changed, forked-from-conversation,
@@ -1706,9 +1731,9 @@ function insertWorkedForAfterLastUserMessage(
 ): AccumulatedThreadItem[] {
   if (!workedFor) return items as AccumulatedThreadItem[];
   /*
-   * Codex Desktop `Yw` (local-conversation-thread byte ~550398) renders the
+   * codex: local-conversation-thread-*.js — Codex Desktop renders the
    * agent-body-collapsible as `<Fragment>{HEADER}{BODY}</Fragment>` where
-   * HEADER carries the "Worked for {time}" label via `Pg` followed by a
+   * HEADER carries the "Worked for {time}" label followed by a
    * `w-full border-t` horizontal rule, and BODY is a `motion.div` containing
    * activity entries + the final assistant message. The header always
    * precedes the body — i.e. worked-for sits between the user message and
