@@ -119,6 +119,7 @@ export interface ThreadRuntimeSlice {
   composerMode: ComposerMode | null;
   threadGoal: ThreadGoal | null;
   threadGoalTurnId: string | null;
+  hookRunsByTurn?: Record<string, unknown[]>;
   terminalTurnIds: string[];
   // codex: local-conversation-thread-CecHj6JI.js#mu — populated by the
   // `thread/tokenUsage/updated` notification; absent until the server emits
@@ -213,6 +214,7 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   composerMode: null,
   threadGoal: null,
   threadGoalTurnId: null,
+  hookRunsByTurn: {},
   terminalTurnIds: [],
   // codex: local-conversation-thread-CecHj6JI.js#mu — null until the first
   // `thread/tokenUsage/updated` notification lands; RightRail status footer
@@ -404,9 +406,16 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
 function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined): ThreadRuntimeSlice {
   const threadGoal = runtime?.threadGoal ?? null;
   const threadGoalTurnId = runtime?.threadGoalTurnId ?? null;
-  const items = threadGoal
-    ? projectThreadGoalOntoUserMessages(runtime?.items ?? [], threadGoal, threadGoalTurnId)
-    : runtime?.items ?? [];
+  const hookRunsByTurn = runtime?.hookRunsByTurn ?? {};
+  const rawItems = runtime?.items ?? [];
+  const goalProjectedItems = threadGoal
+    ? projectCompletedThreadGoalOntoAssistantMessages(
+        projectThreadGoalOntoUserMessages(rawItems, threadGoal, threadGoalTurnId),
+        threadGoal,
+        threadGoalTurnId,
+      )
+    : rawItems;
+  const items = projectHookStatsOntoAssistantMessages(goalProjectedItems, hookRunsByTurn);
   const terminalTurnIds = dedupeStrings(runtime?.terminalTurnIds ?? []);
   return {
     activeTurnId: runtime?.activeTurnId ?? null,
@@ -419,6 +428,7 @@ function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined
     composerMode: runtime?.composerMode ?? null,
     threadGoal,
     threadGoalTurnId,
+    hookRunsByTurn,
     terminalTurnIds,
     // codex: local-conversation-thread-CecHj6JI.js#mu — preserve the latest
     // token-usage snapshot across patch cycles; the reducer rewrites it only
@@ -1182,10 +1192,15 @@ function applyThreadGoalUpdatedNotification(state: CodexUiState, params: Record<
   if (!threadId || !goal) return state;
   const turnId = stringParam(params, "turnId") || null;
   const runtime = selectThreadRuntime(state, threadId);
+  const projectedItems = projectCompletedThreadGoalOntoAssistantMessages(
+    projectThreadGoalOntoUserMessages(runtime.items, goal, turnId),
+    goal,
+    turnId,
+  );
   return threadRuntimePatch(state, threadId, {
     threadGoal: goal,
     threadGoalTurnId: turnId,
-    items: projectThreadGoalOntoUserMessages(runtime.items, goal, turnId),
+    items: projectedItems,
   });
 }
 
@@ -1198,6 +1213,21 @@ function applyThreadGoalClearedNotification(state: CodexUiState, params: Record<
     threadGoalTurnId: null,
     items: clearThreadGoalProjection(runtime.items),
   });
+}
+
+function applyHookRunNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = stringParam(params, "threadId");
+  const turnId = stringParam(params, "turnId");
+  const run = recordParam(params.run);
+  if (!threadId || !turnId || !run) return state;
+  const runtime = selectThreadRuntime(state, threadId);
+  const currentRunsByTurn = runtime.hookRunsByTurn ?? {};
+  const existingRuns = currentRunsByTurn[turnId] ?? [];
+  const hookRunsByTurn = {
+    ...currentRunsByTurn,
+    [turnId]: upsertHookRun(existingRuns, run),
+  };
+  return threadRuntimePatch(state, threadId, { hookRunsByTurn });
 }
 
 function applyThreadSettingsUpdatedNotification(
@@ -1433,10 +1463,10 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
     case "fs/changed":
       return prependLog(state, fsChangedLogText(params));
     case "hook/started":
-      return prependLog(state, hookLogText("started", params));
+      return prependLog(applyHookRunNotification(state, params), hookLogText("started", params));
     case "hook/completed": {
       const level = hookRunStatus(params) === "failed" ? "warn" : "info";
-      return prependLog(state, hookLogText("completed", params), level);
+      return prependLog(applyHookRunNotification(state, params), hookLogText("completed", params), level);
     }
     case "windows/worldWritableWarning":
       return prependLog(state, `world-writable path warning: ${formatUnknownForLog(params)}`, "warn");
@@ -2332,6 +2362,132 @@ function clearThreadGoalProjection(items: AccumulatedThreadItem[]): AccumulatedT
   return changed ? next : items;
 }
 
+function projectCompletedThreadGoalOntoAssistantMessages(
+  items: AccumulatedThreadItem[],
+  goal: ThreadGoal,
+  turnId: string | null,
+): AccumulatedThreadItem[] {
+  const targetIndex = isCompletedThreadGoal(goal)
+    ? threadGoalTargetAssistantMessageIndex(items, turnId)
+    : -1;
+  let changed = false;
+  const next = items.map((item, index) => {
+    const record = item as Record<string, unknown>;
+    const isTarget = index === targetIndex;
+    if (isTarget) {
+      if (record._completedThreadGoal === goal && record._completedThreadGoalTurnId === turnId) return item;
+      changed = true;
+      return {
+        ...item,
+        _completedThreadGoal: goal,
+        _completedThreadGoalTurnId: turnId,
+      };
+    }
+    if (record._completedThreadGoal === undefined && record._completedThreadGoalTurnId === undefined) return item;
+    const cleaned = { ...item } as AccumulatedThreadItem;
+    delete (cleaned as Record<string, unknown>)._completedThreadGoal;
+    delete (cleaned as Record<string, unknown>)._completedThreadGoalTurnId;
+    changed = true;
+    return cleaned;
+  });
+  return changed ? next : items;
+}
+
+function projectHookStatsOntoAssistantMessages(
+  items: AccumulatedThreadItem[],
+  hookRunsByTurn: Record<string, unknown[]>,
+): AccumulatedThreadItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    const record = item as Record<string, unknown>;
+    if (!isAssistantMessageThreadItem(item)) {
+      if (record.hookStats === undefined) return item;
+      const cleaned = { ...item } as AccumulatedThreadItem;
+      delete (cleaned as Record<string, unknown>).hookStats;
+      changed = true;
+      return cleaned;
+    }
+    const turnId = turnIdOf(item);
+    const stats = turnId ? hookStatsFromRuns(hookRunsByTurn[turnId]) : null;
+    if (!stats) {
+      if (record.hookStats === undefined) return item;
+      const cleaned = { ...item } as AccumulatedThreadItem;
+      delete (cleaned as Record<string, unknown>).hookStats;
+      changed = true;
+      return cleaned;
+    }
+    if (hookStatsEqual(record.hookStats, stats)) return item;
+    changed = true;
+    return { ...item, hookStats: stats };
+  });
+  return changed ? next : items;
+}
+
+function upsertHookRun(existingRuns: unknown[], run: Record<string, unknown>): unknown[] {
+  const runId = stringParam(run, "id") || stringParam(run, "runId");
+  if (!runId) return [...existingRuns, run];
+  let replaced = false;
+  const next = existingRuns.map((existing) => {
+    const existingRecord = recordParam(existing);
+    if (!existingRecord) return existing;
+    const existingId = stringParam(existingRecord, "id") || stringParam(existingRecord, "runId");
+    if (existingId !== runId) return existing;
+    replaced = true;
+    return run;
+  });
+  return replaced ? next : [...existingRuns, run];
+}
+
+function hookStatsFromRuns(runs: unknown[] | undefined): Record<string, unknown> | null {
+  if (!runs || runs.length === 0) return null;
+  let blockedCount = 0;
+  let errorCount = 0;
+  const entries: Array<{ kind: string; text: string }> = [];
+  for (const value of runs) {
+    const run = recordParam(value);
+    if (!run) continue;
+    const status = stringParam(run, "status");
+    if (status === "blocked") blockedCount += 1;
+    if (status === "failed") errorCount += 1;
+    const rawEntries = Array.isArray(run.entries) ? run.entries : [];
+    for (const rawEntry of rawEntries) {
+      const entry = recordParam(rawEntry);
+      if (!entry) continue;
+      const kind = stringParam(entry, "kind");
+      if (kind !== "error" && kind !== "feedback" && kind !== "stop") continue;
+      entries.push({ kind, text: stringParam(entry, "text") });
+    }
+  }
+  return {
+    count: runs.length,
+    blockedCount,
+    errorCount,
+    entries,
+  };
+}
+
+function hookStatsEqual(left: unknown, right: Record<string, unknown>): boolean {
+  if (!left || typeof left !== "object" || Array.isArray(left)) return false;
+  const leftRecord = left as Record<string, unknown>;
+  if (leftRecord.count !== right.count) return false;
+  if (leftRecord.blockedCount !== right.blockedCount) return false;
+  if (leftRecord.errorCount !== right.errorCount) return false;
+  const leftEntries = Array.isArray(leftRecord.entries) ? leftRecord.entries : [];
+  const rightEntries = Array.isArray(right.entries) ? right.entries : [];
+  if (leftEntries.length !== rightEntries.length) return false;
+  for (let index = 0; index < leftEntries.length; index += 1) {
+    const leftEntry = recordParam(leftEntries[index]);
+    const rightEntry = recordParam(rightEntries[index]);
+    if (!leftEntry || !rightEntry) return false;
+    if (leftEntry.kind !== rightEntry.kind || leftEntry.text !== rightEntry.text) return false;
+  }
+  return true;
+}
+
+function isCompletedThreadGoal(goal: ThreadGoal): boolean {
+  return goal.status === "complete";
+}
+
 function threadGoalTargetUserMessageIndex(items: AccumulatedThreadItem[], turnId: string | null): number {
   if (turnId) {
     for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -2343,6 +2499,21 @@ function threadGoalTargetUserMessageIndex(items: AccumulatedThreadItem[], turnId
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
     if (item && isUserMessageThreadItem(item)) return index;
+  }
+  return -1;
+}
+
+function threadGoalTargetAssistantMessageIndex(items: AccumulatedThreadItem[], turnId: string | null): number {
+  if (turnId) {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item && isAssistantMessageThreadItem(item) && turnIdOf(item) === turnId) return index;
+    }
+    return -1;
+  }
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item && isAssistantMessageThreadItem(item) && !isNonCompletedTurnItem(item)) return index;
   }
   return -1;
 }
@@ -2466,6 +2637,15 @@ function isConfirmedUserMessage(item: AccumulatedThreadItem | ThreadItem): item 
 
 function isUserMessageThreadItem(item: AccumulatedThreadItem | ThreadItem): boolean {
   return String((item as Record<string, unknown>).type ?? "") === "userMessage";
+}
+
+function isAssistantMessageThreadItem(item: AccumulatedThreadItem | ThreadItem): boolean {
+  return String((item as Record<string, unknown>).type ?? "") === "agentMessage";
+}
+
+function isNonCompletedTurnItem(item: AccumulatedThreadItem | ThreadItem): boolean {
+  const status = (item as Record<string, unknown>)._turnStatus;
+  return typeof status === "string" && status.length > 0 && status !== "completed";
 }
 
 function optimisticUserMessageConfirmedBy(

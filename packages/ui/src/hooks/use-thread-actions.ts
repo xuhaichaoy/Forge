@@ -45,6 +45,19 @@ export function useThreadActions({
   const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
   const threadSelectionRequestId = useRef(0);
 
+  // codex: local-conversation-thread-Kn0WAsVa#J (L25912-25927) — Codex Desktop
+  // routes any `turnId !== latestTurnId` edit through `zi(u, Wd, {...})` (the
+  // ForkFromOlderTurnDialog modal). The dialog's `onForkIntoLocal` callback is
+  // what actually invokes the edit. We mirror that by deferring the edit until
+  // the user confirms the dialog: `editLastUserTurn` parks a Promise resolver
+  // here, and the dialog's confirm button resolves it.
+  const [forkConfirmOpen, setForkConfirmOpen] = useState(false);
+  const [forkConfirmSubmitting, setForkConfirmSubmitting] = useState(false);
+  const forkConfirmResolverRef = useRef<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null>(null);
+
   const createThread = useCallback(async () => {
     threadSelectionRequestId.current += 1;
     setInput("");
@@ -116,6 +129,33 @@ export function useThreadActions({
   const editLastUserTurn = useCallback(async (turnId: string, message: string) => {
     if (!activeThread) return;
     if (!(await ensureConnected())) return;
+
+    // codex: local-conversation-thread-Kn0WAsVa#J (L25912-25927) — Codex
+    // Desktop diverts edits whose `turnId !== latestTurnId` into the
+    // ForkFromOlderTurnDialog (`zi(u, Wd, {...})`). Mirror that here: park a
+    // resolver, open the dialog, and only proceed once the user confirms. The
+    // workflow itself (`editLastUserTurn` in `thread-workflow.ts`) handles the
+    // actual fork; the dialog is purely a confirmation gate.
+    const latestTurn = activeThread.turns.at(-1) ?? null;
+    const needsForkConfirm = latestTurn != null && latestTurn.id !== turnId;
+    if (needsForkConfirm) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          forkConfirmResolverRef.current = { resolve, reject };
+          setForkConfirmSubmitting(false);
+          setForkConfirmOpen(true);
+        });
+      } catch {
+        // User cancelled — silently abort, leaving the composer state as is.
+        forkConfirmResolverRef.current = null;
+        setForkConfirmOpen(false);
+        setForkConfirmSubmitting(false);
+        return;
+      }
+      // Confirmed: keep dialog open with submitting indicator until the
+      // underlying fork+edit settles.
+      setForkConfirmSubmitting(true);
+    }
     /*
      * The workflow auto-recovers `thread not found` by calling
      * `thread/resume {path}` (path-based bypass of the stale session_index).
@@ -173,8 +213,33 @@ export function useThreadActions({
         );
       }
       throw error;
+    } finally {
+      if (needsForkConfirm) {
+        forkConfirmResolverRef.current = null;
+        setForkConfirmOpen(false);
+        setForkConfirmSubmitting(false);
+      }
     }
   }, [activeThread, client, dispatch, ensureConnected, threadContextDefaults, workspace]);
+
+  // codex: local-conversation-thread-Kn0WAsVa#Wd (L6379-6453) — `onForkIntoLocal`
+  // resolves the parked Promise so `editLastUserTurn` can run the fork+edit;
+  // `onClose` rejects it so the caller bails out early.
+  const confirmForkFromOlderTurn = useCallback(() => {
+    const resolver = forkConfirmResolverRef.current;
+    if (!resolver) return;
+    resolver.resolve();
+  }, []);
+
+  const dismissForkFromOlderTurn = useCallback(() => {
+    const resolver = forkConfirmResolverRef.current;
+    if (!resolver) {
+      setForkConfirmOpen(false);
+      setForkConfirmSubmitting(false);
+      return;
+    }
+    resolver.reject(new Error("fork-cancelled"));
+  }, []);
 
   const openRenameThreadDialog = useCallback((thread: Thread) => {
     setThreadActionDialog({ kind: "rename", thread });
@@ -220,9 +285,13 @@ export function useThreadActions({
   return {
     archiveSelectedThread,
     closeThreadActionDialog,
+    confirmForkFromOlderTurn,
     createThread,
+    dismissForkFromOlderTurn,
     editLastUserTurn,
     forkActiveThreadFromTurn,
+    forkConfirmOpen,
+    forkConfirmSubmitting,
     forkSelectedThread,
     openArchiveThreadDialog,
     openRenameThreadDialog,

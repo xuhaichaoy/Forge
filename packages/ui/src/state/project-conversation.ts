@@ -191,6 +191,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     options: {
       assistantArtifacts?: RailEntry[];
       assistantAfter?: AssistantAfterRenderUnit[];
+      hasArtifacts?: boolean;
       parentThreadAttachmentSourceConversationId?: string | null;
     } = {},
   ) => {
@@ -275,6 +276,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         ...(options.assistantAfter && options.assistantAfter.length > 0
           ? { assistantAfter: options.assistantAfter }
           : {}),
+        ...(options.hasArtifacts ? { hasArtifacts: true } : {}),
         assistantPhase: assistantMessagePhase(item),
         renderPlaceholder,
       });
@@ -369,7 +371,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     const assistantArtifacts = split.assistantItem
       ? assistantArtifactsForItem(split.assistantItem)
       : [];
-    const endResources = turnStatus !== "in_progress"
+    const endResources = isCompletedTurnStatus(turnStatus)
       ? assistantEndResourcesForTurn({
           items: split.assistantItem
             ? segment.slice(0, segment.indexOf(split.assistantItem) + 1)
@@ -417,6 +419,8 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     const visibleGeneratedImages = endResourcesIncludePptx(endResources)
       ? []
       : generatedImages;
+    const turnHasArtifacts = endResources.length > 0 || visibleGeneratedImages.length > 0 || pendingGeneratedImage;
+    const turnIdForActions = generatedImageGalleryTurnId(segment, visibleGeneratedImages, split);
     const shouldRenderStaticTurnDiff = Boolean(
       split.unifiedDiffItem
         && turnStatus !== "in_progress"
@@ -475,12 +479,19 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       pushConversationItem(split.assistantItem, {
         assistantArtifacts,
         assistantAfter,
+        hasArtifacts: turnHasArtifacts,
       });
     }
     for (const item of nonImageOutputs) pushConversationItem(item);
     for (const item of split.postAssistantItems) pushConversationItem(item);
     for (const item of split.mcpServerElicitationItems) pushConversationItem(item);
-    if (split.proposedPlanItem) pushConversationItem(split.proposedPlanItem);
+    if (split.proposedPlanItem) {
+      flushActivity();
+      units.push(threadItemRenderUnit(split.proposedPlanItem, {
+        hasArtifacts: turnHasArtifacts,
+        turnId: turnIdForActions,
+      }));
+    }
     if (shouldRenderDesktopThinkingPlaceholder(split, turnStatus)) {
       pushConversationItem(desktopThinkingPlaceholderItem(segment, split));
     }
@@ -917,11 +928,14 @@ function shouldRenderStandaloneThreadItem(item: ThreadItem): boolean {
 
 function threadItemRenderUnit(
   item: ThreadItem,
+  options: { hasArtifacts?: boolean; turnId?: string | null } = {},
 ): Extract<ConversationRenderUnit, { kind: "threadItem" }> {
   return {
     kind: "threadItem",
     key: threadItemRenderKey(item),
     item,
+    ...(options.hasArtifacts ? { hasArtifacts: true } : {}),
+    ...(options.turnId ? { turnId: options.turnId } : {}),
   };
 }
 
@@ -1032,6 +1046,10 @@ function turnStatusForSegment(
     if (typeof status === "string" && status.length > 0) return status;
   }
   return "completed";
+}
+
+function isCompletedTurnStatus(status: string): boolean {
+  return status === "complete" || status === "completed";
 }
 
 function isDesktopAgentRenderableItem(item: ThreadItem): boolean {

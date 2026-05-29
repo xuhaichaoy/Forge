@@ -2,7 +2,6 @@ import { humanizeRrule } from "../src/lib/rrule-format";
 import {
   AUTOMATIONS_FUTURE_HOOKS,
   projectActiveThreadAutomation,
-  projectAutomationRailEntries,
   projectHeartbeatAutomationEligibility,
   projectAutomationsSurface,
 } from "../src/state/automations-viewer";
@@ -12,9 +11,8 @@ export default function runAutomationsViewerTests(): void {
   projectsUnsupportedStateWithoutFakeData();
   projectsEmptyReadOnlyStateFromEndpointPayload();
   projectsRealSchedulesWhenProvided();
-  projectsActiveHeartbeatAutomationsForRightRail();
-  // codex: pe:automation — single-entry per-conversation automation summary
-  // input for the right-rail `automation` section.
+  // CODEX-REF: legacy multi-list automation 已删除，仅保留 single-entry
+  // projectActiveThreadAutomation 测试覆盖 heartbeat-ACTIVE-target-thread filter。
   projectsActiveThreadAutomationForRightRailSection();
   // codex: $i(rawRrule) — humanizeRrule must turn RRULE bodies into English
   // text while falling back to the original string for cron / free-form input.
@@ -94,54 +92,6 @@ function projectsRealSchedulesWhenProvided(): void {
       nextRunAt: "2026-05-17T09:00:00+08:00",
     },
     "real schedule fields should be preserved",
-  );
-}
-
-function projectsActiveHeartbeatAutomationsForRightRail(): void {
-  const model = projectAutomationsSurface({
-    connected: true,
-    payload: {
-      automations: [
-        {
-          id: "heartbeat-1",
-          kind: "heartbeat",
-          name: "Thread heartbeat",
-          rrule: "FREQ=HOURLY",
-          status: "ACTIVE",
-          targetThreadId: "thread-1",
-        },
-        {
-          id: "paused-heartbeat",
-          kind: "heartbeat",
-          name: "Paused heartbeat",
-          rrule: "FREQ=DAILY",
-          status: "PAUSED",
-          targetThreadId: "thread-1",
-        },
-        {
-          id: "cron-1",
-          kind: "cron",
-          name: "Cron automation",
-          rrule: "FREQ=DAILY",
-          status: "ACTIVE",
-          targetThreadId: "thread-1",
-        },
-        {
-          id: "other-thread",
-          kind: "heartbeat",
-          name: "Other thread",
-          rrule: "FREQ=WEEKLY",
-          status: "ACTIVE",
-          targetThreadId: "thread-2",
-        },
-      ],
-    },
-  });
-
-  assertDeepEqual(
-    projectAutomationRailEntries(model, "thread-1"),
-    [{ id: "automation:heartbeat-1", title: "Thread heartbeat", meta: "FREQ=HOURLY" }],
-    "right rail should project only the active heartbeat automation for the current thread",
   );
 }
 

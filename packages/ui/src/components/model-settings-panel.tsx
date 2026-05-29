@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   Cog,
   Container,
+  Eye,
+  EyeOff,
   FlaskConical,
   Gauge,
   GitBranch,
@@ -38,6 +40,7 @@ import { IMAGE_GENERATION_SIZE_OPTIONS, type ImageGenerationSettings } from "../
 import {
   SETTINGS_SECTIONS,
   SETTINGS_SECTION_GROUP_HEADINGS,
+  isDesktopBackedLocalSettingsPanel,
   isRefreshableSettingsPanel,
   type SettingsSectionGroup,
 } from "../state/settings-panel-workflow";
@@ -48,6 +51,7 @@ import { McpSkillsManagementPanel } from "./mcp-skills-management-panel";
 import type { KeymapOverrides } from "../state/keymap-overrides";
 import type { ReducedMotionMode, UiAppearancePreferences } from "../state/appearance";
 import type { UiThemeMode, UiThemeSnapshot } from "../state/theme";
+import { useState } from "react";
 
 export interface SettingsPanelProps {
   activePanel: SettingsPanelId;
@@ -242,6 +246,11 @@ export function SettingsPanel({
                 onSetShortcut={onSetKeyboardShortcut ?? (() => undefined)}
                 onResetShortcut={onResetKeyboardShortcut ?? (() => undefined)}
               />
+            ) : isDesktopBackedLocalSettingsPanel(activePanel) ? (
+              <DesktopBackedSettingsContent
+                panelState={panelState}
+                section={activeSection}
+              />
             ) : (
               <SettingsCommandContent
                 panelState={panelState}
@@ -280,9 +289,57 @@ function SettingsCommandContent({
         entries={panelState.entries}
         onSelectAction={onSelectAction}
         onSelectEntry={onSelectEntry}
+        showSections={false}
       />
       {panelState.entries.length === 0 && panelState.status !== "loading" && !panelState.message && (
         <div className="hc-settings-empty">No settings entries.</div>
+      )}
+    </div>
+  );
+}
+
+function DesktopBackedSettingsContent({
+  panelState,
+  section,
+}: {
+  panelState: CommandPanelState | null;
+  section: (typeof SETTINGS_SECTIONS)[number];
+}) {
+  const entry = panelState?.entries[0] ?? null;
+  const evidence = entry?.details ?? [];
+  return (
+    <div className="hc-settings-route-placeholder">
+      <div className="hc-settings-route-placeholder-main">
+        <div className="hc-settings-route-placeholder-icon" aria-hidden="true">
+          {settingsSectionIcon(section.icon)}
+        </div>
+        <div className="hc-settings-route-placeholder-copy">
+          <div>
+            <h2>{section.title}</h2>
+            <span>{entry?.status ?? "Desktop route"}</span>
+          </div>
+          <p>
+            This Codex Desktop settings page is tracked for parity, but its host bridge is not wired in HiCodex yet.
+          </p>
+        </div>
+      </div>
+
+      <dl className="hc-settings-route-meta">
+        <div>
+          <dt>Route</dt>
+          <dd>{entry?.meta ?? section.id}</dd>
+        </div>
+      </dl>
+
+      {evidence.length > 0 && (
+        <details className="hc-settings-route-evidence">
+          <summary>Source evidence</summary>
+          <ul>
+            {evidence.map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );
@@ -299,6 +356,7 @@ function ModelSettingsForm({
   models: ModelConfig[];
   onSave: () => void;
 }) {
+  const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const configuredModels = modelSlugsForConfig(modelDraft);
   const configuredModelsText = configuredModels.join("\n");
   const setPrimaryModel = (model: string) => {
@@ -316,21 +374,137 @@ function ModelSettingsForm({
       models: nextModels,
     });
   };
+  const defaultModelSelectable = configuredModels.length > 0;
+  const defaultModelInList = defaultModelSelectable && configuredModels.includes(modelDraft.model);
   return (
     <>
-      <div className="hc-settings-grid">
-        <label>Name<input value={modelDraft.name} onChange={(event) => setModelDraft({ ...modelDraft, name: event.target.value })} /></label>
-        <label>Protocol<select value={modelDraft.protocol} onChange={(event) => setModelDraft({ ...modelDraft, protocol: event.target.value as ModelConfig["protocol"] })}><option value="openai">OpenAI compatible</option><option value="anthropic">Anthropic</option></select></label>
-        <label>Base URL<input value={modelDraft.baseUrl} onChange={(event) => setModelDraft({ ...modelDraft, baseUrl: event.target.value })} /></label>
-        <label>API Key<input type="password" value={modelDraft.apiKey} onChange={(event) => setModelDraft({ ...modelDraft, apiKey: event.target.value })} /></label>
-        <label>Default model<input value={modelDraft.model} onChange={(event) => setPrimaryModel(event.target.value)} /></label>
-        <label className="hc-settings-grid-wide">API models<textarea rows={4} value={configuredModelsText} onChange={(event) => setAvailableModels(event.target.value)} /></label>
-        <label>Temperature<input type="number" step="0.1" value={modelDraft.temperature} onChange={(event) => setModelDraft({ ...modelDraft, temperature: Number(event.target.value) })} /></label>
-        <label><input type="checkbox" checked={modelDraft.supportsImageInput !== false} onChange={(event) => setModelDraft({ ...modelDraft, supportsImageInput: event.target.checked })} /> Image input</label>
+      <div className="hc-model-form">
+        <fieldset className="hc-model-fieldset">
+          <legend className="hc-model-fieldset-legend">连接</legend>
+          <p className="hc-model-fieldset-help">配置接入方式和访问凭证。</p>
+          <div className="hc-model-fieldset-grid">
+            <label className="hc-model-field">
+              <span className="hc-model-field-label">名称</span>
+              <input
+                value={modelDraft.name}
+                onChange={(event) => setModelDraft({ ...modelDraft, name: event.target.value })}
+                placeholder="例如 OpenAI 网关"
+              />
+              <span className="hc-model-field-hint">仅在本地展示,方便区分多个网关。</span>
+            </label>
+            <label className="hc-model-field">
+              <span className="hc-model-field-label">接口协议</span>
+              <select
+                value={modelDraft.protocol}
+                onChange={(event) => setModelDraft({ ...modelDraft, protocol: event.target.value as ModelConfig["protocol"] })}
+              >
+                <option value="openai">OpenAI 兼容</option>
+                <option value="anthropic">Anthropic</option>
+              </select>
+              <span className="hc-model-field-hint">按你的服务端协议选择。</span>
+            </label>
+            <label className="hc-model-field hc-model-field-wide">
+              <span className="hc-model-field-label">服务地址</span>
+              <input
+                value={modelDraft.baseUrl}
+                onChange={(event) => setModelDraft({ ...modelDraft, baseUrl: event.target.value })}
+                placeholder="https://api.example.com/v1"
+              />
+              <span className="hc-model-field-hint">API 根地址,通常以 /v1 结尾。</span>
+            </label>
+            <label className="hc-model-field hc-model-field-wide">
+              <span className="hc-model-field-label">API Key</span>
+              <span className="hc-model-field-input-row">
+                <input
+                  className="hc-model-field-input-grow"
+                  type={apiKeyVisible ? "text" : "password"}
+                  value={modelDraft.apiKey}
+                  onChange={(event) => setModelDraft({ ...modelDraft, apiKey: event.target.value })}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="hc-model-field-input-action"
+                  onClick={() => setApiKeyVisible((value) => !value)}
+                  aria-label={apiKeyVisible ? "隐藏 API Key" : "显示 API Key"}
+                  title={apiKeyVisible ? "隐藏" : "显示"}
+                >
+                  {apiKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </span>
+              <span className="hc-model-field-hint">仅保存在本机,不会上传到任何外部服务。</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="hc-model-fieldset">
+          <legend className="hc-model-fieldset-legend">模型</legend>
+          <p className="hc-model-fieldset-help">指定可用的模型,以及默认使用哪一个。</p>
+          <div className="hc-model-fieldset-grid">
+            <label className="hc-model-field hc-model-field-wide">
+              <span className="hc-model-field-label">可用模型</span>
+              <textarea
+                rows={3}
+                value={configuredModelsText}
+                onChange={(event) => setAvailableModels(event.target.value)}
+                placeholder={"每行一个模型名,例如\ngpt-4o\ngpt-4o-mini"}
+              />
+              <span className="hc-model-field-hint">每行一个,模型名按你接入的服务命名,例如 gpt-4o。</span>
+            </label>
+            <label className="hc-model-field">
+              <span className="hc-model-field-label">默认模型</span>
+              {defaultModelSelectable ? (
+                <select
+                  value={defaultModelInList ? modelDraft.model : ""}
+                  onChange={(event) => setPrimaryModel(event.target.value)}
+                >
+                  {!defaultModelInList && <option value="" disabled>选择默认模型</option>}
+                  {configuredModels.map((slug) => (
+                    <option key={slug} value={slug}>{slug}</option>
+                  ))}
+                </select>
+              ) : (
+                <input value={modelDraft.model} onChange={(event) => setPrimaryModel(event.target.value)} disabled placeholder="先在上方添加可用模型" />
+              )}
+              <span className="hc-model-field-hint">新会话默认使用这一个,可在对话中临时切换。</span>
+            </label>
+            <label className="hc-model-field">
+              <span className="hc-model-field-label">采样温度</span>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="2"
+                value={modelDraft.temperature}
+                onChange={(event) => setModelDraft({ ...modelDraft, temperature: Number(event.target.value) })}
+              />
+              <span className="hc-model-field-hint">0 最稳定,2 最发散,日常用 0.2 ~ 0.7。</span>
+            </label>
+            <div className="hc-model-field hc-model-field-wide hc-model-field-toggle">
+              <label className="hc-model-toggle">
+                <input
+                  type="checkbox"
+                  checked={modelDraft.supportsImageInput !== false}
+                  onChange={(event) => setModelDraft({ ...modelDraft, supportsImageInput: event.target.checked })}
+                />
+                <span className="hc-model-toggle-track" aria-hidden="true">
+                  <span className="hc-model-toggle-thumb" />
+                </span>
+                <span className="hc-model-toggle-text">
+                  <span className="hc-model-field-label">支持图片输入</span>
+                  <span className="hc-model-field-hint">开启后可在对话中粘贴 / 拖入图片;请确认你选的模型本身支持图片。</span>
+                </span>
+              </label>
+            </div>
+          </div>
+        </fieldset>
       </div>
       <div className="hc-settings-footer">
-        <div className="hc-muted">{configuredModels.length} API model(s) in this provider · {models.length} runtime model profile(s)</div>
-        <button className="hc-button hc-button-primary" onClick={onSave} type="button"><KeyRound size={15} /> Save and apply</button>
+        <div className="hc-muted">
+          已配置 {configuredModels.length} 个模型 · 当前共 {models.length} 套模型档案
+        </div>
+        <button className="hc-button hc-button-primary" onClick={onSave} type="button"><KeyRound size={15} /> 保存并应用</button>
       </div>
     </>
   );

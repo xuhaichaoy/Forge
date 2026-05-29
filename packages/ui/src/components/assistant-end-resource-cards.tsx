@@ -7,11 +7,14 @@ import type { AssistantEndResource, RailEntry } from "../state/render-group-type
 
 export interface AssistantEndResourceCardViewModel {
   entry: RailEntry;
+  hoverLabel?: string;
   icon: LucideIcon;
   imageSrc?: string;
   key: string;
   meta: string;
+  openLabel: string;
   title: string;
+  trailingLabel: string;
   typeLabel: string;
 }
 
@@ -21,12 +24,16 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
   return resources.map((resource) => {
     const entry = railEntryForEndResource(resource);
     if (resource.type === "website") {
+      const title = "Web preview";
       return {
         entry,
+        hoverLabel: "Open in Codex Browser",
         icon: Globe2,
         key: `website:${resource.target}`,
         meta: resource.target,
-        title: websiteTitle(resource.target),
+        openLabel: `Open ${title}`,
+        title,
+        trailingLabel: "Open in",
         typeLabel: "Website",
       };
     }
@@ -36,7 +43,9 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
         icon: googleDriveResourceIcon(resource.resourceKind),
         key: `google-drive:${resource.url}`,
         meta: resource.url,
+        openLabel: `Open ${resource.title}`,
         title: resource.title,
+        trailingLabel: "Open",
         typeLabel: googleDriveResourceTypeLabel(resource.resourceKind),
       };
     }
@@ -48,7 +57,10 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
       imageSrc: assistantEndResourceImageSrc(preview),
       key: `file:${path}`,
       meta: path,
+      hoverLabel: "Open preview",
+      openLabel: `Open ${preview.title}`,
       title: preview.title,
+      trailingLabel: "Open in",
       typeLabel: assistantEndResourceFileTypeLabel(path, preview.kind),
     };
   });
@@ -68,9 +80,17 @@ export function AssistantEndResourceCards({
   const hiddenCount = cards.length - visibleCards.length;
 
   return (
-    <div className="hc-assistant-resource-list">
+    <div className="hc-assistant-resource-list hc-assistant-end-resource-list">
       {visibleCards.map((card) => {
         const Icon = card.icon;
+        const subtitle = (
+          <span className="hc-assistant-resource-card-subtitles">
+            <span className="hc-assistant-resource-card-type">{card.typeLabel}</span>
+            {card.hoverLabel ? (
+              <span className="hc-assistant-resource-card-hover-type">{card.hoverLabel}</span>
+            ) : null}
+          </span>
+        );
         const content = (
           <>
             {card.imageSrc ? (
@@ -84,14 +104,15 @@ export function AssistantEndResourceCards({
             )}
             <span className="hc-assistant-resource-card-copy">
               <span className="hc-assistant-resource-card-title">{card.title}</span>
-              <span className="hc-assistant-resource-card-type">{card.typeLabel}</span>
+              {subtitle}
             </span>
+            <span className="hc-assistant-resource-card-open-label">{card.trailingLabel}</span>
           </>
         );
 
         if (!onOpenArtifact) {
           return (
-            <div className="hc-assistant-resource-card" key={card.key}>
+            <div className="hc-assistant-resource-card hc-assistant-end-resource-card" key={card.key}>
               {content}
             </div>
           );
@@ -99,7 +120,8 @@ export function AssistantEndResourceCards({
 
         return (
           <button
-            className="hc-assistant-resource-card is-button"
+            className="hc-assistant-resource-card hc-assistant-end-resource-card is-button"
+            aria-label={card.openLabel}
             key={card.key}
             type="button"
             onClick={() => onOpenArtifact(card.entry)}
@@ -110,7 +132,7 @@ export function AssistantEndResourceCards({
       })}
       {hiddenCount > 0 && (
         <button
-          className="hc-assistant-resource-card is-button is-show-more"
+          className="hc-assistant-resource-card hc-assistant-end-resource-card is-button is-show-more"
           type="button"
           aria-expanded={expanded}
           onClick={() => setExpanded(true)}
@@ -137,7 +159,7 @@ function railEntryForEndResource(resource: AssistantEndResource): RailEntry {
   if (resource.type === "website") {
     return {
       id: `end-resource:website:${resource.target}`,
-      title: websiteTitle(resource.target),
+      title: "Web preview",
       meta: resource.target,
       status: "website",
       action: { kind: "url", url: resource.target },
@@ -207,15 +229,6 @@ function googleDriveResourceTypeLabel(kind: Extract<AssistantEndResource, { type
   if (kind === "spreadsheet") return "Sheets";
   if (kind === "presentation") return "Slides";
   return "Drive";
-}
-
-function websiteTitle(value: string): string {
-  try {
-    const url = new URL(value);
-    return `${url.host}${url.pathname === "/" ? "" : url.pathname}${url.search}`;
-  } catch {
-    return value;
-  }
 }
 
 function basename(path: string): string {

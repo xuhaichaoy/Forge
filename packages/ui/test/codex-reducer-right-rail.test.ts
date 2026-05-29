@@ -344,9 +344,10 @@ function projectsThreadTokenUsageIntoStatusFooter(): void {
   // `projectRightRailSections` accepts the statusFooter field (no throw,
   // returns array). HiCodexApp passes the same value through the projection
   // input + the `<RightRail statusFooter>` prop.
+  // CODEX-REF: legacy `automations` multi-list 已删除以对齐 Codex，仅保留
+  // single `automation` 字段。
   const sections = projectRightRailSections({
     progress: [],
-    automations: [],
     branchDetails: { entries: [] },
     artifacts: [],
     sources: [],

@@ -80,6 +80,7 @@ export type ConversationRenderUnit =
       userContent?: UserMessageContentPart[];
       parentThreadAttachment?: ParentThreadAttachment;
       artifacts?: RailEntry[];
+      hasArtifacts?: boolean;
       assistantPhase?: AssistantMessagePhase;
       assistantAfter?: AssistantAfterRenderUnit[];
       isStreaming?: boolean;
@@ -105,6 +106,8 @@ export type ConversationRenderUnit =
       kind: "threadItem";
       key: string;
       item: ThreadItem;
+      hasArtifacts?: boolean;
+      turnId?: string;
     }
   /*
    * Codex Desktop `JC` gallery (local-conversation-thread-BX7YNcUw.js byte

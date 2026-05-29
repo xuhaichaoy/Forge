@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
@@ -54,6 +55,27 @@ export function ApprovalCard({
   );
   const [responding, setResponding] = useState(false);
   const respondingRef = useRef(false);
+  /*
+   * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en`
+   *   let [y, b] = useState(0);                        // current step index
+   *   let z = a.length > 1;                            // hasMultipleQuestions
+   *   let H = y >= a.length - 1;                       // isLastQuestion
+   *   let te = `${y+1} of ${a.length}`;                // "1 of 3" progress
+   *   let {question:U, options:W, isOther:ne} = a[y];  // current question only
+   * Codex 一次只渲染一道 question + 顶部 stepper（多 question 时）+ 数字键
+   * 选 option 后自动 next-or-submit (Pe)、左右箭头切换 question (we)。HiCodex
+   * 严格对齐 — 不再 map 全部 question 铺开。
+   */
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const totalQuestions = detail.questions.length;
+  const hasMultipleQuestions = totalQuestions > 1;
+  const isLastQuestion = questionIndex >= totalQuestions - 1;
+  const currentQuestion = detail.questions[questionIndex] ?? null;
+  const goToQuestion = (next: number) => {
+    if (totalQuestions === 0) return;
+    const clamped = Math.min(Math.max(next, 0), totalQuestions - 1);
+    setQuestionIndex(clamped);
+  };
   const canSubmitWithAnswers = (candidateAnswers: Record<string, string[]>) =>
     detail.canAccept && detail.questions.every((question) =>
       !question.required || (candidateAnswers[question.id] ?? question.defaultAnswers).some((answer) => answer.trim()),
@@ -101,9 +123,36 @@ export function ApprovalCard({
       onLog?.(formatError(error), "error");
     }
   };
-  const panelTitle = requestPanelTitle(detail);
   const kind = requestKind(request.method);
-  const details = requestPanelDetails(detail, request);
+  /*
+   * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en` 顶部 header:
+   *   We = div.className "flex min-w-0 flex-col gap-2"
+   *        children = div.className "text-base font-medium" with text G
+   *        where G = r (外层 header prop) || U (a[y].question)
+   *   qe = div.className "flex items-start justify-between ... pt-4 pr-3 pb-2 pl-4"
+   *        children = [We, Ke]
+   *        where Ke is the stepper (rendered only when multi-question)
+   * Codex `en` header **不渲染** threadId / turnId / itemId / details / body
+   * preview——只显示当前 question title + stepper（多 question 时）。HiCodex
+   * 之前对 user-input request 也塞了这些技术 ID，是 approval/command/mcp 等
+   * 其他 request kind 的通用渲染冗余落到了 user-input。
+   * (注释里避免嵌套 / star star /，TS/CSS 都不支持嵌套块注释。)
+   *
+   * 对 user-input：跳过 details 行和 RequestBodyPreview；panel-title 用当前
+   * question.question 而非 questions[0]?.question（multi-question 时随 step 切换）。
+   */
+  const isUserInput = kind === "user-input";
+  /*
+   * CODEX-REF: en `G = r || U`（r=外层 header prop, U=a[y].question）—— 单一标题
+   * 来源。HiCodex 之前 panel-title 和 QuestionField heading 同时渲染同一份 question
+   * 文本造成重复。对齐方案：panel-title 显示 header 或 question（header 优先），
+   * QuestionField 隐藏自己的 heading（通过 hideHeading prop）。
+   */
+  const panelTitle = isUserInput
+    ? (currentQuestion?.header || currentQuestion?.question || requestPanelTitle(detail))
+    : requestPanelTitle(detail);
+  const details = isUserInput ? [] : requestPanelDetails(detail, request);
+  const showBodyPreview = !isUserInput;
   const primaryLabel = detail.externalUrl && externalUrlOpened ? "Continue" : detail.acceptLabel;
   const declineTitle = kind === "user-input"
     ? "Stops the running turn instead of submitting an empty answer."
@@ -116,6 +165,13 @@ export function ApprovalCard({
       aria-busy={responding || undefined}
       tabIndex={0}
       onKeyDown={(event) => {
+        /*
+         * CODEX-REF: en `Ie` keyboard handler —
+         *   - Escape → onEscapeDismiss
+         *   - 1-9 → select option index N AND (z ? next : submit)
+         *   - ArrowLeft/ArrowRight (multi-question only) → we(y±1)
+         *   - Enter (not in editable) → next-or-submit
+         */
         if (event.defaultPrevented) return;
         if (respondingRef.current) return;
         if (event.key === "Escape") {
@@ -123,15 +179,32 @@ export function ApprovalCard({
           respond(false);
           return;
         }
+        // CODEX-REF: en — left/right 切换 question（仅 multi-question 时）
+        if (hasMultipleQuestions && !isEditableEventTarget(event.target)
+          && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
+          event.preventDefault();
+          goToQuestion(questionIndex + (event.key === "ArrowRight" ? 1 : -1));
+          return;
+        }
+        // CODEX-REF: en — 数字键选 option after which Pe({nextAnswers}) jumps
+        // to next question or submits (when last). HiCodex 用当前 questionIndex
+        // 而不是 questions[0]。
         const shortcut = pendingRequestOptionShortcut({
           key: event.key,
-          questions: detail.questions,
+          questions: currentQuestion ? [currentQuestion] : detail.questions,
           responding: respondingRef.current,
           isEditableTarget: isEditableEventTarget(event.target),
         });
         if (shortcut) {
           event.preventDefault();
-          setAnswers((current) => ({ ...current, [shortcut.questionId]: [shortcut.value] }));
+          const nextAnswers = { ...answers, [shortcut.questionId]: [shortcut.value] };
+          setAnswers(nextAnswers);
+          // Codex Pe: not last → 跳下一题；is last → submit
+          if (!isLastQuestion) {
+            goToQuestion(questionIndex + 1);
+          } else if (canSubmitWithAnswers(nextAnswers)) {
+            respond(true, nextAnswers);
+          }
           return;
         }
         if (pendingRequestShouldSubmitOnEnter({
@@ -142,7 +215,12 @@ export function ApprovalCard({
           shiftKey: event.shiftKey,
         })) {
           event.preventDefault();
-          respond(true);
+          // CODEX-REF: en Enter — 非最后一题跳 next，最后一题 submit
+          if (!isLastQuestion && totalQuestions > 1) {
+            goToQuestion(questionIndex + 1);
+          } else {
+            respond(true);
+          }
         }
       }}
     >
@@ -157,20 +235,58 @@ export function ApprovalCard({
             ))}
           </div>
         )}
-        <RequestBodyPreview detail={detail} request={request} requestKind={kind} />
+        {showBodyPreview && <RequestBodyPreview detail={detail} request={request} requestKind={kind} />}
       </div>
-      {detail.questions.length > 0 && (
+      {currentQuestion && (
         <div className="hc-request-questions">
-          {detail.questions.map((question, index) => (
-            <QuestionField
-              key={question.id}
-              question={question}
-              index={index}
-              disabled={responding}
-              value={answers[question.id] ?? question.defaultAnswers}
-              onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))}
-            />
-          ))}
+          {/*
+           * CODEX-REF: en — 顶部 header 容器
+           *   `flex items-start justify-between border-token-border/70 pt-4 pr-3 pb-2 pl-4`
+           * 左侧是 question title `text-base font-medium`，右侧（仅多 question 时）
+           * 是 "← {y+1} of {a.length} →" 步进器。HiCodex 当前 QuestionField 内
+           * 自带 heading（question.header + question.question），所以这里只在
+           * multi-question 时补一个 stepper 显示进度。
+           */}
+          {hasMultipleQuestions && (
+            <div className="hc-request-question-stepper" aria-live="polite">
+              <button
+                type="button"
+                className="hc-request-question-stepper-nav"
+                aria-label="Previous question"
+                disabled={responding || questionIndex === 0}
+                onClick={() => goToQuestion(questionIndex - 1)}
+              >
+                <ChevronRight aria-hidden size={14} style={{ transform: "rotate(180deg)" }} />
+              </button>
+              <span className="hc-request-question-stepper-count">
+                {questionIndex + 1} of {totalQuestions}
+              </span>
+              <button
+                type="button"
+                className="hc-request-question-stepper-nav"
+                aria-label="Next question"
+                disabled={responding || isLastQuestion}
+                onClick={() => goToQuestion(questionIndex + 1)}
+              >
+                <ChevronRight aria-hidden size={14} />
+              </button>
+            </div>
+          )}
+          <QuestionField
+            key={currentQuestion.id}
+            question={currentQuestion}
+            index={questionIndex}
+            disabled={responding}
+            value={answers[currentQuestion.id] ?? currentQuestion.defaultAnswers}
+            onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: value }))}
+            /*
+             * CODEX-REF: en — panel 顶部 header 已经渲染 question 文本（G）。
+             * 隐藏 QuestionField 自带的 heading 避免与 panel-title 重复。如果
+             * QuestionField 在非 user-input 场景被调用，hideHeading 默认 false，
+             * 保留原有渲染不影响其它 RequestKind。
+             */
+            hideHeading={isUserInput}
+          />
         </div>
       )}
       {!detail.canAccept && detail.acceptDisabledReason && (
@@ -472,20 +588,43 @@ function QuestionField({
   disabled,
   value,
   onChange,
+  hideHeading = false,
 }: {
   question: PendingRequestQuestion;
   index: number;
   disabled: boolean;
   value: string[];
   onChange: (value: string[]) => void;
+  /*
+   * CODEX-REF: en — 顶部 panel header 已经显示 question 文本，QuestionField 自带
+   * heading 与之重复。caller (`ApprovalCard` user-input 分支) 传 `hideHeading=true`
+   * 让 QuestionField 跳过 `.hc-request-question-heading` 渲染。
+   */
+  hideHeading?: boolean;
 }) {
   const currentValue = value[0] ?? "";
+  /*
+   * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en`
+   *   let K = ne === !0;  // isOther
+   *   let q = W.length > 0;  // 有 options
+   *   // K && q  → options + freeform textarea 并存
+   *   // K && !q → freeform textarea only
+   *   // !K && q → options only (radio)
+   * 选中 option 与 freeform 互斥（`xe(id)` 清除 freeform，`Te` 改 textarea 清除
+   * selectedOptionId）。HiCodex 用单维 string[] 表达答案：当 value 命中某 option
+   * 时视为 selected；否则视为 freeform。
+   */
+  const isOther = question.isOther === true;
+  const selectedOptionValue = question.options.find((o) => o.value === currentValue)?.value;
+  const freeformValue = isOther && selectedOptionValue == null ? currentValue : "";
   return (
     <div className="hc-request-question">
-      <div className="hc-request-question-heading">
-        <span>{question.header}</span>
-        <small>{question.question}</small>
-      </div>
+      {!hideHeading && (
+        <div className="hc-request-question-heading">
+          <span>{question.header}</span>
+          <small>{question.question}</small>
+        </div>
+      )}
       {question.kind === "multiSelect" ? (
         <div className="hc-request-options multi">
           {question.options.map((option, optionIndex) => {
@@ -507,27 +646,46 @@ function QuestionField({
           })}
         </div>
       ) : question.options.length > 0 ? (
-        <div className="hc-request-options" role="radiogroup" aria-label={question.header}>
-          {question.options.map((option, optionIndex) => {
-            const selected = currentValue === option.value;
-            return (
-              <button
-                type="button"
-                className="hc-request-option-row"
-                data-selected={selected}
-                role="radio"
-                aria-checked={selected}
+        <>
+          <div className="hc-request-options" role="radiogroup" aria-label={question.header}>
+            {question.options.map((option, optionIndex) => {
+              const selected = selectedOptionValue === option.value;
+              return (
+                <button
+                  type="button"
+                  className="hc-request-option-row"
+                  data-selected={selected}
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={disabled}
+                  key={option.value}
+                  aria-label={option.ariaLabel}
+                  onClick={() => onChange([option.value])}
+                >
+                  <span className="hc-request-option-index">{optionIndex + 1}.</span>
+                  <OptionCopy option={option} />
+                </button>
+              );
+            })}
+          </div>
+          {isOther && (
+            /*
+             * CODEX-REF: en — `K && q` 时 options 后追加 freeform input。
+             * Codex placeholder i18n: `requestInputPanel.otherPlaceholder`
+             * = "No, and tell Codex what to do differently"。HiCodex 用通用兜底。
+             * 输入时清除 selected option（用 freeform 替代）。
+             */
+            <div className="hc-request-inline-freeform hc-request-other-freeform">
+              <textarea
+                value={freeformValue}
+                placeholder="Or type your own answer"
+                rows={1}
                 disabled={disabled}
-                key={option.value}
-                aria-label={option.ariaLabel}
-                onClick={() => onChange([option.value])}
-              >
-                <span className="hc-request-option-index">{optionIndex + 1}.</span>
-                <OptionCopy option={option} />
-              </button>
-            );
-          })}
-        </div>
+                onChange={(event) => onChange(event.target.value.length > 0 ? [event.target.value] : [])}
+              />
+            </div>
+          )}
+        </>
       ) : question.kind === "textarea" ? (
         <div className="hc-request-inline-freeform">
           <span>{index + 1}.</span>

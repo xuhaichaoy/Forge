@@ -22,6 +22,7 @@ export const HICODEX_DESKTOP_CONFIG_KEYS = {
   notificationPreferences: desktopHiCodexKey("notificationPreferences"),
   rightRailPinned: desktopHiCodexKey("rightRail", "isPinned"),
   selectedModelKey: desktopHiCodexKey("selectedModelKey"),
+  yuxiConnection: desktopHiCodexKey("yuxi", "connection"),
 } as const;
 
 export function desktopHiCodexKey(...segments: string[]): string {

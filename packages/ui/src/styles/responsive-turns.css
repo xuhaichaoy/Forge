@@ -485,6 +485,13 @@
   color: var(--hc-text-primary);
 }
 
+.hc-plan-summary-actions .hc-turn-rating-popover-actions button {
+  display: inline-flex;
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+}
+
 .hc-plan-summary-actions svg {
   transition: transform 160ms ease;
 }

@@ -44,15 +44,16 @@ export default function runMessageUnitTests(): void {
   formatsAssistantSpreadsheetResourceCards();
   formatsAssistantWebsiteAndGoogleDriveEndResources();
   limitsAssistantEndResourceCardsLikeCodexDesktop();
-  rendersAssistantActionRowForEndResourcesLikeCodexDesktop();
+  doesNotInventAssistantArtifactActionForEndResources();
   formatsAssistantImageResourceCards();
   parsesInlineMarkdownImagesBeforeLinks();
   rejectsUnsafeMarkdownLinks();
   parsesAssistantPromptLinksLikeDesktop();
   summarizesAssistantAutoReviewStats();
   // codex: local-conversation-thread-CecHj6JI.js#uh — coverage for the new
-  // assistant action row slots (hookStats `zs`, completedThreadGoal `dh`,
-  // sentAtMs trailing slot) so regressions show up in the test runner.
+  // assistant action row slots (hookStats `zs`, completedThreadGoal `dh`).
+  // Note: sentAtMs trailing slot 已删除（Codex 对齐 — action row 无 timestamp）。
+  rendersAssistantTurnRatingWhenSubmitterAvailable();
   rendersAssistantTimestampFromCompletedAtMs();
   summarizesAssistantHookStatsLikeCodexDesktop();
   rendersCompletedThreadGoalChipLikeCodexDesktop();
@@ -169,7 +170,7 @@ function formatsAssistantWebsiteAndGoogleDriveEndResources(): void {
     ]).map((card) => ({ title: card.title, typeLabel: card.typeLabel, meta: card.meta })),
     [
       { title: "report.pdf", typeLabel: "Document · PDF", meta: "docs/report.pdf" },
-      { title: "localhost:3000/report", typeLabel: "Website", meta: "http://localhost:3000/report" },
+      { title: "Web preview", typeLabel: "Website", meta: "http://localhost:3000/report" },
       { title: "Revenue model", typeLabel: "Sheets", meta: "https://docs.google.com/spreadsheets/d/example/edit" },
     ],
     "Desktop end resources should render website and Google Drive cards in the assistant after-content surface",
@@ -190,9 +191,11 @@ function limitsAssistantEndResourceCardsLikeCodexDesktop(): void {
   assertEqual(html.includes("three.pptx"), true, "third end resource should render");
   assertEqual(html.includes("four.xlsx"), false, "fourth end resource should be hidden until expanded");
   assertEqual(html.includes("Show 1 more"), true, "Desktop end resources should expose the show-more footer after three rows");
+  assertEqual(html.includes("Open preview"), true, "file end resource rows should expose Desktop's hover subtitle");
+  assertEqual(html.includes("Open in"), true, "file end resource rows should expose Desktop's open-in affordance label");
 }
 
-function rendersAssistantActionRowForEndResourcesLikeCodexDesktop(): void {
+function doesNotInventAssistantArtifactActionForEndResources(): void {
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
     unit: {
       kind: "message",
@@ -219,14 +222,19 @@ function rendersAssistantActionRowForEndResourcesLikeCodexDesktop(): void {
   }));
 
   assertEqual(
-    html.includes("hc-message-actions"),
+    html.includes("Web preview"),
     true,
-    "assistant messages with end resources should render Desktop's artifact action row even without copy text",
+    "assistant end resources should still render in the assistant after-content surface",
   );
   assertEqual(
     html.includes("Artifacts available"),
-    true,
-    "assistant end resources should count as artifacts in the action row",
+    false,
+    "Desktop action row does not expose a standalone artifacts button",
+  );
+  assertEqual(
+    html.includes("hc-message-actions"),
+    false,
+    "artifact presence alone should not create a HiCodex-only action row",
   );
   assertEqual(
     html.includes("Copy message"),
@@ -893,12 +901,43 @@ function parsesKatexBlockAndInlineMathLikeDesktop(): void {
   assertEqual(currencyHasMath, false, "bare `$5` currency should not be misread as inline math");
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#uh — the trailing slot of the
-// assistant action row binds to `n.completedAt*1000` for assistant items
-// (`item/completed.completedAtMs` in HiCodex). Verify the action row renders
-// the timestamp span when the reducer stamps `completedAtMs` onto the
-// assistant item; the previous implementation only checked legacy
-// `sentAtMs`/`createdAtMs` fields that the reducer never wrote.
+function rendersAssistantTurnRatingWhenSubmitterAvailable(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    threadId: "thread-rating",
+    onSubmitTurnFeedback: () => undefined,
+    onForkTurn: () => undefined,
+    unit: {
+      kind: "message",
+      key: "assistant-rating",
+      role: "assistant",
+      item: {
+        id: "assistant-rating",
+        type: "agentMessage",
+        _turnId: "turn-rating",
+        completed: true,
+        text: "Sample reply.",
+        completedAtMs: 1716557400000,
+      },
+      text: "Sample reply.",
+      hasArtifacts: true,
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(html.includes("Good response"), true, "Desktop Ec thumbs-up rating should render when a real submit callback is available");
+  assertEqual(html.includes("Bad response"), true, "Desktop Ec thumbs-down rating should render when a real submit callback is available");
+  assertEqual(
+    html.indexOf("Good response") < html.indexOf("Fork from this point"),
+    true,
+    "Desktop action row orders rating before fork",
+  );
+}
+
+// CODEX-REF: local-conversation-thread-CecHj6JI.js — assistant message action
+// row container className `mt-1.5 flex h-5 items-center justify-start gap-0.5`
+// 的 children 只有 copy button (`oo`) 和 artifacts indicator (`Ec`)，**无 per-
+// message timestamp**。HiCodex 之前渲染 `<span className="hc-message-time">`
+// 是凭空加的；2026-05-24 强制对齐时删除，本测试调整为 expect 不渲染时间戳。
 function rendersAssistantTimestampFromCompletedAtMs(): void {
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
     unit: {
@@ -920,8 +959,8 @@ function rendersAssistantTimestampFromCompletedAtMs(): void {
 
   assertEqual(
     html.includes("hc-message-time"),
-    true,
-    "assistant action row should render the sentAt timestamp span when completedAtMs is populated by the reducer",
+    false,
+    "assistant action row should NOT render any timestamp span (Codex 对齐：action row 只含 copy + artifacts indicator)",
   );
 }
 

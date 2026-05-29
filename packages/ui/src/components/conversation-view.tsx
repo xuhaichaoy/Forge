@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { FileText, GitFork } from "lucide-react";
+import { GitFork } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { isItemInProgress } from "../state/thread-item-fields";
@@ -23,6 +23,7 @@ import { MessageUnitView } from "./message-unit";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
 import { ThreadItemView } from "./thread-item-view";
+import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
 import {
   setThreadScrollDistanceFromBottom,
   threadScrollDistanceFromBottom,
@@ -92,6 +93,7 @@ export interface ConversationViewProps {
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
+  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
   memoryCitationRoot?: string | null;
@@ -121,6 +123,7 @@ export function ConversationView({
   onOpenAssistantArtifact,
   onOpenDiff,
   onForkTurn,
+  onSubmitTurnFeedback,
   onOpenFileReference,
   onOpenAutomation,
   memoryCitationRoot,
@@ -152,6 +155,7 @@ export function ConversationView({
       onOpenAssistantArtifact={onOpenAssistantArtifact}
       onOpenDiff={onOpenDiff}
       onForkTurn={onForkTurn}
+      onSubmitTurnFeedback={onSubmitTurnFeedback}
       onOpenFileReference={onOpenFileReference}
       onOpenAutomation={onOpenAutomation}
       memoryCitationRoot={memoryCitationRoot}
@@ -553,6 +557,7 @@ export function ConversationUnitView({
   onOpenAssistantArtifact,
   onOpenDiff,
   onForkTurn,
+  onSubmitTurnFeedback,
   onPatchAction,
   patchActionState,
   patchActionInFlight,
@@ -573,6 +578,7 @@ export function ConversationUnitView({
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
+  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
   patchActionInFlight?: boolean;
@@ -585,6 +591,8 @@ export function ConversationUnitView({
         onEditLastUserMessage={onEditLastUserMessage}
         onOpenAssistantArtifact={onOpenAssistantArtifact}
         onForkTurn={onForkTurn}
+        onSubmitTurnFeedback={onSubmitTurnFeedback}
+        threadId={threadId}
         onOpenThreadId={onOpenThreadId}
         onOpenFileReference={onOpenFileReference}
         onOpenAutomation={onOpenAutomation}
@@ -603,6 +611,7 @@ export function ConversationUnitView({
         onMcpAppHostCall={onMcpAppHostCall}
         onReadMcpResource={onReadMcpResource}
         threadId={threadId}
+        onSubmitTurnFeedback={onSubmitTurnFeedback}
       />
     );
   }
@@ -623,6 +632,8 @@ export function ConversationUnitView({
       <GeneratedImageGalleryOutput
         unit={unit}
         onForkTurn={onForkTurn}
+        onSubmitTurnFeedback={onSubmitTurnFeedback}
+        threadId={threadId}
       />
     );
   }
@@ -654,18 +665,26 @@ export function ConversationUnitView({
 function GeneratedImageGalleryOutput({
   unit,
   onForkTurn,
+  onSubmitTurnFeedback,
+  threadId,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>;
   onForkTurn?: (turnId: string) => void;
+  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
+  threadId?: string | null;
 }) {
   const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);
+  const canRateTurn = Boolean(threadId && unit.turnId && onSubmitTurnFeedback);
   return (
     <div className="hc-message assistant hc-generated-image-output" data-role="assistant">
       <GeneratedImageGallery images={unit.images} hasPending={unit.hasPending} />
-      <MessageActionRow copyText="" hasActionChildren sentAtMs={null}>
-        <span className="hc-message-action-status" title="Artifacts available" aria-label="Artifacts available">
-          <FileText size={13} />
-        </span>
+      <MessageActionRow copyText="" hasActionChildren={canFork || canRateTurn}>
+        <TurnRatingControls
+          hasArtifacts
+          onSubmit={onSubmitTurnFeedback}
+          threadId={threadId}
+          turnId={unit.turnId}
+        />
         {canFork && unit.turnId && (
           <IconActionButton
             ariaLabel="Fork from this point"

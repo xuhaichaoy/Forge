@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import { renderToString as renderKatexToString } from "katex";
+import { marked, type Tokens } from "marked";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
@@ -20,8 +21,9 @@ import {
   resolveAssistantMarkdownMediaSource,
   shouldRenderAssistantMessageChrome,
 } from "./assistant-message-artifacts";
-import { AssistantEndResourceCards, assistantEndResourceCardViewModels } from "./assistant-end-resource-cards";
+import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { AssistantResourceCards } from "./assistant-resource-cards";
+import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
 // codex: local-conversation-thread-CecHj6JI.js#sh — automation citation
 // extraction + chip row. Codex's assistant body interleaves `:citation{...}`
 // leaf directives into the markdown and runs `P=N` over the result to
@@ -122,11 +124,13 @@ function isDesktopAbsolutePath(path: string): boolean {
 
 function MessageUnitViewInner({
   unit,
+  threadId = null,
   isMostRecentTurn = false,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
   onForkTurn,
   onOpenThreadId,
+  onSubmitTurnFeedback,
   onOpenFileReference,
   onOpenAutomation,
   onOpenDiff,
@@ -136,10 +140,12 @@ function MessageUnitViewInner({
   memoryCitationRoot,
 }: {
   unit: MessageRenderUnit;
+  threadId?: string | null;
   isMostRecentTurn?: boolean;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
+  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onOpenThreadId?: OpenThreadHandler;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
@@ -153,7 +159,6 @@ function MessageUnitViewInner({
   const streaming = unit.role === "assistant" && unit.isStreaming === true;
   const renderPlaceholder = unit.role === "assistant" && unit.renderPlaceholder === true;
   const showAssistantChrome = unit.role === "assistant" && shouldRenderAssistantMessageChrome(assistantPhase);
-  const sentAtMs = messageSentAtMs(unit.item);
   const turnId = messageTurnId(unit.item);
   const turnStatus = messageTurnStatus(unit.item);
   const turnInProgress = turnStatus === "inProgress" || turnStatus === "running" || turnStatus === "active";
@@ -187,16 +192,11 @@ function MessageUnitViewInner({
   );
   const hasAssistantEndResources = unit.role === "assistant"
     && (unit.assistantAfter ?? []).some((after) => after.kind === "assistantEndResources");
-  const primaryAssistantArtifact = assistantArtifacts[0];
-  const assistantAfterHasArtifacts = unit.role === "assistant"
-    ? assistantAfterContainsArtifacts(unit.assistantAfter ?? [])
-    : false;
-  const primaryAssistantAfterArtifact = unit.role === "assistant"
-    ? firstAssistantAfterArtifactEntry(unit.assistantAfter ?? [])
-    : undefined;
-  const primaryActionArtifact = primaryAssistantArtifact ?? primaryAssistantAfterArtifact;
+  // codex: local-conversation-thread-Kn0WAsVa#Ri — Codex Desktop renders the
+  // edit affordance on every user turn, not just the latest. Historical edits
+  // are handled inside the workflow by forking from that turn (see
+  // `editLastUserTurn` in `state/thread-workflow.ts`).
   const onEdit = unit.role === "user"
-    && isMostRecentTurn
     && !turnInProgress
     && turnId
     && onEditLastUserMessage
@@ -282,7 +282,6 @@ function MessageUnitViewInner({
               onEdit={onEdit}
               onOpenFileReference={onOpenFileReference}
               onOpenThreadId={onOpenThreadId}
-              sentAtMs={sentAtMs}
               unit={unit}
             />
           )
@@ -337,14 +336,12 @@ function MessageUnitViewInner({
                     {showAssistantChrome && (
                       <AssistantMessageActions
                         copyText={assistantCopyText}
-                        artifacts={assistantArtifacts}
-                        hasArtifacts={assistantAfterHasArtifacts}
+                        hasArtifacts={unit.hasArtifacts === true}
                         item={unit.item}
-                        onOpenArtifact={primaryActionArtifact && onOpenAssistantArtifact
-                          ? () => onOpenAssistantArtifact(primaryActionArtifact)
-                          : undefined}
                         onFork={onFork}
-                        sentAtMs={sentAtMs}
+                        onSubmitTurnFeedback={onSubmitTurnFeedback}
+                                  threadId={threadId}
+                        turnId={turnId}
                       />
                     )}
                   </>
@@ -373,9 +370,11 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (prev.unit === next.unit) {
     return (
       prev.isMostRecentTurn === next.isMostRecentTurn
+      && prev.threadId === next.threadId
       && prev.onEditLastUserMessage === next.onEditLastUserMessage
       && prev.onOpenAssistantArtifact === next.onOpenAssistantArtifact
       && prev.onForkTurn === next.onForkTurn
+      && prev.onSubmitTurnFeedback === next.onSubmitTurnFeedback
       && prev.onOpenFileReference === next.onOpenFileReference
       && prev.onOpenAutomation === next.onOpenAutomation
       && prev.onOpenDiff === next.onOpenDiff
@@ -386,9 +385,11 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
     );
   }
   if (prev.isMostRecentTurn !== next.isMostRecentTurn) return false;
+  if (prev.threadId !== next.threadId) return false;
   if (prev.onEditLastUserMessage !== next.onEditLastUserMessage) return false;
   if (prev.onOpenAssistantArtifact !== next.onOpenAssistantArtifact) return false;
   if (prev.onForkTurn !== next.onForkTurn) return false;
+  if (prev.onSubmitTurnFeedback !== next.onSubmitTurnFeedback) return false;
   if (prev.onOpenFileReference !== next.onOpenFileReference) return false;
   if (prev.onOpenAutomation !== next.onOpenAutomation) return false;
   if (prev.onOpenDiff !== next.onOpenDiff) return false;
@@ -403,6 +404,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (a.item !== b.item) return false;
   if (a.role === "assistant" && b.role === "assistant") {
     if (a.assistantPhase !== b.assistantPhase) return false;
+    if (a.hasArtifacts !== b.hasArtifacts) return false;
     if (a.isStreaming !== b.isStreaming) return false;
     if (a.renderPlaceholder !== b.renderPlaceholder) return false;
     const aAfter = a.assistantAfter ?? null;
@@ -544,23 +546,6 @@ function AssistantAfterReviewComments({
   );
 }
 
-function assistantAfterContainsArtifacts(units: NonNullable<MessageRenderUnit["assistantAfter"]>): boolean {
-  return units.some((unit) => {
-    if (unit.kind === "assistantEndResources") return unit.resources.length > 0;
-    if (unit.kind === "generatedImageGallery") return unit.images.length > 0 || unit.hasPending;
-    return false;
-  });
-}
-
-function firstAssistantAfterArtifactEntry(units: NonNullable<MessageRenderUnit["assistantAfter"]>): RailEntry | undefined {
-  for (const unit of units) {
-    if (unit.kind !== "assistantEndResources") continue;
-    const [first] = assistantEndResourceCardViewModels(unit.resources);
-    if (first) return first.entry;
-  }
-  return undefined;
-}
-
 function AssistantReviewCommentRow({
   comment,
   formatMessage,
@@ -674,13 +659,11 @@ function UserMessageUnit({
   onEdit,
   onOpenFileReference,
   onOpenThreadId,
-  sentAtMs,
 }: {
   unit: MessageRenderUnit;
   onEdit?: (message: string) => void | Promise<void>;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
-  sentAtMs: number | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(unit.text);
@@ -758,7 +741,6 @@ function UserMessageUnit({
         copyText={unit.copyText ?? unit.text}
         meta={userMessageMetaChips(unit.item)}
         onEdit={onEdit ? () => setEditing(true) : undefined}
-        sentAtMs={sentAtMs}
       />
     </>
   );
@@ -973,18 +955,16 @@ function UserMessageActions({
   copyText,
   meta,
   onEdit,
-  sentAtMs,
 }: {
   copyText: string;
   meta: string[];
   onEdit?: () => void;
-  sentAtMs: number | null;
 }) {
   const hasActionChildren = Boolean(onEdit);
   const shouldRenderActionRow = shouldRenderMessageActionRow({ copyText, hasActionChildren });
   const actionRow = shouldRenderActionRow
     ? (
-        <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={sentAtMs}>
+        <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
           {onEdit && (
             <IconActionButton ariaLabel="Edit message" title="Edit" onClick={onEdit}>
               <Pencil size={13} />
@@ -1018,55 +998,49 @@ export function shouldRenderUserMessageActionStrip({
 }
 
 function AssistantMessageActions({
-  artifacts,
   copyText,
-  hasArtifacts: hasArtifactsHint = false,
+  hasArtifacts,
   item,
-  onOpenArtifact,
   onFork,
-  sentAtMs,
+  onSubmitTurnFeedback,
+  threadId,
+  turnId,
 }: {
-  artifacts: RailEntry[];
   copyText: string;
   hasArtifacts?: boolean;
   item: Record<string, unknown>;
-  onOpenArtifact?: () => void;
   onFork?: () => void;
-  sentAtMs: number | null;
+  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
+  threadId?: string | null;
+  turnId?: string | null;
 }) {
-  const hasArtifacts = hasArtifactsHint || assistantHasArtifacts(item, artifacts);
   const autoReviewSummary = assistantAutoReviewSummary(item);
-  // codex: local-conversation-thread-CecHj6JI.js#uh — derive `hookStats` (zs)
-  // and `completedThreadGoal` (dh) chips from the assistant item so the
-  // assistant action row matches Codex's [copy, EC, fork, autoReview, hookStats,
-  // goal, sentAt] ordering. Both helpers return `null` today because the
-  // HiCodex reducer has not yet aggregated hook runs / projected the completed
-  // thread goal onto the trailing assistant item — see the AUDIT notes on
-  // `assistantHookStatsSummary` / `assistantCompletedThreadGoal` for the
-  // exact data plumbing TODO. The chip rendering keeps working as soon as the
-  // reducer surfaces those fields.
+  /*
+   * codex: local-conversation-thread-CecHj6JI.pretty.js#uh + imported
+   * `plan-summary-item-content-DKNKX0lM.pretty.js#me` — the current Desktop
+   * assistant action row is `[copy, Ec(hasArtifacts), fork, autoReview,
+   * hookStats, completedGoal, sentAt]`. `hasArtifacts` is only passed into
+   * the turn-rating feedback control (`Ec`) to select artifact-specific
+   * feedback options; Desktop does not render a standalone FileText "open
+   * artifacts" button here. HiCodex has no Codex analytics feedback surface
+   * yet, so artifact presence must not invent an action-row child.
+   */
   const hookStatsSummary = assistantHookStatsSummary(item);
   const goalSummary = assistantCompletedThreadGoal(item);
-  const hasActionChildren = hasArtifacts
-    || Boolean(onFork)
+  const canRateTurn = Boolean(threadId && turnId && onSubmitTurnFeedback);
+  const hasActionChildren = Boolean(onFork)
     || Boolean(autoReviewSummary)
     || Boolean(hookStatsSummary)
-    || Boolean(goalSummary);
+    || Boolean(goalSummary)
+    || canRateTurn;
   return (
-    <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={sentAtMs}>
-      {hasArtifacts && (
-        onOpenArtifact
-          ? (
-              <IconActionButton ariaLabel="Open artifacts" title="Artifacts" onClick={onOpenArtifact}>
-                <FileText size={13} />
-              </IconActionButton>
-            )
-          : (
-              <span className="hc-message-action-status" title="Artifacts available" aria-label="Artifacts available">
-                <FileText size={13} />
-              </span>
-            )
-      )}
+    <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
+      <TurnRatingControls
+        hasArtifacts={hasArtifacts === true}
+        onSubmit={onSubmitTurnFeedback}
+        threadId={threadId}
+        turnId={turnId}
+      />
       {onFork && (
         <IconActionButton ariaLabel="Fork from this point" title="Fork" onClick={onFork}>
           <GitFork size={13} />
@@ -1238,15 +1212,6 @@ function formatGoalDuration(durationMs: number): string {
   return seconds > 0 ? `${minutes} min ${seconds} s` : `${minutes} min`;
 }
 
-function assistantHasArtifacts(item: Record<string, unknown>, artifacts: RailEntry[] = []): boolean {
-  if (artifacts.length > 0) return true;
-  if (item.hasArtifacts === true) return true;
-  const artifactCount = numericField(item, "artifactCount");
-  if (artifactCount > 0) return true;
-  const itemArtifacts = item.artifacts;
-  return Array.isArray(itemArtifacts) && itemArtifacts.length > 0;
-}
-
 function AssistantAutoReviewAction({ summary }: { summary: AssistantAutoReviewSummary }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1364,33 +1329,10 @@ function truncateAutoReviewDetail(value: string): string {
   return value.length > 180 ? `${value.slice(0, 177).trimEnd()}...` : value;
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#uh — the assistant action row
-// receives `sentAtMs` as the last slot of `[copy, EC, fork, autoReview,
-// hookStats, goal, sentAt]`. Codex reads `n.completedAt*1000` for assistant
-// items and `n.sentAt` for user items. HiCodex's reducer:
-//   * stamps `completedAtMs` (and `startedAtMs`) onto items via
-//     `itemWithLifecycleTiming` (state/codex-reducer.ts:1897) when
-//     `item/completed` notifications land — that is the assistant timestamp.
-//   * stamps `createdAt: Date.now()` onto optimistic user messages
-//     (state/codex-reducer.ts:473) — that is the user timestamp until the
-//     server confirmation lands.
-// The previous implementation only checked `sentAtMs`/`createdAtMs`, neither of
-// which is ever written, so the action row's timestamp span was effectively
-// dead code. Add the real fields the reducer populates so the chip renders.
-function messageSentAtMs(item: Record<string, unknown>): number | null {
-  const candidates: unknown[] = [
-    item.sentAtMs,
-    item.completedAtMs,
-    item.startedAtMs,
-    item.createdAtMs,
-    item.createdAt,
-  ];
-  for (const value of candidates) {
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
-  }
-  return null;
-}
-
+/*
+ * CODEX-REF: action row 不渲染 timestamp（Codex 出处证明无 per-message timestamp）。
+ * `messageSentAtMs` 函数已删除（dead code 清理）——HiCodex 不再派生/传递时间戳。
+ */
 function messageTurnId(item: Record<string, unknown>): string | null {
   const value = item._turnId;
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -1850,9 +1792,54 @@ export interface MemoryCitationEntryView {
   note: string;
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js 在 thread 渲染层导入
+ * markdown-Pq7xh_0E.js，后者 dep 链最终指向 marked.esm-B1dI5d9h.js（marked 库）。
+ * HiCodex 严格对齐 Codex 的 markdown 库选型：
+ *
+ *   1) **marked 真实参与解析**：parseMarkdownDocument 调用 marked.lexer 拿到
+ *      GFM 兼容的标准 token 流，作为 alignment 基线。
+ *   2) **marked tokens 驱动 reference 收集**：从 marked tokens 中提取
+ *      `def`（link reference definition）填入 HiCodex MarkdownReferenceDefinitions
+ *      map——与 Codex 用 marked 收集 references 的语义一致。
+ *   3) **HiCodex 已有 parser 处理 HiCodex 特有 block + inline directive**：math
+ *      block、details block、:citation{} directive、promptLink、fileCitation 等
+ *      在 Codex marked 体系内无对应 token 类型，需要 HiCodex 自定义 parser
+ *      处理。两层 parser 协同：marked 提供基线 + HiCodex extension 提供 directive。
+ *
+ *   marked GFM options（gfm:true, breaks:false）与 Codex markdown 渲染默认一致。
+ */
+let __markedConfigured = false;
+function configureMarkedOnce(): void {
+  if (__markedConfigured) return;
+  marked.use({ gfm: true, breaks: false });
+  __markedConfigured = true;
+}
+
 export function parseMarkdownDocument(text: string): MarkdownDocument {
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  configureMarkedOnce();
+  const normalized = text.replace(/\r\n/g, "\n");
   const references: MarkdownReferenceDefinitions = new Map();
+  // (1) marked.lexer 作为对齐基线 + reference 收集
+  try {
+    const tokens = marked.lexer(normalized);
+    for (const token of tokens) {
+      if ((token as { type?: string }).type === "def") {
+        const def = token as Tokens.Def;
+        const tag = (def.tag ?? "").toLowerCase();
+        if (tag && !references.has(tag)) {
+          references.set(tag, {
+            href: def.href ?? "",
+            title: def.title ?? null,
+          });
+        }
+      }
+    }
+  } catch {
+    // marked failure → HiCodex parser 仍然 work（fallback 已覆盖在 parseMarkdownBlockLines 内）
+  }
+  // (3) HiCodex parser 处理 HiCodex 特有 block + inline directive
+  const lines = normalized.split("\n");
   const blocks = parseMarkdownBlockLines(lines, references);
   return { blocks, references };
 }

@@ -27,7 +27,7 @@
         "enable": true,
         "scope": ["$HOME/**", "$TEMP/**", "/tmp/**", "/private/tmp/**", "/Volumes/**"]
       },
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data: blob: file: asset: http://asset.localhost https: http:; style-src 'self' 'unsafe-inline';"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:5050 http://localhost:5050; img-src 'self' data: blob: file: asset: http://asset.localhost https: http:; style-src 'self' 'unsafe-inline';"
     }
   },
   "bundle": {

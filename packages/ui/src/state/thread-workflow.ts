@@ -691,8 +691,41 @@ export async function editLastUserTurn(
   }
   if (!sourceThread) throw new Error("Conversation state not found.");
   const latestTurn = sourceThread.turns.at(-1) ?? null;
-  if (!latestTurn || latestTurn.id !== targetTurnId) {
-    throw new Error("Only the most recent message can be edited.");
+  if (!latestTurn) throw new Error("Conversation has no turns to edit.");
+
+  // codex: local-conversation-thread-Kn0WAsVa#Ri (L25914-25927) — editing a
+  // historical user message in Codex Desktop branches into a new thread via
+  // `thread/fork` (see `Wd` dialog handler L6424-6427), leaving the original
+  // thread intact in the sidebar. We mirror that here: fork up to the target
+  // turn, hand the new thread back to the caller (via `onRollback`, which
+  // already dispatches `upsertThread {..., select: true}`), then recurse to
+  // run the regular rollback + reissue path against the fork's tail turn.
+  if (latestTurn.id !== targetTurnId) {
+    const targetTurn = sourceThread.turns.find((turn) => turn.id === targetTurnId);
+    if (!targetTurn) throw new Error("Target turn not found.");
+    if (targetTurn.status === "inProgress") {
+      throw new Error("Cannot edit a message while a turn is in progress.");
+    }
+    const forkResult = await forkThreadFromTurn(
+      client,
+      threadId,
+      targetTurnId,
+      sourceThread.cwd || workspace,
+      context,
+    );
+    const forkedTail = forkResult.thread.turns.at(-1);
+    if (!forkedTail) throw new Error("Forked thread has no turns to edit.");
+    onRollback?.(forkResult.thread);
+    return editLastUserTurn(
+      client,
+      forkResult.thread.id,
+      forkedTail.id,
+      message,
+      forkResult.thread.cwd || workspace,
+      context,
+      onRollback,
+      forkResult.thread.path ?? null,
+    );
   }
   if (latestTurn.status === "inProgress") {
     throw new Error("Cannot edit a message while a turn is in progress.");

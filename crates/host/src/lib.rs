@@ -382,11 +382,48 @@ fn status_from_inner(inner: &HostInner) -> HostStatus {
         codex_home: codex_home.to_string_lossy().to_string(),
         installation_id: inner.installation_id.clone(),
         first_launch: inner.first_launch,
-        default_cwd: env::current_dir()
-            .ok()
-            .map(|path| path.to_string_lossy().to_string()),
+        default_cwd: resolve_default_cwd(),
         last_error: inner.last_error.clone(),
     }
+}
+
+/// Codex Desktop 桌面版的 `defaultCwd` 是用户的工作目录（通常 home），用于
+/// 在没有 thread-bound workspace 时给前端 path resolution 一个有意义的 base。
+/// HiCodex 之前用 `env::current_dir()`——Tauri dev 模式下进程 CWD 是
+/// `apps/desktop/src-tauri/`（cargo run 从这里启动），完全不是用户工作目录，
+/// 导致前端拼相对路径（model 输出的 file ref）变成 `apps/desktop/src-tauri/xxx`，
+/// 实际不存在。修复策略：
+///   1. 优先用 `$HOME` (Unix) / `$USERPROFILE` (Windows) 环境变量
+///   2. fallback 到 `env::current_dir()`，但拒绝明显是 src-tauri 进程目录的路径
+///
+/// 这与 Codex Electron 应用的 `defaultCwd` 语义一致——指向用户的"默认工作位置"
+/// 而非应用自己的进程 CWD。
+fn resolve_default_cwd() -> Option<String> {
+    if let Ok(home) = env::var("HOME") {
+        let trimmed = home.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    if let Ok(profile) = env::var("USERPROFILE") {
+        let trimmed = profile.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+    env::current_dir().ok().and_then(|path| {
+        let display = path.to_string_lossy().to_string();
+        // sanity check：拒绝 src-tauri / target / node_modules 这种明显非用户 workspace 的路径。
+        let lower = display.to_ascii_lowercase();
+        if lower.ends_with("/src-tauri")
+            || lower.contains("/src-tauri/")
+            || lower.contains("/node_modules/")
+            || lower.contains("/target/")
+        {
+            return None;
+        }
+        Some(display)
+    })
 }
 
 fn codex_home_from_inner(inner: &HostInner) -> PathBuf {

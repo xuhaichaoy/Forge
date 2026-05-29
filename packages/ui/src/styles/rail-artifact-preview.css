@@ -1,17 +1,26 @@
 /*
- * Codex Desktop `Kd` section at codex-local-conversation-thread.pretty.js :1649
- *   <section className="relative z-0 flex flex-col pb-3
- *                       after:absolute after:inset-x-4 after:bottom-0 after:h-[0.5px]
- *                       after:bg-token-border-default after:content-['']
- *                       last:pb-0 last:after:hidden">
- * Separator is a 0.5px pseudo-element with 16px horizontal inset, hidden on the
- * last section. HiCodex previously used a 1px `border-bottom` flush to edges;
- * align to Codex's thinner, inset separator.
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl — right-rail section
+ * className:
+ *   `relative z-0 flex flex-col pb-3 after:absolute after:inset-x-4 after:bottom-0
+ *    after:h-[0.5px] after:bg-token-border-default after:content-[''] last:pb-0
+ *    last:after:hidden`
+ * 严格对齐：section 自身只设 `pb-3` (padding-bottom: 12px)，**无 margin-bottom**——
+ * sections 间距由父 sections wrapper `flex flex-col gap-3` (gap: 12px) 提供。
+ * 末尾 `last:pb-0 last:after:hidden` 去掉最后 section 的 padding 和分隔线。
+ */
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl — section element className:
+ *   `relative z-0 flex flex-col pb-3 ...`
+ * `z-index: 0` creates a stacking context so sticky headers (z-10) within the section
+ * don't bleed above siblings. `flex flex-col` ensures the header + collapsible
+ * stack vertically.
  */
 .hc-rail-section {
   position: relative;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
   padding-bottom: 12px;
-  margin-bottom: 12px;
 }
 
 .hc-rail-section::after {
@@ -25,12 +34,24 @@
 }
 
 .hc-rail-section:last-child {
-  margin-bottom: 0;
   padding-bottom: 0;
 }
 
 .hc-rail-section:last-child::after {
   display: none;
+}
+
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js ul — artifact list container:
+ *   listClassName: `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
+ * `max-h-[28rem]` = 448px cap so a long artifact list scrolls independently inside
+ * the section rather than pushing all other sections out of view.
+ * HiCodex uses `data-section-id` on `.hc-rail-list` to scope this rule without
+ * changing the shared list component API.
+ */
+.hc-rail-list[data-section-id="artifacts"] {
+  max-height: 28rem;
+  overflow-y: auto;
 }
 
 /*

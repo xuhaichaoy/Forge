@@ -8,11 +8,13 @@
  * the footer styles can move with the footer component when refactored.
  */
 
-/* codex: _l — Desktop runs a gradient sweep across the browser tab title
- * while the tab is active. HiCodex mirrors the effect with a CSS-only
- * continuous sweep, scoped to `.loading-shimmer` so other rail-card titles
- * are unaffected. */
-.hc-rail-card-title.loading-shimmer {
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js _l (Browser row, byte 29184) —
+ * Codex 桌面版用 `loading-shimmer-pure-text` class 在 active browser tab title 上
+ * 跑 gradient 渐变扫光。HiCodex 以 CSS 连续扫光对齐(避免与 tool-activity
+ * `hc-thinking-shimmer` 节奏冲突),class 名严格对齐 Codex。
+ */
+.hc-rail-card-title.loading-shimmer-pure-text {
   background: linear-gradient(
     90deg,
     #6f716b 0%,
@@ -37,7 +39,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hc-rail-card-title.loading-shimmer {
+  .hc-rail-card-title.loading-shimmer-pure-text {
     animation: none;
     background: none;
     -webkit-text-fill-color: currentColor;
@@ -51,13 +53,18 @@
  * percent on the right. The full token count is tooltip-only; Compact lives in
  * the small popover menu.
  */
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js — status section (`Ce` =
+ * `T ? <mu conversationId={v} status={p} /> : null`) 裸渲染。`mu` 容器
+ * className `relative mx-4 flex min-w-0 cursor-interaction items-center
+ * justify-between text-sm text-token-text-tertiary before:absolute ...`——**无
+ * padding-y、无 background、无 sticky**，间距由父 sections wrapper `gap-3` (12px)
+ * 提供。HiCodex 之前 sticky 设计的 `padding: 4px 0 8px; background:` 已删除。
+ * 外层 wrapper div 保留（HiCodex `RightRailStatusFooter` 包含 trigger + menu
+ * 两子元素，菜单 absolute positioned 相对 wrapper，删 wrapper 会破坏定位）。
+ */
 .hc-rail-status-footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  margin-top: auto;
-  padding: 4px 0 8px;
-  background: var(--hc-surface-panel, #fffdfa);
+  position: relative;
 }
 
 .hc-rail-status-footer-trigger {

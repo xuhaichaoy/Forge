@@ -1,6 +1,5 @@
 import {
   Bot,
-  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -8,7 +7,6 @@ import {
   Clock,
   Gauge,
   GitBranch,
-  GitCommitHorizontal,
   Github,
   Globe,
   ImageIcon,
@@ -18,6 +16,7 @@ import {
   Monitor,
   Network,
   PencilLine,
+  Settings,
   Square,
   Terminal,
 } from "lucide-react";
@@ -193,6 +192,14 @@ export function RightRail({
 
   return (
     <aside className="hc-right-rail" data-display-mode={displayMode} data-pinned={isPinned ? "true" : "false"}>
+      {/*
+       * CODEX-REF: local-conversation-thread-CecHj6JI.js — sections wrapper
+       * className `flex h-fit max-h-full min-h-0 flex-col gap-3 overflow-y-auto pb-3`。
+       * 外壳是 `overflow-hidden`，sections 在内层 wrapper 内 scroll。status footer
+       * 作为最后一个普通 section 渲染于 sections wrapper 内（Codex 把 status `Ce`/
+       * `mu` 当普通 section 渲染于 sections 数组）——无 sticky-bottom。
+       */}
+      <div className="hc-right-rail-sections">
       {sections.map((section) => (
         <RailSection
           key={section.id}
@@ -210,11 +217,17 @@ export function RightRail({
            * `BranchDetailsCard` as a row trailing; the header slot is reserved
            * for the worktree menu trigger when `onOpenWorktreeMenu` is wired.
            */
-          headerAction={section.id === "branchDetails" && onOpenWorktreeMenu
-            ? <WorktreeMenuTrigger
-                worktreeLabel={branchDetailsWorktreeLabel(section.branchDetails)}
-                onOpen={onOpenWorktreeMenu}
-              />
+          /*
+           * CODEX-REF: local-conversation-thread-CecHj6JI.js ru (byte 69229) —
+           * Environment section 的 header `after` slot 总是渲染 `Ml` (byte 45117)
+           * Choose environment 按钮(path B disabled state:settings-cog icon
+           * 7x7 px,tooltip "Choose environment",disabled when canChangeEnvironment
+           * 为假)。HiCodex 没有 environments 数据流,此处仅纯 UI 占位符严格对齐
+           * Codex `jl` 容器 className(7x7、rounded-sm、bg-transparent、tertiary)。
+           * WorktreeMenuTrigger 已 deprecate(onOpenWorktreeMenu 无调用方,dead prop)。
+           */
+          headerAction={section.id === "branchDetails"
+            ? <EnvironmentSelectorPlaceholder />
             : undefined}
         >
           {section.id === "branchDetails" && section.branchDetails
@@ -262,7 +275,12 @@ export function RightRail({
               )}
         </RailSection>
       ))}
-      {/* codex: local-conversation-thread-CecHj6JI.js#mu — status footer. */}
+      {/*
+       * CODEX-REF: local-conversation-thread-CecHj6JI.js#mu — status footer
+       * 渲染在 sections wrapper 内末尾（Codex 当作 sectionKey `Ce` / `mu` 的
+       * 普通 section）。HiCodex 之前 sticky-bottom 已删除（见 right-rail.css
+       * `.hc-rail-status-footer` 的 position 已改为 static）。
+       */}
       {statusFooter && (
         <RightRailStatusFooter
           tokensUsed={statusFooter?.tokensUsed}
@@ -272,6 +290,7 @@ export function RightRail({
           onCompactThread={onCompactThread}
         />
       )}
+      </div>
     </aside>
   );
 }
@@ -403,15 +422,18 @@ function rightRailContextUsage(
  * header icons were a HiCodex-original embellishment; removed for parity.
  */
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js Sf —
-// Codex Desktop's Git summary panel renders exactly five rows in this strict order:
-//   1. df  — Changes        (pencil icon  + `<Sc linesAdded linesRemoved>` trailing)
-//   2. yf  — Local          (Monitor/Cloud/Worktree icon + chevron-down trailing)
-//   3. Fn  — Branch         (branch icon  + chevron-down trailing, label = currentBranch)
-//   4. er  — Commit         (commit icon  + "Commit" label, no trailing)
-//   5. mf  — GitHub status  (GitHub icon  + ghStatus-derived label)
-// Every row shares the `nt` (gs/Kl) container so they all flush to the same 28px line
-// height; HiCodex now uses `SummaryPanelRow` for the same effect.
+// CODEX-REF: local-conversation-thread-CecHj6JI.js `ru` (Environment section, byte 69229) —
+// 当前 Codex 桌面版 Environment section 内仅以下 row 顺序:
+//   1. Ul  — Changes        (file-with-plus icon + `<Do linesAdded linesRemoved>` trailing,
+//                            zero 时仍渲染 `+0 -0`,无 fallback 字符串)
+//   2. eu  — worktree / thread-handoff trigger(`Cs` 包装,仅 conversationId 存在时渲染;
+//            HiCodex 用 "Local" 行承载相同语义)
+//   3. iu  — branch picker  (branch-graph icon + label=currentBranch + chevron-right;
+//            HiCodex 当前没 currentBranch 数据流,跳过该独立 row)
+//   4. ga  — git actions    (commit/push action rows;HiCodex 没数据流,跳过)
+//   5. Kl  — GitHub status  (icon + 多状态 label;HiCodex 用 "GitHub" 行对齐)
+// 注:Codex 没有独立 "Branch" 和 "Commit" row(HiCodex 旧 5-row 设计来自已不存在的
+// `BX7YNcUw.js` 旧 bundle 引用)。本次砍掉独立 Branch / Commit row 以严格对齐 CecHj6JI。
 function BranchDetailsCard({
   details,
   canOpenEntry,
@@ -430,8 +452,6 @@ function BranchDetailsCard({
   }
 
   const localRow = details.rows.find((row) => row.id === "local");
-  const branchRow = details.rows.find((row) => row.id === "branch");
-  const commitRow = details.rows.find((row) => row.id === "commit");
   const githubRow = details.rows.find((row) => row.id === "github");
   const githubLabel = githubRow?.value ?? details.githubStatus?.label ?? "GitHub CLI unavailable";
 
@@ -445,13 +465,17 @@ function BranchDetailsCard({
   const canOpenChanges = canOpenEntry(changesEntry);
   const linesAdded = details.gitStatus?.linesAdded ?? 0;
   const linesRemoved = details.gitStatus?.linesRemoved ?? 0;
-  const changesTrailing = (linesAdded > 0 || linesRemoved > 0)
-    ? <DiffStatsDisplay linesAdded={linesAdded} linesRemoved={linesRemoved} />
-    : <span className="hc-summary-panel-row-meta">{changesEntry.meta}</span>;
+  // CODEX-REF: diff-stats-C-S_JU1b.js `l` (= Do) —
+  // Codex always renders `+N -N` chips when diffStats != null, including the zero
+  // case (`+0 -0`). 之前 HiCodex 的 zero-state fallback 到 "0 changed files" 字符串没
+  // 源码依据(Codex bundle 全文检索无此字符串),已对齐 always +N -N。
+  const changesTrailing = (
+    <DiffStatsDisplay linesAdded={linesAdded} linesRemoved={linesRemoved} />
+  );
 
   return (
     <div className="hc-rail-list">
-      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js df — Changes row + diff stats trailing */}
+      {/* CODEX-REF: local-conversation-thread-CecHj6JI.js Ul (byte 55985) — Changes row */}
       <SummaryPanelRow
         icon={<PencilLine size={14} />}
         label="Changes"
@@ -459,7 +483,8 @@ function BranchDetailsCard({
         onClick={canOpenChanges ? () => onOpenEntry(changesEntry) : undefined}
         title={changesEntry.meta}
       />
-      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js yf — Local row */}
+      {/* CODEX-REF: local-conversation-thread-CecHj6JI.js eu (byte 66019) — worktree trigger
+          row;HiCodex 没接 worktree handoff 数据流,沿用旧 localRow 数据承载 label。 */}
       {localRow ? (
         <SummaryPanelRow
           icon={<Monitor size={14} />}
@@ -468,29 +493,37 @@ function BranchDetailsCard({
           trailing={<ChevronDown size={12} />}
         />
       ) : null}
-      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js Fn — Branch row (label = branch name) */}
-      {branchRow ? (
-        <SummaryPanelRow
-          icon={<GitBranch size={14} />}
-          label={branchRow.value || branchRow.label}
-          title={branchRow.value || branchRow.label}
-          trailing={<ChevronDown size={12} />}
-        />
-      ) : null}
-      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js er — Commit row */}
-      {commitRow ? (
-        <SummaryPanelRow
-          icon={<GitCommitHorizontal size={14} />}
-          label={commitRow.label}
-        />
-      ) : null}
-      {/* CODEX-REF: local-conversation-thread-BX7YNcUw.js mf — GitHub status row */}
+      {/* CODEX-REF: local-conversation-thread-CecHj6JI.js Kl (byte 56814) — GitHub status row */}
       <SummaryPanelRow
         icon={<Github size={14} />}
         label={githubLabel}
         title={githubLabel}
       />
     </div>
+  );
+}
+
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js Ml (byte 45117) — Choose
+ * environment 按钮 placeholder。Codex `jl` 容器 className:
+ *   `flex h-7 w-7 shrink-0 cursor-interaction items-center justify-center
+ *    rounded-sm border-0 bg-transparent p-0 text-token-text-tertiary
+ *    hover:bg-token-list-hover-background data-[state=open]:bg-token-list-hover-background`
+ * path B(无 environment selected,canChangeEnvironment 假)只渲染 settings-cog
+ * `<Ya className="icon-sm"/>` + tooltip + disabled。HiCodex 没 environments 数据流,
+ * 此处 disabled 占位严格对齐 Codex path B 视觉。
+ */
+function EnvironmentSelectorPlaceholder(): ReactNode {
+  return (
+    <button
+      aria-label="Choose environment"
+      className="hc-rail-environment-selector"
+      disabled
+      title="Choose environment"
+      type="button"
+    >
+      <Settings size={14} aria-hidden="true" />
+    </button>
   );
 }
 
@@ -577,12 +610,29 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
         </button>
         {headerAction}
       </div>
-      {expanded && (
-        <div className="hc-rail-section-content" id={contentId}>
-          {summary && <div className="hc-rail-section-summary">{summary}</div>}
-          {children}
+      {/*
+       * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl (byte ~53727) — Codex
+       * 用 framer-motion `<Jn.div>` + AnimatePresence 做折叠展开:
+       *   initial / exit: { height: 0, opacity: 0, marginTop: 0 }
+       *   animate:        { height: "auto", opacity: 1, marginTop: 2 }
+       *   transition:     da = { duration: 0.5, ease: [.19, 1, .22, 1] }
+       *   className:      "relative z-0 overflow-hidden"
+       * HiCodex 用 CSS grid-rows trick + opacity + margin-top 等价实现 height-auto
+       * 动画(无 framer-motion 依赖),transition spec 严格对齐 Codex `da`。
+       */}
+      <div
+        aria-hidden={!expanded}
+        className="hc-rail-section-collapsible"
+        data-expanded={expanded ? "true" : "false"}
+        id={contentId}
+      >
+        <div className="hc-rail-section-collapsible-inner">
+          <div className="hc-rail-section-content">
+            {summary && <div className="hc-rail-section-summary">{summary}</div>}
+            {children}
+          </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }
@@ -608,8 +658,15 @@ export function RailList({
         canToggle: false,
       };
   let generatedImageCount = 0;
+  /*
+   * CODEX-REF: local-conversation-thread-CecHj6JI.js ul ({artifacts} listClassName):
+   *   `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
+   * Artifact lists use `max-height: 28rem` so a long artifact list scrolls
+   * independently inside the section rather than pushing all other sections out
+   * of view. `data-section-id` feeds the CSS selector.
+   */
   return (
-    <div className="hc-rail-list">
+    <div className="hc-rail-list" data-section-id={sectionId}>
       {clipped.entries.map((entry) => {
         const isGeneratedImage = sectionId === "artifacts" && isGeneratedImageArtifact(entry);
         if (isGeneratedImage) generatedImageCount += 1;
@@ -708,12 +765,11 @@ function RailEntryContent({
   trailingAction?: ReactNode;
 }) {
   const title = displayTitle ?? entry.title;
-  // codex: au/_l — automation and browser rows render a sublabel under the
-  // title (rrule summary / displayUrl), matching Desktop's two-line `<es>`.
-  const showSecondary = sectionId === "branchDetails"
-    || sectionId === "automations"
-    || sectionId === "automation"
-    || sectionId === "browser";
+  const isBrowser = sectionId === "browser";
+  const browserActive = isBrowser && entry.status === "active";
+  // codex: au — automation 行 sublabel (rrule summary) 是二行 layout;
+  // browser 单独走 inline baseline gap-2,见下方 branch。
+  const showSecondary = sectionId === "branchDetails" || sectionId === "automation";
   // codex: au — Desktop sets the row tooltip to "Next run: …" (entry.status
   // for automation rows) rather than the rrule summary, so use status when
   // present for automation rows; fall back to meta/title otherwise.
@@ -721,13 +777,11 @@ function RailEntryContent({
     ? entry.status
     : entry.meta ?? title;
   const diffStats = sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
-  // codex: _l — browser title shimmer while the tab is active. HiCodex toggles
-  // a CSS class instead of recreating Desktop's keyframe-driven highlight
-  // overlay; visual cue is identical (animated gradient sweep).
+  // codex: _l — Browser title shimmer while the tab is active。Codex 把整段
+  // (title + displayUrl) 用 `loading-shimmer-pure-text` 包裹,见 isBrowser 分支。
   const titleClassName = [
     "hc-rail-card-title",
     sectionId === "progress" ? "hc-rail-card-title-progress" : null,
-    sectionId === "browser" && entry.status === "active" ? "loading-shimmer" : null,
   ].filter(Boolean).join(" ");
   return (
     <div className="hc-rail-card-main">
@@ -735,17 +789,50 @@ function RailEntryContent({
         {railEntryIcon(entry, sectionId)}
       </span>
       <div className="hc-rail-card-copy">
-        <div className="hc-rail-card-title-row">
-          <div className={titleClassName} title={tooltip}>{title}</div>
-          {diffStats && <RailDiffStats stats={diffStats} />}
-        </div>
-        {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
-        {showSecondary && entry.status && sectionId !== "browser" && (
-          <div className="hc-rail-card-status">{entry.status}</div>
+        {isBrowser ? (
+          /*
+           * CODEX-REF: local-conversation-thread-CecHj6JI.js _l (Browser row, byte 29184) —
+           * title 和 displayUrl 同一行 baseline-aligned。源码 className 精确:
+           *   active:  `flex min-w-0 items-baseline gap-2` 包在
+           *            `<span class="loading-shimmer-pure-text w-full max-w-full min-w-0">` 内
+           *   inactive: 同样 `flex items-baseline gap-2` 作为 labelClassName 传给 es
+           * 子 span:
+           *   title:      `max-w-[60%] min-w-0 shrink truncate`
+           *   displayUrl: `max-w-[40%] min-w-0 shrink truncate text-sm`
+           *               + inactive 时 `text-token-text-secondary`(active 由 shimmer 接管)
+           */
+          <div
+            className={browserActive
+              ? "hc-rail-card-browser-label loading-shimmer-pure-text"
+              : "hc-rail-card-browser-label"}
+            title={tooltip}
+          >
+            <span className="hc-rail-card-browser-title">{title}</span>
+            {entry.meta && (
+              <span
+                className={browserActive
+                  ? "hc-rail-card-browser-url"
+                  : "hc-rail-card-browser-url hc-rail-card-browser-url-inactive"}
+              >
+                {entry.meta}
+              </span>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="hc-rail-card-title-row">
+              <div className={titleClassName} title={tooltip}>{title}</div>
+              {diffStats && <RailDiffStats stats={diffStats} />}
+            </div>
+            {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
+            {showSecondary && entry.status && (
+              <div className="hc-rail-card-status">{entry.status}</div>
+            )}
+            {showSecondary && entry.details?.map((detail) => (
+              <div className="hc-rail-card-status" key={detail}>{detail}</div>
+            ))}
+          </>
         )}
-        {showSecondary && entry.details?.map((detail) => (
-          <div className="hc-rail-card-status" key={detail}>{detail}</div>
-        ))}
       </div>
       {trailingAction && <div className="hc-rail-card-actions">{trailingAction}</div>}
     </div>
@@ -763,10 +850,10 @@ function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }
 
 function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "progress") return progressEntryIcon(entry.status);
-  // codex: local-conversation-thread/au — automation row uses Clock (`na`),
-  // not CalendarClock — that latter is the legacy `automations` plural list.
+  // CODEX-REF: local-conversation-thread/au — Codex 仅渲染 single automation
+  // row 用 Clock (`na`) 图标。Legacy multi-list "automations" 分支及 CalendarClock
+  // 图标已删除以严格对齐 Codex（无 multi-list automation section）。
   if (sectionId === "automation") return <Clock size={14} />;
-  if (sectionId === "automations") return <CalendarClock size={14} />;
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
   if (sectionId === "sideChats") {
     return normalizeProgressStatus(entry.status) === "inProgress"

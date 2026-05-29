@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSS
 import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
 import { FolderOpen, Loader2, Plus, X } from "lucide-react";
 import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
+import { KbArchiveView } from "./components/kb-archive-view";
+import { KbIngestView } from "./components/kb-ingest-view";
+import { KbLibraryView } from "./components/kb-library-view";
+import { KbTodoView } from "./components/kb-todo-view";
 import { AppToastViewport } from "./components/app-toast-viewport";
 import { AboveComposerPanelContainer } from "./components/above-composer-panel";
 import { FilesTabContent } from "./components/files-tab-content";
@@ -29,11 +33,16 @@ import {
   decodeSelection,
   encodeSelection,
 } from "./components/model-picker-menu";
+import {
+  ReasoningPickerMenu,
+  normalizeReasoningEffortValue,
+} from "./components/reasoning-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { AutomationsPreviewPanel } from "./components/automations-preview-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import type { PatchAction, PatchActionState } from "./components/conversation-view";
+import type { SubmitTurnRatingEvent, TurnRatingEvent } from "./components/turn-rating-controls";
 import {
   LiveTurnDiffPortal,
   shouldRenderLiveTurnDiffPortal,
@@ -55,6 +64,7 @@ import { RemoteTaskView } from "./components/remote-task-view";
 import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
 import { ThreadActionDialog } from "./components/thread-action-dialog";
+import { ForkFromOlderTurnDialog } from "./components/fork-from-older-turn-dialog";
 import { ThreadFindBar } from "./components/thread-find-bar";
 import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
@@ -127,7 +137,6 @@ import { buildApprovalResult } from "./state/approval-requests";
 // right-rail `automation` section can render its Clock + name + rrule body.
 import {
   projectActiveThreadAutomation,
-  projectAutomationRailEntries,
   projectAutomationsSurface,
 } from "./state/automations-viewer";
 import { resolveHiCodexBuildInfo } from "./state/build-info";
@@ -425,6 +434,40 @@ function orderCommandPanelThreadsByPinned<T extends { id: string }>(threads: T[]
   return [...pinnedThreads, ...recentThreads];
 }
 
+function turnFeedbackUploadClassification(event: TurnRatingEvent): string {
+  if (event.eventKind === "turn_rating") {
+    return event.rating === "thumbs_up" ? "good_result" : "bad_result";
+  }
+  return "other";
+}
+
+function turnFeedbackUploadReason(event: TurnRatingEvent): string {
+  if (event.eventKind === "turn_rating") return event.rating;
+  const selectedOption = event.metadata.selected_option ?? "none";
+  const details = event.metadata.details.trim();
+  return details ? `option=${selectedOption}\n\n${details}` : `option=${selectedOption}`;
+}
+
+function turnFeedbackUploadTags(event: TurnRatingEvent): Record<string, string> {
+  const baseTags = {
+    source: "hicodex_turn_rating",
+    event_kind: event.eventKind,
+    turn_id: event.turnId,
+  };
+  if (event.eventKind === "turn_rating") {
+    return {
+      ...baseTags,
+      rating: event.rating,
+    };
+  }
+  return {
+    ...baseTags,
+    action: event.action,
+    has_artifacts: event.metadata.has_artifacts ? "true" : "false",
+    selected_option: event.metadata.selected_option ?? "none",
+  };
+}
+
 const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
 const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;
 
@@ -710,9 +753,46 @@ export function HiCodexApp() {
       // localStorage not available — selection still works in memory
     }
   }, []);
+
+  /*
+   * CODEX-REF: composer-D0cvMZjq.js — Codex setter `f(d.model, t) =
+   * setModelAndReasoningEffort` writes selected effort to modelSettings, which
+   * feeds into composer's `m.reasoningEffort` (= effectiveThreadContextDefaults
+   * 在 HiCodex 这边). HiCodex 用同 selectedModelKey 模式：单独 useState 持久化到
+   * localStorage，effectiveThreadContextDefaults 合并时优先取这里。
+   */
+  const [reasoningEffortOverride, setReasoningEffortOverrideState] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return window.localStorage.getItem("hicodex.reasoningEffortOverride");
+    } catch {
+      return null;
+    }
+  });
+  const setReasoningEffortOverride = useCallback((effort: string | null) => {
+    setReasoningEffortOverrideState(effort);
+    try {
+      if (effort) {
+        window.localStorage.setItem("hicodex.reasoningEffortOverride", effort);
+      } else {
+        window.localStorage.removeItem("hicodex.reasoningEffortOverride");
+      }
+    } catch {
+      // localStorage not available — selection still works in memory
+    }
+  }, []);
   const [modelPickerAnchor, setModelPickerAnchor] = useState<HTMLElement | null>(null);
   const toggleModelPickerAnchor = useCallback((anchor: HTMLElement) => {
     setModelPickerAnchor((current) => (current === anchor ? null : anchor));
+  }, []);
+  /*
+   * CODEX-REF: composer-D0cvMZjq.js — Reasoning picker uses `Ia` popover anchored
+   * to footer trigger button. HiCodex 复刻同 anchor 模式：toggleable HTMLElement
+   * state，由 footer chip 的 onClick 通过 setReasoningPickerAnchor 打开 popover。
+   */
+  const [reasoningPickerAnchor, setReasoningPickerAnchor] = useState<HTMLElement | null>(null);
+  const toggleReasoningPickerAnchor = useCallback((anchor: HTMLElement) => {
+    setReasoningPickerAnchor((current) => (current === anchor ? null : anchor));
   }, []);
   /*
    * Auth status from codex-rs's `getAuthStatus` RPC. The actual `client` is
@@ -855,6 +935,23 @@ export function HiCodexApp() {
     fileSearchControllerRef.current = new WorkspaceFuzzyFileSearchController(rpc);
     return rpc;
   }, [setAccountProjectionState]);
+  const submitTurnFeedback = useCallback<SubmitTurnRatingEvent>(async (event) => {
+    try {
+      await client.request("feedback/upload", {
+        classification: turnFeedbackUploadClassification(event),
+        reason: turnFeedbackUploadReason(event),
+        threadId: event.threadId,
+        includeLogs: false,
+        tags: turnFeedbackUploadTags(event),
+      }, 120_000);
+      if (event.eventKind === "action") {
+        dispatch({ type: "log", text: "Turn feedback sent.", level: "info" });
+      }
+    } catch (error) {
+      const prefix = event.eventKind === "action" ? "Turn feedback submit failed" : "Turn rating failed";
+      dispatch({ type: "log", text: `${prefix}: ${formatError(error)}`, level: "warn" });
+    }
+  }, [client]);
 
   /* Auth refresh — bumped by login/logout notifications + manual picker opens. */
   const [authRefreshNonce, setAuthRefreshNonce] = useState(0);
@@ -1121,10 +1218,11 @@ export function HiCodexApp() {
     state.activeThreadId,
     state.connected,
   ]);
-  const automationRailEntries = useMemo(
-    () => projectAutomationRailEntries(automationsModel, state.activeThreadId),
-    [automationsModel, state.activeThreadId],
-  );
+  /*
+   * CODEX-REF: Codex 仅渲染 single automation。legacy multi-list `automations`
+   * 已删除，对应的 `projectAutomationRailEntries` useMemo (dead code) 也删除。
+   * 仍保留 `projectActiveThreadAutomation` 提供 single automation 数据。
+   */
   // codex: local-conversation-thread-CecHj6JI.js#pe — single-entry automation
   // summary input for the right-rail `automation` section. Pulls the active
   // heartbeat automation targeting the current thread (same filter as the
@@ -1415,7 +1513,30 @@ export function HiCodexApp() {
   useEffect(() => {
     if (workspaceInitialized.current || !state.hostStatus?.defaultCwd) return;
     workspaceInitialized.current = true;
-    setWorkspace((current) => current.trim() || state.hostStatus?.defaultCwd || "");
+    /*
+     * CODEX-REF: thread-context-DyfT5Vx-.js / use-webview-execution-target-B7RRBzs9.js
+     * Codex 桌面版 thread.cwd 来自 Environment/worktree picker 的 workspaceRoot，
+     * 永远是用户实际工作目录（非进程 CWD）。HiCodex 之前用 host 上报的 defaultCwd
+     * 作为 workspace 初值——Rust 端 host 已修为优先 `$HOME`，但前端仍兜底过滤：
+     * 拒绝明显是 Tauri 进程目录 / 仓内构建目录的路径，防止旧 host bin 仍 leak 出错误值。
+     */
+    setWorkspace((current) => {
+      if (current.trim()) return current;
+      const candidate = (state.hostStatus?.defaultCwd ?? "").trim();
+      if (!candidate) return "";
+      const lower = candidate.toLowerCase();
+      if (
+        lower.endsWith("/src-tauri")
+        || lower.includes("/src-tauri/")
+        || lower.includes("/node_modules/")
+        || lower.includes("/target/")
+      ) {
+        // host bin 还在报告进程 cwd 的旧路径——丢弃，让用户后续 setWorkspace
+        // (例如打开 thread 时 activeThread.cwd 同步) 设入正确值。
+        return "";
+      }
+      return candidate;
+    });
   }, [state.hostStatus?.defaultCwd]);
 
   useEffect(() => {
@@ -1553,16 +1674,27 @@ export function HiCodexApp() {
    */
   const effectiveThreadContextDefaults = useMemo(() => {
     const picked = decodeSelection(selectedModelKey);
-    const modelContext = picked ? {
+    let modelContext = picked ? {
       ...(state.threadContextDefaults ?? {}),
       model: picked.model,
       modelProvider: picked.providerId,
     } : state.threadContextDefaults;
+    /*
+     * CODEX-REF: composer-D0cvMZjq.js — m.reasoningEffort 由 setModelAndReasoningEffort
+     * 写入 modelSettings，渲染时取这个值给 picker 和送给后端。HiCodex 把 user 切换
+     * 后的 effort 通过 reasoningEffortOverride 覆盖 thread context 默认值。
+     */
+    if (reasoningEffortOverride) {
+      modelContext = {
+        ...(modelContext ?? {}),
+        reasoningEffort: reasoningEffortOverride,
+      };
+    }
     const workspaceInstructions = workspaceDeveloperInstructions?.workspace === workspace.trim()
       ? workspaceDeveloperInstructions.value
       : null;
     return withWorkspaceDeveloperInstructions(modelContext, workspaceInstructions);
-  }, [selectedModelKey, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
+  }, [reasoningEffortOverride, selectedModelKey, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
 
   useEffect(() => {
     if (!state.connected) {
@@ -1941,9 +2073,13 @@ export function HiCodexApp() {
   const {
     archiveSelectedThread,
     closeThreadActionDialog,
+    confirmForkFromOlderTurn,
     createThread,
+    dismissForkFromOlderTurn,
     editLastUserTurn,
     forkActiveThreadFromTurn,
+    forkConfirmOpen,
+    forkConfirmSubmitting,
     forkSelectedThread,
     openArchiveThreadDialog,
     openRenameThreadDialog,
@@ -2142,11 +2278,13 @@ export function HiCodexApp() {
   const rightRailSections = useMemo(
     () => projectRightRailSections({
       progress: conversation.progress,
-      // codex: local-conversation-thread-CecHj6JI.js#pe — single-row
-      // `automation` section (Clock icon + name + rrule + "Next run: …"
-      // tooltip). Sits between Progress and the legacy `automations` list.
+      /*
+       * CODEX-REF: local-conversation-thread-CecHj6JI.js#pe — single-row
+       * `automation` section (Vl sectionKey="automation"). Codex bundle 无
+       * multi-list automation section，legacy `automations` 传递及对应的
+       * `projectAutomationRailEntries` useMemo / import 全部删除（dead code）。
+       */
       ...(activeThreadAutomation ? { automation: activeThreadAutomation } : {}),
-      automations: automationRailEntries,
       branchDetails,
       artifacts: conversation.artifacts,
       showOutputs: !branchDetails.hasData,
@@ -2162,7 +2300,6 @@ export function HiCodexApp() {
     }),
     [
       activeThreadAutomation,
-      automationRailEntries,
       branchDetails,
       conversation,
       rightRailStatusFooter,
@@ -3950,10 +4087,29 @@ export function HiCodexApp() {
         setComposerAttachments([]);
         openCommandMenu();
         return;
+      case "showReasoningPicker": {
+        /*
+         * CODEX-REF: composer-D0cvMZjq.js — `/reasoning` slash command opens the
+         * Reasoning effort dropdown anchored to the composer footer chip. HiCodex
+         * 用 `[data-chip="reasoning"]` 选 footer chip 作为 anchor；如果 chip 不存在
+         * （e.g. effort 字段未设置时该 chip 不渲染），把 anchor 设为 composer
+         * footer 本身作为退路。
+         */
+        setInput("");
+        setComposerAttachments([]);
+        if (typeof document !== "undefined") {
+          const chip = document.querySelector<HTMLElement>('[data-chip="reasoning"]')
+            ?? document.querySelector<HTMLElement>(".hc-composer-external-footer");
+          if (chip) {
+            setReasoningPickerAnchor((current) => current === chip ? null : chip);
+          }
+        }
+        return;
+      }
       case "log":
         dispatch({ type: "log", text: action.message, level: action.level });
     }
-  }, [composerMode, createWorkbenchThread, enableComposerPlanMode, loadSettingsPanel, openCommandMenu, runSlashRequest, setActiveComposerMode]);
+  }, [composerMode, createWorkbenchThread, enableComposerPlanMode, loadSettingsPanel, openCommandMenu, runSlashRequest, setActiveComposerMode, setReasoningPickerAnchor]);
 
   const executeSlashCommand = useCallback((command: SlashCommand) => {
     void handleSlashAction(applySlashCommand(command.id, { input, mode: composerMode }));
@@ -4422,6 +4578,7 @@ export function HiCodexApp() {
                 sandboxMode={effectiveThreadContextDefaults?.sandbox ?? state.threadContextDefaults?.sandbox}
                 onOpenPermissions={() => void loadSettingsPanel("permissions")}
                 onOpenModelPicker={toggleModelPickerAnchor}
+                onOpenReasoningPicker={toggleReasoningPickerAnchor}
               />
             </div>
           )}
@@ -4435,6 +4592,7 @@ export function HiCodexApp() {
               onOpenAssistantArtifact={openAssistantArtifact}
               onOpenDiff={openActiveDiffPanel}
               onForkTurn={forkActiveThreadFromTurn}
+              onSubmitTurnFeedback={submitTurnFeedback}
               onOpenFileReference={previewConversationFileReferenceAndOpenRail}
               onOpenAutomation={openAutomationFromConversation}
               memoryCitationRoot={memoryCitationRoot}
@@ -4471,6 +4629,7 @@ export function HiCodexApp() {
             onMcpAppHostCall={handleMcpAppHostCall}
             onOpenFileReference={previewConversationFileReferenceAndOpenRail}
             onOpenAutomation={openAutomationFromConversation}
+            onSubmitTurnFeedback={submitTurnFeedback}
             memoryCitationRoot={memoryCitationRoot}
             onOpenThreadId={openBackgroundAgentThread}
             onReadMcpResource={readMcpResource}
@@ -4621,9 +4780,15 @@ export function HiCodexApp() {
           onBack={openWorkbenchTab}
           onOpenExternal={openRemoteTaskExternal}
         />
-      ) : (
-        <KnowledgeBaseView />
-      )}
+      ) : activeAppTab === "knowledge" ? (
+        <KbLibraryView />
+      ) : activeAppTab === "ingest" ? (
+        <KbIngestView />
+      ) : activeAppTab === "archive" ? (
+        <KbArchiveView />
+      ) : activeAppTab === "todo" ? (
+        <KbTodoView />
+      ) : null}
 
       {activeSettingsPanel && (
         <SettingsPanel
@@ -4717,6 +4882,13 @@ export function HiCodexApp() {
           onArchive={archiveSelectedThread}
         />
       )}
+      <ForkFromOlderTurnDialog
+        open={forkConfirmOpen}
+        isSubmitting={forkConfirmSubmitting}
+        onClose={dismissForkFromOlderTurn}
+        onForkIntoLocal={confirmForkFromOlderTurn}
+      />
+
       {mcpFollowUpDialog && (
         <McpFollowUpDialog
           request={{ prompt: mcpFollowUpDialog.prompt, source: mcpFollowUpDialog.source }}
@@ -4747,6 +4919,23 @@ export function HiCodexApp() {
           onClose={() => setModelPickerAnchor(null)}
         />
       )}
+      {/*
+       * CODEX-REF: composer-D0cvMZjq.js — Reasoning effort dropdown (Fa popover
+       * with Fa.Title + Fa.Item children). Anchor 在 composer footer trigger 上。
+       * 默认 effort 取自 effectiveThreadContextDefaults.reasoningEffort，由 user
+       * 点击切换写入 reasoningEffortOverride。
+       */}
+      {reasoningPickerAnchor && (
+        <ReasoningPickerMenu
+          anchor={reasoningPickerAnchor}
+          currentEffort={normalizeReasoningEffortValue(
+            effectiveThreadContextDefaults?.reasoningEffort
+            ?? state.threadContextDefaults?.reasoningEffort,
+          )}
+          onSelect={setReasoningEffortOverride}
+          onClose={() => setReasoningPickerAnchor(null)}
+        />
+      )}
         {/*
           * codex: keyboard-shortcuts-settings-C5AEKt2i.js — standalone
           * keyboard shortcuts dialog, triggered by ⌘⇧/.
@@ -4761,23 +4950,6 @@ export function HiCodexApp() {
   );
 }
 
-function KnowledgeBaseView() {
-  return (
-    <main className="hc-main hc-knowledge-main" aria-label="知识库">
-      <header className="hc-topbar">
-        <div className="hc-topbar-main">
-          <div className="hc-top-title">知识库</div>
-        </div>
-      </header>
-      <section className="hc-knowledge-empty" aria-label="知识库内容">
-        <div className="hc-knowledge-empty-content">
-          <div className="hc-knowledge-empty-title">知识库</div>
-          <div className="hc-knowledge-empty-subtitle">暂无内容</div>
-        </div>
-      </section>
-    </main>
-  );
-}
 
 function PreConversationLoadingShell({
   connected,

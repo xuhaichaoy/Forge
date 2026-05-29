@@ -12,3 +12,5 @@ apps/desktop/src-tauri/binaries/*
 apps/desktop/src-tauri/gen/
 .tmp/
 .claude/skills/
+.claude/skills-archived/
+.claude/worktrees/

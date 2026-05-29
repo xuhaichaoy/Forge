@@ -42,10 +42,8 @@ export default function runRightRailTests(): void {
 function keepsCodexDesktopSectionOrder(): void {
   const sections = projectRightRailSections({
     progress: [railEntry("progress-1", "Read guide", "completed", "Plan")],
-    automations: [railEntry("automation-list-1", "Nightly review", "active", "Next run soon")],
-    // codex: pe:automation — new per-conversation single-automation summary
-    // sits between progress and the legacy `automations` list (Desktop order
-    // progress→automation→environment).
+    // CODEX-REF: pe:automation — Codex 仅渲染 single automation。Legacy
+    // `automations` multi-list 已删除以严格对齐 Codex。
     automation: { id: "auto-1", name: "Weekly digest", rruleSummary: "every Monday at 9am" },
     branchDetails: {
       entries: [],
@@ -61,11 +59,13 @@ function keepsCodexDesktopSectionOrder(): void {
     status: [railEntry("status-1", "42 tokens/s", "running", "18% used")],
   });
 
+  // CODEX-REF: section order — Progress, Automation (single), Environment/
+  // Outputs, Side chats, Background tasks, Browser, Sources, Status。Codex 仅
+  // single automation，无 legacy multi-list automations。
   assertDeepEqual(
     sections.map((section) => section.title),
     [
       "Progress",
-      "Automations",
       "Automations",
       "Outputs",
       "Side chats",

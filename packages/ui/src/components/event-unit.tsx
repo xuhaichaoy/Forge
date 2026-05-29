@@ -440,15 +440,38 @@ function GenericToolActivityView({
            * 之类文案。进行中用小写动词（running/created/editing/...），完成用大写动词
            * （Ran/Created/Edited/...）。
            */}
-          {isWorkedFor && (
-            <ul className="hc-worked-for-aggregates">
-              {workedForAggregateRows(unit).map((row, index) => (
-                <li className="hc-worked-for-aggregate-row" key={`${row.key}-${index}`}>
-                  <span className="hc-worked-for-aggregate-text">{row.text}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          {isWorkedFor && (() => {
+            /*
+             * CODEX-REF: local-conversation-thread-CecHj6JI.js — function Mp 把
+             * aggregate segments push 到数组 `a`，最后 `return t.formatList(a,
+             * {type:'unit'})` 用 react-intl 的 Intl.ListFormat 把数组 join 成
+             * **单行字符串**。leading segment 大写动词（"Created N files"），后续
+             * segment 小写动词（"edited M files"）。HiCodex 严格对齐：从原来的
+             * `<ul><li>per row</li></ul>` 多行列表改为单行 `<div>` 含 formatList
+             * join 后的文本。Intl.ListFormat type:"unit" 在 en/long style 用 ", "
+             * 分隔，等价于 Codex 行为。
+             */
+            const rows = workedForAggregateRows(unit);
+            if (rows.length === 0) return null;
+            /*
+             * CODEX-REF: Codex Mp 用两套 i18n key 区分 leading / compact：
+             *   localConversation.toolActivitySummary.created.leading
+             *     → "{count, plural, one {Created # file} other {Created # files}}"  (大写动词)
+             *   localConversation.toolActivitySummary.created
+             *     → "{count, plural, one {created # file} other {created # files}}"  (小写动词)
+             * 由 `a.length === 0 ? leading : compact` 选择。HiCodex 的
+             * workedForAggregateRows 已用大小写动词区分，但 leading-when-only-running
+             * 的场景文案是小写起始（"running command(s)"），需强制 leading capitalize。
+             */
+            const segments = rows.map((row, index) => {
+              if (index === 0) return row.text.charAt(0).toUpperCase() + row.text.slice(1);
+              return row.text.charAt(0).toLowerCase() + row.text.slice(1);
+            });
+            const joined = typeof Intl !== "undefined" && typeof Intl.ListFormat === "function"
+              ? new Intl.ListFormat(undefined, { type: "unit", style: "long" }).format(segments)
+              : segments.join(", ");
+            return <div className="hc-worked-for-aggregate">{joined}</div>;
+          })()}
           {(isWorkedFor ? workedForExpandedDetailItems(unit) : detailItems).map((item) => (
             <ToolActivityDetail
               item={item}
