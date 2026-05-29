@@ -1,5 +1,5 @@
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/use-measured-text-collapse-CY09pP3a.js
-// Codex 默认导出 d (=Mu) 用 ResizeObserver 测真实文本是否超过 N 行，
+// CODEX-REF: use-measured-text-collapse-*.js
+// Codex 默认导出用 ResizeObserver 测真实文本是否超过 N 行，
 // 返回三态 uncollapsible / collapsed / expanded。
 // HiCodex 之前用启发式 (lines.length > 3 || text.length > 220) 判断，
 // 对 bash -lc 单行长命令会误判成 "需要折叠"，且展开后把整张卡片撑高。
@@ -20,7 +20,7 @@ export interface UseMeasuredTextCollapseResult<T extends HTMLElement> {
 export function useMeasuredTextCollapse<T extends HTMLElement = HTMLElement>(
   maxLines: number = 3,
 ): UseMeasuredTextCollapseResult<T> {
-  // CODEX-REF: use-measured-text-collapse-CY09pP3a.js — 默认导出 d 持有三态 + 用户手动展开标志
+  // CODEX-REF: use-measured-text-collapse-*.js — 默认导出持有三态 + 用户手动展开标志
   const ref = useRef<T | null>(null);
   const [state, setState] = useState<MeasuredCollapseState>("uncollapsible");
   const userExpandedRef = useRef(false);
@@ -28,7 +28,7 @@ export function useMeasuredTextCollapse<T extends HTMLElement = HTMLElement>(
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    // CODEX-REF: use-measured-text-collapse-CY09pP3a.js — Codex 通过临时移除 line-clamp 样式
+    // CODEX-REF: use-measured-text-collapse-*.js — Codex 通过临时移除 line-clamp 样式
     // 再读 scrollHeight 来判断真实文本是否溢出 maxLines 行。
     const prev = {
       display: el.style.display,

@@ -24,11 +24,10 @@ import {
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { AssistantResourceCards } from "./assistant-resource-cards";
 import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
-// codex: local-conversation-thread-CecHj6JI.js#sh — automation citation
+// codex: local-conversation-thread-*.js — automation citation
 // extraction + chip row. Codex's assistant body interleaves `:citation{...}`
-// leaf directives into the markdown and runs `P=N` over the result to
-// hoist them into either the trailing paragraph (`L`) or the fallback chip
-// row (`R`). HiCodex mirrors that with the helpers in
+// leaf directives into the markdown and hoists them into either the trailing
+// paragraph or the fallback chip row. HiCodex mirrors that with the helpers in
 // `state/automation-citations` plus the chip components below.
 import { AutomationCitationChip, AutomationCitationChipRow } from "./automation-citation";
 import {
@@ -192,7 +191,7 @@ function MessageUnitViewInner({
   );
   const hasAssistantEndResources = unit.role === "assistant"
     && (unit.assistantAfter ?? []).some((after) => after.kind === "assistantEndResources");
-  // codex: local-conversation-thread-Kn0WAsVa#Ri — Codex Desktop renders the
+  // codex: local-conversation-thread-*.js — Codex Desktop renders the
   // edit affordance on every user turn, not just the latest. Historical edits
   // are handled inside the workflow by forking from that turn (see
   // `editLastUserTurn` in `state/thread-workflow.ts`).
@@ -212,11 +211,11 @@ function MessageUnitViewInner({
         />
       )
     : null;
-  // codex: local-conversation-thread-CecHj6JI.js#sh — merge the two Desktop
+  // codex: local-conversation-thread-*.js — merge the two Desktop
   // citation sources before handing text to Markdownish: raw `:citation{}`
   // leaf directives already embedded in markdown, plus the `automationCitations`
   // array that split-items attaches to completed assistant messages. Item-level
-  // citations behave like Desktop's generated trailing directives (`lh`).
+  // citations behave like Desktop's generated trailing directives.
   const assistantCitations = useMemo(
     () => {
       if (unit.role !== "assistant") return null;
@@ -238,7 +237,7 @@ function MessageUnitViewInner({
         if (automationId) onOpenAutomation(automationId);
       }
     : undefined;
-  // codex: local-conversation-thread-CecHj6JI.js#sh — assistant body uses the
+  // codex: local-conversation-thread-*.js — assistant body uses the
   // sanitized markdown (`cleanedContent`) so the raw directive token never
   // shows up in the rendered prose; falls back to the original text when no
   // citation extraction ran (non-assistant message or no `:citation` token).
@@ -257,11 +256,11 @@ function MessageUnitViewInner({
     ? assistantCitations.trailingCitations.length > 0
       && markdownAllowsTrailingAutomationInline(assistantMarkdownText)
     : false;
-  // codex: local-conversation-thread-CecHj6JI.js#sh — Codex picks `D` (the
-  // citation list) and combines `O` (the "trailing-paragraph fits" flag)
-  // into the chip-row decision. HiCodex mirrors that by withholding trailing
-  // citations from the row only when Markdownish can append them to the final
-  // paragraph. Loose citations always stay in the fallback row.
+  // codex: local-conversation-thread-*.js — Codex picks the citation list and
+  // combines the "trailing-paragraph fits" flag into the chip-row decision.
+  // HiCodex mirrors that by withholding trailing citations from the row only
+  // when Markdownish can append them to the final paragraph. Loose citations
+  // always stay in the fallback row.
   const automationCitationChips = assistantCitations
     ? [
         ...assistantCitations.loose,
@@ -304,11 +303,11 @@ function MessageUnitViewInner({
                         ? assistantCitations?.trailingCitations
                         : undefined}
                     />
-                    {/* codex: local-conversation-thread-CecHj6JI.js#sh — `R` in the
-                      * Codex render sequence `[L, R, z, B, W]` (markdown body,
-                      * citation chip row, memory citations, artifacts/extras,
-                      * action row). HiCodex emits the row immediately after the
-                      * markdown so reading order matches Codex's `mt-3` block. */}
+                    {/* codex: local-conversation-thread-*.js — citation chip row in
+                      * the Codex render sequence (markdown body, citation chip row,
+                      * memory citations, artifacts/extras, action row). HiCodex emits
+                      * the row immediately after the markdown so reading order matches
+                      * Codex's `mt-3` block. */}
                     <AutomationCitationChipRow
                       citations={automationCitationChips}
                       onOpen={onAutomationCitationOpen}
@@ -1016,11 +1015,11 @@ function AssistantMessageActions({
 }) {
   const autoReviewSummary = assistantAutoReviewSummary(item);
   /*
-   * codex: local-conversation-thread-CecHj6JI.pretty.js#uh + imported
-   * `plan-summary-item-content-DKNKX0lM.pretty.js#me` — the current Desktop
-   * assistant action row is `[copy, Ec(hasArtifacts), fork, autoReview,
+   * codex: local-conversation-thread-*.pretty.js + imported
+   * `plan-summary-item-content-*.pretty.js` — the current Desktop
+   * assistant action row is `[copy, turnRating(hasArtifacts), fork, autoReview,
    * hookStats, completedGoal, sentAt]`. `hasArtifacts` is only passed into
-   * the turn-rating feedback control (`Ec`) to select artifact-specific
+   * the turn-rating feedback control to select artifact-specific
    * feedback options; Desktop does not render a standalone FileText "open
    * artifacts" button here. HiCodex has no Codex analytics feedback surface
    * yet, so artifact presence must not invent an action-row child.
@@ -1034,7 +1033,7 @@ function AssistantMessageActions({
     || Boolean(goalSummary)
     || canRateTurn;
   return (
-    <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
+    <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={messageSentAtMs(item)}>
       <TurnRatingControls
         hasArtifacts={hasArtifacts === true}
         onSubmit={onSubmitTurnFeedback}
@@ -1047,9 +1046,9 @@ function AssistantMessageActions({
         </IconActionButton>
       )}
       {autoReviewSummary && <AssistantAutoReviewAction summary={autoReviewSummary} />}
-      {/* codex: local-conversation-thread-CecHj6JI.js#uh — `t[17]===a?...:(0,$.jsx)(zs,{stats:a})` hookStats chip */}
+      {/* codex: local-conversation-thread-*.js — hookStats chip */}
       {hookStatsSummary && <AssistantHookStatsAction summary={hookStatsSummary} />}
-      {/* codex: local-conversation-thread-CecHj6JI.js#uh — `t[19]===o?...:(0,$.jsx)(dh,{goal:o})` completedThreadGoal chip */}
+      {/* codex: local-conversation-thread-*.js — completedThreadGoal chip */}
       {goalSummary && <AssistantCompletedGoalAction summary={goalSummary} />}
     </MessageActionRow>
   );
@@ -1068,7 +1067,7 @@ interface AssistantCompletedGoalSummary {
   durationLabel: string;
 }
 
-// codex: user-message-attachments-DrGt3PGR.js#_e/#ve — hookStats chip with a
+// codex: user-message-attachments-*.js — hookStats chip with a
 // summary tooltip listing ran/blocked/error counts plus optional entries.
 function AssistantHookStatsAction({ summary }: { summary: AssistantHookStatsSummary }) {
   const [open, setOpen] = useState(false);
@@ -1109,9 +1108,9 @@ function AssistantHookStatsAction({ summary }: { summary: AssistantHookStatsSumm
   );
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#dh — render the completed thread
+// codex: local-conversation-thread-*.js — render the completed thread
 // goal as a non-interactive chip. Codex shows "Goal achieved in {totalTime}"
-// (using `Ti(timeUsedSeconds*1000)`) plus a small icon and divider; we mirror
+// (formatting `timeUsedSeconds*1000`) plus a small icon and divider; we mirror
 // the label + tooltip carrying the objective text.
 function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompletedGoalSummary }) {
   return (
@@ -1125,7 +1124,7 @@ function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompleted
   );
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#sh — destructures `hookStats:s`
+// codex: local-conversation-thread-*.js — destructures `hookStats`
 // off the assistant render unit; here we recover the same shape from the raw
 // assistant item so HiCodexApp does not need to thread an extra prop.
 //
@@ -1172,10 +1171,10 @@ export function assistantHookStatsSummary(item: Record<string, unknown>): Assist
   return { label, title: "Hooks summary", rows, entries };
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#dh — `n.timeUsedSeconds*1e3 ->
-// Ti(...)` → "Goal achieved in {totalTime}". HiCodex only renders the chip
+// codex: local-conversation-thread-*.js — `timeUsedSeconds*1e3` formatted to
+// "Goal achieved in {totalTime}". HiCodex only renders the chip
 // when the goal status is `complete`/`completed` (Codex passes `null` for
-// in-progress goals via `W?null:w`).
+// in-progress goals).
 //
 // AUDIT (2026-05): the HiCodex reducer maintains a per-thread `threadGoal`
 // slice (state/codex-reducer.ts:99-100, sourced from `thread/goal/updated` —
@@ -1330,9 +1329,24 @@ function truncateAutoReviewDetail(value: string): string {
 }
 
 /*
- * CODEX-REF: action row 不渲染 timestamp（Codex 出处证明无 per-message timestamp）。
- * `messageSentAtMs` 函数已删除（dead code 清理）——HiCodex 不再派生/传递时间戳。
+ * Codex Desktop renders a per-message timestamp as the trailing hover/focus
+ * affordance in the action row (re-verified vs v26.519.81530). Derive the
+ * best available send time from the protocol item's timing fields.
  */
+function messageSentAtMs(item: Record<string, unknown>): number | null {
+  const candidates: unknown[] = [
+    item.sentAtMs,
+    item.completedAtMs,
+    item.startedAtMs,
+    item.createdAtMs,
+    item.createdAt,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
+}
+
 function messageTurnId(item: Record<string, unknown>): string | null {
   const value = item._turnId;
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -1793,8 +1807,8 @@ export interface MemoryCitationEntryView {
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js 在 thread 渲染层导入
- * markdown-Pq7xh_0E.js，后者 dep 链最终指向 marked.esm-B1dI5d9h.js（marked 库）。
+ * CODEX-REF: local-conversation-thread-*.js 在 thread 渲染层导入
+ * markdown-*.js，后者 dep 链最终指向 marked.esm-*.js（marked 库）。
  * HiCodex 严格对齐 Codex 的 markdown 库选型：
  *
  *   1) **marked 真实参与解析**：parseMarkdownDocument 调用 marked.lexer 拿到
@@ -2662,7 +2676,7 @@ function parseMarkdownImageInline(
   if (openHref !== closeLabel + 1) {
     const reference = parseMarkdownReferenceTarget(text, closeLabel + 1, label, references);
     if (!reference) return null;
-    const src = normalizeMarkdownHref(reference.href);
+    const src = safeMarkdownImageSrc(reference.href);
     if (!src) return null;
     return {
       alt: label,
@@ -2673,7 +2687,7 @@ function parseMarkdownImageInline(
   }
   const destination = parseMarkdownImageDestination(text, openHref);
   if (!destination) return null;
-  const src = normalizeMarkdownHref(destination.href);
+  const src = safeMarkdownImageSrc(destination.href);
   if (!src) return null;
   return {
     alt: label,
@@ -3160,7 +3174,8 @@ function findMarkdownBareLinkStart(text: string, index: number): number {
 
 function findNextMarkdownBareUrlProtocolIndex(text: string, index: number): number {
   let best = -1;
-  for (const protocol of ["http://", "https://", "ftp://"]) {
+  // ftp is intentionally excluded — it is not in Codex's href scheme allowlist.
+  for (const protocol of ["http://", "https://"]) {
     const match = findUnescapedIndexInsensitive(text, protocol, index);
     if (match >= 0 && (best < 0 || match < best)) best = match;
   }
@@ -3187,7 +3202,7 @@ function parseMarkdownBareLink(text: string, startIndex: number): { endIndex: nu
     return { endIndex: startIndex + email.length, href: `mailto:${email}`, text: email };
   }
 
-  const urlMatch = text.slice(startIndex).match(/^(?:(?:https?|ftp):\/\/|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*/i);
+  const urlMatch = text.slice(startIndex).match(/^(?:https?:\/\/|www\.)(?:[A-Za-z0-9-]+\.?)+[^\s<]*/i);
   if (!urlMatch) return null;
   const rawText = trimMarkdownBareUrl(urlMatch[0]);
   if (!rawText) return null;
@@ -3420,7 +3435,7 @@ function MarkdownBlockView({
         </blockquote>
       );
     case "code":
-      // codex: mermaid-diagram-p7A5YYxA.js — codeblock lang=mermaid renderer.
+      // codex: mermaid-diagram-*.js — codeblock lang=mermaid renderer.
       // `LazyMarkdownCodeBlock` defers to `CodeSnippet`, which detects
       // `language === "mermaid"` and dynamic-imports the mermaid core to
       // `mermaid.render(id, source)` the SVG; render failures fall back to a
@@ -3442,7 +3457,7 @@ function MarkdownBlockView({
         </details>
       );
     case "math":
-      // codex: katex-7--VtpAh.js — inline $ + block $$ KaTeX rendering.
+      // codex: katex-*.js — inline $ + block $$ KaTeX rendering.
       // Block-level math (`$$...$$` or `\[...\]`) goes through `MathDisplay`,
       // which calls `renderKatexToString` with `displayMode=true`; KaTeX
       // parse failures fall back to the raw source so the message still
@@ -3804,7 +3819,7 @@ function markdownMediaKind(src: string): "image" | "video" {
   return "image";
 }
 
-// codex: katex-7--VtpAh.js — block $$ / \[...\] KaTeX renderer. Mirrors
+// codex: katex-*.js — block $$ / \[...\] KaTeX renderer. Mirrors
 // Codex's `MathDisplay` wrapper around `katex.renderToString(...,
 // { displayMode: true, throwOnError: false })`; render failures fall back to
 // the raw source so a malformed equation cannot blow up the whole message.
@@ -3819,7 +3834,7 @@ function MathDisplay({ text }: { text: string }) {
   );
 }
 
-// codex: katex-7--VtpAh.js — inline `$...$` / `\(...\)` KaTeX renderer.
+// codex: katex-*.js — inline `$...$` / `\(...\)` KaTeX renderer.
 // `displayMode: false`; same fallback strategy as `MathDisplay`. The
 // surrounding tokenizer (`parseMarkdownInlineMath`) rejects `$5` / `$ x` so
 // currency strings are not misread as math openings.
@@ -4145,7 +4160,10 @@ export function safeMarkdownHref(value: string): string | null {
   if (href.startsWith("//")) return null;
   const scheme = href.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
   if (!scheme) return href;
-  if (scheme === "http" || scheme === "https" || scheme === "ftp") {
+  // Codex sanitizes link hrefs against /^(https?|ircs?|mailto|xmpp|codex)$/i
+  // (codex: markdown-*.js). ftp is NOT in the allowlist; the codex:// deep-link
+  // scheme IS kept clickable. Re-verified vs Codex Desktop v26.519.81530.
+  if (scheme === "http" || scheme === "https") {
     try {
       new URL(href);
       return href;
@@ -4153,8 +4171,33 @@ export function safeMarkdownHref(value: string): string | null {
       return null;
     }
   }
-  if (scheme === "mailto") return href;
+  if (
+    scheme === "irc"
+    || scheme === "ircs"
+    || scheme === "mailto"
+    || scheme === "xmpp"
+    || scheme === "codex"
+  ) {
+    return href;
+  }
   return null;
+}
+
+// Codex sanitizes image `src` through its `ut()` helper (codex: markdown-*.js):
+// allow data:image/* and data:video/*, file/relative/absolute local paths
+// (Codex's file-path transform; HiCodex resolves these via the local asset
+// bridge), and otherwise require the same scheme allowlist as links. Schemes
+// such as javascript: / vbscript: are dropped. Re-verified vs Codex Desktop
+// v26.519.81530.
+function safeMarkdownImageSrc(value: string): string | null {
+  const src = normalizeMarkdownHref(value);
+  if (!src) return null;
+  if (/^data:(?:image|video)\//iu.test(src)) return src;
+  if (/^file:/iu.test(src)) return src;
+  if (src.startsWith("//")) return null;
+  const scheme = src.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
+  if (!scheme) return src; // relative or absolute local path (mediaSources key)
+  return safeMarkdownHref(src);
 }
 
 function MarkdownPromptLink({ segment }: { segment: MarkdownPromptLinkSegment }) {

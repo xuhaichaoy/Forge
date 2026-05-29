@@ -1,11 +1,11 @@
-// codex: electron-menu-shortcuts-DQYPVyfu.js (command catalog + accelerator
+// codex: electron-menu-shortcuts-*.js (command catalog + accelerator
 // formatting). HiCodex's lightweight registry: descriptors are registered
 // imperatively by consumers (no preloaded catalog) — keeping the registry
 // free of UI policy decisions.
 
 import { resolveKeymapOverride } from "./keymap-overrides";
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#i — command group keys.
+// codex: electron-menu-shortcuts-*.js — command group keys.
 export type CommandGroup =
   | "thread"
   | "navigation"
@@ -15,12 +15,12 @@ export type CommandGroup =
   | "configure"
   | "app";
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#m / #p — shortcut scopes.
+// codex: electron-menu-shortcuts-*.js — shortcut scopes.
 export type CommandScope = "webview" | "electron-only" | "os-global";
 
 export type CommandAvailability = "electron" | "browser";
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#g — platform overrides for
+// codex: electron-menu-shortcuts-*.js — platform overrides for
 // default keybindings.
 export interface CommandPlatformKeybindings {
   macOS?: string[];
@@ -55,7 +55,7 @@ export interface ListCommandsFilter {
   showInCommandMenu?: boolean;
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#a — singleton registry map.
+// codex: electron-menu-shortcuts-*.js — singleton registry map.
 const registry = new Map<string, RegisteredCommand>();
 
 function normalize(descriptor: CommandDescriptor): CommandDescriptor {
@@ -71,7 +71,7 @@ export function registerCommand(
   descriptor: CommandDescriptor,
   handler?: CommandHandler,
 ): void {
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#a — duplicate IDs would shadow
+  // codex: electron-menu-shortcuts-*.js — duplicate IDs would shadow
   // existing commands. We replace silently (HiCodex consumers may re-register
   // on hot-reload), but the descriptor is normalized for downstream defaults.
   const normalized = normalize(descriptor);
@@ -83,12 +83,12 @@ export function unregisterCommand(id: string): void {
   registry.delete(id);
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#s — lookup by ID.
+// codex: electron-menu-shortcuts-*.js — lookup by ID.
 export function getCommand(id: string): RegisteredCommand | undefined {
   return registry.get(id);
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#l (commandMenu filter).
+// codex: electron-menu-shortcuts-*.js (commandMenu filter).
 export function listCommands(filter?: ListCommandsFilter): RegisteredCommand[] {
   const items = Array.from(registry.values());
   if (filter == null) return items;
@@ -102,7 +102,7 @@ export function listCommands(filter?: ListCommandsFilter): RegisteredCommand[] {
   });
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#C — Mac detection (duplicated
+// codex: electron-menu-shortcuts-*.js — Mac detection (duplicated
 // from use-hotkey to avoid creating an import cycle between hooks/state).
 export function isMacPlatform(): boolean {
   if (typeof navigator === "undefined") return false;
@@ -112,12 +112,12 @@ export function isMacPlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(ua);
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#g — platform-specific keybinding
+// codex: electron-menu-shortcuts-*.js — platform-specific keybinding
 // lookup. Returns every accelerator configured for the current platform
 // (preferring macOS on macOS, default elsewhere). Mirrors Codex's
 // `platformDefaultKeybindings[platform]` which is itself an array.
 //
-// CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — user keymap overrides
+// CODEX-REF: keyboard-shortcuts-settings-*.js — user keymap overrides
 // take priority over the descriptor default. Override semantics from
 // keymap-overrides.ts:
 //   - string  → user-supplied accelerator wins, default is ignored
@@ -139,7 +139,7 @@ export function commandAccelerators(id: string): string[] {
   return [];
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#g — back-compat single-accelerator
+// codex: electron-menu-shortcuts-*.js — back-compat single-accelerator
 // helper. Returns the primary (first) binding so existing single-string
 // consumers keep working unchanged.
 export function commandAccelerator(id: string): string | undefined {
@@ -147,7 +147,7 @@ export function commandAccelerator(id: string): string | undefined {
   return all.length > 0 ? all[0] : undefined;
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#E — token → display formatter.
+// codex: electron-menu-shortcuts-*.js — token → display formatter.
 function formatToken(token: string, isMac: boolean): string {
   const tokens = token.split("+").filter(Boolean);
   const mods = new Set<string>();
@@ -178,7 +178,7 @@ function formatToken(token: string, isMac: boolean): string {
         break;
     }
   }
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#E — Mac collapses Shift+/ → ?.
+  // codex: electron-menu-shortcuts-*.js — Mac collapses Shift+/ → ?.
   if (isMac && key === "/" && mods.has("Shift")) {
     mods.delete("Shift");
     key = "?";
@@ -203,7 +203,7 @@ function formatToken(token: string, isMac: boolean): string {
   return [...orderedMods, key ?? ""].filter(Boolean).join("+");
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#T — full accelerator → label.
+// codex: electron-menu-shortcuts-*.js — full accelerator → label.
 export function formatAccelerator(accelerator: string, isMac: boolean): string {
   return accelerator
     .trim()
@@ -213,7 +213,7 @@ export function formatAccelerator(accelerator: string, isMac: boolean): string {
     .join(" ");
 }
 
-// codex: electron-menu-shortcuts-DQYPVyfu.js#O — human-readable accelerator label.
+// codex: electron-menu-shortcuts-*.js — human-readable accelerator label.
 export function commandAcceleratorLabel(id: string): string | undefined {
   const accelerator = commandAccelerator(id);
   if (accelerator == null) return undefined;

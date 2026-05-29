@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { Thread } from "@hicodex/codex-protocol";
-// codex: electron-menu-shortcuts-DQYPVyfu.js — Codex header buttons surface
+// codex: electron-menu-shortcuts-*.js — Codex header buttons surface
 // the accelerator in their tooltip. HiCodex mirrors that on sidebar toggle.
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 
@@ -10,11 +10,11 @@ export interface ConversationChromeProps {
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   /*
-   * Codex Desktop `an` (local-conversation-page-Bt6RhPKI.js byte ~3500):
+   * Codex Desktop local-conversation-page-*.js:
    * header carries a `Toggle pinned summary` button at `order: 250`
    * (actionId `local-thread-summary-panel-toggle`), which flips
    * `isPinned`. Without this button HiCodex users have no way to re-show the
-   * Summary Rail after pinning it off — Codex `cp` hides the rail entirely
+   * Summary Rail after pinning it off — Codex hides the rail entirely
    * when `isPinned` is false, so the pin toggle must live OUTSIDE the rail.
    *
    * When `rightRailToggleAvailable` is true and the viewport is non-overlay
@@ -27,9 +27,9 @@ export interface ConversationChromeProps {
   canPinRightRail?: boolean;
   onToggleRightRailPinned?: () => void;
   /*
-   * codex: app-shell-Bh-lgoQk.js#cn — sidebar trigger group renders
+   * codex: app-shell-*.js — sidebar trigger group renders
    * navigateBack / navigateForward arrow buttons next to the sidebar toggle.
-   * Codex reads `on` / `sn` history atoms (`canGoBack` / `canGoForward`) to
+   * Codex reads the `canGoBack` / `canGoForward` history atoms to
    * compute disabled state. HiCodex passes through the same booleans from
    * `state.threadHistoryStack` + `state.threadHistoryIndex`.
    */
@@ -55,10 +55,10 @@ export function ConversationChrome({
 }: ConversationChromeProps) {
   const displayTitle = title.replace(/\s+/g, " ").trim() || (activeThread ? "Untitled chat" : "New chat");
   const sidebarLabel = sidebarOpen ? "Hide sidebar" : "Show sidebar";
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#toggleSidebar — ⌘B hint in tooltip.
+  // codex: electron-menu-shortcuts-*.js#toggleSidebar — ⌘B hint in tooltip.
   const sidebarAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.toggleSidebar);
   const sidebarTitle = sidebarAccelerator ? `Toggle sidebar (${sidebarAccelerator})` : "Toggle sidebar";
-  // codex: electron-menu-shortcuts-DQYPVyfu.js#navigateBack / #navigateForward — ⌘[/] hints.
+  // codex: electron-menu-shortcuts-*.js#navigateBack / #navigateForward — ⌘[/] hints.
   const backAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.navigateBack);
   const forwardAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.navigateForward);
   const backTitle = backAccelerator ? `Back (${backAccelerator})` : "Back";
@@ -85,7 +85,7 @@ export function ConversationChrome({
           </button>
         )}
         {showNavButtons && (
-          // codex: app-shell-Bh-lgoQk.js#cn — back/forward arrows in sidebar trigger group.
+          // codex: app-shell-*.js — back/forward arrows in sidebar trigger group.
           <div className="hc-topbar-nav-group" role="group" aria-label="Navigation history">
             <button
               type="button"

@@ -52,7 +52,7 @@
   }
 }
 
-/* Turn-level collapse — Codex Desktop OT/kT equivalent */
+/* Turn-level collapse — Codex Desktop turn-collapse toggle equivalent */
 .hc-turn-collapse-row {
   display: flex;
   align-items: center;
@@ -99,7 +99,7 @@
   height: 1px;
   width: 100%;
   max-width: 100%;
-  /* Codex `$T` :8408 rule wrapper uses `text-token-text-secondary` color with
+  /* Codex's turn-collapse rule wrapper uses `text-token-text-secondary` color with
    * `border-token-border-light` border on the inner divider (~5% of foreground).
    * Match that with a very faint hairline rather than the 12% gray that made the
    * line feel disconnected from the rest of the turn. */
@@ -107,9 +107,9 @@
 }
 
 /*
- * Codex's `F_` spacer (pretty.js :4269-4271) injected at :8410 between the rule
+ * Codex's spacer injected between the rule
  * and the agent body when the collapse toggle is visible. `size` defaults to
- * `NT = "var(--conversation-tool-assistant-gap, 8px)"` (:8238) — the 8px is a
+ * `var(--conversation-tool-assistant-gap, 8px)` — the 8px is a
  * fallback; Codex's :root sets the variable to 16px.
  */
 .hc-turn-collapse-gap {
@@ -119,15 +119,15 @@
 
 /*
  * `TurnCollapseFrame` flattens its internal chain (toggle button → rule wrap →
- * F_ spacer → persistent units → animated disclosure) into the `.hc-turn-row`
+ * spacer → persistent units → animated disclosure) into the `.hc-turn-row`
  * direct-child sequence via Fragment. Without these resets the `.hc-turn-row > *
  * + *` 16px margin-top rule would compound on every internal element, adding
  * three spurious 16px gaps between the "Worked for {time}" header and the first
- * body row (~69px instead of Codex's intended 21px = `pt-1` + 1px rule + `F_`).
+ * body row (~69px instead of Codex's intended 21px = `pt-1` + 1px rule + spacer).
  *
- * Codex's `$T` (codex-local-conversation-thread.pretty.js :8407-8414) emits the
+ * Codex's turn-collapse frame emits the
  * header + rule as siblings with NO inter-element spacing — only the rule's own
- * `pt-1` (4px) — and then the `F_` spacer at :8410 is the ONLY 16px gap before
+ * `pt-1` (4px) — and then the spacer is the ONLY 16px gap before
  * the body. Mirror that here by zeroing the inherited row gap inside the chain.
  */
 .hc-turn-row > .hc-turn-collapse-row + .hc-turn-collapse-rule-wrap,
@@ -140,12 +140,12 @@
 }
 
 /*
- * In-progress worked-for divider — Codex Desktop `Ah` at
- * codex-local-conversation-thread.pretty.js :3315-3326. Non-interactive label
- * + full-width 1px rule wrapped in framer-motion `ga.div` with:
+ * In-progress worked-for divider — Codex Desktop's worked-for divider in
+ * local-conversation-thread-*.js. Non-interactive label
+ * + full-width 1px rule wrapped in a framer-motion div with:
  *   initial: { opacity: 0, height: 0 }
  *   animate: { opacity: 1, height: "auto" }
- *   transition: yo  // animations-y0LC3gHS.js → 500ms cubic-bezier(0.19,1,0.22,1)
+ *   transition: animations-*.js → 500ms cubic-bezier(0.19,1,0.22,1)
  *
  * Codex's animation interpolates layout via framer-motion's JS measurement of
  * the natural content height. The CSS-only `grid-template-rows: 0fr → 1fr`
@@ -156,12 +156,12 @@
  * below the rule. Since the height growth is a polish touch (Codex's
  * difference between with/without is barely perceptible on a one-line
  * divider), drop the height interpolation and keep just the opacity fade —
- * which matches `transition: yo` for the opacity component and never
+ * which matches the worked-for transition spec for the opacity component and never
  * misreports a non-content row height.
  *
  * The inner block is a simple flex column: `text-size-chat flex flex-col
- * items-start gap-2 text-token-text-secondary` (parity with Codex `Ah`'s inner
- * div at :3325).
+ * items-start gap-2 text-token-text-secondary` (parity with Codex's worked-for
+ * divider inner div).
  */
 .hc-worked-for-live {
   display: flex;
@@ -178,7 +178,7 @@
 }
 
 .hc-worked-for-live-label {
-  /* Codex `kh` (:3309) — `text-token-foreground/60`. */
+  /* Codex worked-for label — `text-token-foreground/60`. */
   color: #6f716b;
   font-size: 13px;
   line-height: 1.45;
@@ -187,7 +187,7 @@
 .hc-worked-for-live-rule {
   height: 1px;
   width: 100%;
-  /* Codex `Ah` (:3323) — `border-current/20` on the
+  /* Codex worked-for divider — `border-current/20` on the
    * `text-token-text-secondary`-coloured inner div. With the parent ~60% of
    * foreground, the resulting border resolves to ≈12% of foreground. */
   background: rgba(34, 38, 43, 0.12);
@@ -376,7 +376,7 @@
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#Uv — collapsed chevron uses
+ * codex: local-conversation-thread-*.js — collapsed chevron uses
  * `opacity-0 group-hover:opacity-100`; expanded uses `rotate-180 opacity-100`.
  * The host wrapper carries `.group`, mirroring Codex's Tailwind group modifier
  * so the chevron only appears on row hover/focus while the card is collapsed.
@@ -393,7 +393,7 @@
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#Uv — body uses Codex's
+ * codex: local-conversation-thread-*.js — body uses Codex's
  * `vertical-scroll-fade-mask` utility with `--edge-fade-distance:2rem`. We
  * recreate the linear-gradient mask here so the topmost/bottommost rows fade
  * into the card background when the list overflows.
@@ -521,28 +521,35 @@
   inset-inline: 0;
   bottom: 0;
   display: flex;
-  height: 112px;
+  /* Codex's collapsed overlay is `h-40` (10rem = 160px) with a
+   * `bg-gradient-to-t from-token-input-background to-transparent` fade. */
+  height: 160px;
   align-items: flex-end;
   justify-content: center;
+  /* viewPlan button sits centered near `bottom-3` (12px). */
   padding-bottom: 12px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), var(--hc-surface-panel) 70%);
+  background: linear-gradient(to top, var(--hc-surface-panel), transparent);
 }
 
 .hc-plan-summary-fade button {
-  border: 1px solid rgba(34, 38, 43, 0.12);
+  /* Codex renders the planSummary.viewPlan ("Expand plan") control as a FILLED
+   * PRIMARY button (color:"primary") — no surface border. Match HiCodex's
+   * primary-button convention (.hc-send-button): foreground fill + on-accent
+   * text, hover via opacity. */
+  border: 0;
   border-radius: 7px;
-  background: var(--hc-surface-panel);
-  color: var(--hc-text-primary);
+  background: #22262b;
+  color: #fffdfa;
   font-size: 13px;
   font-weight: 560;
   line-height: 18px;
   padding: 6px 10px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   cursor: pointer;
+  transition: opacity 120ms ease;
 }
 
 .hc-plan-summary-fade button:hover {
-  background: color-mix(in srgb, var(--hc-surface-panel) 88%, black);
+  opacity: 0.92;
 }
 
 @keyframes hc-plan-title-pulse {

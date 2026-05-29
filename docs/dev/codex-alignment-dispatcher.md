@@ -32,6 +32,7 @@ Lifecycle channels handled in the same switch (turn/item level, not item delta):
 
 - `turn/started` / `turn/completed` / `turn/diff/updated` / `turn/plan/updated`
 - `item/started` / `item/completed`
+- `model/rerouted` — synthesizes a `modelRerouted` timeline item (`{ fromModel, toModel, reason }`) into the active turn rather than only logging it. The renderer only surfaces reroutes whose `reason === "highRiskCyberActivity"`. HiCodex `itemType` normalizes the camelCase protocol type to `model-rerouted` (added 2026-05-29; verified vs Codex Desktop v26.519.81530).
 
 ## Helpers (semantic, not minified)
 

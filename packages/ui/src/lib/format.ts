@@ -30,8 +30,8 @@ export function stringField(value: unknown, key: string): string {
  * dim, `\x1b[3m` italic, `\x1b[0m` reset, `\x1b[2J` clear screen, …).
  * HiCodex's stderr reader was forwarding raw codes into the toast viewport
  * (Screen Recording 2026-05-21 at 07.57.04 right-bottom toast). Codex Desktop
- * never surfaces stderr to the renderer — `remote-conversation-page-CRbylpi9.js`
- * only consumes structured `error` notifications via `t.params.error.message`.
+ * never surfaces stderr to the renderer — `remote-conversation-page-*.js`
+ * only consumes structured `error` notifications via `params.error.message`.
  * We mirror that by stripping escapes anywhere a stderr line could leak into
  * user-facing text.
  *

@@ -98,8 +98,10 @@ model-rerouted
 multi-agent-action
 permission-request
 personality-changed
-plan-implemented
+plan-implementation
 ```
+
+(Protocol type is `plan-implementation`, not `plan-implemented`; verified against Codex Desktop v26.519.81530 and HiCodex `render-group-types` / `event-projection`.)
 
 This list is the durable rule for which types must not be rendered through the default `ThreadItemView` branch. Each entry has either a dedicated surface (gallery / markdown / tool-activity) or is explicitly suppressed.
 

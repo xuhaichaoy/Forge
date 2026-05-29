@@ -34,11 +34,10 @@
   display: flex;
   flex-direction: column;
   /*
-   * CODEX-REF: Codex Desktop nav container uses gap-0 inside the parent;
-   * row gap lives on the group descendant (`L` component className `gap-0`,
-   * outer container `gap-4` to separate groups). Mirror that here.
-   * settings-page-TI1bCoqP.js around byte offset of the `e=>(0,X.jsx)(L,...)`
-   * group renderer.
+   * CODEX-REF: settings-page-*.js — Codex Desktop nav container uses gap-0
+   * inside the parent; row gap lives on the group descendant (group component
+   * className `gap-0`, outer container `gap-4` to separate groups). Mirror
+   * that here.
    */
   gap: 0;
   overflow: auto;
@@ -48,9 +47,9 @@
 }
 
 /*
- * CODEX-REF: One `<L>` group per Codex `_e` entry. Inside the group, items
- * sit tight (`gap-0` in Codex); we use a small 4px gap so the rounded hover
- * background of adjacent items doesn't visually merge.
+ * CODEX-REF: settings-page-*.js — one nav group per settings-nav entry.
+ * Inside the group, items sit tight (`gap-0` in Codex); we use a small 4px gap
+ * so the rounded hover background of adjacent items doesn't visually merge.
  */
 .hc-settings-nav-group {
   display: flex;
@@ -67,12 +66,11 @@
 }
 
 /*
- * CODEX-REF: Group heading rendered by `<a {...e.heading}/>` inside `L`'s
- * `title` slot (settings-page-TI1bCoqP.js: `title: v||e.heading==null?null:
- * (0,X.jsx)(a,{...e.heading})`). The visible string is the resolved
+ * CODEX-REF: settings-page-*.js — group heading rendered inside the group
+ * component's `title` slot. The visible string is the resolved
  * `defaultMessage` of `settings.nav.heading.app` / `.host` — i.e. "App" / "Host".
- * The actual Codex Desktop typography for the `L` title isn't exposed in this
- * chunk's className strings (likely styled inside the `L` component itself);
+ * The actual Codex Desktop typography for the group title isn't exposed in this
+ * chunk's className strings (likely styled inside the group component itself);
  * we use a conventional settings-nav heading look: small caps-ish weight,
  * muted, left-aligned with the icon column of the buttons below.
  */
@@ -342,8 +340,8 @@
 }
 
 /*
- * codex: local-conversation-thread-Kn0WAsVa#Ud (L6204-6378) — Fork-from-older-
- * turn confirmation dialog. Codex Desktop renders this as a `<ni size="compact">`
+ * codex: local-conversation-thread-*.js — Fork-from-older-
+ * turn confirmation dialog. Codex Desktop renders this as a `size="compact"`
  * dialog with a header (icon + title + subtitle), a `flex flex-col gap-1`
  * options list (one button per fork target), and a secondary Cancel button.
  */
@@ -635,7 +633,7 @@
   line-height: 1.2;
 }
 
-/* codex: app-main-DG-Mf4Wj.js — command menu top-level sections (Thread /
+/* codex: app-main-*.js — command menu top-level sections (Thread /
    Panels / Navigation / Workspace / Skills / Configure / App). */
 .hc-command-panel-section {
   display: grid;
@@ -899,7 +897,7 @@
 }
 
 /*
- * codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
+ * codex: app-main-*.js — cmdk Item right-side shortcut.
  * Trailing kbd hint mirrors the muted glyph row that Codex renders next to
  * each command palette item (⌘K, ⌘,, etc.). Mute by default so the hint
  * stays unobtrusive next to the status pill / secondary actions, and lift
@@ -1352,17 +1350,16 @@ textarea.hc-mcp-tool-control {
 }
 
 /*
- * UnifiedDiff Failure Dialog (HiCodex equivalent of Codex `hS` byte ~422600).
- * Tone tokens match Codex `vS` paths sub-list toneClassName values literally:
- *   appliedPaths   → text-token-foreground            (hc-unified-diff-tone-applied)
- *   skippedPaths   → text-token-description-foreground (hc-unified-diff-tone-skipped)
- *   conflictedPaths → text-token-charts-red           (hc-unified-diff-tone-conflicted)
+ * UnifiedDiff Failure Dialog. Tone tokens match Codex's path sub-list
+ * toneClassName values literally (re-verified vs Codex Desktop v26.519.81530):
+ *   appliedPaths    → text-token-foreground            (hc-unified-diff-tone-applied)
+ *   skippedPaths    → text-token-description-foreground (hc-unified-diff-tone-skipped)
+ *   conflictedPaths → text-token-charts-red            (hc-unified-diff-tone-conflicted)
  */
 .hc-unified-diff-failure-dialog {
-  /* Codex Dialog `max-h-[40vh] overflow-y-auto` is on the body inner; we
-   * apply the same vertical cap directly on the panel so the path lists
-   * scroll while header/footer stay pinned. */
-  max-height: min(40vh, 560px);
+  /* Codex caps only the path-list block at max-h-[40vh]; the panel itself just
+   * stays within the viewport so the header/intro/footer remain visible. */
+  max-height: min(88vh, 640px);
   width: min(560px, 92vw);
 }
 
@@ -1381,15 +1378,26 @@ textarea.hc-mcp-tool-control {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow-y: auto;
   padding: 12px 14px;
 }
 
-.hc-unified-diff-failure-help {
+/* Body intro line (codex.unifiedDiff.patchFailureDetailsIntro* /
+ * patchNotGitRepoDescription / patchErrorOutputSummary / patchFailureNoDetails)
+ * in the description tone, sitting above the path list. */
+.hc-unified-diff-failure-intro {
   margin: 0;
   font-size: 13px;
   line-height: 1.45;
-  color: #5f625d;
+  color: #6f716b;             /* text-token-description-foreground */
+}
+
+/* Codex caps just the path-list block (`max-h-[40vh] overflow-y-auto`). */
+.hc-unified-diff-failure-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .hc-unified-diff-path-section {
@@ -1421,7 +1429,7 @@ textarea.hc-mcp-tool-control {
   word-break: break-all;
 }
 
-/* Codex tone tokens — direct values from app-main-D1mBPyLM.css */
+/* Codex tone tokens — direct values from app-main-*.css */
 .hc-unified-diff-tone-applied,
 .hc-unified-diff-tone-applied .hc-unified-diff-path-name {
   color: #2f3137;             /* text-token-foreground */
@@ -1435,30 +1443,11 @@ textarea.hc-mcp-tool-control {
   color: #c44a3f;             /* text-token-charts-red */
 }
 
-.hc-unified-diff-failure-exec summary {
-  font-size: 12.5px;
-  cursor: pointer;
-  color: #6f716b;
-  padding: 2px 0;
-}
-
-.hc-unified-diff-failure-exec-output {
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  background: #f3f1ea;
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #4a4d48;
-  max-height: 180px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
+/* The git stderr is folded into the intro line as "Git apply error: {message}"
+ * (single line). Codex ships no collapsible exec-output panel in this dialog. */
 
 /*
- * codex: keyboard-shortcuts-settings-C5AEKt2i.js — full keyboard shortcuts
+ * codex: keyboard-shortcuts-settings-*.js — full keyboard shortcuts
  * panel. HiCodex renders it as a stand-alone modal (vs Codex's Settings tab).
  */
 .hc-keyboard-shortcuts-dialog {
@@ -1612,7 +1601,7 @@ textarea.hc-mcp-tool-control {
 }
 
 /*
- * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js capture mode visuals.
+ * CODEX-REF: keyboard-shortcuts-settings-*.js capture mode visuals.
  * Codex captures inline inside the row; HiCodex uses a modal so the styles
  * are bespoke. Color tokens reuse the existing settings palette.
  */
@@ -1699,7 +1688,7 @@ textarea.hc-mcp-tool-control {
 }
 
 /*
- * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js inline editor.
+ * CODEX-REF: keyboard-shortcuts-settings-*.js inline editor.
  * 3-column table where the middle column swaps into a capture input
  * (colSpan=2) when a row enters edit mode. Hover reveals pencil/trash/undo
  * icon actions. The conflict warning renders inline beneath the capture
@@ -1861,7 +1850,7 @@ textarea.hc-mcp-tool-control {
 }
 
 /*
- * CODEX-REF: appearance-settings-BLTO9KX5.js inline editor layout. Codex
+ * CODEX-REF: appearance-settings-*.js inline editor layout. Codex
  * renders each setting as a row of `<label> + control`, separated by a thin
  * divider. HiCodex tokens reuse the existing hc-* palette.
  */

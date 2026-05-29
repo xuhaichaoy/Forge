@@ -512,11 +512,23 @@ button.hc-error-event-summary:hover {
   color: #5f625d;
 }
 
+/*
+ * Codex's exploration accordion body uses a 3-state height map
+ * { preview: 7rem, expanded: 20rem, collapsed: 0px }. preview shows the first
+ * ~7rem (112px) behind a fade mask while exploring; expanded caps at 20rem
+ * (320px) with vertical scroll; collapsed (explored, default) is handled by the
+ * accordion not rendering the body.
+ */
 .hc-tool-block.activity[data-group-type="exploration"][data-view-state="preview"] .hc-tool-details {
-  max-height: 68px;
+  max-height: 7rem;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(180deg, #000 64%, transparent 100%);
   mask-image: linear-gradient(180deg, #000 64%, transparent 100%);
+}
+
+.hc-tool-block.activity[data-group-type="exploration"][data-view-state="expanded"] .hc-tool-details {
+  max-height: 20rem;
+  overflow-y: auto;
 }
 
 .hc-tool-block.activity[data-group-type="pending-mcp-tool-calls"] {
@@ -648,11 +660,11 @@ button.hc-error-event-summary:hover {
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js — Mp 返回经 `t.formatList(a,
- * {type:'unit'})` join 后的**单行字符串**渲染在 collapsed-tool-activity summary
- * 区。HiCodex 对齐：单行展示，类似 Codex `Ap` 的 `block min-w-0 max-w-full
- * truncate`（HiCodex 这里不 truncate，因为 worked-for 内不强行裁剪，让长聚合
- * 自动换行更友好）。
+ * CODEX-REF: local-conversation-thread-*.js — 聚合 join helper 返回经
+ * `t.formatList(a, {type:'unit'})` join 后的**单行字符串**渲染在
+ * collapsed-tool-activity summary 区。HiCodex 对齐：单行展示，类似 Codex 的
+ * `block min-w-0 max-w-full truncate`（HiCodex 这里不 truncate，因为 worked-for
+ * 内不强行裁剪，让长聚合自动换行更友好）。
  */
 .hc-worked-for-aggregate {
   display: block;
@@ -873,10 +885,10 @@ button.hc-error-event-summary:hover {
   border-top: 1px solid #e7e3da;
 }
 
-/* codex: `Pv` 60px header icon + hover-swap subtitle + `Iv` overlay --------- */
+/* codex: header icon (60px) + hover-swap subtitle + overlay --------- */
 
 .hc-turn-diff-header--with-hover {
-  /* codex: `group/turn-diff-header` — relative wrapper for the absolute Iv overlay */
+  /* codex: `group/turn-diff-header` — relative wrapper for the absolute overlay */
   position: relative;
   align-items: center;
   gap: 10px;
@@ -884,7 +896,7 @@ button.hc-error-event-summary:hover {
 }
 
 .hc-turn-diff-header-icon {
-  /* codex: `Pv` `size-10 bg-token-bg-secondary text-token-text-secondary rounded-lg` */
+  /* codex: header icon `size-10 bg-token-bg-secondary text-token-text-secondary rounded-lg` */
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -909,7 +921,7 @@ button.hc-error-event-summary:hover {
 }
 
 .hc-turn-diff-header-overlay {
-  /* codex: `Iv` invisible button covering the entire header */
+  /* codex: invisible button covering the entire header */
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -935,7 +947,8 @@ button.hc-error-event-summary:hover {
   display: none;
 }
 
-/* codex: `group/turn-diff-header` :hover swap default → "Review changes →" */
+/* On header hover/focus, swap the DiffStats subtitle for the reviewChangesHover
+ * label ("Review changes") followed by a trailing arrow icon. */
 .hc-turn-diff-header--with-hover:hover .turn-diff-default-subtitle,
 .hc-turn-diff-header--with-hover:focus-within .turn-diff-default-subtitle {
   display: none;
@@ -944,6 +957,10 @@ button.hc-error-event-summary:hover {
 .hc-turn-diff-header--with-hover:hover .turn-diff-hover-subtitle,
 .hc-turn-diff-header--with-hover:focus-within .turn-diff-hover-subtitle {
   display: inline-flex;
+}
+
+.hc-turn-diff-review-arrow {
+  flex-shrink: 0;
 }
 
 /* File rows with inline disclosure ----------------------------------------- */
@@ -999,14 +1016,14 @@ button.hc-error-event-summary:hover {
 }
 
 .hc-turn-diff-file-too-large {
-  /* codex: `Rv` — large-file row label */
+  /* codex: large-file row label */
   font-size: 11px;
   color: #8a8d86;
   font-style: italic;
 }
 
 .hc-turn-diff-file-review {
-  /* codex: per-file `Mn color="ghost"` Review button */
+  /* codex: per-file `color="ghost"` Review button */
   display: inline-flex;
   align-items: center;
   padding: 2px 6px;
@@ -1040,7 +1057,7 @@ button.hc-error-event-summary:hover {
 /* "Show N more files" / "Collapse files" footer ---------------------------- */
 
 .hc-turn-diff-expand-files {
-  /* codex: `Lv` `flex h-9 w-full items-center px-3 text-left` */
+  /* codex: expand-files button `flex h-9 w-full items-center px-3 text-left` */
   display: inline-flex;
   width: 100%;
   align-items: center;
@@ -1125,7 +1142,7 @@ button.hc-error-event-summary:hover {
 }
 
 /*
- * Two-tone exec row label parts (Codex Desktop wg.commandRanWithDetail :3766 + O_/D_ :4207-4211).
+ * Two-tone exec row label parts (Codex Desktop `commandRanWithDetail` action/detail spans).
  * Action span is muted, non-shrinking, no-wrap; detail inherits normal foreground.
  */
 .hc-tool-summary-action {
@@ -1142,7 +1159,7 @@ button.hc-error-event-summary:hover {
 
 /*
  * For collapsed-tool-activity rows (single-item exec summaries) Codex Desktop's
- * `Ng` wrapper at :3781 uses only `mask-image:linear-gradient(...)` to fade text — no
+ * summary wrapper uses only `mask-image:linear-gradient(...)` to fade text — no
  * `text-overflow:ellipsis`. HiCodex was layering `…` on top of the gradient via the
  * inherited rules on .hc-tool-summary-label / -text / -detail. Override to `clip`
  * inside this group-type so mask-image dominates and the visible `…` disappears.
@@ -1202,10 +1219,10 @@ button.hc-tool-summary:not(:disabled):hover .hc-tool-summary-icon,
 }
 
 /*
- * Hover label color shift. Codex Desktop's button (`Mg` at
- * codex-local-conversation-thread.pretty.js :3769) carries `group/collapsed-tool-activity`
+ * Hover label color shift. Codex Desktop's summary button (in
+ * local-conversation-thread-*.js) carries `group/collapsed-tool-activity`
  * + `group/summary` classes; its label span uses
- * `group-hover/collapsed-tool-activity:text-token-foreground` (:3781) to shift
+ * `group-hover/collapsed-tool-activity:text-token-foreground` to shift
  * from muted to foreground on hover. HiCodex's `button.hc-tool-summary:hover` pseudo
  * selector is functionally equivalent — same trigger condition, same color target.
  */
@@ -1348,12 +1365,12 @@ button.hc-tool-summary:hover svg:last-child,
   display: flex;
   align-items: flex-start;
   /*
-   * Codex `Uw` (`codex-local-conversation-thread.pretty.js` :7826-7828) renders
-   * each web-search row as `<div className="text-size-chat flex items-start
+   * Codex's web-search row (in `local-conversation-thread-*.js`) renders
+   * each row as `<div className="text-size-chat flex items-start
    * gap-1.5 font-sans text-token-description-foreground/80">`. text-size-chat
    * resolves to 13px (`app-main-*.css :root`), not the 12px the base
    * `.hc-tool-detail-row` uses for exec/command output — those go through
-   * Codex's `wo` code-block at text-size-code (12px). Bump web-search rows
+   * Codex's code-block at text-size-code (12px). Bump web-search rows
    * specifically to 13px while leaving command rows untouched.
    */
   gap: 6px;
@@ -1546,13 +1563,13 @@ button.hc-tool-summary:hover svg:last-child,
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js — 函数 `Jh`（embedded variant，
- * 即 thread 内 ExecShell 卡片调用方）渲染命令文本的 className:
+ * CODEX-REF: local-conversation-thread-*.js — embedded variant（即 thread 内
+ * ExecShell 卡片调用方）渲染命令文本的 className:
  *   `text-size-chat-sm text-token-description-foreground whitespace-pre-wrap
- *    break-words font-vscode-editor ${y !== D && 'line-clamp-2'}`
- * 即：默认就上 `line-clamp-2`（`y === useState(null)`，初始 y !== D，clamp 生效），
- * 整段命令文字默认压成 2 行 + ellipsis；点击包裹层（`role="button" onClick: F`）触发
- * `F = () => b(D)`，把 y 设为 D，`y !== D` 变 false，line-clamp 类被移除，永久展开
+ *    break-words font-vscode-editor ${collapsed && 'line-clamp-2'}`
+ * 即：默认就上 `line-clamp-2`（初始 collapsed 状态，clamp 生效），
+ * 整段命令文字默认压成 2 行 + ellipsis；点击包裹层（`role="button"`）触发
+ * 展开 handler，把 collapsed 设为 false，line-clamp 类被移除，永久展开
  * （无反向折叠路径）。**Codex 的命令文本完全不设 max-height、不设 overflow-y**。
  *
  * HiCodex 把 clamp 状态外移到 `[data-command-expanded]` 属性，由 `ExecShellDetail`
@@ -2049,7 +2066,7 @@ button.hc-tool-summary:hover svg:last-child,
  * MCP result block layout — surfaced by `tool-activity-detail.tsx::McpResultBlock`
  * renderer. Codex Desktop uses muted description-foreground tone and tight
  * spacing for resource_link and embedded_resource blocks
- * (`local-conversation-thread-BX7YNcUw.js` byte ~378900). HiCodex now renders
+ * (`local-conversation-thread-*.js`). HiCodex now renders
  * resource_link as non-clickable text ("Read {title|name|uri}") so we drop the
  * link affordance and lean on description-tone color for both forms.
  */

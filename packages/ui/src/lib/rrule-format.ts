@@ -1,5 +1,5 @@
 /*
- * codex: local-conversation-thread-CecHj6JI.js#au $i(rawRrule) — humanizes a
+ * codex: local-conversation-thread-*.js automationRow — humanizes a
  * raw RRULE string into "every Monday at 9am" / "every weekday" style text.
  * Falls back to the original string when parsing fails so the section row
  * still shows something meaningful (e.g. when the schedule arrives as a cron
@@ -8,8 +8,8 @@
  */
 import { rrulestr } from "rrule";
 
-// codex: $i(rawRrule) — accepts the raw scheduling string from app-server and
-// returns a humanized English label, mirroring Desktop's automation rail
+// codex: rrule humanizer — accepts the raw scheduling string from app-server
+// and returns a humanized English label, mirroring Desktop's automation rail
 // summary. Returns null for empty/missing input so callers can omit the
 // `rruleSummary` field entirely. Any parse error (cron, free-form text,
 // truncated RRULE) yields the original trimmed string so the row still shows

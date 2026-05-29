@@ -109,13 +109,19 @@ Inputs: `{ items, status, hideHeader?, threadDetailLevel, resolvedApps }`, where
 
 ### Counts
 
-`Intl.formatList({ type: 'conjunction' })` joins three plural fragments:
+The three plural count fragments are joined with the plain separator string
+`localConversationTurn.exploration.accordion.count.separator` (defaultMessage `, `),
+**not** an Intl conjunction — so the header reads "Explored 1 file, 2 searches, 3 lists"
+(no Oxford "and"):
 
 - `{n, plural, one {# file} other {# files}}`
 - `{n, plural, one {# search} other {# searches}}`
 - `{n, plural, one {# list} other {# lists}}`
 
-HiCodex `tool-activity-grouping.ts::joinConjunction` uses `Intl.ListFormat({ type: 'conjunction' })` and matches this output.
+HiCodex `tool-activity-grouping.ts::explorationSummaryLabel` joins these with `", "`.
+The `Intl.formatList({ type: 'conjunction' })` form ("X, Y, and Z") is used **only** for the
+separate cross-type web-search/MCP activity summary, where HiCodex keeps `joinConjunction`.
+Re-verified against Codex Desktop v26.519.81530 (corrects the earlier conjunction claim).
 
 ### Body
 

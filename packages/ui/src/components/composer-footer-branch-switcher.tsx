@@ -1,4 +1,4 @@
-// codex: composer-footer-branch-switcher-CamXBKfA.js — picker UI.
+// codex: composer-footer-branch-switcher-*.js — picker UI.
 // Self-contained chip+dropdown that drives `host_git_list_branches` /
 // `host_git_checkout_branch` from the composer footer. Codex Desktop splits
 // this into `useGitDefaultBranch` + `useGitRecentBranches` + a search query;
@@ -82,7 +82,7 @@ export function ComposerFooterBranchSwitcher({
   const close = useCallback(() => setOpen(false), []);
   useAnchoredMenuDismiss(open, triggerRef, menuRef, close);
 
-  // codex: composer-footer-branch-switcher-CamXBKfA.js — `useGitCurrentBranch`
+  // codex: composer-footer-branch-switcher-*.js — `useGitCurrentBranch`
   // / `useGitRecentBranches`. We only fetch when running inside Tauri AND when
   // the dropdown opens; the chip itself uses the renderer-provided
   // `currentBranch` label so the SSR snapshot still includes "main".
@@ -155,7 +155,7 @@ export function ComposerFooterBranchSwitcher({
   const effectiveCurrent = state.current ?? trimmedCurrent;
   const chipLabel = effectiveCurrent || trimmedCurrent || "";
 
-  // codex: composer-footer-branch-switcher-CamXBKfA.js — picker sort.
+  // codex: composer-footer-branch-switcher-*.js — picker sort.
   // Codex orders the list as: current branch first, then everything else by
   // `committerdate desc`. We mirror that here in pure JS.
   // codex: branch-picker-extension — also keep remote refs out of the local
@@ -196,7 +196,7 @@ export function ComposerFooterBranchSwitcher({
     return orderedRemoteBranches.filter((branch) => branch.name.toLowerCase().includes(needle));
   }, [needle, orderedRemoteBranches]);
 
-  // codex: composer-footer-branch-switcher-CamXBKfA.js — hide entirely when we
+  // codex: composer-footer-branch-switcher-*.js — hide entirely when we
   // know the workspace is not a git repo. Until the dropdown is opened we keep
   // the chip visible if the caller passed a `currentBranch` label (matches the
   // pre-existing readonly span behavior).
@@ -568,7 +568,7 @@ export const __testing = {
   stripRemotePrefix,
 };
 
-// codex: composer-footer-branch-switcher-CamXBKfA.js — popover positioning.
+// codex: composer-footer-branch-switcher-*.js — popover positioning.
 // Same `createPortal` + `getBoundingClientRect()` pattern used by the project
 // menu (`composer-external-footer.tsx` ProjectMenuPortal); duplicated locally
 // to keep this file self-contained.

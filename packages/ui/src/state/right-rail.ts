@@ -15,9 +15,9 @@ const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 400;
 
 export type RightRailSectionId =
   /*
-   * CODEX-REF: local-conversation-thread-CecHj6JI.js — `pe` 用 Vl(sectionKey=
-   * "automation") 渲染**单条 automation**（`au` 组件，输入是 `lo({automations,
-   * conversationId})` 返回的 single object）。Codex bundle 内无 multi-list
+   * CODEX-REF: local-conversation-thread-*.js — automation section (sectionKey=
+   * "automation") 渲染**单条 automation**（输入是 `{automations,
+   * conversationId}` 返回的 single object）。Codex bundle 内无 multi-list
    * automation 渲染分支。HiCodex 之前的 legacy `"automations"` (multi list) 没有
    * Codex 出处，删除以严格对齐。
    */
@@ -45,11 +45,11 @@ export interface RightRailSection {
   branchDetails?: BranchDetailsViewModel;
 }
 
-// codex: local-conversation-thread/pe:automation — single automation summary
-// payload `lo({automations, conversationId})` with rrule humanized via `$i(...)`
-// and "Next run: …" tooltip in the `au` body. HiCodex mirrors the structured
-// fields without inheriting Desktop's full rrule library; rruleSummary is
-// pre-humanized by the caller.
+// codex: local-conversation-thread-*.js automation — single automation summary
+// payload `{automations, conversationId}` with rrule humanized
+// and "Next run: …" tooltip in the automation row body. HiCodex mirrors the
+// structured fields without inheriting Desktop's full rrule library;
+// rruleSummary is pre-humanized by the caller.
 export interface RightRailAutomationInput {
   id: string;
   name: string;
@@ -57,10 +57,10 @@ export interface RightRailAutomationInput {
   nextRunAtMs?: number | null;
 }
 
-// codex: local-conversation-thread/_e:browser-tabs — single browser tab summary
-// `f = browserUseSummary` with `_l` body rendering title + displayUrl two-line
-// row plus shimmer-on-active. HiCodex collapses the multi-tab list into the
-// one-active-tab summary used by Desktop.
+// codex: local-conversation-thread-*.js browser-tabs — single browser tab
+// summary (browser-use summary) with a body rendering title + displayUrl
+// two-line row plus shimmer-on-active. HiCodex collapses the multi-tab list
+// into the one-active-tab summary used by Desktop.
 export interface RightRailBrowserInput {
   title: string;
   displayUrl: string;
@@ -68,7 +68,7 @@ export interface RightRailBrowserInput {
   tabId?: string;
 }
 
-// codex: local-conversation-thread/Ce:mu — status footer payload (token-speed
+// codex: local-conversation-thread-*.js — status footer payload (token-speed
 // line + context-window usage tooltip + compact-thread button). The projection
 // input carries the raw counters so HiCodexApp can pipe the same shape into
 // both `projectRightRailSections` and the `<RightRail statusFooter=… />` prop.
@@ -80,11 +80,11 @@ export interface RightRailStatusFooterInput {
 
 export interface RightRailProjectionInput {
   progress: RailEntry[];
-  // codex: local-conversation-thread/pe:automation — new per-conversation
+  // codex: local-conversation-thread-*.js automation — new per-conversation
   // automation summary (distinct from the legacy `automations` RailEntry list).
   automation?: RightRailAutomationInput;
   /*
-   * CODEX-REF: Codex 渲染 single automation 经 `lo({automations, conversationId})`
+   * CODEX-REF: Codex 渲染 single automation 经 `{automations, conversationId}`
    * 返回 single object，不渲染 multi-list。HiCodex 严格对齐后删除 multi-list
    * 数据流入；保留 `automation` 单条字段。
    */
@@ -94,13 +94,13 @@ export interface RightRailProjectionInput {
   sideChats?: RailEntry[];
   backgroundAgents?: RailEntry[];
   backgroundTerminals?: RailEntry[];
-  // codex: local-conversation-thread/_e:browser-tabs — replaces the legacy
+  // codex: local-conversation-thread-*.js browser-tabs — replaces the legacy
   // pre-built RailEntry[] with the structured single-tab summary that mirrors
-  // Desktop's `_l` body.
+  // Desktop's browser-tab row body.
   browser?: RightRailBrowserInput;
   sources: RailEntry[];
   status?: RailEntry[];
-  // codex: local-conversation-thread/Ce:mu — status footer counters. Kept on
+  // codex: local-conversation-thread-*.js — status footer counters. Kept on
   // the projection input for documentation/typing; HiCodexApp forwards the
   // same value to `<RightRail statusFooter=… />` since the footer is rendered
   // outside the `RightRailSection[]` list.
@@ -214,8 +214,8 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     ));
   }
 
-  // codex: local-conversation-thread/pe:automation — single-entry section with
-  // `na` (Clock) icon, label=name, meta=rrule summary, status carries the
+  // codex: local-conversation-thread-*.js automation — single-entry section
+  // with a Clock icon, label=name, meta=rrule summary, status carries the
   // humanized "Next run: …" string used as title in Desktop. Sort: directly
   // after progress, before automations/branchDetails (Desktop order
   // progress→automation→environment).
@@ -241,12 +241,12 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   const branchEntries = branchDetails ? branchDetailsEntries(branchDetails) : (branchInput as BranchDetailsEntryInput).entries;
   const hasBranchDetails = branchDetails ? branchDetails.hasData : branchEntries.length > 0;
   if (hasBranchDetails) {
-    // codex: local-conversation-thread-CecHj6JI.js#J — environment section
+    // codex: local-conversation-thread-*.js — environment section
     // title (i18n `codex.localConversation.environmentSummary.title`). The
     // section keyed `branchDetails` here is what Desktop labels "Environment";
     // the title default falls back to "Environment" while still honoring an
     // explicit override coming in via `branchDetails.title`/entry-input title.
-    // TODO: codex: local-conversation-thread-CecHj6JI.js#J — PR row (ga) +
+    // TODO: codex: local-conversation-thread-*.js — PR row +
     // gh-status row require GitHub CLI integration; HiCodex no data source yet.
     sections.push({
       id: "branchDetails",
@@ -260,10 +260,10 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  // CODEX-REF: /private/tmp/codex-asar/pretty/local-conversation-thread-BX7YNcUw.pretty.js:7918-7952 —
-  // Codex Desktop renders the Git summary when `M` is truthy and renders Outputs
-  // only when `!M`, so the Outputs section is suppressed for Git-backed rails even
-  // if artifact entries exist.
+  // CODEX-REF: local-conversation-thread-*.js —
+  // Codex Desktop renders the Git summary when the rail is Git-backed and renders
+  // Outputs only when it is not, so the Outputs section is suppressed for
+  // Git-backed rails even if artifact entries exist.
   const shouldShowOutputs = input.showOutputs ?? !hasBranchDetails;
   if (shouldShowOutputs) {
     sections.push(projectEntrySection("artifacts", "Outputs", input.artifacts, true));
@@ -286,8 +286,8 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     ));
   }
 
-  // codex: local-conversation-thread/_e:browser-tabs — single-entry section
-  // with `ma`(active)/`wa`(Globe) icon and shimmer-on-active title. HiCodex
+  // codex: local-conversation-thread-*.js browser-tabs — single-entry section
+  // with an active-spinner / Globe icon and shimmer-on-active title. HiCodex
   // captures the active/idle bit in `entry.status` so the renderer can route
   // it through the existing browser-row icon logic and add the shimmer class.
   if (input.browser) {
@@ -303,8 +303,8 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  // CODEX-REF: local-conversation-thread-CecHj6JI.js `Se` slot (byte ~99000) —
-  // Codex 桌面版 panel sequence `[fe, pe, J, me, he, ge, _e, Se, Ce]` 中,Sources
+  // CODEX-REF: local-conversation-thread-*.js Sources slot —
+  // 在 Codex 桌面版 panel sequence 中,Sources
   // (`tool-sources`, sectionKey:"tool-sources") **总是渲染**(无渲染条件),空态由
   // section 内部 "No sources yet" empty row 承载。HiCodex 原条件 `sources.length>0 ||
   // sections.length>0` 没源码依据,已对齐 always。
@@ -390,8 +390,8 @@ function branchDetailsEntries(details: BranchDetailsViewModel): RailEntry[] {
     ...(row.value ? { meta: row.value } : {}),
     status: row.status ?? "available",
     ...(row.details && row.details.length > 0 ? { details: row.details } : {}),
-    // codex: local-conversation-thread-CecHj6JI.js#J row 4 PR — actionUrl lifts
-    // into a `url` action so right-rail's onOpenUrl handler opens GitHub.
+    // codex: local-conversation-thread-*.js — environment row 4 PR — actionUrl
+    // lifts into a `url` action so right-rail's onOpenUrl handler opens GitHub.
     ...(row.actionUrl ? { action: { kind: "url" as const, url: row.actionUrl } } : {}),
   }));
   return [
@@ -419,9 +419,9 @@ function rightRailSideSpace(contentWidthPx: number): number {
   return (Math.max(0, contentWidthPx) - DESKTOP_THREAD_LAYOUT_WIDTH_PX) / 2;
 }
 
-// codex: local-conversation-thread/au:automationRow — single automation row:
-// `<es>` shell with `na`(Clock), label = automation.name, sublabel = rrule
-// humanized via `$i(rrule)`, title="Next run: …" tooltip computed off
+// codex: local-conversation-thread-*.js automationRow — single automation row:
+// row shell with a Clock icon, label = automation.name, sublabel = humanized
+// rrule, title="Next run: …" tooltip computed off
 // nextRunAtMs. HiCodex packs the same fields into the RailEntry slots that
 // `right-rail.tsx::railEntryIcon` / `RailEntryContent` already understand.
 function automationRailEntry(input: RightRailAutomationInput): RailEntry {
@@ -434,8 +434,8 @@ function automationRailEntry(input: RightRailAutomationInput): RailEntry {
   };
 }
 
-// codex: local-conversation-thread/_l:browserRow — single browser-tab row:
-// `<es>` shell with `ma`(active spinner)/`wa`(Globe) icon, title + displayUrl
+// codex: local-conversation-thread-*.js browserRow — single browser-tab row:
+// row shell with an active-spinner / Globe icon, title + displayUrl
 // two-line layout, shimmer overlay on the title when `isActive`.
 function browserRailEntry(input: RightRailBrowserInput): RailEntry {
   return {
@@ -446,7 +446,7 @@ function browserRailEntry(input: RightRailBrowserInput): RailEntry {
   };
 }
 
-// codex: local-conversation-thread/au:automationRow — `Next run:` tooltip
+// codex: local-conversation-thread-*.js automationRow — `Next run:` tooltip
 // timestamp formatting. Desktop uses the user's locale + an "X minutes/hours
 // from now" rrule helper; HiCodex shows the localized date/time, which keeps
 // the tooltip readable without pulling in a full rrule library.

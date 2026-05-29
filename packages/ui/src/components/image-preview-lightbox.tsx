@@ -13,8 +13,8 @@ import {
 import { createPortal, flushSync } from "react-dom";
 
 /*
- * Codex Desktop `$C` lightbox (local-conversation-thread-BX7YNcUw.js byte
- * ~514040). Two operating modes:
+ * Codex Desktop image-preview lightbox (local-conversation-thread-*.js). Two
+ * operating modes:
  *
  *   1) **Self-triggered**: render an `<img>` thumbnail inside `frameClassName`
  *      and pop the modal when the user clicks the thumbnail. Used by inline
@@ -22,11 +22,11 @@ import { createPortal, flushSync } from "react-dom";
  *      node that hosts the thumbnail. This is HiCodex's legacy entry point.
  *
  *   2) **Externally controlled**: the parent already shows its own thumbnail
- *      grid (Codex `JC` gallery, see `generated-image-gallery.tsx`) and just
- *      wants the modal layer. Passing `onClose` switches the component to
- *      controlled mode — the trigger button is skipped and the modal mounts
+ *      grid (Codex generated-image gallery, see `generated-image-gallery.tsx`)
+ *      and just wants the modal layer. Passing `onClose` switches the component
+ *      to controlled mode — the trigger button is skipped and the modal mounts
  *      immediately, with optional `onPreviousImage` / `onNextImage` arrows
- *      matching Codex `$C` props (`Previous image` / `Next image`).
+ *      matching Codex lightbox props (`Previous image` / `Next image`).
  */
 
 export interface ImagePreviewLightboxProps {
@@ -45,9 +45,9 @@ export interface ImagePreviewLightboxProps {
    * directly. The trigger button + thumbnail are not rendered.
    */
   onClose?: () => void;
-  /** Codex `$C` `onPreviousImage` — disabled when undefined (arrow hidden). */
+  /** Codex lightbox `onPreviousImage` — disabled when undefined (arrow hidden). */
   onPreviousImage?: () => void;
-  /** Codex `$C` `onNextImage` — disabled when undefined (arrow hidden). */
+  /** Codex lightbox `onNextImage` — disabled when undefined (arrow hidden). */
   onNextImage?: () => void;
 }
 
@@ -203,7 +203,7 @@ export function ImagePreviewLightbox({
   }, [maxZoomPercent, minZoomPercent, open, setZoomAtPoint, zoomPercent]);
 
   /*
-   * codex: image-preview-shortcuts-Cmdmo1ig.js — keyboard bindings for the
+   * codex: image-preview-shortcuts-*.js — keyboard bindings for the
    * image preview lightbox. Mirrors Codex Desktop's full key map: Esc closes,
    * ArrowLeft / ArrowRight step through the gallery, and the zoom commands
    * (Cmd/Ctrl+= / Cmd/Ctrl+- / Cmd/Ctrl+0) live in
@@ -219,15 +219,15 @@ export function ImagePreviewLightbox({
         if (zoomCommand.type === "reset-zoom") resetZoom();
         else stepZoom(zoomCommand.delta);
       } else if (event.key === "Escape") {
-        // codex: image-preview-shortcuts-Cmdmo1ig.js — Esc dismisses the lightbox.
+        // codex: image-preview-shortcuts-*.js — Esc dismisses the lightbox.
         if (isControlled) onClose?.();
         else setOpenInternal(false);
       } else if (event.key === "ArrowLeft" && onPreviousImage) {
-        // codex: image-preview-shortcuts-Cmdmo1ig.js — ← steps to previous image.
+        // codex: image-preview-shortcuts-*.js — ← steps to previous image.
         event.preventDefault();
         onPreviousImage();
       } else if (event.key === "ArrowRight" && onNextImage) {
-        // codex: image-preview-shortcuts-Cmdmo1ig.js — → steps to next image.
+        // codex: image-preview-shortcuts-*.js — → steps to next image.
         event.preventDefault();
         onNextImage();
       }

@@ -41,7 +41,7 @@ import {
   type SidebarThreadStatusState,
 } from "../state/sidebar-projection";
 import { threadTitle } from "../state/thread-workflow";
-// codex: electron-menu-shortcuts-DQYPVyfu.js — sidebar nav entries surface
+// codex: electron-menu-shortcuts-*.js — sidebar nav entries surface
 // the accelerator next to the label (matches Desktop tooltip + menu format).
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 
@@ -107,7 +107,7 @@ export interface SidebarProps {
   /**
    * Workspace roots the user has selected; surfaced so freshly-picked folders
    * appear as empty Project groups before the first thread is created
-   * (Codex Desktop sidebar-project-groups M-function parity).
+   * (Codex Desktop sidebar-project-groups-*.js project-grouping parity).
    */
   selectedWorkspaceRoots?: string[];
   onOrganizeModeChange?: (organizeMode: SidebarOrganizeMode) => void;
@@ -558,7 +558,7 @@ export function Sidebar({
     <aside className="hc-sidebar" id="hc-sidebar">
       {renderUpdateBadge()}
       <div className="hc-sidebar-nav">
-        {/* codex: electron-menu-shortcuts-DQYPVyfu.js#newThread / searchChats — */}
+        {/* codex: electron-menu-shortcuts-*.js (newThread / searchChats) — */}
         {/* sidebar nav entries surface their command accelerator alongside the label. */}
         <SidebarNavItem
           icon={connecting ? <Loader2 className="hc-spin" size={17} /> : <MessageSquarePlus size={17} />}
@@ -769,7 +769,7 @@ export function Sidebar({
             onClick={onToggleTheme}
           />
         )}
-        {/* codex: electron-menu-shortcuts-DQYPVyfu.js#settings — ⌘, */}
+        {/* codex: electron-menu-shortcuts-*.js (settings) — ⌘, */}
         <SidebarNavItem
           icon={<Settings size={17} />}
           label="Settings"
@@ -994,7 +994,7 @@ function SidebarNavItem({
   disabled = false,
   icon,
   label,
-  // codex: electron-menu-shortcuts-DQYPVyfu.js — Codex Desktop sidebar nav entries
+  // codex: electron-menu-shortcuts-*.js — Codex Desktop sidebar nav entries
   // render the platform-formatted accelerator alongside the label (matching the
   // tooltip surfaced in its command menu).
   accelerator,

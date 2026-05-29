@@ -17,8 +17,8 @@ export interface BranchDetailsRow {
   status?: string;
   details?: string[];
   /*
-   * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget — click
-   * opens the PR's GitHub page. branchDetailsEntries() lifts this into a
+   * codex: local-conversation-thread-*.js — Environment-section PR widget (row 4);
+   * click opens the PR's GitHub page. branchDetailsEntries() lifts this into a
    * RailEntryAction `{ kind: "url", url }` so right-rail's existing url handler
    * (onOpenUrl) takes over.
    */
@@ -43,7 +43,7 @@ export interface BranchDetailsProjectionInput {
   diff?: BranchDetailsDiffInput | null;
   gitStatus?: BranchDetailsGitStatusInput | null;
   /*
-   * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget —
+   * codex: local-conversation-thread-*.js — Environment-section PR widget (row 4);
    * caller fetches via `host_gh_pr_status` (gh CLI). When absent, the row
    * is not emitted.
    */
@@ -68,9 +68,9 @@ export interface BranchDetailsDiffFileInput {
   kind?: string | null;
 }
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/diff-unified-DjSR1Ba3.js R (= Sc) —
-// Codex Desktop's Changes summary row pulls `additions`/`deletions` from the active
-// diff projection and threads them through `<Sc linesAdded={..} linesRemoved={..}/>`.
+// CODEX-REF: diff-unified-*.js — Codex Desktop's Changes summary row pulls
+// `additions`/`deletions` from the active diff projection and threads them through
+// its line-count summary component (`linesAdded` / `linesRemoved` props).
 // HiCodex now mirrors that data on `BranchDetailsGitStatus` so the right rail can
 // render the same `+N -N` decoration instead of "N changed files".
 export interface BranchDetailsGitStatus {
@@ -127,8 +127,8 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   const hasExplicitGithubStatus = explicitGithubStatusProvided(input.gitStatus ?? null);
   const shouldShowThreadContext = hasThreadGitContext || hasGitStatusData || diff !== null;
 
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js yf —
-  // Codex Desktop's "Local" row is always rendered as soon as the conversation has
+  // CODEX-REF: local-conversation-thread-*.js — Codex Desktop's "Local" row is
+  // always rendered as soon as the conversation has
   // either a working directory or any thread-level Git context. Previously we gated
   // on `shouldShowThreadContext && cwd`, which produced empty Git surfaces on
   // perfectly normal sessions whose runtime had not yet emitted Git data. Codex
@@ -163,8 +163,8 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
       value: "Commit",
     });
   }
-  // codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR widget — when
-  // the gh CLI returns an active PR for the current branch, surface it between
+  // codex: local-conversation-thread-*.js — Environment-section PR widget (row 4);
+  // when the gh CLI returns an active PR for the current branch, surface it between
   // the Commit row and the GitHub status row. Click opens the PR URL.
   const pullRequest = input.pullRequest ?? null;
   if (pullRequest && pullRequest.number > 0) {
@@ -177,8 +177,8 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
     });
   }
 
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js mf —
-  // Codex Desktop ALWAYS renders the GitHub status row in the Git summary section,
+  // CODEX-REF: local-conversation-thread-*.js — Codex Desktop ALWAYS renders the
+  // GitHub status row in the Git summary section,
   // falling back to "GitHub CLI unavailable" when no `ghStatus` payload is around.
   // We mirror that by emitting the row whenever the Git panel is rendered at all
   // (i.e. there is real Git context), even when no GitHub probe has come back yet.
@@ -194,8 +194,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   return {
     /*
      * Section title mirrors Codex Desktop's `environmentSummary` ICU entry.
-     * Verified literally in
-     *   /private/tmp/codex-asar/webview/assets/local-conversation-thread-CecHj6JI.js
+     * Verified literally in local-conversation-thread-*.js:
      *   `id: "codex.localConversation.environmentSummary.title",
      *    defaultMessage: "Environment",
      *    description: "Title for the thread summary side panel environment
@@ -215,9 +214,9 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#J row 4 `ga` PR status badge —
- * maps the gh CLI `state` / `isDraft` pair to a short status token reused by
- * the rail row's right-side chip ("Draft" / "Merged" / "Closed" / "Open").
+ * codex: local-conversation-thread-*.js — Environment-section PR status badge
+ * (row 4); maps the gh CLI `state` / `isDraft` pair to a short status token
+ * reused by the rail row's right-side chip ("Draft" / "Merged" / "Closed" / "Open").
  */
 function pullRequestStatusFromPr(pr: BranchDetailsPullRequest): string {
   if (pr.isDraft) return "Draft";
@@ -307,9 +306,9 @@ function projectGitStatus(
     booleanField(gitInfo, "hasDiff"),
     diff ? diff.hasDiff : undefined,
   );
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/diff-unified-DjSR1Ba3.js R (= Sc) —
-  // Codex Desktop reads `additions` / `deletions` from the active diff projection and
-  // forwards them to `<Sc linesAdded linesRemoved>`. HiCodex receives either explicit
+  // CODEX-REF: diff-unified-*.js — Codex Desktop reads `additions` / `deletions`
+  // from the active diff projection and forwards them to its line-count summary
+  // component (`linesAdded` / `linesRemoved` props). HiCodex receives either explicit
   // counts in `gitStatus` or a raw unified-diff string; we coalesce both into the
   // viewmodel so the Changes row can render `+N -N` without inventing data.
   const linesAdded = firstDefined(
@@ -353,10 +352,10 @@ function diffLineCountField(record: Record<string, unknown> | null, keys: string
   return undefined;
 }
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/diff-unified-DjSR1Ba3.js — Codex Desktop
-// computes added/removed counts upstream and ships them as numbers; when the runtime
-// only hands us a raw unified-diff string we approximate the same counts by scanning
-// for body lines starting with `+`/`-` (skipping the `+++`/`---` file headers).
+// CODEX-REF: diff-unified-*.js — Codex Desktop computes added/removed counts upstream
+// and ships them as numbers; when the runtime only hands us a raw unified-diff string
+// we approximate the same counts by scanning for body lines starting with `+`/`-`
+// (skipping the `+++`/`---` file headers).
 function countDiffLines(diffText: string, marker: "+" | "-"): number | undefined {
   if (!diffText) return undefined;
   const header = marker === "+" ? "+++" : "---";
@@ -371,8 +370,8 @@ function countDiffLines(diffText: string, marker: "+" | "-"): number | undefined
   return found ? count : undefined;
 }
 
-// CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js mf —
-// Codex Desktop ALWAYS renders the GitHub row inside the Git summary panel; only the
+// CODEX-REF: local-conversation-thread-*.js — Codex Desktop ALWAYS renders the GitHub
+// row inside the Git summary panel; only the
 // label rotates between the five `gitSummary.*` i18n strings depending on the
 // observed `ghStatus`. When no ghStatus payload is available yet the Desktop falls
 // back to "GitHub CLI unavailable" rather than skipping the row, which matches the

@@ -31,7 +31,7 @@ export interface PendingRequestQuestion {
   /*
    * CODEX-REF: packages/codex-protocol/src/generated/v2/ToolRequestUserInputQuestion.ts
    * 协议层 `ToolRequestUserInputQuestion.isOther: boolean`。Codex bundle
-   * `pending-request-item-panel-DVOSLvQ1.js::en` 用 `K = ne === !0` 检查并：
+   * `pending-request-item-panel-*.js` 检查 `isOther === true` 并：
    * - 渲染 freeform textarea（可与 options 并存）
    * - 提交时若 `isOther && freeformText`，则用 freeform 文本作答案（覆盖 selected option id）
    * - 数字键超出 options 数量时 focus 到 textarea

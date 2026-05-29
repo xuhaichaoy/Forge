@@ -1,6 +1,5 @@
 /*
- * Codex Desktop rail section header — `Jd` at
- * codex-local-conversation-thread.pretty.js :1666:
+ * codex: local-conversation-thread-*.js — rail section header:
  *   <header className="sticky top-0 z-10 flex h-7 w-full min-w-0 items-center justify-start
  *                       gap-2 bg-inherit ps-4 pe-2 pb-0.5 text-base text-token-text-tertiary">
  * HiCodex preserves its 13px/650 typography (smaller, lighter aesthetic), but pulls in
@@ -8,17 +7,17 @@
  * of the rail container so the sticky header masks scrolled-under content cleanly.
  */
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js — function Hl (right-rail
- * section header) <header> className:
+ * CODEX-REF: local-conversation-thread-*.js — right-rail section header
+ * <header> className:
  *   `sticky top-0 z-10 flex h-7 w-full min-w-0 items-center justify-start
  *    gap-2 bg-token-dropdown-background ps-4 pe-2 pb-0.5 text-base
  *    text-token-text-tertiary`
  * 严格对齐：z-10、h-7 = height: 28px (固定，不是 min-height)、min-width: 0、gap-2
  * (8px)、ps-4 pe-2 pb-0.5、**无 margin-bottom**（sections 间距由父 `flex flex-col
- * gap-3` 提供，Codex Hl 自身不带 margin）。
+ * gap-3` 提供，Codex 的 header 自身不带 margin）。
  *
  * `justify-content: space-between` 偏离 Codex 的 `justify-start`。Codex 通过
- * 把 after slot 包一层 `flex min-w-0 flex-1`（`v` 变量）让它占满剩余空间，配合
+ * 把 after slot 包一层 `flex min-w-0 flex-1` 让它占满剩余空间，配合
  * `justify-start` 实现 toggle 紧贴左、after 紧贴右。HiCodex 当前 JSX 直接平铺
  * headerAction，未引入 flex-1 包装，所以保留 space-between 等价方案。如果以后
  * 想完全对齐 JSX 层（headerAction 包 flex-1），再把这里改为 flex-start。
@@ -40,7 +39,7 @@
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js Hl — toggle button className:
+ * CODEX-REF: local-conversation-thread-*.js — section-header toggle button className:
  *   `group/section-toggle inline-flex min-w-0 shrink-0 cursor-interaction
  *    items-center gap-1.5 rounded-md py-0.5 pr-1 text-left
  *    focus-visible:outline-2 focus-visible:outline-offset-2`
@@ -69,7 +68,8 @@
 }
 
 /*
- * Codex `:1660` toggle button uses `focus-visible:outline-2 focus-visible:outline-offset-2`.
+ * codex: local-conversation-thread-*.js — the section-header toggle button uses
+ * `focus-visible:outline-2 focus-visible:outline-offset-2`.
  * HiCodex previously had no focus-visible style on this control.
  */
 .hc-rail-section-toggle:focus-visible {
@@ -97,7 +97,7 @@
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js jl + Ml (byte 44480 + 45117) —
+ * CODEX-REF: local-conversation-thread-*.js —
  * "Choose environment" 按钮容器:`h-7 w-7`(28×28 px)、`rounded-sm`(2 px)、
  * `bg-transparent`、`text-token-text-tertiary`、hover-bg-list-hover。HiCodex 占位
  * 仅 disabled 视觉状态,无 dropdown / no-op 点击。
@@ -134,7 +134,7 @@
 }
 
 /*
- * codex: local-conversation-thread-CecHj6JI.js#Vl — Environment section header
+ * codex: local-conversation-thread-*.js — Environment section header
  * worktree menu trigger. Wider than the generic 24x24 action button because it
  * carries the current worktree label inline (Monitor icon + label + chevron).
  */
@@ -161,7 +161,7 @@
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js Hl chevron className —
+ * CODEX-REF: local-conversation-thread-*.js — section-header chevron className —
  *   `icon-2xs shrink-0 transition-transform
  *    group-hover/section-toggle:opacity-100 group-focus-visible/section-toggle:opacity-100
  *    {expanded ? 'opacity-0' : 'opacity-100'}
@@ -218,14 +218,14 @@
 }
 
 /*
- * Codex Desktop `Kd` content (`:1645`):
+ * codex: local-conversation-thread-*.js — rail section content wrapper:
  *   <div className="flex flex-col gap-px px-4">{children}</div>
  * 1px gap between adjacent rail rows + 16px horizontal padding (D4 alignment).
  */
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl (byte ~53727) — Codex 用
+ * CODEX-REF: local-conversation-thread-*.js — Codex 用
  * framer-motion 折叠动画:`initial/exit {height:0, opacity:0, marginTop:0}` →
- * `animate {height:"auto", opacity:1, marginTop:2}`, transition `da = {duration:
+ * `animate {height:"auto", opacity:1, marginTop:2}`, transition `{duration:
  * 0.5, ease: [.19, 1, .22, 1]}`,wrapper className `relative z-0 overflow-hidden`。
  *
  * 因 HiCodex 不依赖 framer-motion,这里用 CSS grid-rows 1fr trick 等价实现

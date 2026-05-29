@@ -351,7 +351,7 @@ function shouldKeepArtifactTextMatch(
   if (hasNegativeArtifactContext(text, match.index)) return false;
   if (source !== "assistant") return true;
   if (match.kind === "markdownImage") return true;
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js dv/hv/xv —
+  // CODEX-REF: local-conversation-thread-*.js —
   // Codex Desktop's assistant artifact extraction parses markdown links and inline-code
   // file references without a "positive context" keyword gate; any resolved path it
   // surfaces becomes an artifact. HiCodex still keeps a heuristic for bare/relative

@@ -65,7 +65,7 @@ export interface LoadSettingsPanelContentOptions {
   uiLocale?: HiCodexLocale;
   uiTheme?: UiThemeSnapshot;
   /*
-   * CODEX-REF: appearance-settings-BLTO9KX5.js §4 + §8. Adding Code font size
+   * CODEX-REF: appearance-settings-*.js §4 + §8. Adding Code font size
    * and Reduce motion entries to the Appearance panel; loader forwards the
    * current snapshot so the entries render with live values.
    */
@@ -217,7 +217,7 @@ export async function loadSettingsPanelContent({
   }
 
   /*
-   * CODEX-REF: appearance-settings-BLTO9KX5.js. The panel is now rendered by
+   * CODEX-REF: appearance-settings-*.js. The panel is now rendered by
    * AppearanceSettingsPanel directly inside SettingsPanel — bespoke 3-row
    * inline editor with segmented toggles + number input — rather than via a
    * flat CommandPanelEntry list. Loader still sets a minimal panel state so
@@ -235,7 +235,7 @@ export async function loadSettingsPanelContent({
   }
 
   /*
-   * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js. The panel is now
+   * CODEX-REF: keyboard-shortcuts-settings-*.js. The panel is now
    * rendered by KeyboardShortcutsSettingsPanel (inline 3-column table +
    * capture-in-row) directly inside SettingsPanel, bypassing the
    * CommandPanelEntry pipeline entirely because Codex's row layout is a

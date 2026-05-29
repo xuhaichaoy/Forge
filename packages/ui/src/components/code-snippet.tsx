@@ -60,11 +60,11 @@ export function CodeSnippet({
     };
   }, [highlightKey, isDiff, isMermaid, normalizedLanguage, shouldPreviewSvg, text]);
 
-  // codex: copy-button-DEwu0JDM.js — direct port of upstream `h(e)` CopyButton.
+  // codex: copy-button-*.js — direct port of upstream CopyButton.
   // Behavior mirrored exactly: writes the in-snippet selection (if any) or the
   // full block text to the clipboard, sets a transient `copied` flag, then
   // clears it after 2000ms (`setTimeout(...,2e3)`) — gated by a focus/mount
-  // ref (upstream `p()` hook → `k()`) so we don't setState after unmount.
+  // ref so we don't setState after unmount.
   // ICU strings from upstream copyButton.* family:
   //   copyButton.copied         = "Copied"
   //   copyButton.copy           = "Copy"
@@ -99,7 +99,7 @@ export function CodeSnippet({
           <figcaption>
             <span>{title}</span>
             {/*
-             * Codex Desktop i18n (code-snippet-CQ14r_m1.js + copy-button-DEwu0JDM.js):
+             * Codex Desktop i18n (code-snippet-*.js + copy-button-*.js):
              *   codeSnippet.wrap.disable  = "Disable word wrap"
              *   codeSnippet.wrap.enable   = "Enable word wrap"
              *   copyButton.copyCode       = "Copy code"
@@ -156,7 +156,7 @@ export function CodeSnippet({
   );
 }
 
-// codex: mermaid-diagram-p7A5YYxA.js (wrapper) + mermaid-IFDMiTb-.js (core
+// codex: mermaid-diagram-*.js (wrapper) + mermaid-*.js (core
 // library) — codeblocks with `lang=mermaid` are rendered by
 // `mermaid.render(id, source)` via a dynamic `import("mermaid")` so the
 // ~1 MB core stays out of the initial bundle. Success: insert the returned

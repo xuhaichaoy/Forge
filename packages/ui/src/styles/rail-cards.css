@@ -122,7 +122,7 @@
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CecHj6JI.js _l (Browser row, byte 29184) —
+ * CODEX-REF: local-conversation-thread-*.js (Browser row) —
  * Codex 桌面版 Browser row 把 title 和 displayUrl 同一行 baseline-aligned 渲染:
  *   wrapper: `flex min-w-0 items-baseline gap-2`
  *   title:      `max-w-[60%] min-w-0 shrink truncate`
@@ -185,15 +185,15 @@
 }
 
 /*
- * CODEX-REF: button-bq66r8jD.js — Codex `Pn` "Show N more" / "Show less" 调用:
+ * CODEX-REF: button-*.js — Codex "Show N more" / "Show less" 按钮调用:
  *   color: "ghostMuted"  → text-token-muted-foreground + enabled:hover:bg-transparent
  *                           + hover:text-token-foreground + border-transparent
  *   size:  "default"     → px-2 py-0.5 text-sm leading-[18px]
  *   shape: rounded-full
  *   base:  flex items-center gap-1 border whitespace-nowrap focus:outline-none
  *          disabled:cursor-not-allowed disabled:opacity-40
- *   call-site overrides (byte 22555): `!px-0 !py-0 text-token-text-tertiary
- *                                       hover:text-token-text-secondary`
+ *   call-site overrides: `!px-0 !py-0 text-token-text-tertiary
+ *                          hover:text-token-text-secondary`
  *
  * 严格对齐:
  * - 字号 14px(text-sm)、line-height 18px、字重默认 normal
@@ -260,11 +260,11 @@
   color: #963d2f;
 }
 
-/* CODEX-REF: /tmp/codex_asar_extract/webview/assets/check-lg-CRmuPmFE.js nt — Codex
+/* CODEX-REF: check-lg-*.js — Codex
  * Desktop renders every Git summary row inside a 28px (`h-7`) flex container with
  * a `min-w-0 flex-1` inner wrapper and a trailing `ms-auto shrink-0` slot. */
 /*
- * CODEX-REF: summary-panel-row-C6RBBgqn.js 函数 `o` — Codex `es` row 基础容器
+ * CODEX-REF: summary-panel-row-*.js — Codex summary-panel row 基础容器
  * className: `group/summary-panel-row relative isolate flex h-7 w-full min-w-0
  * items-center gap-2 rounded-sm border-0 bg-transparent px-0 py-1 text-left`。
  * `isolate` 创建独立 stacking context,让 hover halo `::before` 的 `z-index: -1`
@@ -328,7 +328,7 @@
 }
 
 /*
- * CODEX-REF: summary-panel-row-C6RBBgqn.js 函数 `o` — Codex `es` row hover halo
+ * CODEX-REF: summary-panel-row-*.js — Codex summary-panel row hover halo
  * 通过 `before:absolute before:inset-y-0 before:-inset-x-2 before:-z-10
  * before:rounded-sm before:content-[''] hover:before:bg-token-list-hover-background`
  * 实现:hover 时背景比 row 本身向左右各凸出 8 px(超出 row padding,落在 section
@@ -357,7 +357,7 @@
   cursor: not-allowed;
 }
 
-/* CODEX-REF: /tmp/codex_asar_extract/webview/assets/diff-unified-DjSR1Ba3.js R (= Sc) —
+/* CODEX-REF: diff-unified-*.js — the diff stats renderer.
  * Codex Desktop renders +N -N stats inside an `inline-flex items-center gap-1
  * tabular-nums leading-none` wrapper, with added/removed spans tinted via the
  * git-decoration design tokens. */
@@ -383,7 +383,7 @@
   color: #b23a37;
 }
 
-/* CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js jf —
+/* CODEX-REF: local-conversation-thread-*.js — empty Sources panel.
  * Codex Desktop renders an empty Sources panel as a single `py-1 text-base
  * text-token-description-foreground` row with the literal "No sources yet" string. */
 .hc-rail-empty-state {

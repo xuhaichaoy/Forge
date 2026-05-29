@@ -1,4 +1,4 @@
-// CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js
+// CODEX-REF: open-workspace-file-*.js
 //   Codex Desktop maps xlsx/xlsm/csv/tsv via
 //     var _=new Map([["xlsm","xlsx"],["xlsx","xlsx"],["csv","csv"],["tsv","tsv"]]);
 //   to artifactType:"spreadsheet" and renders them through its closed-source
@@ -35,7 +35,7 @@ export function SpreadsheetPreview({
   className,
   style,
 }: SpreadsheetPreviewProps) {
-  // CODEX-REF: open-workspace-file-DOOUD1lA.js — Codex's xlsx path runs through
+  // CODEX-REF: open-workspace-file-*.js — Codex's xlsx path runs through
   // its WASM XlsxReader; HiCodex calls SheetJS XLSX.read once and caches the
   // workbook so sheet switching is instantaneous and avoids re-parsing.
   const parsed = useMemo<ParsedWorkbook | null>(() => {
@@ -63,7 +63,7 @@ export function SpreadsheetPreview({
     }
   }, [parsed]);
 
-  // CODEX-REF: open-workspace-file-DOOUD1lA.js — Codex's Popcorn renderer
+  // CODEX-REF: open-workspace-file-*.js — Codex's Popcorn renderer
   // builds its own grid; HiCodex calls SheetJS sheet_to_html, which produces
   // a sanitized, non-editable <table> string. We intentionally skip styles,
   // images, comments, merged-region painting beyond what sheet_to_html emits.
@@ -126,7 +126,7 @@ export function SpreadsheetPreview({
       )}
       <div
         className="hc-spreadsheet-table-wrap"
-        // CODEX-REF: open-workspace-file-DOOUD1lA.js — sheet_to_html output is
+        // CODEX-REF: open-workspace-file-*.js — sheet_to_html output is
         // a self-contained <table>; SheetJS escapes cell content, so we accept
         // the dangerouslySetInnerHTML here in exchange for not having to write
         // a virtualized grid. Production hardening would render the cells with

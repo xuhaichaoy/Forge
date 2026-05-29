@@ -2,7 +2,7 @@ import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS } from "./hicodex-desktop-namespace";
 
 /*
- * CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js. Codex Desktop persists
+ * CODEX-REF: keyboard-shortcuts-settings-*.js. Codex Desktop persists
  * keymap overrides through a pair of host bridges:
  *   - query `codex-command-keymap-state` → snapshot of all current bindings
  *   - mutation `set-codex-command-keybinding` with one of 5 types

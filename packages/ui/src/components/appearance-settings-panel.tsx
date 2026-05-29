@@ -20,7 +20,7 @@ import {
 } from "../state/theme";
 
 /*
- * CODEX-REF: appearance-settings-BLTO9KX5.js inline editor. Codex Desktop
+ * CODEX-REF: appearance-settings-*.js inline editor. Codex Desktop
  * renders the Appearance panel as a column of labelled control rows (not as
  * a CommandPanelEntry list), so HiCodex follows suit. The three controls
  * that currently have HiCodex-side backing are Theme (§1), Code font size
@@ -54,7 +54,7 @@ export function AppearanceSettingsPanel({
   return (
     <div className="hc-appearance-settings">
       {/*
-        * CODEX-REF: appearance-settings-BLTO9KX5.js §1 — Theme row.
+        * CODEX-REF: appearance-settings-*.js §1 — Theme row.
         * Codex i18n: settings.general.appearance.theme.{light,dark,system}.
         */}
       <AppearanceRow
@@ -72,7 +72,7 @@ export function AppearanceSettingsPanel({
         />
       </AppearanceRow>
       {/*
-        * CODEX-REF: appearance-settings-BLTO9KX5.js §4 — Code font size.
+        * CODEX-REF: appearance-settings-*.js §4 — Code font size.
         * Codex spec: <input type="number" min={8} max={24} step={1}>, commit
         * onBlur, Enter triggers blur, NaN reverts. HiCodex mirrors verbatim.
         */}
@@ -86,7 +86,7 @@ export function AppearanceSettingsPanel({
         />
       </AppearanceRow>
       {/*
-        * CODEX-REF: appearance-settings-BLTO9KX5.js §8 — Reduce motion.
+        * CODEX-REF: appearance-settings-*.js §8 — Reduce motion.
         * 3-way segmented toggle: System / On / Off (Codex i18n ids
         * settings.general.appearance.reducedMotion.{system,on,off}).
         */}
@@ -164,7 +164,7 @@ function SegmentedToggle({
 }
 
 /*
- * CODEX-REF: appearance-settings-BLTO9KX5.js §4 number-input control.
+ * CODEX-REF: appearance-settings-*.js §4 number-input control.
  *
  *   <input type="number" min={8} max={24} step={1}>
  *   onBlur  → parse → NaN ? revert : commit

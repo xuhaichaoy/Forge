@@ -530,7 +530,7 @@ button.hc-parent-thread-attachment:hover {
 
 /*
  * Codex `T`/`ke` renders user text inside a `whitespace-pre-wrap` flow
- * (`reply-pigVihi-.js:14212`). Mirror that here so inline `$skill` /
+ * (`reply-*.js`). Mirror that here so inline `$skill` /
  * `@path` chips flow on the same line as the surrounding prose instead
  * of stacking as block siblings.
  */
@@ -788,7 +788,7 @@ button.hc-user-attachment-pill:hover {
 .hc-markdown.is-indexed-fade code,
 .hc-markdown.is-indexed-fade pre {
   /*
-   * Matches Codex Desktop's `_fadeIn_wo5r6_52` (markdown-V5_Mvbrr.css): every
+   * Matches Codex Desktop's per-block fade-in (markdown-*.css): every
    * block-level element inside the streaming markdown root starts at opacity 0
    * and runs `_fade-in 0.2s cubic-bezier(.37,.55,.86,.88) forwards`. The
    * animation runs ONCE at the element's first mount; subsequent re-renders
@@ -871,7 +871,7 @@ button.hc-user-attachment-pill:hover {
 }
 
 /*
- * Codex `:4818` markdown <details> renderer uses
+ * Codex markdown <details> renderer uses
  * `className="group my-3 rounded-xl border border-token-border/30 bg-token-bg-secondary/15 px-4 py-3"`
  * — margin 12px, border-radius 12px (rounded-xl), padding 16px horizontal + 12px vertical.
  * Color tokens stay on HiCodex's light-theme equivalents.
@@ -1144,18 +1144,11 @@ button.hc-user-attachment-pill:hover {
   color: #27313d;
 }
 
-.hc-turn-rating-submitted {
-  padding: 0 4px;
-  color: var(--hc-text-secondary, #6f716b);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 .hc-message-action-status.meta {
   color: #6f716b;
 }
 
-/* codex: local-conversation-thread-CecHj6JI.js#dh — completed goal chip mirrors
+/* codex: local-conversation-thread-*.js — completed goal chip mirrors
    Codex's "Goal achieved in {totalTime}" pill (divider + icon + label). */
 .hc-message-goal-chip {
   max-width: 220px;
@@ -1188,11 +1181,6 @@ button.hc-user-attachment-pill:hover {
   opacity: 1;
 }
 
-/*
- * CODEX-REF: action row 仅 copy + artifacts indicator，无 timestamp（见
- * message-action-row.tsx CODEX-REF）。`.hc-message-time` selectors 已删除
- * （dead CSS）。
- */
 .hc-message-actions[data-persistent="true"] button {
   pointer-events: none;
   opacity: 0;
@@ -1237,8 +1225,27 @@ button.hc-user-attachment-pill:hover {
 }
 
 /*
- * CODEX-REF: timestamp 已不渲染，`.hc-message-time` 全部规则删除（dead CSS）。
+ * Per-message timestamp — trailing hover/focus affordance in the action row.
+ * It lives inside `.hc-message-actions` and inherits that container's
+ * hover/focus-within reveal. Re-verified vs Codex Desktop v26.519.81530.
  */
+.hc-message-time {
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  padding: 0 3px;
+  color: #85877f;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.hc-message.assistant .hc-message-time {
+  margin-left: 6px;
+}
+
+.hc-message.user .hc-message-time {
+  margin-right: 0;
+}
 
 .hc-disclosure-motion {
   display: grid;
@@ -1246,7 +1253,7 @@ button.hc-user-attachment-pill:hover {
   min-width: 0;
   opacity: 0;
   transform: translateY(-2px);
-  /* Codex `yo` transition (`animations-y0LC3gHS.js` → pretty:89) — 500ms cubic-bezier(0.19,1,0.22,1) */
+  /* Codex disclosure transition (`animations-*.js`) — 500ms cubic-bezier(0.19,1,0.22,1) */
   transition:
     grid-template-rows var(--hc-codex-transition),
     opacity var(--hc-codex-transition),
@@ -1516,8 +1523,8 @@ button.hc-user-attachment-pill:hover {
   color: var(--hc-text-primary);
 }
 
-/* codex: local-conversation-thread-CecHj6JI.js#sh — `<div className="mt-3 flex
- * flex-wrap gap-1.5">{citations.map(<Jm>)}</div>`. The row sits just below
+/* codex: local-conversation-thread-*.js — `<div className="mt-3 flex
+ * flex-wrap gap-1.5">{citations.map(...)}</div>`. The row sits just below
  * the markdown body; chips are pill-shaped with a faint border and reuse
  * `--hc-surface-hover` for the hover state so they feel like the rest of the
  * action chips in the assistant row.

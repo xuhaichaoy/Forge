@@ -139,7 +139,7 @@ export function createPendingWorktree(
   return invoke("host_create_pending_worktree", { request });
 }
 
-// codex: composer-footer-branch-switcher-CamXBKfA.js — branch picker host API.
+// codex: composer-footer-branch-switcher-*.js — branch picker host API.
 // `lastCommitMs` mirrors the `committerdate:unix * 1000` we emit on the Rust
 // side; the renderer uses it to sort recents to the top.
 // codex: branch-picker-extension — `isRemote` flips on for entries surfaced
@@ -166,7 +166,7 @@ export interface ListGitBranchesOptions {
 }
 
 /**
- * codex: composer-footer-branch-switcher-CamXBKfA.js — `useGitCurrentBranch`
+ * codex: composer-footer-branch-switcher-*.js — `useGitCurrentBranch`
  * + `useGitRecentBranches` collapsed into a single call. When `cwd` is not a
  * git repository the host returns `{ current: null, branches: [] }` so the
  * renderer can hide the chip silently.
@@ -185,7 +185,7 @@ export function listGitBranches(
 }
 
 /**
- * codex: composer-footer-branch-switcher-CamXBKfA.js — picker click handler.
+ * codex: composer-footer-branch-switcher-*.js — picker click handler.
  * Rejects when git refuses the checkout (uncommitted changes, missing branch,
  * etc.) so callers can surface the inline error.
  */
@@ -219,7 +219,7 @@ export function createGitBranch(
   });
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
+// codex: local-conversation-thread-*.js — PR status host API.
 // Mirrors Codex Desktop's `pullRequestStatus` widget that renders inside the
 // Environment section (row 4). The host runs `gh pr status --json ...` in
 // `cwd`; the renderer projects the result into the row UI.
@@ -247,7 +247,7 @@ export interface GhPrStatusResponse {
 }
 
 /**
- * codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
+ * codex: local-conversation-thread-*.js — PR status host API.
  * Returns the current branch's PR via `gh pr status`. Throws when gh is
  * missing or the cwd is not a git repository so callers can decide between
  * silent-hide and surfaced-error UX.
@@ -396,7 +396,7 @@ export function readTextFile(path: string, maxBytes?: number): Promise<string> {
   return invoke("host_read_text_file", { path, maxBytes });
 }
 
-// CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js — Codex loads xlsx
+// CODEX-REF: open-workspace-file-*.js — Codex loads xlsx
 // bytes into its WASM viewer; HiCodex's simplified preview needs the same
 // bytes for SheetJS in the renderer. Returns base64 so the IPC bridge stays
 // JSON-safe.
@@ -471,7 +471,7 @@ function normalizedExternalUrl(value: string): string | null {
 }
 
 /**
- * codex: workspace-directory-tree-CHHgPVoD :_e — single non-recursive list of a
+ * codex: workspace-directory-tree-*.js — single non-recursive list of a
  * directory's direct children. Renderer drives recursion via expand events;
  * Codex Desktop keys the corresponding query on `{ hostId, root, dirPath,
  * includeHidden, refreshKey }` and applies `staleTime = FIVE_SECONDS`.

@@ -36,7 +36,7 @@ export type McpResultBlock =
   | { kind: "image"; mimeType: string; dataUrl: string; annotations?: string }
   | { kind: "audio"; mimeType: string; dataUrl: string; annotations?: string }
   /*
-   * Codex Desktop `case 'resource_link'` (local-conversation-thread byte ~378900):
+   * Codex Desktop `case 'resource_link'` (local-conversation-thread-*.js):
    * label priority is `title ?? name ?? uri`; rendered as muted, **non-clickable**
    * "Read {resourceLinkName}" text — no `<a>` tag, no `target=_blank`.
    */
@@ -373,11 +373,11 @@ export function ToolActivityDetail({
     );
   }
   if (detail.kind === "tool") {
-    // codex: local-conversation-thread-Kn0WAsVa#qg (L13998-14290) — Codex
+    // codex: local-conversation-thread-*.js — Codex
     // Desktop renders the tool item summary as just an icon + tool name +
     // chevron. "Completed / in-progress" is conveyed by a shimmer on the
-    // label (`<Zi active>` wrapper), not by a `MCP · completed` text badge.
-    // For MCP results, Codex's `Zg()` (L14316-14570) renders text blocks
+    // label wrapper, not by a `MCP · completed` text badge.
+    // For MCP results, Codex renders text blocks
     // directly with `max-h-48 overflow-auto whitespace-pre-wrap` — there is
     // no "Result" or "plaintext" label and no Show-N-more-lines toggle.
     return (
@@ -498,7 +498,7 @@ function AutoReviewDetail({ detail }: { detail: Extract<ToolActivityDetailViewMo
 function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
   switch (block.kind) {
     case "text":
-      // codex: local-conversation-thread-Kn0WAsVa#Zg (L14316-14570) — Codex
+      // codex: local-conversation-thread-*.js — Codex
       // Desktop renders MCP text blocks as a plain `<div>` with
       // `max-h-48 overflow-auto whitespace-pre-wrap`, no language label,
       // no code-block chrome.
@@ -524,7 +524,7 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
       );
     case "resourceLink": {
       /*
-       * Codex Desktop (`local-conversation-thread-BX7YNcUw.js` byte ~378900):
+       * Codex Desktop (`local-conversation-thread-*.js`):
        *   defaultMessage: `Read {resourceLinkName}`,
        *   resourceLinkName: title ?? name ?? uri
        * Rendered as a muted `<div>` — explicitly NOT clickable, no `<a href>`
@@ -1544,10 +1544,10 @@ function ExecShellDetail({
   const [expanded, setExpanded] = useState(() => initialExecShellExpanded(detail));
   const [copiedTarget, setCopiedTarget] = useState<ExecShellCopyTarget | null>(null);
   /*
-   * CODEX-REF: local-conversation-thread-CecHj6JI.js function `Jh` —
-   *   let [y, b] = useState(null);
-   *   let A = y !== D && `line-clamp-2`;
-   *   let F = () => { b(D); };           // 一次点击永久展开，无反向回收
+   * CODEX-REF: local-conversation-thread-*.js — exec command-line clamp:
+   *   useState(null) tracks the expanded command id;
+   *   apply `line-clamp-2` until expanded;
+   *   one click permanently expands, with no reverse collapse.
    * `forceExpanded` 场景 (e.g. file preview panel) 期望命令本身也直接全显，
    * 因此初始值跟随 forceExpanded。
    */
@@ -2420,7 +2420,7 @@ function mcpResultBlocks(value: unknown): McpResultBlock[] {
       case "resourceLink": {
         /*
          * Codex prefers `title` over `name` when both are present
-         * (local-conversation-thread byte ~378900 `n.title ?? n.name ?? n.uri`).
+         * (local-conversation-thread-*.js `n.title ?? n.name ?? n.uri`).
          */
         const uri = stringField(blockRecord, "uri");
         const name = stringField(blockRecord, "name");
@@ -2431,7 +2431,7 @@ function mcpResultBlocks(value: unknown): McpResultBlock[] {
       case "embeddedResource":
       case "resource": {
         /*
-         * Codex `case 'embedded_resource'` (byte 379383):
+         * Codex `case 'embedded_resource'`:
          *   let e = n.resource.text ?? n.resource.blob ?? "";
          * `blob` is base64-encoded binary; falling back keeps the content
          * pane non-empty when the server returned a binary payload.
@@ -2456,7 +2456,7 @@ function mcpResultBlocks(value: unknown): McpResultBlock[] {
 
 function formatAnnotations(value: unknown): string | undefined {
   /*
-   * Codex Desktop `ix(annotations)` (local-conversation-thread byte 383578)
+   * Codex Desktop's annotation formatter (local-conversation-thread-*.js)
    * extracts three known MCP annotation fields — `audience`, `priority`,
    * `lastModified` — and joins them with "; ". Any other JSON keys (which
    * the MCP spec leaves implementation-defined) are intentionally dropped.

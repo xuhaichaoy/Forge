@@ -1,6 +1,6 @@
 /* codex: home page hero ICU keys home.hero.* (welcome-page-*.js) */
 /*
- * Hero copy mirrors Codex Desktop's home page (welcome-page-fimgYlnN.js):
+ * Hero copy mirrors Codex Desktop's home page (welcome-page-*.js):
  *   - home.hero.whatShouldWeBuild              → "What should we build?"
  *   - home.hero.whatShouldWeWorkOnInProject    → "What should we work on in {project}?"
  *   - "Let's build" subtitle (Codex home slogan; locked by onboarding test)

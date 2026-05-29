@@ -123,7 +123,7 @@ export type SlashCommandAction =
   | { action: "request"; request: SlashCommandRequest; clearInput: true; payload?: Record<string, unknown> }
   | { action: "showCommands"; clearInput: true }
   /*
-   * CODEX-REF: composer-D0cvMZjq.js — `/reasoning` slash command opens the
+   * CODEX-REF: composer-*.js — `/reasoning` slash command opens the
    * intelligenceDropdown (Reasoning popover). HiCodex uses the composer
    * footer reasoning chip as anchor — caller finds it via
    * `[data-chip="reasoning"]` selector. clearInput so the "/reasoning" text
@@ -398,7 +398,7 @@ export function composerSubmitTooltip(state: ComposerSubmitState): string {
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("model", "Model", "Choose the model and reasoning effort.", "model", "panel", ["provider", "engine"]),
   /*
-   * CODEX-REF: composer-D0cvMZjq.js — slash command id `reasoning`，title 来自
+   * CODEX-REF: composer-*.js — slash command id `reasoning`，title 来自
    * `composer.reasoningSlashCommand.title` = "Reasoning"。HiCodex 复刻同 id +
    * title，handler 走 showReasoningPicker action。
    */
@@ -463,7 +463,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 /*
- * codex: composer-D0cvMZjq.js — composer attach menu lists ~6 entries
+ * codex: composer-*.js — composer attach menu lists ~6 entries
  * (file picker, mention, plain text, image URL, plan toggle, plugins). Codex
  * orders frequently-used attachment entries before mode toggles. HiCodex
  * mirrors the order; `localImage` is intentionally absent because it is
@@ -785,11 +785,11 @@ export function filterSlashCommands<T extends Pick<SlashCommand, "id" | "title">
   const normalized = normalizeSlashQuery(query);
   if (!normalized) return commands;
   /*
-   * codex: slash-command-item-BG_2m44T.js — Codex Desktop ranks slash matches
-   * via a score function (sourced from `dist-BzssiQ2D.js` / `score-query-match`).
-   * Plain substring filtering misses typos / split-token queries and returns
-   * results in arbitrary registration order. We mirror Codex's behaviour with
-   * a weighted scorer: exact id > prefix > substring > subsequence (fuzzy).
+   * codex: slash-command-item-*.js — Codex Desktop ranks slash matches
+   * via a shared `score-query-match` scorer. Plain substring filtering misses
+   * typos / split-token queries and returns results in arbitrary registration
+   * order. We mirror Codex's behaviour with a weighted scorer: exact id >
+   * prefix > substring > subsequence (fuzzy).
    */
   const scored: Array<{ command: T; score: number; index: number }> = [];
   for (let index = 0; index < commands.length; index++) {
@@ -805,7 +805,7 @@ export function filterSlashCommands<T extends Pick<SlashCommand, "id" | "title">
 }
 
 /*
- * codex: slash-command-item-BG_2m44T.js — per-field score with weights.
+ * codex: slash-command-item-*.js — per-field score with weights.
  * Returns 0 when no haystack field has any match. Field weights mirror Codex's
  * priority: id > title > alias > description.
  */
@@ -829,7 +829,7 @@ function scoreSlashCommandMatch(
 }
 
 /*
- * codex: dist-BzssiQ2D.js — `score-query-match` style ranker.
+ * codex: `score-query-match` style ranker.
  *
  * Tiers (higher is better):
  *   exact equality          : 1000

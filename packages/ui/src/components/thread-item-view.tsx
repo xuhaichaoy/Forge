@@ -112,7 +112,7 @@ function TodoListThreadItemView({
   const activePlanIndex = plan.findIndex((entry) => normalizedTodoStatus(entry.status) === "inProgress");
   const completed = plan.length > 0 && plan.every((entry) => normalizedTodoStatus(entry.status) === "completed");
 
-  // codex: local-conversation-thread-CecHj6JI.js#tv — Desktop tracks the
+  // codex: local-conversation-thread-*.js — Desktop tracks the
   // current `in_progress` plan index and calls `scrollIntoView({block:
   // "center", behavior: "smooth"})` when that index changes.
   useEffect(() => {
@@ -122,7 +122,7 @@ function TodoListThreadItemView({
 
   return (
     <div
-      // codex: local-conversation-thread-CecHj6JI.js#Uv — wrapper has the
+      // codex: local-conversation-thread-*.js — wrapper has the
       // `group` modifier so the chevron's `group-hover:opacity-100` rule can
       // light up on row hover when the card is collapsed.
       className="hc-thread-item-row group"
@@ -141,7 +141,7 @@ function TodoListThreadItemView({
             {completed ? <CheckCircle2 size={14} /> : <Circle size={14} />}
           </span>
           <span className="hc-inline-plan-summary">{summary}</span>
-          {/* codex: local-conversation-thread-CecHj6JI.js#Uv — chevron uses
+          {/* codex: local-conversation-thread-*.js — chevron uses
               `opacity-0 group-hover:opacity-100` when collapsed and stays at
               `rotate-180 opacity-100` when expanded. */}
           <ChevronRight
@@ -157,7 +157,7 @@ function TodoListThreadItemView({
           innerClassName="hc-inline-plan-body"
           open={expanded}
         >
-          {/* codex: local-conversation-thread-CecHj6JI.js#Uv — body uses
+          {/* codex: local-conversation-thread-*.js — body uses
               `vertical-scroll-fade-mask max-h-40 space-y-1 overflow-y-auto
               [--edge-fade-distance:2rem]`. We mirror the mask + max-height via
               the existing `hc-inline-plan-list` class with an extra `.is-fade`
@@ -196,7 +196,7 @@ function TodoListThreadItemView({
   );
 }
 
-// codex: local-conversation-thread-CecHj6JI.js#tv — the inline todo-list
+// codex: local-conversation-thread-*.js — the inline todo-list
 // ThreadItem header always uses
 // `localConversationPage.planItemsCompleted`: "{completedItems} out of
 // {totalItems, plural, one {# task completed} other {# tasks completed}}".

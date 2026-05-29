@@ -1,4 +1,4 @@
-// codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status widget.
+// codex: local-conversation-thread-*.js — PR status widget.
 // Standalone row that mirrors the `gh-cli-status-*` children Codex Desktop
 // renders in the Environment section (row 4). It is intentionally self-
 // contained so the right-rail integration can be wired in a follow-up turn
@@ -29,8 +29,8 @@ export interface PrStatusRowProps {
   onClick?: (pr: GhPrInfo) => void;
 }
 
-// codex: ga#status-badge — Codex Desktop encodes badge tone in the class name;
-// HiCodex mirrors with `data-tone` for CSS targetability and a stable test hook.
+// codex: PR-status widget status badge — Codex Desktop encodes badge tone in the
+// class name; HiCodex mirrors with `data-tone` for CSS targetability and a stable test hook.
 type BadgeTone = "draft" | "merged" | "closed" | "open";
 
 interface BadgeProjection {
@@ -50,8 +50,8 @@ export function PrStatusRow({ cwd, onClick }: PrStatusRowProps) {
   const trimmedCwd = typeof cwd === "string" ? cwd.trim() : "";
   const [pr, setPr] = useState<GhPrInfo | null>(null);
 
-  // codex: ga#pullRequestStatus query — Codex Desktop drives this via
-  // react-query; HiCodex uses a plain effect with a cancellation flag so we
+  // codex: PR-status widget `pullRequestStatus` query — Codex Desktop drives this
+  // via react-query; HiCodex uses a plain effect with a cancellation flag so we
   // don't have to pull a new dependency into the host bridge.
   useEffect(() => {
     if (!trimmedCwd) {
@@ -70,7 +70,7 @@ export function PrStatusRow({ cwd, onClick }: PrStatusRowProps) {
         setPr(response.pr ?? null);
       })
       .catch(() => {
-        // codex: ga — gh missing / no repo / network → silently hide the row.
+        // codex: PR-status widget — gh missing / no repo / network → silently hide the row.
         // We intentionally swallow the error so the right-rail keeps rendering.
         if (cancelled) return;
         setPr(null);
@@ -110,6 +110,6 @@ export function PrStatusRow({ cwd, onClick }: PrStatusRowProps) {
   );
 }
 
-// codex: ga#status-badge — exported for unit-test sanity; callers should not
-// rely on this for runtime decisions (status text is in the component output).
+// codex: PR-status widget status badge — exported for unit-test sanity; callers
+// should not rely on this for runtime decisions (status text is in the component output).
 export const __testing = { projectBadge };

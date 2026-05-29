@@ -20,9 +20,9 @@ export type UserMessageMarkdownRenderer = (
 ) => ReactNode;
 
 /*
- * Codex Desktop renders a user message as ONE bubble (`Lc`/`Oe` in
- * `user-message-attachments-C4kFKr_t.js:10408`) whose body is a single
- * `whitespace-pre-wrap` div (`T`/`ke` in `reply-pigVihi-.js:14212`) that
+ * Codex Desktop renders a user message as ONE bubble (in
+ * `user-message-attachments-*.js`) whose body is a single
+ * `whitespace-pre-wrap` div (in `reply-*.js`) that
  * inlines `$skill` and `@path` chips alongside the prose. Only the
  * standalone `n.attachments` and `n.images` arrays escape the bubble into
  * one sibling strip.
@@ -35,7 +35,7 @@ export type UserMessageMarkdownRenderer = (
  *     (mirrors Desktop's unified n.attachments/n.images strip).
  *   - `UserMessageTextContentView` — text parts and inline prompt chips,
  *     rendered in original order so $skill / @path chips flow with the
- *     surrounding prose (mirrors `T`/`ke`).
+ *     surrounding prose (mirrors the Desktop pre-wrap text div).
  *
  * `UserMessageContentView` keeps the legacy wrapper that pairs both, but
  * the live call site (`message-unit.tsx`) places the image strip OUTSIDE
@@ -179,7 +179,7 @@ function UserMessageContentPartView({
 }) {
   if (part.kind === "text") {
     /*
-     * Codex's `T`/`ke` (`reply-pigVihi-.js:14212`) renders text inside a
+     * Codex's user-message text node (`reply-*.js`) renders text inside a
      * `whitespace-pre-wrap` container and still parses inline code/links
      * before flowing sibling chips. We keep the wrapper inline so chips
      * preserve their original order, but parse the text content instead of

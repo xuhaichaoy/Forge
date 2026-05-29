@@ -110,8 +110,8 @@ export type ConversationRenderUnit =
       turnId?: string;
     }
   /*
-   * Codex Desktop `JC` gallery (local-conversation-thread-BX7YNcUw.js byte
-   * ~506222) groups ALL generated-image items in a turn into a single
+   * Codex Desktop's generated-image gallery (local-conversation-thread-*.js)
+   * groups ALL generated-image items in a turn into a single
    * horizontal carousel of thumbnails — rather than one giant card per
    * image. HiCodex previously routed each `generated-image` to a separate
    * markdown ToolBlock, producing a stack of full-width image cards. This

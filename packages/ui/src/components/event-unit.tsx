@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   Brain,
   Check,
   ChevronRight,
@@ -442,8 +443,8 @@ function GenericToolActivityView({
            */}
           {isWorkedFor && (() => {
             /*
-             * CODEX-REF: local-conversation-thread-CecHj6JI.js — function Mp 把
-             * aggregate segments push 到数组 `a`，最后 `return t.formatList(a,
+             * CODEX-REF: local-conversation-thread-*.js — the worked-for aggregate
+             * pushes segments 到数组 `a`，最后 `return t.formatList(a,
              * {type:'unit'})` 用 react-intl 的 Intl.ListFormat 把数组 join 成
              * **单行字符串**。leading segment 大写动词（"Created N files"），后续
              * segment 小写动词（"edited M files"）。HiCodex 严格对齐：从原来的
@@ -1319,14 +1320,14 @@ export type PatchAction = "undo" | "reapply";
 export type PatchActionState = { action: PatchAction; diff: string } | null;
 
 /**
- * codex: local-conversation-thread-8naCrWKH `Av = 3` — default collapse
- * threshold. The header shows `Edited N files`, the body shows the first 3
+ * codex: local-conversation-thread-*.js — default collapse threshold (3).
+ * The header shows `Edited N files`, the body shows the first 3
  * file rows; further rows are revealed by the "Show N more files" footer.
  */
 const TURN_DIFF_COLLAPSE_THRESHOLD = 3;
 
 /**
- * codex: `gv = 5000` + `_v`/`vv` — files whose
+ * codex: local-conversation-thread-*.js — inline-render cutoff (5000): files whose
  * `max(unifiedLineCount, additions+deletions) > 5000` are rendered as a
  * "Too large to render inline" row instead of inline hunks.
  */
@@ -1414,7 +1415,7 @@ export function TurnDiffBlock({
               aria-label="Review changed files"
             >
               {/*
-               * Codex Desktop i18n (local-conversation-thread byte ~424049+):
+               * Codex Desktop i18n (local-conversation-thread-*.js):
                *   codex.unifiedDiff.reviewChanges       = "Review here"
                *   codex.unifiedDiff.reviewShort         = "Review"
                *   codex.unifiedDiff.viewDiffTooltip     = "Review"
@@ -1466,12 +1467,18 @@ export function TurnDiffBlock({
         </span>
         <div className="hc-turn-diff-header-text">
           <span className="hc-turn-diff-title">{titleLabel}</span>
-          {/* codex: default subtitle = DiffStats; hover/focus replaces with "Review changes →" */}
+          {/*
+           * codex: default subtitle = DiffStats; on hover/focus it is replaced
+           * by the reviewChangesHover label ("Review changes") followed by a
+           * separate arrow icon — the arrow is an icon element, not a glyph
+           * baked into the string. Re-verified vs Codex Desktop v26.519.81530.
+           */}
           <span className="hc-turn-diff-subtitle turn-diff-default-subtitle">
             <TurnDiffStats added={model.linesAdded} removed={model.linesRemoved} />
           </span>
           <span className="hc-turn-diff-subtitle turn-diff-hover-subtitle" aria-hidden="true">
-            Review changes →
+            Review changes
+            <ArrowRight aria-hidden className="hc-turn-diff-review-arrow" size={12} />
           </span>
         </div>
         <div className="hc-turn-diff-spacer" />
@@ -1486,7 +1493,7 @@ export function TurnDiffBlock({
             className="hc-turn-diff-patch-action"
             /*
              * Codex Desktop i18n: revertChangesTooltip = "Undo", reapplyChangesTooltip = "Reapply"
-             * (local-conversation-thread byte ~424049+). HiCodex tooltips align to single-word
+             * (local-conversation-thread-*.js). HiCodex tooltips align to single-word
              * Codex values; aria-label adds verb context for screen readers.
              */
             title={patchActionForThisDiff === "undo" ? "Undo" : "Reapply"}
@@ -1516,7 +1523,13 @@ export function TurnDiffBlock({
               handleHeaderReview();
             }}
           >
-            <span className="hc-turn-diff-review-full">Review changes</span>
+            {/*
+             * codex: the completed-card trailing button shows the single
+             * viewDiffTooltip label "Review" (not "Review changes"); the
+             * "Review changes" wording lives only on the hover subtitle above.
+             * Re-verified vs Codex Desktop v26.519.81530.
+             */}
+            <span className="hc-turn-diff-review-full">Review</span>
             <span className="hc-turn-diff-review-short">Review</span>
           </button>
         )}

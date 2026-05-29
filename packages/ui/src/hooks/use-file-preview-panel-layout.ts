@@ -1,39 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /*
- * Mirrors Codex Desktop's AppShell **RightPanel** — the big resizable side
- * panel that hosts `FilePreviewPage` when the user clicks an artifact / file
- * link. NOT the summary rail (`Mf`); the summary rail is a fixed floating
- * card with `rounded-3xl border ... backdrop-blur-sm` and is not user-
- * resizable.
+ * codex: app-shell-*.js — mirrors Codex Desktop's AppShell **RightPanel**, the
+ * big resizable side panel that hosts `FilePreviewPage` when the user clicks an
+ * artifact / file link. NOT the summary rail; the summary rail is a fixed
+ * floating card with `rounded-3xl border ... backdrop-blur-sm` and is not
+ * user-resizable.
  *
- * Source citations (paths under `/private/tmp/`, formatted exports of the
- * `app.asar` bundle):
+ * Derived behavior rules:
  *
- *   • Default width **600 px** — `app-shell.formatted.js:643`
- *     `function Ln({ children, defaultWidth: r2, widthStorageKey }){
- *        let a2 = r2 === void 0 ? 600 : r2; ... }`.
- *     `Ln` is the right-panel registration wrapper that ships the default to
- *     the `S` atom (`d2.defaultWidth` consumed by `vn` at :522).
- *   • Min width **320 px** — `app-shell.formatted.js:522-524` (`function vn`):
- *     `setSize: e3 => { if (e3 < x(320)) { v(s2, false); return; } ... }`.
- *     The 240-px floor in the same file is for the LEFT sidebar (`_n`),
- *     not this panel — earlier confusion on my side.
- *   • `getSizeFromPointer` — :522
- *     `({x: e3}) => (c2.current?.getBoundingClientRect().right ??
- *                    window.innerWidth) / m2 - e3`.
- *     Width is measured from the panel's own right edge, not from
- *     `window.innerWidth`, so the panel stays accurate even when the window
- *     has insets (macOS traffic lights, scroll-bar reserve, etc.).
- *   • Double-click reset — `app-shell-panel-animation-DTiWlXE1.js function w`:
- *     `onClick: e => e.detail === 2 && (..., i(t))` where `t = defaultSize`.
- *   • Full-width mode — :522
- *     `!_2 && jsx(Le, ...)` (`_2 = widthMode === "full"`) hides the handle.
- *     `function yn` then computes `rightPanelWidth = isFullWidth ?
- *     mainContentWidth : ratio·mainContentWidth`, so the panel covers the
- *     conversation area at full mode.
- *   • Expand/Restore button — `app-shell.formatted.js:50` and elsewhere,
- *     `aria-label = codex.rightPanel.expandFullWidth / restoreWidth`.
+ *   • Default width **600 px** — the right-panel registration wrapper ships
+ *     this default (`defaultWidth ?? 600`) to the panel size atom.
+ *   • Min width **320 px** — the setter rejects sizes below 320 px and closes
+ *     the panel instead. The 240-px floor in the same chunk is for the LEFT
+ *     sidebar, not this panel.
+ *   • Size-from-pointer: width is measured from the panel's own right edge
+ *     (`aside.getBoundingClientRect().right ?? window.innerWidth`) minus the
+ *     pointer x, not from `window.innerWidth`, so the panel stays accurate even
+ *     when the window has insets (macOS traffic lights, scroll-bar reserve,
+ *     etc.).
+ *   • Double-click reset — the handle's `onClick(e.detail === 2)` resets to the
+ *     default size.
+ *   • Full-width mode — when `widthMode === "full"` the handle is hidden and
+ *     the right-panel width becomes the full main-content width, so the panel
+ *     covers the conversation area; otherwise it is a ratio of main-content
+ *     width.
+ *   • Expand/Restore button — `aria-label` ICU ids
+ *     `codex.rightPanel.expandFullWidth` / `codex.rightPanel.restoreWidth`.
  *
  * Persistence keys live under `hicodex.filePreviewPanel.` so a curious user
  * can wipe them without touching unrelated UI state.

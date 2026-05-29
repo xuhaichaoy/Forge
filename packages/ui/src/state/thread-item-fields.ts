@@ -105,6 +105,10 @@ export function itemType(item: ThreadItem): string {
       return "context-compaction";
     case "webSearch":
       return "web-search";
+    case "modelRerouted":
+      // Codex synthesizes reroute items with the camelCase protocol type;
+      // HiCodex renders the kebab form. Normalize so live + snapshot items match.
+      return "model-rerouted";
     default:
       return item.type;
   }

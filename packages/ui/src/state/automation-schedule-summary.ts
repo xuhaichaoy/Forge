@@ -1,4 +1,4 @@
-// codex: automation-schedule-9oeon9DY.js#rn / #hn — Desktop parses RRULE
+// codex: automation-schedule-*.js — Desktop parses RRULE
 // text and turns common minutely/hourly/daily/weekly schedules into short
 // summaries, falling back to "Custom schedule" when the rule is not
 // representable by its compact automation UI.
