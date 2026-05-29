@@ -13,3 +13,5 @@
 @import "./styles/side-panel-new-tab.css";
 /* codex: app-shell-Bh-lgoQk Vt()/Ht()/Pt() — side-panel host + tab bar + pill. */
 @import "./styles/side-panel-host.css";
+/* 知识库 / 上传 / 档案中心 三视图公共样式。 */
+@import "./styles/kb-views.css";

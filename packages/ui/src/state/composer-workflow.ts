@@ -122,6 +122,14 @@ export type SlashCommandAction =
   | { action: "setComposerMode"; mode: ComposerMode; text?: string }
   | { action: "request"; request: SlashCommandRequest; clearInput: true; payload?: Record<string, unknown> }
   | { action: "showCommands"; clearInput: true }
+  /*
+   * CODEX-REF: composer-D0cvMZjq.js — `/reasoning` slash command opens the
+   * intelligenceDropdown (Reasoning popover). HiCodex uses the composer
+   * footer reasoning chip as anchor — caller finds it via
+   * `[data-chip="reasoning"]` selector. clearInput so the "/reasoning" text
+   * doesn't linger after popover opens.
+   */
+  | { action: "showReasoningPicker"; clearInput: true }
   | { action: "log"; level: "info" | "warn" | "error"; message: string };
 
 export interface SlashCommandContext {
@@ -389,6 +397,12 @@ export function composerSubmitTooltip(state: ComposerSubmitState): string {
 
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("model", "Model", "Choose the model and reasoning effort.", "model", "panel", ["provider", "engine"]),
+  /*
+   * CODEX-REF: composer-D0cvMZjq.js — slash command id `reasoning`，title 来自
+   * `composer.reasoningSlashCommand.title` = "Reasoning"。HiCodex 复刻同 id +
+   * title，handler 走 showReasoningPicker action。
+   */
+  command("reasoning", "Reasoning", "Choose reasoning effort (None/Minimal/Low/Medium/High/Extra High).", "model", "panel", ["effort"]),
   command("fast", "Fast mode", "Toggle or inspect fast response mode.", "model", "pending", ["service-tier"], "on | off | status", true),
   command("ide", "IDE context", "Attach IDE context to this conversation.", "workspace", "pending", ["editor"], undefined, true),
   command("permissions", "Permissions", "Choose the approval and sandbox profile.", "settings", "panel", ["approvals", "sandbox"]),
@@ -884,6 +898,8 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
   switch (id) {
     case "model":
       return { action: "openSettings", panel: "models", clearInput: true };
+    case "reasoning":
+      return { action: "showReasoningPicker", clearInput: true };
     case "mcp":
       return args
         ? { action: "request", request: "listMcp", clearInput: true, payload: { detail: args } }

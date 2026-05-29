@@ -235,16 +235,21 @@ function rendersProposedPlanSummaryCard(): void {
   );
   assertEqual(planSummaryCompleted(completeItem as never), true, "completed proposed plan should use completed=true");
   const completeHtml = renderToStaticMarkup(createElement(ThreadItemView, {
+    threadId: "thread-plan",
+    onSubmitTurnFeedback: () => undefined,
     unit: {
       kind: "threadItem",
       key: "item:proposed-plan:plan-1",
       item: completeItem,
+      hasArtifacts: true,
+      turnId: "turn-plan-1",
     } as never,
   }));
   assertStringIncludes(completeHtml, "data-item-type=\"proposed-plan\"", "proposed-plan should render a dedicated card");
   assertStringIncludes(completeHtml, "<h3 class=\"hc-plan-summary-title\">Plan</h3>", "completed proposed plan title");
   assertStringIncludes(completeHtml, "Download plan", "completed proposed plan should expose PLAN.md download");
   assertStringIncludes(completeHtml, "Copy plan", "completed proposed plan should expose copy");
+  assertStringIncludes(completeHtml, "Good response", "completed proposed plan should expose Desktop turn rating when feedback submitter is available");
   assertStringIncludes(completeHtml, "<span>Open</span>", "completed proposed plan should show Desktop's visible Open button label");
   assertStringIncludes(completeHtml, "<h2", "proposed-plan markdown should render as markdown");
 

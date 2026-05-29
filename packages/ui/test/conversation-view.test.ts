@@ -264,7 +264,9 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
         },
       ],
     },
+    threadId: "thread-image",
     onForkTurn: () => undefined,
+    onSubmitTurnFeedback: () => undefined,
   }));
 
   assertEqual(
@@ -274,13 +276,18 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
   );
   assertEqual(
     html.includes("Artifacts available"),
-    true,
-    "standalone generated-image output should count as artifacts in the action row",
+    false,
+    "Desktop's tool-outputs action row receives hasArtifacts for turn rating, not a standalone artifacts status",
   );
   assertEqual(
     html.includes("Fork from this point"),
     true,
     "completed standalone generated-image output should expose the Desktop fork action",
+  );
+  assertEqual(
+    html.includes("Good response"),
+    true,
+    "generated-image-only output should reuse Desktop's turn-rating action row when a submit callback is available",
   );
 }
 

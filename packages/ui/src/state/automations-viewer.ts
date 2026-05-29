@@ -166,10 +166,9 @@ export function projectHeartbeatAutomationEligibility(
 // conversationId })` selects the single active heartbeat automation that
 // targets the current thread, and `au` renders it as Clock-icon + name +
 // rrule summary, with the "Next run: …" string driven by `nextRunAtMs`.
-// HiCodex reuses the same filter as `projectAutomationRailEntries` (kind ==
-// heartbeat && status == ACTIVE && targetThreadId == conversationId) and
-// returns the first match collapsed into the `RightRailAutomationInput`
-// shape consumed by `projectRightRailSections({ automation: … })`.
+// 过滤逻辑：kind == heartbeat && status == ACTIVE && targetThreadId ==
+// conversationId，返回 first match collapsed 为 `RightRailAutomationInput`
+// 形状给 `projectRightRailSections({ automation: … })` 消费。
 export function projectActiveThreadAutomation(
   model: AutomationsSurfaceModel,
   conversationId: string | null | undefined,
@@ -210,31 +209,12 @@ function parseIsoTimestampMs(raw: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-export function projectAutomationRailEntries(
-  model: AutomationsSurfaceModel,
-  conversationId: string | null | undefined,
-): RailEntry[] {
-  /*
-   * CODEX-REF: /private/tmp/codex-asar/pretty/use-is-pull-request-merge-helper-enabled-yqBhsVRr.pretty.js
-   * `lo({ automations, conversationId })` selects only heartbeat automations
-   * whose `status === "ACTIVE"` and `targetThreadId === conversationId`.
-   * CODEX-REF: /private/tmp/codex-asar/pretty/local-conversation-thread-CecHj6JI.pretty.js
-   * `au` renders that active heartbeat row with `name` plus an RRULE summary.
-   */
-  const targetThreadId = conversationId?.trim() ?? "";
-  if (!targetThreadId || model.schedules.length === 0) return [];
-  return model.schedules
-    .filter((automation) => (
-      automation.kind === "heartbeat"
-      && automation.status === "ACTIVE"
-      && automation.targetThreadId === targetThreadId
-    ))
-    .map((automation) => ({
-      id: `automation:${automation.id}`,
-      title: automation.title,
-      ...(automation.schedule ? { meta: automation.schedule } : {}),
-    }));
-}
+/*
+ * CODEX-REF: Codex 仅渲染 single automation（`pe = au`），无 multi-list
+ * automation section。legacy `projectAutomationRailEntries` 已删除（dead
+ * export 无 consumer，并对应于 HiCodex 之前的 multi-list 设计偏差）。
+ * `projectActiveThreadAutomation` 是 single automation 的唯一 projection。
+ */
 
 function automationSchedulesFromPayload(payload: unknown): AutomationScheduleView[] | null {
   const items = payloadArray(payload);

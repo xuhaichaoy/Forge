@@ -467,6 +467,52 @@ function buildsMcpDetails(): void {
     true,
     "ordinary MCP detail content should use Desktop's no-content fallback",
   );
+  assertEqual(
+    html.includes("Show raw tool call output"),
+    true,
+    "completed MCP rows should expose Desktop's raw output trigger",
+  );
+  const runningWithResultHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-running-result-1",
+      server: "github",
+      tool: "list_prs",
+      status: "inProgress",
+      completed: false,
+      arguments: { state: "open" },
+      result: { content: [], structuredContent: null, _meta: null },
+      error: null,
+    },
+  }));
+  assertEqual(
+    runningWithResultHtml.includes("Tool returned no content"),
+    true,
+    "running MCP rows with a result should expand like Desktop instead of staying pending",
+  );
+  assertEqual(
+    runningWithResultHtml.includes("Show raw tool call output"),
+    true,
+    "running MCP rows with a result should expose Desktop's raw output trigger",
+  );
+  const runningWithoutResultHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-running-empty-1",
+      server: "github",
+      tool: "list_prs",
+      status: "inProgress",
+      completed: false,
+      arguments: { state: "open" },
+      result: null,
+      error: null,
+    },
+  }));
+  assertEqual(
+    runningWithoutResultHtml.includes("Show raw tool call output"),
+    false,
+    "running MCP rows without a result should keep Desktop's pending-only surface",
+  );
   const textBlockHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
     item: {
       type: "mcpToolCall",
@@ -855,6 +901,40 @@ function buildsMcpAppDetails(): void {
     html.includes("Parameters"),
     false,
     "MCP app rows should keep arguments out of the main content area like Desktop",
+  );
+  assertEqual(
+    html.includes("Show raw tool call output"),
+    true,
+    "completed MCP app rows should expose Desktop's raw output trigger",
+  );
+  const inlineFrameHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "mcpToolCall",
+      id: "mcp-app-inline-render-1",
+      server: "browser-use",
+      tool: "open",
+      status: "completed",
+      arguments: { url: "https://example.com" },
+      mcpAppResourceUri: "ui://browser/widget.html",
+      result: {
+        content: [{
+          type: "embedded_resource",
+          resource: {
+            uri: "ui://browser/widget.html",
+            mimeType: "text/html",
+            text: "<main>Browser</main>",
+          },
+        }],
+        structuredContent: null,
+        _meta: null,
+      },
+      error: null,
+    },
+  }));
+  assertEqual(
+    inlineFrameHtml.includes("hc-tool-raw-output is-inline-app"),
+    true,
+    "inline MCP apps should place Desktop's raw output trigger over the app frame",
   );
 }
 

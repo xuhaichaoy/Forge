@@ -16,7 +16,6 @@ import {
   isItemInProgress,
   itemText,
   itemType,
-  mcpAppResourceUri,
   mcpElicitationServer,
   mcpServerName,
   mcpToolName,
@@ -103,6 +102,7 @@ export function summarizeToolActivity(
   let workedForInProgress = false;
   let hasWorkedFor = false;
   const exploredReadKeys = new Set<string>();
+  const mcpToolCallSources = new Map<string, number>();
   let activeDiffStats: ToolActivitySummary["activeDiffStats"] = null;
   const pushActiveDetail = (
     label: string,
@@ -162,6 +162,8 @@ export function summarizeToolActivity(
       }
     } else if (type === "mcp-tool-call") {
       counts.mcpCalls += 1;
+      const source = mcpToolCallSourceName(item);
+      if (source) mcpToolCallSources.set(source, (mcpToolCallSources.get(source) ?? 0) + 1);
       const label = `Called ${mcpServerName(item) || "mcp"}:${mcpToolName(item) || "tool"}`;
       details.push(label);
       if (itemInProgress) pushActiveDetail(label.replace(/^Called /, "Calling "));
@@ -230,7 +232,7 @@ export function summarizeToolActivity(
   });
   const groupLabel = groupType === "multi-agent-group"
     ? multiAgentGroupLabelForItems(items)
-    : activityLabel(groupType, counts, groupInProgress, groupDurationMs, activityCounts);
+    : activityLabel(groupType, counts, groupInProgress, groupDurationMs, activityCounts, mcpToolCallSources);
   const activeDetail = activeDetails.at(-1) ?? null;
   const label = groupType === "multi-agent-group"
     ? groupLabel
@@ -337,15 +339,14 @@ function activityLabel(
   inProgress: boolean,
   totalDurationMs: number,
   activityCounts: { approvedRequests: number; deniedRequests: number } = { approvedRequests: 0, deniedRequests: 0 },
+  mcpToolCallSources: ReadonlyMap<string, number> = new Map(),
 ): string {
   if (groupType === "reasoning") return inProgress ? "Thinking" : totalDurationMs > 0 ? `Thought for ${formatDuration(totalDurationMs)}` : "Thought";
   if (groupType === "exploration") return explorationSummaryLabel(counts, inProgress) ?? (inProgress ? "Exploring" : "Explored");
   if (groupType === "todo-list") return "Updated progress";
   if (groupType === "pending-mcp-tool-calls") return "Waiting on MCP tool";
   if (groupType === "web-search-group") {
-    const count = counts.webSearches;
-    if (count <= 1) return inProgress ? "Searching the web" : "Searched web";
-    return inProgress ? `Searching the web ${count} times` : `Searched web ${count} times`;
+    return inProgress ? "Searching the web" : "Searched web";
   }
   if (groupType === "multi-agent-group") return inProgress ? "Working with agents" : "Updated agents";
   if (groupType === "worked-for") {
@@ -353,7 +354,7 @@ function activityLabel(
     return inProgress ? "Working" : "Worked";
   }
   if (inProgress) return "Working";
-  const completedLabel = completedActivitySummaryLabel(counts, activityCounts);
+  const completedLabel = completedActivitySummaryLabel(counts, activityCounts, mcpToolCallSources);
   if (completedLabel) return completedLabel;
   if (counts.plans > 0) return "Updated plan";
   if (counts.reasoning > 0) return "Thought";
@@ -363,7 +364,10 @@ function activityLabel(
 function completedActivitySummaryLabel(
   counts: ToolActivitySummary["counts"],
   activityCounts: { approvedRequests: number; deniedRequests: number },
+  mcpToolCallSources: ReadonlyMap<string, number> = new Map(),
 ): string | null {
+  const namedMcpCallCount = Array.from(mcpToolCallSources.values()).reduce((total, count) => total + count, 0);
+  const genericMcpCalls = Math.max(0, counts.mcpCalls + counts.dynamicCalls - namedMcpCallCount);
   const segments = [
     fileChangeSummaryLabel(counts, false),
     explorationSummaryLabel(counts, false),
@@ -371,7 +375,8 @@ function completedActivitySummaryLabel(
     requestSummarySegment("Denied", activityCounts.deniedRequests),
     webSearchCommandSummarySegment(counts.webSearchCommands),
     ordinaryCommandSummarySegment(counts),
-    counts.mcpCalls + counts.dynamicCalls > 0 ? `Called ${formatCount(counts.mcpCalls + counts.dynamicCalls, "tool")}` : "",
+    mcpToolCallSources.size > 0 ? `Used ${joinConjunction(Array.from(mcpToolCallSources.keys()).map(mcpToolCallSourceLabel))}` : "",
+    genericMcpCalls > 0 ? `Called ${formatCount(genericMcpCalls, "tool")}` : "",
     counts.webSearches > 0 ? `Searched web ${formatCount(counts.webSearches, "time")}` : "",
   ].filter((value): value is string => Boolean(value));
   if (segments.length === 0) return null;
@@ -1044,7 +1049,7 @@ function execExitCode(item: ThreadItem): number | null {
 
 export function toolActivityGroupKey(item: ThreadItem, groupType: ToolActivityGroupType): string {
   if (groupType === "pending-mcp-tool-calls") {
-    return `${groupType}:${mcpServerName(item) || "mcp"}`;
+    return `${groupType}:${pendingMcpToolCallSourceKey(item)}`;
   }
   if (groupType === "multi-agent-group") {
     // Codex Desktop's `K` rollup only groups terminal multi-agent actions.
@@ -1102,8 +1107,22 @@ export function isBlockingOutOfBandItem(item: ThreadItem, blockedMcpServers: Set
 function shouldUsePendingMcpToolGroup(item: ThreadItem): boolean {
   return itemType(item) === "mcp-tool-call"
     && isItemInProgress(item)
-    && !mcpAppResourceUri(item)
     && !isDesktopInlineMcpTool(item);
+}
+
+function pendingMcpToolCallSourceKey(item: ThreadItem): string {
+  const source = stringField(item as ItemRecord, "source");
+  if (source === "browser-use" || mcpServerName(item) === "browser-use") return "browser-use";
+  const server = mcpServerName(item);
+  return `server:${server || "mcp"}`;
+}
+
+function mcpToolCallSourceName(item: ThreadItem): string | null {
+  return pendingMcpToolCallSourceKey(item) === "browser-use" ? "browser-use" : null;
+}
+
+function mcpToolCallSourceLabel(source: string): string {
+  return source === "browser-use" ? "the browser" : source;
 }
 
 function isDesktopInlineMcpTool(item: ThreadItem): boolean {

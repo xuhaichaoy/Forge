@@ -14,12 +14,15 @@ const DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX = 180;
 const DESKTOP_RIGHT_RAIL_SHIFT_THRESHOLD_PX = 400;
 
 export type RightRailSectionId =
+  /*
+   * CODEX-REF: local-conversation-thread-CecHj6JI.js — `pe` 用 Vl(sectionKey=
+   * "automation") 渲染**单条 automation**（`au` 组件，输入是 `lo({automations,
+   * conversationId})` 返回的 single object）。Codex bundle 内无 multi-list
+   * automation 渲染分支。HiCodex 之前的 legacy `"automations"` (multi list) 没有
+   * Codex 出处，删除以严格对齐。
+   */
   | "progress"
-  // codex: local-conversation-thread/pe:automation — per-conversation single
-  // automation summary (sectionKey "automation"), distinct from the legacy
-  // multi-entry "automations" list.
   | "automation"
-  | "automations"
   | "branchDetails"
   | "artifacts"
   | "sideChats"
@@ -80,7 +83,11 @@ export interface RightRailProjectionInput {
   // codex: local-conversation-thread/pe:automation — new per-conversation
   // automation summary (distinct from the legacy `automations` RailEntry list).
   automation?: RightRailAutomationInput;
-  automations?: RailEntry[];
+  /*
+   * CODEX-REF: Codex 渲染 single automation 经 `lo({automations, conversationId})`
+   * 返回 single object，不渲染 multi-list。HiCodex 严格对齐后删除 multi-list
+   * 数据流入；保留 `automation` 单条字段。
+   */
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
   artifacts: RailEntry[];
   showOutputs?: boolean;
@@ -225,10 +232,10 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  if (input.automations && input.automations.length > 0) {
-    sections.push(projectEntrySection("automations", "Automations", input.automations, false));
-  }
-
+  /*
+   * CODEX-REF: legacy `automations` multi-list section 已删除。Codex 只渲染
+   * single automation 经 sectionKey "automation"（已在上方处理）。
+   */
   const branchInput = input.branchDetails;
   const branchDetails = isBranchDetailsViewModel(branchInput) ? branchInput : undefined;
   const branchEntries = branchDetails ? branchDetailsEntries(branchDetails) : (branchInput as BranchDetailsEntryInput).entries;
@@ -296,15 +303,12 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
-  // CODEX-REF: /tmp/codex_asar_extract/webview/assets/local-conversation-thread-BX7YNcUw.js he —
-  // Codex Desktop's `<jf>` panel section always renders the "Sources" group in the
-  // summary panel; when no tool sources are present it shows a "No sources yet" empty
-  // state row instead of hiding the section. We mirror that by emitting Sources
-  // whenever the rest of the panel has content (so users never see Sources collapse
-  // mid-conversation), or whenever real sources are present.
-  if (input.sources.length > 0 || sections.length > 0) {
-    sections.push(projectEntrySection("sources", "Sources", input.sources, true));
-  }
+  // CODEX-REF: local-conversation-thread-CecHj6JI.js `Se` slot (byte ~99000) —
+  // Codex 桌面版 panel sequence `[fe, pe, J, me, he, ge, _e, Se, Ce]` 中,Sources
+  // (`tool-sources`, sectionKey:"tool-sources") **总是渲染**(无渲染条件),空态由
+  // section 内部 "No sources yet" empty row 承载。HiCodex 原条件 `sources.length>0 ||
+  // sections.length>0` 没源码依据,已对齐 always。
+  sections.push(projectEntrySection("sources", "Sources", input.sources, true));
 
   if (input.status && input.status.length > 0) {
     sections.push(projectEntrySection("status", "Status", input.status, false));

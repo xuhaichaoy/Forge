@@ -176,6 +176,57 @@
   padding: 0 10px;
 }
 
+/*
+ * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js function `en` —
+ * 多 question 时的 step navigator。Codex 渲染：
+ *   div.className = "flex shrink-0 items-center gap-1 text-xs text-token-description-foreground"
+ *   children = [
+ *     Button(color=ghost, disabled=!B, size=icon, onClick=we(y-1), Chevron rotate-90),
+ *     span(text = te = "1 of 3"),
+ *     Button(color=ghost, disabled=!V, size=icon, onClick=we(y+1), Chevron -rotate-90),
+ *   ]
+ * HiCodex 用相同 layout：左右 ghost icon button + 中间 "1 of N"。
+ * (注释里避免嵌套 / star star /，CSS 不支持嵌套块注释。)
+ */
+.hc-request-question-stepper {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 2px;
+  padding: 0 2px;
+  color: #6f716b;
+  font-size: 12px;
+}
+
+.hc-request-question-stepper-count {
+  min-width: 56px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.hc-request-question-stepper-nav {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.hc-request-question-stepper-nav:hover:not(:disabled) {
+  background: rgba(34, 38, 43, 0.06);
+  color: #27313d;
+}
+
+.hc-request-question-stepper-nav:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .hc-request-question {
   display: grid;
   gap: 5px;
@@ -249,12 +300,19 @@
   gap: 1px;
 }
 
+/*
+ * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js offset ~90335 —
+ * runAlwaysWithAmendment 短模式 JSX 的外层是 `<span className="flex w-full min-w-0
+ * items-center gap-1">`，label 由 `<FormattedMessage>` 直接产出纯文本，**没有任何
+ * overflow-wrap / min-w-0 / break-anywhere 类**。HiCodex 之前在 `.strong` 上叠
+ * `overflow-wrap: anywhere` 会被继承到 label inner span，在窄宽下逐字断行—— Codex
+ * 不做这件事，所以删除。
+ */
 .hc-request-option-copy strong {
   display: block;
   min-width: 0;
   color: #2a2d2b;
   font-weight: 520;
-  overflow-wrap: anywhere;
 }
 
 .hc-request-option-copy strong[data-has-code="true"] {
@@ -269,8 +327,14 @@
   gap: 2px;
 }
 
+/*
+ * CODEX-REF: pending-request-item-panel-DVOSLvQ1.js — label 由 `<FormattedMessage>`
+ * 直接渲染为文本节点，**不设 min-width: 0**。保留 min-content 作为底线，让 label 永远
+ * 至少占下一个英文单词的宽度，避免与 sibling code 抢压缩空间。剩下版式由父级 `display:
+ * flex; align-items: center` + code 的 `flex: 1 1 0` 自行平衡。
+ */
 .hc-request-option-label-text {
-  min-width: 0;
+  /* No explicit min-width: rely on min-content. */
 }
 
 .hc-request-option-code {
@@ -318,6 +382,16 @@
   width: 14px;
   min-height: 14px;
   margin: 1px 0 0;
+}
+
+/*
+ * CODEX-REF: en — isOther freeform input (options 后追加的 textarea)。
+ * Codex 渲染的 textarea 容器没有 number-prefix（"N."），就是裸 textarea
+ * 撑满宽度。HiCodex 给 `.hc-request-other-freeform` 单独 modifier 移除
+ * grid 中 24px 的 number-prefix 列。
+ */
+.hc-request-inline-freeform.hc-request-other-freeform {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .hc-request-inline-freeform {

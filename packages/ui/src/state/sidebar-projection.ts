@@ -336,8 +336,26 @@ function numericField(thread: Thread, key: "createdAt" | "updatedAt"): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/*
+ * CODEX-REF: app-server-manager-signals-Csopz8aM.js — Codex sidebar 判断
+ * thread 是否活动**只看** `m.thread.status.type !== "active"` 一处（明确的
+ * server-pushed status 是 truth source）。`finishTurn` (state/codex-reducer.ts:3042)
+ * 已经把 thread.status 切到 `{ type: "idle" }` 当 turn/completed 通知到达，
+ * 所以只要信任 thread.status.type，spinner 就会随 thread 结束立即停。
+ *
+ * HiCodex 之前 4 个 fallback 检查（isInProgress / resumeState / turns[-1].status）
+ * 让 idle thread 仍可能被判为 active——因为 `thread.turns` 数组里 latest turn
+ * 的 status 字段从未被 turn/completed 通知更新（finishTurn 只改 thread.status，
+ * 不动 turns）。结果 sidebar 圆圈动画在 thread 完成后不停。
+ *
+ * 修复：thread.status.type 存在时**信任它**，不再 fallback；仅当 status 字段
+ * 完全缺失（极旧 payload）才走 loose-field 兜底。
+ */
 function threadHasActiveWork(thread: Thread): boolean {
-  if (thread.status?.type === "active") return true;
+  const statusType = thread.status?.type;
+  if (statusType === "active") return true;
+  if (statusType) return false;
+  // status 字段完全缺失：兜底走 loose fields（极旧 payload 防御）。
   const explicit = looseBooleanField(thread, "isInProgress");
   if (explicit != null) return explicit;
   const resumeState = looseStringField(thread, "resumeState");

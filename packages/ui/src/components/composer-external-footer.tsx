@@ -72,6 +72,13 @@ export interface ComposerExternalFooterProps {
    */
   onOpenModelPicker?: (anchor: HTMLElement) => void;
   /**
+   * CODEX-REF: composer-D0cvMZjq.js — footer 上的 Reasoning trigger 是独立 chip
+   * 显示当前 effort label ("Low" / "Medium" / "High" / "Extra High")，点击弹出
+   * `Fa` popover。HiCodex 把这个 chip 挂在现有 intelligence chip 旁，回调由
+   * HiCodexApp 用 setReasoningPickerAnchor 接住。omit 时不渲染（向后兼容）。
+   */
+  onOpenReasoningPicker?: (anchor: HTMLElement) => void;
+  /**
    * codex: composer-footer-branch-switcher-CamXBKfA.js — fired after a
    * successful `git checkout` so the host can refresh `Thread.gitBranch` /
    * other branch-dependent caches.
@@ -100,6 +107,7 @@ export function ComposerExternalFooter({
   sandboxMode,
   onOpenPermissions,
   onOpenModelPicker,
+  onOpenReasoningPicker,
   onBranchSwitched,
   onBranchSwitchError,
 }: ComposerExternalFooterProps) {
@@ -110,6 +118,28 @@ export function ComposerExternalFooter({
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
   const branchLabel = formatBranchFooterLabel(branch);
   const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
+  /*
+   * CODEX-REF: composer-D0cvMZjq.js — Reasoning trigger chip 永远渲染（Codex
+   * 即使 modelSettings.reasoningEffort 缺省也显示 default label 触发按钮，
+   * disabled 仅当 models data fetch error / 没拿到 models）。HiCodex 这里
+   * 没有 effort 时回退到 default "medium" (与 Codex/Codex CLI 默认一致)，
+   * 让 chip 始终可见可点击。
+   */
+  const REASONING_LABELS = {
+    none: "None",
+    minimal: "Minimal",
+    low: "Low",
+    medium: "Medium",
+    high: "High",
+    xhigh: "Extra High",
+  } as const;
+  type ReasoningKey = keyof typeof REASONING_LABELS;
+  const REASONING_KEYS: readonly ReasoningKey[] = ["none", "minimal", "low", "medium", "high", "xhigh"];
+  const reasoningEffortNormalized: ReasoningKey = typeof reasoningEffort === "string"
+    && REASONING_KEYS.includes(reasoningEffort.trim().toLowerCase() as ReasoningKey)
+    ? reasoningEffort.trim().toLowerCase() as ReasoningKey
+    : "medium";
+  const reasoningChipLabel = REASONING_LABELS[reasoningEffortNormalized];
   const permissionsLabel = formatPermissionsFooterLabel({ approvalPolicy, approvalsReviewer, sandboxMode });
   const permissionsTitle = formatPermissionsFooterTitle({ approvalPolicy, approvalsReviewer, sandboxMode }, permissionsLabel);
   const rootOptions = useMemo(() => dedupeWorkspaceRoots(workspaceRoots), [workspaceRoots]);
@@ -297,6 +327,28 @@ export function ComposerExternalFooter({
               <Cpu size={14} />
               <span className="hc-composer-footer-chip-label">{intelligenceLabel}</span>
               <ChevronDown size={13} />
+            </button>
+          )}
+          {/*
+           * CODEX-REF: composer-D0cvMZjq.js — Reasoning effort trigger chip
+           * （Fa popover anchor）。Codex 截图 dropdown 选项 Low/Medium/High/
+           * Extra High，trigger button 显示当前 effort label。HiCodex 用独立
+           * chip 与 model chip 并列；点击 onOpenReasoningPicker(anchor)
+           * 由 HiCodexApp 持有 setReasoningPickerAnchor 接住。
+           */}
+          {reasoningChipLabel && (
+            <button
+              type="button"
+              className="hc-composer-footer-chip hc-composer-footer-reasoning"
+              title={onOpenReasoningPicker ? "Set reasoning effort" : `Reasoning: ${reasoningChipLabel}`}
+              data-chip="reasoning"
+              data-codex-intelligence-trigger
+              data-selected-reasoning-effort={reasoningEffortNormalized ?? undefined}
+              data-interactive={onOpenReasoningPicker ? "true" : undefined}
+              onClick={onOpenReasoningPicker ? (event) => onOpenReasoningPicker(event.currentTarget) : undefined}
+            >
+              <span className="hc-composer-footer-chip-label">{reasoningChipLabel}</span>
+              {onOpenReasoningPicker && <ChevronDown size={13} />}
             </button>
           )}
         </div>

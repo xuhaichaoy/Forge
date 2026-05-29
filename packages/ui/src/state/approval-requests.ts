@@ -28,6 +28,16 @@ export interface PendingRequestQuestion {
   required: boolean;
   defaultAnswers: string[];
   options: PendingRequestOption[];
+  /*
+   * CODEX-REF: packages/codex-protocol/src/generated/v2/ToolRequestUserInputQuestion.ts
+   * 协议层 `ToolRequestUserInputQuestion.isOther: boolean`。Codex bundle
+   * `pending-request-item-panel-DVOSLvQ1.js::en` 用 `K = ne === !0` 检查并：
+   * - 渲染 freeform textarea（可与 options 并存）
+   * - 提交时若 `isOther && freeformText`，则用 freeform 文本作答案（覆盖 selected option id）
+   * - 数字键超出 options 数量时 focus 到 textarea
+   * HiCodex protocol bridge 之前丢了此字段，QuestionField 因而没有 freeform 输入。
+   */
+  isOther?: boolean;
 }
 
 export interface PendingRequestOption {
@@ -437,6 +447,12 @@ export function requestUserInputQuestions(params: unknown): PendingRequestQuesti
     const record = question && typeof question === "object" ? question as Record<string, unknown> : {};
     const text = questionText(question);
     const options = requestUserInputOptions(record.options);
+    /*
+     * CODEX-REF: ToolRequestUserInputQuestion.isOther → en `K = ne === !0`。
+     * 拿 raw payload 的 isOther / is_other 字段；若 true 则 question 支持 freeform
+     * 输入（合并 options 一起渲染）。
+     */
+    const isOther = record.isOther === true || record.is_other === true;
     return {
       id: stringField(record, "id") || `question_${index + 1}`,
       header: stringField(record, "header") || stringField(record, "label") || `Question ${index + 1}`,
@@ -446,6 +462,7 @@ export function requestUserInputQuestions(params: unknown): PendingRequestQuesti
       required: true,
       defaultAnswers: [],
       options,
+      ...(isOther ? { isOther: true } : {}),
     };
   });
 }

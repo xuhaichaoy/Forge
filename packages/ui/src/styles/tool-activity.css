@@ -647,6 +647,21 @@ button.hc-error-event-summary:hover {
   background: rgba(34, 38, 43, 0.12);
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js — Mp 返回经 `t.formatList(a,
+ * {type:'unit'})` join 后的**单行字符串**渲染在 collapsed-tool-activity summary
+ * 区。HiCodex 对齐：单行展示，类似 Codex `Ap` 的 `block min-w-0 max-w-full
+ * truncate`（HiCodex 这里不 truncate，因为 worked-for 内不强行裁剪，让长聚合
+ * 自动换行更友好）。
+ */
+.hc-worked-for-aggregate {
+  display: block;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: inherit;
+}
+
 .hc-tool-label {
   display: flex;
   align-items: center;
@@ -1530,34 +1545,35 @@ button.hc-tool-summary:hover svg:last-child,
   color: #74776f;
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js — 函数 `Jh`（embedded variant，
+ * 即 thread 内 ExecShell 卡片调用方）渲染命令文本的 className:
+ *   `text-size-chat-sm text-token-description-foreground whitespace-pre-wrap
+ *    break-words font-vscode-editor ${y !== D && 'line-clamp-2'}`
+ * 即：默认就上 `line-clamp-2`（`y === useState(null)`，初始 y !== D，clamp 生效），
+ * 整段命令文字默认压成 2 行 + ellipsis；点击包裹层（`role="button" onClick: F`）触发
+ * `F = () => b(D)`，把 y 设为 D，`y !== D` 变 false，line-clamp 类被移除，永久展开
+ * （无反向折叠路径）。**Codex 的命令文本完全不设 max-height、不设 overflow-y**。
+ *
+ * HiCodex 把 clamp 状态外移到 `[data-command-expanded]` 属性，由 `ExecShellDetail`
+ * 的 `commandExpanded` useState 控制；attribute 在父 `.hc-exec-shell-command` 上，
+ * `code` 元素始终保留 flex item 行为不变。
+ */
 .hc-exec-shell-command code {
   min-width: 0;
   flex: 1 1 auto;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  /*
-   * Cap the command's rendered height so commands that embed a heredoc /
-   * long `-c '<script>'` argument (e.g. `python3 -c $'...'`) don't blow the
-   * shell card up to fill the viewport. ~200px is roughly 12 wrapped lines;
-   * everything beyond scrolls inside the code box. The wheel scroll within
-   * the code element doesn't trigger the surrounding output-toggle button.
-   */
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-/*
- * When the shell card is collapsed (output hidden) we further clamp the
- * command to 3 lines with ellipsis, matching Codex Desktop's collapsed
- * shell card (`composer-DXaiOlFj.js` — line-clamp 3 over a pre-wrap span).
- * Expanding the card (chevron) restores the 200px scroll cap from above.
- */
-.hc-exec-shell[data-shell-state="collapsed"] .hc-exec-shell-command code {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  max-height: none;
+  -webkit-line-clamp: 2;
   overflow: hidden;
+}
+
+.hc-exec-shell-command[data-command-expanded="true"] code {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
 }
 
 .hc-exec-shell-command svg {
@@ -1685,6 +1701,7 @@ button.hc-tool-summary:hover svg:last-child,
 }
 
 .hc-tool-detail-stack.mcp-app {
+  position: relative;
   gap: 7px;
 }
 
@@ -1845,6 +1862,121 @@ button.hc-tool-summary:hover svg:last-child,
   text-underline-offset: 2px;
 }
 
+.hc-tool-raw-output {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.hc-tool-raw-output.is-inline-app {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+}
+
+.hc-tool-raw-output-trigger {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #74776f;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    background var(--hc-codex-transition),
+    color var(--hc-codex-transition),
+    opacity var(--hc-codex-transition);
+}
+
+.hc-tool-detail-stack:hover .hc-tool-raw-output-trigger,
+.hc-tool-detail-stack:focus-within .hc-tool-raw-output-trigger,
+.hc-tool-raw-output-trigger:focus-visible {
+  opacity: 1;
+}
+
+.hc-tool-raw-output-trigger:hover,
+.hc-tool-raw-output-trigger:focus-visible {
+  background: rgba(39, 49, 61, 0.07);
+  color: #27313d;
+  opacity: 1;
+}
+
+.hc-tool-raw-output-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--hc-z-preview-dialog);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(17, 22, 28, 0.32);
+}
+
+.hc-tool-raw-output-dialog {
+  display: grid;
+  width: min(760px, 100%);
+  max-height: min(620px, calc(100vh - 48px));
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(39, 49, 61, 0.16);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 18px 60px rgba(28, 31, 35, 0.24);
+}
+
+.hc-tool-raw-output-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e6e1d8;
+  padding: 12px 14px;
+}
+
+.hc-tool-raw-output-dialog h2 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #27313d;
+  font-size: 13px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-tool-raw-output-dialog header button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(39, 49, 61, 0.12);
+  border-radius: 999px;
+  background: #fff;
+  color: #4f5855;
+  cursor: pointer;
+}
+
+.hc-tool-raw-output-dialog header button:hover {
+  background: #f5f2ea;
+  color: #27313d;
+}
+
+.hc-tool-raw-output-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.hc-tool-raw-output-body pre {
+  max-height: none;
+  margin: 0;
+}
+
 .hc-tool-detail-command,
 .hc-tool-detail-change-title code {
   min-width: 0;
@@ -1932,6 +2064,26 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-mcp-result-block + .hc-mcp-result-block {
   margin-top: 6px;
+}
+
+/*
+ * codex: local-conversation-thread-Kn0WAsVa#Zg L14316-14570 — Desktop text
+ * block uses `max-h-48 overflow-auto whitespace-pre-wrap` with no label and
+ * no syntax-highlighter chrome. 12rem ≈ 192px ≈ Tailwind max-h-48.
+ */
+.hc-mcp-result-text-body {
+  max-height: 12rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--hc-text-primary);
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--hc-surface-hover, color-mix(in oklab, var(--hc-surface-main, #faf9f6) 92%, #0b0c08 8%));
+  border: 1px solid var(--hc-border-subtle);
 }
 
 .hc-mcp-result-resource-link-text {

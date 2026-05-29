@@ -11,7 +11,7 @@ interface AssistantEndResourcesInput {
   cwd?: string | null;
 }
 
-const DIRECT_END_RESOURCE_FILE_EXTENSIONS = new Set([
+const DIFF_COVERAGE_FILE_EXTENSIONS = new Set([
   "avif",
   "csv",
   "doc",
@@ -29,13 +29,14 @@ const DIRECT_END_RESOURCE_FILE_EXTENSIONS = new Set([
   "xlsm",
   "xlsx",
 ]);
-const LINKED_END_RESOURCE_FILE_EXTENSIONS = new Set([
-  ...DIRECT_END_RESOURCE_FILE_EXTENSIONS,
+const DIRECT_END_RESOURCE_FILE_EXTENSIONS = new Set([
+  ...DIFF_COVERAGE_FILE_EXTENSIONS,
   "md",
   "mdx",
 ]);
-
-const DIFF_COVERAGE_FILE_EXTENSIONS = DIRECT_END_RESOURCE_FILE_EXTENSIONS;
+const LINKED_END_RESOURCE_FILE_EXTENSIONS = new Set([
+  ...DIRECT_END_RESOURCE_FILE_EXTENSIONS,
+]);
 
 export function assistantEndResourcesForTurn(input: AssistantEndResourcesInput): AssistantEndResource[] {
   const assistantText = input.assistantText ?? "";
@@ -380,10 +381,21 @@ function normalizedWebsiteUrl(value: string): string | null {
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
     if (!url.port) return null;
     if (/[()[\]]/u.test(`${url.pathname}${url.search}${url.hash}`)) return null;
+    if (!isLocalhostUrl(url)) return null;
     return url.href;
   } catch {
     return null;
   }
+}
+
+function isLocalhostUrl(url: URL): boolean {
+  const host = url.hostname.toLowerCase();
+  return host.endsWith(".localhost")
+    || host === "localhost"
+    || host === "127.0.0.1"
+    || host === "0.0.0.0"
+    || host === "::1"
+    || host === "[::1]";
 }
 
 function singleEditedWebsitePath(items: ThreadItem[]): string | null {
@@ -437,7 +449,7 @@ function normalizePathParts(path: string): string {
     }
     parts.push(part);
   }
-  return `${absolute ? "/" : ""}${parts.join("/")}`;
+  return `${absolute ? "/" : ""}${parts.join("/")}`.toLowerCase();
 }
 
 function stripLineSuffix(path: string): string {

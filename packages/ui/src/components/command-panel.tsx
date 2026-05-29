@@ -211,11 +211,13 @@ export function CommandPanelEntryList({
   entries,
   onSelectEntry,
   onSelectAction,
+  showSections = true,
   subMode = "root",
 }: {
   entries: CommandPanelEntry[];
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
+  showSections?: boolean;
   subMode?: CommandPanelSubMode;
 }) {
   if (entries.length === 0) return null;
@@ -223,6 +225,17 @@ export function CommandPanelEntryList({
   // flat result list; section headings (Thread / Panels / ...) are gated on
   // the root command menu, matching Codex's cmdk Hd atom behavior.
   if (subMode !== "root") {
+    return (
+      <div className="hc-command-panel-list">
+        <CommandPanelGroupedEntries
+          entries={entries}
+          onSelectAction={onSelectAction}
+          onSelectEntry={onSelectEntry}
+        />
+      </div>
+    );
+  }
+  if (!showSections) {
     return (
       <div className="hc-command-panel-list">
         <CommandPanelGroupedEntries

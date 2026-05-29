@@ -140,7 +140,11 @@ function projectsActiveThreadStatusLikeDesktopSidebar(): void {
   assert(status.type === "loading", `active protocol status should render loading, got ${status.type}`);
   assert(sidebarThreadHasVisibleStatus(status), "active thread status should be visible");
 
-  const turnStatus = sidebarThreadStatusState(makeThread({
+  // CODEX-REF: app-server-manager-signals-Csopz8aM.js — sidebar 只看 thread.status.type === "active"。
+  // thread.status 是 server-pushed truth；当 thread.status 已是 terminal (completed/idle/systemError)
+  // 即使 latestTurn 仍 inProgress（数组未被 finishTurn 更新），sidebar 也不应再显示 loading。
+  const terminalWithInProgressTurn = sidebarThreadStatusState(makeThread({
+    status: ({ type: "completed" } as unknown) as Thread["status"],
     turns: [{
       id: "turn-1",
       items: [],
@@ -152,7 +156,29 @@ function projectsActiveThreadStatusLikeDesktopSidebar(): void {
       durationMs: null,
     }],
   }));
-  assert(turnStatus.type === "loading", `latest inProgress turn should render loading, got ${turnStatus.type}`);
+  assert(
+    terminalWithInProgressTurn.type !== "loading",
+    `terminal thread.status must NOT render loading even with stale inProgress turn, got ${terminalWithInProgressTurn.type}`,
+  );
+
+  // 仅当 thread.status 缺失时，才走 turns[-1].status === "inProgress" 兜底。
+  const fallbackTurn = sidebarThreadStatusState(makeThread({
+    status: (undefined as unknown) as Thread["status"],
+    turns: [{
+      id: "turn-1",
+      items: [],
+      itemsView: "full",
+      status: "inProgress",
+      error: null,
+      startedAt: null,
+      completedAt: null,
+      durationMs: null,
+    }],
+  }));
+  assert(
+    fallbackTurn.type === "loading",
+    `missing thread.status with inProgress turn should fallback to loading, got ${fallbackTurn.type}`,
+  );
 }
 
 function projectsUnreadThreadStatusLikeDesktopSidebar(): void {

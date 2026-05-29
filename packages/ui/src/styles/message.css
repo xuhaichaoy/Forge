@@ -138,6 +138,88 @@
   line-height: 1.45;
 }
 
+.hc-assistant-end-resource-list {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(34, 38, 43, 0.10);
+  border-radius: 8px;
+  background: rgba(255, 253, 250, 0.86);
+  box-shadow: 0 4px 14px rgba(34, 38, 43, 0.05);
+}
+
+.hc-assistant-end-resource-card {
+  position: relative;
+  min-height: 58px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.hc-assistant-end-resource-card + .hc-assistant-end-resource-card {
+  border-top: 1px solid rgba(34, 38, 43, 0.10);
+}
+
+.hc-assistant-end-resource-card.is-button:hover {
+  background: rgba(34, 38, 43, 0.04);
+  box-shadow: none;
+}
+
+.hc-assistant-end-resource-card:focus-visible {
+  outline: 1px solid rgba(51, 102, 255, 0.62);
+  outline-offset: -1px;
+}
+
+.hc-assistant-resource-card-subtitles {
+  display: block;
+  min-width: 0;
+}
+
+.hc-assistant-resource-card-hover-type {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  color: #636862;
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-assistant-end-resource-card.is-button:hover .hc-assistant-resource-card-hover-type,
+.hc-assistant-end-resource-card.is-button:focus-visible .hc-assistant-resource-card-hover-type {
+  display: block;
+}
+
+.hc-assistant-end-resource-card.is-button:hover .hc-assistant-resource-card-type,
+.hc-assistant-end-resource-card.is-button:focus-visible .hc-assistant-resource-card-type {
+  display: none;
+}
+
+.hc-assistant-resource-card-open-label {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: #3b3f45;
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1;
+}
+
+.hc-assistant-end-resource-card.is-button:hover .hc-assistant-resource-card-open-label,
+.hc-assistant-end-resource-card.is-button:focus-visible .hc-assistant-resource-card-open-label {
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-assistant-end-resource-card.is-show-more {
+  min-height: 42px;
+  justify-content: center;
+}
+
 .hc-assistant-review-comments {
   display: flex;
   width: min(100%, 560px);
@@ -973,6 +1055,102 @@ button.hc-user-attachment-pill:hover {
   white-space: nowrap;
 }
 
+.hc-turn-rating-controls {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hc-turn-rating-button svg.is-down {
+  transform: rotate(180deg);
+}
+
+.hc-turn-rating-button[aria-pressed="true"] {
+  color: #27313d;
+  background: rgba(39, 49, 61, 0.08);
+}
+
+.hc-turn-rating-popover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: var(--hc-z-popover);
+  display: block;
+  width: min(340px, calc(100vw - 32px));
+  padding: 10px;
+  border: 1px solid var(--hc-border-default, rgba(39, 49, 61, 0.12));
+  border-radius: 8px;
+  background: var(--hc-surface-panel, rgba(255, 255, 255, 0.98));
+  box-shadow: var(--hc-shadow-panel, 0 14px 40px rgba(17, 24, 28, 0.16));
+  color: var(--hc-text-primary, #24292f);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.hc-turn-rating-popover form,
+.hc-turn-rating-options {
+  display: grid;
+  gap: 8px;
+}
+
+.hc-turn-rating-options label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.hc-turn-rating-options input {
+  flex: 0 0 auto;
+}
+
+.hc-turn-rating-popover textarea {
+  min-height: 68px;
+  resize: vertical;
+  border: 1px solid rgba(39, 49, 61, 0.14);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: #fff;
+  color: #27313d;
+  font: inherit;
+}
+
+.hc-turn-rating-legal {
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-turn-rating-legal a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hc-turn-rating-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.hc-message-actions .hc-turn-rating-popover-actions button,
+.hc-plan-summary-actions .hc-turn-rating-popover-actions button {
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(39, 49, 61, 0.12);
+  border-radius: 6px;
+  background: #fff;
+  color: #27313d;
+}
+
+.hc-turn-rating-submitted {
+  padding: 0 4px;
+  color: var(--hc-text-secondary, #6f716b);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .hc-message-action-status.meta {
   color: #6f716b;
 }
@@ -1010,8 +1188,12 @@ button.hc-user-attachment-pill:hover {
   opacity: 1;
 }
 
-.hc-message-actions[data-persistent="true"] button,
-.hc-message-actions[data-persistent="true"] .hc-message-time {
+/*
+ * CODEX-REF: action row 仅 copy + artifacts indicator，无 timestamp（见
+ * message-action-row.tsx CODEX-REF）。`.hc-message-time` selectors 已删除
+ * （dead CSS）。
+ */
+.hc-message-actions[data-persistent="true"] button {
   pointer-events: none;
   opacity: 0;
   transition: opacity 120ms ease;
@@ -1019,10 +1201,7 @@ button.hc-user-attachment-pill:hover {
 
 .hc-message:hover .hc-message-actions[data-persistent="true"] button,
 .hc-message:focus-within .hc-message-actions[data-persistent="true"] button,
-.hc-message-actions[data-persistent="true"]:focus-within button,
-.hc-message:hover .hc-message-actions[data-persistent="true"] .hc-message-time,
-.hc-message:focus-within .hc-message-actions[data-persistent="true"] .hc-message-time,
-.hc-message-actions[data-persistent="true"]:focus-within .hc-message-time {
+.hc-message-actions[data-persistent="true"]:focus-within button {
   pointer-events: auto;
   opacity: 1;
 }
@@ -1057,23 +1236,9 @@ button.hc-user-attachment-pill:hover {
   padding: 0 3px;
 }
 
-.hc-message-time {
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  padding: 0 3px;
-  color: #85877f;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.hc-message.assistant .hc-message-time {
-  margin-left: 6px;
-}
-
-.hc-message.user .hc-message-time {
-  margin-right: 0;
-}
+/*
+ * CODEX-REF: timestamp 已不渲染，`.hc-message-time` 全部规则删除（dead CSS）。
+ */
 
 .hc-disclosure-motion {
   display: grid;
@@ -1188,6 +1353,36 @@ button.hc-user-attachment-pill:hover {
   color: var(--hc-text-secondary);
 }
 
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-list {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-card {
+  border-color: var(--hc-border-default);
+  background: transparent;
+  box-shadow: none;
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-card.is-button:hover,
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-card.is-button:focus-visible {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel-muted);
+  box-shadow: none;
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-hover-type,
+.hc-app[data-theme="dark"] .hc-assistant-resource-card-open-label {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-card.is-button:hover .hc-assistant-resource-card-open-label,
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-card.is-button:focus-visible .hc-assistant-resource-card-open-label {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
 .hc-app[data-theme="dark"] .hc-assistant-review-comments {
   border-color: var(--hc-border-default);
   background: var(--hc-surface-panel);
@@ -1297,6 +1492,26 @@ button.hc-user-attachment-pill:hover {
 }
 
 .hc-app[data-theme="dark"] .hc-auto-review-command-list code {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-rating-button[aria-pressed="true"] {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-rating-popover {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-rating-popover textarea,
+.hc-app[data-theme="dark"] .hc-message-actions .hc-turn-rating-popover-actions button,
+.hc-app[data-theme="dark"] .hc-plan-summary-actions .hc-turn-rating-popover-actions button {
+  border-color: var(--hc-border-default);
   background: var(--hc-surface-soft);
   color: var(--hc-text-primary);
 }

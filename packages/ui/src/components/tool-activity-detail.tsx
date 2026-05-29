@@ -1,5 +1,6 @@
-import { Check, ChevronRight, Copy as CopyIcon, TriangleAlert, X, XCircle } from "lucide-react";
+import { Braces, Check, ChevronRight, Copy as CopyIcon, TriangleAlert, X, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { formatUnknown, stringField } from "../lib/format";
 import {
   mcpAppBridgeError,
@@ -271,6 +272,7 @@ export function ToolActivityDetail({
   threadId?: string | null;
 }) {
   const detail = toolActivityDetailViewModel(item);
+  const rawMcpOutput = rawMcpToolOutputForItem(item, detail.running);
   if (detail.kind === "webSearch") {
     return (
       <div className="hc-tool-detail-row hc-tool-detail-web-search-row">
@@ -371,11 +373,17 @@ export function ToolActivityDetail({
     );
   }
   if (detail.kind === "tool") {
+    // codex: local-conversation-thread-Kn0WAsVa#qg (L13998-14290) — Codex
+    // Desktop renders the tool item summary as just an icon + tool name +
+    // chevron. "Completed / in-progress" is conveyed by a shimmer on the
+    // label (`<Zi active>` wrapper), not by a `MCP · completed` text badge.
+    // For MCP results, Codex's `Zg()` (L14316-14570) renders text blocks
+    // directly with `max-h-48 overflow-auto whitespace-pre-wrap` — there is
+    // no "Result" or "plaintext" label and no Show-N-more-lines toggle.
     return (
       <section className={`hc-tool-detail-stack tool ${detail.running ? "is-running" : ""}`}>
         <div className="hc-tool-detail-line">
           <span className="hc-tool-detail-title">{detail.name}</span>
-          <small>{detail.toolKind}{detail.status ? ` · ${detail.status}` : ""}</small>
         </div>
         {detail.toolKind !== "MCP" && detail.argumentsText && (
           <LabeledCode label="Parameters" text={detail.argumentsText} />
@@ -385,13 +393,14 @@ export function ToolActivityDetail({
           <McpResultBlocksView blocks={detail.resultBlocks} />
         ) : (
           detail.resultText
-            ? <LabeledCode label="Result" text={detail.resultText} />
+            ? <div className="hc-mcp-result-text-body">{detail.resultText}</div>
             : detail.toolKind === "MCP" && !detail.structuredResultText && !detail.errorText
               ? <p className="hc-tool-detail-row">Tool returned no content</p>
               : null
         )}
         {detail.structuredResultText && <CodeBlock text={detail.structuredResultText} />}
         {detail.errorText && <LabeledCode label="Error" text={detail.errorText} />}
+        {rawMcpOutput && <RawToolOutputButton heading={rawMcpOutput.heading} text={rawMcpOutput.text} />}
       </section>
     );
   }
@@ -401,6 +410,7 @@ export function ToolActivityDetail({
         detail={detail}
         onMcpAppHostCall={onMcpAppHostCall}
         onReadMcpResource={onReadMcpResource}
+        rawOutput={rawMcpOutput}
         threadId={threadId}
       />
     );
@@ -488,9 +498,13 @@ function AutoReviewDetail({ detail }: { detail: Extract<ToolActivityDetailViewMo
 function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
   switch (block.kind) {
     case "text":
+      // codex: local-conversation-thread-Kn0WAsVa#Zg (L14316-14570) — Codex
+      // Desktop renders MCP text blocks as a plain `<div>` with
+      // `max-h-48 overflow-auto whitespace-pre-wrap`, no language label,
+      // no code-block chrome.
       return (
         <div className="hc-mcp-result-block hc-mcp-result-text">
-          <LabeledCode label="plaintext" text={mcpTextBlockDisplayText(block)} />
+          <div className="hc-mcp-result-text-body">{mcpTextBlockDisplayText(block)}</div>
         </div>
       );
     case "image":
@@ -565,11 +579,13 @@ function McpAppToolDetail({
   detail,
   onMcpAppHostCall,
   onReadMcpResource,
+  rawOutput,
   threadId,
 }: {
   detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
+  rawOutput: { heading: string; text: string } | null;
   threadId: string | null;
 }) {
   const inlineFrame = detail.inlineFrame;
@@ -647,6 +663,7 @@ function McpAppToolDetail({
   const frame = resourceState.frame;
   const frameTooLarge = frame ? mcpAppHtmlTooLarge(frame.html) : false;
   const fallbackText = detail.errorText || detail.resultText || resourceState.fallbackText;
+  const showRawOutput = rawOutput && resourceState.status !== "loading";
 
   return (
     <section className={`hc-tool-detail-stack mcp-app ${detail.running ? "is-running" : ""}`}>
@@ -678,6 +695,7 @@ function McpAppToolDetail({
         <div className="hc-tool-detail-row">MCP app returned no HTML content</div>
       )}
       {!frame && fallbackText && <LabeledCode label={detail.errorText ? "Error" : "Result"} text={fallbackText} />}
+      {showRawOutput && <RawToolOutputButton heading={rawOutput.heading} inlineApp={Boolean(frame && !frameTooLarge)} text={rawOutput.text} />}
     </section>
   );
 }
@@ -1525,6 +1543,15 @@ function ExecShellDetail({
 }) {
   const [expanded, setExpanded] = useState(() => initialExecShellExpanded(detail));
   const [copiedTarget, setCopiedTarget] = useState<ExecShellCopyTarget | null>(null);
+  /*
+   * CODEX-REF: local-conversation-thread-CecHj6JI.js function `Jh` —
+   *   let [y, b] = useState(null);
+   *   let A = y !== D && `line-clamp-2`;
+   *   let F = () => { b(D); };           // 一次点击永久展开，无反向回收
+   * `forceExpanded` 场景 (e.g. file preview panel) 期望命令本身也直接全显，
+   * 因此初始值跟随 forceExpanded。
+   */
+  const [commandExpanded, setCommandExpanded] = useState<boolean>(forceExpanded);
   const hasBody = Boolean(detail.output || detail.footer);
   const bodyOpen = forceExpanded || detail.running || expanded;
   const output = detail.output || (!detail.running && detail.footer ? "No output" : "");
@@ -1540,7 +1567,8 @@ function ExecShellDetail({
 
   useEffect(() => {
     setExpanded(initialExecShellExpanded(detail));
-  }, [detail.id]);
+    setCommandExpanded(forceExpanded);
+  }, [detail.id, forceExpanded]);
 
   const copyTarget = (target: ExecShellCopyTarget) => {
     const text = execShellCopyText(detail, target);
@@ -1579,12 +1607,23 @@ function ExecShellDetail({
             aria-expanded={bodyOpen}
             className="hc-exec-shell-command hc-exec-shell-toggle"
             type="button"
-            onClick={() => setExpanded((value) => !value)}
+            data-command-expanded={commandExpanded || undefined}
+            onClick={() => {
+              /*
+               * Codex `Jh` 的 F = () => b(D) —— 点击命令一次性把 y 设为 D，
+               * `line-clamp-2` 永久解除。HiCodex 复用现有的整行 button 同时承担
+               * Codex 的"命令展开"语义，叠加 HiCodex 自身的 bodyOpen toggle 行为。
+               */
+              setCommandExpanded(true);
+              setExpanded((value) => !value);
+            }}
           >
             {commandContent}
           </button>
         ) : (
-          <div className="hc-exec-shell-command">{commandContent}</div>
+          <div className="hc-exec-shell-command" data-command-expanded={commandExpanded || undefined}>
+            {commandContent}
+          </div>
         )}
         <ExecShellCopyButton
           className="hc-exec-shell-command-copy"
@@ -1776,7 +1815,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         status,
       };
     }
-    if (running) {
+    if (running && result == null) {
       return {
         kind: "pendingTool",
         id: item.id,
@@ -1885,6 +1924,85 @@ function autoReviewBody(record: ItemRecord): string {
     return "A carefully prompted reviewer agent timed out before Codex ran this request.";
   }
   return "A carefully prompted reviewer agent reviewed this request.";
+}
+
+function rawMcpToolOutputForItem(item: ThreadItem, running: boolean): { heading: string; text: string } | null {
+  if (itemType(item) !== "mcp-tool-call") return null;
+  const record = item as ItemRecord;
+  if (running && record.result == null) return null;
+  const server = mcpServerName(item) || "mcp";
+  const tool = mcpToolName(item) || "tool";
+  const invocation = recordObject(record.invocation);
+  const fallbackInvocation = {
+    server: stringField(record, "server") || server,
+    tool: stringField(record, "tool") || tool,
+    arguments: record.arguments ?? null,
+  };
+  return {
+    heading: `Raw ${server}.${tool} tool call output`,
+    text: formatJsonForRawMcpOutput({
+      callId: stringField(record, "callId") || record.id,
+      invocation: Object.keys(invocation).length > 0 ? invocation : fallbackInvocation,
+      durationMs: typeof record.durationMs === "number" && Number.isFinite(record.durationMs) ? record.durationMs : null,
+      result: record.result ?? null,
+    }),
+  };
+}
+
+function formatJsonForRawMcpOutput(value: unknown): string {
+  try {
+    return JSON.stringify(value, (_key, rawValue) => typeof rawValue === "bigint" ? rawValue.toString() : rawValue, 2) ?? "null";
+  } catch {
+    return formatUnknown(value);
+  }
+}
+
+function RawToolOutputButton({ heading, inlineApp = false, text }: { heading: string; inlineApp?: boolean; text: string }) {
+  const [open, setOpen] = useState(false);
+  if (!text.trim()) return null;
+  const dialog = open ? (
+    <div
+      className="hc-tool-raw-output-overlay"
+      onClick={() => setOpen(false)}
+    >
+      <section
+        aria-label={heading}
+        aria-modal="true"
+        className="hc-tool-raw-output-dialog"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header>
+          <h2>{heading}</h2>
+          <button
+            aria-label="Close raw tool call output"
+            type="button"
+            onClick={() => setOpen(false)}
+          >
+            <X size={15} />
+          </button>
+        </header>
+        <div className="hc-tool-raw-output-body">
+          <CodeBlock text={text} />
+        </div>
+      </section>
+    </div>
+  ) : null;
+
+  return (
+    <div className={`hc-tool-raw-output ${inlineApp ? "is-inline-app" : ""}`}>
+      <button
+        aria-label="Show raw tool call output"
+        className="hc-tool-raw-output-trigger"
+        title="Show raw tool call output"
+        type="button"
+        onClick={() => setOpen(true)}
+      >
+        <Braces size={13} />
+      </button>
+      {dialog && (typeof document === "undefined" ? dialog : createPortal(dialog, document.body))}
+    </div>
+  );
 }
 
 function LabeledCode({ label, text }: { label: string; text: string }) {

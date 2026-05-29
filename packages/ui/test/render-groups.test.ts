@@ -45,10 +45,11 @@ export default function runRenderGroupsTests(): void {
   attachesAutomationUpdatesToCompletedAssistantLikeCodexDesktop();
   keepsLiveTurnDiffOutOfTranscriptProjection();
   attachesTurnDiffToAssistantAfterLikeCodexDesktop();
+  labelsNamedMcpSourcesLikeCodexDesktop();
   attachesEndResourcesAndSuppressesCoveredTurnDiffLikeCodexDesktop();
   rendersEndResourcesWithoutAssistantLikeCodexDesktop();
   suppressesGeneratedImagesForPptxEndResourceWithoutAssistantLikeDesktop();
-  skipsEditedMarkdownEndResourceUnlessLinkedLikeCodexDesktop();
+  includesEditedMarkdownEndResourcesLikeCodexDesktop();
   parsesDesktopMarkdownEndResourceLinks();
   ignoresUnsafeWebsiteFallbacksLikeCodexDesktop();
   attachesReviewCommentsToAssistantAfterLikeCodexDesktop();
@@ -929,6 +930,68 @@ function groupsPendingMcpCallsSeparately(): void {
     assertEqual(pendingGroup.items.length, 2, "pending MCP group should retain both calls");
   } else {
     throw new Error("multiple pending MCP calls should render as tool activity");
+  }
+
+  const appPending = projectConversation([
+    {
+      type: "mcpToolCall",
+      id: "mcp-browser-pending-1",
+      server: "browser-use",
+      tool: "open",
+      status: "inProgress",
+      arguments: { url: "https://example.com/a" },
+      mcpAppResourceUri: "ui://browser/widget.html",
+      result: null,
+      error: null,
+    } as unknown as ThreadItem,
+    {
+      type: "mcpToolCall",
+      id: "mcp-browser-pending-2",
+      server: "browser-use",
+      tool: "click",
+      status: "inProgress",
+      arguments: { selector: "button" },
+      mcpAppResourceUri: "ui://browser/widget.html",
+      result: null,
+      error: null,
+    } as unknown as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertEqual(appPending.units.length, 1, "multiple pending MCP app calls should aggregate by Desktop source");
+  const appGroup = appPending.units[0];
+  if (appGroup?.kind !== "toolActivity") throw new Error("multiple pending MCP app calls should render as tool activity");
+  assertEqual(appGroup.summary.groupType, "pending-mcp-tool-calls", "pending MCP app group type");
+  assertEqual(appGroup.items.length, 2, "pending MCP app group should retain both calls");
+}
+
+function labelsNamedMcpSourcesLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "fileChange",
+      id: "file-change-browser",
+      status: "completed",
+      changes: [{ path: "report.html", kind: { type: "update" }, diff: "+html" }],
+    } as unknown as ThreadItem,
+    {
+      type: "mcpToolCall",
+      id: "mcp-browser-1",
+      server: "browser-use",
+      tool: "open",
+      status: "completed",
+      arguments: { url: "https://example.com" },
+      result: { content: [], structuredContent: null, _meta: null },
+      error: null,
+    } as unknown as ThreadItem,
+  ]);
+
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "toolActivity", "mixed file/MCP activity should render as one collapsed activity group");
+  if (unit?.kind === "toolActivity") {
+    assertEqual(
+      unit.summary.label,
+      "Edited 1 file, used the browser",
+      "Desktop named MCP source summaries should use Used {sources} instead of generic tool counts",
+    );
   }
 }
 
@@ -2091,7 +2154,7 @@ function suppressesGeneratedImagesForPptxEndResourceWithoutAssistantLikeDesktop(
   );
 }
 
-function skipsEditedMarkdownEndResourceUnlessLinkedLikeCodexDesktop(): void {
+function includesEditedMarkdownEndResourcesLikeCodexDesktop(): void {
   const editedOnly = projectConversation([
     {
       type: "userMessage",
@@ -2123,8 +2186,8 @@ function skipsEditedMarkdownEndResourceUnlessLinkedLikeCodexDesktop(): void {
   }
   assertEqual(
     editedAssistant.assistantAfter?.some((unit) => unit.kind === "assistantEndResources") ?? false,
-    false,
-    "Desktop does not create an end-resource card for a directly edited md/mdx file",
+    true,
+    "Desktop creates an end-resource card for a directly edited md/mdx file",
   );
 
   const linked = projectConversation([
@@ -2239,6 +2302,33 @@ function ignoresUnsafeWebsiteFallbacksLikeCodexDesktop(): void {
     assistant.assistantAfter?.some((unit) => unit.kind === "assistantEndResources") ?? false,
     false,
     "Desktop website fallback ignores URLs whose path/query/hash contains brackets or parentheses",
+  );
+
+  const externalProjection = projectConversation([
+    {
+      type: "userMessage",
+      id: "user-external-website",
+      _turnId: "turn-external-website",
+      content: [{ type: "text", text: "Preview a website" }],
+    } as unknown as ThreadItem,
+    {
+      type: "agentMessage",
+      id: "assistant-external-website",
+      _turnId: "turn-external-website",
+      _turnStatus: "completed",
+      text: "Preview http://example.com:3000/report when ready.",
+      phase: "final_answer",
+      completed: true,
+    } as ThreadItem,
+  ]);
+  const externalAssistant = externalProjection.units[1];
+  if (externalAssistant?.kind !== "message" || externalAssistant.role !== "assistant") {
+    throw new Error("external website assistant message should be present");
+  }
+  assertEqual(
+    externalAssistant.assistantAfter?.some((unit) => unit.kind === "assistantEndResources") ?? false,
+    false,
+    "Desktop website fallback is limited to localhost URLs",
   );
 }
 
@@ -3355,6 +3445,31 @@ function groupsWebSearchIntoActivityAndSources(): void {
   assertEqual(projection.sources[0]?.id, "webSearch", "web source id");
   assertEqual(projection.sources[0]?.title, "Web search", "web source title");
   assertEqual(projection.sources[0]?.meta ?? null, null, "web source meta should stay empty like Desktop");
+
+  const multiple = projectConversation([
+    {
+      type: "webSearch",
+      id: "web-search-multi-1",
+      query: "Codex Desktop web search",
+      status: "completed",
+    } as ThreadItem,
+    {
+      type: "webSearch",
+      id: "web-search-multi-2",
+      query: "HiCodex web search",
+      status: "completed",
+    } as ThreadItem,
+  ]);
+  const multipleUnit = multiple.units[0];
+  assertEqual(multipleUnit?.kind, "toolActivity", "adjacent web searches should render as tool activity");
+  if (multipleUnit?.kind === "toolActivity") {
+    assertEqual(
+      multipleUnit.summary.label,
+      "Searched web",
+      "Desktop completed web-search group header stays plain while rows carry per-query details",
+    );
+    assertEqual(multipleUnit.summary.counts.webSearches, 2, "web search count remains available for details/aggregation");
+  }
 }
 
 function groupsAdjacentWebSearchesLikeCodexDesktop(): void {

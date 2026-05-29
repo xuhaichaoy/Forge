@@ -121,6 +121,51 @@
   font-size: 11px;
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js _l (Browser row, byte 29184) —
+ * Codex 桌面版 Browser row 把 title 和 displayUrl 同一行 baseline-aligned 渲染:
+ *   wrapper: `flex min-w-0 items-baseline gap-2`
+ *   title:      `max-w-[60%] min-w-0 shrink truncate`
+ *   displayUrl: `max-w-[40%] min-w-0 shrink truncate text-sm text-token-text-secondary`
+ * active 时整 wrapper 包在 `loading-shimmer-pure-text`(由组件 className 拼接)。
+ */
+.hc-rail-card-browser-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.hc-rail-card-browser-title {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+  color: #27313d;
+}
+
+.hc-rail-card-browser-url {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.hc-rail-card-browser-url-inactive {
+  color: #6f716b;
+}
+
 .hc-rail-diff-stats {
   display: inline-flex;
   flex: 0 0 auto;
@@ -139,21 +184,50 @@
   color: #b23a37;
 }
 
+/*
+ * CODEX-REF: button-bq66r8jD.js — Codex `Pn` "Show N more" / "Show less" 调用:
+ *   color: "ghostMuted"  → text-token-muted-foreground + enabled:hover:bg-transparent
+ *                           + hover:text-token-foreground + border-transparent
+ *   size:  "default"     → px-2 py-0.5 text-sm leading-[18px]
+ *   shape: rounded-full
+ *   base:  flex items-center gap-1 border whitespace-nowrap focus:outline-none
+ *          disabled:cursor-not-allowed disabled:opacity-40
+ *   call-site overrides (byte 22555): `!px-0 !py-0 text-token-text-tertiary
+ *                                       hover:text-token-text-secondary`
+ *
+ * 严格对齐:
+ * - 字号 14px(text-sm)、line-height 18px、字重默认 normal
+ * - 颜色 tertiary,hover 变 secondary(call-site 覆盖 ghostMuted 默认色)
+ * - 圆角 9999px(rounded-full)、padding 0(!px-0 !py-0 覆盖 size default 的
+ *   px-2 py-0.5)、border-transparent
+ * - 背景 transparent、hover 仍 transparent(ghostMuted 的 enabled:hover:bg-transparent)
+ * - align-self: flex-start 让按钮宽度跟随内容(对齐 inline-flex 自然宽度)
+ */
 .hc-rail-more-button {
-  width: 100%;
-  border: 0;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
   background: transparent;
-  color: #2d5562;
+  color: #6f716b;
   cursor: pointer;
-  padding: 6px;
-  text-align: left;
-  font-size: 11px;
-  font-weight: 650;
+  padding: 0;
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: normal;
+  white-space: nowrap;
 }
 
 .hc-rail-more-button:hover {
-  background: #e4e1d7;
+  background: transparent;
+  color: #27313d;
+}
+
+.hc-rail-more-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .hc-approval-actions {
@@ -189,8 +263,16 @@
 /* CODEX-REF: /tmp/codex_asar_extract/webview/assets/check-lg-CRmuPmFE.js nt — Codex
  * Desktop renders every Git summary row inside a 28px (`h-7`) flex container with
  * a `min-w-0 flex-1` inner wrapper and a trailing `ms-auto shrink-0` slot. */
+/*
+ * CODEX-REF: summary-panel-row-C6RBBgqn.js 函数 `o` — Codex `es` row 基础容器
+ * className: `group/summary-panel-row relative isolate flex h-7 w-full min-w-0
+ * items-center gap-2 rounded-sm border-0 bg-transparent px-0 py-1 text-left`。
+ * `isolate` 创建独立 stacking context,让 hover halo `::before` 的 `z-index: -1`
+ * 不会被 row 外部 z-index 截获。
+ */
 .hc-summary-panel-row {
   position: relative;
+  isolation: isolate;
   display: flex;
   height: 28px;
   width: 100%;
@@ -245,7 +327,28 @@
   cursor: pointer;
 }
 
-.hc-summary-panel-row-interactive:hover {
+/*
+ * CODEX-REF: summary-panel-row-C6RBBgqn.js 函数 `o` — Codex `es` row hover halo
+ * 通过 `before:absolute before:inset-y-0 before:-inset-x-2 before:-z-10
+ * before:rounded-sm before:content-[''] hover:before:bg-token-list-hover-background`
+ * 实现:hover 时背景比 row 本身向左右各凸出 8 px(超出 row padding,落在 section
+ * px-4 内侧)。HiCodex 旧实现是行内 bg,无凸出。
+ *
+ * 用 ::before 伪元素严格对齐:`inset: 0 -8px`(等于 inset-y-0 + -inset-x-2),
+ * `z-index: -1`(背景在内容下方),`border-radius: 2px`(rounded-sm)。
+ */
+.hc-summary-panel-row-interactive::before {
+  content: "";
+  position: absolute;
+  inset: 0 -8px;
+  z-index: -1;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color 120ms ease;
+  pointer-events: none;
+}
+
+.hc-summary-panel-row-interactive:hover::before {
   background: rgba(34, 38, 43, 0.06);
 }
 

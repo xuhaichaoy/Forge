@@ -989,6 +989,14 @@
   max-width: min(220px, 28vw);
 }
 
+/*
+ * CODEX-REF: composer-D0cvMZjq.js — Reasoning trigger chip sits next to the
+ * intelligence (model) chip in composer footer; shows current effort label.
+ */
+.hc-composer-footer-reasoning {
+  max-width: min(140px, 18vw);
+}
+
 @container composer-external-footer (width <= 520px) {
   .hc-composer-footer-intelligence .hc-composer-footer-chip-label {
     display: none;
@@ -999,6 +1007,11 @@
     max-width: 28px;
     justify-content: center;
     padding-inline: 0;
+  }
+  /* On narrow footer, also collapse the reasoning chip to its short label area
+   * (Codex 截图 chip 也很紧凑)。 */
+  .hc-composer-footer-reasoning {
+    max-width: min(96px, 14vw);
   }
 }
 

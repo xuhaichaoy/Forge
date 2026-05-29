@@ -1125,7 +1125,7 @@ function threadGoalNotificationsProjectOntoUserMessages(): void {
       {
         id: "turn-1",
         status: "completed",
-        items: [userMessage("user-1", "Ship parity")],
+        items: [userMessage("user-1", "Ship parity"), agentMessage("agent-1", "Done.")],
       },
     ]),
   });
@@ -1140,9 +1140,35 @@ function threadGoalNotificationsProjectOntoUserMessages(): void {
   });
 
   let user = itemById(state, "thread-goal", "user-1") as Record<string, unknown>;
+  let assistant = itemById(state, "thread-goal", "agent-1") as Record<string, unknown>;
   const projectedGoal = user._threadGoal as Record<string, unknown>;
   assertEqual(projectedGoal.objective, "Close Desktop parity", "thread goal update should project onto the user message");
   assertEqual(user._threadGoalTurnId, "turn-1", "thread goal projection should preserve the source turn id");
+  assertEqual(
+    assistant._completedThreadGoal,
+    undefined,
+    "active thread goal update should not project a completed-goal chip onto the assistant message",
+  );
+
+  state = reduceNotification(state, {
+    method: "thread/goal/updated",
+    params: {
+      threadId: "thread-goal",
+      turnId: "turn-1",
+      goal: goalFixture({
+        threadId: "thread-goal",
+        objective: "Close Desktop parity",
+        status: "complete",
+        timeUsedSeconds: 42,
+        updatedAt: 2,
+      }),
+    },
+  });
+
+  assistant = itemById(state, "thread-goal", "agent-1") as Record<string, unknown>;
+  const completedGoal = assistant._completedThreadGoal as Record<string, unknown>;
+  assertEqual(completedGoal.objective, "Close Desktop parity", "completed thread goal should project onto the assistant message");
+  assertEqual(assistant._completedThreadGoalTurnId, "turn-1", "completed thread goal projection should preserve the source turn id");
 
   state = reduceNotification(state, {
     method: "thread/goal/cleared",
@@ -1150,8 +1176,19 @@ function threadGoalNotificationsProjectOntoUserMessages(): void {
   });
 
   user = itemById(state, "thread-goal", "user-1") as Record<string, unknown>;
+  assistant = itemById(state, "thread-goal", "agent-1") as Record<string, unknown>;
   assertEqual(user._threadGoal, undefined, "thread goal clear should remove the projected goal");
   assertEqual(user._threadGoalTurnId, undefined, "thread goal clear should remove the projected goal turn id");
+  assertEqual(
+    (assistant._completedThreadGoal as Record<string, unknown>).objective,
+    "Close Desktop parity",
+    "thread goal clear should preserve Desktop's assistant completed-goal projection",
+  );
+  assertEqual(
+    assistant._completedThreadGoalTurnId,
+    "turn-1",
+    "thread goal clear should preserve the completed-goal turn id",
+  );
 }
 
 function fsChangedNotificationsAreLogged(): void {
@@ -1180,6 +1217,7 @@ function hookNotificationsAreLoggedWithoutSyntheticTranscriptItems(): void {
         turnOrder: ["turn-hooks"],
         items: [
           { ...userMessage("user-hooks", "run hooks"), _turnId: "turn-hooks" },
+          { ...agentMessage("agent-hooks", "Hooks finished."), _turnId: "turn-hooks" },
         ] as AccumulatedThreadItem[],
       }),
     },
@@ -1201,9 +1239,13 @@ function hookNotificationsAreLoggedWithoutSyntheticTranscriptItems(): void {
   );
   assertDeepEqual(
     items(state, "thread-hooks").map((item) => item.id),
-    ["user-hooks"],
+    ["user-hooks", "agent-hooks"],
     "hook/started must not add a synthetic hook transcript item",
   );
+  let assistant = itemById(state, "thread-hooks", "agent-hooks") as Record<string, unknown>;
+  let hookStats = assistant.hookStats as Record<string, unknown>;
+  assertEqual(hookStats.count, 1, "hook/started should project hook stats onto the assistant message");
+  assertEqual(hookStats.errorCount, 0, "running hook should not count as a failed hook");
 
   state = reduceNotification(state, {
     method: "hook/completed",
@@ -1222,9 +1264,13 @@ function hookNotificationsAreLoggedWithoutSyntheticTranscriptItems(): void {
   );
   assertDeepEqual(
     items(state, "thread-hooks").map((item) => item.id),
-    ["user-hooks"],
+    ["user-hooks", "agent-hooks"],
     "hook/completed must not add a synthetic hook transcript item",
   );
+  assistant = itemById(state, "thread-hooks", "agent-hooks") as Record<string, unknown>;
+  hookStats = assistant.hookStats as Record<string, unknown>;
+  assertEqual(hookStats.count, 1, "hook/completed should update the existing hook run instead of duplicating it");
+  assertEqual(hookStats.errorCount, 1, "failed hook/completed should count as an error in assistant hook stats");
 }
 
 function clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes(): void {

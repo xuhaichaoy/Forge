@@ -6,12 +6,17 @@ import type { MouseEvent } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { Markdownish } from "./message-unit";
+import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
 export function PlanSummaryCard({
+  onSubmitTurnFeedback,
+  threadId,
   unit,
 }: {
+  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
+  threadId?: string | null;
   unit: ThreadItemUnit;
 }) {
   const content = planSummaryContent(unit.item);
@@ -77,6 +82,12 @@ export function PlanSummaryCard({
           <div className="hc-plan-summary-actions" aria-label="Plan actions">
             {canUseContentActions && (
               <>
+                <TurnRatingControls
+                  hasArtifacts={unit.hasArtifacts === true}
+                  onSubmit={onSubmitTurnFeedback}
+                  threadId={threadId}
+                  turnId={unit.turnId}
+                />
                 {/*
                  * Codex Desktop i18n:
                  *   localConversation.planSummary.openInNewWindow         = "Open"   (button label / aria-label)

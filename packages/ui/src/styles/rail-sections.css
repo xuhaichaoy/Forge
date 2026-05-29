@@ -7,24 +7,49 @@
  * sticky/z-index, 28px min-height, 8px header gap. Background is an opaque approximation
  * of the rail container so the sticky header masks scrolled-under content cleanly.
  */
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js — function Hl (right-rail
+ * section header) <header> className:
+ *   `sticky top-0 z-10 flex h-7 w-full min-w-0 items-center justify-start
+ *    gap-2 bg-token-dropdown-background ps-4 pe-2 pb-0.5 text-base
+ *    text-token-text-tertiary`
+ * 严格对齐：z-10、h-7 = height: 28px (固定，不是 min-height)、min-width: 0、gap-2
+ * (8px)、ps-4 pe-2 pb-0.5、**无 margin-bottom**（sections 间距由父 `flex flex-col
+ * gap-3` 提供，Codex Hl 自身不带 margin）。
+ *
+ * `justify-content: space-between` 偏离 Codex 的 `justify-start`。Codex 通过
+ * 把 after slot 包一层 `flex min-w-0 flex-1`（`v` 变量）让它占满剩余空间，配合
+ * `justify-start` 实现 toggle 紧贴左、after 紧贴右。HiCodex 当前 JSX 直接平铺
+ * headerAction，未引入 flex-1 包装，所以保留 space-between 等价方案。如果以后
+ * 想完全对齐 JSX 层（headerAction 包 flex-1），再把这里改为 flex-start。
+ */
 .hc-rail-section-header {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 10;
   display: flex;
   width: 100%;
-  min-height: 28px;
+  height: 28px;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  /* Codex `Jd` :1666 — `ps-4 pe-2 pb-0.5` (16px left, 8px right, 2px bottom).
-   * Top margin removed in favor of header padding-bottom for stickier sticky behavior. */
   padding: 0 8px 2px 16px;
-  margin: 0 0 9px;
   background: #fffdfa;
   color: #5c5e59;
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js Hl — toggle button className:
+ *   `group/section-toggle inline-flex min-w-0 shrink-0 cursor-interaction
+ *    items-center gap-1.5 rounded-md py-0.5 pr-1 text-left
+ *    focus-visible:outline-2 focus-visible:outline-offset-2`
+ * 严格对齐：gap-1.5 (6px) ✅、py-0.5 (padding-y: 2px)、pr-1 (padding-right: 4px)、
+ * rounded-md (border-radius: 6px)、text-left ✅、items-center ✅。
+ * shrink-0 vs HiCodex `flex: 1 1 auto` 保留偏差（与 header `justify-content:
+ * space-between` 配套——HiCodex 用 toggle 撑开把 headerAction 推到右边；Codex 用
+ * after slot 包 `flex min-w-0 flex-1` 实现等价 layout）。
+ */
 .hc-rail-section-toggle {
   display: inline-flex;
   min-width: 0;
@@ -32,8 +57,9 @@
   align-items: center;
   gap: 6px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
-  padding: 0;
+  padding: 2px 4px 2px 0;
   color: inherit;
   font-size: 12px;
   font: inherit;
@@ -68,6 +94,33 @@
   background: transparent;
   color: #6f716b;
   cursor: pointer;
+}
+
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js jl + Ml (byte 44480 + 45117) —
+ * "Choose environment" 按钮容器:`h-7 w-7`(28×28 px)、`rounded-sm`(2 px)、
+ * `bg-transparent`、`text-token-text-tertiary`、hover-bg-list-hover。HiCodex 占位
+ * 仅 disabled 视觉状态,无 dropdown / no-op 点击。
+ */
+.hc-rail-environment-selector {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: #6f716b;
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hc-rail-environment-selector:not(:disabled):hover {
+  background: rgba(34, 38, 43, 0.06);
+  color: #27313d;
 }
 
 .hc-rail-section-action:hover:not(:disabled) {
@@ -107,14 +160,33 @@
   white-space: nowrap;
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js Hl chevron className —
+ *   `icon-2xs shrink-0 transition-transform
+ *    group-hover/section-toggle:opacity-100 group-focus-visible/section-toggle:opacity-100
+ *    {expanded ? 'opacity-0' : 'opacity-100'}
+ *    {expanded ? 'rotate-0' : '-rotate-90'}`
+ *
+ * 严格对齐:
+ * - 折叠态(data-expanded 缺):opacity 1,chevron 指向 right(HiCodex ChevronRight 默认方向)
+ * - 展开态(data-expanded="true"):opacity 0(隐藏)+ rotate 90deg(指向 down)
+ * - hover / focus-visible toggle 时:opacity 1(恢复显示)
+ */
 .hc-rail-section-chevron {
   flex: 0 0 auto;
   color: #7c7e78;
-  transition: transform 120ms ease;
+  opacity: 1;
+  transition: transform 120ms ease, opacity 120ms ease;
 }
 
 .hc-rail-section-chevron[data-expanded="true"] {
   transform: rotate(90deg);
+  opacity: 0;
+}
+
+.hc-rail-section-toggle:hover .hc-rail-section-chevron,
+.hc-rail-section-toggle:focus-visible .hc-rail-section-chevron {
+  opacity: 1;
 }
 
 .hc-rail-section-title {
@@ -150,6 +222,47 @@
  *   <div className="flex flex-col gap-px px-4">{children}</div>
  * 1px gap between adjacent rail rows + 16px horizontal padding (D4 alignment).
  */
+/*
+ * CODEX-REF: local-conversation-thread-CecHj6JI.js Vl (byte ~53727) — Codex 用
+ * framer-motion 折叠动画:`initial/exit {height:0, opacity:0, marginTop:0}` →
+ * `animate {height:"auto", opacity:1, marginTop:2}`, transition `da = {duration:
+ * 0.5, ease: [.19, 1, .22, 1]}`,wrapper className `relative z-0 overflow-hidden`。
+ *
+ * 因 HiCodex 不依赖 framer-motion,这里用 CSS grid-rows 1fr trick 等价实现
+ * height-auto 动画:外层 grid `grid-template-rows: 0fr → 1fr`,内层 overflow-hidden
+ * + min-height: 0。配合 opacity 和 margin-top transition 完成对齐。
+ */
+.hc-rail-section-collapsible {
+  position: relative;
+  z-index: 0;
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    grid-template-rows 500ms cubic-bezier(0.19, 1, 0.22, 1),
+    opacity 500ms cubic-bezier(0.19, 1, 0.22, 1),
+    margin-top 500ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.hc-rail-section-collapsible[data-expanded="true"] {
+  grid-template-rows: 1fr;
+  margin-top: 2px;
+  opacity: 1;
+}
+
+.hc-rail-section-collapsible-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-rail-section-collapsible {
+    transition: none;
+  }
+}
+
 .hc-rail-section-content {
   display: flex;
   flex-direction: column;

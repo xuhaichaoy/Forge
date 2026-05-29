@@ -341,6 +341,131 @@
   border-top: 1px solid #dedbd1;
 }
 
+/*
+ * codex: local-conversation-thread-Kn0WAsVa#Ud (L6204-6378) — Fork-from-older-
+ * turn confirmation dialog. Codex Desktop renders this as a `<ni size="compact">`
+ * dialog with a header (icon + title + subtitle), a `flex flex-col gap-1`
+ * options list (one button per fork target), and a secondary Cancel button.
+ */
+.hc-fork-older-turn-dialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.hc-fork-older-turn-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #1f2329;
+}
+
+.hc-fork-older-turn-icon {
+  color: #6f716b;
+}
+
+.hc-fork-older-turn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hc-fork-older-turn-subtitle {
+  margin: 0;
+  color: #6f716b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hc-fork-older-turn-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hc-fork-older-turn-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d7d1c3;
+  border-radius: 8px;
+  background: #fffdfa;
+  color: #252b31;
+  cursor: pointer;
+  text-align: left;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+.hc-fork-older-turn-option:hover:not(:disabled),
+.hc-fork-older-turn-option:focus-visible:not(:disabled) {
+  border-color: #9fb29f;
+  background: #f3f8f1;
+  outline: none;
+}
+
+.hc-fork-older-turn-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hc-fork-older-turn-option-icon {
+  flex-shrink: 0;
+  color: #6f716b;
+}
+
+.hc-fork-older-turn-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hc-fork-older-turn-option-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2329;
+}
+
+.hc-fork-older-turn-option-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6f716b;
+}
+
+.hc-fork-older-turn-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid #dedbd1;
+}
+
+.hc-fork-older-turn-cancel {
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid #d7d1c3;
+  border-radius: 7px;
+  background: transparent;
+  color: #252b31;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+.hc-fork-older-turn-cancel:hover:not(:disabled),
+.hc-fork-older-turn-cancel:focus-visible:not(:disabled) {
+  background: #f3f1ea;
+  border-color: #c4bdac;
+  outline: none;
+}
+
+.hc-fork-older-turn-cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .hc-mcp-follow-up-dialog {
   width: min(500px, calc(100vw - 32px));
 }
@@ -495,6 +620,7 @@
 
 .hc-command-panel-list {
   display: grid;
+  align-content: start;
   gap: 8px;
   min-height: 0;
   overflow: auto;
@@ -513,7 +639,140 @@
    Panels / Navigation / Workspace / Skills / Configure / App). */
 .hc-command-panel-section {
   display: grid;
+  align-content: start;
   gap: 8px;
+}
+
+.hc-settings-route-placeholder {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 14px;
+  overflow: auto;
+  padding: 18px;
+}
+
+.hc-settings-route-placeholder-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: 560px;
+  border: 1px solid #e1dccf;
+  border-radius: 8px;
+  background: #fffdfa;
+  padding: 14px;
+}
+
+.hc-settings-route-placeholder-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e2ded2;
+  border-radius: 7px;
+  background: #f4f2ec;
+  color: #4f544d;
+}
+
+.hc-settings-route-placeholder-copy {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.hc-settings-route-placeholder-copy > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.hc-settings-route-placeholder-copy h2 {
+  margin: 0;
+  overflow: hidden;
+  color: #222823;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-settings-route-placeholder-copy span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #ece9df;
+  color: #4b5651;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.hc-settings-route-placeholder-copy p {
+  margin: 0;
+  max-width: 460px;
+  color: #6a6e66;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.hc-settings-route-meta {
+  display: grid;
+  max-width: 560px;
+  margin: 0;
+  border: 1px solid #e4dfd3;
+  border-radius: 8px;
+  background: #faf9f5;
+}
+
+.hc-settings-route-meta > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+}
+
+.hc-settings-route-meta dt {
+  color: #777a72;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hc-settings-route-meta dd {
+  margin: 0;
+  overflow: hidden;
+  color: #272c27;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-settings-route-evidence {
+  max-width: 560px;
+  border: 1px solid #e4dfd3;
+  border-radius: 8px;
+  background: #faf9f5;
+  color: #5f625d;
+  font-size: 12px;
+}
+
+.hc-settings-route-evidence summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 700;
+}
+
+.hc-settings-route-evidence ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0 12px 12px 28px;
+  line-height: 1.45;
+  word-break: break-word;
 }
 
 .hc-command-panel-section-title {
@@ -1704,4 +1963,270 @@ textarea.hc-mcp-tool-control {
 .hc-appearance-number-input-unit {
   font-size: 12px;
   color: var(--hc-text-secondary);
+}
+
+/* =========================================================
+ * Model settings form
+ * =========================================================
+ *
+ * Two-column fieldset layout with section dividers.
+ * Fieldsets use the "legend float" trick to bypass the
+ * browser's default legend-at-border positioning.
+ */
+
+.hc-model-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* section card — border-bottom acts as section divider */
+.hc-model-fieldset {
+  min-width: 0; /* browser default: min-width: min-content */
+  border: 0;
+  border-bottom: 1px solid #ece8dc;
+  padding: 16px 14px 18px;
+  margin: 0;
+}
+
+.hc-model-fieldset:last-child {
+  border-bottom: 0;
+  padding-bottom: 6px;
+}
+
+/* Float trick: pulls legend into normal flow so subsequent
+ * content (help text, grid) renders below it, not overlapping
+ * the fieldset's native (now invisible) border. */
+.hc-model-fieldset-legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 4px;
+  color: #222823;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hc-model-fieldset-help {
+  clear: both; /* clear legend float */
+  margin: 0 0 12px;
+  color: #6f716b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hc-model-fieldset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+/* ---------- individual field (label wrapper) ---------- */
+
+.hc-model-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+/* spans both columns */
+.hc-model-field-wide {
+  grid-column: 1 / -1;
+}
+
+.hc-model-field-label {
+  color: #63665f;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hc-model-field-hint {
+  color: #8a8c84;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* direct-child controls */
+.hc-model-field > input,
+.hc-model-field > select,
+.hc-model-field > textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cfcabe;
+  border-radius: 7px;
+  background: #f8f6f1;
+  color: #222823;
+  font: inherit;
+  font-size: 13px;
+  padding: 0 9px;
+}
+
+.hc-model-field > input:focus,
+.hc-model-field > select:focus,
+.hc-model-field > textarea:focus {
+  border-color: #9fb29f;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(159, 178, 159, 0.14);
+}
+
+.hc-model-field > input:disabled,
+.hc-model-field > select:disabled {
+  background: #f1ede6;
+  color: #9a9c94;
+  cursor: not-allowed;
+}
+
+/* select: custom chevron, no native arrow */
+.hc-model-field > select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236f716b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+
+/* hide number spinners (temperature field) */
+.hc-model-field input[type="number"]::-webkit-inner-spin-button,
+.hc-model-field input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+.hc-model-field input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.hc-model-field > textarea {
+  padding: 8px 9px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+/* ---------- input + action button row (API Key) ---------- */
+
+.hc-model-field-input-row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #cfcabe;
+  border-radius: 7px;
+  background: #f8f6f1;
+  overflow: hidden;
+}
+
+.hc-model-field-input-row:focus-within {
+  border-color: #9fb29f;
+  box-shadow: 0 0 0 2px rgba(159, 178, 159, 0.14);
+}
+
+.hc-model-field-input-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  padding: 0 9px;
+  color: #222823;
+  font: inherit;
+  font-size: 13px;
+}
+
+.hc-model-field-input-action {
+  flex: 0 0 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-left: 1px solid #e0dcd2;
+  background: transparent;
+  color: #7a7c77;
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease;
+}
+
+.hc-model-field-input-action:hover {
+  background: #ece9df;
+  color: #2a2d2b;
+}
+
+/* ---------- toggle switch (image input field) ---------- */
+
+.hc-model-field-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.hc-model-toggle {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* visually hidden but keyboard-accessible checkbox */
+.hc-model-toggle input[type="checkbox"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* pill track */
+.hc-model-toggle-track {
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: #d0cbbe;
+  margin-top: 1px;
+  pointer-events: none;
+  transition: background 160ms ease;
+}
+
+.hc-model-toggle input:checked ~ .hc-model-toggle-track {
+  background: #4a8a6d;
+}
+
+.hc-model-toggle input:focus-visible ~ .hc-model-toggle-track {
+  outline: 2px solid rgba(74, 138, 109, 0.5);
+  outline-offset: 2px;
+}
+
+/* sliding thumb */
+.hc-model-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+  transition: left 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hc-model-toggle input:checked ~ .hc-model-toggle-track .hc-model-toggle-thumb {
+  left: 16px;
+}
+
+/* label + hint text beside the toggle */
+.hc-model-toggle-text {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
 }
