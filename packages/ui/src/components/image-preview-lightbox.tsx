@@ -220,15 +220,21 @@ export function ImagePreviewLightbox({
         else stepZoom(zoomCommand.delta);
       } else if (event.key === "Escape") {
         // codex: image-preview-shortcuts-*.js — Esc dismisses the lightbox.
+        // Codex's dialog suppresses the event (preventDefault + stopPropagation)
+        // so closing the lightbox doesn't also fire a parent/global Esc handler.
+        event.preventDefault();
+        event.stopPropagation();
         if (isControlled) onClose?.();
         else setOpenInternal(false);
       } else if (event.key === "ArrowLeft" && onPreviousImage) {
         // codex: image-preview-shortcuts-*.js — ← steps to previous image.
         event.preventDefault();
+        event.stopPropagation();
         onPreviousImage();
       } else if (event.key === "ArrowRight" && onNextImage) {
         // codex: image-preview-shortcuts-*.js — → steps to next image.
         event.preventDefault();
+        event.stopPropagation();
         onNextImage();
       }
     };
@@ -422,7 +428,8 @@ function renderModalLayer({
             type="button"
             onClick={onClose}
           >
-            <X aria-hidden size={17} />
+            {/* codex image-preview-dialog close = icon-sm (18px) */}
+            <X aria-hidden size={18} />
           </button>
         </div>
         <div
@@ -445,7 +452,8 @@ function renderModalLayer({
               aria-label="Previous image"
               onClick={onPreviousImage}
             >
-              <ChevronLeft aria-hidden size={20} />
+              {/* codex image-preview-dialog nav = icon-sm (18px) */}
+              <ChevronLeft aria-hidden size={18} />
             </button>
           )}
           <img
@@ -464,7 +472,7 @@ function renderModalLayer({
               aria-label="Next image"
               onClick={onNextImage}
             >
-              <ChevronRight aria-hidden size={20} />
+              <ChevronRight aria-hidden size={18} />
             </button>
           )}
         </div>

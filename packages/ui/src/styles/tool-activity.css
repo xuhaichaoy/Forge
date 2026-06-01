@@ -270,7 +270,7 @@ button.hc-user-input-response-summary:hover {
   flex: none;
   color: #9a9488;
   opacity: 0;
-  transition: opacity 160ms ease, transform 180ms ease;
+  transition: opacity 300ms ease, transform 300ms ease;
 }
 
 .hc-user-input-response-event:hover .hc-user-input-response-summary svg,
@@ -359,7 +359,7 @@ button.hc-error-event-summary:hover {
   flex: none;
   color: #9a9488;
   opacity: 0;
-  transition: opacity 160ms ease, transform 180ms ease;
+  transition: opacity 300ms ease, transform 300ms ease;
 }
 
 .hc-error-event:hover .hc-error-event-summary svg,
@@ -407,10 +407,18 @@ button.hc-error-event-summary:hover {
 .hc-tool-block.activity[data-group-type="reasoning"] .hc-tool-summary {
   gap: 5px;
   color: #6f716b;
+  /* codex live "Thinking" row (qD): `py-0` + label `leading-[1.5]`, NO clickable-row
+     min-height — an intrinsic ~20px row, not the 30px shared tool-summary height. */
+  min-height: 0;
+  padding: 0;
+  line-height: 1.5;
 }
 
 .hc-reasoning-summary .hc-tool-summary-label {
-  font-weight: 560;
+  /* codex live "Thinking" shimmer carries no font-weight class → inherits the body
+     weight --vscode-font-weight:430 (NOT 560 — that was ported from the dead reasoning
+     heading). */
+  font-weight: 430;
 }
 
 .hc-thinking-shimmer-text {
@@ -583,10 +591,10 @@ button.hc-error-event-summary:hover {
   color: #a4a79f;
   opacity: 0;
   transform: rotate(0deg);
-  transition:
-    color var(--hc-codex-transition),
-    opacity var(--hc-codex-transition),
-    transform var(--hc-codex-transition);
+  /* codex: summary/disclosure chevron = `transition-[opacity,rotate] duration-300`
+     (the shared 500ms --hc-codex-transition was slower than Codex; color isn't
+     hover-animated here, so opacity+transform at 300ms matches). */
+  transition: opacity 300ms ease, transform 300ms ease;
 }
 
 .hc-pending-mcp-tool-calls-header:hover .hc-pending-mcp-tool-calls-chevron,
@@ -655,7 +663,7 @@ button.hc-error-event-summary:hover {
 .hc-worked-for-divider {
   height: 1px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 8px; /* Codex: divider flex-col gap-2 = 8px between label and rule */
   background: rgba(34, 38, 43, 0.12);
 }
 
@@ -843,11 +851,21 @@ button.hc-error-event-summary:hover {
 }
 
 .hc-turn-diff-added {
-  color: #168a55;
+  /* codex: text-token-charts-green → --color-accent-green → --green-500 (light) / --green-300 (dark) */
+  color: #00a240;
 }
 
 .hc-turn-diff-removed {
-  color: #b84645;
+  /* codex: text-token-charts-red → --color-accent-red → --red-500 (light) / --red-300 (dark) */
+  color: #e02e2a;
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-added {
+  color: #40c977;
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-removed {
+  color: #ff6764;
 }
 
 .hc-turn-diff-body {
@@ -978,7 +996,9 @@ button.hc-error-event-summary:hover {
   width: 100%;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  /* codex: file-row button uses px-[var(--turn-diff-row-padding-x)] py-[var(--turn-diff-row-padding-y)]
+     where the bundle defines x=.75rem (12px), y=.25rem (4px) in app-main CSS. */
+  padding: 4px 12px;
   border: 0;
   background: transparent;
   color: #4f5855;
@@ -991,6 +1011,13 @@ button.hc-error-event-summary:hover {
 
 .hc-turn-diff-file-row:hover:not(:disabled) {
   background: rgba(34, 38, 43, 0.04);
+}
+
+/* codex: hover is bg-token-list-hover-background/60 (theme-aware). HiCodex's light
+   0.04 ≈ that in light mode, but the hardcoded dark rgba is invisible on a dark
+   surface — add the light-overlay dark override, matching the rail/trigger pattern. */
+.hc-app[data-theme="dark"] .hc-turn-diff-file-row:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .hc-turn-diff-file-row:disabled {
@@ -1057,12 +1084,13 @@ button.hc-error-event-summary:hover {
 /* "Show N more files" / "Collapse files" footer ---------------------------- */
 
 .hc-turn-diff-expand-files {
-  /* codex: expand-files button `flex h-9 w-full items-center px-3 text-left` */
+  /* codex: expand-files button `flex h-9 w-full items-center px-3 text-left` —
+     px-3 = 12px horizontal (the height is governed by h-9 ≈ the 8px vertical here). */
   display: inline-flex;
   width: 100%;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 0;
   border-top: 1px solid #ddd9ce;
   background: transparent;
@@ -1181,11 +1209,21 @@ button.hc-error-event-summary:hover {
 }
 
 .hc-tool-summary-diff-added {
-  color: #168a55;
+  /* codex: text-token-charts-green → --green-500 (light) / --green-300 (dark) */
+  color: #00a240;
 }
 
 .hc-tool-summary-diff-removed {
-  color: #b84645;
+  /* codex: text-token-charts-red → --red-500 (light) / --red-300 (dark) */
+  color: #e02e2a;
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary-diff-added {
+  color: #40c977;
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary-diff-removed {
+  color: #ff6764;
 }
 
 .hc-tool-block.activity.is-running .hc-tool-summary-icon {
@@ -1242,7 +1280,8 @@ button.hc-tool-summary:hover .hc-tool-summary-label,
 .hc-tool-summary svg:last-child {
   color: #7a7d76;
   opacity: 0;
-  transition: opacity 120ms ease, transform 160ms ease;
+  /* codex: summary/disclosure chevron = `transition-[opacity,rotate] duration-300` */
+  transition: opacity 300ms ease, transform 300ms ease;
 }
 
 button.hc-tool-summary:hover svg:last-child,
@@ -1305,7 +1344,8 @@ button.hc-tool-summary:hover svg:last-child,
   flex: 0 0 auto;
   color: #7a7d76;
   opacity: 0;
-  transition: opacity 120ms ease, transform 160ms ease;
+  /* codex: summary/disclosure chevron = `transition-[opacity,rotate] duration-300` */
+  transition: opacity 300ms ease, transform 300ms ease;
 }
 
 .hc-multi-agent-action-header:hover .hc-multi-agent-action-chevron,
@@ -1510,17 +1550,27 @@ button.hc-tool-summary:hover svg:last-child,
   max-width: 100%;
   overflow: hidden;
   border: 1px solid #dedbd1;
-  border-radius: 8px;
+  border-radius: 10px; /* Codex: exec card rounded-lg --radius-lg .625rem = 10px */
   background: #f3f1eb;
   color: #27313d;
 }
 
-.hc-exec-shell-title {
-  padding: 8px 34px 0 10px;
-  color: #636861;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
+/*
+ * codex Nv embedded header `he`: a muted shell-TYPE label row above the command
+ * (`flex items-center justify-between gap-2 px-2 py-1 font-sans text-sm 12px
+ * text-token-description-foreground select-none`). Horizontal inset matches
+ * HiCodex's 10px command padding (Codex uses 8px); font-sans = inherit (the
+ * command run is the mono one, not this header).
+ */
+.hc-exec-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px;
+  color: var(--hc-text-secondary);
+  font-size: 12px;
+  user-select: none;
 }
 
 .hc-exec-shell-command-row {
@@ -1557,11 +1607,6 @@ button.hc-tool-summary:hover svg:last-child,
   color: #27313d;
 }
 
-.hc-exec-shell-command span {
-  flex: 0 0 auto;
-  color: #74776f;
-}
-
 /*
  * CODEX-REF: local-conversation-thread-*.js — embedded variant（即 thread 内
  * ExecShell 卡片调用方）渲染命令文本的 className:
@@ -1593,41 +1638,19 @@ button.hc-tool-summary:hover svg:last-child,
   overflow: visible;
 }
 
-.hc-exec-shell-command svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: #7a7d76;
-  opacity: 0;
-  transition: opacity 120ms ease, transform 160ms ease;
-}
-
-.hc-exec-shell-command:hover svg,
-.hc-exec-shell-command svg.is-open {
-  opacity: 1;
-}
-
-.hc-exec-shell-command svg.is-open {
-  transform: rotate(90deg);
-}
-
-.hc-exec-shell-cwd {
-  border: 0;
-  padding: 4px 10px 0 27px;
-  color: #74776f;
-  font-size: 11px;
-}
-
 .hc-exec-shell-output-wrap {
   position: relative;
   min-width: 0;
 }
 
 .hc-exec-shell-output {
+  /* codex embedded: output block ae = `…max-h-[140px] overflow-x-auto overflow-y-auto…` */
   max-height: 140px;
   margin: 4px 0 0;
   border: 0;
   background: transparent;
   padding: 8px 10px;
+  overflow: auto;
   color: #626b68;
 }
 
@@ -1653,7 +1676,6 @@ button.hc-tool-summary:hover svg:last-child,
   color: #27313d;
 }
 
-.hc-exec-shell:hover .hc-exec-shell-copy-all,
 .hc-exec-shell-command-row:hover .hc-exec-shell-command-copy,
 .hc-exec-shell-output-wrap:hover .hc-exec-shell-output-copy,
 .hc-exec-shell-copy-button:focus-visible,
@@ -1661,19 +1683,15 @@ button.hc-tool-summary:hover svg:last-child,
   opacity: 1;
 }
 
-.hc-exec-shell-copy-all {
-  top: 6px;
-  right: 8px;
-}
-
+/* codex: command copy button `absolute top-0 right-0`; output copy `absolute top-0 right-2.5` (10px). */
 .hc-exec-shell-command-copy {
-  top: 1px;
-  right: 6px;
+  top: 0;
+  right: 0;
 }
 
 .hc-exec-shell-output-copy {
-  top: 8px;
-  right: 8px;
+  top: 0;
+  right: 10px;
 }
 
 .hc-exec-shell-footer {
@@ -1683,28 +1701,19 @@ button.hc-tool-summary:hover svg:last-child,
   gap: 4px;
   min-height: 22px;
   border: 0;
-  padding: 2px 10px 7px;
+  padding: 2px 10px 4px; /* Codex: px-2.5 pt-0.5 pb-1 = 10px/2px/4px */
   color: #74776f;
-  font-size: 11px;
+  font-size: 14px; /* Codex footer text-size-chat --text-base = 14px */
 }
 
-.hc-exec-shell-footer[data-exec-status="success"] {
-  color: #267348;
-}
-
-.hc-exec-shell-footer[data-exec-status="failed"],
-.hc-exec-footer-icon-error {
-  color: #9b3328;
-}
-
-.hc-exec-shell-footer[data-exec-status="interrupted"],
-.hc-exec-footer-icon-warn {
-  color: #9a6a18;
-}
-
-.hc-exec-footer-icon-success {
-  color: #267348;
-}
+/*
+ * codex `zv` exec footer: every terminal state (success / failed / interrupted)
+ * uses the SAME muted wrapper color (`text-token-input-placeholder-foreground`)
+ * — no green/red/amber per-status text — and the success check inherits that
+ * muted gray (its `icon-xxs` carries size only, no color). So we keep the single
+ * base `.hc-exec-shell-footer` color above and intentionally do NOT re-introduce
+ * per-status text/icon colors here.
+ */
 
 .hc-tool-detail-stack {
   display: grid;
@@ -2103,6 +2112,104 @@ button.hc-tool-summary:hover svg:last-child,
   border: 1px solid var(--hc-border-subtle);
 }
 
+/*
+ * codex: an MCP tool error renders inside the shared alert (alert-CoBPbdcu `yc`)
+ * at level="danger" fullWidth — a danger-tinted callout, NOT a "Error"-labeled
+ * code block. Root: `inline-flex items-start gap-1.5 rounded-2xl px-2 py-2
+ * text-base leading-[1.4] shadow-lg border text-token-foreground`; danger adds
+ * `border-token-input-validation-error-border` (→ --color-border-error) +
+ * `bg-token-input-validation-error-background` (→ --color-background-status-error).
+ * Resolved — light: bg --red-50 #ffd9d9 / border #e02e2a26 (red 15%); dark: bg
+ * --red-900 #4d100e / border #fa423e66 (red 40%). Body: `text-size-chat` (13px,
+ * sans — NOT mono) `max-h-48` (12rem) `overflow-auto whitespace-pre-wrap`.
+ */
+.hc-tool-error-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid #e02e2a26;
+  border-radius: var(--hc-radius-2xl);
+  corner-shape: superellipse(1.5);
+  background: #ffd9d9;
+  padding: 8px;
+  font-size: var(--text-base);
+  line-height: 1.4;
+  color: var(--hc-text-primary);
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.1);
+}
+
+.hc-tool-error-callout-body {
+  flex: 1 1 0%;
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--codex-chat-font-size, 13px);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-error-callout {
+  border-color: #fa423e66;
+  background: #4d100e;
+}
+
+/*
+ * codex: local-conversation-thread-*.js — MCP text content blocks render in a
+ * code-style card (rounded-lg border + code-block background) with a sticky
+ * `plaintext` header (codex.mcpTool.textBlock.plaintextTitle) above the body.
+ * Used by McpPlaintextCard; distinct from the bare .hc-mcp-result-text-body
+ * fallback above, which stays for generic non-block tool result text.
+ */
+.hc-mcp-result-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 10px; /* Codex: rounded-lg --radius-lg .625rem = 10px */
+  background: var(--hc-surface-app, #f6f5f1);
+}
+
+.hc-mcp-result-text-header {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px; /* Codex: py-1 ps-2 pe-2 */
+  background: inherit;
+  color: var(--hc-text-secondary, #6b6f67);
+  font-size: 12px; /* Codex: text-sm */
+  line-height: 1.4;
+  user-select: none;
+}
+
+.hc-mcp-result-text-title {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hc-mcp-result-text-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.hc-mcp-plaintext-body {
+  max-height: 12rem; /* Codex: max-h-48 */
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 4px 8px 8px;
+  font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", monospace);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--hc-text-primary);
+}
+
 .hc-mcp-result-resource-link-text {
   color: var(--hc-text-secondary, #6f716b);
   word-break: break-word;
@@ -2356,4 +2463,387 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-preview-lightbox-nav--next {
   right: 16px;
+}
+
+
+/* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
+/* Dark theme overrides for hardcoded light-only text, border, and surface colors */
+
+.hc-app[data-theme="dark"] .hc-status-event {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automation-update-event {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-input-response-event {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] button.hc-user-input-response-summary:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-input-response-summary svg {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-input-response-question {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-input-response-answer {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-error-event {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] button.hc-error-event-summary:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-error-event-summary svg {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-error-event-details {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="reasoning"] {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="reasoning"] .hc-tool-summary {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-reasoning-details .hc-markdown {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="exploration"] {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-pending-mcp-tool-calls-header {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-pending-mcp-tool-calls-header:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-pending-mcp-tool-calls-source-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-pending-mcp-tool-calls-chevron {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-pending-mcp-tool-calls-body {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-toggle {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-toggle:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-toggle > svg {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-toggle > svg:last-child {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-title.is-muted {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-progress {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-progress-title {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-review,
+.hc-app[data-theme="dark"] .hc-turn-diff-patch-action {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-review:hover,
+.hc-app[data-theme="dark"] .hc-turn-diff-patch-action:hover:not(:disabled) {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-patch-action:disabled {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-file {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+/* Dark: the diff card CONTAINER + its internal hairlines were hardcoded light
+   (#fffdfa bg / #ddd9ce / #e7e3da / #faf9f5) with no dark override — on dark that
+   left a white card with (now-light) text invisible on it. Caught via headless
+   screenshot. Map to the dark card surface + border tokens. */
+.hc-app[data-theme="dark"] .hc-turn-diff {
+  background: var(--hc-surface-main);
+  border-color: var(--hc-border-default);
+}
+.hc-app[data-theme="dark"] .hc-turn-diff-files {
+  border-bottom-color: var(--hc-border-default);
+}
+.hc-app[data-theme="dark"] .hc-turn-diff-expand-files {
+  border-top-color: var(--hc-border-default);
+}
+.hc-app[data-theme="dark"] .hc-turn-diff-file + .hc-turn-diff-file {
+  border-top-color: var(--hc-border-default);
+}
+.hc-app[data-theme="dark"] .hc-turn-diff-file-inline {
+  border-top-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+}
+
+/* Dark: more containers that hardcoded a light bg (#fffdfa/#fff) with no dark
+   override — same white-card class as the diff card, found by the screenshot pass. */
+.hc-app[data-theme="dark"] .hc-tool-block:not(.activity) {
+  background: var(--hc-surface-main);
+}
+.hc-app[data-theme="dark"] .hc-tool-raw-output-dialog {
+  background: var(--hc-surface-panel);
+  border-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-file-row {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-file-row > svg:first-child {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-file-too-large {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-file-review {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-file-review:hover,
+.hc-app[data-theme="dark"] .hc-turn-diff-file-review:focus-visible {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-expand-files {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-expand-files:hover {
+  background-color: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-diff-expand-files-chevron {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] button.hc-tool-summary:not(:disabled):hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] button.hc-tool-summary:not(:disabled):hover .hc-tool-summary-icon,
+.hc-app[data-theme="dark"] .hc-tool-summary[aria-expanded="true"] .hc-tool-summary-icon {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] button.hc-tool-summary:hover .hc-tool-summary-label,
+.hc-app[data-theme="dark"] .hc-tool-summary[aria-expanded="true"] .hc-tool-summary-label {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary small {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-summary svg:last-child {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="multi-agent-group"] .hc-tool-summary {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block.activity[data-group-type="multi-agent-group"] .hc-tool-summary:not(:disabled):hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-multi-agent-action-header {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-multi-agent-action-header:hover,
+.hc-app[data-theme="dark"] .hc-multi-agent-action-header[aria-expanded="true"] {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-multi-agent-action-chevron {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-row {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-command-row {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-command-row.is-running {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-web-search-row {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-source {
+  background-color: var(--hc-surface-muted);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-tool-row.is-running .hc-tool-detail-source {
+  background-color: var(--hc-surface-muted);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-stack {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-stack.is-running {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-mcp-app-header {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-mcp-app-header small {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-app[data-theme="dark"] .hc-mcp-app-uri {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-line,
+.hc-app[data-theme="dark"] .hc-tool-detail-change-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-line small,
+.hc-app[data-theme="dark"] .hc-tool-detail-meta,
+.hc-app[data-theme="dark"] .hc-tool-detail-section-label {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-collapsible-toggle {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-collapsible-toggle:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-raw-output-trigger {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-raw-output-trigger:hover,
+.hc-app[data-theme="dark"] .hc-tool-raw-output-trigger:focus-visible {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-raw-output-dialog h2 {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-raw-output-dialog header button {
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-raw-output-dialog header button:hover {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-command,
+.hc-app[data-theme="dark"] .hc-tool-detail-change-title code {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-stack pre {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-block pre,
+.hc-app[data-theme="dark"] .hc-approval-card pre {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell {
+  border-color: var(--hc-border-default);
+  background-color: var(--hc-surface-muted);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell-command {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell-toggle:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell-output {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell-copy-button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell-copy-button:hover,
+.hc-app[data-theme="dark"] .hc-exec-shell-copy-button.is-copied {
+  background-color: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-exec-shell-footer {
+  color: var(--hc-text-secondary);
 }

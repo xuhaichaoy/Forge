@@ -195,15 +195,17 @@
   overflow-y: auto;
   border-radius: 24px;
   background: var(--hc-surface-composer);
-  box-shadow: 0 0 0 1px var(--hc-border-subtle), 0 4px 16px rgba(0, 0, 0, 0.05);
+  /* codex composer ring is `electron:ring-black/10` in BOTH themes (no .electron-dark
+     override) + `shadow-[0_4px_16px_0_rgba(0,0,0,0.05)]`; the dark composer relies on
+     bg contrast, not a visible ring. */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05);
   /*
-   * Codex Desktop composer (`composer-*.css`) uses
-   * `backdrop-filter: blur(8px)` — half of what HiCodex previously had. The
-   * heavier 16px blur made the composer feel too "glassy" / out of place
-   * compared to the rest of the chrome which uses `backdrop-blur-sm` (4px on
-   * the right rail). Match Codex's 8px.
+   * Codex Desktop composer container (`composer-*.css`) uses
+   * `backdrop-blur-lg` = --blur-lg 16px. The 8px value HiCodex previously had
+   * does not belong to the composer at all — it's from a different surface
+   * (the cmdk/referral popover). Match the composer container's 16px.
    */
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(16px); /* Codex: composer container backdrop-blur-lg --blur-lg = 16px */
 }
 
 .hc-composer-field[data-layout="multiline"] {
@@ -562,6 +564,19 @@
   min-width: 0;
 }
 
+/*
+ * codex: composer-*.js — the model-intelligence / reasoning-effort /
+ * permissions chip cluster renders INSIDE the composer bubble footer's middle
+ * column (Composer `footerSettings` slot), not in the below-bubble strip. Lay
+ * the chips out as a row on the footer's 5px gap.
+ */
+.hc-composer-settings-chips {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
 .hc-composer-footer-right {
   display: flex;
   min-width: 0;
@@ -609,6 +624,30 @@
   padding: 0 24px 0;
   color: #6f716b;
   font-size: 13px;
+}
+
+/*
+ * codex fp (ExternalFooterSlot) home variant: `relative z-0 -mt-2` + a slide-in
+ * (Framer `initial:{y:-100%} animate:{y:0}`). The footer tucks 8px under the
+ * composer (behind it via z-0) and slides down on the empty/home screen. The
+ * in-thread footer stays static (no animation / tuck).
+ */
+.hc-composer-external-footer[data-variant="home"] {
+  position: relative;
+  z-index: 0;
+  margin-top: -8px; /* codex -mt-2 */
+  animation: hc-composer-footer-drawer-in 0.24s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+@keyframes hc-composer-footer-drawer-in {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-composer-external-footer[data-variant="home"] {
+    animation: none;
+  }
 }
 
 /*
@@ -689,14 +728,15 @@
   min-width: 0;
   max-width: min(280px, 38vw);
   flex: 0 1 auto;
-  height: 26px;
+  height: 28px; /* Codex: h-token-button-composer = --spacing*7 = 28px */
   align-items: center;
-  gap: 6px;
+  gap: 4px; /* Codex: Button base `gap-1` = 4px */
   border: 0;
-  border-radius: 8px;
+  border-radius: 9999px; /* Codex: Button size:composer = `rounded-full` (--radius-full). 28px add-menu → circle */
   background: transparent;
   color: inherit;
-  padding: 0 4px;
+  padding: 0 8px; /* Codex: size:composer = `px-2` = 8px */
+  font-size: 12px; /* Codex: button size:composer = text-sm = 12px (don't inherit 13px from footer) */
   cursor: pointer;
 }
 
@@ -1707,4 +1747,209 @@
   color: var(--hc-text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+
+/* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
+/* Dark theme overrides for hardcoded light-only colors */
+.hc-app[data-theme="dark"] .hc-prompt-editor {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-prompt-mention {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-plus {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-plus:hover {
+  color: var(--hc-text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-mode-pill {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-mode-pill:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-external-footer {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-project-search {
+  color: var(--hc-text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-project-search input {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-project-menu-title {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-project-empty {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-branch-search {
+  color: var(--hc-text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-branch-search input {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-branch-empty {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-branch-item-suffix {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-branch-picker-default-chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-branch-picker-section-heading {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-branch-picker-create-button {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-branch-picker-create-button:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hc-app[data-theme="dark"] .hc-branch-picker-create-input {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-chip {
+  color: var(--hc-text-primary);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hc-app[data-theme="dark"] .hc-tool-detail-prose {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-file-icon {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-chip-main .hc-attachment-kind {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-remove {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-remove:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-image-preview-dialog {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hc-app[data-theme="dark"] .hc-image-preview-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-image-preview-header button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-image-preview-header button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-section-label {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-empty {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-row {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-row:hover,
+.hc-app[data-theme="dark"] .hc-composer-menu-row[data-active="true"] {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-row small {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-row em {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-row .hc-composer-menu-switch {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-menu-row .hc-composer-menu-switch span {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-input-panel {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-input-heading small,
+.hc-app[data-theme="dark"] .hc-attachment-input-error {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-input-heading button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-input-heading button:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.hc-app[data-theme="dark"] .hc-attachment-input-panel input,
+.hc-app[data-theme="dark"] .hc-attachment-input-panel textarea {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-send-button {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
 }

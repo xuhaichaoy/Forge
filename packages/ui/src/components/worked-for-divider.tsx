@@ -80,10 +80,24 @@ function workedForLabel({
   return `Worked for ${formatDuration(elapsedMs)}`;
 }
 
+/*
+ * codex `zu`/`Bu` (composer-*.js): truncate to whole completed seconds
+ * (Math.floor, like a stopwatch — NOT round) and carry an hours tier with zero
+ * units trimmed: "1h", "1h 1m 40s", "2h 2m 5s". Floor matches Codex for every
+ * duration (round was +1s ahead for half of each second); the hours tier
+ * matches turns running >= 1h ("1h", not "60m").
+ */
 function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1_000));
+  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    const parts = [`${hours}h`];
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0) parts.push(`${seconds}s`);
+    return parts.join(" ");
+  }
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }

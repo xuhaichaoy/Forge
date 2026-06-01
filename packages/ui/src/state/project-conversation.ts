@@ -62,6 +62,17 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   let activity: ThreadItem[] = [];
   let activityGroupType: ToolActivityGroupType | null = null;
   let activityGroupKey: string | null = null;
+  /*
+   * codex split-items-into-render-groups-*.js `oe`: collapse slices cover only
+   * the regions AFTER each assistant message; the LEADING region (before the
+   * first rendered assistant message of a segment) is excluded, so `R` never
+   * cross-folds it into a `collapsed-tool-activity` rollup — leading exec/read
+   * stay `exploration` and web-searches stay `web-search-group`, SEPARATE. These
+   * two flags let `pushActivityItem` suppress the cross-type PROMOTION while in
+   * that leading region (single-type accumulation is unaffected).
+   */
+  let segmentHasAssistantToRender = false;
+  let assistantRenderedInSegment = false;
   const conversationDetailLevel = options.conversationDetailLevel ?? "STEPS_COMMANDS";
   const parentThreadAttachmentSourceConversationId = options.parentThreadAttachmentSourceConversationId?.trim() || null;
   let parentThreadAttachmentUsed = false;
@@ -80,6 +91,16 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
    * bucket (or a standalone exploration if already in one). Standalone
    * groupTypes (`worked-for` / `multi-agent-group` / `pending-mcp-tool-calls` /
    * `todo-list`) keep their independent bucket.
+   */
+  /*
+   * codex split-items-into-render-groups-*.js: the collapse predicate `z()`
+   * INCLUDES web-search, so the `R` pass DOES fold web-search + exec/exploration/
+   * patch/mcp into one cross-type `collapsed-tool-activity` (within a slice / the
+   * no-assistant-message case). HiCodex mirrors that by keeping web-search-group
+   * mergeable. (The ONLY place Codex separates them is the LEADING region that
+   * `oe` excludes from collapse slices — see §M-19 #5; that needs the slice-based
+   * pass split, NOT a blanket de-merge here, which would wrongly separate the
+   * common merged case.)
    */
   const MERGEABLE_ACTIVITY_GROUP_TYPES: ReadonlySet<ToolActivityGroupType> = new Set([
     "collapsed-tool-activity",
@@ -119,7 +140,14 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     }
 
     // Mergeable item joining a mergeable bucket (Codex segment aggregation).
-    if (currentIsMergeable && incomingIsMergeable) {
+    // codex `oe`: the LEADING region (before the first rendered assistant message
+    // of the segment) is excluded from collapse slices, so heterogeneous mergeable
+    // types there are NOT cross-folded — leading exec/read stay `exploration` and
+    // web-searches stay `web-search-group`, separate. So while leading, suppress
+    // the cross-type PROMOTION (single-type accumulation, where
+    // activityGroupType === baseGroupType, still merges as before).
+    const inLeadingRegion = segmentHasAssistantToRender && !assistantRenderedInSegment;
+    if (currentIsMergeable && incomingIsMergeable && !(inLeadingRegion && activityGroupType !== baseGroupType)) {
       if (activityGroupType !== baseGroupType) {
         // Heterogeneous mix — promote the bucket to `collapsed-tool-activity` so the
         // summary builder produces a cross-type count label
@@ -282,6 +310,10 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         assistantPhase: assistantMessagePhase(item),
         renderPlaceholder,
       });
+      // codex `oe`: once a rendered assistant message exists, subsequent activity
+      // falls in a collapse SLICE (cross-folds normally) rather than the leading
+      // region.
+      assistantRenderedInSegment = true;
       return;
     }
     if (hiCodexImageToolOutputUrl(item)) {
@@ -323,6 +355,15 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   const segments = conversationSegments(items);
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index] ?? [];
+    // codex `oe`: the leading region is "before the first RENDERED assistant
+    // message" — mirror the render gate (text or placeholder). A segment with NO
+    // rendered assistant message has no leading region (its activity collapses as
+    // one slice, like Codex's `n.length===0` branch).
+    segmentHasAssistantToRender = segment.some((item) =>
+      isAssistantMessage(item)
+      && (assistantMessageText(item).trim().length > 0 || shouldRenderAssistantPlaceholder(item))
+    );
+    assistantRenderedInSegment = false;
     const turnStatus = turnStatusForSegment(segment, {
       isLastSegment: index === segments.length - 1,
       isThreadRunning: options.isThreadRunning === true,
@@ -520,7 +561,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     : null;
 
   return {
-    units: withStreamingAssistantState(units, options.isThreadRunning === true),
+    units: withStreamingAssistantState(groupConsecutiveDynamicToolCalls(units), options.isThreadRunning === true),
     progress: coalesceProgress(explicitProgress ?? progress),
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
@@ -1121,6 +1162,47 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
     if (predicate(items[index] as T)) return index;
   }
   return -1;
+}
+
+/*
+ * codex split-items-into-render-groups-*.js `Ne` + `K`: batch runs of CONSECUTIVE
+ * standalone `dynamic-tool-call` thread items into one `dynamicToolCallGroup`.
+ * `K` forms a group when `items.length > 1` (a lone completed call stays
+ * standalone — matching HiCodex's existing per-item render; Codex's single
+ * live-latest `keepLatestLiveActivityInGroup` case is left as the standalone
+ * streaming row). Linear scan, mirroring `Ne`.
+ */
+function groupConsecutiveDynamicToolCalls(units: ConversationRenderUnit[]): ConversationRenderUnit[] {
+  const result: ConversationRenderUnit[] = [];
+  let index = 0;
+  while (index < units.length) {
+    const unit = units[index];
+    if (unit?.kind === "threadItem" && itemType(unit.item) === "dynamic-tool-call") {
+      const run: ThreadItem[] = [];
+      let end = index;
+      while (end < units.length) {
+        const candidate = units[end];
+        if (candidate?.kind === "threadItem" && itemType(candidate.item) === "dynamic-tool-call") {
+          run.push(candidate.item);
+          end += 1;
+        } else {
+          break;
+        }
+      }
+      if (run.length > 1) {
+        result.push({
+          kind: "dynamicToolCallGroup",
+          key: `dynamic-tool-call-group:${run[0]?.id ?? index}`,
+          items: run,
+        });
+        index = end;
+        continue;
+      }
+    }
+    if (unit) result.push(unit);
+    index += 1;
+  }
+  return result;
 }
 
 function withStreamingAssistantState(

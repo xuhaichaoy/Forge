@@ -5,9 +5,10 @@ import {
   writeYuxiConnectionConfig,
   type YuxiConnectionConfig,
 } from "../lib/yuxi-client";
+import { isYuxiMockEnabled, setYuxiMockState } from "../lib/yuxi-mock";
 
 /**
- * 知识库系列视图（知识库 / 上传 / 档案中心）的公共页面骨架。
+ * 资料管理系列视图（知识库 / 上传 / 档案中心）的公共页面骨架。
  *
  * 包含：
  * - `<main>` 容器（`hc-main hc-kb-main`）
@@ -50,35 +51,40 @@ export function KbPageShell({
 export function KbYuxiConnectionControl() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<YuxiConnectionConfig>(() => readYuxiConnectionConfig());
+  const [mock, setMock] = useState<boolean>(() => isYuxiMockEnabled(readYuxiConnectionConfig()));
   const save = () => {
     writeYuxiConnectionConfig(draft);
+    setYuxiMockState(mock);
     setOpen(false);
+    if (typeof window !== "undefined") window.location.reload();
   };
   return (
     <div className="hc-kb-connection">
       <button
         type="button"
         className="hc-kb-topbar-btn"
-        aria-label="Yuxi 连接设置"
-        title="Yuxi 连接设置"
+        aria-label="系统连接设置"
+        title="系统连接设置"
         onClick={() => {
-          setDraft(readYuxiConnectionConfig());
+          const config = readYuxiConnectionConfig();
+          setDraft(config);
+          setMock(isYuxiMockEnabled(config));
           setOpen((value) => !value);
         }}
       >
         <Settings2 size={13} strokeWidth={2.2} aria-hidden="true" />
-        连接
+        系统
       </button>
       {open && (
-        <div className="hc-kb-connection-popover" role="dialog" aria-label="Yuxi 连接设置">
+        <div className="hc-kb-connection-popover" role="dialog" aria-label="系统连接设置">
           <div className="hc-kb-connection-header">
-            <span>Yuxi 连接</span>
+            <span>来源系统连接</span>
             <button type="button" className="hc-kb-row-btn" aria-label="关闭" onClick={() => setOpen(false)}>
               <X size={13} aria-hidden="true" />
             </button>
           </div>
           <label className="hc-kb-connection-field">
-            <span>Base URL</span>
+            <span>系统地址</span>
             <input
               value={draft.baseUrl}
               onChange={(event) => setDraft({ ...draft, baseUrl: event.target.value })}
@@ -86,7 +92,7 @@ export function KbYuxiConnectionControl() {
             />
           </label>
           <label className="hc-kb-connection-field">
-            <span>API Token</span>
+            <span>访问凭证</span>
             <input
               value={draft.token}
               onChange={(event) => setDraft({ ...draft, token: event.target.value })}
@@ -94,6 +100,21 @@ export function KbYuxiConnectionControl() {
               placeholder="yxkey_..."
             />
           </label>
+          <label
+            className="hc-kb-connection-field"
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
+          >
+            <span>演示数据（内置示例）</span>
+            <input
+              type="checkbox"
+              checked={mock}
+              onChange={(event) => setMock(event.target.checked)}
+              style={{ width: 16, height: 16 }}
+            />
+          </label>
+          <p style={{ margin: "0 0 4px", fontSize: 11.5, color: "var(--hc-text-secondary)", lineHeight: 1.5 }}>
+            {mock ? "正在使用内置示例数据，无需后端。" : "连接真实来源系统，关闭示例数据。"}保存后会刷新页面生效。
+          </p>
           <div className="hc-kb-connection-actions">
             <button type="button" className="hc-kb-topbar-btn" onClick={() => setOpen(false)}>取消</button>
             <button type="button" className="hc-kb-topbar-btn hc-kb-topbar-btn--primary" onClick={save}>保存</button>

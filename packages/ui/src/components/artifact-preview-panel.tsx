@@ -331,7 +331,7 @@ export function ArtifactPreviewPanel({
       {resolvedTextPath && <ArtifactTextPreviewView preview={textPreview} />}
 
       {showUnavailablePreview && (
-        <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />
+        <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />
       )}
 
       {preview.details.length > 0 && (
@@ -376,7 +376,7 @@ function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: string })
         <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />
       )}
       {status === "error" && (
-        <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />
+        <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />
       )}
       <iframe
         className="hc-artifact-preview-pdf"
@@ -395,7 +395,7 @@ function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
     return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />;
   }
   if (preview.status === "error") {
-    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />;
   }
   return (
     <div className="hc-artifact-preview-text-wrap">
@@ -417,11 +417,11 @@ function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPrevi
     return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />;
   }
   if (preview.status === "error") {
-    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />;
   }
   const rows = preview.preview.rows;
   if (rows.length === 0) {
-    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />;
   }
   const columnCount = Math.max(...rows.map((row) => row.length), 1);
   const view = projectSpreadsheetPreviewView(preview.preview);
@@ -465,11 +465,11 @@ function ArtifactDocumentPreviewView({ preview }: { preview: DocumentPreviewStat
     return <ArtifactPreviewStateView state={{ status: "loading", message: "Preparing preview…" }} />;
   }
   if (preview.status === "error") {
-    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />;
   }
   const paragraphs = preview.preview.paragraphs;
   if (paragraphs.length === 0) {
-    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn't load this preview" }} />;
+    return <ArtifactPreviewStateView state={{ status: "error", message: "Couldn’t load this preview" }} />;
   }
   return (
     <div className="hc-artifact-preview-text-wrap">
@@ -495,10 +495,10 @@ function artifactPreviewState(
     return { status: "loading", message: "Preparing preview…" };
   }
   if (metadataPreview.status === "error") {
-    return { status: "error", message: "Couldn't load this preview" };
+    return { status: "error", message: "Couldn’t load this preview" };
   }
   if (metadataPreview.status === "ready" && !metadataPreview.metadata.isFile) {
-    return { status: "error", message: "Couldn't load this preview" };
+    return { status: "error", message: "Couldn’t load this preview" };
   }
   if (tooLarge) {
     return {

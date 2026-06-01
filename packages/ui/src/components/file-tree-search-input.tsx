@@ -44,7 +44,7 @@ export function FileTreeSearchInput({
         <button
           type="button"
           className="hc-file-tree-search-clear"
-          aria-label="Clear filter"
+          aria-label="Clear file filter"
           onClick={() => onQueryChange("")}
         >
           <X size={12} aria-hidden="true" />

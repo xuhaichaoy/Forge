@@ -25,6 +25,14 @@ export interface AutomationsSurfaceModel {
   schedules: AutomationScheduleView[];
   heartbeatEligibility: HeartbeatAutomationEligibility | null;
   futureHooks: string[];
+  // codex: local-conversation-thread-*.js — the citation chip's `ke` onClick
+  // resolves a specific automation id and either opens `Km({automationId,…})`
+  // (a tab scoped to that one automation via `jm` → `items.find(i=>i.id===n)`)
+  // or `navigate-to-route /automations?automationId=${e}`. Both deep-link the
+  // *specific* automation. HiCodex carries that focus target on the surface
+  // model so the panel can scope/scroll to the matching schedule row instead of
+  // opening the generic full list.
+  focusedAutomationId: string | null;
 }
 
 export interface ProjectAutomationsSurfaceInput {
@@ -33,6 +41,10 @@ export interface ProjectAutomationsSurfaceInput {
   payload?: unknown;
   error?: string | null;
   heartbeat?: ProjectHeartbeatAutomationEligibilityInput | null;
+  // codex: deep-link focus target threaded from the citation chip (`ke` handler
+  // in local-conversation-thread-*.js). Null when the panel is opened from the
+  // generic "Automations" entry point rather than a specific citation.
+  focusedAutomationId?: string | null;
 }
 
 export const AUTOMATIONS_FUTURE_HOOKS = [
@@ -77,6 +89,10 @@ export function projectAutomationsSurface(
   const heartbeatEligibility = input.heartbeat
     ? projectHeartbeatAutomationEligibility(input.heartbeat)
     : null;
+  // codex: deep-link focus target — carried onto every surface model state so
+  // the panel knows which schedule the citation chip asked to focus, regardless
+  // of loading/offline/error/ready status. Normalize empty strings to null.
+  const focusedAutomationId = input.focusedAutomationId?.trim() || null;
   if (input.loading) {
     return {
       status: "loading",
@@ -85,6 +101,7 @@ export function projectAutomationsSurface(
       schedules: [],
       heartbeatEligibility,
       futureHooks: AUTOMATIONS_FUTURE_HOOKS,
+      focusedAutomationId,
     };
   }
 
@@ -96,6 +113,7 @@ export function projectAutomationsSurface(
       schedules: [],
       heartbeatEligibility,
       futureHooks: AUTOMATIONS_FUTURE_HOOKS,
+      focusedAutomationId,
     };
   }
 
@@ -110,6 +128,7 @@ export function projectAutomationsSurface(
       schedules: [],
       heartbeatEligibility,
       futureHooks: AUTOMATIONS_FUTURE_HOOKS,
+      focusedAutomationId,
     };
   }
 
@@ -122,6 +141,7 @@ export function projectAutomationsSurface(
       schedules: [],
       heartbeatEligibility,
       futureHooks: AUTOMATIONS_FUTURE_HOOKS,
+      focusedAutomationId,
     };
   }
   if (schedules.length === 0) {
@@ -132,6 +152,7 @@ export function projectAutomationsSurface(
       schedules: [],
       heartbeatEligibility,
       futureHooks: AUTOMATIONS_FUTURE_HOOKS,
+      focusedAutomationId,
     };
   }
   return {
@@ -141,7 +162,22 @@ export function projectAutomationsSurface(
     schedules,
     heartbeatEligibility,
     futureHooks: AUTOMATIONS_FUTURE_HOOKS,
+    focusedAutomationId,
   };
+}
+
+// codex: local-conversation-thread-*.js — `jm({automationId:n})` resolves the
+// focused automation as `r.data?.items.find(e => e.id === n) ?? null` before
+// rendering `Pm` (the per-automation editor). HiCodex mirrors that find-by-id
+// so the panel can scope/scroll to the focused schedule row. Returns null when
+// nothing is focused, or when the focused id isn't (yet) present in the loaded
+// schedule list (the payload may still be loading or the automation was
+// deleted) — matching Codex's `a == null` placeholder branch in `jm`.
+export function focusedAutomationSchedule(
+  model: AutomationsSurfaceModel,
+): AutomationScheduleView | null {
+  if (!model.focusedAutomationId) return null;
+  return model.schedules.find((schedule) => schedule.id === model.focusedAutomationId) ?? null;
 }
 
 export function projectHeartbeatAutomationEligibility(

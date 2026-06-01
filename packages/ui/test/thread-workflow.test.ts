@@ -8,6 +8,7 @@ import {
   ensureThreadReadyForTurn,
   forkThread,
   forkThreadFromTurn,
+  forkThreadIntoWorktree,
   IMAGE_TOOL_RESUME_FALLBACK_MESSAGE,
   interruptThreadTurn,
   isThreadNotFound,
@@ -117,6 +118,7 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await readsThreadDisplayMetadataBeforeHydratingTurns();
   await resumesThreadAfterMetadataRead();
   await forksThreadFromTurnUsingDesktopSequence();
+  await forksThreadIntoWorktreeByCreatingWorktreeThenForkingIntoIt();
   await startsEphemeralSideConversationByInjectingDesktopBoundary();
   await editsLastUserTurnUsingDesktopRollbackThenStartSequence();
   await recoversThreadNotFoundOnEditByResumingFirst();
@@ -1206,6 +1208,36 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
     "thread/rollback",
     { threadId: "forked-thread", numTurns: 1 },
     "fork from turn should roll back later turns on the fork",
+  );
+}
+
+async function forksThreadIntoWorktreeByCreatingWorktreeThenForkingIntoIt(): Promise<void> {
+  // codex sidebar-thread-section `fork-into-worktree` — create a git worktree for
+  // the source cwd, then fork INTO that worktree path. Verify the createWorktree
+  // step receives the source cwd and the fork targets the worktree path (compared
+  // against a plain fork into that same path, so the assertion is independent of
+  // buildThreadForkParams internals).
+  const worktreePath = "/workspace/.worktrees/forked";
+  const worktreeCalls: Array<{ cwd: string }> = [];
+  const createWorktree = async (request: { cwd: string }) => {
+    worktreeCalls.push({ cwd: request.cwd });
+    return { path: worktreePath };
+  };
+
+  const actual = createClientRecorder({ thread: { id: "forked" } });
+  await forkThreadIntoWorktree(actual.client, "source-thread", "/workspace", createWorktree, null);
+
+  const expected = createClientRecorder({ thread: { id: "forked" } });
+  await forkThread(expected.client, "source-thread", worktreePath, null);
+
+  assertDeepEqual(worktreeCalls, [{ cwd: "/workspace" }], "createWorktree receives the source thread cwd");
+  assertEqual(actual.requests.length, 1, "fork-into-worktree issues a single fork request");
+  assertRequest(
+    actual.requests,
+    0,
+    "thread/fork",
+    expected.requests[0].params,
+    "fork-into-worktree should fork into the new worktree path",
   );
 }
 

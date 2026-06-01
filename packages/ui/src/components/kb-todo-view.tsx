@@ -2,43 +2,33 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { KbPageShell } from "./kb-page-shell";
 import {
+  confirmYuxiClassifyPending,
+  confirmYuxiEntityPending,
+  confirmYuxiForcePending,
+  listYuxiConflicts,
+  listYuxiKnowledgeDatabases,
   listYuxiPendingQueue,
+  rejectYuxiClassifyPending,
+  rejectYuxiEntityPending,
+  rejectYuxiForcePending,
+  resolveYuxiConflict,
+  resolveYuxiDupPending,
+  type YuxiConflictItem,
+  type YuxiKnowledgeDatabase,
   type YuxiPendingItem,
   type YuxiPendingQueue,
 } from "../lib/yuxi-client";
-
-type TodoStatus = "duplicate" | "pick" | "classify" | "error";
-type TodoSource = "upload" | "ai-id" | "ai-cat" | "doc-err";
-
-interface TodoItem {
-  id: string;
-  title: string;
-  source: TodoSource;
-  reason: string;
-  status: TodoStatus;
-  actionLabel: string;
-}
-
-const SOURCE_LABEL: Record<TodoSource, string> = {
-  upload: "资料上传",
-  "ai-id": "AI 识别",
-  "ai-cat": "AI 分类",
-  "doc-err": "文档异常",
-};
-
-const STATUS_LABEL: Record<TodoStatus, string> = {
-  duplicate: "重复待确认",
-  pick: "待选择",
-  classify: "待分类",
-  error: "读不出内容",
-};
-
-const STATUS_CSS: Record<TodoStatus, string> = {
-  duplicate: "hc-kb-status--pending",
-  pick: "hc-kb-status--pending",
-  classify: "hc-kb-status--pending",
-  error: "hc-kb-status--fail",
-};
+import { TodoActions } from "./kb-todo-actions";
+import {
+  defaultDbIdForTodo,
+  defaultEntityIdForTodo,
+  projectTodos,
+  SOURCE_LABEL,
+  STATUS_CSS,
+  STATUS_LABEL,
+  type TodoAction,
+  type TodoItem,
+} from "./kb-todo-model";
 
 export function KbTodoView() {
   const [queues, setQueues] = useState<Record<YuxiPendingQueue, YuxiPendingItem[]>>({
@@ -47,6 +37,10 @@ export function KbTodoView() {
     dup: [],
     force: [],
   });
+  const [conflicts, setConflicts] = useState<YuxiConflictItem[]>([]);
+  const [databases, setDatabases] = useState<YuxiKnowledgeDatabase[]>([]);
+  const [targetByTodo, setTargetByTodo] = useState<Record<string, string>>({});
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,11 +48,13 @@ export function KbTodoView() {
     setLoading(true);
     setError(null);
     try {
-      const [classify, entity, dup, force] = await Promise.all([
+      const [classify, entity, dup, force, conflictsResult, dbs] = await Promise.all([
         listYuxiPendingQueue("classify", { scope: "mine" }),
         listYuxiPendingQueue("entity", { scope: "mine" }),
         listYuxiPendingQueue("dup", { scope: "mine" }),
         listYuxiPendingQueue("force", { scope: "mine" }),
+        listYuxiConflicts({ status: "pending", limit: 100 }),
+        listYuxiKnowledgeDatabases().catch(() => ({ databases: [] as YuxiKnowledgeDatabase[] })),
       ]);
       setQueues({
         classify: classify.items ?? [],
@@ -66,7 +62,10 @@ export function KbTodoView() {
         dup: dup.items ?? [],
         force: force.items ?? [],
       });
+      setConflicts(conflictsResult.items ?? []);
+      setDatabases(dbs.databases ?? []);
     } catch (err) {
+      setConflicts([]);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
@@ -77,8 +76,68 @@ export function KbTodoView() {
     void loadTodos();
   }, [loadTodos]);
 
-  const items = useMemo(() => projectTodos(queues), [queues]);
+  const items = useMemo(() => projectTodos(queues, conflicts), [conflicts, queues]);
   const pendingCount = items.length;
+
+  const runTodoAction = useCallback(async (
+    item: TodoItem,
+    action: TodoAction,
+  ) => {
+    if (item.numericId == null) return;
+    setProcessingId(item.id);
+    setError(null);
+    try {
+      if (action === "confirm_classify") {
+        const dbId = targetByTodo[item.id] || defaultDbIdForTodo(item, databases);
+        if (!dbId) throw new Error("需要先选择目标知识库");
+        await confirmYuxiClassifyPending(item.numericId, dbId);
+      } else if (action === "reject_classify") {
+        await rejectYuxiClassifyPending(item.numericId);
+      } else if (action === "confirm_existing") {
+        const targetEntityId = defaultEntityIdForTodo(item);
+        if (!targetEntityId) throw new Error("没有可关联的候选档案");
+        await confirmYuxiEntityPending(item.numericId, "confirm_existing", targetEntityId);
+      } else if (action === "create_new") {
+        await confirmYuxiEntityPending(item.numericId, "create_new");
+      } else if (action === "skip_entity") {
+        await confirmYuxiEntityPending(item.numericId, "skip");
+      } else if (action === "reject_entity") {
+        await rejectYuxiEntityPending(item.numericId);
+      } else if (action === "dup_replace") {
+        await resolveYuxiDupPending(item.numericId, "replace");
+      } else if (action === "dup_copy") {
+        await resolveYuxiDupPending(item.numericId, "kept_as_copy");
+      } else if (action === "dup_archive") {
+        await resolveYuxiDupPending(item.numericId, "archived");
+      } else if (action === "dup_reject") {
+        await resolveYuxiDupPending(item.numericId, "rejected");
+      } else if (action === "confirm_force") {
+        const dbId = targetByTodo[item.id] || defaultDbIdForTodo(item, databases);
+        if (!dbId) throw new Error("需要先选择目标知识库");
+        await confirmYuxiForcePending(item.numericId, dbId);
+      } else if (action === "reject_force") {
+        await rejectYuxiForcePending(item.numericId);
+      } else if (action === "conflict_apply") {
+        await resolveYuxiConflict(item.numericId, "apply", {
+          acceptedFields: item.conflict?.incoming_attrs ?? null,
+          reason: "HiCodex 待办中心采纳权威字段冲突",
+        });
+      } else if (action === "conflict_reject") {
+        await resolveYuxiConflict(item.numericId, "reject", {
+          reason: "HiCodex 待办中心拒绝字段冲突",
+        });
+      } else if (action === "conflict_skip") {
+        await resolveYuxiConflict(item.numericId, "skip", {
+          reason: "HiCodex 待办中心跳过字段冲突",
+        });
+      }
+      await loadTodos();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProcessingId(null);
+    }
+  }, [databases, loadTodos, targetByTodo]);
 
   return (
     <KbPageShell
@@ -103,99 +162,82 @@ export function KbTodoView() {
           <div className="hc-kb-empty">
             <div className="hc-kb-empty-content">
               <div className="hc-kb-empty-title">{loading ? "正在读取待办" : "暂无待处理事项"}</div>
-              <div className="hc-kb-empty-subtitle">来自资料上传、分类确认、重复版本和实体对齐的事项会显示在这里。</div>
+              <div className="hc-kb-empty-subtitle">来自资料上传、分类确认、重复版本、档案关联和字段冲突的事项会显示在这里。</div>
             </div>
           </div>
         ) : (
-          <table className="hc-kb-table">
-            <thead>
-              <tr>
-                <th style={{ width: "30%" }}>事项</th>
-                <th style={{ width: "12%" }}>来源</th>
-                <th style={{ width: "36%" }}>处理原因</th>
-                <th style={{ width: "12%" }}>状态</th>
-                <th style={{ textAlign: "right" }}>入口</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <div className="hc-kb-file-name" style={{ fontWeight: 560 }}>{item.title}</div>
-                  </td>
-                  <td>
-                    <span style={{ fontSize: 12, color: "var(--hc-text-secondary)" }}>
-                      {SOURCE_LABEL[item.source]}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: 12, color: "var(--hc-text-secondary)", lineHeight: 1.5 }}>
-                    {item.reason}
-                  </td>
-                  <td>
-                    <span className={`hc-kb-status ${STATUS_CSS[item.status]}`}>
-                      {STATUS_LABEL[item.status]}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="hc-kb-row-actions" style={{ justifyContent: "flex-end", opacity: 1 }}>
-                      <button type="button" className="hc-kb-topbar-btn" style={{ height: 24, fontSize: 11 }}>
-                        {item.actionLabel}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TodoTable
+            items={items}
+            databases={databases}
+            targetByTodo={targetByTodo}
+            processingId={processingId}
+            onSelectTarget={(itemId, dbId) => setTargetByTodo((prev) => ({ ...prev, [itemId]: dbId }))}
+            onAction={(item, action) => void runTodoAction(item, action)}
+          />
         )}
       </div>
     </KbPageShell>
   );
 }
 
-function projectTodos(queues: Record<YuxiPendingQueue, YuxiPendingItem[]>): TodoItem[] {
-  return [
-    ...queues.dup.map((item) => ({
-      id: `dup:${item.id}`,
-      title: `「${item.filename || "上传资料"}」和库里已有版本相似`,
-      source: "upload" as const,
-      reason: typeof item.similarity === "number"
-        ? `相似度 ${Math.round(item.similarity * 100)}%，需要选择替换、保留副本或归档。`
-        : "命中重复或相似版本，需要人工确认处理方式。",
-      status: "duplicate" as const,
-      actionLabel: "对比一下",
-    })),
-    ...queues.entity.map((item) => ({
-      id: `entity:${item.id}`,
-      title: `「${item.extracted_text || "抽取实体"}」需要确认`,
-      source: "ai-id" as const,
-      reason: item.candidate_entity_type ? `候选实体类型：${item.candidate_entity_type}` : "AI 抽取到实体关系，需要选择现有档案或创建新档案。",
-      status: "pick" as const,
-      actionLabel: "去选实体",
-    })),
-    ...queues.classify.map((item) => ({
-      id: `classify:${item.id}`,
-      title: `「${item.filename || "资料"}」该放到哪个库？`,
-      source: "ai-cat" as const,
-      reason: classifyReason(item),
-      status: "classify" as const,
-      actionLabel: "去选分类",
-    })),
-    ...queues.force.map((item) => ({
-      id: `force:${item.id}`,
-      title: `「${item.filename || "资料"}」需要手动处理`,
-      source: "doc-err" as const,
-      reason: item.failure_reason || "后端无法自动分类或解析，需要人工指派知识库。",
-      status: "error" as const,
-      actionLabel: "手动处理",
-    })),
-  ];
-}
-
-function classifyReason(item: YuxiPendingItem): string {
-  const top = item.candidates?.[0];
-  if (!top) return "AI 分类置信度不足，需要人工确认目标知识库。";
-  const label = top.label || top.category || "候选分类";
-  const score = typeof top.score === "number" ? `，置信度 ${Math.round(top.score * 100)}%` : "";
-  return `AI 建议放入「${label}」${score}。`;
+function TodoTable({
+  items,
+  databases,
+  targetByTodo,
+  processingId,
+  onSelectTarget,
+  onAction,
+}: {
+  items: TodoItem[];
+  databases: YuxiKnowledgeDatabase[];
+  targetByTodo: Record<string, string>;
+  processingId: string | null;
+  onSelectTarget: (itemId: string, dbId: string) => void;
+  onAction: (item: TodoItem, action: TodoAction) => void;
+}) {
+  return (
+    <table className="hc-kb-table">
+      <thead>
+        <tr>
+          <th style={{ width: "30%" }}>事项</th>
+          <th style={{ width: "12%" }}>来源</th>
+          <th style={{ width: "32%" }}>处理原因</th>
+          <th style={{ width: "12%" }}>状态</th>
+          <th style={{ textAlign: "right" }}>处理</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item) => (
+          <tr key={item.id}>
+            <td>
+              <div className="hc-kb-file-name" style={{ fontWeight: 560 }}>{item.title}</div>
+            </td>
+            <td>
+              <span style={{ fontSize: 12, color: "var(--hc-text-secondary)" }}>
+                {SOURCE_LABEL[item.source]}
+              </span>
+            </td>
+            <td style={{ fontSize: 12, color: "var(--hc-text-secondary)", lineHeight: 1.5 }}>
+              {item.reason}
+            </td>
+            <td>
+              <span className={`hc-kb-status ${STATUS_CSS[item.status]}`}>
+                {STATUS_LABEL[item.status]}
+              </span>
+            </td>
+            <td>
+              <TodoActions
+                item={item}
+                databases={databases}
+                selectedTarget={targetByTodo[item.id] || defaultDbIdForTodo(item, databases)}
+                processing={processingId === item.id}
+                onSelectTarget={(dbId) => onSelectTarget(item.id, dbId)}
+                onAction={(action) => onAction(item, action)}
+              />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }

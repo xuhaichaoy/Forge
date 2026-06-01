@@ -1,19 +1,19 @@
-import { Archive, BookOpen, ClipboardList, LayoutDashboard, Settings, Upload } from "lucide-react";
+import { Archive, BookOpen, ClipboardList, LayoutDashboard, Settings } from "lucide-react";
 
 export type AppNavigationTab = "workbench" | "knowledge" | "ingest" | "archive" | "todo" | "remoteTask";
 
 /**
  * 左侧全局导航 rail 中可见的 tab 列表。
+ * `ingest` 旧上传页保留为内部路由；业务上传入口放在知识库当前库工具栏。
  * `remoteTask` 由程序内部触发（setActiveRemoteTaskId），不作为常规 tab 显示。
  */
 const appNavigationItems: Array<{
-  id: Exclude<AppNavigationTab, "remoteTask">;
+  id: Exclude<AppNavigationTab, "ingest" | "remoteTask">;
   label: string;
   Icon: typeof LayoutDashboard;
 }> = [
   { id: "workbench", label: "工作台",  Icon: LayoutDashboard },
   { id: "knowledge", label: "知识库",  Icon: BookOpen },
-  { id: "ingest",    label: "上传",    Icon: Upload },
   { id: "archive",   label: "档案中心", Icon: Archive },
   { id: "todo",      label: "待办",    Icon: ClipboardList },
 ];

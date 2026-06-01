@@ -5,6 +5,8 @@ import {
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
+// codex copy-button-*.js wraps the action button in <Tooltip tooltipContent={...}/>.
+import { Tooltip } from "./tooltip";
 
 /*
  * CODEX-REF: copy-button-*.js — Codex Desktop's copy affordance.
@@ -65,16 +67,17 @@ export function MessageActionRow({
       <div className="hc-message-actions" data-persistent={persistent || undefined}>
         {trimmedCopyText.length > 0 && (
           /*
-           * CODEX-REF: copy-button-*.js — aria-label swaps between
-           * "Copy" (copyButton.copyAriaLabel) and "Copied" (copyButton.copiedAriaLabel).
-           * Tooltip text (`title`) uses the same pair; Codex's CopyButton
-           * wraps the button in a <Tooltip tooltipContent={...}/> for the
-           * same effect (HiCodex relies on the native `title` attribute,
-           * which is simpler and accessible enough for this case).
+           * CODEX-REF: copy-button-*.js — aria-label swaps between "Copy"
+           * (copyButton.copyAriaLabel) and "Copied" (copyButton.copiedAriaLabel); Codex's
+           * CopyButton wraps the button in <Tooltip tooltipContent={...}/>, so HiCodex now
+           * does the same via the shared Tooltip (the aria-label stays for a11y).
            */
-          <button aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy"} type="button" onClick={handleCopy}>
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-          </button>
+          <Tooltip content={copied ? "Copied" : "Copy"}>
+            <button aria-label={copied ? "Copied" : "Copy"} type="button" onClick={handleCopy}>
+              {/* codex action-row icons = icon-xs (16px) */}
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </Tooltip>
         )}
         {children}
         {sentAtMs !== null && (
@@ -108,17 +111,18 @@ export function IconActionButton({
   title: string;
 }) {
   return (
-    <button
-      aria-label={ariaLabel}
-      title={title}
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
-      }}
-    >
-      {children}
-    </button>
+    <Tooltip content={title}>
+      <button
+        aria-label={ariaLabel}
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onClick();
+        }}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 

@@ -125,14 +125,18 @@
 
 /* codex: home page hero ICU keys home.hero.* (welcome-page-*.js) */
 .hc-onboarding-empty {
+  /* codex home hero band: `flex h-[39%] shrink-0 flex-col justify-end px-panel pb-6`
+     — the hero sits at the BOTTOM of a 39%-height band (so the greeting lands ~39%
+     down, just above the composer), not centered in the whole region. The parent is
+     a definite-height flex column (the current flex:1 fill proves it), so flex-basis
+     39% resolves to 39% height. */
   display: flex;
-  flex: 1 1 auto;
-  min-height: 280px;
+  flex: 0 0 39%;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 24px;
-  padding: 64px 24px;
+  padding: 0 20px 24px;
 }
 
 .hc-onboarding-empty-content {
@@ -156,16 +160,48 @@
   margin: 0;
   color: var(--hc-text-strong);
   font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 400; /* Codex: heading-xl + font-normal override = weight 400, no letter-spacing */
   line-height: 1.2;
 }
 
-.hc-onboarding-empty-subtitle {
+/* codex main home hero has no subtitle — `.hc-onboarding-empty-subtitle` removed. */
+
+/*
+ * codex pE: the hero project name is a clickable selector with a rounded hover pill
+ * (`relative z-0 inline-block ... after:-inset-x-1.5 after:-inset-y-0 after:-z-10
+ * after:rounded-xl group-hover/title:after:bg-token-foreground/5
+ * hover:after:bg-token-foreground/10`). Same heading color/size, no underline.
+ */
+.hc-onboarding-empty-project-trigger {
+  position: relative;
+  z-index: 0;
+  display: inline-block;
   margin: 0;
-  color: var(--hc-text-secondary);
-  font-size: 16px;
-  line-height: 1.4;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre;
+  cursor: pointer;
+}
+
+.hc-onboarding-empty-project-trigger::after {
+  content: "";
+  position: absolute;
+  inset: 0 -6px; /* codex after:-inset-x-1.5 = -6px / -inset-y-0 */
+  z-index: -1;
+  border-radius: var(--hc-radius-xl); /* codex after:rounded-xl */
+  background: transparent;
+  transition: background 0.12s ease;
+}
+
+.hc-onboarding-empty-headline:hover .hc-onboarding-empty-project-trigger::after {
+  background: var(--hc-surface-soft); /* codex group-hover/title:after:bg-token-foreground/5 */
+}
+
+.hc-onboarding-empty-project-trigger:hover::after {
+  background: var(--hc-surface-hover); /* codex hover:after:bg-token-foreground/10 */
 }
 
 .hc-onboarding-empty-promo {
@@ -225,6 +261,15 @@
   color: var(--hc-text-secondary);
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* codex first-run codex.legal.mistakes — a subtle AI-fallibility disclaimer. */
+.hc-onboarding-empty-promo-disclaimer {
+  margin: 0;
+  color: var(--hc-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.85;
 }
 
 .hc-onboarding-empty-promo-actions {
@@ -409,7 +454,7 @@
 .hc-topbar {
   flex: 0 0 auto;
   justify-content: space-between;
-  min-height: 44px;
+  height: 46px; /* codex --height-toolbar = 46px (fixed) */
   padding: 6px 12px 6px 16px;
 }
 
@@ -428,7 +473,8 @@
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--hc-radius-lg); /* codex toolbar button = rounded-lg */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: #5f625b;
   cursor: pointer;
@@ -455,17 +501,18 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: 4px; /* codex toolbar buttons share one `gap-1` (4px) group */
 }
 
 .hc-topbar-nav-button {
   display: inline-grid;
-  width: 26px;
-  height: 26px;
+  width: 28px; /* codex toolbar button = 28px square (matches the sidebar trigger) */
+  height: 28px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--hc-radius-lg); /* codex toolbar button = rounded-lg */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: var(--hc-text-secondary);
   cursor: pointer;
@@ -547,6 +594,17 @@
   line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* codex thread-env-icon — a muted local/worktree env indicator before the title.
+   Inherits the header text color + opacity so it stays theme-aware in light/dark. */
+.hc-topbar-env-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: 2px;
+  color: var(--hc-text-primary);
+  opacity: 0.55;
 }
 
 .hc-thread-find-bar {
@@ -963,4 +1021,35 @@
 
 .hc-app[data-theme="dark"] .hc-background-agent-state.error {
   color: #f0a195;
+}
+
+
+/* ===== Dark-theme completeness, batch 2 (2026-05-30 workflow; role-mapped to --hc-* dark tokens, light untouched) ===== */
+/* Close dark-theme gaps: background-agent panel hardcoded light colors */
+.hc-app[data-theme="dark"] .hc-background-agent-header {
+  border-bottom-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-title small {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-composer {
+  border-top-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-composer textarea {
+  border-color: var(--hc-border-default);
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-background-agent-send {
+  border-color: var(--hc-border-default);
+  background: var(--hc-text-primary);
+  color: var(--hc-surface-main);
 }

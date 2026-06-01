@@ -22,19 +22,36 @@
  */
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+
+type FormatMessage = HiCodexIntlContextValue["formatMessage"];
 
 export const REASONING_EFFORT_VALUES = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 export type ReasoningEffortValue = typeof REASONING_EFFORT_VALUES[number];
 
-export function reasoningEffortLabel(value: ReasoningEffortValue): string {
-  switch (value) {
-    case "none": return "None";
-    case "minimal": return "Minimal";
-    case "low": return "Low";
-    case "medium": return "Medium";
-    case "high": return "High";
-    case "xhigh": return "Extra High";
-  }
+/*
+ * CODEX-REF: composer.mode.local.reasoning.<effort>.label — the six effort
+ * labels Codex renders in the dropdown (and footer chip). English is the source
+ * (defaultMessage); the zh-CN catalog supplies 无/极低/低/中/高/超高.
+ */
+const REASONING_EFFORT_DEFAULT_MESSAGES: Record<ReasoningEffortValue, string> = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+};
+
+// formatMessage is optional so non-React callers (e.g. tests) still get English.
+export function reasoningEffortLabel(
+  value: ReasoningEffortValue,
+  formatMessage?: FormatMessage,
+): string {
+  const defaultMessage = REASONING_EFFORT_DEFAULT_MESSAGES[value];
+  return formatMessage
+    ? formatMessage({ id: `composer.mode.local.reasoning.${value}.label`, defaultMessage })
+    : defaultMessage;
 }
 
 export function normalizeReasoningEffortValue(value: unknown): ReasoningEffortValue | null {
@@ -63,6 +80,7 @@ export function ReasoningPickerMenu({
   onSelect,
   onClose,
 }: ReasoningPickerMenuProps) {
+  const { formatMessage } = useHiCodexIntl();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
@@ -140,7 +158,9 @@ export function ReasoningPickerMenu({
        * CODEX-REF: composer-*.js — dropdown title with FormattedMessage
        *   id `composer.intelligenceDropdown.title`, defaultMessage `Reasoning`.
        */}
-      <div className="hc-reasoning-picker-menu-header">Reasoning</div>
+      <div className="hc-reasoning-picker-menu-header">
+        {formatMessage({ id: "composer.intelligenceDropdown.title", defaultMessage: "Reasoning" })}
+      </div>
       <ul className="hc-reasoning-picker-menu-items" role="none">
         {options.map((effort) => {
           const isActive = effort === currentEffort;
@@ -155,7 +175,7 @@ export function ReasoningPickerMenu({
                 data-reasoning-selected={isActive ? "true" : undefined}
                 onClick={() => select(effort)}
               >
-                <span className="hc-reasoning-picker-menu-item-label">{reasoningEffortLabel(effort)}</span>
+                <span className="hc-reasoning-picker-menu-item-label">{reasoningEffortLabel(effort, formatMessage)}</span>
                 {isActive && <Check aria-hidden size={14} />}
               </button>
             </li>

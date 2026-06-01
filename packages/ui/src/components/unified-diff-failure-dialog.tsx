@@ -1,4 +1,5 @@
 import { AlertTriangle, X } from "lucide-react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 /*
  * Codex Desktop unifiedDiff Failure Dialog.
@@ -60,6 +61,7 @@ export function UnifiedDiffFailureDialog({
   failure,
   onClose,
 }: UnifiedDiffFailureDialogProps) {
+  const { formatMessage } = useHiCodexIntl();
   const isNotGitRepo = failure.errorCode === "not-git-repo";
   const isRevert = failure.action === "revert";
   const { appliedPaths, skippedPaths, conflictedPaths, execOutput } = failure.result;
@@ -67,21 +69,32 @@ export function UnifiedDiffFailureDialog({
     appliedPaths.length > 0 || skippedPaths.length > 0 || conflictedPaths.length > 0;
   const execOutputText = execOutput?.output?.trim() ?? "";
 
+  // codex.unifiedDiff.{revert,reapply}Patch{NotGitRepo,Partial,NoChanges,Error} — 4-way title selector.
   const titleText = isNotGitRepo
-    ? (isRevert ? "Undo requires a Git repository" : "Reapply requires a Git repository")
+    ? (isRevert
+        ? formatMessage({ id: "codex.unifiedDiff.revertPatchNotGitRepo", defaultMessage: "Undo requires a Git repository" })
+        : formatMessage({ id: "codex.unifiedDiff.reapplyPatchNotGitRepo", defaultMessage: "Reapply requires a Git repository" }))
     : appliedPaths.length > 0
-      ? (isRevert ? "Some changes reverted" : "Some changes reapplied")
+      ? (isRevert
+          ? formatMessage({ id: "codex.unifiedDiff.revertPatchPartial", defaultMessage: "Some changes reverted" })
+          : formatMessage({ id: "codex.unifiedDiff.reapplyPatchPartial", defaultMessage: "Some changes reapplied" }))
       : (skippedPaths.length > 0 && conflictedPaths.length === 0)
-        ? (isRevert ? "No changes reverted" : "No changes reapplied")
-        : (isRevert ? "Failed to revert changes" : "Failed to reapply changes");
+        ? (isRevert
+            ? formatMessage({ id: "codex.unifiedDiff.revertPatchNoChanges", defaultMessage: "No changes reverted" })
+            : formatMessage({ id: "codex.unifiedDiff.reapplyPatchNoChanges", defaultMessage: "No changes reapplied" }))
+        : (isRevert
+            ? formatMessage({ id: "codex.unifiedDiff.revertPatchError", defaultMessage: "Failed to revert changes" })
+            : formatMessage({ id: "codex.unifiedDiff.reapplyPatchError", defaultMessage: "Failed to reapply changes" }));
 
   const introText = isNotGitRepo
-    ? "This action only works when running in a Git repository."
+    ? formatMessage({ id: "codex.unifiedDiff.patchNotGitRepoDescription", defaultMessage: "This action only works when running in a Git repository." })
     : hasAnyPaths
-      ? (isRevert ? "There were issues reverting some files" : "There were issues reapplying some files")
+      ? (isRevert
+          ? formatMessage({ id: "codex.unifiedDiff.patchFailureDetailsIntroRevert", defaultMessage: "There were issues reverting some files" })
+          : formatMessage({ id: "codex.unifiedDiff.patchFailureDetailsIntroReapply", defaultMessage: "There were issues reapplying some files" }))
       : execOutputText.length > 0
-        ? `Git apply error: ${firstErrorLine(execOutputText)}`
-        : "No file details were returned for this patch action.";
+        ? formatMessage({ id: "codex.unifiedDiff.patchErrorOutputSummary", defaultMessage: "Git apply error: {message}" }, { message: firstErrorLine(execOutputText) })
+        : formatMessage({ id: "codex.unifiedDiff.patchFailureNoDetails", defaultMessage: "No file details were returned for this patch action." });
 
   return (
     <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
@@ -91,6 +104,14 @@ export function UnifiedDiffFailureDialog({
         data-state="open"
         aria-modal="true"
         aria-label={titleText}
+        onKeyDown={(event) => {
+          // codex: Radix dialogs close on Escape; mirror the dismiss behavior the
+          // other HiCodex dialogs (mcp-follow-up, keyboard-shortcuts, rating) all have.
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
@@ -99,8 +120,11 @@ export function UnifiedDiffFailureDialog({
             <AlertTriangle aria-hidden className="hc-unified-diff-failure-icon" size={16} />
             <span>{titleText}</span>
           </div>
-          {/* codex.unifiedDiff.patchFailureDialogClose */}
-          <button type="button" aria-label="Close" onClick={onClose}>
+          <button
+            type="button"
+            aria-label={formatMessage({ id: "codex.unifiedDiff.patchFailureDialogClose", defaultMessage: "Close" })}
+            onClick={onClose}
+          >
             <X size={16} />
           </button>
         </header>
@@ -110,8 +134,10 @@ export function UnifiedDiffFailureDialog({
             <div className="hc-unified-diff-failure-paths">
               {appliedPaths.length > 0 && (
                 <PathList
-                  // codex.unifiedDiff.patchAppliedPathsHeading
-                  heading={`Applied cleanly (${appliedPaths.length})`}
+                  heading={formatMessage(
+                    { id: "codex.unifiedDiff.patchAppliedPathsHeading", defaultMessage: "Applied cleanly ({count})" },
+                    { count: appliedPaths.length },
+                  )}
                   // tone: text-token-foreground
                   toneClass="hc-unified-diff-tone-applied"
                   paths={appliedPaths}
@@ -119,8 +145,10 @@ export function UnifiedDiffFailureDialog({
               )}
               {skippedPaths.length > 0 && (
                 <PathList
-                  // codex.unifiedDiff.patchSkippedPathsHeading
-                  heading={`Skipped (${skippedPaths.length})`}
+                  heading={formatMessage(
+                    { id: "codex.unifiedDiff.patchSkippedPathsHeading", defaultMessage: "Skipped ({count})" },
+                    { count: skippedPaths.length },
+                  )}
                   // tone: text-token-description-foreground
                   toneClass="hc-unified-diff-tone-skipped"
                   paths={skippedPaths}
@@ -128,8 +156,10 @@ export function UnifiedDiffFailureDialog({
               )}
               {conflictedPaths.length > 0 && (
                 <PathList
-                  // codex.unifiedDiff.patchConflictedPathsHeading
-                  heading={`Conflicts (${conflictedPaths.length})`}
+                  heading={formatMessage(
+                    { id: "codex.unifiedDiff.patchConflictedPathsHeading", defaultMessage: "Conflicts ({count})" },
+                    { count: conflictedPaths.length },
+                  )}
                   // tone: text-token-charts-red
                   toneClass="hc-unified-diff-tone-conflicted"
                   paths={conflictedPaths}
@@ -140,7 +170,7 @@ export function UnifiedDiffFailureDialog({
         </div>
         <footer>
           <button type="button" className="hc-mini-button" autoFocus onClick={onClose}>
-            Close
+            {formatMessage({ id: "codex.unifiedDiff.patchFailureDialogClose", defaultMessage: "Close" })}
           </button>
         </footer>
       </section>

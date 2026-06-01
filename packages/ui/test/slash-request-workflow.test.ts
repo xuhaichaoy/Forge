@@ -514,7 +514,7 @@ async function showsMemoriesOptionsFromThreadContext(): Promise<void> {
             status: "use off · generate on",
             meta: "These switches apply to the chat started from this composer",
             details: [
-              "Use memories: Let Codex bring existing memories into this chat's context",
+              "Use memories: Let Codex bring existing memories into this chat’s context",
               "Generate memories: Allow Codex to use this chat when creating new memories later",
             ],
             secondaryActions: [

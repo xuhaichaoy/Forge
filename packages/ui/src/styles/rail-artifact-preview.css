@@ -28,6 +28,7 @@
   inset-inline: 16px;
   bottom: 0;
   height: 0.5px;
+  /* Faint section divider. Light value kept verbatim; dark override below. */
   background: #d9d5c9;
   pointer-events: none;
 }
@@ -142,7 +143,9 @@
 
 .hc-file-reference-icon-button:hover,
 .hc-artifact-preview-icon-button:hover {
-  background: rgba(34, 38, 43, 0.06);
+  /* Exact light match for --hc-surface-soft (rgba(34,38,43,0.06)); tokenizing
+   * keeps light identical and picks up the dark overlay value for free. */
+  background: var(--hc-surface-soft);
   color: #27313d;
 }
 
@@ -410,4 +413,152 @@
 .hc-file-reference-open-button:hover,
 .hc-artifact-preview-open-button:hover {
   background: #e9e6dc;
+}
+
+/*
+ * ============================================================================
+ * DARK THEME OVERRIDES — right-rail artifact / file-reference preview surface
+ * ============================================================================
+ * HiCodex theming pipeline: `.hc-app[data-theme="dark"]` (base.css:110+) flips
+ * the `--hc-*` design tokens to their dark values. Most files just reference
+ * `var(--hc-*)` and inherit dark for free, but this file predates tokenization
+ * and hardcodes a *warm-paper* light palette (#fffdfa / #fbfaf6 / #f8f6ef
+ * fills, #d6d2c6 / #dfdbcf / #e3dfd3 borders, #27313d / #6f716b text) whose
+ * literals do NOT equal any `--hc-*` token's LIGHT value. Replacing them inline
+ * with `var(--hc-*)` would therefore change LIGHT rendering (e.g. opaque
+ * #fbfaf6 -> translucent grey), which is disallowed.
+ *
+ * So per the assignment's method we KEEP the light hex untouched (light stays
+ * pixel-identical) and re-color each surface here using `var(--hc-*)` tokens —
+ * whose DARK values trace to the Codex Desktop `.electron-dark` palette cited
+ * in base.css:112-124 (sourced from Codex `app-main-*.css`):
+ *   --color-background-editor-opaque  gray-800  #212121  -> --hc-surface-main (dark)
+ *   --color-background-elevated-primary  #212121f5       -> --hc-surface-panel (dark, .96 alpha)
+ *   --color-background-button-secondary-hover rgba(255,255,255,.08) -> --hc-surface-hover (dark)
+ *   (subtle elevated fill)             rgba(255,255,255,.05) -> --hc-surface-soft (dark)
+ *   --color-text-foreground            #fff               -> --hc-text-primary (dark)
+ *   --color-text-foreground-secondary  rgba(255,255,255,.70) -> --hc-text-secondary (dark)
+ *   --color-border                     rgba(255,255,255,.08) -> --hc-border-default (dark)
+ *   --color-border-light               rgba(255,255,255,.04) -> --hc-border-subtle (dark)
+ *   --color-border-heavy               rgba(255,255,255,.16) -> --hc-border-strong (dark)
+ * The one exact light-token match (icon-button hover #rgba(34,38,43,.06) ==
+ * --hc-surface-soft light) was tokenized inline above instead.
+ *
+ * Intentionally LEFT hardcoded (semantic accents with no cited dark token, per
+ * "if a value has no basis, leave it + note"):
+ *   - .hc-artifact-preview-status        #2d5562 (teal status accent)
+ *   - ...[data-status="error"]           #8f3b2f (error red)
+ * These read low-contrast on a #212121 card and likely want a lightened dark
+ * value, but Codex's dark accent tokens aren't available in-repo to cite.
+ */
+
+/* Surfaces — primary card / pdf body -> dark main surface (#212121). */
+.hc-app[data-theme="dark"] .hc-file-reference-panel,
+.hc-app[data-theme="dark"] .hc-artifact-preview-panel,
+.hc-app[data-theme="dark"] .hc-artifact-preview-pdf {
+  background: var(--hc-surface-main);
+}
+
+/* Surfaces — recessed/elevated fills (frames, text/sheet wraps, states,
+ * secondary buttons) -> subtle light overlay on the dark card. */
+.hc-app[data-theme="dark"] .hc-artifact-preview-image-frame,
+.hc-app[data-theme="dark"] .hc-artifact-preview-pdf-frame,
+.hc-app[data-theme="dark"] .hc-artifact-preview-text-wrap,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-wrap,
+.hc-app[data-theme="dark"] .hc-artifact-preview-text-state,
+.hc-app[data-theme="dark"] .hc-artifact-preview-state,
+.hc-app[data-theme="dark"] .hc-file-reference-open-button,
+.hc-app[data-theme="dark"] .hc-artifact-preview-open-button {
+  background: var(--hc-surface-soft);
+}
+
+/* Surfaces — header row + button hover read a touch stronger. */
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet tr:first-child td,
+.hc-app[data-theme="dark"] .hc-file-reference-open-button:hover,
+.hc-app[data-theme="dark"] .hc-artifact-preview-open-button:hover {
+  background: var(--hc-surface-hover);
+}
+
+/* Surfaces — sticky sheet-meta bar (semi-opaque) -> dark elevated panel. */
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-meta {
+  background: var(--hc-surface-panel);
+}
+
+/* Borders — outer card / frame / wrap borders. */
+.hc-app[data-theme="dark"] .hc-file-reference-panel,
+.hc-app[data-theme="dark"] .hc-artifact-preview-panel,
+.hc-app[data-theme="dark"] .hc-artifact-preview-image-frame,
+.hc-app[data-theme="dark"] .hc-artifact-preview-pdf-frame,
+.hc-app[data-theme="dark"] .hc-artifact-preview-text-wrap,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-wrap,
+.hc-app[data-theme="dark"] .hc-artifact-preview-text-state,
+.hc-app[data-theme="dark"] .hc-artifact-preview-state {
+  border-color: var(--hc-border-default);
+}
+
+/* Borders — faint inner table cell / meta / divider lines. */
+.hc-app[data-theme="dark"] .hc-rail-section::after {
+  background: var(--hc-border-subtle);
+}
+
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-meta,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet td,
+.hc-app[data-theme="dark"] .hc-artifact-preview-truncation,
+.hc-app[data-theme="dark"] .hc-artifact-preview-boundary,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-details {
+  border-color: var(--hc-border-subtle);
+}
+
+/* Borders — secondary button outline -> heavier dark border. */
+.hc-app[data-theme="dark"] .hc-file-reference-open-button,
+.hc-app[data-theme="dark"] .hc-artifact-preview-open-button {
+  border-color: var(--hc-border-strong);
+}
+
+/* Text — primary (headings, titles, body, sheet text, button label). */
+.hc-app[data-theme="dark"] .hc-file-reference-heading,
+.hc-app[data-theme="dark"] .hc-artifact-preview-heading,
+.hc-app[data-theme="dark"] .hc-artifact-preview-heading-text h2,
+.hc-app[data-theme="dark"] .hc-file-reference-path,
+.hc-app[data-theme="dark"] .hc-artifact-preview-title,
+.hc-app[data-theme="dark"] .hc-artifact-preview-text,
+.hc-app[data-theme="dark"] .hc-artifact-preview-document,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-meta,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet,
+.hc-app[data-theme="dark"] .hc-file-reference-open-button,
+.hc-app[data-theme="dark"] .hc-artifact-preview-open-button,
+.hc-app[data-theme="dark"] .hc-file-reference-icon-button:hover,
+.hc-app[data-theme="dark"] .hc-artifact-preview-icon-button:hover {
+  color: var(--hc-text-primary);
+}
+
+/* Text — muted secondary (captions, meta, icons, details). NB: excludes
+ * .hc-artifact-preview-status so its semantic teal is preserved in dark too. */
+.hc-app[data-theme="dark"] .hc-artifact-preview-heading-text span,
+.hc-app[data-theme="dark"] .hc-file-reference-heading svg,
+.hc-app[data-theme="dark"] .hc-artifact-preview-heading svg,
+.hc-app[data-theme="dark"] .hc-file-reference-icon-button,
+.hc-app[data-theme="dark"] .hc-artifact-preview-icon-button,
+.hc-app[data-theme="dark"] .hc-file-reference-lines,
+.hc-app[data-theme="dark"] .hc-artifact-preview-meta,
+.hc-app[data-theme="dark"] .hc-artifact-preview-state,
+.hc-app[data-theme="dark"] .hc-artifact-preview-text-state,
+.hc-app[data-theme="dark"] .hc-artifact-preview-truncation,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-meta span,
+.hc-app[data-theme="dark"] .hc-artifact-preview-boundary,
+.hc-app[data-theme="dark"] .hc-artifact-preview-sheet-details,
+.hc-app[data-theme="dark"] .hc-artifact-preview-details {
+  color: var(--hc-text-secondary);
+}
+
+/*
+ * Re-assert the error color in dark so the secondary-text rule above (which
+ * lists .hc-artifact-preview-state / -text-state for default+loading legibility)
+ * does not clobber the [data-status="error"] semantic via equal specificity +
+ * source order. Same hue kept — no cited Codex dark error token to swap in (see
+ * note at top of this block); contrast on the dark card is a known limitation.
+ */
+.hc-app[data-theme="dark"] .hc-artifact-preview-text-state[data-status="error"],
+.hc-app[data-theme="dark"] .hc-artifact-preview-state[data-status="error"] {
+  color: #8f3b2f;
 }

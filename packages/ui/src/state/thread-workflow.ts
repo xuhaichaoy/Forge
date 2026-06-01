@@ -539,6 +539,25 @@ export async function forkThreadFromTurn(
   }, 120_000);
 }
 
+/*
+ * codex sidebar-thread-section `fork-into-worktree` (threadHeader.forkIntoWorktree
+ * "Fork into new worktree") — create an isolated git worktree for the source
+ * thread's cwd, then fork the thread INTO that worktree directory (the forked
+ * thread's workspace becomes the worktree path, so it runs on its own branch).
+ * `createWorktree` is injected (the host `createPendingWorktree`) so this stays a
+ * pure, unit-testable composition of the two proven steps.
+ */
+export async function forkThreadIntoWorktree(
+  client: CodexJsonRpcClient,
+  threadId: string,
+  cwd: string,
+  createWorktree: (request: { cwd: string }) => Promise<{ path: string }>,
+  context?: ThreadContextDefaults | null,
+) {
+  const worktree = await createWorktree({ cwd });
+  return forkThread(client, threadId, worktree.path, context);
+}
+
 export async function startSideConversation(
   client: CodexJsonRpcClient,
   sourceThreadId: string,

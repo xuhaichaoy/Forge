@@ -1,6 +1,10 @@
+import { X } from "lucide-react";
+import { useState } from "react";
 import type { LogLine } from "../state/codex-reducer";
 
-const DEFAULT_TOAST_TTL_MS = 7_000;
+// codex toast-signal-CTz_x1Qc.js — the default toast duration is `var r=5` (5 seconds);
+// the toast lifetime/auto-dismiss matches that, not the 7s HiCodex previously used.
+const DEFAULT_TOAST_TTL_MS = 5_000;
 const MAX_VISIBLE_TOASTS = 3;
 
 export interface AppToastViewportProps {
@@ -8,8 +12,14 @@ export interface AppToastViewportProps {
   now?: number;
 }
 
+const EMPTY_DISMISSED: ReadonlySet<string> = new Set();
+
 export function AppToastViewport({ logs, now = Date.now() }: AppToastViewportProps) {
-  const toasts = projectToastLogs(logs, now);
+  // codex toast-signal-CTz_x1Qc.js — `hasCloseButton` defaults to true, so every toast is
+  // user-dismissible. Track dismissed ids locally (toasts are derived from immutable log
+  // state) so the close affordance hides them ahead of the auto-dismiss TTL.
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(EMPTY_DISMISSED);
+  const toasts = projectToastLogs(logs, now).filter((log) => !dismissed.has(log.id));
   if (toasts.length === 0) return null;
   return (
     <div className="hc-toast-viewport" role="status" aria-live="polite" aria-atomic="false">
@@ -17,6 +27,18 @@ export function AppToastViewport({ logs, now = Date.now() }: AppToastViewportPro
         <article className="hc-app-toast" data-level={log.level} key={log.id}>
           <span className="hc-app-toast-dot" aria-hidden />
           <p>{log.text}</p>
+          <button
+            type="button"
+            className="hc-app-toast-close"
+            aria-label="Dismiss"
+            onClick={() => setDismissed((prev) => {
+              const next = new Set(prev);
+              next.add(log.id);
+              return next;
+            })}
+          >
+            <X size={14} aria-hidden />
+          </button>
         </article>
       ))}
     </div>
@@ -56,4 +78,5 @@ const INTERNAL_LOG_PATTERNS = [
   /^[a-z][\w-]* (?:starting|ready|stopping|stopped|restarting)$/i,
   /^Falling back from WebSockets to HTTPS transport\./i,
   /^stream disconnected before completion:/i,
+  /^Cannot read properties of undefined \(reading ['"]transformCallback['"]\)$/i,
 ];

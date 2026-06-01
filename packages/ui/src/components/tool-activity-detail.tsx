@@ -1,4 +1,4 @@
-import { Braces, Check, ChevronRight, Copy as CopyIcon, TriangleAlert, X, XCircle } from "lucide-react";
+import { Braces, Check, ChevronRight, Copy as CopyIcon, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatUnknown, stringField } from "../lib/format";
@@ -22,6 +22,8 @@ import {
 } from "../state/render-groups";
 import { desktopSkillPathInfoForCommandPath } from "../state/tool-activity-grouping";
 import { AnimatedDisclosure } from "./animated-disclosure";
+import { useHiCodexIntl } from "./i18n-provider";
+import type { FileReference } from "./file-reference-types";
 import type { OpenThreadHandler } from "./open-thread";
 
 type ThreadItem = AccumulatedThreadItem;
@@ -125,6 +127,10 @@ export type ToolActivityDetailViewModel =
       output: string;
       status: string;
       footer: string;
+      /* per-command lifecycle start (ItemStartedNotification.startedAtMs, stamped
+         by the reducer) — drives the live "for {elapsed}" running timer.
+         Optional: older items / test fixtures may omit it. */
+      startedAtMs?: number | null;
     }
   | {
       kind: "patch";
@@ -258,16 +264,25 @@ export interface PatchChangeViewModel {
 
 export function ToolActivityDetail({
   forceExecExpanded = false,
+  hideToolTitle = false,
   item,
   onMcpAppHostCall,
   onReadMcpResource,
+  onOpenFileReference,
   onOpenThreadId,
   threadId = null,
 }: {
   forceExecExpanded?: boolean;
+  /*
+   * codex: a standalone MCP tool-call renders the tool label ONCE in its
+   * collapsible summary row; the disclosure body holds the result only (no
+   * repeated title). `hideToolTitle` lets that caller drop the in-body title.
+   */
+  hideToolTitle?: boolean;
   item: ThreadItem;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
+  onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
   threadId?: string | null;
 }) {
@@ -357,8 +372,7 @@ export function ToolActivityDetail({
               <div className="hc-tool-detail-change" key={`${change.path}:${index}`}>
                 <div className="hc-tool-detail-change-title">
                   <span>{change.action}</span>
-                  {/* HiCodex has no patch-file opener here yet; expose intent as a tooltip only. */}
-                  <code title={`${change.path} — Open in editor`}>{change.path}</code>
+                  <PatchChangePath change={change} onOpenFileReference={onOpenFileReference} />
                 </div>
                 {change.diff && <CodeBlock diff text={change.diff} />}
               </div>
@@ -382,9 +396,11 @@ export function ToolActivityDetail({
     // no "Result" or "plaintext" label and no Show-N-more-lines toggle.
     return (
       <section className={`hc-tool-detail-stack tool ${detail.running ? "is-running" : ""}`}>
-        <div className="hc-tool-detail-line">
-          <span className="hc-tool-detail-title">{detail.name}</span>
-        </div>
+        {!hideToolTitle && (
+          <div className="hc-tool-detail-line">
+            <span className="hc-tool-detail-title">{detail.name}</span>
+          </div>
+        )}
         {detail.toolKind !== "MCP" && detail.argumentsText && (
           <LabeledCode label="Parameters" text={detail.argumentsText} />
         )}
@@ -399,7 +415,17 @@ export function ToolActivityDetail({
               : null
         )}
         {detail.structuredResultText && <CodeBlock text={detail.structuredResultText} />}
-        {detail.errorText && <LabeledCode label="Error" text={detail.errorText} />}
+        {detail.errorText && (
+          /*
+           * codex: an MCP tool error renders inside the shared alert/callout
+           * (alert-CoBPbdcu `yc`) at level="danger" fullWidth — NOT a "Error"-
+           * labeled code block. The message sits in `text-size-chat max-h-48
+           * overflow-auto whitespace-pre-wrap` inside a danger-tinted box.
+           */
+          <div className="hc-tool-error-callout" role="alert">
+            <div className="hc-tool-error-callout-body">{detail.errorText}</div>
+          </div>
+        )}
         {rawMcpOutput && <RawToolOutputButton heading={rawMcpOutput.heading} text={rawMcpOutput.text} />}
       </section>
     );
@@ -434,6 +460,81 @@ export function ToolActivityDetail({
       <CodeBlock text={detail.text || "..."} />
     </section>
   );
+}
+
+/*
+ * CODEX-REF: patch-item-content-*.js `oe` — the per-file patch path is rendered
+ * as a `<button type="button">` (class `text-token-text-link-foreground
+ * hover:underline`, with a `font-mono` full-path tooltip) whose `onClick` calls
+ * `te({path, line:openLocation.line, ...openFile})` to open the file at the
+ * first change line. `openLocation.line = firstAdditionLine ?? firstDeletionLine
+ * ?? 1` (`E`/parse-diff-*.js: additionStart of the first hunk with additions,
+ * else deletionStart of the first hunk with deletions, else 1).
+ *
+ * HiCodex maps this to `onOpenFileReference({ path, lineStart })`. When no
+ * opener is wired (fixture-only renders, or surfaces that don't supply the
+ * handler) the path stays a non-interactive `<code>` with a tooltip, mirroring
+ * Codex's null branch (`G = z==null ? <button> : null`).
+ */
+function PatchChangePath({
+  change,
+  onOpenFileReference,
+}: {
+  change: PatchChangeViewModel;
+  onOpenFileReference?: (reference: FileReference) => void;
+}) {
+  if (!onOpenFileReference) {
+    return <code title={`${change.path} — Open in editor`}>{change.path}</code>;
+  }
+  const lineStart = patchChangeFirstChangeLine(change.diff);
+  return (
+    <button
+      aria-label={`Open ${change.path}`}
+      className="hc-tool-detail-change-path-button"
+      title={change.path}
+      type="button"
+      onClick={() => onOpenFileReference({ path: change.path, lineStart })}
+    >
+      {change.path}
+    </button>
+  );
+}
+
+const PATCH_HUNK_HEADER_RE = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/u;
+
+/*
+ * CODEX-REF: parse-diff-*.js `E` — the file open location line is
+ * `firstAdditionLine ?? firstDeletionLine ?? 1`, where `firstAdditionLine` is
+ * the `+newStart` of the first hunk containing an addition line and
+ * `firstDeletionLine` is the `-oldStart` of the first hunk containing a deletion
+ * line (the hunk-header start values, not the exact +/- line offset).
+ */
+export function patchChangeFirstChangeLine(diff: string): number {
+  let firstAdditionLine: number | null = null;
+  let firstDeletionLine: number | null = null;
+  let hunkOldStart = 0;
+  let hunkNewStart = 0;
+  let hunkHasAddition = false;
+  let hunkHasDeletion = false;
+  for (const rawLine of diff.split(/\r?\n/u)) {
+    const header = PATCH_HUNK_HEADER_RE.exec(rawLine);
+    if (header) {
+      hunkOldStart = Number(header[1]);
+      hunkNewStart = Number(header[2]);
+      hunkHasAddition = false;
+      hunkHasDeletion = false;
+      continue;
+    }
+    if (rawLine.startsWith("+++") || rawLine.startsWith("---")) continue;
+    if (rawLine.startsWith("+")) {
+      if (!hunkHasAddition && firstAdditionLine === null) firstAdditionLine = hunkNewStart;
+      hunkHasAddition = true;
+    } else if (rawLine.startsWith("-")) {
+      if (!hunkHasDeletion && firstDeletionLine === null) firstDeletionLine = hunkOldStart;
+      hunkHasDeletion = true;
+    }
+  }
+  return firstAdditionLine ?? firstDeletionLine ?? 1;
 }
 
 /*
@@ -498,15 +599,12 @@ function AutoReviewDetail({ detail }: { detail: Extract<ToolActivityDetailViewMo
 function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
   switch (block.kind) {
     case "text":
-      // codex: local-conversation-thread-*.js — Codex
-      // Desktop renders MCP text blocks as a plain `<div>` with
-      // `max-h-48 overflow-auto whitespace-pre-wrap`, no language label,
-      // no code-block chrome.
-      return (
-        <div className="hc-mcp-result-block hc-mcp-result-text">
-          <div className="hc-mcp-result-text-body">{mcpTextBlockDisplayText(block)}</div>
-        </div>
-      );
+      // codex: local-conversation-thread-*.js — MCP text blocks render in a
+      // code-style container (rounded-lg border bg-token-text-code-block-background)
+      // with a sticky `plaintext` header (codex.mcpTool.textBlock.plaintextTitle),
+      // NOT a bare box. (The earlier "plain div, no chrome" note misread a
+      // different max-h-48 variant.)
+      return <McpPlaintextCard text={mcpTextBlockDisplayText(block)} />;
     case "image":
       return (
         <div className="hc-mcp-result-block hc-mcp-result-image">
@@ -573,6 +671,31 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
 
 function mcpTextBlockDisplayText(block: Extract<McpResultBlock, { kind: "text" }>): string {
   return block.annotations ? `${block.text}\nAnnotations: ${block.annotations}` : block.text;
+}
+
+/*
+ * codex: local-conversation-thread-*.js — MCP text content blocks render in a
+ * CODE-STYLE container, not a bare box: a
+ * `rounded-lg border border-token-input-background bg-token-text-code-block-background`
+ * card with a sticky header `flex items-center justify-between py-1 ps-2 pe-2
+ * font-sans text-sm text-token-description-foreground select-none` whose title is
+ * `codex.mcpTool.textBlock.plaintextTitle` (defaultMessage "plaintext"), above the
+ * scrollable `max-h-48` text body. (The header's right slot is an empty `flex`
+ * placeholder in Desktop.)
+ */
+function McpPlaintextCard({ text }: { text: string }) {
+  const { formatMessage } = useHiCodexIntl();
+  return (
+    <div className="hc-mcp-result-text">
+      <div className="hc-mcp-result-text-header">
+        <span className="hc-mcp-result-text-title">
+          {formatMessage({ id: "codex.mcpTool.textBlock.plaintextTitle", defaultMessage: "plaintext" })}
+        </span>
+        <span className="hc-mcp-result-text-header-actions" aria-hidden="true" />
+      </div>
+      <div className="hc-mcp-plaintext-body">{text}</div>
+    </div>
+  );
 }
 
 function McpAppToolDetail({
@@ -1534,6 +1657,67 @@ function escapeHtmlAttribute(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+/*
+ * codex: the embedded exec header (`Nv` `he`) labels the block by SHELL TYPE,
+ * derived from the command's leading program — `Lv(Av(command))`. `Av` (= `jv` +
+ * `Mv`) extracts the first token's basename (after quote-stripping + path split)
+ * and maps a known shell executable to its shell type (`x` = the `mm` map); `Lv`
+ * maps that type to a display name (`y` = the `hm` map), defaulting to "Shell".
+ * So normal commands (git/npm/…) show "Shell"; a bare shell invocation
+ * (bash/zsh/pwsh/sh/cmd, incl. `.exe`) shows that shell's name.
+ */
+const EXEC_SHELL_EXECUTABLES: Record<string, string> = {
+  bash: "bash",
+  "bash.exe": "bash",
+  "git-bash.exe": "bash",
+  cmd: "cmd",
+  "cmd.exe": "cmd",
+  powershell: "powershell",
+  "powershell.exe": "powershell",
+  pwsh: "powershell",
+  "pwsh.exe": "powershell",
+  sh: "sh",
+  "sh.exe": "sh",
+  zsh: "zsh",
+  "zsh.exe": "zsh",
+};
+const EXEC_SHELL_DISPLAY_NAMES: Record<string, string> = {
+  bash: "bash",
+  cmd: "cmd",
+  powershell: "PowerShell",
+  sh: "sh",
+  zsh: "zsh",
+};
+
+function execShellBasename(token: string): string {
+  // codex Mv: e.split(/[/\\]/).at(-1) ?? e
+  const parts = token.split(/[/\\]/);
+  return parts[parts.length - 1] || token;
+}
+
+function execShellProgramName(command: string): string | null {
+  // codex jv: trim → unwrap a leading quote → first whitespace token → basename
+  let t = command.trim();
+  if (t.length === 0) return null;
+  const quoted = t.match(/^(['"])(.*?)\1/);
+  const inner = quoted?.[2];
+  if (inner != null) {
+    if (quoted![0].length === t.length) {
+      t = inner.trim();
+    } else {
+      return execShellBasename(inner);
+    }
+  }
+  const token = t.match(/^\S+/)?.[0];
+  return token == null ? null : execShellBasename(token);
+}
+
+function execShellTypeLabel(command: string): string {
+  const program = execShellProgramName(command);
+  const shellType = program == null ? null : EXEC_SHELL_EXECUTABLES[program.toLowerCase()] ?? null;
+  return shellType == null ? "Shell" : EXEC_SHELL_DISPLAY_NAMES[shellType];
+}
+
 function ExecShellDetail({
   detail,
   forceExpanded = false,
@@ -1552,16 +1736,27 @@ function ExecShellDetail({
    * 因此初始值跟随 forceExpanded。
    */
   const [commandExpanded, setCommandExpanded] = useState<boolean>(forceExpanded);
-  const hasBody = Boolean(detail.output || detail.footer);
   const bodyOpen = forceExpanded || detail.running || expanded;
   const output = detail.output || (!detail.running && detail.footer ? "No output" : "");
 
-  /* Keep running command output pinned to the newest line. */
+  /*
+   * Keep running output pinned to the newest line — but ONLY when the user is
+   * already at the bottom. codex: local-conversation-thread `Xp` recomputes an
+   * at-bottom flag on every scroll (`scrollHeight - scrollTop - clientHeight <=
+   * Yp`, Yp=24) and the content-change effect bails when not at bottom, so a
+   * manual scroll-up is never yanked back down.
+   */
   const outputRef = useRef<HTMLPreElement | null>(null);
+  const outputAtBottomRef = useRef<boolean>(true);
+  const onOutputScroll = () => {
+    const el = outputRef.current;
+    if (!el) return;
+    outputAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 24;
+  };
   useEffect(() => {
     if (!detail.running || !bodyOpen) return;
     const el = outputRef.current;
-    if (!el) return;
+    if (!el || !outputAtBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
   }, [bodyOpen, detail.output, detail.running]);
 
@@ -1582,11 +1777,11 @@ function ExecShellDetail({
   };
 
   const commandContent = (
-    <>
-      <span>$</span>
-      <code>{detail.command}</code>
-      {hasBody && !forceExpanded && <ChevronRight className={bodyOpen ? "is-open" : ""} size={14} />}
-    </>
+    /*
+     * Codex embedded Nv renders one continuous monospace run `$ {command}`, no
+     * separate $ span and NO chevron — the command row is not a body disclosure.
+     */
+    <code>$ {detail.command}</code>
   );
 
   return (
@@ -1594,28 +1789,39 @@ function ExecShellDetail({
       className={`hc-exec-shell ${detail.running ? "is-running" : ""}`}
       data-shell-state={bodyOpen ? "expanded" : "collapsed"}
     >
-      <div className="hc-exec-shell-title">Shell</div>
-      <ExecShellCopyButton
-        className="hc-exec-shell-copy-all"
-        copied={copiedTarget === "all"}
-        label={copiedTarget === "all" ? "Copied" : "Copy command and output"}
-        onClick={() => copyTarget("all")}
-      />
+      {/*
+       * Codex Nv embedded card = a flex column `[he, ve, ye]`. For embedded:
+       * `he` (the shell-TYPE header below) renders, the full `ve` header bar
+       * (shellName + cwd + copy-shell-contents + collapse/expand) is gated to
+       * variant==="default" so in-thread cards omit it, and the body `ye` shows
+       * UNCONDITIONALLY (`<div className="relative overflow-hidden">{me}</div>`,
+       * no collapse). Card-level copy is omitted (Codex exposes only the scoped
+       * per-command / per-output copy); the command row's only click affordance
+       * is un-clamping its own `line-clamp-2` (F = () => b(D)), NOT a body toggle.
+       */}
+      {!forceExpanded && (
+        /*
+         * codex `he` (embedded only): a muted shell-TYPE label row above the
+         * command — `Lv(Av(command))`, i.e. "Shell" for normal commands or the
+         * shell name (bash/zsh/PowerShell/…) when the command is a bare shell.
+         */
+        <div className="hc-exec-shell-header">
+          <span>{execShellTypeLabel(detail.command)}</span>
+        </div>
+      )}
       <div className="hc-exec-shell-command-row">
-        {hasBody && !forceExpanded ? (
+        {!forceExpanded ? (
           <button
-            aria-expanded={bodyOpen}
             className="hc-exec-shell-command hc-exec-shell-toggle"
             type="button"
             data-command-expanded={commandExpanded || undefined}
             onClick={() => {
               /*
-               * Codex `Jh` 的 F = () => b(D) —— 点击命令一次性把 y 设为 D，
-               * `line-clamp-2` 永久解除。HiCodex 复用现有的整行 button 同时承担
-               * Codex 的"命令展开"语义，叠加 HiCodex 自身的 bodyOpen toggle 行为。
+               * Codex `Nv` 的 F = () => b(D) —— 点击命令一次性把 y 设为 D，
+               * `line-clamp-2` 永久解除（无反向折叠）。命令点击只解夹紧自身，
+               * 不再控制 output/footer 的可见性。
                */
               setCommandExpanded(true);
-              setExpanded((value) => !value);
             }}
           >
             {commandContent}
@@ -1632,15 +1838,16 @@ function ExecShellDetail({
           onClick={() => copyTarget("command")}
         />
       </div>
-      {bodyOpen && detail.cwd && <div className="hc-exec-shell-cwd">{detail.cwd}</div>}
-      {bodyOpen && output && (
-        /*
-         * Codex Desktop only sets `data-thread-find-skip` on the collapsed
-         * exec-shell wrapper. Once stdout/stderr is visible, the shell output is
-         * searchable by the in-thread find walker.
-         */
+      {/*
+       * Codex embedded Nv: the output block `ue` is a sibling of the command row
+       * inside `pe = <div className="relative">…</div>` and renders
+       * UNCONDITIONALLY (only gated on whether there IS output text — `W = w ? a :
+       * l ? "" : E`). It is NOT hidden behind a body toggle, so HiCodex shows it
+       * whenever `output` is present rather than gating on `bodyOpen`.
+       */}
+      {output && (
         <div className="hc-exec-shell-output-wrap">
-          <pre className="hc-exec-shell-output" ref={outputRef}>
+          <pre className="hc-exec-shell-output" ref={outputRef} onScroll={onOutputScroll}>
             <code>{output}</code>
           </pre>
           <ExecShellCopyButton
@@ -1651,7 +1858,8 @@ function ExecShellDetail({
           />
         </div>
       )}
-      {bodyOpen && renderExecFooter(detail)}
+      {/* Codex embedded: the footer (zv) is the second child of the card wrapper and always renders. */}
+      {renderExecFooter(detail)}
     </section>
   );
 }
@@ -1677,9 +1885,8 @@ function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "
         : "unknown";
   return (
     <div className="hc-exec-shell-footer" data-exec-status={status}>
-      {isStopped && <TriangleAlert aria-hidden className="hc-exec-footer-icon-warn" size={12} />}
+      {/* codex `zv` exec footer: only the success branch carries an icon (a check); Stopped/Exit-code are text-only. */}
       {isSuccess && <Check aria-hidden className="hc-exec-footer-icon-success" size={12} />}
-      {isExitCodeFailure && <XCircle aria-hidden className="hc-exec-footer-icon-error" size={12} />}
       <span>{detail.footer}</span>
     </div>
   );
@@ -1772,6 +1979,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       output: commandOutputText(item),
       status,
       footer: execFooter(record, running),
+      startedAtMs: typeof record.startedAtMs === "number" && Number.isFinite(record.startedAtMs) ? record.startedAtMs : null,
     };
   }
   if (type === "patch") {
@@ -1971,12 +2179,20 @@ function RawToolOutputButton({ heading, inlineApp = false, text }: { heading: st
         className="hc-tool-raw-output-dialog"
         role="dialog"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            setOpen(false);
+          }
+        }}
       >
         <header>
           <h2>{heading}</h2>
           <button
             aria-label="Close raw tool call output"
             type="button"
+            autoFocus
             onClick={() => setOpen(false)}
           >
             <X size={15} />
@@ -2783,7 +2999,14 @@ function multiAgentRows(record: ItemRecord): MultiAgentRowViewModel[] {
   const rows: MultiAgentRowViewModel[] = receiverIds.map((threadId) => {
     const agent = multiAgentAgentPart(record, threadId);
     const stateSuffix = multiAgentStateSuffix(record, threadId);
-    if (action === "spawnAgent" && status === "completed" && prompt) {
+    if (action === "spawnAgent" && status !== "failed" && prompt) {
+      // Codex renders "Created {agent} with the instructions: {instructions}"
+      // (multiAgentAction.row) as soon as the agent is spawned — while the
+      // group header still reads "Spawning N agents" AND after completion.
+      // Only the failed state falls back to the "Failed spawning" verb row.
+      // HiCodex previously gated this on status === "completed", so an
+      // in-progress spawn showed a bare "Spawning" verb instead of the named
+      // instructions row. Re-verified vs Codex Desktop v26.519.81530.
       return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
         "Created ",
         agent,

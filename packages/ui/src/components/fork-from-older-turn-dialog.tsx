@@ -49,6 +49,13 @@ export function ForkFromOlderTurnDialog({
         aria-modal="true"
         aria-labelledby="hc-fork-older-turn-title"
         aria-describedby="hc-fork-older-turn-subtitle"
+        onKeyDown={(event) => {
+          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
@@ -91,6 +98,7 @@ export function ForkFromOlderTurnDialog({
           <button
             type="button"
             className="hc-fork-older-turn-cancel"
+            autoFocus
             disabled={isSubmitting}
             onClick={onClose}
           >

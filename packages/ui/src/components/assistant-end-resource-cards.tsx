@@ -1,7 +1,6 @@
-import { FileText, Globe2, ImageIcon, Presentation, ScrollText, Sheet, type LucideIcon } from "lucide-react";
+import { ChevronDown, FileText, Globe2, ImageIcon, Presentation, ScrollText, Sheet, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 
-import { convertLocalFileSrc } from "../lib/tauri-host";
 import { projectArtifactPreview } from "../state/artifact-preview";
 import type { AssistantEndResource, RailEntry } from "../state/render-group-types";
 
@@ -9,7 +8,6 @@ export interface AssistantEndResourceCardViewModel {
   entry: RailEntry;
   hoverLabel?: string;
   icon: LucideIcon;
-  imageSrc?: string;
   key: string;
   meta: string;
   openLabel: string;
@@ -54,14 +52,16 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
     return {
       entry,
       icon: assistantEndResourceIcon(preview.kind),
-      imageSrc: assistantEndResourceImageSrc(preview),
       key: `file:${path}`,
       meta: path,
       hoverLabel: "Open preview",
       openLabel: `Open ${preview.title}`,
       title: preview.title,
       trailingLabel: "Open in",
-      typeLabel: assistantEndResourceFileTypeLabel(path, preview.kind),
+      // CODEX-REF local-conversation-thread-DAwsPWah.js: subtitle = `tD(f,c)??nD(o)` —
+      // when no known file-TYPE label matches, fall back to the parent DIRECTORY path
+      // (`nD`), not "File · {EXT}".
+      typeLabel: assistantEndResourceFileTypeLabel(path, preview.kind) ?? assistantEndResourceDirectory(path),
     };
   });
 }
@@ -93,15 +93,13 @@ export function AssistantEndResourceCards({
         );
         const content = (
           <>
-            {card.imageSrc ? (
-              <span className="hc-assistant-resource-card-preview">
-                <img alt="" src={card.imageSrc} />
-              </span>
-            ) : (
-              <span className="hc-assistant-resource-card-icon">
-                <Icon size={18} />
-              </span>
-            )}
+            {/* CODEX-REF local-conversation-thread-DAwsPWah.js: inline end-resource card
+                always renders the file-type icon tile (`flex size-10 … rounded-lg` with a
+                `size-6` icon) — even for images. Image thumbnails (`XE`) appear only in the
+                separate generated-image gallery, never in inline cards. */}
+            <span className="hc-assistant-resource-card-icon">
+              <Icon size={18} />
+            </span>
             <span className="hc-assistant-resource-card-copy">
               <span className="hc-assistant-resource-card-title">{card.title}</span>
               {subtitle}
@@ -138,6 +136,8 @@ export function AssistantEndResourceCards({
           onClick={() => setExpanded(true)}
         >
           <span>Show {hiddenCount} more</span>
+          {/* codex show-more button renders a trailing chevron (icon-xs = 16px). */}
+          <ChevronDown size={16} aria-hidden />
         </button>
       )}
     </div>
@@ -188,40 +188,36 @@ function googleDriveResourceIcon(kind: Extract<AssistantEndResource, { type: "go
   return FileText;
 }
 
-function assistantEndResourceImageSrc(preview: ReturnType<typeof projectArtifactPreview>): string {
-  const source = preview.imageSource;
-  if (!source) return "";
-  if (source.kind === "url") return source.src;
-  if (/^file:/i.test(source.src)) return source.src;
-  if (!source.src.startsWith("/")) return "";
-  try {
-    return convertLocalFileSrc(source.src);
-  } catch {
-    return `file://${encodeURI(source.src)}`;
-  }
-}
-
-function assistantEndResourceFileTypeLabel(path: string, kind: ReturnType<typeof projectArtifactPreview>["kind"]): string {
-  const extension = pathExtension(path);
-  const normalizedExtension = extension ? extension.toLowerCase() : "";
-  const labelExtension = normalizedExtension.toUpperCase();
-  if (normalizedExtension === "csv" || normalizedExtension === "tsv" || normalizedExtension === "xls" || normalizedExtension === "xlsm" || normalizedExtension === "xlsx") {
-    return `Spreadsheet · ${labelExtension}`;
-  }
-  if (normalizedExtension === "ppt" || normalizedExtension === "pptx") {
-    return `Slides · ${labelExtension}`;
-  }
-  if (kind === "image") return normalizedExtension ? `Image · ${labelExtension}` : "Image";
-  if (normalizedExtension === "pdf" || normalizedExtension === "doc" || normalizedExtension === "docx" || normalizedExtension === "md" || normalizedExtension === "mdx") {
+// CODEX-REF local-conversation-thread-DAwsPWah.js `tD(e,t)`: file-type label is driven
+// purely by the lower-cased file extension. Document (pdf/doc/docx/md/mdx), Spreadsheet
+// (csv/tsv/xls/xlsm/xlsx), Slides (ppt/pptx) and Image (avif/gif/jpeg/jpg/png/webp) sets
+// map to a `Kind · {EXT}` label; ANY other / missing extension returns null so the caller
+// can fall back to the directory path (`nD`).
+function assistantEndResourceFileTypeLabel(path: string, _kind: ReturnType<typeof projectArtifactPreview>["kind"]): string | null {
+  const extension = pathExtension(path).toLowerCase();
+  if (!extension) return null;
+  const labelExtension = extension.toUpperCase();
+  if (extension === "pdf" || extension === "doc" || extension === "docx" || extension === "md" || extension === "mdx") {
     return `Document · ${labelExtension}`;
   }
-  if (kind === "markdown") return "Document · MD";
-  if (kind === "text") return normalizedExtension ? `Text · ${labelExtension}` : "Text";
-  if (kind === "pdf") return "Document · PDF";
-  if (kind === "presentation") return "Presentation";
-  if (kind === "spreadsheet") return "Spreadsheet";
-  if (kind === "document") return "Document";
-  return normalizedExtension ? `File · ${labelExtension}` : "File";
+  if (extension === "csv" || extension === "tsv" || extension === "xls" || extension === "xlsm" || extension === "xlsx") {
+    return `Spreadsheet · ${labelExtension}`;
+  }
+  if (extension === "ppt" || extension === "pptx") {
+    return `Slides · ${labelExtension}`;
+  }
+  if (extension === "avif" || extension === "gif" || extension === "jpeg" || extension === "jpg" || extension === "png" || extension === "webp") {
+    return `Image · ${labelExtension}`;
+  }
+  return null;
+}
+
+// CODEX-REF local-conversation-thread-DAwsPWah.js `nD(e)`: parent directory of the file
+// path — `posix.dirname(path)`, returning "/" when the dirname is "." and otherwise the
+// directory with a trailing slash.
+function assistantEndResourceDirectory(path: string): string {
+  const dir = posixDirname(path);
+  return dir === "." ? "/" : `${dir}/`;
 }
 
 function googleDriveResourceTypeLabel(kind: Extract<AssistantEndResource, { type: "google-drive" }>["resourceKind"]): string {
@@ -238,4 +234,15 @@ function basename(path: string): string {
 function pathExtension(value: string): string {
   const match = value.trim().match(/\.([A-Za-z0-9]+)(?:[#?].*)?$/);
   return match?.[1] ?? "";
+}
+
+// POSIX `dirname` semantics (mirrors `path.posix.dirname` used by Codex `nD`): returns the
+// parent directory of a "/"-separated path, or "." when there is no directory component.
+function posixDirname(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const trimmed = normalized.replace(/\/+$/, "");
+  const lastSlash = trimmed.lastIndexOf("/");
+  if (lastSlash < 0) return ".";
+  if (lastSlash === 0) return "/";
+  return trimmed.slice(0, lastSlash);
 }

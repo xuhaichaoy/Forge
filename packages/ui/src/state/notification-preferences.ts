@@ -85,12 +85,14 @@ export function shouldNotifyTurnCompletion(input: {
 
 export function notificationPolicyLabel(policy: TurnCompletionNotificationPolicy): string {
   switch (policy) {
+    // codex notifications.turnMode.* — always="Always", off="Never",
+    // unfocused(=HiCodex backgroundOnly: notify only when app not focused)="Only when unfocused".
     case "always":
       return "Always";
     case "off":
-      return "Off";
+      return "Never";
     default:
-      return "Background only";
+      return "Only when unfocused";
   }
 }
 

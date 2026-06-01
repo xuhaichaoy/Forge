@@ -14,12 +14,10 @@ import {
   Maximize2,
   MessageSquarePlus,
   Minimize2,
-  Moon,
   Pin,
   Plug,
   Search,
   Settings,
-  Sun,
 } from "lucide-react";
 import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
@@ -44,6 +42,8 @@ import { threadTitle } from "../state/thread-workflow";
 // codex: electron-menu-shortcuts-*.js — sidebar nav entries surface
 // the accelerator next to the label (matches Desktop tooltip + menu format).
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
+// codex sidebar-thread-section `gt(platform)` — the reveal label is platform-switched.
+import { osRevealLabel } from "../state/command-registry";
 
 const threadRowClass =
   "group relative flex h-token-nav-row cursor-interaction rounded-lg px-row-x py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--vscode-focusBorder)]";
@@ -74,6 +74,9 @@ const threadMenuSeparatorClass = "w-full px-row-x py-1";
 export interface SidebarProps {
   threads: Thread[];
   activeThreadId: string | null;
+  // codex sidebar-thread-section `ht` — the active thread's linked-worktree status;
+  // swaps the fork label to "Fork into same worktree" (forking reuses the worktree).
+  activeThreadIsWorktree?: boolean;
   connected: boolean;
   connecting: boolean;
   onConnect: () => void | Promise<void>;
@@ -84,6 +87,10 @@ export interface SidebarProps {
   onUseExistingFolder?: () => void | Promise<void>;
   onSelectThread: (thread: Thread) => void | Promise<void>;
   onForkThread: (thread: Thread) => void | Promise<void>;
+  // codex sidebar-thread-section `fork-into-worktree` — fork into a fresh git worktree.
+  onForkThreadIntoWorktree?: (thread: Thread) => void | Promise<void>;
+  // codex threadHeader.openInNewWindow — open the thread in a second app window.
+  onOpenThreadWindow?: (thread: Thread) => void | Promise<void>;
   onRenameThread: (thread: Thread) => void | Promise<void>;
   onArchiveThread: (thread: Thread) => void | Promise<void>;
   pinnedThreadIds?: ReadonlySet<string>;
@@ -130,6 +137,7 @@ export interface SidebarProps {
 export function Sidebar({
   threads,
   activeThreadId,
+  activeThreadIsWorktree = false,
   connected,
   connecting,
   onConnect,
@@ -140,6 +148,8 @@ export function Sidebar({
   onUseExistingFolder,
   onSelectThread,
   onForkThread,
+  onForkThreadIntoWorktree,
+  onOpenThreadWindow,
   onRenameThread,
   onArchiveThread,
   pinnedThreadIds,
@@ -409,7 +419,7 @@ export function Sidebar({
             )}
           </div>
         </div>
-        <div className={cx(threadActionGroupClass, threadArchiveActionClass, isConfirmingArchive && "pl-1 opacity-100")} aria-label="Thread actions">
+        <div className={cx(threadActionGroupClass, threadArchiveActionClass, isConfirmingArchive && "pl-1 opacity-100")} aria-label="Chat actions">
           {isConfirmingArchive ? (
             <button
               type="button"
@@ -501,6 +511,17 @@ export function Sidebar({
             <div className={threadMenuSeparatorClass}>
                 <div className="h-px w-full bg-token-menu-border" />
             </div>
+            {onOpenThreadWindow && (
+              // codex threadHeader.openInNewWindow — open this thread in a second app window.
+              <button
+                type="button"
+                className={threadMenuItemClass}
+                role="menuitem"
+                onClick={() => runOptionalThreadAction(thread, onOpenThreadWindow)}
+              >
+                Open in new window
+              </button>
+            )}
             <button
               type="button"
               className={threadMenuItemClass}
@@ -508,7 +529,7 @@ export function Sidebar({
               disabled={!threadCwd || !onOpenThreadFolder}
               onClick={() => runOptionalThreadAction(thread, onOpenThreadFolder)}
             >
-              Open in Finder
+              {osRevealLabel()}
             </button>
             <button
               type="button"
@@ -546,8 +567,20 @@ export function Sidebar({
               role="menuitem"
               onClick={() => runThreadAction(thread, onForkThread)}
             >
-              Fork into local
+              {/* codex `ht ? forkIntoSameWorktree : forkIntoLocal` */}
+              {isActive && activeThreadIsWorktree ? "Fork into same worktree" : "Fork into local"}
             </button>
+            {onForkThreadIntoWorktree && (
+              <button
+                type="button"
+                className={threadMenuItemClass}
+                role="menuitem"
+                disabled={!threadCwd}
+                onClick={() => runOptionalThreadAction(thread, onForkThreadIntoWorktree)}
+              >
+                Fork into new worktree
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -561,27 +594,27 @@ export function Sidebar({
         {/* codex: electron-menu-shortcuts-*.js (newThread / searchChats) — */}
         {/* sidebar nav entries surface their command accelerator alongside the label. */}
         <SidebarNavItem
-          icon={connecting ? <Loader2 className="hc-spin" size={17} /> : <MessageSquarePlus size={17} />}
+          icon={connecting ? <Loader2 className="hc-spin" size={16} /> : <MessageSquarePlus size={16} />}
           label={connected ? "New chat" : "Connect"}
           accelerator={connected ? descriptorAcceleratorLabel(COMMAND_IDS.newThread) : null}
           onClick={() => void (connected ? onCreateThread() : onConnect())}
           disabled={connecting}
         />
         <SidebarNavItem
-          icon={<Search size={17} />}
+          icon={<Search size={16} />}
           label="Search"
           accelerator={descriptorAcceleratorLabel(COMMAND_IDS.searchChats)}
           onClick={() => void onOpenSearch()}
         />
         <SidebarNavItem
-          icon={<Plug size={17} />}
+          icon={<Plug size={16} />}
           label="Plugins"
           onClick={() => void onOpenPlugins?.()}
           disabled={!onOpenPlugins}
         />
         {onOpenAutomations && (
           <SidebarNavItem
-            icon={<Clock size={17} />}
+            icon={<Clock size={16} />}
             label="Automations"
             onClick={() => void onOpenAutomations()}
           />
@@ -598,7 +631,7 @@ export function Sidebar({
               onClick={() => toggleGroup(pinnedGroupKey)}
               title="Pinned"
             >
-              {pinnedGroupCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              {pinnedGroupCollapsed ? <ChevronRight size={14} className="hc-sidebar-group-chevron" /> : <ChevronDown size={14} className="hc-sidebar-group-chevron" />}
               <Pin size={16} />
               <span className="hc-project-name">Pinned</span>
             </button>
@@ -744,12 +777,12 @@ export function Sidebar({
               onClick={() => toggleGroup(group.key)}
               title={group.path ?? group.label}
             >
-              {effectiveCollapsedGroupKeys.has(group.key) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              {effectiveCollapsedGroupKeys.has(group.key) ? <ChevronRight size={14} className="hc-sidebar-group-chevron" /> : <ChevronDown size={14} className="hc-sidebar-group-chevron" />}
               <Folder size={16} />
               <span className="hc-project-name">{group.label}</span>
             </button>
             {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.length === 0 && (
-              <div className="hc-empty-group">暂无会话，从 + New chat 开始</div>
+              <div className="hc-empty-group">No chats</div>
             )}
             {!effectiveCollapsedGroupKeys.has(group.key) && renderThreadRows(group.threads)}
           </div>
@@ -758,24 +791,29 @@ export function Sidebar({
         )}
       </div>
 
+      {/*
+       * codex profile footer (app-main-c6M_ecgT `lp` in the `Uh` profile dropdown): a
+       * SINGLE row = avatar + "Settings" label, opening a dropdown that holds the
+       * account info + Settings + sign-out. No separate theme-toggle row (theme lives
+       * in Settings → Appearance) and no separate Settings row (merged into the
+       * dropdown). When signed out we keep a plain Settings row so settings stays
+       * reachable.
+       */}
       <div className="hc-sidebar-footer">
-        {accountView && (
-          <SidebarAccountSummary accountView={accountView} onSignOut={signOut} />
-        )}
-        {onToggleTheme && (
+        {accountView ? (
+          <SidebarAccountSummary
+            accountView={accountView}
+            onSignOut={signOut}
+            onOpenSettings={onOpenSettings}
+          />
+        ) : (
           <SidebarNavItem
-            icon={resolvedUiTheme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-            label={resolvedUiTheme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            onClick={onToggleTheme}
+            icon={<Settings size={16} />}
+            label="Settings"
+            accelerator={descriptorAcceleratorLabel(COMMAND_IDS.settings)}
+            onClick={onOpenSettings}
           />
         )}
-        {/* codex: electron-menu-shortcuts-*.js (settings) — ⌘, */}
-        <SidebarNavItem
-          icon={<Settings size={17} />}
-          label="Settings"
-          accelerator={descriptorAcceleratorLabel(COMMAND_IDS.settings)}
-          onClick={onOpenSettings}
-        />
       </div>
     </aside>
   );
@@ -865,9 +903,11 @@ function clamp(value: number, min: number, max: number): number {
 function SidebarAccountSummary({
   accountView,
   onSignOut,
+  onOpenSettings,
 }: {
   accountView: AccountViewModel;
   onSignOut: () => void;
+  onOpenSettings: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -881,10 +921,6 @@ function SidebarAccountSummary({
     accountView.quotaDetail,
     accountView.error,
   ].filter(Boolean).join("\n");
-  const meta = [
-    accountView.authLabel,
-    accountView.planLabel,
-  ].filter(Boolean).join(" / ");
   const items = projectAccountMenuItems(accountView);
   const runMenuItem = (item: AccountMenuItem) => {
     if (item.action === "account/signOut") {
@@ -910,16 +946,23 @@ function SidebarAccountSummary({
         <span className="hc-sidebar-account-avatar" aria-hidden="true">
           {accountView.avatarInitials}
         </span>
-        <span className="hc-sidebar-account-body">
-          <span className="hc-sidebar-account-name">{accountView.displayName}</span>
-          <span className="hc-sidebar-account-meta">
-            {accountView.loading ? "Refreshing account..." : meta || accountView.quotaLabel}
-          </span>
-        </span>
-        <ChevronRight className="hc-sidebar-account-chevron" size={14} aria-hidden="true" />
+        {/* codex profileFooter `lp`: avatar + "Settings" label (codex.profileFooter.signedInFallback);
+            the account name / plan / usage live in the dropdown below, not inline. */}
+        <span className="hc-sidebar-account-label">Settings</span>
       </button>
       {open && (
         <div className="hc-sidebar-account-menu" role="menu" data-state="open">
+          {/* codex profile dropdown exposes Settings here (the footer no longer has a
+              standalone Settings row); sign-out stays in `items` below. */}
+          <button
+            className="hc-sidebar-account-menu-item"
+            role="menuitem"
+            type="button"
+            onClick={() => { setOpen(false); onOpenSettings(); }}
+          >
+            <Settings size={14} aria-hidden="true" />
+            <span>Settings</span>
+          </button>
           {items.map((item) => item.action
             ? (
                 <button

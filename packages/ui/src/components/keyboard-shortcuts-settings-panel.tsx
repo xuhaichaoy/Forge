@@ -36,10 +36,10 @@ import { resolveKeymapOverride, type KeymapOverrides } from "../state/keymap-ove
  */
 
 const GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "thread", title: "Thread" },
+  { key: "thread", title: "Chat" },
   { key: "panels", title: "Panels" },
   { key: "navigation", title: "Navigation" },
-  { key: "workspace", title: "Workspace" },
+  { key: "workspace", title: "Project" },
   { key: "skills", title: "Skills" },
   { key: "configure", title: "Configure" },
   { key: "app", title: "App" },
@@ -134,43 +134,63 @@ export function KeyboardShortcutsSettingsPanel({
         <input
           type="search"
           value={query}
-          placeholder="Filter shortcuts…"
-          aria-label="Filter shortcuts"
+          placeholder="Search shortcuts"
+          aria-label="Search keyboard shortcuts"
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
       {sections.length === 0 ? (
-        <div className="hc-keyboard-settings-empty">No shortcuts match {`“${query}”`}</div>
+        <div className="hc-keyboard-settings-empty">No matching shortcuts</div>
       ) : (
-        sections.map((section) => (
-          <section className="hc-keyboard-settings-section" key={section.key}>
-            <h3 className="hc-keyboard-settings-section-title">{section.title}</h3>
-            <table className="hc-keyboard-settings-table">
-              <tbody>
-                {section.descriptors.map((descriptor) => (
-                  <Row
-                    key={descriptor.id}
-                    descriptor={descriptor}
-                    editing={editingId === descriptor.id}
-                    captured={editingId === descriptor.id ? captured : null}
-                    hasOverride={resolveKeymapOverride(descriptor.id, keymapOverrides) !== undefined}
-                    conflict={editingId === descriptor.id && captured
-                      ? findConflict(captured, descriptor.id)
-                      : null}
-                    inputRef={editingId === descriptor.id ? inputRef : undefined}
-                    onEdit={() => onClickEdit(descriptor.id)}
-                    onClear={() => onClickClear(descriptor.id)}
-                    onReset={() => onClickReset(descriptor.id)}
-                    onCancel={() => {
-                      setEditingId(null);
-                      setCaptured(null);
-                    }}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </section>
-        ))
+        /*
+         * codex keyboard-shortcuts settings: ONE flat table (colgroup + a single column
+         * header `Command`/`Keybinding`/`Actions[sr-only]` =
+         * settings.keyboardShortcuts.table.command/keybinding/actions) with per-section
+         * group-header rows in the tbody — matching Codex's single-table layout (audit-6),
+         * not HiCodex's prior per-section tables. NOTE (visual): needs an A/B check against
+         * Codex.app per the visual-alignment rule; verified to compile + pass tests headless.
+         */
+        <table className="hc-keyboard-settings-table">
+          <colgroup>
+            <col className="hc-keyboard-settings-col-command" />
+            <col className="hc-keyboard-settings-col-keybinding" />
+            <col className="hc-keyboard-settings-col-actions" />
+          </colgroup>
+          <thead className="hc-keyboard-settings-thead">
+            <tr>
+              <th scope="col">Command</th>
+              <th scope="col">Keybinding</th>
+              <th scope="col"><span className="hc-keyboard-settings-sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sections.flatMap((section) => [
+              <tr key={`section-${section.key}`} className="hc-keyboard-settings-section-row">
+                <th scope="colgroup" colSpan={3}>{section.title}</th>
+              </tr>,
+              ...section.descriptors.map((descriptor) => (
+                <Row
+                  key={descriptor.id}
+                  descriptor={descriptor}
+                  editing={editingId === descriptor.id}
+                  captured={editingId === descriptor.id ? captured : null}
+                  hasOverride={resolveKeymapOverride(descriptor.id, keymapOverrides) !== undefined}
+                  conflict={editingId === descriptor.id && captured
+                    ? findConflict(captured, descriptor.id)
+                    : null}
+                  inputRef={editingId === descriptor.id ? inputRef : undefined}
+                  onEdit={() => onClickEdit(descriptor.id)}
+                  onClear={() => onClickClear(descriptor.id)}
+                  onReset={() => onClickReset(descriptor.id)}
+                  onCancel={() => {
+                    setEditingId(null);
+                    setCaptured(null);
+                  }}
+                />
+              )),
+            ])}
+          </tbody>
+        </table>
       )}
     </div>
   );

@@ -5,6 +5,10 @@ import type { GetAccountRateLimitsResponse } from "@hicodex/codex-protocol/gener
 import type { PlanType } from "@hicodex/codex-protocol/generated/PlanType";
 import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
 import type { RateLimitWindow } from "@hicodex/codex-protocol/generated/v2/RateLimitWindow";
+import type { I18nMessageDescriptor, I18nValues } from "./i18n";
+
+// Structural alias for the IntlProvider's formatMessage (optional at call sites).
+type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 
 export type AccountRefreshScope = "account" | "rateLimits" | "all";
 
@@ -270,6 +274,7 @@ export function accountFromCredentialSummary(summary: AccountCredentialSummary |
 export function projectAccountViewModel(
   state: AccountState,
   credentialSummary?: AccountCredentialSummary | null,
+  formatMessage?: FormatMessage,
 ): AccountViewModel {
   const account = state.account ?? accountFromCredentialSummary(credentialSummary);
   const identity = projectAccountIdentity(account);
@@ -293,7 +298,9 @@ export function projectAccountViewModel(
       // codex: profile dropdown sign-out label — ICU id `codex.profileDropdown.logOut`
       // defaultMessage:`Log out` (also `codex.command.logOut`, distinct from the
       // longer command description `codex.commandDescription.logOut`:`Sign out of Codex`).
-      label: "Log out",
+      label: formatMessage
+        ? formatMessage({ id: "codex.profileDropdown.logOut", defaultMessage: "Log out" })
+        : "Log out",
       disabled: !signedIn || state.refreshing,
       ...(!signedIn ? { reason: "No Codex account is signed in." } : {}),
     },

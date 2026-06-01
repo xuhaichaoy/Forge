@@ -6,6 +6,7 @@ import {
   shouldPreventTurnAutoCollapse,
   splitTurnUnits,
 } from "../src/components/turn-collapse";
+import { mcpAppResourceUri } from "../src/state/render-groups";
 import type {
   AccumulatedThreadItem,
   ConversationRenderUnit,
@@ -21,8 +22,9 @@ export default function runTurnCollapseTests(): void {
   ignoresCommentaryAssistantMessagesAsFinalCollapseBoundary();
   splitsUserAgentAndFinalAssistantLikeDesktop();
   keepsSteeringUserMessagesPersistentWhenCollapsed();
+  keepsMidTurnPlainUserMessagesPersistentWhenCollapsed();
   requiresFinalAssistantAndRenderableAgentItemsBeforeCollapse();
-  preventsAutoCollapseForDesktopPendingToolContent();
+  preventsAutoCollapseForMcpAppToolCalls();
 }
 
 function makeUserUnit(turnId: string): ConversationRenderUnit {
@@ -232,6 +234,36 @@ function keepsSteeringUserMessagesPersistentWhenCollapsed(): void {
   assert(split.persistentAgentUnits.length === 1 && split.persistentAgentUnits[0] === steering, "steering message should remain visible when collapsed");
 }
 
+function keepsMidTurnPlainUserMessagesPersistentWhenCollapsed(): void {
+  // Regression (Image #12 bug): a mid-turn follow-up user message the backend
+  // folded into the running turn — WITHOUT stamping steeringStatus — must stay
+  // visible when the "Worked for" toggle collapses the turn. HiCodex never
+  // populates steeringStatus today, so every mid-turn user message hits this
+  // path; Codex keeps all user messages out of the collapsible body
+  // (split-items `Lb`/`zb`: a user-message entry is never collapsible).
+  const user = makeUserUnit("turn-1");
+  const activity = makeActivityUnit("turn-1");
+  const followUp: ConversationRenderUnit = {
+    kind: "message",
+    key: "followup-turn-1",
+    role: "user",
+    item: { id: "followup-turn-1", type: "userMessage", content: "follow up", _turnId: "turn-1" },
+    text: "follow up",
+  };
+  const assistant = makeAssistantUnit("turn-1");
+  const split = splitTurnUnits([user, activity, followUp, assistant]);
+
+  assert(split.leadingUnits.length === 1 && split.leadingUnits[0] === user, "the leading user message stays outside the collapse");
+  assert(
+    split.collapsibleAgentUnits.length === 1 && split.collapsibleAgentUnits[0] === activity,
+    "a plain mid-turn user message must NOT be collapsible — only agent work is",
+  );
+  assert(
+    split.persistentAgentUnits.length === 1 && split.persistentAgentUnits[0] === followUp,
+    "a plain mid-turn user message must stay visible when the turn is collapsed",
+  );
+}
+
 function requiresFinalAssistantAndRenderableAgentItemsBeforeCollapse(): void {
   assert(
     shouldAllowTurnCollapse({
@@ -259,24 +291,33 @@ function requiresFinalAssistantAndRenderableAgentItemsBeforeCollapse(): void {
   );
 }
 
-function preventsAutoCollapseForDesktopPendingToolContent(): void {
-  const pendingMcp: AccumulatedThreadItem = {
-    id: "mcp-1",
+function makeMcpToolCallUnit(
+  options: { id: string; resourceUri?: string; inProgress: boolean },
+): { unit: ConversationRenderUnit; item: AccumulatedThreadItem } {
+  const item: AccumulatedThreadItem = {
+    id: options.id,
     type: "mcp-tool-call",
-    status: "inProgress",
     _turnId: "turn-1",
+    status: options.inProgress ? "inProgress" : "completed",
+    completed: !options.inProgress,
+    invocation: { server: "demo", tool: "render" },
+    ...(options.inProgress
+      ? {}
+      // Resolved MCP app: result success carrying the resource URI under _meta,
+      // matching mcpAppResourceUri's _meta.ui.resourceUri resolution path.
+      : { result: { type: "success", _meta: options.resourceUri ? { ui: { resourceUri: options.resourceUri } } : {} } }),
   };
-  const pendingUnit: ConversationRenderUnit = {
+  const unit: ConversationRenderUnit = {
     kind: "toolActivity",
-    key: "pending-mcp",
-    items: [pendingMcp],
+    key: `tool-${options.id}`,
+    items: [item],
     summary: {
-      groupType: "pending-mcp-tool-calls",
-      label: "Waiting on MCP tool",
+      groupType: options.inProgress ? "pending-mcp-tool-calls" : "collapsed-tool-activity",
+      label: options.inProgress ? "Waiting on MCP tool" : "Used demo",
       icon: "mcp",
       activeDetail: null,
       details: [],
-      inProgress: true,
+      inProgress: options.inProgress,
       totalDurationMs: null,
       counts: {
         commands: 0,
@@ -299,17 +340,47 @@ function preventsAutoCollapseForDesktopPendingToolContent(): void {
       },
     },
   };
+  return { unit, item };
+}
 
-  assert(shouldPreventTurnAutoCollapse([pendingUnit]), "pending MCP/app tool content should prevent default auto-collapse");
-  assert(splitTurnUnits([makeUserUnit("turn-1"), pendingUnit, makeAssistantUnit("turn-1")]).preventAutoCollapse, "split should carry preventAutoCollapse to frame default");
+function preventsAutoCollapseForMcpAppToolCalls(): void {
+  // CODEX-REF split-items-into-render-groups `dc`/`C`: the default-expanded
+  // (preventAutoCollapse) state keys PURELY on the turn containing an MCP-app
+  // tool-call (a successful mcp-tool-call resolving to an MCP-app resource URI),
+  // NOT on in-progress / pending activity.
+
+  // 1. An MCP-APP tool-call (resolved resource URI) prevents auto-collapse —
+  //    even though it is completed, not in-progress.
+  const app = makeMcpToolCallUnit({ id: "mcp-app", resourceUri: "ui://app/widget", inProgress: false });
   assert(
-    !shouldPreventTurnAutoCollapse([
-      {
-        ...pendingUnit,
-        items: [{ ...pendingMcp, status: "completed", completed: true }],
-        summary: { ...pendingUnit.summary, inProgress: false },
-      },
-    ]),
-    "completed MCP/app tool content should follow Desktop's normal auto-collapse path",
+    Boolean(mcpAppResourceUri(app.item)),
+    "fixture sanity: the MCP-app tool-call must resolve a resource URI",
+  );
+  assert(
+    shouldPreventTurnAutoCollapse([app.unit]),
+    "a completed MCP-app tool-call must prevent default auto-collapse (Codex `dc`)",
+  );
+  assert(
+    splitTurnUnits([makeUserUnit("turn-1"), app.unit, makeAssistantUnit("turn-1")]).preventAutoCollapse,
+    "split should carry MCP-app-driven preventAutoCollapse to the frame default",
+  );
+
+  // 2. A PENDING / in-progress MCP tool-call that is NOT an app no longer drives
+  //    preventAutoCollapse — Codex dropped the in-progress trigger.
+  const pendingNonApp = makeMcpToolCallUnit({ id: "mcp-pending", inProgress: true });
+  assert(
+    !mcpAppResourceUri(pendingNonApp.item),
+    "fixture sanity: a pending non-app tool-call has no resource URI",
+  );
+  assert(
+    !shouldPreventTurnAutoCollapse([pendingNonApp.unit]),
+    "a pending/in-progress non-app tool-call must NOT drive preventAutoCollapse anymore",
+  );
+
+  // 3. A completed NON-app tool-call follows the normal auto-collapse path.
+  const completedNonApp = makeMcpToolCallUnit({ id: "mcp-plain", inProgress: false });
+  assert(
+    !shouldPreventTurnAutoCollapse([completedNonApp.unit]),
+    "a completed non-app MCP tool-call follows Desktop's normal auto-collapse path",
   );
 }

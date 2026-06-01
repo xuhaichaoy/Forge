@@ -79,7 +79,7 @@ export function QueuedFollowUpStack({
             <button
               type="button"
               className="hc-queued-followup-steer"
-              title={message.status === "paused" ? "Retry queued message" : "Submit without interrupting the model"}
+              title={message.status === "paused" ? "Try sending this queued message again. Edit or delete it if retry keeps failing." : "Submit without interrupting the model"}
               aria-label={message.status === "paused" ? "Retry" : "Steer"}
               onClick={() => onSendNow(message)}
             >

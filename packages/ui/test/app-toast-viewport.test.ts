@@ -30,7 +30,8 @@ function filtersInternalHostLifecycleAndTransportLogsLikeDesktop(): void {
     logFixture("service-ready", "training_api ready", "info", 9_900),
     logFixture("service-starting", "codex_apps starting", "info", 9_800),
     logFixture("attach", "attaching to existing Codex app-server", "warn", 9_700),
-    logFixture("visible-error", "Save failed", "error", 9_600),
+    logFixture("transform-callback", "Cannot read properties of undefined (reading 'transformCallback')", "error", 9_600),
+    logFixture("visible-error", "Save failed", "error", 9_500),
   ];
 
   assertDeepEqual(

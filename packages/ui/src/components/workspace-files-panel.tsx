@@ -17,7 +17,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileTree } from "./file-tree";
 import { FileTreeSearchInput } from "./file-tree-search-input";
-import { workspaceListDir, type WorkspaceDirEntry } from "../lib/tauri-host";
+import {
+  isTauriRuntime,
+  readTextFile,
+  revealPath,
+  workspaceListDir,
+  type WorkspaceDirEntry,
+} from "../lib/tauri-host";
 
 export interface WorkspaceFilesPanelProps {
   /** Absolute path to the workspace root. */
@@ -152,6 +158,36 @@ export function WorkspaceFilesPanel({
     [onSelectFile],
   );
 
+  // codex workspace-file-context-menu `workspace-file-reveal-path` — reveal the
+  // entry in the OS file manager via the host. `entry.path` is workspace-relative,
+  // so resolve against the absolute root before handing it to the host command.
+  const handleReveal = useCallback(
+    (entry: WorkspaceDirEntry) => {
+      void revealPath(joinWorkspacePath(workspaceRoot, entry.path)).catch((error) => {
+        // A reveal failure should not blow away the tree (loadError hides it);
+        // surface to the console like other non-fatal host action failures.
+        console.error("reveal path failed", error);
+      });
+    },
+    [workspaceRoot],
+  );
+
+  // codex workspace-file-context-menu `workspace-file-copy-contents` — read the
+  // file's text via the host and copy it to the clipboard.
+  const handleCopyContents = useCallback(
+    (entry: WorkspaceDirEntry) => {
+      void (async () => {
+        try {
+          const contents = await readTextFile(joinWorkspacePath(workspaceRoot, entry.path));
+          await navigator.clipboard?.writeText(contents);
+        } catch (error) {
+          console.error("copy file contents failed", error);
+        }
+      })();
+    },
+    [workspaceRoot],
+  );
+
   const rootEntries = entriesByDir.get("") ?? [];
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const searchMatches = useMemo(() => {
@@ -191,6 +227,10 @@ export function WorkspaceFilesPanel({
             selectedPath={selectedPath}
             onToggle={handleToggle}
             onSelect={handleSelect}
+            // OS-integration context-menu actions only exist when a Tauri host
+            // is present; omitting them in browser/test hides those menu rows.
+            onRevealEntry={isTauriRuntime() ? handleReveal : undefined}
+            onCopyEntryContents={isTauriRuntime() ? handleCopyContents : undefined}
             loadingPaths={loadingPaths}
             searchMatches={searchMatches}
           />
@@ -198,4 +238,11 @@ export function WorkspaceFilesPanel({
       </div>
     </div>
   );
+}
+
+/** Resolve a workspace-relative entry path against the absolute root. */
+function joinWorkspacePath(root: string, relPath: string): string {
+  if (!relPath) return root;
+  const base = root.endsWith("/") ? root.slice(0, -1) : root;
+  return `${base}/${relPath}`;
 }

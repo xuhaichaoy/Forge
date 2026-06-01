@@ -52,7 +52,7 @@ function rendersExecPolicyOptionCommandAsTruncatedCode(): void {
 
   assertIncludes(html, "hc-request-option-code", "execpolicy option should render the command as a code preview");
   assertIncludes(html, 'data-code-layout="inline"', "single-line execpolicy previews should use Desktop's inline truncation layout");
-  assertIncludes(html, "Yes, and don&#x27;t ask again for commands that start with</span><code", "prefix and command should not be one unbroken text node");
+  assertIncludes(html, "Yes, and don’t ask again for commands that start with</span><code", "prefix and command should not be one unbroken text node");
 }
 
 function detectsSafeEnterSubmitScope(): void {

@@ -8,7 +8,7 @@ import {
 } from "../state/file-references";
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 import { formatError } from "../lib/format";
-import { openFileReference } from "../lib/tauri-host";
+import { openFileReference, readTextFile, revealPath } from "../lib/tauri-host";
 
 export interface ArtifactPreviewPathContext {
   cwd: string;
@@ -69,6 +69,31 @@ export function useArtifactPreviewActions({
     });
   }, [dispatch]);
 
+  // codex workspace-file-context-menu `workspace-file-reveal-path` (attached to
+  // inline file references via inline-mentions-*.js) — resolve the citation to
+  // an absolute path, then reveal it in the OS file manager.
+  const revealFileReference = useCallback((reference: { path: string; lineStart: number; lineEnd?: number }) => {
+    const normalized = resolveFileSelection(reference);
+    if (!normalized) return;
+    void revealPath(normalized.path).catch((error) => {
+      dispatch({ type: "log", text: formatError(error), level: "warn" });
+    });
+  }, [dispatch, resolveFileSelection]);
+
+  // codex `workspace-file-copy-contents` — resolve + read the file's text + copy.
+  const copyFileReferenceContents = useCallback((reference: { path: string; lineStart: number; lineEnd?: number }) => {
+    const normalized = resolveFileSelection(reference);
+    if (!normalized) return;
+    void (async () => {
+      try {
+        const contents = await readTextFile(normalized.path);
+        await navigator.clipboard?.writeText(contents);
+      } catch (error) {
+        dispatch({ type: "log", text: formatError(error), level: "warn" });
+      }
+    })();
+  }, [dispatch, resolveFileSelection]);
+
   const openRailArtifactFileExternal = useCallback((reference: RailEntryReference) => {
     const normalized = resolveFileSelection(reference);
     if (!normalized) return;
@@ -104,6 +129,7 @@ export function useArtifactPreviewActions({
   }, [openRailUrl, previewRailArtifact, previewRailFileReference]);
 
   return {
+    copyFileReferenceContents,
     openAssistantArtifact,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
@@ -113,5 +139,6 @@ export function useArtifactPreviewActions({
     previewRailArtifact,
     previewRailFileReference,
     resolveFileSelection,
+    revealFileReference,
   };
 }

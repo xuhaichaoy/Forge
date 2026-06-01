@@ -12,10 +12,11 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_notification::NotificationExt;
 
+mod codex_bundle;
 mod document_preview;
 mod spreadsheet_preview;
 
@@ -29,6 +30,7 @@ const APP_CONNECT_OAUTH_CALLBACK_PATH: &str = "/aip/connectors/links/oauth/callb
 const APP_CONNECT_OAUTH_BROWSER_REDIRECT_PATH: &str = "/connector_platform_oauth_redirect";
 
 const MENU_NEW_CHAT: &str = "hicodex:new-chat";
+const MENU_NEW_WINDOW: &str = "hicodex:new-window";
 const MENU_SEARCH: &str = "hicodex:search";
 const MENU_SETTINGS: &str = "hicodex:settings";
 const MENU_RELOAD: &str = "hicodex:reload";
@@ -81,6 +83,8 @@ struct HostGitStatus {
     changed_files: Vec<HostGitChangedFile>,
     has_diff: bool,
     diff: String,
+    // codex thread-env-icon — true when the cwd is a LINKED git worktree.
+    is_worktree: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -193,6 +197,72 @@ fn host_open_file_reference(path: String, line: Option<u32>) -> Result<(), Strin
         .unwrap_or_default();
     let display_target = format!("{trimmed}{line_suffix}");
     open_path(target).map_err(|error| format!("failed to open {display_target}: {error}"))
+}
+
+// Mirrors Codex Desktop's `workspace-file-reveal-path` context-menu action
+// (workspace-file-context-menu-*.js): reveal a file/folder in the OS file
+// manager, selecting the item where the platform supports it.
+#[tauri::command]
+fn host_reveal_path(path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("file path is empty".to_string());
+    }
+    let target = Path::new(trimmed);
+    if !target.exists() {
+        return Err(format!("path does not exist: {trimmed}"));
+    }
+    reveal_path(target).map_err(|error| format!("failed to reveal {trimmed}: {error}"))
+}
+
+// Mirrors Codex Desktop's `threadHeader.openInNewWindow` ("Open in new window").
+// Codex (Electron) opens a BrowserWindow; HiCodex opens a second Tauri webview
+// loading the same app, injecting the target thread id via an initialization
+// script so the frontend can route to it on startup (reusing the existing
+// deep-link routing) without a load-timing race. An already-open window for the
+// thread is focused instead of duplicated.
+#[tauri::command]
+fn host_open_thread_window(app: AppHandle, thread_id: String) -> Result<(), String> {
+    let thread_id = thread_id.trim();
+    if thread_id.is_empty() {
+        return Err("thread id is empty".to_string());
+    }
+    let label = format!("thread-{thread_id}");
+    if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+    let encoded = serde_json::to_string(thread_id).map_err(|error| error.to_string())?;
+    let init_script = format!("window.__HICODEX_INITIAL_THREAD__ = {encoded};");
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::default())
+        .title("HiCodex")
+        .inner_size(1280.0, 820.0)
+        .initialization_script(&init_script)
+        .build()
+        .map_err(|error| format!("failed to open thread window: {error}"))?;
+    Ok(())
+}
+
+// codex newWindow (⌘⇧N) — open a fresh app window. Codex (Electron) opens a new
+// BrowserWindow; HiCodex opens a new Tauri webview that injects a new-chat signal so the
+// frontend starts a fresh conversation on startup. Each window needs a unique label.
+static NEW_WINDOW_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn open_new_window_impl(app: &AppHandle) -> Result<(), String> {
+    let n = NEW_WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let label = format!("new-window-{n}");
+    WebviewWindowBuilder::new(app, &label, WebviewUrl::default())
+        .title("HiCodex")
+        .inner_size(1280.0, 820.0)
+        .initialization_script("window.__HICODEX_INITIAL_NEW_CHAT__ = true;")
+        .build()
+        .map_err(|error| format!("failed to open new window: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn host_open_new_window(app: AppHandle) -> Result<(), String> {
+    open_new_window_impl(&app)
 }
 
 #[tauri::command]
@@ -1183,6 +1253,8 @@ fn read_host_git_status(cwd: &str) -> Result<HostGitStatus, String> {
     let changed_files = read_changed_git_files(repo_path)?;
     let diff = read_git_diff(repo_path, sha.is_some())?;
     let has_diff = !changed_files.is_empty() || !diff.trim().is_empty();
+    // Compute before moving `repo_root` into the struct (repo_path borrows it).
+    let is_worktree = git_is_linked_worktree(repo_path);
 
     Ok(HostGitStatus {
         cwd: cwd.to_string(),
@@ -1195,6 +1267,7 @@ fn read_host_git_status(cwd: &str) -> Result<HostGitStatus, String> {
         changed_files,
         has_diff,
         diff,
+        is_worktree,
     })
 }
 
@@ -1266,7 +1339,22 @@ fn non_git_status(cwd: &str) -> HostGitStatus {
         changed_files: Vec::new(),
         has_diff: false,
         diff: String::new(),
+        is_worktree: false,
     }
+}
+
+// codex thread-env-icon (worktree env, tooltip "running in a local git worktree") —
+// detect whether `repo_path` is a LINKED git worktree (created via `git worktree
+// add`). A linked worktree's git dir lives under the main repo's
+// `.git/worktrees/<name>`, whereas the main working tree's git dir is the repo's
+// own `.git`; `--absolute-git-dir` resolves the per-worktree path so we can tell.
+fn git_is_linked_worktree(repo_path: &Path) -> bool {
+    run_git(repo_path, &["rev-parse", "--absolute-git-dir"])
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| command_stdout(&output))
+        .map(|git_dir| git_dir.contains("/.git/worktrees/") || git_dir.contains("\\.git\\worktrees\\"))
+        .unwrap_or(false)
 }
 
 fn git_repo_root(cwd: &Path) -> Result<Option<String>, String> {
@@ -2234,6 +2322,31 @@ fn open_path(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Reveal `path` in the OS file manager. Mirrors Codex Desktop's platform
+/// switch in `workspace-file-context-menu-*.js` (`C(platform)`): macOS reveals
+/// and selects the item in Finder (`open -R`), Windows selects it in Explorer
+/// (`explorer /select,`), and other Unix opens the containing directory in the
+/// system file manager (xdg-open has no portable "select this item" verb, so
+/// we fall back to the parent directory).
+fn reveal_path(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open").arg("-R").arg(path).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(format!("/select,{}", path.to_string_lossy()))
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let target = path.parent().unwrap_or(path);
+        Command::new("xdg-open").arg(target).spawn().map(|_| ())
+    }
+}
+
 fn normalized_external_url(value: &str) -> Result<String, String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -2294,6 +2407,12 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let new_chat = MenuItemBuilder::with_id(MENU_NEW_CHAT, "New Chat")
         .accelerator("CmdOrCtrl+N")
         .build(handle)?;
+    // codex newWindow (⌘⇧N). Native + webview both bind it (same as New Chat's ⌘N); the
+    // native menu consumes the accelerator on desktop, so the webview command is the
+    // browser/palette path and there is no double-open.
+    let new_window = MenuItemBuilder::with_id(MENU_NEW_WINDOW, "New Window")
+        .accelerator("CmdOrCtrl+Shift+N")
+        .build(handle)?;
     let search = MenuItemBuilder::with_id(MENU_SEARCH, "Search")
         .accelerator("CmdOrCtrl+K")
         .build(handle)?;
@@ -2318,6 +2437,7 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .build()?;
     let file_menu = SubmenuBuilder::new(handle, "File")
         .item(&new_chat)
+        .item(&new_window)
         .item(&search)
         .separator()
         .item(&close)
@@ -2345,6 +2465,9 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
 fn handle_native_menu_event(app: &AppHandle, id: &str) {
     match id {
         MENU_NEW_CHAT => emit_native_shell_action(app, "newChat", true, None, None),
+        MENU_NEW_WINDOW => {
+            let _ = open_new_window_impl(app);
+        }
         MENU_SEARCH => emit_native_shell_action(app, "search", true, None, None),
         MENU_SETTINGS => emit_native_shell_action(app, "settings", true, None, None),
         MENU_RELOAD => emit_unsupported_native_menu_action(
@@ -2352,11 +2475,25 @@ fn handle_native_menu_event(app: &AppHandle, id: &str) {
             "reload",
             "Reload is unsupported because HiCodex has no separate browser panel.",
         ),
-        MENU_CLOSE => emit_unsupported_native_menu_action(
-            app,
-            "closeWindow",
-            "Close Window is unsupported because HiCodex has no safe tab target.",
-        ),
+        MENU_CLOSE => {
+            // codex closeTabOrWindow (⌘W). §M-44/§M-55 added real secondary windows
+            // (thread-* / new-window-*); ⌘W closes the focused secondary window. The main
+            // window stays guarded (closing it is the app-exit path; ⌘Q handles that), so
+            // ⌘W on main keeps the prior no-tab-target message rather than killing the app.
+            let focused_secondary = app
+                .webview_windows()
+                .into_values()
+                .find(|window| window.label() != "main" && window.is_focused().unwrap_or(false));
+            if let Some(window) = focused_secondary {
+                let _ = window.close();
+            } else {
+                emit_unsupported_native_menu_action(
+                    app,
+                    "closeWindow",
+                    "Close Window is unsupported for the main window because HiCodex has no tab target.",
+                );
+            }
+        }
         MENU_QUIT => app.exit(0),
         _ => {}
     }
@@ -2596,6 +2733,9 @@ fn host_workspace_list_dir(
 
 fn main() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("codexbundle", |_ctx, request| {
+            codex_bundle::handle_bundle_request(&request)
+        })
         .plugin(tauri_plugin_single_instance::init(
             handle_single_instance_activation,
         ))
@@ -2617,6 +2757,14 @@ fn main() {
             state.host.forward_events(move |event| {
                 let _ = handle.emit(APP_SERVER_EVENT_NAME, event);
             });
+            // Experimental: host the real Codex Desktop bundle in a separate
+            // window when HICODEX_CODEX_BUNDLE is set. The clean-room `main`
+            // window is the untouched default and is unaffected.
+            if std::env::var("HICODEX_CODEX_BUNDLE").is_ok() {
+                if let Err(error) = codex_bundle::open_codex_bundle_window(app.handle().clone()) {
+                    eprintln!("[codex-bundle] failed to open window: {error}");
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -2628,6 +2776,9 @@ fn main() {
             host_read_codex_auth_summary,
             host_read_installation_state,
             host_open_file_reference,
+            host_reveal_path,
+            host_open_thread_window,
+            host_open_new_window,
             host_open_external_url,
             host_pick_file_references,
             host_pick_workspace_folder,
@@ -2650,7 +2801,8 @@ fn main() {
             host_notify_turn_completed,
             host_handle_deep_link_url,
             host_generate_image,
-            host_workspace_list_dir
+            host_workspace_list_dir,
+            codex_bundle::open_codex_bundle_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running HiCodex desktop");

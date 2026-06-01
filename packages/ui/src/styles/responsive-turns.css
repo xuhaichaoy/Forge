@@ -78,7 +78,7 @@
 }
 
 .hc-turn-collapse-toggle:hover {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
   color: #27313d;
 }
 
@@ -179,8 +179,8 @@
 
 .hc-worked-for-live-label {
   /* Codex worked-for label — `text-token-foreground/60`. */
-  color: #6f716b;
-  font-size: 13px;
+  color: #767779; /* Codex: text-token-foreground/60 = color-mix(in oklab, #1a1c1f 60%, transparent) over light surface */
+  font-size: 14px; /* Codex: text-size-chat = --codex-chat-font-size -> --vscode-font-size -> --text-base = 14px */
   line-height: 1.45;
 }
 
@@ -191,6 +191,12 @@
    * `text-token-text-secondary`-coloured inner div. With the parent ~60% of
    * foreground, the resulting border resolves to ≈12% of foreground. */
   background: rgba(34, 38, 43, 0.12);
+}
+
+/* Dark: Codex's border-current/20 follows the (now light) foreground; the
+   hardcoded dark-ink line is invisible on a dark surface → light overlay. */
+.hc-app[data-theme="dark"] .hc-worked-for-live-rule {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 @keyframes hc-worked-for-fade {
@@ -243,6 +249,10 @@
 
 .hc-thread-item-button:hover {
   background: rgba(34, 38, 43, 0.05);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-item-button:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .hc-thread-item-body {
@@ -327,7 +337,8 @@
   gap: 8px;
   color: #4b4d48;
   font-size: 13px;
-  line-height: 18px;
+  /* codex: plan item spans use leading-4 = line-height 16px (calc(--spacing * 4)). */
+  line-height: 16px;
 }
 
 .hc-inline-plan-body {
@@ -433,7 +444,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 9px 10px 8px 12px;
-  border-bottom: 1px solid rgba(34, 38, 43, 0.09);
+  /* codex plan card header has NO border-bottom (the header/body share one surface). */
 }
 
 .hc-plan-summary-title {
@@ -442,7 +453,7 @@
   overflow: hidden;
   color: var(--hc-text-primary);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 600; /* codex plan title = `text-base font-semibold` = 600 (not 650) */
   line-height: 20px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -481,7 +492,7 @@
 
 .hc-plan-summary-actions button:hover,
 .hc-plan-summary-actions button:focus-visible {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
   color: var(--hc-text-primary);
 }
 
@@ -503,7 +514,7 @@
 .hc-plan-summary-body {
   position: relative;
   min-width: 0;
-  padding: 12px;
+  padding: 12px 16px; /* codex markdown surface = `px-4 py-3` = 16px inline / 12px block */
 }
 
 .hc-plan-summary-body.is-collapsed {
@@ -578,4 +589,77 @@
     outline-offset: 4px;
     background-color: rgba(45, 108, 223, 0.08);
   }
+}
+
+
+/* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
+/* Dark theme overrides for hardcoded LIGHT-only colors */
+.hc-app[data-theme="dark"] .hc-turn-collapse-row {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-collapse-toggle {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-collapse-toggle:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-collapse-chevron {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-collapse-rule {
+  background: color-mix(in oklab, #ffffff 6%, transparent);
+}
+
+.hc-app[data-theme="dark"] .hc-worked-for-live-label {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-card {
+  border-inline-color: var(--hc-border-default);
+  border-top-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-header {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-header:hover {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-header-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-row {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-status {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-index {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-inline-plan-step[data-status="completed"] {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-plan-summary-card {
+  border-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-plan-summary-header {
+  border-bottom-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-settings-nav {
+  border-bottom-color: var(--hc-border-default);
 }

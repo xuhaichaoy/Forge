@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "codex-bundle",
+  "description": "Capability for the optional window that hosts the real Codex Desktop bundle. Grants it the same app-server transport surface as the clean-room main window (event listen + invoke of host_* commands via core:default), plus the host plugin permissions it relies on.",
+  "windows": ["codex-bundle"],
+  "permissions": [
+    "core:default",
+    "notification:allow-is-permission-granted",
+    "process:allow-restart",
+    "shell:allow-open",
+    "updater:default"
+  ]
+}

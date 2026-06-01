@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AccumulatedThreadItem, ConversationRenderUnit } from "../state/render-groups";
+import { mcpAppResourceUri } from "../state/render-groups";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import { WorkedForDivider } from "./worked-for-divider";
 
@@ -138,7 +139,7 @@ export function splitTurnUnits(units: ConversationRenderUnit[]): TurnUnitSplit {
       continue;
     }
     expandedAgentUnits.push(unit);
-    if (isPersistentSteeringUserUnit(unit)) {
+    if (isUserMessageUnit(unit) || isPersistentSteeringUserUnit(unit)) {
       persistentAgentUnits.push(unit);
     } else {
       collapsibleAgentUnits.push(unit);
@@ -158,25 +159,50 @@ export function splitTurnUnits(units: ConversationRenderUnit[]): TurnUnitSplit {
 }
 
 export function shouldPreventTurnAutoCollapse(units: ConversationRenderUnit[]): boolean {
-  return units.some((unit) => {
-    if (unit.kind === "toolActivity") {
-      if (unit.summary.inProgress) return true;
-      return unit.items.some(itemPreventsAutoCollapse);
-    }
-    if (unit.kind === "generatedImageGallery") {
-      // Pending image generation keeps the turn active (Codex `$e` placeholder).
-      if (unit.hasPending) return true;
-      return unit.images.some(itemPreventsAutoCollapse);
-    }
-    if (unit.kind === "assistantEndResources") return false;
-    if (unit.kind === "message" && unit.role === "assistant") {
-      return (unit.assistantAfter ?? []).some((after) =>
-        after.kind === "generatedImageGallery"
-        && (after.hasPending || after.images.some(itemPreventsAutoCollapse))
-      );
-    }
-    return itemPreventsAutoCollapse(unit.item);
-  });
+  /*
+   * CODEX-REF split-items-into-render-groups-BuC48F2v.js `dc` (exported `C`):
+   *   function C({entries,mcpServerStatuses}){
+   *     return entries.some(e=>e.kind==="item"&&e.item.type==="mcp-tool-call"&&x({item:e.item,mcpServerStatuses}))
+   *   }
+   *   // x(...) === b(...) !== "not-mcp-app"; b(...) keys on the tool-call's
+   *   // successful result resolving to an MCP-app resource URI.
+   * Consumed in local-conversation-thread-Kn0WAsVa.js `Yb`:
+   *   vt = renderMcpApps && shouldAutoExpandMcpApps;        // K && z
+   *   bt = vt && dc({entries:ht,mcpServerStatuses:yt});     // preventAutoCollapse
+   *   {isCollapsed} = Ib({..., preventAutoCollapse: bt});   // isCollapsed = persisted ?? !bt
+   * So the default-EXPANDED state is keyed PURELY on "the turn contains an
+   * MCP-app tool-call" — there is NO in-progress / pending / hasPending check.
+   *
+   * A live (in-progress) turn does not get wrongly auto-collapsed by dropping
+   * the old in-progress checks: `Ib`/`shouldAllowTurnCollapse` require
+   * hasFinalAssistantStarted, so while the turn is running shouldAllowCollapse
+   * is false and isCollapsed is forced false regardless of preventAutoCollapse.
+   *
+   * HiCodex does not thread the renderMcpApps/shouldAutoExpandMcpApps settings
+   * into this pure helper (Codex defaults: renderMcpApps=true,
+   * shouldAutoExpandMcpApps=false), so we faithfully reproduce the inner `dc`
+   * predicate — MCP-app presence — using the same item-level detection that
+   * event-unit.tsx uses for default-expanded tool activity (`mcpAppResourceUri`).
+   */
+  return units.some(unitHasMcpApp);
+}
+
+function unitHasMcpApp(unit: ConversationRenderUnit): boolean {
+  if (unit.kind === "toolActivity") {
+    return unit.items.some(itemIsMcpApp);
+  }
+  if (unit.kind === "message" || unit.kind === "event" || unit.kind === "threadItem") {
+    return itemIsMcpApp(unit.item);
+  }
+  // generatedImageGallery / assistantEndResources carry no mcp-tool-call items.
+  return false;
+}
+
+function itemIsMcpApp(item: AccumulatedThreadItem): boolean {
+  // Mirrors event-unit.tsx default-expand detection: a successful mcp-tool-call
+  // that resolves to an MCP-app resource URI. `mcpAppResourceUri` already gates
+  // on type === "mcp-tool-call" and returns "" otherwise.
+  return Boolean(mcpAppResourceUri(item));
 }
 
 export function shouldAllowTurnCollapse(input: {
@@ -315,7 +341,7 @@ function TurnCollapseToggle({
       >
         <span>{label}</span>
         <ChevronRight
-          size={10}
+          size={14}
           className={`hc-turn-collapse-chevron text-stone-900/40 transition-transform duration-200 ${collapsed ? "rotate-0" : "is-open rotate-90"}`}
         />
       </button>
@@ -352,6 +378,9 @@ function isTurnCancelled(units: ConversationRenderUnit[]): boolean {
         after.kind === "generatedImageGallery" && after.images.some(itemIsCancelled)
       );
     }
+    if (unit.kind === "dynamicToolCallGroup") {
+      return unit.items.some(itemIsCancelled);
+    }
     return itemIsCancelled(unit.item);
   });
 }
@@ -359,15 +388,6 @@ function isTurnCancelled(units: ConversationRenderUnit[]): boolean {
 function itemIsCancelled(item: AccumulatedThreadItem): boolean {
   const status = (item as Record<string, unknown>)._turnStatus;
   return status === "cancelled" || status === "canceled";
-}
-
-function itemPreventsAutoCollapse(item: AccumulatedThreadItem): boolean {
-  const record = item as Record<string, unknown>;
-  const type = String(record.type ?? "");
-  const status = String(record.status ?? record.executionStatus ?? "");
-  if (status === "inProgress" || status === "running" || status === "pending") return true;
-  if (record.completed === false) return true;
-  return false;
 }
 
 function singleContextCompactionUnit(units: ConversationRenderUnit[]): boolean {

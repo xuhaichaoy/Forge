@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ComposerExternalFooter,
+  ComposerSettingsChips,
   formatIntelligenceFooterLabel,
   formatPermissionsFooterLabel,
   formatWorkspaceProjectLabel,
@@ -54,18 +55,21 @@ function formatsContextChipLabels(): void {
       sandboxMode: "workspace-write",
       approvalPolicy: "on-request",
       approvalsReviewer: "user",
-    }) === "Default permissions",
-    "permissions label should project Desktop's default permissions chip",
+    }) === "Ask for approval",
+    "permissions chip should render Desktop's default-mode shortLabel (composer.permissionsDropdown.default.shortLabel)",
   );
 }
 
 function rendersContextChipsWithOverflowHooks(): void {
-  const html = renderToStaticMarkup(createElement(ComposerExternalFooter, {
-    branch: "main",
-    cwd: "/workspace/HiCodex",
+  /*
+   * codex: composer-*.js — the model-intelligence / reasoning-effort /
+   * permissions chips render INSIDE the composer bubble footer (Composer
+   * `footerSettings` slot) via ComposerSettingsChips. The below-bubble external
+   * footer keeps only the project add-menu + branch chip.
+   */
+  const chips = renderToStaticMarkup(createElement(ComposerSettingsChips, {
     model: "gpt-5.5",
     reasoningEffort: "medium",
-    reasoningSummary: "auto",
     sandboxMode: "workspace-write",
     approvalPolicy: "on-request",
     onOpenPermissions: () => undefined,
@@ -73,43 +77,53 @@ function rendersContextChipsWithOverflowHooks(): void {
   }));
 
   assert(
-    html.includes("hc-composer-external-footer-context"),
-    "footer should group runtime context chips away from project chips",
+    chips.includes("hc-composer-settings-chips"),
+    "in-bubble settings cluster should wrap the model/reasoning/permissions chips",
   );
   assert(
-    html.includes('aria-label="Project and work mode"'),
-    "footer should keep project and work mode behind the left add menu",
+    chips.includes('data-chip="permissions"'),
+    "settings cluster should render a permissions chip",
   );
   assert(
-    html.includes('data-chip="permissions"'),
-    "footer should render a permissions chip",
+    chips.includes("hc-tooltip-trigger"),
+    "settings chips should be wrapped in a styled Tooltip (codex tooltip-CDzchJxN.js), not a native title",
   );
   assert(
-    html.includes('title="Change permissions"'),
-    "wired permissions chip should advertise the settings action",
+    chips.includes('data-chip="intelligence"'),
+    "settings cluster should render an intelligence chip",
   );
   assert(
-    html.includes('data-chip="intelligence"'),
-    "footer should render an intelligence chip",
-  );
-  assert(
-    !html.includes('data-chip="work-mode"'),
-    "work-mode should not remain as a persistent footer chip",
-  );
-  assert(
-    html.includes("hc-composer-footer-branch") && html.includes("main"),
-    "footer should render the current branch chip",
-  );
-  assert(
-    html.includes('data-interactive="true"'),
+    chips.includes('data-interactive="true"'),
     "interactive intelligence chip should expose the interactive styling hook",
   );
   assert(
-    html.includes("gpt-5.5 Medium"),
+    chips.includes("gpt-5.5 Medium"),
     "intelligence chip should show the Desktop-style model and effort label",
   );
   assert(
-    !html.includes("Auto summaries") && !html.includes(" / "),
+    !chips.includes("Auto summaries") && !chips.includes(" / "),
     "intelligence chip should not expose summary mode or slash-joined labels",
+  );
+
+  const footer = renderToStaticMarkup(createElement(ComposerExternalFooter, {
+    branch: "main",
+    cwd: "/workspace/HiCodex",
+  }));
+
+  assert(
+    footer.includes('aria-label="Project and work mode"'),
+    "external footer should keep project and work mode behind the left add menu",
+  );
+  assert(
+    footer.includes("hc-composer-footer-branch") && footer.includes("main"),
+    "external footer should render the current branch chip",
+  );
+  assert(
+    !footer.includes('data-chip="work-mode"'),
+    "work-mode should not remain as a persistent footer chip",
+  );
+  assert(
+    !footer.includes('data-chip="permissions"') && !footer.includes('data-chip="intelligence"'),
+    "model/permissions chips should move out of the external footer into the in-bubble cluster",
   );
 }

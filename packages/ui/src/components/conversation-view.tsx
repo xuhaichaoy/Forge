@@ -22,7 +22,7 @@ import { IconActionButton, MessageActionRow } from "./message-action-row";
 import { MessageUnitView } from "./message-unit";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
-import { ThreadItemView } from "./thread-item-view";
+import { DynamicToolCallGroupView, ThreadItemView } from "./thread-item-view";
 import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
 import {
   setThreadScrollDistanceFromBottom,
@@ -614,6 +614,9 @@ export function ConversationUnitView({
         onSubmitTurnFeedback={onSubmitTurnFeedback}
       />
     );
+  }
+  if (unit.kind === "dynamicToolCallGroup") {
+    return <DynamicToolCallGroupView unit={unit} />;
   }
   if (unit.kind === "toolActivity") {
     return (

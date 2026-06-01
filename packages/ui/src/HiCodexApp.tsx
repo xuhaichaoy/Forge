@@ -24,7 +24,7 @@ import { KeyboardShortcutsDialog } from "./components/keyboard-shortcuts-dialog"
 import { StatusTextPanel } from "./components/status-text-panel";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
-import { ComposerExternalFooter } from "./components/composer-external-footer";
+import { ComposerExternalFooter, ComposerSettingsChips } from "./components/composer-external-footer";
 import { HiCodexIntlProvider, useHiCodexIntl } from "./components/i18n-provider";
 import { insertPromptEditorText } from "./components/prompt-editor";
 import {
@@ -42,6 +42,10 @@ import { AutomationsPreviewPanel } from "./components/automations-preview-panel"
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
 import type { PatchAction, PatchActionState } from "./components/conversation-view";
+// codex inline-mentions-*.js / user-message-attachments-*.js context-menu wrapper —
+// reveal + copy-contents actions for file-reference anchors + attachment pills,
+// provided once above the conversation.
+import { FileCitationMenuContext } from "./components/file-citation-menu";
 import type { SubmitTurnRatingEvent, TurnRatingEvent } from "./components/turn-rating-controls";
 import {
   LiveTurnDiffPortal,
@@ -73,7 +77,9 @@ import {
   applyPatchAction,
   ghPrStatus,
   openExternalUrl,
-  openFileReference,
+  revealPath,
+  openThreadWindow,
+  openNewWindow,
   isTauriRuntime,
   listenNativeShellEvents,
   pickFileReferences,
@@ -268,6 +274,8 @@ import {
   threadGitBranch,
 } from "./state/app-shell-helpers";
 import {
+  createI18nBundle,
+  formatI18nMessage,
   loadHiCodexLocale,
   saveHiCodexLocale,
   type HiCodexLocale,
@@ -632,6 +640,20 @@ export function HiCodexApp() {
     root.classList.toggle("electron-dark", resolvedUiTheme === "dark");
   }, [resolvedUiTheme, uiLocale, uiThemeMode]);
   /*
+   * Locale-aware formatter for the label projections computed in this component.
+   * HiCodexApp renders (and therefore sits ABOVE) the HiCodexIntlProvider, so it
+   * cannot use useHiCodexIntl; instead it builds the same bundle from uiLocale so
+   * projection labels (composer placeholder, slash/memories copy, settings nav)
+   * localize identically to hook-based components.
+   */
+  const formatUiMessage = useMemo(() => {
+    const bundle = createI18nBundle(uiLocale);
+    return (
+      descriptor: Parameters<typeof formatI18nMessage>[1],
+      values?: Parameters<typeof formatI18nMessage>[2],
+    ) => formatI18nMessage(bundle, descriptor, values);
+  }, [uiLocale]);
+  /*
    * CODEX-REF: Apply Code font size + Reduce motion to the DOM root.
    *
    *   - --codex-chat-code-font-size is the existing token defined in base.css
@@ -851,6 +873,11 @@ export function HiCodexApp() {
   const [automationsPayload, setAutomationsPayload] = useState<unknown>(null);
   const [automationsError, setAutomationsError] = useState<string | null>(null);
   const [automationsLoading, setAutomationsLoading] = useState(false);
+  // codex: local-conversation-thread-*.js — citation chip `ke` handler deep-links
+  // a *specific* automation id (Km({automationId,…}) / navigate-to-route
+  // /automations?automationId=…). HiCodex tracks that focus target so the panel
+  // can scope to the matching schedule instead of the generic list.
+  const [focusedAutomationId, setFocusedAutomationId] = useState<string | null>(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const accountStateRef = useRef<AccountState>(initialAccountState);
   const mcpStartupStatusPanelHandledRef = useRef(0);
@@ -883,8 +910,8 @@ export function HiCodexApp() {
     setAccountState(next);
   }, []);
   const accountViewModel = useMemo(
-    () => projectAccountViewModel(accountState, codexAuthSummary),
-    [accountState, codexAuthSummary],
+    () => projectAccountViewModel(accountState, codexAuthSummary, formatUiMessage),
+    [accountState, codexAuthSummary, formatUiMessage],
   );
   const client = useMemo(() => {
     const rpc = new CodexJsonRpcClient({
@@ -1202,6 +1229,8 @@ export function HiCodexApp() {
     error: automationsError,
     loading: automationsLoading,
     payload: automationsPayload,
+    // codex: deep-link focus target from the citation chip `ke` handler.
+    focusedAutomationId,
     heartbeat: {
       hasConversation: Boolean(state.activeThreadId),
       hostSupported: true,
@@ -1220,6 +1249,7 @@ export function HiCodexApp() {
     automationsError,
     automationsLoading,
     automationsPayload,
+    focusedAutomationId,
     latestTurnIdForHeartbeat,
     state.activeThreadId,
     state.connected,
@@ -2087,6 +2117,7 @@ export function HiCodexApp() {
     forkConfirmOpen,
     forkConfirmSubmitting,
     forkSelectedThread,
+    forkSelectedThreadIntoWorktree,
     openArchiveThreadDialog,
     openRenameThreadDialog,
     renameSelectedThread,
@@ -2247,20 +2278,29 @@ export function HiCodexApp() {
     }
   }, [client, ensureConnected]);
 
-  const openAutomationsPanel = useCallback(() => {
+  // codex: local-conversation-thread-*.js — opening the automations surface.
+  // `automationId` is the deep-link focus target from the citation chip `ke`
+  // handler; the generic "Automations" entry point passes nothing and the panel
+  // opens unfocused (clears any stale focus). Mirrors Codex resolving a specific
+  // id (`Km({automationId,…})` / `navigate-to-route ?automationId=…`).
+  const openAutomationsPanel = useCallback((automationId?: string | null) => {
+    setFocusedAutomationId(automationId?.trim() || null);
     closeFilePreviewPanel();
     closeBackgroundAgentPanel();
     void refreshAutomationsPanel();
   }, [closeBackgroundAgentPanel, closeFilePreviewPanel, refreshAutomationsPanel]);
 
-  const openAutomationFromConversation = useCallback((_automationId: string) => {
-    openAutomationsPanel();
+  // codex: citation chip onClick (`ke`) — deep-link to the *specific* automation
+  // the chip references. We thread its id through so the panel scopes/scrolls to
+  // that schedule instead of opening the full list.
+  const openAutomationFromConversation = useCallback((automationId: string) => {
+    openAutomationsPanel(automationId);
   }, [openAutomationsPanel]);
 
   const composerPlaceholder = composerPlaceholderText({
     hasConversation: conversation.units.length > 0,
     hasBackgroundAgentsPanel: backgroundAgentPanel != null,
-  });
+  }, formatUiMessage);
   // codex: local-conversation-thread-*.js — status footer payload.
   // Reads the `tokenUsage` slice the reducer writes from
   // `thread/tokenUsage/updated`. Desktop keeps this hidden by default behind
@@ -2959,6 +2999,11 @@ export function HiCodexApp() {
       COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.settings)!,
       () => { void loadSettingsPanel("general"); },
     );
+    // codex newWindow — ⌘⇧N opens a fresh window (desktop-only; no-op/caught in browser).
+    registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.newWindow)!,
+      () => { void openNewWindow().catch(() => undefined); },
+    );
     return () => {
       // codex: electron-menu-shortcuts-*.js — only unregister the
       // IDs this effect owns so the second-wave effect (archive/rename/pin/
@@ -2974,6 +3019,7 @@ export function HiCodexApp() {
       unregisterCommand(COMMAND_IDS.previousThread);
       unregisterCommand(COMMAND_IDS.nextThread);
       unregisterCommand(COMMAND_IDS.settings);
+      unregisterCommand(COMMAND_IDS.newWindow);
     };
   }, [
     createWorkbenchThread,
@@ -3107,6 +3153,36 @@ export function HiCodexApp() {
       unlisten?.();
     };
   }, [createWorkbenchThread, loadSettingsPanel, openCommandMenu, openDeepLinkUrl]);
+
+  // codex threadHeader.openInNewWindow — a window opened via host_open_thread_window
+  // injects `window.__HICODEX_INITIAL_THREAD__`; once connected, route to that thread
+  // once via the existing deep-link path. The first/main window has no such global.
+  const initialThreadRoutedRef = useRef(false);
+  useEffect(() => {
+    if (initialThreadRoutedRef.current || !state.connected) return;
+    const globalScope =
+      typeof window !== "undefined" ? (window as { __HICODEX_INITIAL_THREAD__?: unknown }) : null;
+    if (!globalScope) return;
+    const initialThread = globalScope.__HICODEX_INITIAL_THREAD__;
+    if (typeof initialThread !== "string" || initialThread.length === 0) return;
+    initialThreadRoutedRef.current = true;
+    delete globalScope.__HICODEX_INITIAL_THREAD__;
+    void openDeepLinkUrl(`codex://threads/${initialThread}`);
+  }, [state.connected, openDeepLinkUrl]);
+
+  // codex newWindow — a window opened via host_open_new_window injects
+  // `window.__HICODEX_INITIAL_NEW_CHAT__`; once connected, start a fresh chat once. The
+  // first/main window has no such global, so this is a no-op there.
+  const initialNewChatRef = useRef(false);
+  useEffect(() => {
+    if (initialNewChatRef.current || !state.connected) return;
+    const globalScope =
+      typeof window !== "undefined" ? (window as { __HICODEX_INITIAL_NEW_CHAT__?: unknown }) : null;
+    if (!globalScope || globalScope.__HICODEX_INITIAL_NEW_CHAT__ !== true) return;
+    initialNewChatRef.current = true;
+    delete globalScope.__HICODEX_INITIAL_NEW_CHAT__;
+    void createWorkbenchThread();
+  }, [state.connected, createWorkbenchThread]);
 
   useSkillsPanelRefresh({
     activeSettingsPanel,
@@ -3315,32 +3391,37 @@ export function HiCodexApp() {
 
   const copyTextToClipboard = useCallback(async (label: string, value: string) => {
     const text = value.trim();
+    // codex copy toasts read "Copied {noun}" with a lowercase mid-sentence noun
+    // (threadHeader.copyWorkingDirectorySuccess "Copied working directory",
+    // copyConversationMarkdownSuccess "Copied conversation as Markdown"); call sites pass the
+    // lowercase noun. The sentence-initial "unavailable" warning capitalizes it.
+    const sentenceLabel = label.charAt(0).toUpperCase() + label.slice(1);
     if (!text) {
-      dispatch({ type: "log", text: `${label} is unavailable`, level: "warn" });
+      dispatch({ type: "log", text: `${sentenceLabel} is unavailable`, level: "warn" });
       return;
     }
     try {
       await navigator.clipboard.writeText(text);
-      dispatch({ type: "log", text: `${label} copied`, level: "info" });
+      dispatch({ type: "log", text: `Copied ${label}`, level: "info" });
     } catch (error) {
       dispatch({ type: "log", text: `copy failed: ${formatError(error)}`, level: "error" });
     }
   }, []);
 
   const copyWorkingDirectory = useCallback(() => {
-    void copyTextToClipboard("Working directory", activeThread?.cwd || workspace || "");
+    void copyTextToClipboard("working directory", activeThread?.cwd || workspace || "");
   }, [activeThread?.cwd, copyTextToClipboard, workspace]);
 
   const copySessionId = useCallback(() => {
-    void copyTextToClipboard("Session ID", activeThread?.id ?? "");
+    void copyTextToClipboard("session id", activeThread?.id ?? "");
   }, [activeThread?.id, copyTextToClipboard]);
 
   const copyThreadWorkingDirectory = useCallback((thread: Thread) => {
-    void copyTextToClipboard("Working directory", thread.cwd || workspace || "");
+    void copyTextToClipboard("working directory", thread.cwd || workspace || "");
   }, [copyTextToClipboard, workspace]);
 
   const copyThreadSessionId = useCallback((thread: Thread) => {
-    void copyTextToClipboard("Session ID", thread.id);
+    void copyTextToClipboard("session id", thread.id);
   }, [copyTextToClipboard]);
 
   const copyThreadDeeplink = useCallback((thread: Thread) => {
@@ -3354,10 +3435,21 @@ export function HiCodexApp() {
       return;
     }
     try {
-      await openFileReference(cwd);
+      // codex sidebar-thread-section `open-thread-folder` — REVEAL the workspace
+      // root in the OS file manager ("Reveal in Finder", i18n desc "reveal a
+      // folder"), i.e. select it in its parent, rather than just opening it.
+      await revealPath(cwd);
     } catch (error) {
-      dispatch({ type: "log", text: `open folder failed: ${formatError(error)}`, level: "error" });
+      dispatch({ type: "log", text: `reveal folder failed: ${formatError(error)}`, level: "error" });
     }
+  }, []);
+
+  // codex threadHeader.openInNewWindow — open the thread in a second app window
+  // (host_open_thread_window; the new window routes to the thread on startup).
+  const openThreadInNewWindow = useCallback((thread: Thread) => {
+    void openThreadWindow(thread.id).catch((error) => {
+      dispatch({ type: "log", text: `open in new window failed: ${formatError(error)}`, level: "warn" });
+    });
   }, []);
 
   const setThreadPinnedById = useCallback((threadId: string, pinned: boolean) => {
@@ -3388,7 +3480,7 @@ export function HiCodexApp() {
       dispatch({ type: "log", text: "Conversation markdown is unavailable", level: "warn" });
       return;
     }
-    void copyTextToClipboard("Conversation markdown", buildConversationMarkdown({
+    void copyTextToClipboard("conversation as Markdown", buildConversationMarkdown({
       title: threadTitle(activeThread),
       units: conversation.units,
     }));
@@ -3489,7 +3581,7 @@ export function HiCodexApp() {
           });
           return;
         }
-        void copyTextToClipboard("Conversation path", path);
+        void copyTextToClipboard("conversation path", path);
       },
     );
     registerCommand(
@@ -3729,6 +3821,7 @@ export function HiCodexApp() {
   });
 
   const {
+    copyFileReferenceContents,
     openAssistantArtifact,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
@@ -3737,6 +3830,7 @@ export function HiCodexApp() {
     previewPathContext,
     previewRailArtifact,
     previewRailFileReference,
+    revealFileReference,
   } = useArtifactPreviewActions({
     activeThreadCwd: activeThread?.cwd,
     defaultCwd: state.hostStatus?.defaultCwd,
@@ -3979,6 +4073,7 @@ export function HiCodexApp() {
   const runSlashRequest = useCallback((request: Parameters<typeof runSlashRequestWorkflow>[0], payload?: Record<string, unknown>) => (
     runSlashRequestWorkflow(request, payload, {
       client,
+      formatMessage: formatUiMessage,
       dispatch,
       ensureConnected,
       openCommandPanel,
@@ -4010,6 +4105,7 @@ export function HiCodexApp() {
     activeTurnId,
     buildInfo,
     client,
+    formatUiMessage,
     ensureConnected,
     openCommandPanel,
     openRenameThreadDialog,
@@ -4105,7 +4201,7 @@ export function HiCodexApp() {
         setComposerAttachments([]);
         if (typeof document !== "undefined") {
           const chip = document.querySelector<HTMLElement>('[data-chip="reasoning"]')
-            ?? document.querySelector<HTMLElement>(".hc-composer-external-footer");
+            ?? document.querySelector<HTMLElement>(".hc-composer-settings-chips");
           if (chip) {
             setReasoningPickerAnchor((current) => current === chip ? null : chip);
           }
@@ -4349,8 +4445,15 @@ export function HiCodexApp() {
   const remoteTaskVisible = activeAppTab === "remoteTask" && activeRemoteTaskId !== null;
   const sidebarVisible = workbenchVisible && sidebarOpen;
   const appClassName = workbenchVisible && showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app";
+  // codex: inline file references carry the workspace-file context menu; provide the
+  // reveal + copy-contents actions (host + path resolution) to every FileCitationAnchor.
+  const fileCitationMenuActions = useMemo(
+    () => ({ onReveal: revealFileReference, onCopyContents: copyFileReferenceContents }),
+    [revealFileReference, copyFileReferenceContents],
+  );
 
   return (
+    <FileCitationMenuContext.Provider value={fileCitationMenuActions}>
     <HiCodexIntlProvider locale={uiLocale}>
       <div
         className={appClassName}
@@ -4378,6 +4481,8 @@ export function HiCodexApp() {
         <Sidebar
           threads={projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey })}
           activeThreadId={state.activeThreadId}
+          // codex sidebar-thread-section ht — swaps the active thread's fork label.
+          activeThreadIsWorktree={worktreeHostGitStatus?.isWorktree ?? false}
           connected={state.connected}
           connecting={state.connecting}
           updateAvailable={updateBadge}
@@ -4390,6 +4495,8 @@ export function HiCodexApp() {
           onUseExistingFolder={useExistingWorkspaceFolder}
           onSelectThread={selectWorkbenchThread}
           onForkThread={forkSelectedThread}
+          onForkThreadIntoWorktree={forkSelectedThreadIntoWorktree}
+          onOpenThreadWindow={openThreadInNewWindow}
           onRenameThread={openRenameThreadDialog}
           onArchiveThread={archiveSelectedThread}
           pinnedThreadIds={pinnedThreadIds}
@@ -4426,6 +4533,8 @@ export function HiCodexApp() {
         <ConversationChrome
           title={activeThread ? threadTitle(activeThread, state.threadsRuntime[activeThread.id]?.items ?? null) : "New chat"}
           activeThread={activeThread}
+          // codex thread-env-icon — local vs (linked git) worktree indicator for the active thread.
+          env={worktreeHostGitStatus?.isWorktree ? "worktree" : "local"}
           sidebarOpen={sidebarOpen}
           onToggleSidebar={toggleSidebar}
           /*
@@ -4566,25 +4675,29 @@ export function HiCodexApp() {
                 onSend={() => void sendTurn()}
                 onInterrupt={() => void interruptActiveTurn()}
                 onSlashCommand={executeSlashCommand}
+                footerSettings={(
+                  <ComposerSettingsChips
+                    model={effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model}
+                    approvalPolicy={effectiveThreadContextDefaults?.approvalPolicy ?? state.threadContextDefaults?.approvalPolicy}
+                    approvalsReviewer={effectiveThreadContextDefaults?.approvalsReviewer ?? state.threadContextDefaults?.approvalsReviewer}
+                    reasoningEffort={effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort}
+                    sandboxMode={effectiveThreadContextDefaults?.sandbox ?? state.threadContextDefaults?.sandbox}
+                    onOpenPermissions={() => void loadSettingsPanel("permissions")}
+                    onOpenModelPicker={toggleModelPickerAnchor}
+                    onOpenReasoningPicker={toggleReasoningPickerAnchor}
+                  />
+                )}
               />
               <ComposerExternalFooter
+                variant={!activeThread ? "home" : "default"}
                 branch={threadGitBranch(activeThread)}
                 cwd={activeThread?.cwd || workspace}
-                model={effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model}
                 workMode={composerWorkMode}
                 workModeOptions={composerWorkModeOptions}
                 workspaceRoots={workspaceRootOptions}
                 onWorkspaceRootSelected={selectWorkspaceRoot}
                 onUseExistingFolder={useExistingWorkspaceFolder}
                 onWorkModeChange={setComposerWorkMode}
-                approvalPolicy={effectiveThreadContextDefaults?.approvalPolicy ?? state.threadContextDefaults?.approvalPolicy}
-                approvalsReviewer={effectiveThreadContextDefaults?.approvalsReviewer ?? state.threadContextDefaults?.approvalsReviewer}
-                reasoningEffort={effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort}
-                reasoningSummary={effectiveThreadContextDefaults?.reasoningSummary ?? state.threadContextDefaults?.reasoningSummary}
-                sandboxMode={effectiveThreadContextDefaults?.sandbox ?? state.threadContextDefaults?.sandbox}
-                onOpenPermissions={() => void loadSettingsPanel("permissions")}
-                onOpenModelPicker={toggleModelPickerAnchor}
-                onOpenReasoningPicker={toggleReasoningPickerAnchor}
               />
             </div>
           )}
@@ -4646,7 +4759,12 @@ export function HiCodexApp() {
         {automationsPanelOpen && (
           <AutomationsPreviewPanel
             model={automationsModel}
-            onClose={() => setAutomationsPanelOpen(false)}
+            onClose={() => {
+              setAutomationsPanelOpen(false);
+              // codex: clear the deep-link focus target on close so a later
+              // generic "Automations" open doesn't re-scope to a stale id.
+              setFocusedAutomationId(null);
+            }}
             onRefresh={refreshAutomationsPanel}
           />
         )}
@@ -4674,14 +4792,15 @@ export function HiCodexApp() {
             // footer until first counter" behaviour. `onBrowserOpen` stays
             // unwired until the browser-tabs slice lands.
             statusFooter={rightRailStatusFooter}
-            // codex: au row onClick — open automation editor modal. HiCodex
-            // routes the click through `openAutomationsPanel`, which closes
-            // sibling side panels and refreshes the automations payload before
-            // showing the read-only panel.
-            // TODO: codex: au row onClick should focus/select that specific
-            // automation inside the panel; currently the panel opens to the
-            // full list.
-            onAutomationOpen={(_automationId) => openAutomationsPanel()}
+            // codex: au row onClick — open automation editor modal. Codex's
+            // `ke` handler (local-conversation-thread-*.js) deep-links the
+            // *specific* automation (Km({automationId,…}) / navigate-to-route
+            // ?automationId=…). HiCodex threads the rail row's id through
+            // `openAutomationsPanel`, which records it as the surface model's
+            // `focusedAutomationId` focus target (resolved via
+            // `focusedAutomationSchedule`) so the panel can scope to that
+            // schedule instead of the generic full list.
+            onAutomationOpen={(automationId) => openAutomationsPanel(automationId)}
             isResponseInProgress={activeThreadRunning}
             onCompactThread={state.activeThreadId ? () => void runSlashRequest("compactThread") : undefined}
           />
@@ -4728,7 +4847,8 @@ export function HiCodexApp() {
                     sidePanel.setPanelOpen(true);
                   }}
                 >
-                  <Plus size={14} aria-hidden="true" />
+                  {/* codex ghost-toolbar glyph = icon-xs (16px) */}
+                  <Plus size={16} aria-hidden="true" />
                 </button>
                 {/*
                   * codex: thread-app-shell-chrome-*.js close button.
@@ -4745,7 +4865,8 @@ export function HiCodexApp() {
                   title="Close side panel"
                   onClick={() => sidePanel.setPanelOpen(false)}
                 >
-                  <X size={14} aria-hidden="true" />
+                  {/* codex ghost-toolbar glyph = icon-xs (16px) */}
+                  <X size={16} aria-hidden="true" />
                 </button>
               </>
             }
@@ -4826,9 +4947,11 @@ export function HiCodexApp() {
           // commits onBlur, can't ride the CommandPanelEntry action pipeline).
           uiTheme={uiThemeSnapshot}
           uiAppearance={uiAppearance}
+          uiLocale={uiLocale}
           onSetUiTheme={setUiThemeMode}
           onSetCodeFontSize={setUiCodeFontSize}
           onSetReducedMotion={setUiReducedMotion}
+          onSetUiLocale={setUiLocale}
         />
       )}
 
@@ -4953,6 +5076,7 @@ export function HiCodexApp() {
         <AppToastViewport logs={state.logs} />
       </div>
     </HiCodexIntlProvider>
+    </FileCitationMenuContext.Provider>
   );
 }
 

@@ -82,6 +82,7 @@ export default function runRenderGroupsTests(): void {
   formatsExpandedToolDetailsSemantically();
   groupsWebSearchIntoActivityAndSources();
   groupsAdjacentWebSearchesLikeCodexDesktop();
+  keepsLeadingMixedActivitySeparateLikeCodexDesktop();
   rendersActiveWebSearchLikeCodexDesktop();
   cleansWebSearchSiteFiltersLikeCodexDesktop();
   rendersInProgressMultiAgentActionsAsDesktopActivity();
@@ -3510,6 +3511,34 @@ function groupsAdjacentWebSearchesLikeCodexDesktop(): void {
     assertEqual(search.summary.groupType, "collapsed-tool-activity", "cross-type bucket uses collapsed-tool-activity");
     assertEqual(search.summary.counts.webSearches, 2, "web search count is preserved in cross-type bucket");
     assertEqual(search.summary.counts.commands, 1, "command count is preserved in cross-type bucket");
+  }
+}
+
+function keepsLeadingMixedActivitySeparateLikeCodexDesktop(): void {
+  // codex split-items-into-render-groups-*.js `oe`: collapse SLICES cover only the
+  // regions AFTER each assistant message, so the LEADING region (activity before
+  // the first rendered assistant message) is excluded from `R`'s cross-type fold.
+  // The exploration-merge + `q` web-search-group passes still run, so leading
+  // exec + web-search stay as SEPARATE groups, NOT one collapsed-tool-activity
+  // rollup. (Contrast groupsAdjacentWebSearchesLikeCodexDesktop above: with NO
+  // assistant message the whole segment is one slice and DOES cross-fold.)
+  const projection = projectConversation([
+    { type: "commandExecution", id: "cmd-1", command: "npm run a", status: "completed", aggregatedOutput: "ok", exitCode: 0 } as ThreadItem,
+    { type: "commandExecution", id: "cmd-2", command: "npm run b", status: "completed", aggregatedOutput: "ok", exitCode: 0 } as ThreadItem,
+    { type: "webSearch", id: "web-1", query: "codex desktop", status: "completed" } as ThreadItem,
+    { type: "agentMessage", id: "assistant-1", text: "Done.", completed: true } as ThreadItem,
+  ]);
+  const activityUnits = projection.units.filter((unit) => unit.kind === "toolActivity");
+  assertEqual(activityUnits.length, 2, "leading exec + web-search must stay TWO separate groups, not one cross-type rollup");
+  const execGroup = activityUnits[0];
+  if (execGroup?.kind === "toolActivity") {
+    assertEqual(execGroup.summary.counts.webSearches, 0, "leading exec group must NOT absorb the web search");
+    assertEqual(execGroup.summary.counts.commands, 2, "leading exec group keeps both commands");
+  }
+  const searchGroup = activityUnits[1];
+  if (searchGroup?.kind === "toolActivity") {
+    assertEqual(searchGroup.summary.groupType, "web-search-group", "leading web search stays its own web-search-group");
+    assertEqual(searchGroup.summary.counts.webSearches, 1, "leading web-search-group keeps the search");
   }
 }
 

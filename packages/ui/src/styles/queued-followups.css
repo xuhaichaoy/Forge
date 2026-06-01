@@ -39,6 +39,20 @@
   background: rgba(34, 38, 43, 0.065);
 }
 
+/* Dark: the queued-followup card's dark-ink border + fill are invisible on a
+   dark surface → light overlays (matching the rail/trigger dark pattern). */
+.hc-app[data-theme="dark"] .hc-queued-followup-row {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.hc-app[data-theme="dark"] .hc-queued-followup-row:hover,
+.hc-app[data-theme="dark"] .hc-queued-followup-row:focus-within,
+.hc-app[data-theme="dark"] .hc-queued-followup-row.is-menu-open {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.065);
+}
+
 .hc-queued-followup-row[data-dragging="true"] {
   opacity: 0.6;
 }

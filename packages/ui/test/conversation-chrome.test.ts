@@ -25,7 +25,7 @@ function keepsChromeFreeOfStatusAndKebabAffordances(): void {
   }));
 
   assertDeepEqual(html.includes("hc-status-pill"), false, "sidecar status should not render as a chrome pill");
-  assertDeepEqual(html.includes("Thread actions"), false, "thread kebab actions should not render in chrome");
+  assertDeepEqual(html.includes("Chat actions"), false, "thread kebab actions should not render in chrome");
   assertDeepEqual(html.includes("..."), false, "topbar title should not be hard-truncated in JavaScript");
 }
 

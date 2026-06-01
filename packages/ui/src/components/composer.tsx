@@ -83,6 +83,14 @@ export interface ComposerProps {
   onOpenPlugins?: () => void;
   showPlanKeywordSuggestion?: boolean;
   pendingRequestContent?: ReactNode;
+  /*
+   * codex: composer-*.js — Codex Desktop keeps the model-intelligence /
+   * reasoning-effort / permissions chips INSIDE the composer bubble's footer
+   * (`composer-footer` grid middle column), not in the below-bubble strip.
+   * HiCodex injects that chip cluster here as a slot; the branch + work-mode
+   * controls stay in the external below-bubble footer.
+   */
+  footerSettings?: ReactNode;
   onSend: (options?: ComposerSendOptions) => void;
   onInterrupt: () => void;
   onSlashCommand: (command: SlashCommand) => void;
@@ -107,6 +115,7 @@ export function Composer({
   onOpenPlugins,
   showPlanKeywordSuggestion = true,
   pendingRequestContent,
+  footerSettings,
   onSend,
   onInterrupt,
   onSlashCommand,
@@ -238,7 +247,7 @@ export function Composer({
   const addImageFilesAsDataUrls = useCallback((files: File[]) => {
     if (files.length === 0) return;
     if (!supportsImageInput) {
-      onAttachmentError?.("Current model does not declare image input support");
+      onAttachmentError?.("This model does not support image inputs. Try a different model.");
       return;
     }
     void Promise.all(files.map(readImageFileAttachment)).then((items) => {
@@ -256,7 +265,7 @@ export function Composer({
     let unavailablePathCount = 0;
 
     if (imageFiles.length > 0 && !supportsImageInput) {
-      onAttachmentError?.("Current model does not declare image input support");
+      onAttachmentError?.("This model does not support image inputs. Try a different model.");
     } else {
       for (const file of imageFiles) {
         const path = composerFilePath(file);
@@ -467,7 +476,7 @@ export function Composer({
 
     if ((actionId === "filePath" || actionId === "localImage") && onBrowseFiles) {
       if (actionId === "localImage" && !supportsImageInput) {
-        onAttachmentError?.("Current model does not declare image input support");
+        onAttachmentError?.("This model does not support image inputs. Try a different model.");
         closeComposerPopovers();
         requestComposerFocus(promptEditorRef.current);
         return;
@@ -496,11 +505,11 @@ export function Composer({
       const result = confirmAttachmentInput(state);
       if (result.attachment) {
         if (isImageAttachment(result.attachment) && !supportsImageInput) {
-          onAttachmentError?.("Current model does not declare image input support");
+          onAttachmentError?.("This model does not support image inputs. Try a different model.");
           requestAttachmentInputFocus(attachmentInputRef.current);
           return {
             ...state,
-            error: "Current model does not declare image input support",
+            error: "This model does not support image inputs. Try a different model.",
           };
         }
         const merged = mergeComposerAttachments(attachmentsRef.current, [result.attachment]);
@@ -1117,7 +1126,7 @@ export function Composer({
                   onPlanSelected={onPlanSelected}
                   onShowAttachmentMenu={showAttachmentMenu}
                 />
-                <div className="hc-composer-footer-middle" />
+                <div className="hc-composer-footer-middle">{footerSettings}</div>
                 <div className="hc-composer-footer-right" ref={setFooterRightMeasureElement}>
                   <ComposerSubmitButton submitState={submitState} submitTitle={submitTitle} />
                 </div>
@@ -1192,8 +1201,9 @@ const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftProps>(f
       <button
         className="hc-composer-plus"
         type="button"
-        title="Add context"
-        aria-label="Add context"
+        // codex composer.addContextDropdown.ariaLabel — "Add files and more"
+        title="Add files and more"
+        aria-label="Add files and more"
         aria-expanded={attachmentPickerOpen}
         onClick={onShowAttachmentMenu}
       >
@@ -1234,9 +1244,10 @@ const ComposerSubmitButton = forwardRef<HTMLButtonElement, ComposerSubmitButtonP
       disabled={submitState.disabled}
       data-mode={submitState.submitButtonMode}
     >
+      {/* codex send/stop glyphs are uniform icon-sm (18px) */}
       {submitState.threadRuntimeStatus === "connecting"
-        ? <Loader2 className="hc-spin" size={16} />
-        : submitState.submitButtonMode === "stop" ? <Square size={13} /> : <ArrowUp size={16} />}
+        ? <Loader2 className="hc-spin" size={18} />
+        : submitState.submitButtonMode === "stop" ? <Square size={18} /> : <ArrowUp size={18} />}
     </button>
   );
 });

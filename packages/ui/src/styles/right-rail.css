@@ -48,6 +48,56 @@
 }
 
 /*
+ * codex: an ACTIVE background subagent shows a shimmering "is working" label
+ * (backgroundAgents.activeLabel = `loading-shimmer-pure-text shrink-0
+ * whitespace-nowrap text-token-description-foreground`). Reuses the same
+ * @keyframes hc-rail-shimmer as the browser-title shimmer.
+ */
+.hc-rail-card-working {
+  flex-shrink: 0;
+  white-space: nowrap;
+  background: linear-gradient(
+    90deg,
+    #6f716b 0%,
+    #6f716b 35%,
+    rgba(0, 0, 0, 0.65) 50%,
+    #6f716b 65%,
+    #6f716b 100%
+  );
+  background-size: 220% 100%;
+  background-position: -120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: hc-rail-shimmer 4s steps(48, end) infinite;
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-working {
+  background: linear-gradient(
+    90deg,
+    var(--hc-text-secondary) 0%,
+    var(--hc-text-secondary) 35%,
+    rgba(0, 0, 0, 0.65) 50%,
+    var(--hc-text-secondary) 65%,
+    var(--hc-text-secondary) 100%
+  );
+  background-size: 220% 100%;
+  background-position: -120% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-rail-card-working {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+    color: #6f716b;
+  }
+}
+
+/*
  * codex: local-conversation-thread-*.js — Status footer.
  * Sticky-bottom status popover trigger: token speed on the left, context
  * percent on the right. The full token count is tooltip-only; Compact lives in
@@ -95,7 +145,7 @@
 
 .hc-rail-status-footer-trigger:hover::before,
 .hc-rail-status-footer-trigger[aria-expanded="true"]::before {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
 }
 
 .hc-rail-status-footer-cluster {
@@ -165,7 +215,7 @@
 }
 
 .hc-rail-status-footer-menu-item:hover:not(:disabled) {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
   color: #27313d;
 }
 
@@ -307,7 +357,7 @@
 }
 
 .hc-pr-status-row:hover {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
 }
 
 .hc-pr-status-row-icon {
@@ -350,7 +400,7 @@
   align-items: center;
   border-radius: 999px;
   padding: 2px 8px;
-  background: rgba(34, 38, 43, 0.08);
+  background: var(--hc-surface-hover);
   color: #4b4e49;
   font-size: 11px;
   font-weight: 600;
@@ -375,4 +425,50 @@
 .hc-pr-status-badge[data-tone="draft"] {
   background: rgba(110, 119, 129, 0.16);
   color: #6e7781;
+}
+
+
+/* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
+/* Dark theme overrides for hardcoded light colors */
+.hc-app[data-theme="dark"] .hc-rail-card-title.loading-shimmer-pure-text {
+  background: linear-gradient(
+    90deg,
+    var(--hc-text-secondary) 0%,
+    var(--hc-text-secondary) 35%,
+    rgba(0, 0, 0, 0.65) 50%,
+    var(--hc-text-secondary) 65%,
+    var(--hc-text-secondary) 100%
+  );
+}
+
+.hc-app[data-theme="dark"] .hc-rail-status-footer-trigger {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-status-footer-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-status-context-donut {
+  background: conic-gradient(var(--hc-text-secondary) var(--hc-context-usage-percent, 0%), rgba(255, 255, 255, 0.08) 0);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-status-footer-menu-item:hover:not(:disabled) {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-pr-status-row-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-pr-status-row-title-text {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-pr-status-row-number {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-pr-status-badge {
+  color: var(--hc-text-secondary);
 }

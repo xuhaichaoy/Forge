@@ -6,13 +6,17 @@ import {
   PlugZap,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
 import { fileIconFor } from "../lib/file-icon";
 import type { ConversationRenderUnit, UserMessageContentPart } from "../state/render-groups";
 import type { FileReference } from "./file-reference-types";
+// codex user-message-attachments-*.js wraps attachment/file pills with the same
+// workspace-file context menu as inline refs (shared via ./file-citation-menu).
+import { ContextMenu } from "./context-menu";
+import { FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
 
 export type UserMessageMarkdownRenderer = (
   text: string,
@@ -350,6 +354,10 @@ function UserMessageChipView({
   onOpenFileReference?: (reference: FileReference) => void;
   variant?: "inline" | "attachment";
 }) {
+  // codex: file/attachment chips carry the shared workspace-file context menu;
+  // reveal + copy-contents arrive via context (provided above the conversation).
+  const menuActions = useContext(FileCitationMenuContext);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { icon, label, prefix } = chipVisual(part);
   const displayLabel = `${prefix}${label}`;
   const style = part.brandColor && part.chipKind !== "skill" ? { color: part.brandColor } : undefined;
@@ -367,17 +375,26 @@ function UserMessageChipView({
   // 可点击：file / mention 类带 path 且提供了 onOpenFileReference
   const isInteractive = (part.chipKind === "mention" || part.chipKind === "file") && Boolean(part.path) && Boolean(onOpenFileReference);
   if (isInteractive) {
+    const reference = { path: part.path, lineStart: 1 };
+    const items = fileReferenceContextMenuItems({ reference, onOpenFileReference, menuActions });
     return (
-      <button
-        className={`${className} hc-user-chip-button`}
-        title={part.path}
-        type="button"
-        style={style}
-        onClick={() => onOpenFileReference?.({ path: part.path, lineStart: 1 })}
-      >
-        {icon}
-        <span>{displayLabel}</span>
-      </button>
+      <>
+        <button
+          className={`${className} hc-user-chip-button`}
+          title={part.path}
+          type="button"
+          style={style}
+          onClick={() => onOpenFileReference?.(reference)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setMenu({ x: event.clientX, y: event.clientY });
+          }}
+        >
+          {icon}
+          <span>{displayLabel}</span>
+        </button>
+        {menu != null && <ContextMenu items={items} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
+      </>
     );
   }
   return (
