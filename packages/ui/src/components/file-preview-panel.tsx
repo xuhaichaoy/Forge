@@ -1,4 +1,5 @@
 import { Copy, ExternalLink, Maximize2, Minimize2, X } from "lucide-react";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
   useCallback,
   useEffect,
@@ -114,6 +115,7 @@ export function FilePreviewPanel({
   onOpenFileReferenceExternal,
   onOpenUrl,
 }: FilePreviewPanelProps): ReactNode {
+  const { formatMessage } = useHiCodexIntl();
   const asideRef = useRef<HTMLElement | null>(null);
   const previewSource = usePreviewSource({
     artifactPreview,
@@ -200,11 +202,15 @@ export function FilePreviewPanel({
             </button>
           )}
           <button
-            aria-label={resize.fullWidth ? "Restore panel width" : "Expand panel"}
+            aria-label={resize.fullWidth
+              ? formatMessage({ id: "codex.rightPanel.restoreWidth", defaultMessage: "Restore panel width" })
+              : formatMessage({ id: "codex.rightPanel.expandFullWidth", defaultMessage: "Expand panel" })}
             aria-pressed={resize.fullWidth}
             className="hc-file-preview-panel-icon-button"
             onClick={resize.onToggleFullWidth}
-            title={resize.fullWidth ? "Restore panel width" : "Expand panel"}
+            title={resize.fullWidth
+              ? formatMessage({ id: "codex.rightPanel.restoreWidth", defaultMessage: "Restore panel width" })
+              : formatMessage({ id: "codex.rightPanel.expandFullWidth", defaultMessage: "Expand panel" })}
             type="button"
           >
             {resize.fullWidth ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -300,7 +306,7 @@ function FilePreviewPanelBody({
       .then(async ({ path, metadata }) => {
         if (cancelled) return;
         if (!metadata.isFile) {
-          setState({ status: "error", message: "Couldn't load this preview" });
+          setState({ status: "error", message: "Couldn’t load this preview" });
           return;
         }
         if (isArtifactPreviewTooLarge(metadata)) {
@@ -380,7 +386,7 @@ function FilePreviewPanelBody({
         }
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error", message: "Couldn't load this preview" });
+        if (!cancelled) setState({ status: "error", message: "Couldn’t load this preview" });
       });
 
     return () => {
@@ -434,9 +440,10 @@ function FilePreviewStateView({
       />
     );
   }
-  if (isDiffLanguage(state.language)) {
-    return <DiffPreviewView cwd={cwd} text={state.text} workspaceRoot={workspaceRoot} />;
-  }
+  // codex artifact-tab-content renders EVERY file (incl. .diff/.patch) through one
+  // shiki highlight path — no special diff viewer. CodeSnippet supports the shiki
+  // `diff` grammar, so a .diff file renders as highlighted diff text just like Codex
+  // (we deliberately do NOT special-case it into a diff viewer).
   return (
     <div className="hc-file-preview-code-view">
       <CodeSnippet
@@ -455,6 +462,10 @@ function FilePreviewStateView({
   );
 }
 
+// NOTE: no longer rendered. Per codex (§M-16), file previews show .diff/.patch as
+// shiki-highlighted text via CodeSnippet (codex's artifact-tab-content has no diff
+// viewer), so the FilePreviewStateView diff branch was removed. This richer viewer +
+// `isDiffLanguage` are retained for reference and are safe to delete.
 function DiffPreviewView({
   cwd,
   text,
@@ -498,7 +509,7 @@ function DiffPreviewView({
   }, []);
 
   if (!model.hasChanges) {
-    return <div className="hc-file-preview-empty">No diff hunks to preview</div>;
+    return <div className="hc-file-preview-empty">No diff available</div>;
   }
 
   return (
@@ -618,7 +629,7 @@ function UnifiedDiffHunk({ hunk }: { hunk: DiffViewerHunk }) {
 
 function DocumentPreviewView({ preview }: { preview: DocumentPreview }) {
   if (preview.paragraphs.length === 0) {
-    return <div className="hc-file-preview-empty">Couldn't load this preview</div>;
+    return <div className="hc-file-preview-empty">Couldn’t load this preview</div>;
   }
   return (
     <div className="hc-file-preview-document-view">

@@ -62,7 +62,7 @@ export function buildConfigBatchWriteParams(params: {
 }
 
 export function configWriteTargetMissingMessage(scope = "Config write"): string {
-  return `${scope} needs app-server's versioned user config target (filePath and expectedVersion). Refresh Settings so HiCodex can read the latest config layers, then try again.`;
+  return `${scope} needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so HiCodex can read the latest config layers, then try again.`;
 }
 
 export function formatConfigWriteError(error: unknown, scope = "Config write"): string {

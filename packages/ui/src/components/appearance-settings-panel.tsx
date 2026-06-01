@@ -18,6 +18,8 @@ import {
   type UiThemeMode,
   type UiThemeSnapshot,
 } from "../state/theme";
+import { HICODEX_SUPPORTED_LOCALES, type HiCodexLocale } from "../state/i18n";
+import { useHiCodexIntl } from "./i18n-provider";
 
 /*
  * CODEX-REF: appearance-settings-*.js inline editor. Codex Desktop
@@ -39,18 +41,23 @@ import {
 export interface AppearanceSettingsPanelProps {
   uiTheme: UiThemeSnapshot;
   uiAppearance: UiAppearancePreferences;
+  uiLocale: HiCodexLocale;
   onSetUiTheme: (mode: UiThemeMode) => void;
   onSetCodeFontSize: (size: number) => void;
   onSetReducedMotion: (mode: ReducedMotionMode) => void;
+  onSetUiLocale: (locale: HiCodexLocale) => void;
 }
 
 export function AppearanceSettingsPanel({
   uiTheme,
   uiAppearance,
+  uiLocale,
   onSetUiTheme,
   onSetCodeFontSize,
   onSetReducedMotion,
+  onSetUiLocale,
 }: AppearanceSettingsPanelProps) {
+  const { formatMessage } = useHiCodexIntl();
   return (
     <div className="hc-appearance-settings">
       {/*
@@ -58,7 +65,7 @@ export function AppearanceSettingsPanel({
         * Codex i18n: settings.general.appearance.theme.{light,dark,system}.
         */}
       <AppearanceRow
-        title="Theme"
+        title={formatMessage({ id: "settings.general.appearance.theme", defaultMessage: "Theme" })}
         description={themeModeDescription(uiTheme.mode, uiTheme.resolved)}
       >
         <SegmentedToggle
@@ -72,13 +79,44 @@ export function AppearanceSettingsPanel({
         />
       </AppearanceRow>
       {/*
+        * codex: general-settings-*.js `Er` — language picker (id
+        * settings.ide.language.label "Language" / .description "Language for the
+        * app UI"). Codex hosts it in General settings; HiCodex surfaces the EN/ZH
+        * switch here next to Theme via the same SegmentedToggle. The locale
+        * backend (setUiLocale + persistence + IntlProvider) already exists — this
+        * is just the missing in-panel control. Native labels (English / 简体中文).
+        */}
+      <AppearanceRow
+        title={formatMessage({ id: "settings.ide.language.label", defaultMessage: "Language" })}
+        description={formatMessage({
+          id: "settings.ide.language.description",
+          defaultMessage: "Language for the app UI",
+        })}
+      >
+        <SegmentedToggle
+          options={HICODEX_SUPPORTED_LOCALES.map((locale) => ({
+            value: locale,
+            label: localeNativeLabel(locale),
+          }))}
+          value={uiLocale}
+          onChange={(value) => onSetUiLocale(value as HiCodexLocale)}
+          ariaLabel="Language"
+        />
+      </AppearanceRow>
+      {/*
         * CODEX-REF: appearance-settings-*.js §4 — Code font size.
         * Codex spec: <input type="number" min={8} max={24} step={1}>, commit
         * onBlur, Enter triggers blur, NaN reverts. HiCodex mirrors verbatim.
         */}
       <AppearanceRow
-        title="Code font size"
-        description="Adjust the base size used for code across chats and diffs."
+        title={formatMessage({
+          id: "settings.general.appearance.codeFontSize.row",
+          defaultMessage: "Code font size",
+        })}
+        description={formatMessage({
+          id: "settings.general.appearance.codeFontSize.row.description",
+          defaultMessage: "Adjust the base size used for code across chats and diffs",
+        })}
       >
         <CodeFontSizeInput
           value={uiAppearance.codeFontSize}
@@ -91,7 +129,10 @@ export function AppearanceSettingsPanel({
         * settings.general.appearance.reducedMotion.{system,on,off}).
         */}
       <AppearanceRow
-        title="Reduce motion"
+        title={formatMessage({
+          id: "settings.general.appearance.reducedMotion.label",
+          defaultMessage: "Reduce motion",
+        })}
         description={reducedMotionDescription(uiAppearance.reducedMotion)}
       >
         <SegmentedToggle
@@ -106,6 +147,13 @@ export function AppearanceSettingsPanel({
       </AppearanceRow>
     </div>
   );
+}
+
+// Native language labels for the segmented toggle (English / 简体中文), the way
+// Codex's picker shows native names. localeLabel() in state/i18n gives English
+// names ("Chinese (Simplified)") which read oddly inside the toggle.
+function localeNativeLabel(locale: HiCodexLocale): string {
+  return locale === "zh-CN" ? "简体中文" : "English";
 }
 
 function AppearanceRow({
@@ -182,14 +230,24 @@ function CodeFontSizeInput({
   value: number;
   onCommit: (next: number) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [draft, setDraft] = useState<string>(String(value));
   const valueRef = useRef(value);
+  // Escape sets this so the synchronous blur() it triggers reverts instead of
+  // committing — without it, onBlur→tryCommit reads the (still-typed) draft from
+  // its closure and commits the clamped value, defeating "cancel via Escape".
+  const cancelRef = useRef(false);
   useEffect(() => {
     valueRef.current = value;
     setDraft(String(value));
   }, [value]);
 
   const tryCommit = (): void => {
+    if (cancelRef.current) {
+      cancelRef.current = false;
+      setDraft(String(valueRef.current));
+      return;
+    }
     const parsed = Number.parseFloat(draft);
     if (!Number.isFinite(parsed)) {
       setDraft(String(valueRef.current));
@@ -221,13 +279,17 @@ function CodeFontSizeInput({
             event.currentTarget.blur();
           } else if (event.key === "Escape") {
             event.preventDefault();
+            event.stopPropagation();
+            cancelRef.current = true;
             setDraft(String(valueRef.current));
             event.currentTarget.blur();
           }
         }}
       />
       {/* CODEX-REF: settings.general.appearance.codeFontSize.units defaultMessage "px" */}
-      <span className="hc-appearance-number-input-unit">px</span>
+      <span className="hc-appearance-number-input-unit">
+        {formatMessage({ id: "settings.general.appearance.codeFontSize.units", defaultMessage: "px" })}
+      </span>
     </div>
   );
 }

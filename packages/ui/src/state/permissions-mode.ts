@@ -1,7 +1,7 @@
 import type { ThreadContextDefaults } from "./codex-reducer";
 import type { CommandPanelEntry, ConfigWriteActionEdit } from "./command-panel";
 
-export type PermissionMode = "read-only" | "auto" | "granular" | "full-access";
+export type PermissionMode = "read-only" | "auto" | "granular" | "guardian-approvals" | "full-access";
 export type PermissionModeStatus = PermissionMode | "custom";
 export type PermissionRequirementsInput = unknown;
 
@@ -22,7 +22,8 @@ const DEFAULT_WORKSPACE_WRITE = {
   exclude_tmpdir_env_var: false,
 };
 
-const PERMISSION_MODES: PermissionMode[] = ["read-only", "auto", "granular", "full-access"];
+// codex src-*.js `Fd` mode→config map order: read-only, auto, granular, guardian-approvals, full-access.
+const PERMISSION_MODES: PermissionMode[] = ["read-only", "auto", "granular", "guardian-approvals", "full-access"];
 
 export function projectPermissionModeCommandEntries(
   context: ThreadContextDefaults | null,
@@ -55,13 +56,21 @@ export function permissionModeFromThreadContext(context: ThreadContextDefaults |
   if (sandboxMode === "workspace-write" && isGranularApprovalPolicy(approvalPolicy) && approvalsReviewer === "user") {
     return "granular";
   }
-  if (sandboxMode === "workspace-write" && approvalPolicy === "on-request" && approvalsReviewer === "user") {
-    return "auto";
+  if (sandboxMode === "workspace-write" && approvalPolicy === "on-request") {
+    // codex src-*.js `Nd()`: workspace-write + on-request → a guardian/auto-review reviewer
+    // resolves to `guardian-approvals`, otherwise `auto`.
+    if (isGuardianReviewer(approvalsReviewer)) return "guardian-approvals";
+    if (approvalsReviewer === "user") return "auto";
   }
   if (sandboxMode === "danger-full-access" && approvalPolicy === "never") {
     return "full-access";
   }
   return "custom";
+}
+
+function isGuardianReviewer(value: string): boolean {
+  // codex src-*.js `Md()`: the guardian / auto-review reviewer values.
+  return value === "auto_review" || value === "guardian_subagent";
 }
 
 export function permissionModeConfigEdits(mode: PermissionMode): ConfigWriteActionEdit[] {
@@ -131,6 +140,14 @@ function permissionModeConfig(mode: PermissionMode): {
         approvalsReviewer: "user",
         sandboxWorkspaceWrite: DEFAULT_WORKSPACE_WRITE,
       };
+    case "guardian-approvals":
+      // codex src-*.js `Fd["guardian-approvals"]`.
+      return {
+        sandboxMode: "workspace-write",
+        approvalPolicy: "on-request",
+        approvalsReviewer: "guardian_subagent",
+        sandboxWorkspaceWrite: DEFAULT_WORKSPACE_WRITE,
+      };
     case "full-access":
       return {
         sandboxMode: "danger-full-access",
@@ -149,6 +166,9 @@ function permissionModeLabel(mode: PermissionMode): string {
       return "Auto";
     case "granular":
       return "Granular";
+    case "guardian-approvals":
+      // codex `agentMode.guardianApprovals` = "Auto-review".
+      return "Auto-review";
     case "full-access":
       return "Full access";
   }
@@ -159,11 +179,18 @@ function permissionModeMeta(mode: PermissionMode): string {
     case "read-only":
       return "Read files, ask before changes or commands.";
     case "auto":
-      return "Workspace write with on-request approvals.";
+      // codex composer.permissionsDropdown.default.description — `auto` (workspace-write
+      // + on-request) is Codex's "default" / ask-for-approval mode.
+      return "Always ask to edit external files and use the internet.";
     case "granular":
       return "Workspace write with request-permission approvals.";
+    case "guardian-approvals":
+      // codex composer.permissionsDropdown.guardianApproval.description.
+      return "Only ask for actions detected as potentially unsafe.";
     case "full-access":
-      return "No sandbox and no approval prompts.";
+      // codex composer.permissionsDropdown.fullAccess.description — `full-access`
+      // (danger-full-access + never) is unambiguously Codex's "Full access" mode.
+      return "Unrestricted access to the internet and any file on your computer.";
   }
 }
 

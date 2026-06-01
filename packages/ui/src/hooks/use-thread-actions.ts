@@ -3,7 +3,7 @@ import type { Thread } from "@hicodex/codex-protocol";
 import type { ThreadActionDialogState } from "../components/thread-action-dialog";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
-import { findRolloutForThread, getHostStatus, isTauriRuntime } from "../lib/tauri-host";
+import { createPendingWorktree, findRolloutForThread, getHostStatus, isTauriRuntime } from "../lib/tauri-host";
 import type {
   CodexUiAction,
   ThreadContextDefaults,
@@ -14,6 +14,7 @@ import {
   editLastUserTurn as editLastUserTurnWorkflow,
   forkThread as forkThreadWorkflow,
   forkThreadFromTurn as forkThreadFromTurnWorkflow,
+  forkThreadIntoWorktree as forkThreadIntoWorktreeWorkflow,
   isThreadNotFound,
   isThreadNotMaterialized,
   readThreadForDisplay,
@@ -103,6 +104,29 @@ export function useThreadActions({
     try {
       if (!(await ensureConnected())) return;
       const result = await forkThreadWorkflow(client, thread.id, thread.cwd || workspace, threadContextDefaults);
+      dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    } catch (error) {
+      dispatch({ type: "log", text: formatError(error), level: "error" });
+    }
+  }, [client, dispatch, ensureConnected, threadContextDefaults, workspace]);
+
+  // codex sidebar-thread-section `fork-into-worktree` — fork into a fresh git
+  // worktree (host createPendingWorktree → fork with the worktree path as cwd).
+  const forkSelectedThreadIntoWorktree = useCallback(async (thread: Thread) => {
+    try {
+      if (!(await ensureConnected())) return;
+      const cwd = (thread.cwd || workspace).trim();
+      if (!cwd) {
+        dispatch({ type: "log", text: "Working directory is unavailable", level: "warn" });
+        return;
+      }
+      const result = await forkThreadIntoWorktreeWorkflow(
+        client,
+        thread.id,
+        cwd,
+        createPendingWorktree,
+        threadContextDefaults,
+      );
       dispatch({ type: "upsertThread", thread: result.thread, select: true });
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
@@ -209,7 +233,7 @@ export function useThreadActions({
       }
       if (isThreadNotFound(error) && !rolloutPath) {
         throw new Error(
-          `${formatError(error)}. This conversation's rollout file could not be located on disk. Start a new chat to continue with your edited message.`,
+          `${formatError(error)}. This conversation’s rollout file could not be located on disk. Start a new chat to continue with your edited message.`,
         );
       }
       throw error;
@@ -293,6 +317,7 @@ export function useThreadActions({
     forkConfirmOpen,
     forkConfirmSubmitting,
     forkSelectedThread,
+    forkSelectedThreadIntoWorktree,
     openArchiveThreadDialog,
     openRenameThreadDialog,
     renameSelectedThread,

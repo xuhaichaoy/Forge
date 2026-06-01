@@ -5,17 +5,17 @@ import {
   ChevronRight,
   Circle,
   Clock,
+  FileDiff,
   Gauge,
   GitBranch,
   Github,
   Globe,
   ImageIcon,
+  Laptop,
   LoaderCircle,
   MessageSquareText,
   Minimize2,
-  Monitor,
   Network,
-  PencilLine,
   Settings,
   Square,
   Terminal,
@@ -31,6 +31,7 @@ import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import type { BranchDetailsViewModel } from "../state/branch-details";
 import { DiffStatsDisplay } from "./diff-stats-display";
 import { SummaryPanelRow } from "./summary-panel-row";
+import { useHiCodexIntl } from "./i18n-provider";
 import type { OpenThreadHandler } from "./open-thread";
 import type { RailEntry, RailEntryAction, RailEntryReference } from "../state/render-groups";
 import {
@@ -41,10 +42,14 @@ import {
 } from "../state/right-rail";
 
 /*
- * Codex Desktop's right-rail summary panel (local-conversation-thread-*.js)
- * is a **fixed-size floating
- * card** — `rounded-3xl border border-token-border-default py-3 shadow-md
- * backdrop-blur-sm`. It is NOT user-resizable; clicking an
+ * CODEX-REF: local-conversation-thread-DAwsPWah.js — Codex Desktop's right-rail
+ * summary panel is a **fixed-size floating card**:
+ *   `rounded-3xl border border-token-border-default bg-token-dropdown-background
+ *    pt-3 shadow-md`
+ * Note vs. the older bundle: there is **no `backdrop-blur-sm`**, the surface
+ * fill is now an explicit `bg-token-dropdown-background`, and padding is
+ * **top-only (`pt-3`)** rather than the previous `py-3`. It is NOT
+ * user-resizable; clicking an
  * Artifact / file entry does **not** render an inline preview here. Instead
  * it calls `openWorkspaceFile({..., openInSidePanel: true, scope: v2})`,
  * which opens the AppShell **RightPanel** (app-shell-*.js) and routes it to
@@ -129,6 +134,7 @@ export function RightRail({
   // not wire it so the rail keeps current behavior for non-worktree shells.
   onOpenWorktreeMenu,
 }: RightRailProps) {
+  const { formatMessage } = useHiCodexIntl();
   const canOpenEntry = (entry: RailEntry) =>
     isRailEntryActionAvailable(entry, {
       onOpenFileReference,
@@ -231,18 +237,20 @@ export function RightRail({
         >
           {section.id === "branchDetails" && section.branchDetails
             ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
-            : section.id === "sources" && section.allEntries.length === 0
-              /* CODEX-REF: local-conversation-thread-*.js —
-               * Codex Desktop renders Sources with a `py-1 text-base
-               * text-token-description-foreground` "No sources yet" row whenever the
-               * tool-source list is empty rather than hiding the entire section. */
-              ? <div className="hc-rail-empty-state">No sources yet</div>
+            : section.id === "sources"
+              /* CODEX-REF: local-conversation-thread-*.js — Codex renders Sources as a
+               * wrapping row of icon-only favicon buttons (name in tooltip), with a
+               * `py-1 text-base text-token-description-foreground` "No sources yet" row
+               * when the tool-source list is empty rather than hiding the section. */
+              ? (section.allEntries.length === 0
+                  ? <div className="hc-rail-empty-state">{formatMessage({ id: "codex.localConversation.sources.empty", defaultMessage: "No sources yet" })}</div>
+                  : <SourcesIconRow entries={section.allEntries} />)
             : section.id === "artifacts" && section.allEntries.length === 0
               /* CODEX-REF: local-conversation-thread-*.js —
                * Codex Desktop's artifact list body renders a
                * `codex.localConversation.artifacts.empty` "No artifacts yet" row when
                * the artifact list is empty, matching the Sources empty-state behavior. */
-              ? <div className="hc-rail-empty-state">No artifacts yet</div>
+              ? <div className="hc-rail-empty-state">{formatMessage({ id: "codex.localConversation.artifacts.empty", defaultMessage: "No artifacts yet" })}</div>
             : (
                 <RailList
                   entries={section.allEntries}
@@ -258,7 +266,7 @@ export function RightRail({
                       ? canOpenAutomationEntry
                       : section.id === "browser"
                         ? canOpenBrowserEntry
-                        : section.id === "sources" ? undefined : canOpenEntry}
+                        : canOpenEntry}
                   onCleanBackgroundTerminals={section.id === "backgroundTasks" && hasBackgroundTerminalEntries(section.allEntries)
                     ? onCleanBackgroundTerminals
                     : undefined}
@@ -269,7 +277,7 @@ export function RightRail({
                       : section.id === "browser"
                         ? openBrowserEntry
                         : section.id === "sideChats" ? openSideChatEntry
-                        : section.id === "sources" ? undefined : openEntry}
+                        : openEntry}
                 />
               )}
         </RailSection>
@@ -337,6 +345,14 @@ export function RightRailStatusFooter({
       className="hc-rail-status-footer"
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setMenuOpen(false);
+        }
+      }}
+      onKeyDown={(event) => {
+        // codex: the status dropdown is a Radix DropdownMenu → closes on Escape.
+        // HiCodex's custom menu only had onBlur (Esc doesn't move focus), so add it.
+        if (event.key === "Escape" && menuOpen) {
+          event.stopPropagation();
           setMenuOpen(false);
         }
       }}
@@ -462,31 +478,49 @@ function BranchDetailsCard({
     action: { kind: "diff" },
   };
   const canOpenChanges = canOpenEntry(changesEntry);
-  const linesAdded = details.gitStatus?.linesAdded ?? 0;
-  const linesRemoved = details.gitStatus?.linesRemoved ?? 0;
-  // CODEX-REF: diff-stats-*.js —
-  // Codex always renders `+N -N` chips when diffStats != null, including the zero
-  // case (`+0 -0`). 之前 HiCodex 的 zero-state fallback 到 "0 changed files" 字符串没
-  // 源码依据(Codex bundle 全文检索无此字符串),已对齐 always +N -N。
-  const changesTrailing = (
-    <DiffStatsDisplay linesAdded={linesAdded} linesRemoved={linesRemoved} />
-  );
+  // CODEX-REF: local-conversation-thread-DAwsPWah.js (Kd, git-summary Changes row) —
+  // trailing = `i ? <spinner icon-xs/> : r==null ? null : <Ms linesAdded={r.additions}
+  // linesRemoved={r.deletions}/>`. `r` is the diff-stats object: when it is null
+  // (gitStatus absent / no real diff stats) Codex renders NO trailing — it does
+  // NOT coalesce to `+0 -0`. HiCodex previously coalesced line counts with `?? 0`,
+  // which forced a bogus `+0 -0` chip whenever gitStatus was missing; aligned to
+  // the null branch here. (The loading-spinner branch `i` needs a data-layer
+  // loading flag that BranchDetailsViewModel does not expose, so it is omitted.)
+  const diffStats =
+    details.gitStatus
+    && (details.gitStatus.linesAdded != null || details.gitStatus.linesRemoved != null)
+      ? {
+          linesAdded: details.gitStatus.linesAdded ?? 0,
+          linesRemoved: details.gitStatus.linesRemoved ?? 0,
+        }
+      : null;
+  const changesTrailing = diffStats
+    ? <DiffStatsDisplay linesAdded={diffStats.linesAdded} linesRemoved={diffStats.linesRemoved} />
+    : null;
 
   return (
     <div className="hc-rail-list">
-      {/* CODEX-REF: local-conversation-thread-*.js — Changes row */}
+      {/* CODEX-REF: local-conversation-thread-DAwsPWah.js (Kd) — Changes row icon is
+          the custom `Os` changes glyph rendered at `icon-sm` (app-main-DGDTSRlh.css
+          `.icon-sm{width:18px;height:18px}`). lucide `FileDiff` is HiCodex's
+          clean-room match for the Os file-diff glyph; sized to 18px. */}
       <SummaryPanelRow
-        icon={<PencilLine size={14} />}
+        icon={<FileDiff size={18} />}
         label="Changes"
         trailing={changesTrailing}
         onClick={canOpenChanges ? () => onOpenEntry(changesEntry) : undefined}
         title={changesEntry.meta}
       />
-      {/* CODEX-REF: local-conversation-thread-*.js — worktree trigger
-          row;HiCodex 没接 worktree handoff 数据流,沿用旧 localRow 数据承载 label。 */}
+      {/* CODEX-REF: local-conversation-thread-DAwsPWah.js — worktree/execution-mode
+          trigger row. Codex renders the macbook glyph (lucide `Laptop`) at `icon-sm`
+          (app-main-DGDTSRlh.css `.icon-sm{width:18px;height:18px}`) for the local
+          execution mode; cloud→Cloud, worktree→GitBranch. BranchDetailsViewModel does
+          NOT expose the execution mode here (the `local` row carries only id/label/
+          value), so HiCodex always renders Laptop and cannot mode-swap the glyph yet.
+          HiCodex 没接 worktree handoff 数据流,沿用旧 localRow 数据承载 label。 */}
       {localRow ? (
         <SummaryPanelRow
-          icon={<Monitor size={14} />}
+          icon={<Laptop size={18} />}
           label={localRow.label}
           title={localRow.value || localRow.label}
           trailing={<ChevronDown size={12} />}
@@ -555,7 +589,7 @@ function WorktreeMenuTrigger({
       title={worktreeLabel}
       type="button"
     >
-      <Monitor size={12} />
+      <Laptop size={12} />
       <span className="hc-rail-worktree-trigger-label">{worktreeLabel}</span>
       <ChevronDown size={12} />
     </button>
@@ -603,9 +637,12 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
           type="button"
           onClick={() => setCollapsed(expanded)}
         >
-          <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
+          {/* codex `Gd` section header: button children = [title, count, chevron] —
+              the disclosure chevron is the TRAILING child (after the title + count),
+              not leading. */}
           <span className="hc-rail-section-title">{title}</span>
           {!expanded && count > 0 && id !== "progress" && <span className="hc-rail-section-count">{count}</span>}
+          <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
         </button>
         {headerAction}
       </div>
@@ -821,10 +858,17 @@ function RailEntryContent({
           <>
             <div className="hc-rail-card-title-row">
               <div className={titleClassName} title={tooltip}>{title}</div>
+              {/* codex: an ACTIVE background subagent shows a shimmering "is working"
+                  label next to its name (backgroundAgents.activeLabel =
+                  loading-shimmer-pure-text + text-token-description-foreground). */}
+              {sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) && entry.status === "active" && (
+                <span className="hc-rail-card-working">is working</span>
+              )}
               {diffStats && <RailDiffStats stats={diffStats} />}
             </div>
             {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
-            {showSecondary && entry.status && (
+            {/* codex automation row shows next-run only as the title tooltip, not a visible body line. */}
+            {showSecondary && entry.status && sectionId !== "automation" && (
               <div className="hc-rail-card-status">{entry.status}</div>
             )}
             {showSecondary && entry.details?.map((detail) => (
@@ -852,7 +896,7 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
   // CODEX-REF: local-conversation-thread-*.js — Codex 仅渲染 single automation
   // row 用 Clock 图标。Legacy multi-list "automations" 分支及 CalendarClock
   // 图标已删除以严格对齐 Codex（无 multi-list automation section）。
-  if (sectionId === "automation") return <Clock size={14} />;
+  if (sectionId === "automation") return <Clock size={16} />; // codex automation row icon = icon-xs (16px)
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
   if (sectionId === "sideChats") {
     return normalizeProgressStatus(entry.status) === "inProgress"
@@ -889,10 +933,11 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
   if (sectionId === "status") return progressEntryIcon(entry.status);
   const imageSrc = railEntryImageSrc(entry);
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
-  if (entry.action?.kind === "url") return <Globe size={14} />;
-  if (entry.reference && isImageArtifactPath(entry.reference.path)) return <ImageIcon size={14} />;
+  // codex Outputs rows render via summary-panel-row with `icon-sm` (18px) icons.
+  if (entry.action?.kind === "url") return <Globe size={18} />;
+  if (entry.reference && isImageArtifactPath(entry.reference.path)) return <ImageIcon size={18} />;
   /* File icons use the shared clean-room extension/MIME mapping helper. */
-  return fileIconFor({ path: entry.reference?.path, size: 14 });
+  return fileIconFor({ path: entry.reference?.path, size: 18 });
 }
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
@@ -936,11 +981,47 @@ function SourceLogo({
   );
 }
 
+/*
+ * codex Sources section (local-conversation-thread-*.js `Nf`): each source renders
+ * as an icon-only `size-6` (24px) `rounded-sm` button with an `icon-xs` (16px) logo
+ * and the source name in a left tooltip + aria-label — NOT a text-label row card.
+ * HiCodex sources carry no open action (onOpenEntry is undefined for "sources"), so
+ * we render Codex's non-`onOpen` variant: a `role="img"` span with the name as the
+ * tooltip/aria-label. The icon resolution mirrors the railEntryIcon sources branch
+ * (webSearch → Globe; logoUrl → SourceLogo; else Network) at 16px.
+ */
+function sourceEntryLogo(entry: RailEntry): ReactNode {
+  if (entry.id === "webSearch") return <Globe size={16} />;
+  if (entry.logoUrl || entry.logoUrlDark) {
+    return <SourceLogo logoUrl={entry.logoUrl} logoUrlDark={entry.logoUrlDark} alt={entry.title} />;
+  }
+  return <Network size={16} />;
+}
+
+function SourcesIconRow({ entries }: { entries: readonly RailEntry[] }): ReactNode {
+  return (
+    <div className="hc-rail-sources-icons">
+      {entries.map((entry) => (
+        <span
+          key={entry.id}
+          role="img"
+          className="hc-rail-source-icon"
+          aria-label={entry.title ?? undefined}
+          title={entry.title ?? undefined}
+        >
+          {sourceEntryLogo(entry)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function progressEntryIcon(status: string | undefined): ReactNode {
   const normalized = normalizeProgressStatus(status);
-  if (normalized === "completed") return <CheckCircle2 size={14} />;
-  if (normalized === "inProgress") return <LoaderCircle className="hc-rail-progress-spinner" size={14} />;
-  return <Circle size={14} />;
+  // codex plan/status step icon is `icon-sm` (18px), not 14px.
+  if (normalized === "completed") return <CheckCircle2 size={18} />;
+  if (normalized === "inProgress") return <LoaderCircle className="hc-rail-progress-spinner" size={18} />;
+  return <Circle size={18} />;
 }
 
 function normalizeProgressStatus(status: string | undefined): "completed" | "inProgress" | "pending" {

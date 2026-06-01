@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { renderToString as renderKatexToString } from "katex";
 import { marked, type Tokens } from "marked";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
 import type { AssistantReviewComment, ConversationRenderUnit, RailEntry } from "../state/render-groups";
@@ -41,6 +41,10 @@ import {
   desktopMarkdownCodeBlockWrapMode,
 } from "./code-snippet";
 import type { FileReference } from "./file-reference-types";
+// codex inline-mentions-*.js wraps inline file references with the workspace-file
+// context menu; HiCodex shares the menu definition via ./file-citation-menu.
+import { ContextMenu } from "./context-menu";
+import { FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
 import { GeneratedImageGallery } from "./generated-image-gallery";
 import { TurnDiffBlock, type PatchAction, type PatchActionState } from "./event-unit";
 import {
@@ -131,6 +135,7 @@ function MessageUnitViewInner({
   onOpenThreadId,
   onSubmitTurnFeedback,
   onOpenFileReference,
+  onOpenFileReferenceExternal,
   onOpenAutomation,
   onOpenDiff,
   onPatchAction,
@@ -147,6 +152,7 @@ function MessageUnitViewInner({
   onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onOpenThreadId?: OpenThreadHandler;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenFileReferenceExternal?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
   onOpenDiff?: (filePath?: string) => void;
   onPatchAction?: (action: PatchAction, diff: string) => void;
@@ -191,11 +197,12 @@ function MessageUnitViewInner({
   );
   const hasAssistantEndResources = unit.role === "assistant"
     && (unit.assistantAfter ?? []).some((after) => after.kind === "assistantEndResources");
-  // codex: local-conversation-thread-*.js — Codex Desktop renders the
-  // edit affordance on every user turn, not just the latest. Historical edits
-  // are handled inside the workflow by forking from that turn (see
-  // `editLastUserTurn` in `state/thread-workflow.ts`).
+  // codex: local-conversation-thread-*.js — the edit affordance is gated to the
+  // MOST RECENT user turn only (`isMostRecentTurn: S === v.length-1`; onEditMessage
+  // is passed solely when true). Older turns expose Fork, not Edit — the
+  // ForkFromOlderTurn dialog is a fork-only affordance, never reached by edit.
   const onEdit = unit.role === "user"
+    && isMostRecentTurn
     && !turnInProgress
     && turnId
     && onEditLastUserMessage
@@ -288,7 +295,8 @@ function MessageUnitViewInner({
             renderPlaceholder
               ? (
                   <div className="hc-assistant-placeholder" aria-label="Assistant response is loading">
-                    <Loader2 className="hc-spin" size={16} />
+                    {/* codex pre-stream placeholder spinner = `.icon-sm` (18px), not 16px. */}
+                    <Loader2 className="hc-spin" size={18} />
                   </div>
                 )
               : (
@@ -299,6 +307,7 @@ function MessageUnitViewInner({
                       mediaSources={assistantMediaSources}
                       onOpenAutomationCitation={onAutomationCitationOpen}
                       onOpenFileReference={onOpenFileReference}
+                      onOpenFileReferenceExternal={onOpenFileReferenceExternal}
                       trailingAutomationCitations={canInlineAutomationCitations
                         ? assistantCitations?.trailingCitations
                         : undefined}
@@ -892,7 +901,8 @@ function CollapsedUserText({
           onClick={() => setExpanded((value) => !value)}
         >
           <span>{expanded ? "Show less" : "Show more"}</span>
-          <ChevronRight size={12} className={expanded ? "is-open" : ""} />
+          {/* codex collapse chevron = icon-2xs (14px) */}
+          <ChevronRight size={14} className={expanded ? "is-open" : ""} />
         </button>
       )}
     </div>
@@ -917,6 +927,10 @@ function userMessageMetaChips(item: Record<string, unknown>): string[] {
   if (pullRequestCheckCount > 0) {
     chips.push(pullRequestCheckCount === 1 ? "1 CI test" : `${pullRequestCheckCount} CI tests`);
   }
+  // codex local-conversation-thread userMessage.pullRequestMergeConflict — gated on the
+  // item's `hasPullRequestMergeConflict` boolean (same protocol field Codex reads, a
+  // sibling of pullRequestFixMode/autoResolveSync), rendered near the end of the strip.
+  if (booleanField(item, "hasPullRequestMergeConflict")) chips.push("Merge conflicts");
   return chips;
 }
 
@@ -966,7 +980,7 @@ function UserMessageActions({
         <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
           {onEdit && (
             <IconActionButton ariaLabel="Edit message" title="Edit" onClick={onEdit}>
-              <Pencil size={13} />
+              <Pencil size={16} />
             </IconActionButton>
           )}
         </MessageActionRow>
@@ -1042,7 +1056,7 @@ function AssistantMessageActions({
       />
       {onFork && (
         <IconActionButton ariaLabel="Fork from this point" title="Fork" onClick={onFork}>
-          <GitFork size={13} />
+          <GitFork size={16} />
         </IconActionButton>
       )}
       {autoReviewSummary && <AssistantAutoReviewAction summary={autoReviewSummary} />}
@@ -1363,6 +1377,7 @@ export function Markdownish({
   mediaSources,
   onOpenAutomationCitation,
   onOpenFileReference,
+  onOpenFileReferenceExternal,
   trailingAutomationCitations,
 }: {
   fadeType?: MarkdownFadeType;
@@ -1370,6 +1385,7 @@ export function Markdownish({
   mediaSources?: Map<string, string>;
   onOpenAutomationCitation?: (citation: CitationDirective) => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenFileReferenceExternal?: (reference: FileReference) => void;
   trailingAutomationCitations?: CitationDirective[];
 }) {
   /*
@@ -1433,6 +1449,7 @@ export function Markdownish({
                 mediaSources={mediaSources}
                 onOpenAutomationCitation={onOpenAutomationCitation}
                 onOpenFileReference={onOpenFileReference}
+                onOpenFileReferenceExternal={onOpenFileReferenceExternal}
                 references={references}
               />
             );
@@ -3396,6 +3413,7 @@ function MarkdownBlockView({
   mediaSources,
   onOpenAutomationCitation,
   onOpenFileReference,
+  onOpenFileReferenceExternal,
   references,
 }: {
   block: MarkdownBlock;
@@ -3404,16 +3422,17 @@ function MarkdownBlockView({
   mediaSources?: Map<string, string>;
   onOpenAutomationCitation?: (citation: CitationDirective) => void;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenFileReferenceExternal?: (reference: FileReference) => void;
   references?: MarkdownReferenceDefinitions;
 }) {
   switch (block.kind) {
     case "heading": {
-      return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference, mediaSources, fadeContext, { references })}</Heading>;
+      return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</Heading>;
     }
     case "paragraph":
       return (
         <p>
-          {renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext, { references })}
+          {renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}
           <InlineAutomationCitations citations={inlineAutomationCitations} onOpen={onOpenAutomationCitation} />
         </p>
       );
@@ -3428,10 +3447,11 @@ function MarkdownBlockView({
                   key={`${child.kind}-${index}`}
                   mediaSources={mediaSources}
                   onOpenFileReference={onOpenFileReference}
+                  onOpenFileReferenceExternal={onOpenFileReferenceExternal}
                   references={references}
                 />
               ))
-            : renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext, { references })}
+            : renderInlineWithBreaks(block.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}
         </blockquote>
       );
     case "code":
@@ -3449,10 +3469,10 @@ function MarkdownBlockView({
         <details className="hc-markdown-details" open={block.open}>
           <summary>
             <ChevronRight size={13} />
-            <span>{renderInline(block.summary, onOpenFileReference, mediaSources, fadeContext, { references })}</span>
+            <span>{renderInline(block.summary, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</span>
           </summary>
           <div className="hc-markdown-details-body">
-            <Markdownish text={block.text} mediaSources={mediaSources} onOpenFileReference={onOpenFileReference} />
+            <Markdownish text={block.text} mediaSources={mediaSources} onOpenFileReference={onOpenFileReference} onOpenFileReferenceExternal={onOpenFileReferenceExternal} />
           </div>
         </details>
       );
@@ -3476,6 +3496,7 @@ function MarkdownBlockView({
               loose={block.loose === true}
               mediaSources={mediaSources}
               onOpenFileReference={onOpenFileReference}
+              onOpenFileReferenceExternal={onOpenFileReferenceExternal}
               references={references}
             />
           ))}
@@ -3490,7 +3511,7 @@ function MarkdownBlockView({
             <li key={index}>
               <input aria-label={item.checked ? "Completed task" : "Pending task"} checked={item.checked} readOnly type="checkbox" />
               <span>
-                {renderInline(item.text, onOpenFileReference, mediaSources, fadeContext, { references })}
+                {renderInline(item.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}
               </span>
             </li>
           ))}
@@ -3503,7 +3524,7 @@ function MarkdownBlockView({
             <thead>
               <tr>
                 {block.headers.map((header, index) => (
-                  <th align={block.aligns?.[index] ?? undefined} key={index}>{renderInline(header, onOpenFileReference, mediaSources, fadeContext, { references })}</th>
+                  <th align={block.aligns?.[index] ?? undefined} key={index}>{renderInline(header, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</th>
                 ))}
               </tr>
             </thead>
@@ -3511,7 +3532,7 @@ function MarkdownBlockView({
               {block.rows.map((row, rowIndex) => (
                 <tr key={rowIndex}>
                   {normalizeTableRow(row, block.headers.length).map((cell, cellIndex) => (
-                    <td align={block.aligns?.[cellIndex] ?? undefined} key={cellIndex}>{renderInline(cell, onOpenFileReference, mediaSources, fadeContext, { references })}</td>
+                    <td align={block.aligns?.[cellIndex] ?? undefined} key={cellIndex}>{renderInline(cell, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</td>
                   ))}
                 </tr>
               ))}
@@ -3540,6 +3561,7 @@ function MarkdownListItemView({
   loose,
   mediaSources,
   onOpenFileReference,
+  onOpenFileReferenceExternal,
   references,
 }: {
   fadeContext?: MarkdownFadeContext | null;
@@ -3547,6 +3569,7 @@ function MarkdownListItemView({
   loose?: boolean;
   mediaSources?: Map<string, string>;
   onOpenFileReference?: (reference: FileReference) => void;
+  onOpenFileReferenceExternal?: (reference: FileReference) => void;
   references?: MarkdownReferenceDefinitions;
 }) {
   const text = typeof item === "string" ? item : item.text;
@@ -3560,9 +3583,9 @@ function MarkdownListItemView({
       )}
       {loose
         ? text.length > 0 && (
-            <p>{renderInlineWithBreaks(text, onOpenFileReference, mediaSources, fadeContext, { references })}</p>
+            <p>{renderInlineWithBreaks(text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</p>
           )
-        : renderInline(text, onOpenFileReference, mediaSources, fadeContext, { references })}
+        : renderInline(text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}
       {children.map((child, index) => (
         <MarkdownBlockView
           block={child}
@@ -3570,6 +3593,7 @@ function MarkdownListItemView({
           key={`${child.kind}-${index}`}
           mediaSources={mediaSources}
           onOpenFileReference={onOpenFileReference}
+          onOpenFileReferenceExternal={onOpenFileReferenceExternal}
           references={references}
         />
       ))}
@@ -3981,11 +4005,31 @@ function isAbsoluteFilePath(path: string): boolean {
     || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
+// codex: inline-mentions-CbDcUfAO.js — the Codex file element wires
+// `onClick: e => _e(fe(e))` where `fe` is `external-markdown-link`'s
+// `ve(e){return e.metaKey||e.ctrlKey}` and `_e` is the click handler
+// `(e,n)=>{...if(F&&!R&&!e){I({isPreview}); return} ...modifiedClick:e...}`.
+// A plain click (`!e`) opens the in-app preview; a modified click
+// (`metaKey||ctrlKey`) routes to the external / open-in path instead.
+// HiCodex mirrors that: plain click -> `onOpenFileReference` (in-app
+// preview), Cmd/Ctrl-click -> `onOpenFileReferenceExternal` when an
+// external opener is wired. With no external opener available the click
+// falls through to the in-app preview (never the no-op it was before).
+function fileReferenceClickIsModified(event: MouseEvent<HTMLAnchorElement>): boolean {
+  return event.metaKey || event.ctrlKey;
+}
+
 function handleFileReferenceClick(
   event: MouseEvent<HTMLAnchorElement>,
   reference: FileReference,
   onOpenFileReference: ((reference: FileReference) => void) | undefined,
+  onOpenFileReferenceExternal?: (reference: FileReference) => void,
 ): void {
+  if (fileReferenceClickIsModified(event) && onOpenFileReferenceExternal) {
+    event.preventDefault();
+    onOpenFileReferenceExternal(reference);
+    return;
+  }
   if (!onOpenFileReference) return;
   event.preventDefault();
   onOpenFileReference(reference);
@@ -4004,6 +4048,7 @@ function renderInlineWithBreaks(
   mediaSources?: Map<string, string>,
   fadeContext?: MarkdownFadeContext | null,
   options: MarkdownInlineParseOptions = {},
+  onOpenFileReferenceExternal?: (reference: FileReference) => void,
 ): ReactNode[] {
   const lines = text.split("\n");
   return lines.flatMap((line, index) => {
@@ -4016,6 +4061,7 @@ function renderInlineWithBreaks(
       mediaSources,
       fadeContext,
       options,
+      onOpenFileReferenceExternal,
     );
     return [...separator, ...rendered];
   });
@@ -4025,12 +4071,52 @@ function markdownLineHasHardBreak(line: string): boolean {
   return /(?: {2,}|\\)$/u.test(line);
 }
 
+// codex inline-mentions-*.js wraps each inline file-reference anchor with the shared
+// workspace-file context menu; HiCodex's anchor mirrors that via the shared
+// FileCitationMenuContext + items builder (see ./file-citation-menu). onClick (open)
+// keeps using the existing handlers unchanged.
+function FileCitationAnchor({
+  entry,
+  displayPath,
+  onOpenFileReference,
+  onOpenFileReferenceExternal,
+}: {
+  // fileCitation segments carry a definite lineEnd (needed by memoryCitationLineLabel);
+  // this is assignable to FileReference for the open/reveal/copy handlers below.
+  entry: { path: string; lineStart: number; lineEnd: number };
+  displayPath: string;
+  onOpenFileReference?: (reference: FileReference) => void;
+  onOpenFileReferenceExternal?: (reference: FileReference) => void;
+}) {
+  const menuActions = useContext(FileCitationMenuContext);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions });
+
+  return (
+    <>
+      <a
+        className="hc-file-citation-marker"
+        href={citationHref(entry)}
+        onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference, onOpenFileReferenceExternal)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setMenu({ x: event.clientX, y: event.clientY });
+        }}
+      >
+        {displayCitationPath(displayPath)} {memoryCitationLineLabel(entry)}
+      </a>
+      {menu != null && <ContextMenu items={items} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
+    </>
+  );
+}
+
 function renderInline(
   text: string,
   onOpenFileReference?: (reference: FileReference) => void,
   mediaSources?: Map<string, string>,
   fadeContext?: MarkdownFadeContext | null,
   options: MarkdownInlineParseOptions = {},
+  onOpenFileReferenceExternal?: (reference: FileReference) => void,
 ): ReactNode[] {
   return parseMarkdownInline(text, options).map((segment, index) => {
     if (segment.kind === "code") {
@@ -4039,13 +4125,13 @@ function renderInline(
     }
     if (segment.kind === "htmlBreak") return <br key={index} />;
     if (segment.kind === "htmlSpan") {
-      return renderBasicInlineHtmlSegment(segment, index, onOpenFileReference, mediaSources, fadeContext, options);
+      return renderBasicInlineHtmlSegment(segment, index, onOpenFileReference, mediaSources, fadeContext, options, onOpenFileReferenceExternal);
     }
     if (segment.kind === "promptLink") return <MarkdownPromptLink key={index} segment={segment} />;
     if (segment.kind === "link") {
       return (
         <MarkdownLink href={segment.href} key={index} title={segment.title}>
-          {renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, { ...options, inLink: true })}
+          {renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, { ...options, inLink: true }, onOpenFileReferenceExternal)}
         </MarkdownLink>
       );
     }
@@ -4066,20 +4152,19 @@ function renderInline(
     if (segment.kind === "fileCitation") {
       const entry = { path: segment.path, lineStart: segment.lineStart, lineEnd: segment.lineEnd };
       return (
-        <a
-          className="hc-file-citation-marker"
-          href={citationHref(entry)}
+        <FileCitationAnchor
           key={index}
-          onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference)}
-        >
-          {displayCitationPath(segment.path)} {memoryCitationLineLabel(entry)}
-        </a>
+          entry={entry}
+          displayPath={segment.path}
+          onOpenFileReference={onOpenFileReference}
+          onOpenFileReferenceExternal={onOpenFileReferenceExternal}
+        />
       );
     }
     if (segment.kind === "math") return <MathInline key={index} text={segment.text} />;
-    if (segment.kind === "strong") return <strong key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options)}</strong>;
-    if (segment.kind === "em") return <em key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options)}</em>;
-    if (segment.kind === "del") return <del key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options)}</del>;
+    if (segment.kind === "strong") return <strong key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options, onOpenFileReferenceExternal)}</strong>;
+    if (segment.kind === "em") return <em key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options, onOpenFileReferenceExternal)}</em>;
+    if (segment.kind === "del") return <del key={index}>{renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options, onOpenFileReferenceExternal)}</del>;
     if (fadeContext) return renderMarkdownFadeText(segment.text, fadeContext, index);
     return segment.text;
   });
@@ -4103,8 +4188,9 @@ function renderBasicInlineHtmlSegment(
   mediaSources?: Map<string, string>,
   fadeContext?: MarkdownFadeContext | null,
   options: MarkdownInlineParseOptions = {},
+  onOpenFileReferenceExternal?: (reference: FileReference) => void,
 ): ReactNode {
-  const children = renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options);
+  const children = renderInline(segment.text, onOpenFileReference, mediaSources, fadeContext, options, onOpenFileReferenceExternal);
   if (segment.tag === "b" || segment.tag === "strong") return <strong key={key}>{children}</strong>;
   if (segment.tag === "del" || segment.tag === "s") return <del key={key}>{children}</del>;
   if (segment.tag === "em" || segment.tag === "i") return <em key={key}>{children}</em>;

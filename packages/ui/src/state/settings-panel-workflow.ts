@@ -7,7 +7,14 @@ import {
   localeDescription,
   localeLabel,
   type HiCodexLocale,
+  type I18nMessageDescriptor,
+  type I18nValues,
 } from "./i18n";
+
+// Local structural alias for the IntlProvider's formatMessage, so this state
+// module localizes labels without importing from the components layer. Callers
+// (model-settings-panel) pass it down; when absent, labels stay English.
+type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 import {
   TURN_COMPLETION_NOTIFICATION_POLICIES,
   notificationPolicyDescription,
@@ -169,22 +176,31 @@ export const SETTINGS_SECTIONS: Array<{
   // Codex Desktop label "MCP servers" with subtitle "Connect external tools and data sources."
   // (settings-shared-*.js subtitle for the mcp-settings case)
   { id: "mcp", title: "MCP servers", description: "Connect external tools and data sources.", icon: "mcp", group: "host" },
-  // Codex Desktop label "Hooks" (settings.nav.hooks-settings) — no subtitle
-  { id: "hooks", title: "Hooks", description: "", icon: "hooks", group: "host" },
+  // Codex Desktop label "Hooks" with subtitle "Manage lifecycle hooks from config and enabled
+  // plugins." (bundle: "Subtitle for hooks settings"). Codex appends a "<a>Learn more</a>" docs
+  // link, omitted here — the nav subtitle renders as plain text and that link targets Codex's
+  // hosted docs, which HiCodex doesn't ship.
+  { id: "hooks", title: "Hooks", description: "Manage lifecycle hooks from config and enabled plugins.", icon: "hooks", group: "host" },
   // Codex Desktop label "Plugins" (settings.nav.plugins-settings) — gated in Codex but always shown in HiCodex
   { id: "plugins", title: "Plugins", description: "", icon: "plugins", group: "host" },
-  // Codex Desktop label "Skills" (settings.nav.skills-settings) — gated in Codex but always shown in HiCodex
-  { id: "skills", title: "Skills", description: "", icon: "skills", group: "host" },
+  // Codex Desktop label "Skills" with subtitle "Give Codex superpowers." (bundle: "Subheading
+  // shown above the skills sections"). Codex's "<link>Learn more</link>" docs link is omitted —
+  // the nav subtitle is plain text. Gated in Codex but always shown in HiCodex.
+  { id: "skills", title: "Skills", description: "Give Codex superpowers.", icon: "skills", group: "host" },
   // HiCodex-only: agent runtime policy — fits next to other agent-scope settings
   { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions", group: "host" },
   // HiCodex-only: agent approval policy — same rationale as permissions
   { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions", group: "host" },
   // HiCodex-only: connected apps — semantic neighbor to plugins/skills
   { id: "apps", title: "Apps", description: "Connected apps", icon: "apps", group: "host" },
-  // Codex Desktop label "Browser" (settings.nav.browser-use) — no subtitle
-  { id: "browser-use", title: "Browser", description: "", icon: "browser", group: "host" },
-  // Codex Desktop label "Computer use" (settings.nav.computer-use) — no subtitle
-  { id: "computer-use", title: "Computer use", description: "", icon: "computer", group: "host" },
+  // Codex Desktop label "Browser" with subtitle "Manage Codex's browser." (bundle: "Subtitle
+  // for in-app browser settings"). Codex's trailing "Google Chrome can be set up in
+  // <computerUseSettingsLink>…</computerUseSettingsLink>" clause is dropped — it needs a
+  // cross-section link the plain-text nav subtitle can't render.
+  { id: "browser-use", title: "Browser", description: "Manage Codex’s browser.", icon: "browser", group: "host" },
+  // Codex Desktop label "Computer use" with subtitle "Manage how Codex uses other applications
+  // on your computer" (bundle: "Subtitle for computer use settings").
+  { id: "computer-use", title: "Computer use", description: "Manage how Codex uses other applications on your computer", icon: "computer", group: "host" },
   // Codex Desktop label "Environments" (settings.nav.local-environments) — no subtitle
   { id: "local-environments", title: "Environments", description: "", icon: "environments", group: "host" },
   // Codex Desktop label "Worktrees" (settings.nav.worktrees) — no subtitle
@@ -194,6 +210,59 @@ export const SETTINGS_SECTIONS: Array<{
   // Codex Desktop label "Archived chats" (settings.nav.data-controls) — no subtitle (last in Codex _e order)
   { id: "data-controls", title: "Archived chats", description: "", icon: "archive", group: "host" },
 ];
+
+/*
+ * Codex i18n ids for the settings-nav slugs that exist in Codex's zh-CN catalog
+ * (`settings.nav.*`). Sections with NO Codex id (HiCodex-only: models, images,
+ * permissions, approvals, apps, experimental) are omitted → their English title
+ * is used as-is. defaultMessage is always the section's existing English title,
+ * so en-US rendering is unchanged.
+ */
+const SETTINGS_SECTION_I18N_IDS: Partial<Record<SettingsPanelId, string>> = {
+  general: "settings.nav.general-settings",
+  appearance: "settings.nav.appearance",
+  appshots: "settings.nav.appshots",
+  connections: "settings.nav.connections",
+  "git-settings": "settings.nav.git-settings",
+  usage: "settings.nav.usage",
+  agent: "settings.nav.agent",
+  personalization: "settings.nav.personalization",
+  "keyboard-shortcuts": "settings.nav.keyboard-shortcuts",
+  mcp: "settings.nav.mcp-settings",
+  hooks: "settings.nav.hooks-settings",
+  plugins: "settings.nav.plugins-settings",
+  skills: "settings.nav.skills-settings",
+  "browser-use": "settings.nav.browser-use",
+  "computer-use": "settings.nav.computer-use",
+  "local-environments": "settings.nav.local-environments",
+  worktrees: "settings.nav.worktrees",
+  "data-controls": "settings.nav.data-controls",
+};
+
+const SETTINGS_GROUP_HEADING_I18N_IDS: Record<SettingsSectionGroup, string> = {
+  app: "settings.nav.heading.app",
+  host: "settings.nav.heading.host",
+};
+
+// Localize a settings-nav section title. formatMessage is optional so callers
+// without an IntlProvider (and tests) keep the English title.
+export function settingsSectionTitle(
+  section: { id: SettingsPanelId; title: string },
+  formatMessage?: FormatMessage,
+): string {
+  const id = SETTINGS_SECTION_I18N_IDS[section.id];
+  return id && formatMessage ? formatMessage({ id, defaultMessage: section.title }) : section.title;
+}
+
+// Localize a settings-nav group heading ("App" / "Host").
+export function settingsGroupHeadingTitle(
+  group: SettingsSectionGroup,
+  heading: string,
+  formatMessage?: FormatMessage,
+): string {
+  const id = SETTINGS_GROUP_HEADING_I18N_IDS[group];
+  return id && formatMessage ? formatMessage({ id, defaultMessage: heading }) : heading;
+}
 
 export function isRefreshableSettingsPanel(panel: SettingsPanelId): boolean {
   return panel === "images"
@@ -425,10 +494,10 @@ const DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE: Record<DesktopBackedLocalSettingsPan
  * dictates section order; anything not in the list falls under "Other".
  */
 const KEYBOARD_SHORTCUTS_GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "thread", title: "Thread" },
+  { key: "thread", title: "Chat" },
   { key: "panels", title: "Panels" },
   { key: "navigation", title: "Navigation" },
-  { key: "workspace", title: "Workspace" },
+  { key: "workspace", title: "Project" },
   { key: "skills", title: "Skills" },
   { key: "configure", title: "Configure" },
   { key: "app", title: "App" },
@@ -964,10 +1033,11 @@ function notificationPolicyAction(policy: TurnCompletionNotificationPolicy) {
   return {
     id: `notifications:policy:${policy}`,
     label,
-    title: `Use ${label.toLowerCase()} notifications`,
+    // Readable with the multi-word policy labels (codex "Only when unfocused").
+    title: `Notify on turn completion: ${label}`,
     action: {
       type: "setNotificationPreferences" as const,
-      title: `Use ${label.toLowerCase()} notifications`,
+      title: `Notify on turn completion: ${label}`,
       patch: { turnCompletionPolicy: policy },
     },
   };

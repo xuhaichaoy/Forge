@@ -29,6 +29,7 @@ export default function runToolActivityDetailTests(): void {
   keepsCompletedExecShellCollapsedLikeDesktop();
   rendersRunningExecShellFooterBlankLikeDesktop();
   keepsVisibleExecShellSearchableLikeDesktop();
+  omitsCardLevelCopyAllLikeDesktopEmbeddedExec();
   buildsDesktopShellCopyText();
   buildsDesktopLightweightExecRows();
   preservesDesktopPathTextInExecSummaryRows();
@@ -280,6 +281,33 @@ function keepsVisibleExecShellSearchableLikeDesktop(): void {
   );
 }
 
+function omitsCardLevelCopyAllLikeDesktopEmbeddedExec(): void {
+  // codex (local-conversation-thread `Jh` variant:"embedded"): the in-thread
+  // exec card exposes ONLY per-command + per-output copy (scoped group/command,
+  // group/output) — it renders NO card-level "Copy command and output" button.
+  const html = renderToStaticMarkup(createElement(ToolActivityDetail, {
+    item: {
+      type: "commandExecution",
+      id: "exec-copy-buttons",
+      command: "npm run build",
+      status: "completed",
+      aggregatedOutput: "done",
+      exitCode: 0,
+    },
+  }));
+
+  assertEqual(
+    html.includes("hc-exec-shell-copy-all"),
+    false,
+    "embedded exec card must not render a card-level copy-all button (Codex's embedded variant has none)",
+  );
+  assertEqual(
+    html.includes("hc-exec-shell-command-copy"),
+    true,
+    "embedded exec card keeps the per-command copy button",
+  );
+}
+
 function buildsDesktopShellCopyText(): void {
   const detail = toolActivityDetailViewModel({
     type: "commandExecution",
@@ -330,6 +358,7 @@ function buildsExecDetails(): void {
       output: "ok",
       status: "completed",
       footer: "Success",
+      startedAtMs: null,
     },
     "successful exec detail should expose command, output, and Desktop success footer",
   );

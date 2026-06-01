@@ -59,9 +59,11 @@ function keepsCodexDesktopSectionOrder(): void {
     status: [railEntry("status-1", "42 tokens/s", "running", "18% used")],
   });
 
-  // CODEX-REF: section order — Progress, Automation (single), Environment/
-  // Outputs, Side chats, Background tasks, Browser, Sources, Status。Codex 仅
-  // single automation，无 legacy multi-list automations。
+  // CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — section order:
+  // Progress, Automation (single), Environment/Outputs, Side chats,
+  // background-subagents ("Subagents"), background-tasks ("Tasks"), Browser,
+  // Sources, Status. Codex 仅 single automation。Desktop 把 subagents/tasks 拆成
+  // 两个独立 section（不再合并成 "Subagents and tasks"）。
   assertDeepEqual(
     sections.map((section) => section.title),
     [
@@ -69,7 +71,8 @@ function keepsCodexDesktopSectionOrder(): void {
       "Automations",
       "Outputs",
       "Side chats",
-      "Subagents and tasks",
+      "Subagents",
+      "Tasks",
       "Browser",
       "Sources",
       "Status",
@@ -77,9 +80,24 @@ function keepsCodexDesktopSectionOrder(): void {
     "right rail section order should match Codex Desktop",
   );
   assertEqual(
+    sectionById(sections, "backgroundSubagents").count,
+    1,
+    "background-subagents section should carry only background agents",
+  );
+  assertEqual(
+    sectionById(sections, "backgroundSubagents").entries[0]?.title,
+    "Explorer (explorer)",
+    "background-subagents entry should come from backgroundAgents",
+  );
+  assertEqual(
     sectionById(sections, "backgroundTasks").count,
-    2,
-    "background tasks should combine background agents and terminals",
+    1,
+    "background-tasks section should carry only background terminals",
+  );
+  assertEqual(
+    sectionById(sections, "backgroundTasks").entries[0]?.title,
+    "npm run dev",
+    "background-tasks entry should come from backgroundTerminals",
   );
   // codex: pe:automation/_e:browser-tabs — assert the new sections actually
   // emit a single-entry payload from the structured projection inputs.
@@ -212,9 +230,32 @@ function usesDesktopBackgroundTaskTitles(): void {
     sources: [],
   });
 
-  assertEqual(sectionById(onlyAgents, "backgroundTasks").title, "Subagents", "agent-only background section title");
-  assertEqual(sectionById(onlyTerminals, "backgroundTasks").title, "Tasks", "terminal-only background section title");
-  assertEqual(sectionById(mixed, "backgroundTasks").title, "Subagents and tasks", "mixed background section title");
+  // CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — `Ve` (subagents) and
+  // `He` (tasks) gate independently on `l.length>0` / `de>0`. Agent-only emits
+  // just background-subagents ("Subagents"); terminal-only emits just
+  // background-tasks ("Tasks"); mixed emits BOTH (no merged "Subagents and
+  // tasks" title anymore).
+  assertEqual(sectionById(onlyAgents, "backgroundSubagents").title, "Subagents", "agent-only emits Subagents section");
+  assertEqual(
+    onlyAgents.find((section) => section.id === "backgroundTasks"),
+    undefined,
+    "agent-only should not emit a Tasks section",
+  );
+  assertEqual(sectionById(onlyTerminals, "backgroundTasks").title, "Tasks", "terminal-only emits Tasks section");
+  assertEqual(
+    onlyTerminals.find((section) => section.id === "backgroundSubagents"),
+    undefined,
+    "terminal-only should not emit a Subagents section",
+  );
+  assertEqual(sectionById(mixed, "backgroundSubagents").title, "Subagents", "mixed emits a Subagents section");
+  assertEqual(sectionById(mixed, "backgroundTasks").title, "Tasks", "mixed emits a Tasks section");
+  // Codex Wf orders Ve (subagents) before He (tasks).
+  assertEqual(
+    mixed.findIndex((section) => section.id === "backgroundSubagents") <
+      mixed.findIndex((section) => section.id === "backgroundTasks"),
+    true,
+    "subagents section should sort before tasks section like Codex",
+  );
 }
 
 function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
@@ -596,6 +637,7 @@ function sectionById(
     | "branchDetails"
     | "artifacts"
     | "sideChats"
+    | "backgroundSubagents"
     | "backgroundTasks"
     | "browser"
     | "sources"

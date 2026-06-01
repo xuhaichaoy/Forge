@@ -5,18 +5,62 @@
   background: var(--hc-surface-app);
   color: var(--hc-text-primary);
   --hc-surface-app: #f6f5f1;
-  --hc-surface-main: #faf9f5;
+  --hc-surface-main: #fff; /* Codex light: bg-token-main-surface-primary -> --color-background-surface -> --gray-0 = #fff */
   --hc-surface-sidebar: #f6f5f1;
   --hc-surface-panel: rgba(255, 253, 250, 0.94);
   --hc-surface-panel-muted: rgba(255, 253, 250, 0.5);
   --hc-surface-composer: rgba(255, 253, 250, 0.92);
   --hc-surface-hover: rgba(34, 38, 43, 0.08);
+  /* list/tab hover (Codex token-list-hover-background). Was previously only an
+     inline fallback `var(--hc-surface-list-hover, rgba(34,38,43,.06))` → undefined
+     in BOTH themes, so the dark fallback was the LIGHT overlay (near-invisible on
+     dark). Defined here: light keeps the 6% value (no change), dark gets a visible
+     white overlay — fixes the side-panel tab/button + rail source-icon hovers. */
+  --hc-surface-list-hover: rgba(34, 38, 43, 0.06);
   --hc-surface-soft: rgba(34, 38, 43, 0.06);
-  --hc-text-primary: #202124;
+  /* Selected/elevated secondary surface (Codex bg-token-bg-secondary / active tab
+     bg). Was only an inline fallback `var(--hc-surface-secondary, #f5f4ef)` → the
+     LIGHT literal showed in dark too (active side-panel tab pill + new-tab action
+     card rendered as light cards on dark). Light keeps #f5f4ef; dark below. */
+  --hc-surface-secondary: #f5f4ef;
+  /* Opaque tab-strip surface = the OPAQUE base of --hc-surface-panel (which is
+     0.94-alpha). Codex's tab pill sits on an opaque `bg-token-main-surface-primary`,
+     so its title gradient-fade + hover close-overlay (which reference the per-tab
+     `--app-shell-tab-background`) dissolve cleanly into a solid color. HiCodex's pill
+     is transparent over the translucent panel, so we expose this opaque equivalent as
+     `--hc-tab-bg` (set per pill state) for the fade/overlay to fade INTO. */
+  --hc-tab-surface: #fffdfa;
+  /* Muted fill (exec/tool-result boxes). Previously only used as an inline
+     fallback `var(--hc-surface-muted, #f3f1ea)`; defined here so it carries a
+     dark value too (matching the #2a2a2a dark fallback already in the code). */
+  --hc-surface-muted: #f3f1ea;
+  /*
+   * Consumed (with light fallbacks) by the settings/appearance + command surfaces
+   * in settings-command.css. Defined here so `.hc-app[data-theme="dark"]` (below)
+   * can give them dark values — without these defs they fell back to the light
+   * literal in BOTH themes (the Appearance panel stayed light in dark mode).
+   */
+  --hc-surface-default: #fffdfa;
+  --hc-surface-subtle: #ebe7dc;
+  --hc-text-accent: #2d5562;
+  /* Codex light text palette (app-main: --color-text-foreground #1a1c1f;
+     token-text-secondary = foreground 65%; description/text-tertiary = 70%).
+     Solid-hex equivalents composited over a #fff surface. */
+  --hc-text-primary: #1a1c1f;
   --hc-text-strong: #171717;
-  --hc-text-secondary: #8a8b84;
-  --hc-border-default: rgba(34, 38, 43, 0.14);
-  --hc-border-subtle: rgba(34, 38, 43, 0.08);
+  --hc-text-secondary: #6a6b6d;
+  /* Codex has TWO muted text levels: token-text-secondary (= foreground 65%)
+     and description-foreground / text-tertiary (= 70%). HiCodex mirrors both;
+     tertiary was previously only an inline fallback `var(--hc-text-tertiary,#8a8c87)`
+     so it never adapted to dark. Light = Codex description/text-tertiary (70% of
+     #1a1c1f over white = #5f6062), dark = 70% white. */
+  --hc-text-tertiary: #5f6062;
+  /* Codex border tokens (app-main): token-border 8% / border-light 5% /
+     border-heavy 12% of foreground. HiCodex's defaults were heavier (14%/8%);
+     aligned to Codex's percentages. (strong kept as the warm solid pending a
+     visual check — it maps to border-heavy but is a deliberate solid hue.) */
+  --hc-border-default: rgba(34, 38, 43, 0.08);
+  --hc-border-subtle: rgba(34, 38, 43, 0.05);
   --hc-border-strong: #d2cdc0;
   --hc-shadow-panel: 0 10px 30px rgba(34, 38, 43, 0.16);
   --hc-thread-footer-gradient: linear-gradient(to top, #faf9f5 0%, #faf9f5 74%, rgba(250, 249, 245, 0) 100%);
@@ -45,7 +89,7 @@
   --thread-content-max-width: 48rem;
   --markdown-wide-block-max-width: 56rem;
   --thread-content-padding-inline: 16px;
-  --thread-body-padding-inline: 24px;
+  --thread-body-padding-inline: 16px; /* Codex: thread body = px-toolbar = --padding-toolbar = .25rem*4 = 16px */
   --thread-content-top-inset: 0px;
   /*
    * `--codex-chat-font-size` and `--codex-chat-code-font-size` are kept under
@@ -104,6 +148,29 @@
   --hc-z-modal: 100;
   --hc-z-preview-dialog: 110;
   --hc-z-toast: 130;
+  /* codex corner radii: --radius-lg-base .625rem (10px) / --radius-xl-base .75rem
+     (12px), scaled by --corner-radius-scale (1, or 1.25 under the @supports block
+     below). Mirrors Codex so rounded surfaces render identically on hosts with or
+     without corner-shape support. */
+  --hc-corner-radius-scale: 1;
+  --hc-radius-lg: calc(10px * var(--hc-corner-radius-scale));
+  --hc-radius-xl: calc(12px * var(--hc-corner-radius-scale));
+  --hc-radius-2xl: calc(16px * var(--hc-corner-radius-scale)); /* codex --radius-2xl-base 1rem */
+}
+
+/*
+ * codex applies --corner-radius-scale:1.25 + corner-shape: superellipse(1.5) to its
+ * rounded-* utilities ONLY inside this feature query (Chromium 139+; WebKit once it
+ * ships). On a host WITHOUT corner-shape support (e.g. an older WKWebView) it stays
+ * at scale 1 with plain arcs — exactly Codex's own fallback — so HiCodex matches
+ * Codex on either host instead of guessing one fixed radius. Each consuming surface
+ * pairs `border-radius: var(--hc-radius-lg|xl)` with `corner-shape: superellipse(1.5)`
+ * (the property is simply ignored where unsupported).
+ */
+@supports (corner-shape: superellipse(1.5)) {
+  :root {
+    --hc-corner-radius-scale: 1.25;
+  }
 }
 
 :root[data-hc-theme="dark"],
@@ -129,13 +196,23 @@
   --hc-surface-panel-muted: rgba(33, 33, 33, 0.74);
   --hc-surface-composer: rgba(33, 33, 33, 0.94);
   --hc-surface-hover: rgba(255, 255, 255, 0.08);
+  --hc-surface-list-hover: rgba(255, 255, 255, 0.08); /* dark-visible list/tab hover (see light def) */
   --hc-surface-soft: rgba(255, 255, 255, 0.05);
+  --hc-surface-secondary: #2a2a2a; /* dark elevated secondary surface (active tab pill / new-tab card) */
+  --hc-tab-surface: #212121; /* opaque base of the dark panel (tab-strip fade/overlay target) */
+  --hc-surface-muted: #2a2a2a; /* dark muted fill for exec/tool-result boxes (matches the #2a2a2a inline dark fallback) */
+  --hc-surface-default: #2a2a2a; /* Codex .electron-dark elevated surface above editor-opaque #212121 */
+  --hc-surface-subtle: rgba(255, 255, 255, 0.05);
+  --hc-text-accent: #7aa9b8; /* dark teal accent — matches conversation/message dark blocks */
   --hc-text-primary: #ffffff;
   --hc-text-strong: #ffffff;
-  --hc-text-secondary: rgba(255, 255, 255, 0.70);
-  --hc-border-default: rgba(255, 255, 255, 0.08);
-  --hc-border-subtle: rgba(255, 255, 255, 0.04);
-  --hc-border-strong: rgba(255, 255, 255, 0.16);
+  /* Codex dark: token-text-secondary = color-mix(foreground 65%); tertiary/
+     description = 70%. (Verified in app-main-DGDTSRlh.css .electron-dark.) */
+  --hc-text-secondary: rgba(255, 255, 255, 0.65);
+  --hc-text-tertiary: rgba(255, 255, 255, 0.70);
+  --hc-border-default: rgba(255, 255, 255, 0.08); /* = Codex token-border 8% */
+  --hc-border-subtle: rgba(255, 255, 255, 0.05); /* = Codex border-light 5% */
+  --hc-border-strong: rgba(255, 255, 255, 0.12); /* = Codex border-heavy 12% */
   --hc-shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.40);
   --hc-thread-footer-gradient: linear-gradient(to top, #212121 0%, #212121 74%, rgba(33, 33, 33, 0) 100%);
   --vscode-focusBorder: rgba(51, 156, 255, 0.70);
@@ -333,7 +410,7 @@ button {
 
 .hc-app-toast {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-columns: 8px minmax(0, 1fr) auto;
   align-items: start;
   gap: 10px;
   padding: 10px 12px;
@@ -342,7 +419,7 @@ button {
   color: var(--hc-text-primary);
   background: var(--hc-surface-panel);
   box-shadow: var(--hc-shadow-panel);
-  animation: hc-app-toast-lifetime 7s ease forwards;
+  animation: hc-app-toast-lifetime 5s ease forwards; /* codex toast-signal default duration = 5s */
 }
 
 .hc-app-toast p {
@@ -367,6 +444,40 @@ button {
 
 .hc-app-toast[data-level="error"] .hc-app-toast-dot {
   background: #b43a33;
+}
+
+/* codex toast-signal `success()` level — charts-green dot (--green-500 light / --green-300 dark). */
+.hc-app-toast[data-level="success"] .hc-app-toast-dot {
+  background: #00a240;
+}
+
+.hc-app[data-theme="dark"] .hc-app-toast[data-level="success"] .hc-app-toast-dot {
+  background: #40c977;
+}
+
+/* codex toast-signal-CTz_x1Qc.js — every toast has a close affordance (hasCloseButton
+   defaults to true). The viewport is pointer-events:none, so the button opts back in. */
+.hc-app-toast-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: -2px -4px 0 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--hc-text-secondary);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.hc-app-toast-close:hover {
+  color: var(--hc-text-primary);
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-app[data-theme="dark"] .hc-app-toast-close:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 @keyframes hc-app-toast-lifetime {
@@ -633,14 +744,15 @@ button {
 }
 
 .hc-file-preview-panel-title span {
-  font-size: 13px;
-  font-weight: 650;
+  /* codex artifact-preview-header `Le` h2: `text-sm` (12px) `font-medium` (500). */
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.3;
 }
 
 .hc-file-preview-panel-title small {
   color: #7a7c77;
-  font-size: 11px;
+  font-size: 12px; /* codex secondary header label is `text-sm` = --text-sm:12px */
   font-weight: 500;
   line-height: 1.25;
 }
@@ -714,7 +826,8 @@ button {
 .hc-file-preview-code-container {
   min-height: 100%;
   overflow: visible !important;
-  padding: 16px;
+  /* codex preview body uses `p-panel` = --padding-panel-base (--spacing × 5) = 20px. */
+  padding: 20px;
 }
 
 .hc-file-preview-code {
@@ -904,8 +1017,8 @@ button {
 .hc-preview-lightbox-zoom-controls button {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 36px; /* codex image-preview-dialog zoom button = size-9 (36px) */
+  height: 36px;
   border: 0;
   border-radius: 999px;
   background: rgba(17, 20, 24, 0.08);
@@ -923,7 +1036,7 @@ button {
 }
 
 .hc-preview-lightbox-zoom-controls span {
-  min-width: 52px;
+  min-width: 64px; /* codex image-preview-dialog zoom readout = min-w-16 (64px) */
   padding: 0 6px;
   text-align: center;
   font-size: 13px;
@@ -1313,9 +1426,9 @@ button {
 .hc-sidebar-nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px; /* codex sidebar row icon-label gap = gap-2 = 8px */
   width: 100%;
-  min-height: 34px;
+  min-height: 31px; /* codex sidebar nav row height */
   border: 0;
   border-radius: 7px;
   background: transparent;
@@ -1337,6 +1450,13 @@ button {
 
 .hc-sidebar-nav-item:disabled:hover {
   background: transparent;
+}
+
+/* `.hc-sidebar-nav-item` hardcodes a light-mode color (#30332f) which, unlike the
+   thread rows (they inherit the dark root color), leaves the nav labels near-black
+   on the dark sidebar. Restore the inherited primary text in dark (light untouched). */
+.hc-app[data-theme="dark"] .hc-sidebar-nav-item {
+  color: var(--hc-text-primary);
 }
 
 .hc-sidebar-nav-icon {
@@ -1368,7 +1488,7 @@ button {
   line-height: 16px;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  opacity: 0.6;
+  opacity: 0; /* codex: shortcut chip is hidden at rest, revealed on row hover/focus */
   transition: opacity 0.15s ease;
 }
 
@@ -1386,7 +1506,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px; /* codex sidebar nav label = text-base = --text-base:14px */
   font-weight: 520;
   line-height: 18px;
 }
@@ -1506,6 +1626,18 @@ button {
   background: rgba(34, 38, 43, 0.06);
 }
 
+/* codex section-toggle: the disclosure chevron is hidden at rest and revealed on
+   row hover/focus (`opacity-0 group-hover/section-toggle:opacity-100`). */
+.hc-sidebar-group-chevron {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.hc-project-row:hover .hc-sidebar-group-chevron,
+.hc-project-row:focus-visible .hc-sidebar-group-chevron {
+  opacity: 1;
+}
+
 .hc-project-name {
   min-width: 0;
   overflow: hidden;
@@ -1540,6 +1672,63 @@ button {
 .hc-composer-menu.hc-app-popover-menu,
 .hc-attachment-input-panel.hc-app-popover-menu {
   z-index: var(--hc-z-popover);
+}
+
+/* codex context-menu-CDka65eJ.js — the right-click menu is min-w-[180px] (wider than the
+   154px inline thread menus); it reuses the .hc-thread-menu popover surface otherwise. */
+.hc-context-menu {
+  min-width: 180px;
+}
+
+/* codex tooltip-CDzchJxN.js — hover/focus tooltip: a rounded-xl panel-surface box (dropdown
+   bg @90% + 0.5px ring + backdrop blur + spread shadow), text-sm content with px-1.5/py-0.5
+   padding, and an optional shortcut kbd (h-4 min-w-4, px-1.5, rounded-md, bg-current/10, text-xs). */
+.hc-tooltip-trigger {
+  display: inline-flex;
+}
+
+.hc-tooltip {
+  z-index: var(--hc-z-popover);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 2px 6px;
+  border-radius: 12px;
+  background: rgba(255, 253, 250, 0.9);
+  color: var(--hc-text-primary);
+  box-shadow: 0 0 0 0.5px var(--hc-border-default), 0 12px 28px rgb(25 30 25 / 18%);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  font-size: 12px;
+  line-height: 16px;
+  user-select: none;
+}
+
+.hc-tooltip-content {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.hc-tooltip-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: currentColor;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.hc-app[data-theme="dark"] .hc-tooltip {
+  background: color-mix(in srgb, var(--hc-surface-panel) 92%, transparent);
+  box-shadow: 0 0 0 0.5px var(--hc-border-default), 0 12px 28px rgb(0 0 0 / 40%);
 }
 
 .hc-thread-menu-item {
@@ -1591,15 +1780,28 @@ button {
 }
 
 .hc-thread-confirm-archive {
-  background: rgba(150, 61, 47, 0.16);
-  color: #b43b31;
+  /* codex sidebar-thread-section — the archive-confirm is a Button color="danger"
+     (charts-red/10 fill + charts-red text), matching the §M-28 dialog danger variant. */
+  background: rgba(224, 46, 42, 0.1);
+  color: #e02e2a;
   font-weight: 650;
 }
 
 .hc-thread-confirm-archive:hover,
 .hc-thread-confirm-archive:focus-visible {
-  background: rgba(150, 61, 47, 0.22);
-  color: #9f2f27;
+  background: rgba(224, 46, 42, 0.18);
+  color: #e02e2a;
+}
+
+.hc-app[data-theme="dark"] .hc-thread-confirm-archive {
+  background: rgba(255, 103, 100, 0.1);
+  color: #ff6764;
+}
+
+.hc-app[data-theme="dark"] .hc-thread-confirm-archive:hover,
+.hc-app[data-theme="dark"] .hc-thread-confirm-archive:focus-visible {
+  background: rgba(255, 103, 100, 0.18);
+  color: #ff6764;
 }
 
 .hc-thread-menu-item:disabled {
@@ -1657,6 +1859,18 @@ button {
 .hc-sidebar-account-trigger:focus-visible {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 2px;
+}
+
+/* codex profile-footer label ("Settings") beside the avatar — same size as the
+   sidebar nav labels, readable in both themes (account name/plan are in the menu). */
+.hc-sidebar-account-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--hc-text-primary);
 }
 
 .hc-sidebar-account-avatar {
@@ -2325,4 +2539,51 @@ button.hc-sidebar-account-menu-item small {
   transition-duration: 0.001ms !important;
   transition-delay: 0ms !important;
   scroll-behavior: auto !important;
+}
+
+/* ===== Dark-theme completeness for base.css popups/panels/inputs =====
+   These hardcoded a light bg (#fffdfa) / light border with no dark override →
+   white surfaces (with now-light text) on dark. Found by the comprehensive
+   container-bg sweep + visual harness; map to the dark panel/main surface +
+   border tokens. Right-side popups (right rail overlay, thread menu, diff
+   viewer) → panel surface; inputs/code → main surface. */
+.hc-app[data-theme="dark"] .hc-right-rail[data-display-mode="overlay"] {
+  background: var(--hc-surface-panel);
+}
+.hc-app[data-theme="dark"] .hc-thread-menu {
+  background: var(--hc-surface-panel);
+  border-color: var(--hc-border-default);
+}
+.hc-app[data-theme="dark"] .hc-file-diff-viewer {
+  background: var(--hc-surface-main);
+  color: var(--hc-text-primary);
+}
+.hc-app[data-theme="dark"] .hc-file-preview-code-snippet {
+  background: var(--hc-surface-main);
+}
+.hc-app[data-theme="dark"] .hc-file-diff-controls select {
+  background: var(--hc-surface-main);
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary);
+}
+.hc-app[data-theme="dark"] .hc-model-picker-edit-input,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-textarea {
+  background: var(--hc-surface-main);
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary);
+}
+.hc-app[data-theme="dark"] .hc-model-picker-signin-button {
+  background: var(--hc-surface-main);
+}
+/* Generic buttons hardcoded a white #fffdfa fill with no dark override → white
+   buttons on dark (dialogs, MCP form, the unified-diff failure-dialog Close,
+   etc.). Dark secondary-button = subtle surface defined by its border. */
+.hc-app[data-theme="dark"] .hc-button,
+.hc-app[data-theme="dark"] .hc-icon-button,
+.hc-app[data-theme="dark"] .hc-link-button,
+.hc-app[data-theme="dark"] .hc-mini-button,
+.hc-app[data-theme="dark"] .hc-button-primary {
+  background: var(--hc-surface-soft);
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary);
 }

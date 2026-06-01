@@ -27,6 +27,8 @@ export const COMMAND_IDS = {
   searchChats: "searchChats",
   searchFiles: "searchFiles",
   newThread: "newThread",
+  // codex: electron-menu-shortcuts-*.js#newWindow — New Window ⌘⇧N.
+  newWindow: "newWindow",
   previousThread: "previousThread",
   nextThread: "nextThread",
   settings: "settings",
@@ -79,6 +81,21 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     defaultKeybindings: {
       macOS: ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"],
       default: ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"],
+    },
+  },
+  // codex: electron-menu-shortcuts-*.js newWindow — "New Window" ⌘⇧N. Desktop-only
+  // (opens a second Tauri webview); the handler thunks into openNewWindow().
+  {
+    id: COMMAND_IDS.newWindow,
+    title: "New window",
+    description: "Open a new window",
+    group: "navigation",
+    commandMenuGroupKey: "navigation",
+    scope: "webview",
+    availableIn: ["electron"],
+    defaultKeybindings: {
+      macOS: ["CmdOrCtrl+Shift+N"],
+      default: ["CmdOrCtrl+Shift+N"],
     },
   },
   // codex: electron-menu-shortcuts-*.js findInThread — ⌘F.

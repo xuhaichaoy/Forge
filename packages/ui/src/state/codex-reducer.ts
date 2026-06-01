@@ -34,7 +34,9 @@ export interface PendingServerRequest {
 
 export interface LogLine {
   id: string;
-  level: "info" | "warn" | "error";
+  // codex toast-signal-CTz_x1Qc.js exposes info/success/warning/danger; HiCodex maps
+  // warn≈warning and error≈danger, and adds `success` (the previously-missing green level).
+  level: "info" | "warn" | "error" | "success";
   text: string;
   at: number;
 }
@@ -165,7 +167,7 @@ export type CodexUiAction =
   | { type: "notification"; message: JsonRpcNotification }
   | { type: "serverRequest"; request: JsonRpcRequest }
   | { type: "resolveServerRequest"; id: RequestId }
-  | { type: "log"; text: string; level?: "info" | "warn" | "error" }
+  | { type: "log"; text: string; level?: "info" | "warn" | "error" | "success" }
   | { type: "setModels"; models: ModelConfig[] }
   | { type: "upsertModel"; model: ModelConfig }
   | { type: "setThreadContextDefaults"; context: ThreadContextDefaults | null }
@@ -631,7 +633,7 @@ function applyDropOptimisticUserMessage(
 function prependLog(
   state: CodexUiState,
   text: string,
-  level: "info" | "warn" | "error" = "info",
+  level: "info" | "warn" | "error" | "success" = "info",
 ): CodexUiState {
   return {
     ...state,

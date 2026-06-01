@@ -1,7 +1,7 @@
 /*
  * codex: local-conversation-thread-*.js — rail section header:
  *   <header className="sticky top-0 z-10 flex h-7 w-full min-w-0 items-center justify-start
- *                       gap-2 bg-inherit ps-4 pe-2 pb-0.5 text-base text-token-text-tertiary">
+ *                       gap-2 bg-inherit ps-4 pe-2.5 pb-0.5 text-base text-token-text-tertiary">
  * HiCodex preserves its 13px/650 typography (smaller, lighter aesthetic), but pulls in
  * sticky/z-index, 28px min-height, 8px header gap. Background is an opaque approximation
  * of the rail container so the sticky header masks scrolled-under content cleanly.
@@ -10,10 +10,10 @@
  * CODEX-REF: local-conversation-thread-*.js — right-rail section header
  * <header> className:
  *   `sticky top-0 z-10 flex h-7 w-full min-w-0 items-center justify-start
- *    gap-2 bg-token-dropdown-background ps-4 pe-2 pb-0.5 text-base
+ *    gap-2 bg-token-dropdown-background ps-4 pe-2.5 pb-0.5 text-base
  *    text-token-text-tertiary`
  * 严格对齐：z-10、h-7 = height: 28px (固定，不是 min-height)、min-width: 0、gap-2
- * (8px)、ps-4 pe-2 pb-0.5、**无 margin-bottom**（sections 间距由父 `flex flex-col
+ * (8px)、ps-4 pe-2.5 pb-0.5、**无 margin-bottom**（sections 间距由父 `flex flex-col
  * gap-3` 提供，Codex 的 header 自身不带 margin）。
  *
  * `justify-content: space-between` 偏离 Codex 的 `justify-start`。Codex 通过
@@ -33,7 +33,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 8px 2px 16px;
+  /* CODEX-REF: header `pe-2.5` = 10px right padding (updated bundle) */
+  padding: 0 10px 2px 16px;
   background: #fffdfa;
   color: #5c5e59;
 }
@@ -119,12 +120,12 @@
 }
 
 .hc-rail-environment-selector:not(:disabled):hover {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
   color: #27313d;
 }
 
 .hc-rail-section-action:hover:not(:disabled) {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
   color: #27313d;
 }
 
@@ -199,8 +200,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: inherit;
-  font-size: 13px;
-  font-weight: 650;
+  /* codex: section header is `text-base` (--text-base:14px) with a bare `truncate`
+     title that inherits body weight --vscode-font-weight:430 — NOT 13px/650. */
+  font-size: 14px;
+  font-weight: 430;
 }
 
 .hc-rail-section-title svg {
@@ -211,10 +214,10 @@
   display: inline-block;
   flex: 0 0 auto;
   color: #6f716b;
-  opacity: 0.55;
+  opacity: 0.5;
   padding: 0;
-  font-size: 13px;
-  font-weight: 650;
+  font-size: 14px;
+  font-weight: 430;
 }
 
 /*
@@ -266,7 +269,8 @@
 .hc-rail-section-content {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  /* codex: section body is `flex flex-col gap-0.5 px-4` = 2px gap. */
+  gap: 2px;
   padding: 0 16px;
 }
 
@@ -294,4 +298,58 @@
   line-height: 1.4;
   color: var(--token-description-foreground, #8a8478);
   font-style: italic;
+}
+
+
+/* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
+/* Dark theme overrides for hardcoded light-only colors */
+.hc-app[data-theme="dark"] .hc-rail-section-header {
+  background: transparent;
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-toggle:focus-visible {
+  outline: 2px solid var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-header:hover,
+.hc-app[data-theme="dark"] .hc-rail-section-toggle:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-action {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-environment-selector {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-environment-selector:not(:disabled):hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-action:hover:not(:disabled) {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-worktree-trigger {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-chevron {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-count {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-section-summary {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-empty-panel {
+  border-color: var(--hc-border-default);
+  background: transparent;
 }

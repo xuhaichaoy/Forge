@@ -60,6 +60,19 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
       continue;
     }
 
+    /*
+     * A `dynamicToolCallGroup` is a render-only batching of consecutive
+     * dynamic-tool-call items; markdown export expands it back to one section
+     * per item (unchanged from the pre-grouping standalone export).
+     */
+    if (unit.kind === "dynamicToolCallGroup") {
+      for (const item of unit.items) {
+        const itemBody = normalizedText(formatItemDetail(item) || itemText(item)).trim();
+        sections.push(details(threadItemLabel({ kind: "threadItem", key: item.id, item }), itemBody || "No detail"));
+      }
+      continue;
+    }
+
     const body = unit.kind === "event"
       ? normalizedText(unit.text || itemText(unit.item)).trim()
       : normalizedText(formatItemDetail(unit.item) || itemText(unit.item)).trim();

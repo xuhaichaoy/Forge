@@ -28,6 +28,9 @@ export interface HostGitStatus {
   changedFiles: Array<HostGitChangedFile | string>;
   hasDiff: boolean;
   diff: string | null;
+  // codex thread-env-icon — true when the cwd is a LINKED git worktree
+  // (explicit field so it types as boolean, not the index signature's unknown).
+  isWorktree?: boolean;
   [key: string]: unknown;
 }
 

@@ -2,6 +2,7 @@ import { Save, Server, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import type { CommandPanelEntry } from "../state/command-panel";
 import { normalizeMcpServerKey } from "../state/mcp-skills-management";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type McpServerFormAction = Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openMcpServerForm" }>;
 type ExtendedMcpServerFormAction = McpServerFormAction & {
@@ -40,6 +41,7 @@ export interface McpServerConfigFormProps {
 }
 
 export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConfigFormProps) {
+  const { formatMessage } = useHiCodexIntl();
   const initialValues = useMemo(() => initialMcpServerConfigFormValues(action), [action]);
   const [values, setValues] = useState<McpServerConfigFormValues>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -71,6 +73,13 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
         data-state="open"
         aria-modal="true"
         aria-label={action.title}
+        onKeyDown={(event) => {
+          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
@@ -93,9 +102,12 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
               <strong>
                 {action.mode === "edit"
                   ? values.name
-                    ? `Update ${values.name} MCP`
+                    ? formatMessage(
+                        { id: "settings.mcp.detail.titleExisting", defaultMessage: "Update {name} MCP" },
+                        { name: values.name },
+                      )
                     : "Update MCP"
-                  : "Connect to a custom MCP"}
+                  : formatMessage({ id: "settings.mcp.detail.titleNew", defaultMessage: "Connect to a custom MCP" })}
               </strong>
               <span>Saved to Codex config.toml under mcp_servers.&lt;name&gt;.</span>
             </div>
@@ -105,6 +117,7 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                 <input
                   className="hc-mcp-tool-control"
                   placeholder="github"
+                  autoFocus
                   value={values.name}
                   onChange={(event) => setValue("name", event.currentTarget.value)}
                 />
@@ -270,7 +283,7 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
             {/* codex: settings.mcp.detail.save = "Save" */}
             <button className="hc-button hc-mcp-tool-submit" type="submit">
               <Save size={15} />
-              <span>Save</span>
+              <span>{formatMessage({ id: "settings.mcp.detail.save", defaultMessage: "Save" })}</span>
             </button>
           </footer>
         </form>

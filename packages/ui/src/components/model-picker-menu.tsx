@@ -222,7 +222,8 @@ export function ModelPickerMenu({
                     }}
                   >
                     <LogIn size={13} />
-                    <span>Sign in to ChatGPT</span>
+                    {/* codex profile-dropdown `signInWithOpenAI` defaultMessage = "Sign in with ChatGPT" */}
+                    <span>Sign in with ChatGPT</span>
                   </button>
                   <span className="hc-model-picker-signin-hint">
                     Opens chatgpt.com OAuth in your browser.

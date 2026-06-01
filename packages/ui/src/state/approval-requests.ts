@@ -232,10 +232,10 @@ function fileChangeApprovalQuestions(_params: unknown): PendingRequestQuestion[]
   // codex: prompt + menu labels align to upstream ICU defaults —
   //   patchApprovalRequest.prompt              = "Do you want to make these changes?"
   //   execApprovalRequest.menu.runOnce         = "Yes"
-  //   execApprovalRequest.menu.runAlways       = "Yes, and don't ask again this session"
+  //   execApprovalRequest.menu.runAlways       = "Yes, and don’t ask again this session"
   return [approvalDecisionQuestion("Do you want to make these changes?", [
     { value: "accept", label: "Yes", description: "Approve this patch application." },
-    { value: "acceptForSession", label: "Yes, and don't ask again this session", description: "Approve patch applications until app-server restarts." },
+    { value: "acceptForSession", label: "Yes, and don’t ask again this session", description: "Approve patch applications until app-server restarts." },
   ])];
 }
 
@@ -263,8 +263,8 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
   //     execApprovalRequest.network.menu.allowAlways     = "Yes, and allow this host in the future"
   //   exec branch:
   //     execApprovalRequest.menu.runOnce                          = "Yes"
-  //     execApprovalRequest.menu.runAlwaysWithAmendment.prefix    = "Yes, and don't ask again for commands that start with"
-  //     execApprovalRequest.menu.runAlways                        = "Yes, and don't ask again this session"
+  //     execApprovalRequest.menu.runAlwaysWithAmendment.prefix    = "Yes, and don’t ask again for commands that start with"
+  //     execApprovalRequest.menu.runAlways                        = "Yes, and don’t ask again this session"
   const filterAvailable = (options: PendingRequestOption[]) =>
     filterAvailableCommandDecisionOptions(params, options);
   if (networkApprovalContext(params)) {
@@ -287,14 +287,14 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
     amendment
       ? {
           value: "acceptWithExecpolicyAmendment",
-          label: "Yes, and don't ask again for commands that start with",
+          label: "Yes, and don’t ask again for commands that start with",
           description: "Approve commands with the same prefix.",
           codePreview: execPolicyAmendmentText(amendment),
-          ariaLabel: `Yes, and don't ask again for commands that start with ${execPolicyAmendmentText(amendment)}`,
+          ariaLabel: `Yes, and don’t ask again for commands that start with ${execPolicyAmendmentText(amendment)}`,
         }
       : {
           value: "acceptForSession",
-          label: "Yes, and don't ask again this session",
+          label: "Yes, and don’t ask again this session",
           description: "Approve command executions until app-server restarts.",
         },
   ]);
@@ -316,7 +316,7 @@ function commandApprovalBody(params: unknown): string {
   const network = networkApprovalContext(params);
   if (network) {
     const host = stringField(network, "host");
-    return host ? `Reason: ${host} isn't on the current network allowlist` : "Reason: host isn't on the current network allowlist";
+    return host ? `Reason: ${host} isn’t on the current network allowlist` : "Reason: host isn’t on the current network allowlist";
   }
   return [
     commandText(params),
@@ -541,7 +541,7 @@ function mcpPersistQuestions(params: unknown): PendingRequestQuestion[] {
     required: false,
     defaultAnswers: ["none"],
     options: [
-      { value: "none", label: "Don't persist", description: "Apply this response only once." },
+      { value: "none", label: "Don’t persist", description: "Apply this response only once." },
       ...modes.map((mode) => ({
         value: mode,
         label: mcpPersistLabel(mode, copyKind),
@@ -565,7 +565,7 @@ function mcpPersistCopyKind(params: unknown): "approval" | "toolSuggestion" {
 }
 
 function mcpPersistLabel(mode: string, copyKind: "approval" | "toolSuggestion"): string {
-  if (copyKind === "toolSuggestion") return "Don't show again";
+  if (copyKind === "toolSuggestion") return "Don’t show again";
   if (mode === "always") return "Always allow";
   if (mode === "session") return "Allow for this chat";
   return mode;
@@ -1061,7 +1061,9 @@ function describePermissions(value: unknown): string {
 function describeNetworkPermissions(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   const record = value as Record<string, unknown>;
-  if (record.enabled === true) return ["Network: enabled"];
+  // codex `permissionRequest.networkValue` = "Internet access" for a granted
+  // network request (not "enabled").
+  if (record.enabled === true) return ["Network: Internet access"];
   if (record.enabled === false) return ["Network: disabled"];
   return [`Network: ${formatUnknown(value)}`];
 }

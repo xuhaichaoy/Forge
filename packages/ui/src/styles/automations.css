@@ -79,7 +79,7 @@
 }
 
 .hc-automations-icon-button:hover {
-  background: rgba(34, 38, 43, 0.08);
+  background: var(--hc-surface-hover);
   color: #27313d;
 }
 
@@ -87,7 +87,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(34, 38, 43, 0.08);
+  border: 1px solid var(--hc-border-subtle);
   border-radius: 7px;
   background: #f8f6ef;
   color: #5f625d;
@@ -173,7 +173,7 @@
 }
 
 .hc-automations-schedule-row dt {
-  color: #8a8c85;
+  color: var(--hc-text-secondary);
 }
 
 .hc-automations-schedule-row dd {
@@ -184,7 +184,7 @@
 
 .hc-automations-empty,
 .hc-automations-hooks {
-  border: 1px dashed rgba(34, 38, 43, 0.14);
+  border: 1px dashed var(--hc-border-default);
   border-radius: 7px;
   color: #6f716b;
   padding: 12px;
@@ -201,4 +201,111 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 11px;
   white-space: pre-wrap;
+}
+
+/*
+ * Dark theme — drives off the same pipeline as base.css
+ * (`:root[data-hc-theme="dark"], .hc-app[data-theme="dark"]` flips the `--hc-*`
+ * tokens to the Codex `.electron-dark` palette). The greys/tints below were
+ * hardcoded LIGHT hex with no exact `--hc-*` light-token equivalent, so per the
+ * project rule they keep their light value and gain a dark-only override here.
+ * (The handful that matched a token light value exactly — `rgba(34,38,43,0.08)`
+ * = surface-hover/border-subtle, `rgba(34,38,43,0.14)` = border-default,
+ * `#8a8c85` ≈ text-secondary — were tokenized inline instead and inherit dark
+ * for free.)
+ *
+ * Dark values sourced from Codex Desktop `app-main-DGDTSRlh.css` dark tokens:
+ *   --color-text-foreground            #fff            (→ --hc-text-primary)
+ *   --color-text-foreground-secondary  #ffffffb3       (→ --hc-text-secondary)
+ *   --color-background-editor-opaque   --gray-800 #212121 (→ --hc-surface-main)
+ *   --color-text-success  --green-300  #40c977
+ *   --color-text-error    --red-300    #ff6764
+ *   --color-background-status-error    --red-900  #4d100e
+ *   --color-border / --color-border-light  rgba(255,255,255,0.08 / 0.04)
+ * Neutral info/loading surfaces map to --hc-surface-soft (rgba(255,255,255,0.05)),
+ * the dark analog of the warm off-white panels used in light mode.
+ */
+.hc-app[data-theme="dark"] .hc-automations-panel {
+  border-left-color: var(--hc-border-default);
+  background: var(--hc-surface-main);
+  box-shadow: -8px 0 24px -8px rgba(0, 0, 0, 0.40);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-title span {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-title span[data-status="ready"] {
+  color: #40c977;
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-title span[data-status="loading"] {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-title span[data-status="unsupported"],
+.hc-app[data-theme="dark"] .hc-automations-panel-title span[data-status="error"] {
+  color: #ff6764;
+}
+
+.hc-app[data-theme="dark"] .hc-automations-icon-button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-icon-button:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-message {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-message[data-status="unsupported"],
+.hc-app[data-theme="dark"] .hc-automations-panel-message[data-status="error"] {
+  background: #4d100e;
+  color: #ff6764;
+}
+
+.hc-app[data-theme="dark"] .hc-automations-panel-message[data-status="loading"] {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-heartbeat {
+  border-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-heartbeat span {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-heartbeat strong {
+  color: #ff6764;
+}
+
+.hc-app[data-theme="dark"] .hc-automations-heartbeat[data-eligible="true"] strong {
+  color: #40c977;
+}
+
+.hc-app[data-theme="dark"] .hc-automations-schedule-row {
+  border-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-schedule-row p {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-schedule-row dd {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-empty,
+.hc-app[data-theme="dark"] .hc-automations-hooks {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-automations-hooks code {
+  color: var(--hc-text-primary);
 }

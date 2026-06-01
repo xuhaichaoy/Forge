@@ -34,7 +34,7 @@ function rendersDesktopConfirmationPrompt(): void {
 
   assert(html.includes("Send follow-up from figma?"), "follow-up dialog should render source-aware title");
   assert(
-    html.includes("An MCP app wants to send this prompt."),
+    html.includes("An app wants to send this prompt"),
     "follow-up dialog should explain the app-requested prompt",
   );
   assert(html.includes("Review the latest output"), "follow-up dialog should prefill the requested prompt");

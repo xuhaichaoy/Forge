@@ -1,5 +1,5 @@
 import { Play, Server, X } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { CommandPanelEntry } from "../state/command-panel";
 import {
   buildMcpToolArguments,
@@ -20,6 +20,12 @@ export function McpToolCallForm({ action, onClose, onSubmit }: McpToolCallFormPr
   const initialValues = useMemo(() => emptyMcpToolArgumentValues(action.fields), [action.fields]);
   const [values, setValues] = useState<McpToolArgumentValues>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // Focus the dialog on open (Radix focuses dialog content on mount) so the
+  // section's Escape handler is reachable immediately, not only after a click.
+  const dialogRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   function updateField(name: string, value: string | boolean) {
     setValues((current) => ({ ...current, [name]: value }));
@@ -42,11 +48,20 @@ export function McpToolCallForm({ action, onClose, onSubmit }: McpToolCallFormPr
   return (
     <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="hc-command-panel hc-mcp-tool-form"
         role="dialog"
         data-state="open"
         aria-modal="true"
         aria-label={action.title}
+        onKeyDown={(event) => {
+          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>

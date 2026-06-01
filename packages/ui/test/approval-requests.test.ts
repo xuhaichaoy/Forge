@@ -71,7 +71,7 @@ export default function runApprovalRequestTests(): void {
   );
   assertIncludes(
     sessionCommandDetail.body,
-    "Reason: example.com isn't on the current network allowlist",
+    "Reason: example.com isn’t on the current network allowlist",
     "network command approval body should follow Desktop reason text",
   );
   assertIncludes(
@@ -130,10 +130,10 @@ export default function runApprovalRequestTests(): void {
     pendingRequestDetail(execPolicyCommandRequest).questions[0]?.options[1],
     {
       value: "acceptWithExecpolicyAmendment",
-      label: "Yes, and don't ask again for commands that start with",
+      label: "Yes, and don’t ask again for commands that start with",
       description: "Approve commands with the same prefix.",
       codePreview: "npm test",
-      ariaLabel: "Yes, and don't ask again for commands that start with npm test",
+      ariaLabel: "Yes, and don’t ask again for commands that start with npm test",
     },
     "command execpolicy option should split Desktop's prefix text from the truncated command preview",
   );
@@ -404,7 +404,7 @@ export default function runApprovalRequestTests(): void {
   assertEqual(mcpToolApprovalDetail.questions[0]?.id, "_meta.persist", "mcp tool approval should expose persist choices");
   assertDeepEqual(
     mcpToolApprovalDetail.questions[0]?.options.map((option) => option.label),
-    ["Don't persist", "Always allow", "Allow for this chat"],
+    ["Don’t persist", "Always allow", "Allow for this chat"],
     "mcp tool approval persist labels",
   );
   assertIncludes(mcpToolApprovalMetadata, "Approval: MCP tool call", "mcp tool approval kind metadata");
@@ -436,7 +436,7 @@ export default function runApprovalRequestTests(): void {
     "cwd: /workspace/project",
     "permissions cwd metadata",
   );
-  assertIncludes(permissionsDetail.body, "Network: enabled", "permissions body includes network permission");
+  assertIncludes(permissionsDetail.body, "Network: Internet access", "permissions body includes network permission (codex networkValue = 'Internet access')");
   assertIncludes(permissionsDetail.body, "Write: /workspace/project", "permissions body includes file permission");
   assertEqual(permissionsDetail.questions[0]?.id, "scope", "permissions scope question");
   assertDeepEqual(

@@ -96,8 +96,8 @@ function splitsCommandMenuEntriesIntoTaxonomySections(): void {
     })),
     [
       { groupKey: "other",     title: "Other",     ids: ["thread:pinned"] },
-      { groupKey: "thread",    title: "Thread",    ids: ["command:new"] },
-      { groupKey: "workspace", title: "Workspace", ids: ["command:search-files"] },
+      { groupKey: "thread",    title: "Chat",    ids: ["command:new"] },
+      { groupKey: "workspace", title: "Project", ids: ["command:search-files"] },
       { groupKey: "skills",    title: "Skills",    ids: ["skill:code-review"] },
       { groupKey: "configure", title: "Configure", ids: ["command:settings"] },
     ],
@@ -1696,7 +1696,8 @@ function createsEmptyLoadingAndErrorPanelStates(): void {
       status: "empty",
       title: "Plugins",
       entries: [],
-      message: "No plugins found.",
+      // codex command-panel empties have no trailing period (`No plugins found`).
+      message: "No plugins found",
     },
     "ready panel state with no entries should become empty",
   );

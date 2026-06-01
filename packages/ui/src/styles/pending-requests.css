@@ -42,7 +42,7 @@
   min-width: 0;
   color: #252827;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 500; /* codex question title = `text-base font-medium` = 500 (not 650) */
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -56,11 +56,11 @@
   display: grid;
   grid-template-columns: minmax(72px, 96px) minmax(0, 1fr);
   align-items: start;
-  gap: 8px;
+  gap: 2px 12px; /* codex `gap-x-3 gap-y-0.5` = 12px column / 2px row */
   min-height: 20px;
   color: #62655f;
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 13px; /* codex `text-size-chat` = --codex-chat-font-size 13px */
+  line-height: 20px; /* codex leading-5 */
 }
 
 .hc-request-detail-row > span:first-child {
@@ -79,6 +79,28 @@
   padding: 1px 3px;
   color: #4e5652;
   font-size: 11px;
+}
+
+/* CODEX-REF: pending-request-item-panel-*.js — On/kn 渲染 filesystem 权限路径：
+   每条路径单独一行的 `font-mono leading-5 text-token-description-foreground` code，
+   外层 `flex min-w-0 flex-col gap-0.5`（非逗号拼成一个值，也不是 pill 背景）。 */
+.hc-request-detail-code-lines {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.hc-request-detail-code-lines code {
+  border-radius: 0;
+  background: none;
+  padding: 0;
+  color: #62655f;
+  font-size: 12px; /* codex text-size-code */
+  line-height: 20px; /* codex leading-5 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* CODEX-REF: composer-*.js — 命令预览
@@ -270,11 +292,12 @@
 .hc-request-option-row {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
-  align-items: start;
-  gap: 6px;
+  align-items: center; /* codex option button = `items-center` */
+  gap: 8px; /* codex `gap-2` = 8px */
   width: 100%;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--hc-radius-xl); /* codex `rounded-xl` (12px → 15px squircle) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   padding: 6px 8px;
   color: #2a2d2b;
@@ -451,16 +474,18 @@
   gap: 6px;
   min-height: 30px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 9999px; /* codex action buttons = `rounded-full` */
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 12px; /* codex button text = `text-sm` = --text-sm:12px */
   font-weight: 520;
   cursor: pointer;
 }
 
 .hc-request-action.primary {
-  background: #23483b;
-  color: #fffdfa;
+  /* codex primary button = `bg-token-foreground text-token-dropdown-background` — a
+     neutral high-contrast button (near-black on light / white on dark), NOT green. */
+  background: var(--hc-text-primary);
+  color: var(--hc-surface-main);
 }
 
 .hc-request-action.primary:disabled {
@@ -526,6 +551,11 @@
   color: rgba(255, 255, 255, 0.80);
 }
 
+.hc-app[data-theme="dark"] .hc-request-detail-code-lines code {
+  background: none;
+  color: rgba(255, 255, 255, 0.58);
+}
+
 .hc-app[data-theme="dark"] .hc-request-option-code {
   color: rgba(255, 255, 255, 0.58);
 }
@@ -556,7 +586,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-request-question-heading > small {
-  color: var(--hc-text-secondary);
+  color: var(--hc-text-tertiary);
 }
 
 .hc-app[data-theme="dark"] .hc-request-option-row {
@@ -578,7 +608,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-request-option-copy small {
-  color: var(--hc-text-secondary);
+  color: var(--hc-text-tertiary);
 }
 
 .hc-app[data-theme="dark"] .hc-request-inline-freeform input,
@@ -623,4 +653,15 @@
 .hc-app[data-theme="dark"] .hc-request-action.ghost kbd {
   background: rgba(255, 255, 255, 0.10);
   color: var(--hc-text-secondary);
+}
+
+
+/* ===== Dark-theme completeness, batch 2 (2026-05-30 workflow; role-mapped to --hc-* dark tokens, light untouched) ===== */
+/* Dark theme overrides for stepper navigation text colors */
+.hc-app[data-theme="dark"] .hc-request-question-stepper {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-request-question-stepper-nav:hover:not(:disabled) {
+  color: var(--hc-text-primary);
 }

@@ -37,15 +37,15 @@ export function ThreadFindBar({
   }, [focusToken]);
 
   return (
-    <div className="hc-thread-find-bar" role="search" aria-label="Find in thread">
+    <div className="hc-thread-find-bar" role="search" aria-label="Find in chat">
       <label className="hc-thread-find-input">
         <Search size={14} aria-hidden="true" />
         <input
           ref={inputRef}
           type="search"
           value={query}
-          placeholder="Find"
-          aria-label="Find in thread"
+          placeholder="Search chat…"
+          aria-label="Find in chat"
           onChange={(event) => onQueryChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -60,8 +60,8 @@ export function ThreadFindBar({
       <button
         type="button"
         className="hc-thread-find-icon-button"
-        aria-label="Previous match"
-        title="Previous match"
+        aria-label="Previous result"
+        title="Previous result"
         disabled={!canNavigate}
         onClick={onPrevious}
       >
@@ -70,8 +70,8 @@ export function ThreadFindBar({
       <button
         type="button"
         className="hc-thread-find-icon-button"
-        aria-label="Next match"
-        title="Next match"
+        aria-label="Next result"
+        title="Next result"
         disabled={!canNavigate}
         onClick={onNext}
       >

@@ -26,6 +26,17 @@ export type RightRailSectionId =
   | "branchDetails"
   | "artifacts"
   | "sideChats"
+  /*
+   * CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — Desktop renders TWO
+   * distinct background sections, not one merged "Subagents and tasks" list.
+   * sectionKey="background-subagents" (title <Rf type="subagents"/> →
+   * "Subagents", fed `backgroundAgents:l, backgroundTerminals:[]`) and
+   * sectionKey="background-tasks" (title <Rf type="tasks"/> → "Tasks", fed
+   * `backgroundTerminals:u`, with a "View all processes" header after-button).
+   * Title i18n keys: codex.localConversation.backgroundTasks.title.subagents
+   * / .title.tasks. The old combined-title branch is gone from the new bundle.
+   */
+  | "backgroundSubagents"
   | "backgroundTasks"
   | "browser"
   | "sources"
@@ -273,14 +284,31 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     sections.push(projectEntrySection("sideChats", "Side chats", input.sideChats, false));
   }
 
-  const backgroundTasks = [
-    ...(input.backgroundAgents ?? []),
-    ...(input.backgroundTerminals ?? []),
-  ];
+  // CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — `Ve` then `He`.
+  // Two separate sections, placed after Side chats and before Browser:
+  //   Ve = l.length>0 && <Wd sectionKey="background-subagents" title=subagents
+  //        titleSuffix=count{l.length} … backgroundAgents:l, backgroundTerminals:[] />
+  //   He = de>0     && <Wd after=<button …"View all processes"/>
+  //        sectionKey="background-tasks" title=tasks titleSuffix=count{de} …
+  //        backgroundTerminals:u />
+  // The two source arrays are separable in HiCodex's projection input:
+  // `backgroundAgents` (subagents) and `backgroundTerminals` (tasks). Desktop
+  // no longer merges them into a single "Subagents and tasks" list.
+  const backgroundSubagents = input.backgroundAgents ?? [];
+  if (backgroundSubagents.length > 0) {
+    sections.push(projectEntrySection(
+      "backgroundSubagents",
+      "Subagents",
+      backgroundSubagents,
+      false,
+    ));
+  }
+
+  const backgroundTasks = input.backgroundTerminals ?? [];
   if (backgroundTasks.length > 0) {
     sections.push(projectEntrySection(
       "backgroundTasks",
-      backgroundTasksTitle(input.backgroundAgents ?? [], input.backgroundTerminals ?? []),
+      "Tasks",
       backgroundTasks,
       false,
     ));
@@ -371,14 +399,6 @@ function allProgressEntriesCompleted(entries: RailEntry[]): boolean {
   return entries.length > 0 && entries.every((entry) => isCompletedProgressStatus(entry.status));
 }
 
-function backgroundTasksTitle(backgroundAgents: RailEntry[], backgroundTerminals: RailEntry[]): string {
-  const hasBackgroundAgents = backgroundAgents.length > 0;
-  const hasBackgroundTerminals = backgroundTerminals.length > 0;
-  if (hasBackgroundAgents && hasBackgroundTerminals) return "Subagents and tasks";
-  if (hasBackgroundAgents) return "Subagents";
-  return "Tasks";
-}
-
 function isBranchDetailsViewModel(value: RightRailProjectionInput["branchDetails"]): value is BranchDetailsViewModel {
   return "rows" in value && "emptyText" in value && "hasData" in value;
 }
@@ -446,14 +466,24 @@ function browserRailEntry(input: RightRailBrowserInput): RailEntry {
   };
 }
 
-// codex: local-conversation-thread-*.js automationRow — `Next run:` tooltip
-// timestamp formatting. Desktop uses the user's locale + an "X minutes/hours
-// from now" rrule helper; HiCodex shows the localized date/time, which keeps
-// the tooltip readable without pulling in a full rrule library.
+// codex format-automation-next-run-label-*.js: a relative-day label, NOT a raw
+// locale datetime — calendar-day delta via start-of-day diff (Math.round) → "Today
+// at {time}" (delta 0) / "Tomorrow at {time}" (1) / "{weekday} at {time}" (else),
+// with time = {hour:'numeric', minute:'2-digit'} and weekday:'long'; "Not scheduled"
+// when there is no next run. (Codex also maps PAUSED → "-", but HiCodex's rail input
+// carries no automation status, so that branch is omitted per "没有依据".)
 function formatNextRunAt(nextRunAtMs: number | null | undefined): string {
-  if (nextRunAtMs == null || !Number.isFinite(nextRunAtMs)) return "";
+  if (nextRunAtMs == null || !Number.isFinite(nextRunAtMs)) return "Not scheduled";
   try {
-    return new Date(nextRunAtMs).toLocaleString();
+    const next = new Date(nextRunAtMs);
+    const now = new Date();
+    const startOfDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const deltaDays = Math.round((startOfDay(next) - startOfDay(now)) / 86_400_000);
+    const time = next.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    if (deltaDays === 0) return `Today at ${time}`;
+    if (deltaDays === 1) return `Tomorrow at ${time}`;
+    const weekday = next.toLocaleDateString(undefined, { weekday: "long" });
+    return `${weekday} at ${time}`;
   } catch {
     return "";
   }

@@ -54,6 +54,7 @@ export default function runMessageUnitTests(): void {
   // assistant action row slots (hookStats `zs`, completedThreadGoal `dh`).
   // Note: sentAtMs trailing slot 已删除（Codex 对齐 — action row 无 timestamp）。
   rendersAssistantTurnRatingWhenSubmitterAvailable();
+  hidesUserEditAffordanceUnlessMostRecentTurn();
   rendersAssistantTimestampFromCompletedAtMs();
   summarizesAssistantHookStatsLikeCodexDesktop();
   rendersCompletedThreadGoalChipLikeCodexDesktop();
@@ -930,6 +931,52 @@ function rendersAssistantTurnRatingWhenSubmitterAvailable(): void {
     html.indexOf("Good response") < html.indexOf("Fork from this point"),
     true,
     "Desktop action row orders rating before fork",
+  );
+}
+
+// codex: local-conversation-thread-Kn0WAsVa.js — the user-message edit
+// affordance is gated to the MOST RECENT user turn only. In the thread loop
+// `for(let[e,a]of pe.entries()){let o=e===pe.length-1;...onEditMessage:o?S:void 0}`
+// the edit handler `S` is passed solely when `o` (the last-index /
+// `isMostRecentTurn: S===v.length-1` flag) is true; older turns receive
+// `void 0` and expose Fork rather than Edit. This guards
+// MessageUnitView's `onEdit = ... && isMostRecentTurn && ...` predicate.
+function hidesUserEditAffordanceUnlessMostRecentTurn(): void {
+  const userUnit = (isMostRecentTurn: boolean) => ({
+    threadId: "thread-edit-gate",
+    isMostRecentTurn,
+    onEditLastUserMessage: () => undefined,
+    unit: {
+      kind: "message" as const,
+      key: "user-edit-gate",
+      role: "user" as const,
+      item: {
+        id: "user-edit-gate",
+        type: "userMessage",
+        _turnId: "turn-edit-gate",
+        // No `_turnStatus` -> messageTurnStatus() === "" -> not in progress.
+      },
+      text: "Refine the report copy.",
+    },
+  });
+
+  const olderTurnHtml = renderToStaticMarkup(createElement(MessageUnitView, userUnit(false)));
+  assertEqual(
+    olderTurnHtml.includes("Edit message"),
+    false,
+    "older user turns should not expose the edit affordance (Codex passes onEditMessage `void 0` off the most recent turn)",
+  );
+  assertEqual(
+    olderTurnHtml.includes("Refine the report copy."),
+    true,
+    "the older user turn should still render its message text without an edit button",
+  );
+
+  const recentTurnHtml = renderToStaticMarkup(createElement(MessageUnitView, userUnit(true)));
+  assertEqual(
+    recentTurnHtml.includes("Edit message"),
+    true,
+    "the most recent user turn should expose the Desktop edit affordance when a submit callback and turn id are available",
   );
 }
 

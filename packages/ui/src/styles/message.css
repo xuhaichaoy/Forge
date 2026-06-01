@@ -62,6 +62,7 @@
 
 .hc-assistant-resource-card.is-show-more {
   justify-content: center;
+  gap: 4px; /* codex show-more button `gap-1` between label and chevron */
   min-height: 40px;
   padding: 8px 12px;
   color: #636862;
@@ -77,8 +78,10 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  border-radius: 14px;
-  border: 1px solid rgba(34, 38, 43, 0.08);
+  /* codex resource-card icon tile is `size-10 rounded-lg bg-token-bg-secondary` —
+     borderless (Tailwind preflight zeroes border width) with rounded-lg corners. */
+  border-radius: var(--hc-radius-lg);
+  corner-shape: superellipse(1.5);
   background: #f5f1e8;
   color: #646862;
 }
@@ -122,7 +125,8 @@
 .hc-assistant-resource-card-title {
   color: #22262b;
   font-size: 13px;
-  font-weight: 620;
+  /* codex title is `text-size-chat font-medium` → --font-weight-medium:500 (not 620). */
+  font-weight: 500;
   line-height: 1.45;
 }
 
@@ -388,7 +392,9 @@ button.hc-assistant-review-comment-row:focus-visible,
 
 .hc-user-message-bubble {
   max-width: 77%;
-  border-radius: 16px;
+  /* codex user bubble is `rounded-2xl` (--radius-2xl 16px → 20px squircle w/ corner-shape). */
+  border-radius: var(--hc-radius-2xl);
+  corner-shape: superellipse(1.5);
   background: rgba(34, 38, 43, 0.05);
   padding: 8px 12px;
   color: #22262b;
@@ -612,7 +618,9 @@ button.hc-parent-thread-attachment:hover {
   place-items: center;
   overflow: hidden;
   border: 1px solid #d8d5ca;
-  border-radius: 8px;
+  /* codex user image attachment is `rounded-lg` (10px → 12.5px squircle w/ corner-shape). */
+  border-radius: var(--hc-radius-lg);
+  corner-shape: superellipse(1.5);
   background: transparent;
   padding: 0;
   cursor: pointer;
@@ -684,6 +692,11 @@ button.hc-parent-thread-attachment:hover {
 .hc-user-chip-button:hover {
   background: #fffdfa;
   border-color: rgba(45, 85, 98, 0.25);
+}
+
+.hc-app[data-theme="dark"] .hc-user-chip-button:hover {
+  background: var(--hc-surface-hover);
+  border-color: var(--hc-text-accent);
 }
 
 .hc-user-chip-file {
@@ -777,19 +790,20 @@ button.hc-user-attachment-pill:hover {
   min-width: 0;
   width: 100%;
   font-size: var(--codex-chat-font-size);
-  line-height: var(--hc-chat-line-height);
+  line-height: 22px; /* Codex: leading-[calc(var(--codex-chat-font-size)+8px)] = calc(13px+8px), upstream resolves to 22px */
 }
 
 .hc-markdown.is-indexed-fade .hc-markdown-fade-in,
 .hc-markdown.is-indexed-fade hr,
 .hc-markdown.is-indexed-fade li,
 .hc-markdown.is-indexed-fade tr,
-.hc-markdown.is-indexed-fade blockquote,
-.hc-markdown.is-indexed-fade code,
-.hc-markdown.is-indexed-fade pre {
+.hc-markdown.is-indexed-fade blockquote {
   /*
-   * Matches Codex Desktop's per-block fade-in (markdown-*.css): every
-   * block-level element inside the streaming markdown root starts at opacity 0
+   * Matches Codex Desktop's per-block fade-in (inline-mentions-*.css): the
+   * faded elements are prose words (.hc-markdown-fade-in), hr, li, tr, and
+   * blockquote — Codex's fade selector deliberately EXCLUDES code/pre, so code
+   * blocks and inline code render at full opacity immediately (no fade flicker
+   * on code). Each faded element starts at opacity 0
    * and runs `_fade-in 0.2s cubic-bezier(.37,.55,.86,.88) forwards`. The
    * animation runs ONCE at the element's first mount; subsequent re-renders
    * without remount don't restart it (forwards keeps the end opacity). That
@@ -817,9 +831,7 @@ button.hc-user-attachment-pill:hover {
   .hc-markdown.is-indexed-fade hr,
   .hc-markdown.is-indexed-fade li,
   .hc-markdown.is-indexed-fade tr,
-  .hc-markdown.is-indexed-fade blockquote,
-  .hc-markdown.is-indexed-fade code,
-  .hc-markdown.is-indexed-fade pre {
+  .hc-markdown.is-indexed-fade blockquote {
     --hc-markdown-fade-duration: 0s;
     opacity: 1;
     animation-duration: 0s;
@@ -839,8 +851,12 @@ button.hc-user-attachment-pill:hover {
   margin-bottom: 0;
 }
 
+.hc-markdown > :first-child {
+  margin-top: 0; /* Codex: [&>*:first-child]:mt-0 */
+}
+
 .hc-markdown p {
-  margin: 0 0 10px;
+  margin: 8px 0; /* Codex: my-2 = 8px symmetric */
 }
 
 .hc-math-display {
@@ -919,29 +935,35 @@ button.hc-user-attachment-pill:hover {
 .hc-markdown h6 {
   margin: 0 0 8px;
   color: #20262d;
-  font-weight: 750;
+  font-weight: 600; /* Codex: font-semibold overrides heading-* declared 500 */
   line-height: 1.25;
 }
 
 .hc-markdown h1 {
-  font-size: 18px;
+  font-size: 24px; /* Codex: heading-lg --text-heading-lg=24px */
+  line-height: 1.2;
+  margin: 20px 0 8px; /* Codex: mt-5 mb-2 */
 }
 
 .hc-markdown h2 {
-  font-size: 16px;
+  font-size: 18px; /* Codex: heading-base --text-heading-md=18px (electron) */
+  line-height: 1.33;
+  margin: 16px 0 8px; /* Codex: mt-4 mb-2 */
 }
 
 .hc-markdown h3,
 .hc-markdown h4,
 .hc-markdown h5,
 .hc-markdown h6 {
-  font-size: 14px;
+  font-size: 18px; /* Codex: heading-subsection --text-heading-sm=18px */
+  line-height: 1.33;
+  margin: 12px 0 6px; /* Codex: mt-3 mb-1.5 */
 }
 
 .hc-markdown ul,
 .hc-markdown ol {
-  margin: 0 0 8px;
-  padding-left: 22px;
+  margin: 0 0 16px;
+  padding-inline-start: 1.3125rem; /* codex `_list_n9ah0_116`: padding-inline-start 1.3125rem = 21px (was pl-4 16px) */
 }
 
 .hc-message-actions {
@@ -952,8 +974,7 @@ button.hc-user-attachment-pill:hover {
   gap: 2px;
   margin-top: 6px;
   color: #85877f;
-  opacity: 0;
-  transition: opacity 120ms ease;
+  opacity: 0; /* Codex: revealed via opacity utilities with no transition (instant) */
 }
 
 .hc-message-action-status {
@@ -1071,77 +1092,102 @@ button.hc-user-attachment-pill:hover {
   background: rgba(39, 49, 61, 0.08);
 }
 
-.hc-turn-rating-popover {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 6px);
-  z-index: var(--hc-z-popover);
-  display: block;
-  width: min(340px, calc(100vw - 32px));
-  padding: 10px;
-  border: 1px solid var(--hc-border-default, rgba(39, 49, 61, 0.12));
-  border-radius: 8px;
-  background: var(--hc-surface-panel, rgba(255, 255, 255, 0.98));
-  box-shadow: var(--hc-shadow-panel, 0 14px 40px rgba(17, 24, 28, 0.16));
-  color: var(--hc-text-primary, #24292f);
-  font-size: 12px;
-  line-height: 1.35;
-  white-space: normal;
+/*
+ * CODEX-REF: feedback-form-dialog-BZv3Fod0.js — turn feedback is a CENTERED
+ * GLOBAL MODAL, not an inline anchored popover. The dialog box reuses the
+ * shared `hc-thread-dialog-panel` chrome (settings-command.css) inside the
+ * shared centered `hc-settings-backdrop` overlay; only the feedback-specific
+ * internals (pill radiogroup + textarea + legal notice) are styled here.
+ */
+.hc-turn-feedback-dialog {
+  width: min(520px, calc(100vw - 32px));
 }
 
-.hc-turn-rating-popover form,
-.hc-turn-rating-options {
-  display: grid;
+.hc-turn-feedback-body {
+  gap: 12px;
+}
+
+/* CODEX-REF: feedback-form-dialog-BZv3Fod0.js — `role=radiogroup` with
+   className `flex flex-wrap gap-2`; pills are `rounded-full border px-3 py-1`. */
+.hc-turn-feedback-options {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.hc-turn-rating-options label {
-  display: flex;
+.hc-turn-feedback-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-width: 0;
+  gap: 4px;
+  border: 1px solid var(--hc-border-default, rgba(39, 49, 61, 0.16));
+  border-radius: 9999px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--hc-text-primary, #27313d);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
-.hc-turn-rating-options input {
+.hc-turn-feedback-pill:hover {
+  background: rgba(39, 49, 61, 0.06);
+}
+
+/* CODEX-REF: feedback-form-dialog-BZv3Fod0.js — selected pill flips to
+   `bg-token-foreground text-token-dropdown-background` (inverted fill). */
+.hc-turn-feedback-pill[data-checked="true"] {
+  border-color: #27313d;
+  background: #27313d;
+  color: #faf9f5;
+}
+
+.hc-turn-feedback-pill[data-checked="true"]:hover {
+  background: #1f2933;
+}
+
+/* Beat `.hc-thread-dialog-body span` (settings-command.css) so the pill label
+   inherits the pill's foreground (dark / inverted-when-checked) at pill size,
+   instead of the muted dialog-span gray. */
+.hc-turn-feedback-pill span {
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.hc-turn-feedback-pill-icon {
   flex: 0 0 auto;
 }
 
-.hc-turn-rating-popover textarea {
-  min-height: 68px;
+.hc-turn-feedback-textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 260px;
   resize: vertical;
   border: 1px solid rgba(39, 49, 61, 0.14);
-  border-radius: 6px;
-  padding: 7px 8px;
+  border-radius: 12px;
+  padding: 9px 12px;
   background: #fff;
   color: #27313d;
   font: inherit;
+  line-height: 1.45;
+}
+
+.hc-turn-feedback-textarea:focus {
+  border-color: #9fb29f;
+  outline: none;
 }
 
 .hc-turn-rating-legal {
   color: var(--hc-text-secondary, #6f716b);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .hc-turn-rating-legal a {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-.hc-turn-rating-popover-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.hc-message-actions .hc-turn-rating-popover-actions button,
-.hc-plan-summary-actions .hc-turn-rating-popover-actions button {
-  width: auto;
-  height: 26px;
-  padding: 0 9px;
-  border: 1px solid rgba(39, 49, 61, 0.12);
-  border-radius: 6px;
-  background: #fff;
-  color: #27313d;
 }
 
 .hc-message-action-status.meta {
@@ -1196,17 +1242,17 @@ button.hc-user-attachment-pill:hover {
 
 .hc-message.user .hc-message-actions {
   justify-content: flex-end;
-  gap: 2px;
+  gap: 4px; /* codex user action row is `gap-1` = 4px (assistant row stays gap-0.5 = 2px) */
   margin: 0 4px;
 }
 
 .hc-message-actions button {
   display: grid;
-  width: 22px;
-  height: 20px;
+  width: 26px; /* Codex: ghost size:icon, 16px icon-xs + electron:p-1 4px + 1px border = ~26px square */
+  height: 26px;
   place-items: center;
   border: 0;
-  border-radius: 5px;
+  border-radius: 8px; /* Codex: electron:rounded-md --radius-md .5rem = 8px */
   background: transparent;
   color: inherit;
   cursor: pointer;
@@ -1235,7 +1281,7 @@ button.hc-user-attachment-pill:hover {
   align-items: center;
   padding: 0 3px;
   color: #85877f;
-  font-size: 12px;
+  font-size: 13px; /* codex timestamp is `text-size-chat leading-5` = --codex-chat-font-size 13px */
   line-height: 20px;
 }
 
@@ -1508,20 +1554,15 @@ button.hc-user-attachment-pill:hover {
   color: var(--hc-text-primary);
 }
 
-.hc-app[data-theme="dark"] .hc-turn-rating-popover {
-  border-color: var(--hc-border-default);
-  background: var(--hc-surface-panel);
-  box-shadow: var(--hc-shadow-panel);
-  color: var(--hc-text-primary);
-}
-
-.hc-app[data-theme="dark"] .hc-turn-rating-popover textarea,
-.hc-app[data-theme="dark"] .hc-message-actions .hc-turn-rating-popover-actions button,
-.hc-app[data-theme="dark"] .hc-plan-summary-actions .hc-turn-rating-popover-actions button {
-  border-color: var(--hc-border-default);
-  background: var(--hc-surface-soft);
-  color: var(--hc-text-primary);
-}
+/*
+ * The turn feedback form is now a centered modal rendered with the shared
+ * `hc-thread-dialog-panel` chrome (light-surface in every theme, matching the
+ * sibling thread-action / fork-from-older-turn dialogs, which carry no
+ * data-theme="dark" overrides). The feedback internals therefore keep their
+ * light-surface colors here too, so no dark-theme override block is needed for
+ * the dialog (the former `.hc-turn-rating-popover` dark rules targeted the
+ * removed inline popover and have been dropped).
+ */
 
 /* codex: local-conversation-thread-*.js — `<div className="mt-3 flex
  * flex-wrap gap-1.5">{citations.map(...)}</div>`. The row sits just below
@@ -1625,4 +1666,99 @@ button.hc-automation-citation-chip {
 .hc-app[data-theme="dark"] .hc-automation-citation-chip:hover,
 .hc-app[data-theme="dark"] .hc-automation-citation-chip:focus-visible {
   background: var(--hc-surface-hover);
+}
+
+
+/* ===== Dark-theme completeness, batch 2 (2026-05-30 workflow; role-mapped to --hc-* dark tokens, light untouched) ===== */
+/* Dark-theme overrides for hardcoded light-only text/background colors */
+.hc-app[data-theme="dark"] .hc-assistant-resource-card.is-show-more {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-parent-thread-attachment {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] button.hc-parent-thread-attachment:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-message-collapse-toggle {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-message-collapse-toggle:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-image-fallback {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-attachment-pill {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] button.hc-user-attachment-pill:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-math-display {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-math-inline {
+  background: var(--hc-surface-soft);
+}
+
+.hc-app[data-theme="dark"] .hc-markdown-details > summary {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-markdown h1,
+.hc-app[data-theme="dark"] .hc-markdown h2,
+.hc-app[data-theme="dark"] .hc-markdown h3,
+.hc-app[data-theme="dark"] .hc-markdown h4,
+.hc-app[data-theme="dark"] .hc-markdown h5,
+.hc-app[data-theme="dark"] .hc-markdown h6 {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-message-actions {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-assistant-end-resource-card.is-button:hover {
+  background: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] button.hc-assistant-review-comment-row:hover,
+.hc-app[data-theme="dark"] button.hc-assistant-review-comment-row:focus-visible,
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle:hover,
+.hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle:focus-visible {
+  background: var(--hc-surface-hover);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-rating-button[aria-pressed="true"] {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-turn-feedback-textarea {
+  /* bg was hardcoded #fff — without this the (now light) text sat on white. */
+  background: var(--hc-surface-main);
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-message-goal-chip {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-message-action-strip {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-message-time {
+  color: var(--hc-text-secondary);
 }

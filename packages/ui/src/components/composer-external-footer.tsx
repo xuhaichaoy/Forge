@@ -21,7 +21,7 @@
 // or similar entries land in `state/commands.ts`, then thread tooltips
 // through `descriptorAcceleratorLabel(commandId)` (already exported by
 // `state/commands.ts`).
-import { ChevronDown, Cpu, Folder, Plus, Search, ShieldCheck } from "lucide-react";
+import { ChevronDown, Folder, Hand, Search, Settings, ShieldAlert, ShieldCheck, ShieldUser, type LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -35,6 +35,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  composerWorkModeLabel,
   projectWorktreeModeOptions,
   type ComposerWorkMode,
   type WorktreeModeOption,
@@ -42,6 +43,9 @@ import {
 import { WorktreeModeMenuItems } from "./worktree-mode-menu";
 // codex: composer-footer-branch-switcher-*.js — chip + dropdown.
 import { ComposerFooterBranchSwitcher } from "./composer-footer-branch-switcher";
+// codex tooltip-CDzchJxN.js — the composer settings chips are wrapped in a styled Tooltip
+// (Codex's intelligence trigger uses `Cn`/`tooltipContent`), replacing the native `title`.
+import { Tooltip } from "./tooltip";
 
 export interface ComposerWorkspaceRootOption {
   root: string;
@@ -51,33 +55,12 @@ export interface ComposerWorkspaceRootOption {
 export interface ComposerExternalFooterProps {
   branch?: string | null;
   cwd?: string | null;
-  model?: string | null;
   workMode?: ComposerWorkMode;
   workModeOptions?: WorktreeModeOption[];
   workspaceRoots?: ComposerWorkspaceRootOption[];
   onWorkspaceRootSelected?: (root: string) => void | Promise<void>;
   onUseExistingFolder?: () => void | Promise<void>;
   onWorkModeChange?: (mode: ComposerWorkMode) => void;
-  approvalPolicy?: unknown;
-  approvalsReviewer?: unknown;
-  reasoningSummary?: unknown;
-  reasoningEffort?: unknown;
-  sandboxMode?: unknown;
-  onOpenPermissions?: (anchor: HTMLElement) => void;
-  /**
-   * Opens or closes the model picker menu anchored at the model chip element.
-   * When omitted the chip is rendered as display-only (existing behaviour).
-   * The chevron next to the model name visually hints that this is
-   * interactive when `onOpenModelPicker` is provided.
-   */
-  onOpenModelPicker?: (anchor: HTMLElement) => void;
-  /**
-   * CODEX-REF: composer-*.js — footer 上的 Reasoning trigger 是独立 chip
-   * 显示当前 effort label ("Low" / "Medium" / "High" / "Extra High")，点击弹出
-   * reasoning-effort popover。HiCodex 把这个 chip 挂在现有 intelligence chip 旁，
-   * 回调由 HiCodexApp 用 setReasoningPickerAnchor 接住。omit 时不渲染（向后兼容）。
-   */
-  onOpenReasoningPicker?: (anchor: HTMLElement) => void;
   /**
    * codex: composer-footer-branch-switcher-*.js — fired after a
    * successful `git checkout` so the host can refresh `Thread.gitBranch` /
@@ -89,60 +72,53 @@ export interface ComposerExternalFooterProps {
    * failures through the dispatch log (caller decides toast vs. inline).
    */
   onBranchSwitchError?: (message: string) => void;
+  /**
+   * codex fp (ExternalFooterSlot): the HOME variant slides the footer in
+   * (y:-100%→0) and tucks it under the composer (`relative z-0 -mt-2`); the
+   * in-thread footer is static. Defaults to "default" (no drawer animation).
+   */
+  variant?: "home" | "default";
 }
 
 export function ComposerExternalFooter({
   branch,
   cwd,
-  model,
   workMode = "local",
   workModeOptions,
   workspaceRoots = [],
   onWorkspaceRootSelected,
   onUseExistingFolder,
   onWorkModeChange,
-  approvalPolicy,
-  approvalsReviewer,
-  reasoningEffort,
-  sandboxMode,
-  onOpenPermissions,
-  onOpenModelPicker,
-  onOpenReasoningPicker,
   onBranchSwitched,
   onBranchSwitchError,
+  variant = "default",
 }: ComposerExternalFooterProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const projectTriggerRef = useRef<HTMLButtonElement | null>(null);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const closeProjectMenu = useCallback(() => setProjectMenuOpen(false), []);
+  // codex: work mode (run location) is a SEPARATE visible footer chip, not buried in
+  // the project menu. Its own trigger + anchored dropdown mirror the project chip.
+  const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
+  const workModeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const workModeMenuRef = useRef<HTMLDivElement | null>(null);
+  const closeWorkModeMenu = useCallback(() => setWorkModeMenuOpen(false), []);
   const branchLabel = formatBranchFooterLabel(branch);
-  const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
-  /*
-   * CODEX-REF: composer-*.js — Reasoning trigger chip 永远渲染（Codex
-   * 即使 modelSettings.reasoningEffort 缺省也显示 default label 触发按钮，
-   * disabled 仅当 models data fetch error / 没拿到 models）。HiCodex 这里
-   * 没有 effort 时回退到 default "medium" (与 Codex/Codex CLI 默认一致)，
-   * 让 chip 始终可见可点击。
-   */
-  const REASONING_LABELS = {
-    none: "None",
-    minimal: "Minimal",
-    low: "Low",
-    medium: "Medium",
-    high: "High",
-    xhigh: "Extra High",
-  } as const;
-  type ReasoningKey = keyof typeof REASONING_LABELS;
-  const REASONING_KEYS: readonly ReasoningKey[] = ["none", "minimal", "low", "medium", "high", "xhigh"];
-  const reasoningEffortNormalized: ReasoningKey = typeof reasoningEffort === "string"
-    && REASONING_KEYS.includes(reasoningEffort.trim().toLowerCase() as ReasoningKey)
-    ? reasoningEffort.trim().toLowerCase() as ReasoningKey
-    : "medium";
-  const reasoningChipLabel = REASONING_LABELS[reasoningEffortNormalized];
-  const permissionsLabel = formatPermissionsFooterLabel({ approvalPolicy, approvalsReviewer, sandboxMode });
-  const permissionsTitle = formatPermissionsFooterTitle({ approvalPolicy, approvalsReviewer, sandboxMode }, permissionsLabel);
   const rootOptions = useMemo(() => dedupeWorkspaceRoots(workspaceRoots), [workspaceRoots]);
+  // codex: the home/below-composer footer-left is a LABELED project-selector chip
+  // (`de` workspace-root dropdown), not a bare "+". Label it with the active root's
+  // name (matched option label, else the cwd basename, else "Project").
+  const projectLabel = useMemo(() => {
+    const matched = rootOptions.find((option) => option.root === cwd);
+    if (matched) return matched.label;
+    if (cwd) {
+      const trimmed = cwd.replace(/[\\/]+$/u, "");
+      const base = trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
+      if (base.length > 0) return base;
+    }
+    return "Project";
+  }, [cwd, rootOptions]);
   const resolvedWorkModeOptions = useMemo(
     () => workModeOptions ?? projectWorktreeModeOptions({ mode: workMode }),
     [workMode, workModeOptions],
@@ -152,6 +128,7 @@ export function ComposerExternalFooter({
     [projectSearch, rootOptions],
   );
   useAnchoredMenuDismiss(projectMenuOpen, projectTriggerRef, projectMenuRef, closeProjectMenu);
+  useAnchoredMenuDismiss(workModeMenuOpen, workModeTriggerRef, workModeMenuRef, closeWorkModeMenu);
 
   function selectWorkspaceRoot(root: string) {
     setProjectMenuOpen(false);
@@ -180,7 +157,7 @@ export function ComposerExternalFooter({
     //   </div>
     // The send button + mic live in composer.tsx for HiCodex, so the actions
     // cluster slot in this strip is intentionally empty here.
-    <div className="hc-composer-external-footer" aria-label="Composer context">
+    <div className="hc-composer-external-footer" data-variant={variant} aria-label="Composer context">
       {/*
        * CODEX-REF: composer-*.js — left column hosts the
        * `+` add-menu trigger followed by the permissions chip (Codex packs
@@ -191,7 +168,7 @@ export function ComposerExternalFooter({
           <button
             ref={projectTriggerRef}
             type="button"
-            className="hc-composer-footer-chip hc-composer-footer-add-menu"
+            className="hc-composer-footer-chip hc-composer-footer-project-chip"
             title="Project and work mode"
             aria-label="Project and work mode"
             aria-haspopup="menu"
@@ -199,7 +176,10 @@ export function ComposerExternalFooter({
             aria-controls={projectMenuOpen ? "hc-composer-project-menu" : undefined}
             onClick={() => setProjectMenuOpen((value) => !value)}
           >
-            <Plus size={15} />
+            {/* codex: labeled project-selector chip (folder + project name + chevron), not a bare "+". */}
+            <Folder size={14} />
+            <span className="hc-composer-footer-chip-label">{projectLabel}</span>
+            <ChevronDown size={14} />
           </button>
           {projectMenuOpen && (
             <ProjectMenuPortal anchor={projectTriggerRef.current}>
@@ -252,36 +232,44 @@ export function ComposerExternalFooter({
                     </button>
                   </>
                 )}
-                <div className="hc-thread-menu-separator" />
+              </div>
+            </ProjectMenuPortal>
+          )}
+        </div>
+        {/* codex: work mode (run location) is its own visible chip beside the project chip. */}
+        <div className="hc-composer-footer-workmode">
+          <button
+            ref={workModeTriggerRef}
+            type="button"
+            className="hc-composer-footer-chip hc-composer-footer-workmode-chip"
+            title="Work mode"
+            aria-label="Work mode"
+            aria-haspopup="menu"
+            aria-expanded={workModeMenuOpen}
+            onClick={() => setWorkModeMenuOpen((value) => !value)}
+          >
+            <span className="hc-composer-footer-chip-label">{composerWorkModeLabel(workMode)}</span>
+            <ChevronDown size={14} />
+          </button>
+          {workModeMenuOpen && (
+            <ProjectMenuPortal anchor={workModeTriggerRef.current}>
+              <div
+                ref={workModeMenuRef}
+                className="hc-thread-menu hc-composer-project-menu hc-app-popover-menu"
+                role="menu"
+                data-state="open"
+              >
                 <div className="hc-composer-project-menu-title" role="presentation">Work mode</div>
                 <WorktreeModeMenuItems
                   mode={workMode}
                   options={resolvedWorkModeOptions}
                   onModeChange={onWorkModeChange}
-                  onClose={closeProjectMenu}
+                  onClose={closeWorkModeMenu}
                 />
               </div>
             </ProjectMenuPortal>
           )}
         </div>
-        {/*
-         * CODEX-REF: composer-*.js — Codex renders the
-         * permissions dropdown immediately after the `+` button inside the
-         * left grid cell, so the trigger sits on the same baseline as the add
-         * menu.
-         */}
-        <button
-          type="button"
-          className="hc-composer-footer-chip hc-composer-footer-permissions"
-          title={onOpenPermissions ? "Change permissions" : permissionsTitle}
-          data-chip="permissions"
-          data-interactive={onOpenPermissions ? "true" : undefined}
-          onClick={onOpenPermissions ? (event) => onOpenPermissions(event.currentTarget) : undefined}
-        >
-          <ShieldCheck size={14} />
-          <span className="hc-composer-footer-chip-label">{permissionsLabel}</span>
-          <ChevronDown size={13} />
-        </button>
       </div>
       {/*
        * codex: composer-footer-branch-switcher-*.js — chip + dropdown.
@@ -304,56 +292,125 @@ export function ComposerExternalFooter({
           />
         )}
       </div>
-      {/*
-       * CODEX-REF: composer-*.js — right grid cell:
-       *   <div className="flex w-full min-w-0 items-center justify-end gap-2">
-       *     <div className="flex min-w-0 flex-1 justify-end"> model/context </div>
-       *     <div className="flex shrink-0 items-center gap-2"> mic + send </div>
-       *   </div>
-       * The mic + send cluster is rendered by composer.tsx in HiCodex, so the
-       * `actions` slot here is intentionally empty.
-       */}
-      <div className="hc-composer-external-footer-context" aria-label="Composer runtime context">
-        <div className="hc-composer-external-footer-context-flex">
-          {intelligenceLabel && (
-            <button
-              type="button"
-              className="hc-composer-footer-chip hc-composer-footer-model hc-composer-footer-intelligence"
-              title={onOpenModelPicker ? "Select model" : intelligenceLabel}
-              data-chip="intelligence"
-              data-interactive={onOpenModelPicker ? "true" : undefined}
-              onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
-            >
-              <Cpu size={14} />
-              <span className="hc-composer-footer-chip-label">{intelligenceLabel}</span>
-              <ChevronDown size={13} />
-            </button>
-          )}
-          {/*
-           * CODEX-REF: composer-*.js — Reasoning effort trigger chip
-           * （reasoning-effort popover anchor）。Codex 截图 dropdown 选项
-           * Low/Medium/High/Extra High，trigger button 显示当前 effort label。
-           * HiCodex 用独立 chip 与 model chip 并列；点击 onOpenReasoningPicker(anchor)
-           * 由 HiCodexApp 持有 setReasoningPickerAnchor 接住。
-           */}
-          {reasoningChipLabel && (
-            <button
-              type="button"
-              className="hc-composer-footer-chip hc-composer-footer-reasoning"
-              title={onOpenReasoningPicker ? "Set reasoning effort" : `Reasoning: ${reasoningChipLabel}`}
-              data-chip="reasoning"
-              data-codex-intelligence-trigger
-              data-selected-reasoning-effort={reasoningEffortNormalized ?? undefined}
-              data-interactive={onOpenReasoningPicker ? "true" : undefined}
-              onClick={onOpenReasoningPicker ? (event) => onOpenReasoningPicker(event.currentTarget) : undefined}
-            >
-              <span className="hc-composer-footer-chip-label">{reasoningChipLabel}</span>
-              {onOpenReasoningPicker && <ChevronDown size={13} />}
-            </button>
-          )}
-        </div>
-        <div className="hc-composer-external-footer-actions" aria-hidden="true" />
-      </div>
+    </div>
+  );
+}
+
+/*
+ * CODEX-REF: composer-*.js — the model-intelligence trigger
+ * (`data-codex-intelligence-trigger`), reasoning-effort chip and permissions
+ * chip render INSIDE the composer bubble footer (`composer-footer` grid), not
+ * in the below-bubble strip. HiCodex groups them here so the Composer can mount
+ * the cluster in its in-bubble footer-middle slot; branch + work-mode stay in
+ * the external below-bubble footer.
+ */
+const REASONING_LABELS = {
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+} as const;
+type ReasoningKey = keyof typeof REASONING_LABELS;
+const REASONING_KEYS: readonly ReasoningKey[] = ["none", "minimal", "low", "medium", "high", "xhigh"];
+
+// codex composer-zFOdryLS.js `Xp` — the permissions CHIP trigger renders a PER-MODE icon
+// alongside the label (icon `he` + label `ge` together in each branch). The four Codex
+// glyphs: full-access = shield-exclamation (`Qc`), guardian-approvals = shield-user (`Gp`),
+// custom = settings-cog, default = raised-hand (`Wp`) → closest lucide equivalents. Keyed
+// by the label `formatPermissionsFooterLabel` returns — note the guardian CHIP label is
+// `guardianApproval.triggerLabel` = "Approve for me" (the "Auto-review" string is the
+// settings/`agentMode` label, used in permissions-mode.ts, not on the chip).
+const PERMISSIONS_FOOTER_ICON: Record<string, LucideIcon> = {
+  "Full access": ShieldAlert,
+  "Approve for me": ShieldUser,
+  "Custom": Settings,
+  "Ask for approval": Hand,
+};
+
+export interface ComposerSettingsChipsProps {
+  model?: string | null;
+  approvalPolicy?: unknown;
+  approvalsReviewer?: unknown;
+  reasoningEffort?: unknown;
+  sandboxMode?: unknown;
+  onOpenPermissions?: (anchor: HTMLElement) => void;
+  onOpenModelPicker?: (anchor: HTMLElement) => void;
+  onOpenReasoningPicker?: (anchor: HTMLElement) => void;
+}
+
+export function ComposerSettingsChips({
+  model,
+  approvalPolicy,
+  approvalsReviewer,
+  reasoningEffort,
+  sandboxMode,
+  onOpenPermissions,
+  onOpenModelPicker,
+  onOpenReasoningPicker,
+}: ComposerSettingsChipsProps) {
+  const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
+  const reasoningEffortNormalized: ReasoningKey = typeof reasoningEffort === "string"
+    && REASONING_KEYS.includes(reasoningEffort.trim().toLowerCase() as ReasoningKey)
+    ? (reasoningEffort.trim().toLowerCase() as ReasoningKey)
+    : "medium";
+  const reasoningChipLabel = REASONING_LABELS[reasoningEffortNormalized];
+  const permissionsLabel = formatPermissionsFooterLabel({ approvalPolicy, approvalsReviewer, sandboxMode });
+  const permissionsTitle = formatPermissionsFooterTitle({ approvalPolicy, approvalsReviewer, sandboxMode }, permissionsLabel);
+  const PermissionsIcon = PERMISSIONS_FOOTER_ICON[permissionsLabel] ?? ShieldCheck;
+  return (
+    <div className="hc-composer-settings-chips">
+      <Tooltip content={onOpenPermissions ? "Change permissions" : permissionsTitle}>
+        <button
+          type="button"
+          className="hc-composer-footer-chip hc-composer-footer-permissions"
+          data-chip="permissions"
+          data-interactive={onOpenPermissions ? "true" : undefined}
+          onClick={onOpenPermissions ? (event) => onOpenPermissions(event.currentTarget) : undefined}
+        >
+          <PermissionsIcon size={14} />
+          <span className="hc-composer-footer-chip-label">{permissionsLabel}</span>
+          <ChevronDown size={14} />
+        </button>
+      </Tooltip>
+      {intelligenceLabel && (
+        <Tooltip content={onOpenModelPicker ? "Select model" : intelligenceLabel}>
+          <button
+            type="button"
+            className="hc-composer-footer-chip hc-composer-footer-model hc-composer-footer-intelligence"
+            data-chip="intelligence"
+            data-interactive={onOpenModelPicker ? "true" : undefined}
+            onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
+          >
+            {/*
+             * codex composer-zFOdryLS.js `Np` (the intelligence trigger): in label mode
+             * (hideLabel=false) the children are [null, model+reasoning label, chevron] — NO
+             * leading icon. The leading icon only appears in the compact hideLabel variant
+             * (and even then it's an effort/model glyph, not a static Cpu). HiCodex always
+             * shows the label, so it matches Codex's label mode: label + chevron, no icon.
+             */}
+            <span className="hc-composer-footer-chip-label">{intelligenceLabel}</span>
+            <ChevronDown size={14} />
+          </button>
+        </Tooltip>
+      )}
+      {reasoningChipLabel && (
+        <Tooltip content={onOpenReasoningPicker ? "Set reasoning effort" : `Reasoning: ${reasoningChipLabel}`}>
+          <button
+            type="button"
+            className="hc-composer-footer-chip hc-composer-footer-reasoning"
+            data-chip="reasoning"
+            data-codex-intelligence-trigger
+            data-selected-reasoning-effort={reasoningEffortNormalized ?? undefined}
+            data-interactive={onOpenReasoningPicker ? "true" : undefined}
+            onClick={onOpenReasoningPicker ? (event) => onOpenReasoningPicker(event.currentTarget) : undefined}
+          >
+            <span className="hc-composer-footer-chip-label">{reasoningChipLabel}</span>
+            {onOpenReasoningPicker && <ChevronDown size={14} />}
+          </button>
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -517,20 +574,24 @@ export function formatPermissionsFooterLabel(input: {
   const approvalPolicy = input.approvalPolicy ?? "on-request";
   const approvalsReviewer = stringValue(input.approvalsReviewer) ?? "user";
   if (sandboxMode === "danger-full-access" && approvalPolicy === "never") return "Full access";
-  if (isAutoReviewPolicy(approvalsReviewer)) return "Auto-review";
+  // codex composer-zFOdryLS.js Xp — the guardian CHIP trigger uses `guardianApproval.triggerLabel`
+  // ("Approve for me"), not the `shortLabel`/`agentMode` "Auto-review" (that's the settings label).
+  if (isAutoReviewPolicy(approvalsReviewer)) return "Approve for me";
+  // codex composer.permissionsDropdown.default.shortLabel — the footer CHIP renders the
+  // mode's *shortLabel* (verified in composer-zFOdryLS.js: the chip trigger uses
+  // `<mode>.shortLabel`, not `.label`). Codex's default approvals mode is the catch-all
+  // for any policy that is not full-access / guardian / config.toml-custom, and its
+  // chip shortLabel is "Ask for approval". Both the granular-object policy form and the
+  // legacy on-request string are this default mode — Codex has NO "Granular" mode and
+  // never shows "Default permissions" on the chip (that string is the dropdown `.label`).
   if (
-    sandboxMode === "workspace-write"
-    && isGranularApprovalPolicy(approvalPolicy)
-    && approvalsReviewer === "user"
+    approvalsReviewer === "user"
+    && (
+      (sandboxMode === "workspace-write" && isGranularApprovalPolicy(approvalPolicy))
+      || ((sandboxMode === "workspace-write" || sandboxMode === "read-only") && approvalPolicy === "on-request")
+    )
   ) {
-    return "Granular";
-  }
-  if (
-    (sandboxMode === "workspace-write" || sandboxMode === "read-only")
-    && approvalPolicy === "on-request"
-    && approvalsReviewer === "user"
-  ) {
-    return "Default permissions";
+    return "Ask for approval";
   }
   return "Custom";
 }
@@ -589,7 +650,11 @@ function isGranularApprovalPolicy(value: unknown): boolean {
 }
 
 function isAutoReviewPolicy(value: string): boolean {
-  return value === "guardian-approvals" || value === "auto-review" || value === "auto_review";
+  // codex src-*.js `Md()`: the guardian / auto-review reviewer values are
+  // "auto_review" | "guardian_subagent" (the latter was missing here, so a real
+  // guardian config never showed the "Auto-review" chip). Legacy spellings kept for safety.
+  return value === "auto_review" || value === "guardian_subagent"
+    || value === "guardian-approvals" || value === "auto-review";
 }
 
 function stringValue(value: unknown): string | null {

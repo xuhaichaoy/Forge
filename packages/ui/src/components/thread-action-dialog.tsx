@@ -52,11 +52,14 @@ export function ThreadActionDialog({
               <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
             </header>
             <div className="hc-thread-dialog-body">
+              {/* codex sidebarElectron.renameThreadDialogSubtitle */}
+              <p className="hc-thread-dialog-subtitle">Keep it short and recognizable</p>
               <label>
                 Name
                 <input
                   autoFocus
                   value={draft}
+                  placeholder="Add a title…"
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Escape") onClose();
@@ -65,7 +68,7 @@ export function ThreadActionDialog({
               </label>
             </div>
             <footer>
-              <button type="button" className="hc-mini-button" onClick={onClose}>Cancel</button>
+              <button type="button" className="hc-mini-button ghost" onClick={onClose}>Cancel</button>
               <button type="submit" className="hc-mini-button accept" disabled={!draft.trim()}>Save</button>
             </footer>
           </form>
@@ -79,7 +82,7 @@ export function ThreadActionDialog({
               <span>You can find it later in your archived chats.</span>
             </div>
             <footer>
-              <button type="button" className="hc-mini-button" onClick={onClose}>Cancel</button>
+              <button type="button" className="hc-mini-button ghost" onClick={onClose}>Cancel</button>
               <button type="button" className="hc-mini-button decline" autoFocus onClick={() => void onArchive(action.thread)}>
                 Archive
               </button>

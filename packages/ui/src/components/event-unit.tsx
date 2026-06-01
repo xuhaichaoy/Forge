@@ -2,7 +2,9 @@ import {
   ArrowRight,
   Brain,
   Check,
+  ChevronDown,
   ChevronRight,
+  CircleUserRound,
   Cloud,
   Clock,
   FileSearch,
@@ -13,6 +15,7 @@ import {
   LoaderCircle,
   Network,
   PencilLine,
+  ShieldAlert,
   Sparkles,
   Terminal,
   TriangleAlert,
@@ -20,6 +23,9 @@ import {
 } from "lucide-react";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { stringField } from "../lib/format";
+import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+
+type FormatMessage = HiCodexIntlContextValue["formatMessage"];
 import {
   type ConversationRenderUnit,
   type EventFormat,
@@ -72,6 +78,7 @@ function ToolActivityViewInner({
   unit,
   onMcpAppHostCall,
   onReadMcpResource,
+  onOpenFileReference,
   onOpenThreadId,
   threadId = null,
 }: ToolActivityViewProps) {
@@ -120,6 +127,7 @@ function ToolActivityViewInner({
       unit={unit}
       onMcpAppHostCall={onMcpAppHostCall}
       onReadMcpResource={onReadMcpResource}
+      onOpenFileReference={onOpenFileReference}
       onOpenThreadId={onOpenThreadId}
       threadId={threadId}
     />
@@ -337,12 +345,14 @@ function GenericToolActivityView({
   unit,
   onMcpAppHostCall,
   onReadMcpResource,
+  onOpenFileReference,
   onOpenThreadId,
   threadId,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
+  onOpenFileReference?: (reference: FileReference) => void;
   onOpenThreadId?: OpenThreadHandler;
   threadId: string | null;
 }) {
@@ -478,6 +488,7 @@ function GenericToolActivityView({
               item={item}
               key={item.id}
               onMcpAppHostCall={onMcpAppHostCall}
+              onOpenFileReference={onOpenFileReference}
               onOpenThreadId={onOpenThreadId}
               onReadMcpResource={onReadMcpResource}
               threadId={threadId}
@@ -571,7 +582,8 @@ export function workedForAggregateRows(
   if (counts.webSearches > 0) {
     rows.push({
       key: "webSearch.completed",
-      text: actionCount(inProgress ? "Searching the web" : "Searched the web", counts.webSearches, "time", "times"),
+      // codex: completed = "Searched web" (no "the"); in-progress = "Searching the web".
+      text: actionCount(inProgress ? "Searching the web" : "Searched web", counts.webSearches, "time", "times"),
     });
   }
 
@@ -876,11 +888,19 @@ function workedForActivityItem(items: Extract<ConversationRenderUnit, { kind: "t
   return items.find((item) => item.type === "worked-for" || item.type === "workedFor") as Record<string, unknown> | undefined;
 }
 
+// codex `zu`/`Bu`: floor to whole seconds (not round) + hours tier, zero units trimmed.
 function formatWorkedDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1_000));
+  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    const parts = [`${hours}h`];
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0) parts.push(`${seconds}s`);
+    return parts.join(" ");
+  }
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
@@ -1043,7 +1063,7 @@ export function ToolBlock({
     const summaryContent = (
       <>
         <span className="hc-error-event-text">{value || label}</span>
-        {hasDetails && <ChevronRight aria-hidden className={streamErrorExpanded ? "is-open" : ""} size={14} />}
+        {hasDetails && <ChevronDown aria-hidden className={streamErrorExpanded ? "is-open" : ""} size={14} />}
       </>
     );
     return (
@@ -1113,9 +1133,9 @@ export function ToolBlock({
 
 function statusDividerIcon(type: string) {
   const className = "hc-status-event-kind-icon";
-  if (type === "auto-review-interruption-warning") return <TriangleAlert className={className} size={14} aria-hidden="true" />;
-  if (type === "model-changed") return <Brain className={className} size={14} aria-hidden="true" />;
-  if (type === "personality-changed") return <Sparkles className={className} size={14} aria-hidden="true" />;
+  if (type === "auto-review-interruption-warning") return <ShieldAlert className={className} size={16} aria-hidden="true" />;
+  if (type === "model-changed") return <Brain className={className} size={16} aria-hidden="true" />;
+  if (type === "personality-changed") return <CircleUserRound className={className} size={16} aria-hidden="true" />;
   if (type === "remote-task-created") return <Cloud className={className} size={14} aria-hidden="true" />;
   if (type === "forked-from-conversation") return <GitFork className={className} size={14} aria-hidden="true" />;
   return null;
@@ -1363,6 +1383,7 @@ export function TurnDiffBlock({
   patchActionInFlight?: boolean;
   value: string;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const model = turnDiffViewModel(value);
   // codex: `Pv` local state `y` — show only the first `Av` files until expanded.
   const [filesExpanded, setFilesExpanded] = useState(false);
@@ -1389,11 +1410,11 @@ export function TurnDiffBlock({
       : "undo";
 
   const singleFileName = model.fileCount === 1 && model.files.length === 1 ? model.files[0]!.path : null;
-  const titleLabel = formatTurnDiffFileCount(model.fileCount, singleFileName);
+  const titleLabel = formatTurnDiffFileCount(model.fileCount, singleFileName, formatMessage);
   const singleFileDetailsLabel = singleFileName == null ? null : "Details";
 
   if (inProgress) {
-    const progressTitleLabel = formatTurnDiffFilesChanged(model.fileCount);
+    const progressTitleLabel = formatTurnDiffFilesChanged(model.fileCount, formatMessage);
     return (
       <article
         className="hc-tool-block activity hc-turn-diff-progress"
@@ -1411,8 +1432,11 @@ export function TurnDiffBlock({
               className="hc-turn-diff-review"
               type="button"
               onClick={() => onOpenDiff()}
-              title="Review"
-              aria-label="Review changed files"
+              title={formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
+              aria-label={formatMessage({
+                id: "codex.unifiedDiff.reviewChangedFiles",
+                defaultMessage: "Review changed files",
+              })}
             >
               {/*
                * Codex Desktop i18n (local-conversation-thread-*.js):
@@ -1422,7 +1446,9 @@ export function TurnDiffBlock({
                *   codex.unifiedDiff.reviewChangedFiles  = "Review changed files" (aria-label)
                *   codex.unifiedDiff.reviewChangesHover  = "Review changes" (hover/header subtitle)
                */}
-              <span className="hc-turn-diff-review-full">Review here</span>
+              <span className="hc-turn-diff-review-full">
+                {formatMessage({ id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review here" })}
+              </span>
               <span className="hc-turn-diff-review-short">Review</span>
             </button>
           )}
@@ -1457,7 +1483,10 @@ export function TurnDiffBlock({
           <button
             type="button"
             className="hc-turn-diff-header-overlay"
-            aria-label="Review changed files"
+            aria-label={formatMessage({
+              id: "codex.unifiedDiff.reviewChangedFiles",
+              defaultMessage: "Review changed files",
+            })}
             onClick={handleHeaderReview}
           />
         )}
@@ -1477,7 +1506,7 @@ export function TurnDiffBlock({
             <TurnDiffStats added={model.linesAdded} removed={model.linesRemoved} />
           </span>
           <span className="hc-turn-diff-subtitle turn-diff-hover-subtitle" aria-hidden="true">
-            Review changes
+            {formatMessage({ id: "codex.unifiedDiff.reviewChangesHover", defaultMessage: "Review changes" })}
             <ArrowRight aria-hidden className="hc-turn-diff-review-arrow" size={12} />
           </span>
         </div>
@@ -1529,8 +1558,12 @@ export function TurnDiffBlock({
              * "Review changes" wording lives only on the hover subtitle above.
              * Re-verified vs Codex Desktop v26.519.81530.
              */}
-            <span className="hc-turn-diff-review-full">Review</span>
-            <span className="hc-turn-diff-review-short">Review</span>
+            <span className="hc-turn-diff-review-full">
+              {formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
+            </span>
+            <span className="hc-turn-diff-review-short">
+              {formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
+            </span>
           </button>
         )}
       </div>
@@ -1560,7 +1593,7 @@ export function TurnDiffBlock({
                 handlePerFileReview(file.path);
               }}
             >
-              Review
+              {formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
             </span>
           ) : null;
           if (tooLarge) {
@@ -1627,7 +1660,15 @@ export function TurnDiffBlock({
           aria-expanded={false}
           onClick={() => setFilesExpanded(true)}
         >
-          <span>{remaining === 1 ? "Show 1 more file" : `Show ${remaining} more files`}</span>
+          <span>
+            {formatMessage(
+              {
+                id: "codex.unifiedDiff.showMoreFiles",
+                defaultMessage: "{count, plural, one {Show # more file} other {Show # more files}}",
+              },
+              { count: remaining },
+            )}
+          </span>
           <ChevronRight aria-hidden size={12} className="hc-turn-diff-expand-files-chevron" />
         </button>
       ) : filesExpanded && model.files.length > TURN_DIFF_COLLAPSE_THRESHOLD ? (
@@ -1637,7 +1678,7 @@ export function TurnDiffBlock({
           aria-expanded={true}
           onClick={() => setFilesExpanded(false)}
         >
-          <span>Collapse files</span>
+          <span>{formatMessage({ id: "codex.unifiedDiff.collapseFiles", defaultMessage: "Collapse files" })}</span>
           <ChevronRight
             aria-hidden
             size={12}
@@ -1704,19 +1745,45 @@ function TurnDiffStats({ added, removed }: { added: number; removed: number }) {
  * supplied, returns the file-specific label. Otherwise falls back to the
  * plural-aware count label.
  */
-export function formatTurnDiffFileCount(fileCount: number, singleFileName?: string | null): string {
-  if (fileCount === 1) {
-    if (typeof singleFileName === "string" && singleFileName.trim().length > 0) {
-      // codex: codex.unifiedDiff.editedFile defaultMessage="Edited {filename}"
-      return `Edited ${turnDiffBasename(singleFileName)}`;
-    }
-    return "Edited 1 file";
+export function formatTurnDiffFileCount(
+  fileCount: number,
+  singleFileName?: string | null,
+  formatMessage?: FormatMessage,
+): string {
+  if (fileCount === 1 && typeof singleFileName === "string" && singleFileName.trim().length > 0) {
+    // codex: codex.unifiedDiff.editedFile defaultMessage="Edited {filename}"
+    const filename = turnDiffBasename(singleFileName);
+    return formatMessage
+      ? formatMessage({ id: "codex.unifiedDiff.editedFile", defaultMessage: "Edited {filename}" }, { filename })
+      : `Edited ${filename}`;
   }
-  return `Edited ${fileCount} files`;
+  // codex: codex.unifiedDiff.editedFiles plural defaultMessage="{fileCount, plural, one {Edited # file} other {Edited # files}}"
+  return formatMessage
+    ? formatMessage(
+        {
+          id: "codex.unifiedDiff.editedFiles",
+          defaultMessage: "{fileCount, plural, one {Edited # file} other {Edited # files}}",
+        },
+        { fileCount },
+      )
+    : fileCount === 1
+      ? "Edited 1 file"
+      : `Edited ${fileCount} files`;
 }
 
-export function formatTurnDiffFilesChanged(fileCount: number): string {
-  return fileCount === 1 ? "1 file changed" : `${fileCount} files changed`;
+export function formatTurnDiffFilesChanged(fileCount: number, formatMessage?: FormatMessage): string {
+  // codex: codex.unifiedDiff.filesChanged plural defaultMessage="{fileCount, plural, one {# file changed} other {# files changed}}"
+  return formatMessage
+    ? formatMessage(
+        {
+          id: "codex.unifiedDiff.filesChanged",
+          defaultMessage: "{fileCount, plural, one {# file changed} other {# files changed}}",
+        },
+        { fileCount },
+      )
+    : fileCount === 1
+      ? "1 file changed"
+      : `${fileCount} files changed`;
 }
 
 function turnDiffBasename(path: string): string {

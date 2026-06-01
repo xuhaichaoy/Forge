@@ -77,6 +77,8 @@ export interface HostGitStatus {
   changedFiles: HostGitChangedFile[];
   hasDiff: boolean;
   diff: string;
+  // codex thread-env-icon — true when the cwd is a LINKED git worktree.
+  isWorktree?: boolean;
 }
 
 export interface CreatePendingWorktreeRequest {
@@ -337,6 +339,22 @@ export async function readInstallationState(
 
 export function openFileReference(path: string, line?: number | null): Promise<void> {
   return invoke("host_open_file_reference", { path, line });
+}
+
+// codex workspace-file-context-menu-*.js `workspace-file-reveal-path` — reveal a
+// file/folder in the OS file manager (Finder / Explorer / file manager).
+export function revealPath(path: string): Promise<void> {
+  return invoke("host_reveal_path", { path });
+}
+
+// codex threadHeader.openInNewWindow — open the thread in a second app window.
+export function openThreadWindow(threadId: string): Promise<void> {
+  return invoke("host_open_thread_window", { threadId });
+}
+
+// codex newWindow (⌘⇧N) — open a fresh app window; the new window starts a new chat on startup.
+export function openNewWindow(): Promise<void> {
+  return invoke("host_open_new_window");
 }
 
 export async function openExternalUrl(url: string): Promise<void> {

@@ -16,8 +16,10 @@
  *   on the selection callback (workspace-directory-tree).
  */
 import { ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { resolveFileIcon, type FileIconFamily } from "../lib/file-icon-resolver";
+import { osRevealLabel } from "../state/command-registry";
+import { ContextMenu, type ContextMenuItem } from "./context-menu";
 import type { WorkspaceDirEntry } from "../lib/tauri-host";
 
 export interface FileTreeProps {
@@ -29,23 +31,107 @@ export interface FileTreeProps {
   selectedPath: string | null;
   onToggle: (path: string) => void;
   onSelect: (entry: WorkspaceDirEntry) => void;
+  /** codex workspace-file-context-menu `workspace-file-reveal-path` — reveal in OS file manager. Omitted in non-Tauri/test. */
+  onRevealEntry?: (entry: WorkspaceDirEntry) => void;
+  /** codex workspace-file-context-menu `workspace-file-copy-contents` — copy file contents (files only). */
+  onCopyEntryContents?: (entry: WorkspaceDirEntry) => void;
   loadingPaths?: Set<string>;
   /** When set, render the matching subset only (search results mode). */
   searchMatches?: WorkspaceDirEntry[] | null;
 }
 
+type FileTreeContextMenuOpener = (event: MouseEvent, entry: WorkspaceDirEntry) => void;
+const FileTreeContextMenuContext = createContext<FileTreeContextMenuOpener | null>(null);
+
 export function FileTree(props: FileTreeProps) {
+  // codex context-menu-*.js — file rows open a right-click context menu (the file-tree TODO).
+  const [menu, setMenu] = useState<{ entry: WorkspaceDirEntry; x: number; y: number } | null>(null);
+  const openMenu = useCallback<FileTreeContextMenuOpener>((event, entry) => {
+    event.preventDefault();
+    setMenu({ entry, x: event.clientX, y: event.clientY });
+  }, []);
+  const closeMenu = useCallback(() => setMenu(null), []);
+
   // codex: workspace-directory-tree — search mode renders a flat result list; browse mode renders the tree.
-  if (props.searchMatches != null) {
-    return <SearchResultsList entries={props.searchMatches} {...props} />;
-  }
+  const body = props.searchMatches != null
+    ? <SearchResultsList entries={props.searchMatches} {...props} />
+    : (
+        <div className="hc-file-tree" role="tree">
+          {props.rootEntries.map((entry) => (
+            <FileTreeNode key={entry.path} entry={entry} depth={0} {...props} />
+          ))}
+        </div>
+      );
+
   return (
-    <div className="hc-file-tree" role="tree">
-      {props.rootEntries.map((entry) => (
-        <FileTreeNode key={entry.path} entry={entry} depth={0} {...props} />
-      ))}
-    </div>
+    <FileTreeContextMenuContext.Provider value={openMenu}>
+      {body}
+      {menu != null && (
+        <ContextMenu
+          items={fileTreeContextMenuItems(menu.entry, {
+            onSelect: props.onSelect,
+            onRevealEntry: props.onRevealEntry,
+            onCopyEntryContents: props.onCopyEntryContents,
+          })}
+          x={menu.x}
+          y={menu.y}
+          onClose={closeMenu}
+        />
+      )}
+    </FileTreeContextMenuContext.Provider>
   );
+}
+
+/*
+ * codex workspace-file-context-menu-ZTEfnsSe.js — the rendered menu (item ids
+ * `workspace-file-*`) is, in order: [open target(s)] / separator / copy-path /
+ * copy-contents / reveal-path. Two fidelity points extracted from the chunk:
+ *   1. Only the "Open with" app-target rows carry an icon (`icon:e.icon`); the
+ *      copy-path / copy-contents / reveal-path rows have NO leading icon — so
+ *      HiCodex renders them icon-less to match (it previously added icons).
+ *   2. The reveal row's label is platform-switched by `C(platform)`:
+ *      darwin→"Reveal in Finder", win32→"Open in Explorer", else→"Open in File Manager".
+ * Codex's "Open in {app}" targets need OS app-discovery HiCodex lacks; HiCodex
+ * substitutes its in-app file viewer under Codex's own `viewFile` label ("Open file").
+ */
+function fileTreeContextMenuItems(
+  entry: WorkspaceDirEntry,
+  handlers: {
+    onSelect: (entry: WorkspaceDirEntry) => void;
+    onRevealEntry?: (entry: WorkspaceDirEntry) => void;
+    onCopyEntryContents?: (entry: WorkspaceDirEntry) => void;
+  },
+): ContextMenuItem[] {
+  const isFile = entry.type !== "directory";
+  const items: ContextMenuItem[] = [];
+  // Open section — in-app viewer under Codex's `viewFile` ("Open file") label (files only).
+  if (isFile) {
+    items.push({ id: "open-file", label: "Open file", onSelect: () => handlers.onSelect(entry) });
+    items.push({ id: "open-separator", separator: true });
+  }
+  // codex `workspace-file-copy-path` — copies the (workspace-relative) path.
+  items.push({
+    id: "copy-path",
+    label: "Copy path",
+    onSelect: () => {
+      void navigator.clipboard?.writeText(entry.path);
+    },
+  });
+  // codex `workspace-file-copy-contents` — reads + copies the file's text (files only).
+  if (isFile && handlers.onCopyEntryContents != null) {
+    const onCopyEntryContents = handlers.onCopyEntryContents;
+    items.push({
+      id: "copy-contents",
+      label: "Copy file contents",
+      onSelect: () => onCopyEntryContents(entry),
+    });
+  }
+  // codex `workspace-file-reveal-path` — reveal in the OS file manager.
+  if (handlers.onRevealEntry != null) {
+    const onRevealEntry = handlers.onRevealEntry;
+    items.push({ id: "reveal-path", label: osRevealLabel(), onSelect: () => onRevealEntry(entry) });
+  }
+  return items;
 }
 
 interface FileTreeNodeProps extends FileTreeProps {
@@ -151,6 +237,7 @@ function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, 
     () => resolveFileIcon(entry.name, entry.type === "directory", isExpanded),
     [entry.name, entry.type, isExpanded],
   );
+  const openContextMenu = useContext(FileTreeContextMenuContext);
   return (
     <button
       type="button"
@@ -159,6 +246,7 @@ function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, 
       data-selected={isSelected || undefined}
       data-loading={isLoading || undefined}
       onClick={onClick}
+      onContextMenu={openContextMenu ? (event) => openContextMenu(event, entry) : undefined}
     >
       <span className="hc-file-tree-indent" aria-hidden="true">
         {/* codex: workspace-directory-tree indent — width derived from `depth`. */}

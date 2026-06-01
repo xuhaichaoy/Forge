@@ -120,10 +120,18 @@ function useElapsedMs(startedAtMs: number | null, tick: boolean): number {
   return Math.max(now - startedAtMs, 0);
 }
 
+// codex `zu`/`Bu`: floor to whole seconds (not round) + hours tier, zero units trimmed.
 function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.round(ms / 1_000));
+  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    const parts = [`${hours}h`];
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0) parts.push(`${seconds}s`);
+    return parts.join(" ");
+  }
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }

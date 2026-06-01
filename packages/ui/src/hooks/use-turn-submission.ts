@@ -167,7 +167,7 @@ export function useTurnSubmission({
         return;
       }
       if (composerHasImageAttachments(message.attachments) && !activeModelSupportsImageInput) {
-        const reason = "Current model does not declare image input support";
+        const reason = "Remove images or switch models to send this message";
         updateQueuedFollowUps(threadId, (queue) => updateQueuedFollowUpStatus(queue, message.id, "paused", reason));
         dispatch({ type: "log", text: reason, level: "warn" });
         return;
@@ -252,7 +252,7 @@ export function useTurnSubmission({
       return;
     }
     if (composerHasImageAttachments(draftAttachments) && !activeModelSupportsImageInput) {
-      dispatch({ type: "log", text: "Current model does not declare image input support", level: "warn" });
+      dispatch({ type: "log", text: "Remove images or switch models to send this message", level: "warn" });
       return;
     }
     const sendAttachments = await attachmentsWithDataImagePreviews(draftAttachments);

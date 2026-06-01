@@ -1,6 +1,7 @@
 import { humanizeRrule } from "../src/lib/rrule-format";
 import {
   AUTOMATIONS_FUTURE_HOOKS,
+  focusedAutomationSchedule,
   projectActiveThreadAutomation,
   projectHeartbeatAutomationEligibility,
   projectAutomationsSurface,
@@ -18,6 +19,10 @@ export default function runAutomationsViewerTests(): void {
   // text while falling back to the original string for cron / free-form input.
   humanizesRruleStringsForRightRailSummary();
   projectsHeartbeatAutomationEligibility();
+  // codex: citation chip `ke` deep-link — the surface model carries the focus
+  // target so the panel can scope to the specific automation.
+  carriesDeepLinkFocusTargetThroughEveryState();
+  resolvesFocusedAutomationScheduleById();
 }
 
 function projectsLoadingStateBeforeEndpointReturns(): void {
@@ -134,15 +139,15 @@ function projectsActiveThreadAutomationForRightRailSection(): void {
     },
   });
 
-  // codex: $i(rawRrule) — `rruleSummary` is now the humanized text from
-  // `rrule.toText()`; "FREQ=HOURLY" becomes "every hour" so the rail row
-  // matches Desktop's automation summary wording.
+  // codex automation-schedule-CNorTxWd.js — `rruleSummary` is Codex's STRUCTURED
+  // schedule label, NOT rrule's prose toText(); "FREQ=HOURLY" → "Hourly" (not
+  // "every hour"), matching Desktop's automation summary wording.
   assertDeepEqual(
     projectActiveThreadAutomation(model, "thread-1"),
     {
       id: "heartbeat-active",
       name: "Thread heartbeat",
-      rruleSummary: "every hour",
+      rruleSummary: "Hourly",
       nextRunAtMs: Date.parse(isoNextRun),
     },
     "right rail automation section should humanize the heartbeat RRULE for the current thread",
@@ -161,30 +166,43 @@ function projectsActiveThreadAutomationForRightRailSection(): void {
   );
 }
 
-// codex: $i(rawRrule) — humanizeRrule contract:
-//   RRULE body / RRULE-prefixed → humanized English ("every week on …")
+// codex automation-schedule-CNorTxWd.js — humanizeRrule contract:
+//   RRULE body / RRULE-prefixed → Codex STRUCTURED label ("Daily", "Hourly",
+//     "Weekdays", "Weekends", "{days} at {time}", "Every {n}h/m")
 //   cron / free-form text       → returned as-is (rrule cannot parse)
 //   null / empty / whitespace   → null (caller omits the field)
 function humanizesRruleStringsForRightRailSummary(): void {
+  // single weekday + BYHOUR → "{days} at {time}" (e.g. "Mondays at 9:00 AM")
   const weekly = humanizeRrule("FREQ=WEEKLY;BYDAY=MO;BYHOUR=9");
   assertEqual(
-    typeof weekly === "string" && /every/i.test(weekly) && /week/i.test(weekly),
+    typeof weekly === "string" && /^Mondays at /.test(weekly),
     true,
-    "RRULE body should be humanized into English containing 'every' and 'week'",
+    "single-weekday RRULE should humanize to 'Mondays at {time}'",
   );
 
-  const weekdays = humanizeRrule("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR");
+  // Mon–Fri → "Weekdays"
   assertEqual(
-    typeof weekdays === "string" && /weekday/i.test(weekdays),
-    true,
-    "Mon-Fri RRULE should humanize to text mentioning 'weekday'",
+    humanizeRrule("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"),
+    "Weekdays",
+    "Mon-Fri RRULE should humanize to Codex's 'Weekdays' label",
   );
 
-  const prefixed = humanizeRrule("RRULE:FREQ=HOURLY");
+  // Sat+Sun → "Weekends"
   assertEqual(
-    typeof prefixed === "string" && /every/i.test(prefixed) && /hour/i.test(prefixed),
-    true,
-    "iCal-prefixed RRULE should still humanize to 'every hour'-style text",
+    humanizeRrule("FREQ=WEEKLY;BYDAY=SA,SU"),
+    "Weekends",
+    "Sat-Sun RRULE should humanize to Codex's 'Weekends' label",
+  );
+
+  // FREQ alone → bare interval label ("Daily" / "Hourly" / "Weekly")
+  assertEqual(humanizeRrule("FREQ=DAILY"), "Daily", "FREQ=DAILY → 'Daily'");
+  assertEqual(humanizeRrule("FREQ=HOURLY;INTERVAL=2"), "Every 2h", "every-2-hours RRULE → 'Every 2h'");
+
+  // iCal-prefixed RRULE → same structured label
+  assertEqual(
+    humanizeRrule("RRULE:FREQ=HOURLY"),
+    "Hourly",
+    "iCal-prefixed RRULE should humanize to Codex's 'Hourly' label",
   );
 
   assertEqual(humanizeRrule(null), null, "null input should return null");
@@ -264,6 +282,114 @@ function projectsHeartbeatAutomationEligibility(): void {
     }),
     { isEligible: true, reason: null },
     "heartbeat should be eligible after a completed local turn with no pending request",
+  );
+}
+
+// codex: local-conversation-thread-*.js — the citation chip `ke` handler
+// resolves a specific automation id and deep-links it (Km({automationId,…}) /
+// navigate-to-route ?automationId=…). HiCodex threads that id onto the surface
+// model as `focusedAutomationId` so the panel can scope to it. The focus target
+// must survive on EVERY status (loading/offline/error/empty/ready), and empty /
+// whitespace ids must normalize to null.
+function carriesDeepLinkFocusTargetThroughEveryState(): void {
+  const loading = projectAutomationsSurface({
+    connected: true,
+    loading: true,
+    focusedAutomationId: "auto-7",
+  });
+  assertEqual(loading.status, "loading", "loading state should be unchanged by focus target");
+  assertEqual(loading.focusedAutomationId, "auto-7", "loading state should still carry the focus target");
+
+  const offline = projectAutomationsSurface({
+    connected: false,
+    focusedAutomationId: "auto-7",
+  });
+  assertEqual(offline.focusedAutomationId, "auto-7", "offline state should still carry the focus target");
+
+  const errored = projectAutomationsSurface({
+    connected: true,
+    error: "boom",
+    focusedAutomationId: "auto-7",
+  });
+  assertEqual(errored.status, "error", "error state should be unchanged by focus target");
+  assertEqual(errored.focusedAutomationId, "auto-7", "error state should still carry the focus target");
+
+  const empty = projectAutomationsSurface({
+    connected: true,
+    payload: { schedules: [] },
+    focusedAutomationId: "auto-7",
+  });
+  assertEqual(empty.focusedAutomationId, "auto-7", "empty state should still carry the focus target");
+
+  const ready = projectAutomationsSurface({
+    connected: true,
+    payload: { schedules: [{ id: "auto-7", name: "Digest", cron: "0 9 * * *", status: "enabled" }] },
+    focusedAutomationId: "auto-7",
+  });
+  assertEqual(ready.status, "ready", "ready state should be unchanged by focus target");
+  assertEqual(ready.focusedAutomationId, "auto-7", "ready state should carry the focus target");
+
+  const unfocused = projectAutomationsSurface({ connected: true, payload: { schedules: [] } });
+  assertEqual(
+    unfocused.focusedAutomationId,
+    null,
+    "generic open (no citation id) should leave the focus target null",
+  );
+
+  const blank = projectAutomationsSurface({
+    connected: true,
+    payload: { schedules: [] },
+    focusedAutomationId: "   ",
+  });
+  assertEqual(blank.focusedAutomationId, null, "whitespace-only focus id should normalize to null");
+}
+
+// codex: local-conversation-thread-*.js — `jm({automationId:n})` resolves the
+// focused automation as `items.find(e => e.id === n) ?? null` before rendering
+// the per-automation editor. `focusedAutomationSchedule` mirrors that so the
+// panel scopes to exactly the deep-linked schedule, falling back to null when
+// nothing is focused or the id isn't present (matching `jm`'s placeholder branch).
+function resolvesFocusedAutomationScheduleById(): void {
+  const model = projectAutomationsSurface({
+    connected: true,
+    payload: {
+      schedules: [
+        { id: "auto-1", name: "First", cron: "0 9 * * *", status: "enabled" },
+        { id: "auto-2", name: "Second", cron: "0 18 * * *", status: "enabled" },
+      ],
+    },
+    focusedAutomationId: "auto-2",
+  });
+  assertEqual(
+    focusedAutomationSchedule(model)?.id,
+    "auto-2",
+    "resolver should return the schedule matching the focus target",
+  );
+  assertEqual(
+    focusedAutomationSchedule(model)?.title,
+    "Second",
+    "resolved schedule should be the full view, not just the id",
+  );
+
+  const noFocus = projectAutomationsSurface({
+    connected: true,
+    payload: { schedules: [{ id: "auto-1", name: "First", cron: "0 9 * * *", status: "enabled" }] },
+  });
+  assertEqual(
+    focusedAutomationSchedule(noFocus),
+    null,
+    "resolver should return null when nothing is focused",
+  );
+
+  const missing = projectAutomationsSurface({
+    connected: true,
+    payload: { schedules: [{ id: "auto-1", name: "First", cron: "0 9 * * *", status: "enabled" }] },
+    focusedAutomationId: "auto-404",
+  });
+  assertEqual(
+    focusedAutomationSchedule(missing),
+    null,
+    "resolver should return null when the focus id is not in the loaded schedules (deleted / still loading)",
   );
 }
 

@@ -91,8 +91,15 @@ interface SidePanelTabPillProps {
 }
 
 function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) {
+  // codex: title sits in a `relative min-w-0 flex-1 overflow-hidden` wrapper with a
+  // sibling right-edge gradient fade (NOT a CSS ellipsis) so long titles dissolve.
   const label = tab.title != null
-    ? <span className="hc-side-panel-tab-pill__title">{tab.title}</span>
+    ? (
+        <span className="hc-side-panel-tab-pill__title-wrap">
+          <span className="hc-side-panel-tab-pill__title">{tab.title}</span>
+          <span className="hc-side-panel-tab-pill__title-fade" aria-hidden="true" />
+        </span>
+      )
     : null;
   // codex Pt line 500: `H = () => n.activateTab(s, l)`; line 1019-1022 `qt` body click upgrade preview to pin.
   const onClickTab = () => {
@@ -126,11 +133,13 @@ function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) 
       {tab.isClosable && (
         <button
           type="button"
-          aria-label="Close tab"
+          // codex `codex.tabs.closeNamed` defaultMessage "Close {title} tab" — per-tab named label.
+          aria-label={tab.title != null ? `Close ${tab.title} tab` : "Close tab"}
           className="hc-side-panel-tab-pill__close"
           onClick={onClickClose}
         >
-          <X size={12} aria-hidden="true" />
+          {/* codex close glyph = icon-xs (16px) */}
+          <X size={16} aria-hidden="true" />
         </button>
       )}
     </div>

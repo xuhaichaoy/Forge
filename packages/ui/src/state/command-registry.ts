@@ -112,6 +112,20 @@ export function isMacPlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(ua);
 }
 
+/*
+ * codex: the OS file-manager "reveal" label is platform-switched in both the
+ * workspace-file context menu (`C(platform)`) and the sidebar thread menu
+ * (`gt(platform)`): darwin→"Reveal in Finder", win32→"Open in Explorer",
+ * else→"Open in File Manager" (i18n `*.openInFinder/openInExplorer/openInFileManager`).
+ */
+export function osRevealLabel(): string {
+  if (isMacPlatform()) return "Reveal in Finder";
+  const platform = typeof navigator !== "undefined" ? navigator.platform ?? "" : "";
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent ?? "" : "";
+  if (/Win/i.test(platform) || /Windows/i.test(ua)) return "Open in Explorer";
+  return "Open in File Manager";
+}
+
 // codex: electron-menu-shortcuts-*.js — platform-specific keybinding
 // lookup. Returns every accelerator configured for the current platform
 // (preferring macOS on macOS, default elsewhere). Mirrors Codex's

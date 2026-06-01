@@ -147,8 +147,9 @@ function projectsMcpConfigActionsFromEffectiveConfig(): void {
   );
   assertDeepEqual(
     userServer?.secondaryActions?.map((action) => action.label),
-    ["Reload", "Disable", "Edit", "Remove"],
-    "user-scope MCP servers should expose reload plus enable/edit/remove config actions",
+    // codex settings.mcp: per-server control "Settings" + removal "Uninstall".
+    ["Reload", "Disable", "Settings", "Uninstall"],
+    "user-scope MCP servers should expose reload plus enable/settings/uninstall config actions",
   );
   assertDeepEqual(
     userServer?.secondaryActions?.find((action) => action.label === "Disable")?.action,
@@ -162,7 +163,7 @@ function projectsMcpConfigActionsFromEffectiveConfig(): void {
     "enable/disable action should carry filePath and expectedVersion for config/batchWrite",
   );
   assertDeepEqual(
-    userServer?.secondaryActions?.find((action) => action.label === "Edit")?.action,
+    userServer?.secondaryActions?.find((action) => action.label === "Settings")?.action,
     {
       type: "openMcpServerForm",
       title: "Edit user-server",

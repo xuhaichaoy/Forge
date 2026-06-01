@@ -42,16 +42,20 @@ import {
   SETTINGS_SECTION_GROUP_HEADINGS,
   isDesktopBackedLocalSettingsPanel,
   isRefreshableSettingsPanel,
+  settingsGroupHeadingTitle,
+  settingsSectionTitle,
   type SettingsSectionGroup,
 } from "../state/settings-panel-workflow";
 import { AppearanceSettingsPanel } from "./appearance-settings-panel";
+import { useHiCodexIntl } from "./i18n-provider";
 import { CommandPanelEntryList } from "./command-panel";
 import { KeyboardShortcutsSettingsPanel } from "./keyboard-shortcuts-settings-panel";
 import { McpSkillsManagementPanel } from "./mcp-skills-management-panel";
 import type { KeymapOverrides } from "../state/keymap-overrides";
 import type { ReducedMotionMode, UiAppearancePreferences } from "../state/appearance";
 import type { UiThemeMode, UiThemeSnapshot } from "../state/theme";
-import { useState } from "react";
+import type { HiCodexLocale } from "../state/i18n";
+import { useEffect, useRef, useState } from "react";
 
 export interface SettingsPanelProps {
   activePanel: SettingsPanelId;
@@ -84,9 +88,11 @@ export interface SettingsPanelProps {
    */
   uiTheme?: UiThemeSnapshot;
   uiAppearance?: UiAppearancePreferences;
+  uiLocale?: HiCodexLocale;
   onSetUiTheme?: (mode: UiThemeMode) => void;
   onSetCodeFontSize?: (size: number) => void;
   onSetReducedMotion?: (mode: ReducedMotionMode) => void;
+  onSetUiLocale?: (locale: HiCodexLocale) => void;
 }
 
 export function SettingsPanel({
@@ -109,20 +115,40 @@ export function SettingsPanel({
   onResetKeyboardShortcut,
   uiTheme,
   uiAppearance,
+  uiLocale,
   onSetUiTheme,
   onSetCodeFontSize,
   onSetReducedMotion,
+  onSetUiLocale,
 }: SettingsPanelProps) {
+  const { formatMessage } = useHiCodexIntl();
   const activeSection = SETTINGS_SECTIONS.find((section) => section.id === activePanel) ?? SETTINGS_SECTIONS[0];
   const refreshable = isRefreshableSettingsPanel(activePanel);
+  // Focus the dialog on open (Radix focuses dialog content on mount) so Escape
+  // closes it immediately, not only after the user clicks into the panel.
+  const dialogRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
   return (
     <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
+        tabIndex={-1}
         className="hc-settings-panel hc-settings-center"
         role="dialog"
         data-state="open"
         aria-modal="true"
         aria-label="Settings"
+        onKeyDown={(event) => {
+          // codex: the Settings page is a Radix modal → Escape closes it. Fields
+          // that own Escape (e.g. the code-font-size input revert) stopPropagation
+          // so they don't also close the panel.
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            onClose();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
@@ -148,7 +174,7 @@ export function SettingsPanel({
               if (sections.length === 0) return null;
               return (
                 <div className="hc-settings-nav-group" data-group={group} key={group}>
-                  {heading ? <div className="hc-settings-nav-group-heading">{heading}</div> : null}
+                  {heading ? <div className="hc-settings-nav-group-heading">{settingsGroupHeadingTitle(group, heading, formatMessage)}</div> : null}
                   {sections.map((section) => (
                     <button
                       aria-current={section.id === activePanel ? "page" : undefined}
@@ -159,7 +185,7 @@ export function SettingsPanel({
                     >
                       {settingsSectionIcon(section.icon)}
                       <span>
-                        <strong>{section.title}</strong>
+                        <strong>{settingsSectionTitle(section, formatMessage)}</strong>
                         {/*
                          * CODEX-REF: Codex Desktop renders no subtitle/description
                          * per section — settings-shared-*.js returns null for
@@ -179,7 +205,7 @@ export function SettingsPanel({
               <div>
                 {settingsSectionIcon(activeSection.icon)}
                 <span>
-                  <strong>{activeSection.title}</strong>
+                  <strong>{settingsSectionTitle(activeSection, formatMessage)}</strong>
                   {activeSection.description ? <small>{activeSection.description}</small> : null}
                 </span>
               </div>
@@ -229,9 +255,11 @@ export function SettingsPanel({
               <AppearanceSettingsPanel
                 uiTheme={uiTheme ?? { mode: "system", resolved: "light" }}
                 uiAppearance={uiAppearance ?? { codeFontSize: 12, reducedMotion: "system" }}
+                uiLocale={uiLocale ?? "en-US"}
                 onSetUiTheme={onSetUiTheme ?? (() => undefined)}
                 onSetCodeFontSize={onSetCodeFontSize ?? (() => undefined)}
                 onSetReducedMotion={onSetReducedMotion ?? (() => undefined)}
+                onSetUiLocale={onSetUiLocale ?? (() => undefined)}
               />
             ) : activePanel === "keyboard-shortcuts" ? (
               /*
@@ -305,6 +333,7 @@ function DesktopBackedSettingsContent({
   panelState: CommandPanelState | null;
   section: (typeof SETTINGS_SECTIONS)[number];
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const entry = panelState?.entries[0] ?? null;
   const evidence = entry?.details ?? [];
   return (
@@ -315,7 +344,7 @@ function DesktopBackedSettingsContent({
         </div>
         <div className="hc-settings-route-placeholder-copy">
           <div>
-            <h2>{section.title}</h2>
+            <h2>{settingsSectionTitle(section, formatMessage)}</h2>
             <span>{entry?.status ?? "Desktop route"}</span>
           </div>
           <p>

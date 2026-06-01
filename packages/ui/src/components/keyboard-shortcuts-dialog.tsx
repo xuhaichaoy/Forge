@@ -29,10 +29,10 @@ export interface KeyboardShortcutsDialogProps {
  * `commandMenuGroupKey` so the list mirrors the command palette taxonomy.
  */
 const GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "thread", title: "Thread" },
+  { key: "thread", title: "Chat" },
   { key: "panels", title: "Panels" },
   { key: "navigation", title: "Navigation" },
-  { key: "workspace", title: "Workspace" },
+  { key: "workspace", title: "Project" },
   { key: "skills", title: "Skills" },
   { key: "configure", title: "Configure" },
   { key: "app", title: "App" },
@@ -97,7 +97,7 @@ export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDial
         </div>
         <div className="hc-keyboard-shortcuts-body">
           {sections.length === 0 ? (
-            <div className="hc-keyboard-shortcuts-empty">No shortcuts match {`“${query}”`}</div>
+            <div className="hc-keyboard-shortcuts-empty">No matching shortcuts</div>
           ) : (
             sections.map((section) => (
               <section className="hc-keyboard-shortcuts-section" key={section.key}>

@@ -1321,11 +1321,11 @@ export function useCommandPanelActions({
       }
       void clipboard.writeText(action.text)
         .then(() => {
-          dispatch({ type: "log", text: `${action.label} copied to clipboard.`, level: "info" });
+          dispatch({ type: "log", text: `Copied ${action.label}`, level: "info" });
           sink("generic", {
             status: "ready",
             title: action.title,
-            message: `${action.label} copied to clipboard.`,
+            message: `Copied ${action.label}`,
             entries: [],
           });
         })

@@ -70,7 +70,8 @@ export function addMcpServerConfigManagementEntries(
   const existingServers = config?.serverKeys ?? mcpServerEntryNames(entries);
   const addEntry: CommandPanelEntry = {
     id: "mcp:add-server",
-    title: "Add MCP server",
+    // codex settings.mcp.addServer — Codex's add button reads "Add server".
+    title: "Add server",
     kind: "mcpServer",
     status: "new",
     meta: "stdio or streamable HTTP",
@@ -113,8 +114,9 @@ export function addMcpServerConfigManagementEntries(
           } : undefined,
           !isReadOnly ? {
             id: `${entry.id}:edit-config`,
-            label: "Edit",
-            title: `Edit ${entry.title} config`,
+            // codex settings.mcp.server.settings — Codex's per-server control is "Settings".
+            label: "Settings",
+            title: `${entry.title} settings`,
             action: mcpServerFormAction({
               title: `Edit ${entry.title}`,
               mode: "edit" as const,
@@ -126,8 +128,9 @@ export function addMcpServerConfigManagementEntries(
           } : undefined,
           !isReadOnly ? {
             id: `${entry.id}:remove-config`,
-            label: "Remove",
-            title: `Remove ${entry.title}`,
+            // codex settings.mcp.detail.uninstall — Codex labels MCP-server removal "Uninstall".
+            label: "Uninstall",
+            title: `Uninstall ${entry.title}`,
             tone: "danger" as const,
             action: {
               type: "removeMcpServer" as const,

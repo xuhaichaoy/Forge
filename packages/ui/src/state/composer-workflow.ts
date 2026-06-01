@@ -1,4 +1,10 @@
 import type { ImageDetail, UserInput } from "@hicodex/codex-protocol";
+import type { I18nMessageDescriptor, I18nValues } from "./i18n";
+
+// Structural alias for the IntlProvider's formatMessage, so this state module
+// localizes labels without importing the components layer. Optional at call
+// sites: when omitted, English defaultMessage is returned.
+type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 
 export type ComposerEnterResult =
   | { action: "none"; preventDefault: false }
@@ -161,19 +167,26 @@ export interface ComposerSendOptions {
   attachments?: ComposerAttachment[];
 }
 
-export function composerPlaceholderText(input: {
-  hasConversation: boolean;
-  hasBackgroundAgentsPanel?: boolean;
-}): string {
+export function composerPlaceholderText(
+  input: {
+    hasConversation: boolean;
+    hasBackgroundAgentsPanel?: boolean;
+  },
+  formatMessage?: FormatMessage,
+): string {
   // codex: placeholder strings align verbatim to upstream ICU defaults —
   //   composer.placeholder.newTask.locally.v2              = "Ask Codex anything. @ to use plugins or mention files"
   //   composer.placeholder.localFollowUp.locallyWithAgents = "Ask for follow up changes or @ to tag an agent"
   //   composer.placeholder.localFollowUp.locally           = "Ask for follow-up changes"
   // (Upstream intentionally drops the hyphen in the with-agents variant.)
-  if (!input.hasConversation) return "Ask Codex anything. @ to use plugins or mention files";
+  const fm = (id: string, defaultMessage: string): string =>
+    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
+  if (!input.hasConversation) {
+    return fm("composer.placeholder.newTask.locally.v2", "Ask Codex anything. @ to use plugins or mention files");
+  }
   return input.hasBackgroundAgentsPanel
-    ? "Ask for follow up changes or @ to tag an agent"
-    : "Ask for follow-up changes";
+    ? fm("composer.placeholder.localFollowUp.locallyWithAgents", "Ask for follow up changes or @ to tag an agent")
+    : fm("composer.placeholder.localFollowUp.locally", "Ask for follow-up changes");
 }
 
 export interface AttachAction {
@@ -396,6 +409,12 @@ export function composerSubmitTooltip(state: ComposerSubmitState): string {
 }
 
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
+  // codex composer-zFOdryLS.js — where a command maps to a Codex slash command, its
+  // DESCRIPTION uses Codex's exact wording (source-backed alignment), even where
+  // HiCodex's mechanics differ slightly (e.g. /status surfaces session info rather
+  // than only toggling; /mcp reloads while listing; /goal also inspects/clears;
+  // /fork's worktree option lives in the sidebar menu). Wording follows Codex for
+  // UI consistency; the divergences are mechanics, not the user-facing description.
   command("model", "Model", "Choose the model and reasoning effort.", "model", "panel", ["provider", "engine"]),
   /*
    * CODEX-REF: composer-*.js — slash command id `reasoning`，title 来自
@@ -411,35 +430,35 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("setup-default-sandbox", "Setup sandbox", "Configure the default sandbox on supported platforms.", "settings", "pending", ["sandbox"], undefined, true),
   command("sandbox-add-read-dir", "Add sandbox read dir", "Allow Codex to read another directory.", "settings", "pending", ["read-dir"], "path", true),
   command("experimental", "Experimental", "Open experimental feature toggles.", "settings", "panel", ["features", "labs"]),
-  command("approve", "Approve retry", "Approve a blocked auto-review retry for this thread.", "tools", "direct", ["auto-review"]),
+  command("approve", "Approve retry", "Approve a blocked auto-review retry for this chat.", "tools", "direct", ["auto-review"]),
   command("approvals", "Approvals", "Open pending approval and permission controls.", "settings", "panel", ["permission", "requests"]),
   command("memories", "Memories", "Inspect or configure memory behavior.", "tools", "direct", ["memory"]),
   command("skills", "Skills", "List available Codex skills.", "tools", "direct", ["skill"], "reload"),
   command("hooks", "Hooks", "List configured lifecycle hooks.", "tools", "direct", ["hook"]),
-  command("review", "Review", "Review the current working tree or custom instructions.", "workspace", "direct", ["inspect", "code review"], "instructions"),
-  command("rename", "Rename", "Rename the active thread.", "thread", "direct", ["title"], "name"),
-  command("new", "New thread", "Start a new thread.", "thread", "direct", ["chat"]),
-  command("resume", "Resume", "Resume an existing thread.", "thread", "direct", ["history", "open"], "thread id"),
-  command("fork", "Fork", "Fork the active thread.", "thread", "direct", ["branch"]),
+  command("review", "Code review", "Review unstaged changes or compare against a branch", "workspace", "direct", ["inspect", "code review"], "instructions"),
+  command("rename", "Rename", "Rename the active chat.", "thread", "direct", ["title"], "name"),
+  command("new", "New chat", "Start a new chat.", "thread", "direct", ["chat"]),
+  command("resume", "Resume", "Resume an existing chat.", "thread", "direct", ["history", "open"], "chat id"),
+  command("fork", "Fork", "Fork this chat into local or a new worktree", "thread", "direct", ["branch"]),
   command("init", "Init", "Insert the Codex workspace initialization prompt.", "workspace", "prompt", ["agents", "bootstrap"]),
-  command("compact", "Compact", "Compact the active thread context.", "thread", "direct", ["summarize", "ctx"]),
+  command("compact", "Compact", "Compact the active chat context.", "thread", "direct", ["summarize", "ctx"]),
   command("plan", "Plan mode", "Switch the composer into planning mode.", "thread", "direct", ["planner"], "prompt"),
-  command("goal", "Goal", "Create, inspect, or clear the long-running goal.", "thread", "direct", ["objective"], "objective | clear"),
+  command("goal", "Goal", "Set a goal that Codex will keep working towards", "thread", "direct", ["objective"], "objective | clear"),
   command("collab", "Collaboration", "Choose the collaboration mode.", "team", "direct", ["mode"]),
   command("agent", "Agents", "Switch or manage agent threads.", "team", "pending", ["subagent", "multiagent"], undefined, true),
   command("subagents", "Subagents", "Open multi-agent controls.", "team", "pending", ["agent", "multiagents"], undefined, true),
-  command("side", "Side conversation", "Start an ephemeral side conversation.", "thread", "direct", ["sidecar"], "prompt"),
+  command("side", "Side", "Start a side conversation in an ephemeral fork", "thread", "direct", ["sidecar"], "prompt"),
   command("copy", "Copy answer", "Copy the last assistant answer as markdown.", "thread", "desktop", ["clipboard"]),
   command("raw", "Raw mode", "Toggle raw transcript mode.", "debug", "pending", ["scrollback"], "on | off", true),
   command("diff", "Diff", "Show the current git diff.", "workspace", "direct", ["changes"]),
   command("mention", "Mention", "Add a file mention to the composer.", "workspace", "direct", ["file", "@"]),
-  command("status", "Status", "Toggle context usage.", "workspace", "direct", ["session"]),
+  command("status", "Status", "Show chat id, context usage, and rate limits", "workspace", "direct", ["session"]),
   command("debug-config", "Debug config", "Inspect effective Codex config layers.", "debug", "direct", ["config"]),
   command("rpc", "RPC inspector", "Inspect recent JSON-RPC and host events.", "debug", "direct", ["json-rpc", "inspector"]),
   command("title", "Terminal title", "Configure terminal title behavior.", "settings", "pending", ["terminal"], undefined, true),
   command("statusline", "Status line", "Configure status-line behavior.", "settings", "pending", ["status"], undefined, true),
   command("theme", "Theme", "Choose the UI appearance.", "settings", "direct", ["appearance", "dark", "light"]),
-  command("mcp", "MCP", "Reload and list MCP servers and tools.", "mcp", "direct", ["tools", "server"], "verbose"),
+  command("mcp", "MCP", "Show MCP server status", "mcp", "direct", ["tools", "server"], "verbose"),
   command("apps", "Apps", "List connected apps and connectors.", "tools", "direct", ["connectors"]),
   command("plugins", "Plugins", "List installed and marketplace plugins.", "tools", "direct", ["plugin"]),
   command("worktrees", "Worktrees", "Inspect local, worktree, and cloud work modes.", "workspace", "panel", ["git", "branch", "cloud"]),
@@ -450,10 +469,10 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("feedback", "Feedback", "Prepare a feedback report with diagnostics.", "tools", "direct", ["logs", "bug"]),
   command("rollout", "Rollout path", "Show the current rollout path when available.", "debug", "pending", ["debug"], undefined, true),
   command("ps", "Background terminals", "List background terminal processes.", "tools", "direct", ["processes"]),
-  command("stop", "Stop terminals", "Stop all background terminals for this thread.", "tools", "direct", ["clean"]),
-  command("clean", "Clean terminals", "Stop all background terminals for this thread.", "tools", "direct", ["stop"], undefined, true),
+  command("stop", "Stop terminals", "Stop all background terminals for this chat.", "tools", "direct", ["clean"]),
+  command("clean", "Clean terminals", "Stop all background terminals for this chat.", "tools", "direct", ["stop"], undefined, true),
   command("clear", "Clear", "Clear composer input.", "thread", "direct", ["reset"]),
-  command("personality", "Personality", "Choose assistant communication style.", "settings", "direct", ["style"]),
+  command("personality", "Personality", "Choose how Codex responds", "settings", "direct", ["style"]),
   command("realtime", "Realtime", "Start or configure realtime voice.", "tools", "pending", ["voice", "audio"], undefined, true),
   command("settings", "Settings", "Open settings.", "settings", "panel", ["config", "preferences"]),
   command("test-approval", "Test approval", "Trigger a development approval request.", "debug", "pending", ["debug"], undefined, true),

@@ -228,7 +228,17 @@ export function ApprovalCard({
           <div className="hc-request-panel-details">
             {details.map((item) => (
               <RequestDetailRow key={`${item.label}:${item.value}`} label={item.label}>
-                {item.code ? <code>{item.value}</code> : item.value}
+                {item.values
+                  ? (
+                    <span className="hc-request-detail-code-lines">
+                      {item.values.map((path, index) => (
+                        <code key={`${path}:${index}`}>{path}</code>
+                      ))}
+                    </span>
+                  )
+                  : item.code
+                    ? <code>{item.value}</code>
+                    : item.value}
               </RequestDetailRow>
             ))}
           </div>
@@ -299,7 +309,8 @@ export function ApprovalCard({
           onClick={() => respond(false)}
         >
           <span>{detail.declineLabel}</span>
-          <kbd>Esc</kbd>
+          {/* codex: requestInputPanel uses 'ESC' (uppercase); the general approval/browser path uses 'Esc'. */}
+          <kbd>{isUserInput ? "ESC" : "Esc"}</kbd>
         </button>
         <button
           type="button"
@@ -310,7 +321,8 @@ export function ApprovalCard({
           onClick={() => respond(true)}
         >
           <span>{primaryLabel}</span>
-          <kbd>↵</kbd>
+          {/* codex Enter chip = ⏎ (U+23CE RETURN SYMBOL), not ↵ (U+21B5) */}
+          <kbd>⏎</kbd>
         </button>
       </div>
     </div>
@@ -321,6 +333,10 @@ interface RequestDetailItem {
   label: string;
   value: string;
   code?: boolean;
+  // Codex renders each granted filesystem path on its own monospace line
+  // (pending-request-item-panel On/kn). When set, render `values` as stacked
+  // code lines instead of the single comma-joined `value`.
+  values?: string[];
 }
 
 type RequestKind =
@@ -346,6 +362,18 @@ function requestPanelTitle(detail: PendingRequestDetail): string {
   return detail.questions[0]?.question || detail.title;
 }
 
+// Codex renders each granted filesystem path on its own monospace line
+// (pending-request-item-panel `On` → `flex min-w-0 flex-col gap-0.5` stack of
+// `kn` `font-mono leading-5` code lines), not a single comma-joined value.
+function detailRowFromLabelValue(label: string, value: string): RequestDetailItem {
+  const code = isTechnicalDetail(label, value);
+  if ((label === "Read" || label === "Write") && value.includes(", ")) {
+    const values = value.split(", ").map((path) => path.trim()).filter(Boolean);
+    if (values.length > 1) return { label, value, code, values };
+  }
+  return { label, value, code };
+}
+
 function requestPanelDetails(detail: PendingRequestDetail, request: PendingServerRequest): RequestDetailItem[] {
   const rows: RequestDetailItem[] = [];
   if (detail.reason) rows.push({ label: "Reason", value: detail.reason });
@@ -364,7 +392,7 @@ function requestPanelDetails(detail: PendingRequestDetail, request: PendingServe
     if (line === detail.title || line === detail.questions[0]?.question) continue;
     const [label, ...rest] = line.split(": ");
     if (rest.length > 0 && label.length <= 24) {
-      rows.push({ label, value: rest.join(": "), code: isTechnicalDetail(label, rest.join(": ")) });
+      rows.push(detailRowFromLabelValue(label, rest.join(": ")));
     } else {
       rows.push({ label: "Details", value: line, code: looksLikeCommandOrPath(line) });
     }
@@ -378,7 +406,7 @@ function bodyLinesToDetailRows(detailBody: string, detail: PendingRequestDetail)
     if (line === detail.title || line === detail.questions[0]?.question) continue;
     const [label, ...rest] = line.split(": ");
     if (rest.length > 0 && label.length <= 24) {
-      rows.push({ label, value: rest.join(": "), code: isTechnicalDetail(label, rest.join(": ")) });
+      rows.push(detailRowFromLabelValue(label, rest.join(": ")));
     } else {
       rows.push({ label: "Details", value: line, code: looksLikeCommandOrPath(line) });
     }
@@ -677,7 +705,7 @@ function QuestionField({
             <div className="hc-request-inline-freeform hc-request-other-freeform">
               <textarea
                 value={freeformValue}
-                placeholder="Or type your own answer"
+                placeholder="No, and tell Codex what to do differently"
                 rows={1}
                 disabled={disabled}
                 onChange={(event) => onChange(event.target.value.length > 0 ? [event.target.value] : [])}
@@ -725,7 +753,10 @@ function OptionCopy({ option }: { option: PendingRequestQuestion["options"][numb
           </code>
         )}
       </strong>
-      {option.description && <small>{option.description}</small>}
+      {/* codex: approval/option rows are a single bold label line — the option's
+          `description` is i18n/metadata (or a hover tooltip in the optionPicker
+          path), NEVER an always-visible inline subline. So HiCodex no longer
+          renders it as `<small>` subtext. */}
     </span>
   );
 }

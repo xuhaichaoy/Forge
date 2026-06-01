@@ -344,7 +344,8 @@ export function ComposerFooterBranchSwitcher({
       >
         <GitBranch size={14} />
         <span className="hc-composer-footer-chip-label">{chipLabel}</span>
-        <ChevronDown size={13} />
+        {/* codex chip chevron = icon-2xs (14px) */}
+        <ChevronDown size={14} />
       </button>
       {open && (
         <BranchMenuPortal anchor={triggerRef.current}>
@@ -369,17 +370,17 @@ export function ComposerFooterBranchSwitcher({
             </label>
             <div className="hc-composer-branch-list">
               {state.status === "loading" && (
-                <div className="hc-composer-branch-empty">Loading branches</div>
+                <div className="hc-composer-branch-empty">Loading branches…</div>
               )}
               {state.status === "error" && (
                 <div className="hc-composer-branch-empty hc-composer-branch-error">
-                  {state.error ?? "Failed to load branches"}
+                  {state.error ?? "Unable to load branches"}
                 </div>
               )}
               {state.status === "ready"
                 && visibleBranches.length === 0
                 && visibleRemoteBranches.length === 0 && (
-                  <div className="hc-composer-branch-empty">No branches</div>
+                  <div className="hc-composer-branch-empty">No branches found</div>
                 )}
               {state.status === "ready"
                 && visibleBranches.map((branch) => {
@@ -499,7 +500,7 @@ export function ComposerFooterBranchSwitcher({
                 disabled={state.status === "loading" || switching !== null}
               >
                 <Plus size={13} />
-                <span>Create new branch…</span>
+                <span>Create and checkout new branch…</span>
               </button>
             )}
           </div>

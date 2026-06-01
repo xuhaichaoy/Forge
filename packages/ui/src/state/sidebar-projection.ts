@@ -133,9 +133,12 @@ export function projectSidebarThreadGroups(
 ): SidebarThreadGroup[] {
   const organizeMode = context.organizeMode ?? DEFAULT_SIDEBAR_ORGANIZE_MODE;
   if (organizeMode === "recent") {
+    // codex app-main `sidebarElectron.recentThreads` = "Recent chats" (description
+    // "List label for threads in recent section"). Matches HiCodex's own command-panel
+    // "Recent chats" group label; the bare "Recent" was an internal inconsistency.
     return threads.length === 0
       ? []
-      : [{ key: "recent", label: "Recent", path: null, threads: [...threads] }];
+      : [{ key: "recent", label: "Recent chats", path: null, threads: [...threads] }];
   }
   const seedRoots = normalizeSeedWorkspaceRoots(context.selectedWorkspaceRoots);
   if (organizeMode === "current_workspace") {

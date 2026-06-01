@@ -140,7 +140,7 @@ export function McpFollowUpDialog({
             <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
           </header>
           <div className="hc-thread-dialog-body">
-            <span>An MCP app wants to send this prompt.</span>
+            <span>An app wants to send this prompt</span>
             <span>{sourceSummary}</span>
             <fieldset className="hc-mcp-follow-up-options">
               <legend>Send to</legend>

@@ -4,13 +4,14 @@ import {
   Circle,
   GitFork,
   LoaderCircle,
+  Network,
   Terminal,
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
-import { isItemInProgress, itemType } from "../state/thread-item-fields";
+import { formatDuration, isItemInProgress, itemType } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 import { PlanSummaryCard } from "./plan-summary-card";
@@ -82,21 +83,105 @@ function McpToolCallThreadItemView({
   threadId: string | null;
   unit: ThreadItemUnit;
 }) {
+  const detail = toolActivityDetailViewModel(unit.item);
+  const running = isItemInProgress(unit.item);
+  /*
+   * codex: a standalone MCP tool call renders as a collapsible summary row
+   * (server/tool icon + tool label + hover chevron) over an animated disclosure
+   * holding ONLY the result body — the tool label is NOT repeated inside. The
+   * summary label shimmers while the call is active (`no active={!completed}`).
+   *
+   * Codex inits the open flag `V = a && L` (an MCP app with a ready resource)
+   * and a one-shot effect only ever calls `H(true)` — so a regular tool call
+   * stays FOLDED while running and after completion, and only MCP apps expand
+   * themselves; nothing auto-collapses.
+   *
+   * (HiCodex keeps its own "server:tool" identity as the label instead of
+   * Codex's per-connector `MS` formatting, which needs connector/app metadata
+   * HiCodex does not carry; the icon falls back to the MCP `Network` glyph,
+   * matching Codex's no-logo fallback.)
+   */
+  const isMcpApp = detail.kind === "mcpApp";
+  const [expanded, setExpanded] = useState(isMcpApp);
+  const lastItemId = useRef(unit.item.id);
+  useEffect(() => {
+    if (lastItemId.current !== unit.item.id) {
+      lastItemId.current = unit.item.id;
+      setExpanded(isMcpApp);
+    } else if (isMcpApp) {
+      setExpanded(true);
+    }
+  }, [unit.item.id, isMcpApp]);
+
+  const label = mcpToolCallSummaryLabel(detail);
+
   return (
     <div
-      className="hc-thread-item-row"
+      className="hc-thread-item-row group"
       data-content-search-unit-key={unit.key}
       data-item-ids={unit.item.id}
       data-item-type="mcp-tool-call"
     >
-      <ToolActivityDetail
-        item={unit.item}
-        onMcpAppHostCall={onMcpAppHostCall}
-        onReadMcpResource={onReadMcpResource}
-        threadId={threadId}
-      />
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="group flex w-fit max-w-full min-w-0 appearance-none items-center self-start gap-1.5 border-0 bg-transparent px-0 py-0 text-left text-[13px] leading-5 text-stone-500 shadow-none transition-colors hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/20"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <Network aria-hidden className="shrink-0 text-stone-400 transition-colors group-hover:text-stone-500" size={14} />
+        <span className={`min-w-0 flex-1 truncate ${running ? "animate-pulse" : ""}`}>{label}</span>
+        <ChevronRight
+          aria-hidden
+          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-300 ${
+            expanded ? "rotate-90 opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          size={14}
+        />
+      </button>
+      <AnimatedDisclosure
+        className="hc-thread-item-disclosure"
+        innerClassName="hc-thread-item-body"
+        open={expanded}
+      >
+        <div className="pt-2">
+          <ToolActivityDetail
+            hideToolTitle
+            item={unit.item}
+            onMcpAppHostCall={onMcpAppHostCall}
+            onReadMcpResource={onReadMcpResource}
+            threadId={threadId}
+          />
+        </div>
+      </AnimatedDisclosure>
     </div>
   );
+}
+
+function mcpToolCallSummaryLabel(detail: ReturnType<typeof toolActivityDetailViewModel>): string {
+  if (detail.kind === "tool" || detail.kind === "mcpApp" || detail.kind === "pendingTool") {
+    // detail.name is "server:tool"; the summary label is the humanized TOOL.
+    const colon = detail.name.indexOf(":");
+    const tool = colon >= 0 ? detail.name.slice(colon + 1) : detail.name;
+    return humanizeMcpToolName(tool);
+  }
+  return "Tool call";
+}
+
+/*
+ * codex: Codex's MCP summary label `MS(...)` uses per-connector generators ONLY
+ * when a `matchingApp` is resolved from the user's connected-connector registry
+ * (`resolvedApps`). HiCodex carries no connector registry → `matchingApp` is
+ * always null → Codex itself falls back to `HS = WS(US(toolName))`: split the
+ * tool name into alphanumeric words (`GS`: lowercase, split on /[^a-z0-9]+/),
+ * join with spaces (`US`, no prefix to strip when there's no app), and
+ * sentence-case (`WS`). So `create_issue` → "Create issue". This is the faithful
+ * no-connector rendering; the server identity rides on the (logo) icon in Codex,
+ * which HiCodex shows as the generic `Network` fallback either way.
+ */
+function humanizeMcpToolName(toolName: string): string {
+  const words = toolName.trim().toLowerCase().split(/[^a-z0-9]+/g).filter((word) => word.length > 0);
+  const joined = words.length === 0 ? toolName : words.join(" ");
+  return joined.length === 0 ? joined : joined.charAt(0).toUpperCase() + joined.slice(1);
 }
 
 function TodoListThreadItemView({
@@ -110,7 +195,6 @@ function TodoListThreadItemView({
   const activePlanItemRef = useRef<HTMLLIElement | null>(null);
   const summary = todoListSummaryLabel(unit.item, formatMessage);
   const activePlanIndex = plan.findIndex((entry) => normalizedTodoStatus(entry.status) === "inProgress");
-  const completed = plan.length > 0 && plan.every((entry) => normalizedTodoStatus(entry.status) === "completed");
 
   // codex: local-conversation-thread-*.js — Desktop tracks the
   // current `in_progress` plan index and calls `scrollIntoView({block:
@@ -137,16 +221,17 @@ function TodoListThreadItemView({
           onClick={() => setExpanded((value) => !value)}
           type="button"
         >
-          <span className="hc-inline-plan-header-icon" aria-hidden="true">
-            {completed ? <CheckCircle2 size={14} /> : <Circle size={14} />}
-          </span>
+          {/* codex nT: the to-do card header is summary text + chevron ONLY — no
+              leading status icon (completion is conveyed by the "N out of M tasks
+              completed" summary). HiCodex previously rendered an extra Circle/
+              CheckCircle2 glyph here; dropped to match. */}
           <span className="hc-inline-plan-summary">{summary}</span>
           {/* codex: local-conversation-thread-*.js — chevron uses
               `opacity-0 group-hover:opacity-100` when collapsed and stays at
               `rotate-180 opacity-100` when expanded. */}
           <ChevronRight
             aria-hidden
-            className={`hc-thread-item-chevron hc-inline-plan-chevron shrink-0 text-stone-400 transition-[opacity,transform] duration-200 ${
+            className={`hc-thread-item-chevron hc-inline-plan-chevron shrink-0 text-stone-400 transition-[opacity,transform] duration-300 ${
               expanded ? "is-open" : ""
             }`}
             size={14}
@@ -251,10 +336,16 @@ function normalizedTodoStatus(status: string): "completed" | "inProgress" | "pen
 }
 
 function todoStatusIcon(status: string) {
+  // codex `ow`/`uw` (the REACHABLE standalone todo-list step icon) is `icon-3xs` = 10px
+  // (completed → check, else → empty circle; Codex's in-progress glyph `or` is a hair
+  // smaller at 9px). This previously cited the unreachable compact `nT` (`icon-xxs` =
+  // 12px) by mistake — `nT` never renders in the aligned flow (the last todo-list is
+  // hoisted out of grouping). HiCodex keeps a subtle spinner as its in-progress
+  // affordance, sized to the 10px step-icon row.
   const normalized = normalizedTodoStatus(status);
-  if (normalized === "completed") return <CheckCircle2 size={14} />;
-  if (normalized === "inProgress") return <LoaderCircle className="hc-inline-plan-spinner" size={14} />;
-  return <Circle size={14} />;
+  if (normalized === "completed") return <CheckCircle2 size={10} />;
+  if (normalized === "inProgress") return <LoaderCircle className="hc-inline-plan-spinner" size={10} />;
+  return <Circle size={10} />;
 }
 
 function ExecThreadItemView({
@@ -269,6 +360,22 @@ function ExecThreadItemView({
   useEffect(() => {
     setExpanded(detail.kind === "exec" && initialExecShellExpanded(detail));
   }, [detail.id, detail.kind]);
+
+  /*
+   * codex: a running command appends a live "for {elapsed}" timer to its status
+   * (toolSummaryForCmd.runningTimer = ` for {elapsed}`, e.g. "Running command
+   * for 4s"), ticking each second off the item's ItemStarted `startedAtMs` and
+   * dropped once the command completes.
+   */
+  const running = detail.kind === "exec" && detail.running;
+  const startedAtMs = detail.kind === "exec" ? detail.startedAtMs : null;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running || startedAtMs == null) return;
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [running, startedAtMs]);
 
   if (!canExpand) {
     return (
@@ -285,6 +392,9 @@ function ExecThreadItemView({
 
   const bodyOpen = detail.running || expanded;
   const label = execThreadItemSummaryLabel(detail, bodyOpen);
+  const runningTimer = running && startedAtMs != null && nowMs - startedAtMs >= 1000
+    ? ` for ${formatDuration(nowMs - startedAtMs)}`
+    : null;
 
   return (
     <div
@@ -300,10 +410,12 @@ function ExecThreadItemView({
         onClick={() => setExpanded((value) => !value)}
       >
         <Terminal aria-hidden className="shrink-0 text-stone-400 transition-colors group-hover:text-stone-500" size={14} />
-        <span className={`min-w-0 flex-1 truncate ${detail.running ? "animate-pulse" : ""}`}>{label}</span>
+        <span className={`min-w-0 flex-1 truncate ${detail.running ? "animate-pulse" : ""}`}>
+          {label}{runningTimer && <span className="tabular-nums">{runningTimer}</span>}
+        </span>
         <ChevronRight
           aria-hidden
-          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-200 ${
+          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-300 ${
             bodyOpen ? "rotate-90 opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
           size={14}
@@ -355,6 +467,65 @@ function DynamicToolCallThreadItemView({
   );
 }
 
+/*
+ * codex split-items-into-render-groups-*.js `Pg`: a `dynamic-tool-call-group`
+ * renders as a collapsible section — a summary header (Codex `Ig`: the grouped
+ * tool labels with per-label repeat counts) over a body holding each call's row.
+ */
+export function DynamicToolCallGroupView({
+  unit,
+}: {
+  unit: Extract<ConversationRenderUnit, { kind: "dynamicToolCallGroup" }>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const running = unit.items.some((item) => isItemInProgress(item));
+  const summary = dynamicToolCallGroupSummary(unit.items);
+  return (
+    <div className="hc-thread-item-row group" data-content-search-unit-key={unit.key} data-item-type="dynamic-tool-call-group">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="group flex w-fit max-w-full min-w-0 appearance-none items-center self-start gap-1.5 border-0 bg-transparent px-0 py-0 text-left text-[13px] leading-5 text-stone-500 shadow-none transition-colors hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/20"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span className={`min-w-0 flex-1 truncate ${running ? "animate-pulse" : ""}`}>{summary}</span>
+        <ChevronRight
+          aria-hidden
+          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-300 ${
+            expanded ? "rotate-90 opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          size={14}
+        />
+      </button>
+      <AnimatedDisclosure className="hc-thread-item-disclosure" innerClassName="hc-thread-item-body" open={expanded}>
+        <div className="pt-1">
+          {unit.items.map((item) => (
+            <DynamicToolCallThreadItemView key={item.id} unit={{ kind: "threadItem", key: item.id, item }} />
+          ))}
+        </div>
+      </AnimatedDisclosure>
+    </div>
+  );
+}
+
+/*
+ * codex `Ig` + `Bg` + `zg`: dedup the grouped calls by label and append the
+ * repeat count (`localConversation.dynamicToolCallGroup.repeatCount` =
+ * " {count} times") when a label repeats; join distinct labels with a comma.
+ */
+function dynamicToolCallGroupSummary(
+  items: Extract<ConversationRenderUnit, { kind: "dynamicToolCallGroup" }>["items"],
+): string {
+  const groups: { label: string; count: number }[] = [];
+  for (const item of items) {
+    const label = dynamicToolCallLabel(item);
+    const existing = groups.find((group) => group.label === label);
+    if (existing) existing.count += 1;
+    else groups.push({ label, count: 1 });
+  }
+  return groups.map((group) => (group.count > 1 ? `${group.label} ${group.count} times` : group.label)).join(", ");
+}
+
 function McpServerElicitationThreadItemView({
   unit,
 }: {
@@ -403,7 +574,7 @@ function AutoReviewThreadItemView({
       {canExpand && (
         <ChevronRight
           aria-hidden
-          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-200 ${
+          className={`shrink-0 text-stone-400 transition-[opacity,transform] duration-300 ${
             expanded ? "rotate-90 opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
           size={14}

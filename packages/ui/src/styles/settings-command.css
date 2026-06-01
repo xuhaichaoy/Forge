@@ -9,7 +9,7 @@
 
 .hc-settings-panel {
   width: min(720px, calc(100vw - 32px));
-  border: 1px solid #d2cdc0;
+  border: 1px solid var(--hc-border-strong); /* was #d2cdc0 — exact match to --hc-border-strong light value; dark value (rgba 255 255 255 / 16%) free */
   border-radius: 8px;
   background: #faf9f5;
   box-shadow: 0 24px 60px rgb(25 30 25 / 22%);
@@ -188,7 +188,7 @@
   flex-direction: column;
   width: min(780px, calc(100vw - 32px));
   max-height: min(760px, calc(100dvh - 84px));
-  border: 1px solid #d2cdc0;
+  border: 1px solid var(--hc-border-strong); /* was #d2cdc0 — exact --hc-border-strong match */
   border-radius: 8px;
   background: #faf9f5;
   box-shadow: 0 24px 60px rgb(25 30 25 / 22%);
@@ -201,7 +201,7 @@
   width: min(420px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
   flex-direction: column;
-  border: 1px solid #d2cdc0;
+  border: 1px solid var(--hc-border-strong); /* was #d2cdc0 — exact --hc-border-strong match */
   border-radius: 8px;
   background: #faf9f5;
   box-shadow: 0 24px 60px rgb(25 30 25 / 22%);
@@ -328,6 +328,17 @@
 .hc-thread-dialog-body span {
   color: #6f716b;
   font-size: 12px;
+  line-height: 1.45;
+}
+
+/* codex rename-dialog subtitle (sidebarElectron.renameThreadDialogSubtitle) — secondary
+   helper line under the title; override the bold/clamped .hc-thread-dialog-body p default. */
+.hc-thread-dialog-body p.hc-thread-dialog-subtitle {
+  display: block;
+  max-height: none;
+  color: #6f716b;
+  font-size: 12px;
+  font-weight: 400;
   line-height: 1.45;
 }
 
@@ -1734,6 +1745,48 @@ textarea.hc-mcp-tool-control {
   color: var(--hc-text-secondary);
 }
 
+/* codex one-flat-table layout (audit-6): colgroup column widths + a single column header
+   + per-section group-header rows. Visual A/B against Codex.app pending. */
+.hc-keyboard-settings-col-command { width: 50%; }
+.hc-keyboard-settings-col-keybinding { width: 30%; }
+.hc-keyboard-settings-col-actions { width: 20%; }
+
+.hc-keyboard-settings-thead th {
+  padding: 8px 6px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hc-text-secondary);
+  border-bottom: 1px solid var(--hc-border-subtle, rgba(0, 0, 0, 0.04));
+}
+
+.hc-keyboard-settings-section-row th {
+  padding: 14px 6px 6px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hc-text-secondary);
+}
+
+.hc-keyboard-settings-table th:first-child,
+.hc-keyboard-settings-table td:first-child { padding-left: 16px; }
+.hc-keyboard-settings-table th:last-child,
+.hc-keyboard-settings-table td:last-child { padding-right: 16px; }
+
+.hc-keyboard-settings-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .hc-keyboard-settings-table {
   width: 100%;
   border-collapse: collapse;
@@ -2218,4 +2271,322 @@ textarea.hc-mcp-tool-control {
   display: grid;
   min-width: 0;
   gap: 3px;
+}
+
+/* =========================================================================
+ * DARK THEME OVERRIDES  (the reported Settings/Appearance dark-mode bug)
+ * =========================================================================
+ *
+ * WHY this block exists
+ * ---------------------
+ * HiCodex theming flips the `--hc-*` design tokens under
+ * `.hc-app[data-theme="dark"]` (base.css:110+). Components that read
+ * `var(--hc-*)` get dark for free. The selectors ABOVE in this file were
+ * authored with a bespoke *warm-grey* light palette (e.g. #faf9f5, #fffdfa,
+ * #222823, #6f716b) whose hex literals do NOT match the cool-grey `--hc-*`
+ * token LIGHT values — so they could not simply be swapped to `var(--hc-*)`
+ * without shifting the light rendering (which is a hard no). The single
+ * exception (#d2cdc0 == --hc-border-strong light) was swapped inline above.
+ *
+ * METHOD: the light hex literals are LEFT UNTOUCHED (light mode renders
+ * exactly as before); this block re-points every surface/text/border/tint to
+ * its dark equivalent. Values are sourced from the authoritative dark pipeline
+ * rather than invented:
+ *   • Surfaces/text/borders pull `var(--hc-*)` dark token values, which base.css
+ *     documents as the Codex Desktop `.electron-dark` palette
+ *     (app-main dark `--color-*`): main/editor-opaque #212121, app surface
+ *     #181818, foreground #fff, foreground-secondary rgba(255,255,255,.70),
+ *     foreground-tertiary rgba(255,255,255,.50), border rgba(255,255,255,.08),
+ *     border-light rgba(255,255,255,.04), border-heavy rgba(255,255,255,.16),
+ *     button-secondary-hover rgba(255,255,255,.08).
+ *   • Elevated cards/inputs that sit ON the #212121 panel use a solid
+ *     #2a2a2a — Codex's elevated-on-editor surface one step above editor-opaque
+ *     (#212121); a solid (not translucent) value avoids alpha stacking on the
+ *     already-translucent panel.
+ *   • Semantic tone TEXT reuses HiCodex's existing dark semantic literals so
+ *     this dialog matches the rest of the app in dark mode: danger #f0a195,
+ *     success #9bd4b8, accent #7aa9b8 (see conversation.css / message.css dark
+ *     blocks). Tone FILLS (which are near-white in light and would glow on
+ *     dark) drop to low-alpha hue washes.
+ * Accent/semantic *borders* that are already legible in both themes
+ * (#9fb29f success, #d6a79d/#ddb4a8 danger, #d8c692/#b7c7ae tone, #8c7a57/
+ * #b7a98f focus, #4a8a6d toggle-on, #2d5562 accent, #c44a3f diff-red,
+ * #f59e0b update) are intentionally left theme-independent.
+ * ------------------------------------------------------------------------- */
+
+/* ---- Panels / dialog shells: warm near-white #faf9f5 / #fbfaf6 -> #212121 -- */
+.hc-app[data-theme="dark"] .hc-settings-panel,
+.hc-app[data-theme="dark"] .hc-command-panel,
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel,
+.hc-app[data-theme="dark"] .hc-settings-route-meta,
+.hc-app[data-theme="dark"] .hc-settings-route-evidence {
+  background: var(--hc-surface-main);
+  color: var(--hc-text-primary);
+  border-color: var(--hc-border-strong);
+}
+
+.hc-app[data-theme="dark"] .hc-management-entry {
+  background: var(--hc-surface-main);
+}
+
+/* Nav rail / route placeholder icon / disabled command rows: #f4f2ec -> app #181818 */
+.hc-app[data-theme="dark"] .hc-settings-nav,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-icon,
+.hc-app[data-theme="dark"] .hc-command-panel-row[data-disabled="true"] {
+  background: var(--hc-surface-app);
+}
+
+/* ---- Elevated cards / inputs / rows that sit ON the panel: #fffdfa -> #2a2a2a -- */
+.hc-app[data-theme="dark"] .hc-settings-nav-item[aria-current="page"],
+.hc-app[data-theme="dark"] .hc-thread-dialog-body input,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body textarea,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option,
+.hc-app[data-theme="dark"] .hc-command-panel-search input,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-main,
+.hc-app[data-theme="dark"] .hc-command-panel-chat-empty button,
+.hc-app[data-theme="dark"] .hc-command-panel-row,
+.hc-app[data-theme="dark"] .hc-management-summary-item,
+.hc-app[data-theme="dark"] .hc-management-section,
+.hc-app[data-theme="dark"] .hc-command-secondary-action,
+.hc-app[data-theme="dark"] .hc-mcp-tool-form-summary,
+.hc-app[data-theme="dark"] .hc-mcp-tool-field {
+  background: #2a2a2a; /* Codex .electron-dark elevated surface above editor-opaque #212121 */
+  color: var(--hc-text-primary);
+}
+
+/* Model-form + mcp text controls: #f8f6f1 / #f6f3ec -> soft overlay */
+.hc-app[data-theme="dark"] .hc-mcp-tool-control,
+.hc-app[data-theme="dark"] .hc-mcp-tool-checkbox,
+.hc-app[data-theme="dark"] .hc-model-field > input,
+.hc-app[data-theme="dark"] .hc-model-field > select,
+.hc-app[data-theme="dark"] .hc-model-field > textarea,
+.hc-app[data-theme="dark"] .hc-model-field-input-row {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
+}
+
+/* Disabled inputs / disabled option fill: #f1ede6 / #f2f0ea -> soft overlay */
+.hc-app[data-theme="dark"] .hc-model-field > input:disabled,
+.hc-app[data-theme="dark"] .hc-model-field > select:disabled,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option[data-disabled="true"] {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+}
+
+/* ---- Hover / active fills -> Codex button-secondary-hover rgba(255,255,255,.08) -- */
+.hc-app[data-theme="dark"] .hc-settings-nav-item:hover,
+.hc-app[data-theme="dark"] .hc-settings-nav-item:focus-visible,
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel header button:hover,
+.hc-app[data-theme="dark"] .hc-command-secondary-action:hover,
+.hc-app[data-theme="dark"] .hc-command-secondary-action:focus-visible,
+.hc-app[data-theme="dark"] .hc-model-field-input-action:hover,
+.hc-app[data-theme="dark"] .hc-management-entry[data-actionable="true"]:hover,
+.hc-app[data-theme="dark"] .hc-management-entry[data-actionable="true"]:focus-visible {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-command-panel-chat-empty button:hover,
+.hc-app[data-theme="dark"] .hc-command-panel-chat-empty button:focus-visible,
+.hc-app[data-theme="dark"] .hc-command-panel-row[data-actionable="true"]:hover,
+.hc-app[data-theme="dark"] .hc-command-panel-row[data-actionable="true"]:focus-visible {
+  background: var(--hc-surface-hover);
+}
+
+/* ---- Status pills / accelerator chips: #ece9df / #f3f1e8 -> soft overlay ---- */
+.hc-app[data-theme="dark"] .hc-command-status,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-copy span,
+.hc-app[data-theme="dark"] .hc-management-entry-primary,
+.hc-app[data-theme="dark"] .hc-mcp-tool-field-header em,
+.hc-app[data-theme="dark"] .hc-command-panel-row-accelerator {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-secondary);
+  border-color: var(--hc-border-subtle);
+}
+
+/* ---- Borders: warm greys (#dedbd1/#cfcabe/#ddd8cc/#d7d1c3) -------- */
+.hc-app[data-theme="dark"] .hc-settings-nav,
+.hc-app[data-theme="dark"] .hc-settings-panel header,
+.hc-app[data-theme="dark"] .hc-command-panel header,
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel header,
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel footer,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-footer,
+.hc-app[data-theme="dark"] .hc-settings-footer,
+.hc-app[data-theme="dark"] .hc-mcp-tool-form-footer {
+  border-color: var(--hc-border-strong);
+}
+
+.hc-app[data-theme="dark"] .hc-settings-nav-item[aria-current="page"],
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-cancel,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option,
+.hc-app[data-theme="dark"] .hc-command-panel-row,
+.hc-app[data-theme="dark"] .hc-command-panel-chat-empty button,
+.hc-app[data-theme="dark"] .hc-command-secondary-action,
+.hc-app[data-theme="dark"] .hc-management-summary-item,
+.hc-app[data-theme="dark"] .hc-management-section,
+.hc-app[data-theme="dark"] .hc-mcp-tool-form-summary,
+.hc-app[data-theme="dark"] .hc-mcp-tool-field,
+.hc-app[data-theme="dark"] .hc-mcp-tool-control,
+.hc-app[data-theme="dark"] .hc-mcp-tool-checkbox,
+.hc-app[data-theme="dark"] .hc-model-field > input,
+.hc-app[data-theme="dark"] .hc-model-field > select,
+.hc-app[data-theme="dark"] .hc-model-field > textarea,
+.hc-app[data-theme="dark"] .hc-model-field-input-row,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body input,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body textarea,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-main,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-icon,
+.hc-app[data-theme="dark"] .hc-command-panel-row-accelerator {
+  border-color: var(--hc-border-default);
+}
+
+/* Thin divider borders (#ece8dc / #e4dfd3): subtle in dark */
+.hc-app[data-theme="dark"] .hc-settings-content-header,
+.hc-app[data-theme="dark"] .hc-command-panel-message,
+.hc-app[data-theme="dark"] .hc-command-panel-search,
+.hc-app[data-theme="dark"] .hc-management-summary-bar,
+.hc-app[data-theme="dark"] .hc-management-entry-list,
+.hc-app[data-theme="dark"] .hc-model-fieldset {
+  border-color: var(--hc-border-subtle);
+}
+
+.hc-app[data-theme="dark"] .hc-model-field-input-action {
+  border-left-color: var(--hc-border-subtle);
+}
+
+/* ---- Primary / strong text: #222823 #242824 #252b31 #272c27 #2a2d2b #1f2329 #222 -> #fff */
+.hc-app[data-theme="dark"] .hc-settings-nav-item[aria-current="page"],
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-copy h2,
+.hc-app[data-theme="dark"] .hc-settings-route-meta dd,
+.hc-app[data-theme="dark"] .hc-command-panel-search input,
+.hc-app[data-theme="dark"] .hc-command-panel-chat-empty button,
+.hc-app[data-theme="dark"] .hc-command-panel-row h3,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-title,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option-title,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-cancel,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option,
+.hc-app[data-theme="dark"] .hc-mcp-tool-form-summary strong,
+.hc-app[data-theme="dark"] .hc-mcp-tool-field-header,
+.hc-app[data-theme="dark"] .hc-mcp-tool-control,
+.hc-app[data-theme="dark"] .hc-mcp-tool-checkbox,
+.hc-app[data-theme="dark"] .hc-management-summary-item strong,
+.hc-app[data-theme="dark"] .hc-management-section > header strong,
+.hc-app[data-theme="dark"] .hc-management-entry-copy strong,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body input,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body textarea,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body p,
+.hc-app[data-theme="dark"] .hc-model-fieldset-legend,
+.hc-app[data-theme="dark"] .hc-model-field > input,
+.hc-app[data-theme="dark"] .hc-model-field > select,
+.hc-app[data-theme="dark"] .hc-model-field > textarea,
+.hc-app[data-theme="dark"] .hc-model-field-input-grow {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-model-field-input-action:hover {
+  color: var(--hc-text-primary);
+}
+
+/* ---- Secondary text: #6f716b #63665f #5f625d #5b5f59 #4b4f4a #4f544d #4b5651 #73766f #6a6e66 #696d65 #666961 #656960 -> rgba(255,255,255,.70) */
+.hc-app[data-theme="dark"] .hc-settings-nav-item,
+.hc-app[data-theme="dark"] .hc-settings-nav-item small,
+.hc-app[data-theme="dark"] .hc-settings-content-header small,
+.hc-app[data-theme="dark"] .hc-settings-empty,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-icon,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-copy span,
+.hc-app[data-theme="dark"] .hc-settings-route-placeholder-copy p,
+.hc-app[data-theme="dark"] .hc-settings-route-evidence,
+.hc-app[data-theme="dark"] .hc-settings-grid label,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body label,
+.hc-app[data-theme="dark"] .hc-thread-dialog-body span,
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel header button,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-icon,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-subtitle,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option-icon,
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option-desc,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-options legend,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option small,
+.hc-app[data-theme="dark"] .hc-mcp-tool-form-summary span,
+.hc-app[data-theme="dark"] .hc-mcp-tool-field small,
+.hc-app[data-theme="dark"] .hc-command-panel-message,
+.hc-app[data-theme="dark"] .hc-command-panel-search,
+.hc-app[data-theme="dark"] .hc-command-panel-row p,
+.hc-app[data-theme="dark"] .hc-command-panel-chat-empty,
+.hc-app[data-theme="dark"] .hc-command-secondary-action,
+.hc-app[data-theme="dark"] .hc-command-details,
+.hc-app[data-theme="dark"] .hc-management-summary-item span,
+.hc-app[data-theme="dark"] .hc-management-section > header span,
+.hc-app[data-theme="dark"] .hc-management-entry-icon,
+.hc-app[data-theme="dark"] .hc-management-entry-copy p,
+.hc-app[data-theme="dark"] .hc-management-entry-primary,
+.hc-app[data-theme="dark"] .hc-management-entry-details,
+.hc-app[data-theme="dark"] .hc-command-status,
+.hc-app[data-theme="dark"] .hc-model-field-label {
+  color: var(--hc-text-secondary);
+}
+
+/* ---- Muted / tertiary text: #777a72 #7a7c75 #7a7c77 #858780 #8a8c84 #8b8e85 #97968d #9a9c94 -> rgba(255,255,255,.50) */
+.hc-app[data-theme="dark"] .hc-settings-nav-group-heading,
+.hc-app[data-theme="dark"] .hc-command-panel-group,
+.hc-app[data-theme="dark"] .hc-command-panel-section-title,
+.hc-app[data-theme="dark"] .hc-command-panel-section-count,
+.hc-app[data-theme="dark"] .hc-settings-route-meta dt,
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option[data-disabled="true"] small,
+.hc-app[data-theme="dark"] .hc-command-panel-row[data-disabled="true"],
+.hc-app[data-theme="dark"] .hc-command-panel-row[data-disabled="true"] h3,
+.hc-app[data-theme="dark"] .hc-management-entry[data-disabled="true"],
+.hc-app[data-theme="dark"] .hc-model-field-hint {
+  color: rgba(255, 255, 255, 0.50); /* Codex .electron-dark --color-text-foreground-tertiary */
+}
+
+/* ---- Semantic TONE text — reuse HiCodex dark literals so dialog matches app -- */
+/* danger (#963d2f) -> #f0a195 (same as conversation.css dark error) */
+.hc-app[data-theme="dark"] .hc-command-panel-message[data-status="error"],
+.hc-app[data-theme="dark"] .hc-command-secondary-action[data-tone="danger"],
+.hc-app[data-theme="dark"] .hc-mcp-tool-field-error {
+  color: #f0a195;
+}
+/* success (#16452f) — too dark to read on #212121 -> #9bd4b8 (app dark success) */
+.hc-app[data-theme="dark"] .hc-command-secondary-action[data-tone="success"],
+.hc-app[data-theme="dark"] .hc-mcp-tool-submit {
+  color: #9bd4b8;
+}
+
+/* ---- Semantic TONE fills — near-white in light, would glow on dark -> hue wash */
+/* success selected/option fills (#f3f8f1 / #f0f6ef) */
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option:hover:not(:disabled),
+.hc-app[data-theme="dark"] .hc-fork-older-turn-option:focus-visible:not(:disabled),
+.hc-app[data-theme="dark"] .hc-mcp-follow-up-option[data-selected="true"],
+.hc-app[data-theme="dark"] .hc-mcp-tool-submit {
+  background: rgba(74, 138, 109, 0.16); /* green wash; hue from #4a8a6d toggle-on */
+}
+.hc-app[data-theme="dark"] .hc-management-summary-item[data-tone="success"] {
+  background: rgba(74, 138, 109, 0.16);
+}
+.hc-app[data-theme="dark"] .hc-management-summary-item[data-tone="warning"] {
+  background: rgba(216, 198, 146, 0.16); /* amber wash; hue from #d8c692 */
+}
+.hc-app[data-theme="dark"] .hc-management-summary-item[data-tone="danger"] {
+  background: rgba(196, 74, 63, 0.16); /* red wash; hue from #c44a3f */
+}
+/* neutral active fill (#f4f1e8 management entry hover) */
+.hc-app[data-theme="dark"] .hc-management-entry[data-actionable="true"]:hover,
+.hc-app[data-theme="dark"] .hc-management-entry[data-actionable="true"]:focus-visible {
+  background: var(--hc-surface-hover);
+}
+
+/* Backdrop scrim — light uses rgb(28 28 26 / 30%); deepen for dark (Codex dialog
+ * backdrop darkens further on dark theme). */
+.hc-app[data-theme="dark"] .hc-settings-backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+
+/* ===== Dark-theme completeness, batch 2 (2026-05-30 workflow; role-mapped to --hc-* dark tokens, light untouched) ===== */
+/* Dark theme overrides for remaining gaps — toggle track off-state background */
+.hc-app[data-theme="dark"] .hc-model-toggle-track {
+  background: var(--hc-surface-soft);
 }

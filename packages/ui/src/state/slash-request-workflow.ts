@@ -10,6 +10,7 @@ import type {
 import { CodexJsonRpcClient, type RpcDebugEvent } from "../lib/codex-json-rpc-client";
 import { formatError, formatUnknown } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
+import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 import {
   logoutAndRefreshAccountState,
   type AccountState,
@@ -47,8 +48,12 @@ import {
   type UiThemeSnapshot,
 } from "./theme";
 
+// Structural alias for the IntlProvider's formatMessage (optional; English when absent).
+type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
+
 export interface SlashRequestWorkflowContext {
   client: CodexJsonRpcClient;
+  formatMessage?: FormatMessage;
   dispatch: ThreadWorkflowDispatch;
   ensureConnected: () => Promise<boolean>;
   openCommandPanel: (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
@@ -82,6 +87,7 @@ export async function runSlashRequestWorkflow(
 ) {
   const {
     client,
+    formatMessage,
     dispatch,
     ensureConnected,
     openCommandPanel,
@@ -241,7 +247,7 @@ export async function runSlashRequestWorkflow(
         dispatch({ type: "setThreads", threads: [result.thread, ...threads.filter((thread) => thread.id !== result.thread.id)] });
         dispatch({ type: "setActiveThread", threadId: result.thread.id });
         dispatch({ type: "notification", message: { method: "thread/started", params: { thread: result.thread } } });
-        dispatch({ type: "log", text: `Forked active thread to ${result.thread.id}.`, level: "info" });
+        dispatch({ type: "log", text: `Forked active thread to ${result.thread.id}.`, level: "success" });
         return;
       }
       case "renameThread": {
@@ -261,7 +267,7 @@ export async function runSlashRequestWorkflow(
           type: "setThreads",
           threads: threads.map((thread) => thread.id === threadId ? { ...thread, name: name.trim() } : thread),
         });
-        dispatch({ type: "log", text: `Renamed active thread to ${name.trim()}.`, level: "info" });
+        dispatch({ type: "log", text: `Renamed active thread to ${name.trim()}.`, level: "success" });
         return;
       }
       case "reloadMcp":
@@ -461,9 +467,11 @@ export async function runSlashRequestWorkflow(
       case "showMemories": {
         openCommandPanel("generic", {
           status: "ready",
-          title: "Memories",
+          title: formatMessage
+            ? formatMessage({ id: "composer.memoriesSlashCommand.title", defaultMessage: "Memories" })
+            : "Memories",
           message: "Configure memory defaults, or update whether the current chat can generate future memories.",
-          entries: projectMemoryCommandEntries(activeThreadId, threadContextDefaults),
+          entries: projectMemoryCommandEntries(activeThreadId, threadContextDefaults, formatMessage),
         });
         return;
       }
@@ -597,7 +605,15 @@ function cleanGoalDetails(values: string[]): string[] {
 function projectMemoryCommandEntries(
   activeThreadId: string | null,
   context: ThreadContextDefaults | null,
+  formatMessage?: FormatMessage,
 ): CommandPanelEntry[] {
+  const fm = (id: string, defaultMessage: string): string =>
+    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
+  // Composite bullet "<label>: <description>" — both halves have Codex ids, so
+  // they localize together (the "Use memories"/"Generate memories" prefix is
+  // composer.memoriesSlashCommand.{use,generate}MemoriesLabel).
+  const bullet = (labelId: string, labelEn: string, descId: string, descEn: string): string =>
+    `${fm(`composer.memoriesSlashCommand.${labelId}`, labelEn)}: ${fm(`composer.memoriesSlashCommand.${descId}`, descEn)}`;
   const preferences = effectiveThreadMemoryPreferences(context);
   const entries: CommandPanelEntry[] = [{
     id: "memories:defaults",
@@ -607,13 +623,13 @@ function projectMemoryCommandEntries(
     // codex: subtitle aligned to upstream
     //   composer.memoriesSlashCommand.newThreadDialogSubtitle =
     //     "These switches apply to the chat started from this composer"
-    meta: "These switches apply to the chat started from this composer",
+    meta: fm("composer.memoriesSlashCommand.newThreadDialogSubtitle", "These switches apply to the chat started from this composer"),
     // codex: detail bullets align to upstream ICU defaults —
-    //   composer.memoriesSlashCommand.useMemoriesDescription      = "Let Codex bring existing memories into this chat's context"
+    //   composer.memoriesSlashCommand.useMemoriesDescription      = "Let Codex bring existing memories into this chat’s context"
     //   composer.memoriesSlashCommand.generateMemoriesDescription = "Allow Codex to use this chat when creating new memories later"
     details: [
-      "Use memories: Let Codex bring existing memories into this chat's context",
-      "Generate memories: Allow Codex to use this chat when creating new memories later",
+      bullet("useMemoriesLabel", "Use memories", "useMemoriesDescription", "Let Codex bring existing memories into this chat’s context"),
+      bullet("generateMemoriesLabel", "Generate memories", "generateMemoriesDescription", "Allow Codex to use this chat when creating new memories later"),
     ],
     secondaryActions: [
       memoryConfigAction("use", !preferences.useMemories),
@@ -626,16 +642,16 @@ function projectMemoryCommandEntries(
       id: `memories:thread:${activeThreadId}`,
       // codex: panel title aligned to upstream
       //   composer.memoriesSlashCommand.dialogTitle = "Chat memories"
-      title: "Chat memories",
+      title: fm("composer.memoriesSlashCommand.dialogTitle", "Chat memories"),
       kind: "status",
       // codex: subtitle aligned to upstream
       //   composer.memoriesSlashCommand.existingThreadDialogSubtitle = "These switches apply to the current chat"
-      status: "These switches apply to the current chat",
+      status: fm("composer.memoriesSlashCommand.existingThreadDialogSubtitle", "These switches apply to the current chat"),
       meta: `thread ${activeThreadId}`,
       // codex: first bullet aligns to upstream
       //   composer.memoriesSlashCommand.useMemoriesStartedDescription = "Cannot be changed after conversation has started"
       details: [
-        "Use memories: Cannot be changed after conversation has started",
+        bullet("useMemoriesLabel", "Use memories", "useMemoriesStartedDescription", "Cannot be changed after conversation has started"),
         "Generate memories controls whether this chat remains eligible for future memory generation.",
       ],
       secondaryActions: [
@@ -913,7 +929,7 @@ function projectFeedbackCommandEntries(input: {
       meta: threadSuffix,
       details: [
         "Copies thread id, workspace, runtime status, and recent UI logs.",
-        "Matches Codex Desktop's include-session-logs intent without uploading logs from HiCodex.",
+        "Matches Codex Desktop’s include-session-logs intent without uploading logs from HiCodex.",
       ],
       action: {
         type: "copyText",

@@ -671,7 +671,7 @@ function MermaidFlowchartPreview({ model }: { model: MermaidPreviewModel }) {
   const nodeById = new Map(model.nodes.map((node) => [node.id, node]));
   return (
     <div className="hc-mermaid-preview" data-mermaid-kind="flowchart">
-      <svg aria-label="Mermaid flowchart preview" role="img" viewBox={`0 0 ${model.width} ${model.height}`}>
+      <svg aria-label="Mermaid diagram" role="img" viewBox={`0 0 ${model.width} ${model.height}`}>
         <defs>
           <marker id="hc-mermaid-arrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
             <path d="M 0 0 L 8 4 L 0 8 z" />

@@ -1,12 +1,21 @@
-import { ArrowLeft, ArrowRight, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ArrowLeft, ArrowRight, GitBranch, Laptop, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { Thread } from "@hicodex/codex-protocol";
 // codex: electron-menu-shortcuts-*.js — Codex header buttons surface
 // the accelerator in their tooltip. HiCodex mirrors that on sidebar toggle.
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
+// codex thread-env-icon-*.js wraps the env indicator in <Tooltip/> (tooltip-*.js).
+import { Tooltip } from "./tooltip";
 
 export interface ConversationChromeProps {
   title: string;
   activeThread?: Thread | null;
+  /*
+   * codex thread-env-icon-*.js — the conversation header shows an environment
+   * indicator (Codex: macbook=local / worktree / cloud / remote-globe). HiCodex is
+   * a local client, so the meaningful states are "local" vs a linked git
+   * "worktree" (derived from the active thread's `host_git_status.isWorktree`).
+   */
+  env?: "local" | "worktree";
   sidebarOpen?: boolean;
   onToggleSidebar?: () => void;
   /*
@@ -42,6 +51,7 @@ export interface ConversationChromeProps {
 export function ConversationChrome({
   title,
   activeThread = null,
+  env = "local",
   sidebarOpen = true,
   onToggleSidebar,
   rightRailToggleAvailable = false,
@@ -95,7 +105,8 @@ export function ConversationChrome({
               disabled={!canNavigateBack || !onNavigateBack}
               onClick={onNavigateBack}
             >
-              <ArrowLeft size={14} aria-hidden="true" />
+              {/* codex toolbar arrows = icon-xs (16px) */}
+              <ArrowLeft size={16} aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -105,10 +116,28 @@ export function ConversationChrome({
               disabled={!canNavigateForward || !onNavigateForward}
               onClick={onNavigateForward}
             >
-              <ArrowRight size={14} aria-hidden="true" />
+              <ArrowRight size={16} aria-hidden="true" />
             </button>
           </div>
         )}
+        {/*
+          * codex thread-env-icon — local/worktree indicator before the title, with
+          * the same tooltip strings Codex uses on its env icon.
+          */}
+        <Tooltip
+          content={
+            env === "worktree"
+              ? "This conversation is running in a local git worktree."
+              : "This conversation is running locally."
+          }
+        >
+          <span
+            className="hc-topbar-env-icon"
+            aria-label={env === "worktree" ? "Running in a local git worktree" : "Running locally"}
+          >
+            {env === "worktree" ? <GitBranch size={16} aria-hidden="true" /> : <Laptop size={16} aria-hidden="true" />}
+          </span>
+        </Tooltip>
         <div className="hc-top-title" title={displayTitle}>{displayTitle}</div>
       </div>
       {showRightRailToggle && (

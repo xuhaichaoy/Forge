@@ -1,6 +1,40 @@
 .hc-rail-list {
   display: grid;
-  gap: 1px;
+  /* codex: rail lists are `flex flex-col gap-0.5` = 2px (--spacing:.25rem × .5). */
+  gap: 2px;
+}
+
+/*
+ * codex Sources list: `-ml-1 flex flex-wrap gap-0.5` row of `size-6` (24px)
+ * `rounded-sm` icon-only buttons holding an `icon-xs` (16px) logo; name in tooltip.
+ */
+.hc-rail-sources-icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: -4px; /* codex -ml-1 */
+}
+
+.hc-rail-source-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px; /* codex rounded-sm */
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-rail-source-icon:hover {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
+  color: var(--hc-text-primary, #1d1f1c);
+}
+
+.hc-rail-source-icon svg,
+.hc-rail-source-icon img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
 }
 
 .hc-rail-card {
@@ -19,7 +53,7 @@
 }
 
 .hc-rail-card-button:hover {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
 }
 
 .hc-rail-card-main {
@@ -85,8 +119,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #2a2d2b;
-  font-size: 12px;
-  font-weight: 600;
+  /* codex: rail rows render via summary-panel-row, label is `text-base` (14px) with
+     no weight class → inherits body --vscode-font-weight:430 (not 12px/600). */
+  font-size: 14px;
+  font-weight: 430;
   line-height: 1.45;
 }
 
@@ -96,9 +132,10 @@
   -webkit-box-orient: vertical;
   white-space: normal;
   color: #6f716b;
-  font-size: 13px;
+  /* codex: progress step text is `text-base leading-normal` = 14px / line-height 1.5. */
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .hc-rail-card[data-progress-status="completed"] .hc-rail-card-icon {
@@ -260,6 +297,48 @@
   color: #963d2f;
 }
 
+/* codex button-OF01XbfH.js — the `ghost` variant (used by dialog Cancel buttons) is
+   tertiary text with transparent border/background + a surface hover; the `danger`
+   variant (destructive dialog actions, e.g. Archive) is a charts-red/10 fill + charts-red
+   text with a transparent border (not a bordered outline). Scoped to the thread dialog so
+   the shared rail-card .decline outline style is untouched. */
+.hc-mini-button.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: #62655f;
+}
+
+.hc-mini-button.ghost:hover {
+  background: rgba(34, 38, 43, 0.06);
+}
+
+.hc-thread-dialog-panel .hc-mini-button.decline {
+  border-color: transparent;
+  background: rgba(224, 46, 42, 0.1);
+  color: #e02e2a;
+}
+
+.hc-thread-dialog-panel .hc-mini-button.decline:hover {
+  background: rgba(224, 46, 42, 0.18);
+}
+
+.hc-app[data-theme="dark"] .hc-mini-button.ghost {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.hc-app[data-theme="dark"] .hc-mini-button.ghost:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel .hc-mini-button.decline {
+  background: rgba(255, 103, 100, 0.1);
+  color: #ff6764;
+}
+
+.hc-app[data-theme="dark"] .hc-thread-dialog-panel .hc-mini-button.decline:hover {
+  background: rgba(255, 103, 100, 0.18);
+}
+
 /* CODEX-REF: check-lg-*.js — Codex
  * Desktop renders every Git summary row inside a 28px (`h-7`) flex container with
  * a `min-w-0 flex-1` inner wrapper and a trailing `ms-auto shrink-0` slot. */
@@ -309,7 +388,8 @@
   white-space: nowrap;
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 13px;
+  /* codex: summary-panel-row label is `text-base` = --text-base:14px. */
+  font-size: 14px;
   line-height: 1.35;
   color: #2a2d2b;
 }
@@ -349,7 +429,7 @@
 }
 
 .hc-summary-panel-row-interactive:hover::before {
-  background: rgba(34, 38, 43, 0.06);
+  background: var(--hc-surface-soft);
 }
 
 .hc-summary-panel-row-disabled {
@@ -357,10 +437,17 @@
   cursor: not-allowed;
 }
 
-/* CODEX-REF: diff-unified-*.js — the diff stats renderer.
+/* CODEX-REF: diff-unified-*.js + app-main-DGDTSRlh.css — the diff stats renderer.
  * Codex Desktop renders +N -N stats inside an `inline-flex items-center gap-1
  * tabular-nums leading-none` wrapper, with added/removed spans tinted via the
- * git-decoration design tokens. */
+ * git-decoration design tokens:
+ *   added  → --color-token-git-decoration-added-resource-foreground
+ *            → --vscode-gitDecoration-addedResourceForeground → --color-decoration-added
+ *   removed → --color-token-git-decoration-deleted-resource-foreground
+ *            → --vscode-gitDecoration-deletedResourceForeground → --color-decoration-deleted
+ * Resolved palette steps (app-main-DGDTSRlh.css):
+ *   .electron-light: added = --green-500 = #00a240 ; deleted = --red-600 = #ba2623
+ *   .electron-dark:  added = --green-300 = #40c977 ; deleted = --red-400 = #fa423e */
 .hc-diff-stats {
   display: inline-flex;
   align-items: center;
@@ -374,21 +461,97 @@
 .hc-diff-stats-added {
   flex-shrink: 0;
   line-height: 1;
-  color: #1f7a43;
+  color: #00a240;
 }
 
 .hc-diff-stats-removed {
   flex-shrink: 0;
   line-height: 1;
-  color: #b23a37;
+  color: #ba2623;
 }
 
-/* CODEX-REF: local-conversation-thread-*.js — empty Sources panel.
+.hc-app[data-theme="dark"] .hc-diff-stats-added {
+  color: #40c977;
+}
+
+.hc-app[data-theme="dark"] .hc-diff-stats-removed {
+  color: #fa423e;
+}
+
+/* CODEX-REF: local-conversation-thread-DAwsPWah.js — empty Sources/artifacts panel.
  * Codex Desktop renders an empty Sources panel as a single `py-1 text-base
- * text-token-description-foreground` row with the literal "No sources yet" string. */
+ * text-token-description-foreground` row with the literal "No sources yet" string.
+ * `text-base` = 14px (was 13px). */
 .hc-rail-empty-state {
   padding: 4px 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.35;
   color: #6f716b;
+}
+
+
+/* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
+/* Dark theme text & border overrides for light-hardcoded colors */
+.hc-app[data-theme="dark"] .hc-rail-card-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-thumb {
+  border-color: var(--hc-border-default);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-title-progress {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card[data-progress-status="completed"] .hc-rail-card-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-meta {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-status {
+  color: var(--hc-text-accent);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-browser-title {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-card-browser-url-inactive {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-diff-stats {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-more-button {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-more-button:hover {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-summary-panel-row-icon {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-summary-panel-row-label {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-summary-panel-row-trailing {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-empty-state {
+  color: var(--hc-text-secondary);
 }

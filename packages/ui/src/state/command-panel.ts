@@ -380,10 +380,10 @@ export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[
 // state/commands.ts COMMAND_DESCRIPTORS / state/command-registry.ts
 // CommandGroup). Sections without entries are skipped at render time.
 const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "thread",     title: "Thread" },
+  { key: "thread",     title: "Chat" },
   { key: "panels",     title: "Panels" },
   { key: "navigation", title: "Navigation" },
-  { key: "workspace",  title: "Workspace" },
+  { key: "workspace",  title: "Project" },
   { key: "skills",     title: "Skills" },
   { key: "configure",  title: "Configure" },
   { key: "app",        title: "App" },
@@ -2118,12 +2118,31 @@ function panelTitle(panel: CommandPanelKind): string {
   }
 }
 
+// codex: several panels ship DEDICATED loading/empty strings rather than the generic
+// "{title}" template — Codex lowercases the noun in loading messages
+// (`Loading skills…`) and uses bespoke empties. These are the byte-exact Codex
+// strings (keys: skills.page.*, skills.appsPage.loading, plugins.page.loading,
+// agent-settings experimentalFeatures.*); loading ellipses use U+2026 to match the
+// rest of HiCodex. Panels without a known Codex string fall through to the generic
+// builder. (mcp empty is intentionally left generic — Codex has both "connected" and
+// "configured" variants and HiCodex's panel semantics don't cleanly pick one.)
+const PANEL_MESSAGE_OVERRIDES: Partial<Record<CommandPanelKind, { loading?: string; empty?: string }>> = {
+  experimental: { loading: "Loading experimental features…", empty: "No beta experimental features available" },
+  skills: { loading: "Loading skills…", empty: "No skills found" },
+  apps: { loading: "Loading apps…" },
+  plugins: { loading: "Loading plugins…" },
+  hooks: { loading: "Loading hooks…" },
+  // codex settings.mcp.empty — fixes the generic builder's lowercased "mcp" acronym.
+  mcp: { empty: "No MCP servers connected" },
+};
+
 function panelMessage(panel: CommandPanelKind, status: CommandPanelStatus, error?: string): string {
   if (status === "error") return error || `${panelTitle(panel)} failed.`;
-  // codex: upstream loading messages use Unicode `…` (U+2026), e.g.
-  // `Loading experimental features…` — keep the ellipsis byte-for-byte aligned.
-  if (status === "loading") return `Loading ${panelTitle(panel)}…`;
-  if (status === "empty") return `No ${panelTitle(panel).toLowerCase()} found.`;
+  const override = PANEL_MESSAGE_OVERRIDES[panel];
+  if (status === "loading") return override?.loading ?? `Loading ${panelTitle(panel)}…`;
+  // codex command-panel empties have no trailing period (e.g. `No apps found`,
+  // `No skills found`) — match that convention for every panel's generic empty.
+  if (status === "empty") return override?.empty ?? `No ${panelTitle(panel).toLowerCase()} found`;
   return "";
 }
 
