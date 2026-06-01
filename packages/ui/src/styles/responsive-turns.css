@@ -431,10 +431,11 @@
 .hc-plan-summary-card {
   width: min(100%, 720px);
   overflow: hidden;
-  border: 1px solid rgba(34, 38, 43, 0.14);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--hc-surface-panel) 92%, transparent);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  /* codex plan card = markdown-surface `m` wrapper: NO border, NO shadow, rounded-lg,
+     bg-token-foreground/5 wash (was a bordered+shadowed opaque panel; A/B-pending incl. dark wash). */
+  border-radius: var(--hc-radius-lg);
+  corner-shape: superellipse(1.5);
+  background: var(--hc-surface-hover);
 }
 
 .hc-plan-summary-header {
@@ -443,7 +444,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 9px 10px 8px 12px;
+  padding: 8px 12px; /* codex plan header px-3 py-2 = 8px 12px symmetric (was 9px 10px 8px 12px; A/B-pending) */
   /* codex plan card header has NO border-bottom (the header/body share one surface). */
 }
 
@@ -472,11 +473,11 @@
 
 .hc-plan-summary-actions button {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 24px; /* codex size:icon electron ≈ 24px (14px icon-2xs + 2×4px p-1 + border) (was 28px; A/B-pending) */
+  height: 24px;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--hc-radius-md); /* codex size:icon electron:rounded-md = 8/10px (was 7px; A/B-pending) */
   background: transparent;
   color: var(--hc-text-secondary);
   cursor: pointer;
@@ -487,6 +488,8 @@
   width: auto;
   gap: 4px;
   padding: 0 8px;
+  border: 1px solid var(--hc-border-default); /* codex Button color:outline = 1px ~8% foreground border (A/B-pending) */
+  border-radius: 9999px; /* codex default-size outline button = rounded-full pill (overrides the actions radius-md; A/B-pending) */
   white-space: nowrap;
 }
 

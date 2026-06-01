@@ -32,6 +32,8 @@ import {
   ModelPickerMenu,
   decodeSelection,
   encodeSelection,
+  isSubscriptionProviderId,
+  normalizeSubscriptionProviderId,
 } from "./components/model-picker-menu";
 import {
   ReasoningPickerMenu,
@@ -112,6 +114,7 @@ import { canNavigateBackInHistory, canNavigateForwardInHistory } from "./state/t
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
   DEFAULT_SUBSCRIPTION_PROVIDER_ID,
+  DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
   DEFAULT_MODEL_REASONING_SUMMARY,
   EMPTY_MODEL,
   buildModelConfigFromConfig,
@@ -479,6 +482,12 @@ function turnFeedbackUploadTags(event: TurnRatingEvent): Record<string, string> 
 const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
 const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;
 
+function migrateSubscriptionModelSelection(value: string | null): string | null {
+  const decoded = decodeSelection(value);
+  if (!decoded || decoded.providerId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID) return value;
+  return encodeSelection(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID, decoded.model);
+}
+
 function readSystemThemeVariant(): ResolvedUiTheme {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -757,16 +766,23 @@ export function HiCodexApp() {
   const [selectedModelKey, setSelectedModelKeyState] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     try {
-      return readMigratedStorageValue(window.localStorage, SELECTED_MODEL_STORAGE_KEY, [LEGACY_SELECTED_MODEL_STORAGE_KEY]);
+      const stored = readMigratedStorageValue(window.localStorage, SELECTED_MODEL_STORAGE_KEY, [LEGACY_SELECTED_MODEL_STORAGE_KEY]);
+      const migrated = migrateSubscriptionModelSelection(stored);
+      if (migrated !== stored) {
+        if (migrated) window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, migrated);
+        else window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY);
+      }
+      return migrated;
     } catch {
       return null;
     }
   });
   const setSelectedModelKey = useCallback((key: string | null) => {
-    setSelectedModelKeyState(key);
+    const nextKey = migrateSubscriptionModelSelection(key);
+    setSelectedModelKeyState(nextKey);
     try {
-      if (key) {
-        window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, key);
+      if (nextKey) {
+        window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, nextKey);
       } else {
         window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY);
         window.localStorage.removeItem(LEGACY_SELECTED_MODEL_STORAGE_KEY);
@@ -1713,7 +1729,7 @@ export function HiCodexApp() {
     let modelContext = picked ? {
       ...(state.threadContextDefaults ?? {}),
       model: picked.model,
-      modelProvider: picked.providerId,
+      modelProvider: normalizeSubscriptionProviderId(picked.providerId),
     } : state.threadContextDefaults;
     /*
      * CODEX-REF: composer-*.js — m.reasoningEffort 由 setModelAndReasoningEffort
@@ -2033,20 +2049,21 @@ export function HiCodexApp() {
   const modelPickerProviders = useMemo(() => {
     const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
       ?? DEFAULT_PROVIDERS[0];
-    const openaiProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_PROVIDER_ID);
+    const subscriptionProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
     const activeProviderId = state.threadContextDefaults?.modelProvider?.trim() || localFallback.id;
     const draftProviderId = modelDraft.id.trim();
-    const useDraftForLocalProvider = draftProviderId.length > 0 && draftProviderId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID;
+    const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
+    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSubscriptionProviderId(draftProviderId);
     const localProviderId = useDraftForLocalProvider
       ? draftProviderId
-      : (activeProviderId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID ? activeProviderId : localFallback.id);
+      : (!activeIsSubscription ? activeProviderId : localFallback.id);
     const localModels = normalizeModelSlugs([
       ...modelSlugsForConfig(modelDraft),
     ]);
-    const openaiModels = openaiProvider
+    const subscriptionModels = subscriptionProvider
       ? normalizeModelSlugs([
-          ...openaiProvider.models,
-          activeProviderId === DEFAULT_SUBSCRIPTION_PROVIDER_ID ? state.threadContextDefaults?.model : null,
+          ...subscriptionProvider.models,
+          activeIsSubscription ? state.threadContextDefaults?.model : null,
         ])
       : [];
     return [
@@ -2064,7 +2081,12 @@ export function HiCodexApp() {
           : localFallback.baseUrl,
         models: localModels.length > 0 ? localModels : localFallback.models,
       },
-      ...(openaiProvider ? [{ ...openaiProvider, models: openaiModels.length > 0 ? openaiModels : openaiProvider.models }] : []),
+      ...(subscriptionProvider
+        ? [{
+            ...subscriptionProvider,
+            models: subscriptionModels.length > 0 ? subscriptionModels : subscriptionProvider.models,
+          }]
+        : []),
     ];
   }, [
     modelDraft.baseUrl,
@@ -2083,7 +2105,7 @@ export function HiCodexApp() {
    * Logic:
    *   - The active config.toml provider is always considered ready (the user
    *     is presumably already using it, so its credential layer works).
-   *   - For the built-in `openai` provider: ready when `getAuthStatus` returns
+   *   - For ChatGPT subscription providers: ready when `getAuthStatus` returns
    *     any non-null auth method, or when the isolated HiCodex auth.json has a
    *     ChatGPT/API-key credential. `getAuthStatus` is scoped to the active
    *     provider, so a local API provider with `requires_openai_auth = false`
@@ -2097,11 +2119,12 @@ export function HiCodexApp() {
     // OAuth is complete. Keep the subscription provider ready when either the
     // live RPC reports an auth method or the isolated Codex auth.json contains
     // a ChatGPT/API-key credential.
-    if (active && active !== DEFAULT_SUBSCRIPTION_PROVIDER_ID) {
+    if (active && !isSubscriptionProviderId(active)) {
       ready.add(active);
     }
     if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredentialSummary(codexAuthSummary)) {
       ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
+      ready.add(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
     }
     return ready;
   }, [codexAuthSummary, state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
@@ -5038,7 +5061,10 @@ export function HiCodexApp() {
           selectedKey={selectedModelKey}
           defaultKey={
             state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
-              ? encodeSelection(state.threadContextDefaults.modelProvider, state.threadContextDefaults.model)
+              ? encodeSelection(
+                  normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider),
+                  state.threadContextDefaults.model,
+                )
               : null
           }
           readyProviders={readyProviders}

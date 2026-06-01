@@ -52,6 +52,15 @@ export function KbLibraryStoragePanel({
             {yuxiBusinessLineLabel(selectedCategory.line)} · {selectedDatabase?.db_id ? "已启用" : "首次上传时自动创建资料库"}
           </div>
         </div>
+        <button
+          type="button"
+          className="hc-kb-topbar-btn hc-kb-topbar-btn--primary"
+          disabled={governanceSaving}
+          onClick={() => onSaveGovernance(selectedDatabase, draft)}
+        >
+          <Save size={13} strokeWidth={2.2} aria-hidden="true" />
+          {governanceSaving ? "保存中" : "保存设置"}
+        </button>
       </div>
 
       {!selectedDatabase?.db_id && (
@@ -68,49 +77,6 @@ export function KbLibraryStoragePanel({
           )}
         </div>
       )}
-
-      <BusinessSummary
-        database={selectedDatabase}
-        category={selectedCategory}
-        draft={draft}
-      />
-
-      <section className="hc-kb-admin-section hc-kb-admin-section--wide">
-        <div className="hc-kb-admin-section-head">
-          <strong>这个库怎么用</strong>
-          <button
-            type="button"
-            className="hc-kb-topbar-btn hc-kb-topbar-btn--primary"
-            disabled={governanceSaving}
-            onClick={() => onSaveGovernance(selectedDatabase, draft)}
-          >
-            <Save size={13} strokeWidth={2.2} aria-hidden="true" />
-            {governanceSaving ? "保存中" : "保存设置"}
-          </button>
-        </div>
-        <div className="hc-kb-simple-settings">
-          <GovernanceField
-            label="资料范围"
-            value={draft.citationScope}
-            onChange={(value) => setDraft((prev) => ({ ...prev, citationScope: value }))}
-          />
-          <GovernanceField
-            label="负责人"
-            value={draft.ownerRole}
-            onChange={(value) => setDraft((prev) => ({ ...prev, ownerRole: value }))}
-          />
-          <GovernanceField
-            label="什么时候更新"
-            value={draft.updateRule}
-            onChange={(value) => setDraft((prev) => ({ ...prev, updateRule: value }))}
-          />
-          <GovernanceField
-            label="数据来源"
-            value={draft.externalSystems.join("、")}
-            onChange={(value) => setDraft((prev) => ({ ...prev, externalSystems: splitList(value) }))}
-          />
-        </div>
-      </section>
 
       <section className="hc-kb-admin-section hc-kb-admin-section--wide">
         <div className="hc-kb-admin-section-head">
@@ -148,49 +114,41 @@ export function KbLibraryStoragePanel({
             ]}
             onChange={(value) => setDraft((prev) => ({ ...prev, entityMode: value as LibraryGovernanceDraft["entityMode"] }))}
           />
+          <SimpleSettingRow
+            title="匹配严格度"
+            description="均衡适合日常检索，严格适合投标响应、报价和资质类资料。"
+            value={draft.confidenceMode}
+            options={[
+              { value: "balanced", label: "均衡" },
+              { value: "strict", label: "严格" },
+            ]}
+            onChange={(value) => setDraft((prev) => ({ ...prev, confidenceMode: value as LibraryGovernanceDraft["confidenceMode"] }))}
+          />
         </div>
-        <SimpleFlow />
       </section>
 
       <section className="hc-kb-admin-section hc-kb-admin-section--wide">
         <div className="hc-kb-admin-section-head">
-          <strong>怎么保证匹配准确</strong>
-          <span>不是只看关键词，会同时看标签、档案关系、业务规则和来源证据。</span>
+          <strong>这个库怎么用</strong>
+          <span>选填，便于团队对齐资料范围与维护责任。</span>
         </div>
-        <div className="hc-kb-match-explain-grid">
-          <MatchExplainCard
-            title="先限定范围"
-            value={selectedDatabase?.name || selectedCategory.label}
-            description="只在当前业务线和当前知识库内优先匹配，避免串库。"
+        <div className="hc-kb-simple-settings">
+          <GovernanceField
+            label="资料范围"
+            value={draft.citationScope}
+            onChange={(value) => setDraft((prev) => ({ ...prev, citationScope: value }))}
           />
-          <MatchExplainCard
-            title="再看档案关系"
-            value={draft.entityMode === "auto_align" ? "自动关联" : "人工确认"}
-            description="讲师、课程、客户、项目等关系会参与推荐和排序。"
+          <GovernanceField
+            label="负责人"
+            value={draft.ownerRole}
+            onChange={(value) => setDraft((prev) => ({ ...prev, ownerRole: value }))}
           />
-          <MatchExplainCard
-            title="保留来源证据"
-            value="可追溯"
-            description="命中的文件、片段和原文位置会跟随结果展示。"
-          />
-          <MatchExplainCard
-            title="低把握不乱用"
-            value={draft.confidenceMode === "strict" ? "严格" : "均衡"}
-            description="重复、冲突、缺字段或低把握内容进入入库问题。"
+          <GovernanceField
+            label="什么时候更新"
+            value={draft.updateRule}
+            onChange={(value) => setDraft((prev) => ({ ...prev, updateRule: value }))}
           />
         </div>
-        <SimpleSettingRow
-          title="匹配严格度"
-          description="均衡适合日常检索，严格适合投标响应、报价和资质类资料。"
-          value={draft.confidenceMode}
-          options={[
-            { value: "balanced", label: "均衡" },
-            { value: "strict", label: "严格" },
-          ]}
-          onChange={(value) => setDraft((prev) => ({ ...prev, confidenceMode: value as LibraryGovernanceDraft["confidenceMode"] }))}
-        />
-        <SignalChips title="主要匹配依据" values={draft.matchSignals} />
-        <SignalChips title="质量要求" values={draft.qualityMetrics} />
       </section>
 
       <details className="hc-kb-advanced-settings">
@@ -226,45 +184,6 @@ export function KbLibraryStoragePanel({
   );
 }
 
-function BusinessSummary({
-  database,
-  category,
-  draft,
-}: {
-  database: YuxiKnowledgeDatabase | null;
-  category: YuxiCategoryMeta;
-  draft: LibraryGovernanceDraft;
-}) {
-  const cards = [
-    {
-      title: "放什么资料",
-      value: draft.citationScope || category.label,
-      meta: draft.citationScope || database?.description || category.description,
-    },
-    {
-      title: "上传后",
-      value: intakeModeLabel(draft.intakeMode),
-      meta: "能识别清楚就入库，重复或冲突进入入库问题",
-    },
-    {
-      title: "档案",
-      value: draft.entityMode === "auto_align" ? "自动关联" : "人工确认",
-      meta: "识别出的对象会进入档案中心，后续检索会引用这些关系",
-    },
-  ];
-  return (
-    <div className="hc-kb-governance-summary" aria-label="当前知识库设置摘要">
-      {cards.map((card) => (
-        <div key={card.title} className="hc-kb-governance-card">
-          <span>{card.title}</span>
-          <strong>{card.value}</strong>
-          <em>{card.meta}</em>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function SimpleSettingRow({
   title,
   description,
@@ -295,49 +214,6 @@ function SimpleSettingRow({
           >
             {option.label}
           </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SimpleFlow() {
-  const steps = ["上传", "读取内容", "提取档案", "确认问题", "入库检索"];
-  return (
-    <div className="hc-kb-simple-flow" aria-label="上传后处理流程">
-      {steps.map((step, index) => (
-        <span key={step}>{index + 1}. {step}</span>
-      ))}
-    </div>
-  );
-}
-
-function MatchExplainCard({
-  title,
-  value,
-  description,
-}: {
-  title: string;
-  value: string;
-  description: string;
-}) {
-  return (
-    <div className="hc-kb-match-explain-card">
-      <span>{title}</span>
-      <strong>{value}</strong>
-      <em>{description}</em>
-    </div>
-  );
-}
-
-function SignalChips({ title, values }: { title: string; values: string[] }) {
-  const displayValues = values.length > 0 ? values : ["当前库范围", "档案关系", "来源证据"];
-  return (
-    <div className="hc-kb-signal-row">
-      <span>{title}</span>
-      <div className="hc-kb-tags">
-        {displayValues.slice(0, 8).map((value) => (
-          <span key={value} className="hc-kb-tag">{value}</span>
         ))}
       </div>
     </div>
@@ -447,10 +323,6 @@ function entityModeValue(value: unknown): LibraryGovernanceDraft["entityMode"] {
 
 function confidenceModeValue(value: unknown): LibraryGovernanceDraft["confidenceMode"] {
   return value === "strict" ? "strict" : "balanced";
-}
-
-function intakeModeLabel(value: LibraryGovernanceDraft["intakeMode"]): string {
-  return value === "review_first" ? "先人工处理" : "自动入库";
 }
 
 function splitList(value: string): string[] {

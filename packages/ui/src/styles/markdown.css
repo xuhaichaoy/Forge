@@ -1,5 +1,17 @@
 .hc-markdown li {
-  margin: 0 0 8px; /* codex `_listItem_n9ah0_151` = .5rem (8px) inter-item gap */
+  margin: 0; /* codex `_listItem`: no own margin; inter-item gap is on `li + li` below, so no trailing space after the last item (A/B-pending) */
+}
+
+.hc-markdown li + li {
+  margin-top: 8px; /* codex `_listItem + _listItem` = .5rem (8px) between consecutive items (A/B-pending) */
+}
+
+.hc-markdown li > p {
+  margin: 0; /* codex `_listItem > p` = 0 (A/B-pending) */
+}
+
+.hc-markdown li > p + p {
+  margin-top: 11px; /* codex `_listItem > p + p` = .6875rem = 11px (A/B-pending) */
 }
 
 .hc-markdown .hc-task-list {
@@ -42,7 +54,7 @@
 
 .hc-markdown hr {
   height: 1px;
-  margin: 16px 0; /* Codex: hr = my-4 = 16px */
+  margin: 28px 0; /* codex markdown ._horizontalRule = 28px 0 (was 16px prose assumption; A/B-pending) */
   border: 0;
   background: #d8dbe0;
 }
@@ -204,23 +216,25 @@
 }
 
 .hc-code-snippet {
-  margin: 0 0 10px;
+  margin: 14px 0; /* codex markdown ._codeBlock = 14px 0 (was 0 0 10px; A/B-pending) */
   overflow: hidden;
   border: 1px solid #d8dbe0;
-  border-radius: 8px;
+  border-radius: var(--hc-radius-lg); /* codex code-snippet `rounded-lg` = 10/12.5px (was 8px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: #f5f6f8;
   contain: inline-size;
 }
 
 .hc-markdown-code-lazy {
-  margin: 0 0 10px;
+  margin: 14px 0; /* codex markdown ._codeBlock = 14px 0 (was 0 0 10px; A/B-pending) */
 }
 
 .hc-markdown-code-lazy pre {
   overflow-x: auto;
   margin: 0;
   border: 1px solid #d8dbe0;
-  border-radius: 8px;
+  border-radius: var(--hc-radius-lg); /* codex code `rounded-lg` = 10/12.5px (was 8px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: rgba(34, 38, 43, 0.04);
   padding: 8px;
 }

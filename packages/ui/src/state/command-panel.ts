@@ -5,9 +5,11 @@ import {
   type McpToolArgumentField,
 } from "./mcp-tool-arguments";
 import { mcpAppResourceUriFromMeta } from "./thread-item-fields";
-import type { HiCodexLocale } from "./i18n";
+import type { HiCodexLocale, I18nMessageDescriptor, I18nValues } from "./i18n";
 import type { NotificationPreferences } from "./notification-preferences";
 import type { UiThemeMode } from "./theme";
+
+type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 
 export interface ConfigWriteActionEdit {
   keyPath: string;
@@ -315,15 +317,17 @@ export function commandPanelSubModeFromPanel(panel: CommandPanelState | null): C
 
 // codex: app-main-*.js — three placeholders that ride with the Hd
 // atom: root → "Type command", chats → "Search chats", files → "Search files".
-export function commandPanelSubModePlaceholder(subMode: CommandPanelSubMode): string {
+export function commandPanelSubModePlaceholder(subMode: CommandPanelSubMode, formatMessage?: FormatMessage): string {
+  const fm = (id: string, defaultMessage: string): string =>
+    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
   switch (subMode) {
     case "files":
-      return "Search files";
+      return fm("codex.commandMenu.fileSearchPlaceholder", "Search files");
     case "chats":
-      return "Search chats";
+      return fm("codex.commandMenu.chatSearchPlaceholder", "Search chats");
     case "root":
     default:
-      return "Type command";
+      return fm("codex.commandMenu.searchPlaceholder", "Type command");
   }
 }
 

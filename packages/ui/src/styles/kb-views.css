@@ -1235,78 +1235,35 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 42px;
-  padding: 8px 14px;
+  min-height: 46px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--hc-border-subtle);
   background: var(--hc-surface-main);
   flex-shrink: 0;
 }
 
 .hc-kb-library-toolbar-main {
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: row;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+  gap: 14px;
 }
 
 .hc-kb-library-title {
+  flex: 0 0 auto;
   color: var(--hc-text-primary);
   font-size: 13px;
   font-weight: 650;
   line-height: 1.25;
 }
 
-.hc-kb-library-meta,
 .hc-kb-library-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.hc-kb-library-meta {
-  color: var(--hc-text-secondary);
-  font-size: 11.5px;
-  line-height: 1.35;
-}
-
-.hc-kb-library-metrics {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.hc-kb-library-metric {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 20px;
-  padding: 0 7px;
-  border: 1px solid var(--hc-border-subtle);
-  border-radius: 999px;
-  background: var(--hc-surface-panel);
-  color: var(--hc-text-secondary);
-  font-size: 11px;
-  line-height: 1;
-}
-
-.hc-kb-library-metric strong {
-  color: var(--hc-text-primary);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.hc-kb-library-metric[data-tone="pending"] {
-  border-color: color-mix(in oklab, #f59e0b 28%, var(--hc-border-subtle));
-  background: color-mix(in oklab, #f59e0b 10%, var(--hc-surface-panel));
-}
-
-.hc-kb-library-metric[data-tone="danger"] {
-  border-color: color-mix(in oklab, #dc2626 30%, var(--hc-border-subtle));
-  background: color-mix(in oklab, #dc2626 8%, var(--hc-surface-panel));
 }
 
 .hc-kb-library-actions {
@@ -1866,6 +1823,33 @@
   flex-shrink: 0;
 }
 
+.hc-kb-library-toolbar .hc-kb-workspace-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.hc-kb-library-toolbar .hc-kb-workspace-tabs {
+  min-height: 46px;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.hc-kb-library-toolbar .hc-kb-workspace-tab {
+  height: 46px;
+}
+
+.hc-kb-library-toolbar .hc-kb-workspace-gear {
+  margin-left: 4px;
+}
+
+.hc-kb-library-toolbar .hc-kb-workspace-subtabs {
+  margin: -2px 0 6px;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+
 .hc-kb-workspace-spacer {
   flex: 1 1 auto;
 }
@@ -2415,6 +2399,39 @@
 .hc-kb-markdown-preview {
   max-height: 220px;
   overflow: hidden;
+}
+
+/* 资料详情的内容预览（阅读视图）：连续段落，替代“片段 0/1/2”调试样式 */
+.hc-kb-doc-reading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hc-kb-doc-reading p {
+  margin: 0;
+  color: var(--hc-text-primary);
+  font-size: 13px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  scroll-margin: 16px;
+}
+
+/* 检索命中的段：底色 + 左侧强调条，点击搜索结果后滚动定位到这里 */
+.hc-kb-doc-reading p[data-hit="true"] {
+  background: color-mix(in oklab, #f59e0b 16%, var(--hc-surface-main));
+  border-radius: 6px;
+  padding: 8px 10px;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+/* 命中段里出现的检索关键词加亮 */
+.hc-kb-doc-mark {
+  background: color-mix(in oklab, #f59e0b 35%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 650;
 }
 
 .hc-kb-storage-actions {

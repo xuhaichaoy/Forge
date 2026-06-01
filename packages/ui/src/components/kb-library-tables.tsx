@@ -90,10 +90,10 @@ export function LibraryDocumentsTable({
             />
           </th>
           <th style={{ width: "28%" }}>资料名称</th>
-          <th style={{ width: "20%" }}>所属知识库</th>
-          <th style={{ width: "14%" }}>处理状态</th>
-          <th style={{ width: "16%" }}>入库情况</th>
-          <th style={{ width: "14%" }}>内容定位</th>
+          <th style={{ width: "11%" }}>所属知识库</th>
+          <th style={{ width: "16%" }}>上传</th>
+          <th style={{ width: "11%" }}>处理状态</th>
+          <th style={{ width: "22%" }}>入库情况</th>
           <th style={{ width: "12%", textAlign: "right" }}>操作</th>
         </tr>
       </thead>
@@ -123,14 +123,9 @@ export function LibraryDocumentsTable({
               />
             </td>
             <td>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
                 <FileIcon ext={file.ext} />
-                <div>
-                  <div className="hc-kb-file-name">{file.name}</div>
-                  <div className="hc-kb-file-meta">
-                    上传人 {file.uploadedBy} · {file.date}
-                  </div>
-                </div>
+                <div className="hc-kb-file-name">{file.name}</div>
               </div>
             </td>
             <td>
@@ -144,17 +139,16 @@ export function LibraryDocumentsTable({
               </div>
             </td>
             <td>
+              <div className="hc-kb-file-name">{file.uploadedBy}</div>
+              <div className="hc-kb-file-meta" style={{ whiteSpace: "nowrap" }}>{file.date}</div>
+            </td>
+            <td>
               <span className={`hc-kb-status hc-kb-status--${documentStatusTone(file.raw.status)}`}>
                 {documentStatusLabel(file.raw.status)}
               </span>
-              <div className="hc-kb-file-meta">更新 {file.updatedDate}</div>
             </td>
             <td>
               <div className="hc-kb-file-name">{file.versionLabel}</div>
-              <div className="hc-kb-file-meta">{file.pendingReason}</div>
-            </td>
-            <td>
-              <div className="hc-kb-file-meta">{file.sourceLocator}</div>
             </td>
             <td>
               <div className="hc-kb-row-actions" style={{ justifyContent: "flex-end" }}>
@@ -252,6 +246,7 @@ function documentStatusLabel(value: string | null | undefined): string {
   if (value === "indexed" || value === "done" || value === "completed" || value === "success") return "已入库";
   if (value === "parsed") return "已解析";
   if (value === "uploaded") return "已上传";
+  if (value === "processing" || value === "pending" || value === "running") return "处理中";
   if (value === "failed" || value === "error" || value === "error_parsing") return "失败";
   return value || "未记录";
 }
@@ -268,20 +263,33 @@ export function SearchResultsTable({
   loading,
   errors = [],
   searchedKbCount = 0,
+  onOpen,
 }: {
   groups: YuxiSearchGroup[];
   loading: boolean;
   errors?: Array<{ db_id?: string; error?: string }>;
   searchedKbCount?: number;
+  onOpen?: (target: { fileId: string; chunkId: string }) => void;
 }) {
-  const rows = groups.flatMap((group) => (group.results ?? []).map((result, index) => ({
-    id: `${group.business_line ?? "line"}:${group.category ?? "cat"}:${result.db_id ?? index}`,
-    kbName: result.kb_name || "知识库",
-    category: group.label || yuxiCategoryMeta(group.category)?.label || group.category || "未分类",
-    businessLine: yuxiBusinessLineLabel(group.business_line),
-    result: summarizeSearchResult(result.result),
-    evidence: summarizeSearchEvidence(result.result),
-  })));
+  const rows = groups.flatMap((group) => (group.results ?? []).map((result, index) => {
+    const raw = (result.result ?? {}) as Record<string, unknown>;
+    const chunkId = typeof raw.chunk_id === "string" ? raw.chunk_id : "";
+    const fileId = typeof raw.file_id === "string"
+      ? raw.file_id
+      : chunkId
+        ? chunkId.split("#")[0]
+        : "";
+    return {
+      id: `${group.business_line ?? "line"}:${group.category ?? "cat"}:${result.db_id ?? index}:${index}`,
+      kbName: result.kb_name || "知识库",
+      category: group.label || yuxiCategoryMeta(group.category)?.label || group.category || "未分类",
+      businessLine: yuxiBusinessLineLabel(group.business_line),
+      result: summarizeSearchResult(result.result),
+      evidence: summarizeSearchEvidence(result.result),
+      fileId,
+      chunkId,
+    };
+  }));
   if (rows.length === 0) {
     return (
       <div className="hc-kb-empty">
@@ -310,7 +318,12 @@ export function SearchResultsTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr
+              key={row.id}
+              tabIndex={row.fileId ? 0 : undefined}
+              onClick={row.fileId ? () => onOpen?.({ fileId: row.fileId, chunkId: row.chunkId }) : undefined}
+              style={row.fileId ? { cursor: "pointer" } : undefined}
+            >
               <td>
                 <div className="hc-kb-file-name">{row.kbName}</div>
                 <div className="hc-kb-file-meta">{row.businessLine}</div>

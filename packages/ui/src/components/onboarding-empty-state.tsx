@@ -9,6 +9,7 @@
  * has no "Let's build" subtitle (letsBuild appears 0× in app-main).
  */
 import { useMemo } from "react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 interface OnboardingEmptyStateProps {
   onDismissPromo?: () => void;
@@ -46,6 +47,15 @@ export function OnboardingEmptyState({
   workspace,
 }: OnboardingEmptyStateProps) {
   const project = useMemo(() => projectBasename(workspace), [workspace]);
+  const { formatMessage } = useHiCodexIntl();
+  // The project name's position differs by locale ("…work on in {project}?" vs
+  // "我们应该在{project}中做些什么？"), so split the localized template on {project}
+  // and render the clickable selector between the two halves.
+  const headlineTemplate = project
+    ? formatMessage({ id: "hc.home.hero.whatShouldWeWorkOnInProject", defaultMessage: "What should we work on in {project}?" })
+    : formatMessage({ id: "hc.home.hero.whatShouldWeWorkOn", defaultMessage: "What should we work on?" });
+  const [headlineBefore, headlineAfter = ""] = project ? headlineTemplate.split("{project}") : [headlineTemplate];
+  const changeFolderLabel = formatMessage({ id: "hc.home.hero.changeProjectFolder", defaultMessage: "Change project folder" });
   // codex app-main home hero (fE): no-project / non-git case uses
   // home.hero.whatShouldWeWorkOn ("What should we work on?"), NOT "build" — the
   // "build" + "Let's build" strings live on the separate hotkey-window new-thread
@@ -57,26 +67,27 @@ export function OnboardingEmptyState({
           <h2 className="hc-onboarding-empty-headline">
             {project ? (
               <>
-                What should we work on in{" "}
-                {/* codex pE: the project name is a clickable selector with a rounded hover
-                    pill that opens the workspace-root picker. HiCodex wires it to the
-                    change-folder action (open-folder is part of Codex's hero selector); a
-                    full recent-roots dropdown would duplicate the composer footer picker. */}
+                {headlineBefore}
+                {/* codex pE: the project name is a clickable selector that opens the
+                    workspace-root picker. The trailing "?" / locale suffix lives in
+                    headlineAfter so the project name moves position correctly across
+                    locales (zh-CN renders 我们应该在 {project} 中做些什么？). */}
                 {onUseExistingFolder ? (
                   <button
                     type="button"
                     className="hc-onboarding-empty-project-trigger"
-                    title="Change project folder"
+                    title={changeFolderLabel}
                     onClick={() => onUseExistingFolder()}
                   >
-                    {project}?
+                    {project}
                   </button>
                 ) : (
-                  `${project}?`
+                  project
                 )}
+                {headlineAfter}
               </>
             ) : (
-              "What should we work on?"
+              headlineBefore
             )}
           </h2>
         </div>

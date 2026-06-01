@@ -78,10 +78,6 @@ export function KbArchiveView() {
     }),
     [archiveBizLine, archiveCategory, sourceDbId],
   );
-  const sourceCategories = useMemo(
-    () => YUXI_CATEGORIES.filter((category) => archiveBizLine === "all" || category.line === archiveBizLine),
-    [archiveBizLine],
-  );
   const sourceDatabases = useMemo(
     () => databases.filter((database) => {
       if (archiveBizLine !== "all" && database.business_line !== archiveBizLine) return false;
@@ -234,12 +230,6 @@ export function KbArchiveView() {
     }
     resetSelection();
   }, [activeTab, resetSelection]);
-
-  const selectArchiveCategory = useCallback((value: string) => {
-    setArchiveCategory(value);
-    setSourceDbId("all");
-    resetSelection();
-  }, [resetSelection]);
 
   const changeAuthority = useCallback(async (status: string) => {
     if (selectedId == null) return;
@@ -446,94 +436,6 @@ export function KbArchiveView() {
                 <span className="hc-kb-filter-opt-count">{counts[id].toLocaleString()}</span>
               </button>
             ))}
-          </div>
-
-          <div className="hc-kb-filter-section">
-            <div className="hc-kb-filter-label">来源范围</div>
-            <label className="hc-kb-archive-sidebar-field">
-              <span>知识库</span>
-              <select
-                value={archiveCategory}
-                onChange={(event) => selectArchiveCategory(event.currentTarget.value)}
-              >
-                <option value="all">全部知识库</option>
-                {sourceCategories.map((category) => (
-                  <option key={category.key} value={category.key}>{category.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="hc-kb-archive-sidebar-field">
-              <span>资料库</span>
-              <select
-                value={sourceDbId}
-                onChange={(event) => {
-                  setSourceDbId(event.currentTarget.value);
-                  resetSelection();
-                }}
-              >
-                <option value="all">全部资料库</option>
-                {sourceDatabases.map((database) => {
-                  const dbId = database.db_id ?? "";
-                  const category = yuxiCategoryMeta(database.category);
-                  return (
-                    <option key={dbId || database.name || "database"} value={dbId} disabled={!dbId}>
-                      {database.name || dbId || "未命名"}{category ? ` · ${category.label}` : ""}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
-          </div>
-
-          <div className="hc-kb-filter-section">
-            <div className="hc-kb-filter-label">筛选条件</div>
-            <label className="hc-kb-archive-sidebar-field">
-              <span>档案状态</span>
-              <select
-                value={authorityFilter}
-                onChange={(event) => setAuthorityFilter(event.target.value)}
-              >
-                <option value="all">全部状态</option>
-                <option value="authoritative">已确认</option>
-                <option value="candidate">待核对</option>
-                <option value="unconfirmed">未确认</option>
-                <option value="stale">已过期</option>
-              </select>
-            </label>
-            {tab.filters.map((filter) => (
-              <label key={filter.label} className="hc-kb-archive-sidebar-field">
-                <span>{filter.label}</span>
-                <select
-                  value={entityFilters[filter.label] ?? ""}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    setEntityFilters((prev) => {
-                      const next = { ...prev };
-                      if (value) next[filter.label] = value;
-                      else delete next[filter.label];
-                      return next;
-                    });
-                  }}
-                >
-                  <option value="">{filter.label === "排序" ? "默认排序" : `全部${filter.label}`}</option>
-                  {filter.options.map((option) => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            {(authorityFilter !== "all" || Object.keys(entityFilters).length > 0) && (
-              <button
-                type="button"
-                className="hc-kb-filter-opt hc-kb-filter-opt--empty"
-                onClick={() => {
-                  setAuthorityFilter("all");
-                  setEntityFilters({});
-                }}
-              >
-                清除筛选
-              </button>
-            )}
           </div>
         </aside>
 

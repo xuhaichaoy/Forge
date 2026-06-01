@@ -1,7 +1,4 @@
-import {
-  type YuxiEntity,
-  yuxiEntityTypeLabel,
-} from "../lib/yuxi-client";
+import { type YuxiEntity } from "../lib/yuxi-client";
 import {
   AUTHORITY_LABEL,
   authorityClass,
@@ -37,10 +34,9 @@ export function EntityTable({
             <tr key={item.id ?? item.canonical_name} data-active={entityId != null && selectedId === entityId ? "true" : undefined} onClick={() => onSelect(item)}>
               <td>
                 <div className="hc-kb-file-name">{item.canonical_name || `未命名档案 #${item.id ?? "-"}`}</div>
-                <div className="hc-kb-file-meta">
-                  {yuxiEntityTypeLabel(item.entity_type)}
-                  {item.aliases && item.aliases.length > 0 ? ` · ${item.aliases.slice(0, 2).join(" / ")}` : ""}
-                </div>
+                {item.aliases && item.aliases.length > 0 && (
+                  <div className="hc-kb-file-meta">别名 {item.aliases.slice(0, 2).join(" / ")}</div>
+                )}
               </td>
               <td>
                 <div className="hc-kb-tags">

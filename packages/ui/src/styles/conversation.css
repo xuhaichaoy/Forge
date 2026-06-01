@@ -483,7 +483,7 @@
 
 .hc-sidebar-trigger:hover,
 .hc-sidebar-trigger:focus-visible {
-  background: rgba(34, 38, 43, 0.08);
+  background: var(--hc-surface-hover); /* codex ghost hover = list-hover 5% (was hardcoded 8%, A/B-pending) */
   color: var(--hc-text-primary);
 }
 
@@ -553,7 +553,8 @@
   flex: 0 0 auto;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--hc-radius-lg); /* codex toolbar button `rounded-lg` = 10/12.5px (was 7px; matches sibling triggers, A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: #5f625b;
   cursor: pointer;
@@ -561,7 +562,7 @@
 
 .hc-rail-trigger:hover,
 .hc-rail-trigger:focus-visible {
-  background: rgba(34, 38, 43, 0.08);
+  background: var(--hc-surface-hover); /* codex ghost hover = list-hover 5% (was hardcoded 8%, A/B-pending) */
   color: var(--hc-text-primary);
 }
 
@@ -590,7 +591,7 @@
   overflow: hidden;
   color: var(--hc-text-primary);
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 500; /* codex header title `electron:font-medium` = 500 (was 650, A/B-pending) */
   line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -602,8 +603,7 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  margin-right: 2px;
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary); /* codex: env icon→title spacing is the gap-2 (8px) alone; removed extra 2px margin (A/B-pending) */
   opacity: 0.55;
 }
 
@@ -635,7 +635,7 @@
   border-radius: 7px;
   background: color-mix(in srgb, var(--hc-surface-panel) 88%, white);
   color: #6a675e;
-  padding: 0 8px;
+  padding: 0 8px 0 16px; /* codex find input wrapper pl-4 = 16px left inset (right unconfirmed, kept 8px); A/B-pending */
 }
 
 .hc-thread-find-input:focus-within {
@@ -645,7 +645,7 @@
 .hc-thread-find-input input {
   width: 100%;
   min-width: 0;
-  height: 28px;
+  height: 24px; /* codex find input h-6 = 24px (was 28px; A/B-pending) */
   border: 0;
   outline: 0;
   background: transparent;
@@ -664,8 +664,8 @@
 
 .hc-thread-find-icon-button {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 16px; /* codex find-bar prev/next/close buttons = h-4 w-4 = 16px (was 28px; A/B-pending) */
+  height: 16px;
   flex: 0 0 auto;
   place-items: center;
   border: 0;
@@ -769,6 +769,13 @@
 
 .hc-turn-row > * + * {
   margin-top: var(--conversation-tool-assistant-gap);
+}
+
+.hc-turn-row > :not(.hc-message.user) + .hc-message.assistant {
+  /* codex persistent-agent-body gapAfter=4px: tighten the gap between an agent/tool
+     body and the following assistant message (the b_ spacer = 4px); user→assistant in
+     tool-free turns stays 16px via the :not(.hc-message.user) predecessor guard. A/B-pending. */
+  margin-top: 4px;
 }
 
 .hc-turn-row[data-last-turn="true"] {

@@ -286,7 +286,7 @@
 
 .hc-request-options {
   display: grid;
-  gap: 2px;
+  gap: 4px; /* codex radiogroup `flex flex-col gap-1` = 4px (A/B-pending value align) */
 }
 
 .hc-request-option-row {
@@ -299,7 +299,7 @@
   border-radius: var(--hc-radius-xl); /* codex `rounded-xl` (12px → 15px squircle) */
   corner-shape: superellipse(1.5);
   background: transparent;
-  padding: 6px 8px;
+  padding: 8px; /* codex option button `p-2` = 8px uniform (was 6px block) */
   color: #2a2d2b;
   cursor: pointer;
   text-align: left;
@@ -335,7 +335,7 @@
   display: block;
   min-width: 0;
   color: #2a2d2b;
-  font-weight: 520;
+  font-weight: 500; /* codex option label `font-medium` = 500 (was 520) */
 }
 
 .hc-request-option-copy strong[data-has-code="true"] {
@@ -471,11 +471,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 30px;
+  gap: 4px; /* codex button base `gap-1` = 4px (label↔kbd; was 6px) */
+  min-height: 28px; /* codex size:composer `h-token-button-composer` = 28px (was 30px) */
   border: 1px solid transparent;
   border-radius: 9999px; /* codex action buttons = `rounded-full` */
-  padding: 0 10px;
+  padding: 0 8px; /* codex composer button `px-2` = 8px (was 10px) */
   font-size: 12px; /* codex button text = `text-sm` = --text-sm:12px */
   font-weight: 520;
   cursor: pointer;

@@ -1716,6 +1716,7 @@ function buildsTurnStartAndSteerRequests(): void {
     },
     "startTurn should build a protocol-shaped turn/start request",
   );
+  assertEqual(start.requests[0]?.timeout, null, "startTurn should not use the short default RPC timeout");
 
   const emptyWorkspace = createClientRecorder();
   void startTurn(emptyWorkspace.client, "thread-2", input, "");

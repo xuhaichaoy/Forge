@@ -37,7 +37,7 @@ export function AppToastViewport({ logs, now = Date.now() }: AppToastViewportPro
               return next;
             })}
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </article>
       ))}

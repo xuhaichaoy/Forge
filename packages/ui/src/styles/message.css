@@ -22,7 +22,7 @@
   min-width: 0;
   flex-direction: column;
   gap: 0;
-  color: #22262b;
+  color: #1a1c1f; /* codex electron --color-text-foreground=#1a1c1f (was #22262b, which is 0× in Codex; A/B-pending) */
 }
 
 .hc-assistant-resource-list {
@@ -397,13 +397,12 @@ button.hc-assistant-review-comment-row:focus-visible,
   corner-shape: superellipse(1.5);
   background: rgba(34, 38, 43, 0.05);
   padding: 8px 12px;
-  color: #22262b;
+  color: #1a1c1f; /* codex electron --color-text-foreground=#1a1c1f (was #22262b; A/B-pending) */
   overflow-wrap: anywhere;
 }
 
 .hc-user-edit-shell {
-  width: min(720px, 100%);
-  max-width: 77%;
+  width: 100%; /* codex edit wrapper is w-full (was min(720px,100%)+max-width 77%; A/B-pending) */
   padding: 1px;
 }
 
@@ -412,10 +411,11 @@ button.hc-assistant-review-comment-row:focus-visible,
   display: flex;
   width: 100%;
   flex-direction: column;
-  border-radius: 24px;
-  background: rgba(255, 253, 250, 0.9);
-  box-shadow: 0 4px 16px rgba(34, 38, 43, 0.05);
-  outline: 1px solid rgba(34, 38, 43, 0.1);
+  border-radius: var(--hc-radius-3xl); /* codex edit-form rounded-3xl = 20/25px (was 24px; A/B-pending) */
+  corner-shape: superellipse(1.5);
+  background: color-mix(in oklab, var(--vscode-foreground) 5%, transparent); /* codex edit-form bg-token-foreground/5 (was opaque cream; A/B-pending) */
+  box-shadow: none; /* codex edit-form has no shadow (A/B-pending) */
+  outline: none; /* codex edit-form has no outline/border (A/B-pending) */
   backdrop-filter: blur(12px);
 }
 
@@ -457,19 +457,19 @@ button.hc-assistant-review-comment-row:focus-visible,
 
 .hc-user-edit-actions button {
   height: 28px;
-  border: 1px solid #d8d5ca;
-  border-radius: 7px;
-  background: #fffdfa;
-  padding: 0 10px;
+  border: 1px solid color-mix(in oklab, #1a1c1f 8%, transparent); /* codex --color-border = 8% fg (was #d8d5ca; A/B-pending) */
+  border-radius: var(--hc-radius-lg); /* codex toolbar button rounded-lg = 10/12.5px (was 7px; A/B-pending) */
+  background: color-mix(in oklab, #1a1c1f 2%, transparent); /* codex bg-token-bg-fog = 2% fg (was #fffdfa; A/B-pending) */
+  padding: 0 8px; /* codex px-2 = 8px (was 10px; A/B-pending) */
   color: #333731;
-  font-size: 12px;
+  font-size: 14px; /* codex text-base = 14px (was 12px; A/B-pending) */
   font-weight: 650;
   cursor: pointer;
 }
 
 .hc-user-edit-actions button.primary {
-  border-color: #17483f;
-  background: #17483f;
+  border-color: #1a1c1f; /* codex primary button bg-token-foreground = #1a1c1f (was green #17483f; A/B-pending) */
+  background: #1a1c1f;
   color: #fffdfa;
 }
 
@@ -790,7 +790,7 @@ button.hc-user-attachment-pill:hover {
   min-width: 0;
   width: 100%;
   font-size: var(--codex-chat-font-size);
-  line-height: 22px; /* Codex: leading-[calc(var(--codex-chat-font-size)+8px)] = calc(13px+8px), upstream resolves to 22px */
+  line-height: 22px; /* codex _markdownContent line-height = calc(--codex-chat-font-size + 8px) = calc(14px + 8px) = 22px */
 }
 
 .hc-markdown.is-indexed-fade .hc-markdown-fade-in,
@@ -856,7 +856,7 @@ button.hc-user-attachment-pill:hover {
 }
 
 .hc-markdown p {
-  margin: 8px 0; /* Codex: my-2 = 8px symmetric */
+  margin: 0 0 11px; /* codex markdown ._paragraph = 0 0 .6875rem (11px); was 8px symmetric prose assumption (A/B-pending) */
 }
 
 .hc-math-display {
@@ -933,37 +933,43 @@ button.hc-user-attachment-pill:hover {
 .hc-markdown h4,
 .hc-markdown h5,
 .hc-markdown h6 {
-  margin: 0 0 8px;
+  margin: 20px 0 10px; /* codex markdown ._heading: uniform 20px 0 10px for every level (A/B-pending) */
   color: #20262d;
   font-weight: 600; /* Codex: font-semibold overrides heading-* declared 500 */
   line-height: 1.25;
 }
 
 .hc-markdown h1 {
-  font-size: 24px; /* Codex: heading-lg --text-heading-lg=24px */
+  font-size: 24px; /* codex markdown ._heading1=24px; margin/line-height inherit base (A/B-pending) */
   line-height: 1.2;
-  margin: 20px 0 8px; /* Codex: mt-5 mb-2 */
 }
 
 .hc-markdown h2 {
-  font-size: 18px; /* Codex: heading-base --text-heading-md=18px (electron) */
-  line-height: 1.33;
-  margin: 16px 0 8px; /* Codex: mt-4 mb-2 */
+  font-size: 20px; /* codex markdown ._heading2=20px (was 18px from irrelevant --text-heading-md token); line-height inherits base 1.25 (A/B-pending) */
 }
 
 .hc-markdown h3,
-.hc-markdown h4,
+.hc-markdown h4 {
+  font-size: 17px; /* codex markdown ._heading3/4 = 17px/22px (was collapsed 18px; A/B-pending) */
+  line-height: 22px;
+}
+
 .hc-markdown h5,
 .hc-markdown h6 {
-  font-size: 18px; /* Codex: heading-subsection --text-heading-sm=18px */
-  line-height: 1.33;
-  margin: 12px 0 6px; /* Codex: mt-3 mb-1.5 */
+  font-size: 15px; /* codex markdown ._heading5/6 = 15px/20px (4-tier scale 24/20/17/15; A/B-pending) */
+  line-height: 20px;
 }
 
 .hc-markdown ul,
 .hc-markdown ol {
-  margin: 0 0 16px;
+  margin: 0 0 10px; /* codex `_list`: top-level list margin-bottom .625rem = 10px (was 16px; A/B-pending) */
   padding-inline-start: 1.3125rem; /* codex `_list_n9ah0_116`: padding-inline-start 1.3125rem = 21px (was pl-4 16px) */
+}
+
+.hc-markdown li > ul,
+.hc-markdown li > ol {
+  margin-top: 8px; /* codex `_listItem > _list`: nested list = 8px top, 0 bottom (was inheriting 0 0 10px; A/B-pending) */
+  margin-bottom: 0;
 }
 
 .hc-message-actions {
@@ -1259,7 +1265,7 @@ button.hc-user-attachment-pill:hover {
 }
 
 .hc-message-actions button:hover {
-  background: rgba(34, 38, 43, 0.07);
+  background: var(--hc-surface-hover); /* codex ghost list-hover = 5% (was 7%; A/B-pending) */
   color: #27313d;
 }
 
@@ -1281,7 +1287,7 @@ button.hc-user-attachment-pill:hover {
   align-items: center;
   padding: 0 3px;
   color: #85877f;
-  font-size: 13px; /* codex timestamp is `text-size-chat leading-5` = --codex-chat-font-size 13px */
+  font-size: 11px; /* codex per-message timestamp = text-xs text-token-text-tertiary = --text-xs 11px (was 13px; round-5 verified; A/B-pending) */
   line-height: 20px;
 }
 

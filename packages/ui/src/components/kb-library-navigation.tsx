@@ -3,11 +3,13 @@ import { type BizLine } from "./kb-library-model";
 
 export function BusinessLineFilter({
   bizLine,
+  totalCount,
   presalesCount,
   bidCount,
   onSelect,
 }: {
   bizLine: BizLine;
+  totalCount: number;
   presalesCount: number;
   bidCount: number;
   onSelect: (value: BizLine) => void;
@@ -16,6 +18,7 @@ export function BusinessLineFilter({
     <div className="hc-kb-filter-section">
       <div className="hc-kb-filter-label">业务线</div>
       {([
+        { id: "all", label: "全部", count: totalCount },
         { id: "training_presales", label: "售前", count: presalesCount },
         { id: "bidding", label: "投标", count: bidCount },
       ] as const).map(({ id, label, count }) => (
@@ -26,7 +29,7 @@ export function BusinessLineFilter({
           data-active={bizLine === id ? "true" : undefined}
           onClick={() => onSelect(id)}
         >
-          {label}
+          <span className="hc-kb-filter-opt-name">{label}</span>
           <span className="hc-kb-filter-opt-count">{count}</span>
         </button>
       ))}

@@ -282,20 +282,8 @@ let ENTITY_ITEMS: YuxiPendingItem[] = [
   },
 ];
 
-let CLASSIFY_ITEMS: YuxiPendingItem[] = [
-  {
-    id: 103,
-    filename: "报价单_2024.xlsx",
-    business_line_hint: "training_presales",
-    suggested_db_id: "kb_lecturer",
-    candidates: [
-      candidate({ category: "lecturer", label: "讲师库", db_id: "kb_lecturer", score: 0.6, reason: "含讲师报价信息" }),
-      candidate({ category: "course", label: "课程库", db_id: "kb_course", score: 0.3, reason: "含课程名称" }),
-    ],
-    status: "pending",
-    created_at: daysAgo(1),
-  },
-];
+// 归属判断（该放哪个库）已下线：上传即指定库，归属确定，不再产生此类待办。
+let CLASSIFY_ITEMS: YuxiPendingItem[] = [];
 
 let FORCE_ITEMS: YuxiPendingItem[] = [
   {
@@ -352,9 +340,10 @@ const TASKS: YuxiTask[] = [
 // 搜索
 // ---------------------------------------------------------------------------
 
-function buildSearchGroups(query: string): YuxiSearchGroup[] {
+function buildSearchGroups(query: string, scopedDbIds: ReadonlySet<string>): YuxiSearchGroup[] {
   const q = query.trim().toLowerCase();
   const matched = DOCUMENTS.filter((doc) => {
+    if (doc.db_id && !scopedDbIds.has(doc.db_id)) return false; // 只搜范围内的库
     if (!q) return true;
     return (doc.filename ?? "").toLowerCase().includes(q) || (doc.kb_name ?? "").toLowerCase().includes(q);
   }).slice(0, 12);
@@ -375,13 +364,13 @@ function buildSearchGroups(query: string): YuxiSearchGroup[] {
       results: docs.map((doc) => ({
         db_id: dbId,
         kb_name: lib?.name ?? "知识库",
+        // 顶层 content 让 summarizeSearchResult 直接取出可读片段，不再吐 JSON；file_id 供点击预览
         result: {
           filename: doc.filename,
-          score: 0.7 + Math.min(0.25, (doc.chunk_count ?? 10) / 200),
-          chunk_id: `${doc.file_id}#1`,
-          results: [
-            { content: `命中片段：${doc.filename} 中与「${query}」相关的内容…`, score: 0.78 },
-          ],
+          file_id: doc.file_id,
+          chunk_id: `${doc.file_id}#3`, // 命中中间段，预览打开后会滚动定位并高亮
+          score: 0.78,
+          content: `命中「${query}」：${doc.filename} 中的相关片段（演示）。接入真实来源后会替换为实际命中的正文内容。`,
         },
       })),
     });
@@ -442,7 +431,18 @@ export function resolveYuxiMock<T>(path: string, init: RequestInit): T | undefin
   if (pathname === "/api/presales/library/search" && method === "POST") {
     const body = parseBody(init);
     const query = typeof body.query === "string" ? body.query : "";
-    return { query, total_kbs_searched: DATABASES.length, groups: buildSearchGroups(query), errors: [] } as T;
+    const asStrings = (value: unknown): string[] =>
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+    const dbIds = asStrings(body.db_ids);
+    const categories = asStrings(body.categories);
+    const lines = asStrings(body.business_lines);
+    // 按范围确定要搜的库：db_id > 分类 > 业务线 > 全部
+    let scoped = DATABASES;
+    if (dbIds.length) scoped = scoped.filter((d) => d.db_id != null && dbIds.includes(d.db_id));
+    else if (categories.length) scoped = scoped.filter((d) => d.category != null && categories.includes(d.category));
+    else if (lines.length) scoped = scoped.filter((d) => d.business_line != null && lines.includes(d.business_line));
+    const scopedDbIds = new Set(scoped.map((d) => d.db_id).filter((v): v is string => typeof v === "string"));
+    return { query, total_kbs_searched: scoped.length, groups: buildSearchGroups(query, scopedDbIds), errors: [] } as T;
   }
 
   // --- 任务（处理记录）---
@@ -529,13 +529,15 @@ export function resolveYuxiMock<T>(path: string, init: RequestInit): T | undefin
   const entityRelated = pathname.match(/^\/api\/presales\/entities\/(\d+)\/related$/);
   if (entityRelated) {
     const id = Number(entityRelated[1]);
-    const others = ENTITIES.filter((item) => item.id !== id).slice(0, 3);
-    return {
-      entity_id: id,
-      related: {
-        co_occurrence: others.map((item) => ({ id: item.id, canonical_name: item.canonical_name, entity_type: item.entity_type, co_occurrence: 2 })),
-      },
-    } as T;
+    const self = ENTITIES.find((item) => item.id === id);
+    const others = ENTITIES.filter((item) => item.id !== id && item._category === self?._category).slice(0, 3);
+    // 按实体类型分组（teacher/course/…），前端用 yuxiEntityTypeLabel 渲染成中文，避免漏出原始 key
+    const related: Record<string, Array<{ id?: number; canonical_name?: string | null; entity_type?: string | null; co_occurrence: number }>> = {};
+    others.forEach((item, index) => {
+      const key = item.entity_type ?? "entity";
+      (related[key] ??= []).push({ id: item.id, canonical_name: item.canonical_name, entity_type: item.entity_type, co_occurrence: 2 + (index % 2) });
+    });
+    return { entity_id: id, related } as T;
   }
   const entityHistory = pathname.match(/^\/api\/presales\/entities\/(\d+)\/history$/);
   if (entityHistory) {
@@ -558,17 +560,25 @@ export function resolveYuxiMock<T>(path: string, init: RequestInit): T | undefin
     const fileId = decodeURIComponent(docDetail[1]);
     const doc = DOCUMENTS.find((d) => d.file_id === fileId);
     const name = doc?.filename ?? "资料";
-    const segCount = Math.min(6, Math.max(3, Math.round((doc?.chunk_count ?? 12) / 4)));
-    const lines = Array.from({ length: segCount }, (_, i) => ({
+    const kbName = doc?.kb_name ?? "知识库";
+    const paragraphs = [
+      `《${name}》`,
+      `本资料归属「${kbName}」，用于在售前与方案环节直接引用。以下为内容预览，接入真实来源系统后会替换为从原文件解析出的实际正文。`,
+      `一、背景与目标。说明该资料的适用业务场景、覆盖范围与核心目标，帮助快速判断是否适合当前客户与项目。`,
+      `二、核心要点。列出主要结论、关键数据与可复用要素；正式内容会按原文档的章节结构分段呈现，并保留可追溯的来源位置。`,
+      `三、适用建议。说明适合在哪些客户场景、哪些环节使用，以及使用时需要注意的口径与边界。`,
+      `四、补充说明。原文件中的表格、图示与附件信息会在解析后一并纳入，可用于检索与档案关联。`,
+    ];
+    const lines = paragraphs.map((content, i) => ({
       chunk_id: `${fileId}#${i + 1}`,
       chunk_index: i,
-      content: `【${name} · 第 ${i + 1} 段】演示正文片段，用于展示资料详情的分段与内容定位。接入真实来源系统后会替换为实际抽取内容。`,
-      tokens: 120 + i * 18,
+      content,
+      tokens: 80 + i * 22,
     }));
     return {
       status: "success",
-      meta: { filename: name, file_type: doc?.file_type, pages: doc?.page_count, uploaded_by: doc?.uploaded_by, knowledge_base: doc?.kb_name },
-      content: `${name}（演示正文预览）\n\n${lines.map((l) => l.content).join("\n\n")}`,
+      meta: { filename: name, file_type: doc?.file_type, pages: doc?.page_count, uploaded_by: doc?.uploaded_by, knowledge_base: kbName },
+      content: paragraphs.join("\n\n"),
       lines,
     } as T;
   }

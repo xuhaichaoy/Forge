@@ -46,6 +46,7 @@ import { ComposerFooterBranchSwitcher } from "./composer-footer-branch-switcher"
 // codex tooltip-CDzchJxN.js — the composer settings chips are wrapped in a styled Tooltip
 // (Codex's intelligence trigger uses `Cn`/`tooltipContent`), replacing the native `title`.
 import { Tooltip } from "./tooltip";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface ComposerWorkspaceRootOption {
   root: string;
@@ -93,6 +94,7 @@ export function ComposerExternalFooter({
   onBranchSwitchError,
   variant = "default",
 }: ComposerExternalFooterProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const projectTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -248,7 +250,7 @@ export function ComposerExternalFooter({
             aria-expanded={workModeMenuOpen}
             onClick={() => setWorkModeMenuOpen((value) => !value)}
           >
-            <span className="hc-composer-footer-chip-label">{composerWorkModeLabel(workMode)}</span>
+            <span className="hc-composer-footer-chip-label">{composerWorkModeLabel(workMode, formatMessage)}</span>
             <ChevronDown size={14} />
           </button>
           {workModeMenuOpen && (
@@ -329,6 +331,16 @@ const PERMISSIONS_FOOTER_ICON: Record<string, LucideIcon> = {
   "Ask for approval": Hand,
 };
 
+// Maps the (English) chip label — which is also the icon-map key above — to its Codex
+// permissions-dropdown shortLabel id, so the DISPLAYED text localizes while the icon
+// lookup (and the title) still key off the stable English label.
+const PERMISSIONS_FOOTER_LABEL_ID: Record<string, string> = {
+  "Full access": "composer.permissionsDropdown.fullAccess.shortLabel",
+  "Approve for me": "composer.permissionsDropdown.guardianApproval.triggerLabel",
+  "Custom": "composer.permissionsDropdown.custom.shortLabel",
+  "Ask for approval": "composer.permissionsDropdown.default.shortLabel",
+};
+
 export interface ComposerSettingsChipsProps {
   model?: string | null;
   approvalPolicy?: unknown;
@@ -350,12 +362,16 @@ export function ComposerSettingsChips({
   onOpenModelPicker,
   onOpenReasoningPicker,
 }: ComposerSettingsChipsProps) {
+  const { formatMessage } = useHiCodexIntl();
   const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
   const reasoningEffortNormalized: ReasoningKey = typeof reasoningEffort === "string"
     && REASONING_KEYS.includes(reasoningEffort.trim().toLowerCase() as ReasoningKey)
     ? (reasoningEffort.trim().toLowerCase() as ReasoningKey)
     : "medium";
-  const reasoningChipLabel = REASONING_LABELS[reasoningEffortNormalized];
+  const reasoningChipLabel = formatMessage({
+    id: `composer.mode.local.reasoning.${reasoningEffortNormalized}.label`,
+    defaultMessage: REASONING_LABELS[reasoningEffortNormalized],
+  });
   const permissionsLabel = formatPermissionsFooterLabel({ approvalPolicy, approvalsReviewer, sandboxMode });
   const permissionsTitle = formatPermissionsFooterTitle({ approvalPolicy, approvalsReviewer, sandboxMode }, permissionsLabel);
   const PermissionsIcon = PERMISSIONS_FOOTER_ICON[permissionsLabel] ?? ShieldCheck;
@@ -370,7 +386,7 @@ export function ComposerSettingsChips({
           onClick={onOpenPermissions ? (event) => onOpenPermissions(event.currentTarget) : undefined}
         >
           <PermissionsIcon size={14} />
-          <span className="hc-composer-footer-chip-label">{permissionsLabel}</span>
+          <span className="hc-composer-footer-chip-label">{formatMessage({ id: PERMISSIONS_FOOTER_LABEL_ID[permissionsLabel] ?? "", defaultMessage: permissionsLabel })}</span>
           <ChevronDown size={14} />
         </button>
       </Tooltip>

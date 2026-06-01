@@ -100,6 +100,7 @@ export const THREAD_LIST_PAGE_SIZE = 100;
 export const THREAD_LIST_MAX_PAGES = 20;
 const DEFAULT_THREAD_PERSONALITY = "friendly";
 const DEFAULT_USER_THREAD_SOURCE: ThreadSource = "user";
+const TURN_START_TIMEOUT_MS: number | null = null;
 const TURN_STEER_TIMEOUT_MS: number | null = null;
 const ROLLOUT_DYNAMIC_TOOL_HEAD_MAX_BYTES = 512_000;
 const WORKSPACE_DEVELOPER_INSTRUCTIONS_MAX_BYTES = 120_000;
@@ -395,7 +396,7 @@ export async function startTurn(
   context?: ThreadContextDefaults | null,
   options?: TurnStartOptions | null,
 ) {
-  return client.request("turn/start", buildTurnStartParams(threadId, input, workspace, context, options));
+  return client.request("turn/start", buildTurnStartParams(threadId, input, workspace, context, options), TURN_START_TIMEOUT_MS);
 }
 
 export async function refreshThreadMetadata(

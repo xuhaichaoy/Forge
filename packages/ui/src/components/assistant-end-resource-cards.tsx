@@ -98,7 +98,7 @@ export function AssistantEndResourceCards({
                 `size-6` icon) — even for images. Image thumbnails (`XE`) appear only in the
                 separate generated-image gallery, never in inline cards. */}
             <span className="hc-assistant-resource-card-icon">
-              <Icon size={18} />
+              <Icon size={24} />
             </span>
             <span className="hc-assistant-resource-card-copy">
               <span className="hc-assistant-resource-card-title">{card.title}</span>

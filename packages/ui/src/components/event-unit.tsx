@@ -768,7 +768,7 @@ function ToolActivitySummaryLabel({
 }
 
 function ToolActivityIconMark({ icon }: { icon: ToolActivityIcon }) {
-  const props = { className: "hc-tool-summary-icon", size: 14 };
+  const props = { className: "hc-tool-summary-icon", size: 16 };
   if (icon === "clock") return <Clock {...props} />;
   if (icon === "edit") return <PencilLine {...props} />;
   if (icon === "mcp") return <Network {...props} />;

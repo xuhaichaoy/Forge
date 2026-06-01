@@ -1226,9 +1226,8 @@ button.hc-error-event-summary:hover {
   color: #ff6764;
 }
 
-.hc-tool-block.activity.is-running .hc-tool-summary-icon {
-  color: #5e7768;
-}
+/* codex conveys "running" via the label shimmer (hc-status-event-shimmer) only — the
+   summary leading icon keeps its neutral base color, no green recolor (A/B-pending). */
 
 .hc-tool-block.activity[data-group-type="worked-for"] .hc-tool-summary-icon {
   display: none;
@@ -1249,7 +1248,7 @@ button.hc-tool-summary:not(:disabled):hover .hc-tool-summary-icon,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #74776f;
+  color: color-mix(in oklab, var(--hc-text-primary) 40%, transparent); /* codex text-token-conversation-summary-trailing = 40% foreground (was opaque #74776f; A/B-pending) */
   font-size: 13px;
   font-weight: 450;
   line-height: 1.82;
@@ -1278,7 +1277,7 @@ button.hc-tool-summary:hover .hc-tool-summary-label,
 }
 
 .hc-tool-summary svg:last-child {
-  color: #7a7d76;
+  color: color-mix(in oklab, var(--hc-text-primary) 50%, transparent); /* codex disclosure chevron = text-token-input-placeholder-foreground 50% (was #7a7d76; A/B-pending) */
   opacity: 0;
   /* codex: summary/disclosure chevron = `transition-[opacity,rotate] duration-300` */
   transition: opacity 300ms ease, transform 300ms ease;
@@ -1318,7 +1317,7 @@ button.hc-tool-summary:hover svg:last-child,
   border: 0;
   background: transparent;
   padding: 0;
-  color: #6f716b;
+  color: color-mix(in oklab, var(--hc-text-primary) 40%, transparent); /* codex multi-agent header = conversation-summary-trailing 40% fg (was opaque #6f716b; A/B-pending) */
   cursor: pointer;
   font: inherit;
   text-align: left;
@@ -1333,8 +1332,8 @@ button.hc-tool-summary:hover svg:last-child,
   min-width: 0;
   overflow: hidden;
   color: currentColor;
-  font-size: 13px;
-  font-weight: 520;
+  font-size: 14px; /* codex multi-agent title text-size-chat = --codex-chat-font-size 14px (was 13px; A/B-pending) */
+  font-weight: 430; /* codex title inherits body weight 430, no weight utility (was 520; A/B-pending) */
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1474,7 +1473,7 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-tool-block.activity[data-group-type="multi-agent-group"] .hc-tool-detail-row {
   color: #6f716b;
-  font-size: 13px;
+  font-size: 14px; /* codex multi-agent row text-size-chat = --codex-chat-font-size 14px (was 13px; A/B-pending) */
   line-height: 1.45;
 }
 
@@ -2437,8 +2436,8 @@ button.hc-tool-summary:hover svg:last-child,
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 36px;
-  height: 36px;
+  width: 40px; /* codex lightbox nav button h-10/min-w-10 = 40px (was 36px; A/B-pending) */
+  height: 40px;
   display: grid;
   place-items: center;
   border: 0;

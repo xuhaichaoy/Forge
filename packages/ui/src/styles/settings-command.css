@@ -202,7 +202,8 @@
   max-width: calc(100vw - 32px);
   flex-direction: column;
   border: 1px solid var(--hc-border-strong); /* was #d2cdc0 — exact --hc-border-strong match */
-  border-radius: 8px;
+  border-radius: var(--hc-radius-3xl); /* codex dialog `rounded-3xl` = 20px (25px squircle); was 8px (A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: #faf9f5;
   box-shadow: 0 24px 60px rgb(25 30 25 / 22%);
   overflow: hidden;
@@ -249,13 +250,19 @@
   font-weight: 750;
 }
 
+/* codex dialog header title = `font-semibold` = 600 (was 750). The settings/command panel
+   headers keep 750 pending their own A/B — this overrides only the dialog. */
+.hc-thread-dialog-panel header div {
+  font-weight: 600;
+}
+
 .hc-thread-dialog-panel header button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 24px; /* codex dialog close = 16px icon + p-1 (4px) = 24px box (was 28px, A/B-pending) */
+  height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 4px; /* codex `rounded` = 4px (was 6px) */
   background: transparent;
   color: #5f625d;
   cursor: pointer;
@@ -270,7 +277,7 @@
   min-height: 0;
   gap: 8px;
   overflow: auto;
-  padding: 14px;
+  padding: 20px; /* codex dialog body `px-5 py-5` = 20px (was 14px, A/B-pending) */
 }
 
 .hc-thread-dialog-body label {
@@ -327,7 +334,7 @@
 
 .hc-thread-dialog-body span {
   color: #6f716b;
-  font-size: 12px;
+  font-size: 14px; /* codex dialog body text `text-base` = 14px (was 12px, A/B-pending) */
   line-height: 1.45;
 }
 
@@ -337,7 +344,7 @@
   display: block;
   max-height: none;
   color: #6f716b;
-  font-size: 12px;
+  font-size: 14px; /* codex dialog subtitle slot `text-base` = 14px (was 12px, A/B-pending) */
   font-weight: 400;
   line-height: 1.45;
 }
@@ -345,7 +352,7 @@
 .hc-thread-dialog-panel footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px; /* codex DialogFooter `gap-3` = 12px (was 8px, A/B-pending) */
   padding: 12px 14px 14px;
   border-top: 1px solid #dedbd1;
 }
@@ -584,7 +591,7 @@
   padding: 12px 14px;
   border-bottom: 1px solid #ece8dc;
   color: #5b5f59;
-  font-size: 12px;
+  font-size: 14px; /* codex command-menu message text-base = 14px (was 12px; A/B-pending) */
 }
 
 .hc-command-panel-message[data-status="error"] {
@@ -639,8 +646,8 @@
 .hc-command-panel-group {
   padding: 3px 2px 0;
   color: #777a72;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px; /* codex command-menu group heading text-sm = 12px (was 11px; A/B-pending) */
+  font-weight: 400; /* codex group heading no weight utility = normal (was 700; A/B-pending) */
   line-height: 1.2;
 }
 
@@ -791,11 +798,11 @@
   gap: 8px;
   padding: 8px 2px 2px;
   color: #5f6159;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: 12px; /* codex group heading text-sm = 12px (was 11px; A/B-pending) */
+  font-weight: 400; /* codex group heading normal weight (was 700; A/B-pending) */
+  letter-spacing: normal; /* codex group heading no tracking (was 0.04em; A/B-pending) */
   line-height: 1.2;
-  text-transform: uppercase;
+  text-transform: none; /* codex group heading mixed-case (was uppercase; A/B-pending) */
 }
 
 .hc-command-panel-section-count {
@@ -815,7 +822,7 @@
   padding: 18px 14px;
   text-align: center;
   color: #6f716b;
-  font-size: 12px;
+  font-size: 14px; /* codex command-menu empty-state text-base = 14px (was 12px; A/B-pending) */
 }
 
 .hc-command-panel-chat-empty button {
@@ -837,10 +844,10 @@
 }
 
 .hc-command-panel-row {
-  border: 1px solid #ddd8cc;
+  border: 0; /* codex [cmdk-item] has no border — flat rows; the container border lives on .hc-command-panel (A/B-pending) */
   border-radius: 8px;
-  background: #fffdfa;
-  padding: 10px;
+  background: transparent; /* codex [cmdk-item] resting = transparent over the dropdown surface (was #fffdfa card; A/B-pending) */
+  padding: 5px 8px; /* codex [cmdk-item] electron --padding-row-y/x = 5px/8px (was 10px; A/B-pending) */
   color: inherit;
   font: inherit;
   text-align: left;
@@ -858,8 +865,7 @@
 
 .hc-command-panel-row[data-actionable="true"]:hover,
 .hc-command-panel-row[data-actionable="true"]:focus-visible {
-  border-color: #c8c1b2;
-  background: #f8f5ed;
+  background: color-mix(in oklab, #1a1c1f 5%, transparent); /* codex [cmdk-item] hover = list-hover 5% fill (was #f8f5ed + a now-dead border-color; A/B-pending) */
   outline: none;
 }
 
@@ -885,12 +891,12 @@
 .hc-command-panel-row h3 {
   margin: 0;
   color: #222823;
-  font-size: 13px;
+  font-size: 14px; /* codex command item title text-base = 14px (was 13px; A/B-pending) */
 }
 
 .hc-command-panel-row p {
   margin: 4px 0 0;
-  color: #6f716b;
+  color: color-mix(in oklab, #1a1c1f 50%, transparent); /* codex description-foreground = 50% fg (was opaque #6f716b; A/B-pending) */
   font-size: 11px;
   line-height: 1.35;
   word-break: break-word;
@@ -918,13 +924,13 @@
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  border-radius: 5px;
-  border: 1px solid #d6d3c8;
-  background: #f3f1e8;
+  border-radius: var(--hc-radius-md); /* codex kbd !rounded-md = 8px (was 5px; A/B-pending) */
+  border: 0; /* codex kbd !border-0 (was 1px; A/B-pending) */
+  background: color-mix(in oklab, currentColor 10%, transparent); /* codex kbd bg-current/10 (was #f3f1e8; A/B-pending) */
   color: #6f716b;
-  padding: 1px 5px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
+  padding: 2px 6px; /* codex kbd py-0.5 px-1.5 = 2px 6px (was 1px 5px; A/B-pending) */
+  font-family: var(--hc-font-sans); /* codex kbd !font-sans (was monospace; A/B-pending) */
+  font-size: 11px; /* codex kbd !text-xs = 11px (was 10px; A/B-pending) */
   line-height: 1.4;
   letter-spacing: 0.02em;
   opacity: 0.65;

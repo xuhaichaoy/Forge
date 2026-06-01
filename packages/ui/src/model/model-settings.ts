@@ -10,6 +10,7 @@ export const DEFAULT_MODEL_CONTEXT_WINDOW = 262144;
 export const DEFAULT_MODEL_AUTO_COMPACT_TOKEN_LIMIT = 235929;
 export const DEFAULT_MODEL_REASONING_SUMMARY = "none";
 export const DEFAULT_SUBSCRIPTION_PROVIDER_ID = "openai";
+export const DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID = "openai_http";
 export const DEFAULT_SUBSCRIPTION_MODELS = ["gpt-5.5", "gpt-5.4"];
 
 export const EMPTY_MODEL: ModelConfig = {

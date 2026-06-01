@@ -6,6 +6,9 @@ import {
   readMigratedStorageValue,
 } from "./hicodex-desktop-namespace";
 import type { BrowserStorageLike } from "./image-generation-tool";
+import type { I18nMessageDescriptor, I18nValues } from "./i18n";
+
+type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 
 export type ComposerWorkMode = "local" | "worktree" | "cloud";
 
@@ -121,14 +124,16 @@ export function normalizeComposerWorkMode(value: unknown): ComposerWorkMode {
   return value === "worktree" || value === "cloud" ? value : "local";
 }
 
-export function composerWorkModeLabel(mode: ComposerWorkMode): string {
+export function composerWorkModeLabel(mode: ComposerWorkMode, formatMessage?: FormatMessage): string {
+  const fm = (id: string, defaultMessage: string): string =>
+    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
   switch (mode) {
     case "worktree":
-      return "Worktree";
+      return fm("composer.mode.worktreeSegment", "Worktree");
     case "cloud":
-      return "Cloud";
+      return fm("composer.mode.runInCloud", "Cloud");
     default:
-      return "Work locally";
+      return fm("composer.mode.workLocally", "Work locally");
   }
 }
 

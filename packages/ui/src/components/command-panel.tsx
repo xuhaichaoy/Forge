@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
   commandPanelChatCreateEntry,
   commandPanelHandleEscape,
@@ -50,6 +51,7 @@ export interface CommandPanelProps {
 }
 
 export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, onSearchQueryChange }: CommandPanelProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [query, setQuery] = useState("");
   const visibleEntries = useMemo(
     () => panel.panel === "files" ? panel.entries : filterCommandEntries(panel.entries, query),
@@ -138,10 +140,10 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
 
         {showSearchInput && (
           <label className="hc-command-panel-search">
-            <span>Search</span>
+            <span>{formatMessage({ id: "hc.sidebar.search", defaultMessage: "Search" })}</span>
             <input
               autoFocus
-              placeholder={commandPanelSubModePlaceholder(subMode)}
+              placeholder={commandPanelSubModePlaceholder(subMode, formatMessage)}
               value={query}
               onChange={(event) => {
                 const nextQuery = event.target.value;
@@ -154,7 +156,7 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
 
         {panel.entries.length > 0 && visibleEntries.length === 0 && (
           <div className="hc-command-panel-message" data-status="empty">
-            <span>{panel.panel === "files" ? "No matching files." : "No matching commands or chats."}</span>
+            <span>{panel.panel === "files" ? formatMessage({ id: "thread.fileTreePanel.noMatchingFiles", defaultMessage: "No matching files." }) : formatMessage({ id: "codex.commandMenu.noResults", defaultMessage: "No matching commands or chats." })}</span>
           </div>
         )}
 
@@ -176,9 +178,10 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
 }
 
 function CommandPanelChatCreateEmptyState({ onCreate }: { onCreate?: () => void }) {
+  const { formatMessage } = useHiCodexIntl();
   return (
     <div className="hc-command-panel-chat-empty" data-command-menu-empty-state="true">
-      <span>Create a chat to get started!</span>
+      <span>{formatMessage({ id: "codex.commandMenu.noChatsEmptyState", defaultMessage: "Create a chat to get started!" })}</span>
       <button
         type="button"
         onClick={(event) => {

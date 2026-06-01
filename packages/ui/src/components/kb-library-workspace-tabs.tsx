@@ -1,11 +1,9 @@
-import { AlertCircle, Archive, Clock3, Files, Link2, SearchCheck, Settings2, SlidersHorizontal } from "lucide-react";
+import { AlertCircle, Clock3, Files, Settings2, SlidersHorizontal } from "lucide-react";
 
 export type KbLibraryWorkspaceTab =
   | "documents"
   | "pending"
   | "storage"
-  | "archive"
-  | "accuracy"
   | "integrations"
   | "tasks";
 
@@ -14,16 +12,16 @@ type TabDef = { value: KbLibraryWorkspaceTab; label: string; icon: typeof Files 
 /** 主区视图：找（资料 / 档案）+ 理（待处理）。日常 90% 的操作都在这一行。 */
 const PRIMARY_TABS: TabDef[] = [
   { value: "documents", label: "资料", icon: Files },
-  { value: "archive", label: "档案", icon: Archive },
   { value: "pending", label: "待处理", icon: AlertCircle },
 ];
 
-/** 管理（⚙）：偶尔才碰的配置与诊断，默认收起在「管理」后面。 */
+/** 管理（⚙）：偶尔才碰的配置与诊断，默认收起在「管理」后面。
+ *  不列出的：
+ *  - 来源系统（外部系统同步）—— 本库默认就是业务手动上传的资料；
+ *  - 匹配效果（评分权重/检索标准）—— 属系统级默认标准，全局统一、非每库自配。 */
 const MANAGE_TABS: TabDef[] = [
   { value: "storage", label: "设置", icon: Settings2 },
-  { value: "integrations", label: "来源系统", icon: Link2 },
   { value: "tasks", label: "处理记录", icon: Clock3 },
-  { value: "accuracy", label: "匹配效果", icon: SearchCheck },
 ];
 
 const MANAGE_VALUES: KbLibraryWorkspaceTab[] = MANAGE_TABS.map((tab) => tab.value);
