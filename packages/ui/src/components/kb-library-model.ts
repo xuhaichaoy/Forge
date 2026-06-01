@@ -17,7 +17,6 @@ export interface FileRow {
   batchLabel: string;
   versionLabel: string;
   pendingReason: string;
-  sourceLocator: string;
   categories: Array<{ label: string; kind: "instructor" | "course" | "case" | "customer" | "proposal" | "bid" }>;
   bizLine: BizLine;
   raw: YuxiLibraryDocument;
@@ -68,7 +67,6 @@ export function toFileRow(file: YuxiLibraryDocument): FileRow {
     batchLabel: file.batch_id || shortId(file.file_id) || "未记录",
     versionLabel: versionLabel(file),
     pendingReason: file.pending_reason || pendingReason(file.status),
-    sourceLocator: sourceLocator(file),
     bizLine: file.business_line === "training_presales" || file.business_line === "bidding" ? file.business_line : "all",
     // 「所属知识库」列已用粗体展示库名（file.source）。这里只补一个分类标签，
     // 且当分类名与库名相同时（如单库分类）不再重复打标签，避免出现两个一样的胶囊。
@@ -94,14 +92,6 @@ function pendingReason(status: string | null | undefined): string {
   if (status === "parsed") return "待入库";
   if (status === "processing" || status === "pending" || status === "running") return "处理中";
   return "无待处理";
-}
-
-function sourceLocator(file: YuxiLibraryDocument): string {
-  const parts = [
-    typeof file.page_count === "number" ? `${file.page_count} 页` : "",
-    typeof file.chunk_count === "number" ? `${file.chunk_count} 段` : "",
-  ].filter(Boolean);
-  return parts.join(" · ") || "已保存原件";
 }
 
 function shortId(value: string | null | undefined): string {

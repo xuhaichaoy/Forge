@@ -2,6 +2,8 @@ import { Check, ChevronRight, Cpu, LogIn, Settings as SettingsIcon } from "lucid
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   DEFAULT_MODEL_NAME,
+  DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
+  DEFAULT_SUBSCRIPTION_PROVIDER_ID,
   DEFAULT_SUBSCRIPTION_MODELS,
   formatModelDisplayName,
 } from "../model/model-settings";
@@ -51,17 +53,35 @@ export const DEFAULT_PROVIDERS: ModelPickerProvider[] = [
     authMode: "api-key",
   },
   {
-    // id 必须是 "openai" — codex-rs 后端内置的 provider 名（auto OAuth）。
-    // ChatGPT Plus / Pro 订阅走这条：用 `/login` slash command 完成 OAuth，
-    // token 写入 codex-home/auth.json，新建 chat 时 codex-rs 自动用它。
-    id: "openai",
-    label: "ChatGPT 订阅 · OpenAI",
-    host: "api.openai.com",
-    baseUrl: "https://api.openai.com/v1",
+    /*
+     * HiCodex routes ChatGPT subscription traffic through a configured HTTP
+     * provider instead of codex-rs's built-in `openai` provider. The built-in
+     * provider enables Responses-over-WebSocket; on networks that block or
+     * throttle the websocket path, every new thread burns its first turn on
+     * websocket retries before falling back to HTTP. `openai_http` still uses
+     * the same `/login` ChatGPT OAuth credentials and ChatGPT Codex backend,
+     * but starts directly on the HTTP Responses transport.
+     */
+    id: DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
+    label: "ChatGPT 订阅 · OpenAI HTTP",
+    host: "chatgpt.com",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
     models: DEFAULT_SUBSCRIPTION_MODELS,
     authMode: "oauth",
   },
 ];
+
+export function isSubscriptionProviderId(providerId: string | null | undefined): boolean {
+  const normalized = providerId?.trim();
+  return normalized === DEFAULT_SUBSCRIPTION_PROVIDER_ID
+    || normalized === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID;
+}
+
+export function normalizeSubscriptionProviderId(providerId: string): string {
+  return providerId === DEFAULT_SUBSCRIPTION_PROVIDER_ID
+    ? DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID
+    : providerId;
+}
 
 /** Persisted selection: `${providerId}::${modelSlug}` */
 export function encodeSelection(providerId: string, model: string): string {

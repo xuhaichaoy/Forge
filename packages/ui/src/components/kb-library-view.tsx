@@ -4,7 +4,6 @@ import {
   analyzeYuxiKnowledgeFile,
   batchDeleteYuxiKnowledgeDocuments,
   cancelYuxiTask,
-  createYuxiKnowledgeFolder,
   createYuxiKnowledgeDatabase,
   deleteYuxiKnowledgeDocument,
   deleteYuxiTask,
@@ -20,10 +19,7 @@ import {
   listYuxiLibraryDocuments,
   listYuxiConflicts,
   listYuxiPendingQueue,
-  listYuxiScoringRules,
-  listYuxiScoringTemplates,
   listYuxiTasks,
-  moveYuxiKnowledgeDocument,
   parseYuxiKnowledgeDocuments,
   processYuxiKnowledgeDocuments,
   searchYuxiLibrary,
@@ -34,8 +30,6 @@ import {
   type YuxiIntakeResponse,
   type YuxiSearchResponse,
   type YuxiLibraryDocument,
-  type YuxiScoringRule,
-  type YuxiScoringTemplate,
   type YuxiSearchGroup,
   type YuxiTask,
   uploadYuxiKnowledgeFile,
@@ -45,8 +39,6 @@ import {
   yuxiLibraryGovernance,
 } from "../lib/yuxi-client";
 import { KbYuxiConnectionControl } from "./kb-page-shell";
-import { KbAccuracyPanel } from "./kb-accuracy-panel";
-import { KbLibraryArchivePanel } from "./kb-library-archive-panel";
 import { KbLibraryIntegrationPanel } from "./kb-library-integration-panel";
 import { KbLibraryIngestPipeline, uploadRunPipelineSteps } from "./kb-library-ingest-pipeline";
 import {
@@ -57,7 +49,7 @@ import {
   type LibraryUploadRun,
 } from "./kb-library-model";
 import {
-  BusinessLineTabs,
+  BusinessLineFilter,
   LibraryTreeFilter,
 } from "./kb-library-navigation";
 import { KbLibraryDetailPanel } from "./kb-library-detail";
@@ -79,9 +71,6 @@ export function KbLibraryView() {
   const [searchGroups, setSearchGroups] = useState<YuxiSearchGroup[]>([]);
   const [searchErrors, setSearchErrors] = useState<NonNullable<YuxiSearchResponse["errors"]>>([]);
   const [searchedKbCount, setSearchedKbCount] = useState(0);
-  const [scoringTemplates, setScoringTemplates] = useState<YuxiScoringTemplate[]>([]);
-  const [scoringRules, setScoringRules] = useState<YuxiScoringRule[]>([]);
-  const [scoringError, setScoringError] = useState<string | null>(null);
   const [taskRows, setTaskRows] = useState<YuxiTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
@@ -101,6 +90,8 @@ export function KbLibraryView() {
   const [focusPendingIds, setFocusPendingIds] = useState<number[]>([]);
   const [governanceSaving, setGovernanceSaving] = useState(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [highlightChunkId, setHighlightChunkId] = useState<string | null>(null);
+  const [highlightQuery, setHighlightQuery] = useState<string | null>(null);
   const [checkedRowIds, setCheckedRowIds] = useState<Set<string>>(() => new Set());
   const [documentDetail, setDocumentDetail] = useState<YuxiKnowledgeDocumentDetail | null>(null);
   const [documentAnalysis, setDocumentAnalysis] = useState<YuxiFileAnalysisResponse | null>(null);
@@ -249,35 +240,9 @@ export function KbLibraryView() {
     }
   }, [activeDbId, businessLine, category, selectedCategory, selectedDatabases]);
 
-  const loadScoring = useCallback(async () => {
-    if (!selectedCategory) {
-      setScoringTemplates([]);
-      setScoringRules([]);
-      setScoringError(null);
-      return;
-    }
-    setScoringError(null);
-    try {
-      const [templates, rules] = await Promise.all([
-        listYuxiScoringTemplates({ businessLine: selectedCategory.line }),
-        listYuxiScoringRules({ businessLine: selectedCategory.line }),
-      ]);
-      setScoringTemplates(templates.items ?? []);
-      setScoringRules(rules.items ?? []);
-    } catch (err) {
-      setScoringTemplates([]);
-      setScoringRules([]);
-      setScoringError(err instanceof Error ? err.message : String(err));
-    }
-  }, [selectedCategory]);
-
   useEffect(() => {
     void loadDocuments();
   }, [loadDocuments]);
-
-  useEffect(() => {
-    void loadScoring();
-  }, [loadScoring]);
 
   useEffect(() => {
     void loadTasks();
@@ -308,10 +273,14 @@ export function KbLibraryView() {
     () => allRows.filter((row) => documentRowMatchesFilters(row, documentStatusFilter, documentTypeFilter)),
     [allRows, documentStatusFilter, documentTypeFilter],
   );
-  const selectedFile = useMemo(
-    () => rows.find((row) => row.id === selectedRowId) ?? null,
-    [rows, selectedRowId],
-  );
+  const selectedFile = useMemo(() => {
+    if (!selectedRowId) return null;
+    const inRows = rows.find((row) => row.id === selectedRowId);
+    if (inRows) return inRows;
+    // 搜索态下表格 rows 为空，命中的文件从全量资料里解析
+    const doc = allDocuments.find((file) => toFileRow(file).id === selectedRowId);
+    return doc ? toFileRow(doc) : null;
+  }, [allDocuments, rows, selectedRowId]);
   const checkedRows = useMemo(
     () => rows.filter((row) => checkedRowIds.has(row.id) && row.raw.db_id && row.raw.file_id),
     [checkedRowIds, rows],
@@ -323,21 +292,12 @@ export function KbLibraryView() {
   const selectedDatabaseCount = selectedDatabase?.db_id
     ? allDocuments.filter((file) => file.db_id === selectedDatabase.db_id).length
     : selectedCategoryCount;
-  const documentStatusSummary = useMemo(
-    () => summarizeDocumentStatus(documents),
-    [documents],
-  );
   const activeTaskCount = useMemo(
     () => countActiveTasks(taskRows, activeDbId),
     [activeDbId, taskRows],
   );
   const pendingTotal = pendingSummary ?? 0;
   const sourceSystemCount = yuxiLibraryGovernance(selectedCategory?.key)?.externalSystems.length ?? 0;
-  const showLibraryStatus = selectedDatabaseCount > 0
-    || documentStatusSummary.indexed > 0
-    || documentStatusSummary.pending > 0
-    || documentStatusSummary.failed > 0
-    || activeTaskCount > 0;
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const file of allDocuments) {
@@ -347,7 +307,12 @@ export function KbLibraryView() {
     return counts;
   }, [allDocuments]);
   useEffect(() => {
-    if (selectedRowId && !rows.some((row) => row.id === selectedRowId)) {
+    // 搜索态 rows 为空，但命中的文件在 allDocuments 里——两处都找不到才清空选中
+    if (
+      selectedRowId
+      && !rows.some((row) => row.id === selectedRowId)
+      && !allDocuments.some((file) => toFileRow(file).id === selectedRowId)
+    ) {
       setSelectedRowId(null);
     }
     setCheckedRowIds((prev) => {
@@ -355,7 +320,7 @@ export function KbLibraryView() {
       const next = new Set([...prev].filter((id) => existing.has(id)));
       return next.size === prev.size ? prev : next;
     });
-  }, [rows, selectedRowId]);
+  }, [allDocuments, rows, selectedRowId]);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -491,34 +456,6 @@ export function KbLibraryView() {
     });
   }, [rows]);
 
-  const submitDocumentTask = useCallback(async (
-    targets: Array<ReturnType<typeof toFileRow>>,
-    mode: "parse" | "index",
-  ) => {
-    const groups = groupRowsByDatabase(targets);
-    if (groups.length === 0) {
-      setError("请选择可处理的资料。");
-      return;
-    }
-    setError(null);
-    setNotice(null);
-    try {
-      let submitted = 0;
-      for (const group of groups) {
-        const result = mode === "parse"
-          ? await parseYuxiKnowledgeDocuments(group.dbId, group.fileIds)
-          : await indexYuxiKnowledgeDocuments(group.dbId, group.fileIds);
-        if (result.status === "failed") throw new Error(result.message || "任务提交失败");
-        submitted += group.fileIds.length;
-      }
-      setNotice(`${mode === "parse" ? "重新解析" : "重新入库"}任务已提交：${submitted} 条资料`);
-      await Promise.all([loadTasks(), loadDocuments()]);
-      setLibraryMode("tasks");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [loadDocuments, loadTasks]);
-
   const handleBatchDelete = useCallback(async () => {
     const groups = groupRowsByDatabase(checkedRows);
     const total = groups.reduce((sum, item) => sum + item.fileIds.length, 0);
@@ -542,37 +479,6 @@ export function KbLibraryView() {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [checkedRows, loadDocuments]);
-
-  const handleMoveToFolder = useCallback(async (targets: Array<ReturnType<typeof toFileRow>>) => {
-    const groups = groupRowsByDatabase(targets);
-    const total = groups.reduce((sum, item) => sum + item.fileIds.length, 0);
-    if (total === 0) {
-      setError("请选择可移动的资料。");
-      return;
-    }
-    const defaultName = new Date().toLocaleDateString("zh-CN").replace(/\//g, "-");
-    const folderName = globalThis.prompt("移动到哪个文件夹？不存在会自动创建。", `资料整理 ${defaultName}`)?.trim();
-    if (!folderName) return;
-    setError(null);
-    setNotice(null);
-    try {
-      let moved = 0;
-      for (const group of groups) {
-        const folder = await createYuxiKnowledgeFolder(group.dbId, folderName);
-        const folderId = folderIdFromResponse(folder);
-        if (!folderId) throw new Error(`文件夹「${folderName}」创建成功但系统未返回文件夹信息`);
-        for (const fileId of group.fileIds) {
-          await moveYuxiKnowledgeDocument(group.dbId, fileId, folderId);
-          moved += 1;
-        }
-      }
-      setCheckedRowIds(new Set());
-      setNotice(`已移动 ${moved} 条资料到「${folderName}」`);
-      await loadDocuments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }, [loadDocuments]);
 
   const handleCancelTask = useCallback(async (task: YuxiTask) => {
     if (!task.id) return;
@@ -1054,23 +960,19 @@ export function KbLibraryView() {
     <main className="hc-main hc-kb-main" aria-label="知识库管理">
       <header className="hc-topbar">
         <div className="hc-topbar-main">
-          <span className="hc-kb-topbar-stats">
-            <strong>知识库</strong>
-            <span>{totalCount} 条资料</span>
-            {updatedLabel && <span className="hc-kb-topbar-stats-badge">已同步 {updatedLabel}</span>}
-          </span>
-          <BusinessLineTabs
-            bizLine={bizLine}
-            totalCount={totalCount}
-            presalesCount={presalesCount}
-            bidCount={bidCount}
-            onSelect={selectBizLine}
-          />
+          <div className="hc-top-title">知识库</div>
         </div>
         <div className="hc-topbar-actions">
-          <button type="button" className="hc-kb-topbar-btn" onClick={() => void loadDocuments()} disabled={loading} aria-label="同步平台数据">
+          <button
+            type="button"
+            className="hc-kb-topbar-btn"
+            onClick={() => void loadDocuments()}
+            disabled={loading}
+            aria-label="同步平台数据"
+            title={updatedLabel ? `最近同步 ${updatedLabel}` : "同步平台数据"}
+          >
             <RefreshCw size={13} strokeWidth={2.2} aria-hidden="true" />
-            {loading ? "同步中" : "同步数据"}
+            {loading ? "同步中" : "同步"}
           </button>
           <KbYuxiConnectionControl />
         </div>
@@ -1090,6 +992,13 @@ export function KbLibraryView() {
           }}
         />
         <aside className="hc-kb-filters" aria-label="知识库列表">
+          <BusinessLineFilter
+            bizLine={bizLine}
+            totalCount={totalCount}
+            presalesCount={presalesCount}
+            bidCount={bidCount}
+            onSelect={selectBizLine}
+          />
           <LibraryTreeFilter
             activeCat={activeCat}
             activeDbId={activeDbId}
@@ -1135,17 +1044,18 @@ export function KbLibraryView() {
           <div className="hc-kb-library-toolbar">
             <div className="hc-kb-library-toolbar-main">
               <div className="hc-kb-library-title">{activeLibraryLabel}</div>
-              <div className="hc-kb-library-meta">
-                {selectedCategory?.line && <span>{yuxiBusinessLineLabel(selectedCategory.line)}</span>}
-                <span>{selectedDatabaseCount} 条资料</span>
-              </div>
-              {showLibraryStatus && (
-                <div className="hc-kb-library-metrics" aria-label="当前知识库状态">
-                  <LibraryMetric label="可检索" value={documentStatusSummary.indexed} />
-                  <LibraryMetric label="处理中" value={documentStatusSummary.pending} tone={documentStatusSummary.pending > 0 ? "pending" : undefined} />
-                  <LibraryMetric label="失败" value={documentStatusSummary.failed} tone={documentStatusSummary.failed > 0 ? "danger" : undefined} />
-                  <LibraryMetric label="任务" value={activeTaskCount} tone={activeTaskCount > 0 ? "pending" : undefined} />
-                </div>
+              {!searchText && (
+                <KbLibraryWorkspaceTabs
+                  active={libraryMode}
+                  disabledManagement={!selectedCategory}
+                  counts={{
+                    documents: selectedDatabaseCount,
+                    pending: pendingTotal,
+                    integrations: sourceSystemCount,
+                    tasks: activeTaskCount,
+                  }}
+                  onSelect={setLibraryMode}
+                />
               )}
             </div>
             <div className="hc-kb-library-actions">
@@ -1163,21 +1073,6 @@ export function KbLibraryView() {
               </button>
             </div>
           </div>
-
-          {!searchText && (
-            <KbLibraryWorkspaceTabs
-              active={libraryMode}
-              disabledManagement={!selectedCategory}
-              counts={{
-                documents: selectedDatabaseCount,
-                pending: pendingTotal,
-                accuracy: scoringRules.length,
-                integrations: sourceSystemCount,
-                tasks: activeTaskCount,
-              }}
-              onSelect={setLibraryMode}
-            />
-          )}
 
           {uploadRuns.length > 0 && (
             <UploadBatchTable
@@ -1201,6 +1096,13 @@ export function KbLibraryView() {
                 loading={loading}
                 errors={searchErrors}
                 searchedKbCount={searchedKbCount}
+                onOpen={(target) => {
+                  const doc = allDocuments.find((file) => file.file_id === target.fileId);
+                  if (!doc) return;
+                  setSelectedRowId(toFileRow(doc).id);
+                  setHighlightChunkId(target.chunkId || null);
+                  setHighlightQuery(searchQuery.trim() || null);
+                }}
               />
             </div>
           ) : libraryMode === "pending" ? (
@@ -1222,20 +1124,6 @@ export function KbLibraryView() {
               onUpload={() => setUploadDialogOpen(true)}
               onSaveGovernance={(database, draft) => void saveGovernance(database, draft)}
               governanceSaving={governanceSaving}
-            />
-          ) : libraryMode === "archive" ? (
-            <KbLibraryArchivePanel
-              selectedCategory={selectedCategory}
-              selectedDatabase={selectedDatabase}
-            />
-          ) : libraryMode === "accuracy" ? (
-            <KbAccuracyPanel
-              selectedCategory={selectedCategory}
-              selectedDatabase={selectedDatabase}
-              templates={scoringTemplates}
-              rules={scoringRules}
-              scoringError={scoringError}
-              onRefreshScoring={loadScoring}
             />
           ) : libraryMode === "integrations" ? (
             <KbLibraryIntegrationPanel
@@ -1292,15 +1180,6 @@ export function KbLibraryView() {
                       </select>
                     </div>
                     <div className="hc-kb-bulkbar-actions">
-                      <button type="button" className="hc-kb-topbar-btn" disabled={checkedRows.length === 0} onClick={() => void submitDocumentTask(checkedRows, "parse")}>
-                        重新解析
-                      </button>
-                      <button type="button" className="hc-kb-topbar-btn" disabled={checkedRows.length === 0} onClick={() => void submitDocumentTask(checkedRows, "index")}>
-                        重新入库
-                      </button>
-                      <button type="button" className="hc-kb-topbar-btn" disabled={checkedRows.length === 0} onClick={() => void handleMoveToFolder(checkedRows)}>
-                        移动到文件夹
-                      </button>
                       <button type="button" className="hc-kb-topbar-btn hc-kb-topbar-btn--danger" disabled={checkedRows.length === 0} onClick={() => void handleBatchDelete()}>
                         批量删除
                       </button>
@@ -1313,7 +1192,11 @@ export function KbLibraryView() {
                     loading={loading}
                     selectedRowId={selectedRowId}
                     checkedRowIds={checkedRowIds}
-                    onSelect={(file) => setSelectedRowId(file.id)}
+                    onSelect={(file) => {
+                      setSelectedRowId(file.id);
+                      setHighlightChunkId(null);
+                      setHighlightQuery(null);
+                    }}
                     onToggleChecked={toggleCheckedRow}
                     onToggleAll={toggleAllCheckedRows}
                     onDownload={(file) => void handleDownload(file)}
@@ -1325,43 +1208,42 @@ export function KbLibraryView() {
                   />
                 </div>
               </div>
-              {selectedFile && (
-                <div className="hc-kb-archive-drawer hc-kb-archive-drawer--fixed" role="presentation">
-                  <button
-                    type="button"
-                    className="hc-kb-archive-drawer-scrim"
-                    aria-label="关闭资料详情"
-                    onClick={() => setSelectedRowId(null)}
-                  />
-                  <aside className="hc-kb-archive-drawer-panel" role="dialog" aria-modal="true" aria-label="资料详情">
-                    <button type="button" className="hc-kb-archive-drawer-close" onClick={() => setSelectedRowId(null)}>
-                      <X size={14} strokeWidth={2.2} aria-hidden="true" />
-                      关闭
-                    </button>
-                    <KbLibraryDetailPanel
-                      file={selectedFile}
-                      detail={documentDetail}
-                      analysis={documentAnalysis}
-                      analysisLoading={analysisLoading}
-                      analysisError={analysisError}
-                      hydeQuestions={hydeQuestions}
-                      hydeLoading={hydeLoading}
-                      hydeError={hydeError}
-                      loading={detailLoading}
-                      error={detailError}
-                      selectedCategory={selectedCategory}
-                      selectedDatabase={selectedDatabase}
-                      scoringTemplates={scoringTemplates}
-                      scoringRules={scoringRules}
-                      scoringError={scoringError}
-                      onDownload={(file) => void handleDownload(file)}
-                      onDelete={(file) => void handleDelete(file)}
-                      onAnalyze={(file) => void analyzeSelectedFile(file)}
-                      onGenerateQuestions={(file) => void generateSelectedFileQuestions(file)}
-                    />
-                  </aside>
-                </div>
-              )}
+            </div>
+          )}
+          {selectedFile && (
+            <div className="hc-kb-archive-drawer hc-kb-archive-drawer--fixed" role="presentation">
+              <button
+                type="button"
+                className="hc-kb-archive-drawer-scrim"
+                aria-label="关闭资料详情"
+                onClick={() => setSelectedRowId(null)}
+              />
+              <aside className="hc-kb-archive-drawer-panel" role="dialog" aria-modal="true" aria-label="资料详情">
+                <button type="button" className="hc-kb-archive-drawer-close" onClick={() => setSelectedRowId(null)}>
+                  <X size={14} strokeWidth={2.2} aria-hidden="true" />
+                  关闭
+                </button>
+                <KbLibraryDetailPanel
+                  file={selectedFile}
+                  detail={documentDetail}
+                  analysis={documentAnalysis}
+                  analysisLoading={analysisLoading}
+                  analysisError={analysisError}
+                  hydeQuestions={hydeQuestions}
+                  hydeLoading={hydeLoading}
+                  hydeError={hydeError}
+                  loading={detailLoading}
+                  error={detailError}
+                  selectedCategory={selectedCategory}
+                  selectedDatabase={selectedDatabase}
+                  highlightChunkId={highlightChunkId}
+                  highlightQuery={highlightQuery}
+                  onDownload={(file) => void handleDownload(file)}
+                  onDelete={(file) => void handleDelete(file)}
+                  onAnalyze={(file) => void analyzeSelectedFile(file)}
+                  onGenerateQuestions={(file) => void generateSelectedFileQuestions(file)}
+                />
+              </aside>
             </div>
           )}
           {uploadDialogOpen && (
@@ -1529,23 +1411,6 @@ function UploadBatchTable({
   );
 }
 
-function LibraryMetric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone?: "pending" | "danger";
-}) {
-  return (
-    <span className="hc-kb-library-metric" data-tone={tone}>
-      <strong>{value}</strong>
-      {label}
-    </span>
-  );
-}
-
 function summarizeUploadRuns(runs: LibraryUploadRun[]): { done: number; failed: number; queued: number; processing: number } {
   return runs.reduce((acc, run) => {
     if (run.status === "done") acc.done += 1;
@@ -1578,23 +1443,6 @@ function groupRowsByDatabase(rows: Array<ReturnType<typeof toFileRow>>): Array<{
     grouped.set(dbId, current);
   }
   return [...grouped.entries()].map(([dbId, fileIds]) => ({ dbId, fileIds }));
-}
-
-function summarizeDocumentStatus(documents: YuxiLibraryDocument[]): { indexed: number; pending: number; failed: number } {
-  let indexed = 0;
-  let pending = 0;
-  let failed = 0;
-  for (const document of documents) {
-    const status = (document.status ?? "").toLowerCase();
-    if (["indexed", "done", "completed", "success"].includes(status)) {
-      indexed += 1;
-    } else if (["failed", "error", "error_parsing"].includes(status)) {
-      failed += 1;
-    } else {
-      pending += 1;
-    }
-  }
-  return { indexed, pending, failed };
 }
 
 function documentRowMatchesFilters(
@@ -1643,18 +1491,6 @@ function stringArray(value: unknown): string[] {
 
 function objectRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function folderIdFromResponse(response: Record<string, unknown>): string | null {
-  for (const key of ["folder_id", "id", "file_id", "doc_id"]) {
-    const value = response[key];
-    if (typeof value === "string" && value.length > 0) return value;
-  }
-  const data = response.data;
-  if (data && typeof data === "object") {
-    return folderIdFromResponse(data as Record<string, unknown>);
-  }
-  return null;
 }
 
 async function waitForYuxiTask(taskId: string, onTask: (task: YuxiTask) => void): Promise<YuxiTask> {

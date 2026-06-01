@@ -1207,7 +1207,7 @@ const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftProps>(f
         aria-expanded={attachmentPickerOpen}
         onClick={onShowAttachmentMenu}
       >
-        <Plus size={16} />
+        <Plus size={18} />
       </button>
       {mode === "plan" && (
         <button

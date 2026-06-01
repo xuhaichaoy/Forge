@@ -5,6 +5,7 @@ import type { Thread } from "@hicodex/codex-protocol";
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 // codex thread-env-icon-*.js wraps the env indicator in <Tooltip/> (tooltip-*.js).
 import { Tooltip } from "./tooltip";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface ConversationChromeProps {
   title: string;
@@ -63,8 +64,15 @@ export function ConversationChrome({
   onNavigateBack,
   onNavigateForward,
 }: ConversationChromeProps) {
-  const displayTitle = title.replace(/\s+/g, " ").trim() || (activeThread ? "Untitled chat" : "New chat");
-  const sidebarLabel = sidebarOpen ? "Hide sidebar" : "Show sidebar";
+  const { formatMessage } = useHiCodexIntl();
+  const displayTitle =
+    title.replace(/\s+/g, " ").trim() ||
+    (activeThread
+      ? formatMessage({ id: "hc.conversation.untitled", defaultMessage: "Untitled chat" })
+      : formatMessage({ id: "hc.sidebar.newChat", defaultMessage: "New chat" }));
+  const sidebarLabel = sidebarOpen
+    ? formatMessage({ id: "hc.sidebar.hideSidebar", defaultMessage: "Hide sidebar" })
+    : formatMessage({ id: "hc.sidebar.showSidebar", defaultMessage: "Show sidebar" });
   // codex: electron-menu-shortcuts-*.js#toggleSidebar — ⌘B hint in tooltip.
   const sidebarAccelerator = descriptorAcceleratorLabel(COMMAND_IDS.toggleSidebar);
   const sidebarTitle = sidebarAccelerator ? `Toggle sidebar (${sidebarAccelerator})` : "Toggle sidebar";
@@ -135,7 +143,7 @@ export function ConversationChrome({
             className="hc-topbar-env-icon"
             aria-label={env === "worktree" ? "Running in a local git worktree" : "Running locally"}
           >
-            {env === "worktree" ? <GitBranch size={16} aria-hidden="true" /> : <Laptop size={16} aria-hidden="true" />}
+            {env === "worktree" ? <GitBranch size={14} aria-hidden="true" /> : <Laptop size={14} aria-hidden="true" />}
           </span>
         </Tooltip>
         <div className="hc-top-title" title={displayTitle}>{displayTitle}</div>
@@ -150,7 +158,7 @@ export function ConversationChrome({
             title="Toggle pinned summary"
             onClick={onToggleRightRailPinned}
           >
-            <RightRailIcon size={16} aria-hidden="true" />
+            <RightRailIcon size={18} aria-hidden="true" />
           </button>
         </div>
       )}

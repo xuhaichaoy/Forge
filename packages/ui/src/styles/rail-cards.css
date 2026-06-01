@@ -21,7 +21,7 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border-radius: 4px; /* codex rounded-sm */
+  border-radius: calc(6px * var(--hc-corner-radius-scale)); /* codex rounded-sm = --radius-sm-base .375rem (6px) * scale = 6/7.5px (was 4px; A/B-pending) */
   color: var(--hc-text-secondary, #6f716b);
 }
 
@@ -359,7 +359,7 @@
   align-items: center;
   gap: 8px;
   border: 0;
-  border-radius: 2px;
+  border-radius: calc(6px * var(--hc-corner-radius-scale)); /* codex summary-row rounded-sm = 6/7.5px (was 2px; A/B-pending) */
   padding: 4px 0;
   background: transparent;
   color: inherit;
@@ -422,7 +422,7 @@
   position: absolute;
   inset: 0 -8px;
   z-index: -1;
-  border-radius: 2px;
+  border-radius: calc(6px * var(--hc-corner-radius-scale)); /* codex hover halo rounded-sm = 6/7.5px (was 2px; A/B-pending) */
   background: transparent;
   transition: background-color 120ms ease;
   pointer-events: none;

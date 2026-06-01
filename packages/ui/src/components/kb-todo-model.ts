@@ -88,16 +88,6 @@ export function projectTodos(
       status: "pick" as const,
       raw: item,
     })),
-    ...queues.classify.map((item) => ({
-      id: `classify:${item.id}`,
-      numericId: typeof item.id === "number" ? item.id : null,
-      kind: "classify" as const,
-      title: `「${item.filename || "资料"}」该放到哪个知识库？`,
-      source: "ai-cat" as const,
-      reason: classifyReason(item),
-      status: "classify" as const,
-      raw: item,
-    })),
     ...queues.force.map((item) => ({
       id: `force:${item.id}`,
       numericId: typeof item.id === "number" ? item.id : null,
@@ -160,14 +150,6 @@ export function todoBelongsToCurrentLibrary(item: YuxiPendingItem, category: str
   if (!category) return false;
   if (item.candidates?.some((candidate) => candidate.category === category)) return true;
   return false;
-}
-
-function classifyReason(item: YuxiPendingItem): string {
-  const top = item.candidates?.[0];
-  if (!top) return "系统不确定该放入哪个知识库，需要人工确认。";
-  const label = top.label || top.category || "候选分类";
-  const score = typeof top.score === "number" ? `，把握度 ${Math.round(top.score * 100)}%` : "";
-  return `系统建议放入「${label}」${score}。`;
 }
 
 function entityReason(item: YuxiPendingItem): string {

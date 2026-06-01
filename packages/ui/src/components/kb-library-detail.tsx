@@ -8,10 +8,7 @@ import {
   type YuxiFileAnalysisEntity,
   type YuxiFileAnalysisResponse,
   type YuxiKnowledgeDatabase,
-  type YuxiKnowledgeDocumentChunk,
   type YuxiKnowledgeDocumentDetail,
-  type YuxiScoringRule,
-  type YuxiScoringTemplate,
 } from "../lib/yuxi-client";
 import { type FileRow } from "./kb-library-model";
 
@@ -28,9 +25,8 @@ export function KbLibraryDetailPanel({
   error,
   selectedCategory,
   selectedDatabase,
-  scoringTemplates,
-  scoringRules,
-  scoringError,
+  highlightChunkId,
+  highlightQuery,
   onDownload,
   onDelete,
   onAnalyze,
@@ -48,9 +44,8 @@ export function KbLibraryDetailPanel({
   error: string | null;
   selectedCategory: YuxiCategoryMeta | null;
   selectedDatabase: YuxiKnowledgeDatabase | null;
-  scoringTemplates: YuxiScoringTemplate[];
-  scoringRules: YuxiScoringRule[];
-  scoringError: string | null;
+  highlightChunkId?: string | null;
+  highlightQuery?: string | null;
   onDownload: (file: FileRow) => void;
   onDelete: (file: FileRow) => void;
   onAnalyze: (file: FileRow) => void;
@@ -61,9 +56,6 @@ export function KbLibraryDetailPanel({
       <LibraryProfilePanel
         selectedCategory={selectedCategory}
         selectedDatabase={selectedDatabase}
-        scoringTemplates={scoringTemplates}
-        scoringRules={scoringRules}
-        scoringError={scoringError}
       />
     );
   }
@@ -72,8 +64,17 @@ export function KbLibraryDetailPanel({
   const chunks = detail?.lines ?? [];
   const contentPreview = typeof detail?.content === "string" ? detail.content : "";
   const fileStatus = stringValue(meta.status) || file.raw.status || "未记录";
-  const sourcePath = stringValue(meta.path) || stringValue(meta.markdown_file) || "";
-  const chunkCount = chunks.length;
+
+  // 阅读视图：优先用带 chunk_id 的解析分段（便于命中段定位高亮），没有再退回完整正文按空行分段。
+  const readingBlocks = (chunks.length > 0
+    ? chunks.map((chunk) => ({
+        chunkId: typeof chunk.chunk_id === "string" ? chunk.chunk_id : null,
+        text: (typeof chunk.content === "string" ? chunk.content : "").trim(),
+      }))
+    : contentPreview.split(/\n{2,}/).map((text) => ({ chunkId: null as string | null, text: text.trim() }))
+  ).filter((block) => block.text);
+  const readingPreview = readingBlocks.slice(0, 60);
+  const readingMore = readingBlocks.length - readingPreview.length;
 
   return (
     <aside className="hc-kb-detail-panel" aria-label="资料详情">
@@ -115,15 +116,6 @@ export function KbLibraryDetailPanel({
         </div>
       </DetailBlock>
 
-      <IngestStateBlock status={fileStatus} entityCount={analysis?.entities?.length ?? 0} />
-
-      <DetailBlock title="解析结果">
-        <div className="hc-kb-detail-kv">
-          <Kv label="可检索内容" value={loading ? "读取中" : `${chunkCount} 段`} />
-          <Kv label="原文位置" value={sourcePath || "已保存原件"} />
-        </div>
-      </DetailBlock>
-
       <DetailBlock title="提炼结果">
         <div className="hc-kb-analysis-actions">
           <button type="button" className="hc-kb-topbar-btn" onClick={() => onAnalyze(file)} disabled={analysisLoading}>
@@ -154,71 +146,67 @@ export function KbLibraryDetailPanel({
         )}
       </DetailBlock>
 
-      <DetailBlock title="可检索片段">
+      <DetailBlock title="内容预览">
         {loading ? (
-          <div className="hc-kb-detail-muted">正在读取解析内容</div>
-        ) : chunks.length > 0 ? (
-          <div className="hc-kb-chunk-list">
-            {chunks.slice(0, 4).map((chunk, index) => (
-              <div key={chunk.id ?? chunk.chunk_id ?? index} className="hc-kb-chunk-item">
-                <div className="hc-kb-chunk-title">片段 {chunk.chunk_order_index ?? chunk.chunk_index ?? index + 1}</div>
-                <div className="hc-kb-chunk-text">{chunkText(chunk)}</div>
-              </div>
-            ))}
+          <div className="hc-kb-detail-muted">正在读取内容</div>
+        ) : readingPreview.length > 0 ? (
+          <div className="hc-kb-doc-reading">
+            {readingPreview.map((block, index) => {
+              const hit = highlightChunkId != null && block.chunkId === highlightChunkId;
+              return (
+                <p
+                  key={block.chunkId ?? index}
+                  ref={hit ? scrollHitIntoView : undefined}
+                  data-hit={hit ? "true" : undefined}
+                >
+                  {renderWithQuery(block.text, highlightQuery)}
+                </p>
+              );
+            })}
+            {readingMore > 0 && (
+              <div className="hc-kb-detail-muted">还有 {readingMore} 段，下载原文件查看完整内容。</div>
+            )}
           </div>
-        ) : contentPreview ? (
-          <div className="hc-kb-markdown-preview">{trimPreview(contentPreview)}</div>
         ) : (
-          <div className="hc-kb-detail-muted">系统未返回解析片段</div>
+          <div className="hc-kb-detail-muted">暂无可预览的内容</div>
         )}
       </DetailBlock>
     </aside>
   );
 }
 
-function IngestStateBlock({
-  status,
-  entityCount,
-}: {
-  status: string;
-  entityCount: number;
-}) {
-  const parsed = ["parsed", "indexed", "done", "completed", "success"].includes(status);
-  const indexed = ["indexed", "done", "completed", "success"].includes(status);
-  const failed = ["failed", "error", "error_parsing"].includes(status);
-  const steps = [
-    { label: "原文件", value: "已保存", tone: failed ? "pending" : "ok" },
-    { label: "文本/表格", value: failed ? "失败" : parsed ? "已解析" : "待解析", tone: failed ? "fail" : parsed ? "ok" : "pending" },
-    { label: "检索内容", value: failed ? "失败" : indexed ? "可搜索" : "需处理", tone: failed ? "fail" : indexed ? "ok" : "pending" },
-    { label: "关联档案", value: entityCount > 0 ? `${entityCount} 个` : indexed ? "待关联" : "待提取", tone: entityCount > 0 ? "ok" : "pending" },
-    { label: "证据引用", value: indexed ? "可检索" : "未启用", tone: indexed ? "ok" : "pending" },
-  ];
-  return (
-    <DetailBlock title="处理进度">
-      <div className="hc-kb-ingest-lanes">
-        {steps.map((step) => (
-          <div key={step.label} className="hc-kb-ingest-lane" data-tone={step.tone}>
-            <span>{step.label}</span>
-            <strong>{step.value}</strong>
-          </div>
-        ))}
-      </div>
-    </DetailBlock>
-  );
+/** 命中段的稳定 ref 回调：节点挂载时把它居中滚入视图。模块级保证 ref 身份稳定、只触发一次。 */
+function scrollHitIntoView(node: HTMLParagraphElement | null) {
+  if (node) node.scrollIntoView({ block: "center" });
+}
+
+/** 在正文里把命中的关键词高亮（语义命中时关键词不一定出现，出现则加亮）。 */
+function renderWithQuery(text: string, query: string | null | undefined): ReactNode {
+  const q = (query ?? "").trim();
+  if (!q) return text;
+  const lower = text.toLowerCase();
+  const lowerQ = q.toLowerCase();
+  if (!lower.includes(lowerQ)) return text;
+  const parts: ReactNode[] = [];
+  let from = 0;
+  let at = lower.indexOf(lowerQ, from);
+  let key = 0;
+  while (at !== -1) {
+    if (at > from) parts.push(text.slice(from, at));
+    parts.push(<mark key={key++} className="hc-kb-doc-mark">{text.slice(at, at + q.length)}</mark>);
+    from = at + q.length;
+    at = lower.indexOf(lowerQ, from);
+  }
+  if (from < text.length) parts.push(text.slice(from));
+  return parts;
 }
 
 function LibraryProfilePanel({
   selectedCategory,
   selectedDatabase,
-  scoringTemplates,
-  scoringRules,
-  scoringError,
 }: {
   selectedCategory: YuxiCategoryMeta | null;
   selectedDatabase: YuxiKnowledgeDatabase | null;
-  scoringTemplates: YuxiScoringTemplate[];
-  scoringRules: YuxiScoringRule[];
-  scoringError: string | null;
 }) {
   const governance = yuxiLibraryGovernance(selectedCategory?.key);
   return (
@@ -260,7 +248,6 @@ function LibraryProfilePanel({
               <Kv label="引用范围" value={governance.citationScope} />
             </div>
           </DetailBlock>
-          <MatchingRulesBlock templates={scoringTemplates} rules={scoringRules} error={scoringError} />
         </>
       ) : (
         <DetailBlock title="管理方式">
@@ -268,54 +255,6 @@ function LibraryProfilePanel({
         </DetailBlock>
       )}
     </aside>
-  );
-}
-
-function MatchingRulesBlock({
-  templates,
-  rules,
-  error,
-}: {
-  templates: YuxiScoringTemplate[];
-  rules: YuxiScoringRule[];
-  error: string | null;
-}) {
-  const activeTemplate = templates.find((item) => item.status === "active") ?? templates[0] ?? null;
-  return (
-    <DetailBlock title="匹配标准">
-      {error ? (
-        <div className="hc-kb-detail-muted">{error}</div>
-      ) : activeTemplate ? (
-        <div className="hc-kb-match-rules">
-          <div className="hc-kb-detail-kv">
-            <Kv label="模板" value={activeTemplate.name || `模板 #${activeTemplate.id ?? activeTemplate.template_id ?? "-"}`} />
-            <Kv label="版本" value={activeTemplate.version || activeTemplate.status || "未记录"} />
-            <Kv label="标准数" value={`${rules.length} 条`} />
-          </div>
-          {activeTemplate.dimensions && activeTemplate.dimensions.length > 0 && (
-            <div className="hc-kb-match-dimensions">
-              {activeTemplate.dimensions.slice(0, 5).map((dimension) => (
-                <div key={dimension.key ?? dimension.label} className="hc-kb-match-dimension">
-                  <span>{dimension.label || dimension.key || "维度"}</span>
-                  <strong>{typeof dimension.weight === "number" ? `${dimension.weight}%` : "-"}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-          {rules.length > 0 && (
-            <div className="hc-kb-tags">
-              {rules.slice(0, 5).map((rule) => (
-                <span key={rule.id ?? rule.rule_id ?? rule.name} className="hc-kb-tag">
-                  {rule.name || rule.rule_type || "标准"}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="hc-kb-detail-muted">还没有配置匹配标准。</div>
-      )}
-    </DetailBlock>
   );
 }
 
@@ -411,11 +350,6 @@ function statusLabel(value: string): string {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-function chunkText(chunk: YuxiKnowledgeDocumentChunk): string {
-  const value = typeof chunk.content === "string" ? chunk.content : JSON.stringify(chunk);
-  return trimPreview(value);
 }
 
 function trimPreview(value: string, maxLength = 520): string {

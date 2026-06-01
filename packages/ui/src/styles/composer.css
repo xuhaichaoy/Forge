@@ -210,7 +210,8 @@
 
 .hc-composer-field[data-layout="multiline"] {
   min-height: 112px;
-  border-radius: 24px;
+  border-radius: var(--hc-radius-3xl); /* codex composer rounded-3xl = 20/25px (was 24px; A/B-pending) */
+  corner-shape: superellipse(1.5);
 }
 
 .hc-composer-field[data-layout="single"] {
@@ -355,7 +356,7 @@
 }
 
 .hc-composer-field[data-layout="multiline"] .hc-prompt-editor .ProseMirror {
-  padding: 15px 14px 8px;
+  padding: 15px 12px 8px; /* codex composer px-3 = 12px inline inset (was 14px; A/B-pending) */
 }
 
 .hc-prompt-editor .ProseMirror:focus-visible {
@@ -1513,7 +1514,7 @@
   border-radius: 999px;
   align-self: center;
   color: #fffdfa;
-  background: #22262b;
+  background: #1a1c1f; /* codex send button bg-token-foreground = --color-text-foreground #1a1c1f (was #22262b; A/B-pending) */
   padding: 2px;
   cursor: pointer;
   transition: opacity 120ms ease, transform 120ms ease;

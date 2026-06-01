@@ -27,7 +27,6 @@ import {
   STATUS_LABEL,
   type TodoAction,
   type TodoItem,
-  type TodoKind,
   todoBelongsToCurrentLibrary,
 } from "./kb-todo-model";
 
@@ -112,7 +111,6 @@ export function KbLibraryPendingPanel({
     () => projectTodos(queues, conflicts).filter((item) => todoBelongsToCurrentLibrary(item.raw, selectedCategory?.key ?? null, libraryDbIds)),
     [conflicts, libraryDbIds, queues, selectedCategory?.key],
   );
-  const queueCounts = useMemo(() => countByKind(items), [items]);
   const focusSet = useMemo(() => new Set(focusPendingIds), [focusPendingIds]);
 
   useEffect(() => {
@@ -199,7 +197,6 @@ export function KbLibraryPendingPanel({
       <div className="hc-kb-panel-head">
         <div>
           <div className="hc-kb-section-title">{selectedDatabase?.name || selectedCategory.label} · 入库问题</div>
-          <PendingQueueMetrics counts={queueCounts} />
         </div>
         <button type="button" className="hc-kb-topbar-btn" onClick={() => void loadPending()} disabled={loading}>
           <RefreshCw size={13} strokeWidth={2.2} aria-hidden="true" />
@@ -256,23 +253,3 @@ export function KbLibraryPendingPanel({
   );
 }
 
-function PendingQueueMetrics({ counts }: { counts: Record<TodoKind, number> }) {
-  const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
-  if (total === 0) return null;
-  return (
-    <div className="hc-kb-pending-metrics" aria-label="入库问题分类统计">
-      <span><strong>{counts.classify}</strong> 归属</span>
-      <span><strong>{counts.entity}</strong> 档案</span>
-      <span><strong>{counts.dup}</strong> 重复</span>
-      <span><strong>{counts.conflict}</strong> 字段冲突</span>
-      <span><strong>{counts.force}</strong> 读取异常</span>
-    </div>
-  );
-}
-
-function countByKind(items: TodoItem[]): Record<TodoKind, number> {
-  return items.reduce<Record<TodoKind, number>>((acc, item) => {
-    acc[item.kind] += 1;
-    return acc;
-  }, { classify: 0, entity: 0, dup: 0, force: 0, conflict: 0 });
-}

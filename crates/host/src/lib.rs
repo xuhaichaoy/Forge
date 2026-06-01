@@ -2272,11 +2272,25 @@ fn ensure_default_hicodex_profile(codex_home: &Path) -> Result<(), std::io::Erro
 
     let config = fs::read_to_string(&config_path)?;
     let top_level = missing_top_level_model_config(&config, &models_path);
-    if top_level.is_empty() {
+    let mut next_config = if top_level.is_empty() {
+        config.clone()
+    } else {
+        insert_top_level_toml(&config, &top_level)
+    };
+    if !has_toml_table(&next_config, "model_providers.openai_http") {
+        if !next_config.ends_with('\n') {
+            next_config.push('\n');
+        }
+        next_config.push('\n');
+        next_config.push_str(default_openai_http_provider_toml());
+    } else {
+        next_config = remove_toml_table_key(&next_config, "model_providers.openai_http", "base_url");
+    }
+    if next_config == config {
         return Ok(());
     }
 
-    fs::write(&config_path, insert_top_level_toml(&config, &top_level))?;
+    fs::write(&config_path, next_config)?;
     Ok(())
 }
 
@@ -2375,6 +2389,41 @@ fn has_top_level_toml_key(config: &str, key: &str) -> bool {
     false
 }
 
+fn has_toml_table(config: &str, table: &str) -> bool {
+    let expected = format!("[{table}]");
+    config.lines().any(|line| line.trim() == expected)
+}
+
+fn remove_toml_table_key(config: &str, table: &str, key: &str) -> String {
+    let expected_table = format!("[{table}]");
+    let mut in_target_table = false;
+    let mut lines = Vec::new();
+
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            in_target_table = trimmed == expected_table;
+        }
+
+        if in_target_table
+            && !trimmed.starts_with('#')
+            && trimmed
+                .split_once('=')
+                .is_some_and(|(name, _)| name.trim() == key)
+        {
+            continue;
+        }
+
+        lines.push(line);
+    }
+
+    let mut next = lines.join("\n");
+    if config.ends_with('\n') {
+        next.push('\n');
+    }
+    next
+}
+
 fn insert_top_level_toml(config: &str, addition: &str) -> String {
     if let Some(index) = config.find("\n[") {
         let (head, tail) = config.split_at(index + 1);
@@ -2382,6 +2431,15 @@ fn insert_top_level_toml(config: &str, addition: &str) -> String {
     }
     let separator = if config.ends_with('\n') { "" } else { "\n" };
     format!("{config}{separator}{addition}")
+}
+
+fn default_openai_http_provider_toml() -> &'static str {
+    r#"[model_providers.openai_http]
+name = "OpenAI"
+wire_api = "responses"
+requires_openai_auth = true
+supports_websockets = false
+"#
 }
 
 fn default_config_toml(models_path: &Path) -> String {
@@ -2412,10 +2470,12 @@ base_url = "http://127.0.0.1:8890/v1"
 wire_api = "responses"
 requires_openai_auth = false
 supports_websockets = false
-{bearer_token_line}"#,
+{bearer_token_line}
+{openai_http_provider}"#,
         models_path = toml_string(&models_path.to_string_lossy()),
         instructions = toml_multiline_literal(HICODEX_BASE_INSTRUCTIONS),
         bearer_token_line = bearer_token_line,
+        openai_http_provider = default_openai_http_provider_toml(),
     )
 }
 
@@ -2799,6 +2859,17 @@ mod tests {
         assert!(config.contains("model_catalog_json"));
         assert!(config.contains("Qwen3.6-27B-mxfp4"));
         assert!(config.contains("personality = \"pragmatic\""));
+        assert!(config.contains("[model_providers.openai_http]"));
+        assert!(config.contains("supports_websockets = false"));
+        assert!(config.contains("requires_openai_auth = true"));
+        let openai_http_block = config
+            .split("[model_providers.openai_http]")
+            .nth(1)
+            .unwrap()
+            .split("\n[")
+            .next()
+            .unwrap();
+        assert!(!openai_http_block.contains("base_url"));
         assert!(config.contains(HICODEX_BASE_INSTRUCTIONS));
         let catalog = fs::read_to_string(dir.join("models.json")).unwrap();
         assert!(catalog.contains("\"model_messages\""));
@@ -2823,6 +2894,93 @@ mod tests {
         let config = default_config_toml_with_api_key(models_path, Some("local-dev-token"));
 
         assert!(config.contains("experimental_bearer_token = \"local-dev-token\""));
+    }
+
+    #[test]
+    fn refreshes_existing_config_with_openai_http_provider() {
+        let dir = env::temp_dir().join(format!(
+            "hicodex-host-openai-http-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("config.toml"),
+            r#"model = "gpt-5.5"
+model_provider = "hicodex_local"
+
+[model_providers.hicodex_local]
+name = "HiCodex local gateway"
+base_url = "http://127.0.0.1:8890/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+"#,
+        )
+        .unwrap();
+
+        ensure_default_hicodex_profile(&dir).unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert_eq!(config.matches("[model_providers.openai_http]").count(), 1);
+        assert!(config.contains("requires_openai_auth = true"));
+        assert!(config.contains("supports_websockets = false"));
+        let openai_http_block = config
+            .split("[model_providers.openai_http]")
+            .nth(1)
+            .unwrap()
+            .split("\n[")
+            .next()
+            .unwrap();
+        assert!(!openai_http_block.contains("base_url"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn refreshes_existing_openai_http_provider_to_chatgpt_backend_default() {
+        let dir = env::temp_dir().join(format!(
+            "hicodex-host-openai-http-repair-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("config.toml"),
+            r#"model = "gpt-5.5"
+model_provider = "openai_http"
+
+[model_providers.openai_http]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+wire_api = "responses"
+requires_openai_auth = true
+supports_websockets = false
+
+[model_providers.hicodex_local]
+name = "HiCodex local gateway"
+base_url = "http://127.0.0.1:8890/v1"
+wire_api = "responses"
+requires_openai_auth = false
+supports_websockets = false
+"#,
+        )
+        .unwrap();
+
+        ensure_default_hicodex_profile(&dir).unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        let openai_http_block = config
+            .split("[model_providers.openai_http]")
+            .nth(1)
+            .unwrap()
+            .split("\n[")
+            .next()
+            .unwrap();
+        assert!(!openai_http_block.contains("base_url"));
+        assert!(config.contains("base_url = \"http://127.0.0.1:8890/v1\""));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { useEffect, useState, type DragEvent } from "react";
-import { Archive, FileText, Link2, Loader2, SearchCheck, Upload, UsersRound, X } from "lucide-react";
+import { Link2, Loader2, Upload, X } from "lucide-react";
 
 export function KbLibraryUploadPanel({
   activeLibraryLabel,
@@ -117,29 +117,6 @@ export function KbLibraryUploadPanel({
               {uploading ? "上传中" : "选择文件"}
             </button>
           </div>
-
-          <ol className="hc-kb-upload-flow" aria-label="上传后的处理流程">
-            <li>
-              <span><Archive size={14} strokeWidth={2.1} aria-hidden="true" /></span>
-              <strong>保存原件</strong>
-              <em>保留来源文件</em>
-            </li>
-            <li>
-              <span><FileText size={14} strokeWidth={2.1} aria-hidden="true" /></span>
-              <strong>读取内容</strong>
-              <em>正文和表格入库</em>
-            </li>
-            <li>
-              <span><UsersRound size={14} strokeWidth={2.1} aria-hidden="true" /></span>
-              <strong>提取档案</strong>
-              <em>讲师、课程、客户等</em>
-            </li>
-            <li>
-              <span><SearchCheck size={14} strokeWidth={2.1} aria-hidden="true" /></span>
-              <strong>可检索</strong>
-              <em>带来源证据匹配</em>
-            </li>
-          </ol>
 
           <div className="hc-kb-upload-secondary">
             <button

@@ -23,7 +23,7 @@ export const ENTITY_TABS: TabConfig[] = [
   {
     id: "teacher",
     label: "讲师",
-    searchPlaceholder: "搜索讲师、可授课程、服务客户或项目关系…",
+    searchPlaceholder: "搜索讲师姓名、专长或行业…",
     hints: ["王老师讲过的课", "金融行业讲师", "报价 <= 3 万", "有制造业经验的讲师"],
     filters: [
       { label: "专长领域", options: ["AI", "领导力", "财务管理", "消费品营销"] },
@@ -35,7 +35,7 @@ export const ENTITY_TABS: TabConfig[] = [
   {
     id: "course",
     label: "课程",
-    searchPlaceholder: "搜索课程、可授讲师、采购客户或历史项目…",
+    searchPlaceholder: "搜索课程名称或方向…",
     hints: ["金融领导力课程可授讲师", "某客户采购过的课程", ">= 4.5 分课程"],
     filters: [
       { label: "课程类别", options: ["领导力", "AI / 数字化", "营销", "财务"] },
@@ -47,7 +47,7 @@ export const ENTITY_TABS: TabConfig[] = [
   {
     id: "case",
     label: "案例",
-    searchPlaceholder: "搜索案例、关联客户、参与讲师或复用方案…",
+    searchPlaceholder: "搜索案例名称或行业…",
     hints: ["金融客户历史高管培训", "同行业复盘案例", "近一年赢标案例"],
     filters: [
       { label: "行业", options: ["金融", "制造业", "互联网", "新能源"] },
@@ -176,6 +176,17 @@ export function businessFieldLabel(key: string | null | undefined): string {
   const lower = normalized.toLowerCase();
   const map: Record<string, string> = {
     aliases: "别名",
+    audience: "适用人群",
+    duration: "课时",
+    teacher: "讲师",
+    scale: "规模",
+    result: "结果",
+    level: "层级",
+    score: "得分",
+    type: "类型",
+    weight: "权重",
+    scope: "适用范围",
+    severity: "严重程度",
     specialty: "专长",
     specialties: "专长",
     expertise: "专长",

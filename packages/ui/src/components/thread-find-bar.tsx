@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface ThreadFindBarProps {
   currentIndex: number;
@@ -27,6 +28,12 @@ export function ThreadFindBar({
   const countLabel = query.trim()
     ? `${canNavigate ? currentIndex + 1 : 0}/${matchCount}`
     : "0/0";
+  const { formatMessage } = useHiCodexIntl();
+  const findLabel = formatMessage({ id: "codex.threadFindBar.label", defaultMessage: "Find in chat" });
+  const placeholderText = formatMessage({ id: "codex.threadFindBar.placeholder", defaultMessage: "Search chat…" });
+  const previousLabel = formatMessage({ id: "codex.threadFindBar.previousResult", defaultMessage: "Previous result" });
+  const nextLabel = formatMessage({ id: "codex.threadFindBar.nextResult", defaultMessage: "Next result" });
+  const closeLabel = formatMessage({ id: "codex.threadFindBar.close", defaultMessage: "Close find" });
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -37,15 +44,15 @@ export function ThreadFindBar({
   }, [focusToken]);
 
   return (
-    <div className="hc-thread-find-bar" role="search" aria-label="Find in chat">
+    <div className="hc-thread-find-bar" role="search" aria-label={findLabel}>
       <label className="hc-thread-find-input">
         <Search size={14} aria-hidden="true" />
         <input
           ref={inputRef}
           type="search"
           value={query}
-          placeholder="Search chat…"
-          aria-label="Find in chat"
+          placeholder={placeholderText}
+          aria-label={findLabel}
           onChange={(event) => onQueryChange(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -60,8 +67,8 @@ export function ThreadFindBar({
       <button
         type="button"
         className="hc-thread-find-icon-button"
-        aria-label="Previous result"
-        title="Previous result"
+        aria-label={previousLabel}
+        title={previousLabel}
         disabled={!canNavigate}
         onClick={onPrevious}
       >
@@ -70,8 +77,8 @@ export function ThreadFindBar({
       <button
         type="button"
         className="hc-thread-find-icon-button"
-        aria-label="Next result"
-        title="Next result"
+        aria-label={nextLabel}
+        title={nextLabel}
         disabled={!canNavigate}
         onClick={onNext}
       >
@@ -80,8 +87,8 @@ export function ThreadFindBar({
       <button
         type="button"
         className="hc-thread-find-icon-button"
-        aria-label="Close find"
-        title="Close find"
+        aria-label={closeLabel}
+        title={closeLabel}
         onClick={onClose}
       >
         <X size={14} aria-hidden="true" />

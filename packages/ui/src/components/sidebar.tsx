@@ -22,6 +22,7 @@ import {
 import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
   projectAccountMenuItems,
   type AccountMenuItem,
@@ -46,7 +47,7 @@ import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 import { osRevealLabel } from "../state/command-registry";
 
 const threadRowClass =
-  "group relative flex h-token-nav-row cursor-interaction rounded-lg px-row-x py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--vscode-focusBorder)]";
+  "group relative flex h-token-nav-row cursor-interaction rounded-[var(--hc-radius-lg)] px-row-x py-row-y text-sm hover:bg-token-list-hover-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--vscode-focusBorder)]";
 const threadRowActiveClass = "bg-token-list-hover-background";
 const threadRowContentClass =
   "flex min-w-0 flex-1 self-stretch items-center gap-2 text-base leading-5 text-token-foreground";
@@ -55,7 +56,7 @@ const threadActionGroupClass =
 const threadArchiveActionClass =
   "absolute right-0 top-0 z-10 flex h-full items-center justify-center mr-0.5 pr-0.5";
 const threadIconButtonClass =
-  "pointer-events-none flex h-5 w-5 items-center justify-center rounded-md border-0 bg-transparent p-0 text-inherit opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-50 hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vscode-focusBorder)]";
+  "pointer-events-none flex h-5 w-5 items-center justify-center rounded-[var(--hc-radius-md)] border-0 bg-transparent p-0 text-inherit opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-50 hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--vscode-focusBorder)]";
 const threadConfirmArchiveButtonClass =
   "hc-thread-confirm-archive pointer-events-auto inline-flex h-auto items-center justify-center rounded-md px-3 py-0 text-sm leading-5";
 const threadPinIndicatorClass = "h-5 w-5 shrink-0";
@@ -189,6 +190,7 @@ export function Sidebar({
   const [internalCollapsedGroupKeys, setInternalCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
   const [previouslyExpandedGroupKeys, setPreviouslyExpandedGroupKeys] = useState<string[]>([]);
   const [confirmingArchiveThreadId, setConfirmingArchiveThreadId] = useState<string | null>(null);
+  const { formatMessage } = useHiCodexIntl();
   const effectiveOrganizeMode = organizeMode ?? internalOrganizeMode;
   const effectiveCollapsedGroupKeys = collapsedGroupKeys ?? internalCollapsedGroupKeys;
   const { pinnedThreads, unpinnedThreads } = splitSidebarThreadsByPinned(threads, pinnedThreadIds);
@@ -199,7 +201,10 @@ export function Sidebar({
     currentWorkspaceRoot,
     selectedWorkspaceRoots,
   });
-  const sectionLabel = effectiveOrganizeMode === "recent" ? "Chats" : "Projects";
+  const sectionLabel =
+    effectiveOrganizeMode === "recent"
+      ? formatMessage({ id: "hc.sidebar.section.chats", defaultMessage: "Chats" })
+      : formatMessage({ id: "hc.sidebar.section.projects", defaultMessage: "Projects" });
   const sectionCollapseAction = projectSectionCollapseAction(
     threadGroups.map((group) => group.key),
     effectiveCollapsedGroupKeys,
@@ -595,27 +600,27 @@ export function Sidebar({
         {/* sidebar nav entries surface their command accelerator alongside the label. */}
         <SidebarNavItem
           icon={connecting ? <Loader2 className="hc-spin" size={16} /> : <MessageSquarePlus size={16} />}
-          label={connected ? "New chat" : "Connect"}
+          label={connected ? formatMessage({ id: "hc.sidebar.newChat", defaultMessage: "New chat" }) : formatMessage({ id: "hc.sidebar.connect", defaultMessage: "Connect" })}
           accelerator={connected ? descriptorAcceleratorLabel(COMMAND_IDS.newThread) : null}
           onClick={() => void (connected ? onCreateThread() : onConnect())}
           disabled={connecting}
         />
         <SidebarNavItem
           icon={<Search size={16} />}
-          label="Search"
+          label={formatMessage({ id: "hc.sidebar.search", defaultMessage: "Search" })}
           accelerator={descriptorAcceleratorLabel(COMMAND_IDS.searchChats)}
           onClick={() => void onOpenSearch()}
         />
         <SidebarNavItem
           icon={<Plug size={16} />}
-          label="Plugins"
+          label={formatMessage({ id: "hc.sidebar.plugins", defaultMessage: "Plugins" })}
           onClick={() => void onOpenPlugins?.()}
           disabled={!onOpenPlugins}
         />
         {onOpenAutomations && (
           <SidebarNavItem
             icon={<Clock size={16} />}
-            label="Automations"
+            label={formatMessage({ id: "hc.sidebar.automations", defaultMessage: "Automations" })}
             onClick={() => void onOpenAutomations()}
           />
         )}
@@ -809,7 +814,7 @@ export function Sidebar({
         ) : (
           <SidebarNavItem
             icon={<Settings size={16} />}
-            label="Settings"
+            label={formatMessage({ id: "hc.sidebar.settings", defaultMessage: "Settings" })}
             accelerator={descriptorAcceleratorLabel(COMMAND_IDS.settings)}
             onClick={onOpenSettings}
           />

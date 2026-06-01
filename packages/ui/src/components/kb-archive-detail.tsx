@@ -207,7 +207,7 @@ export function EntityDetailPanel({
       </section>
 
       <section className="hc-kb-entity-detail-block">
-        <strong>为什么可信</strong>
+        <strong>来源依据</strong>
         {references.length === 0 ? (
           <p>暂无来源资料，后续上传并确认关联后会出现在这里。</p>
         ) : (
@@ -245,7 +245,7 @@ export function EntityDetailPanel({
       </section>
 
       <section className="hc-kb-entity-detail-block">
-        <strong>可以一起使用的档案</strong>
+        <strong>相关档案</strong>
         {relatedLoading ? (
           <p>正在读取相关档案。</p>
         ) : related && related.related && relatedCount(related.related) > 0 ? (

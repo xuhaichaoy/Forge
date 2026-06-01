@@ -221,9 +221,11 @@ function rendersDesktopEmptyStateSloganWithoutDuplicateCtas(): void {
   // here (letsBuild appears 0× in app-main). So the main-home empty state must
   // render the greeting and must NOT render a "Let's build" subtitle.
   assertIncludes(html, "What should we work on in", "empty state should render Codex's main-home greeting");
-  // codex pE: the project name (with trailing "?") is a clickable selector, not plain text.
+  // codex pE: the project name is a clickable selector. The trailing "?" / locale suffix now sits
+  // OUTSIDE the button (headlineAfter) so the project name positions correctly across locales
+  // (zh-CN renders 我们应该在 {project} 中做些什么？ with the project in the middle).
   assertIncludes(html, "hc-onboarding-empty-project-trigger", "the project name should be a clickable selector (codex pE)");
-  assertIncludes(html, "HiCodex?", "the greeting should include the project name with its trailing '?'");
+  assertIncludes(html, "HiCodex</button>?", "the project selector should be followed by the trailing '?' (outside the clickable button)");
   assertEqual(html.includes("Let&#x27;s build"), false, "main-home hero must NOT show the hotkey-page 'Let's build' slogan");
   assertEqual(html.includes("Start a chat"), false, "empty state should not use ad hoc hero copy");
   assertEqual(html.includes("Choose folder"), false, "empty state should not duplicate composer folder controls");

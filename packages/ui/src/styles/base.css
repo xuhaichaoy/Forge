@@ -10,7 +10,7 @@
   --hc-surface-panel: rgba(255, 253, 250, 0.94);
   --hc-surface-panel-muted: rgba(255, 253, 250, 0.5);
   --hc-surface-composer: rgba(255, 253, 250, 0.92);
-  --hc-surface-hover: rgba(34, 38, 43, 0.08);
+  --hc-surface-hover: color-mix(in oklab, #1a1c1f 5%, transparent); /* codex list-hover = 5% oklab foreground (was 8% sRGB #22262b, A/B-pending) */
   /* list/tab hover (Codex token-list-hover-background). Was previously only an
      inline fallback `var(--hc-surface-list-hover, rgba(34,38,43,.06))` → undefined
      in BOTH themes, so the dark fallback was the LIGHT overlay (near-invisible on
@@ -65,7 +65,7 @@
   --hc-shadow-panel: 0 10px 30px rgba(34, 38, 43, 0.16);
   --hc-thread-footer-gradient: linear-gradient(to top, #faf9f5 0%, #faf9f5 74%, rgba(250, 249, 245, 0) 100%);
   --vscode-foreground: var(--hc-text-primary);
-  --vscode-descriptionForeground: var(--hc-text-secondary);
+  --vscode-descriptionForeground: color-mix(in oklab, var(--hc-text-primary) 50%, transparent); /* codex --color-text-foreground-tertiary = 50% foreground in both themes (was --hc-text-secondary 65%; A/B-pending) */
   --vscode-list-hoverBackground: var(--hc-surface-hover);
   --vscode-focusBorder: #89a9b2;
   --vscode-dropdown-background: var(--hc-surface-composer);
@@ -92,22 +92,23 @@
   --thread-body-padding-inline: 16px; /* Codex: thread body = px-toolbar = --padding-toolbar = .25rem*4 = 16px */
   --thread-content-top-inset: 0px;
   /*
-   * `--codex-chat-font-size` and `--codex-chat-code-font-size` are kept under
-   * the upstream `--codex-` namespace because both literals exist in Codex
-   * Desktop's assets (verified `var(--codex-chat-font-size, 13px)`
-   * and `--codex-chat-code-font-size` are real Desktop tokens) so HiCodex
-   * `var(--codex-chat-font-size)` references actually point at Desktop-aligned
-   * values when the same selector cascades.
+   * Codex Desktop's chat font size is a fallback CHAIN, not a literal:
+   *   --codex-chat-font-size: var(--vscode-chat-font-size, var(--vscode-font-size, 13px))
+   * where --vscode-chat-font-size -> --vscode-font-size -> --text-base = 14px,
+   * and BOTH intermediate vars are defined in Codex's root block — so the chain
+   * resolves to 14px. The trailing `13px` is a DEAD inner fallback that HiCodex
+   * had mistakenly hard-coded; the real Desktop chat body is 14px. (A/B-pending.)
+   * (`--codex-chat-code-font-size` likewise chains via --vscode-(chat-)editor-font-size
+   * -> --text-sm = 12px, which equals its 12px fallback — so 12px is correct.)
    *
-   * `--hc-chat-line-height` lives under the HiCodex `--hc-` namespace because
-   * Codex Desktop's CSS has no `--codex-chat-line-height` token (`rg -- "--codex-chat-"`
-   * in the assets only returns the two font-size variables above). Per
-   * DEVELOPMENT.md §13 the `--hc-*` namespace is the right home for tokens
-   * that do not have an upstream counterpart.
+   * `--hc-chat-line-height` stays --hc- namespaced (Codex has no
+   * `--codex-chat-line-height` token), but Codex's markdown body resolves
+   * line-height to calc(--markdown-font-size + 8px) (= 22px at 14px), so we
+   * mirror that exact formula here instead of a bespoke multiplier.
    */
-  --codex-chat-font-size: 13px;
+  --codex-chat-font-size: 14px; /* codex chain -> --text-base = 14px; 13px was the dead fallback (A/B-pending) */
   --codex-chat-code-font-size: 12px;
-  --hc-chat-line-height: 1.86;
+  --hc-chat-line-height: calc(var(--codex-chat-font-size) + 8px); /* codex --markdown-line-height = font + 8px = 22px (was 1.86 ≈ 24-26px; A/B-pending) */
   /*
    * `--hc-font-mono` / `--hc-font-sans` mirror Codex Desktop's
    * `--font-mono-default` / `--font-sans-default` stacks verified literally
@@ -156,6 +157,8 @@
   --hc-radius-lg: calc(10px * var(--hc-corner-radius-scale));
   --hc-radius-xl: calc(12px * var(--hc-corner-radius-scale));
   --hc-radius-2xl: calc(16px * var(--hc-corner-radius-scale)); /* codex --radius-2xl-base 1rem */
+  --hc-radius-md: calc(8px * var(--hc-corner-radius-scale)); /* codex --radius-md-base .5rem */
+  --hc-radius-3xl: calc(20px * var(--hc-corner-radius-scale)); /* codex --radius-3xl-base 1.25rem */
 }
 
 /*
@@ -206,13 +209,14 @@
   --hc-text-accent: #7aa9b8; /* dark teal accent — matches conversation/message dark blocks */
   --hc-text-primary: #ffffff;
   --hc-text-strong: #ffffff;
-  /* Codex dark: token-text-secondary = color-mix(foreground 65%); tertiary/
-     description = 70%. (Verified in app-main-DGDTSRlh.css .electron-dark.) */
-  --hc-text-secondary: rgba(255, 255, 255, 0.65);
-  --hc-text-tertiary: rgba(255, 255, 255, 0.70);
+  /* Codex .electron-dark: foreground-secondary = 70% (#ffffffb3), foreground-tertiary = 50% (#ffffff80),
+     border-heavy = 16% (#ffffff29). (Round-7 dark audit: HiCodex had secondary/tertiary alphas swapped
+     and border-heavy mis-stated as 12%.) */
+  --hc-text-secondary: rgba(255, 255, 255, 0.70); /* codex --color-text-foreground-secondary (was 0.65; A/B-pending) */
+  --hc-text-tertiary: rgba(255, 255, 255, 0.50); /* codex --color-text-foreground-tertiary (was 0.70, swapped; A/B-pending) */
   --hc-border-default: rgba(255, 255, 255, 0.08); /* = Codex token-border 8% */
-  --hc-border-subtle: rgba(255, 255, 255, 0.05); /* = Codex border-light 5% */
-  --hc-border-strong: rgba(255, 255, 255, 0.12); /* = Codex border-heavy 12% */
+  --hc-border-subtle: rgba(255, 255, 255, 0.05); /* ~ Codex border-light 4% */
+  --hc-border-strong: rgba(255, 255, 255, 0.16); /* codex --color-border-heavy #ffffff29 = 16% (was 0.12; A/B-pending) */
   --hc-shadow-panel: 0 10px 30px rgba(0, 0, 0, 0.40);
   --hc-thread-footer-gradient: linear-gradient(to top, #212121 0%, #212121 74%, rgba(33, 33, 33, 0) 100%);
   --vscode-focusBorder: rgba(51, 156, 255, 0.70);
@@ -398,12 +402,14 @@ button {
 
 .hc-toast-viewport {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  inset: 0; /* codex toast viewport: top-center via inset:0 + margin auto (was bottom-right; A/B-pending) */
+  margin: 8px auto;
   z-index: var(--hc-z-toast);
   display: flex;
-  width: min(360px, calc(100vw - 36px));
+  max-width: 560px; /* codex toast viewport max-w-[560px] (was min(360px,…); A/B-pending) */
   flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   pointer-events: none;
 }
@@ -412,20 +418,21 @@ button {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr) auto;
   align-items: start;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 6px; /* codex alert-root gap-1.5 = 6px (was 10px; A/B-pending) */
+  padding: 8px; /* codex alert px-2 py-2 = 8px (was 10px 12px; A/B-pending) */
   border: 1px solid var(--hc-border-default);
-  border-radius: 8px;
+  border-radius: var(--hc-radius-2xl); /* codex alert-root rounded-2xl = 16/20px (was 8px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   color: var(--hc-text-primary);
   background: var(--hc-surface-panel);
-  box-shadow: var(--hc-shadow-panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); /* codex toast _alert shadow, theme-invariant (was --hc-shadow-panel; A/B-pending) */
   animation: hc-app-toast-lifetime 5s ease forwards; /* codex toast-signal default duration = 5s */
 }
 
 .hc-app-toast p {
   min-width: 0;
   margin: 0;
-  font-size: 12px;
+  font-size: 14px; /* codex toast _alert font-size = --text-base 14px (was 12px; A/B-pending) */
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -464,7 +471,7 @@ button {
   margin: -2px -4px 0 0;
   padding: 2px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 9999px; /* codex toast close button rounded-full pill (was 4px; A/B-pending) */
   background: transparent;
   color: var(--hc-text-secondary);
   cursor: pointer;
@@ -594,7 +601,8 @@ button {
    */
   overflow: hidden;
   border: 1px solid var(--hc-border-default);
-  border-radius: 24px;
+  border-radius: var(--hc-radius-3xl); /* codex right-rail rounded-3xl = 20/25px (was 24px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: var(--hc-surface-panel-muted);
   box-shadow:
     0 4px 6px -1px rgba(0, 0, 0, 0.1),
@@ -954,8 +962,8 @@ button {
 
 .hc-preview-lightbox-toolbar-button {
   display: inline-flex;
-  width: 36px;
-  height: 36px;
+  width: 40px; /* codex lightbox toolbar button h-10/min-w-10 = 40px (was 36px; A/B-pending) */
+  height: 40px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
@@ -1565,7 +1573,7 @@ button {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px; /* codex section-header actions `gap-1` = 4px (was 3px, A/B-pending) */
   opacity: 0;
   pointer-events: none;
   transition: opacity 120ms ease;
@@ -1584,7 +1592,8 @@ button {
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--hc-radius-md); /* codex `rounded-md` = 8px (10px squircle); was 7px (A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: #777973;
   cursor: pointer;
@@ -1610,11 +1619,12 @@ button {
 .hc-project-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px; /* codex folder/project row `gap-1` = 4px (was 8px, A/B-pending) */
   width: 100%;
   min-height: 32px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--hc-radius-md); /* codex `rounded-md` = 8px (10px squircle); was 7px (A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: #5f625b;
   cursor: pointer;
@@ -1839,13 +1849,14 @@ button {
 
 .hc-sidebar-account-trigger {
   width: 100%;
-  min-height: 34px;
+  min-height: 31px; /* codex profile-footer row h-token-nav-row = 31px (was 34px; A/B-pending) */
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 7px;
+  padding: 5px 8px; /* codex --padding-row-x = 8px inline (was 7px; A/B-pending) */
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--hc-radius-lg); /* codex nav-row rounded-lg = 10/12.5px (was 8px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: inherit;
   text-align: left;
@@ -1877,8 +1888,8 @@ button {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 18px; /* codex account avatar icon-sm = 18px (was 22px; A/B-pending) */
+  height: 18px;
   border-radius: 999px;
   background: #e8e1d3;
   color: #4b463d;
@@ -2068,19 +2079,20 @@ button.hc-sidebar-account-menu-item small {
   flex-direction: column;
   background: #fffdfa;
   border: 1px solid rgba(34, 38, 43, 0.14);
-  border-radius: 10px;
+  border-radius: var(--hc-radius-xl); /* codex reasoning dropdown rounded-xl = 12/15px (was 10px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
   overflow: hidden;
-  font-size: 13px;
+  font-size: 12px; /* codex dropdown item text-sm = --text-sm 12px (was 13px; A/B-pending) */
 }
 
 .hc-reasoning-picker-menu-header {
   padding: 8px 12px 4px;
   color: #8a8b84;
-  font-size: 11px;
+  font-size: 12px; /* codex Na.Title text-sm = --text-sm 12px (was 11px; A/B-pending) */
   font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: normal; /* codex Na.Title has no tracking (was 0.04em; A/B-pending) */
+  text-transform: none; /* codex renders mixed-case "Reasoning" (was uppercase; A/B-pending) */
 }
 
 .hc-reasoning-picker-menu-items {
@@ -2096,11 +2108,12 @@ button.hc-sidebar-account-menu-item small {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px; /* codex $.content gap-1.5 = 6px (was 8px; A/B-pending) */
   width: 100%;
-  padding: 6px 10px;
+  padding: 5px 8px; /* codex electron --padding-row-y/x = 5px/8px (was 6px 10px; A/B-pending) */
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--hc-radius-lg); /* codex dropdown item rounded-lg = 10/12.5px (was 6px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: #22262b;
   cursor: pointer;
@@ -2113,8 +2126,7 @@ button.hc-sidebar-account-menu-item small {
 }
 
 .hc-reasoning-picker-menu-item[data-active="true"] {
-  color: #1f2326;
-  font-weight: 580;
+  color: #1f2326; /* codex selected reasoning item: only the checkmark marks it, no weight change (removed font-weight 580; A/B-pending) */
 }
 
 .hc-reasoning-picker-menu-item-label {
@@ -2125,10 +2137,10 @@ button.hc-sidebar-account-menu-item small {
 .hc-model-picker-menu-header {
   padding: 10px 14px 6px;
   color: #8a8b84;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 12px; /* codex Na.Title text-sm = 12px (was 11px; A/B-pending) */
+  font-weight: 400; /* codex Na.Title normal weight (was 500; A/B-pending) */
+  letter-spacing: normal; /* codex Na.Title no tracking (was 0.04em; A/B-pending) */
+  text-transform: none; /* codex Na.Title mixed-case (was uppercase; matches reasoning header §M-61; A/B-pending) */
 }
 
 .hc-model-picker-menu-list {
@@ -2304,7 +2316,8 @@ button.hc-sidebar-account-menu-item small {
   width: 100%;
   padding: 6px 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--hc-radius-lg); /* codex model item rounded-lg = 10/12.5px (was 6px; A/B-pending) */
+  corner-shape: superellipse(1.5);
   background: transparent;
   color: #202124;
   cursor: pointer;
@@ -2316,7 +2329,7 @@ button.hc-sidebar-account-menu-item small {
   background: rgba(34, 38, 43, 0.05);
 }
 .hc-model-picker-model-item[data-active="true"] {
-  background: rgba(137, 169, 178, 0.18);
+  background: transparent; /* codex marks the selected model by the checkmark only, no row bg (was rgba(137,169,178,.18); A/B-pending) */
 }
 .hc-model-picker-model-icon {
   display: inline-flex;
@@ -2324,8 +2337,7 @@ button.hc-sidebar-account-menu-item small {
 }
 .hc-model-picker-model-name {
   flex: 1;
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
+  font-size: 12px; /* codex model name = UI sans (removed monospace; A/B-pending) */
 }
 .hc-model-picker-model-check {
   color: #2c5e6f;

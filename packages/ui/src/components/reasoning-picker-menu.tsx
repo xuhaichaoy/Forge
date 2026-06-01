@@ -176,7 +176,7 @@ export function ReasoningPickerMenu({
                 onClick={() => select(effort)}
               >
                 <span className="hc-reasoning-picker-menu-item-label">{reasoningEffortLabel(effort, formatMessage)}</span>
-                {isActive && <Check aria-hidden size={14} />}
+                {isActive && <Check aria-hidden size={16} />}
               </button>
             </li>
           );
