@@ -910,9 +910,22 @@ function userMessagePreview(candidate: unknown): string {
       buffer.push(partRecord.text);
     }
   }
-  const merged = buffer.join("\n").replace(/\s+/g, " ").trim();
+  const merged = titlePreviewFromPromptText(buffer.join("\n")).replace(/\s+/g, " ").trim();
   if (!merged) return "";
   return merged.length > 60 ? `${merged.slice(0, 60).trimEnd()}…` : merged;
+}
+
+// Thread titles are derived from the raw user-message text, where @/$ mentions and
+// file references are serialized as markdown links `[label](<path>)` (the renderer
+// turns these into chips — see user-message-content.ts FILE_LINK_RE). Collapse them
+// to just their label (e.g. `$imagegen`) so the title reads like the message instead
+// of leaking raw markdown + an absolute path.
+function titlePreviewFromPromptText(text: string): string {
+  if (!text.includes("](")) return text;
+  return text.replace(
+    /\[([^[\]\n]+)\]\((?:<[^>\n]+>|[^)\s\n]+)\)/g,
+    (_whole: string, label: string) => label.trim(),
+  );
 }
 
 export function threadStatusLabel(status: unknown): string {

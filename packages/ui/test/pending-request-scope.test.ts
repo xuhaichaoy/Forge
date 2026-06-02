@@ -211,6 +211,15 @@ function classifiesMcpAndDynamicToolRequestsForAwaitingState(): void {
     "userInput",
     "Desktop dynamic request_option_picker should use the user-input awaiting lane",
   );
+  assertDeepEqual(
+    pendingRequestAwaitingKind(request("setup-picker", "item/tool/call", {
+      threadId: "thread-1",
+      tool: "setup_codex_context_picker",
+      arguments: { canSelectSources: true },
+    })),
+    "userInput",
+    "Desktop dynamic setup_codex_context_picker should use the user-input awaiting lane",
+  );
 }
 
 function summarizesAwaitingStateByThread(): void {

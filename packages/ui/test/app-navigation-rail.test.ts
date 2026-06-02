@@ -16,7 +16,7 @@ function rendersProjectTabs(): void {
   }));
 
   assertIncludes(html, "全部项目", "global app rail should expose the project-level navigation label");
-  assertIncludes(html, "工作台", "global app rail should include the Workbench tab");
+  assertIncludes(html, "对话", "global app rail should include the Workbench tab (labelled 对话)");
   assertIncludes(html, "知识库", "global app rail should include the Knowledge Base tab");
 }
 

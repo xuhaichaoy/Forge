@@ -1,6 +1,6 @@
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
+import { renderableLocalImageSrc } from "../lib/local-image-src";
 import type { ThreadItem } from "../state/render-groups";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
 
@@ -85,18 +85,7 @@ function imageItemSrc(item: ThreadItem): string {
 }
 
 function normalizeImageSource(value: string): string {
-  if (/^(?:data|blob|https?|file):/i.test(value)) return value;
-  if (value.startsWith("/")) {
-    if (isTauriRuntime()) {
-      try {
-        return convertLocalFileSrc(value);
-      } catch {
-        return `file://${encodeURI(value)}`;
-      }
-    }
-    return `file://${encodeURI(value)}`;
-  }
-  return value;
+  return renderableLocalImageSrc(value);
 }
 
 function imageItemId(item: ThreadItem, fallback: number): string {
@@ -212,6 +201,8 @@ export function GeneratedImageGallery({
           >
             {images.map((image, index) => {
               const id = imageItemId(image, index);
+              const measuredAspectRatio = aspectRatios[id];
+              const aspectRatio = measuredAspectRatio ?? 1;
               const isHidden = layout.aspectRatio === "square"
                 && (index < clampedStartIndex || index >= clampedStartIndex + layout.visibleCount);
               return (
@@ -220,6 +211,8 @@ export function GeneratedImageGallery({
                   src={imageItemSrc(image)}
                   imageNumber={index + 1}
                   heightPx={layout.heightPx}
+                  aspectRatio={aspectRatio}
+                  aspectRatioKnown={measuredAspectRatio != null}
                   square={layout.aspectRatio === "square"}
                   hiddenInCarousel={isHidden}
                   onAspectRatioChange={(ratio) => handleAspectRatioChange(id, ratio)}
@@ -277,6 +270,8 @@ function GalleryThumbnail({
   src,
   imageNumber,
   heightPx,
+  aspectRatio,
+  aspectRatioKnown,
   square,
   hiddenInCarousel,
   onAspectRatioChange,
@@ -285,19 +280,25 @@ function GalleryThumbnail({
   src: string;
   imageNumber: number;
   heightPx: number;
+  aspectRatio: number;
+  aspectRatioKnown: boolean;
   square: boolean;
   hiddenInCarousel: boolean;
   onAspectRatioChange: (ratio: number) => void;
   onOpenPreview: () => void;
 }) {
   const alt = `Generated image ${imageNumber}`;
+  const frameHeightPx = heightPx > 0 ? heightPx : undefined;
+  const frameWidthPx = frameHeightPx == null
+    ? undefined
+    : square ? frameHeightPx : Math.max(frameHeightPx * aspectRatio, 1);
   // While `src` is empty (e.g. waiting for `app://` URL hook resolution in
   // Codex `ew()`), render a placeholder square — Codex `YC` does the same.
   if (!src) {
     return (
       <div
         className="hc-generated-image-gallery-thumb hc-generated-image-gallery-thumb--empty"
-        style={{ width: heightPx, height: heightPx }}
+        style={{ width: frameHeightPx, height: frameHeightPx }}
       >
         <Loader2 aria-hidden className="hc-spin" size={16} />
       </div>
@@ -307,7 +308,7 @@ function GalleryThumbnail({
     <button
       type="button"
       className="hc-generated-image-gallery-thumb"
-      style={{ width: square ? heightPx : undefined, height: heightPx }}
+      style={{ width: frameWidthPx, height: frameHeightPx }}
       aria-label={alt}
       aria-hidden={hiddenInCarousel}
       tabIndex={hiddenInCarousel ? -1 : undefined}
@@ -317,11 +318,18 @@ function GalleryThumbnail({
         src={src}
         alt={alt}
         referrerPolicy="no-referrer"
-        className={square ? "hc-generated-image-thumb-img is-square" : "hc-generated-image-thumb-img is-natural"}
+        className={[
+          "hc-generated-image-thumb-img",
+          square ? "is-square" : "is-natural",
+          !square && !aspectRatioKnown ? "is-measuring" : "",
+        ].filter(Boolean).join(" ")}
         onLoad={(event) => {
           const target = event.currentTarget;
           if (target.naturalWidth <= 0 || target.naturalHeight <= 0) return;
           onAspectRatioChange(target.naturalWidth / target.naturalHeight);
+        }}
+        onError={() => {
+          if (!aspectRatioKnown) onAspectRatioChange(1);
         }}
       />
     </button>
