@@ -14,3 +14,4 @@ apps/desktop/src-tauri/gen/
 .claude/skills/
 .claude/skills-archived/
 .claude/worktrees/
+.gitnexus

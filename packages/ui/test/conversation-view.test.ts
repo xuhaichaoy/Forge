@@ -92,6 +92,7 @@ export default function runConversationViewTests(): void {
   summarizesWorkedForWebSearchCommandsSeparately();
   rendersStandaloneGeneratedImageActionRowLikeCodexDesktop();
   rendersGeneratedImagePlaceholderSpinnerLikeCodexDesktop();
+  rendersGeneratedImageLocalSourcesThroughTauriAssetProtocol();
   omitsReasoningRowsFromExplorationDetailsLikeDesktop();
   rendersWorkedForExpansionThroughToolDetails();
   keepsVirtualTurnKeysUniqueWhenTurnSegmentsRepeat();
@@ -318,6 +319,65 @@ function rendersGeneratedImagePlaceholderSpinnerLikeCodexDesktop(): void {
     false,
     "Desktop empty generated-image thumbnail should not emit a false aria-hidden attribute",
   );
+}
+
+function rendersGeneratedImageLocalSourcesThroughTauriAssetProtocol(): void {
+  const globalRecord = globalThis as unknown as Record<string, unknown>;
+  const previousWindow = globalRecord.window;
+  const convertedPaths: string[] = [];
+  globalRecord.window = {
+    __TAURI_INTERNALS__: {
+      convertFileSrc: (path: string, protocol: string) => {
+        convertedPaths.push(`${protocol}:${path}`);
+        return `asset://localhost/${encodeURIComponent(path)}`;
+      },
+    },
+  };
+
+  try {
+    const html = renderToStaticMarkup(createElement(GeneratedImageGallery, {
+      images: [
+        {
+          id: "file-url-image",
+          type: "generated-image",
+          src: "file:///tmp/hicodex-home/generated_images/thread%201/ig_generated.png",
+          status: "completed",
+        },
+        {
+          id: "absolute-path-image",
+          type: "generated-image",
+          savedPath: "/tmp/hicodex-home/generated_images/thread 1/ig_saved.png",
+          status: "completed",
+        },
+      ],
+      hasPending: false,
+    }));
+
+    assertDeepEqual(
+      convertedPaths,
+      [
+        "asset:/tmp/hicodex-home/generated_images/thread 1/ig_generated.png",
+        "asset:/tmp/hicodex-home/generated_images/thread 1/ig_saved.png",
+      ],
+      "generated image local sources should be handed to Tauri as decoded file paths",
+    );
+    assertEqual(
+      html.includes("asset://localhost/%2Ftmp%2Fhicodex-home%2Fgenerated_images%2Fthread%201%2Fig_generated.png"),
+      true,
+      "generated image file URLs should render through Tauri's asset protocol",
+    );
+    assertEqual(
+      html.includes("file:///tmp/hicodex-home/generated_images"),
+      false,
+      "generated image local sources should not render raw file URLs in Tauri",
+    );
+  } finally {
+    if (previousWindow === undefined) {
+      delete globalRecord.window;
+    } else {
+      globalRecord.window = previousWindow;
+    }
+  }
 }
 
 function parsesMarkdownBlocksForModelOutput(): void {

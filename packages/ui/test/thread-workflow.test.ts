@@ -188,6 +188,21 @@ function buildsThreadTitlesFromNamePreviewAndId(): void {
     "12345678...cdef",
     "threadTitle should shorten long ids",
   );
+  // Mentions serialize as `[label](<path>)` in the message text; the title must show
+  // the label, not the raw markdown + absolute path.
+  assertEqual(
+    threadTitle(threadFixture({ id: "img" }), [
+      {
+        type: "userMessage",
+        content: [{
+          type: "text",
+          text: "[$imagegen](</Users/haichao/Library/Application Support/HiCodex/skill.md>) 生成一个皮卡丘的图片",
+        }],
+      },
+    ]),
+    "$imagegen 生成一个皮卡丘的图片",
+    "threadTitle should collapse mention markdown to its label",
+  );
 }
 
 function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
