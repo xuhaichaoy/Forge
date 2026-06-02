@@ -77,7 +77,7 @@ export interface SlashRequestWorkflowContext {
   logs?: LogLine[];
   rpcDebugEvents?: RpcDebugEvent[];
   buildInfo?: HiCodexBuildInfo;
-  onToggleStatusFooter?: () => void;
+  onShowStatusPanel?: () => void;
 }
 
 export async function runSlashRequestWorkflow(
@@ -99,9 +99,6 @@ export async function runSlashRequestWorkflow(
     activeTurnId,
     activeItems = [],
     connected,
-    pid,
-    modelCount,
-    pendingRequestCount,
     threads,
     threadContextDefaults = null,
     openSideConversationPanel,
@@ -111,7 +108,7 @@ export async function runSlashRequestWorkflow(
     logs = [],
     rpcDebugEvents = [],
     buildInfo,
-    onToggleStatusFooter,
+    onShowStatusPanel,
   } = context;
 
   try {
@@ -125,8 +122,8 @@ export async function runSlashRequestWorkflow(
       return;
     }
 
-    if (request === "toggleStatusFooter") {
-      onToggleStatusFooter?.();
+    if (request === "showStatus") {
+      onShowStatusPanel?.();
       return;
     }
 
@@ -212,26 +209,6 @@ export async function runSlashRequestWorkflow(
                 details: diff.split("\n").slice(0, 80),
               }]
             : [],
-        });
-        return;
-      }
-      case "showStatus": {
-        openCommandPanel("status", {
-          status: "ready",
-          entries: [{
-            id: "status:runtime",
-            title: "Runtime",
-            kind: "status",
-            status: connected ? "connected" : "offline",
-            meta: `pid ${pid ?? "none"}`,
-            details: [
-              `Thread: ${activeThreadId ?? "none"}`,
-              `Turn: ${activeTurnId ?? "none"}`,
-              `CWD: ${workspace.trim() || defaultCwd || "none"}`,
-              `Models: ${modelCount}`,
-              `Pending requests: ${pendingRequestCount}`,
-            ],
-          }],
         });
         return;
       }

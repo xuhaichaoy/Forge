@@ -77,7 +77,6 @@ export type SlashCommandRequest =
   | "startReview"
   | "showDiff"
   | "showStatus"
-  | "toggleStatusFooter"
   | "forkThread"
   | "renameThread"
   | "reloadMcp"
@@ -950,7 +949,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "diff":
       return { action: "request", request: "showDiff", clearInput: true };
     case "status":
-      return { action: "request", request: "toggleStatusFooter", clearInput: true };
+      return { action: "request", request: "showStatus", clearInput: true };
     case "help":
       return { action: "showCommands", clearInput: true };
     case "skills":

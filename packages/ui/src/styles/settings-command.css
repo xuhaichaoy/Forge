@@ -1446,6 +1446,35 @@ textarea.hc-mcp-tool-control {
   word-break: break-all;
 }
 
+.hc-unified-diff-path-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hc-unified-diff-path-button:hover,
+.hc-unified-diff-path-button:focus-visible {
+  background: var(--hc-surface-hover);
+}
+
+.hc-unified-diff-path-open-icon {
+  flex: 0 0 auto;
+  color: var(--hc-text-accent);
+  opacity: 0;
+}
+
+.hc-unified-diff-path-button:hover .hc-unified-diff-path-open-icon,
+.hc-unified-diff-path-button:focus-visible .hc-unified-diff-path-open-icon {
+  opacity: 1;
+}
+
 /* Codex tone tokens — direct values from app-main-*.css */
 .hc-unified-diff-tone-applied,
 .hc-unified-diff-tone-applied .hc-unified-diff-path-name {

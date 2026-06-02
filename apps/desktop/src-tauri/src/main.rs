@@ -31,6 +31,7 @@ const APP_CONNECT_OAUTH_BROWSER_REDIRECT_PATH: &str = "/connector_platform_oauth
 
 const MENU_NEW_CHAT: &str = "hicodex:new-chat";
 const MENU_NEW_WINDOW: &str = "hicodex:new-window";
+const MENU_OPEN_FOLDER: &str = "hicodex:open-folder";
 const MENU_SEARCH: &str = "hicodex:search";
 const MENU_SETTINGS: &str = "hicodex:settings";
 const MENU_RELOAD: &str = "hicodex:reload";
@@ -2413,6 +2414,9 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let new_window = MenuItemBuilder::with_id(MENU_NEW_WINDOW, "New Window")
         .accelerator("CmdOrCtrl+Shift+N")
         .build(handle)?;
+    let open_folder = MenuItemBuilder::with_id(MENU_OPEN_FOLDER, "Open Folder…")
+        .accelerator("CmdOrCtrl+O")
+        .build(handle)?;
     let search = MenuItemBuilder::with_id(MENU_SEARCH, "Search")
         .accelerator("CmdOrCtrl+K")
         .build(handle)?;
@@ -2438,6 +2442,7 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let file_menu = SubmenuBuilder::new(handle, "File")
         .item(&new_chat)
         .item(&new_window)
+        .item(&open_folder)
         .item(&search)
         .separator()
         .item(&close)
@@ -2468,6 +2473,7 @@ fn handle_native_menu_event(app: &AppHandle, id: &str) {
         MENU_NEW_WINDOW => {
             let _ = open_new_window_impl(app);
         }
+        MENU_OPEN_FOLDER => emit_native_shell_action(app, "openFolder", true, None, None),
         MENU_SEARCH => emit_native_shell_action(app, "search", true, None, None),
         MENU_SETTINGS => emit_native_shell_action(app, "settings", true, None, None),
         MENU_RELOAD => emit_unsupported_native_menu_action(

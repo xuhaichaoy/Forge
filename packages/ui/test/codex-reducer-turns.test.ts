@@ -29,6 +29,7 @@ export default function runCodexReducerTurnsTests(): void {
   upsertsExistingThreadWithoutMovingItToTheTop();
   upsertingRunningThreadSnapshotPreservesStreamingItems();
   appendsStreamingDeltasToAgentReasoningAndCommandItems();
+  commandExecutionTerminalInteractionParsesStdinIntoCommandActions();
   turnScopesDeltaCreatedAssistantAndReasoningItems();
   preservesItemLifecycleTimestampsFromProtocolNotifications();
   completingTurnProjectsTurnTimingAsWorkedForItem();
@@ -903,6 +904,98 @@ function appendsStreamingDeltasToAgentReasoningAndCommandItems(): void {
   );
 }
 
+function commandExecutionTerminalInteractionParsesStdinIntoCommandActions(): void {
+  const baseState = {
+    ...initialCodexUiState,
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": runtimeSlice({
+        items: [
+          {
+            type: "commandExecution",
+            id: "command-1",
+            command: "bash",
+            status: "inProgress",
+          } as unknown as AccumulatedThreadItem,
+        ],
+      }),
+    },
+  } as CodexUiState;
+
+  let state = reduceNotification(baseState, {
+    method: "item/commandExecution/terminalInteraction",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "command-1",
+      processId: "process-1",
+      stdin: "echo he",
+    },
+  });
+  assertDeepEqual(
+    commandActions(state, "thread-1", "command-1"),
+    [],
+    "partial terminal stdin should buffer until a newline arrives",
+  );
+  assertDeepEqual(
+    state.terminalInputBuffers,
+    { "thread-1:command-1": "echo he" },
+    "partial terminal stdin should be buffered by thread and item",
+  );
+
+  state = reduceNotification(state, {
+    method: "item/commandExecution/terminalInteraction",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "command-1",
+      processId: "process-1",
+      stdin: "llo\b!\n",
+    },
+  });
+  assertDeepEqual(
+    commandActions(state, "thread-1", "command-1"),
+    [{ type: "unknown", command: "echo hell!" }],
+    "terminal stdin newline should append Desktop-style unknown commandActions",
+  );
+  assertDeepEqual(state.terminalInputBuffers, {}, "newline should clear the terminal input buffer");
+
+  state = reduceNotification(state, {
+    method: "item/commandExecution/terminalInteraction",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "command-1",
+      processId: "process-1",
+      stdin: "partial\u0003\n",
+    },
+  });
+  assertDeepEqual(
+    commandActions(state, "thread-1", "command-1"),
+    [{ type: "unknown", command: "echo hell!" }],
+    "Ctrl-C should clear the buffered terminal input without appending an empty command",
+  );
+
+  state = reduceNotification(state, {
+    method: "item/commandExecution/terminalInteraction",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      itemId: "command-1",
+      processId: "process-1",
+      stdin: "  pwd  \r",
+    },
+  });
+  assertDeepEqual(
+    commandActions(state, "thread-1", "command-1"),
+    [
+      { type: "unknown", command: "echo hell!" },
+      { type: "unknown", command: "pwd" },
+    ],
+    "carriage return should finish a trimmed terminal command like Codex Desktop",
+  );
+}
+
 function preservesItemLifecycleTimestampsFromProtocolNotifications(): void {
   const command = {
     type: "commandExecution",
@@ -1271,6 +1364,23 @@ function hookNotificationsAreLoggedWithoutSyntheticTranscriptItems(): void {
   hookStats = assistant.hookStats as Record<string, unknown>;
   assertEqual(hookStats.count, 1, "hook/completed should update the existing hook run instead of duplicating it");
   assertEqual(hookStats.errorCount, 1, "failed hook/completed should count as an error in assistant hook stats");
+
+  state = reduceNotification(state, {
+    method: "hook/completed",
+    params: {
+      threadId: "thread-hooks",
+      turnId: "turn-hooks",
+      run: hookRun("hook-2", "userPromptSubmit", "blocked", "blocked by hook"),
+    },
+  });
+
+  const user = itemById(state, "thread-hooks", "user-hooks") as Record<string, unknown>;
+  assertEqual(user.deliveryStatus, "not-sent", "blocked userPromptSubmit hook should mark the user message not sent");
+  assertEqual(user.hookBlocked, true, "blocked userPromptSubmit hook should project hook-blocked user status");
+  assistant = itemById(state, "thread-hooks", "agent-hooks") as Record<string, unknown>;
+  hookStats = assistant.hookStats as Record<string, unknown>;
+  assertEqual(hookStats.count, 2, "blocked hook run should be included in assistant hook stats");
+  assertEqual(hookStats.blockedCount, 1, "blocked hook run should increment blocked hook count");
 }
 
 function clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes(): void {
@@ -3052,6 +3162,11 @@ function reasoningContent(state: CodexUiState, threadId: string, itemId: string)
 function commandOutput(state: CodexUiState, threadId: string, itemId: string): string {
   const item = itemById(state, threadId, itemId) as Record<string, unknown>;
   return typeof item.aggregatedOutput === "string" ? item.aggregatedOutput : "";
+}
+
+function commandActions(state: CodexUiState, threadId: string, itemId: string): unknown[] {
+  const item = itemById(state, threadId, itemId) as Record<string, unknown>;
+  return Array.isArray(item.commandActions) ? item.commandActions : [];
 }
 
 function eventContent(state: CodexUiState, threadId: string, itemId: string): string {

@@ -32,6 +32,10 @@ export function projectBackgroundAgentRailEntries(items: ThreadItem[]): RailEntr
       const status = normalizeBackgroundAgentStatus(
         state.status || stringField(record, "status") || previous?.status || "completed",
       );
+      if (multiAgentAction(record) === "closeAgent" || status === "hidden") {
+        entries.delete(threadId);
+        continue;
+      }
       const diffStats = multiAgentReceiverDiffStats(record, threadId) ?? previous?.diffStats ?? null;
       entries.set(threadId, {
         threadId,
@@ -277,19 +281,26 @@ function multiAgentAction(record: ItemRecord): string {
 
 function normalizeBackgroundAgentStatus(status: string): string {
   switch (status) {
+    case "pendingInit":
+      return "waiting";
     case "active":
     case "inProgress":
     case "in_progress":
     case "pending":
-    case "pendingInit":
     case "running":
       return "active";
+    case "completed":
+    case "done":
+      return "done";
+    case "interrupted":
     case "errored":
     case "failed":
     case "notFound":
-      return "failed";
+    case "shutdown":
+    case "closed":
+      return "hidden";
     default:
-      return status || "completed";
+      return status || "done";
   }
 }
 

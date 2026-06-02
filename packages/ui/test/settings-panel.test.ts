@@ -23,7 +23,7 @@ import {
 import type { SettingsPanelId } from "../src/state/composer-workflow";
 import { loadSettingsPanelContent } from "../src/state/settings-panel-loader";
 import { initialCodexUiState } from "../src/state/codex-reducer";
-import type { CommandPanelState } from "../src/state/command-panel";
+import { createCommandPanelState, type CommandPanelState } from "../src/state/command-panel";
 
 export default async function runSettingsPanelTests(): Promise<void> {
   exposesUnifiedSettingsSectionsWithoutLogin();
@@ -41,6 +41,7 @@ export default async function runSettingsPanelTests(): Promise<void> {
   await createsPendingWorktreeThroughHostApi();
   await loadsWorktreesSettingsFromHostBeforeProtocolFallback();
   await fallsBackToGitDiffWhenHostUnavailable();
+  await loadsHooksSettingsWithReviewFocus();
   displaysCustomPermissionStateWithoutSelectableCustomMode();
   displaysCustomApprovalPolicyAsDegraded();
 }
@@ -591,6 +592,48 @@ async function fallsBackToGitDiffWhenHostUnavailable(): Promise<void> {
   );
 }
 
+async function loadsHooksSettingsWithReviewFocus(): Promise<void> {
+  const host = fakeSettingsPanelHost((method, params) => {
+    if (method === "hooks/list") {
+      assertDeepEqual(params, { cwds: ["/workspace/project"] }, "Hooks settings should query the current workspace cwd");
+      return {
+        data: [{
+          cwd: "/workspace/project",
+          hooks: [
+            hookSettingsFixture("project", "project", null),
+            hookSettingsFixture("plugin-a", "plugin", "plugin-a"),
+            hookSettingsFixture("plugin-b", "plugin", "plugin-b"),
+          ],
+        }],
+      };
+    }
+    throw new Error(`unexpected protocol call: ${method}`);
+  });
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    hooksFocus: { source: "plugin", pluginId: "plugin-a" },
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: (panel, options) => host.setPanel(createCommandPanelState(panel, options)),
+    panel: "hooks",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, connected: true },
+    workspace: "/workspace/project",
+  });
+
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => entry.title),
+    ["plugin-a"],
+    "Review hooks should open Hooks settings focused to the matching source/plugin",
+  );
+  assertDeepEqual(
+    host.panel?.message,
+    "Showing plugin hooks for plugin-a.",
+    "focused Hooks settings should explain the selected Desktop source",
+  );
+}
+
 function displaysCustomPermissionStateWithoutSelectableCustomMode(): void {
   const entries = localSettingsEntries("permissions", {
     connected: true,
@@ -695,6 +738,26 @@ function fakeSettingsPanelHost(
     },
   };
   return host;
+}
+
+function hookSettingsFixture(key: string, source: string, pluginId: string | null) {
+  return {
+    key,
+    eventName: "UserPromptSubmit",
+    handlerType: "command",
+    matcher: null,
+    command: "echo ok",
+    timeoutSec: 1,
+    statusMessage: null,
+    sourcePath: "/workspace/.codex/hooks.json",
+    source,
+    pluginId,
+    displayOrder: 1,
+    enabled: true,
+    isManaged: false,
+    currentHash: `hash-${key}`,
+    trustStatus: "untrusted",
+  };
 }
 
 function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {

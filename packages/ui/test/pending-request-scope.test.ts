@@ -1,6 +1,9 @@
 import type { PendingServerRequest } from "../src/state/codex-reducer";
 import {
   deriveActivePendingRequests,
+  deriveBackgroundPendingRequests,
+  deriveComposerPendingRequests,
+  pendingRequestOwnerThreadId,
   pendingRequestAwaitingKind,
   pendingRequestScope,
   summarizePendingRequestAwaitingByThread,
@@ -11,6 +14,8 @@ export default function runPendingRequestScopeTests(): void {
   filtersActivePendingRequestsByThreadAndTurn();
   matchesItemOnlyRequestsAgainstActiveThreadItems();
   ordersActivePendingRequestsLikeComposerModes();
+  surfacesOnlyDesktopChildApprovalBeforeActiveThreadRequests();
+  derivesBackgroundPendingRequestsForStopAllTargets();
   classifiesMcpAndDynamicToolRequestsForAwaitingState();
   summarizesAwaitingStateByThread();
   attributesItemOnlyAwaitingStateWhenItemsAreIndexedByThread();
@@ -130,6 +135,62 @@ function ordersActivePendingRequestsLikeComposerModes(): void {
   );
 }
 
+function surfacesOnlyDesktopChildApprovalBeforeActiveThreadRequests(): void {
+  const requests = [
+    request("active-approval", "item/permissions/requestApproval", { threadId: "thread-1" }, undefined, 40),
+    request("child-input-newer", "item/tool/requestUserInput", { threadId: "child-1" }, undefined, 30),
+    request("child-item-only", "mcpServer/elicitation/request", { itemId: "child-item" }, undefined, 20),
+    request("second-child-approval", "item/commandExecution/requestApproval", { threadId: "child-2" }, undefined, 10),
+    request("wrong-child", "item/tool/requestUserInput", { threadId: "child-3" }, undefined, 5),
+    request("unscoped", "item/tool/requestUserInput", { message: "Global" }, undefined, 50),
+  ];
+
+  assertDeepEqual(
+    deriveComposerPendingRequests(requests, {
+      activeThreadId: "thread-1",
+      backgroundThreadIds: ["child-1", "child-2"],
+      itemsByThread: {
+        "child-1": [{ id: "child-item" }],
+      },
+    }).map(requestId),
+    ["second-child-approval", "active-approval", "unscoped"],
+    "composer pending requests should promote only Desktop child approvals before active-thread request panels",
+  );
+}
+
+function derivesBackgroundPendingRequestsForStopAllTargets(): void {
+  const requests = [
+    request("active-thread", "item/tool/requestUserInput", { threadId: "thread-1" }, undefined, 50),
+    request("child-2-approval", "item/permissions/requestApproval", { threadId: "child-2" }, undefined, 40),
+    request("child-1-item", "item/tool/requestUserInput", { itemId: "child-item" }, undefined, 10),
+    request("child-1-input", "mcpServer/elicitation/request", { threadId: "child-1" }, undefined, 20),
+    request("wrong-child", "item/tool/requestUserInput", { threadId: "child-3" }, undefined, 30),
+    request("unscoped", "item/tool/requestUserInput", { message: "Global" }, undefined, 60),
+    request("child-1-input", "item/commandExecution/requestApproval", { threadId: "child-1" }, undefined, 70),
+  ];
+
+  const backgroundRequests = deriveBackgroundPendingRequests(requests, {
+    activeThreadId: "thread-1",
+    backgroundThreadIds: ["child-1", "child-2", "thread-1"],
+    itemsByThread: {
+      "child-1": [{ id: "child-item" }],
+    },
+  });
+
+  assertDeepEqual(
+    backgroundRequests.map(requestId),
+    ["child-1-input", "child-1-item", "child-2-approval"],
+    "background pending requests should dedupe and sort by background thread order before Stop all handles them",
+  );
+  assertDeepEqual(
+    backgroundRequests.map((pendingRequest) => pendingRequestOwnerThreadId(pendingRequest, {
+      itemsByThread: { "child-1": [{ id: "child-item" }] },
+    })),
+    ["child-1", "child-1", "child-2"],
+    "background pending requests should keep item-only ownership for child threads",
+  );
+}
+
 function classifiesMcpAndDynamicToolRequestsForAwaitingState(): void {
   assertDeepEqual(
     pendingRequestAwaitingKind(request("mcp", "mcpServer/elicitation/request", { threadId: "thread-1" })),
@@ -139,7 +200,16 @@ function classifiesMcpAndDynamicToolRequestsForAwaitingState(): void {
   assertDeepEqual(
     pendingRequestAwaitingKind(request("tool-call", "item/tool/call", { threadId: "thread-1" })),
     "toolCall",
-    "dynamic tool calls should keep the tool-call awaiting lane",
+    "ordinary dynamic tool calls should keep the tool-call awaiting lane",
+  );
+  assertDeepEqual(
+    pendingRequestAwaitingKind(request("option-picker", "item/tool/call", {
+      threadId: "thread-1",
+      tool: "request_option_picker",
+      arguments: { question: "Pick", options: [{ label: "A" }] },
+    })),
+    "userInput",
+    "Desktop dynamic request_option_picker should use the user-input awaiting lane",
   );
 }
 

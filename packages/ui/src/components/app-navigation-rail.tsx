@@ -12,7 +12,7 @@ const appNavigationItems: Array<{
   label: string;
   Icon: typeof LayoutDashboard;
 }> = [
-  { id: "workbench", label: "工作台",  Icon: LayoutDashboard },
+  { id: "workbench", label: "对话",  Icon: LayoutDashboard },
   { id: "knowledge", label: "知识库",  Icon: BookOpen },
   { id: "archive",   label: "档案中心", Icon: Archive },
   { id: "todo",      label: "待办",    Icon: ClipboardList },

@@ -38,9 +38,9 @@ import type { ComponentType, ReactNode } from "react";
 /**
  * codex: app-shell-tab-controller-B2eCi4Le.pretty.js:7
  *   `var d = { BROWSER: 'browser', DIFF: 'diff', MCP_APP: 'mcp-app', TIMELINE: 'timeline' }`
- * Files / Side chat / Terminal tabs intentionally have no kind in Codex —
- * they fall back to auto-generated `component:${UUID}` tabIds (see `k()` at
- * line 340-346). HiCodex mirrors that: the `kind` field is optional.
+ * Workspace file/source tabs also pass a dynamic `workspaceFile:${hostId}`
+ * kind from review-file-source-tab/open-artifact-side-panel-tab. Other tabs
+ * such as Side chat / Terminal may omit kind and fall back to their tabId.
  */
 export const TAB_KINDS = {
   browser: "browser",
@@ -49,7 +49,8 @@ export const TAB_KINDS = {
   timeline: "timeline",
 } as const;
 
-export type TabKind = (typeof TAB_KINDS)[keyof typeof TAB_KINDS];
+export type WorkspaceFileTabKind = `workspaceFile:${string}`;
+export type TabKind = (typeof TAB_KINDS)[keyof typeof TAB_KINDS] | WorkspaceFileTabKind;
 
 export type SidePanelId = "right" | "bottom";
 
@@ -134,10 +135,11 @@ export interface SidePanelTab {
 
 export interface SidePanelTabContextMenuItem {
   readonly id: string;
-  readonly label: ReactNode;
-  readonly onSelect: () => void;
+  readonly label?: ReactNode;
+  readonly onSelect?: () => void;
   readonly destructive?: boolean;
   readonly disabled?: boolean;
+  readonly separator?: boolean;
 }
 
 /**

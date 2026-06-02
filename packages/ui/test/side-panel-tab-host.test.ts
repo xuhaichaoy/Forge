@@ -60,6 +60,7 @@ export default function runSidePanelTabHostTests(): void {
   controllerOpenTabSeedsAndPreservesDefaultState();
   controllerOpenTabEvictsCurrentPreviewWhenAddingNewPreview();
   controllerOpenTabDoesNotEvictPreviewWhenReOpeningSameTab();
+  controllerOpenTabReusesExistingIdForArtifactSourceConversion();
   controllerOpenTabActivatesAndOpensPanelByDefault();
   controllerOpenTabHonoursActivateFalse();
   controllerOpenTabIsLabelForcesIsClosableFalse();
@@ -184,6 +185,40 @@ function applyTabInsertOrUpdatePreservesPinAgainstPreviewDowngrade(): void {
   });
   state = applyTabInsertOrUpdate(state, tryPreview);
   assertEqual(state.tabsById["t1"]?.isPreview, false, "existing pinned tab not downgraded to preview");
+}
+
+function controllerOpenTabReusesExistingIdForArtifactSourceConversion(): void {
+  /*
+   * codex: artifact-tab-content.electron-*.js calls review-file-source-tab's
+   * source opener with the current artifact `tabId`; app-shell-tab-controller
+   * then updates that existing tab instead of appending a file:* tab.
+   */
+  const ArtifactComponent = (() => createElement("div")) as unknown as SidePanelTabComponent;
+  const SourceComponent = (() => createElement("div")) as unknown as SidePanelTabComponent;
+  const controller = makeController();
+
+  controller.openTab({
+    id: "artifact:local:%2Fworkspace%2Freport.pdf",
+    Component: ArtifactComponent,
+    title: "report.pdf",
+    isPreview: true,
+  });
+  controller.openTab({
+    id: "artifact:local:%2Fworkspace%2Freport.pdf",
+    Component: SourceComponent,
+    title: "report.pdf",
+    isPreview: false,
+    kind: "workspaceFile:local",
+    props: { path: "/workspace/report.pdf", lineStart: 1 },
+  });
+
+  const tabs = controller.getTabs();
+  assertEqual(tabs.length, 1, "source conversion should update the artifact tab in place");
+  assertEqual(tabs[0]?.tabId, "artifact:local:%2Fworkspace%2Freport.pdf", "tab id should stay the artifact tab id");
+  assertEqual(tabs[0]?.Component, SourceComponent, "tab component should become the file source preview");
+  assertEqual(tabs[0]?.kind, "workspaceFile:local", "source conversion should use Desktop's workspace-file kind");
+  assertEqual(tabs[0]?.isPreview, false, "source conversion should pin the reused tab");
+  assertEqual(tabs[0]?.props.path, "/workspace/report.pdf", "source conversion should replace tab props");
 }
 
 function applyActivateTabUpdatesRecentlyClosedLikeCodex(): void {

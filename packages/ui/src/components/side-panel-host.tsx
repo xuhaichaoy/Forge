@@ -1,5 +1,13 @@
-import type { CSSProperties, ReactNode } from "react";
-import { useCallback, useMemo } from "react";
+import {
+  Component,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+  type ErrorInfo,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { SidePanelTabBar } from "./side-panel-tab-bar";
 import type {
   SidePanelTab,
@@ -25,10 +33,10 @@ import type {
  *                         children: [header, body] });
  *   }
  *
- * Active tab rendering — Codex `qt` (line 1014-1082) wraps the result of
- * `tab.renderPanel(closeFn)` in an ErrorBoundary + `role=tabpanel`. HiCodex
- * simplifies: render `<tab.Component ...>` directly with the close/active/
- * tabState plumbing matching the Codex `B(...)` factory (line 286-307).
+ * Active tab rendering — Codex `qt` wraps the result of `tab.renderPanel(closeFn)`
+ * in an ErrorBoundary + `role=tabpanel`, and pointer/key interaction inside a
+ * preview panel pins that preview tab unless the target opts out via
+ * `data-tab-preview-pin-exempt`.
  *
  * Width — Codex `RightPanelOutlet` (app-shell-Bh-lgoQk:2777-2809) hard-codes
  * a `defaultWidth: 600` and supports user resize. HiCodex starts with the
@@ -39,7 +47,6 @@ import type {
  *   • Resize handle (`Le` in Codex `vn` at app-shell:522)
  *   • Width animation (motion-one bridge `app-shell-panel-animation`)
  *   • Full-width toggle (Codex `U` atom + `Q()` helper)
- *   • ErrorBoundary around tab content (Codex `Ge` at qt:1054)
  *   These remain to-do; bare structural shell first.
  */
 export const SIDE_PANEL_HOST_DEFAULT_WIDTH_PX = 600;
@@ -107,6 +114,12 @@ export function SidePanelHost({
     };
     const onClose = () => controller.closeTab(tabId);
     const isActive = true;
+    const pinPreviewFromInteraction = (event: PointerEvent<HTMLDivElement> | KeyboardEvent<HTMLDivElement>) => {
+      if (!activeTab.isPreview) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-tab-preview-pin-exempt]")) return;
+      controller.pinTab(tabId);
+    };
     return (
       <div
         role="tabpanel"
@@ -115,8 +128,12 @@ export function SidePanelHost({
         data-tab-id={tabId}
         className="hc-side-panel-host__tab-panel"
         tabIndex={-1}
+        onKeyDownCapture={pinPreviewFromInteraction}
+        onPointerDownCapture={pinPreviewFromInteraction}
       >
-        <Component {...props} tabId={tabId} isActive={isActive} tabState={tabStateValue} setTabState={setTabState} onClose={onClose} />
+        <SidePanelTabErrorBoundary resetKey={tabId}>
+          <Component {...props} tabId={tabId} isActive={isActive} tabState={tabStateValue} setTabState={setTabState} onClose={onClose} />
+        </SidePanelTabErrorBoundary>
       </div>
     );
   }, [activeTab, controller]);
@@ -148,3 +165,37 @@ export function SidePanelHost({
 }
 
 export type { SidePanelTab, SidePanelTabHostController, TabId };
+
+class SidePanelTabErrorBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    if (typeof console !== "undefined") {
+      console.error("AppShellTabPanel crashed", error, info.componentStack);
+    }
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }): void {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error != null) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (this.state.error != null) {
+      return (
+        <div className="hc-side-panel-host__error" role="alert">
+          This tab could not be rendered.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}

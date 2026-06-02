@@ -24,8 +24,10 @@ import { resolveFileReferencePathCandidates } from "../state/file-references";
 
 export interface ArtifactPreviewPanelProps {
   entry: RailEntry;
+  hostId?: string | null;
   workspaceRoot?: string | null;
   cwd?: string | null;
+  refreshKey?: number | null;
   onClose: () => void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenFileExternal?: (reference: RailEntryReference) => void;
@@ -58,8 +60,10 @@ type DocumentPreviewState =
 
 export function ArtifactPreviewPanel({
   entry,
+  hostId: _hostId = null,
   workspaceRoot,
   cwd,
+  refreshKey = 0,
   onClose,
   onOpenFileReference,
   onOpenFileExternal,
@@ -153,7 +157,7 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [preferredReferencePath, referencePathCandidates]);
+  }, [preferredReferencePath, referencePathCandidates, refreshKey]);
 
   useEffect(() => {
     if (!resolvedTextPath || preview.kind === "spreadsheet" || !metadataReadyForPreview) {
@@ -185,7 +189,7 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [metadataReadyForPreview, preview.kind, resolvedTextPath]);
+  }, [metadataReadyForPreview, preview.kind, refreshKey, resolvedTextPath]);
 
   useEffect(() => {
     if (!resolvedDocumentPath || !metadataReadyForPreview) {
@@ -212,7 +216,7 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [metadataReadyForPreview, resolvedDocumentPath]);
+  }, [metadataReadyForPreview, refreshKey, resolvedDocumentPath]);
 
   useEffect(() => {
     if (!resolvedSpreadsheetPath || !metadataReadyForPreview) {
@@ -239,7 +243,7 @@ export function ArtifactPreviewPanel({
     return () => {
       cancelled = true;
     };
-  }, [metadataReadyForPreview, resolvedSpreadsheetPath]);
+  }, [metadataReadyForPreview, refreshKey, resolvedSpreadsheetPath]);
 
   const previewState = artifactPreviewState(metadataPreview, tooLarge, resolvedReference != null);
   const hasInlinePreview = Boolean(

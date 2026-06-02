@@ -71,8 +71,8 @@ export interface TurnPlanSnapshot {
   updatedAt: number;
 }
 
-// codex: local-conversation-thread-*.js — RightRail status footer
-// reads `usedTokens` / `contextWindow` from the `thread/tokenUsage/updated`
+// codex: composer-*.js `/status` panel reads `usedTokens` / `contextWindow`
+// from the `thread/tokenUsage/updated`
 // notification (ThreadTokenUsage). `usedTokens` mirrors Desktop's "tokens
 // used" counter (last-turn input + output) and `contextWindow` is
 // `modelContextWindow` (null until the server has model metadata).
@@ -139,6 +139,7 @@ export interface CodexUiState {
   threads: Thread[];
   activeThreadId: string | null;
   threadsRuntime: Record<string, ThreadRuntimeSlice>;
+  terminalInputBuffers?: Record<string, string>;
   composerMode: ComposerMode;
   pendingRequests: PendingServerRequest[];
   logs: LogLine[];
@@ -193,6 +194,7 @@ export const initialCodexUiState: CodexUiState = {
   threads: [],
   activeThreadId: null,
   threadsRuntime: {},
+  terminalInputBuffers: {},
   composerMode: "default",
   pendingRequests: [],
   logs: [],
@@ -218,10 +220,8 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   threadGoalTurnId: null,
   hookRunsByTurn: {},
   terminalTurnIds: [],
-  // codex: local-conversation-thread-*.js — null until the first
-  // `thread/tokenUsage/updated` notification lands; RightRail status footer
-  // stays hidden while this is falsy (mirrors Desktop's `tokensUsed != null`
-  // gate inside the status-footer component).
+  // codex: composer-*.js `/status` panel — null until the first
+  // `thread/tokenUsage/updated` notification lands.
   tokenUsage: null,
   tokenSpeed: { tokensPerSecond: 0, turnId: null },
   tokenSpeedTracker: null,
@@ -345,10 +345,12 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
     case "removeThread": {
       const nextThreads = state.threads.filter((thread) => thread.id !== action.threadId);
       const { [action.threadId]: _removed, ...threadsRuntime } = state.threadsRuntime;
+      const terminalInputBuffers = pruneTerminalInputBuffersForThread(state.terminalInputBuffers, action.threadId);
       return withActiveComposerMode({
         ...state,
         threads: nextThreads,
         threadsRuntime,
+        terminalInputBuffers,
         activeThreadId: state.activeThreadId === action.threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
       });
     }
@@ -410,13 +412,14 @@ function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined
   const threadGoalTurnId = runtime?.threadGoalTurnId ?? null;
   const hookRunsByTurn = runtime?.hookRunsByTurn ?? {};
   const rawItems = runtime?.items ?? [];
+  const hookStatusProjectedItems = projectHookBlockedOntoUserMessages(rawItems, hookRunsByTurn);
   const goalProjectedItems = threadGoal
     ? projectCompletedThreadGoalOntoAssistantMessages(
-        projectThreadGoalOntoUserMessages(rawItems, threadGoal, threadGoalTurnId),
+        projectThreadGoalOntoUserMessages(hookStatusProjectedItems, threadGoal, threadGoalTurnId),
         threadGoal,
         threadGoalTurnId,
       )
-    : rawItems;
+    : hookStatusProjectedItems;
   const items = projectHookStatsOntoAssistantMessages(goalProjectedItems, hookRunsByTurn);
   const terminalTurnIds = dedupeStrings(runtime?.terminalTurnIds ?? []);
   return {
@@ -447,6 +450,24 @@ function dedupeStrings(values: string[]): string[] {
     if (value && !next.includes(value)) next.push(value);
   }
   return next;
+}
+
+function pruneTerminalInputBuffersForThread(
+  buffers: Record<string, string> | undefined,
+  threadId: string,
+): Record<string, string> | undefined {
+  if (!buffers) return buffers;
+  const prefix = `${threadId}:`;
+  let changed = false;
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(buffers)) {
+    if (key.startsWith(prefix)) {
+      changed = true;
+      continue;
+    }
+    next[key] = value;
+  }
+  return changed ? next : buffers;
 }
 
 function updateThreadRuntime(
@@ -806,10 +827,10 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return prependLog(state, `thread unarchived: ${shortThreadId(threadId)}`);
     }
     case "thread/tokenUsage/updated":
-      // codex: local-conversation-thread-*.js — projects the
+      // codex: composer-*.js `/status` panel — projects the
       // `ThreadTokenUsage` payload (last-turn breakdown + `modelContextWindow`)
-      // into `ThreadRuntimeSlice.tokenUsage` so `RightRail`'s status footer
-      // can render the "X / Y tokens used" line and context-window tooltip.
+      // into `ThreadRuntimeSlice.tokenUsage` so the composer status panel can
+      // render the context usage row.
       return applyThreadTokenUsageUpdatedNotification(state, params);
     case "thread/compacted":
       return applyThreadCompactedNotification(state, params);
@@ -873,27 +894,27 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return upsertItem(reconciled, threadId, stampedItem, turnIdParam);
     }
     /*
-     * Codex Desktop's `remote-conversation-page` dispatcher consumes exactly
-     * 5 item-level delta channels (docs §26.4). HiCodex used to subscribe to
-     * 4 extra protocol-defined channels — none of which had a downstream
+     * Codex Desktop's `remote-conversation-page` dispatcher consumes 5 visible
+     * item-level delta channels (docs §26.4). HiCodex used to subscribe to 3
+     * extra protocol-defined channels — none of which had a downstream
      * consumer in the renderer:
      *
      *   - `item/reasoning/summaryPartAdded` — `appendReasoningText` already
      *     auto-expands the summary array via `updateReasoningParts`, making
      *     a separate "pre-allocate slot" channel redundant. Matches Codex's
      *     `Tn(arr, idx, default)` helper which expands on first delta arrival.
-     *   - `item/commandExecution/terminalInteraction` — writes
-     *     `terminalInteractions[]` on the item, but nothing in HiCodex
-     *     reads that field (verified 2026-05-21 grep).
      *   - `item/fileChange/outputDelta` — flagged deprecated in the v2
      *     protocol; modern app-server does not send it.
      *   - `item/mcpToolCall/progress` — Desktop currently logs and ignores
      *     this progress message instead of projecting a renderer field.
      *
      * The 5 channels HiCodex now consumes match Codex exactly. The single
-     * intentional divergence is `item/fileChange/patchUpdated` below, kept
-     * because HiCodex renders `changes[]` incrementally via
-     * `tool-activity-detail.tsx:334` (Codex waits for `item/completed`).
+     * non-text channel here is `item/commandExecution/terminalInteraction`,
+     * which Codex handles in app-server-manager by parsing stdin into
+     * commandActions. The single intentional divergence is
+     * `item/fileChange/patchUpdated` below, kept because HiCodex renders
+     * `changes[]` incrementally via `tool-activity-detail.tsx:334` (Codex
+     * waits for `item/completed`).
      */
     case "item/agentMessage/delta":
       return updateLiveTokenSpeed(appendItemText(state, params, "agentMessage", "text", "delta"), params);
@@ -905,6 +926,8 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return updateLiveTokenSpeed(appendReasoningText(state, params, "summary", "summaryIndex"), params);
     case "item/commandExecution/outputDelta":
       return appendItemText(state, params, "commandExecution", "aggregatedOutput", "delta");
+    case "item/commandExecution/terminalInteraction":
+      return applyCommandExecutionTerminalInteraction(state, params);
     case "item/fileChange/patchUpdated":
       // HiCodex extension (not in Codex Desktop's 5-channel set).
       return mergeItemFields(state, params, "fileChange", { changes: params.changes });
@@ -1013,10 +1036,10 @@ function applyErrorNotification(state: CodexUiState, params: Record<string, unkn
   };
 }
 
-// codex: git-branch-picker-dropdown-content + local-conversation-thread
-// status footer — context usage is calculated from `last.totalTokens` and
+// codex: composer-*.js `/status` panel — context usage is calculated from
+// `last.totalTokens` and
 // `modelContextWindow`. The cumulative `total` object is not the number Desktop
-// shows in the right-rail status row.
+// shows in the status panel.
 function applyThreadTokenUsageUpdatedNotification(
   state: CodexUiState,
   params: Record<string, unknown>,
@@ -2450,6 +2473,46 @@ function projectHookStatsOntoAssistantMessages(
   return changed ? next : items;
 }
 
+function projectHookBlockedOntoUserMessages(
+  items: AccumulatedThreadItem[],
+  hookRunsByTurn: Record<string, unknown[]>,
+): AccumulatedThreadItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    const record = item as Record<string, unknown>;
+    const turnId = typeof record._turnId === "string" ? record._turnId : "";
+    const isUser = record.type === "userMessage";
+    const isBlocked = isUser && turnId ? hookRunsBlockUserPrompt(hookRunsByTurn[turnId]) : false;
+    if (isBlocked) {
+      if (record.deliveryStatus === "not-sent" && record.hookBlocked === true && record._hookBlockedProjection === true) return item;
+      changed = true;
+      return {
+        ...item,
+        deliveryStatus: "not-sent",
+        hookBlocked: true,
+        _hookBlockedProjection: true,
+      };
+    }
+    if (record._hookBlockedProjection !== true) return item;
+    const cleaned = { ...item } as AccumulatedThreadItem;
+    delete (cleaned as Record<string, unknown>).deliveryStatus;
+    delete (cleaned as Record<string, unknown>).hookBlocked;
+    delete (cleaned as Record<string, unknown>)._hookBlockedProjection;
+    changed = true;
+    return cleaned;
+  });
+  return changed ? next : items;
+}
+
+function hookRunsBlockUserPrompt(runs: unknown[] | undefined): boolean {
+  if (!runs || runs.length === 0) return false;
+  return runs.some((value) => {
+    const run = recordParam(value);
+    if (!run) return false;
+    return stringParam(run, "eventName") === "userPromptSubmit" && stringParam(run, "status") === "blocked";
+  });
+}
+
 function upsertHookRun(existingRuns: unknown[], run: Record<string, unknown>): unknown[] {
   const runId = stringParam(run, "id") || stringParam(run, "runId");
   if (!runId) return [...existingRuns, run];
@@ -2929,6 +2992,86 @@ function appendItemText(
     next = placeItemInTurn(next, turnId ? attachTurnId(incoming, turnId) : incoming, order);
   }
   return threadRuntimePatch(state, threadId, { items: next, turnOrder: order });
+}
+
+export function parseTerminalInteractionInput(
+  inputBuffer: string,
+  stdin: string,
+): { commands: string[]; inputBuffer: string } {
+  let buffer = inputBuffer;
+  const commands: string[] = [];
+  for (const char of stdin) {
+    if (char === "\r" || char === "\n") {
+      const command = buffer.trim();
+      if (command) commands.push(command);
+      buffer = "";
+    } else if (char === "\u0003") {
+      buffer = "";
+    } else if (char === "\b" || char === "\u007f") {
+      buffer = buffer.slice(0, -1);
+    } else {
+      buffer += char;
+    }
+  }
+  return { commands, inputBuffer: buffer };
+}
+
+function applyCommandExecutionTerminalInteraction(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  const itemId = String(params.itemId ?? "");
+  const stdin = String(params.stdin ?? "");
+  if (!threadId || !itemId || !stdin) return state;
+
+  const bufferKey = `${threadId}:${itemId}`;
+  const previousBuffer = state.terminalInputBuffers?.[bufferKey] ?? "";
+  const parsed = parseTerminalInteractionInput(previousBuffer, stdin);
+  const stateWithBuffer = withTerminalInputBuffer(state, bufferKey, parsed.inputBuffer);
+  if (parsed.commands.length === 0) return stateWithBuffer;
+
+  const runtime = selectThreadRuntime(stateWithBuffer, threadId);
+  let found = false;
+  const items = runtime.items.map((item) => {
+    if (item.id !== itemId || (item.type !== "commandExecution" && item.type !== "exec")) return item;
+    found = true;
+    const record = item as Record<string, unknown>;
+    const commandActions = Array.isArray(record.commandActions)
+      ? record.commandActions.slice()
+      : [];
+    return {
+      ...item,
+      commandActions: [
+        ...commandActions,
+        ...parsed.commands.map((command) => ({ type: "unknown", command })),
+      ],
+    };
+  });
+  if (!found) return stateWithBuffer;
+  return threadRuntimePatch(stateWithBuffer, threadId, { items });
+}
+
+function withTerminalInputBuffer(
+  state: CodexUiState,
+  key: string,
+  inputBuffer: string,
+): CodexUiState {
+  const current = state.terminalInputBuffers ?? {};
+  if (inputBuffer) {
+    if (current[key] === inputBuffer) return state;
+    return {
+      ...state,
+      terminalInputBuffers: {
+        ...current,
+        [key]: inputBuffer,
+      },
+    };
+  }
+  if (!(key in current)) return state;
+  const next = { ...current };
+  delete next[key];
+  return { ...state, terminalInputBuffers: next };
 }
 
 function mergeItemFields(

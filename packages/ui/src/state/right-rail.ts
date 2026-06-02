@@ -39,8 +39,7 @@ export type RightRailSectionId =
   | "backgroundSubagents"
   | "backgroundTasks"
   | "browser"
-  | "sources"
-  | "status";
+  | "sources";
 export type RightRailDisplayMode = "overlay" | "shift" | "gutter";
 
 export interface RightRailSection {
@@ -79,16 +78,6 @@ export interface RightRailBrowserInput {
   tabId?: string;
 }
 
-// codex: local-conversation-thread-*.js — status footer payload (token-speed
-// line + context-window usage tooltip + compact-thread button). The projection
-// input carries the raw counters so HiCodexApp can pipe the same shape into
-// both `projectRightRailSections` and the `<RightRail statusFooter=… />` prop.
-export interface RightRailStatusFooterInput {
-  tokensUsed?: number;
-  contextWindow?: number;
-  tokensPerSecond?: number;
-}
-
 export interface RightRailProjectionInput {
   progress: RailEntry[];
   // codex: local-conversation-thread-*.js automation — new per-conversation
@@ -110,12 +99,6 @@ export interface RightRailProjectionInput {
   // Desktop's browser-tab row body.
   browser?: RightRailBrowserInput;
   sources: RailEntry[];
-  status?: RailEntry[];
-  // codex: local-conversation-thread-*.js — status footer counters. Kept on
-  // the projection input for documentation/typing; HiCodexApp forwards the
-  // same value to `<RightRail statusFooter=… />` since the footer is rendered
-  // outside the `RightRailSection[]` list.
-  statusFooter?: RightRailStatusFooterInput;
 }
 
 export interface BranchDetailsEntryInput {
@@ -337,10 +320,6 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   // section 内部 "No sources yet" empty row 承载。HiCodex 原条件 `sources.length>0 ||
   // sections.length>0` 没源码依据,已对齐 always。
   sections.push(projectEntrySection("sources", "Sources", input.sources, true));
-
-  if (input.status && input.status.length > 0) {
-    sections.push(projectEntrySection("status", "Status", input.status, false));
-  }
 
   return sections;
 }

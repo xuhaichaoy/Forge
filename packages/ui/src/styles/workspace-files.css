@@ -133,6 +133,12 @@
   background: var(--hc-surface-hover);
 }
 
+.hc-file-tree-row:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+  background: var(--hc-surface-hover);
+}
+
 .hc-file-tree-row[data-selected="true"] {
   background: var(--hc-surface-soft);
   color: var(--hc-text-strong);

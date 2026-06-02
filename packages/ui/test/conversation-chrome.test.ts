@@ -6,6 +6,7 @@ export default function runConversationChromeTests(): void {
   keepsPreConversationHeaderSingleRow();
   keepsChromeFreeOfStatusAndKebabAffordances();
   rendersDesktopSidebarTriggerLabels();
+  rendersOverlaySummaryToggleSeparatelyFromPinnedToggle();
 }
 
 function keepsPreConversationHeaderSingleRow(): void {
@@ -44,6 +45,27 @@ function rendersDesktopSidebarTriggerLabels(): void {
   assertIncludes(openHtml, "hc-sidebar-trigger", "sidebar trigger should render as a compact header action");
   assertIncludes(openHtml, "Hide sidebar", "open sidebar trigger should use Desktop's hide label");
   assertIncludes(closedHtml, "Show sidebar", "closed sidebar trigger should use Desktop's show label");
+}
+
+function rendersOverlaySummaryToggleSeparatelyFromPinnedToggle(): void {
+  const overlayHtml = renderToStaticMarkup(createElement(ConversationChrome, {
+    title: "Chat",
+    rightRailToggleAvailable: true,
+    rightRailPopoverOpen: true,
+    canPinRightRail: false,
+    onToggleRightRailPopover: () => undefined,
+  }));
+  const pinnedHtml = renderToStaticMarkup(createElement(ConversationChrome, {
+    title: "Chat",
+    rightRailToggleAvailable: true,
+    rightRailPinned: true,
+    canPinRightRail: true,
+    onToggleRightRailPinned: () => undefined,
+  }));
+
+  assertIncludes(overlayHtml, "Toggle summary", "overlay mode should render Desktop's popover summary trigger");
+  assertIncludes(overlayHtml, "aria-expanded=\"true\"", "overlay summary trigger should expose popover state");
+  assertIncludes(pinnedHtml, "Toggle pinned summary", "non-overlay mode should render Desktop's pinned summary trigger");
 }
 
 function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {

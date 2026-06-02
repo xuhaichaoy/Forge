@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 interface IconProps {
   size?: number;
   className?: string;
+  "aria-hidden"?: boolean | "true" | "false";
 }
 
 export type FileIconKey =
@@ -58,9 +59,11 @@ function iconClass(key: FileIconKey, className?: string): string {
 
 function makeIcon(
   key: FileIconKey,
-  Icon: (props: { size?: number; className?: string }) => ReactNode,
+  Icon: (props: IconProps) => ReactNode,
 ): FileIconComponent {
-  return ({ size = 16, className }) => <Icon size={size} className={iconClass(key, className)} />;
+  return ({ size = 16, className, "aria-hidden": ariaHidden }) => (
+    <Icon size={size} className={iconClass(key, className)} aria-hidden={ariaHidden} />
+  );
 }
 
 const ICON_REGISTRY: Record<FileIconKey, FileIconComponent> = {
@@ -101,17 +104,16 @@ const FILENAME_TO_KEY: Record<string, FileIconKey> = {
 const EXTENSION_GROUPS: Array<{ key: FileIconKey; extensions: string[] }> = [
   { key: "typescript", extensions: ["ts"] },
   { key: "react", extensions: ["tsx", "jsx"] },
-  { key: "javascript", extensions: ["js", "mjs", "cjs"] },
+  // codex: get-file-icon maps `.hs` into Desktop's `javascript` family; keep
+  // this exact source map so all file surfaces stay parity-aligned.
+  { key: "javascript", extensions: ["js", "mjs", "cjs", "hs"] },
   { key: "python", extensions: ["py"] },
   { key: "java", extensions: ["java"] },
   { key: "rust", extensions: ["rs"] },
   { key: "php", extensions: ["php"] },
   { key: "css", extensions: ["css", "scss", "less", "sass"] },
   { key: "cplusplus", extensions: ["cpp", "cxx", "cc", "c", "hpp", "hh", "h"] },
-  // Haskell (.hs) is not a JS variant — moved out of the `javascript` group
-  // into the generic `code` bucket alongside other less-common languages.
-  // Caught during the 2026-05-21 review pass.
-  { key: "code", extensions: ["rb", "go", "kt", "swift", "m", "mm", "cs", "sql", "hs"] },
+  { key: "code", extensions: ["rb", "go", "kt", "swift", "m", "mm", "cs", "sql"] },
   { key: "json", extensions: ["json", "jsonc"] },
   { key: "document", extensions: ["md", "mdx", "markdown", "mkd", "mdown", "xml"] },
   { key: "html", extensions: ["html", "htm"] },

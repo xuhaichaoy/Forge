@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
-import { chainCommands, deleteSelection, selectAll, splitBlock } from "prosemirror-commands";
+import { chainCommands, deleteSelection, joinBackward, joinForward, selectAll, selectNodeBackward, selectNodeForward, splitBlock } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { Fragment, Schema, Slice } from "prosemirror-model";
@@ -130,8 +130,13 @@ export class PromptEditorController {
             },
             "Mod-Enter": emitSubmit,
             "Mod-a": selectAll,
-            Backspace: deleteSelection,
-            Delete: deleteSelection,
+            // Mirror ProseMirror's baseKeymap Backspace/Delete: chain
+            // selection-delete with block-join (joinBackward/joinForward) and
+            // atom-node selection. Without joinBackward a collapsed cursor at a
+            // paragraph boundary did nothing, so a trailing/empty line — and any
+            // line break — could not be deleted.
+            Backspace: chainCommands(deleteSelection, joinBackward, selectNodeBackward),
+            Delete: chainCommands(deleteSelection, joinForward, selectNodeForward),
             "Mod-z": undo,
             "Mod-y": redo,
             "Mod-Shift-z": redo,
@@ -751,6 +756,21 @@ export function promptEditorInlineNodesForTest(text: string): Array<{ type: stri
 
 export function promptEditorPromptTextRoundTripForTest(text: string): string {
   return docToPromptText(promptTextToDoc({ schema: promptEditorSchema, text })).content;
+}
+
+// Runs the editor's real Backspace command (deleteSelection → joinBackward →
+// selectNodeBackward) with the caret at the end of `text`, returning the
+// resulting prompt text. Guards the "trailing/empty line can't be deleted" bug:
+// before joinBackward was chained in, a collapsed caret at a paragraph boundary
+// was a no-op, so the line break survived every Backspace.
+export function promptEditorBackspaceAtEndForTest(text: string): string {
+  const schema = promptEditorSchema;
+  const doc = plainTextToDoc({ schema, text });
+  let state = EditorState.create({ schema, doc, selection: TextSelection.atEnd(doc) });
+  chainCommands(deleteSelection, joinBackward, selectNodeBackward)(state, (tr) => {
+    state = state.apply(tr);
+  });
+  return docToPromptText(state.doc).content;
 }
 
 export function promptEditorPasteInlineNodesForTest(text: string): Array<{ type: string; attrs: Record<string, unknown>; text?: string }> {

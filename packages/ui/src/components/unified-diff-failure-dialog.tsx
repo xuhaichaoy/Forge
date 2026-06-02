@@ -1,4 +1,4 @@
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ExternalLink, X } from "lucide-react";
 import { useHiCodexIntl } from "./i18n-provider";
 
 /*
@@ -46,6 +46,7 @@ export interface UnifiedDiffFailure {
 export interface UnifiedDiffFailureDialogProps {
   failure: UnifiedDiffFailure;
   onClose: () => void;
+  onOpenPath?: (path: string) => void;
 }
 
 function firstErrorLine(text: string): string {
@@ -60,6 +61,7 @@ function firstErrorLine(text: string): string {
 export function UnifiedDiffFailureDialog({
   failure,
   onClose,
+  onOpenPath,
 }: UnifiedDiffFailureDialogProps) {
   const { formatMessage } = useHiCodexIntl();
   const isNotGitRepo = failure.errorCode === "not-git-repo";
@@ -141,6 +143,7 @@ export function UnifiedDiffFailureDialog({
                   // tone: text-token-foreground
                   toneClass="hc-unified-diff-tone-applied"
                   paths={appliedPaths}
+                  onOpenPath={onOpenPath}
                 />
               )}
               {skippedPaths.length > 0 && (
@@ -152,6 +155,7 @@ export function UnifiedDiffFailureDialog({
                   // tone: text-token-description-foreground
                   toneClass="hc-unified-diff-tone-skipped"
                   paths={skippedPaths}
+                  onOpenPath={onOpenPath}
                 />
               )}
               {conflictedPaths.length > 0 && (
@@ -163,6 +167,7 @@ export function UnifiedDiffFailureDialog({
                   // tone: text-token-charts-red
                   toneClass="hc-unified-diff-tone-conflicted"
                   paths={conflictedPaths}
+                  onOpenPath={onOpenPath}
                 />
               )}
             </div>
@@ -180,10 +185,12 @@ export function UnifiedDiffFailureDialog({
 
 function PathList({
   heading,
+  onOpenPath,
   toneClass,
   paths,
 }: {
   heading: string;
+  onOpenPath?: (path: string) => void;
   toneClass: string;
   paths: readonly string[];
 }) {
@@ -193,7 +200,18 @@ function PathList({
       <ul className="hc-unified-diff-path-list">
         {paths.map((path) => (
           <li key={path} className="hc-unified-diff-path-row">
-            <span className="hc-unified-diff-path-name">{path}</span>
+            {onOpenPath ? (
+              <button
+                type="button"
+                className="hc-unified-diff-path-button"
+                onClick={() => onOpenPath(path)}
+              >
+                <span className="hc-unified-diff-path-name">{path}</span>
+                <ExternalLink aria-hidden className="hc-unified-diff-path-open-icon" size={12} />
+              </button>
+            ) : (
+              <span className="hc-unified-diff-path-name">{path}</span>
+            )}
           </li>
         ))}
       </ul>

@@ -1,10 +1,12 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { ContextMenu, type ContextMenuItem } from "./context-menu";
 import type {
   SidePanelTab,
   SidePanelTabHostController,
   TabId,
 } from "../hooks/use-side-panel-tab-host";
+import type { SidePanelTabContextMenuItem } from "../state/side-panel-tab-host";
 
 /*
  * Side-panel tab strip — port of Codex Desktop's `Ht(e)` at
@@ -32,9 +34,6 @@ import type {
  *     HiCodex skips until we port the dnd-kit-equivalent wiring.
  *   • Edge scrim sentinels (`Gt(...)` lines 791, 879 + IntersectionObserver
  *     scrim fade) — purely visual, defer.
- *   • Context menu (Codex line 458-481 `F = () => [...contextMenuItems, close]`)
- *     — defer until HiCodex needs it.
- *   • Trailing content (`tab.trailingContent` rendered as `y` at line 384).
  *
  * Preview pill style mirrors Codex's italic title treatment via
  * `data-is-preview` so a future stylesheet rule can target it.
@@ -91,6 +90,7 @@ interface SidePanelTabPillProps {
 }
 
 function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   // codex: title sits in a `relative min-w-0 flex-1 overflow-hidden` wrapper with a
   // sibling right-edge gradient fade (NOT a CSS ellipsis) so long titles dissolve.
   const label = tab.title != null
@@ -111,37 +111,89 @@ function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) 
     event.stopPropagation();
     controller.closeTab(tab.tabId);
   };
+  const contextMenuItems = useMemo(() => sidePanelTabContextMenuItems(tab, controller), [controller, tab]);
+  const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    if (contextMenuItems.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ x: event.clientX, y: event.clientY });
+  };
   return (
-    <div
-      className="hc-side-panel-tab-pill"
-      data-tab-id={tab.tabId}
-      data-active={isActive ? "true" : "false"}
-      data-is-preview={tab.isPreview ? "true" : "false"}
-      data-is-label={tab.isLabel ? "true" : "false"}
-    >
-      <button
-        type="button"
-        role="tab"
-        aria-selected={isActive}
-        title={tab.tooltip ?? undefined}
-        className="hc-side-panel-tab-pill__button"
-        onClick={onClickTab}
+    <>
+      <div
+        className="hc-side-panel-tab-pill"
+        data-tab-id={tab.tabId}
+        data-active={isActive ? "true" : "false"}
+        data-is-preview={tab.isPreview ? "true" : "false"}
+        data-is-label={tab.isLabel ? "true" : "false"}
+        onContextMenu={onContextMenu}
       >
-        {tab.icon != null && <span className="hc-side-panel-tab-pill__icon">{tab.icon}</span>}
-        {label}
-      </button>
-      {tab.isClosable && (
         <button
           type="button"
-          // codex `codex.tabs.closeNamed` defaultMessage "Close {title} tab" — per-tab named label.
-          aria-label={tab.title != null ? `Close ${tab.title} tab` : "Close tab"}
-          className="hc-side-panel-tab-pill__close"
-          onClick={onClickClose}
+          role="tab"
+          aria-selected={isActive}
+          title={tab.tooltip ?? undefined}
+          className="hc-side-panel-tab-pill__button"
+          onClick={onClickTab}
         >
-          {/* codex close glyph = icon-xs (16px) */}
-          <X size={16} aria-hidden="true" />
+          {tab.icon != null && <span className="hc-side-panel-tab-pill__icon">{tab.icon}</span>}
+          {label}
         </button>
+        {tab.trailingContent != null && (
+          <span className="hc-side-panel-tab-pill__trailing">{tab.trailingContent}</span>
+        )}
+        {tab.isClosable && (
+          <button
+            type="button"
+            data-tab-preview-pin-exempt="true"
+            // codex `codex.tabs.closeNamed` defaultMessage "Close {title} tab" — per-tab named label.
+            aria-label={`Close ${tabTitleText(tab.title)} tab`}
+            className="hc-side-panel-tab-pill__close"
+            onClick={onClickClose}
+          >
+            {/* codex close glyph = icon-xs (16px) */}
+            <X size={16} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+      {contextMenu != null && (
+        <ContextMenu
+          items={contextMenuItems}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
       )}
-    </div>
+    </>
   );
+}
+
+export function sidePanelTabContextMenuItems(
+  tab: SidePanelTab,
+  controller: SidePanelTabHostController,
+): ContextMenuItem[] {
+  const customItems = (tab.contextMenuItems ?? []).map(sidePanelTabContextMenuItem);
+  if (!tab.isClosable) return customItems;
+  const closeItem: ContextMenuItem = {
+    id: `close:${tab.tabId}`,
+    label: "Close",
+    onSelect: () => controller.closeTab(tab.tabId),
+  };
+  return customItems.length > 0
+    ? [...customItems, { id: `separator:${tab.tabId}`, separator: true }, closeItem]
+    : [closeItem];
+}
+
+function sidePanelTabContextMenuItem(item: SidePanelTabContextMenuItem): ContextMenuItem {
+  return {
+    id: item.id,
+    label: item.label,
+    separator: item.separator,
+    disabled: item.disabled,
+    onSelect: item.onSelect,
+  };
+}
+
+function tabTitleText(title: ReactNode): string {
+  return typeof title === "string" && title.trim() ? title.trim() : "tab";
 }

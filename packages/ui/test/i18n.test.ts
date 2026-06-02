@@ -83,6 +83,24 @@ function formatsMigratedSurfaceMessages(): void {
   assertEqual(formatI18nMessage(zh, { id: "codex.unifiedDiff.patchFailureDialogClose", defaultMessage: "Close" }), "关闭", "failure dialog close zh");
 
   // /memories dialog (slash-request projection) + scattered singles.
+  assertEqual(
+    formatI18nMessage(zh, {
+      id: "codex.hooksReviewBanner.summary",
+      defaultMessage: "{count, plural, one {# hook needs review before it can run} other {# hooks need review before they can run}}",
+    }, { count: 2 }),
+    "2 个钩子需要审查后才能运行",
+    "hooks review banner summary zh",
+  );
+  assertEqual(formatI18nMessage(zh, { id: "codex.hooksReviewBanner.trustAll", defaultMessage: "Trust all" }), "全部信任", "hooks review trustAll zh");
+  assertEqual(formatI18nMessage(zh, { id: "codex.hooksReviewBanner.review", defaultMessage: "Review hooks" }), "审查钩子", "hooks review action zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.title", defaultMessage: "Plan" }), "套餐", "plan summary title zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.titleWriting", defaultMessage: "Writing plan" }), "编写计划", "plan summary titleWriting zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.download", defaultMessage: "Download plan" }), "下载套餐", "plan summary download zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.expand", defaultMessage: "Expand plan summary" }), "展开计划概要", "plan summary expand aria zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.collapse", defaultMessage: "Collapse plan summary" }), "折叠计划概要", "plan summary collapse aria zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.viewPlan", defaultMessage: "Expand plan" }), "展开计划", "plan summary view plan zh");
+  assertEqual(formatI18nMessage(zh, { id: "copyButton.copyAriaLabel", defaultMessage: "Copy" }), "复制", "copy button copy zh");
+  assertEqual(formatI18nMessage(zh, { id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" }), "已复制", "copy button copied zh");
   assertEqual(formatI18nMessage(zh, { id: "composer.memoriesSlashCommand.dialogTitle", defaultMessage: "Chat memories" }), "对话记忆", "memories dialogTitle zh");
   assertEqual(formatI18nMessage(zh, { id: "composer.memoriesSlashCommand.useMemoriesLabel", defaultMessage: "Use memories" }), "使用记忆", "memories useMemoriesLabel zh");
   assertEqual(formatI18nMessage(zh, { id: "composer.memoriesSlashCommand.useMemoriesDescription", defaultMessage: "Let Codex bring existing memories into this chat’s context" }), "允许 Codex 将现有记忆带入此对话的上下文", "memories useMemoriesDescription zh");

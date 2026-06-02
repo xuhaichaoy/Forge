@@ -686,8 +686,8 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
   );
   assertDeepEqual(
     applySlashCommand("status", { input: "/status" }),
-    { action: "request", request: "toggleStatusFooter", clearInput: true },
-    "status should toggle the Desktop context-usage footer",
+    { action: "request", request: "showStatus", clearInput: true },
+    "status should open the Desktop composer status panel",
   );
   assertDeepEqual(
     applySlashCommand("ps", { input: "/ps" }),

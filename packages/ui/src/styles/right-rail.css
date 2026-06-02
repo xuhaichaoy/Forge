@@ -97,140 +97,13 @@
   }
 }
 
-/*
- * codex: local-conversation-thread-*.js — Status footer.
- * Sticky-bottom status popover trigger: token speed on the left, context
- * percent on the right. The full token count is tooltip-only; Compact lives in
- * the small popover menu.
- */
-/*
- * CODEX-REF: local-conversation-thread-*.js — status section 裸渲染（仅在有
- * 状态时渲染 `<status conversationId status />`）。status 容器
- * className `relative mx-4 flex min-w-0 cursor-interaction items-center
- * justify-between text-sm text-token-text-tertiary before:absolute ...`——**无
- * padding-y、无 background、无 sticky**，间距由父 sections wrapper `gap-3` (12px)
- * 提供。HiCodex 之前 sticky 设计的 `padding: 4px 0 8px; background:` 已删除。
- * 外层 wrapper div 保留（HiCodex `RightRailStatusFooter` 包含 trigger + menu
- * 两子元素，菜单 absolute positioned 相对 wrapper，删 wrapper 会破坏定位）。
- */
-.hc-rail-status-footer {
-  position: relative;
-}
-
-.hc-rail-status-footer-trigger {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: calc(100% - 32px);
-  min-width: 0;
-  margin: 0 16px;
-  gap: 10px;
-  border: 0;
-  border-radius: 4px;
-  padding: 4px 0;
-  background: transparent;
-  font-size: 12px;
-  color: #6f716b;
-  cursor: pointer;
-}
-
-.hc-rail-status-footer-trigger::before {
-  content: "";
-  position: absolute;
-  inset: -4px -8px;
-  z-index: -1;
-  border-radius: 4px;
-}
-
-.hc-rail-status-footer-trigger:hover::before,
-.hc-rail-status-footer-trigger[aria-expanded="true"]::before {
-  background: var(--hc-surface-soft);
-}
-
-.hc-rail-status-footer-cluster {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.hc-rail-status-footer-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.hc-rail-status-footer-icon {
-  flex: 0 0 auto;
-  color: #5d5d5d;
-}
-
-.hc-rail-status-context-donut {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-  border-radius: 999px;
-  background:
-    conic-gradient(#5d5d5d var(--hc-context-usage-percent, 0%), rgba(93, 93, 93, 0.2) 0);
-}
-
-.hc-rail-status-context-donut::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: inherit;
-  background: var(--hc-surface-panel, #fffdfa);
-}
-
-.hc-rail-status-footer-menu {
-  position: absolute;
-  right: 12px;
-  bottom: calc(100% + 4px);
-  width: 180px;
-  border: 1px solid var(--hc-border-subtle, rgba(34, 38, 43, 0.12));
-  border-radius: 6px;
-  padding: 4px;
-  background: var(--hc-surface-panel, #fffdfa);
-  box-shadow: 0 10px 24px rgba(20, 24, 29, 0.14);
-}
-
-.hc-rail-status-footer-menu-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  border-radius: 4px;
-  padding: 7px 8px;
-  background: transparent;
-  color: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.hc-rail-status-footer-menu-item:hover:not(:disabled) {
-  background: var(--hc-surface-soft);
-  color: #27313d;
-}
-
-.hc-rail-status-footer-menu-item:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 /* codex: local-conversation-thread-*.js — sticky section header.
  * Desktop's section-header element is `sticky top-0 z-10` over
  * `bg-token-dropdown-background` so the title remains visible while the rail
  * body scrolls beneath it. HiCodex already pins the header in
  * `rail-sections.css` with `z-index: 1`; this override raises the stacking
- * context above rail-card hover overlays (and the status-footer's sticky
- * bottom) and swaps the hardcoded panel color for the themed surface token so
+ * context above rail-card hover overlays and swaps the hardcoded panel color
+ * for the themed surface token so
  * dark mode keeps the same masking behavior. The rail scroll container is
  * `.hc-right-rail { overflow-y: auto }` (see base.css), which is the ancestor
  * the sticky positioning attaches to. */
@@ -439,22 +312,6 @@
     var(--hc-text-secondary) 65%,
     var(--hc-text-secondary) 100%
   );
-}
-
-.hc-app[data-theme="dark"] .hc-rail-status-footer-trigger {
-  color: var(--hc-text-secondary);
-}
-
-.hc-app[data-theme="dark"] .hc-rail-status-footer-icon {
-  color: var(--hc-text-secondary);
-}
-
-.hc-app[data-theme="dark"] .hc-rail-status-context-donut {
-  background: conic-gradient(var(--hc-text-secondary) var(--hc-context-usage-percent, 0%), rgba(255, 255, 255, 0.08) 0);
-}
-
-.hc-app[data-theme="dark"] .hc-rail-status-footer-menu-item:hover:not(:disabled) {
-  color: var(--hc-text-primary);
 }
 
 .hc-app[data-theme="dark"] .hc-pr-status-row-icon {

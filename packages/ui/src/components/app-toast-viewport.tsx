@@ -79,4 +79,11 @@ const INTERNAL_LOG_PATTERNS = [
   /^Falling back from WebSockets to HTTPS transport\./i,
   /^stream disconnected before completion:/i,
   /^Cannot read properties of undefined \(reading ['"]transformCallback['"]\)$/i,
+  // codex-rs warns when a model slug is absent from its bundled metadata table
+  // (e.g. a subscription model routed through `openai_http`) and falls back to
+  // default metadata. The turn still completes normally, so this is benign
+  // noise rather than a user-actionable error — keep it in the log history but
+  // don't pop a scary toast on every turn. (The proper fix is to supply the
+  // model metadata so codex-rs stops falling back.)
+  /^Model metadata for .+ not found\. Defaulting to fallback metadata/i,
 ];

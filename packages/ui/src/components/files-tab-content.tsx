@@ -1,4 +1,5 @@
-import { WorkspaceFilesPanel } from "./workspace-files-panel";
+import { WorkspaceFilesPanel, type WorkspaceFileSelectOptions } from "./workspace-files-panel";
+import type { WorkspaceDirEntry } from "../lib/tauri-host";
 
 /*
  * Files tab content — wraps the existing `WorkspaceFilesPanel` for use as a
@@ -36,7 +37,9 @@ import { WorkspaceFilesPanel } from "./workspace-files-panel";
 export interface FilesTabContentProps {
   readonly workspaceRoot: string;
   readonly activeFilePath?: string | null;
-  readonly onSelectFile?: (relPath: string) => void;
+  readonly onSelectFile?: (relPath: string, options: WorkspaceFileSelectOptions) => void;
+  readonly onAddFileToChat?: (relPath: string) => void;
+  readonly searchWorkspaceFiles?: (query: string, workspaceRoot: string) => Promise<WorkspaceDirEntry[]>;
   readonly includeHidden?: boolean;
 }
 
@@ -44,6 +47,8 @@ export function FilesTabContent({
   workspaceRoot,
   activeFilePath,
   onSelectFile,
+  onAddFileToChat,
+  searchWorkspaceFiles,
   includeHidden,
 }: FilesTabContentProps) {
   return (
@@ -51,6 +56,8 @@ export function FilesTabContent({
       workspaceRoot={workspaceRoot}
       {...(activeFilePath !== undefined ? { activeFilePath } : {})}
       {...(onSelectFile !== undefined ? { onSelectFile } : {})}
+      {...(onAddFileToChat !== undefined ? { onAddFileToChat } : {})}
+      {...(searchWorkspaceFiles !== undefined ? { searchWorkspaceFiles } : {})}
       {...(includeHidden !== undefined ? { includeHidden } : {})}
     />
   );

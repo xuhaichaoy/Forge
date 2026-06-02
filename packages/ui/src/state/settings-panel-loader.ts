@@ -16,6 +16,11 @@ import type { SettingsPanelId } from "./composer-workflow";
 import {
   HICODEX_IMAGE_TOOL_NAME,
 } from "./image-generation-tool";
+import {
+  filterHooksListResponseForFocus,
+  hooksSettingsFocusMessage,
+  type HooksSettingsFocus,
+} from "./hooks-review";
 import type { HiCodexLocale } from "./i18n";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -55,6 +60,7 @@ export interface LoadSettingsPanelContentOptions {
   client: CodexJsonRpcClient;
   ensureConnected: () => Promise<boolean>;
   forceReload?: boolean;
+  hooksFocus?: HooksSettingsFocus | null;
   includeImageDynamicTool: boolean;
   openSettingsPanelContent: (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
   panel: SettingsPanelId;
@@ -135,6 +141,7 @@ export async function loadSettingsPanelContent({
   client,
   ensureConnected,
   forceReload = false,
+  hooksFocus = null,
   includeImageDynamicTool,
   openSettingsPanelContent,
   panel,
@@ -485,7 +492,13 @@ export async function loadSettingsPanelContent({
       const result = await client.request<unknown>("hooks/list", {
         cwds: workspace.trim() ? [workspace.trim()] : [],
       }, 120_000);
-      openSettingsPanelContent("hooks", { status: "ready", title, entries: projectCommandPanelEntries({ hooks: result }) });
+      const focusedResult = filterHooksListResponseForFocus(result, hooksFocus);
+      openSettingsPanelContent("hooks", {
+        status: "ready",
+        title,
+        message: hooksSettingsFocusMessage(hooksFocus),
+        entries: projectCommandPanelEntries({ hooks: focusedResult }),
+      });
       return;
     }
     if (panel === "apps") {

@@ -1,0 +1,86 @@
+import {
+  resolveFileReferencePathCandidates,
+} from "./file-references";
+
+export interface OpenFileWatchTabInput {
+  readonly tabId: string;
+  readonly kind?: string;
+  readonly props: Readonly<Record<string, unknown>>;
+}
+
+export interface OpenFileWatchTarget {
+  readonly watchId: string;
+  readonly hostId: string;
+  readonly watchPath: string;
+  readonly tabIds: readonly string[];
+}
+
+export function openFileWatchTargetsFromSidePanelTabs(
+  tabs: readonly OpenFileWatchTabInput[],
+): OpenFileWatchTarget[] {
+  const byWatchId = new Map<string, { hostId: string; watchPath: string; tabIds: string[] }>();
+
+  for (const tab of tabs) {
+    const kindHostId = hostIdFromWorkspaceFileKind(tab.kind);
+    if (!kindHostId) continue;
+
+    const path = stringProp(tab.props.path);
+    if (!path) continue;
+
+    const workspaceRoot = stringProp(tab.props.workspaceRoot);
+    const cwd = stringProp(tab.props.cwd);
+    const watchPath = resolveFileReferencePathCandidates(path, { workspaceRoot, cwd })
+      .find(isAbsoluteOpenFileWatchPath);
+    if (!watchPath) continue;
+
+    const hostId = stringProp(tab.props.hostId) || kindHostId;
+    const watchId = openFileWatchId(hostId, watchPath);
+    const current = byWatchId.get(watchId);
+    if (current) {
+      current.tabIds.push(tab.tabId);
+      continue;
+    }
+    byWatchId.set(watchId, { hostId, watchPath, tabIds: [tab.tabId] });
+  }
+
+  return [...byWatchId.entries()].map(([watchId, target]) => ({
+    watchId,
+    hostId: target.hostId,
+    watchPath: target.watchPath,
+    tabIds: target.tabIds,
+  }));
+}
+
+export function nextOpenFileWatchRefreshKey(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value + 1
+    : 1;
+}
+
+export function openFileWatchId(hostId: string, watchPath: string): string {
+  return `open-file-${hashOpenFileWatchKey(`${hostId}\0${watchPath}`)}`;
+}
+
+function hostIdFromWorkspaceFileKind(kind: string | undefined): string | null {
+  const prefix = "workspaceFile:";
+  if (!kind?.startsWith(prefix)) return null;
+  const hostId = kind.slice(prefix.length).trim();
+  return hostId || null;
+}
+
+function stringProp(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function isAbsoluteOpenFileWatchPath(path: string): boolean {
+  return path.startsWith("/");
+}
+
+function hashOpenFileWatchKey(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}

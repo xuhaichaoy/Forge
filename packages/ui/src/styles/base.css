@@ -49,6 +49,8 @@
   --hc-text-primary: #1a1c1f;
   --hc-text-strong: #171717;
   --hc-text-secondary: #6a6b6d;
+  --hc-editor-warning-foreground: #e25507;
+  --hc-editor-warning-background: #ffe7d9;
   /* Codex has TWO muted text levels: token-text-secondary (= foreground 65%)
      and description-foreground / text-tertiary (= 70%). HiCodex mirrors both;
      tertiary was previously only an inline fallback `var(--hc-text-tertiary,#8a8c87)`
@@ -214,6 +216,8 @@
      and border-heavy mis-stated as 12%.) */
   --hc-text-secondary: rgba(255, 255, 255, 0.70); /* codex --color-text-foreground-secondary (was 0.65; A/B-pending) */
   --hc-text-tertiary: rgba(255, 255, 255, 0.50); /* codex --color-text-foreground-tertiary (was 0.70, swapped; A/B-pending) */
+  --hc-editor-warning-foreground: #ff8549;
+  --hc-editor-warning-background: #4a2206;
   --hc-border-default: rgba(255, 255, 255, 0.08); /* = Codex token-border 8% */
   --hc-border-subtle: rgba(255, 255, 255, 0.05); /* ~ Codex border-light 4% */
   --hc-border-strong: rgba(255, 255, 255, 0.16); /* codex --color-border-heavy #ffffff29 = 16% (was 0.12; A/B-pending) */
@@ -614,7 +618,7 @@ button {
  * CODEX-REF: local-conversation-thread-*.js — sections
  * wrapper className: `flex h-fit max-h-full min-h-0 flex-col gap-3 overflow-y-auto pb-3`。
  * 这一层承担 sections 间距 (gap-3 = 12px)、可滚动 (overflow-y-auto)、底部
- * padding (pb-3 = 12px)。status footer 作为最后一个普通 section 渲染于此 wrapper 内。
+ * padding (pb-3 = 12px)。
  */
 .hc-right-rail-sections {
   display: flex;
@@ -628,6 +632,8 @@ button {
 }
 
 .hc-right-rail[data-display-mode="overlay"] {
+  top: 54px;
+  max-height: calc(100% - 66px);
   background: #fffdfa;
   /* Slightly stronger shadow in overlay mode keeps the panel visually anchored when it floats
    * over content without a reserved gutter — equivalent of Codex's mode-driven opacity bump. */
@@ -1431,6 +1437,84 @@ button {
   .hc-sidebar-update-dot { animation: none; }
 }
 
+.hc-sidebar-usage-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 10px 11px;
+  border: 1px solid rgba(42, 42, 38, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 253, 250, 0.78);
+  color: var(--hc-text-primary);
+}
+
+.hc-sidebar-usage-alert-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hc-sidebar-usage-alert-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 17px;
+}
+
+.hc-sidebar-usage-alert-dismiss {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: -2px -3px 0 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--hc-text-secondary);
+}
+
+.hc-sidebar-usage-alert-dismiss:hover {
+  background: rgba(34, 38, 43, 0.08);
+}
+
+.hc-sidebar-usage-alert-dismiss:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.hc-sidebar-usage-alert-reset {
+  color: var(--hc-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.hc-sidebar-usage-alert-progress {
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(32, 33, 36, 0.1);
+}
+
+.hc-sidebar-usage-alert-progress::-webkit-progress-bar {
+  background: rgba(32, 33, 36, 0.1);
+}
+
+.hc-sidebar-usage-alert-progress::-webkit-progress-value {
+  background: var(--hc-text-primary);
+}
+
+.hc-sidebar-usage-alert-progress::-moz-progress-bar {
+  background: var(--hc-text-primary);
+}
+
 .hc-sidebar-nav-item {
   display: flex;
   align-items: center;
@@ -2031,6 +2115,85 @@ button.hc-sidebar-account-menu-item small {
   color: #a14335;
 }
 
+.hc-sidebar-rate-limit-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 7px;
+  color: var(--hc-text-primary);
+  font-size: 12px;
+}
+
+.hc-sidebar-rate-limit-summary-heading {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hc-sidebar-rate-limit-summary-heading span {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-sidebar-rate-limit-summary-heading small {
+  color: var(--hc-text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.hc-sidebar-rate-limit-summary-rows,
+.hc-sidebar-rate-limit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hc-sidebar-rate-limit-section-label {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--hc-text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-sidebar-rate-limit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  min-width: 0;
+  color: var(--hc-text-secondary);
+}
+
+.hc-sidebar-rate-limit-window {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--hc-text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-sidebar-rate-limit-remaining {
+  color: var(--hc-text-secondary);
+  white-space: nowrap;
+}
+
+.hc-sidebar-rate-limit-row small {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--hc-text-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /*
  * Footer model chip — when wired to an `onOpenModelPicker` handler the chip
  * becomes an interactive button (`data-interactive="true"`). The hover state
@@ -2330,6 +2493,16 @@ button.hc-sidebar-account-menu-item small {
 }
 .hc-model-picker-model-item[data-active="true"] {
   background: transparent; /* codex marks the selected model by the checkmark only, no row bg (was rgba(137,169,178,.18); A/B-pending) */
+}
+/* Locked = provider auth not verified ("not signed in" / "no key"); model is
+   not selectable until the user signs in / sets a key. opacity dims whatever
+   the active theme color is, so no separate dark override is needed. */
+.hc-model-picker-model-item[data-locked="true"] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.hc-model-picker-model-item[data-locked="true"]:hover {
+  background: transparent;
 }
 .hc-model-picker-model-icon {
   display: inline-flex;

@@ -1,6 +1,7 @@
-import { ChevronDown, FileText, Globe2, ImageIcon, Presentation, ScrollText, Sheet, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, FileText, FolderOpen, Globe2, ImageIcon, Presentation, ScrollText, Sheet, type LucideIcon } from "lucide-react";
+import { useCallback, useRef, useState, type RefObject } from "react";
 
+import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import { projectArtifactPreview } from "../state/artifact-preview";
 import type { AssistantEndResource, RailEntry } from "../state/render-group-types";
 
@@ -69,12 +70,18 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
 export function AssistantEndResourceCards({
   resources,
   onOpenArtifact,
+  onRevealResource,
 }: {
   resources: AssistantEndResource[];
   onOpenArtifact?: (entry: RailEntry) => void;
+  onRevealResource?: (entry: RailEntry) => void;
 }) {
   const cards = assistantEndResourceCardViewModels(resources);
   const [expanded, setExpanded] = useState(false);
+  const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
+  const openMenuWrapRef = useRef<HTMLSpanElement | null>(null);
+  const closeOpenMenu = useCallback(() => setOpenMenuKey(null), []);
+  useDismissibleLayer(openMenuKey != null, openMenuWrapRef, closeOpenMenu);
   if (cards.length === 0) return null;
   const visibleCards = expanded ? cards : cards.slice(0, END_RESOURCE_PREVIEW_LIMIT);
   const hiddenCount = cards.length - visibleCards.length;
@@ -83,6 +90,7 @@ export function AssistantEndResourceCards({
     <div className="hc-assistant-resource-list hc-assistant-end-resource-list">
       {visibleCards.map((card) => {
         const Icon = card.icon;
+        const menuOpen = openMenuKey === card.key;
         const subtitle = (
           <span className="hc-assistant-resource-card-subtitles">
             <span className="hc-assistant-resource-card-type">{card.typeLabel}</span>
@@ -104,7 +112,13 @@ export function AssistantEndResourceCards({
               <span className="hc-assistant-resource-card-title">{card.title}</span>
               {subtitle}
             </span>
-            <span className="hc-assistant-resource-card-open-label">{card.trailingLabel}</span>
+            <EndResourceOpenInControl
+              card={card}
+              menuOpen={menuOpen}
+              onOpenChange={(open) => setOpenMenuKey(open ? card.key : null)}
+              onRevealResource={onRevealResource}
+              refForOpenMenu={openMenuWrapRef}
+            />
           </>
         );
 
@@ -117,15 +131,18 @@ export function AssistantEndResourceCards({
         }
 
         return (
-          <button
-            className="hc-assistant-resource-card hc-assistant-end-resource-card is-button"
-            aria-label={card.openLabel}
+          <div
+            className={`hc-assistant-resource-card hc-assistant-end-resource-card is-button ${menuOpen ? "is-menu-open" : ""}`}
             key={card.key}
-            type="button"
-            onClick={() => onOpenArtifact(card.entry)}
           >
+            <button
+              aria-label={card.openLabel}
+              className="hc-assistant-end-resource-preview-button"
+              type="button"
+              onClick={() => onOpenArtifact(card.entry)}
+            />
             {content}
-          </button>
+          </div>
         );
       })}
       {hiddenCount > 0 && (
@@ -141,6 +158,59 @@ export function AssistantEndResourceCards({
         </button>
       )}
     </div>
+  );
+}
+
+function EndResourceOpenInControl({
+  card,
+  menuOpen,
+  onOpenChange,
+  onRevealResource,
+  refForOpenMenu,
+}: {
+  card: AssistantEndResourceCardViewModel;
+  menuOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRevealResource?: (entry: RailEntry) => void;
+  refForOpenMenu: RefObject<HTMLSpanElement | null>;
+}) {
+  const canRevealInFolder = card.entry.action?.kind === "file" && Boolean(onRevealResource);
+  if (!canRevealInFolder) {
+    return <span className="hc-assistant-resource-card-open-label">{card.trailingLabel}</span>;
+  }
+
+  return (
+    <span
+      className="hc-assistant-end-resource-open-menu-wrap"
+      ref={menuOpen ? refForOpenMenu : undefined}
+    >
+      <button
+        type="button"
+        className="hc-assistant-resource-card-open-label hc-assistant-end-resource-open-trigger"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => onOpenChange(!menuOpen)}
+      >
+        <span>{card.trailingLabel}</span>
+        <ChevronDown size={14} aria-hidden />
+      </button>
+      {menuOpen && (
+        <span className="hc-thread-menu hc-app-popover-menu hc-assistant-end-resource-open-menu" role="menu" data-state="open">
+          <button
+            type="button"
+            className="hc-thread-menu-item"
+            role="menuitem"
+            onClick={() => {
+              onOpenChange(false);
+              onRevealResource?.(card.entry);
+            }}
+          >
+            <FolderOpen size={13} aria-hidden />
+            <span>Open in folder</span>
+          </button>
+        </span>
+      )}
+    </span>
   );
 }
 

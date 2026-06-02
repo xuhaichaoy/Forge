@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
-import type { CollaborationModeMask, ModelConfig, Thread } from "@hicodex/codex-protocol";
-import { FolderOpen, Loader2, Plus, X } from "lucide-react";
+import type {
+  CollaborationModeMask,
+  JsonRpcNotification,
+  ModelConfig,
+  Thread,
+  ThreadGoalClearResponse,
+  ThreadGoalSetResponse,
+} from "@hicodex/codex-protocol";
+import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
+import { FileText, FolderOpen, Loader2, Plus, X } from "lucide-react";
 import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
 import { KbArchiveView } from "./components/kb-archive-view";
 import { KbIngestView } from "./components/kb-ingest-view";
@@ -21,10 +29,14 @@ import { useSidePanelTabHost } from "./hooks/use-side-panel-tab-host";
 // codex: keyboard-shortcuts-settings-*.js — standalone dialog rendering
 // all `COMMAND_DESCRIPTORS` with their platform-formatted accelerator.
 import { KeyboardShortcutsDialog } from "./components/keyboard-shortcuts-dialog";
+import { HooksReviewBanner } from "./components/hooks-review-banner";
 import { StatusTextPanel } from "./components/status-text-panel";
 import { CommandPanel } from "./components/command-panel";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter, ComposerSettingsChips } from "./components/composer-external-footer";
+import { ComposerQuotaBanner } from "./components/composer-quota-banner";
+import { ComposerStatusPanel } from "./components/composer-status-panel";
+import { ThreadGoalBanner, type ThreadGoalBannerAction } from "./components/thread-goal-banner";
 import { HiCodexIntlProvider, useHiCodexIntl } from "./components/i18n-provider";
 import { insertPromptEditorText } from "./components/prompt-editor";
 import {
@@ -34,12 +46,15 @@ import {
   encodeSelection,
   isSubscriptionProviderId,
   normalizeSubscriptionProviderId,
+  resolveEffectiveModelSelection,
 } from "./components/model-picker-menu";
 import {
   ReasoningPickerMenu,
   normalizeReasoningEffortValue,
 } from "./components/reasoning-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
+import { BackgroundSubagentsStack } from "./components/background-subagents-stack";
+import { ArtifactPreviewPanel } from "./components/artifact-preview-panel";
 import { AutomationsPreviewPanel } from "./components/automations-preview-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
@@ -64,7 +79,7 @@ import { OnboardingEmptyState } from "./components/onboarding-empty-state";
 import { SettingsPanel } from "./components/model-settings-panel";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
-import { FilePreviewPanel } from "./components/file-preview-panel";
+import { FilePreviewPanel, FileReferencePreviewTab } from "./components/file-preview-panel";
 import { RightRail } from "./components/right-rail";
 import { RemoteTaskView } from "./components/remote-task-view";
 import { Sidebar } from "./components/sidebar";
@@ -90,6 +105,7 @@ import {
   type CodexAuthSummary,
   type GhPrInfo,
   type PatchActionResult,
+  type WorkspaceDirEntry,
 } from "./lib/tauri-host";
 import { applyUpdate, checkForUpdates } from "./lib/updater";
 import {
@@ -111,6 +127,7 @@ import { useThreadActions } from "./hooks/use-thread-actions";
 // ConversationChrome arrow buttons. Reducer keeps the stack in
 // state.threadHistoryStack / state.threadHistoryIndex (see thread-history.ts).
 import { canNavigateBackInHistory, canNavigateForwardInHistory } from "./state/thread-history";
+import { artifactPreviewTabId, projectArtifactPreview, shouldOpenArtifactPreview } from "./state/artifact-preview";
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
   DEFAULT_SUBSCRIPTION_PROVIDER_ID,
@@ -136,11 +153,12 @@ import {
   hasOpenAiCredentialSummary,
   initialAccountState,
   logoutAndRefreshAccountState,
+  projectComposerQuotaBanner,
   projectAccountViewModel,
   refreshAccountState,
   type AccountState,
 } from "./state/account-state";
-import { buildApprovalResult } from "./state/approval-requests";
+import { buildApprovalResult, buildStopPendingRequestResult } from "./state/approval-requests";
 // codex: local-conversation-thread-*.js — `projectActiveThreadAutomation`
 // selects the single heartbeat automation that targets the active thread so the
 // right-rail `automation` section can render its Clock + name + rrule body.
@@ -148,6 +166,7 @@ import {
   projectActiveThreadAutomation,
   projectAutomationsSurface,
 } from "./state/automations-viewer";
+import { collectBackgroundSubagentStopThreadIds } from "./state/background-subagents-stop";
 import { resolveHiCodexBuildInfo } from "./state/build-info";
 import { projectBranchDetails } from "./state/branch-details";
 import {
@@ -167,12 +186,18 @@ import {
   sidebarPreferenceStorage,
   type SidebarPreferences,
 } from "./state/sidebar-preferences";
-import type { FileReferenceSelection } from "./state/file-references";
+import {
+  fileReferenceSidePanelContextMenuItems,
+  fileReferenceSidePanelTabKind,
+  fileReferenceSidePanelTabId,
+  type FileReferenceSelection,
+} from "./state/file-references";
 import {
   applySlashCommand,
   buildUserInputFromComposer,
   composerAttachmentsFromPaths,
   composerPlaceholderText,
+  mergeComposerAttachments,
   projectComposerSubmitState,
   type ComposerAttachment,
   type ComposerMentionMarker,
@@ -202,10 +227,16 @@ import {
   commandAccelerator,
   commandAccelerators,
   getCommand,
+  osRevealLabel,
   registerCommand,
   unregisterCommand,
 } from "./state/command-registry";
 import { COMMAND_DESCRIPTORS, COMMAND_IDS } from "./state/commands";
+import {
+  buildConfigBatchWriteParams,
+  formatConfigWriteError,
+  readConfigWriteTarget,
+} from "./state/config-write-target";
 import { buildConversationMarkdown } from "./state/conversation-markdown";
 import { threadIdFromCodexDeepLink } from "./state/deep-links";
 import {
@@ -222,11 +253,19 @@ import {
   mentionOptionsFromSkillsResponse,
 } from "./state/mention-options";
 import {
+  buildTrustAllHooksEdits,
+  hookReviewProjectRoot,
+  projectHooksNeedingReview,
+  type HooksSettingsFocus,
+  type HooksReviewSnapshot,
+} from "./state/hooks-review";
+import {
   appRegistryEntriesFromResponse,
   isThreadStatusInProgress,
   projectConversation,
   type AppRegistryEntry,
   type RailEntry,
+  type RailEntryReference,
 } from "./state/render-groups";
 import {
   MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR,
@@ -258,8 +297,17 @@ import {
 import { claimAppConnectOAuthCallback } from "./state/app-connect-oauth";
 import {
   deriveActivePendingRequests,
+  deriveBackgroundPendingRequests,
+  deriveComposerPendingRequests,
+  pendingRequestOwnerThreadId,
+  pendingRequestScope,
   summarizePendingRequestAwaitingByThread,
 } from "./state/pending-request-scope";
+import {
+  nextOpenFileWatchRefreshKey,
+  openFileWatchTargetsFromSidePanelTabs,
+  type OpenFileWatchTarget,
+} from "./state/open-file-watches";
 import {
   claimHiCodexImageToolRequest,
   executeHiCodexImageToolCall,
@@ -319,7 +367,6 @@ import {
   rightRailDisplayMode,
   rightRailPreferenceStorage,
   rightRailReservedInlineEndPx,
-  rightRailShouldRender,
   saveRightRailPinned,
 } from "./state/right-rail";
 import {
@@ -385,6 +432,7 @@ import {
   dispatchOptimisticUserMessage,
   dropOptimisticUserMessage,
   interruptThreadTurn,
+  readThread,
   readWorkspaceDeveloperInstructions,
   sendPanelThreadMessage,
   startSideConversation,
@@ -408,6 +456,12 @@ function isSuccessfulAccountLoginCompletedNotification(message: { method: string
   if (message.method !== "account/login/completed") return false;
   const params = message.params;
   return Boolean(params && typeof params === "object" && (params as { success?: unknown }).success === true);
+}
+
+function watchIdFromFsChangedNotification(params: unknown): string | null {
+  if (!params || typeof params !== "object") return null;
+  const watchId = (params as { watchId?: unknown }).watchId;
+  return typeof watchId === "string" && watchId.trim() ? watchId : null;
 }
 
 function authModeFromAccountUpdatedNotification(message: { method: string; params?: unknown }): string | null {
@@ -443,6 +497,52 @@ function orderCommandPanelThreadsByPinned<T extends { id: string }>(threads: T[]
   const pinnedThreads = threads.filter((thread) => pinnedThreadIds.has(thread.id));
   const recentThreads = threads.filter((thread) => !pinnedThreadIds.has(thread.id));
   return [...pinnedThreads, ...recentThreads];
+}
+
+function patchFailurePathForOpen(path: string, cwd: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(trimmed)) return trimmed;
+  const root = cwd.trim().replace(/[\\/]+$/, "");
+  if (!root) return trimmed;
+  return `${root}/${trimmed.replace(/^(?:\.[\\/]|[\\/])+/, "")}`;
+}
+
+function fuzzyFileResultsToWorkspaceEntries(root: string, files: Array<{
+  root?: string;
+  path?: string;
+  file_name?: string;
+}>): WorkspaceDirEntry[] {
+  const seen = new Set<string>();
+  const entries: WorkspaceDirEntry[] = [];
+  for (const file of files) {
+    const path = workspaceRelativeFuzzyPath(root, file);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    entries.push({
+      type: "file",
+      path,
+      name: file.file_name || basenameFromPath(path),
+    });
+  }
+  return entries;
+}
+
+function workspaceRelativeFuzzyPath(root: string, file: { root?: string; path?: string; file_name?: string }): string {
+  const rawPath = (file.path || file.file_name || "").replace(/\\/g, "/").trim();
+  if (!rawPath) return "";
+  const normalizedRoot = (file.root || root).replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normalizedRoot && rawPath === normalizedRoot) return file.file_name || "";
+  if (normalizedRoot && rawPath.startsWith(`${normalizedRoot}/`)) {
+    return rawPath.slice(normalizedRoot.length + 1).replace(/^\/+/, "");
+  }
+  return rawPath.replace(/^\/+/, "");
+}
+
+function basenameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const slash = normalized.lastIndexOf("/");
+  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
 }
 
 function turnFeedbackUploadClassification(event: TurnRatingEvent): string {
@@ -481,6 +581,7 @@ function turnFeedbackUploadTags(event: TurnRatingEvent): Record<string, string> 
 
 const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
 const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;
+const LOCAL_SIDE_PANEL_HOST_ID = "local";
 
 function migrateSubscriptionModelSelection(value: string | null): string | null {
   const decoded = decodeSelection(value);
@@ -722,7 +823,9 @@ export function HiCodexApp() {
     setRightRailPinnedState(isPinned);
     saveRightRailPinned(rightRailPreferenceStorage(), isPinned);
   }, []);
-  const [statusFooterVisible, setStatusFooterVisible] = useState(false);
+  const [rightRailPopoverOpen, setRightRailPopoverOpen] = useState(false);
+  const [composerStatusPanelOpen, setComposerStatusPanelOpen] = useState(false);
+  const [threadGoalPendingAction, setThreadGoalPendingAction] = useState<ThreadGoalBannerAction | null>(null);
   /*
    * Codex Desktop Summary Rail visibility (in
    * `local-conversation-thread-*.js`) is derived state, not
@@ -874,13 +977,21 @@ export function HiCodexApp() {
    */
   const [artifactPreviewNonce, setArtifactPreviewNonce] = useState(0);
   const setArtifactPreview = useCallback((entry: RailEntry | null) => {
-    setArtifactPreviewState(entry);
-    if (entry !== null) setArtifactPreviewNonce((value) => value + 1);
+    if (entry === null) {
+      setArtifactPreviewState(null);
+      return;
+    }
+    setArtifactPreviewState(null);
+    setArtifactPreviewNonce((value) => value + 1);
+    openArtifactPreviewTabRef.current?.(entry);
   }, []);
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
+  const [backgroundSubagentsStopAllPending, setBackgroundSubagentsStopAllPending] = useState(false);
   const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
+  const [hooksChangedNonce, setHooksChangedNonce] = useState(0);
   const [appListChangedNonce, setAppListChangedNonce] = useState(0);
+  const [hooksReviewSnapshot, setHooksReviewSnapshot] = useState<HooksReviewSnapshot | null>(null);
   const [appRegistry, setAppRegistry] = useState<AppRegistryEntry[]>([]);
   const [accountState, setAccountState] = useState<AccountState>(initialAccountState);
   const [accountRefreshNonce, setAccountRefreshNonce] = useState(0);
@@ -900,13 +1011,16 @@ export function HiCodexApp() {
   const appListChangedHandledRef = useRef(0);
   const appListRefreshMessageRef = useRef("App list changed.");
   const mcpServerStatusRefreshMessageRef = useRef("MCP startup status changed.");
+  const openArtifactPreviewTabRef = useRef<((entry: RailEntry) => void) | null>(null);
   const clientRef = useRef<CodexJsonRpcClient | null>(null);
+  const refreshOpenFileWatchTabsRef = useRef<((watchId: string) => void) | null>(null);
   const authRefreshTokenOnNextRefreshRef = useRef(false);
   const accountRefreshTokenOnNextRefreshRef = useRef(false);
   const workspaceInitialized = useRef(false);
   const hasConnectedOnceRef = useRef(false);
   const needsReconnectRecoveryRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
+  const hooksReviewRequestSeqRef = useRef(0);
   const fileSearchControllerRef = useRef<WorkspaceFuzzyFileSearchController | null>(null);
   const fileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
   const fileSearchSessionRootsKeyRef = useRef("");
@@ -942,6 +1056,13 @@ export function HiCodexApp() {
         }
         if (message.method === "skills/changed") {
           setSkillsChangedNonce((current) => current + 1);
+        }
+        if (message.method === "hook/completed") {
+          setHooksChangedNonce((current) => current + 1);
+        }
+        if (message.method === "fs/changed") {
+          const watchId = watchIdFromFsChangedNotification(message.params);
+          if (watchId) refreshOpenFileWatchTabsRef.current?.(watchId);
         }
         if (message.method === "mcpServer/startupStatus/updated") {
           mcpServerStatusRefreshMessageRef.current = "MCP startup status changed.";
@@ -1135,6 +1256,11 @@ export function HiCodexApp() {
   const itemsByThread = useMemo(() => selectItemsByThread(state), [state.threadsRuntime]);
   const activeThreadRunning = Boolean(activeTurnId) || isThreadStatusInProgress(activeThread?.status);
   const worktreeStatusCwd = activeThread?.cwd?.trim() || workspace.trim();
+  const hooksReviewCwd = activeThread ? "" : (workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "");
+  const showHooksReviewBanner = !activeThread
+    && (hooksReviewSnapshot?.count ?? 0) > 0
+    && input.trim().length === 0
+    && composerAttachments.length === 0;
 
   /*
    * Codex Desktop turn-diff Undo / Reapply state. Mirrors the two-useState
@@ -1231,7 +1357,24 @@ export function HiCodexApp() {
     },
     [worktreeStatusCwd],
   );
-  const activePendingRequests = useMemo(
+  const activeProgressPlan = activeThreadRuntime.turnPlan;
+  const conversation = useMemo(
+    () => projectConversation(activeItems, {
+      appRegistry,
+      isThreadRunning: activeThreadRunning,
+      mcpServerStatuses,
+      parentThreadAttachmentSourceConversationId: activeThread?.forkedFromId ?? null,
+      progressPlan: activeProgressPlan,
+    }),
+    [activeItems, activeProgressPlan, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
+  );
+  const backgroundPendingThreadIds = useMemo(
+    () => conversation.backgroundAgents
+      .map((entry) => entry.action?.kind === "thread" ? entry.action.threadId : null)
+      .filter((threadId): threadId is string => Boolean(threadId && threadId !== state.activeThreadId)),
+    [conversation.backgroundAgents, state.activeThreadId],
+  );
+  const activeThreadPendingRequests = useMemo(
     () => deriveActivePendingRequests(state.pendingRequests, {
       activeThreadId: state.activeThreadId,
       activeTurnId,
@@ -1239,6 +1382,48 @@ export function HiCodexApp() {
     }),
     [activeItems, activeTurnId, state.activeThreadId, state.pendingRequests],
   );
+  const activePendingRequests = useMemo(
+    () => deriveComposerPendingRequests(state.pendingRequests, {
+      activeThreadId: state.activeThreadId,
+      activeTurnId,
+      activeItemIds: activeItems.map((item) => item.id),
+      backgroundThreadIds: backgroundPendingThreadIds,
+      itemsByThread,
+    }),
+    [activeItems, activeTurnId, backgroundPendingThreadIds, itemsByThread, state.activeThreadId, state.pendingRequests],
+  );
+  const backgroundSubagentPendingRequests = useMemo(
+    () => deriveBackgroundPendingRequests(state.pendingRequests, {
+      activeThreadId: state.activeThreadId,
+      backgroundThreadIds: backgroundPendingThreadIds,
+      itemsByThread,
+    }),
+    [backgroundPendingThreadIds, itemsByThread, state.activeThreadId, state.pendingRequests],
+  );
+  const backgroundSubagentStopThreadIds = useMemo(
+    () => mergeBackgroundSubagentStopThreadIds(
+      activeBackgroundSubagentThreadIds(conversation.backgroundAgents, state.activeThreadId),
+      backgroundSubagentPendingRequests,
+      itemsByThread,
+    ),
+    [backgroundSubagentPendingRequests, conversation.backgroundAgents, itemsByThread, state.activeThreadId],
+  );
+  const activePendingRequestActors = useMemo(() => {
+    const labelsByThreadId = new Map<string, string>();
+    for (const entry of conversation.backgroundAgents) {
+      if (entry.action?.kind !== "thread") continue;
+      const displayName = entry.action.displayName?.trim() || entry.title.trim();
+      if (displayName) labelsByThreadId.set(entry.action.threadId, displayName);
+    }
+    const actors: Record<string, string> = {};
+    for (const request of activePendingRequests) {
+      const threadId = pendingRequestOwnerThreadId(request, { itemsByThread });
+      if (!threadId || threadId === state.activeThreadId) continue;
+      const label = labelsByThreadId.get(threadId);
+      if (label) actors[String(request.id)] = label;
+    }
+    return actors;
+  }, [activePendingRequests, conversation.backgroundAgents, itemsByThread, state.activeThreadId]);
   const latestTurnIdForHeartbeat = activeTurnId ?? activeThreadRuntime.turnOrder.at(-1) ?? null;
   const automationsModel = useMemo(() => projectAutomationsSurface({
     connected: state.connected,
@@ -1256,11 +1441,11 @@ export function HiCodexApp() {
         : latestTurnIdForHeartbeat
           ? "completed"
           : null,
-      pendingRequestType: heartbeatPendingRequestType(activePendingRequests),
+      pendingRequestType: heartbeatPendingRequestType(activeThreadPendingRequests),
       resumeState: state.connected ? "resumed" : "resuming",
     },
   }), [
-    activePendingRequests,
+    activeThreadPendingRequests,
     activeThreadRunning,
     automationsError,
     automationsLoading,
@@ -1318,7 +1503,6 @@ export function HiCodexApp() {
         });
     }
   }, [client, imageGenerationSettings, modelDraft, state.hostStatus?.codexHome, state.pendingRequests]);
-  const activeProgressPlan = activeThreadRuntime.turnPlan;
   const activeModelSupportsImageInput = useMemo(() => {
     const providerId = state.threadContextDefaults?.modelProvider ?? "";
     const modelSlug = state.threadContextDefaults?.model ?? "";
@@ -1337,16 +1521,6 @@ export function HiCodexApp() {
     isThreadRunning: activeThreadRunning,
     hasBlockingRequest: activePendingRequests.length > 0,
   });
-  const conversation = useMemo(
-    () => projectConversation(activeItems, {
-      appRegistry,
-      isThreadRunning: activeThreadRunning,
-      mcpServerStatuses,
-      parentThreadAttachmentSourceConversationId: activeThread?.forkedFromId ?? null,
-      progressPlan: activeProgressPlan,
-    }),
-    [activeItems, activeProgressPlan, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
-  );
   const branchDetails = useMemo(
     () => projectBranchDetails({
       thread: activeThread,
@@ -1724,6 +1898,117 @@ export function HiCodexApp() {
    * `selectedModelKey` here stores `${providerId}::${modelSlug}` —
    * see DEFAULT_PROVIDERS + encodeSelection in model-picker-menu.tsx.
    */
+  const modelPickerProviders = useMemo(() => {
+    const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
+      ?? DEFAULT_PROVIDERS[0];
+    const subscriptionProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
+    const activeProviderId = state.threadContextDefaults?.modelProvider?.trim() || localFallback.id;
+    const draftProviderId = modelDraft.id.trim();
+    const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
+    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSubscriptionProviderId(draftProviderId);
+    const localProviderId = useDraftForLocalProvider
+      ? draftProviderId
+      : (!activeIsSubscription ? activeProviderId : localFallback.id);
+    const localModels = normalizeModelSlugs([
+      ...modelSlugsForConfig(modelDraft),
+    ]);
+    const subscriptionModels = subscriptionProvider
+      ? normalizeModelSlugs([
+          ...subscriptionProvider.models,
+          activeIsSubscription ? state.threadContextDefaults?.model : null,
+        ])
+      : [];
+    return [
+      {
+        ...localFallback,
+        id: localProviderId,
+        label: useDraftForLocalProvider && modelDraft.name.trim()
+          ? modelDraft.name.trim()
+          : localFallback.label,
+        host: useDraftForLocalProvider
+          ? hostFromBaseUrl(modelDraft.baseUrl, localFallback.host)
+          : localFallback.host,
+        baseUrl: useDraftForLocalProvider && modelDraft.baseUrl.trim()
+          ? modelDraft.baseUrl.trim()
+          : localFallback.baseUrl,
+        models: localModels.length > 0 ? localModels : localFallback.models,
+      },
+      ...(subscriptionProvider
+        ? [{
+            ...subscriptionProvider,
+            models: subscriptionModels.length > 0 ? subscriptionModels : subscriptionProvider.models,
+          }]
+        : []),
+    ];
+  }, [
+    modelDraft.baseUrl,
+    modelDraft.id,
+    modelDraft.model,
+    modelDraft.models,
+    modelDraft.name,
+    state.threadContextDefaults?.model,
+    state.threadContextDefaults?.modelProvider,
+  ]);
+
+  /*
+   * Set of providers whose auth is verified — drives "not signed in" / "no key"
+   * picker warnings and the inline Sign-in button.
+   *
+   * Logic:
+   *   - The active config.toml provider is always considered ready (the user
+   *     is presumably already using it, so its credential layer works).
+   *   - For ChatGPT subscription providers: ready when `getAuthStatus` returns
+   *     any non-null auth method, or when the isolated HiCodex auth.json has a
+   *     ChatGPT/API-key credential. `getAuthStatus` is scoped to the active
+   *     provider, so a local API provider with `requires_openai_auth = false`
+   *     would otherwise make the subscription provider look signed out.
+   */
+  const readyProviders = useMemo(() => {
+    const ready = new Set<string>();
+    const active = state.threadContextDefaults?.modelProvider ?? "";
+    // `getAuthStatus` is provider-scoped: local gateways with
+    // `requires_openai_auth = false` report no OpenAI auth even when ChatGPT
+    // OAuth is complete. Keep the subscription provider ready when either the
+    // live RPC reports an auth method or the isolated Codex auth.json contains
+    // a ChatGPT/API-key credential.
+    if (active && !isSubscriptionProviderId(active)) {
+      ready.add(active);
+    }
+    if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredentialSummary(codexAuthSummary)) {
+      ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
+      ready.add(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
+    }
+    return ready;
+  }, [codexAuthSummary, state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
+
+  /*
+   * If the intended model's provider is not signed in, resolve to a ready
+   * provider+model so a new chat actually sends instead of spinning on
+   * "Reconnecting…". The intended pick stays in selectedModelKey / config, so
+   * signing in restores it automatically. `noReadyProvider` → the composer
+   * blocks send and prompts sign-in / configuration instead.
+   */
+  const effectiveModelSelection = useMemo(() => {
+    const intendedKey = selectedModelKey
+      ?? (state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
+        ? encodeSelection(
+            normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider),
+            state.threadContextDefaults.model,
+          )
+        : null);
+    return resolveEffectiveModelSelection({
+      intended: decodeSelection(intendedKey),
+      providers: modelPickerProviders,
+      readyProviders,
+    });
+  }, [
+    modelPickerProviders,
+    readyProviders,
+    selectedModelKey,
+    state.threadContextDefaults?.model,
+    state.threadContextDefaults?.modelProvider,
+  ]);
+
   const effectiveThreadContextDefaults = useMemo(() => {
     const picked = decodeSelection(selectedModelKey);
     let modelContext = picked ? {
@@ -1731,6 +2016,20 @@ export function HiCodexApp() {
       model: picked.model,
       modelProvider: normalizeSubscriptionProviderId(picked.providerId),
     } : state.threadContextDefaults;
+    /*
+     * Apply the not-signed-in fallback: when the intended provider is not ready
+     * but another is, send to the ready (provider, model) instead. Skip when
+     * nothing is ready (the composer surfaces a sign-in prompt and disables send).
+     */
+    if (!effectiveModelSelection.noReadyProvider
+      && (effectiveModelSelection.providerId !== (modelContext?.modelProvider ?? "")
+        || effectiveModelSelection.model !== (modelContext?.model ?? ""))) {
+      modelContext = {
+        ...(modelContext ?? {}),
+        model: effectiveModelSelection.model,
+        modelProvider: effectiveModelSelection.providerId,
+      };
+    }
     /*
      * CODEX-REF: composer-*.js — m.reasoningEffort 由 setModelAndReasoningEffort
      * 写入 modelSettings，渲染时取这个值给 picker 和送给后端。HiCodex 把 user 切换
@@ -1746,7 +2045,78 @@ export function HiCodexApp() {
       ? workspaceDeveloperInstructions.value
       : null;
     return withWorkspaceDeveloperInstructions(modelContext, workspaceInstructions);
-  }, [reasoningEffortOverride, selectedModelKey, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
+  }, [effectiveModelSelection, reasoningEffortOverride, selectedModelKey, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
+  const composerSelectedModel = effectiveThreadContextDefaults?.model
+    ?? normalizeModelConfig(modelDraft).model
+    ?? null;
+  const composerQuotaBanner = useMemo(
+    () => projectComposerQuotaBanner(
+      accountState.rateLimitsByLimitId,
+      accountState.rateLimits,
+      composerSelectedModel,
+    ),
+    [accountState.rateLimits, accountState.rateLimitsByLimitId, composerSelectedModel],
+  );
+
+  const updateActiveThreadGoal = useCallback(async (
+    patch: { objective?: string; status?: ThreadGoalStatus },
+    pendingAction: ThreadGoalBannerAction,
+  ) => {
+    const threadId = state.activeThreadId;
+    if (!threadId) {
+      dispatch({ type: "log", text: "Select or start a thread before editing a goal.", level: "warn" });
+      return;
+    }
+    if (!(await ensureConnected())) return;
+    setThreadGoalPendingAction(pendingAction);
+    try {
+      const response = await client.request<ThreadGoalSetResponse>("thread/goal/set", {
+        threadId,
+        ...patch,
+      }, 120_000);
+      const message: JsonRpcNotification = {
+        method: "thread/goal/updated",
+        params: { threadId, turnId: null, goal: response.goal },
+      };
+      dispatch({ type: "notification", message });
+    } catch (error) {
+      dispatch({ type: "log", text: `thread goal update failed: ${formatError(error)}`, level: "error" });
+    } finally {
+      setThreadGoalPendingAction(null);
+    }
+  }, [client, ensureConnected, state.activeThreadId]);
+
+  const editActiveThreadGoal = useCallback((objective: string) => (
+    updateActiveThreadGoal({ objective }, "edit")
+  ), [updateActiveThreadGoal]);
+
+  const setActiveThreadGoalStatus = useCallback((status: ThreadGoalStatus) => (
+    updateActiveThreadGoal({ status }, "status")
+  ), [updateActiveThreadGoal]);
+
+  const clearActiveThreadGoal = useCallback(async () => {
+    const threadId = state.activeThreadId;
+    if (!threadId) {
+      dispatch({ type: "log", text: "Select or start a thread before clearing a goal.", level: "warn" });
+      return;
+    }
+    if (!(await ensureConnected())) return;
+    setThreadGoalPendingAction("clear");
+    try {
+      const response = await client.request<ThreadGoalClearResponse>("thread/goal/clear", { threadId }, 120_000);
+      if (response.cleared) {
+        const message: JsonRpcNotification = {
+          method: "thread/goal/cleared",
+          params: { threadId },
+        };
+        dispatch({ type: "notification", message });
+      }
+    } catch (error) {
+      dispatch({ type: "log", text: `thread goal clear failed: ${formatError(error)}`, level: "error" });
+    } finally {
+      setThreadGoalPendingAction(null);
+    }
+  }, [client, ensureConnected, state.activeThreadId]);
 
   useEffect(() => {
     if (!state.connected) {
@@ -2046,88 +2416,9 @@ export function HiCodexApp() {
     return loadCollaborationModes();
   }, [collaborationModes, loadCollaborationModes]);
 
-  const modelPickerProviders = useMemo(() => {
-    const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
-      ?? DEFAULT_PROVIDERS[0];
-    const subscriptionProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
-    const activeProviderId = state.threadContextDefaults?.modelProvider?.trim() || localFallback.id;
-    const draftProviderId = modelDraft.id.trim();
-    const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
-    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSubscriptionProviderId(draftProviderId);
-    const localProviderId = useDraftForLocalProvider
-      ? draftProviderId
-      : (!activeIsSubscription ? activeProviderId : localFallback.id);
-    const localModels = normalizeModelSlugs([
-      ...modelSlugsForConfig(modelDraft),
-    ]);
-    const subscriptionModels = subscriptionProvider
-      ? normalizeModelSlugs([
-          ...subscriptionProvider.models,
-          activeIsSubscription ? state.threadContextDefaults?.model : null,
-        ])
-      : [];
-    return [
-      {
-        ...localFallback,
-        id: localProviderId,
-        label: useDraftForLocalProvider && modelDraft.name.trim()
-          ? modelDraft.name.trim()
-          : localFallback.label,
-        host: useDraftForLocalProvider
-          ? hostFromBaseUrl(modelDraft.baseUrl, localFallback.host)
-          : localFallback.host,
-        baseUrl: useDraftForLocalProvider && modelDraft.baseUrl.trim()
-          ? modelDraft.baseUrl.trim()
-          : localFallback.baseUrl,
-        models: localModels.length > 0 ? localModels : localFallback.models,
-      },
-      ...(subscriptionProvider
-        ? [{
-            ...subscriptionProvider,
-            models: subscriptionModels.length > 0 ? subscriptionModels : subscriptionProvider.models,
-          }]
-        : []),
-    ];
-  }, [
-    modelDraft.baseUrl,
-    modelDraft.id,
-    modelDraft.model,
-    modelDraft.models,
-    modelDraft.name,
-    state.threadContextDefaults?.model,
-    state.threadContextDefaults?.modelProvider,
-  ]);
-
-  /*
-   * Set of providers whose auth is verified — drives "not signed in" / "no key"
-   * picker warnings and the inline Sign-in button.
-   *
-   * Logic:
-   *   - The active config.toml provider is always considered ready (the user
-   *     is presumably already using it, so its credential layer works).
-   *   - For ChatGPT subscription providers: ready when `getAuthStatus` returns
-   *     any non-null auth method, or when the isolated HiCodex auth.json has a
-   *     ChatGPT/API-key credential. `getAuthStatus` is scoped to the active
-   *     provider, so a local API provider with `requires_openai_auth = false`
-   *     would otherwise make the subscription provider look signed out.
-   */
-  const readyProviders = useMemo(() => {
-    const ready = new Set<string>();
-    const active = state.threadContextDefaults?.modelProvider ?? "";
-    // `getAuthStatus` is provider-scoped: local gateways with
-    // `requires_openai_auth = false` report no OpenAI auth even when ChatGPT
-    // OAuth is complete. Keep the subscription provider ready when either the
-    // live RPC reports an auth method or the isolated Codex auth.json contains
-    // a ChatGPT/API-key credential.
-    if (active && !isSubscriptionProviderId(active)) {
-      ready.add(active);
-    }
-    if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredentialSummary(codexAuthSummary)) {
-      ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
-      ready.add(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
-    }
-    return ready;
-  }, [codexAuthSummary, state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
+  // modelPickerProviders, readyProviders + effectiveModelSelection are defined
+  // above effectiveThreadContextDefaults (hoisted so the not-signed-in fallback
+  // can resolve before the thread-context defaults / composer state are built).
 
   const {
     archiveSelectedThread,
@@ -2324,26 +2615,9 @@ export function HiCodexApp() {
     hasConversation: conversation.units.length > 0,
     hasBackgroundAgentsPanel: backgroundAgentPanel != null,
   }, formatUiMessage);
-  // codex: local-conversation-thread-*.js — status footer payload.
-  // Reads the `tokenUsage` slice the reducer writes from
-  // `thread/tokenUsage/updated`. Desktop keeps this hidden by default behind
-  // the `/status` "Toggle context usage" command (`local-conversation-status-
-  // section-visible`); HiCodex mirrors that local toggle instead of showing
-  // the status row whenever token counters exist.
+  // codex: composer-*.js `/status` panel reads the context usage slice
+  // populated by `thread/tokenUsage/updated`.
   const tokenUsageSnapshot = activeThreadRuntime.tokenUsage ?? null;
-  const tokenSpeedSnapshot = activeThreadRuntime.tokenSpeed ?? null;
-  const rightRailStatusFooter = useMemo(
-    () => (statusFooterVisible && tokenUsageSnapshot
-      ? {
-          tokensUsed: tokenUsageSnapshot.usedTokens,
-          contextWindow: tokenUsageSnapshot.contextWindow ?? undefined,
-          tokensPerSecond: activeThreadRunning && tokenSpeedSnapshot?.turnId === activeTurnId
-            ? tokenSpeedSnapshot.tokensPerSecond
-            : 0,
-        }
-      : undefined),
-    [activeThreadRunning, activeTurnId, statusFooterVisible, tokenSpeedSnapshot, tokenUsageSnapshot],
-  );
   const rightRailSections = useMemo(
     () => projectRightRailSections({
       progress: conversation.progress,
@@ -2361,17 +2635,11 @@ export function HiCodexApp() {
       backgroundAgents: conversation.backgroundAgents,
       backgroundTerminals: conversation.backgroundTerminals,
       sources: conversation.sources,
-      // codex: local-conversation-thread-*.js — passed through for
-      // typing/documentation. `projectRightRailSections` does not render the
-      // footer itself; `<RightRail statusFooter=… />` below consumes the
-      // same value.
-      ...(rightRailStatusFooter ? { statusFooter: rightRailStatusFooter } : {}),
     }),
     [
       activeThreadAutomation,
       branchDetails,
       conversation,
-      rightRailStatusFooter,
       sideChatRailEntries,
     ],
   );
@@ -2413,12 +2681,27 @@ export function HiCodexApp() {
    * otherwise paint the rail with branchDetails the moment a user opens
    * the app in a git workspace).
    */
+  const rightRailMode = rightRailDisplayMode(rightRailLayoutWidthPx);
   const showRightRail = rightRailPinned
     && Boolean(activeThread)
     && rightRailSections.length > 0
-    && rightRailShouldRender(rightRailLayoutWidthPx)
+    && rightRailMode !== "overlay"
     && !hasFilePreviewSelection;
-  const rightRailMode = rightRailPinned ? rightRailDisplayMode(rightRailLayoutWidthPx) : "overlay";
+  const showRightRailPopover = rightRailPopoverOpen
+    && Boolean(activeThread)
+    && rightRailSections.length > 0
+    && rightRailMode === "overlay"
+    && !hasFilePreviewSelection;
+  useEffect(() => {
+    if (
+      rightRailMode !== "overlay"
+      || !activeThread
+      || rightRailSections.length === 0
+      || hasFilePreviewSelection
+    ) {
+      setRightRailPopoverOpen(false);
+    }
+  }, [activeThread, hasFilePreviewSelection, rightRailMode, rightRailSections.length]);
   const mainLayoutStyle = {
     "--hc-right-panel-offset": `${Math.round(sidePanelRailOffsetPx)}px`,
   } as CSSProperties;
@@ -2783,6 +3066,19 @@ export function HiCodexApp() {
     })();
   }, [activeThread?.cwd, ensureConnected, getFileSearchSession, state.hostStatus?.defaultCwd, workspace]);
 
+  const searchWorkspaceFilesForFilesTab = useCallback(async (
+    query: string,
+    root: string,
+  ): Promise<WorkspaceDirEntry[]> => {
+    if (!(await ensureConnected())) {
+      throw new Error("Runtime is offline.");
+    }
+    const controller = fileSearchControllerRef.current;
+    if (!controller) throw new Error("Fuzzy file search is unavailable.");
+    const result = await controller.searchOnce({ roots: [root], query });
+    return fuzzyFileResultsToWorkspaceEntries(root, result.files ?? []);
+  }, [ensureConnected]);
+
   const searchCommandMenuFromPanel = useCallback((query: string) => {
     const trimmedQuery = query.trim();
     const baseEntries = commandMenuEntries();
@@ -2843,7 +3139,7 @@ export function HiCodexApp() {
 
   const loadSettingsPanel = useCallback(async (
     panel: SettingsPanelId,
-    options: { forceReload?: boolean } = {},
+    options: { forceReload?: boolean; hooksFocus?: HooksSettingsFocus | null } = {},
   ) => {
     setActiveSettingsPanel(panel);
     setCommandPanel(null);
@@ -2852,6 +3148,7 @@ export function HiCodexApp() {
       client,
       ensureConnected,
       forceReload: options.forceReload === true,
+      hooksFocus: options.hooksFocus ?? null,
       includeImageDynamicTool,
       notificationPreferences,
       openSettingsPanelContent,
@@ -2885,6 +3182,63 @@ export function HiCodexApp() {
     if (!activeSettingsPanel) return;
     void loadSettingsPanel(activeSettingsPanel, { forceReload: true });
   }, [activeSettingsPanel, loadSettingsPanel]);
+
+  useEffect(() => {
+    const cwd = hooksReviewCwd.trim();
+    if (!state.connected || !hookReviewProjectRoot(cwd)) {
+      setHooksReviewSnapshot(null);
+      return;
+    }
+    let disposed = false;
+    const requestSeq = hooksReviewRequestSeqRef.current + 1;
+    hooksReviewRequestSeqRef.current = requestSeq;
+    void client.request<unknown>("hooks/list", { cwds: [cwd] }, 120_000)
+      .then((response) => {
+        if (disposed || hooksReviewRequestSeqRef.current !== requestSeq) return;
+        setHooksReviewSnapshot(projectHooksNeedingReview(response, cwd));
+      })
+      .catch((error) => {
+        if (disposed || hooksReviewRequestSeqRef.current !== requestSeq) return;
+        setHooksReviewSnapshot(null);
+        dispatch({ type: "log", text: `hooks review refresh failed: ${formatError(error)}`, level: "warn" });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [client, hooksChangedNonce, hooksReviewCwd, state.connected]);
+
+  const trustAllHooks = useCallback(async () => {
+    const snapshot = hooksReviewSnapshot;
+    if (!snapshot || snapshot.count <= 0) return;
+    if (!(await ensureConnected())) {
+      dispatch({ type: "log", text: "Runtime is offline.", level: "warn" });
+      return;
+    }
+    try {
+      const target = await readConfigWriteTarget(client, {
+        cwd: snapshot.cwd,
+        keyPaths: ["hooks.state"],
+        scope: "Hooks trust",
+      });
+      await client.request("config/batchWrite", buildConfigBatchWriteParams({
+        edits: buildTrustAllHooksEdits(snapshot.hooks),
+        target,
+        reloadUserConfig: true,
+      }), 120_000);
+      dispatch({ type: "log", text: "Trusted hooks", level: "info" });
+      const response = await client.request<unknown>("hooks/list", { cwds: [snapshot.cwd] }, 120_000);
+      setHooksReviewSnapshot(projectHooksNeedingReview(response, snapshot.cwd));
+    } catch (error) {
+      dispatch({ type: "log", text: `hooks trust failed: ${formatConfigWriteError(error, "Hooks trust")}`, level: "warn" });
+    }
+  }, [client, ensureConnected, hooksReviewSnapshot]);
+
+  const reviewHooks = useCallback(() => {
+    void loadSettingsPanel("hooks", {
+      forceReload: true,
+      hooksFocus: hooksReviewSnapshot?.focus ?? null,
+    });
+  }, [hooksReviewSnapshot?.focus, loadSettingsPanel]);
 
   /*
    * codex: app-shell-tab-controller-*.js `x({ panelId: 'right', panelOpen$, setPanelOpen })`
@@ -2923,6 +3277,76 @@ export function HiCodexApp() {
   // (which expects `toggleWorkspaceFilesPanel` as a dep above its use) while
   // avoiding a TDZ on the later-declared destructured value.
   const openFilesTabRef = useRef<(() => void) | null>(null);
+  const openFileWatchTargetsRef = useRef(new Map<string, OpenFileWatchTarget>());
+  useEffect(() => {
+    const refreshTabsForWatch = (watchId: string) => {
+      const target = openFileWatchTargetsRef.current.get(watchId);
+      if (!target) return;
+      const snapshot = sidePanel.controller.getSnapshot();
+      for (const tabId of target.tabIds) {
+        const tab = snapshot.tabsById[tabId];
+        if (!tab) continue;
+        sidePanel.controller.updateTab(tabId, {
+          props: {
+            ...tab.props,
+            refreshKey: nextOpenFileWatchRefreshKey(tab.props.refreshKey),
+          },
+        });
+      }
+    };
+    refreshOpenFileWatchTabsRef.current = refreshTabsForWatch;
+    return () => {
+      if (refreshOpenFileWatchTabsRef.current === refreshTabsForWatch) {
+        refreshOpenFileWatchTabsRef.current = null;
+      }
+    };
+  }, [sidePanel.controller]);
+
+  useEffect(() => {
+    if (!state.connected) {
+      openFileWatchTargetsRef.current = new Map();
+      return;
+    }
+
+    const nextTargets = new Map(
+      openFileWatchTargetsFromSidePanelTabs(sidePanel.tabs)
+        .map((target) => [target.watchId, target] as const),
+    );
+    const previousTargets = openFileWatchTargetsRef.current;
+
+    for (const watchId of previousTargets.keys()) {
+      if (nextTargets.has(watchId)) continue;
+      void Promise.resolve()
+        .then(() => client.request("fs/unwatch", { watchId }, 10_000))
+        .catch((error: unknown) => {
+          dispatch({ type: "log", text: `fs/unwatch ${watchId} failed: ${formatError(error)}`, level: "warn" });
+        });
+    }
+
+    for (const target of nextTargets.values()) {
+      if (previousTargets.has(target.watchId)) continue;
+      void Promise.resolve()
+        .then(() => client.request("fs/watch", { watchId: target.watchId, path: target.watchPath }, 10_000))
+        .catch((error: unknown) => {
+          dispatch({ type: "log", text: `fs/watch ${target.watchPath} failed: ${formatError(error)}`, level: "warn" });
+        });
+    }
+
+    openFileWatchTargetsRef.current = nextTargets;
+  }, [client, sidePanel.tabs, state.connected]);
+
+  useEffect(() => {
+    return () => {
+      const watchIds = [...openFileWatchTargetsRef.current.keys()];
+      openFileWatchTargetsRef.current = new Map();
+      for (const watchId of watchIds) {
+        void Promise.resolve()
+          .then(() => client.request("fs/unwatch", { watchId }, 10_000))
+          .catch(() => undefined);
+      }
+    };
+  }, [client]);
+
   const toggleWorkspaceFilesPanel = useCallback(() => {
     const snapshot = sidePanel.controller.getSnapshot();
     const filesTabExists = snapshot.tabsById[FILES_TAB_ID] != null;
@@ -3007,6 +3431,10 @@ export function HiCodexApp() {
       () => { void createWorkbenchThread(); },
     );
     registerCommand(
+      COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.openFolder)!,
+      () => { void useExistingWorkspaceFolder(); },
+    );
+    registerCommand(
       COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.previousThread)!,
       () => {
         if (previousThreadId) selectThreadById(previousThreadId);
@@ -3039,6 +3467,7 @@ export function HiCodexApp() {
       unregisterCommand(COMMAND_IDS.searchChats);
       unregisterCommand(COMMAND_IDS.searchFiles);
       unregisterCommand(COMMAND_IDS.newThread);
+      unregisterCommand(COMMAND_IDS.openFolder);
       unregisterCommand(COMMAND_IDS.previousThread);
       unregisterCommand(COMMAND_IDS.nextThread);
       unregisterCommand(COMMAND_IDS.settings);
@@ -3056,6 +3485,7 @@ export function HiCodexApp() {
     selectThreadById,
     toggleSidebar,
     toggleWorkspaceFilesPanel,
+    useExistingWorkspaceFolder,
   ]);
 
   // codex: use-hotkey-*.js — one useHotkey call per ported command. The
@@ -3067,6 +3497,12 @@ export function HiCodexApp() {
   const openCommandMenuAccelerators = useMemo(() => {
     const all = commandAccelerators(COMMAND_IDS.openCommandMenu);
     return all.length > 0 ? all : ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"];
+  }, []);
+  // codex: electron-menu-shortcuts-*.js#newThread — Desktop binds both
+  // CmdOrCtrl+N and CmdOrCtrl+Shift+O to New Chat.
+  const newThreadAccelerators = useMemo(() => {
+    const all = commandAccelerators(COMMAND_IDS.newThread);
+    return all.length > 0 ? all : ["CmdOrCtrl+N", "CmdOrCtrl+Shift+O"];
   }, []);
   useHotkey({
     accelerator: openCommandMenuAccelerators,
@@ -3111,10 +3547,17 @@ export function HiCodexApp() {
     },
   });
   useHotkey({
-    accelerator: commandAccelerator(COMMAND_IDS.newThread) ?? "CmdOrCtrl+N",
+    accelerator: newThreadAccelerators,
     onKeyDown: (event) => {
       event.preventDefault();
       getCommand(COMMAND_IDS.newThread)?.handler?.(event);
+    },
+  });
+  useHotkey({
+    accelerator: commandAccelerator(COMMAND_IDS.openFolder) ?? "CmdOrCtrl+O",
+    onKeyDown: (event) => {
+      event.preventDefault();
+      getCommand(COMMAND_IDS.openFolder)?.handler?.(event);
     },
   });
   useHotkey({
@@ -3148,6 +3591,9 @@ export function HiCodexApp() {
         case "newChat":
           void createWorkbenchThread();
           return;
+        case "openFolder":
+          void useExistingWorkspaceFolder();
+          return;
         case "search":
           openCommandMenu();
           return;
@@ -3175,7 +3621,7 @@ export function HiCodexApp() {
       cancelled = true;
       unlisten?.();
     };
-  }, [createWorkbenchThread, loadSettingsPanel, openCommandMenu, openDeepLinkUrl]);
+  }, [createWorkbenchThread, loadSettingsPanel, openCommandMenu, openDeepLinkUrl, useExistingWorkspaceFolder]);
 
   // codex threadHeader.openInNewWindow — a window opened via host_open_thread_window
   // injects `window.__HICODEX_INITIAL_THREAD__`; once connected, route to that thread
@@ -3588,24 +4034,11 @@ export function HiCodexApp() {
       COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyWorkingDirectory)!,
       () => copyWorkingDirectory(),
     );
-    // codex: TODO — Codex Desktop's copyConversationPath copies the
-    // rollout JSONL path. HiCodex's `Thread.path` is sometimes absent
-    // (sqlite-cached snapshots); if available we copy it, otherwise we
-    // log so the binding still resolves.
+    // codex: local-conversation-thread-*.js registers copy-conversation-path
+    // to the same copyWorkingDirectory(cwd) action as copy-working-directory.
     registerCommand(
       COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyConversationPath)!,
-      () => {
-        const path = activeThread?.path?.trim();
-        if (!path) {
-          dispatch({
-            type: "log",
-            text: "copyConversationPath not yet implemented in HiCodex (rollout path unavailable)",
-            level: "info",
-          });
-          return;
-        }
-        void copyTextToClipboard("conversation path", path);
-      },
+      () => copyWorkingDirectory(),
     );
     registerCommand(
       COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.copyDeeplink)!,
@@ -3701,6 +4134,7 @@ export function HiCodexApp() {
     openRenameThreadDialog,
     pinnedThreadIds,
     toggleThreadPinned,
+    workspace,
   ]);
 
   // codex: use-hotkey-*.js — one useHotkey call per ported command
@@ -3845,14 +4279,12 @@ export function HiCodexApp() {
 
   const {
     copyFileReferenceContents,
-    openAssistantArtifact,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
     openRailUrl,
-    previewConversationFileReference,
     previewPathContext,
     previewRailArtifact,
-    previewRailFileReference,
+    resolveFileSelection,
     revealFileReference,
   } = useArtifactPreviewActions({
     activeThreadCwd: activeThread?.cwd,
@@ -3862,6 +4294,58 @@ export function HiCodexApp() {
     setFileReference,
     workspace,
   });
+  const openFileReferenceSidePanelTab = useCallback((
+    reference: { path: string; lineStart: number; lineEnd?: number; hostId?: string | null },
+    options: {
+      isPreview: boolean;
+      hostId?: string | null;
+      tabId?: string;
+      title?: string;
+      workspaceRoot?: string | null;
+      cwd?: string | null;
+    },
+  ) => {
+    const resolvedReference = resolveFileSelection(reference);
+    if (!resolvedReference) return;
+    const hostId = resolvedReference.hostId ?? options.hostId ?? LOCAL_SIDE_PANEL_HOST_ID;
+    const tabReference = { ...resolvedReference, hostId };
+    const tabId = options.tabId ?? fileReferenceSidePanelTabId(resolvedReference.path, hostId);
+    sidePanel.controller.openTab({
+      id: tabId,
+      Component: FileReferencePreviewTab,
+      title: options.title ?? basenameFromPath(resolvedReference.path),
+      tooltip: resolvedReference.path,
+      icon: <FileText size={14} aria-hidden="true" />,
+      isPreview: options.isPreview,
+      kind: fileReferenceSidePanelTabKind(hostId),
+      contextMenuItems: fileReferenceSidePanelContextMenuItems({
+        onOpenFile: () => openFileReferenceExternal(tabReference),
+        onCopyPath: () => {
+          void globalThis.navigator?.clipboard?.writeText(resolvedReference.path);
+        },
+        onCopyContents: () => copyFileReferenceContents(tabReference),
+        onRevealPath: () => revealFileReference(tabReference),
+        revealLabel: osRevealLabel(),
+      }),
+      props: {
+        path: resolvedReference.path,
+        lineStart: resolvedReference.lineStart,
+        lineEnd: resolvedReference.lineEnd,
+        hostId,
+        refreshKey: 0,
+        workspaceRoot: options.workspaceRoot ?? previewPathContext.workspaceRoot,
+        cwd: options.cwd ?? previewPathContext.cwd,
+      },
+    });
+  }, [
+    copyFileReferenceContents,
+    openFileReferenceExternal,
+    previewPathContext.cwd,
+    previewPathContext.workspaceRoot,
+    revealFileReference,
+    resolveFileSelection,
+    sidePanel.controller,
+  ]);
   const memoryCitationRoot = useMemo(() => {
     const codexHome = state.hostStatus?.codexHome?.trim();
     return codexHome ? `${codexHome.replace(/[\\/]+$/, "")}/memories` : null;
@@ -3890,14 +4374,40 @@ export function HiCodexApp() {
         icon: <FolderOpen size={14} aria-hidden="true" />,
         props: {
           workspaceRoot: worktreeStatusCwd,
-          onSelectFile: (relPath: string) => {
+          onSelectFile: (relPath: string, _options: { isPreview: boolean }) => {
             const root = worktreeStatusCwd.replace(/\/$/, "");
-            openFileReferenceExternal({ path: `${root}/${relPath}`, lineStart: 1, lineEnd: 1 });
+            const reference = { path: `${root}/${relPath}`, lineStart: 1, lineEnd: 1 };
+            openFileReferenceSidePanelTab(reference, {
+              // codex: review-file-source-tab-*.js `ia(...)` forces pinned
+              // when selecting from the empty workspace-browser tab (`t == null`).
+              isPreview: false,
+              workspaceRoot: root,
+              cwd: root,
+            });
+            sidePanel.controller.closeTab(FILES_TAB_ID);
           },
+          onAddFileToChat: (relPath: string) => {
+            const root = worktreeStatusCwd.replace(/\/$/, "");
+            const path = `${root}/${relPath}`;
+            setComposerAttachments((current) =>
+              mergeComposerAttachments(current, [{
+                type: "mention",
+                name: basenameFromPath(relPath),
+                path,
+              }]),
+            );
+          },
+          searchWorkspaceFiles: searchWorkspaceFilesForFilesTab,
         },
       });
     };
-  }, [sidePanel, worktreeStatusCwd, openFileReferenceExternal]);
+  }, [
+    sidePanel,
+    worktreeStatusCwd,
+    openFileReferenceSidePanelTab,
+    searchWorkspaceFilesForFilesTab,
+    setComposerAttachments,
+  ]);
 
   /*
    * codex: thread-app-shell-chrome-*.js landing-page action
@@ -3922,33 +4432,104 @@ export function HiCodexApp() {
     return actions;
   }, [worktreeStatusCwd]);
 
-  // CODEX-REF: app-main-*.js — file/source/artifact open path: any
-  // file/source/artifact open flips the right panel visibility atom. In Codex
-  // Desktop opening a file/source/artifact tab triggers
-  // `setRightPanelOpen(true)`, which the Summary Rail visibility predicate
-  // turns into `isHiddenByRightPanel = true` — the Summary Rail auto-hides.
-  // HiCodex's RightPanel analogue is the file-preview side panel; the auto-
-  // hide rule is encoded in `showRightRail` above (`!hasFilePreviewSelection`),
-  // so the preview-open handlers no longer need to manually toggle the rail.
-  // The wrappers stay as a forwarding layer for symmetry with how Codex
-  // funnels these through the RightPanel atom dispatcher.
-  const previewConversationFileReferenceAndOpenRail = useCallback<
-    typeof previewConversationFileReference
-  >((reference) => {
-    return previewConversationFileReference(reference);
-  }, [previewConversationFileReference]);
+  // CODEX-REF: local-conversation-thread-*.js + review-file-source-tab-*.js —
+  // file/source opens route through the AppShell side panel tab controller,
+  // using preview tabs for inline conversation citations and rail source rows.
+  const previewConversationFileReferenceAndOpenRail = useCallback((reference: {
+    path: string;
+    lineStart: number;
+    lineEnd?: number;
+  }) => {
+    openFileReferenceSidePanelTab(reference, { isPreview: true });
+  }, [openFileReferenceSidePanelTab]);
   const previewRailArtifactAndOpenRail = useCallback<typeof previewRailArtifact>((entry) => {
     return previewRailArtifact(entry);
   }, [previewRailArtifact]);
-  const previewRailFileReferenceAndOpenRail = useCallback<typeof previewRailFileReference>(
-    (reference) => {
-      return previewRailFileReference(reference);
-    },
-    [previewRailFileReference],
-  );
+  const previewRailFileReferenceAndOpenRail = useCallback((reference: RailEntryReference) => {
+    openFileReferenceSidePanelTab(reference, { isPreview: true });
+  }, [openFileReferenceSidePanelTab]);
   const openRailUrlAndOpenRail = useCallback<typeof openRailUrl>((url) => {
     return openRailUrl(url);
   }, [openRailUrl]);
+  const openAssistantArtifactInSidePanel = useCallback((entry: RailEntry) => {
+    if (shouldOpenArtifactPreview(entry)) {
+      previewRailArtifactAndOpenRail(entry);
+      return;
+    }
+    if (entry.reference) {
+      previewRailFileReferenceAndOpenRail(entry.reference);
+      return;
+    }
+    if (entry.action?.kind === "url") {
+      openRailUrlAndOpenRail(entry.action.url);
+      return;
+    }
+    previewRailArtifactAndOpenRail(entry);
+  }, [
+    openRailUrlAndOpenRail,
+    previewRailArtifactAndOpenRail,
+    previewRailFileReferenceAndOpenRail,
+  ]);
+  const revealAssistantEndResource = useCallback((entry: RailEntry) => {
+    const reference = entry.action?.kind === "file" ? entry.action.reference : entry.reference;
+    if (!reference) return;
+    revealFileReference(reference);
+  }, [revealFileReference]);
+
+  useEffect(() => {
+    openArtifactPreviewTabRef.current = (entry: RailEntry) => {
+      const preview = projectArtifactPreview(entry);
+      const hostId = preview.reference?.hostId ?? LOCAL_SIDE_PANEL_HOST_ID;
+      const tabId = artifactPreviewTabId(entry, hostId);
+      const openArtifactSourceInPlace = (reference: RailEntryReference) => {
+        openFileReferenceSidePanelTab(reference, {
+          // codex: artifact-tab-content.electron-*.js View source calls the
+          // source-tab opener with the current artifact `tabId`; the tab
+          // controller updates that id in place and defaults preview=false.
+          isPreview: false,
+          hostId,
+          tabId,
+          title: preview.title,
+          workspaceRoot: previewPathContext.workspaceRoot,
+          cwd: previewPathContext.cwd,
+        });
+      };
+      sidePanel.controller.openTab({
+        id: tabId,
+        Component: ArtifactPreviewPanel,
+        title: preview.title,
+        tooltip: preview.title,
+        icon: <FileText size={14} aria-hidden="true" />,
+        isPreview: true,
+        kind: preview.reference ? fileReferenceSidePanelTabKind(hostId) : undefined,
+        props: {
+          entry,
+          hostId,
+          ...(preview.reference ? {
+            path: preview.reference.path,
+            lineStart: preview.reference.lineStart,
+            lineEnd: preview.reference.lineEnd,
+          } : {}),
+          refreshKey: 0,
+          workspaceRoot: previewPathContext.workspaceRoot,
+          cwd: previewPathContext.cwd,
+          onOpenFileReference: openArtifactSourceInPlace,
+          onOpenFileExternal: openRailArtifactFileExternal,
+          onOpenUrl: openRailUrlAndOpenRail,
+        },
+      });
+    };
+    return () => {
+      openArtifactPreviewTabRef.current = null;
+    };
+  }, [
+    openRailArtifactFileExternal,
+    openRailUrlAndOpenRail,
+    previewPathContext.cwd,
+    previewPathContext.workspaceRoot,
+    openFileReferenceSidePanelTab,
+    sidePanel.controller,
+  ]);
 
   const rememberThreadScrollOffset = useCallback((distanceFromBottomPx: number) => {
     threadScrollOffsetsRef.current.set(activeThreadScrollKey, Math.max(0, distanceFromBottomPx));
@@ -4120,7 +4701,7 @@ export function HiCodexApp() {
       logs: state.logs,
       rpcDebugEvents,
       buildInfo,
-      onToggleStatusFooter: () => setStatusFooterVisible((visible) => !visible),
+      onShowStatusPanel: () => setComposerStatusPanelOpen(true),
     })
   ), [
     accountState,
@@ -4141,7 +4722,7 @@ export function HiCodexApp() {
     state.models.length,
     state.pendingRequests.length,
     state.logs,
-    setStatusFooterVisible,
+    setComposerStatusPanelOpen,
     rpcDebugEvents,
     effectiveThreadContextDefaults,
     state.threads,
@@ -4401,9 +4982,12 @@ export function HiCodexApp() {
         return;
       }
       if (request.method === "item/tool/requestUserInput" && !accepted) {
-        const params = request.params as { threadId?: unknown; turnId?: unknown } | undefined;
-        const threadId = typeof params?.threadId === "string" ? params.threadId : state.activeThreadId;
-        const turnId = typeof params?.turnId === "string" ? params.turnId : activeTurnId;
+        const scope = pendingRequestScope(request);
+        const threadId = scope.threadId
+          ?? pendingRequestOwnerThreadId(request, { itemsByThread })
+          ?? state.activeThreadId;
+        const runtime = threadId ? state.threadsRuntime[threadId] : null;
+        const turnId = scope.turnId ?? runtime?.activeTurnId ?? (threadId === state.activeThreadId ? activeTurnId : null);
         if (threadId && turnId) {
           await interruptThreadTurn(client, threadId, turnId);
           dispatch({ type: "resolveServerRequest", id: request.id });
@@ -4418,7 +5002,122 @@ export function HiCodexApp() {
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
     }
-  }, [activeTurnId, client, imageGenerationSettings, modelDraft, state.activeThreadId, state.hostStatus?.codexHome]);
+  }, [
+    activeTurnId,
+    client,
+    imageGenerationSettings,
+    itemsByThread,
+    modelDraft,
+    state.activeThreadId,
+    state.hostStatus?.codexHome,
+    state.threadsRuntime,
+  ]);
+
+  const stopBackgroundSubagents = useCallback(async () => {
+    if (backgroundSubagentsStopAllPending || backgroundSubagentStopThreadIds.length === 0) return;
+    setBackgroundSubagentsStopAllPending(true);
+    try {
+      if (!(await ensureConnected())) return;
+      const stopThreadIds = await collectBackgroundSubagentStopThreadIds({
+        activeThreadId: state.activeThreadId,
+        seedThreadIds: backgroundSubagentStopThreadIds,
+        readThread: (threadId) => readThread(client, threadId, true),
+      });
+      const stopPendingRequests = deriveBackgroundPendingRequests(state.pendingRequests, {
+        activeThreadId: state.activeThreadId,
+        backgroundThreadIds: stopThreadIds,
+        itemsByThread,
+      });
+      let pendingRequestCount = 0;
+      let interruptedCount = 0;
+      let terminalCleanupCount = 0;
+      let failedCount = 0;
+      const requestThreadIds = new Set<string>();
+      for (const request of stopPendingRequests) {
+        const ownerThreadId = pendingRequestOwnerThreadId(request, { itemsByThread });
+        if (ownerThreadId) requestThreadIds.add(ownerThreadId);
+        try {
+          const result = buildStopPendingRequestResult(request);
+          result === null
+            ? await client.reject(request.id, "Stopped by HiCodex user")
+            : await client.respond(request.id, result);
+          dispatch({ type: "resolveServerRequest", id: request.id });
+          pendingRequestCount += 1;
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      const refreshedThreadIds = new Set<string>();
+      for (const threadId of stopThreadIds) {
+        let turnId = state.threadsRuntime[threadId]?.activeTurnId ?? null;
+        if (!turnId) {
+          try {
+            turnId = await readInProgressTurnId(client, threadId);
+          } catch {
+            failedCount += 1;
+          }
+        }
+        let shouldRefresh = requestThreadIds.has(threadId);
+        try {
+          if (turnId) {
+            await interruptThreadTurn(client, threadId, turnId);
+            interruptedCount += 1;
+            shouldRefresh = true;
+          } else {
+            await cleanBackgroundTerminalsForThread(client, threadId);
+            terminalCleanupCount += 1;
+            shouldRefresh = true;
+          }
+          if (shouldRefresh && !refreshedThreadIds.has(threadId)) {
+            await refreshThreadMetadata(client, threadId, dispatch);
+            refreshedThreadIds.add(threadId);
+          }
+        } catch {
+          failedCount += 1;
+        }
+      }
+
+      const handledCount = pendingRequestCount + interruptedCount + terminalCleanupCount;
+      if (handledCount > 0) {
+        const parts = [
+          interruptedCount > 0
+            ? `${interruptedCount} running background agent${interruptedCount === 1 ? "" : "s"}`
+            : null,
+          pendingRequestCount > 0
+            ? `${pendingRequestCount} pending request${pendingRequestCount === 1 ? "" : "s"}`
+            : null,
+          terminalCleanupCount > 0
+            ? `${terminalCleanupCount} background terminal cleanup${terminalCleanupCount === 1 ? "" : "s"}`
+            : null,
+        ].filter(Boolean);
+        dispatch({
+          type: "log",
+          text: `Stop requested for ${parts.join(" and ")}.`,
+          level: failedCount > 0 ? "warn" : "info",
+        });
+      } else {
+        dispatch({
+          type: "log",
+          text: failedCount > 0
+            ? "Failed to stop background agents."
+            : "No running background agent turns or terminals were found.",
+          level: failedCount > 0 ? "error" : "warn",
+        });
+      }
+    } finally {
+      setBackgroundSubagentsStopAllPending(false);
+    }
+  }, [
+    backgroundSubagentStopThreadIds,
+    backgroundSubagentsStopAllPending,
+    client,
+    ensureConnected,
+    itemsByThread,
+    state.activeThreadId,
+    state.pendingRequests,
+    state.threadsRuntime,
+  ]);
 
   const applyModelDraft = useCallback(() => {
     const nextModel = normalizeModelConfig(modelDraft);
@@ -4574,8 +5273,28 @@ export function HiCodexApp() {
            */
           rightRailToggleAvailable={Boolean(activeThread) && rightRailSections.length > 0}
           rightRailPinned={rightRailPinned}
-          canPinRightRail={rightRailShouldRender(rightRailLayoutWidthPx)}
-          onToggleRightRailPinned={() => setRightRailPinned(!rightRailPinned)}
+          rightRailPopoverOpen={showRightRailPopover}
+          canPinRightRail={rightRailMode !== "overlay"}
+          onToggleRightRailPinned={() => {
+            // The file-preview panel and the summary rail share the right
+            // panel, so the rail is suppressed while a preview is selected
+            // (hasFilePreviewSelection gates showRightRail). Without freeing it
+            // here the toggle is a dead no-op whenever a preview is open —
+            // including a blank/failed preview (e.g. backend down) the user may
+            // not recognize as open. Revealing the rail closes the preview.
+            if (!rightRailPinned && hasFilePreviewSelection) closeFilePreviewPanel();
+            setRightRailPinned(!rightRailPinned);
+          }}
+          onToggleRightRailPopover={() => {
+            if (!showRightRailPopover && hasFilePreviewSelection) {
+              // Closing the preview frees right-panel width, which can flip the
+              // layout out of overlay mode — pin too so the rail still shows
+              // inline in that case.
+              closeFilePreviewPanel();
+              setRightRailPinned(true);
+            }
+            setRightRailPopoverOpen((open) => !open);
+          }}
           // codex: app-shell-*.js — sidebar trigger group back/forward arrows.
           canNavigateBack={canNavigateBackInHistory(state.threadHistoryStack, state.threadHistoryIndex)}
           canNavigateForward={canNavigateForwardInHistory(state.threadHistoryStack, state.threadHistoryIndex)}
@@ -4618,8 +5337,12 @@ export function HiCodexApp() {
                  * StatusText) into a single `createPortal(<vs>{children}</vs>, So)`
                  * so the rounded-corner stacking (`first:rounded-t-2xl` gated by
                  * `HasPortalContentContext`) renders as one continuous card.
-                 * HiCodex currently wires queued follow-ups plus a placeholder
-                 * StatusText slot through this shared container.
+                 * HiCodex wires queued follow-ups, background subagents, hooks
+                 * review, and the placeholder StatusText slot through this
+                 * shared container. Quota/account banners render as siblings
+                 * after this portal in the current Desktop bundle, and the
+                 * `/status` panel is composer-local chrome rather than part of
+                 * this above-composer stack.
                  */}
                 <LiveTurnDiffPortal
                   diff={activeDiff}
@@ -4636,6 +5359,25 @@ export function HiCodexApp() {
                     onDelete={deleteQueuedFollowUp}
                     onQueueingChange={setFollowUpQueueingEnabled}
                     onReorder={reorderQueuedFollowUp}
+                  />
+                  <ThreadGoalBanner
+                    goal={activeThreadRuntime.threadGoal}
+                    pendingAction={threadGoalPendingAction}
+                    onEditGoal={editActiveThreadGoal}
+                    onSetGoalStatus={setActiveThreadGoalStatus}
+                    onClearGoal={clearActiveThreadGoal}
+                  />
+                  <BackgroundSubagentsStack
+                    canStopAll={backgroundSubagentStopThreadIds.length > 0}
+                    entries={conversation.backgroundAgents}
+                    onOpenThread={openBackgroundAgentThread}
+                    onStopAll={stopBackgroundSubagents}
+                    stopAllPending={backgroundSubagentsStopAllPending}
+                  />
+                  <HooksReviewBanner
+                    count={showHooksReviewBanner ? (hooksReviewSnapshot?.count ?? 0) : 0}
+                    onReview={reviewHooks}
+                    onTrustAll={trustAllHooks}
                   />
                   {/*
                    * codex: composer-*.js — StatusTextPanel (above-composer
@@ -4659,6 +5401,16 @@ export function HiCodexApp() {
               </div>
 
               {/*
+               * codex: composer-zFOdryLS.pretty.js — the quota / rate-limit
+               * banner is a sibling after the above-composer portal, not one
+               * of the rounded stacked portal rows.
+               */}
+              <ComposerQuotaBanner
+                banner={composerQuotaBanner}
+                onViewStatus={() => setComposerStatusPanelOpen(true)}
+              />
+
+              {/*
                * codex: composer-*.js — Codex also exposes a second portal
                * target `data-above-composer-queue-portal` (`$o`) for asymmetric
                * future slots. Codex bundle has no `createPortal` writing into it
@@ -4671,6 +5423,16 @@ export function HiCodexApp() {
                 data-above-composer-conversation-id={state.activeThreadId ?? undefined}
               />
 
+              {composerStatusPanelOpen && (
+                <ComposerStatusPanel
+                  threadId={state.activeThreadId}
+                  tokensUsed={tokenUsageSnapshot?.usedTokens}
+                  contextWindow={tokenUsageSnapshot?.contextWindow}
+                  rateLimits={accountState.rateLimits}
+                  rateLimitsByLimitId={accountState.rateLimitsByLimitId}
+                  onClose={() => setComposerStatusPanelOpen(false)}
+                />
+              )}
 
               <Composer
                 input={input}
@@ -4690,6 +5452,7 @@ export function HiCodexApp() {
                 pendingRequestContent={activePendingRequests.length > 0 ? (
                   <PendingRequestStack
                     pendingRequests={activePendingRequests}
+                    requestActors={activePendingRequestActors}
                     onRespond={respondToRequest}
                     onLog={(text, level) => dispatch({ type: "log", text, level })}
                   />
@@ -4731,7 +5494,8 @@ export function HiCodexApp() {
               emptyState={conversationEmptyState}
               threadId={state.activeThreadId}
               onEditLastUserMessage={editLastUserTurn}
-              onOpenAssistantArtifact={openAssistantArtifact}
+              onOpenAssistantArtifact={openAssistantArtifactInSidePanel}
+              onRevealAssistantEndResource={revealAssistantEndResource}
               onOpenDiff={openActiveDiffPanel}
               onForkTurn={forkActiveThreadFromTurn}
               onSubmitTurnFeedback={submitTurnFeedback}
@@ -4792,11 +5556,11 @@ export function HiCodexApp() {
           />
         )}
 
-        {showRightRail && (
+        {(showRightRail || showRightRailPopover) && (
           <RightRail
             sections={rightRailSections}
-            displayMode={rightRailMode}
-            isPinned={rightRailPinned}
+            displayMode={showRightRailPopover ? "overlay" : rightRailMode}
+            isPinned={showRightRail ? rightRailPinned : true}
             onOpenArtifactPreview={previewRailArtifactAndOpenRail}
             onOpenFileReference={previewRailFileReferenceAndOpenRail}
             onOpenUrl={openRailUrlAndOpenRail}
@@ -4806,15 +5570,6 @@ export function HiCodexApp() {
               ? () => void cleanBackgroundTerminals()
               : undefined}
             backgroundTerminalCleanupPending={backgroundTerminalCleanupPending}
-            // codex: local-conversation-thread-*.js — status footer
-            // (token-speed line + compact-thread button). `statusFooter` is
-            // populated by `thread/tokenUsage/updated` via
-            // `ThreadRuntimeSlice.tokenUsage`; `RightRailStatusFooter`
-            // self-hides when both `tokensUsed` and `onCompactThread` are
-            // absent, so leaving the prop undefined matches Desktop's "no
-            // footer until first counter" behaviour. `onBrowserOpen` stays
-            // unwired until the browser-tabs slice lands.
-            statusFooter={rightRailStatusFooter}
             // codex: au row onClick — open automation editor modal. Codex's
             // `ke` handler (local-conversation-thread-*.js) deep-links the
             // *specific* automation (Km({automationId,…}) / navigate-to-route
@@ -4824,8 +5579,6 @@ export function HiCodexApp() {
             // `focusedAutomationSchedule`) so the panel can scope to that
             // schedule instead of the generic full list.
             onAutomationOpen={(automationId) => openAutomationsPanel(automationId)}
-            isResponseInProgress={activeThreadRunning}
-            onCompactThread={state.activeThreadId ? () => void runSlashRequest("compactThread") : undefined}
           />
         )}
 
@@ -5052,13 +5805,22 @@ export function HiCodexApp() {
         <UnifiedDiffFailureDialog
           failure={patchFailure}
           onClose={() => setPatchFailure(null)}
+          onOpenPath={(path) => {
+            const target = patchFailurePathForOpen(path, worktreeStatusCwd);
+            if (!target) return;
+            openFileReferenceExternal({ path: target, lineStart: 1, lineEnd: 1 });
+          }}
         />
       )}
       {modelPickerAnchor && (
         <ModelPickerMenu
           anchor={modelPickerAnchor}
           providers={modelPickerProviders}
-          selectedKey={selectedModelKey}
+          selectedKey={
+            effectiveModelSelection.noReadyProvider
+              ? selectedModelKey
+              : encodeSelection(effectiveModelSelection.providerId, effectiveModelSelection.model)
+          }
           defaultKey={
             state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
               ? encodeSelection(
@@ -5206,6 +5968,45 @@ function recordObject(value: unknown): Record<string, unknown> {
 function normalizeWorkspaceRoot(value: string): string {
   const trimmed = value.trim();
   return trimmed.replace(/[\\/]+$/, "") || trimmed;
+}
+
+function activeBackgroundSubagentThreadIds(entries: RailEntry[], activeThreadId: string | null): string[] {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.status !== "active" || entry.action?.kind !== "thread") continue;
+    const threadId = entry.action.threadId.trim();
+    if (!threadId || threadId === activeThreadId || ids.has(threadId)) continue;
+    ids.add(threadId);
+  }
+  return Array.from(ids);
+}
+
+function mergeBackgroundSubagentStopThreadIds(
+  activeThreadIds: string[],
+  pendingRequests: PendingServerRequest[],
+  itemsByThread: Record<string, Array<{ id?: string }>>,
+): string[] {
+  const ids = new Set(activeThreadIds);
+  for (const request of pendingRequests) {
+    const threadId = pendingRequestOwnerThreadId(request, { itemsByThread });
+    if (!threadId || ids.has(threadId)) continue;
+    ids.add(threadId);
+  }
+  return Array.from(ids);
+}
+
+async function readInProgressTurnId(client: CodexJsonRpcClient, threadId: string): Promise<string | null> {
+  const result = await readThread(client, threadId, true);
+  const turns = result.thread?.turns ?? [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn.status === "inProgress") return turn.id;
+  }
+  return null;
+}
+
+async function cleanBackgroundTerminalsForThread(client: CodexJsonRpcClient, threadId: string): Promise<void> {
+  await client.request("thread/backgroundTerminals/clean", { threadId }, 120_000);
 }
 
 function heartbeatPendingRequestType(

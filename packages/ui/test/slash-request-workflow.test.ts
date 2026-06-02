@@ -13,7 +13,7 @@ export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await setsReadsAndClearsThreadGoalsThroughAppServer();
   await listsBackgroundTerminalsFromActiveItems();
   await cleansBackgroundTerminalsThroughAppServer();
-  await togglesDesktopStatusFooter();
+  await opensDesktopComposerStatusPanel();
   await showsPersonalityOptionsFromThreadContext();
   await showsMemoriesOptionsFromThreadContext();
   await showsDebugConfigFromConfigLayers();
@@ -410,18 +410,18 @@ async function cleansBackgroundTerminalsThroughAppServer(): Promise<void> {
   );
 }
 
-async function togglesDesktopStatusFooter(): Promise<void> {
+async function opensDesktopComposerStatusPanel(): Promise<void> {
   const workflow = createWorkflowRecorder([]);
-  let toggles = 0;
-  await runSlashRequestWorkflow("toggleStatusFooter", undefined, {
+  let opens = 0;
+  await runSlashRequestWorkflow("showStatus", undefined, {
     ...workflow.context,
-    onToggleStatusFooter: () => {
-      toggles += 1;
+    onShowStatusPanel: () => {
+      opens += 1;
     },
   });
 
-  assertDeepEqual(toggles, 1, "status request should toggle the context-usage footer");
-  assertDeepEqual(workflow.panels, [], "status footer toggle should not open the old status command panel");
+  assertDeepEqual(opens, 1, "status request should open the composer status panel");
+  assertDeepEqual(workflow.panels, [], "status request should not open the old status command panel");
 }
 
 async function showsPersonalityOptionsFromThreadContext(): Promise<void> {
