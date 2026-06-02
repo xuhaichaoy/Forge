@@ -10,7 +10,9 @@ const codexSourceDir =
   defaultCodexSourceDir;
 const providedBin = process.env.HICODEX_CODEX_BIN;
 const targetDir = resolve(root, "apps/desktop/src-tauri/binaries");
-const targetBin = resolve(targetDir, "codex");
+// Windows 上产物与 sidecar 都是 codex.exe，其它平台是 codex。
+const exeSuffix = process.platform === "win32" ? ".exe" : "";
+const targetBin = resolve(targetDir, `codex${exeSuffix}`);
 
 mkdirSync(targetDir, { recursive: true });
 
@@ -27,7 +29,7 @@ if (!sourceBin) {
   if (build.status !== 0) {
     process.exit(build.status ?? 1);
   }
-  sourceBin = resolve(codexSourceDir, "target/release/codex");
+  sourceBin = resolve(codexSourceDir, `target/release/codex${exeSuffix}`);
 }
 
 if (!existsSync(sourceBin)) {
@@ -35,5 +37,7 @@ if (!existsSync(sourceBin)) {
 }
 
 copyFileSync(sourceBin, targetBin);
-chmodSync(targetBin, 0o755);
+if (process.platform !== "win32") {
+  chmodSync(targetBin, 0o755);
+}
 console.log(`Prepared Codex sidecar: ${targetBin}`);
