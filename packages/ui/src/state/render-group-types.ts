@@ -112,9 +112,11 @@ export type ConversationRenderUnit =
   /*
    * Codex Desktop (split-items-into-render-groups-*.js `Ne`/`K`) batches runs of
    * CONSECUTIVE `dynamic-tool-call` items into one `dynamic-tool-call-group` —
-   * grouping when `items.length > 1` (a single completed call still renders
-   * standalone). HiCodex mirrors that with this unit; the renderer shows the
-   * batched calls inside one collapsible group rather than N standalone rows.
+   * grouping when `items.length > 1`, and also for the active terminal
+   * `continuesLiveActivityBetweenCalls` app-control call. A single completed
+   * call still renders standalone. HiCodex mirrors that with this unit; the
+   * renderer shows the batched calls inside one collapsible group rather than N
+   * standalone rows.
    */
   | {
       kind: "dynamicToolCallGroup";
@@ -259,6 +261,7 @@ export interface RailEntryReference {
   path: string;
   lineStart: number;
   lineEnd?: number;
+  hostId?: string;
 }
 
 export type RailEntryAction =

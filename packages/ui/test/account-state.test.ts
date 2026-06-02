@@ -5,6 +5,8 @@ import {
   hasOpenAiCredentialSummary,
   initialAccountState,
   logoutAndRefreshAccountState,
+  projectAccountUsageAlert,
+  projectComposerQuotaBanner,
   projectAccountMenuItems,
   projectAccountViewModel,
   refreshAccountState,
@@ -16,6 +18,8 @@ import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/Rat
 export default async function runAccountStateTests(): Promise<void> {
   await refreshesAccountAndRateLimitProjection();
   updatesRateLimitSnapshotFromNotification();
+  projectsSidebarUsageAlertFromCoreRateLimit();
+  projectsComposerQuotaBannerOnlyForBlockingLimits();
   projectsCredentialSummaryWhenActiveProviderHasNoAccount();
   await logsOutThenRefreshesAccountState();
 }
@@ -60,6 +64,15 @@ async function refreshesAccountAndRateLimitProjection(): Promise<void> {
       quotaLabel: viewModel.quotaLabel,
       quotaDetail: viewModel.quotaDetail,
       quotaTone: viewModel.quotaTone,
+      rateLimitHeading: viewModel.rateLimitSummary?.heading ?? null,
+      rateLimitRemaining: viewModel.rateLimitSummary?.remainingText ?? null,
+      rateLimitSections: viewModel.rateLimitSummary?.sections.map((section) => ({
+        label: section.label,
+        windows: section.windows.map((window) => ({
+          label: window.label,
+          remainingText: window.remainingText,
+        })),
+      })) ?? null,
       signOutDisabled: viewModel.signOutAction.disabled,
     },
     {
@@ -72,9 +85,18 @@ async function refreshesAccountAndRateLimitProjection(): Promise<void> {
       quotaLabel: "Codex: 42% used",
       quotaDetail: "Credits 12.50 | Primary window 300m",
       quotaTone: "success",
+      rateLimitHeading: "Usage remaining",
+      rateLimitRemaining: "58% left",
+      rateLimitSections: [{
+        label: "Codex limit:",
+        windows: [{
+          label: "5h limit:",
+          remainingText: "58% left",
+        }],
+      }],
       signOutDisabled: false,
     },
-    "account view model should expose footer/sidebar-ready identity and quota fields",
+    "account view model should expose footer/sidebar-ready identity and Desktop-style rate-limit fields",
   );
   assertDeepEqual(
     menuItems.map((item) => ({
@@ -88,12 +110,94 @@ async function refreshesAccountAndRateLimitProjection(): Promise<void> {
     [
       { id: "identity", label: "Signed in as", value: "ada@example.com", tone: "neutral", action: null, disabled: false },
       { id: "plan", label: "Plan", value: "Pro", tone: "neutral", action: null, disabled: false },
-      { id: "quota", label: "Usage", value: "Codex: 42% used", tone: "success", action: null, disabled: false },
-      { id: "quotaDetail", label: "Usage detail", value: "Credits 12.50 | Primary window 300m", tone: "success", action: null, disabled: false },
       // codex: sign-out label aligns to upstream `codex.profileDropdown.logOut` = "Log out"
       { id: "signOut", label: "Log out", value: null, tone: "neutral", action: "account/signOut", disabled: false },
     ],
-    "account menu should expose identity, plan, quota, and sign-out affordances",
+    "account menu should expose identity/plan/sign-out while the profile dropdown owns the compact rate-limit summary",
+  );
+}
+
+function projectsSidebarUsageAlertFromCoreRateLimit(): void {
+  const modelLimit = rateLimitFixture({ usedPercent: 97 });
+  const coreLimit = {
+    ...rateLimitFixture({ usedPercent: 88 }),
+    limitId: null,
+    limitName: null,
+    primary: {
+      usedPercent: 81,
+      windowDurationMins: 300,
+      resetsAt: null,
+    },
+    secondary: {
+      usedPercent: 88,
+      windowDurationMins: 10_080,
+      resetsAt: 1_800_000_000,
+    },
+  };
+  assertDeepEqual(
+    projectAccountUsageAlert({ model: modelLimit, core: coreLimit }),
+    {
+      dismissalKey: "core:10080:1800000000",
+      remainingPercent: 12,
+      resetAt: 1_800_000_000,
+      usedPercent: 88,
+      windowDurationMins: 10_080,
+    },
+    "sidebar usage alert should use the most consumed core account window, not model-specific buckets",
+  );
+  assertEqual(
+    projectAccountUsageAlert({ core: { ...rateLimitFixture({ usedPercent: 79 }), limitName: null } }),
+    null,
+    "sidebar usage alert should stay hidden above Desktop's low-remaining threshold",
+  );
+}
+
+function projectsComposerQuotaBannerOnlyForBlockingLimits(): void {
+  const coreLimit = {
+    ...rateLimitFixture({ usedPercent: 100 }),
+    limitId: null,
+    limitName: null,
+    primary: {
+      usedPercent: 100,
+      windowDurationMins: 300,
+      resetsAt: null,
+    },
+  };
+  assertDeepEqual(
+    projectComposerQuotaBanner({ core: coreLimit }, null, "gpt-5"),
+    {
+      id: "rate-limit-window:core:default",
+      title: "Codex usage limit reached",
+      detail: "5h limit is fully used.",
+      tone: "danger",
+    },
+    "composer quota banner should prioritize blocking core account limits",
+  );
+
+  const selectedModelLimit = {
+    ...rateLimitFixture({ usedPercent: 100 }),
+    limitId: "gpt-5",
+    limitName: "gpt_5",
+    primary: {
+      usedPercent: 100,
+      windowDurationMins: 60,
+      resetsAt: null,
+    },
+  };
+  assertDeepEqual(
+    projectComposerQuotaBanner({ "gpt-5": selectedModelLimit }, null, "gpt-5"),
+    {
+      id: "rate-limit-window:model:gpt-5",
+      title: "gpt-5 limit reached",
+      detail: "1h limit is fully used.",
+      tone: "danger",
+    },
+    "composer quota banner should show selected model limits without product-owned upgrade actions",
+  );
+  assertEqual(
+    projectComposerQuotaBanner({ "gpt-5": selectedModelLimit }, null, "gpt-4.1"),
+    null,
+    "composer quota banner should not show non-selected model limits",
   );
 }
 

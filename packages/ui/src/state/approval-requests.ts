@@ -12,11 +12,44 @@ export interface PendingRequestDetail {
   canAccept: boolean;
   acceptDisabledReason?: string;
   externalUrl?: string;
+  mcpToolApproval?: PendingRequestMcpToolApproval;
+  optionPicker?: PendingRequestOptionPicker;
+  setupContextPicker?: PendingRequestSetupContextPicker;
 }
 
 export interface PendingRequestMetadata {
   label: string;
   value: string;
+}
+
+export interface PendingRequestMcpToolApproval {
+  connectorName: string;
+  riskLevel: string | null;
+  toolParamEntries: PendingRequestMcpToolParamEntry[];
+}
+
+export interface PendingRequestMcpToolParamEntry {
+  name: string;
+  label: string;
+  displayKind: "text" | "json";
+  previewText: string;
+  expandedText: string;
+  isExpandable: boolean;
+}
+
+export const OPTION_PICKER_ACTION_QUESTION_ID = "__optionPicker.action";
+export const OPTION_PICKER_QUESTION_ID = "optionPickerSelection";
+export const SETUP_CONTEXT_ACTION_QUESTION_ID = "__setupCodexContextPicker.action";
+
+export interface PendingRequestOptionPicker {
+  questionId: string;
+  allowMultiple: boolean;
+  submitLabel: string;
+  skipLabel: string;
+}
+
+export interface PendingRequestSetupContextPicker {
+  canSelectSources: boolean;
 }
 
 export interface PendingRequestQuestion {
@@ -104,6 +137,7 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
       };
     }
     case "mcpServer/elicitation/request": {
+      const mcpToolApproval = mcpToolApprovalDetail(params);
       const questions = [
         ...mcpElicitationQuestions(params),
         ...mcpPersistQuestions(params),
@@ -118,6 +152,7 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         declineLabel: "Cancel",
         canAccept: true,
         externalUrl: externalUrl ?? undefined,
+        mcpToolApproval: mcpToolApproval ?? undefined,
       };
     }
     case "item/permissions/requestApproval":
@@ -134,18 +169,20 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
           ? undefined
           : "No additional permission profile was provided.",
       };
-    case "item/tool/call":
-      return {
-        title: "App tool request",
-        reason: "Dynamic client-side tool execution is not implemented.",
-        body: toolCallRequestBody(params),
-        metadata: toolCallRequestMetadata(params),
-        questions: [],
-        acceptLabel: "Unsupported",
-        declineLabel: "Cancel",
-        canAccept: false,
-        acceptDisabledReason: "HiCodex can show this app-server request but cannot execute dynamic app tools from the UI shell yet.",
-      };
+    case "item/tool/requestOptionPicker": {
+      const optionPicker = optionPickerRequestDetail(params, false);
+      if (optionPicker) return optionPicker;
+      return unsupportedToolCallDetail(params);
+    }
+    case "item/tool/requestSetupCodexContextPicker":
+      return setupContextPickerRequestDetail(params, false) ?? unsupportedToolCallDetail(params);
+    case "item/tool/call": {
+      const optionPicker = optionPickerRequestDetail(params, true);
+      if (optionPicker) return optionPicker;
+      const setupContextPicker = setupContextPickerRequestDetail(params, true);
+      if (setupContextPicker) return setupContextPicker;
+      return unsupportedToolCallDetail(params);
+    }
     case "account/chatgptAuthTokens/refresh":
       return {
         title: "ChatGPT auth refresh",
@@ -216,12 +253,245 @@ export function buildApprovalResult(
         strictAutoReview: false,
       };
     }
-    case "item/tool/call":
+    case "item/tool/requestOptionPicker": {
+      const optionPickerResult = buildOptionPickerResult(request, accepted, answers, false);
+      return optionPickerResult ?? null;
+    }
+    case "item/tool/requestSetupCodexContextPicker": {
+      const setupContextPickerResult = buildSetupContextPickerResult(request, accepted, answers, false);
+      return setupContextPickerResult ?? null;
+    }
+    case "item/tool/call": {
+      const optionPickerResult = buildOptionPickerResult(request, accepted, answers, true);
+      if (optionPickerResult) return optionPickerResult;
+      const setupContextPickerResult = buildSetupContextPickerResult(request, accepted, answers, true);
+      return setupContextPickerResult ?? null;
+    }
     case "account/chatgptAuthTokens/refresh":
       return null;
     default:
       return null;
   }
+}
+
+export function buildStopPendingRequestResult(request: PendingServerRequest): unknown | null {
+  switch (request.method) {
+    case "item/commandExecution/requestApproval":
+    case "execCommandApproval":
+    case "item/fileChange/requestApproval":
+    case "applyPatchApproval":
+    case "mcpServer/elicitation/request":
+      return buildApprovalResult(request, false);
+    case "item/tool/requestUserInput":
+      return { answers: {} };
+    case "item/permissions/requestApproval":
+      return { permissions: {}, scope: "turn" };
+    case "item/tool/requestOptionPicker":
+      return buildApprovalResult(request, false);
+    case "item/tool/requestSetupCodexContextPicker":
+      return buildApprovalResult(request, false);
+    case "item/tool/call":
+      return buildApprovalResult(request, false);
+    default:
+      return null;
+  }
+}
+
+function setupContextPickerRequestDetail(
+  params: unknown,
+  dynamicToolCall: boolean,
+): PendingRequestDetail | null {
+  if (!setupContextPickerRequestModel(params, dynamicToolCall)) return null;
+  return {
+    title: "Where can we pull context from?",
+    body: "",
+    metadata: requestMetadata(params, ["threadId", "turnId", "itemId", "callId"]),
+    questions: [],
+    acceptLabel: "Continue",
+    declineLabel: "Skip",
+    canAccept: true,
+    setupContextPicker: {
+      canSelectSources: false,
+    },
+  };
+}
+
+function buildSetupContextPickerResult(
+  request: PendingServerRequest,
+  accepted: boolean,
+  answers: Record<string, string[]>,
+  dynamicToolCall: boolean,
+): unknown | null {
+  if (!setupContextPickerRequestModel(request.params, dynamicToolCall)) return null;
+  const response = {
+    action: setupContextPickerAction(accepted, answers),
+    selectedSources: [],
+  };
+  if (!dynamicToolCall) return response;
+  /*
+   * CODEX-REF: app-server-manager-signals-Bpaj8VHp.pretty.js
+   * `replyWithSetupCodexContextPickerResponse` wraps dynamic
+   * `setup_codex_context_picker` responses with the same `bc` inputText
+   * wrapper used by `request_option_picker`.
+   */
+  return {
+    success: true,
+    contentItems: [{ type: "inputText", text: JSON.stringify(response) }],
+  };
+}
+
+function setupContextPickerAction(
+  accepted: boolean,
+  answers: Record<string, string[]>,
+): "continue" | "skip" | "dismiss" {
+  if (!accepted) return "dismiss";
+  const requested = answers[SETUP_CONTEXT_ACTION_QUESTION_ID]?.[0];
+  return requested === "skip" || requested === "dismiss" ? requested : "continue";
+}
+
+function setupContextPickerRequestModel(params: unknown, dynamicToolCall: boolean): true | null {
+  if (!dynamicToolCall) return true;
+  const record = objectRecord(params);
+  if (!record) return null;
+  return stringField(record, "tool") === "setup_codex_context_picker" ? true : null;
+}
+
+function unsupportedToolCallDetail(params: unknown): PendingRequestDetail {
+  return {
+    title: "App tool request",
+    reason: "Dynamic client-side tool execution is not implemented.",
+    body: toolCallRequestBody(params),
+    metadata: toolCallRequestMetadata(params),
+    questions: [],
+    acceptLabel: "Unsupported",
+    declineLabel: "Cancel",
+    canAccept: false,
+    acceptDisabledReason: "HiCodex can show this app-server request but cannot execute dynamic app tools from the UI shell yet.",
+  };
+}
+
+function optionPickerRequestDetail(params: unknown, dynamicToolCall: boolean): PendingRequestDetail | null {
+  const parsed = optionPickerRequestModel(params, dynamicToolCall);
+  if (!parsed) return null;
+  const question: PendingRequestQuestion = {
+    id: OPTION_PICKER_QUESTION_ID,
+    header: parsed.question,
+    question: parsed.question,
+    kind: parsed.allowMultiple ? "multiSelect" : "singleSelect",
+    isSecret: false,
+    required: true,
+    defaultAnswers: [],
+    options: parsed.options,
+    isOther: true,
+  };
+  return {
+    title: parsed.question,
+    body: parsed.options.map((option) => option.label).join("\n"),
+    metadata: requestMetadata(params, ["threadId", "turnId", "itemId", "callId"]),
+    questions: [question],
+    acceptLabel: parsed.submitLabel,
+    declineLabel: parsed.skipLabel,
+    canAccept: true,
+    optionPicker: {
+      questionId: OPTION_PICKER_QUESTION_ID,
+      allowMultiple: parsed.allowMultiple,
+      submitLabel: parsed.submitLabel,
+      skipLabel: parsed.skipLabel,
+    },
+  };
+}
+
+function buildOptionPickerResult(
+  request: PendingServerRequest,
+  accepted: boolean,
+  answers: Record<string, string[]>,
+  dynamicToolCall: boolean,
+): unknown | null {
+  const parsed = optionPickerRequestModel(request.params, dynamicToolCall);
+  if (!parsed) return null;
+  const action = optionPickerAction(accepted, answers);
+  const answerValues = answers[OPTION_PICKER_QUESTION_ID] ?? [];
+  const optionValues = new Set(parsed.options.map((option) => option.value));
+  const selectedOptions = action === "dismiss"
+    ? []
+    : answerValues.filter((value) => optionValues.has(value));
+  const freeformAnswer = action === "dismiss"
+    ? null
+    : answerValues.map((value) => value.trim()).find((value) => value.length > 0 && !optionValues.has(value)) ?? null;
+  const response = { action, selectedOptions, freeformAnswer };
+  if (!dynamicToolCall) return response;
+  /*
+   * CODEX-REF: app-server-manager-signals-Bpaj8VHp.pretty.js `bc` wraps
+   * dynamic `request_option_picker` responses as an MCP-style tool result:
+   * { success:true, contentItems:[{ type:"inputText", text:JSON.stringify(response) }] }.
+   */
+  return {
+    success: true,
+    contentItems: [{ type: "inputText", text: JSON.stringify(response) }],
+  };
+}
+
+function optionPickerAction(
+  accepted: boolean,
+  answers: Record<string, string[]>,
+): "submit" | "skip" | "dismiss" {
+  if (!accepted) return "dismiss";
+  const requested = answers[OPTION_PICKER_ACTION_QUESTION_ID]?.[0];
+  return requested === "skip" || requested === "dismiss" ? requested : "submit";
+}
+
+function optionPickerRequestModel(
+  params: unknown,
+  dynamicToolCall: boolean,
+): {
+  question: string;
+  options: PendingRequestOption[];
+  allowMultiple: boolean;
+  submitLabel: string;
+  skipLabel: string;
+} | null {
+  const record = objectRecord(params);
+  if (!record) return null;
+  const source = dynamicToolCall ? dynamicOptionPickerArguments(record) : record;
+  if (!source) return null;
+  const question = stringField(source, "question");
+  const options = optionPickerOptions(source.options);
+  if (!question || options.length === 0) return null;
+  return {
+    question,
+    options,
+    allowMultiple: source.allowMultiple === true || source.allow_multiple === true,
+    submitLabel: stringField(source, "submitLabel") || stringField(source, "submit_label") || "Submit",
+    skipLabel: stringField(source, "skipLabel") || stringField(source, "skip_label") || "Skip",
+  };
+}
+
+function dynamicOptionPickerArguments(record: Record<string, unknown>): Record<string, unknown> | null {
+  if (stringField(record, "tool") !== "request_option_picker") return null;
+  const args = record.arguments;
+  if (typeof args === "string") {
+    try {
+      return objectRecord(JSON.parse(args));
+    } catch {
+      return null;
+    }
+  }
+  return objectRecord(args);
+}
+
+function optionPickerOptions(value: unknown): PendingRequestOption[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((option) => {
+    if (!option || typeof option !== "object" || Array.isArray(option)) return [];
+    const record = option as Record<string, unknown>;
+    const label = stringField(record, "label");
+    if (!label) return [];
+    return [{
+      value: label,
+      label,
+      description: stringField(record, "description"),
+    }];
+  });
 }
 
 function commandApprovalQuestions(params: unknown): PendingRequestQuestion[] {
@@ -718,6 +988,7 @@ function mcpElicitationBody(params: unknown): string {
 function mcpElicitationTitle(params: unknown): string {
   const meta = objectRecord(objectRecord(params)?._meta);
   const approvalKind = stringField(meta, "codex_approval_kind");
+  if (approvalKind === "mcp_tool_call") return mcpToolApprovalTitle(params);
   const connector = stringField(meta, "connector_name") || stringField(meta, "connector_id");
   const kind = stringField(params, "kind");
   const suggestion = objectRecord(objectRecord(params)?.suggestion);
@@ -737,10 +1008,28 @@ function mcpElicitationTitle(params: unknown): string {
     return "Connect app?";
   }
   if (kind === "urlAction" || mcpUrlActionUrl(params)) return "Action required";
-  if (approvalKind === "mcp_tool_call") return connector ? `Allow ${connector} to run?` : "Allow MCP tool call?";
   if (stringField(params, "mode") === "url" || stringField(params, "url")) return "Open this URL?";
   if (connector) return `Connect ${connector}?`;
   return "MCP request";
+}
+
+function mcpToolApprovalTitle(params: unknown): string {
+  const record = objectRecord(params);
+  const message = stringField(record, "message") || stringField(record, "title");
+  const approval = objectRecord(record?.approval);
+  const meta = objectRecord(record?._meta);
+  const connectorName = mcpToolApprovalConnectorName(params);
+  const messageMatch = /^Allow\s+(.+?)\s+to\s+run\s+tool\s+"([^"]+)"\?$/.exec(message);
+  const toolName = messageMatch?.[2]
+    || stringField(approval, "tool_name")
+    || stringField(approval, "toolName")
+    || stringField(record, "tool_name")
+    || stringField(record, "toolName")
+    || stringField(meta, "tool_name")
+    || stringField(meta, "toolName");
+  if (toolName) return `Allow ${connectorName} to run ${toolName} tool ?`;
+  if (message) return message;
+  return `Allow ${connectorName} to run tool ?`;
 }
 
 function mcpElicitationAcceptLabel(
@@ -795,6 +1084,131 @@ function mcpConnectorAuthUrl(params: unknown): string | null {
       || stringField(meta, "oauth_url")
       || stringField(meta, "oauthUrl"),
   );
+}
+
+function mcpToolApprovalDetail(params: unknown): PendingRequestMcpToolApproval | null {
+  const record = objectRecord(params);
+  const meta = objectRecord(record?._meta);
+  const approval = objectRecord(record?.approval);
+  const approvalKind = stringField(meta, "codex_approval_kind") || stringField(record, "kind");
+  if (approvalKind !== "mcp_tool_call" && approvalKind !== "mcpToolCall") return null;
+  return {
+    connectorName: mcpToolApprovalConnectorName(params),
+    riskLevel: stringField(record, "riskLevel")
+      || stringField(record, "risk_level")
+      || stringField(meta, "riskLevel")
+      || stringField(meta, "risk_level")
+      || stringField(approval, "riskLevel")
+      || stringField(approval, "risk_level")
+      || null,
+    toolParamEntries: mcpToolParamEntries(params),
+  };
+}
+
+function mcpToolApprovalConnectorName(params: unknown): string {
+  const record = objectRecord(params);
+  const meta = objectRecord(record?._meta);
+  const approval = objectRecord(record?.approval);
+  return stringField(approval, "connector_name")
+    || stringField(approval, "connectorName")
+    || stringField(meta, "connector_name")
+    || stringField(meta, "connectorName")
+    || stringField(record, "connector_name")
+    || stringField(record, "connectorName")
+    || stringField(approval, "connector_id")
+    || stringField(meta, "connector_id")
+    || "Connector";
+}
+
+function mcpToolParamEntries(params: unknown): PendingRequestMcpToolParamEntry[] {
+  const record = objectRecord(params);
+  const meta = objectRecord(record?._meta);
+  const approval = objectRecord(record?.approval);
+  const display = record?.toolParamsDisplay
+    ?? record?.tool_params_display
+    ?? meta?.toolParamsDisplay
+    ?? meta?.tool_params_display;
+  const rawParams = approval?.tool_params
+    ?? approval?.toolParams
+    ?? record?.tool_params
+    ?? record?.toolParams
+    ?? meta?.tool_params
+    ?? meta?.toolParams;
+  const displayEntries = mcpToolParamDisplayEntries(display);
+  const sourceEntries = displayEntries.length > 0 ? displayEntries : mcpToolParamObjectEntries(rawParams);
+  return sourceEntries.map((entry) => {
+    const value = mcpToolParamValue(entry.value);
+    return {
+      name: entry.name,
+      label: entry.label,
+      ...value,
+    };
+  });
+}
+
+function mcpToolParamDisplayEntries(value: unknown): Array<{ name: string; label: string; value: unknown }> {
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => {
+      const record = objectRecord(item);
+      if (!record) return [];
+      const name = stringField(record, "name") || stringField(record, "key") || `param_${index + 1}`;
+      const label = stringField(record, "displayName")
+        || stringField(record, "display_name")
+        || stringField(record, "label")
+        || humanizeParamName(name);
+      return [{ name, label, value: record.value }];
+    });
+  }
+  return mcpToolParamObjectEntries(value);
+}
+
+function mcpToolParamObjectEntries(value: unknown): Array<{ name: string; label: string; value: unknown }> {
+  const record = objectRecord(value);
+  if (!record) return [];
+  return Object.entries(record).map(([name, paramValue]) => ({
+    name,
+    label: humanizeParamName(name),
+    value: paramValue,
+  }));
+}
+
+function mcpToolParamValue(value: unknown): Pick<PendingRequestMcpToolParamEntry, "displayKind" | "previewText" | "expandedText" | "isExpandable"> {
+  if (typeof value === "string") {
+    return {
+      displayKind: "text",
+      previewText: value,
+      expandedText: value,
+      isExpandable: mcpToolParamTextIsExpandable(value),
+    };
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value == null) {
+    const text = String(value);
+    return {
+      displayKind: "text",
+      previewText: text,
+      expandedText: text,
+      isExpandable: false,
+    };
+  }
+  const expandedText = formatUnknown(value);
+  const compactText = inlineUnknown(value);
+  return {
+    displayKind: "json",
+    previewText: compactText.length <= 48 ? compactText : `${compactText.slice(0, 47)}…`,
+    expandedText,
+    isExpandable: compactText.length > 48,
+  };
+}
+
+function mcpToolParamTextIsExpandable(value: string): boolean {
+  if (value.length > 120) return true;
+  return value.split(/\r?\n/).length > 4;
+}
+
+function humanizeParamName(value: string): string {
+  const words = value.trim().replace(/^connector[_-]/, "").split(/[_\-\s]+/g).filter(Boolean);
+  if (words.length === 0) return value;
+  return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
 function normalizedHttpUrl(value: string): string | null {

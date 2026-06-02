@@ -1,13 +1,17 @@
+import type { SidePanelTabContextMenuItem } from "./side-panel-tab-host";
+
 export interface FileReferenceInput {
   path?: string | null;
   lineStart?: number | null;
   lineEnd?: number | null;
+  hostId?: string | null;
 }
 
 export interface FileReferenceSelection {
   path: string;
   lineStart: number;
   lineEnd: number;
+  hostId?: string;
 }
 
 export interface FileReferenceResolutionContext {
@@ -23,7 +27,13 @@ export function normalizeFileReference(input: FileReferenceInput): FileReference
   const rawLineEnd = positiveInteger(input.lineEnd) ?? lineStart;
   const lineEnd = Math.max(lineStart, rawLineEnd);
 
-  return { path, lineStart, lineEnd };
+  const hostId = input.hostId?.trim() ?? "";
+  return {
+    path,
+    lineStart,
+    lineEnd,
+    ...(hostId ? { hostId } : {}),
+  };
 }
 
 export function resolveFileReferencePathCandidates(
@@ -49,7 +59,44 @@ export function resolveFileReferencePathCandidates(
 }
 
 export function fileReferenceKey(reference: FileReferenceSelection): string {
-  return `${reference.path}:${reference.lineStart}-${reference.lineEnd}`;
+  return `${reference.hostId ? `${reference.hostId}:` : ""}${reference.path}:${reference.lineStart}-${reference.lineEnd}`;
+}
+
+export function fileReferenceSidePanelTabId(path: string, hostId?: string | null): string {
+  // codex: review-file-source-tab-*.js `ia(...)` uses `file:${path}` when
+  // hostId is absent, and `file:${hostId}:${path}` for host-backed tabs.
+  return hostId ? `file:${hostId}:${path}` : `file:${path}`;
+}
+
+export function fileReferenceSidePanelTabKind(hostId: string): `workspaceFile:${string}` {
+  // codex: review-file-source-tab-*.js / open-artifact-side-panel-tab-*.js set
+  // source tab kind to `workspaceFile:${hostId}`.
+  return `workspaceFile:${hostId}`;
+}
+
+export interface FileReferenceSidePanelContextMenuHandlers {
+  readonly onOpenFile: () => void;
+  readonly onCopyPath: () => void;
+  readonly onCopyContents: () => void;
+  readonly onRevealPath: () => void;
+  readonly revealLabel: string;
+}
+
+export function fileReferenceSidePanelContextMenuItems(
+  handlers: FileReferenceSidePanelContextMenuHandlers,
+): readonly SidePanelTabContextMenuItem[] {
+  /*
+   * codex workspace-file-context-menu-*.js emits open target(s), a separator,
+   * copy path, copy contents, and reveal. HiCodex does not yet have Desktop's
+   * OS app-target query, so the first row is Codex's own `viewFile` label.
+   */
+  return [
+    { id: "workspace-file-open-file", label: "Open file", onSelect: handlers.onOpenFile },
+    { id: "workspace-file-open-separator", separator: true },
+    { id: "workspace-file-copy-path", label: "Copy path", onSelect: handlers.onCopyPath },
+    { id: "workspace-file-copy-contents", label: "Copy file contents", onSelect: handlers.onCopyContents },
+    { id: "workspace-file-reveal-path", label: handlers.revealLabel, onSelect: handlers.onRevealPath },
+  ];
 }
 
 export function fileReferenceLineLabel(

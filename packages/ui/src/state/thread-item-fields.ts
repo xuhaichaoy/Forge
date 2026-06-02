@@ -9,6 +9,9 @@ export function itemText(item: ThreadItem): string {
   if (Array.isArray(record.summary) || Array.isArray(record.content)) {
     return [...stringArray(record.summary), ...stringArray(record.content)].join("\n");
   }
+  if (Array.isArray(record.fragments)) {
+    return record.fragments.map(hookPromptFragmentText).filter(Boolean).join("\n");
+  }
   if (typeof record.aggregatedOutput === "string") return record.aggregatedOutput;
   if (typeof record.result === "string") return record.result;
   if (typeof record.error === "string") return record.error;
@@ -88,6 +91,7 @@ export function itemType(item: ThreadItem): string {
   if (rawType === "workedFor") return "worked-for";
   switch (item.type) {
     case "userMessage":
+    case "hookPrompt":
       return "user-message";
     case "agentMessage":
       return "assistant-message";
@@ -112,6 +116,12 @@ export function itemType(item: ThreadItem): string {
     default:
       return item.type;
   }
+}
+
+function hookPromptFragmentText(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const text = (value as Record<string, unknown>).text;
+  return typeof text === "string" ? text : "";
 }
 
 export function isThreadStatusInProgress(status: unknown): boolean {

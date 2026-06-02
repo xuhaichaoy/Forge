@@ -2,6 +2,9 @@ import {
   fileReferenceDisplayPath,
   fileReferenceKey,
   fileReferenceLineLabel,
+  fileReferenceSidePanelContextMenuItems,
+  fileReferenceSidePanelTabKind,
+  fileReferenceSidePanelTabId,
   normalizeFileReference,
   resolveFileReferencePathCandidates,
 } from "../src/state/file-references";
@@ -10,6 +13,8 @@ export default function runFileReferenceTests(): void {
   normalizesClickedReferenceForPreview();
   defaultsInvalidLinesToSingleLine();
   formatsPreviewLabelsAndKeys();
+  buildsDesktopSidePanelTabIds();
+  buildsDesktopWorkspaceFileContextMenuSubset();
   shortensLongPathsFromTheLeft();
   prefersWorkspaceRootForRepoRelativePaths();
   prefersCwdForBareAndDotRelativePaths();
@@ -43,6 +48,40 @@ function formatsPreviewLabelsAndKeys(): void {
   assertEqual(fileReferenceLineLabel(reference), "Lines 3-5", "line range label");
   assertEqual(fileReferenceLineLabel({ ...reference, lineEnd: 3 }), "Line 3", "single line label");
   assertEqual(fileReferenceKey(reference), "/tmp/memory.md:3-5", "stable file reference key");
+}
+
+function buildsDesktopSidePanelTabIds(): void {
+  assertEqual(
+    fileReferenceSidePanelTabId("/workspace/src/app.ts"),
+    "file:/workspace/src/app.ts",
+    "local file tabs without host id should use Desktop's file:path id",
+  );
+  assertEqual(
+    fileReferenceSidePanelTabId("/workspace/src/app.ts", "host-1"),
+    "file:host-1:/workspace/src/app.ts",
+    "host-backed file tabs should include host id",
+  );
+  assertEqual(
+    fileReferenceSidePanelTabKind("host-1"),
+    "workspaceFile:host-1",
+    "workspace file tab kind should use Desktop's host-scoped kind",
+  );
+}
+
+function buildsDesktopWorkspaceFileContextMenuSubset(): void {
+  const items = fileReferenceSidePanelContextMenuItems({
+    onOpenFile: () => undefined,
+    onCopyPath: () => undefined,
+    onCopyContents: () => undefined,
+    onRevealPath: () => undefined,
+    revealLabel: "Reveal in Finder",
+  });
+  assertEqual(items.length, 5, "source tab menu should include open, separator, copy, contents, reveal");
+  assertEqual(items[0]?.id, "workspace-file-open-file", "first row is Open file");
+  assertEqual(items[1]?.separator, true, "open section should be separated from file actions");
+  assertEqual(items[2]?.label, "Copy path", "copy path row");
+  assertEqual(items[3]?.label, "Copy file contents", "copy contents row");
+  assertEqual(items[4]?.label, "Reveal in Finder", "platform reveal label");
 }
 
 function shortensLongPathsFromTheLeft(): void {

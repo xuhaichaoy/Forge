@@ -5,6 +5,7 @@ export default function runBackgroundAgentTests(): void {
   projectsReceiverThreadsAsClickableRailEntries();
   projectsDiffStatsFromReceiverThreadLatestTurn();
   updatesExistingAgentStatusFromLaterActions();
+  hidesDesktopHiddenAgentStatesAndClosedAgents();
   ignoresNonCollabItemsAndRowsWithoutReceivers();
 }
 
@@ -126,12 +127,64 @@ function updatesExistingAgentStatusFromLaterActions(): void {
 
   assertEqual(entries.length, 1, "later multi-agent rows should update the same agent entry");
   assertEqual(entries[0]?.title, "agent-agent-12", "agent row should keep Desktop's stable fallback title");
-  assertEqual(entries[0]?.status, "completed", "latest agent state should win");
+  assertEqual(entries[0]?.status, "done", "Desktop completed agent state should project to done");
   assertDeepEqual(
     entries[0]?.details,
     ["Action: wait", "Model: gpt-5.5", "State: done"],
     "latest action details should keep earlier model metadata when available",
   );
+}
+
+function hidesDesktopHiddenAgentStatesAndClosedAgents(): void {
+  const hiddenByState = projectBackgroundAgentRailEntries([
+    {
+      type: "collabAgentToolCall",
+      id: "spawn-1",
+      tool: "spawnAgent",
+      status: "completed",
+      receiverThreadIds: ["agent-hidden"],
+      agentsStates: {
+        "agent-hidden": { status: "running", message: null },
+      },
+    } as ThreadItem,
+    {
+      type: "collabAgentToolCall",
+      id: "wait-1",
+      tool: "wait",
+      status: "completed",
+      receiverThreadIds: ["agent-hidden"],
+      agentsStates: {
+        "agent-hidden": { status: "errored", message: "failed" },
+      },
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(hiddenByState, [], "Desktop hidden agent states should remove background-agent rows");
+
+  const hiddenByClose = projectBackgroundAgentRailEntries([
+    {
+      type: "collabAgentToolCall",
+      id: "spawn-2",
+      tool: "spawnAgent",
+      status: "completed",
+      receiverThreadIds: ["agent-closed"],
+      agentsStates: {
+        "agent-closed": { status: "running", message: null },
+      },
+    } as ThreadItem,
+    {
+      type: "collabAgentToolCall",
+      id: "close-1",
+      tool: "closeAgent",
+      status: "completed",
+      receiverThreadIds: ["agent-closed"],
+      agentsStates: {
+        "agent-closed": { status: "completed", message: "closed" },
+      },
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(hiddenByClose, [], "Desktop closeAgent references should remove background-agent rows");
 }
 
 function ignoresNonCollabItemsAndRowsWithoutReceivers(): void {

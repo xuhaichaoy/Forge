@@ -94,6 +94,63 @@ export function decodeSelection(value: string | null): { providerId: string; mod
   return { providerId: value.slice(0, idx), model: value.slice(idx + 2) };
 }
 
+export interface ModelSelectionRef {
+  providerId: string;
+  model: string;
+}
+
+export interface ResolvedModelSelection {
+  /** The (provider, model) that should actually be used to start/send a turn. */
+  providerId: string;
+  model: string;
+  /** The user's intended selection (saved pick or config.toml default), if any. */
+  intended: ModelSelectionRef | null;
+  /** True when `intended`'s provider was not ready, so we fell back to another. */
+  fellBack: boolean;
+  /** True when no provider is auth-ready at all → the caller should block send. */
+  noReadyProvider: boolean;
+}
+
+/*
+ * Product logic for "the selected model's provider is not signed in".
+ *
+ * Rather than silently send to an unusable provider (which only spins on
+ * "Reconnecting… N/5"), resolve the EFFECTIVE (provider, model):
+ *   1. intended provider ready  → use it (normal path; fellBack=false).
+ *   2. intended not ready, some other provider ready → fall back to the first
+ *      ready provider's first model (fellBack=true). The intended pick is kept
+ *      by the caller, so signing in restores it automatically.
+ *   3. nothing ready → noReadyProvider=true; caller disables send + prompts
+ *      sign-in / configuration.
+ * Reachability is a separate layer: a provider can be auth-ready but its
+ * endpoint down — that is caught by the transport, not here.
+ */
+export function resolveEffectiveModelSelection(args: {
+  intended: ModelSelectionRef | null;
+  providers: readonly { id: string; models: readonly string[] }[];
+  readyProviders: ReadonlySet<string>;
+}): ResolvedModelSelection {
+  const { intended, providers, readyProviders } = args;
+  const intendedReady =
+    intended != null && intended.providerId.length > 0 && readyProviders.has(intended.providerId);
+  if (intendedReady) {
+    return { providerId: intended!.providerId, model: intended!.model, intended, fellBack: false, noReadyProvider: false };
+  }
+  const fallback = providers.find((provider) => readyProviders.has(provider.id) && provider.models.length > 0);
+  if (fallback) {
+    // Only a "fall back" when the user actually intended a (now-unusable)
+    // provider; with no intention this is just picking the ready default.
+    return { providerId: fallback.id, model: fallback.models[0], intended, fellBack: intended != null, noReadyProvider: false };
+  }
+  return {
+    providerId: intended?.providerId ?? "",
+    model: intended?.model ?? "",
+    intended,
+    fellBack: false,
+    noReadyProvider: true,
+  };
+}
+
 export interface ModelPickerMenuProps {
   anchor: HTMLElement;
   providers: ModelPickerProvider[];
@@ -255,15 +312,37 @@ export function ModelPickerMenu({
                   {provider.models.map((modelSlug) => {
                     const key = encodeSelection(provider.id, modelSlug);
                     const isActive = key === activeKey;
+                    /*
+                     * A provider whose auth is not verified (`!isReady` → the
+                     * "not signed in" / "no key" header warning) cannot serve a
+                     * turn, so its models are not selectable — picking one only
+                     * produced a connect/reconnect error ("Reconnecting… N/5").
+                     * HiCodex extension: Codex Desktop has no per-provider model
+                     * picker (it gates the whole app behind a single ChatGPT
+                     * login), so there is no upstream idiom to mirror — we lock
+                     * the rows and steer the user to the inline Sign-in row
+                     * (oauth) or Settings → Models (api key).
+                     */
+                    const isLocked = !isReady;
                     return (
                       <li key={modelSlug} role="none">
                         <button
                           type="button"
                           role="menuitemradio"
                           aria-checked={isActive}
+                          aria-disabled={isLocked || undefined}
                           className="hc-model-picker-model-item"
                           data-active={isActive ? "true" : undefined}
+                          data-locked={isLocked ? "true" : undefined}
+                          title={
+                            isLocked
+                              ? provider.authMode === "oauth"
+                                ? "Sign in with ChatGPT to use this model"
+                                : "Set an API key in Settings → Models to use this model"
+                              : undefined
+                          }
                           onClick={() => {
+                            if (isLocked) return;
                             onSelect(key === defaultKey ? null : key);
                             onClose();
                           }}

@@ -5,17 +5,17 @@
  *
  * MVP scope (vs Codex Desktop full implementation):
  *   - Browse mode: lazy `host_workspace_list_dir` per expanded directory.
- *   - Search mode: client-side substring filter over already-loaded entries.
+ *   - Search mode: app-server fuzzy search when provided, with local
+ *     already-loaded substring search as a browser/test fallback.
  *   - State is component-local (`useState`). Persistence to disk and per-route
  *     atoms are TODO.
  *
- * TODO: fuzzy file-search session (Codex uses streaming `createFuzzyFileSearchSession`).
  * TODO: `fs/watch` driven auto-refresh on mtime change (Codex bumps `refreshKey`).
- * TODO: keyboard navigation (Up/Down/Left/Right/Enter) — Codex implements in :_e.
  * TODO: `revealSelectedPath` auto-scroll into view — needs measuring/virtualizer.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileTree } from "./file-tree";
+import type { FileTreeSelectOptions } from "./file-tree";
 import { FileTreeSearchInput } from "./file-tree-search-input";
 import {
   isTauriRuntime,
@@ -31,15 +31,27 @@ export interface WorkspaceFilesPanelProps {
   /** When set, the panel auto-expands ancestors and highlights this file. */
   activeFilePath?: string | null;
   /** Single-click on a file. */
-  onSelectFile?: (relPath: string) => void;
+  onSelectFile?: (relPath: string, options: WorkspaceFileSelectOptions) => void;
+  /** Right-click `Add to chat` action for file rows. */
+  onAddFileToChat?: (relPath: string) => void;
+  /** Desktop-style workspace fuzzy file search backed by app-server. */
+  searchWorkspaceFiles?: (query: string, workspaceRoot: string) => Promise<WorkspaceDirEntry[]>;
   /** Show files/dirs starting with '.' */
   includeHidden?: boolean;
 }
+
+export interface WorkspaceFileSelectOptions {
+  isPreview: boolean;
+}
+
+export type WorkspaceFilesRootState = "loading" | "empty" | "tree";
 
 export function WorkspaceFilesPanel({
   workspaceRoot,
   activeFilePath,
   onSelectFile,
+  onAddFileToChat,
+  searchWorkspaceFiles,
   includeHidden = false,
 }: WorkspaceFilesPanelProps) {
   // codex: _e — atom `me` { expandedPaths, scrollTop, searchQuery, selectedPath }.
@@ -52,6 +64,12 @@ export function WorkspaceFilesPanel({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPath, setSelectedPath] = useState<string | null>(activeFilePath ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [remoteSearch, setRemoteSearch] = useState<{
+    query: string;
+    status: "loading" | "ready" | "error";
+    matches: WorkspaceDirEntry[];
+    error?: string;
+  } | null>(null);
 
   const loadDir = useCallback(
     async (dirPath: string): Promise<void> => {
@@ -150,12 +168,19 @@ export function WorkspaceFilesPanel({
   );
 
   const handleSelect = useCallback(
-    (entry: WorkspaceDirEntry) => {
+    (entry: WorkspaceDirEntry, options: FileTreeSelectOptions) => {
       if (entry.type !== "file") return;
       setSelectedPath(entry.path);
-      onSelectFile?.(entry.path);
+      onSelectFile?.(entry.path, options);
     },
     [onSelectFile],
+  );
+  const handleAddToChat = useCallback(
+    (entry: WorkspaceDirEntry) => {
+      if (entry.type !== "file") return;
+      onAddFileToChat?.(entry.path);
+    },
+    [onAddFileToChat],
   );
 
   // codex workspace-file-context-menu `workspace-file-reveal-path` — reveal the
@@ -189,8 +214,15 @@ export function WorkspaceFilesPanel({
   );
 
   const rootEntries = entriesByDir.get("") ?? [];
-  const trimmedQuery = searchQuery.trim().toLowerCase();
-  const searchMatches = useMemo(() => {
+  const normalizedSearchQuery = searchQuery.trim();
+  const trimmedQuery = normalizedSearchQuery.toLowerCase();
+  const rootState = workspaceFilesRootState({
+    entriesByDir,
+    loadingPaths,
+    rootEntries,
+    hasSearchQuery: trimmedQuery.length > 0,
+  });
+  const localSearchMatches = useMemo(() => {
     if (trimmedQuery.length === 0) return null;
     // codex: workspace-directory-tree-CHHgPVoD :_e search mode — flatten loaded
     // entries; the streaming fuzzy session is a TODO above. We deliberately
@@ -206,6 +238,39 @@ export function WorkspaceFilesPanel({
     flat.sort((a, b) => a.path.localeCompare(b.path));
     return flat;
   }, [entriesByDir, trimmedQuery]);
+  const useRemoteSearch = Boolean(searchWorkspaceFiles && normalizedSearchQuery.length > 0);
+  useEffect(() => {
+    if (!searchWorkspaceFiles || normalizedSearchQuery.length === 0) {
+      setRemoteSearch(null);
+      return;
+    }
+    let cancelled = false;
+    const query = normalizedSearchQuery;
+    setRemoteSearch({ query, status: "loading", matches: [] });
+    void searchWorkspaceFiles(query, workspaceRoot)
+      .then((matches) => {
+        if (cancelled) return;
+        setRemoteSearch({ query, status: "ready", matches });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRemoteSearch({
+          query,
+          status: "error",
+          matches: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchWorkspaceFiles, normalizedSearchQuery, workspaceRoot]);
+  const remoteSearchForQuery = remoteSearch?.query === normalizedSearchQuery ? remoteSearch : null;
+  const searchMatches = normalizedSearchQuery.length === 0
+    ? null
+    : useRemoteSearch
+      ? (remoteSearchForQuery?.matches ?? [])
+      : localSearchMatches;
 
   return (
     <div className="hc-workspace-files-panel">
@@ -219,6 +284,14 @@ export function WorkspaceFilesPanel({
       <div className="hc-workspace-files-panel-body">
         {loadError != null ? (
           <div className="hc-file-tree-error">{loadError}</div>
+        ) : useRemoteSearch && remoteSearchForQuery?.status === "loading" ? (
+          <div className="hc-file-tree-empty">Searching files…</div>
+        ) : useRemoteSearch && remoteSearchForQuery?.status === "error" ? (
+          <div className="hc-file-tree-error">{remoteSearchForQuery.error ?? "File search failed."}</div>
+        ) : rootState === "loading" ? (
+          <div className="hc-file-tree-empty">Loading directory entries…</div>
+        ) : rootState === "empty" ? (
+          <div className="hc-file-tree-empty">No files in this folder</div>
         ) : (
           <FileTree
             rootEntries={rootEntries}
@@ -227,6 +300,7 @@ export function WorkspaceFilesPanel({
             selectedPath={selectedPath}
             onToggle={handleToggle}
             onSelect={handleSelect}
+            onAddEntryToChat={onAddFileToChat ? handleAddToChat : undefined}
             // OS-integration context-menu actions only exist when a Tauri host
             // is present; omitting them in browser/test hides those menu rows.
             onRevealEntry={isTauriRuntime() ? handleReveal : undefined}
@@ -238,6 +312,23 @@ export function WorkspaceFilesPanel({
       </div>
     </div>
   );
+}
+
+export function workspaceFilesRootState({
+  entriesByDir,
+  loadingPaths,
+  rootEntries,
+  hasSearchQuery,
+}: {
+  entriesByDir: ReadonlyMap<string, WorkspaceDirEntry[]>;
+  loadingPaths: ReadonlySet<string>;
+  rootEntries: readonly WorkspaceDirEntry[];
+  hasSearchQuery: boolean;
+}): WorkspaceFilesRootState {
+  if (hasSearchQuery) return "tree";
+  if (!entriesByDir.has("") || loadingPaths.has("")) return "loading";
+  if (entriesByDir.has("") && rootEntries.length === 0) return "empty";
+  return "tree";
 }
 
 /** Resolve a workspace-relative entry path against the absolute root. */

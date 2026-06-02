@@ -8,6 +8,7 @@ import {
   Clock,
   Folder,
   FolderPlus,
+  Gauge,
   ListFilter,
   Loader2,
   LogOut,
@@ -18,6 +19,7 @@ import {
   Plug,
   Search,
   Settings,
+  X,
 } from "lucide-react";
 import { useCallback, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
@@ -26,8 +28,13 @@ import { useHiCodexIntl } from "./i18n-provider";
 import {
   projectAccountMenuItems,
   type AccountMenuItem,
+  type AccountUsageAlert,
   type AccountViewModel,
 } from "../state/account-state";
+import {
+  compactWindowLabel,
+  type RateLimitCompactSummary,
+} from "../state/rate-limit-summary";
 import {
   DEFAULT_SIDEBAR_ORGANIZE_MODE,
   projectSidebarThreadGroups,
@@ -190,6 +197,7 @@ export function Sidebar({
   const [internalCollapsedGroupKeys, setInternalCollapsedGroupKeys] = useState<Set<string>>(() => new Set());
   const [previouslyExpandedGroupKeys, setPreviouslyExpandedGroupKeys] = useState<string[]>([]);
   const [confirmingArchiveThreadId, setConfirmingArchiveThreadId] = useState<string | null>(null);
+  const [dismissedUsageAlertKeys, setDismissedUsageAlertKeys] = useState<Set<string>>(() => new Set());
   const { formatMessage } = useHiCodexIntl();
   const effectiveOrganizeMode = organizeMode ?? internalOrganizeMode;
   const effectiveCollapsedGroupKeys = collapsedGroupKeys ?? internalCollapsedGroupKeys;
@@ -211,6 +219,8 @@ export function Sidebar({
     previouslyExpandedGroupKeys,
   );
   const showProjectSection = threadGroups.length > 0 || Boolean(onUseExistingFolder);
+  const usageAlert = accountView?.usageAlert ?? null;
+  const showUsageAlert = usageAlert != null && !dismissedUsageAlertKeys.has(usageAlert.dismissalKey);
 
   const runThreadAction = (thread: Thread, action: (thread: Thread) => void | Promise<void>) => {
     setOpenThreadMenu(null);
@@ -315,6 +325,11 @@ export function Sidebar({
   const useExistingFolder = () => {
     setOpenSectionMenu(null);
     void onUseExistingFolder?.();
+  };
+
+  const dismissUsageAlert = () => {
+    if (!usageAlert) return;
+    setDismissedUsageAlertKeys((current) => new Set(current).add(usageAlert.dismissalKey));
   };
 
   const signOut = () => {
@@ -626,6 +641,13 @@ export function Sidebar({
         )}
       </div>
 
+      {showUsageAlert && usageAlert && (
+        <SidebarUsageAlert
+          alert={usageAlert}
+          onDismiss={dismissUsageAlert}
+        />
+      )}
+
       <div className="hc-thread-list">
         {pinnedThreads.length > 0 && (
           <div className="hc-thread-group hc-thread-pinned-group">
@@ -905,6 +927,74 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function SidebarUsageAlert({
+  alert,
+  onDismiss,
+}: {
+  alert: AccountUsageAlert;
+  onDismiss: () => void;
+}) {
+  const { formatMessage } = useHiCodexIntl();
+  const reset = usageAlertResetLabel(alert);
+  return (
+    <div className="hc-sidebar-usage-alert">
+      <div className="hc-sidebar-usage-alert-copy">
+        <div className="hc-sidebar-usage-alert-heading">
+          <span>
+            {formatMessage(
+              {
+                id: "sidebarElectron.usageAlert.title",
+                defaultMessage: "{remaining}% usage remaining",
+              },
+              { remaining: alert.remainingPercent },
+            )}
+          </span>
+          <button
+            type="button"
+            className="hc-sidebar-usage-alert-dismiss"
+            aria-label={formatMessage({
+              id: "sidebarElectron.usageAlert.dismiss",
+              defaultMessage: "Dismiss usage alert",
+            })}
+            onClick={onDismiss}
+          >
+            <X size={12} />
+          </button>
+        </div>
+        {reset && <div className="hc-sidebar-usage-alert-reset">{reset}</div>}
+      </div>
+      <progress
+        aria-label={formatMessage({
+          id: "sidebarElectron.usageAlert.progress.ariaLabel",
+          defaultMessage: "Usage consumed",
+        })}
+        className="hc-sidebar-usage-alert-progress"
+        max={100}
+        value={alert.usedPercent}
+      />
+    </div>
+  );
+}
+
+function usageAlertResetLabel(alert: AccountUsageAlert): string | null {
+  if (alert.resetAt) {
+    const millis = alert.resetAt > 10_000_000_000 ? alert.resetAt : alert.resetAt * 1_000;
+    const resetAt = new Date(millis);
+    if (!Number.isNaN(resetAt.getTime())) {
+      return `Resets ${resetAt.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+    }
+  }
+  if (alert.windowDurationMins) return `Window ${usageAlertWindowLabel(alert.windowDurationMins)}`;
+  return null;
+}
+
+function usageAlertWindowLabel(minutes: number): string {
+  if (minutes >= 10_080 && minutes % 10_080 === 0) return `${minutes / 10_080}w`;
+  if (minutes >= 1_440 && minutes % 1_440 === 0) return `${minutes / 1_440}d`;
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
 function SidebarAccountSummary({
   accountView,
   onSignOut,
@@ -927,6 +1017,8 @@ function SidebarAccountSummary({
     accountView.error,
   ].filter(Boolean).join("\n");
   const items = projectAccountMenuItems(accountView);
+  const actionItems = items.filter((item) => item.action);
+  const infoItems = items.filter((item) => !item.action);
   const runMenuItem = (item: AccountMenuItem) => {
     if (item.action === "account/signOut") {
       if (item.disabled) return;
@@ -968,35 +1060,63 @@ function SidebarAccountSummary({
             <Settings size={14} aria-hidden="true" />
             <span>Settings</span>
           </button>
-          {items.map((item) => item.action
-            ? (
-                <button
-                  key={item.id}
-                  className="hc-sidebar-account-menu-item"
-                  data-tone={item.tone}
-                  disabled={item.disabled}
-                  role="menuitem"
-                  type="button"
-                  onClick={() => runMenuItem(item)}
-                >
-                  <LogOut size={14} aria-hidden="true" />
-                  <span>{item.label}</span>
-                  {item.value && <small>{item.value}</small>}
-                </button>
-              )
-            : (
-                <div
-                  className="hc-sidebar-account-menu-item"
-                  data-tone={item.tone}
-                  key={item.id}
-                  role="menuitem"
-                >
-                  <span>{item.label}</span>
-                  {item.value && <strong>{item.value}</strong>}
-                </div>
-              ))}
+          {infoItems.map((item) => (
+            <div
+              className="hc-sidebar-account-menu-item"
+              data-tone={item.tone}
+              key={item.id}
+              role="menuitem"
+            >
+              <span>{item.label}</span>
+              {item.value && <strong>{item.value}</strong>}
+            </div>
+          ))}
+          {accountView.rateLimitSummary && (
+            <SidebarRateLimitSummary summary={accountView.rateLimitSummary} />
+          )}
+          {actionItems.map((item) => (
+            <button
+              key={item.id}
+              className="hc-sidebar-account-menu-item"
+              data-tone={item.tone}
+              disabled={item.disabled}
+              role="menuitem"
+              type="button"
+              onClick={() => runMenuItem(item)}
+            >
+              <LogOut size={14} aria-hidden="true" />
+              <span>{item.label}</span>
+              {item.value && <small>{item.value}</small>}
+            </button>
+          ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function SidebarRateLimitSummary({ summary }: { summary: RateLimitCompactSummary }) {
+  return (
+    <div className="hc-sidebar-rate-limit-summary" role="group" aria-label={summary.heading}>
+      <div className="hc-sidebar-rate-limit-summary-heading">
+        <Gauge size={14} aria-hidden="true" />
+        <span>{summary.heading}</span>
+        {summary.remainingText && <small>{summary.remainingText}</small>}
+      </div>
+      <div className="hc-sidebar-rate-limit-summary-rows">
+        {summary.sections.map((section) => (
+          <div className="hc-sidebar-rate-limit-section" key={section.id}>
+            {section.label && <div className="hc-sidebar-rate-limit-section-label">{section.label}</div>}
+            {section.windows.map((window) => (
+              <div className="hc-sidebar-rate-limit-row" key={`${section.id}:${window.id}`}>
+                <span className="hc-sidebar-rate-limit-window">{compactWindowLabel(window.label)}</span>
+                <span className="hc-sidebar-rate-limit-remaining">{window.remainingText}</span>
+                {window.resetText && <small>{window.resetText}</small>}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

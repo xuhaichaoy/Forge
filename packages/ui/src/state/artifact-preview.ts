@@ -123,6 +123,21 @@ export function projectArtifactPreview(entry: RailEntry): ArtifactPreviewModel {
   };
 }
 
+export function artifactPreviewTabId(entry: RailEntry, hostId = "local"): string {
+  const preview = projectArtifactPreview(entry);
+  const path = preview.reference?.path
+    ?? preview.textPath
+    ?? preview.pdfPath
+    ?? preview.imageSource?.src
+    ?? preview.url
+    ?? `${entry.id}:${preview.title}`;
+  if (preview.url && !preview.reference) return `artifact:url:${encodeURIComponent(path)}`;
+  const resolvedHostId = preview.reference?.hostId?.trim() || hostId || "local";
+  // codex: open-artifact-side-panel-tab-*.js uses `artifact:${hostId}:${path}`
+  // for workspace-file artifacts; URL-only artifacts keep HiCodex's URL scope.
+  return `artifact:${resolvedHostId}:${path}`;
+}
+
 export function shouldOpenArtifactPreview(entry: RailEntry): boolean {
   return projectArtifactPreview(entry).kind !== "url";
 }

@@ -1,6 +1,7 @@
 import {
   installPromptEditorViewStaleGuardsForTest,
   isStalePromptEditorViewError,
+  promptEditorBackspaceAtEndForTest,
   promptEditorInlineNodesForTest,
   promptEditorPasteInlineNodesForTest,
   promptEditorPromptTextRoundTripForTest,
@@ -23,6 +24,21 @@ export default function runPromptEditorTests(): void {
   parsesPromptMarkdownMentionsLikeCodexDesktop();
   parsesPastedPromptLinksLikeCodexDesktop();
   preservesPromptRichLinkSerialization();
+  deletesLineBreaksWithBackspace();
+}
+
+// Regression: a collapsed caret at a paragraph boundary must join lines on
+// Backspace. Before joinBackward was chained into the Backspace binding, a
+// trailing/empty line (and any line break) could not be deleted.
+function deletesLineBreaksWithBackspace(): void {
+  assert(
+    promptEditorBackspaceAtEndForTest("123123\n123123\n") === "123123\n123123",
+    "Backspace at the end of a trailing empty line should remove the line break",
+  );
+  assert(
+    promptEditorBackspaceAtEndForTest("abc\n") === "abc",
+    "Backspace on a lone trailing empty line should remove it (joinBackward, not just char delete)",
+  );
 }
 
 function detectsStaleProseMirrorViewErrorsAcrossRealms(): void {

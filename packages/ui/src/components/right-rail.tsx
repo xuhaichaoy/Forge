@@ -6,7 +6,6 @@ import {
   Circle,
   Clock,
   FileDiff,
-  Gauge,
   GitBranch,
   Github,
   Globe,
@@ -14,14 +13,13 @@ import {
   Laptop,
   LoaderCircle,
   MessageSquareText,
-  Minimize2,
   Network,
   Settings,
   Square,
   Terminal,
 } from "lucide-react";
 import { useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 // codex: local-conversation-thread-*.js — persisted across remounts
 // (in-memory only, matches Desktop atomFamily semantics)
 import { useSectionCollapse } from "../hooks/use-section-collapse";
@@ -38,7 +36,6 @@ import {
   clipRailEntries,
   type RightRailDisplayMode,
   type RightRailSection as RightRailSectionViewModel,
-  type RightRailStatusFooterInput,
 } from "../state/right-rail";
 
 /*
@@ -59,8 +56,8 @@ import {
  *
  * Earlier versions of this file conflated the two by adding resize/fullwidth
  * to the summary rail and inlining `ArtifactPreviewPanel` here. Reverted: the
- * rail is purely sections, and file preview lives in its own
- * `<FilePreviewPanel>` aside.
+ * rail is purely sections, and file/source previews live in AppShell
+ * side-panel tabs.
  */
 export interface RightRailProps {
   sections: RightRailSectionViewModel[];
@@ -79,12 +76,6 @@ export interface RightRailProps {
   // codex: local-conversation-thread-*.js — browser panel CTA;
   // Desktop's browser row opens the active browser-use tab in the sandbox view.
   onBrowserOpen?: (tabId: string | undefined) => void;
-  // codex: local-conversation-thread-*.js — status footer payload.
-  // Desktop renders a single status popover trigger (`tokens/s` + `% used`);
-  // the full token count is tooltip-only and Compact is a menu item.
-  statusFooter?: RightRailStatusFooterInput;
-  isResponseInProgress?: boolean;
-  onCompactThread?: () => void;
   // codex: local-conversation-thread-*.js — Environment section
   // accordion accepts an `after` slot in the header (worktree menu trigger
   // alongside diff stats). HiCodex exposes the worktree-menu open callback as
@@ -126,9 +117,6 @@ export function RightRail({
   // corresponding feature lights up.
   onAutomationOpen,
   onBrowserOpen,
-  statusFooter,
-  isResponseInProgress = false,
-  onCompactThread,
   // codex: local-conversation-thread-*.js — environment section
   // header `after` slot CTA (worktree menu opener); silent when caller does
   // not wire it so the rail keeps current behavior for non-worktree shells.
@@ -178,9 +166,9 @@ export function RightRail({
   /*
    * Click flow for the Artifact / file cards:
    *   - If the entry is previewable (`shouldOpenArtifactPreview`), parent
-   *     opens `<FilePreviewPanel>` via `onOpenArtifactPreview`. Matches the
-   *     Codex `openWorkspaceFile({..., openInSidePanel: true, ...})` route in
-   *     local-conversation-thread-*.js.
+   *     opens the AppShell side-panel tab via `onOpenArtifactPreview`. Matches
+   *     the Codex `openWorkspaceFile({..., openInSidePanel: true, ...})` route
+   *     in local-conversation-thread-*.js.
    *   - Otherwise fall back to the generic "open file in editor" / "open
    *     URL" / "open diff" handlers (Codex open-workspace-file-*.js
    *     non-side-panel branch).
@@ -200,9 +188,7 @@ export function RightRail({
       {/*
        * CODEX-REF: local-conversation-thread-*.js — sections wrapper
        * className `flex h-fit max-h-full min-h-0 flex-col gap-3 overflow-y-auto pb-3`。
-       * 外壳是 `overflow-hidden`，sections 在内层 wrapper 内 scroll。status footer
-       * 作为最后一个普通 section 渲染于 sections wrapper 内（Codex 把 status section
-       * 当普通 section 渲染于 sections 数组）——无 sticky-bottom。
+       * 外壳是 `overflow-hidden`，sections 在内层 wrapper 内 scroll。
        */}
       <div className="hc-right-rail-sections">
       {sections.map((section) => (
@@ -282,152 +268,9 @@ export function RightRail({
               )}
         </RailSection>
       ))}
-      {/*
-       * CODEX-REF: local-conversation-thread-*.js — status footer
-       * 渲染在 sections wrapper 内末尾（Codex 当作普通 status section 渲染）。
-       * HiCodex 之前 sticky-bottom 已删除（见 right-rail.css
-       * `.hc-rail-status-footer` 的 position 已改为 static）。
-       */}
-      {statusFooter && (
-        <RightRailStatusFooter
-          tokensUsed={statusFooter?.tokensUsed}
-          contextWindow={statusFooter?.contextWindow}
-          tokensPerSecond={statusFooter?.tokensPerSecond}
-          isResponseInProgress={isResponseInProgress}
-          onCompactThread={onCompactThread}
-        />
-      )}
       </div>
     </aside>
   );
-}
-
-/*
- * codex: local-conversation-thread-*.js — Status footer.
- * Renders Desktop's status popover trigger: token speed on the left, context
- * percent on the right, and a Compact menu item inside the popover.
- */
-export interface RightRailStatusFooterProps {
-  tokensUsed?: number;
-  contextWindow?: number;
-  tokensPerSecond?: number;
-  isResponseInProgress: boolean;
-  onCompactThread?: () => void;
-}
-
-export function RightRailStatusFooter({
-  tokensUsed,
-  contextWindow,
-  tokensPerSecond = 0,
-  isResponseInProgress,
-  onCompactThread,
-}: RightRailStatusFooterProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const contextUsage = rightRailContextUsage(tokensUsed, contextWindow);
-  const roundedTokensPerSecond = Math.round(Math.max(0, tokensPerSecond));
-  const tokensLabel = contextUsage.available
-    ? `${formatStatusNumber(contextUsage.usedTokens)} / ${formatStatusNumber(contextUsage.contextWindow)} tokens used`
-    : undefined;
-  const percentLabel = `${Math.round(contextUsage.percent ?? 0)}% used`;
-  const compactDisabled = isResponseInProgress || !onCompactThread;
-  const compactTitle = isResponseInProgress
-    ? "Compact is disabled while a task is in progress"
-    : "Compact thread";
-  const speedIconStyle = {
-    transform: `rotate(${-90 + Math.max(0, Math.min(tokensPerSecond / 300, 1)) * 270}deg)`,
-    transformOrigin: "center",
-  } as CSSProperties;
-  const donutStyle = {
-    "--hc-context-usage-percent": `${Math.max(0, Math.min(contextUsage.percent ?? 0, 100))}%`,
-  } as CSSProperties;
-  return (
-    <div
-      className="hc-rail-status-footer"
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setMenuOpen(false);
-        }
-      }}
-      onKeyDown={(event) => {
-        // codex: the status dropdown is a Radix DropdownMenu → closes on Escape.
-        // HiCodex's custom menu only had onBlur (Esc doesn't move focus), so add it.
-        if (event.key === "Escape" && menuOpen) {
-          event.stopPropagation();
-          setMenuOpen(false);
-        }
-      }}
-    >
-      <button
-        aria-expanded={menuOpen}
-        aria-haspopup="menu"
-        aria-label={`Thread status: ${roundedTokensPerSecond} tokens/s, ${percentLabel}`}
-        className="hc-rail-status-footer-trigger"
-        onClick={() => setMenuOpen((open) => !open)}
-        title={tokensLabel}
-        type="button"
-      >
-        <span className="hc-rail-status-footer-cluster">
-          <Gauge aria-hidden="true" className="hc-rail-status-footer-icon" size={14} style={speedIconStyle} />
-          <span className="hc-rail-status-footer-label">{roundedTokensPerSecond} tokens/s</span>
-        </span>
-        <span className="hc-rail-status-footer-cluster">
-          <span className="hc-rail-status-footer-label">{percentLabel}</span>
-          <span
-            aria-label={contextUsage.available ? `Context usage: ${Math.round(contextUsage.percent ?? 0)}%` : "Context usage unavailable"}
-            className="hc-rail-status-context-donut"
-            role="img"
-            style={donutStyle}
-          />
-        </span>
-      </button>
-      {menuOpen && (
-        <div className="hc-rail-status-footer-menu" role="menu">
-          <button
-            className="hc-rail-status-footer-menu-item"
-            disabled={compactDisabled}
-            onClick={() => {
-              if (compactDisabled) return;
-              setMenuOpen(false);
-              onCompactThread?.();
-            }}
-            role="menuitem"
-            title={compactTitle}
-            type="button"
-          >
-            <Minimize2 size={14} />
-            <span>Compact</span>
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function formatStatusNumber(value: number): string {
-  return Math.round(value).toLocaleString();
-}
-
-function rightRailContextUsage(
-  tokensUsed: number | null | undefined,
-  contextWindow: number | null | undefined,
-): { available: true; contextWindow: number; percent: number; usedTokens: number } | { available: false; percent: null } {
-  if (
-    tokensUsed == null
-    || contextWindow == null
-    || !Number.isFinite(tokensUsed)
-    || !Number.isFinite(contextWindow)
-    || contextWindow <= 0
-    || tokensUsed < 0
-  ) {
-    return { available: false, percent: null };
-  }
-  const usedTokens = Math.min(tokensUsed, contextWindow);
-  return {
-    available: true,
-    contextWindow,
-    percent: (usedTokens / contextWindow) * 100,
-    usedTokens,
-  };
 }
 
 /*
@@ -812,7 +655,7 @@ function RailEntryContent({
   const tooltip = sectionId === "automation" && entry.status
     ? entry.status
     : entry.meta ?? title;
-  const diffStats = sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
+  const diffStats = sectionId === "backgroundSubagents" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
   // codex: browser row — Browser title shimmer while the tab is active。Codex 把整段
   // (title + displayUrl) 用 `loading-shimmer-pure-text` 包裹,见 isBrowser 分支。
   const titleClassName = [
@@ -861,7 +704,7 @@ function RailEntryContent({
               {/* codex: an ACTIVE background subagent shows a shimmering "is working"
                   label next to its name (backgroundAgents.activeLabel =
                   loading-shimmer-pure-text + text-token-description-foreground). */}
-              {sectionId === "backgroundTasks" && isBackgroundAgentEntry(entry) && entry.status === "active" && (
+              {sectionId === "backgroundSubagents" && isBackgroundAgentEntry(entry) && entry.status === "active" && (
                 <span className="hc-rail-card-working">is working</span>
               )}
               {diffStats && <RailDiffStats stats={diffStats} />}
@@ -903,12 +746,12 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
       ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
       : <MessageSquareText size={14} />;
   }
-  if (sectionId === "backgroundTasks") {
-    if (isBackgroundTerminalEntry(entry)) return <Terminal size={14} />;
+  if (sectionId === "backgroundSubagents") {
     return entry.status === "active"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
       : <Bot size={14} />;
   }
+  if (sectionId === "backgroundTasks") return <Terminal size={14} />;
   if (sectionId === "browser") {
     // codex: browser row — Desktop's active state shows a spinner; idle uses
     // a static Globe. HiCodex normalizes "active" (set by
@@ -930,7 +773,6 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
     }
     return <Network size={14} />;
   }
-  if (sectionId === "status") return progressEntryIcon(entry.status);
   const imageSrc = railEntryImageSrc(entry);
   if (imageSrc) return <img alt="" className="hc-rail-card-thumb" src={imageSrc} />;
   // codex Outputs rows render via summary-panel-row with `icon-sm` (18px) icons.

@@ -122,7 +122,7 @@ Deferred (rationale):
 - **RD1 dispatcher** — `turn/plan/updated` synthesizing a `todo-list` item is internal-only: Desktop does not render todo-list as a standalone transcript row, and HiCodex's `turnPlan` snapshot already drives the same live right-rail Progress (no visible divergence).
 - **RD2 dispatcher** — the `requestApproval`/`tool/call`/`requestUserInput` cases in `applyNotification` are dead (id-bearing → `onServerRequest`); removing them is cleanup with no visible change.
 - **RD3 unified-diff** — failure-dialog path rows as file-open buttons need `cwd`/`hostId` plumbed through `HiCodexApp`.
-- **RD4 markdown** — `<sub>` containing a link → `<span>` is niche; needs inline-link detection in the sub renderer.
+- **RD4 markdown** — closed 2026-06-02: `<sub>` containing an `img.shields.io/badge/P…` priority badge image now demotes to `<span>`, matching Codex's basic-HTML renderer.
 - **RD5 plan** — "Writing plan" gradient text-shimmer vs HiCodex's opacity-pulse + indexed fade; the indexed fade is already accepted as a clean-room choice.
 - **RD6 markdown** — hljs token-scope coverage (shiki vs hljs); exact token boundaries differ by tokenizer.
 
@@ -934,6 +934,114 @@ Final round (`css-value-audit-6`, default + analysis-only). **13 findings → 10
 Verified **tsc 0 · 75 UI · build ✓**. All `A/B-pending`.
 
 **Sweep status — contract-method CSS-value alignment is now complete.** Rounds 2–6 + the two source-resolved deferrals (§M-59 chat-font, §M-60 list-model) + the earlier §J pass have swept every Codex-backed HiCodex surface: message/markdown/top-bar/composer/right-rail/tool-activity/plan/sidebar/reasoning/dialogs/approval/find-bar/lightbox/command-palette/model-picker/user-message-edit/toasts/turn/collab-blocks/empty-states/account. Net this session: **~165 Codex-backed value swaps across 5 audit rounds + 2 deferral resolutions**, each backed by a resolved Codex bundle value, flagged `A/B-pending` in-comment, and gated `tsc 0 · 75 UI · build ✓` after every batch. The only surfaces deliberately left are **HiCodex-only features with no Codex baseline** (file-preview side-by-side diff, KB/model-gateway business shell, left nav-rail) and a couple of **A/B-gated layout calls** (composer min-height — genuinely content-rendering-dependent, not cleanly source-decidable). Next: the in-app A/B pass against Codex.app to confirm the rendered pixels (the one thing the headless contract method can't do) — see the surface-organized **`docs/dev/codex-alignment-ab-checklist.md`**.
+
+## §M-65 — account/rate-limit read-only summary parity
+
+Implemented the remaining protocol-backed account/quota slice from the Desktop profile/status surfaces. Codex Desktop `/status` builds rate-limit rows from all readable buckets, emits model-section labels (`{modelName} limit:`), percent-left text, reset metadata, and a textual progress bar (`█/░`); the profile dropdown reuses the compact `Usage remaining` summary and suppresses product-owned upgrade/admin/referral actions when they are unavailable. HiCodex already stores both the legacy single bucket and `rateLimitsByLimitId`, so this pass added a shared `rate-limit-summary.ts` projection and wired it into:
+
+- `/status`: `ComposerStatusPanel` now accepts `rateLimitsByLimitId`, includes all buckets, and renders the Desktop-style third progress column when the panel is wide enough.
+- Account dropdown: the old quota/detail rows are replaced by a read-only compact `Usage remaining` block when rate-limit windows exist; sign-out/settings remain as before.
+- Docs/tests: account + composer status tests now cover multi-bucket projection and the compact summary shape.
+
+Still intentionally skipped: full profile stats (`/wham/profiles/me`), Usage & billing, upgrade, credits purchase/reset, admin request, and referral flows. Those require Desktop product HTTP endpoints or account services outside the app-server protocol and remain product-owned boundaries.
+
+## §M-66 — thread-goal composer banner and user-message status parity
+
+Implemented the next protocol-backed thread-goal slice after auditing Desktop's composer goal banner and local transcript action rows. HiCodex already had app-server `thread/goal/set|get|clear` types/routes and reducer projection for `thread/goal/updated` / `thread/goal/cleared`; the gap was the composer surface plus the user-message status label.
+
+- Above composer: added a `ThreadGoalBanner` in the same stacked portal as queued follow-ups/background subagents/hooks/quota. It shows Desktop's status labels, active duration/token progress, objective, edit/pause-resume/clear actions, and sends only protocol-owned `thread/goal/set` / `thread/goal/clear` requests.
+- Transcript: user goal rows now render Desktop's `Sent as goal` status instead of a HiCodex-only `Goal: ...` objective chip. Completed goals continue through the reducer's `_completedThreadGoal` assistant projection and `Goal achieved...` action chip.
+- Tests/docs: added banner formatter/render coverage and user-message status coverage, and recorded the durable rules in `docs/DEVELOPMENT.md`.
+
+Still intentionally skipped: Desktop's native app mention metadata (`native-desktop-apps` / native app icons) and automation management mutations remain host-bridge/product-scope gaps until app-server exposes matching protocol routes.
+
+## §M-67 — shared `get-file-icon` map for workspace tree and file surfaces
+
+Closed the workspace-tree icon-family gap against Desktop's `get-file-icon-DeSxUi4G.pretty.js`. HiCodex already used a shared Desktop-derived map for file mentions and right-rail Outputs/Sources, but `file-icon-resolver.ts` still carried an MVP-only resolver that special-cased Markdown and treated everything else as a generic file.
+
+- `file-icon-resolver.ts` now delegates non-directory rows to `fileIconKeyFor`, so workspace tree rows share the same extension, filename, and MIME key map as file mentions and Outputs/Sources.
+- `file-tree.tsx` renders those shared icon families through `fileIconComponent`; only expanded folders keep the local `folder-open` branch.
+- The shared map is restored to Desktop's exact `.hs -> javascript` family even though a generic `code` icon would be semantically cleaner.
+- Tests cover representative Desktop families: TypeScript, React, Dockerfile/terminal, hashes, notebook, `skill.md`, document, spreadsheet, presentation, archives, `.hs`, and MIME image hints.
+
+Still intentionally approximate: glyph artwork remains clean-room/lucide-based, not a byte-for-byte port of Desktop's SVG registry.
+
+## §M-68 — MCP tool-call approval panel parity
+
+Closed the protocol-backed `mcpServer/elicitation/request` gap for `_meta.codex_approval_kind === "mcp_tool_call"` against `pending-request-item-panel-DZ77s3cA.pretty.js`. URL actions, connector auth, and generic MCP forms were already routed through the above-composer pending-request stack; MCP tool-call approvals were still flattened into generic metadata rows.
+
+- `approval-requests.ts` now projects a structured MCP tool approval view model: connector name, risk level, formatted tool title, and Desktop-style tool parameter entries from `toolParamsDisplay` / `_meta.tool_params_display` or raw `tool_params`.
+- `pending-request-stack.tsx` renders the dedicated approval surface: connector or `Elevated Risk` header, formatted `Allow {connectorName} to run {toolName} tool ?` title, 4-row parameter preview, per-parameter `Expand` / `Collapse`, and `Show N more items` / `Show fewer items`.
+- Existing persist choices remain protocol-shaped and still return `{ action: "accept", content: {}, _meta: { persist } }` for selected `always` / `session` modes.
+- Tests cover the structured view model, high-risk rendering, formatted title, parameter preview/expand/show-more labels, and persist labels.
+
+Still intentionally skipped here: native `item/tool/requestOptionPicker` and `item/tool/requestSetupCodexContextPicker` exist in the Desktop renderer, but the local generated app-server `ServerRequest` union does not expose those request methods. Do not invent local protocol routes for them. Dynamic `item/tool/call` `request_option_picker` is covered in §M-71; the source-backed setup-context response shell is covered in §M-73.
+
+## §M-69 — review-comment tooltip body parity
+
+Closed the assistant review-comment rendering gap against `local-conversation-thread-CtUuMnse.pretty.js`. HiCodex already parsed line-start `:code-comment{}` directives into `AssistantReviewComment.body` and rendered review rows in the correct after-content order, but the row UI only showed priority, title, and location.
+
+- `message-unit.tsx` now wraps each review-comment row with a hover/focus tooltip that includes the file location, title, and model-authored body text.
+- The row remains clickable and still opens the referenced file through the existing `onOpenFileReference` path.
+- `message.css` adds scoped tooltip layout and dark-theme tokens for the review-comment surface.
+- Conversation-view coverage now asserts the tooltip role and body text are present alongside the localized open-row label.
+
+Still intentionally approximate: the tooltip is clean-room CSS rather than Radix tooltip plumbing; keep behavior and content aligned before chasing portal-level pixel parity.
+
+## §M-70 — hook prompt feedback and blocked-user status parity
+
+Closed the protocol-backed hook feedback gap against `app-server-manager-signals-Bpaj8VHp.pretty.js` and `local-conversation-thread-CtUuMnse.pretty.js`. HiCodex already ignored synthetic `hook` rows and aggregated per-turn hook runs onto assistant `hookStats`; it still dropped protocol `hookPrompt` items and did not mark user prompts blocked by `userPromptSubmit` hooks.
+
+- `thread-item-fields.ts` and `user-message-content.ts` now treat protocol `hookPrompt` items as user-message feedback rows, with text/copy/content built from `fragments[].text`.
+- `codex-reducer.ts` projects blocked `userPromptSubmit` hook runs onto the matching user message as `deliveryStatus: "not-sent"` plus hook-blocked metadata, while preserving assistant `hookStats`.
+- `message-unit.tsx` renders Desktop status chips: `Hook blocked this message` for blocked user prompts and `Hook feedback` for hookPrompt feedback rows. Existing goal chips remain visible beside hook status.
+- Tests cover reducer projection, hookPrompt render-group projection, and both user-message status chips.
+
+Still intentionally skipped: richer hook-run detail popovers beyond the existing assistant hook summary; do not create standalone hook transcript rows.
+
+## §M-71 — dynamic option picker and child approval promotion parity
+
+Closed the source-backed pending-request gap from the 2026-06-02 Desktop snapshot (`26.527.31326`, build `3390`). Desktop's app-server manager treats dynamic `item/tool/call` `request_option_picker` as a blocking option picker and replies with an `inputText` tool result containing JSON `{ action, selectedOptions, freeformAnswer }`; Desktop's pending panel renders rounded option pills, a `Something else` freeform input, and Skip/Submit/Dismiss actions. The same pass verified that Desktop's child-pending selector promotes only child command/file approvals before the active thread request panel; active-thread pending state handles user input, option picker, permission, and MCP requests.
+
+- `approval-requests.ts` now recognizes dynamic `request_option_picker`, projects the Desktop option-picker view model, and returns the Desktop wrapper for submit/skip/dismiss. Native `item/tool/requestOptionPicker` is handled defensively when present, but remains a generated-protocol boundary rather than a route HiCodex invents.
+- `pending-request-stack.tsx` renders the option picker as pills plus `Something else`, preserves option selection and freeform text as separate answer channels, supports Skip/Submit/Dismiss, and matches Desktop's `requestUserInput.isOther` ArrowDown focus behavior.
+- `pending-request-scope.ts` classifies dynamic input helpers (`request_onboarding_input`, `request_option_picker`, `setup_codex_context_picker`) as user-input blocking state, while composer child promotion is restricted to Desktop's command/file approval subset.
+- Tests cover dynamic option-picker projection/result wrapping, option-picker rendering, `isOther` ArrowDown focus, dynamic awaiting classification, background Stop-all ownership, and child approval promotion order.
+
+Verification: `npm run typecheck --workspace @hicodex/ui`, `npm run test --workspace @hicodex/ui` (88 tests), `npm run build --workspace @hicodex/desktop`, and `git diff --check` all passed.
+
+Still intentionally skipped here: the full setup-context source picker (apps, connector OAuth, plugins, folders) needs product/host data that the local generated protocol does not currently expose; do not synthesize it from Desktop screenshots or chunk names. The source-backed empty-source response shell is covered in §M-73. The right-rail Browser section still needs a real browser snapshot source before it can show Desktop-equivalent content.
+
+## §M-72 — quota banner placement in composer footer
+
+Closed a small above-composer stack mismatch against `composer-zFOdryLS.pretty.js`: Desktop renders the quota/rate-limit banner as a sibling after the main above-composer portal, not inside the continuous rounded portal stack that contains queued messages, goal, child approvals, hooks review, and status text.
+
+- `HiCodexApp.tsx` now renders `ComposerQuotaBanner` immediately after the above-composer portal instead of inside `AboveComposerPanelContainer`.
+- The quota projection and banner component remain unchanged; this is a placement fix only.
+
+Verification: `npm run typecheck --workspace @hicodex/ui`, `npm run test --workspace @hicodex/ui` (88 tests), `npm run build --workspace @hicodex/desktop`, and `git diff --check` all passed.
+
+Still intentionally skipped: Desktop's current bundle also computes background-subagent rows behind a hard false gate. HiCodex still keeps its product-visible background-subagent stack until there is an explicit product decision to hide that capability for strict current-build parity.
+
+## §M-73 — setup-context picker response shell parity
+
+Closed the safe, source-backed subset of Desktop's setup-context pending request against `app-server-manager-signals-Bpaj8VHp.pretty.js` and `pending-request-item-panel-DZ77s3cA.pretty.js`. Desktop treats native `item/tool/requestSetupCodexContextPicker` and dynamic `item/tool/call` `setup_codex_context_picker` as blocking setup-context picker requests. Its Dismiss/Skip/Continue actions reply with `{ action, selectedSources }`; dynamic tool calls wrap that JSON response in the same `inputText` tool-result wrapper used by `request_option_picker`.
+
+- `approval-requests.ts` now recognizes dynamic `setup_codex_context_picker` and defensive native setup-context requests, returns Desktop's `Continue` / `Skip` / `Dismiss` actions, and wraps dynamic responses as `success: true` plus one `inputText` content item.
+- `pending-request-stack.tsx` renders setup-context requests as a dedicated pending card with Desktop's title and Skip/Continue actions, while Escape maps to Dismiss.
+- Tests cover dynamic Continue/Skip/Dismiss wrapping, direct native response shape, Stop-all dismissal, and the dedicated pending-card rendering.
+
+Verification: `npm run typecheck --workspace @hicodex/ui`, `npm run test --workspace @hicodex/ui` (88 tests), `npm run build --workspace @hicodex/desktop`, and `git diff --check` all passed.
+
+Still intentionally skipped: selecting Google Drive, Slack, Gmail, local folders, or Browse all app/plugin sources requires real app/plugin/OAuth/folder-picker host flows. HiCodex keeps `selectedSources: []` until those product bridges exist instead of faking connected sources from Desktop bundle strings.
+
+## §M-74 — Browser right-rail source boundary
+
+Verified the right-rail Browser gap against Desktop's `local-conversation-thread-CtUuMnse.pretty.js` and `browser-sidebar-manager-BLXOqzh1.pretty.js`. Desktop's Browser section is not derived from transcript items; it is fed by browser-sidebar snapshots and active-tab state. The Desktop projection filters for web tabs only, drops empty URLs and `about:blank`, falls back from title to URL, and renders the stored browser tab id.
+
+Current HiCodex has only the render/projection input (`RightRailBrowserInput`) and tests that inject synthetic browser rows. `HiCodexApp` does not pass a `browser` value to `projectRightRailSections`, and generated app-server `ThreadItem` types do not expose browser snapshot state.
+
+Still intentionally skipped: do not synthesize Browser rail rows from MCP text, web-search activity, or transcript items. Full parity needs a real host/app browser-sidebar snapshot source plus an open-browser-tab action before wiring `browser` / `onBrowserOpen` into `RightRail`.
 
 ## Quick history
 

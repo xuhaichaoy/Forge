@@ -44,6 +44,7 @@ export default function runMessageUnitTests(): void {
   formatsAssistantSpreadsheetResourceCards();
   formatsAssistantWebsiteAndGoogleDriveEndResources();
   limitsAssistantEndResourceCardsLikeCodexDesktop();
+  rendersAssistantEndResourceOpenInDropdownLikeCodexDesktop();
   doesNotInventAssistantArtifactActionForEndResources();
   formatsAssistantImageResourceCards();
   parsesInlineMarkdownImagesBeforeLinks();
@@ -55,6 +56,8 @@ export default function runMessageUnitTests(): void {
   // Note: sentAtMs trailing slot 已删除（Codex 对齐 — action row 无 timestamp）。
   rendersAssistantTurnRatingWhenSubmitterAvailable();
   hidesUserEditAffordanceUnlessMostRecentTurn();
+  rendersThreadGoalUserStatusLikeCodexDesktop();
+  rendersHookUserStatusLikeCodexDesktop();
   rendersAssistantTimestampFromCompletedAtMs();
   summarizesAssistantHookStatsLikeCodexDesktop();
   rendersCompletedThreadGoalChipLikeCodexDesktop();
@@ -70,6 +73,7 @@ export default function runMessageUnitTests(): void {
   rendersTableAlignmentLikeDesktopMarkdown();
   rendersBareLinksLikeDesktopMarkdown();
   rendersReferenceLinksLikeDesktopMarkdown();
+  demotesPriorityBadgeSubscriptLikeDesktopMarkdown();
   limitsMarkdownCodeWrapToggleToDesktopTextLanguages();
   usesDesktopLazyCodeBlockViewportMargin();
   computesDesktopImagePreviewNavigation();
@@ -194,6 +198,18 @@ function limitsAssistantEndResourceCardsLikeCodexDesktop(): void {
   assertEqual(html.includes("Show 1 more"), true, "Desktop end resources should expose the show-more footer after three rows");
   assertEqual(html.includes("Open preview"), true, "file end resource rows should expose Desktop's hover subtitle");
   assertEqual(html.includes("Open in"), true, "file end resource rows should expose Desktop's open-in affordance label");
+}
+
+function rendersAssistantEndResourceOpenInDropdownLikeCodexDesktop(): void {
+  const html = renderToStaticMarkup(createElement(AssistantEndResourceCards, {
+    resources: [{ type: "file", path: "docs/report.pdf" }],
+    onOpenArtifact: () => undefined,
+    onRevealResource: () => undefined,
+  }));
+
+  assertEqual(html.includes("hc-assistant-end-resource-preview-button"), true, "end resource card should render a separate preview overlay button");
+  assertEqual(html.includes("aria-haspopup=\"menu\""), true, "file end resource should expose a distinct Open in dropdown trigger");
+  assertEqual(html.includes("aria-label=\"Open report.pdf\""), true, "preview overlay should own the open-preview accessible label");
 }
 
 function doesNotInventAssistantArtifactActionForEndResources(): void {
@@ -432,6 +448,23 @@ function rejectsUnsafeMarkdownLinks(): void {
   );
   assertEqual(safeMarkdownHref("data:text/html,hello"), null, "data URLs should be rejected");
   assertEqual(safeMarkdownHref("//example.com"), null, "protocol-relative URLs should be rejected");
+}
+
+function demotesPriorityBadgeSubscriptLikeDesktopMarkdown(): void {
+  const plainHtml = renderAssistantMarkdown("<sub>plain</sub>");
+  assertEqual(plainHtml.includes("<sub>plain</sub>"), true, "ordinary basic HTML subscript should remain a sub element");
+
+  const badgeHtml = renderAssistantMarkdown("<sub>![P1](https://img.shields.io/badge/P1-high-orange)</sub>");
+  assertEqual(
+    badgeHtml.includes("<sub"),
+    false,
+    "Desktop demotes priority-badge image subscripts to a span so the badge keeps normal size",
+  );
+  assertEqual(
+    badgeHtml.includes("https://img.shields.io/badge/P1-high-orange"),
+    true,
+    "priority badge image should still render after the subscript wrapper is demoted",
+  );
 }
 
 function parsesAssistantPromptLinksLikeDesktop(): void {
@@ -980,6 +1013,68 @@ function hidesUserEditAffordanceUnlessMostRecentTurn(): void {
   );
 }
 
+function rendersThreadGoalUserStatusLikeCodexDesktop(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "user-goal-status",
+      role: "user",
+      item: {
+        id: "user-goal-status",
+        type: "userMessage",
+        _turnId: "turn-goal-status",
+        _threadGoal: {
+          threadId: "thread-goal-status",
+          objective: "Keep aligning Desktop parity",
+          status: "active",
+        },
+      },
+      text: "Keep aligning Desktop parity",
+    },
+  }));
+
+  assertEqual(html.includes("Sent as goal"), true, "Desktop user goal rows should render the Sent as goal status");
+  assertEqual(html.includes("Goal:"), false, "the user goal status should not expose HiCodex-only objective text");
+}
+
+function rendersHookUserStatusLikeCodexDesktop(): void {
+  const blockedHtml = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "user-hook-blocked",
+      role: "user",
+      item: {
+        id: "user-hook-blocked",
+        type: "userMessage",
+        deliveryStatus: "not-sent",
+        hookBlocked: true,
+        _threadGoal: {
+          threadId: "thread-hook-blocked",
+          objective: "Keep aligning Desktop parity",
+          status: "active",
+        },
+      },
+      text: "Blocked by hook",
+    },
+  }));
+  assertEqual(blockedHtml.includes("Hook blocked this message"), true, "blocked hook user rows should render Desktop's hook-blocked status");
+  assertEqual(blockedHtml.includes("Sent as goal"), true, "hook status should not remove the existing goal status chip");
+
+  const feedbackHtml = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "hook-feedback",
+      role: "user",
+      item: {
+        id: "hook-feedback",
+        type: "hookPrompt",
+      },
+      text: "Hook suggested a safer command.",
+    },
+  }));
+  assertEqual(feedbackHtml.includes("Hook feedback"), true, "hookPrompt rows should render Desktop's hook feedback status");
+}
+
 // Codex Desktop's assistant message action row renders a per-message timestamp
 // as its trailing hover/focus affordance (re-verified vs Codex Desktop
 // v26.519.81530). The earlier "no timestamp" removal was a misread of the
@@ -1081,6 +1176,24 @@ function rendersCompletedThreadGoalChipLikeCodexDesktop(): void {
     null,
     "in-progress goals should not surface the completed-goal chip (Codex passes `null` via `W?null:w`)",
   );
+}
+
+function renderAssistantMarkdown(text: string): string {
+  return renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-markdown-test",
+      role: "assistant",
+      item: {
+        id: "assistant-markdown-test",
+        type: "agentMessage",
+        _turnId: "turn-assistant-markdown-test",
+        completed: true,
+      },
+      text,
+      assistantPhase: "final_answer",
+    },
+  }));
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

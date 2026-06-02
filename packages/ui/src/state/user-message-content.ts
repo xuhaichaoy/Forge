@@ -5,12 +5,18 @@ import type { ThreadItem, UserMessageContentPart, UserMessageTextElement } from 
 export function userMessageText(item: ThreadItem): string {
   const record = item as Record<string, unknown>;
   const content = Array.isArray(record.content) ? record.content : [];
+  if (content.length === 0 && Array.isArray(record.fragments)) {
+    return hookPromptFragmentsText(record.fragments);
+  }
   return content.map(userInputPartText).filter(Boolean).join("\n");
 }
 
 export function userMessageCopyText(item: ThreadItem): string {
   const record = item as Record<string, unknown>;
   const content = Array.isArray(record.content) ? record.content : [];
+  if (content.length === 0 && Array.isArray(record.fragments)) {
+    return hookPromptFragmentsText(record.fragments).trim();
+  }
   return content
     .map((part) => projectUserInputPart(part).filter(isCopyableUserMessagePart).map(copyableUserMessagePartText).join(""))
     .filter(Boolean)
@@ -21,7 +27,19 @@ export function userMessageCopyText(item: ThreadItem): string {
 export function projectUserMessageContent(item: ThreadItem): UserMessageContentPart[] {
   const record = item as Record<string, unknown>;
   const content = Array.isArray(record.content) ? record.content : [];
+  if (content.length === 0 && Array.isArray(record.fragments)) {
+    const text = hookPromptFragmentsText(record.fragments);
+    return text ? [{ kind: "text", text, textElements: [] }] : [];
+  }
   return content.flatMap(projectUserInputPart);
+}
+
+function hookPromptFragmentsText(fragments: unknown[]): string {
+  return fragments.map((fragment) => {
+    if (!fragment || typeof fragment !== "object") return "";
+    const text = (fragment as Record<string, unknown>).text;
+    return typeof text === "string" ? text : "";
+  }).filter(Boolean).join("\n");
 }
 
 function userInputPartText(part: unknown): string {

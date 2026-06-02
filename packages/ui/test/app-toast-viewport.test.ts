@@ -6,7 +6,24 @@ import type { LogLine } from "../src/state/codex-reducer";
 export default function runAppToastViewportTests(): void {
   projectsRecentUserFacingLogsOnly();
   filtersInternalHostLifecycleAndTransportLogsLikeDesktop();
+  suppressesBenignModelMetadataFallbackWarning();
   rendersToastViewportForProjectedLogs();
+}
+
+// codex-rs warns when a model slug (e.g. a subscription model via openai_http)
+// is missing from its bundled metadata; the turn still completes, so the toast
+// is benign noise and must be suppressed (but kept in the log history).
+function suppressesBenignModelMetadataFallbackWarning(): void {
+  const logs: LogLine[] = [
+    logFixture("metadata", "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.", "warn", 10_000),
+    logFixture("visible-error", "Save failed", "error", 9_900),
+  ];
+
+  assertDeepEqual(
+    projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
+    ["visible-error"],
+    "the model-metadata fallback warning should not surface as a toast",
+  );
 }
 
 function projectsRecentUserFacingLogsOnly(): void {

@@ -561,7 +561,10 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     : null;
 
   return {
-    units: withStreamingAssistantState(groupConsecutiveDynamicToolCalls(units), options.isThreadRunning === true),
+    units: withStreamingAssistantState(
+      groupConsecutiveDynamicToolCalls(units, { keepLatestLiveActivityInGroup: options.isThreadRunning === true }),
+      options.isThreadRunning === true,
+    ),
     progress: coalesceProgress(explicitProgress ?? progress),
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
@@ -1167,12 +1170,15 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
 /*
  * codex split-items-into-render-groups-*.js `Ne` + `K`: batch runs of CONSECUTIVE
  * standalone `dynamic-tool-call` thread items into one `dynamicToolCallGroup`.
- * `K` forms a group when `items.length > 1` (a lone completed call stays
- * standalone — matching HiCodex's existing per-item render; Codex's single
- * live-latest `keepLatestLiveActivityInGroup` case is left as the standalone
- * streaming row). Linear scan, mirroring `Ne`.
+ * `K` forms a group when `items.length > 1`, plus the active terminal
+ * `keepLatestLiveActivityInGroup` case for dynamic app-control tools whose
+ * Desktop metadata marks `continuesLiveActivityBetweenCalls`. A lone completed
+ * call still renders standalone. Linear scan, mirroring `Ne`.
  */
-function groupConsecutiveDynamicToolCalls(units: ConversationRenderUnit[]): ConversationRenderUnit[] {
+function groupConsecutiveDynamicToolCalls(
+  units: ConversationRenderUnit[],
+  options: { keepLatestLiveActivityInGroup?: boolean } = {},
+): ConversationRenderUnit[] {
   const result: ConversationRenderUnit[] = [];
   let index = 0;
   while (index < units.length) {
@@ -1189,7 +1195,10 @@ function groupConsecutiveDynamicToolCalls(units: ConversationRenderUnit[]): Conv
           break;
         }
       }
-      if (run.length > 1) {
+      const shouldKeepLatestLiveActivityInGroup = options.keepLatestLiveActivityInGroup === true
+        && end === units.length
+        && shouldContinueDynamicLiveActivityBetweenCalls(run[run.length - 1]);
+      if (run.length > 1 || shouldKeepLatestLiveActivityInGroup) {
         result.push({
           kind: "dynamicToolCallGroup",
           key: `dynamic-tool-call-group:${run[0]?.id ?? index}`,
@@ -1203,6 +1212,14 @@ function groupConsecutiveDynamicToolCalls(units: ConversationRenderUnit[]): Conv
     index += 1;
   }
   return result;
+}
+
+function shouldContinueDynamicLiveActivityBetweenCalls(item: ThreadItem | undefined): boolean {
+  if (!item) return false;
+  const record = item as ItemRecord;
+  const namespace = stringValue(record.namespace ?? record.toolNamespace ?? record.tool_namespace);
+  const tool = stringValue(record.tool ?? record.toolName ?? record.tool_name ?? record.functionName ?? record.function_name);
+  return namespace === "codex_app" && (tool === "list_threads" || tool === "read_thread");
 }
 
 function withStreamingAssistantState(

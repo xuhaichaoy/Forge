@@ -251,7 +251,7 @@ function ignoresUnknownNotifications(): void {
 
 // codex: local-conversation-thread-CecHj6JI.js#mu — verifies the
 // `thread/tokenUsage/updated` notification feeds the runtime slice that the
-// RightRail status footer (and projection input) reads.
+// Composer `/status` panel reads.
 function projectsThreadTokenUsageIntoStatusFooter(): void {
   let state = stateWithThread("thread-tokens");
 
@@ -331,32 +331,16 @@ function projectsThreadTokenUsageIntoStatusFooter(): void {
     "thread/tokenUsage/updated should preserve null modelContextWindow",
   );
 
-  // Projection input shape consumed by HiCodexApp / `<RightRail statusFooter>`.
-  const footer = refreshed.tokenUsage
-    ? { tokensUsed: refreshed.tokenUsage.usedTokens, contextWindow: refreshed.tokenUsage.contextWindow ?? undefined }
-    : undefined;
-  assertDeepEqual(
-    footer,
-    { tokensUsed: 266, contextWindow: undefined },
-    "RightRail statusFooter input should match HiCodexApp's projection mapping",
-  );
-
-  // `projectRightRailSections` accepts the statusFooter field (no throw,
-  // returns array). HiCodexApp passes the same value through the projection
-  // input + the `<RightRail statusFooter>` prop.
-  // CODEX-REF: legacy `automations` multi-list 已删除以对齐 Codex，仅保留
-  // single `automation` 字段。
   const sections = projectRightRailSections({
     progress: [],
     branchDetails: { entries: [] },
     artifacts: [],
     sources: [],
-    statusFooter: footer,
   });
   assertEqual(
     Array.isArray(sections),
     true,
-    "projectRightRailSections should accept the statusFooter projection input",
+    "projectRightRailSections should ignore token-usage state; /status owns composer-local rendering",
   );
 }
 

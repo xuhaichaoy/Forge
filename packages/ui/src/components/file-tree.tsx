@@ -10,13 +10,19 @@
  *
  * TODO: replace the recursive renderer with a packed-tree virtual scroller —
  *   see file-tree-search-input for the chunked visible-count sums.
- * TODO: right-click context menu (Copy path, Open in split, Reveal in OS) —
- *   Codex Desktop wires it through context-menu-*.js.
- * TODO: single-click preview vs double-click open — Codex `isPreview: true|false`
- *   on the selection callback (workspace-directory-tree).
  */
-import { ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
-import { createContext, useCallback, useContext, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { ChevronRight, FolderOpen } from "lucide-react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
+import { fileIconComponent } from "../lib/file-icon";
 import { resolveFileIcon, type FileIconFamily } from "../lib/file-icon-resolver";
 import { osRevealLabel } from "../state/command-registry";
 import { ContextMenu, type ContextMenuItem } from "./context-menu";
@@ -30,7 +36,9 @@ export interface FileTreeProps {
   expandedPaths: Set<string>;
   selectedPath: string | null;
   onToggle: (path: string) => void;
-  onSelect: (entry: WorkspaceDirEntry) => void;
+  onSelect: (entry: WorkspaceDirEntry, options: FileTreeSelectOptions) => void;
+  /** codex threadSidePanel.workspaceBrowser.addToChat — add a file row to composer context. */
+  onAddEntryToChat?: (entry: WorkspaceDirEntry) => void;
   /** codex workspace-file-context-menu `workspace-file-reveal-path` — reveal in OS file manager. Omitted in non-Tauri/test. */
   onRevealEntry?: (entry: WorkspaceDirEntry) => void;
   /** codex workspace-file-context-menu `workspace-file-copy-contents` — copy file contents (files only). */
@@ -38,6 +46,10 @@ export interface FileTreeProps {
   loadingPaths?: Set<string>;
   /** When set, render the matching subset only (search results mode). */
   searchMatches?: WorkspaceDirEntry[] | null;
+}
+
+export interface FileTreeSelectOptions {
+  isPreview: boolean;
 }
 
 type FileTreeContextMenuOpener = (event: MouseEvent, entry: WorkspaceDirEntry) => void;
@@ -70,6 +82,7 @@ export function FileTree(props: FileTreeProps) {
         <ContextMenu
           items={fileTreeContextMenuItems(menu.entry, {
             onSelect: props.onSelect,
+            onAddEntryToChat: props.onAddEntryToChat,
             onRevealEntry: props.onRevealEntry,
             onCopyEntryContents: props.onCopyEntryContents,
           })}
@@ -83,9 +96,10 @@ export function FileTree(props: FileTreeProps) {
 }
 
 /*
- * codex workspace-file-context-menu-ZTEfnsSe.js — the rendered menu (item ids
- * `workspace-file-*`) is, in order: [open target(s)] / separator / copy-path /
- * copy-contents / reveal-path. Two fidelity points extracted from the chunk:
+ * codex workspace-file-context-menu-ZTEfnsSe.js + file-tree-search-input-*.js
+ * (`threadSidePanel.workspaceBrowser.addToChat`) — the rendered menu starts
+ * with open target(s), then a separator, then copy/add-to-chat/reveal actions.
+ * Two fidelity points extracted from the file-reference menu chunk:
  *   1. Only the "Open with" app-target rows carry an icon (`icon:e.icon`); the
  *      copy-path / copy-contents / reveal-path rows have NO leading icon — so
  *      HiCodex renders them icon-less to match (it previously added icons).
@@ -94,10 +108,11 @@ export function FileTree(props: FileTreeProps) {
  * Codex's "Open in {app}" targets need OS app-discovery HiCodex lacks; HiCodex
  * substitutes its in-app file viewer under Codex's own `viewFile` label ("Open file").
  */
-function fileTreeContextMenuItems(
+export function fileTreeContextMenuItems(
   entry: WorkspaceDirEntry,
   handlers: {
-    onSelect: (entry: WorkspaceDirEntry) => void;
+    onSelect: (entry: WorkspaceDirEntry, options: FileTreeSelectOptions) => void;
+    onAddEntryToChat?: (entry: WorkspaceDirEntry) => void;
     onRevealEntry?: (entry: WorkspaceDirEntry) => void;
     onCopyEntryContents?: (entry: WorkspaceDirEntry) => void;
   },
@@ -106,7 +121,7 @@ function fileTreeContextMenuItems(
   const items: ContextMenuItem[] = [];
   // Open section — in-app viewer under Codex's `viewFile` ("Open file") label (files only).
   if (isFile) {
-    items.push({ id: "open-file", label: "Open file", onSelect: () => handlers.onSelect(entry) });
+    items.push({ id: "open-file", label: "Open file", onSelect: () => handlers.onSelect(entry, { isPreview: false }) });
     items.push({ id: "open-separator", separator: true });
   }
   // codex `workspace-file-copy-path` — copies the (workspace-relative) path.
@@ -117,6 +132,15 @@ function fileTreeContextMenuItems(
       void navigator.clipboard?.writeText(entry.path);
     },
   });
+  // codex `threadSidePanel.workspaceBrowser.addToChat` — files only.
+  if (isFile && handlers.onAddEntryToChat != null) {
+    const onAddEntryToChat = handlers.onAddEntryToChat;
+    items.push({
+      id: "add-to-chat",
+      label: "Add to chat",
+      onSelect: () => onAddEntryToChat(entry),
+    });
+  }
   // codex `workspace-file-copy-contents` — reads + copies the file's text (files only).
   if (isFile && handlers.onCopyEntryContents != null) {
     const onCopyEntryContents = handlers.onCopyEntryContents;
@@ -168,7 +192,11 @@ function FileTreeNode({
             onToggle(entry.path);
             return;
           }
-          onSelect(entry);
+          onSelect(entry, { isPreview: true });
+        }}
+        onOpen={() => {
+          if (isDir) return;
+          onSelect(entry, { isPreview: false });
         }}
       />
       {isExpanded && childEntries != null
@@ -214,7 +242,8 @@ function SearchResultsList({
             isSelected={selectedPath === entry.path}
             isLoading={false}
             secondaryLabel={dirPart || null}
-            onClick={() => onSelect(entry)}
+            onClick={() => onSelect(entry, { isPreview: true })}
+            onOpen={() => onSelect(entry, { isPreview: false })}
           />
         );
       })}
@@ -230,9 +259,10 @@ interface RowProps {
   isLoading: boolean;
   secondaryLabel?: string | null;
   onClick: () => void;
+  onOpen?: () => void;
 }
 
-function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, onClick }: RowProps) {
+function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, onClick, onOpen }: RowProps) {
   const family = useMemo(
     () => resolveFileIcon(entry.name, entry.type === "directory", isExpanded),
     [entry.name, entry.type, isExpanded],
@@ -243,9 +273,12 @@ function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, 
       type="button"
       className="hc-file-tree-row"
       data-depth={depth}
+      data-file-tree-path={entry.path}
       data-selected={isSelected || undefined}
       data-loading={isLoading || undefined}
       onClick={onClick}
+      onDoubleClick={onOpen}
+      onKeyDown={(event) => handleFileTreeRowKeyDown(event, { entry, isExpanded, onClick, onOpen })}
       onContextMenu={openContextMenu ? (event) => openContextMenu(event, entry) : undefined}
     >
       <span className="hc-file-tree-indent" aria-hidden="true">
@@ -273,21 +306,89 @@ function Row({ depth, entry, isExpanded, isSelected, isLoading, secondaryLabel, 
   );
 }
 
-function FileIconGlyph({ family }: { family: FileIconFamily }): ReactNode {
-  // codex: iconResolver — folder/folder-open/.md badge/generic file.
-  switch (family) {
-    case "folder":
-      return <Folder className="hc-file-tree-icon" size={13} aria-hidden="true" />;
-    case "folder-open":
-      return <FolderOpen className="hc-file-tree-icon" size={13} aria-hidden="true" />;
-    case "markdown":
-      return (
-        <span className="hc-file-tree-icon hc-file-tree-icon--markdown" aria-hidden="true">
-          M
-        </span>
-      );
-    case "file":
+const FILE_TREE_ROW_SELECTOR = ".hc-file-tree-row[data-file-tree-path]";
+
+function handleFileTreeRowKeyDown(
+  event: KeyboardEvent<HTMLButtonElement>,
+  row: {
+    entry: WorkspaceDirEntry;
+    isExpanded: boolean;
+    onClick: () => void;
+    onOpen?: () => void;
+  },
+): void {
+  const rows = visibleFileTreeRowElements(event.currentTarget);
+  const index = rows.indexOf(event.currentTarget);
+  if (index < 0) return;
+
+  let handled = true;
+  switch (event.key) {
+    case "ArrowDown":
+      focusFileTreeRow(rows, index + 1);
+      break;
+    case "ArrowUp":
+      focusFileTreeRow(rows, index - 1);
+      break;
+    case "Home":
+      focusFileTreeRow(rows, 0);
+      break;
+    case "End":
+      focusFileTreeRow(rows, rows.length - 1);
+      break;
+    case "ArrowRight":
+      if (row.entry.type === "directory" && !row.isExpanded) {
+        row.onClick();
+      } else {
+        focusFileTreeRow(rows, index + 1);
+      }
+      break;
+    case "ArrowLeft":
+      if (row.entry.type === "directory" && row.isExpanded) {
+        row.onClick();
+      } else {
+        focusFileTreeParentRow(rows, row.entry.path);
+      }
+      break;
+    case "Enter":
+      (row.onOpen ?? row.onClick)();
+      break;
     default:
-      return <FileText className="hc-file-tree-icon" size={13} aria-hidden="true" />;
+      handled = false;
   }
+  if (!handled) return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function visibleFileTreeRowElements(current: HTMLButtonElement): HTMLButtonElement[] {
+  const tree = current.closest(".hc-file-tree");
+  if (!tree) return [current];
+  return Array.from(tree.querySelectorAll<HTMLButtonElement>(FILE_TREE_ROW_SELECTOR));
+}
+
+function focusFileTreeRow(rows: HTMLButtonElement[], index: number): void {
+  const boundedIndex = Math.max(0, Math.min(index, rows.length - 1));
+  rows[boundedIndex]?.focus();
+}
+
+function focusFileTreeParentRow(rows: HTMLButtonElement[], path: string): void {
+  const parentPath = parentDirPath(path);
+  if (parentPath == null) return;
+  const parent = rows.find((row) => row.dataset.fileTreePath === parentPath);
+  parent?.focus();
+}
+
+function parentDirPath(path: string): string | null {
+  const slash = path.lastIndexOf("/");
+  return slash > 0 ? path.slice(0, slash) : null;
+}
+
+function FileIconGlyph({ family }: { family: FileIconFamily }): ReactNode {
+  // codex: get-file-icon — tree rows use the same extension/MIME icon family
+  // map as file mentions and source/output rows; only expanded folders differ.
+  if (family === "folder-open") {
+    return <FolderOpen className="hc-file-tree-icon" size={13} aria-hidden="true" />;
+  }
+  const Icon = fileIconComponent(family);
+  return <Icon className="hc-file-tree-icon" size={13} aria-hidden="true" />;
 }

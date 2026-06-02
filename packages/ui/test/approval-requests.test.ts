@@ -1,4 +1,4 @@
-import { buildApprovalResult, pendingRequestDetail } from "../src/state/approval-requests";
+import { buildApprovalResult, buildStopPendingRequestResult, pendingRequestDetail } from "../src/state/approval-requests";
 import type { PendingServerRequest } from "../src/state/codex-reducer";
 
 function request(method: string, params?: unknown): PendingServerRequest {
@@ -386,21 +386,39 @@ export default function runApprovalRequestTests(): void {
     turnId: "turn-1",
     serverName: "codex_apps",
     mode: "form",
-    message: "Allow this app tool call?",
+    message: "Allow GitHub to run tool \"search_repositories\"?",
+    riskLevel: "high",
     requestedSchema: { type: "object", properties: {} },
     _meta: {
       codex_approval_kind: "mcp_tool_call",
       connector_id: "github",
       connector_name: "GitHub",
       persist: ["always", "session"],
-      tool_params_display: { repo: "openai/codex", action: "read" },
+      tool_params_display: [
+        { name: "repo", displayName: "Repository", value: "openai/codex" },
+        { name: "filters", displayName: "Filters", value: { language: "TypeScript", archived: false, minStars: 100 } },
+      ],
     },
   });
   const mcpToolApprovalDetail = pendingRequestDetail(mcpToolApprovalRequest);
   const mcpToolApprovalMetadata = mcpToolApprovalDetail.metadata
     .map((item) => `${item.label}: ${item.value}`)
     .join("\n");
-  assertEqual(mcpToolApprovalDetail.title, "Allow GitHub to run?", "mcp tool approval title should reflect the approval subtype");
+  assertEqual(
+    mcpToolApprovalDetail.title,
+    "Allow GitHub to run search_repositories tool ?",
+    "mcp tool approval title should use Desktop's formatted tool title shape",
+  );
+  assertEqual(mcpToolApprovalDetail.mcpToolApproval?.connectorName, "GitHub", "mcp tool approval connector");
+  assertEqual(mcpToolApprovalDetail.mcpToolApproval?.riskLevel, "high", "mcp tool approval risk level");
+  assertDeepEqual(
+    mcpToolApprovalDetail.mcpToolApproval?.toolParamEntries.map((entry) => [entry.label, entry.previewText, entry.isExpandable]),
+    [
+      ["Repository", "openai/codex", false],
+      ["Filters", "{\"language\":\"TypeScript\",\"archived\":false,\"minS…", true],
+    ],
+    "mcp tool approval should expose Desktop-style structured tool parameters",
+  );
   assertEqual(mcpToolApprovalDetail.questions[0]?.id, "_meta.persist", "mcp tool approval should expose persist choices");
   assertDeepEqual(
     mcpToolApprovalDetail.questions[0]?.options.map((option) => option.label),
@@ -409,11 +427,6 @@ export default function runApprovalRequestTests(): void {
   );
   assertIncludes(mcpToolApprovalMetadata, "Approval: MCP tool call", "mcp tool approval kind metadata");
   assertIncludes(mcpToolApprovalMetadata, "Connector: GitHub", "mcp tool approval connector metadata");
-  assertIncludes(
-    mcpToolApprovalMetadata,
-    "Tool parameters: {\"repo\":\"openai/codex\",\"action\":\"read\"}",
-    "mcp tool approval parameter metadata",
-  );
   assertDeepEqual(
     buildApprovalResult(mcpToolApprovalRequest, true, { "_meta.persist": ["always"] }),
     { action: "accept", content: {}, _meta: { persist: "always" } },
@@ -503,6 +516,125 @@ export default function runApprovalRequestTests(): void {
   assertEqual(toolCallDetail.canAccept, false, "dynamic tool call cannot accept");
   assertEqual(buildApprovalResult(toolCallRequest, true), null, "dynamic tool call accept result is null");
 
+  const optionPickerRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-2",
+    tool: "request_option_picker",
+    arguments: {
+      question: "Choose a path",
+      options: [
+        { label: "Fast", description: "Quick route" },
+        { label: "Careful" },
+      ],
+      allowMultiple: true,
+      submitLabel: "Continue",
+      skipLabel: "Not now",
+    },
+  });
+  const optionPickerDetail = pendingRequestDetail(optionPickerRequest);
+  assertEqual(optionPickerDetail.title, "Choose a path", "dynamic option picker title");
+  assertEqual(optionPickerDetail.acceptLabel, "Continue", "dynamic option picker submit label");
+  assertEqual(optionPickerDetail.declineLabel, "Not now", "dynamic option picker skip label");
+  assertEqual(optionPickerDetail.canAccept, true, "dynamic option picker can accept");
+  assertEqual(optionPickerDetail.optionPicker?.allowMultiple, true, "dynamic option picker preserves allowMultiple");
+  assertDeepEqual(
+    buildApprovalResult(optionPickerRequest, true, {
+      optionPickerSelection: ["Fast", "Something custom"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"submit\",\"selectedOptions\":[\"Fast\"],\"freeformAnswer\":\"Something custom\"}",
+      }],
+    },
+    "dynamic option picker submit result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(optionPickerRequest, true, {
+      "__optionPicker.action": ["skip"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"skip\",\"selectedOptions\":[],\"freeformAnswer\":null}",
+      }],
+    },
+    "dynamic option picker skip result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(optionPickerRequest, false),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"dismiss\",\"selectedOptions\":[],\"freeformAnswer\":null}",
+      }],
+    },
+    "dynamic option picker dismiss result",
+  );
+
+  const setupContextRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-3",
+    tool: "setup_codex_context_picker",
+    arguments: {},
+  });
+  const setupContextDetail = pendingRequestDetail(setupContextRequest);
+  assertEqual(setupContextDetail.title, "Where can we pull context from?", "dynamic setup context picker title");
+  assertEqual(setupContextDetail.acceptLabel, "Continue", "dynamic setup context picker continue label");
+  assertEqual(setupContextDetail.declineLabel, "Skip", "dynamic setup context picker skip label");
+  assertEqual(setupContextDetail.canAccept, true, "dynamic setup context picker can accept");
+  assertEqual(setupContextDetail.setupContextPicker?.canSelectSources, false, "setup context source selection stays host-gated");
+  assertDeepEqual(
+    buildApprovalResult(setupContextRequest, true),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"continue\",\"selectedSources\":[]}",
+      }],
+    },
+    "dynamic setup context picker continue result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupContextRequest, true, {
+      "__setupCodexContextPicker.action": ["skip"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"skip\",\"selectedSources\":[]}",
+      }],
+    },
+    "dynamic setup context picker skip result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupContextRequest, false),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"dismiss\",\"selectedSources\":[]}",
+      }],
+    },
+    "dynamic setup context picker dismiss result",
+  );
+
+  const nativeSetupContextRequest = request("item/tool/requestSetupCodexContextPicker", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+  });
+  assertDeepEqual(
+    buildApprovalResult(nativeSetupContextRequest, true),
+    { action: "continue", selectedSources: [] },
+    "native setup context picker should return the direct Desktop response shape",
+  );
+
   const tokenRefreshRequest = request("account/chatgptAuthTokens/refresh", { accountId: "acct-1" });
   const tokenRefreshDetail = pendingRequestDetail(tokenRefreshRequest);
   assertEqual(tokenRefreshDetail.canAccept, false, "chatgpt token refresh cannot accept");
@@ -515,4 +647,37 @@ export default function runApprovalRequestTests(): void {
   assertIncludes(unknownDetail.body, "\"raw\": true", "unknown request body shows params");
   assertEqual(buildApprovalResult(unknownRequest, true), null, "unknown accept result is null");
   assertEqual(buildApprovalResult(unknownRequest, false), null, "unknown decline result is null");
+
+  assertDeepEqual(
+    buildStopPendingRequestResult(commandRequest),
+    { decision: "decline" },
+    "Stop all should decline command approvals with a normal response",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(inputRequest),
+    { answers: {} },
+    "Stop all should answer user-input requests with an empty answer payload",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(permissionsRequest),
+    { permissions: {}, scope: "turn" },
+    "Stop all should decline permissions requests with Desktop's turn-scoped empty grant",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(mcpFormRequest),
+    { action: "decline", content: null, _meta: null },
+    "Stop all should decline MCP elicitations with a normal response",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(setupContextRequest),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"dismiss\",\"selectedSources\":[]}",
+      }],
+    },
+    "Stop all should dismiss dynamic setup context pickers",
+  );
+  assertEqual(buildStopPendingRequestResult(unknownRequest), null, "Stop all unsupported request result is null");
 }

@@ -1172,6 +1172,16 @@ function localizesReviewCommentLabelsLikeDesktop(): void {
     "Desktop zh-CN review comment open aria label should localize",
   );
   assertEqual(
+    html.includes('role="tooltip"'),
+    true,
+    "review comment rows should expose Desktop-style tooltip content",
+  );
+  assertEqual(
+    html.includes("Handle the missing value."),
+    true,
+    "review comment tooltip should render the model-authored body text",
+  );
+  assertEqual(
     html.includes("Show 1 more comment"),
     false,
     "review comment show-more label should not stay hard-coded English",

@@ -4,6 +4,7 @@ import type { MouseEvent } from "react";
 
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
+import { useHiCodexIntl } from "./i18n-provider";
 import { Markdownish } from "./message-unit";
 import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
 
@@ -23,6 +24,23 @@ export function PlanSummaryCard({
   const canUseContentActions = completed && content.trim().length > 0;
   const [collapsed, setCollapsed] = useState(() => !completed);
   const [copied, setCopied] = useState(false);
+  const { formatMessage } = useHiCodexIntl();
+  const title = completed
+    ? formatMessage({ id: "localConversation.planSummary.title", defaultMessage: "Plan" })
+    : formatMessage({ id: "localConversation.planSummary.titleWriting", defaultMessage: "Writing plan" });
+  const downloadLabel = formatMessage({ id: "localConversation.planSummary.download", defaultMessage: "Download plan" });
+  const copyLabel = copied
+    ? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
+    : formatMessage({ id: "copyButton.copyAriaLabel", defaultMessage: "Copy" });
+  const openLabel = formatMessage({ id: "localConversation.planSummary.openInNewWindow", defaultMessage: "Open" });
+  const openTooltip = formatMessage({ id: "localConversation.planSummary.openInNewWindow.tooltip", defaultMessage: "Open in new window" });
+  const toggleAriaLabel = collapsed
+    ? formatMessage({ id: "localConversation.planSummary.expand", defaultMessage: "Expand plan summary" })
+    : formatMessage({ id: "localConversation.planSummary.collapse", defaultMessage: "Collapse plan summary" });
+  const toggleTooltip = collapsed
+    ? formatMessage({ id: "localConversation.planSummary.expandTooltip", defaultMessage: "Expand" })
+    : formatMessage({ id: "localConversation.planSummary.collapseTooltip", defaultMessage: "Collapse" });
+  const viewPlanLabel = formatMessage({ id: "localConversation.planSummary.viewPlan", defaultMessage: "Expand plan" });
 
   useEffect(() => {
     setCollapsed(!completed);
@@ -78,7 +96,7 @@ export function PlanSummaryCard({
       data-item-type={typeof unit.item.type === "string" ? unit.item.type : "proposed-plan"}
     >
       <header className="hc-plan-summary-header">
-        <h3 className="hc-plan-summary-title">{completed ? "Plan" : "Writing plan"}</h3>
+        <h3 className="hc-plan-summary-title">{title}</h3>
         <div className="hc-plan-summary-actions" aria-label="Plan actions">
           {canUseContentActions && (
             <>
@@ -94,10 +112,10 @@ export function PlanSummaryCard({
                *   localConversation.planSummary.openInNewWindow.tooltip = "Open in new window"
                * Click handler is intentionally inert — Codex main process
                * (`show-plan-summary`) is a no-op stub, so HiCodex matches.
-               */}
+              */}
               <button
-                aria-label="Download plan"
-                title="Download plan"
+                aria-label={downloadLabel}
+                title={downloadLabel}
                 type="button"
                 onClick={handleDownload}
               >
@@ -110,31 +128,31 @@ export function PlanSummaryCard({
                * and copyButton.copiedAriaLabel (defaultMessage "Copied") for
                * ~2s; there is no floating "Copied to clipboard" toast for the
                * plan card.
-               */}
+              */}
               <button
-                aria-label={copied ? "Copied" : "Copy"}
-                title={copied ? "Copied" : "Copy"}
+                aria-label={copyLabel}
+                title={copyLabel}
                 type="button"
                 onClick={handleCopy}
               >
                 {copied ? <Check aria-hidden size={14} /> : <Copy aria-hidden size={14} />}
               </button>
               <button
-                aria-label="Open"
+                aria-label={openLabel}
                 className="hc-plan-summary-open"
-                title="Open in new window"
+                title={openTooltip}
                 type="button"
                 onClick={handleOpenInNewWindow}
               >
-                <span>Open</span>
+                <span>{openLabel}</span>
                 <ExternalLink aria-hidden size={14} />
               </button>
             </>
           )}
           <button
             aria-expanded={!collapsed}
-            aria-label={collapsed ? "Expand plan summary" : "Collapse plan summary"}
-            title={collapsed ? "Expand" : "Collapse"}
+            aria-label={toggleAriaLabel}
+            title={toggleTooltip}
             type="button"
             onClick={() => setCollapsed((value) => !value)}
           >
@@ -154,7 +172,7 @@ export function PlanSummaryCard({
               type="button"
               onClick={() => setCollapsed(false)}
             >
-              Expand plan
+              {viewPlanLabel}
             </button>
           </div>
         )}

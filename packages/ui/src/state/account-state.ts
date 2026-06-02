@@ -6,6 +6,7 @@ import type { PlanType } from "@hicodex/codex-protocol/generated/PlanType";
 import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
 import type { RateLimitWindow } from "@hicodex/codex-protocol/generated/v2/RateLimitWindow";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
+import { projectRateLimitCompactSummary, type RateLimitCompactSummary } from "./rate-limit-summary";
 
 // Structural alias for the IntlProvider's formatMessage (optional at call sites).
 type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
@@ -47,9 +48,26 @@ export interface AccountViewModel {
   quotaLabel: string;
   quotaDetail: string | null;
   quotaTone: "neutral" | "success" | "warning" | "danger";
+  rateLimitSummary: RateLimitCompactSummary | null;
+  usageAlert: AccountUsageAlert | null;
   loading: boolean;
   error: string | null;
   signOutAction: AccountSignOutAction;
+}
+
+export interface AccountUsageAlert {
+  dismissalKey: string;
+  remainingPercent: number;
+  resetAt: number | null;
+  usedPercent: number;
+  windowDurationMins: number | null;
+}
+
+export interface ComposerQuotaBannerModel {
+  id: string;
+  title: string;
+  detail: string;
+  tone: "warning" | "danger";
 }
 
 export interface AccountMenuItem {
@@ -280,6 +298,12 @@ export function projectAccountViewModel(
   const identity = projectAccountIdentity(account);
   const quota = projectQuotaSummary(state.rateLimits);
   const signedIn = account !== null;
+  const rateLimitSummary = signedIn
+    ? projectRateLimitCompactSummary(state.rateLimitsByLimitId, state.rateLimits)
+    : null;
+  const usageAlert = signedIn
+    ? projectAccountUsageAlert(state.rateLimitsByLimitId, state.rateLimits)
+    : null;
   return {
     signedIn,
     displayName: identity.displayName,
@@ -291,6 +315,8 @@ export function projectAccountViewModel(
     quotaLabel: quota.label,
     quotaDetail: quota.detail,
     quotaTone: quota.tone,
+    rateLimitSummary,
+    usageAlert,
     loading: state.refreshing || state.status === "loading",
     error: state.error,
     signOutAction: {
@@ -324,19 +350,21 @@ export function projectAccountMenuItems(view: AccountViewModel): AccountMenuItem
       tone: "neutral",
     });
   }
-  items.push({
-    id: "quota",
-    label: "Usage",
-    value: view.quotaLabel,
-    tone: view.quotaTone,
-  });
-  if (view.quotaDetail) {
+  if (!view.rateLimitSummary) {
     items.push({
-      id: "quotaDetail",
-      label: "Usage detail",
-      value: view.quotaDetail,
+      id: "quota",
+      label: "Usage",
+      value: view.quotaLabel,
       tone: view.quotaTone,
     });
+    if (view.quotaDetail) {
+      items.push({
+        id: "quotaDetail",
+        label: "Usage detail",
+        value: view.quotaDetail,
+        tone: view.quotaTone,
+      });
+    }
   }
   if (view.error) {
     items.push({
@@ -516,6 +544,139 @@ function projectQuotaSummary(snapshot: RateLimitSnapshot | null): {
       ? "danger"
       : primary && primary.usedPercent >= 90 ? "warning" : "success",
   };
+}
+
+export function projectAccountUsageAlert(
+  snapshotsByLimitId: Record<string, RateLimitSnapshot>,
+  fallback: RateLimitSnapshot | null = null,
+): AccountUsageAlert | null {
+  const snapshots = Object.values(snapshotsByLimitId);
+  if (fallback && !snapshots.includes(fallback)) snapshots.push(fallback);
+  const coreSnapshot = snapshots.find((snapshot) => snapshot.limitName === null) ?? null;
+  const windows = [coreSnapshot?.primary, coreSnapshot?.secondary]
+    .filter((window): window is RateLimitWindow => Boolean(window && Number.isFinite(window.usedPercent)));
+  if (windows.length === 0 || coreSnapshot?.rateLimitReachedType) return null;
+  const window = windows.reduce((current, next) => usageWindowMoreConsumed(next, current) ? next : current);
+  const usedPercent = Math.max(0, Math.min(100, window.usedPercent));
+  const remainingPercent = Math.max(0, Math.round(100 - usedPercent));
+  if (usedPercent < 80 || usedPercent >= 100 || remainingPercent > 20) return null;
+  return {
+    dismissalKey: [
+      coreSnapshot?.limitId || "core",
+      window.windowDurationMins ?? "unknown-window",
+      window.resetsAt ?? "unknown-reset",
+    ].join(":"),
+    remainingPercent,
+    resetAt: window.resetsAt,
+    usedPercent,
+    windowDurationMins: window.windowDurationMins,
+  };
+}
+
+function usageWindowMoreConsumed(candidate: RateLimitWindow, current: RateLimitWindow): boolean {
+  if (candidate.usedPercent !== current.usedPercent) return candidate.usedPercent > current.usedPercent;
+  return (candidate.windowDurationMins ?? 0) > (current.windowDurationMins ?? 0);
+}
+
+export function projectComposerQuotaBanner(
+  snapshotsByLimitId: Record<string, RateLimitSnapshot>,
+  fallback: RateLimitSnapshot | null = null,
+  selectedModel: string | null = null,
+): ComposerQuotaBannerModel | null {
+  const snapshots = normalizedRateLimitSnapshots(snapshotsByLimitId, fallback);
+  const coreSnapshot = snapshots.find((snapshot) => snapshot.limitName === null) ?? null;
+  const coreBanner = coreSnapshot ? composerQuotaBannerForSnapshot(coreSnapshot, "core", null) : null;
+  if (coreBanner) return coreBanner;
+
+  const normalizedSelectedModel = normalizeLimitName(selectedModel);
+  if (!normalizedSelectedModel) return null;
+  const modelSnapshot = snapshots.find((snapshot) => {
+    if (snapshot.limitName === null) return false;
+    return normalizeLimitName(snapshot.limitName) === normalizedSelectedModel
+      || normalizeLimitName(snapshot.limitId) === normalizedSelectedModel;
+  }) ?? null;
+  return modelSnapshot ? composerQuotaBannerForSnapshot(modelSnapshot, "model", selectedModel) : null;
+}
+
+function normalizedRateLimitSnapshots(
+  snapshotsByLimitId: Record<string, RateLimitSnapshot>,
+  fallback: RateLimitSnapshot | null,
+): RateLimitSnapshot[] {
+  const snapshots = Object.values(snapshotsByLimitId);
+  if (fallback && !snapshots.includes(fallback)) snapshots.push(fallback);
+  return snapshots;
+}
+
+function composerQuotaBannerForSnapshot(
+  snapshot: RateLimitSnapshot,
+  kind: "core" | "model",
+  selectedModel: string | null,
+): ComposerQuotaBannerModel | null {
+  if (kind === "core" && snapshot.credits && !snapshot.credits.unlimited && !snapshot.credits.hasCredits) {
+    return {
+      id: "credits-depleted",
+      title: "Codex credits depleted",
+      detail: "No credits are available for this account.",
+      tone: "danger",
+    };
+  }
+  if (snapshot.rateLimitReachedType) {
+    const label = kind === "model"
+      ? `${quotaModelDisplayName(selectedModel ?? snapshot.limitName)} limit reached`
+      : "Codex usage limit reached";
+    return {
+      id: `rate-limit-reached:${kind}:${snapshot.limitId ?? snapshot.limitName ?? "default"}`,
+      title: label,
+      detail: humanizeIdentifier(snapshot.rateLimitReachedType),
+      tone: "danger",
+    };
+  }
+  const limitWindow = fullyUsedRateLimitWindow(snapshot);
+  if (!limitWindow) return null;
+  return {
+    id: `rate-limit-window:${kind}:${snapshot.limitId ?? snapshot.limitName ?? "default"}`,
+    title: kind === "model"
+      ? `${quotaModelDisplayName(selectedModel ?? snapshot.limitName)} limit reached`
+      : "Codex usage limit reached",
+    detail: rateLimitWindowDetail(limitWindow),
+    tone: "danger",
+  };
+}
+
+function fullyUsedRateLimitWindow(snapshot: RateLimitSnapshot): RateLimitWindow | null {
+  const windows = [snapshot.primary, snapshot.secondary]
+    .filter((window): window is RateLimitWindow => Boolean(window && Number.isFinite(window.usedPercent) && window.usedPercent >= 100));
+  if (windows.length === 0) return null;
+  return windows.reduce((current, next) => usageWindowMoreConsumed(next, current) ? next : current);
+}
+
+function rateLimitWindowDetail(window: RateLimitWindow): string {
+  if (window.resetsAt) {
+    const millis = window.resetsAt > 10_000_000_000 ? window.resetsAt : window.resetsAt * 1_000;
+    const resetAt = new Date(millis);
+    if (!Number.isNaN(resetAt.getTime())) {
+      return `Resets ${resetAt.toLocaleString()}.`;
+    }
+  }
+  if (window.windowDurationMins) return `${usageWindowDurationLabel(window.windowDurationMins)} is fully used.`;
+  return "View status for rate-limit details.";
+}
+
+function usageWindowDurationLabel(minutes: number): string {
+  if (minutes >= 10_080 && minutes % 10_080 === 0) return `${minutes / 10_080}w limit`;
+  if (minutes >= 1_440 && minutes % 1_440 === 0) return `${minutes / 1_440}d limit`;
+  if (minutes >= 60 && minutes % 60 === 0) return `${minutes / 60}h limit`;
+  return `${minutes}m limit`;
+}
+
+function quotaModelDisplayName(value: string | null | undefined): string {
+  const normalized = value?.trim();
+  return normalized ? normalized.replace(/_/g, "-") : "Selected model";
+}
+
+function normalizeLimitName(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase().replace(/[_\s]+/g, "-");
+  return normalized || null;
 }
 
 function creditLabel(credits: NonNullable<RateLimitSnapshot["credits"]>): string {

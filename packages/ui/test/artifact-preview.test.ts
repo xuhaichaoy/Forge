@@ -1,4 +1,5 @@
 import {
+  artifactPreviewTabId,
   clipArtifactPreviewText,
   formatArtifactFileSize,
   isArtifactPreviewTooLarge,
@@ -16,6 +17,7 @@ export default function runArtifactPreviewTests(): void {
   keepsSpreadsheetArtifactsTypedWhilePreservingTextPreview();
   projectsOrdinaryUrlsWithoutImagePreview();
   separatesPreviewArtifactsFromBrowserUrls();
+  buildsStableNonCollidingPreviewTabIds();
   clipsLongPreviewText();
   detectsDesktopPreviewSizeLimit();
 }
@@ -222,6 +224,46 @@ function separatesPreviewArtifactsFromBrowserUrls(): void {
     }),
     true,
     "image URL artifacts should remain previewable artifacts",
+  );
+}
+
+function buildsStableNonCollidingPreviewTabIds(): void {
+  assertEqual(
+    artifactPreviewTabId({
+      id: "resource:file-a",
+      title: "report",
+      reference: { path: "reports/report.md", lineStart: 1 },
+    }),
+    "artifact:local:reports/report.md",
+    "file artifact preview tabs should use Desktop's artifact:host:path id",
+  );
+
+  assertEqual(
+    artifactPreviewTabId({
+      id: "resource:file-a",
+      title: "report",
+      reference: { path: "reports/report.md", lineStart: 1, hostId: "host-1" },
+    }, "local"),
+    "artifact:host-1:reports/report.md",
+    "file artifact preview tabs should prefer the reference host id",
+  );
+
+  assertEqual(
+    artifactPreviewTabId({
+      id: "website:https://example.com/report",
+      title: "report",
+      action: { kind: "url", url: "https://example.com/report" },
+    }),
+    "artifact:url:https%3A%2F%2Fexample.com%2Freport",
+    "URL artifact preview tabs should keep a URL scope",
+  );
+
+  const first = artifactPreviewTabId({ id: "artifact:one", title: "report" });
+  const second = artifactPreviewTabId({ id: "artifact:two", title: "report" });
+  assertEqual(
+    first === second,
+    false,
+    "same-title artifacts without file or URL references should not collide",
   );
 }
 

@@ -352,12 +352,14 @@ function TurnRatingButton({
         the icon by selection state, rendered at `icon-xs` = 16px with
         `rotate-180` for thumbs_down). We mirror that via lucide's `fill` prop,
         keeping the `is-down` rotation class for thumbs_down.
+        HiCodex divergence: rendered at 12px (smaller than Codex's icon-xs 16px)
+        per product preference, matching the other message action-row icons.
       */}
       <ThumbsUp
         aria-hidden
         className={rating === "thumbs_down" ? "is-down" : ""}
         fill={pressed ? "currentColor" : "none"}
-        size={16}
+        size={12}
       />
     </button>
   );

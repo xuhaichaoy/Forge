@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 export interface ContextMenuItem {
   id: string;
   /** Omitted for separator rows. */
-  label?: string;
+  label?: ReactNode;
   icon?: ReactNode;
   disabled?: boolean;
   /** codex context-menu-*.js `{type:"separator"}` — renders a divider, not a row. */

@@ -131,6 +131,7 @@ function MessageUnitViewInner({
   isMostRecentTurn = false,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
+  onRevealAssistantEndResource,
   onForkTurn,
   onOpenThreadId,
   onSubmitTurnFeedback,
@@ -148,6 +149,7 @@ function MessageUnitViewInner({
   isMostRecentTurn?: boolean;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
+  onRevealAssistantEndResource?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
   onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onOpenThreadId?: OpenThreadHandler;
@@ -326,6 +328,7 @@ function MessageUnitViewInner({
                     <AssistantAfterEndResources
                       units={unit.assistantAfter ?? []}
                       onOpenArtifact={onOpenAssistantArtifact}
+                      onRevealResource={onRevealAssistantEndResource}
                     />
                     {!hasAssistantEndResources && (
                       <AssistantResourceCards entries={assistantResourceCards} onOpenArtifact={onOpenAssistantArtifact} />
@@ -381,6 +384,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
       && prev.threadId === next.threadId
       && prev.onEditLastUserMessage === next.onEditLastUserMessage
       && prev.onOpenAssistantArtifact === next.onOpenAssistantArtifact
+      && prev.onRevealAssistantEndResource === next.onRevealAssistantEndResource
       && prev.onForkTurn === next.onForkTurn
       && prev.onSubmitTurnFeedback === next.onSubmitTurnFeedback
       && prev.onOpenFileReference === next.onOpenFileReference
@@ -396,6 +400,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (prev.threadId !== next.threadId) return false;
   if (prev.onEditLastUserMessage !== next.onEditLastUserMessage) return false;
   if (prev.onOpenAssistantArtifact !== next.onOpenAssistantArtifact) return false;
+  if (prev.onRevealAssistantEndResource !== next.onRevealAssistantEndResource) return false;
   if (prev.onForkTurn !== next.onForkTurn) return false;
   if (prev.onSubmitTurnFeedback !== next.onSubmitTurnFeedback) return false;
   if (prev.onOpenFileReference !== next.onOpenFileReference) return false;
@@ -461,9 +466,11 @@ function AssistantAfterGalleries({ units }: { units: NonNullable<MessageRenderUn
 function AssistantAfterEndResources({
   units,
   onOpenArtifact,
+  onRevealResource,
 }: {
   units: NonNullable<MessageRenderUnit["assistantAfter"]>;
   onOpenArtifact?: (entry: RailEntry) => void;
+  onRevealResource?: (entry: RailEntry) => void;
 }) {
   const resourceUnits = units.filter((unit) => unit.kind === "assistantEndResources");
   if (resourceUnits.length === 0) return null;
@@ -474,6 +481,7 @@ function AssistantAfterEndResources({
           key={unit.key}
           resources={unit.resources}
           onOpenArtifact={onOpenArtifact}
+          onRevealResource={onRevealResource}
         />
       ))}
     </>
@@ -566,6 +574,7 @@ function AssistantReviewCommentRow({
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
   const location = reviewCommentLocation(comment);
+  const tooltipBody = comment.body.trim();
   const content = (
     <span className="hc-assistant-review-comment-row-content">
       <span className="hc-assistant-review-comment-priority-slot">
@@ -579,14 +588,11 @@ function AssistantReviewCommentRow({
       </span>
     </span>
   );
-  if (!onOpenFileReference) {
-    return (
-      <div className="hc-assistant-review-comment-row" data-index={index}>
-        {content}
-      </div>
-    );
-  }
-  return (
+  const row = !onOpenFileReference ? (
+    <div className="hc-assistant-review-comment-row" data-index={index}>
+      {content}
+    </div>
+  ) : (
     <button
       type="button"
       aria-label={formatMessage({
@@ -600,6 +606,24 @@ function AssistantReviewCommentRow({
     >
       {content}
     </button>
+  );
+  if (!tooltipBody) return row;
+  return (
+    <div className="hc-assistant-review-comment-tooltip-wrap">
+      {row}
+      <div className="hc-assistant-review-comment-tooltip" role="tooltip">
+        <div className="hc-assistant-review-comment-tooltip-open-row">
+          {comment.priority ? (
+            <span className="hc-assistant-review-comment-priority">{comment.priority}</span>
+          ) : null}
+          <span className="hc-assistant-review-comment-tooltip-location" dir="ltr">{location}</span>
+        </div>
+        <div className="hc-assistant-review-comment-tooltip-body">
+          <div className="hc-assistant-review-comment-tooltip-title">{comment.title}</div>
+          <div className="hc-assistant-review-comment-tooltip-copy">{tooltipBody}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -915,6 +939,11 @@ function likelyLongUserMessage(text: string): boolean {
 
 function userMessageMetaChips(item: Record<string, unknown>): string[] {
   const chips: string[] = [];
+  if (stringValue(item.deliveryStatus) === "not-sent" || booleanField(item, "hookBlocked")) {
+    chips.push("Hook blocked this message");
+  } else if (item.type === "hookPrompt" || booleanField(item, "hookFeedback")) {
+    chips.push("Hook feedback");
+  }
   const goalChip = threadGoalMetaChip(item);
   if (goalChip) chips.push(goalChip);
   if (booleanField(item, "referencesPriorConversation")) chips.push("References prior conversation");
@@ -937,9 +966,9 @@ function userMessageMetaChips(item: Record<string, unknown>): string[] {
 function threadGoalMetaChip(item: Record<string, unknown>): string | null {
   const goal = recordField(item, "_threadGoal");
   const objective = stringValue(goal.objective).trim();
-  if (objective) return `Goal: ${truncateMetaChip(objective)}`;
   const status = stringValue(goal.status).trim();
-  return status ? `Goal: ${truncateMetaChip(status)}` : null;
+  if (objective || status || item.goal === true) return "Sent as goal";
+  return null;
 }
 
 function booleanField(item: Record<string, unknown>, key: string): boolean {
@@ -960,10 +989,6 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function truncateMetaChip(value: string): string {
-  return value.length > 72 ? `${value.slice(0, 69)}...` : value;
-}
-
 function UserMessageActions({
   copyText,
   meta,
@@ -980,7 +1005,8 @@ function UserMessageActions({
         <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
           {onEdit && (
             <IconActionButton ariaLabel="Edit message" title="Edit" onClick={onEdit}>
-              <Pencil size={16} />
+              {/* HiCodex divergence: 12px (Codex action icon-xs = 16px), per product preference */}
+              <Pencil size={12} />
             </IconActionButton>
           )}
         </MessageActionRow>
@@ -1056,7 +1082,8 @@ function AssistantMessageActions({
       />
       {onFork && (
         <IconActionButton ariaLabel="Fork from this point" title="Fork" onClick={onFork}>
-          <GitFork size={16} />
+          {/* HiCodex divergence: 12px (Codex action icon-xs = 16px), per product preference */}
+          <GitFork size={12} />
         </IconActionButton>
       )}
       {autoReviewSummary && <AssistantAutoReviewAction summary={autoReviewSummary} />}
@@ -1194,14 +1221,11 @@ export function assistantHookStatsSummary(item: Record<string, unknown>): Assist
 // slice (state/codex-reducer.ts:99-100, sourced from `thread/goal/updated` —
 // `ThreadGoal` is fully typed by the protocol in
 // `packages/codex-protocol/src/generated/v2/ThreadGoal.ts`) and projects it
-// onto the matching user message via `projectThreadGoalOntoUserMessages` as
-// `_threadGoal`. It does NOT currently project the goal onto the trailing
-// assistant message even when the goal status reaches `complete`. Codex's
-// assistant action row reads `n.completedThreadGoal` directly off the
-// assistant render unit; HiCodex would need an analogous projection
-// (`completedThreadGoal` / `_completedThreadGoal` on the last assistant item
-// of the completed turn) to light up this chip. Both shapes are accepted
-// below so the chip lights up automatically once that projection is wired.
+// onto the matching user message as `_threadGoal`. When the status reaches
+// `complete`, the reducer also projects `_completedThreadGoal` onto the last
+// assistant item in the goal turn. Codex's assistant action row reads
+// `n.completedThreadGoal` directly off the assistant render unit; HiCodex
+// accepts both names so protocol-native or projected items light up the chip.
 export function assistantCompletedThreadGoal(item: Record<string, unknown>): AssistantCompletedGoalSummary | null {
   const raw = (item as { completedThreadGoal?: unknown; _completedThreadGoal?: unknown }).completedThreadGoal
     ?? (item as { _completedThreadGoal?: unknown })._completedThreadGoal;
@@ -4194,9 +4218,31 @@ function renderBasicInlineHtmlSegment(
   if (segment.tag === "b" || segment.tag === "strong") return <strong key={key}>{children}</strong>;
   if (segment.tag === "del" || segment.tag === "s") return <del key={key}>{children}</del>;
   if (segment.tag === "em" || segment.tag === "i") return <em key={key}>{children}</em>;
-  if (segment.tag === "sub") return <sub key={key}>{children}</sub>;
+  if (segment.tag === "sub") {
+    // Codex demotes priority-badge images out of subscript so shields.io badges
+    // keep their normal image size in review/comment markdown.
+    return markdownInlineContainsPriorityBadgeImage(segment.text, options)
+      ? <span key={key}>{children}</span>
+      : <sub key={key}>{children}</sub>;
+  }
   if (segment.tag === "sup") return <sup key={key}>{children}</sup>;
   return <u key={key}>{children}</u>;
+}
+
+function markdownInlineContainsPriorityBadgeImage(
+  text: string,
+  options: MarkdownInlineParseOptions = {},
+): boolean {
+  return parseMarkdownInline(text, options).some((segment) => {
+    if (segment.kind === "image" && priorityBadgeLabelFromSrc(segment.src) != null) return true;
+    if (segment.kind === "strong" || segment.kind === "em" || segment.kind === "del" || segment.kind === "htmlSpan") {
+      return markdownInlineContainsPriorityBadgeImage(segment.text, options);
+    }
+    if (segment.kind === "link") {
+      return markdownInlineContainsPriorityBadgeImage(segment.text, { ...options, inLink: true });
+    }
+    return false;
+  });
 }
 
 function isMarkdownBlockBoundary(line: string, nextLine = ""): boolean {
@@ -4284,6 +4330,17 @@ function safeMarkdownImageSrc(value: string): string | null {
   const scheme = src.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
   if (!scheme) return src; // relative or absolute local path (mediaSources key)
   return safeMarkdownHref(src);
+}
+
+function priorityBadgeLabelFromSrc(src: string): string | null {
+  try {
+    const url = new URL(src);
+    if (url.protocol !== "https:" || url.hostname !== "img.shields.io") return null;
+    if (!url.pathname.startsWith("/badge/")) return null;
+    return url.pathname.match(/^\/badge\/(P[0-9]+)(?:-|$)/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function MarkdownPromptLink({ segment }: { segment: MarkdownPromptLinkSegment }) {

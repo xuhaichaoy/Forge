@@ -1,12 +1,18 @@
-import { ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
 import { useMeasuredTextCollapse } from "../hooks/use-measured-text-collapse";
 import type { PendingServerRequest } from "../state/codex-reducer";
 import {
+  OPTION_PICKER_ACTION_QUESTION_ID,
+  SETUP_CONTEXT_ACTION_QUESTION_ID,
   pendingRequestDetail,
   type PendingRequestDetail,
+  type PendingRequestMcpToolApproval,
+  type PendingRequestMcpToolParamEntry,
+  type PendingRequestOptionPicker,
+  type PendingRequestSetupContextPicker,
   type PendingRequestQuestion,
 } from "../state/approval-requests";
 
@@ -14,11 +20,13 @@ export type { PendingRequestDetail };
 
 export interface PendingRequestStackProps {
   pendingRequests: PendingServerRequest[];
+  requestActors?: Record<string, string>;
   onRespond: (request: PendingServerRequest, accepted: boolean, answers?: Record<string, string[]>) => void | Promise<void>;
   onLog?: (text: string, level?: "info" | "warn" | "error") => void;
 }
 
 export interface ApprovalCardProps {
+  actorLabel?: string;
   request: PendingServerRequest;
   onRespond: (request: PendingServerRequest, accepted: boolean, answers?: Record<string, string[]>) => void | Promise<void>;
   onLog?: (text: string, level?: "info" | "warn" | "error") => void;
@@ -26,6 +34,7 @@ export interface ApprovalCardProps {
 
 export function PendingRequestStack({
   pendingRequests,
+  requestActors = {},
   onRespond,
   onLog,
 }: PendingRequestStackProps) {
@@ -33,6 +42,7 @@ export function PendingRequestStack({
     <section className="hc-pending-stack" aria-label="Pending requests">
       {pendingRequests.map((request) => (
         <ApprovalCard
+          actorLabel={requestActors[String(request.id)]}
           key={String(request.id)}
           request={request}
           onRespond={onRespond}
@@ -44,6 +54,7 @@ export function PendingRequestStack({
 }
 
 export function ApprovalCard({
+  actorLabel,
   request,
   onRespond,
   onLog,
@@ -78,11 +89,13 @@ export function ApprovalCard({
     detail.canAccept && detail.questions.every((question) =>
       !question.required || (candidateAnswers[question.id] ?? question.defaultAnswers).some((answer) => answer.trim()),
     );
+  const canRespondWithAnswers = (accepted: boolean, candidateAnswers: Record<string, string[]>) =>
+    !accepted || canSubmitWithAnswers(candidateAnswers) || isNonSubmitOptionPickerAction(detail, candidateAnswers);
   const canSubmit = !responding && canSubmitWithAnswers(answers);
 
   const respond = (accepted: boolean, nextAnswers: Record<string, string[]> = answers) => {
     if (respondingRef.current) return;
-    if (accepted && !canSubmitWithAnswers(nextAnswers)) return;
+    if (!canRespondWithAnswers(accepted, nextAnswers)) return;
     respondingRef.current = true;
     setResponding(true);
     const finishResponding = () => {
@@ -121,7 +134,18 @@ export function ApprovalCard({
       onLog?.(formatError(error), "error");
     }
   };
+  const respondOptionPicker = (action: "submit" | "skip" | "dismiss", nextAnswers: Record<string, string[]> = answers) => {
+    respond(true, { ...nextAnswers, [OPTION_PICKER_ACTION_QUESTION_ID]: [action] });
+  };
+  const respondSetupContextPicker = (action: "continue" | "skip" | "dismiss") => {
+    respond(true, { ...answers, [SETUP_CONTEXT_ACTION_QUESTION_ID]: [action] });
+  };
   const kind = requestKind(request.method);
+  const requestKindForRender: RequestKind = detail.optionPicker
+    ? "option-picker"
+    : detail.setupContextPicker
+      ? "setup-context-picker"
+      : kind;
   /*
    * CODEX-REF: pending-request-item-panel-*.js — panel header:
    *   title container `flex min-w-0 flex-col gap-2`
@@ -139,6 +163,8 @@ export function ApprovalCard({
    * question.question 而非 questions[0]?.question（multi-question 时随 step 切换）。
    */
   const isUserInput = kind === "user-input";
+  const isOptionPicker = detail.optionPicker != null;
+  const isSetupContextPicker = detail.setupContextPicker != null;
   /*
    * CODEX-REF: pending-request-item-panel-*.js — single title source: outer
    * header prop falling back to the current question text. HiCodex 之前
@@ -149,8 +175,8 @@ export function ApprovalCard({
   const panelTitle = isUserInput
     ? (currentQuestion?.header || currentQuestion?.question || requestPanelTitle(detail))
     : requestPanelTitle(detail);
-  const details = isUserInput ? [] : requestPanelDetails(detail, request);
-  const showBodyPreview = !isUserInput;
+  const details = isUserInput || isOptionPicker || isSetupContextPicker ? [] : requestPanelDetails(detail, request);
+  const showBodyPreview = !isUserInput && !isOptionPicker && !isSetupContextPicker;
   const primaryLabel = detail.externalUrl && externalUrlOpened ? "Continue" : detail.acceptLabel;
   const declineTitle = kind === "user-input"
     ? "Stops the running turn instead of submitting an empty answer."
@@ -159,7 +185,7 @@ export function ApprovalCard({
   return (
     <div
       className="hc-request-input-panel"
-      data-request-kind={kind}
+      data-request-kind={requestKindForRender}
       aria-busy={responding || undefined}
       tabIndex={0}
       onKeyDown={(event) => {
@@ -174,7 +200,13 @@ export function ApprovalCard({
         if (respondingRef.current) return;
         if (event.key === "Escape") {
           event.preventDefault();
-          respond(false);
+          if (isOptionPicker) {
+            respondOptionPicker("dismiss");
+          } else if (isSetupContextPicker) {
+            respondSetupContextPicker("dismiss");
+          } else {
+            respond(false);
+          }
           return;
         }
         // CODEX-REF: pending-request-item-panel-*.js — left/right 切换 question（仅 multi-question 时）
@@ -182,6 +214,23 @@ export function ApprovalCard({
           && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
           event.preventDefault();
           goToQuestion(questionIndex + (event.key === "ArrowRight" ? 1 : -1));
+          return;
+        }
+        const arrowSelection = pendingRequestOptionArrowSelection({
+          key: event.key,
+          question: currentQuestion,
+          currentValue: currentQuestion ? answers[currentQuestion.id] ?? currentQuestion.defaultAnswers : [],
+          responding: respondingRef.current,
+          isEditableTarget: isEditableEventTarget(event.target),
+        });
+        if (arrowSelection) {
+          event.preventDefault();
+          if ("focusOther" in arrowSelection) {
+            const textarea = event.currentTarget.querySelector<HTMLTextAreaElement>("[data-request-other-freeform]");
+            textarea?.focus();
+            return;
+          }
+          setAnswers((current) => ({ ...current, [arrowSelection.questionId]: [arrowSelection.value] }));
           return;
         }
         // CODEX-REF: pending-request-item-panel-*.js — 数字键选 option, after which
@@ -200,6 +249,8 @@ export function ApprovalCard({
           // Codex next-or-submit: not last → 跳下一题；is last → submit
           if (!isLastQuestion) {
             goToQuestion(questionIndex + 1);
+          } else if (isOptionPicker && canSubmitWithAnswers(nextAnswers)) {
+            respondOptionPicker("submit", nextAnswers);
           } else if (canSubmitWithAnswers(nextAnswers)) {
             respond(true, nextAnswers);
           }
@@ -216,6 +267,10 @@ export function ApprovalCard({
           // CODEX-REF: pending-request-item-panel-*.js — Enter: 非最后一题跳 next，最后一题 submit
           if (!isLastQuestion && totalQuestions > 1) {
             goToQuestion(questionIndex + 1);
+          } else if (isOptionPicker) {
+            respondOptionPicker("submit");
+          } else if (isSetupContextPicker) {
+            respondSetupContextPicker("continue");
           } else {
             respond(true);
           }
@@ -223,7 +278,12 @@ export function ApprovalCard({
       }}
     >
       <div className="hc-request-panel-content">
+        {actorLabel ? (
+          <div className="hc-request-panel-actor">{actorLabel}</div>
+        ) : null}
+        {detail.mcpToolApproval ? <McpToolApprovalHeader approval={detail.mcpToolApproval} /> : null}
         <div className="hc-request-panel-title">{panelTitle}</div>
+        {detail.setupContextPicker ? <SetupContextPickerBody picker={detail.setupContextPicker} /> : null}
         {details.length > 0 && (
           <div className="hc-request-panel-details">
             {details.map((item) => (
@@ -280,21 +340,32 @@ export function ApprovalCard({
               </button>
             </div>
           )}
-          <QuestionField
-            key={currentQuestion.id}
-            question={currentQuestion}
-            index={questionIndex}
-            disabled={responding}
-            value={answers[currentQuestion.id] ?? currentQuestion.defaultAnswers}
-            onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: value }))}
-            /*
-             * CODEX-REF: pending-request-item-panel-*.js — panel 顶部 header 已经
-             * 渲染 question 文本。隐藏 QuestionField 自带的 heading 避免与
-             * panel-title 重复。如果 QuestionField 在非 user-input 场景被调用，
-             * hideHeading 默认 false，保留原有渲染不影响其它 RequestKind。
-             */
-            hideHeading={isUserInput}
-          />
+          {detail.optionPicker ? (
+            <OptionPickerField
+              optionPicker={detail.optionPicker}
+              question={currentQuestion}
+              disabled={responding}
+              value={answers[currentQuestion.id] ?? currentQuestion.defaultAnswers}
+              onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: value }))}
+              onSubmit={(value) => respondOptionPicker("submit", { ...answers, [currentQuestion.id]: value })}
+            />
+          ) : (
+            <QuestionField
+              key={currentQuestion.id}
+              question={currentQuestion}
+              index={questionIndex}
+              disabled={responding}
+              value={answers[currentQuestion.id] ?? currentQuestion.defaultAnswers}
+              onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: value }))}
+              /*
+               * CODEX-REF: pending-request-item-panel-*.js — panel 顶部 header 已经
+               * 渲染 question 文本。隐藏 QuestionField 自带的 heading 避免与
+               * panel-title 重复。如果 QuestionField 在非 user-input 场景被调用，
+               * hideHeading 默认 false，保留原有渲染不影响其它 RequestKind。
+               */
+              hideHeading={isUserInput}
+            />
+          )}
         </div>
       )}
       {!detail.canAccept && detail.acceptDisabledReason && (
@@ -306,11 +377,19 @@ export function ApprovalCard({
           className="hc-request-action ghost"
           disabled={responding}
           title={declineTitle}
-          onClick={() => respond(false)}
+          onClick={() => {
+            if (isOptionPicker) {
+              respondOptionPicker("skip");
+            } else if (isSetupContextPicker) {
+              respondSetupContextPicker("skip");
+            } else {
+              respond(false);
+            }
+          }}
         >
           <span>{detail.declineLabel}</span>
           {/* codex: requestInputPanel uses 'ESC' (uppercase); the general approval/browser path uses 'Esc'. */}
-          <kbd>{isUserInput ? "ESC" : "Esc"}</kbd>
+          {!isOptionPicker && !isSetupContextPicker && <kbd>{isUserInput ? "ESC" : "Esc"}</kbd>}
         </button>
         <button
           type="button"
@@ -318,7 +397,15 @@ export function ApprovalCard({
           autoFocus
           disabled={!canSubmit}
           title={!canSubmit ? detail.acceptDisabledReason : undefined}
-          onClick={() => respond(true)}
+          onClick={() => {
+            if (isOptionPicker) {
+              respondOptionPicker("submit");
+            } else if (isSetupContextPicker) {
+              respondSetupContextPicker("continue");
+            } else {
+              respond(true);
+            }
+          }}
         >
           <span>{primaryLabel}</span>
           {/* codex Enter chip = ⏎ (U+23CE RETURN SYMBOL), not ↵ (U+21B5) */}
@@ -343,6 +430,8 @@ type RequestKind =
   | "command"
   | "file-change"
   | "user-input"
+  | "option-picker"
+  | "setup-context-picker"
   | "mcp"
   | "tool-call"
   | "permission"
@@ -377,6 +466,7 @@ function detailRowFromLabelValue(label: string, value: string): RequestDetailIte
 function requestPanelDetails(detail: PendingRequestDetail, request: PendingServerRequest): RequestDetailItem[] {
   const rows: RequestDetailItem[] = [];
   if (detail.reason) rows.push({ label: "Reason", value: detail.reason });
+  if (detail.mcpToolApproval) return rows;
   for (const item of detail.metadata) {
     rows.push({ label: item.label, value: item.value, code: isTechnicalDetail(item.label, item.value) });
   }
@@ -423,6 +513,9 @@ function RequestBodyPreview({
   request: PendingServerRequest;
   requestKind: RequestKind;
 }) {
+  if (detail.mcpToolApproval) {
+    return <McpToolApprovalParams approval={detail.mcpToolApproval} />;
+  }
   if (requestKind === "command") {
     if (networkApprovalContext(request.params)) return null;
     return <CommandPreview text={commandPreviewText(request.params)} />;
@@ -439,6 +532,113 @@ function RequestBodyPreview({
     );
   }
   return null;
+}
+
+const MCP_TOOL_PARAM_PREVIEW_LIMIT = 4;
+
+function McpToolApprovalHeader({ approval }: { approval: PendingRequestMcpToolApproval }) {
+  const isHighRisk = approval.riskLevel === "high";
+  if (isHighRisk) {
+    return (
+      <div className="hc-mcp-tool-approval-header warning">
+        <AlertTriangle aria-hidden size={14} />
+        <span>Elevated Risk</span>
+      </div>
+    );
+  }
+  return (
+    <div className="hc-mcp-tool-approval-header">
+      <span className="hc-mcp-tool-approval-connector-dot" aria-hidden="true" />
+      <span>{approval.connectorName}</span>
+    </div>
+  );
+}
+
+function McpToolApprovalParams({ approval }: { approval: PendingRequestMcpToolApproval }) {
+  const [showAll, setShowAll] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const entries = approval.toolParamEntries;
+  if (entries.length === 0) return null;
+  const visibleEntries = showAll ? entries : entries.slice(0, MCP_TOOL_PARAM_PREVIEW_LIMIT);
+  const hiddenCount = entries.length - visibleEntries.length;
+  return (
+    <div className="hc-mcp-tool-approval-params" aria-label="Tool parameters">
+      {visibleEntries.map((entry) => {
+        const key = entry.name;
+        return (
+          <McpToolParamRow
+            key={key}
+            entry={entry}
+            expanded={expanded[key] === true}
+            onToggle={() => setExpanded((current) => ({ ...current, [key]: current[key] !== true }))}
+          />
+        );
+      })}
+      {hiddenCount > 0 ? (
+        <button
+          type="button"
+          className="hc-mcp-tool-param-toggle-list"
+          onClick={() => setShowAll(true)}
+        >
+          <span>{`Show ${hiddenCount} more items`}</span>
+          <ChevronRight aria-hidden size={12} />
+        </button>
+      ) : null}
+      {showAll && entries.length > MCP_TOOL_PARAM_PREVIEW_LIMIT ? (
+        <button
+          type="button"
+          className="hc-mcp-tool-param-toggle-list"
+          onClick={() => setShowAll(false)}
+        >
+          <span>Show fewer items</span>
+          <ChevronRight aria-hidden className="hc-mcp-tool-param-chevron-up" size={12} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function McpToolParamRow({
+  entry,
+  expanded,
+  onToggle,
+}: {
+  entry: PendingRequestMcpToolParamEntry;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const value = expanded ? entry.expandedText : entry.previewText;
+  const valueClass = [
+    "hc-mcp-tool-param-value",
+    entry.displayKind === "json" ? "json" : "text",
+    entry.isExpandable && !expanded ? "collapsed" : "",
+  ].filter(Boolean).join(" ");
+  return (
+    <div className="hc-mcp-tool-param-row">
+      <div className="hc-mcp-tool-param-label">{entry.label}</div>
+      <div className="hc-mcp-tool-param-content">
+        <div className={valueClass} data-expanded={expanded || undefined}>
+          {value}
+        </div>
+        {entry.isExpandable ? (
+          <button
+            type="button"
+            className="hc-mcp-tool-param-toggle"
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.label}`}
+            onClick={onToggle}
+          >
+            <span>{expanded ? "Collapse" : "Expand"}</span>
+            <ChevronRight
+              aria-hidden
+              className={expanded ? "hc-mcp-tool-param-chevron-up" : undefined}
+              size={12}
+            />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 // CODEX-REF: composer-*.js — command-preview renderer.
@@ -557,6 +757,37 @@ export function pendingRequestOptionShortcut(input: {
   return option ? { questionId: question.id, value: option.value } : null;
 }
 
+export function pendingRequestOptionArrowSelection(input: {
+  key: string;
+  question: PendingRequestQuestion | null;
+  currentValue: string[];
+  responding: boolean;
+  isEditableTarget: boolean;
+}): { questionId: string; value: string } | { questionId: string; focusOther: true } | null {
+  /*
+   * CODEX-REF: pending-request-item-panel-*.js — request input panel registers
+   * ArrowUp/ArrowDown hotkeys outside editable fields; they prevent default and
+   * move the current radio selection through `question.options`; when isOther
+   * is present, ArrowDown from the last option focuses the freeform textarea.
+   */
+  if (input.responding || input.isEditableTarget) return null;
+  if (input.key !== "ArrowUp" && input.key !== "ArrowDown") return null;
+  const question = input.question;
+  if (!question || question.kind === "multiSelect" || question.options.length === 0) return null;
+  const current = input.currentValue[0] ?? "";
+  const currentIndex = question.options.findIndex((option) => option.value === current);
+  if (input.key === "ArrowDown" && question.isOther === true && currentIndex === question.options.length - 1) {
+    return { questionId: question.id, focusOther: true };
+  }
+  const direction = input.key === "ArrowDown" ? 1 : -1;
+  const nextIndex = currentIndex < 0
+    ? 0
+    : Math.min(Math.max(currentIndex + direction, 0), question.options.length - 1);
+  if (nextIndex === currentIndex) return null;
+  const option = question.options[nextIndex];
+  return option ? { questionId: question.id, value: option.value } : null;
+}
+
 const COMMON_SHELL_COMMANDS = new Set([
   "awk",
   "bun",
@@ -602,6 +833,8 @@ function requestKind(method: string): RequestKind {
   if (method.includes("commandExecution") || method === "execCommandApproval") return "command";
   if (method.includes("fileChange") || method === "applyPatchApproval") return "file-change";
   if (method.includes("requestUserInput")) return "user-input";
+  if (method.includes("requestOptionPicker")) return "option-picker";
+  if (method.includes("requestSetupCodexContextPicker")) return "setup-context-picker";
   if (method.includes("elicitation")) return "mcp";
   if (method === "item/tool/call") return "tool-call";
   if (method.includes("permissions")) return "permission";
@@ -702,8 +935,9 @@ function QuestionField({
              * = "No, and tell Codex what to do differently"。HiCodex 用通用兜底。
              * 输入时清除 selected option（用 freeform 替代）。
              */
-            <div className="hc-request-inline-freeform hc-request-other-freeform">
+          <div className="hc-request-inline-freeform hc-request-other-freeform">
               <textarea
+                data-request-other-freeform="true"
                 value={freeformValue}
                 placeholder="No, and tell Codex what to do differently"
                 rows={1}
@@ -740,6 +974,98 @@ function QuestionField({
   );
 }
 
+function OptionPickerField({
+  optionPicker,
+  question,
+  disabled,
+  value,
+  onChange,
+  onSubmit,
+}: {
+  optionPicker: PendingRequestOptionPicker;
+  question: PendingRequestQuestion;
+  disabled: boolean;
+  value: string[];
+  onChange: (value: string[]) => void;
+  onSubmit: (value: string[]) => void;
+}) {
+  const optionValues = new Set(question.options.map((option) => option.value));
+  const freeformValue = value.find((item) => !optionValues.has(item)) ?? "";
+  const selectedValues = value.filter((item) => optionValues.has(item));
+  const currentSelectedValues = optionPicker.allowMultiple ? selectedValues : selectedValues.slice(0, 1);
+  const pickerValue = (selected: string[], freeform: string) => (
+    freeform.length > 0 ? [...selected, freeform] : selected
+  );
+  const toggleOption = (optionValue: string) => {
+    const selected = selectedValues.includes(optionValue);
+    if (optionPicker.allowMultiple) {
+      onChange(selected
+        ? value.filter((item) => item !== optionValue)
+        : [...value.filter((item) => item !== optionValue || !optionValues.has(item)), optionValue]);
+      return;
+    }
+    onChange(pickerValue([optionValue], freeformValue));
+  };
+  const changeFreeform = (text: string) => {
+    onChange(pickerValue(currentSelectedValues, text));
+  };
+  /*
+   * CODEX-REF: pending-request-item-panel-DZ77s3cA.pretty.js `un` —
+   * optionPicker is a dedicated form: rounded option pills (`role` radio or
+   * checkbox), an inline "Something else" input, Skip ghost button, and a
+   * primary Submit button returning { action, selectedOptions, freeformAnswer }.
+   */
+  return (
+    <div className="hc-option-picker">
+      <div className="hc-option-picker-options" role={optionPicker.allowMultiple ? "group" : "radiogroup"} aria-label={question.question}>
+        {question.options.map((option) => {
+          const selected = selectedValues.includes(option.value);
+          return (
+            <button
+              key={option.value}
+              type="button"
+              className="hc-option-picker-pill"
+              role={optionPicker.allowMultiple ? "checkbox" : "radio"}
+              aria-checked={selected}
+              data-selected={selected || undefined}
+              disabled={disabled}
+              onClick={() => toggleOption(option.value)}
+              title={option.description || undefined}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+        <input
+          className="hc-option-picker-freeform"
+          data-request-other-freeform="true"
+          value={freeformValue}
+          placeholder="Something else"
+          disabled={disabled}
+          onChange={(event) => changeFreeform(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onSubmit(pickerValue(currentSelectedValues, event.currentTarget.value));
+            }
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SetupContextPickerBody({ picker }: { picker: PendingRequestSetupContextPicker }) {
+  /*
+   * CODEX-REF: pending-request-item-panel-DZ77s3cA.pretty.js `Pn` —
+   * setup context picker can always Dismiss, Skip, or Continue with
+   * `{ action, selectedSources }`. HiCodex intentionally keeps source
+   * selection empty until the app/plugin/OAuth/folder host flows exist.
+   */
+  void picker;
+  return null;
+}
+
 function OptionCopy({ option }: { option: PendingRequestQuestion["options"][number] }) {
   const codePreview = option.codePreview?.trim() ?? "";
   const codeLayout = codePreview.includes("\n") || codePreview.includes("\r") ? "block" : "inline";
@@ -770,9 +1096,25 @@ function answerPayload(
   detail: PendingRequestDetail,
   answers: Record<string, string[]>,
 ): Record<string, string[]> {
-  return Object.fromEntries(
+  const payload = Object.fromEntries(
     detail.questions.map((question) => [question.id, answers[question.id] ?? question.defaultAnswers]),
   );
+  if (detail.optionPicker && answers[OPTION_PICKER_ACTION_QUESTION_ID]) {
+    payload[OPTION_PICKER_ACTION_QUESTION_ID] = answers[OPTION_PICKER_ACTION_QUESTION_ID];
+  }
+  if (detail.setupContextPicker && answers[SETUP_CONTEXT_ACTION_QUESTION_ID]) {
+    payload[SETUP_CONTEXT_ACTION_QUESTION_ID] = answers[SETUP_CONTEXT_ACTION_QUESTION_ID];
+  }
+  return payload;
+}
+
+function isNonSubmitOptionPickerAction(
+  detail: PendingRequestDetail,
+  answers: Record<string, string[]>,
+): boolean {
+  if (!detail.optionPicker) return false;
+  const action = answers[OPTION_PICKER_ACTION_QUESTION_ID]?.[0];
+  return action === "skip" || action === "dismiss";
 }
 
 function isEditableEventTarget(target: EventTarget | null): boolean {

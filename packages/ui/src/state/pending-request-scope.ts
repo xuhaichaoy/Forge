@@ -19,6 +19,16 @@ export interface PendingRequestThreadSummaryContext {
   itemsByThread?: Record<string, Array<{ id?: string }>> | null;
 }
 
+export interface ComposerPendingRequestContext extends ActivePendingRequestContext {
+  backgroundThreadIds?: Iterable<string> | null;
+  itemsByThread?: Record<string, Array<{ id?: string }>> | null;
+}
+
+export interface BackgroundPendingRequestContext extends PendingRequestThreadSummaryContext {
+  activeThreadId?: string | null;
+  backgroundThreadIds?: Iterable<string> | null;
+}
+
 export type PendingRequestAwaitingKind = "approval" | "userInput" | "toolCall" | "request";
 
 export type PendingRequestAwaitingFlag =
@@ -74,6 +84,71 @@ export function deriveActivePendingRequests(
     .sort(comparePendingRequests);
 }
 
+export function deriveComposerPendingRequests(
+  requests: PendingServerRequest[],
+  context: ComposerPendingRequestContext,
+): PendingServerRequest[] {
+  const activeRequests = deriveActivePendingRequests(requests, context);
+  const backgroundThreadIds = idList(context.backgroundThreadIds);
+  if (backgroundThreadIds.length === 0) return activeRequests;
+
+  const activeRequestIds = new Set(activeRequests.map((request) => String(request.id)));
+  const backgroundCandidates = dedupePendingRequests(requests)
+    .filter((request) => {
+      if (activeRequestIds.has(String(request.id))) return false;
+      /*
+       * CODEX-REF: composer-zFOdryLS.pretty.js child pending panel uses `af`
+       * -> app-server manager `h_`, and `h_` only returns child `{type:"approval"}`
+       * from command/file approval requests. Active-thread `f_` handles userInput,
+       * optionPicker, permissionRequest, and MCP elicitations; child promotion
+       * does not.
+       */
+      if (!isDesktopChildPromotedPendingRequest(request)) return false;
+      const threadId = pendingRequestOwnerThreadId(request, context);
+      return threadId !== null && backgroundThreadIds.includes(threadId);
+    })
+    .sort(comparePendingRequests);
+  const backgroundRequest = backgroundThreadIds.flatMap((threadId) =>
+    backgroundCandidates.filter((request) => {
+      return pendingRequestOwnerThreadId(request, context) === threadId;
+    }),
+  )[0] ?? null;
+
+  return backgroundRequest ? [backgroundRequest, ...activeRequests] : activeRequests;
+}
+
+export function deriveBackgroundPendingRequests(
+  requests: PendingServerRequest[],
+  context: BackgroundPendingRequestContext,
+): PendingServerRequest[] {
+  const activeThreadId = normalizedString(context.activeThreadId);
+  const backgroundThreadIds = idList(context.backgroundThreadIds)
+    .filter((threadId) => threadId !== activeThreadId);
+  if (backgroundThreadIds.length === 0) return [];
+
+  const backgroundThreadIdSet = new Set(backgroundThreadIds);
+  return dedupePendingRequests(requests)
+    .filter((request) => {
+      const threadId = pendingRequestOwnerThreadId(request, context);
+      return threadId !== null && backgroundThreadIdSet.has(threadId);
+    })
+    .sort((left, right) => {
+      const leftThreadIndex = backgroundThreadIds.indexOf(pendingRequestOwnerThreadId(left, context) ?? "");
+      const rightThreadIndex = backgroundThreadIds.indexOf(pendingRequestOwnerThreadId(right, context) ?? "");
+      return leftThreadIndex === rightThreadIndex
+        ? comparePendingRequests(left, right)
+        : leftThreadIndex - rightThreadIndex;
+    });
+}
+
+export function pendingRequestOwnerThreadId(
+  request: PendingServerRequest,
+  context: PendingRequestThreadSummaryContext = {},
+): string | null {
+  const scope = pendingRequestScope(request);
+  return scope.threadId ?? threadIdForItemId(scope.itemId, context.itemsByThread ?? null);
+}
+
 export function pendingRequestMatchesActiveScope(
   request: PendingServerRequest,
   activeThreadId: string | null,
@@ -95,8 +170,7 @@ export function summarizePendingRequestAwaitingByThread(
   context: PendingRequestThreadSummaryContext = {},
 ): PendingRequestThreadAwaitingMap {
   return requests.reduce<PendingRequestThreadAwaitingMap>((summaries, request) => {
-    const scope = pendingRequestScope(request);
-    const threadId = scope.threadId ?? threadIdForItemId(scope.itemId, context.itemsByThread ?? null);
+    const threadId = pendingRequestOwnerThreadId(request, context);
     if (threadId === null) return summaries;
 
     const summary = summaries[threadId] ?? emptyThreadAwaiting(threadId);
@@ -115,13 +189,36 @@ export function pendingRequestAwaitingKind(request: PendingServerRequest): Pendi
     case "item/permissions/requestApproval":
       return "approval";
     case "item/tool/requestUserInput":
+    case "item/tool/requestOptionPicker":
+    case "item/tool/requestSetupCodexContextPicker":
     case "mcpServer/elicitation/request":
       return "userInput";
     case "item/tool/call":
-      return "toolCall";
+      return isDynamicInputToolRequest(request) ? "userInput" : "toolCall";
     default:
       return "request";
   }
+}
+
+function isDesktopChildPromotedPendingRequest(request: PendingServerRequest): boolean {
+  switch (request.method) {
+    case "item/commandExecution/requestApproval":
+    case "execCommandApproval":
+    case "item/fileChange/requestApproval":
+    case "applyPatchApproval":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isDynamicInputToolRequest(request: PendingServerRequest): boolean {
+  if (request.method !== "item/tool/call") return false;
+  const params = objectRecord(request.params);
+  const tool = normalizedString(params?.tool);
+  return tool === "request_onboarding_input"
+    || tool === "request_option_picker"
+    || tool === "setup_codex_context_picker";
 }
 
 function scopeFromValue(value: unknown): Omit<PendingRequestScope, "hasScope"> {
@@ -255,6 +352,19 @@ function itemIdSet(value: Iterable<string> | null | undefined): ReadonlySet<stri
   for (const item of value) {
     const id = normalizedString(item);
     if (id) ids.add(id);
+  }
+  return ids;
+}
+
+function idList(value: Iterable<string> | null | undefined): string[] {
+  if (!value) return [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const item of value) {
+    const id = normalizedString(item);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
   }
   return ids;
 }

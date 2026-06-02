@@ -79,6 +79,16 @@ export interface FilePreviewPanelProps {
   onOpenUrl?: (url: string) => void;
 }
 
+export interface FileReferencePreviewTabProps {
+  path: string;
+  lineStart?: number | null;
+  lineEnd?: number | null;
+  hostId?: string | null;
+  workspaceRoot?: string | null;
+  cwd?: string | null;
+  refreshKey?: number | null;
+}
+
 interface FilePreviewSource {
   key: string;
   title: string;
@@ -236,6 +246,42 @@ export function FilePreviewPanel({
   );
 }
 
+export function FileReferencePreviewTab({
+  path,
+  lineStart = 1,
+  lineEnd = lineStart,
+  hostId: _hostId = null,
+  workspaceRoot,
+  cwd,
+  refreshKey = 0,
+}: FileReferencePreviewTabProps): ReactNode {
+  const source = useMemo<FilePreviewSource>(() => {
+    const start = normalizePositiveLine(lineStart) ?? 1;
+    const end = Math.max(start, normalizePositiveLine(lineEnd) ?? start);
+    const reference = { path, lineStart: start, lineEnd: end };
+    return {
+      key: `reference:${reference.path}:${reference.lineStart}:${reference.lineEnd}:${refreshKey ?? 0}`,
+      title: basename(reference.path),
+      path: reference.path,
+      displayPath: fileReferenceDisplayPath(reference.path),
+      lineLabel: fileReferenceLineLabel(reference),
+      kind: "reference",
+      reference,
+    };
+  }, [lineEnd, lineStart, path, refreshKey]);
+
+  return (
+    <div className="hc-file-preview-tab" data-file-preview-tab-path={path}>
+      <FilePreviewPanelBody
+        key={source.key}
+        cwd={cwd}
+        source={source}
+        workspaceRoot={workspaceRoot}
+      />
+    </div>
+  );
+}
+
 function usePreviewSource({
   artifactPreview,
   artifactPreviewNonce,
@@ -276,6 +322,10 @@ function usePreviewSource({
       reference: fileReference,
     };
   }, [artifactPreview, artifactPreviewNonce, fileReference]);
+}
+
+function normalizePositiveLine(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
 }
 
 function FilePreviewPanelBody({

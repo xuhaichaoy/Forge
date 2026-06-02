@@ -29,6 +29,8 @@ export const COMMAND_IDS = {
   newThread: "newThread",
   // codex: electron-menu-shortcuts-*.js#newWindow — New Window ⌘⇧N.
   newWindow: "newWindow",
+  // codex: electron-menu-shortcuts-*.js#openFolder — Open Folder… ⌘O.
+  openFolder: "openFolder",
   previousThread: "previousThread",
   nextThread: "nextThread",
   settings: "settings",
@@ -98,6 +100,21 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Shift+N"],
     },
   },
+  // codex: electron-menu-shortcuts-*.js openFolder — command menu workspace
+  // item, native File menu title "Open Folder…", accelerator ⌘O.
+  {
+    id: COMMAND_IDS.openFolder,
+    title: "Open folder",
+    description: "Add a local project to Codex",
+    group: "workspace",
+    commandMenuGroupKey: "workspace",
+    scope: "webview",
+    availableIn: ["electron"],
+    defaultKeybindings: {
+      macOS: ["CmdOrCtrl+O"],
+      default: ["CmdOrCtrl+O"],
+    },
+  },
   // codex: electron-menu-shortcuts-*.js findInThread — ⌘F.
   {
     id: COMMAND_IDS.findInThread,
@@ -163,7 +180,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+P"],
     },
   },
-  // codex: electron-menu-shortcuts-*.js newThread — ⌘N.
+  // codex: electron-menu-shortcuts-*.js newThread — ⌘N / ⌘⇧O.
   {
     id: COMMAND_IDS.newThread,
     title: "New chat",
@@ -172,8 +189,8 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     scope: "webview",
     availableIn: ["electron", "browser"],
     defaultKeybindings: {
-      macOS: ["CmdOrCtrl+N"],
-      default: ["CmdOrCtrl+N"],
+      macOS: ["CmdOrCtrl+N", "CmdOrCtrl+Shift+O"],
+      default: ["CmdOrCtrl+N", "CmdOrCtrl+Shift+O"],
     },
   },
   // codex: electron-menu-shortcuts-*.js previousThread — ⌘⇧[.

@@ -1,7 +1,7 @@
 /*
  * codex: above-composer-panel-row-u8ZTJgs2.pretty.js
  *   - `p` (line ~11)  → AboveComposerPanelContainer (provides HasPortalContentContext)
- *   - `m` (line ~29)  → AboveComposerPanel (consumes context, toggles first-rounded)
+ *   - `m` (line ~29)  → AboveComposerPanel (first:rounded-t-2xl when context is false)
  *   - `C` (line ~131) → PanelRow (icon + title + meta + trailing + actions)
  *
  * Codex Tailwind classes (no longer used here because HiCodex has no Tailwind):
@@ -14,9 +14,7 @@
  * Visual equivalents are encoded as `hc-above-composer-panel*` / `hc-panel-row*` in
  * packages/ui/src/styles/composer.css.
  */
-import { createContext, useContext, type HTMLAttributes, type ReactNode } from "react";
-
-const HasPortalContentContext = createContext(false);
+import { type HTMLAttributes, type ReactNode } from "react";
 
 interface AboveComposerPanelContainerProps {
   hasAboveComposerPortalContent?: boolean;
@@ -29,12 +27,14 @@ export function AboveComposerPanelContainer({
   className,
   children,
 }: AboveComposerPanelContainerProps) {
-  // codex: above-composer-panel-row p (container + HasPortalContentContext.Provider)
-  const cls = ["hc-above-composer-panel-container", className].filter(Boolean).join(" ");
+  // codex: above-composer-panel-row p/m — context gates `first:rounded-t-2xl`.
+  const cls = [
+    "hc-above-composer-panel-container",
+    hasAboveComposerPortalContent ? "hc-above-composer-panel-container--has-content-above" : null,
+    className,
+  ].filter(Boolean).join(" ");
   return (
-    <HasPortalContentContext.Provider value={hasAboveComposerPortalContent}>
-      <div className={cls}>{children}</div>
-    </HasPortalContentContext.Provider>
+    <div className={cls}>{children}</div>
   );
 }
 
@@ -44,11 +44,8 @@ interface AboveComposerPanelProps {
 }
 
 export function AboveComposerPanel({ className, children }: AboveComposerPanelProps) {
-  // codex: above-composer-panel-row m (first-rounded gated by !useContext(HasPortalContentContext))
-  const hasContentAbove = useContext(HasPortalContentContext);
   const cls = [
     "hc-above-composer-panel",
-    !hasContentAbove ? "hc-above-composer-panel--first-rounded" : null,
     className,
   ]
     .filter(Boolean)

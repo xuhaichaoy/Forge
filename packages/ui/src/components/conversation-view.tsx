@@ -90,6 +90,7 @@ export interface ConversationViewProps {
   threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
+  onRevealAssistantEndResource?: (entry: RailEntry) => void;
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
@@ -121,6 +122,7 @@ export function ConversationView({
   threadId = null,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
+  onRevealAssistantEndResource,
   onOpenDiff,
   onForkTurn,
   onSubmitTurnFeedback,
@@ -153,6 +155,7 @@ export function ConversationView({
       isMostRecentTurn={context?.isMostRecentTurn === true}
       onEditLastUserMessage={onEditLastUserMessage}
       onOpenAssistantArtifact={onOpenAssistantArtifact}
+      onRevealAssistantEndResource={onRevealAssistantEndResource}
       onOpenDiff={onOpenDiff}
       onForkTurn={onForkTurn}
       onSubmitTurnFeedback={onSubmitTurnFeedback}
@@ -555,6 +558,7 @@ export function ConversationUnitView({
   threadId = null,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
+  onRevealAssistantEndResource,
   onOpenDiff,
   onForkTurn,
   onSubmitTurnFeedback,
@@ -575,6 +579,7 @@ export function ConversationUnitView({
   threadId?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
+  onRevealAssistantEndResource?: (entry: RailEntry) => void;
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
@@ -590,6 +595,7 @@ export function ConversationUnitView({
         isMostRecentTurn={isMostRecentTurn}
         onEditLastUserMessage={onEditLastUserMessage}
         onOpenAssistantArtifact={onOpenAssistantArtifact}
+        onRevealAssistantEndResource={onRevealAssistantEndResource}
         onForkTurn={onForkTurn}
         onSubmitTurnFeedback={onSubmitTurnFeedback}
         threadId={threadId}
@@ -641,7 +647,13 @@ export function ConversationUnitView({
     );
   }
   if (unit.kind === "assistantEndResources") {
-    return <AssistantEndResourceCards resources={unit.resources} onOpenArtifact={onOpenAssistantArtifact} />;
+    return (
+      <AssistantEndResourceCards
+        resources={unit.resources}
+        onOpenArtifact={onOpenAssistantArtifact}
+        onRevealResource={onRevealAssistantEndResource}
+      />
+    );
   }
   return (
     <ToolBlock

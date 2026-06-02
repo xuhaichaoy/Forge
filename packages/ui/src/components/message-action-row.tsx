@@ -74,8 +74,8 @@ export function MessageActionRow({
            */
           <Tooltip content={copied ? "Copied" : "Copy"}>
             <button aria-label={copied ? "Copied" : "Copy"} type="button" onClick={handleCopy}>
-              {/* codex action-row icons = icon-xs (16px) */}
-              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {/* HiCodex divergence: action-row icons at 12px (Codex icon-xs = 16px); shrunk per product preference */}
+              {copied ? <Check size={12} /> : <Copy size={12} />}
             </button>
           </Tooltip>
         )}

@@ -33,7 +33,6 @@ export default function runRightRailTests(): void {
   preservesSectionCountsAndEntryMeta();
   projectsBranchDiffAction();
   projectsDesktopGitSurfaceWithoutExtraStatusRows();
-  rendersDesktopStatusFooterTrigger();
   loadsAndPersistsRightRailPinnedPreference();
   computesDesktopRightRailDisplayModeAndContentShift();
   hidesRightRailWhileDesktopModeIsOverlay();
@@ -56,13 +55,12 @@ function keepsCodexDesktopSectionOrder(): void {
     // legacy RailEntry[] form.
     browser: { title: "Codex docs", displayUrl: "platform.openai.com", isActive: true, tabId: "tab-1" },
     sources: [railEntry("source-1", "github:list_prs", "completed", "MCP tool")],
-    status: [railEntry("status-1", "42 tokens/s", "running", "18% used")],
   });
 
   // CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — section order:
   // Progress, Automation (single), Environment/Outputs, Side chats,
   // background-subagents ("Subagents"), background-tasks ("Tasks"), Browser,
-  // Sources, Status. Codex 仅 single automation。Desktop 把 subagents/tasks 拆成
+  // Sources. Codex 仅 single automation。Desktop 把 subagents/tasks 拆成
   // 两个独立 section（不再合并成 "Subagents and tasks"）。
   assertDeepEqual(
     sections.map((section) => section.title),
@@ -75,7 +73,6 @@ function keepsCodexDesktopSectionOrder(): void {
       "Tasks",
       "Browser",
       "Sources",
-      "Status",
     ],
     "right rail section order should match Codex Desktop",
   );
@@ -380,6 +377,11 @@ function rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction(): void {
     },
     artifacts: [],
     sideChats: [railEntry("side-chat:side-1", "Side chat", "active", "Uses gpt-5.2")],
+    backgroundAgents: [{
+      ...railEntry("background-agent:agent-1", "Explorer", "active", "Uses gpt-5.4"),
+      diffStats: { linesAdded: 3, linesRemoved: 1 },
+      action: { kind: "thread", threadId: "agent-1", displayName: "Explorer", model: "gpt-5.4", role: "explorer" },
+    }],
     backgroundTerminals: [railEntry("background-terminal:proc-1", "npm run dev", "running", "/workspace")],
     sources: [],
   });
@@ -392,6 +394,16 @@ function rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction(): void {
     html,
     "hc-rail-progress-spinner",
     "running side chat should render a spinner icon like Codex Desktop",
+  );
+  assertStringIncludes(
+    html,
+    "is working",
+    "active background subagent should render Desktop's inline working label",
+  );
+  assertStringIncludes(
+    html,
+    "+3",
+    "background subagent rows should render their diff stats in the Subagents section",
   );
   assertStringIncludes(
     html,
@@ -592,32 +604,6 @@ function hidesRightRailWhileDesktopModeIsOverlay(): void {
   assertEqual(rightRailShouldRender(1_096), true, "right rail should render once the Desktop display mode leaves overlay");
 }
 
-function rendersDesktopStatusFooterTrigger(): void {
-  const html = renderToStaticMarkup(createElement(RightRail, {
-    sections: projectRightRailSections({
-      progress: [],
-      branchDetails: { entries: [] },
-      artifacts: [],
-      sources: [],
-    }),
-    statusFooter: { tokensUsed: 28_300, contextWindow: 249_000, tokensPerSecond: 42 },
-    onCompactThread: () => undefined,
-  }));
-
-  assertStringIncludes(html, "42 tokens/s", "status footer should show Desktop token-speed label");
-  assertStringIncludes(html, "11% used", "status footer should show Desktop context percent label");
-  assertStringIncludes(
-    html,
-    "28,300 / 249,000 tokens used",
-    "status footer should keep full token count in the trigger tooltip",
-  );
-  assertStringExcludes(
-    html,
-    "hc-rail-status-footer-compact",
-    "status footer should not render HiCodex's old always-visible Compact button",
-  );
-}
-
 function railEntry(id: string, title: string, status: string, meta: string) {
   return { id, title, status, meta };
 }
@@ -640,8 +626,7 @@ function sectionById(
     | "backgroundSubagents"
     | "backgroundTasks"
     | "browser"
-    | "sources"
-    | "status",
+    | "sources",
 ) {
   const section = sections.find((candidate) => candidate.id === id);
   assertNotNull(section, `expected ${id} section`);

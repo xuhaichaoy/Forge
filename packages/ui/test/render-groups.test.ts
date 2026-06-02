@@ -75,8 +75,10 @@ export default function runRenderGroupsTests(): void {
   keepsReasoningInsideActiveExplorationLikeCodexDesktop();
   treatsReadOnlyCurlCommandsAsWebSearchCommandsLikeCodexDesktop();
   groupsToolActivityItemsAndPreservesSummaries();
+  keepsLiveCodexAppThreadReadsGroupedLikeCodexDesktop();
   groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop();
   dropsHookThreadItemsLikeCodexDesktop();
+  rendersHookPromptAsFeedbackUserMessageLikeCodexDesktop();
   summarizesPatchChangeKinds();
   showsActivePatchDiffStatsLikeCodexDesktop();
   formatsExpandedToolDetailsSemantically();
@@ -3245,6 +3247,62 @@ function groupsToolActivityItemsAndPreservesSummaries(): void {
   assertEqual(projection.sources[0]?.status ?? null, null, "mcp source status should stay empty like Desktop");
 }
 
+function keepsLiveCodexAppThreadReadsGroupedLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "dynamicToolCall",
+      id: "dynamic-read-thread",
+      namespace: "codex_app",
+      tool: "read_thread",
+      status: "running",
+      arguments: { threadId: "thread-123" },
+      contentItems: null,
+      success: null,
+    } as ThreadItem,
+  ], { isThreadRunning: true });
+
+  assertEqual(projection.units.length, 1, "single live Desktop thread reads should stay in a dynamic tool group");
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "dynamicToolCallGroup", "live codex_app/read_thread should use Desktop's dynamic tool group");
+  if (unit?.kind === "dynamicToolCallGroup") {
+    assertEqual(unit.key, "dynamic-tool-call-group:dynamic-read-thread", "dynamic group key should anchor to the tool call id");
+    assertEqual(unit.items.length, 1, "live single read_thread group should contain the terminal dynamic call");
+    assertEqual(unit.items[0]?.id, "dynamic-read-thread", "group should preserve the original dynamic call");
+  }
+
+  const completedProjection = projectConversation([
+    {
+      type: "dynamicToolCall",
+      id: "dynamic-list-thread",
+      namespace: "codex_app",
+      tool: "list_threads",
+      status: "completed",
+      arguments: {},
+      contentItems: null,
+      success: true,
+    } as ThreadItem,
+  ]);
+
+  const completedUnit = threadItemByKey(completedProjection, "item:dynamic-tool-call:dynamic-list-thread");
+  assertEqual(completedUnit.item.id, "dynamic-list-thread", "single completed Desktop thread list should stay standalone");
+
+  const genericProjection = projectConversation([
+    {
+      type: "dynamicToolCall",
+      id: "dynamic-generic-live",
+      namespace: "functions",
+      tool: "exec_command",
+      status: "running",
+      arguments: { cmd: "git status --short" },
+      contentItems: null,
+      success: null,
+    } as ThreadItem,
+  ], { isThreadRunning: true });
+
+  const genericUnit = threadItemByKey(genericProjection, "item:dynamic-tool-call:dynamic-generic-live");
+  assertEqual(genericUnit.item.id, "dynamic-generic-live", "generic live dynamic tools should remain standalone");
+}
+
 function groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop(): void {
   const projection = projectConversation([
     {
@@ -3319,6 +3377,31 @@ function dropsHookThreadItemsLikeCodexDesktop(): void {
   assertEqual(unit?.kind, "threadItem", "the completed command should keep Desktop's standalone command row");
   if (unit?.kind === "threadItem") {
     assertEqual(unit.item.id, "command-1", "hook rows should not displace the command item");
+  }
+}
+
+function rendersHookPromptAsFeedbackUserMessageLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "hookPrompt",
+      id: "hook-prompt-1",
+      fragments: [
+        { text: "Use a safer command instead.", hookRunId: "hook-1" },
+        { text: "Avoid deleting generated files.", hookRunId: "hook-2" },
+      ],
+    } as unknown as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 1, "hookPrompt should render as a user message instead of being dropped");
+  const unit = projection.units[0];
+  assertEqual(unit?.kind, "message", "hookPrompt should project through the message renderer");
+  if (unit?.kind === "message") {
+    assertEqual(unit.role, "user", "hookPrompt should be a Desktop-style user message");
+    assertEqual(
+      unit.text,
+      "Use a safer command instead.\nAvoid deleting generated files.",
+      "hookPrompt text should be built from fragments",
+    );
   }
 }
 

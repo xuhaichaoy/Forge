@@ -29,13 +29,15 @@ export interface ConversationChromeProps {
    *
    * When `rightRailToggleAvailable` is true and the viewport is non-overlay
    * (`canPinRightRail`), the button reflects pinned state. In overlay mode
-   * (small viewport) Codex shows a separate `Toggle summary` button — HiCodex
-   * leaves the rail hidden in that mode so the button is also hidden.
+   * (small viewport), Codex swaps this for a `Toggle summary` popover trigger
+   * that does not reserve layout space.
    */
   rightRailToggleAvailable?: boolean;
   rightRailPinned?: boolean;
+  rightRailPopoverOpen?: boolean;
   canPinRightRail?: boolean;
   onToggleRightRailPinned?: () => void;
+  onToggleRightRailPopover?: () => void;
   /*
    * codex: app-shell-*.js — sidebar trigger group renders
    * navigateBack / navigateForward arrow buttons next to the sidebar toggle.
@@ -57,8 +59,10 @@ export function ConversationChrome({
   onToggleSidebar,
   rightRailToggleAvailable = false,
   rightRailPinned = false,
+  rightRailPopoverOpen = false,
   canPinRightRail = false,
   onToggleRightRailPinned,
+  onToggleRightRailPopover,
   canNavigateBack = false,
   canNavigateForward = false,
   onNavigateBack,
@@ -85,8 +89,17 @@ export function ConversationChrome({
   const showRightRailToggle = rightRailToggleAvailable
     && canPinRightRail
     && Boolean(onToggleRightRailPinned);
-  const RightRailIcon = rightRailPinned ? PanelRightClose : PanelRightOpen;
+  const showRightRailPopoverToggle = rightRailToggleAvailable
+    && !canPinRightRail
+    && Boolean(onToggleRightRailPopover);
+  const RightRailIcon = (showRightRailToggle ? rightRailPinned : rightRailPopoverOpen)
+    ? PanelRightClose
+    : PanelRightOpen;
   const showNavButtons = Boolean(onNavigateBack) || Boolean(onNavigateForward);
+  const showRightRailAction = showRightRailToggle || showRightRailPopoverToggle;
+  const rightRailActionLabel = showRightRailPopoverToggle ? "Toggle summary" : "Toggle pinned summary";
+  const rightRailActionPressed = showRightRailPopoverToggle ? rightRailPopoverOpen : rightRailPinned;
+  const rightRailActionHandler = showRightRailPopoverToggle ? onToggleRightRailPopover : onToggleRightRailPinned;
   return (
     <header className="hc-topbar">
       <div className="hc-topbar-main">
@@ -148,15 +161,17 @@ export function ConversationChrome({
         </Tooltip>
         <div className="hc-top-title" title={displayTitle}>{displayTitle}</div>
       </div>
-      {showRightRailToggle && (
+      {showRightRailAction && (
         <div className="hc-topbar-actions">
           <button
             type="button"
             className="hc-rail-trigger"
-            aria-pressed={rightRailPinned}
-            aria-label="Toggle pinned summary"
-            title="Toggle pinned summary"
-            onClick={onToggleRightRailPinned}
+            aria-expanded={showRightRailPopoverToggle ? rightRailPopoverOpen : undefined}
+            aria-haspopup={showRightRailPopoverToggle ? "dialog" : undefined}
+            aria-pressed={rightRailActionPressed}
+            aria-label={rightRailActionLabel}
+            title={rightRailActionLabel}
+            onClick={rightRailActionHandler}
           >
             <RightRailIcon size={18} aria-hidden="true" />
           </button>
