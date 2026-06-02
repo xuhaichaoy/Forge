@@ -547,27 +547,29 @@ fn resolve_codex_bin(config: &AppServerStartConfig) -> PathBuf {
 }
 
 fn bundled_codex_candidates() -> Vec<PathBuf> {
+    // Windows 上 sidecar 是 `codex.exe`，其它平台是 `codex`。
+    let bin_name = format!("codex{}", std::env::consts::EXE_SUFFIX);
     let mut candidates = Vec::new();
     if let Ok(exe) = env::current_exe() {
         if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("binaries").join("codex"));
+            candidates.push(parent.join("binaries").join(&bin_name));
             candidates.push(
                 parent
                     .join("..")
                     .join("Resources")
                     .join("binaries")
-                    .join("codex"),
+                    .join(&bin_name),
             );
         }
     }
     if let Ok(cwd) = env::current_dir() {
-        candidates.push(cwd.join("binaries").join("codex"));
+        candidates.push(cwd.join("binaries").join(&bin_name));
         candidates.push(
             cwd.join("apps")
                 .join("desktop")
                 .join("src-tauri")
                 .join("binaries")
-                .join("codex"),
+                .join(&bin_name),
         );
     }
     candidates
@@ -593,10 +595,21 @@ fn resolve_codex_home(configured: Option<&str>) -> PathBuf {
     default_codex_home()
 }
 
+/// 用户 home 目录：Unix 取 `$HOME`，Windows 取 `$USERPROFILE`。
+/// 与 `resolve_default_cwd` 的解析顺序保持一致，避免 Windows 上 `$HOME` 缺失时
+/// 退化到进程 CWD（会把 codex-home 落到 `./.hicodex` 这种错误位置）。
+fn user_home_dir() -> Option<PathBuf> {
+    if let Some(home) = env::var_os("HOME").filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(home));
+    }
+    if let Some(profile) = env::var_os("USERPROFILE").filter(|value| !value.is_empty()) {
+        return Some(PathBuf::from(profile));
+    }
+    None
+}
+
 fn default_codex_home() -> PathBuf {
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| Path::new(".").to_path_buf());
+    let home = user_home_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
     if cfg!(target_os = "macos") {
         return home
             .join("Library")
@@ -608,8 +621,7 @@ fn default_codex_home() -> PathBuf {
 }
 
 fn default_codex_cli_home() -> PathBuf {
-    env::var_os("HOME")
-        .map(PathBuf::from)
+    user_home_dir()
         .unwrap_or_else(|| Path::new(".").to_path_buf())
         .join(".codex")
 }
