@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Copy, Download, ExternalLink } from "lucide-react";
+import { Check, ChevronDown, Copy, Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MouseEvent } from "react";
 
@@ -6,7 +6,7 @@ import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { useHiCodexIntl } from "./i18n-provider";
 import { Markdownish } from "./message-unit";
-import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
+import { type SubmitTurnRatingEvent } from "./turn-rating-controls";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
@@ -32,8 +32,6 @@ export function PlanSummaryCard({
   const copyLabel = copied
     ? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
     : formatMessage({ id: "copyButton.copyAriaLabel", defaultMessage: "Copy" });
-  const openLabel = formatMessage({ id: "localConversation.planSummary.openInNewWindow", defaultMessage: "Open" });
-  const openTooltip = formatMessage({ id: "localConversation.planSummary.openInNewWindow.tooltip", defaultMessage: "Open in new window" });
   const toggleAriaLabel = collapsed
     ? formatMessage({ id: "localConversation.planSummary.expand", defaultMessage: "Expand plan summary" })
     : formatMessage({ id: "localConversation.planSummary.collapse", defaultMessage: "Collapse plan summary" });
@@ -69,18 +67,6 @@ export function PlanSummaryCard({
     downloadPlanMarkdown(content);
   };
 
-  /*
-   * Codex Desktop renderer emits `dispatchMessage("show-plan-summary", {planContent, conversationId})`
-   * (plan-summary-item-content-*.js), but Codex's Electron main
-   * handler (`main-*.js` `case "show-plan-summary": break;`) is a no-op
-   * stub — the action is wired in the UI but produces no user-visible effect.
-   * HiCodex aligns by exposing the same button + tooltip surface while leaving
-   * the click handler intentionally inert (no Tauri window/route opened).
-   */
-  const handleOpenInNewWindow = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-  };
-
   return (
     <article
       className={`hc-plan-summary-card ${completed ? "is-complete" : "is-writing"}`}
@@ -100,19 +86,6 @@ export function PlanSummaryCard({
         <div className="hc-plan-summary-actions" aria-label="Plan actions">
           {canUseContentActions && (
             <>
-              <TurnRatingControls
-                hasArtifacts={unit.hasArtifacts === true}
-                onSubmit={onSubmitTurnFeedback}
-                threadId={threadId}
-                turnId={unit.turnId}
-              />
-              {/*
-               * Codex Desktop i18n:
-               *   localConversation.planSummary.openInNewWindow         = "Open"   (button label / aria-label)
-               *   localConversation.planSummary.openInNewWindow.tooltip = "Open in new window"
-               * Click handler is intentionally inert — Codex main process
-               * (`show-plan-summary`) is a no-op stub, so HiCodex matches.
-              */}
               <button
                 aria-label={downloadLabel}
                 title={downloadLabel}
@@ -136,16 +109,6 @@ export function PlanSummaryCard({
                 onClick={handleCopy}
               >
                 {copied ? <Check aria-hidden size={14} /> : <Copy aria-hidden size={14} />}
-              </button>
-              <button
-                aria-label={openLabel}
-                className="hc-plan-summary-open"
-                title={openTooltip}
-                type="button"
-                onClick={handleOpenInNewWindow}
-              >
-                <span>{openLabel}</span>
-                <ExternalLink aria-hidden size={14} />
               </button>
             </>
           )}

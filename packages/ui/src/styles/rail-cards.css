@@ -25,10 +25,15 @@
   color: var(--hc-text-secondary, #6f716b);
 }
 
-.hc-rail-source-icon:hover {
-  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
-  color: var(--hc-text-primary, #1d1f1c);
-}
+/*
+ * CODEX-REF: local-conversation-thread-CEeZyOcp.js (Nf) — Sources renders a clickable
+ * `<button>` variant (with `hover:bg-token-list-hover-background hover:text-token-foreground`)
+ * ONLY when the source has `mcpAppId` + an `onOpen` handler; otherwise it is a static
+ * `role="img"` span with NO hover affordance. HiCodex has no source-open data flow, so all
+ * sources render the static span variant — which must therefore carry no hover background
+ * (the prior `:hover` rule implied a non-existent click target). When source-open lands,
+ * add a `.hc-rail-source-icon` button variant that restores the hover bg/fg.
+ */
 
 .hc-rail-source-icon svg,
 .hc-rail-source-icon img {
@@ -158,23 +163,10 @@
   font-size: 11px;
 }
 
-/*
- * CODEX-REF: local-conversation-thread-*.js (Browser row) —
- * Codex 桌面版 Browser row 把 title 和 displayUrl 同一行 baseline-aligned 渲染:
- *   wrapper: `flex min-w-0 items-baseline gap-2`
- *   title:      `max-w-[60%] min-w-0 shrink truncate`
- *   displayUrl: `max-w-[40%] min-w-0 shrink truncate text-sm text-token-text-secondary`
- * active 时整 wrapper 包在 `loading-shimmer-pure-text`(由组件 className 拼接)。
- */
-.hc-rail-card-browser-label {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-}
-
+/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Browser row) — title span is
+ * `max-w-[60%] min-w-0 shrink truncate` with NO weight class, so it inherits body
+ * text-base (14px) at the default body weight (430). HiCodex previously rendered it
+ * 13px/650 (too small + too bold). Aligned to 14px/430. */
 .hc-rail-card-browser-title {
   display: block;
   flex: 1 1 auto;
@@ -183,11 +175,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  font-weight: 650;
-  color: #27313d;
+  font-size: 14px;
+  font-weight: 430;
+  color: #2a2d2b;
 }
 
+/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Browser row) — displayUrl span is
+ * `max-w-[40%] min-w-0 shrink truncate text-sm` (= 13px); inactive adds
+ * `text-token-text-secondary`. HiCodex previously rendered it 11px. Aligned to 13px. */
 .hc-rail-card-browser-url {
   display: block;
   flex: 1 1 auto;
@@ -196,11 +191,98 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .hc-rail-card-browser-url-inactive {
   color: #6f716b;
+}
+
+/*
+ * CODEX-REF: summary-panel-row-DMF5uaBF.js (wc) — for rows whose label is a
+ * `[primary, secondary]` Fragment (browser title+url, automation name+rrule, subagent
+ * name+"is working"), Codex passes a baseline `labelClassName` to the wc label wrapper:
+ * `flex min-w-0 flex-1 items-baseline gap-2`. This REPLACES the default `truncate`
+ * wrapper (each child truncates individually). HiCodex mirrors that here.
+ */
+.hc-rail-row-label-baseline {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Browser row) — when the tab is
+ * active, the whole title+displayUrl baseline group is wrapped in
+ * `loading-shimmer-pure-text w-full max-w-full min-w-0`. The inner group keeps the
+ * baseline flex; title/url reuse .hc-rail-card-browser-title / -url. */
+.hc-rail-row-browser-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (wf, automation row) — name is
+ * `min-w-0 flex-1 truncate`; rrule summary is `text-size-chat max-w-48 shrink-0 truncate
+ * text-token-text-secondary` (≈13px secondary), sharing the row baseline. */
+.hc-rail-row-automation-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: #2a2d2b;
+}
+
+.hc-rail-row-automation-rrule {
+  flex: 0 0 auto;
+  max-width: 12rem; /* codex max-w-48 = 192px */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px; /* codex text-size-chat */
+  color: #6f716b;
+}
+
+/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Hu/Uu, subagent row) — `icon:null`
+ * row whose label is the Fragment `[name, "is working" shimmer]` inside the baseline
+ * label wrapper. Name truncates; the shimmer label is `shrink-0 whitespace-nowrap` (see
+ * .hc-rail-card-working). */
+.hc-rail-row-subagent-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: #2a2d2b;
+}
+
+/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (terminal row) — command label is
+ * `truncate font-mono text-sm` = 13px monospace, single line. */
+.hc-rail-row-terminal-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--hc-font-mono, ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace);
+  font-size: 13px;
+  color: #2a2d2b;
+}
+
+.hc-app[data-theme="dark"] .hc-rail-row-automation-name,
+.hc-app[data-theme="dark"] .hc-rail-row-subagent-name,
+.hc-app[data-theme="dark"] .hc-rail-row-terminal-label {
+  color: var(--hc-text-primary);
+}
+
+.hc-app[data-theme="dark"] .hc-rail-row-automation-rrule {
+  color: var(--hc-text-secondary);
 }
 
 .hc-rail-diff-stats {

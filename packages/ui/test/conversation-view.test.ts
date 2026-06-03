@@ -33,6 +33,22 @@ import {
 } from "../src/components/conversation-view";
 import { GeneratedImageGallery } from "../src/components/generated-image-gallery";
 import { HiCodexIntlProvider } from "../src/components/i18n-provider";
+import { formatMessage, setActiveI18nLocale, HICODEX_DEFAULT_LOCALE } from "../src/state/i18n";
+
+// Mirror event-unit's worked-for aggregate render: leading descriptor for the
+// first row (capitalized verb), compact for the rest, resolved via formatMessage.
+function renderWorkedForAggregate(
+  rows: ReturnType<typeof workedForAggregateRows>,
+): string[] {
+  // worked-for aggregate asserts Codex EN copy, but this file also renders zh-CN provider
+  // subtests that flip the process-level i18n locale via setActiveI18nLocale. Pin the default
+  // (en-US) here so the module-level formatMessage resolves English regardless of subtest order.
+  setActiveI18nLocale(HICODEX_DEFAULT_LOCALE);
+  return rows.map((row, index) => {
+    const descriptor = index === 0 ? row.leading : row.compact;
+    return formatMessage({ id: descriptor.id, defaultMessage: descriptor.defaultMessage }, descriptor.values);
+  });
+}
 
 export default function runConversationViewTests(): void {
   parsesMarkdownBlocksForModelOutput();
@@ -287,8 +303,8 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
   );
   assertEqual(
     html.includes("Good response"),
-    true,
-    "generated-image-only output should reuse Desktop's turn-rating action row when a submit callback is available",
+    false,
+    "turn rating thumbs are removed from all model replies, including generated-image output",
   );
 }
 
@@ -1723,9 +1739,9 @@ function rendersPendingMcpCallsWithDesktopCompactHeader(): void {
     "pending MCP header should show the active tool label instead of the local generic summary",
   );
   assertEqual(
-    html.includes("Calling list_issues"),
+    html.includes("List issues"),
     true,
-    "pending MCP header should follow the latest active MCP tool",
+    "pending MCP header should follow the latest active MCP tool (human-readable name)",
   );
   assertEqual(
     html.includes('data-view-state="collapsed"'),
@@ -2232,8 +2248,11 @@ function summarizesRunningWorkedForCommandsSeparately(): void {
   } as Parameters<typeof workedForAggregateRows>[0];
 
   assertDeepEqual(
-    workedForAggregateRows(unit).map((row) => row.text),
-    ["1 running command", "Ran 1 command"],
+    renderWorkedForAggregate(workedForAggregateRows(unit)),
+    // Codex toolActivitySummary: leading row uses the capitalized verb form
+    // (commands.running.leading = "Running # command"), the trailing completed
+    // row uses the compact lowercase form (commands = "ran # command").
+    ["Running 1 command", "ran 1 command"],
     "worked-for aggregate should not mark a running command as completed",
   );
 }
@@ -2275,8 +2294,10 @@ function summarizesWorkedForWebSearchCommandsSeparately(): void {
   } as Parameters<typeof workedForAggregateRows>[0];
 
   assertDeepEqual(
-    workedForAggregateRows(unit).map((row) => row.text),
-    ["Ran 1 command", "Searching the web"],
+    renderWorkedForAggregate(workedForAggregateRows(unit)),
+    // Leading completed-command row capitalized (commands.leading = "Ran # command"),
+    // trailing running web-search row compact (webSearchCommands.searching = "searching the web").
+    ["Ran 1 command", "searching the web"],
     "worked-for aggregate should not double-count running web search commands as ordinary commands",
   );
 }

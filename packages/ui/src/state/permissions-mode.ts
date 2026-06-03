@@ -1,5 +1,6 @@
 import type { ThreadContextDefaults } from "./codex-reducer";
 import type { CommandPanelEntry, ConfigWriteActionEdit } from "./command-panel";
+import { formatMessage } from "./i18n";
 
 export type PermissionMode = "read-only" | "auto" | "granular" | "guardian-approvals" | "full-access";
 export type PermissionModeStatus = PermissionMode | "custom";
@@ -35,7 +36,7 @@ export function projectPermissionModeCommandEntries(
     ...PERMISSION_MODES.map((mode) => permissionModeEntry(mode, currentMode, requirements)),
     {
       id: "permissions:current",
-      title: "Current resolved mode",
+      title: formatMessage({ id: "hc.permissions.current.title", defaultMessage: "Current resolved mode" }),
       kind: "status",
       status: currentMode,
       meta: "Derived from app-server config/read",
@@ -104,8 +105,11 @@ function permissionModeEntry(
     disabled,
     action: disabled ? undefined : {
       type: "writeConfig",
-      title: "Permissions",
-      message: `Set permissions mode to ${label}.`,
+      title: formatMessage({ id: "hc.permissions.writeConfig.title", defaultMessage: "Permissions" }),
+      message: formatMessage(
+        { id: "hc.permissions.writeConfig.message", defaultMessage: "Set permissions mode to {label}." },
+        { label },
+      ),
       edits: permissionModeConfigEdits(mode),
       reloadUserConfig: true,
     },
@@ -161,36 +165,55 @@ function permissionModeConfig(mode: PermissionMode): {
 function permissionModeLabel(mode: PermissionMode): string {
   switch (mode) {
     case "read-only":
-      return "Read only";
+      return formatMessage({ id: "hc.permissions.mode.readOnly.label", defaultMessage: "Read only" });
     case "auto":
-      return "Auto";
+      return formatMessage({ id: "hc.permissions.mode.auto.label", defaultMessage: "Auto" });
     case "granular":
-      return "Granular";
+      return formatMessage({ id: "hc.permissions.mode.granular.label", defaultMessage: "Granular" });
     case "guardian-approvals":
-      // codex `agentMode.guardianApprovals` = "Auto-review".
-      return "Auto-review";
+      // codex composer.permissionsDropdown.guardianApproval.shortLabel = "Auto-review".
+      return formatMessage({
+        id: "composer.permissionsDropdown.guardianApproval.shortLabel",
+        defaultMessage: "Auto-review",
+      });
     case "full-access":
-      return "Full access";
+      // codex composer.permissionsDropdown.fullAccess.label = "Full access".
+      return formatMessage({ id: "composer.permissionsDropdown.fullAccess.label", defaultMessage: "Full access" });
   }
 }
 
 function permissionModeMeta(mode: PermissionMode): string {
   switch (mode) {
     case "read-only":
-      return "Read files, ask before changes or commands.";
+      return formatMessage({
+        id: "hc.permissions.mode.readOnly.meta",
+        defaultMessage: "Read files, ask before changes or commands.",
+      });
     case "auto":
       // codex composer.permissionsDropdown.default.description — `auto` (workspace-write
       // + on-request) is Codex's "default" / ask-for-approval mode.
-      return "Always ask to edit external files and use the internet.";
+      return formatMessage({
+        id: "composer.permissionsDropdown.default.description",
+        defaultMessage: "Always ask to edit external files and use the internet",
+      });
     case "granular":
-      return "Workspace write with request-permission approvals.";
+      return formatMessage({
+        id: "hc.permissions.mode.granular.meta",
+        defaultMessage: "Workspace write with request-permission approvals.",
+      });
     case "guardian-approvals":
       // codex composer.permissionsDropdown.guardianApproval.description.
-      return "Only ask for actions detected as potentially unsafe.";
+      return formatMessage({
+        id: "composer.permissionsDropdown.guardianApproval.description",
+        defaultMessage: "Only ask for actions detected as potentially unsafe",
+      });
     case "full-access":
       // codex composer.permissionsDropdown.fullAccess.description — `full-access`
       // (danger-full-access + never) is unambiguously Codex's "Full access" mode.
-      return "Unrestricted access to the internet and any file on your computer.";
+      return formatMessage({
+        id: "composer.permissionsDropdown.fullAccess.description",
+        defaultMessage: "Unrestricted access to the internet and any file on your computer",
+      });
   }
 }
 
@@ -271,7 +294,7 @@ function requirementsEntry(requirements: PermissionRequirements | null): Command
   }
   return {
     id: "permissions:requirements",
-    title: "Runtime requirements",
+    title: formatMessage({ id: "hc.permissions.requirements.title", defaultMessage: "Runtime requirements" }),
     kind: "status",
     status: "active",
     meta: "Loaded from configRequirements/read",

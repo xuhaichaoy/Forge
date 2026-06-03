@@ -203,6 +203,16 @@ function buildsThreadTitlesFromNamePreviewAndId(): void {
     "$imagegen 生成一个皮卡丘的图片",
     "threadTitle should collapse mention markdown to its label",
   );
+  // Regression: the backend can persist the first prompt's raw text as the thread
+  // name/preview. That explicit field must be collapsed too, not just the items path.
+  assertEqual(
+    threadTitle(threadFixture({
+      id: "named-with-mention",
+      name: "[$拆标](</Users/haichao/Library/Application Support/HiCodex/skills/拆标/SKILL.md>) 拆一下标书",
+    })),
+    "$拆标 拆一下标书",
+    "threadTitle should collapse mention markdown stored in name/preview",
+  );
 }
 
 function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {

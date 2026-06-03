@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, RotateCcw, Search, Trash2 } from "lucide-react";
-import { COMMAND_DESCRIPTORS, descriptorAcceleratorLabel } from "../state/commands";
+import {
+  COMMAND_DESCRIPTORS,
+  commandDescriptorDescription,
+  commandDescriptorTitle,
+  descriptorAcceleratorLabel,
+} from "../state/commands";
 import {
   commandAccelerators,
   formatAccelerator,
@@ -226,9 +231,9 @@ function Row({
   return (
     <tr className="hc-keyboard-settings-row" data-editing={editing}>
       <td className="hc-keyboard-settings-cell-command">
-        <div className="hc-keyboard-settings-command-title">{descriptor.title}</div>
-        {descriptor.description ? (
-          <div className="hc-keyboard-settings-command-desc">{descriptor.description}</div>
+        <div className="hc-keyboard-settings-command-title">{commandDescriptorTitle(descriptor)}</div>
+        {commandDescriptorDescription(descriptor) ? (
+          <div className="hc-keyboard-settings-command-desc">{commandDescriptorDescription(descriptor)}</div>
         ) : null}
       </td>
       {editing ? (

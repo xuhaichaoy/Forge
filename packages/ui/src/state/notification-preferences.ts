@@ -1,5 +1,6 @@
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { formatMessage } from "./i18n";
 
 export const LEGACY_HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = "hicodex:notification-preferences";
 export const HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.notificationPreferences;
@@ -88,27 +89,38 @@ export function notificationPolicyLabel(policy: TurnCompletionNotificationPolicy
     // codex notifications.turnMode.* — always="Always", off="Never",
     // unfocused(=HiCodex backgroundOnly: notify only when app not focused)="Only when unfocused".
     case "always":
-      return "Always";
+      return formatMessage({ id: "notifications.turnMode.always", defaultMessage: "Always" });
     case "off":
-      return "Never";
+      return formatMessage({ id: "notifications.turnMode.off", defaultMessage: "Never" });
     default:
-      return "Only when unfocused";
+      return formatMessage({ id: "notifications.turnMode.unfocused", defaultMessage: "Only when unfocused" });
   }
 }
 
 export function notificationPolicyDescription(policy: TurnCompletionNotificationPolicy): string {
   switch (policy) {
     case "always":
-      return "Notify when a turn finishes, even while the HiCodex window is focused.";
+      return formatMessage({
+        id: "hc.notifications.turnMode.always.description",
+        defaultMessage: "Notify when a turn finishes, even while the HiCodex window is focused.",
+      });
     case "off":
-      return "Do not show native turn-completion notifications.";
+      return formatMessage({
+        id: "hc.notifications.turnMode.off.description",
+        defaultMessage: "Do not show native turn-completion notifications.",
+      });
     default:
-      return "Notify when a turn finishes outside the focused HiCodex window.";
+      return formatMessage({
+        id: "hc.notifications.turnMode.unfocused.description",
+        defaultMessage: "Notify when a turn finishes outside the focused HiCodex window.",
+      });
   }
 }
 
 export function notificationSoundLabel(enabled: boolean): string {
-  return enabled ? "Sound on" : "Sound off";
+  return enabled
+    ? formatMessage({ id: "hc.notifications.sound.on", defaultMessage: "Sound on" })
+    : formatMessage({ id: "hc.notifications.sound.off", defaultMessage: "Sound off" });
 }
 
 function decodeNotificationPreferenceValue(value: unknown): Record<string, unknown> | null {

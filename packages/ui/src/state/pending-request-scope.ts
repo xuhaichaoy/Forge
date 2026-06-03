@@ -192,6 +192,7 @@ export function pendingRequestAwaitingKind(request: PendingServerRequest): Pendi
     case "item/tool/requestOptionPicker":
     case "item/tool/requestSetupCodexContextPicker":
     case "mcpServer/elicitation/request":
+    case "item/plan/requestImplementation":
       return "userInput";
     case "item/tool/call":
       return isDynamicInputToolRequest(request) ? "userInput" : "toolCall";

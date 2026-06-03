@@ -6,6 +6,7 @@ export const HICODEX_THEME_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.appearanceT
 
 export const UI_THEME_MODES = ["system", "light", "dark"] as const;
 export type UiThemeMode = (typeof UI_THEME_MODES)[number];
+export const APPEARANCE_THEME_MODE_ORDER = ["light", "dark", "system"] as const satisfies readonly UiThemeMode[];
 export type ResolvedUiTheme = Exclude<UiThemeMode, "system">;
 
 export interface UiThemeSnapshot {

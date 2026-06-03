@@ -1,7 +1,9 @@
 import { Check, Plus, ThumbsUp } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
+
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type TurnRating = "thumbs_up" | "thumbs_down";
 
@@ -28,44 +30,45 @@ export type SubmitTurnRatingEvent = (event: TurnRatingEvent) => void | Promise<v
 
 interface FeedbackOption {
   id: string;
+  labelId: string;
   label: string;
 }
 
 const NORMAL_FEEDBACK_OPTIONS: Record<TurnRating, FeedbackOption[]> = {
   thumbs_down: [
-    { id: "incorrect_or_incomplete", label: "Incorrect or incomplete" },
-    { id: "didnt_follow_my_instructions", label: "Didn’t follow my instructions" },
-    { id: "off_track_or_wrong_scope", label: "Off track / wrong scope" },
-    { id: "lost_context", label: "Lost context" },
-    { id: "slow_or_buggy", label: "Slow or buggy" },
-    { id: "other", label: "Other" },
+    { id: "incorrect_or_incomplete", labelId: "turnRatingControls.feedback.incorrectOrIncomplete", label: "Incorrect or incomplete" },
+    { id: "didnt_follow_my_instructions", labelId: "turnRatingControls.artifactFeedback.didntFollowMyInstructions", label: "Didn’t follow my instructions" },
+    { id: "off_track_or_wrong_scope", labelId: "turnRatingControls.feedback.offTrackOrWrongScope", label: "Off track / wrong scope" },
+    { id: "lost_context", labelId: "turnRatingControls.feedback.lostContext", label: "Lost context" },
+    { id: "slow_or_buggy", labelId: "turnRatingControls.feedback.slowOrBuggy", label: "Slow or buggy" },
+    { id: "other", labelId: "turnRatingControls.feedback.other", label: "Other" },
   ],
   thumbs_up: [
-    { id: "solved_my_task", label: "Solved my task" },
-    { id: "followed_my_instructions", label: "Followed my instructions" },
-    { id: "good_code_or_output_quality", label: "Good code / output quality" },
-    { id: "fast_and_efficient", label: "Fast and efficient" },
-    { id: "useful_autonomy", label: "Useful autonomy" },
-    { id: "other", label: "Other" },
+    { id: "solved_my_task", labelId: "turnRatingControls.feedback.solvedMyTask", label: "Solved my task" },
+    { id: "followed_my_instructions", labelId: "turnRatingControls.feedback.followedMyInstructions", label: "Followed my instructions" },
+    { id: "good_code_or_output_quality", labelId: "turnRatingControls.feedback.goodCodeOrOutputQuality", label: "Good code / output quality" },
+    { id: "fast_and_efficient", labelId: "turnRatingControls.feedback.fastAndEfficient", label: "Fast and efficient" },
+    { id: "useful_autonomy", labelId: "turnRatingControls.feedback.usefulAutonomy", label: "Useful autonomy" },
+    { id: "other", labelId: "turnRatingControls.feedback.other", label: "Other" },
   ],
 };
 
 const ARTIFACT_FEEDBACK_OPTIONS: Record<TurnRating, FeedbackOption[]> = {
   thumbs_down: [
-    { id: "wrong_presentation_length", label: "Wrong presentation length" },
-    { id: "poor_writing", label: "Poor writing" },
-    { id: "poor_style_format_or_visuals", label: "Poor style, format or visuals" },
-    { id: "wrong_topics_or_subtopics", label: "Wrong topics or subtopics" },
-    { id: "didnt_follow_my_instructions", label: "Didn’t follow my instructions" },
-    { id: "didnt_follow_my_template", label: "Didn’t follow my template" },
-    { id: "incorrect_content", label: "Incorrect content" },
+    { id: "wrong_presentation_length", labelId: "turnRatingControls.artifactFeedback.wrongPresentationLength", label: "Wrong presentation length" },
+    { id: "poor_writing", labelId: "turnRatingControls.artifactFeedback.poorWriting", label: "Poor writing" },
+    { id: "poor_style_format_or_visuals", labelId: "turnRatingControls.artifactFeedback.poorStyleFormatOrVisuals", label: "Poor style, format or visuals" },
+    { id: "wrong_topics_or_subtopics", labelId: "turnRatingControls.artifactFeedback.wrongTopicsOrSubtopics", label: "Wrong topics or subtopics" },
+    { id: "didnt_follow_my_instructions", labelId: "turnRatingControls.artifactFeedback.didntFollowMyInstructions", label: "Didn’t follow my instructions" },
+    { id: "didnt_follow_my_template", labelId: "turnRatingControls.artifactFeedback.didntFollowMyTemplate", label: "Didn’t follow my template" },
+    { id: "incorrect_content", labelId: "turnRatingControls.artifactFeedback.incorrectContent", label: "Incorrect content" },
   ],
   thumbs_up: [
-    { id: "good_content", label: "Good content" },
-    { id: "good_writing_quality", label: "Good writing quality" },
-    { id: "good_style_format_or_visuals", label: "Good style, format or visuals" },
-    { id: "followed_my_instructions_well", label: "Followed my instructions well" },
-    { id: "generated_quickly", label: "Generated quickly" },
+    { id: "good_content", labelId: "turnRatingControls.artifactFeedback.goodContent", label: "Good content" },
+    { id: "good_writing_quality", labelId: "turnRatingControls.artifactFeedback.goodWritingQuality", label: "Good writing quality" },
+    { id: "good_style_format_or_visuals", labelId: "turnRatingControls.artifactFeedback.goodStyleFormatOrVisuals", label: "Good style, format or visuals" },
+    { id: "followed_my_instructions_well", labelId: "turnRatingControls.artifactFeedback.followedMyInstructionsWell", label: "Followed my instructions well" },
+    { id: "generated_quickly", labelId: "turnRatingControls.artifactFeedback.generatedQuickly", label: "Generated quickly" },
   ],
 };
 
@@ -97,6 +100,7 @@ export function TurnRatingControls({
   threadId?: string | null;
   turnId?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [selectedRating, setSelectedRating] = useState<TurnRating | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
@@ -168,13 +172,13 @@ export function TurnRatingControls({
   return (
     <span className="hc-turn-rating-controls">
       <TurnRatingButton
-        ariaLabel="Good response"
+        ariaLabel={formatMessage({ id: "assistantMessageContent.thumbsUp", defaultMessage: "Good response" })}
         onClick={() => chooseRating("thumbs_up")}
         pressed={selectedRating === "thumbs_up"}
         rating="thumbs_up"
       />
       <TurnRatingButton
-        ariaLabel="Bad response"
+        ariaLabel={formatMessage({ id: "assistantMessageContent.thumbsDown", defaultMessage: "Bad response" })}
         onClick={() => chooseRating("thumbs_down")}
         pressed={selectedRating === "thumbs_down"}
         rating="thumbs_down"
@@ -237,6 +241,7 @@ function TurnFeedbackDialog({
   selectedOptionId: string | null;
   submitDisabled: boolean;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   // Escape dismisses the dialog, matching the Radix modal's default close-on-Escape.
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -267,15 +272,15 @@ function TurnFeedbackDialog({
         role="dialog"
         data-state="open"
         aria-modal="true"
-        aria-label="Share feedback"
+        aria-label={formatMessage({ id: "feedbackFormDialog.title", defaultMessage: "Share feedback" })}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <form onSubmit={onSubmit}>
           <header>
-            <div>Share feedback</div>
+            <div>{formatMessage({ id: "feedbackFormDialog.title", defaultMessage: "Share feedback" })}</div>
           </header>
           <div className="hc-thread-dialog-body hc-turn-feedback-body">
-            <div className="hc-turn-feedback-options" role="radiogroup" aria-label="Feedback options">
+            <div className="hc-turn-feedback-options" role="radiogroup" aria-label={formatMessage({ id: "feedbackFormDialog.optionsLabel", defaultMessage: "Feedback options" })}>
               {options.map((option) => {
                 const checked = selectedOptionId === option.id;
                 const Icon = checked ? Check : Plus;
@@ -290,26 +295,34 @@ function TurnFeedbackDialog({
                     onClick={() => onChooseOption(option.id)}
                   >
                     <Icon aria-hidden className="hc-turn-feedback-pill-icon" size={12} />
-                    <span>{option.label}</span>
+                    <span>{formatMessage({ id: option.labelId, defaultMessage: option.label })}</span>
                   </button>
                 );
               })}
             </div>
             <textarea
-              aria-label="Share details (optional)"
+              aria-label={formatMessage({ id: "feedbackFormDialog.detailsPlaceholder.optional", defaultMessage: "Share details (optional)" })}
               autoFocus
               className="hc-turn-feedback-textarea"
               onChange={(event) => onChangeDetails(event.target.value)}
               onKeyDown={handleTextareaKeyDown}
-              placeholder="Share details (optional)"
+              placeholder={formatMessage({ id: "feedbackFormDialog.detailsPlaceholder.optional", defaultMessage: "Share details (optional)" })}
               value={details}
             />
             <span className="hc-turn-rating-legal">
-              Your feedback can be used to improve Codex. <a href="https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance" rel="noreferrer" target="_blank">Learn more</a>.
+              {renderFeedbackLegalNotice(
+                formatMessage({
+                  // CODEX-REF plan-summary-item-content-tuRA3zV6.js:
+                  //   id:`turnRatingControls.feedbackLegalNotice`,
+                  //   defaultMessage:`Your feedback can be used to improve Codex. <link>Learn more</link>.`
+                  id: "turnRatingControls.feedbackLegalNotice",
+                  defaultMessage: "Your feedback can be used to improve Codex. <link>Learn more</link>.",
+                }),
+              )}
             </span>
           </div>
           <footer>
-            <button type="submit" className="hc-mini-button accept" disabled={submitDisabled}>Submit</button>
+            <button type="submit" className="hc-mini-button accept" disabled={submitDisabled}>{formatMessage({ id: "feedbackFormDialog.submit", defaultMessage: "Submit" })}</button>
           </footer>
         </form>
       </section>
@@ -321,6 +334,34 @@ function TurnFeedbackDialog({
   // when there is no document (server-side static markup / tests).
   if (typeof document === "undefined") return dialog;
   return createPortal(dialog, document.body);
+}
+
+/*
+ * Codex renders `turnRatingControls.feedbackLegalNotice` as react-intl rich text
+ * with a `<link>` chunk wrapping "Learn more" as an anchor
+ * (plan-summary-item-content-tuRA3zV6.js). HiCodex's formatMessage returns a
+ * plain string, so we resolve the single Codex id (which keeps the i18n key
+ * aligned and localized) and split on the `<link>…</link>` chunk at render time
+ * to inject the same anchor — producing identical visible output without a
+ * generic rich-text engine.
+ */
+function renderFeedbackLegalNotice(message: string): ReactNode {
+  const match = /^([\s\S]*?)<link>([\s\S]*?)<\/link>([\s\S]*)$/.exec(message);
+  if (!match) return message;
+  const [, before, linkText, after] = match;
+  return (
+    <>
+      {before}
+      <a
+        href="https://help.openai.com/en/articles/5722486-how-your-data-is-used-to-improve-model-performance"
+        rel="noreferrer"
+        target="_blank"
+      >
+        {linkText}
+      </a>
+      {after}
+    </>
+  );
 }
 
 function TurnRatingButton({

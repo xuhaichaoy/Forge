@@ -143,6 +143,16 @@ export function hasInlineUserMessageContent(
   return userMessageInlineParts(content).length > 0;
 }
 
+// codex user-message-attachments-*.js — the strip above the bubble holds the
+// standalone attachment/image parts. Used to decide whether a body-less user
+// message still has a visible surface (and thus warrants the "(No content)"
+// placeholder in the bubble slot).
+export function hasUserMessageAttachments(
+  unit: Extract<ConversationRenderUnit, { kind: "message" }>,
+): boolean {
+  return userMessageAttachmentParts(unit).length > 0;
+}
+
 export function userMessageAttachmentPartsForTest(
   parts: UserMessageContentPart[],
 ): UserMessageContentPart[] {

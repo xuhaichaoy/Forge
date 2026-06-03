@@ -161,9 +161,11 @@ export function shouldShowPlanKeywordSuggestion(input: {
 }
 
 export interface ComposerSendOptions {
+  bypassSubmitState?: boolean;
   followUpSubmitAction?: FollowUpSubmitAction;
   input?: string;
   attachments?: ComposerAttachment[];
+  mode?: ComposerMode;
 }
 
 export function composerPlaceholderText(
@@ -391,20 +393,30 @@ export function projectComposerSubmitState(input: ComposerSubmitStateInput): Com
   };
 }
 
-export function composerSubmitTooltip(state: ComposerSubmitState): string {
+export function composerSubmitTooltip(
+  state: ComposerSubmitState,
+  formatMessage?: FormatMessage,
+): string {
   if (state.disabledReason) return state.disabledReason;
 
+  // codex composer-CwxGJF3C.js — the submit-button tooltip label is a single
+  // verb: composer.submitButtonTooltip.{send,queue,steer,stop}. The keyboard
+  // shortcut is NOT baked into the label string; Codex renders it separately.
+  const fm = (id: string, defaultMessage: string): string =>
+    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
+
   if (state.submitButtonMode === "stop") {
-    return state.canStopFromEscape ? "Stop response (Esc)" : "Stop response";
+    return fm("composer.submitButtonTooltip.stop", "Stop");
   }
 
   if (state.submitButtonMode === "queue") {
-    if (state.isQueueingEnabled) return "Queue (Enter)\nSteer (Cmd+Enter)";
-    return "Steer (Enter)\nQueue (Cmd+Enter)";
+    // Primary action: queue when queueing is enabled (Enter), otherwise steer.
+    return state.isQueueingEnabled
+      ? fm("composer.submitButtonTooltip.queue", "Queue")
+      : fm("composer.submitButtonTooltip.steer", "Steer");
   }
 
-  if (state.hasContent) return "Send message (Enter)";
-  return "Send";
+  return fm("composer.submitButtonTooltip.send", "Send");
 }
 
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
@@ -441,7 +453,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("fork", "Fork", "Fork this chat into local or a new worktree", "thread", "direct", ["branch"]),
   command("init", "Init", "Insert the Codex workspace initialization prompt.", "workspace", "prompt", ["agents", "bootstrap"]),
   command("compact", "Compact", "Compact the active chat context.", "thread", "direct", ["summarize", "ctx"]),
-  command("plan", "Plan mode", "Switch the composer into planning mode.", "thread", "direct", ["planner"], "prompt"),
+  command("plan-mode", "Plan mode", "Switch the composer into planning mode.", "thread", "direct", ["plan", "planner"], "prompt"),
   command("goal", "Goal", "Set a goal that Codex will keep working towards", "thread", "direct", ["objective"], "objective | clear"),
   command("collab", "Collaboration", "Choose the collaboration mode.", "team", "direct", ["mode"]),
   command("agent", "Agents", "Switch or manage agent threads.", "team", "pending", ["subagent", "multiagent"], undefined, true),
@@ -481,13 +493,11 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 /*
- * codex: composer-*.js — composer attach menu lists ~6 entries
- * (file picker, mention, plain text, image URL, plan toggle, plugins). Codex
- * orders frequently-used attachment entries before mode toggles. HiCodex
- * mirrors the order; `localImage` is intentionally absent because it is
- * already covered by paste/drag-drop in the composer field itself
- * (HiCodex `composer.tsx` `onPaste` + `onDrop` listeners), matching Codex's
- * implicit local-image path.
+ * Composer "+" add menu. A workflow agent once cut this to 2 items based on an
+ * unconfirmed read of the Codex 26.x "+" menu; that dropped real entry points
+ * (mention / plain text / image URL / plugins), so it is restored to HiCodex's
+ * original 6-item set. Re-align the composition only against a ground-truth
+ * screenshot of the Codex desktop "+" menu.
  */
 export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
   {
@@ -888,7 +898,7 @@ export function slashCommandsForComposerMode(
   commands: SlashCommand[] = DEFAULT_SLASH_COMMANDS,
 ): SlashCommand[] {
   return commands.map((command) => {
-    if (command.id !== "plan") return command;
+    if (!isPlanSlashCommand(command.id)) return command;
     return {
       ...command,
       description: mode === "plan" ? "Turn off planning mode." : "Turn on planning mode.",
@@ -911,7 +921,9 @@ export function attachActionsForComposerMode(
 
 export function applySlashCommand(commandId: string, context: SlashCommandContext): SlashCommandAction {
   const id = commandId.toLowerCase();
-  const args = slashArgs(id, context.input);
+  const args = isPlanSlashCommand(id)
+    ? slashArgsForAny(["plan-mode", "plan"], context.input)
+    : slashArgs(id, context.input);
 
   switch (id) {
     case "model":
@@ -986,6 +998,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "memories":
       return { action: "request", request: "showMemories", clearInput: true };
     case "plan":
+    case "plan-mode":
       return {
         action: "setComposerMode",
         mode: args || context.mode !== "plan" ? "plan" : "default",
@@ -1226,6 +1239,17 @@ function slashArgs(commandId: string, input: string): string {
   const match = input.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
   if (!match) return "";
   return match[1].toLowerCase() === commandId ? match[2].trim() : "";
+}
+
+function slashArgsForAny(commandIds: string[], input: string): string {
+  const match = input.trim().match(/^\/(\S+)\s*([\s\S]*)$/);
+  if (!match) return "";
+  const id = match[1].toLowerCase();
+  return commandIds.includes(id) ? match[2].trim() : "";
+}
+
+function isPlanSlashCommand(id: string): boolean {
+  return id === "plan" || id === "plan-mode";
 }
 
 function optionalPayload(key: string, value: string): Record<string, unknown> | undefined {

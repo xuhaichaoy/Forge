@@ -2,6 +2,7 @@ import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
   composerModeRequiresUnavailablePlanMode,
   selectNextQueuedFollowUp,
+  shouldResetCreatedThreadComposerMode,
   shouldQueueComposerFollowUp,
   shouldSteerQueuedFollowUp,
   turnStartOptionsFromComposerMode,
@@ -13,6 +14,7 @@ export default function runTurnSubmissionTests(): void {
   selectsNextQueuedFollowUp();
   projectsTurnStartOptionsFromComposerMode();
   detectsUnavailablePlanMode();
+  detectsCreatedThreadComposerModeResetGate();
 }
 
 function detectsQueuedFollowUpSubmissions(): void {
@@ -178,6 +180,19 @@ function detectsUnavailablePlanMode(): void {
     PLAN_MODE_UNAVAILABLE_MESSAGE,
     "Plan mode is unavailable until collaboration modes load from app-server",
     "shared warning should stay stable across direct and queued submissions",
+  );
+}
+
+function detectsCreatedThreadComposerModeResetGate(): void {
+  assertEqual(
+    shouldResetCreatedThreadComposerMode("default"),
+    true,
+    "default new-thread submission should reset explicit draft mode",
+  );
+  assertEqual(
+    shouldResetCreatedThreadComposerMode("plan"),
+    false,
+    "plan new-thread submission should preserve the collaboration-derived mode",
   );
 }
 

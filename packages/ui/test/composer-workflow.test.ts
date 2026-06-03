@@ -184,10 +184,10 @@ function projectsCodexDesktopSubmitTooltips(): void {
       })),
     ],
     [
-      "Send message (Enter)",
-      "Stop response (Esc)",
-      "Queue (Enter)\nSteer (Cmd+Enter)",
-      "Steer (Enter)\nQueue (Cmd+Enter)",
+      "Send",
+      "Stop",
+      "Queue",
+      "Steer",
       "Resolve the pending request before sending more input",
     ],
     "submit tooltip should distinguish send, stop, queue, and blocked states",
@@ -467,7 +467,7 @@ function exposesCodexCliSlashCommands(): void {
       "fork",
       "init",
       "compact",
-      "plan",
+      "plan-mode",
       "goal",
       "collab",
       "agent",
@@ -596,8 +596,8 @@ function filtersSlashCommandsByIdTitleAndAliases(): void {
 }
 
 function updatesPlanCommandTextForComposerMode(): void {
-  const defaultPlan = slashCommandsForComposerMode("default").find((command) => command.id === "plan");
-  const activePlan = slashCommandsForComposerMode("plan").find((command) => command.id === "plan");
+  const defaultPlan = slashCommandsForComposerMode("default").find((command) => command.id === "plan-mode");
+  const activePlan = slashCommandsForComposerMode("plan").find((command) => command.id === "plan-mode");
   const defaultAttachPlan = attachActionsForComposerMode("default").find((action) => action.id === "plan");
   const activeAttachPlan = attachActionsForComposerMode("plan").find((action) => action.id === "plan");
 
@@ -668,6 +668,11 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
     applySlashCommand("plan", { input: "/plan inspect first" }),
     { action: "setComposerMode", mode: "plan", text: "inspect first" },
     "plan should enable Desktop-style plan mode instead of rewriting the prompt",
+  );
+  assertDeepEqual(
+    applySlashCommand("plan-mode", { input: "/plan-mode inspect first" }),
+    { action: "setComposerMode", mode: "plan", text: "inspect first" },
+    "Desktop plan-mode command id should enable planning mode",
   );
   assertDeepEqual(
     applySlashCommand("plan", { input: "/plan", mode: "plan" }),

@@ -231,6 +231,16 @@ function rendersDesktopEmptyStateSloganWithoutDuplicateCtas(): void {
   assertEqual(html.includes("Choose folder"), false, "empty state should not duplicate composer folder controls");
   assertEqual(html.includes("Add project"), false, "empty state should not duplicate project selection controls");
   assertEqual(html.includes("/Users/haichao/Desktop/data/HiCodex"), false, "empty state should not repeat the workspace path");
+
+  // Welcome-promo CTAs must reuse Codex's existing i18n labels (sidebarElectron.newThread
+  // = "New chat"; projectSetup.addProjectMenu.useExistingFolder = "Use an existing folder")
+  // rather than the previous self-authored "Begin new conversation"/"Open existing folder".
+  assertIncludes(html, "New chat", "promo primary CTA should reuse Codex's newThread label");
+  assertIncludes(html, "Use an existing folder", "promo secondary CTA should reuse Codex's useExistingFolder label");
+  assertEqual(html.includes("Begin new conversation"), false, "promo must not use the self-authored primary CTA copy");
+  assertEqual(html.includes("Open existing folder"), false, "promo must not use the self-authored secondary CTA copy");
+  // The self-authored promo description sentence has no Codex equivalent and must be gone.
+  assertEqual(html.includes("Connect external agents"), false, "promo must not carry self-authored description copy");
 }
 
 function onboardingSnapshot(overrides: Partial<OnboardingSnapshot> = {}): OnboardingSnapshot {

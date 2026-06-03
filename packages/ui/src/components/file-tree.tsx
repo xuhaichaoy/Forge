@@ -25,7 +25,9 @@ import {
 import { fileIconComponent } from "../lib/file-icon";
 import { resolveFileIcon, type FileIconFamily } from "../lib/file-icon-resolver";
 import { osRevealLabel } from "../state/command-registry";
+import { formatMessage } from "../state/i18n";
 import { ContextMenu, type ContextMenuItem } from "./context-menu";
+import { useHiCodexIntl } from "./i18n-provider";
 import type { WorkspaceDirEntry } from "../lib/tauri-host";
 
 export interface FileTreeProps {
@@ -120,14 +122,20 @@ export function fileTreeContextMenuItems(
   const isFile = entry.type !== "directory";
   const items: ContextMenuItem[] = [];
   // Open section — in-app viewer under Codex's `viewFile` ("Open file") label (files only).
+  // codex labels go through the module-level formatMessage so the ZH locale
+  // localizes the menu (this helper is a pure function with no React hook).
   if (isFile) {
-    items.push({ id: "open-file", label: "Open file", onSelect: () => handlers.onSelect(entry, { isPreview: false }) });
+    items.push({
+      id: "open-file",
+      label: formatMessage({ id: "markdown.fileReference.viewFile", defaultMessage: "Open file" }),
+      onSelect: () => handlers.onSelect(entry, { isPreview: false }),
+    });
     items.push({ id: "open-separator", separator: true });
   }
   // codex `workspace-file-copy-path` — copies the (workspace-relative) path.
   items.push({
     id: "copy-path",
-    label: "Copy path",
+    label: formatMessage({ id: "codex.review.fileTree.contextMenu.copyPath", defaultMessage: "Copy path" }),
     onSelect: () => {
       void navigator.clipboard?.writeText(entry.path);
     },
@@ -137,7 +145,7 @@ export function fileTreeContextMenuItems(
     const onAddEntryToChat = handlers.onAddEntryToChat;
     items.push({
       id: "add-to-chat",
-      label: "Add to chat",
+      label: formatMessage({ id: "threadSidePanel.workspaceBrowser.addToChat", defaultMessage: "Add to chat" }),
       onSelect: () => onAddEntryToChat(entry),
     });
   }
@@ -146,7 +154,7 @@ export function fileTreeContextMenuItems(
     const onCopyEntryContents = handlers.onCopyEntryContents;
     items.push({
       id: "copy-contents",
-      label: "Copy file contents",
+      label: formatMessage({ id: "markdown.fileReference.copyFileContents", defaultMessage: "Copy file contents" }),
       onSelect: () => onCopyEntryContents(entry),
     });
   }
@@ -224,9 +232,17 @@ function SearchResultsList({
   selectedPath,
   onSelect,
 }: { entries: WorkspaceDirEntry[] } & FileTreeProps) {
+  const { formatMessage } = useHiCodexIntl();
   // codex: workspace-directory-tree — search results are rendered flat with parent paths dimmed.
   if (entries.length === 0) {
-    return <div className="hc-file-tree-empty">No matching files</div>;
+    // codex workspace-directory-tree empty state uses the workspace-browser id
+    // (`thread.fileTreePanel.noMatchingFiles`), distinct from the review/diff
+    // panel's `codex.review.fileSearch.empty`.
+    return (
+      <div className="hc-file-tree-empty">
+        {formatMessage({ id: "thread.fileTreePanel.noMatchingFiles", defaultMessage: "No matching files" })}
+      </div>
+    );
   }
   return (
     <div className="hc-file-tree" role="tree">

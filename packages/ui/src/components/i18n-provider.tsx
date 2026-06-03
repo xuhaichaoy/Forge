@@ -2,6 +2,7 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import {
   createI18nBundle,
   formatI18nMessage,
+  setActiveI18nLocale,
   type HiCodexLocale,
   type I18nMessageDescriptor,
   type I18nValues,
@@ -27,7 +28,9 @@ export function HiCodexIntlProvider({
   locale: HiCodexLocale;
 }) {
   const value = useMemo<HiCodexIntlContextValue>(() => {
-    const bundle = createI18nBundle(locale);
+    // Keep the module-level singleton (used by state/helpers via formatMessage
+    // import) in sync, and reuse the same bundle for the React context value.
+    const bundle = setActiveI18nLocale(locale);
     return {
       locale: bundle.locale,
       formatMessage: (descriptor, values) => formatI18nMessage(bundle, descriptor, values),

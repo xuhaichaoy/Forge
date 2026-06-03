@@ -1,4 +1,11 @@
-import { buildApprovalResult, buildStopPendingRequestResult, pendingRequestDetail } from "../src/state/approval-requests";
+import {
+  PLAN_IMPLEMENTATION_ACCEPT_VALUE,
+  PLAN_IMPLEMENTATION_QUESTION_ID,
+  PLAN_IMPLEMENTATION_REQUEST_METHOD,
+  buildApprovalResult,
+  buildStopPendingRequestResult,
+  pendingRequestDetail,
+} from "../src/state/approval-requests";
 import type { PendingServerRequest } from "../src/state/codex-reducer";
 
 function request(method: string, params?: unknown): PendingServerRequest {
@@ -71,7 +78,7 @@ export default function runApprovalRequestTests(): void {
   );
   assertIncludes(
     sessionCommandDetail.body,
-    "Reason: example.com isn’t on the current network allowlist",
+    "Reason: example.com isn't on the current network allowlist",
     "network command approval body should follow Desktop reason text",
   );
   assertIncludes(
@@ -130,10 +137,10 @@ export default function runApprovalRequestTests(): void {
     pendingRequestDetail(execPolicyCommandRequest).questions[0]?.options[1],
     {
       value: "acceptWithExecpolicyAmendment",
-      label: "Yes, and don’t ask again for commands that start with",
+      label: "Yes, and don't ask again for commands that start with",
       description: "Approve commands with the same prefix.",
       codePreview: "npm test",
-      ariaLabel: "Yes, and don’t ask again for commands that start with npm test",
+      ariaLabel: "Yes, and don't ask again for commands that start with npm test",
     },
     "command execpolicy option should split Desktop's prefix text from the truncated command preview",
   );
@@ -217,9 +224,9 @@ export default function runApprovalRequestTests(): void {
     ],
   });
   const inputDetail = pendingRequestDetail(inputRequest);
-  assertEqual(inputDetail.title, "Codex needs input", "user input title");
+  assertEqual(inputDetail.title, "", "user input has no fixed title; panel uses question text");
   assertEqual(inputDetail.acceptLabel, "Submit", "user input accept label");
-  assertEqual(inputDetail.declineLabel, "Stop", "user input decline should interrupt the turn");
+  assertEqual(inputDetail.declineLabel, "Dismiss", "user input decline aligns with requestInputPanel.dismiss");
   assertEqual(inputDetail.canAccept, true, "user input can accept");
   assertEqual(inputDetail.questions.length, 3, "user input question count");
   assertEqual(inputDetail.questions[0]?.id, "question_1", "user input fallback id");
@@ -252,6 +259,36 @@ export default function runApprovalRequestTests(): void {
     "user input answer payload",
   );
   assertEqual(buildApprovalResult(inputRequest, false), null, "user input decline result");
+
+  const planImplementationRequest = request(PLAN_IMPLEMENTATION_REQUEST_METHOD, {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    planContent: "## Plan\n\n- Patch\n- Verify",
+  });
+  const planImplementationDetail = pendingRequestDetail(planImplementationRequest);
+  assertEqual(planImplementationDetail.title, "Implement this plan?", "plan implementation title");
+  assertEqual(planImplementationDetail.declineLabel, "Dismiss", "plan implementation dismiss label");
+  assertEqual(planImplementationDetail.questions[0]?.isOther, true, "plan implementation supports freeform alternative");
+  assertDeepEqual(
+    planImplementationDetail.questions[0]?.defaultAnswers,
+    [PLAN_IMPLEMENTATION_ACCEPT_VALUE],
+    "plan implementation defaults to the Desktop implement option",
+  );
+  assertDeepEqual(
+    buildApprovalResult(planImplementationRequest, true, {
+      [PLAN_IMPLEMENTATION_QUESTION_ID]: [PLAN_IMPLEMENTATION_ACCEPT_VALUE],
+    }),
+    { action: "implement", followUp: null },
+    "plan implementation accept result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(planImplementationRequest, true, {
+      [PLAN_IMPLEMENTATION_QUESTION_ID]: ["Change the plan first"],
+    }),
+    { action: "custom", followUp: "Change the plan first" },
+    "plan implementation custom follow-up result",
+  );
+  assertEqual(buildApprovalResult(planImplementationRequest, false), null, "plan implementation dismiss result");
 
   const mcpFormRequest = request("mcpServer/elicitation/request", {
     threadId: "thread-1",

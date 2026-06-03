@@ -54,7 +54,7 @@ export default function runMessageUnitTests(): void {
   // codex: local-conversation-thread-CecHj6JI.js#uh — coverage for the new
   // assistant action row slots (hookStats `zs`, completedThreadGoal `dh`).
   // Note: sentAtMs trailing slot 已删除（Codex 对齐 — action row 无 timestamp）。
-  rendersAssistantTurnRatingWhenSubmitterAvailable();
+  omitsAssistantTurnRatingThumbs();
   hidesUserEditAffordanceUnlessMostRecentTurn();
   rendersThreadGoalUserStatusLikeCodexDesktop();
   rendersHookUserStatusLikeCodexDesktop();
@@ -935,7 +935,7 @@ function parsesKatexBlockAndInlineMathLikeDesktop(): void {
   assertEqual(currencyHasMath, false, "bare `$5` currency should not be misread as inline math");
 }
 
-function rendersAssistantTurnRatingWhenSubmitterAvailable(): void {
+function omitsAssistantTurnRatingThumbs(): void {
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
     threadId: "thread-rating",
     onSubmitTurnFeedback: () => undefined,
@@ -958,13 +958,9 @@ function rendersAssistantTurnRatingWhenSubmitterAvailable(): void {
     },
   }));
 
-  assertEqual(html.includes("Good response"), true, "Desktop Ec thumbs-up rating should render when a real submit callback is available");
-  assertEqual(html.includes("Bad response"), true, "Desktop Ec thumbs-down rating should render when a real submit callback is available");
-  assertEqual(
-    html.indexOf("Good response") < html.indexOf("Fork from this point"),
-    true,
-    "Desktop action row orders rating before fork",
-  );
+  assertEqual(html.includes("Good response"), false, "thumbs-up rating must not render — turn rating removed from all model replies");
+  assertEqual(html.includes("Bad response"), false, "thumbs-down rating must not render — turn rating removed from all model replies");
+  assertEqual(html.includes("Fork from this point"), true, "the fork action still renders in the assistant action row");
 }
 
 // codex: local-conversation-thread-Kn0WAsVa.js — the user-message edit

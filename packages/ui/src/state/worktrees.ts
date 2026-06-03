@@ -133,7 +133,11 @@ export function composerWorkModeLabel(mode: ComposerWorkMode, formatMessage?: Fo
     case "cloud":
       return fm("composer.mode.runInCloud", "Cloud");
     default:
-      return fm("composer.mode.workLocally", "Work locally");
+      // codex composer-CwxGJF3C.js — the run-location segment/chip uses the
+      // short label triad: composer.mode.local.short="Local" /
+      // worktreeSegment="Worktree" / runInCloud="Cloud". The full sentence
+      // "Work locally" is the menu description row, not the chip label.
+      return fm("composer.mode.local.short", "Local");
   }
 }
 

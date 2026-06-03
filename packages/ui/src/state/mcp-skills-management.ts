@@ -3,6 +3,7 @@ import {
   type ConfigWriteTarget,
   type CommandPanelEntry,
 } from "./command-panel";
+import { formatMessage } from "./i18n";
 
 export type ManagementPanelKind = "mcp" | "plugins" | "skills";
 
@@ -71,7 +72,7 @@ export function addMcpServerConfigManagementEntries(
   const addEntry: CommandPanelEntry = {
     id: "mcp:add-server",
     // codex settings.mcp.addServer — Codex's add button reads "Add server".
-    title: "Add server",
+    title: formatMessage({ id: "settings.mcp.addServer", defaultMessage: "Add server" }),
     kind: "mcpServer",
     status: "new",
     meta: "stdio or streamable HTTP",
@@ -115,7 +116,7 @@ export function addMcpServerConfigManagementEntries(
           !isReadOnly ? {
             id: `${entry.id}:edit-config`,
             // codex settings.mcp.server.settings — Codex's per-server control is "Settings".
-            label: "Settings",
+            label: formatMessage({ id: "settings.mcp.server.settings", defaultMessage: "Settings" }),
             title: `${entry.title} settings`,
             action: mcpServerFormAction({
               title: `Edit ${entry.title}`,
@@ -129,7 +130,7 @@ export function addMcpServerConfigManagementEntries(
           !isReadOnly ? {
             id: `${entry.id}:remove-config`,
             // codex settings.mcp.detail.uninstall — Codex labels MCP-server removal "Uninstall".
-            label: "Uninstall",
+            label: formatMessage({ id: "settings.mcp.detail.uninstall", defaultMessage: "Uninstall" }),
             title: `Uninstall ${entry.title}`,
             tone: "danger" as const,
             action: {

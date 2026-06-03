@@ -15,6 +15,7 @@
  *   threadHeader.forkIntoLocal (Ki.forkIntoLocal → "Fork into local")
  */
 import { GitFork, X } from "lucide-react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface ForkFromOlderTurnDialogProps {
   open: boolean;
@@ -29,6 +30,8 @@ export function ForkFromOlderTurnDialog({
   onClose,
   onForkIntoLocal,
 }: ForkFromOlderTurnDialogProps) {
+  const { formatMessage } = useHiCodexIntl();
+
   if (!open) return null;
 
   const handleBackdropMouseDown = () => {
@@ -61,11 +64,16 @@ export function ForkFromOlderTurnDialog({
         <header>
           <div className="hc-fork-older-turn-title">
             <GitFork aria-hidden className="hc-fork-older-turn-icon" size={16} />
-            <span id="hc-fork-older-turn-title">Fork from earlier message?</span>
+            <span id="hc-fork-older-turn-title">
+              {formatMessage({
+                id: "localConversation.forkFromOlderTurnDialog.title",
+                defaultMessage: "Fork from earlier message?",
+              })}
+            </span>
           </div>
           <button
             type="button"
-            aria-label="Close"
+            aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })}
             disabled={isSubmitting}
             onClick={onClose}
           >
@@ -74,8 +82,11 @@ export function ForkFromOlderTurnDialog({
         </header>
         <div className="hc-thread-dialog-body hc-fork-older-turn-body">
           <p id="hc-fork-older-turn-subtitle" className="hc-fork-older-turn-subtitle">
-            This keeps your current files and worktree state as-is. If later turns changed
-            the filesystem, the new fork may not match what is currently on disk.
+            {formatMessage({
+              id: "localConversation.forkFromOlderTurnDialog.subtitle",
+              defaultMessage:
+                "This keeps your current files and worktree state as-is. If later turns changed the filesystem, the new fork may not match what is currently on disk.",
+            })}
           </p>
           <div className="hc-fork-older-turn-options">
             <button
@@ -86,9 +97,17 @@ export function ForkFromOlderTurnDialog({
             >
               <GitFork aria-hidden className="hc-fork-older-turn-option-icon" size={14} />
               <span className="hc-fork-older-turn-option-text">
-                <span className="hc-fork-older-turn-option-title">Fork into local</span>
+                <span className="hc-fork-older-turn-option-title">
+                  {formatMessage({
+                    id: "threadHeader.forkIntoLocal",
+                    defaultMessage: "Fork into local",
+                  })}
+                </span>
                 <span className="hc-fork-older-turn-option-desc">
-                  Continue from this message in a new local chat
+                  {formatMessage({
+                    id: "localConversation.forkFromOlderTurnDialog.local.description",
+                    defaultMessage: "Continue from this message in a new local chat",
+                  })}
                 </span>
               </span>
             </button>
@@ -102,7 +121,10 @@ export function ForkFromOlderTurnDialog({
             disabled={isSubmitting}
             onClick={onClose}
           >
-            Cancel
+            {formatMessage({
+              id: "localConversation.forkFromOlderTurnDialog.cancel",
+              defaultMessage: "Cancel",
+            })}
           </button>
         </footer>
       </section>

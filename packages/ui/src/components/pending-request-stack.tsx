@@ -2,6 +2,7 @@ import { AlertTriangle, ChevronRight } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
+import { useHiCodexIntl } from "./i18n-provider";
 import { useMeasuredTextCollapse } from "../hooks/use-measured-text-collapse";
 import type { PendingServerRequest } from "../state/codex-reducer";
 import {
@@ -38,8 +39,12 @@ export function PendingRequestStack({
   onRespond,
   onLog,
 }: PendingRequestStackProps) {
+  const { formatMessage } = useHiCodexIntl();
   return (
-    <section className="hc-pending-stack" aria-label="Pending requests">
+    <section
+      className="hc-pending-stack"
+      aria-label={formatMessage({ id: "hc.pendingRequest.regionLabel", defaultMessage: "Pending requests" })}
+    >
       {pendingRequests.map((request) => (
         <ApprovalCard
           actorLabel={requestActors[String(request.id)]}
@@ -59,6 +64,7 @@ export function ApprovalCard({
   onRespond,
   onLog,
 }: ApprovalCardProps) {
+  const { formatMessage } = useHiCodexIntl();
   const detail = useMemo(() => pendingRequestDetail(request), [request]);
   const [externalUrlOpened, setExternalUrlOpened] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string[]>>(() =>
@@ -140,6 +146,18 @@ export function ApprovalCard({
   const respondSetupContextPicker = (action: "continue" | "skip" | "dismiss") => {
     respond(true, { ...answers, [SETUP_CONTEXT_ACTION_QUESTION_ID]: [action] });
   };
+  const handleSingleSelectOption = (question: PendingRequestQuestion, value: string) => {
+    const nextAnswers = { ...answers, [question.id]: [value] };
+    setAnswers(nextAnswers);
+    const action = pendingRequestOptionSelectionAction({ questionIndex, totalQuestions });
+    if (action === "next") {
+      goToQuestion(questionIndex + 1);
+    } else if (action === "submit" && isOptionPicker && canSubmitWithAnswers(nextAnswers)) {
+      respondOptionPicker("submit", nextAnswers);
+    } else if (action === "submit" && canSubmitWithAnswers(nextAnswers)) {
+      respond(true, nextAnswers);
+    }
+  };
   const kind = requestKind(request.method);
   const requestKindForRender: RequestKind = detail.optionPicker
     ? "option-picker"
@@ -177,9 +195,14 @@ export function ApprovalCard({
     : requestPanelTitle(detail);
   const details = isUserInput || isOptionPicker || isSetupContextPicker ? [] : requestPanelDetails(detail, request);
   const showBodyPreview = !isUserInput && !isOptionPicker && !isSetupContextPicker;
-  const primaryLabel = detail.externalUrl && externalUrlOpened ? "Continue" : detail.acceptLabel;
-  const declineTitle = kind === "user-input"
-    ? "Stops the running turn instead of submitting an empty answer."
+  const primaryLabel = detail.externalUrl && externalUrlOpened || hasMultipleQuestions && !isLastQuestion
+    ? formatMessage({ id: "requestInputPanel.continue", defaultMessage: "Continue" })
+    : detail.acceptLabel;
+  const declineTitle = request.method.includes("requestUserInput")
+    ? formatMessage({
+        id: "hc.pendingRequest.declineUserInputTitle",
+        defaultMessage: "Stops the running turn instead of submitting an empty answer.",
+      })
     : undefined;
 
   return (
@@ -247,11 +270,12 @@ export function ApprovalCard({
           const nextAnswers = { ...answers, [shortcut.questionId]: [shortcut.value] };
           setAnswers(nextAnswers);
           // Codex next-or-submit: not last → 跳下一题；is last → submit
-          if (!isLastQuestion) {
+          const action = pendingRequestOptionSelectionAction({ questionIndex, totalQuestions });
+          if (action === "next") {
             goToQuestion(questionIndex + 1);
-          } else if (isOptionPicker && canSubmitWithAnswers(nextAnswers)) {
+          } else if (action === "submit" && isOptionPicker && canSubmitWithAnswers(nextAnswers)) {
             respondOptionPicker("submit", nextAnswers);
-          } else if (canSubmitWithAnswers(nextAnswers)) {
+          } else if (action === "submit" && canSubmitWithAnswers(nextAnswers)) {
             respond(true, nextAnswers);
           }
           return;
@@ -320,19 +344,22 @@ export function ApprovalCard({
               <button
                 type="button"
                 className="hc-request-question-stepper-nav"
-                aria-label="Previous question"
+                aria-label={formatMessage({ id: "hc.pendingRequest.previousQuestion", defaultMessage: "Previous question" })}
                 disabled={responding || questionIndex === 0}
                 onClick={() => goToQuestion(questionIndex - 1)}
               >
                 <ChevronRight aria-hidden size={14} style={{ transform: "rotate(180deg)" }} />
               </button>
               <span className="hc-request-question-stepper-count">
-                {questionIndex + 1} of {totalQuestions}
+                {formatMessage(
+                  { id: "hc.pendingRequest.questionStep", defaultMessage: "{current} of {total}" },
+                  { current: questionIndex + 1, total: totalQuestions },
+                )}
               </span>
               <button
                 type="button"
                 className="hc-request-question-stepper-nav"
-                aria-label="Next question"
+                aria-label={formatMessage({ id: "hc.pendingRequest.nextQuestion", defaultMessage: "Next question" })}
                 disabled={responding || isLastQuestion}
                 onClick={() => goToQuestion(questionIndex + 1)}
               >
@@ -357,6 +384,7 @@ export function ApprovalCard({
               disabled={responding}
               value={answers[currentQuestion.id] ?? currentQuestion.defaultAnswers}
               onChange={(value) => setAnswers((current) => ({ ...current, [currentQuestion.id]: value }))}
+              onOptionSelect={(value) => handleSingleSelectOption(currentQuestion, value)}
               /*
                * CODEX-REF: pending-request-item-panel-*.js — panel 顶部 header 已经
                * 渲染 question 文本。隐藏 QuestionField 自带的 heading 避免与
@@ -447,7 +475,10 @@ function RequestDetailRow({ label, children }: { label: string; children: React.
 }
 
 function requestPanelTitle(detail: PendingRequestDetail): string {
-  if (detail.title !== "Codex needs input") return detail.title;
+  // CODEX-REF: requestInputPanel.* — 用户输入请求无固定标题 id，面板标题取
+  // 当前问题文本。requestUserInput 现以空 title 进入(见 approval-requests.ts)，
+  // 此处对空标题回退到首个问题文本，与 Codex 一致。
+  if (detail.title) return detail.title;
   return detail.questions[0]?.question || detail.title;
 }
 
@@ -513,6 +544,7 @@ function RequestBodyPreview({
   request: PendingServerRequest;
   requestKind: RequestKind;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   if (detail.mcpToolApproval) {
     return <McpToolApprovalParams approval={detail.mcpToolApproval} />;
   }
@@ -524,7 +556,10 @@ function RequestBodyPreview({
     const paths = detail.body.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (paths.length === 0 || paths.some((line) => line.startsWith("{") || line.startsWith("["))) return null;
     return (
-      <div className="hc-request-file-preview" aria-label="Requested file changes">
+      <div
+        className="hc-request-file-preview"
+        aria-label={formatMessage({ id: "hc.pendingRequest.requestedFileChanges", defaultMessage: "Requested file changes" })}
+      >
         {paths.map((path) => (
           <code key={path}>{path}</code>
         ))}
@@ -537,12 +572,13 @@ function RequestBodyPreview({
 const MCP_TOOL_PARAM_PREVIEW_LIMIT = 4;
 
 function McpToolApprovalHeader({ approval }: { approval: PendingRequestMcpToolApproval }) {
+  const { formatMessage } = useHiCodexIntl();
   const isHighRisk = approval.riskLevel === "high";
   if (isHighRisk) {
     return (
       <div className="hc-mcp-tool-approval-header warning">
         <AlertTriangle aria-hidden size={14} />
-        <span>Elevated Risk</span>
+        <span>{formatMessage({ id: "composer.mcpToolCallApproval.elevatedRiskLabel", defaultMessage: "Elevated Risk" })}</span>
       </div>
     );
   }
@@ -555,6 +591,7 @@ function McpToolApprovalHeader({ approval }: { approval: PendingRequestMcpToolAp
 }
 
 function McpToolApprovalParams({ approval }: { approval: PendingRequestMcpToolApproval }) {
+  const { formatMessage } = useHiCodexIntl();
   const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const entries = approval.toolParamEntries;
@@ -562,7 +599,10 @@ function McpToolApprovalParams({ approval }: { approval: PendingRequestMcpToolAp
   const visibleEntries = showAll ? entries : entries.slice(0, MCP_TOOL_PARAM_PREVIEW_LIMIT);
   const hiddenCount = entries.length - visibleEntries.length;
   return (
-    <div className="hc-mcp-tool-approval-params" aria-label="Tool parameters">
+    <div
+      className="hc-mcp-tool-approval-params"
+      aria-label={formatMessage({ id: "hc.pendingRequest.toolParameters", defaultMessage: "Tool parameters" })}
+    >
       {visibleEntries.map((entry) => {
         const key = entry.name;
         return (
@@ -580,7 +620,12 @@ function McpToolApprovalParams({ approval }: { approval: PendingRequestMcpToolAp
           className="hc-mcp-tool-param-toggle-list"
           onClick={() => setShowAll(true)}
         >
-          <span>{`Show ${hiddenCount} more items`}</span>
+          <span>
+            {formatMessage(
+              { id: "composer.mcpToolCallApproval.toolParam.more", defaultMessage: "Show {count} more items" },
+              { count: hiddenCount },
+            )}
+          </span>
           <ChevronRight aria-hidden size={12} />
         </button>
       ) : null}
@@ -590,7 +635,7 @@ function McpToolApprovalParams({ approval }: { approval: PendingRequestMcpToolAp
           className="hc-mcp-tool-param-toggle-list"
           onClick={() => setShowAll(false)}
         >
-          <span>Show fewer items</span>
+          <span>{formatMessage({ id: "composer.mcpToolCallApproval.toolParam.less", defaultMessage: "Show fewer items" })}</span>
           <ChevronRight aria-hidden className="hc-mcp-tool-param-chevron-up" size={12} />
         </button>
       ) : null}
@@ -607,7 +652,11 @@ function McpToolParamRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const value = expanded ? entry.expandedText : entry.previewText;
+  const toggleAction = expanded
+    ? formatMessage({ id: "composer.mcpToolCallApproval.toolParam.collapse", defaultMessage: "Collapse" })
+    : formatMessage({ id: "composer.mcpToolCallApproval.toolParam.expand", defaultMessage: "Expand" });
   const valueClass = [
     "hc-mcp-tool-param-value",
     entry.displayKind === "json" ? "json" : "text",
@@ -625,10 +674,13 @@ function McpToolParamRow({
             type="button"
             className="hc-mcp-tool-param-toggle"
             aria-expanded={expanded}
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.label}`}
+            aria-label={formatMessage(
+              { id: "composer.mcpToolCallApproval.toolParam.toggle", defaultMessage: "{action} {label}" },
+              { action: toggleAction, label: entry.label },
+            )}
             onClick={onToggle}
           >
-            <span>{expanded ? "Collapse" : "Expand"}</span>
+            <span>{toggleAction}</span>
             <ChevronRight
               aria-hidden
               className={expanded ? "hc-mcp-tool-param-chevron-up" : undefined}
@@ -648,6 +700,7 @@ function McpToolParamRow({
 // HiCodex 这里改用 useMeasuredTextCollapse 三态 hook：靠 ResizeObserver 测真实
 // 文本高度而不是用启发式行数/字数；展开后是内层容器滚动而非把卡片撑高。
 function CommandPreview({ text }: { text: string }) {
+  const { formatMessage } = useHiCodexIntl();
   const { ref, state, toggle } = useMeasuredTextCollapse<HTMLSpanElement>(3);
   const isExpanded = state === "expanded";
   const isCollapsed = state === "collapsed";
@@ -670,7 +723,9 @@ function CommandPreview({ text }: { text: string }) {
             className="hc-request-command-preview-toggle"
             onClick={toggle}
           >
-            {isExpanded ? "Collapse" : "Expand"}
+            {isExpanded
+              ? formatMessage({ id: "composer.mcpToolCallApproval.toolParam.collapse", defaultMessage: "Collapse" })
+              : formatMessage({ id: "composer.mcpToolCallApproval.toolParam.expand", defaultMessage: "Expand" })}
           </button>
         </div>
       )}
@@ -757,6 +812,14 @@ export function pendingRequestOptionShortcut(input: {
   return option ? { questionId: question.id, value: option.value } : null;
 }
 
+export function pendingRequestOptionSelectionAction(input: {
+  questionIndex: number;
+  totalQuestions: number;
+}): "next" | "submit" | null {
+  if (input.totalQuestions <= 0) return null;
+  return input.questionIndex < input.totalQuestions - 1 ? "next" : "submit";
+}
+
 export function pendingRequestOptionArrowSelection(input: {
   key: string;
   question: PendingRequestQuestion | null;
@@ -832,7 +895,7 @@ const COMMON_SHELL_COMMANDS = new Set([
 function requestKind(method: string): RequestKind {
   if (method.includes("commandExecution") || method === "execCommandApproval") return "command";
   if (method.includes("fileChange") || method === "applyPatchApproval") return "file-change";
-  if (method.includes("requestUserInput")) return "user-input";
+  if (method.includes("requestUserInput") || method.includes("requestImplementation")) return "user-input";
   if (method.includes("requestOptionPicker")) return "option-picker";
   if (method.includes("requestSetupCodexContextPicker")) return "setup-context-picker";
   if (method.includes("elicitation")) return "mcp";
@@ -847,6 +910,7 @@ function QuestionField({
   disabled,
   value,
   onChange,
+  onOptionSelect,
   hideHeading = false,
 }: {
   question: PendingRequestQuestion;
@@ -854,6 +918,7 @@ function QuestionField({
   disabled: boolean;
   value: string[];
   onChange: (value: string[]) => void;
+  onOptionSelect?: (value: string) => void;
   /*
    * CODEX-REF: pending-request-item-panel-*.js — 顶部 panel header 已经显示
    * question 文本，QuestionField 自带 heading 与之重复。caller
@@ -862,6 +927,7 @@ function QuestionField({
    */
   hideHeading?: boolean;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const currentValue = value[0] ?? "";
   /*
    * CODEX-REF: pending-request-item-panel-*.js — question field render modes,
@@ -919,7 +985,13 @@ function QuestionField({
                   disabled={disabled}
                   key={option.value}
                   aria-label={option.ariaLabel}
-                  onClick={() => onChange([option.value])}
+                  onClick={() => {
+                    if (onOptionSelect) {
+                      onOptionSelect(option.value);
+                    } else {
+                      onChange([option.value]);
+                    }
+                  }}
                 >
                   <span className="hc-request-option-index">{optionIndex + 1}.</span>
                   <OptionCopy option={option} />
@@ -939,7 +1011,7 @@ function QuestionField({
               <textarea
                 data-request-other-freeform="true"
                 value={freeformValue}
-                placeholder="No, and tell Codex what to do differently"
+                placeholder={formatMessage({ id: "requestInputPanel.otherPlaceholder", defaultMessage: "No, and tell Codex what to do differently" })}
                 rows={1}
                 disabled={disabled}
                 onChange={(event) => onChange(event.target.value.length > 0 ? [event.target.value] : [])}
@@ -952,7 +1024,7 @@ function QuestionField({
           <span>{index + 1}.</span>
           <textarea
             value={currentValue}
-            placeholder="Type here"
+            placeholder={formatMessage({ id: "requestInputPanel.freeFormPlaceholder", defaultMessage: "Type here" })}
             rows={1}
             disabled={disabled}
             onChange={(event) => onChange([event.target.value])}
@@ -964,7 +1036,7 @@ function QuestionField({
           <input
             type={question.kind === "password" ? "password" : question.kind === "number" ? "number" : "text"}
             value={currentValue}
-            placeholder="Type here"
+            placeholder={formatMessage({ id: "requestInputPanel.freeFormPlaceholder", defaultMessage: "Type here" })}
             disabled={disabled}
             onChange={(event) => onChange([event.target.value])}
           />
@@ -989,6 +1061,7 @@ function OptionPickerField({
   onChange: (value: string[]) => void;
   onSubmit: (value: string[]) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const optionValues = new Set(question.options.map((option) => option.value));
   const freeformValue = value.find((item) => !optionValues.has(item)) ?? "";
   const selectedValues = value.filter((item) => optionValues.has(item));
@@ -1040,7 +1113,7 @@ function OptionPickerField({
           className="hc-option-picker-freeform"
           data-request-other-freeform="true"
           value={freeformValue}
-          placeholder="Something else"
+          placeholder={formatMessage({ id: "optionPickerRequest.freeformPlaceholder", defaultMessage: "Something else" })}
           disabled={disabled}
           onChange={(event) => changeFreeform(event.currentTarget.value)}
           onKeyDown={(event) => {
@@ -1089,6 +1162,7 @@ function OptionCopy({ option }: { option: PendingRequestQuestion["options"][numb
 
 function defaultAnswers(question: PendingRequestQuestion): string[] {
   if (question.defaultAnswers.length > 0) return question.defaultAnswers;
+  if (question.kind === "singleSelect" && question.options.length > 0) return [question.options[0].value];
   return [];
 }
 

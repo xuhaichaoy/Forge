@@ -13,6 +13,15 @@ export interface SummaryPanelRowProps {
   disabled?: boolean;
   title?: string;
   className?: string;
+  // CODEX-REF: summary-panel-row-DMF5uaBF.js (wc) — `labelClassName` overrides the
+  // default `truncate` label wrapper class (`m ?? "truncate"`). Codex passes a baseline
+  // `flex items-baseline gap-2` here for the browser/automation rows whose label is a
+  // `[name, secondary]` Fragment. When omitted, HiCodex keeps the truncating single-line
+  // label wrapper.
+  labelClassName?: string;
+  // CODEX-REF: summary-panel-row-DMF5uaBF.js (wc) — `label` may suppress its own wrapper
+  // padding/icon when the row carries `icon:null` (Codex subagent `agent` case). The icon
+  // slot is simply omitted when `icon` is nullish (no empty box reserved).
 }
 
 export function SummaryPanelRow({
@@ -23,6 +32,7 @@ export function SummaryPanelRow({
   disabled,
   title,
   className,
+  labelClassName,
 }: SummaryPanelRowProps) {
   const isInteractive = Boolean(onClick) && !disabled;
   const classes = [
@@ -42,14 +52,14 @@ export function SummaryPanelRow({
         onClick={onClick}
         title={title}
       >
-        <SummaryPanelRowInner icon={icon} label={label} trailing={trailing} />
+        <SummaryPanelRowInner icon={icon} label={label} trailing={trailing} labelClassName={labelClassName} />
       </button>
     );
   }
 
   return (
     <div className={classes} title={title}>
-      <SummaryPanelRowInner icon={icon} label={label} trailing={trailing} />
+      <SummaryPanelRowInner icon={icon} label={label} trailing={trailing} labelClassName={labelClassName} />
     </div>
   );
 }
@@ -58,10 +68,12 @@ function SummaryPanelRowInner({
   icon,
   label,
   trailing,
+  labelClassName,
 }: {
   icon?: ReactNode;
   label: ReactNode;
   trailing?: ReactNode;
+  labelClassName?: string;
 }) {
   return (
     <span className="hc-summary-panel-row-inner">
@@ -70,7 +82,11 @@ function SummaryPanelRowInner({
           {icon}
         </span>
       ) : null}
-      <span className="hc-summary-panel-row-label">{label}</span>
+      {/* CODEX-REF: summary-panel-row-DMF5uaBF.js — label wrapper class is `m ?? "truncate"`,
+          i.e. `labelClassName` REPLACES the default truncating wrapper (it does not stack on
+          top of it). HiCodex's default `hc-summary-panel-row-label` carries the flex/min-w-0
+          /truncate geometry; a baseline label variant supplies its own class instead. */}
+      <span className={labelClassName ?? "hc-summary-panel-row-label"}>{label}</span>
       {trailing ? (
         <span className="hc-summary-panel-row-trailing">{trailing}</span>
       ) : null}

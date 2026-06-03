@@ -30,7 +30,7 @@ function projectsDesktopGitRowsFromThreadCwdGitInfoAndStatus() {
   });
 
   assertEqual(view.hasData, true, "thread data should mark Git details as populated");
-  assertRow(view.rows, "local", "Local", "Work locally");
+  assertRow(view.rows, "local", "Local", "");
   assertRow(view.rows, "branch", "Branch", "codex/branch-details-tests");
   assertRow(view.rows, "commit", "Commit", "Commit");
   assertMissingRow(view.rows, "cwd", "Working directory should not be rendered in the Desktop Git surface");
@@ -55,7 +55,7 @@ function ignoresPlainThreadContextWithoutGitOrDiffData() {
 
   assertEqual(view.hasData, false, "non-git thread context alone should not populate Git details");
   assertEqual(view.rows.length, 1, "non-git thread context should still project the Local row when cwd exists");
-  assertRow(view.rows, "local", "Local", "Work locally");
+  assertRow(view.rows, "local", "Local", "");
 }
 
 function keepsExplicitGitStatusFactsWithoutRenderingExtraRows() {

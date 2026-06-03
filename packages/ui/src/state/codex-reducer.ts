@@ -3173,6 +3173,54 @@ function upsertTurnPlan(state: CodexUiState, params: Record<string, unknown>): C
   });
 }
 
+// Codex never sends a `planImplementation` thread item over the wire — its
+// webview synthesizes one client-side when a turn completes. The Codex bundle's
+// app-server-manager (`B_`) scans the just-completed turn for the proposed-plan
+// item (raw wire type "plan") and, when it carries text, appends a
+// `planImplementation` UI item holding that text; `planImplementationPendingRequest`
+// (HiCodexApp.tsx) then derives the "Implement this plan?" composer prompt from
+// it. HiCodex already had every downstream half (itemType mapping, the
+// `item/plan/requestImplementation` method, the accept handler) but never
+// synthesized the item, so a finished plan turn left no way to act on the plan
+// and plan mode appeared to stop silently. This restores that synthesis.
+const PLAN_IMPLEMENTATION_SYNTHESIZED_ID_PREFIX = "implement-plan:";
+
+function withSynthesizedPlanImplementation(
+  items: AccumulatedThreadItem[],
+  turnId: string,
+  turnStatus: string,
+): AccumulatedThreadItem[] {
+  // Gate exactly like Codex: only a normally completed turn proposes
+  // implementation — failed/interrupted/cancelled turns must not.
+  if (turnStatus !== "completed" || !turnId) return items;
+  const planItem = items.find(
+    (item) => turnIdOf(item) === turnId && (item as { type?: unknown }).type === "plan",
+  );
+  const planText = planItem ? (planItem as { text?: unknown }).text : undefined;
+  const planContent = typeof planText === "string" ? planText.trim() : "";
+  if (!planContent) return items;
+  // Idempotent: drop any prior synthesized item for this turn before re-adding.
+  const withoutStale = items.filter(
+    (item) => !((item as { type?: unknown }).type === "planImplementation" && turnIdOf(item) === turnId),
+  );
+  const synthesized: AccumulatedThreadItem = {
+    id: `${PLAN_IMPLEMENTATION_SYNTHESIZED_ID_PREFIX}${turnId}`,
+    type: "planImplementation",
+    turnId,
+    planContent,
+    isCompleted: false,
+    _turnId: turnId,
+  };
+  // Append at the tail of this turn's segment (Codex pushes to turn.items end).
+  const lastTurnIndex = findLastIndex(withoutStale, (item) => turnIdOf(item) === turnId);
+  if (lastTurnIndex < 0) return [...withoutStale, synthesized];
+  return [
+    ...withoutStale.slice(0, lastTurnIndex + 1),
+    synthesized,
+    ...withoutStale.slice(lastTurnIndex + 1),
+  ];
+}
+
 function finishTurn(
   state: CodexUiState,
   params: Record<string, unknown>,
@@ -3202,9 +3250,13 @@ function finishTurn(
       )
     : turnItemsWithWorkedFor(turn);
   const currentItems = runtime.items;
-  const nextItems = turnId
+  const mergedItems = turnId
     ? replaceTurnSegment(currentItems, turnId, terminalSegment, order)
     : mergeItemsInIncomingOrder(currentItems, terminalSegment);
+  // Codex synthesizes the plan-implementation affordance on the client at turn
+  // completion (see withSynthesizedPlanImplementation); replicate it so a
+  // finished plan turn surfaces "Implement this plan?" instead of stopping.
+  const nextItems = withSynthesizedPlanImplementation(mergedItems, turnId, turnStatus);
   const tokenSpeedPatch = turnId ? completedTokenSpeedPatch(runtime, turnId, turn) : {};
   return {
     ...state,

@@ -1,5 +1,6 @@
 import { AlertCircle } from "lucide-react";
 import type { ComposerQuotaBannerModel } from "../state/account-state";
+import { formatMessage } from "../state/i18n";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
 
 export interface ComposerQuotaBannerProps {
@@ -24,7 +25,12 @@ export function ComposerQuotaBanner({
             className="hc-composer-quota-banner-action"
             onClick={onViewStatus}
           >
-            View status
+            {/*
+             * codex: upsell banner CTA — ICU id `codex.upsellBanner.cta.viewUsage`
+             * defaultMessage:`View Usage` (zh `查看使用情况`). Codex routes to the
+             * usage surface here; HiCodex opens the composer status panel.
+             */}
+            {formatMessage({ id: "codex.upsellBanner.cta.viewUsage", defaultMessage: "View Usage" })}
           </button>
         )}
       />

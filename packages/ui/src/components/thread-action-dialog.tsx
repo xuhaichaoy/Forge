@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
 import { threadTitle } from "../state/thread-workflow";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type ThreadActionDialogState =
   | { kind: "rename"; thread: Thread }
@@ -21,6 +22,7 @@ export function ThreadActionDialog({
   onRename,
   onArchive,
 }: ThreadActionDialogProps) {
+  const { formatMessage } = useHiCodexIntl();
   const title = threadTitle(action.thread);
   const [draft, setDraft] = useState(title);
 
@@ -42,24 +44,28 @@ export function ThreadActionDialog({
         role="dialog"
         data-state="open"
         aria-modal="true"
-        aria-label={action.kind === "rename" ? "Rename chat" : "Archive chat?"}
+        aria-label={
+          action.kind === "rename"
+            ? formatMessage({ id: "sidebarElectron.renameThreadDialogTitle", defaultMessage: "Rename chat" })
+            : formatMessage({ id: "threadHeader.archiveConfirmTitle", defaultMessage: "Archive chat?" })
+        }
         onMouseDown={(event) => event.stopPropagation()}
       >
         {action.kind === "rename" ? (
           <form onSubmit={submitRename}>
             <header>
-              <div><Pencil size={16} /> Rename chat</div>
-              <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
+              <div><Pencil size={16} /> {formatMessage({ id: "sidebarElectron.renameThreadDialogTitle", defaultMessage: "Rename chat" })}</div>
+              <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={onClose}><X size={16} /></button>
             </header>
             <div className="hc-thread-dialog-body">
               {/* codex sidebarElectron.renameThreadDialogSubtitle */}
-              <p className="hc-thread-dialog-subtitle">Keep it short and recognizable</p>
+              <p className="hc-thread-dialog-subtitle">{formatMessage({ id: "sidebarElectron.renameThreadDialogSubtitle", defaultMessage: "Keep it short and recognizable" })}</p>
               <label>
-                Name
+                {formatMessage({ id: "hc.threadDialog.nameLabel", defaultMessage: "Name" })}
                 <input
                   autoFocus
                   value={draft}
-                  placeholder="Add a title…"
+                  placeholder={formatMessage({ id: "sidebarElectron.renameThreadDialogPlaceholder", defaultMessage: "Add a title…" })}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Escape") onClose();
@@ -68,23 +74,23 @@ export function ThreadActionDialog({
               </label>
             </div>
             <footer>
-              <button type="button" className="hc-mini-button ghost" onClick={onClose}>Cancel</button>
-              <button type="submit" className="hc-mini-button accept" disabled={!draft.trim()}>Save</button>
+              <button type="button" className="hc-mini-button ghost" onClick={onClose}>{formatMessage({ id: "sidebarElectron.renameThreadDialogCancel", defaultMessage: "Cancel" })}</button>
+              <button type="submit" className="hc-mini-button accept" disabled={!draft.trim()}>{formatMessage({ id: "sidebarElectron.renameThreadDialogSave", defaultMessage: "Save" })}</button>
             </footer>
           </form>
         ) : (
           <>
             <header>
-              <div><Archive size={16} /> Archive chat?</div>
-              <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
+              <div><Archive size={16} /> {formatMessage({ id: "threadHeader.archiveConfirmTitle", defaultMessage: "Archive chat?" })}</div>
+              <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={onClose}><X size={16} /></button>
             </header>
             <div className="hc-thread-dialog-body">
-              <span>You can find it later in your archived chats.</span>
+              <span>{formatMessage({ id: "threadHeader.archiveConfirmSubtitle", defaultMessage: "You can find it later in your archived chats." })}</span>
             </div>
             <footer>
-              <button type="button" className="hc-mini-button ghost" onClick={onClose}>Cancel</button>
+              <button type="button" className="hc-mini-button ghost" onClick={onClose}>{formatMessage({ id: "threadHeader.archiveConfirmCancel", defaultMessage: "Cancel" })}</button>
               <button type="button" className="hc-mini-button decline" autoFocus onClick={() => void onArchive(action.thread)}>
-                Archive
+                {formatMessage({ id: "threadHeader.archiveConfirmConfirm", defaultMessage: "Archive" })}
               </button>
             </footer>
           </>

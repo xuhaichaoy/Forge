@@ -1,6 +1,7 @@
 import { formatUnknown, stringField } from "../lib/format";
 import { formatModelDisplayName } from "../model/model-settings";
 
+import { formatMessage } from "./i18n";
 import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import { automationScheduleSummary } from "./automation-schedule-summary";
 import type { EventFormat, EventTone, ItemRecord, ThreadItem } from "./render-group-types";
@@ -14,35 +15,55 @@ import {
 } from "./thread-item-fields";
 
 export function eventLabel(item: ThreadItem): string {
-  if (hiCodexImageToolOutputUrl(item)) return "Generated image";
+  if (hiCodexImageToolOutputUrl(item)) return generatedImageLabel();
   const type = itemType(item);
   const record = item as ItemRecord;
-  if (type === "userInput" || type === "user-input") return isCompletedRecord(item) ? "User input request" : "User input requested";
+  if (type === "userInput" || type === "user-input") {
+    return isCompletedRecord(item)
+      ? formatMessage({ id: "hc.event.userInputRequest", defaultMessage: "User input request" })
+      : formatMessage({ id: "hc.event.userInputRequested", defaultMessage: "User input requested" });
+  }
   if (type === "user-input-response") return userInputResponseSummary(record);
-  if (type === "mcp-server-elicitation") return "MCP server elicitation";
-  if (type === "permission-request") return "Permission request";
-  if (type === "turn-diff") return "Diff";
+  if (type === "mcp-server-elicitation") return formatMessage({ id: "hc.event.mcpServerElicitation", defaultMessage: "MCP server elicitation" });
+  if (type === "permission-request") return formatMessage({ id: "hc.event.permissionRequest", defaultMessage: "Permission request" });
+  if (type === "turn-diff") return formatMessage({ id: "hc.event.diff", defaultMessage: "Diff" });
   if (type === "automation-update") return automationUpdateSummary(record);
-  if (type === "auto-review-interruption-warning") return "Turn ended by Auto-review";
-  if (type === "automatic-approval-review") return "Auto-review";
-  if (type === "multi-agent-action") return "Subagent action";
-  if (type === "plan-implementation") return "Plan implementation";
-  if (type === "remote-task-created") return "Created task in Codex Cloud";
+  if (type === "auto-review-interruption-warning") return autoReviewInterruptionLabel();
+  if (type === "automatic-approval-review") return formatMessage({ id: "hc.event.autoReview", defaultMessage: "Auto-review" });
+  if (type === "multi-agent-action") return formatMessage({ id: "hc.event.subagentAction", defaultMessage: "Subagent action" });
+  if (type === "plan-implementation") return formatMessage({ id: "hc.event.planImplementation", defaultMessage: "Plan implementation" });
+  if (type === "remote-task-created") return remoteTaskCreatedLabel();
   if (type === "context-compaction") return contextCompactionLabel(item);
   if (type === "personality-changed") return personalityChangedLabel(record);
   if (type === "forked-from-conversation") return forkedConversationLabel(record);
   if (type === "model-changed") return modelChangedLabel(record);
   if (type === "model-rerouted") return modelReroutedLabel(record);
-  if (type === "steered") return "Steered conversation";
-  if (type === "system-error") return "System error";
-  if (type === "stream-error") return "Stream error";
-  if (type === "dynamic-tool-call") return "Tool call";
-  if (type === "imageView") return "Viewed image";
-  if (type === "imageGeneration" || type === "generated-image") return "Generated image";
-  if (type === "enteredReviewMode") return "Entered review";
-  if (type === "exitedReviewMode") return "Exited review";
-  if (type === "proposed-plan") return "Plan";
+  if (type === "steered") return steeredLabel();
+  if (type === "system-error") return formatMessage({ id: "hc.event.systemError", defaultMessage: "System error" });
+  if (type === "stream-error") return formatMessage({ id: "hc.event.streamError", defaultMessage: "Stream error" });
+  if (type === "dynamic-tool-call") return formatMessage({ id: "hc.event.toolCall", defaultMessage: "Tool call" });
+  if (type === "imageView") return formatMessage({ id: "hc.event.viewedImage", defaultMessage: "Viewed image" });
+  if (type === "imageGeneration" || type === "generated-image") return generatedImageLabel();
+  if (type === "enteredReviewMode") return formatMessage({ id: "hc.event.enteredReview", defaultMessage: "Entered review" });
+  if (type === "exitedReviewMode") return formatMessage({ id: "hc.event.exitedReview", defaultMessage: "Exited review" });
+  if (type === "proposed-plan") return formatMessage({ id: "hc.event.plan", defaultMessage: "Plan" });
   return type;
+}
+
+function generatedImageLabel(): string {
+  return formatMessage({ id: "hc.event.generatedImage", defaultMessage: "Generated image" });
+}
+
+function autoReviewInterruptionLabel(): string {
+  return formatMessage({ id: "localConversation.autoReviewInterruptionWarning", defaultMessage: "Turn ended by Auto-review" });
+}
+
+function remoteTaskCreatedLabel(): string {
+  return formatMessage({ id: "hc.event.remoteTaskCreated", defaultMessage: "Created task in Codex Cloud" });
+}
+
+function steeredLabel(): string {
+  return formatMessage({ id: "localConversation.steered.summary", defaultMessage: "Steered conversation" });
 }
 
 export function eventText(item: ThreadItem): string {
@@ -74,7 +95,7 @@ export function eventText(item: ThreadItem): string {
     return automationUpdateSummary(record);
   }
   if (type === "auto-review-interruption-warning") {
-    return "Turn ended by Auto-review";
+    return autoReviewInterruptionLabel();
   }
   if (type === "automatic-approval-review") {
     return eventLines([
@@ -99,7 +120,7 @@ export function eventText(item: ThreadItem): string {
     ]);
   }
   if (type === "remote-task-created") {
-    return "Created task in Codex Cloud";
+    return remoteTaskCreatedLabel();
   }
   if (type === "context-compaction") {
     return contextCompactionLabel(item);
@@ -115,7 +136,7 @@ export function eventText(item: ThreadItem): string {
     return modelReroutedLabel(record);
   }
   if (type === "steered") {
-    return "Steered conversation";
+    return steeredLabel();
   }
   if (type === "system-error") {
     return errorSummaryText(item) || formatUnknown(item);
@@ -231,9 +252,13 @@ function contextCompactionLabel(item: ThreadItem): string {
   const source = stringField(record, "source");
   const completed = contextCompactionCompleted(item);
   if (source === "manual") {
-    return completed ? "Context compacted" : "Compacting context";
+    return completed
+      ? formatMessage({ id: "localConversation.contextManuallyCompacted", defaultMessage: "Context compacted" })
+      : formatMessage({ id: "localConversation.contextManuallyCompacting", defaultMessage: "Compacting context" });
   }
-  return completed ? "Context automatically compacted" : "Automatically compacting context";
+  return completed
+    ? formatMessage({ id: "localConversation.contextAutomaticallyCompacted", defaultMessage: "Context automatically compacted" })
+    : formatMessage({ id: "localConversation.contextAutomaticallyCompacting", defaultMessage: "Automatically compacting context" });
 }
 
 function contextCompactionCompleted(item: ThreadItem): boolean {
@@ -252,32 +277,56 @@ function permissionResponseText(value: unknown): string {
 function modelChangedLabel(record: ItemRecord): string {
   const from = stringField(record, "fromModel") || stringField(record, "from_model");
   const to = stringField(record, "toModel") || stringField(record, "to_model");
-  return `Model changed from ${modelDisplayName(from)} to ${modelDisplayName(to)}.`;
+  return formatMessage(
+    { id: "localConversation.modelChanged", defaultMessage: "Model changed from {fromModel} to {toModel}." },
+    { fromModel: modelDisplayName(from), toModel: modelDisplayName(to) },
+  );
 }
 
 function modelReroutedLabel(record: ItemRecord): string {
   const to = stringField(record, "toModel") || stringField(record, "to_model");
-  return `Your request was routed to ${modelDisplayName(to)}.`;
+  return formatMessage(
+    { id: "localConversation.modelRerouted", defaultMessage: "Your request was routed to {toModel}." },
+    { toModel: modelDisplayName(to) },
+  );
 }
 
 function modelDisplayName(value: string): string {
   const trimmed = value.trim();
-  return trimmed ? formatModelDisplayName(trimmed) : "Custom";
+  return trimmed ? formatModelDisplayName(trimmed) : formatMessage({ id: "hc.event.modelCustomName", defaultMessage: "Custom" });
 }
 
 function personalityChangedLabel(record: ItemRecord): string {
-  const label = stringField(record, "personality") === "friendly" ? "Friendly" : "Pragmatic";
-  return `Switched to ${label} personality`;
+  const label = stringField(record, "personality") === "friendly"
+    ? formatMessage({ id: "composer.personalitySlashCommand.label.friendly", defaultMessage: "Friendly" })
+    : formatMessage({ id: "composer.personalitySlashCommand.label.pragmatic", defaultMessage: "Pragmatic" });
+  return formatMessage(
+    { id: "localConversation.personalityChanged", defaultMessage: "Switched to {personality} personality" },
+    { personality: label },
+  );
 }
 
 function forkedConversationLabel(_record: ItemRecord): string {
-  return "Forked from conversation";
+  return formatMessage({ id: "localConversation.forkedFromConversation", defaultMessage: "Forked from conversation" });
 }
 
 function userInputResponseSummary(record: ItemRecord): string {
   const count = recordArray(record.questionsAndAnswers).length;
-  if (record.completed !== true) return count === 1 ? "Asking question" : "Asking questions";
-  return `Asked ${count} ${count === 1 ? "question" : "questions"}`;
+  if (record.completed !== true) {
+    return formatMessage(
+      { id: "localConversation.userInputRequest.inProgress", defaultMessage: "Asking {count, plural, one {question} other {questions}}" },
+      { count },
+    );
+  }
+  const asked = formatMessage({ id: "localConversation.userInputRequest.summary.asked", defaultMessage: "Asked" });
+  const counts = formatMessage(
+    { id: "localConversation.userInputRequest.summary.count", defaultMessage: "{count, plural, one {# question} other {# questions}}" },
+    { count },
+  );
+  return formatMessage(
+    { id: "localConversation.userInputRequest.summary", defaultMessage: "{label} {counts}" },
+    { label: asked, counts },
+  );
 }
 
 function automationUpdateSummary(record: ItemRecord): string {
@@ -294,19 +343,23 @@ function automationUpdateSummary(record: ItemRecord): string {
     || stringField(record, "name")
     || stringField(snapshot, "name")
     || deletedAutomationTitle(mode, id)
-    || "Untitled automation";
+    || formatMessage({ id: "automation.updateDirective.untitled", defaultMessage: "Untitled automation" });
   const rawSchedule = stringField(args, "rrule") || stringField(record, "rrule") || stringField(snapshot, "rrule");
   const schedule = automationScheduleSummary(rawSchedule) ?? "";
   return [action, title, schedule].filter(Boolean).join(" · ");
 }
 
 function automationActionLabel(mode: string, deleteStatus: string): string {
-  if (mode === "create") return "Created";
-  if (mode === "update") return "Updated";
-  if (mode === "delete") return deleteStatus === "not_found" ? "Missing" : "Deleted";
-  if (mode === "suggested-create") return "Proposed";
-  if (mode === "suggested-update") return "Proposed update";
-  return "Automation";
+  if (mode === "create") return formatMessage({ id: "automation.updateDirective.created", defaultMessage: "Created" });
+  if (mode === "update") return formatMessage({ id: "automation.updateDirective.updated", defaultMessage: "Updated" });
+  if (mode === "delete") {
+    return deleteStatus === "not_found"
+      ? formatMessage({ id: "automation.updateDirective.missing", defaultMessage: "Missing" })
+      : formatMessage({ id: "automation.updateDirective.deleted", defaultMessage: "Deleted" });
+  }
+  if (mode === "suggested-create") return formatMessage({ id: "automation.updateDirective.proposed", defaultMessage: "Proposed" });
+  if (mode === "suggested-update") return formatMessage({ id: "automation.updateDirective.proposedUpdate", defaultMessage: "Proposed update" });
+  return formatMessage({ id: "automation.updateDirective.automation", defaultMessage: "Automation" });
 }
 
 function deletedAutomationTitle(mode: string, id: string): string {
@@ -319,11 +372,13 @@ function deletedAutomationTitle(mode: string, id: string): string {
 
 function questionAnswerDetailText(value: unknown): string {
   return recordArray(value).map((questionAndAnswer) => {
-    const question = stringField(questionAndAnswer, "question") || "Question";
+    const question = stringField(questionAndAnswer, "question")
+      || formatMessage({ id: "hc.event.questionFallback", defaultMessage: "Question" });
     const answers = Array.isArray(questionAndAnswer.answers)
       ? questionAndAnswer.answers.map(scalarText).filter(Boolean)
       : [];
-    return [question, answers.length > 0 ? answers.join(", ") : "No answer provided"].join("\n");
+    const noAnswer = formatMessage({ id: "localConversation.userInputRequest.noAnswer", defaultMessage: "No answer provided" });
+    return [question, answers.length > 0 ? answers.join(", ") : noAnswer].join("\n");
   }).filter(Boolean).join("\n\n");
 }
 

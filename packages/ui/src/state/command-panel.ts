@@ -385,8 +385,8 @@ export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[
 // CommandGroup). Sections without entries are skipped at render time.
 const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; title: string }> = [
   { key: "thread",     title: "Chat" },
-  { key: "panels",     title: "Panels" },
   { key: "navigation", title: "Navigation" },
+  { key: "panels",     title: "Panels" },
   { key: "workspace",  title: "Project" },
   { key: "skills",     title: "Skills" },
   { key: "configure",  title: "Configure" },

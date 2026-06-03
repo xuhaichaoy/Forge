@@ -114,6 +114,13 @@ function OnboardingFirstThreadPromo({
   onStartChat,
   onUseExistingFolder,
 }: OnboardingFirstThreadPromoProps) {
+  const { formatMessage } = useHiCodexIntl();
+  // codex sidebarElectron.newThread (= "New chat") drives the primary new-thread
+  // action; codex projectSetup.addProjectMenu.useExistingFolder (= "Use an
+  // existing folder") drives the secondary open-folder action. Both reuse Codex's
+  // existing i18n labels rather than inventing onboarding-card copy.
+  const startChatLabel = formatMessage({ id: "hc.onboarding.promo.newChat", defaultMessage: "New chat" });
+  const useExistingFolderLabel = formatMessage({ id: "projectSetup.addProjectMenu.useExistingFolder", defaultMessage: "Use an existing folder" });
   return (
     <div
       className="hc-onboarding-empty-promo"
@@ -131,10 +138,6 @@ function OnboardingFirstThreadPromo({
       </button>
       <div className="hc-onboarding-empty-promo-body">
         <h3 className="hc-onboarding-empty-promo-title">Welcome to HiCodex</h3>
-        <p className="hc-onboarding-empty-promo-text">
-          Connect external agents, configure MCP servers, or begin a new
-          conversation to get started.
-        </p>
         {/* codex first-run codex.legal.mistakes.* — AI fallibility / review-output disclaimer. */}
         <p className="hc-onboarding-empty-promo-disclaimer">
           Codex can make mistakes. Review the code it writes and commands it runs.
@@ -146,14 +149,14 @@ function OnboardingFirstThreadPromo({
           className="hc-onboarding-empty-promo-action hc-onboarding-empty-promo-action-primary"
           onClick={() => onStartChat?.()}
         >
-          Begin new conversation
+          {startChatLabel}
         </button>
         <button
           type="button"
           className="hc-onboarding-empty-promo-action hc-onboarding-empty-promo-action-secondary"
           onClick={() => onUseExistingFolder?.()}
         >
-          Open existing folder
+          {useExistingFolderLabel}
         </button>
       </div>
     </div>

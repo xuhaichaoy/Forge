@@ -249,8 +249,8 @@ function rendersProposedPlanSummaryCard(): void {
   assertStringIncludes(completeHtml, "<h3 class=\"hc-plan-summary-title\">Plan</h3>", "completed proposed plan title");
   assertStringIncludes(completeHtml, "Download plan", "completed proposed plan should expose PLAN.md download");
   assertStringIncludes(completeHtml, "aria-label=\"Copy\"", "completed proposed plan should expose the shared copy-button (copyButton.copyAriaLabel \"Copy\")");
-  assertStringIncludes(completeHtml, "Good response", "completed proposed plan should expose Desktop turn rating when feedback submitter is available");
-  assertStringIncludes(completeHtml, "<span>Open</span>", "completed proposed plan should show Desktop's visible Open button label");
+  assertStringNotIncludes(completeHtml, "Good response", "turn rating thumbs are removed from all model replies, including the plan card");
+  assertStringNotIncludes(completeHtml, "<span>Open</span>", "the no-op Open button is removed from the plan card");
   assertStringIncludes(completeHtml, "<h2", "proposed-plan markdown should render as markdown");
 
   const writingItem = {

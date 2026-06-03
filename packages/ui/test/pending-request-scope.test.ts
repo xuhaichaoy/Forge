@@ -220,6 +220,15 @@ function classifiesMcpAndDynamicToolRequestsForAwaitingState(): void {
     "userInput",
     "Desktop dynamic setup_codex_context_picker should use the user-input awaiting lane",
   );
+  assertDeepEqual(
+    pendingRequestAwaitingKind(request("implement-plan", "item/plan/requestImplementation", {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      planContent: "## Plan",
+    })),
+    "userInput",
+    "Desktop synthetic plan implementation requests should use the user-input awaiting lane",
+  );
 }
 
 function summarizesAwaitingStateByThread(): void {

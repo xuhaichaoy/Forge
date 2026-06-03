@@ -823,7 +823,7 @@
 .hc-memory-citations {
   margin-top: 12px;
   color: #6f716b;
-  font-size: 12px;
+  font-size: 13px; /* codex text-size-chat-sm */
 }
 
 .hc-memory-citations summary {

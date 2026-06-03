@@ -1,9 +1,31 @@
-import { ArrowUp, AtSign, FileText, ListChecks, Loader2, Paperclip, PlugZap, Plus, Sparkles, Square, X } from "lucide-react";
+import {
+  ArrowUp,
+  AtSign,
+  Bot,
+  Bug,
+  Cpu,
+  FileText,
+  GitBranch,
+  ListChecks,
+  Loader2,
+  Paperclip,
+  PlugZap,
+  Plus,
+  Server,
+  Settings as SettingsIcon,
+  Slash,
+  Sparkles,
+  Square,
+  Wrench,
+  X,
+} from "lucide-react";
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 import { convertLocalFileSrc, listenNativeFileDropEvents } from "../lib/tauri-host";
 import { AboveComposerPlanSuggestion } from "./above-composer-plan-suggestion";
+import { useHiCodexIntl } from "./i18n-provider";
 import { focusPromptEditorElement, PromptEditor, replacePromptEditorTextRangeWithMention } from "./prompt-editor";
+import { Tooltip } from "./tooltip";
 import {
   CLOSED_ATTACHMENT_PICKER_STATE,
   DEFAULT_SLASH_COMMANDS,
@@ -120,6 +142,7 @@ export function Composer({
   onInterrupt,
   onSlashCommand,
 }: ComposerProps) {
+  const { formatMessage } = useHiCodexIntl();
   const composerRef = useRef<HTMLFormElement | null>(null);
   const composerFieldRef = useRef<HTMLDivElement | null>(null);
   const footerLeftMeasureRef = useRef<HTMLDivElement | null>(null);
@@ -144,8 +167,11 @@ export function Composer({
     [availableSlashCommands, slashQuery],
   );
   const selectedSlashCommand = slashCommands[Math.min(slashIndex, Math.max(0, slashCommands.length - 1))] ?? null;
-  const submitTitle = composerSubmitTooltip(submitState);
-  const placeholder = placeholderText ?? "Ask Codex anything. @ to use plugins or mention files";
+  const submitTitle = composerSubmitTooltip(submitState, formatMessage);
+  const placeholder = placeholderText ?? formatMessage({
+    id: "composer.placeholder.newTask.locally.v2",
+    defaultMessage: "Ask Codex anything. @ to use plugins or mention files",
+  });
   const mentionOpen = mentionPicker.status !== "closed";
   const hasComposerPopover = slashOpen || attachmentPicker.status !== "closed" || mentionOpen;
   /*
@@ -174,7 +200,9 @@ export function Composer({
     mentionPicker.activeIndex,
     Math.max(0, mentionOptions.length - 1),
   )] ?? null;
-  const mentionMenuLabel = mentionPicker.trigger?.marker === "$" ? "Skills and apps" : "Plugins";
+  const mentionMenuLabel = mentionPicker.trigger?.marker === "$"
+    ? formatMessage({ id: "hc.composer.mention.skillsAndApps", defaultMessage: "Skills and apps" })
+    : formatMessage({ id: "composer.atMentionList.appPlugins", defaultMessage: "Plugins" });
   const setFooterRightMeasureElement = useCallback((element: HTMLElement | null) => {
     footerRightMeasureRef.current = element;
   }, []);
@@ -247,7 +275,10 @@ export function Composer({
   const addImageFilesAsDataUrls = useCallback((files: File[]) => {
     if (files.length === 0) return;
     if (!supportsImageInput) {
-      onAttachmentError?.("This model does not support image inputs. Try a different model.");
+      onAttachmentError?.(formatMessage({
+        id: "composer.imageInputsUnsupported",
+        defaultMessage: "This model does not support image inputs. Try a different model.",
+      }));
       return;
     }
     void Promise.all(files.map(readImageFileAttachment)).then((items) => {
@@ -265,7 +296,10 @@ export function Composer({
     let unavailablePathCount = 0;
 
     if (imageFiles.length > 0 && !supportsImageInput) {
-      onAttachmentError?.("This model does not support image inputs. Try a different model.");
+      onAttachmentError?.(formatMessage({
+        id: "composer.imageInputsUnsupported",
+        defaultMessage: "This model does not support image inputs. Try a different model.",
+      }));
     } else {
       for (const file of imageFiles) {
         const path = composerFilePath(file);
@@ -279,7 +313,10 @@ export function Composer({
       else unavailablePathCount += 1;
     }
     if (unavailablePathCount > 0 && options.warnUnavailablePaths !== false) {
-      onAttachmentError?.("File path is unavailable. Use the + file picker or drag the file from Finder.");
+      onAttachmentError?.(formatMessage({
+        id: "hc.composer.attach.filePathUnavailable",
+        defaultMessage: "File path is unavailable. Use the + file picker or drag the file from Finder.",
+      }));
     }
 
     addAttachments(pathAttachments);
@@ -363,7 +400,15 @@ export function Composer({
 
     if (!onMentionSearch) {
       setMentionPicker((state) => matchesActiveTrigger(state)
-        ? { ...state, status: "error", error: "Mention search is unavailable", options: [] }
+        ? {
+            ...state,
+            status: "error",
+            error: formatMessage({
+              id: "hc.composer.mention.searchUnavailable",
+              defaultMessage: "Mention search is unavailable",
+            }),
+            options: [],
+          }
         : state);
       return;
     }
@@ -476,7 +521,10 @@ export function Composer({
 
     if ((actionId === "filePath" || actionId === "localImage") && onBrowseFiles) {
       if (actionId === "localImage" && !supportsImageInput) {
-        onAttachmentError?.("This model does not support image inputs. Try a different model.");
+        onAttachmentError?.(formatMessage({
+          id: "composer.imageInputsUnsupported",
+          defaultMessage: "This model does not support image inputs. Try a different model.",
+        }));
         closeComposerPopovers();
         requestComposerFocus(promptEditorRef.current);
         return;
@@ -505,11 +553,15 @@ export function Composer({
       const result = confirmAttachmentInput(state);
       if (result.attachment) {
         if (isImageAttachment(result.attachment) && !supportsImageInput) {
-          onAttachmentError?.("This model does not support image inputs. Try a different model.");
+          const unsupportedMessage = formatMessage({
+            id: "composer.imageInputsUnsupported",
+            defaultMessage: "This model does not support image inputs. Try a different model.",
+          });
+          onAttachmentError?.(unsupportedMessage);
           requestAttachmentInputFocus(attachmentInputRef.current);
           return {
             ...state,
-            error: "This model does not support image inputs. Try a different model.",
+            error: unsupportedMessage,
           };
         }
         const merged = mergeComposerAttachments(attachmentsRef.current, [result.attachment]);
@@ -726,25 +778,36 @@ export function Composer({
                         <button
                           className="hc-attachment-chip-main"
                           type="button"
-                          aria-label={`Preview ${chipTitle}`}
+                          aria-label={formatMessage(
+                            { id: "hc.composer.attach.previewChip", defaultMessage: "Preview {label}" },
+                            { label: chipTitle },
+                          )}
                           onClick={() => setImagePreview({ src: previewSrc, label })}
                         >
                           <AttachmentPreview src={previewSrc} />
-                          <span className="hc-attachment-kind">{kindLabel}</span>
+                          {/*
+                           * codex composer-CwxGJF3C.js — file chips show the
+                           * filename (and, where available, "{extension} ·
+                           * {lineInfo}"), never a synthetic "Mention/Image/File"
+                           * category word. The kind is conveyed by the icon
+                           * alone; kindLabel is kept only for the hover title.
+                           */}
                           <span className="hc-attachment-label">{displayLabel}</span>
                         </button>
                       ) : (
                         <span className="hc-attachment-chip-main static">
                           <AttachmentStaticIcon attachment={attachment} />
-                          <span className="hc-attachment-kind">{kindLabel}</span>
                           <span className="hc-attachment-label">{displayLabel}</span>
                         </span>
                       )}
                       <button
                         className="hc-attachment-remove"
                         type="button"
-                        title="Remove attachment"
-                        aria-label={`Remove ${chipTitle}`}
+                        title={formatMessage({ id: "hc.composer.attach.removeAttachment", defaultMessage: "Remove attachment" })}
+                        aria-label={formatMessage(
+                          { id: "appshotAttachment.removeAriaLabel", defaultMessage: "Remove {title}" },
+                          { title: chipTitle },
+                        )}
                         onClick={() => changeAttachments(removeComposerAttachment(attachments, index))}
                       >
                         <X size={13} />
@@ -766,7 +829,7 @@ export function Composer({
                * while a popover is mounted. Each popover here is rendered
                * only while open, so the marker can be hard-coded.
                */
-              <div ref={slashMenuRef} className="hc-composer-menu" role="listbox" aria-label="Slash commands" data-state="open">
+              <div ref={slashMenuRef} className="hc-composer-menu" role="listbox" aria-label={formatMessage({ id: "composer.slashCommands.dialogTitle", defaultMessage: "Slash commands" })} data-state="open">
                 {slashCommands.map((command) => {
                   const active = command.id === selectedSlashCommand?.id;
                   return (
@@ -781,12 +844,19 @@ export function Composer({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => selectSlashCommand(command)}
                     >
-                      <span className="hc-command-icon">/{command.id.slice(0, 1)}</span>
+                      <span className="hc-command-icon">{slashCommandIcon(command)}</span>
                       <span>
                         <strong>/{command.id}</strong>
                         <small>{command.description}</small>
                       </span>
-                      <em>{command.supported}</em>
+                      {/*
+                       * codex slash-command-item-Cubjf4gi.js — the right slot is
+                       * an optional secondary text (arg hint), not the internal
+                       * routing channel. We surface inlineArgs when present and
+                       * drop the `supported` (direct/panel/pending…) badge, which
+                       * is an implementation detail Codex never shows the user.
+                       */}
+                      {command.inlineArgs && <em className="hc-command-args">{command.inlineArgs}</em>}
                     </button>
                   );
                 })}
@@ -807,7 +877,7 @@ export function Composer({
                 )}
                 {mentionSections.map((section) => (
                   <div key={section.kind} className="hc-composer-menu-section">
-                    <div className="hc-composer-menu-section-label">{section.title}</div>
+                    <div className="hc-composer-menu-section-label">{formatMessage({ id: section.i18nId, defaultMessage: section.title })}</div>
                     {section.options.map((option) => (
                       <button
                         className="hc-composer-menu-row"
@@ -829,30 +899,37 @@ export function Composer({
                     ))}
                   </div>
                 ))}
+                {/*
+                 * codex at-mention-list-GuqX2GsW.js — the @ list uses
+                 * atMentionList.emptyQuery / .loading / .noResults. The $ (skill)
+                 * branch keeps skillMentionList.* (already correct).
+                 */}
                 {mentionPicker.status === "idle" && (
-                  <div className="hc-composer-menu-empty">Type to search mentions</div>
+                  <div className="hc-composer-menu-empty">{formatMessage({ id: "composer.atMentionList.emptyQuery", defaultMessage: "Type to search for files" })}</div>
                 )}
                 {mentionPicker.status === "loading" && mentionOptions.length === 0 && (
                   <div className="hc-composer-menu-empty">
                     <Loader2 className="hc-spin" size={13} />
-                    {mentionPicker.trigger?.marker === "$" ? "Loading skills and apps…" : "Searching mentions..."}
+                    {mentionPicker.trigger?.marker === "$"
+                      ? formatMessage({ id: "composer.skillMentionList.loading", defaultMessage: "Loading skills and apps…" })
+                      : formatMessage({ id: "composer.atMentionList.loading", defaultMessage: "Searching files…" })}
                   </div>
                 )}
                 {mentionPicker.status === "ready" && mentionOptions.length === 0 && (
                   <div className="hc-composer-menu-empty">
                     {mentionPicker.trigger?.marker === "$"
-                      ? "No skills or apps found"
-                      : "No files, skills, apps, or plugins found"}
+                      ? formatMessage({ id: "composer.skillMentionList.noResults", defaultMessage: "No skills or apps found" })
+                      : formatMessage({ id: "composer.atMentionList.noResults", defaultMessage: "No results" })}
                   </div>
                 )}
                 {mentionPicker.status === "error" && (
-                  <div className="hc-composer-menu-empty">{mentionPicker.error || "Unable to search mentions"}</div>
+                  <div className="hc-composer-menu-empty">{mentionPicker.error || formatMessage({ id: "hc.composer.mention.searchFailed", defaultMessage: "Unable to search mentions" })}</div>
                 )}
               </div>
             )}
 
             {attachmentPicker.status === "menu" && (
-              <div className="hc-composer-menu attach" role="menu" aria-label="Attach context" data-state="open">
+              <div className="hc-composer-menu attach" role="menu" aria-label={formatMessage({ id: "hc.composer.attach.menuLabel", defaultMessage: "Attach context" })} data-state="open">
                 {attachActions.map((action) => {
                   const isPlanAction = action.id === "plan";
                   const checked = isPlanAction && mode === "plan";
@@ -894,8 +971,8 @@ export function Composer({
                   </span>
                   <button
                     type="button"
-                    aria-label="Cancel attachment"
-                    title="Cancel"
+                    aria-label={formatMessage({ id: "hc.composer.attach.cancelAttachment", defaultMessage: "Cancel attachment" })}
+                    title={formatMessage({ id: "hc.composer.attach.cancel", defaultMessage: "Cancel" })}
                     onClick={() => {
                       setAttachmentPicker(closeAttachmentPicker());
                       requestComposerFocus(promptEditorRef.current);
@@ -955,10 +1032,10 @@ export function Composer({
                       requestComposerFocus(promptEditorRef.current);
                     }}
                   >
-                    Types
+                    {formatMessage({ id: "hc.composer.attach.types", defaultMessage: "Types" })}
                   </button>
                   <button type="button" className="hc-mini-button accept" onClick={confirmAttachment}>
-                    Add
+                    {formatMessage({ id: "hc.composer.attach.add", defaultMessage: "Add" })}
                   </button>
                 </div>
               </div>
@@ -1150,7 +1227,7 @@ export function Composer({
           <div className="hc-image-preview-dialog" role="dialog" aria-modal="true" aria-label={imagePreview.label} data-state="open">
             <div className="hc-image-preview-header">
               <span title={imagePreview.label}>{imagePreview.label}</span>
-              <button type="button" aria-label="Close preview" title="Close" onClick={() => setImagePreview(null)}>
+              <button type="button" aria-label={formatMessage({ id: "codex.localConversation.closeGeneratedImagePreview", defaultMessage: "Close preview" })} title={formatMessage({ id: "hc.composer.preview.close", defaultMessage: "Close" })} onClick={() => setImagePreview(null)}>
                 <X size={16} />
               </button>
             </div>
@@ -1196,34 +1273,67 @@ const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftProps>(f
   onPlanSelected,
   onShowAttachmentMenu,
 }, ref) {
+  const { formatMessage } = useHiCodexIntl();
+  const addContextLabel = formatMessage({ id: "composer.addContextDropdown.ariaLabel", defaultMessage: "Add files and more" });
   return (
     <div className="hc-composer-footer-left" ref={ref}>
       <button
         className="hc-composer-plus"
         type="button"
         // codex composer.addContextDropdown.ariaLabel — "Add files and more"
-        title="Add files and more"
-        aria-label="Add files and more"
+        title={addContextLabel}
+        aria-label={addContextLabel}
         aria-expanded={attachmentPickerOpen}
         onClick={onShowAttachmentMenu}
       >
         <Plus size={18} />
       </button>
       {mode === "plan" && (
-        <button
-          type="button"
-          className="hc-composer-mode-pill"
-          title="Create a plan. Shift + Tab to toggle."
-          aria-label="Plan mode"
-          onClick={() => onPlanSelected?.()}
-        >
-          <ListChecks size={13} />
-          <span className="composer-footer__label--sm">Plan</span>
-        </button>
+        /*
+         * codex composer-CwxGJF3C.js — the plan-mode indicator tooltip is a
+         * styled Tooltip with three centred segments, not a one-line `title`:
+         *   composer.planModeIndicator.tooltipText     = "Create a plan"
+         *   composer.planModeIndicator.tooltipShortcut = "{shortcut}" (kbd)
+         *   composer.planModeIndicator.tooltipToggle   = "to toggle"
+         * rendered `flex flex-col items-center text-center` with the shortcut in
+         * a keycap. HiCodex injects "Shift + Tab" as the shortcut (matching the
+         * Codex bundle's literal value) and renders it inside <kbd>.
+         */
+        <Tooltip content={<PlanModeTooltipContent />}>
+          <button
+            type="button"
+            className="hc-composer-mode-pill"
+            aria-label={formatMessage({ id: "composer.planModeDropdown.ariaLabel", defaultMessage: "Plan mode" })}
+            onClick={() => onPlanSelected?.()}
+          >
+            <ListChecks size={13} />
+            <span className="composer-footer__label--sm">{formatMessage({ id: "composer.planModeIndicator", defaultMessage: "Plan" })}</span>
+          </button>
+        </Tooltip>
       )}
     </div>
   );
 });
+
+/*
+ * codex composer-CwxGJF3C.js — `flex flex-col items-center text-center
+ * leading-tight` container: tooltipText on the first line, then a line with the
+ * shortcut keycap followed by tooltipToggle ("to toggle").
+ */
+function PlanModeTooltipContent() {
+  const { formatMessage } = useHiCodexIntl();
+  return (
+    <span className="hc-plan-tooltip">
+      <span>{formatMessage({ id: "composer.planModeIndicator.tooltipText", defaultMessage: "Create a plan" })}</span>
+      <span className="hc-plan-tooltip-shortcut-row">
+        <kbd className="hc-plan-tooltip-kbd">
+          {formatMessage({ id: "composer.planModeIndicator.tooltipShortcut", defaultMessage: "{shortcut}" }, { shortcut: "Shift + Tab" })}
+        </kbd>
+        <span>{formatMessage({ id: "composer.planModeIndicator.tooltipToggle", defaultMessage: "to toggle" })}</span>
+      </span>
+    </span>
+  );
+}
 
 interface ComposerSubmitButtonProps {
   submitState: ComposerSubmitState;
@@ -1252,16 +1362,27 @@ const ComposerSubmitButton = forwardRef<HTMLButtonElement, ComposerSubmitButtonP
   );
 });
 
+/*
+ * codex composer-CwxGJF3C.js — the drop overlay has TWO mutually-exclusive
+ * states (not a stacked card):
+ *   • composer.dropOverlay.holdShift   = "Hold {key} to drop" ({key}=Shift
+ *     keycap) — while an image is dragged WITHOUT Shift held.
+ *   • composer.dropOverlay.dropToAttach = "Drop to attach" — when the drag can
+ *     be dropped to attach.
+ * HiCodex only tracks a single `dropActive` boolean (droppable) and has no
+ * drag-modifier state to drive the Shift-held variant, so it renders just the
+ * "Drop to attach" state. The self-made "Hold"/"to drop" fragment strings are
+ * removed; the holdShift {key} ICU is registered for parity but not shown until
+ * the drag-modifier data flow exists.
+ */
 function ComposerDropOverlay() {
+  const { formatMessage } = useHiCodexIntl();
   return (
     <div className="hc-composer-drop-overlay" aria-hidden="true">
       <div className="hc-composer-drop-card">
-        <span className="hc-composer-drop-hold">
-          Hold
-          <span className="hc-composer-drop-key">Shift</span>
-          to drop
+        <span className="hc-composer-drop-action">
+          {formatMessage({ id: "composer.dropOverlay.dropToAttach", defaultMessage: "Drop to attach" })}
         </span>
-        <span className="hc-composer-drop-action">Drop to attach</span>
       </div>
     </div>
   );
@@ -1365,6 +1486,35 @@ function slashSearchText(value: string): string {
   return value.trimStart().replace(/^\/+/, "");
 }
 
+/*
+ * codex slash-command-item-Cubjf4gi.js — every slash row renders a real
+ * LeftIcon (icon-xs), not a text glyph built from the command's first letter.
+ * HiCodex has no per-command icon registry, so we map by category and fall
+ * back to a generic slash icon — replacing the old "/m" / "/r" pseudo-glyph.
+ */
+function slashCommandIcon(command: Pick<SlashCommand, "category">) {
+  switch (command.category) {
+    case "model":
+      return <Cpu size={16} />;
+    case "thread":
+      return <ListChecks size={16} />;
+    case "workspace":
+      return <GitBranch size={16} />;
+    case "tools":
+      return <Wrench size={16} />;
+    case "mcp":
+      return <Server size={16} />;
+    case "team":
+      return <Bot size={16} />;
+    case "settings":
+      return <SettingsIcon size={16} />;
+    case "debug":
+      return <Bug size={16} />;
+    default:
+      return <Slash size={16} />;
+  }
+}
+
 function attachIcon(actionId: AttachActionId) {
   switch (actionId) {
     case "filePath":
@@ -1414,42 +1564,48 @@ function mentionSearchError(error: unknown): string {
  * does not distinguish Live vs Custom agents, so they collapse into one
  * "Agents" section; the rest mirrors Codex.
  */
-const MENTION_SECTION_ORDER: ReadonlyArray<{ kind: NonNullable<ComposerMentionOption["kind"]>; title: string }> = [
-  { kind: "agent", title: "Agents" },
-  { kind: "skill", title: "Skills" },
-  { kind: "app", title: "Apps" },
-  { kind: "plugin", title: "Plugins" },
-  { kind: "file", title: "Files" },
+/*
+ * codex at-mention-list-GuqX2GsW.js — the @ list has no standalone "Apps"
+ * section: app results are grouped under "Plugins" (atMentionList.appPlugins).
+ * `composer.skillMentionList.app` ("App", singular) belongs to the $ skill
+ * list, not here. So HiCodex folds the `app` kind into the Plugins section and
+ * keeps the Codex `atMentionList.*` ids. Each section can match several kinds.
+ */
+const MENTION_SECTION_ORDER: ReadonlyArray<{ kinds: ReadonlyArray<NonNullable<ComposerMentionOption["kind"]>>; title: string; i18nId: string }> = [
+  { kinds: ["agent"], title: "Agents", i18nId: "composer.atMentionList.agents" },
+  { kinds: ["skill"], title: "Skills", i18nId: "composer.atMentionList.skills" },
+  { kinds: ["plugin", "app"], title: "Plugins", i18nId: "composer.atMentionList.plugins" },
+  { kinds: ["file"], title: "Files", i18nId: "composer.atMentionList.files" },
 ];
 
 interface MentionSection {
   kind: NonNullable<ComposerMentionOption["kind"]>;
   title: string;
+  i18nId: string;
   options: ComposerMentionOption[];
 }
 
+const MENTION_SECTION_KINDS: ReadonlySet<string> = new Set(
+  MENTION_SECTION_ORDER.flatMap((entry) => entry.kinds),
+);
+
 /* Reorder options so that section-grouped layout still drives a contiguous
  * flat array (keyboard nav uses `mentionPicker.activeIndex` against this list).
- * Within each kind, original score-based ordering is preserved. Options
+ * Within each section the original score-based ordering is preserved. Options
  * without a recognized kind are appended at the end, kept ungrouped. */
 function groupedMentionOptions(options: ComposerMentionOption[]): ComposerMentionOption[] {
   if (options.length === 0) return options;
-  const buckets = new Map<string, ComposerMentionOption[]>();
   const ungrouped: ComposerMentionOption[] = [];
+  const recognized: ComposerMentionOption[] = [];
   for (const option of options) {
-    const kind = option.kind;
-    if (kind && MENTION_SECTION_ORDER.some((entry) => entry.kind === kind)) {
-      const bucket = buckets.get(kind);
-      if (bucket) bucket.push(option);
-      else buckets.set(kind, [option]);
-    } else {
-      ungrouped.push(option);
-    }
+    if (option.kind && MENTION_SECTION_KINDS.has(option.kind)) recognized.push(option);
+    else ungrouped.push(option);
   }
   const ordered: ComposerMentionOption[] = [];
   for (const entry of MENTION_SECTION_ORDER) {
-    const bucket = buckets.get(entry.kind);
-    if (bucket) ordered.push(...bucket);
+    for (const option of recognized) {
+      if (option.kind && entry.kinds.includes(option.kind)) ordered.push(option);
+    }
   }
   ordered.push(...ungrouped);
   return ordered;
@@ -1459,9 +1615,9 @@ function mentionSectionsFromOptions(options: ComposerMentionOption[]): MentionSe
   if (options.length === 0) return [];
   const sections: MentionSection[] = [];
   for (const entry of MENTION_SECTION_ORDER) {
-    const filtered = options.filter((option) => option.kind === entry.kind);
+    const filtered = options.filter((option) => option.kind != null && entry.kinds.includes(option.kind));
     if (filtered.length > 0) {
-      sections.push({ kind: entry.kind, title: entry.title, options: filtered });
+      sections.push({ kind: entry.kinds[0]!, title: entry.title, i18nId: entry.i18nId, options: filtered });
     }
   }
   return sections;

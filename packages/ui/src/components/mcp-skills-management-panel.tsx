@@ -28,6 +28,7 @@ import {
   managementPanelSummary,
   type ManagementPanelKind,
 } from "../state/mcp-skills-management";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface McpSkillsManagementPanelProps {
   kind: ManagementPanelKind;
@@ -44,8 +45,14 @@ export function McpSkillsManagementPanel({
   onSelectEntry,
   onSelectAction,
 }: McpSkillsManagementPanelProps) {
+  const { formatMessage } = useHiCodexIntl();
   if (!panelState) {
-    return <div className="hc-settings-empty">Select a settings section.</div>;
+    // HiCodex-only fallback (no Codex equivalent): no settings section is selected yet.
+    return (
+      <div className="hc-settings-empty">
+        {formatMessage({ id: "hc.management.selectSection", defaultMessage: "Select a settings section." })}
+      </div>
+    );
   }
 
   const summary = managementPanelSummary(kind, panelState.entries);
@@ -76,7 +83,11 @@ export function McpSkillsManagementPanel({
             disabled={panelState.status === "loading"}
           >
             {panelState.status === "loading" ? <Loader2 className="hc-spin" size={13} /> : <RefreshCw size={13} />}
-            <span>Reload</span>
+            {/* CODEX-REF: Codex uses "Refresh" for every settings refresh action
+              * (skills.page.refreshSkills = "Refresh", ZH 刷新). Match the
+              * settings header's sibling "Refresh" button (model-settings-panel)
+              * instead of the prior "Reload" wording. */}
+            <span>{formatMessage({ id: "skills.page.refreshSkills", defaultMessage: "Refresh" })}</span>
           </button>
         )}
       </div>
@@ -108,7 +119,15 @@ export function McpSkillsManagementPanel({
       ) : (
         panelState.status !== "loading" && !panelState.message && (
           <div className="hc-settings-empty">
-            {kind === "mcp" ? "No MCP servers." : kind === "plugins" ? "No plugins." : "No skills."}
+            {/* Codex empty states:
+              *   mcp     -> settings.mcp.empty           = "No MCP servers connected" (ZH 未连接 MCP 服务器)
+              *   plugins -> skills.appsPage.empty.plugins = "No plugins found"        (ZH 未找到插件)
+              *   skills  -> skills.page.empty            = "No skills found"          (ZH 找不到技能) */}
+            {kind === "mcp"
+              ? formatMessage({ id: "settings.mcp.empty", defaultMessage: "No MCP servers connected" })
+              : kind === "plugins"
+                ? formatMessage({ id: "skills.appsPage.empty.plugins", defaultMessage: "No plugins found" })
+                : formatMessage({ id: "skills.page.empty", defaultMessage: "No skills found" })}
           </div>
         )
       )}

@@ -20,16 +20,18 @@ function rendersReadOnlyQuotaBanner(): void {
   const html = renderToStaticMarkup(createElement(ComposerQuotaBanner, {
     banner: {
       id: "rate-limit-window:core:default",
-      title: "Codex usage limit reached",
+      // codex: aligns to `codex.upsellBanner.general.title` = "You’re out of Codex messages"
+      title: "You’re out of Codex messages",
       detail: "5h limit is fully used.",
       tone: "danger",
     },
     onViewStatus: () => undefined,
   }));
 
-  assertIncludes(html, "Codex usage limit reached", "composer quota banner should show the quota title");
+  assertIncludes(html, "You’re out of Codex messages", "composer quota banner should show the quota title");
   assertIncludes(html, "5h limit is fully used.", "composer quota banner should show quota detail");
-  assertIncludes(html, "View status", "composer quota banner should use the existing status panel action");
+  // codex: CTA aligns to `codex.upsellBanner.cta.viewUsage` = "View Usage"
+  assertIncludes(html, "View Usage", "composer quota banner should use the upstream upsell CTA label");
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

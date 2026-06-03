@@ -14,7 +14,7 @@ function assert(value: unknown, message: string): void {
 
 export default function runMcpFollowUpDialogTests(): void {
   rendersDesktopConfirmationPrompt();
-  rendersSourceThreadServerAndTool();
+  omitsSourceThreadServerAndTool();
   disablesSendForEmptyPrompts();
   defaultsToCurrentThreadTarget();
   selectsNewThreadAndSideChatTargets();
@@ -32,7 +32,9 @@ function rendersDesktopConfirmationPrompt(): void {
     onSend: () => {},
   }));
 
-  assert(html.includes("Send follow-up from figma?"), "follow-up dialog should render source-aware title");
+  // codex: confirmFollowUp.title is the static "Send follow-up?" (no {server} interpolation).
+  assert(html.includes("Send follow-up?"), "follow-up dialog should render the static Codex title");
+  assert(!html.includes("Send follow-up from figma?"), "follow-up dialog should not interpolate the server into the title");
   assert(
     html.includes("An app wants to send this prompt"),
     "follow-up dialog should explain the app-requested prompt",
@@ -41,7 +43,9 @@ function rendersDesktopConfirmationPrompt(): void {
   assert(!submitButton(html)?.includes("disabled=\"\""), "follow-up dialog should allow sending a non-empty prompt");
 }
 
-function rendersSourceThreadServerAndTool(): void {
+// codex: Codex's confirmFollowUp dialog does not render a thread/server/tool source-summary row;
+// HiCodex now matches that (the row was removed during alignment).
+function omitsSourceThreadServerAndTool(): void {
   const html = renderToStaticMarkup(createElement(McpFollowUpDialog, {
     request: {
       prompt: "Review the latest output",
@@ -51,9 +55,9 @@ function rendersSourceThreadServerAndTool(): void {
     onSend: () => {},
   }));
 
-  assert(html.includes("Thread thread-123"), "follow-up dialog should show source thread");
-  assert(html.includes("Server figma"), "follow-up dialog should show source server");
-  assert(html.includes("Tool inspect"), "follow-up dialog should show source tool");
+  assert(!html.includes("Thread thread-123"), "follow-up dialog should not show a source thread summary");
+  assert(!html.includes("Server figma"), "follow-up dialog should not show a source server summary");
+  assert(!html.includes("Tool inspect"), "follow-up dialog should not show a source tool summary");
 }
 
 function disablesSendForEmptyPrompts(): void {
@@ -94,8 +98,10 @@ function disablesLocalAndWorktreeTargets(): void {
   assert(checkedRadioValue(html) === "current-thread", "disabled worktree should fall back to the current thread target");
   assert(localInput?.includes("disabled=\"\""), "local follow-up target should be disabled");
   assert(worktreeInput?.includes("disabled=\"\""), "worktree follow-up target should be disabled");
-  assert(html.includes(MCP_FOLLOW_UP_LOCAL_DISABLED_REASON), "local disabled reason should be visible");
-  assert(html.includes(MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON), "worktree disabled reason should mention missing host createPendingWorktree");
+  // renderToStaticMarkup HTML-escapes the text (e.g. the apostrophe in the local reason),
+  // so compare against the escaped form to assert the same visible string.
+  assert(html.includes(escapeHtmlText(MCP_FOLLOW_UP_LOCAL_DISABLED_REASON)), "local disabled reason should be visible");
+  assert(html.includes(escapeHtmlText(MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON)), "worktree disabled reason should be visible");
   assert(
     normalizeMcpFollowUpOptions([{
       id: "worktree",
@@ -145,4 +151,15 @@ function radioInputs(html: string): string[] {
 
 function submitButton(html: string): string | null {
   return html.match(/<button\b[^>]*type="submit"[^>]*>/)?.[0] ?? null;
+}
+
+// Mirror React's renderToStaticMarkup text escaping so literal-string assertions
+// match the rendered markup (notably the apostrophe in the local disabled reason).
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 }

@@ -48,6 +48,8 @@ import {
 } from "./appearance";
 import {
   COMMAND_DESCRIPTORS,
+  commandDescriptorDescription,
+  commandDescriptorTitle,
   descriptorAcceleratorLabel,
 } from "./commands";
 import {
@@ -237,6 +239,13 @@ const SETTINGS_SECTION_I18N_IDS: Partial<Record<SettingsPanelId, string>> = {
   "local-environments": "settings.nav.local-environments",
   worktrees: "settings.nav.worktrees",
   "data-controls": "settings.nav.data-controls",
+  // HiCodex-only sections (no Codex nav id) — localized via hc.settings.nav.* keys.
+  models: "hc.settings.nav.models",
+  images: "hc.settings.nav.images",
+  permissions: "hc.settings.nav.permissions",
+  approvals: "hc.settings.nav.approvals",
+  apps: "hc.settings.nav.apps",
+  experimental: "hc.settings.nav.experimental",
 };
 
 const SETTINGS_GROUP_HEADING_I18N_IDS: Record<SettingsSectionGroup, string> = {
@@ -252,6 +261,33 @@ export function settingsSectionTitle(
 ): string {
   const id = SETTINGS_SECTION_I18N_IDS[section.id];
   return id && formatMessage ? formatMessage({ id, defaultMessage: section.title }) : section.title;
+}
+
+// HiCodex shows a one-line subtitle under each settings-nav title (Codex Desktop
+// shows none). Localize it the same way as the title; defaultMessage keeps the
+// existing English subtitle so en-US rendering is unchanged.
+const SETTINGS_SECTION_DESC_I18N_IDS: Partial<Record<SettingsPanelId, string>> = {
+  general: "hc.settings.desc.general",
+  models: "hc.settings.desc.models",
+  images: "hc.settings.desc.images",
+  mcp: "hc.settings.desc.mcp",
+  hooks: "hc.settings.desc.hooks",
+  skills: "hc.settings.desc.skills",
+  permissions: "hc.settings.desc.permissions",
+  approvals: "hc.settings.desc.approvals",
+  apps: "hc.settings.desc.apps",
+  "browser-use": "hc.settings.desc.browserUse",
+  "computer-use": "hc.settings.desc.computerUse",
+  worktrees: "hc.settings.desc.worktrees",
+  experimental: "hc.settings.desc.experimental",
+};
+
+export function settingsSectionDescription(
+  section: { id: SettingsPanelId; description: string },
+  formatMessage?: FormatMessage,
+): string {
+  const id = SETTINGS_SECTION_DESC_I18N_IDS[section.id];
+  return id && formatMessage ? formatMessage({ id, defaultMessage: section.description }) : section.description;
 }
 
 // Localize a settings-nav group heading ("App" / "Host").
@@ -549,10 +585,10 @@ export function keyboardShortcutsSettingsEntries(
     const hasOverride = override !== undefined;
     return {
       id: `keyboard-shortcut:${descriptor.id}`,
-      title: descriptor.title,
+      title: commandDescriptorTitle(descriptor),
       kind: "status",
       status: accelerator ?? "—",
-      meta: hasOverride ? "Custom" : (descriptor.description ?? undefined),
+      meta: hasOverride ? "Custom" : commandDescriptorDescription(descriptor),
       groupKey,
       groupLabel: groupLabel(groupKey),
     };

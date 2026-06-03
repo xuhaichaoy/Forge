@@ -3,6 +3,7 @@ import { ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AccumulatedThreadItem, ConversationRenderUnit } from "../state/render-groups";
 import { mcpAppResourceUri } from "../state/render-groups";
+import { formatMessage } from "../state/i18n";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import { WorkedForDivider } from "./worked-for-divider";
 
@@ -354,7 +355,16 @@ function turnCollapseLabel(split: TurnUnitSplit): string {
     return split.workedForUnit.summary.label;
   }
   const count = split.collapsibleAgentUnits.length;
-  return count === 1 ? "1 previous message" : `${count} previous messages`;
+  // CODEX-REF local-conversation-thread-CEeZyOcp.js :8901
+  //   id:`localConversation.previousMessagesSummary`,
+  //   defaultMessage:`{count, plural, one {# previous message} other {# previous messages}}`
+  return formatMessage(
+    {
+      id: "localConversation.previousMessagesSummary",
+      defaultMessage: "{count, plural, one {# previous message} other {# previous messages}}",
+    },
+    { count },
+  );
 }
 
 function labelForAria(label: string, count: number): string {

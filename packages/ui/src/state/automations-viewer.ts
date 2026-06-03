@@ -226,13 +226,19 @@ export function projectActiveThreadAutomation(
   // cron expressions) and returns null for missing input so we can omit the
   // field.
   const nextRunAtMs = parseIsoTimestampMs(match.nextRunAt);
-  // codex: humanize the rrule via rrule.toText()
+  // codex automation-schedule-*.js `dn`/`Ec` — humanize the rrule into Codex's
+  // structured label; null (cron / free-form / MONTHLY / YEARLY) lets the rail row
+  // render the localized "Custom schedule" fallback instead of the raw body.
   const rruleSummary = humanizeRrule(match.schedule);
+  // codex format-automation-next-run-label-*.js `Ao({status})` — the rail passes
+  // the automation status so the "Next run" tooltip renders "-" for PAUSED. Only
+  // ACTIVE rows reach here today, but the channel mirrors Codex's contract.
   return {
     id: match.id,
     name: match.title || "Automation",
     ...(rruleSummary ? { rruleSummary } : {}),
     ...(nextRunAtMs != null ? { nextRunAtMs } : {}),
+    ...(match.status ? { status: match.status } : {}),
   };
 }
 

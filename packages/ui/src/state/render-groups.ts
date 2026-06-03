@@ -9,6 +9,7 @@ export {
   commandOutputText,
   commandText,
   formatCount,
+  humanReadableToolLabel,
   isItemInProgress,
   isThreadStatusInProgress,
   itemText,

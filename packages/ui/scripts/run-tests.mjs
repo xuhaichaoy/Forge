@@ -36,6 +36,14 @@ if (testFiles.length === 0) {
   throw new Error("No UI test files were emitted.");
 }
 
+// i18n's active locale is a process-level singleton (state/i18n.ts). Any test that mounts
+// <I18nProvider locale="…"> flips it via setActiveI18nLocale and never restores it. Because
+// every test file runs in this one process in filename order, a zh-CN render in an earlier
+// file (e.g. conversation-view) leaks into later files (e.g. right-rail) whose state code reads
+// the module-level formatMessage and asserts English. Reset to the default after each runner so
+// files start from a clean en-US baseline. Tests that assert zh-CN set it inside their own run().
+const i18nRuntime = requireFromTests(join(outDir, "packages/ui/src/state/i18n.js"));
+
 let count = 0;
 for (const file of testFiles) {
   const modulePath = join(testDir, file);
@@ -54,6 +62,7 @@ for (const file of testFiles) {
 
   for (const [name, run] of runners) {
     await run();
+    i18nRuntime.setActiveI18nLocale(i18nRuntime.HICODEX_DEFAULT_LOCALE);
     count += 1;
     console.log(`ok ${file} ${name}`);
   }
