@@ -658,7 +658,13 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
       todoListItem = item;
       continue;
     }
-    if (type === "proposed-plan") {
+    // The protocol's standalone plan item is wire type `plan` (v2 ThreadItem
+    // `{ type: "plan", id, text }`); `proposed-plan` is the legacy/local fixture
+    // alias. Both render through PlanSummaryCard (thread-item-view.tsx:57/70,
+    // buildUnits:252) — route both into the dedicated plan slot here too, or a
+    // real `plan` item falls through to the generic agent bucket and never
+    // shows as a plan card in the desktop layout.
+    if (type === "proposed-plan" || type === "plan") {
       proposedPlanItem = item;
       continue;
     }

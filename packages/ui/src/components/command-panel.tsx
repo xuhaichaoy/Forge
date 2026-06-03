@@ -156,7 +156,7 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
 
         {panel.entries.length > 0 && visibleEntries.length === 0 && (
           <div className="hc-command-panel-message" data-status="empty">
-            <span>{panel.panel === "files" ? formatMessage({ id: "thread.fileTreePanel.noMatchingFiles", defaultMessage: "No matching files." }) : formatMessage({ id: "codex.commandMenu.noResults", defaultMessage: "No matching commands or chats." })}</span>
+            <span>{panel.panel === "files" ? formatMessage({ id: "thread.fileTreePanel.noMatchingFiles", defaultMessage: "No matching files" }) : formatMessage({ id: "codex.commandMenu.noResults", defaultMessage: "No matches" })}</span>
           </div>
         )}
 
@@ -189,7 +189,7 @@ function CommandPanelChatCreateEmptyState({ onCreate }: { onCreate?: () => void 
           onCreate?.();
         }}
       >
-        Create chat
+        {formatMessage({ id: "codex.commandMenu.createChat", defaultMessage: "Create chat" })}
       </button>
     </div>
   );
@@ -261,9 +261,6 @@ export function CommandPanelEntryList({
           {section.groupKey !== "other" && (
             <div className="hc-command-panel-section-title" role="presentation">
               <span>{section.title}</span>
-              <span className="hc-command-panel-section-count" aria-hidden="true">
-                {section.entries.length}
-              </span>
             </div>
           )}
           <CommandPanelGroupedEntries

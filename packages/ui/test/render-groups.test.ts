@@ -23,6 +23,7 @@ export default function runRenderGroupsTests(): void {
   suppressesDesktopThinkingPlaceholderWhileToolsRun();
   attachesParentThreadChipToFirstUserMessageLikeDesktop();
   treatsRunningCommentaryTailAsAssistantItemLikeCodexDesktop();
+  routesProtocolPlanItemIntoTheDesktopPlanSlot();
   groupsReasoningSummaryAndContentIntoToolActivity();
   marksIncompleteReasoningAsThinkingLikeCodexDesktop();
   showsThinkingPlaceholderWhileReasoningStreams();
@@ -721,6 +722,41 @@ function treatsRunningCommentaryTailAsAssistantItemLikeCodexDesktop(): void {
       "assistant:assistant-commentary-1",
     ],
     "assistant commentary with visible output should suppress the separate Thinking placeholder",
+  );
+}
+
+function routesProtocolPlanItemIntoTheDesktopPlanSlot(): void {
+  // The wire protocol's standalone plan is `type: "plan"` ({ id, text }), while
+  // "proposed-plan" is only the legacy/local alias. splitTurnItems must route
+  // the real `plan` type into the dedicated plan slot — otherwise it falls
+  // through to isDesktopAgentRenderableItem (which excludes "plan") and is
+  // silently dropped, so the plan never renders even though the
+  // "Implement this plan?" affordance is derived from it.
+  const userMessage = {
+    type: "userMessage",
+    id: "user-1",
+    content: [{ type: "inputText", text: "Plan it" }],
+    _turnId: "turn-1",
+  } as ThreadItem;
+  const planItem = {
+    type: "plan",
+    id: "plan-1",
+    text: "1. Inspect the prototype\n2. Write the review",
+    completed: true,
+    _turnId: "turn-1",
+    _turnStatus: "completed",
+  } as ThreadItem;
+
+  const split = splitTurnItems([userMessage, planItem], "completed");
+  assertEqual(
+    split.proposedPlanItem?.id ?? null,
+    "plan-1",
+    "a protocol `plan` item should fill the desktop plan slot so it renders as a plan card",
+  );
+  assertEqual(
+    split.agentItems.some((item) => item.id === "plan-1"),
+    false,
+    "the plan item must not leak into (or be dropped by) the generic agent activity bucket",
   );
 }
 
@@ -1476,6 +1512,12 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
       isCompleted: false,
       planContent: "Implement renderer parity",
     } as unknown as ThreadItem,
+    {
+      type: "planImplementation",
+      id: "plan-implementation-camel-1",
+      isCompleted: false,
+      planContent: "Implement renderer parity from live protocol casing",
+    } as unknown as ThreadItem,
   ]);
 
   assertEqual(projection.units.length, 5, "renderable Desktop event items should stay visible");
@@ -1520,6 +1562,11 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
     projection.units.some((unit) => unit.key === "plan-implementation-1"),
     false,
     "Desktop returns null for plan-implementation thread items",
+  );
+  assertEqual(
+    projection.units.some((unit) => unit.key === "plan-implementation-camel-1"),
+    false,
+    "live planImplementation casing should normalize to Desktop's skipped plan-implementation item",
   );
 }
 
@@ -3332,7 +3379,7 @@ function groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop(): void {
   const activity = projection.units[0];
   assertEqual(activity?.kind, "toolActivity", "approved auto-review should join the command activity group");
   if (activity?.kind === "toolActivity") {
-    assertEqual(activity.summary.label, "Approved 1 request, ran 1 command", "auto-review count should use Desktop activity summary wording");
+    assertEqual(activity.summary.label, "Approved request, ran 1 command", "auto-review count should use Desktop activity summary wording");
     assertIncludes(activity.summary.details, "Approved request", "approved auto-review detail should stay visible");
     assertDeepEqual(
       activity.items.map((item) => item.id),

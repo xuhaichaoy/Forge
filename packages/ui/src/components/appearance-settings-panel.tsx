@@ -6,14 +6,12 @@ import {
   CODE_FONT_SIZE_STEP,
   REDUCED_MOTION_MODES,
   clampCodeFontSize,
-  reducedMotionDescription,
   reducedMotionLabel,
   type ReducedMotionMode,
   type UiAppearancePreferences,
 } from "../state/appearance";
 import {
-  UI_THEME_MODES,
-  themeModeDescription,
+  APPEARANCE_THEME_MODE_ORDER,
   themeModeLabel,
   type UiThemeMode,
   type UiThemeSnapshot,
@@ -63,15 +61,23 @@ export function AppearanceSettingsPanel({
       {/*
         * CODEX-REF: appearance-settings-*.js §1 — Theme row.
         * Codex i18n: settings.general.appearance.theme.{light,dark,system}.
+        * Description is the static settings.general.appearance.theme.description
+        * (Codex shows one fixed sentence, not a mode-dependent prose). Segmented
+        * options follow Codex order Light | Dark | System
+        * (APPEARANCE_THEME_MODE_ORDER), with System last.
         */}
       <AppearanceRow
         title={formatMessage({ id: "settings.general.appearance.theme", defaultMessage: "Theme" })}
-        description={themeModeDescription(uiTheme.mode, uiTheme.resolved)}
+        description={formatMessage({
+          id: "settings.general.appearance.theme.description",
+          defaultMessage: "Use light, dark, or match your system",
+        })}
       >
         <SegmentedToggle
-          options={UI_THEME_MODES.map((mode) => ({
+          options={APPEARANCE_THEME_MODE_ORDER.map((mode) => ({
             value: mode,
             label: themeModeLabel(mode),
+            ariaLabel: themeModeLabel(mode),
           }))}
           value={uiTheme.mode}
           onChange={(value) => onSetUiTheme(value as UiThemeMode)}
@@ -97,6 +103,7 @@ export function AppearanceSettingsPanel({
           options={HICODEX_SUPPORTED_LOCALES.map((locale) => ({
             value: locale,
             label: localeNativeLabel(locale),
+            ariaLabel: localeNativeLabel(locale),
           }))}
           value={uiLocale}
           onChange={(value) => onSetUiLocale(value as HiCodexLocale)}
@@ -126,19 +133,25 @@ export function AppearanceSettingsPanel({
       {/*
         * CODEX-REF: appearance-settings-*.js §8 — Reduce motion.
         * 3-way segmented toggle: System / On / Off (Codex i18n ids
-        * settings.general.appearance.reducedMotion.{system,on,off}).
+        * settings.general.appearance.reducedMotion.{system,on,off}). Description
+        * is the static settings.general.appearance.reducedMotion.description
+        * (Codex shows one fixed sentence, not a mode-dependent prose).
         */}
       <AppearanceRow
         title={formatMessage({
           id: "settings.general.appearance.reducedMotion.label",
           defaultMessage: "Reduce motion",
         })}
-        description={reducedMotionDescription(uiAppearance.reducedMotion)}
+        description={formatMessage({
+          id: "settings.general.appearance.reducedMotion.description",
+          defaultMessage: "Reduce animations or match your system",
+        })}
       >
         <SegmentedToggle
           options={REDUCED_MOTION_MODES.map((mode) => ({
             value: mode,
             label: reducedMotionLabel(mode),
+            ariaLabel: reducedMotionLabel(mode),
           }))}
           value={uiAppearance.reducedMotion}
           onChange={(value) => onSetReducedMotion(value as ReducedMotionMode)}
@@ -182,7 +195,11 @@ function SegmentedToggle({
   onChange,
   ariaLabel,
 }: {
-  options: ReadonlyArray<{ value: string; label: string }>;
+  // CODEX-REF: general-settings-*.js segmented options carry a per-option
+  // ariaLabel (`{id,label,ariaLabel}`); thread it through to each radio so the
+  // accessible name matches Codex's localized option label, not just the
+  // visible text.
+  options: ReadonlyArray<{ value: string; label: string; ariaLabel?: string }>;
   value: string;
   onChange: (next: string) => void;
   ariaLabel: string;
@@ -197,6 +214,7 @@ function SegmentedToggle({
             type="button"
             role="radio"
             aria-checked={selected}
+            aria-label={option.ariaLabel ?? option.label}
             className="hc-segmented-toggle-option"
             data-selected={selected}
             onClick={() => {

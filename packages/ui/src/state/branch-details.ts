@@ -1,4 +1,5 @@
 import type { Thread } from "@hicodex/codex-protocol";
+import { formatMessage } from "./i18n";
 
 export interface BranchDetailsViewModel {
   title: string;
@@ -135,10 +136,23 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   // shows Local as the second of its five canonical Git rows in every snapshot.
   const hasLocalContext = Boolean(thread?.cwd) || shouldShowThreadContext;
   if (hasLocalContext) {
+    // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Sf→Zc) — the Environment
+    // second row is the worktree/composer-mode trigger (composerMode defaults to
+    // `local`, triggerVariant `summary-panel`). Codex labels it with the SHORT
+    // execution-mode name `composer.mode.local.short` ("Local") and a chevron —
+    // there is NO "Work locally" subtitle here ("Work locally" lives only on the
+    // composer's full `composer.mode.workLocally` description line, not this rail
+    // row). HiCodex previously invented `value: "Work locally"`; the row now
+    // carries only the short mode label so the rendered trigger matches Codex's
+    // "Local + chevron" trigger. (HiCodex has no worktree-handoff data flow, so
+    // the mode cannot switch to Cloud/Worktree yet; the static `local` label is
+    // the correct floor.)
     rows.push({
       id: "local",
-      label: "Local",
-      value: "Work locally",
+      // codex composer.mode.local.short — Codex labels the Environment second row
+      // with the SHORT execution-mode name "Local".
+      label: formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" }),
+      value: "",
     });
   }
 
@@ -152,15 +166,16 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   if (branch) {
     rows.push({
       id: "branch",
-      label: "Branch",
+      label: formatMessage({ id: "hc.branchDetails.row.branch", defaultMessage: "Branch" }),
       value: branch,
     });
   }
   if (hasCommitAction) {
+    const commitLabel = formatMessage({ id: "hc.branchDetails.row.commit", defaultMessage: "Commit" });
     rows.push({
       id: "commit",
-      label: "Commit",
-      value: "Commit",
+      label: commitLabel,
+      value: commitLabel,
     });
   }
   // codex: local-conversation-thread-*.js — Environment-section PR widget (row 4);
@@ -170,7 +185,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   if (pullRequest && pullRequest.number > 0) {
     rows.push({
       id: "pull-request",
-      label: "Pull request",
+      label: formatMessage({ id: "hc.branchDetails.row.pullRequest", defaultMessage: "Pull request" }),
       value: `${pullRequest.title} #${pullRequest.number}`,
       status: pullRequestStatusFromPr(pullRequest),
       actionUrl: pullRequest.url,
@@ -203,8 +218,11 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
      * `branchDetails` for historical reasons; the user-visible title is the
      * Desktop-aligned "Environment".
      */
-    title: "Environment",
-    emptyText: "Environment details will appear when the app server provides thread Git or diff data.",
+    title: formatMessage({ id: "codex.localConversation.environmentSummary.title", defaultMessage: "Environment" }),
+    emptyText: formatMessage({
+      id: "hc.branchDetails.emptyText",
+      defaultMessage: "Environment details will appear when the app server provides thread Git or diff data.",
+    }),
     rows,
     diff,
     gitStatus,
@@ -275,8 +293,11 @@ function projectDiff(input: BranchDetailsDiffInput | null): BranchDetailsDiff | 
   if (!hasDiff) return null;
 
   return {
-    title: "Diff",
-    summary: changedFileCount > 0 ? formatCount(changedFileCount, "changed file") : "Review changed files",
+    title: formatMessage({ id: "hc.branchDetails.diff.title", defaultMessage: "Diff" }),
+    summary: changedFileCount > 0
+      ? changedFilesSummary(changedFileCount)
+      // codex codex.unifiedDiff.reviewChangedFiles — empty-diff CTA copy.
+      : formatMessage({ id: "codex.unifiedDiff.reviewChangedFiles", defaultMessage: "Review changed files" }),
     changedFiles: changedFileCount,
     hasDiff,
     files,
@@ -376,6 +397,14 @@ function countDiffLines(diffText: string, marker: "+" | "-"): number | undefined
 // observed `ghStatus`. When no ghStatus payload is available yet the Desktop falls
 // back to "GitHub CLI unavailable" rather than skipping the row, which matches the
 // "happy path on a machine without `gh`".
+function githubCliUnavailableLabel(): string {
+  // codex codex.localConversation.gitSummary.githubCliUnavailable.
+  return formatMessage({
+    id: "codex.localConversation.gitSummary.githubCliUnavailable",
+    defaultMessage: "GitHub CLI unavailable",
+  });
+}
+
 function projectGithubStatus(input: BranchDetailsGitStatusInput | null): BranchDetailsGithubStatus {
   const record = objectRecord(input);
   const githubRecord = record
@@ -386,32 +415,67 @@ function projectGithubStatus(input: BranchDetailsGitStatusInput | null): BranchD
       )
     : null;
   if (!githubRecord) {
-    return { label: "GitHub CLI unavailable", status: "unavailable" };
+    return { label: githubCliUnavailableLabel(), status: "unavailable" };
   }
 
   if (githubRecord.isInstalled === false) {
-    return { label: "GitHub CLI unavailable", status: "unavailable" };
+    return { label: githubCliUnavailableLabel(), status: "unavailable" };
   }
   if (githubRecord.isAuthenticated === false) {
-    return { label: "GitHub CLI not authenticated", status: "signed out" };
+    return {
+      // codex codex.localConversation.gitSummary.githubCliSignedOut.
+      label: formatMessage({
+        id: "codex.localConversation.gitSummary.githubCliSignedOut",
+        defaultMessage: "GitHub CLI not authenticated",
+      }),
+      status: "signed out",
+    };
   }
   if (githubRecord.isLoading === true || githubRecord.isPending === true || githubRecord.status === "loading") {
-    return { label: "Checking pull request", status: "loading" };
+    return {
+      // codex codex.localConversation.gitSummary.checkingPullRequest.
+      label: formatMessage({
+        id: "codex.localConversation.gitSummary.checkingPullRequest",
+        defaultMessage: "Checking pull request",
+      }),
+      status: "loading",
+    };
   }
   if (githubRecord.isError === true || githubRecord.status === "error") {
-    return { label: "Pull request status unavailable", status: "unavailable" };
+    return {
+      // codex codex.localConversation.gitSummary.pullRequestUnavailable.
+      label: formatMessage({
+        id: "codex.localConversation.gitSummary.pullRequestUnavailable",
+        defaultMessage: "Pull request status unavailable",
+      }),
+      status: "unavailable",
+    };
   }
   const pullRequestNumber = firstDefined(
     numberField(githubRecord, "number"),
     numberField(objectRecord(githubRecord.pullRequestStatus), "number"),
   );
   if (pullRequestNumber !== undefined) {
-    return { label: `PR #${pullRequestNumber}`, status: "available" };
+    return {
+      // codex codex.localConversation.gitSummary.pullRequestTabTitle — "PR #{number}".
+      label: formatMessage(
+        { id: "codex.localConversation.gitSummary.pullRequestTabTitle", defaultMessage: "PR #{number}" },
+        { number: pullRequestNumber },
+      ),
+      status: "available",
+    };
   }
   if (githubRecord.isInstalled === true && githubRecord.isAuthenticated === true) {
-    return { label: "Create pull request", status: "available" };
+    return {
+      // codex codex.localConversation.gitSummary.createPullRequest.
+      label: formatMessage({
+        id: "codex.localConversation.gitSummary.createPullRequest",
+        defaultMessage: "Create pull request",
+      }),
+      status: "available",
+    };
   }
-  return { label: "GitHub CLI unavailable", status: "unavailable" };
+  return { label: githubCliUnavailableLabel(), status: "unavailable" };
 }
 
 function dedupeFiles(files: BranchDetailsDiffFileInput[]): BranchDetailsDiffFile[] {
@@ -503,6 +567,16 @@ function countDiffFiles(diff: string): number {
   return files.size;
 }
 
-function formatCount(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+function changedFilesSummary(count: number): string {
+  // HiCodex's "N changed file(s)" diff summary phrasing has no exact Codex i18n
+  // entry (Codex's `codex.unifiedDiff.filesChanged` reads "# files changed"); keep
+  // the HiCodex wording as a self-hosted ICU plural so the en-US summary is byte
+  // identical and zh gets a localized form.
+  return formatMessage(
+    {
+      id: "hc.branchDetails.diff.changedFiles",
+      defaultMessage: "{count, plural, one {# changed file} other {# changed files}}",
+    },
+    { count },
+  );
 }

@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
+import { useHiCodexIntl } from "./i18n-provider";
 
 /*
  * Codex Desktop image-preview lightbox (local-conversation-thread-*.js). Two
@@ -65,6 +66,7 @@ export function ImagePreviewLightbox({
   onPreviousImage,
   onNextImage,
 }: ImagePreviewLightboxProps) {
+  const { formatMessage } = useHiCodexIntl();
   const isControlled = onClose != null;
   const [openInternal, setOpenInternal] = useState(false);
   const [naturalSize, setNaturalSize] = useState<ImagePreviewSize | null>(null);
@@ -249,6 +251,7 @@ export function ImagePreviewLightbox({
    * gets re-rooted under `hc-thread-scroll-body`'s transform.
    */
   const modal = open ? renderModalLayer({
+    formatMessage,
     src,
     downloadSrc: downloadSrc ?? src,
     alt,
@@ -320,9 +323,9 @@ export function ImagePreviewLightbox({
   return (
     <figure className={frameClassName ?? ""}>
       <button
-        aria-label="Open image preview"
+        aria-label={formatMessage({ id: "codex.stories.imagePreviewDialog.open", defaultMessage: "Open image preview" })}
         className="hc-preview-lightbox-trigger"
-        title="Open image preview"
+        title={formatMessage({ id: "codex.stories.imagePreviewDialog.open", defaultMessage: "Open image preview" })}
         type="button"
         onClick={() => setOpenInternal(true)}
       >
@@ -338,6 +341,7 @@ export function ImagePreviewLightbox({
 }
 
 function renderModalLayer({
+  formatMessage,
   src,
   downloadSrc,
   alt,
@@ -361,6 +365,7 @@ function renderModalLayer({
   onPreviousImage,
   onNextImage,
 }: {
+  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"];
   src: string;
   downloadSrc: string;
   alt: string;
@@ -385,7 +390,14 @@ function renderModalLayer({
   onNextImage?: () => void;
 }) {
   const downloadName = imageDownloadName(alt, downloadSrc);
-  const previewLabel = title || alt || "Image preview";
+  const previewLabel = title || alt
+    || formatMessage({ id: "imagePreviewDialog.label", defaultMessage: "Image preview" });
+  const downloadLabel = formatMessage({ id: "imagePreviewDialog.download", defaultMessage: "Download image" });
+  const closeLabel = formatMessage({ id: "imagePreviewDialog.close", defaultMessage: "Close image preview" });
+  const previousImageLabel = formatMessage({ id: "imagePreviewDialog.previousImage", defaultMessage: "Previous image" });
+  const nextImageLabel = formatMessage({ id: "imagePreviewDialog.nextImage", defaultMessage: "Next image" });
+  const zoomOutLabel = formatMessage({ id: "imagePreviewDialog.zoomOut", defaultMessage: "Zoom out image" });
+  const zoomInLabel = formatMessage({ id: "imagePreviewDialog.zoomIn", defaultMessage: "Zoom in image" });
   const hasImageNav = onPreviousImage != null || onNextImage != null;
   const minZoom = zoomLevels[0] ?? zoomPercent;
   const maxZoom = zoomLevels.at(-1) ?? zoomPercent;
@@ -411,20 +423,20 @@ function renderModalLayer({
       >
         <div className="hc-preview-lightbox-toolbar">
           <a
-            aria-label="Download image"
+            aria-label={downloadLabel}
             className="hc-preview-lightbox-toolbar-button"
             download={downloadName}
             href={downloadSrc}
-            title="Download image"
+            title={downloadLabel}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => handleImageDownloadClick(event, downloadSrc, downloadName)}
           >
             <Download aria-hidden size={16} />
           </a>
           <button
-            aria-label="Close image preview"
+            aria-label={closeLabel}
             className="hc-preview-lightbox-toolbar-button"
-            title="Close image preview"
+            title={closeLabel}
             type="button"
             onClick={onClose}
           >
@@ -449,7 +461,7 @@ function renderModalLayer({
             <button
               type="button"
               className="hc-preview-lightbox-nav hc-preview-lightbox-nav--prev"
-              aria-label="Previous image"
+              aria-label={previousImageLabel}
               onClick={onPreviousImage}
             >
               {/* codex image-preview-dialog nav = icon-sm (18px) */}
@@ -469,7 +481,7 @@ function renderModalLayer({
             <button
               type="button"
               className="hc-preview-lightbox-nav hc-preview-lightbox-nav--next"
-              aria-label="Next image"
+              aria-label={nextImageLabel}
               onClick={onNextImage}
             >
               <ChevronRight aria-hidden size={18} />
@@ -479,7 +491,7 @@ function renderModalLayer({
         {showZoomControls && (
           <div className="hc-preview-lightbox-zoom-controls">
             <button
-              aria-label="Zoom out image"
+              aria-label={zoomOutLabel}
               disabled={zoomPercent <= minZoom}
               type="button"
               onClick={onZoomOut}
@@ -488,7 +500,7 @@ function renderModalLayer({
             </button>
             <span>{formatZoomPercent(zoomPercent)}</span>
             <button
-              aria-label="Zoom in image"
+              aria-label={zoomInLabel}
               disabled={zoomPercent >= maxZoom}
               type="button"
               onClick={onZoomIn}

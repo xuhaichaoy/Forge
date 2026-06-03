@@ -9,7 +9,7 @@ import {
   resolveHiCodexLocale,
   saveHiCodexLocale,
 } from "../src/state/i18n";
-import { settingsGroupHeadingTitle, settingsSectionTitle } from "../src/state/settings-panel-workflow";
+import { settingsGroupHeadingTitle, settingsSectionTitle, settingsSectionDescription } from "../src/state/settings-panel-workflow";
 import { composerPlaceholderText } from "../src/state/composer-workflow";
 
 export default function runI18nTests(): void {
@@ -181,7 +181,8 @@ function formatsDesktopPluralMessages(): void {
 }
 
 // Settings-nav titles localize via the SETTINGS_SECTION_I18N_IDS map + helper;
-// HiCodex-only sections (no Codex id) and the no-formatMessage path stay English.
+// HiCodex-only sections (models/images/…) are now localized via hc.settings.* keys,
+// and subtitles localize the same way; only the no-formatMessage path stays English.
 function formatsSettingsNavLabels(): void {
   const zh = createI18nBundle("zh-CN");
   const zhFormat = (descriptor: Parameters<typeof formatI18nMessage>[1], values?: Parameters<typeof formatI18nMessage>[2]) =>
@@ -190,10 +191,13 @@ function formatsSettingsNavLabels(): void {
   assertEqual(settingsSectionTitle({ id: "appearance", title: "Appearance" }, zhFormat), "外观", "settings nav appearance zh");
   assertEqual(settingsSectionTitle({ id: "mcp", title: "MCP servers" }, zhFormat), "MCP 服务器", "settings nav mcp zh (mcp-settings id)");
   assertEqual(settingsSectionTitle({ id: "data-controls", title: "Archived chats" }, zhFormat), "已归档对话", "settings nav data-controls zh");
-  assertEqual(settingsSectionTitle({ id: "models", title: "Models" }, zhFormat), "Models", "HiCodex-only section stays English even in zh");
+  assertEqual(settingsSectionTitle({ id: "models", title: "Models" }, zhFormat), "模型", "HiCodex-only section (models) now localized in zh");
   assertEqual(settingsSectionTitle({ id: "appearance", title: "Appearance" }), "Appearance", "no formatMessage → English");
   assertEqual(settingsGroupHeadingTitle("app", "App", zhFormat), "应用", "settings nav group heading app zh");
   assertEqual(settingsGroupHeadingTitle("host", "Host", zhFormat), "主机", "settings nav group heading host zh");
+  assertEqual(settingsSectionDescription({ id: "general", description: "Runtime and workspace" }, zhFormat), "运行时与工作区", "settings nav general subtitle zh");
+  assertEqual(settingsSectionDescription({ id: "models", description: "Provider and model profile" }, zhFormat), "提供方与模型档案", "settings nav models subtitle zh");
+  assertEqual(settingsSectionDescription({ id: "models", description: "Provider and model profile" }), "Provider and model profile", "no formatMessage → English subtitle");
 
   // Composer placeholder — each branch resolves to the right Codex id + zh copy.
   assertEqual(

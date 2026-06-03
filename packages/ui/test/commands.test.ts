@@ -8,7 +8,7 @@ export default function runCommandDescriptorTests(): void {
 function exposesOpenFolderCommandWithDesktopAccelerator(): void {
   const descriptor = COMMAND_DESCRIPTORS.find((entry) => entry.id === COMMAND_IDS.openFolder);
   if (!descriptor) throw new Error("openFolder command descriptor should exist");
-  assertEqual(descriptor.title, "Open folder", "openFolder title should match Desktop command default");
+  assertEqual(descriptor.title, "Open Folder…", "openFolder title should match Desktop native menu title");
   assertEqual(descriptor.description, "Add a local project to Codex", "openFolder description should match Desktop default");
   assertEqual(descriptor.group, "workspace", "openFolder should be a workspace command");
   assertEqual(descriptor.commandMenuGroupKey, "workspace", "openFolder command menu group should be workspace");

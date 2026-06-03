@@ -1526,16 +1526,34 @@
   gap: 6px;
 }
 
+/*
+ * codex slash-command-item-Cubjf4gi.js — leftIcon is a real icon (icon-xs,
+ * 16px), not a green text-glyph pill. Render the lucide icon in a plain,
+ * muted slot that lines up with the row's icon column.
+ */
 .hc-command-icon {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  color: #193b34;
-  background: #eef3ee;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  color: #5f625d;
+}
+
+.hc-command-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+/*
+ * codex slash-command-item-Cubjf4gi.js — optional right-slot secondary text
+ * (arg hint) is `shrink-0 opacity-80`, not an uppercase routing badge.
+ */
+.hc-composer-menu-row em.hc-command-args {
+  flex: 0 0 auto;
   font-size: 11px;
-  font-weight: 800;
+  text-transform: none;
+  opacity: 0.8;
 }
 
 .hc-send-button {

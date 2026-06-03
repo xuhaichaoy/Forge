@@ -1,4 +1,5 @@
 import { formatUnknown, stringField } from "../lib/format";
+import { formatMessage } from "./i18n";
 import type { PendingServerRequest } from "./codex-reducer";
 
 export interface PendingRequestDetail {
@@ -40,6 +41,9 @@ export interface PendingRequestMcpToolParamEntry {
 export const OPTION_PICKER_ACTION_QUESTION_ID = "__optionPicker.action";
 export const OPTION_PICKER_QUESTION_ID = "optionPickerSelection";
 export const SETUP_CONTEXT_ACTION_QUESTION_ID = "__setupCodexContextPicker.action";
+export const PLAN_IMPLEMENTATION_REQUEST_METHOD = "item/plan/requestImplementation";
+export const PLAN_IMPLEMENTATION_QUESTION_ID = "planImplementationDecision";
+export const PLAN_IMPLEMENTATION_ACCEPT_VALUE = "implement";
 
 export interface PendingRequestOptionPicker {
   questionId: string;
@@ -83,6 +87,30 @@ export interface PendingRequestOption {
 
 const APPROVAL_DECISION_QUESTION_ID = "approvalDecision";
 
+// Shared pending-request action labels. Codex-backed where an upstream id
+// exists (common.cancel / requestInputPanel.submit / requestInputPanel.dismiss);
+// "Allow" / "Unsupported" / "App tool request" are HiCodex panel labels with no
+// dedicated Codex id. Defined as functions so each resolves against the active
+// locale at render time (formatMessage reads the module-level i18n singleton).
+function allowLabel(): string {
+  return formatMessage({ id: "hc.pendingRequest.allow", defaultMessage: "Allow" });
+}
+function cancelLabel(): string {
+  return formatMessage({ id: "common.cancel", defaultMessage: "Cancel" });
+}
+function submitLabel(): string {
+  return formatMessage({ id: "requestInputPanel.submit", defaultMessage: "Submit" });
+}
+function dismissLabel(): string {
+  return formatMessage({ id: "requestInputPanel.dismiss", defaultMessage: "Dismiss" });
+}
+function unsupportedLabel(): string {
+  return formatMessage({ id: "hc.pendingRequest.unsupported", defaultMessage: "Unsupported" });
+}
+function appToolRequestLabel(): string {
+  return formatMessage({ id: "hc.pendingRequest.appToolRequest.title", defaultMessage: "App tool request" });
+}
+
 export function pendingRequestDetail(request: PendingServerRequest): PendingRequestDetail {
   const params = request.params as Record<string, unknown> | undefined;
   switch (request.method) {
@@ -95,12 +123,15 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         body: commandApprovalBody(params),
         metadata: commandApprovalMetadata(params),
         questions,
-        acceptLabel: "Allow",
-        declineLabel: "Cancel",
+        acceptLabel: allowLabel(),
+        declineLabel: cancelLabel(),
         canAccept: questions.some((question) => question.options.length > 0),
         acceptDisabledReason: questions.some((question) => question.options.length > 0)
           ? undefined
-          : "No approvable command decision was provided.",
+          : formatMessage({
+              id: "hc.pendingRequest.command.noDecision",
+              defaultMessage: "No approvable command decision was provided.",
+            }),
       };
     }
     case "item/fileChange/requestApproval":
@@ -112,30 +143,55 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         return typeof path === "string" ? [path] : [];
       });
       return {
-        title: "Do you want to make these changes?",
+        title: formatMessage({
+          id: "patchApprovalRequest.prompt",
+          defaultMessage: "Do you want to make these changes?",
+        }),
         reason: stringField(params, "reason"),
         body: paths.length > 0 ? paths.join("\n") : formatUnknown(params),
         metadata: fileChangeApprovalMetadata(params),
         questions: fileChangeApprovalQuestions(params),
-        acceptLabel: "Allow",
-        declineLabel: "Cancel",
+        acceptLabel: allowLabel(),
+        declineLabel: cancelLabel(),
         canAccept: true,
       };
     }
     case "item/tool/requestUserInput": {
       const questions = requestUserInputQuestions(params);
+      /*
+       * CODEX-REF: pending-request-item-panel-*.js requestInputPanel.* —
+       * Codex 的用户输入面板没有固定标题 id（requestInputPanel 词根仅含
+       * submit/skip/dismiss/continue 等，无 title/header），面板标题直接取当前
+       * question 文本。故 title 留空，由 requestPanelTitle/panelTitle 回退到问题
+       * 文本（与 Codex 一致），避免无 question 时落出非 Codex 文案。
+       * declineLabel 用 requestInputPanel.dismiss=`Dismiss`（zh `忽略`），与
+       * plan-implementation 分支一致；按钮 tooltip 保留为 HiCodex 增强。
+       */
       return {
-        title: "Codex needs input",
+        title: "",
         body: questions.length > 0
           ? questions.map((question, index) => `${index + 1}. ${question.question}`).join("\n")
           : formatUnknown(params),
         metadata: requestMetadata(params, ["threadId", "turnId", "itemId"]),
         questions,
-        acceptLabel: "Submit",
-        declineLabel: "Stop",
+        acceptLabel: submitLabel(),
+        declineLabel: dismissLabel(),
         canAccept: true,
       };
     }
+    case PLAN_IMPLEMENTATION_REQUEST_METHOD:
+      return {
+        title: formatMessage({
+          id: "implementPlanRequest.prompt",
+          defaultMessage: "Implement this plan?",
+        }),
+        body: stringField(params, "planContent"),
+        metadata: requestMetadata(params, ["threadId", "turnId", "itemId"]),
+        questions: [planImplementationQuestion()],
+        acceptLabel: submitLabel(),
+        declineLabel: dismissLabel(),
+        canAccept: true,
+      };
     case "mcpServer/elicitation/request": {
       const mcpToolApproval = mcpToolApprovalDetail(params);
       const questions = [
@@ -149,7 +205,7 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         metadata: mcpElicitationMetadata(params),
         questions,
         acceptLabel: mcpElicitationAcceptLabel(params, questions),
-        declineLabel: "Cancel",
+        declineLabel: cancelLabel(),
         canAccept: true,
         externalUrl: externalUrl ?? undefined,
         mcpToolApproval: mcpToolApproval ?? undefined,
@@ -162,12 +218,15 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
         body: describePermissions(params?.permissions),
         metadata: requestMetadata(params, ["cwd", "threadId", "turnId", "itemId"]),
         questions: hasGrantablePermissions(params?.permissions) ? [permissionScopeQuestion()] : [],
-        acceptLabel: "Allow",
-        declineLabel: "Cancel",
+        acceptLabel: allowLabel(),
+        declineLabel: cancelLabel(),
         canAccept: hasGrantablePermissions(params?.permissions),
         acceptDisabledReason: hasGrantablePermissions(params?.permissions)
           ? undefined
-          : "No additional permission profile was provided.",
+          : formatMessage({
+              id: "hc.pendingRequest.permission.noProfile",
+              defaultMessage: "No additional permission profile was provided.",
+            }),
       };
     case "item/tool/requestOptionPicker": {
       const optionPicker = optionPickerRequestDetail(params, false);
@@ -185,25 +244,43 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
     }
     case "account/chatgptAuthTokens/refresh":
       return {
-        title: "ChatGPT auth refresh",
-        body: "HiCodex does not manage ChatGPT auth tokens for app-server refresh requests.",
+        title: formatMessage({
+          id: "hc.pendingRequest.chatgptAuthRefresh.title",
+          defaultMessage: "ChatGPT auth refresh",
+        }),
+        body: formatMessage({
+          id: "hc.pendingRequest.chatgptAuthRefresh.body",
+          defaultMessage: "HiCodex does not manage ChatGPT auth tokens for app-server refresh requests.",
+        }),
         metadata: requestMetadata(params, ["threadId", "turnId", "accountId"]),
         questions: [],
-        acceptLabel: "Unsupported",
-        declineLabel: "Cancel",
+        acceptLabel: unsupportedLabel(),
+        declineLabel: cancelLabel(),
         canAccept: false,
-        acceptDisabledReason: "Token refresh must be handled by a real ChatGPT auth provider.",
+        acceptDisabledReason: formatMessage({
+          id: "hc.pendingRequest.chatgptAuthRefresh.disabledReason",
+          defaultMessage: "Token refresh must be handled by a real ChatGPT auth provider.",
+        }),
       };
     default:
       return {
-        title: `Unsupported request: ${request.method}`,
+        title: formatMessage(
+          {
+            id: "hc.pendingRequest.unsupportedRequest.title",
+            defaultMessage: "Unsupported request: {method}",
+          },
+          { method: request.method },
+        ),
         body: formatUnknown(params),
         metadata: [],
         questions: [],
-        acceptLabel: "Unsupported",
-        declineLabel: "Cancel",
+        acceptLabel: unsupportedLabel(),
+        declineLabel: cancelLabel(),
         canAccept: false,
-        acceptDisabledReason: "Unknown app-server request type.",
+        acceptDisabledReason: formatMessage({
+          id: "hc.pendingRequest.unsupportedRequest.disabledReason",
+          defaultMessage: "Unknown app-server request type.",
+        }),
       };
   }
 }
@@ -234,6 +311,10 @@ export function buildApprovalResult(
       return { decision: accepted ? legacyApprovalDecisionFromAnswers(answers) : "denied" };
     case "item/tool/requestUserInput":
       return accepted ? { answers: buildUserInputAnswers(request, answers) } : null;
+    case PLAN_IMPLEMENTATION_REQUEST_METHOD:
+      return accepted
+        ? { action: planImplementationAction(answers), followUp: planImplementationFollowUp(answers) }
+        : null;
     case "mcpServer/elicitation/request":
       return {
         action: accepted ? "accept" : "decline",
@@ -284,6 +365,8 @@ export function buildStopPendingRequestResult(request: PendingServerRequest): un
       return buildApprovalResult(request, false);
     case "item/tool/requestUserInput":
       return { answers: {} };
+    case PLAN_IMPLEMENTATION_REQUEST_METHOD:
+      return null;
     case "item/permissions/requestApproval":
       return { permissions: {}, scope: "turn" };
     case "item/tool/requestOptionPicker":
@@ -303,12 +386,15 @@ function setupContextPickerRequestDetail(
 ): PendingRequestDetail | null {
   if (!setupContextPickerRequestModel(params, dynamicToolCall)) return null;
   return {
-    title: "Where can we pull context from?",
+    title: formatMessage({
+      id: "setupCodexContextPicker.title",
+      defaultMessage: "Where can we pull context from?",
+    }),
     body: "",
     metadata: requestMetadata(params, ["threadId", "turnId", "itemId", "callId"]),
     questions: [],
-    acceptLabel: "Continue",
-    declineLabel: "Skip",
+    acceptLabel: formatMessage({ id: "setupCodexContextPicker.continue", defaultMessage: "Continue" }),
+    declineLabel: formatMessage({ id: "setupCodexContextPicker.skip", defaultMessage: "Skip" }),
     canAccept: true,
     setupContextPicker: {
       canSelectSources: false,
@@ -358,15 +444,21 @@ function setupContextPickerRequestModel(params: unknown, dynamicToolCall: boolea
 
 function unsupportedToolCallDetail(params: unknown): PendingRequestDetail {
   return {
-    title: "App tool request",
-    reason: "Dynamic client-side tool execution is not implemented.",
+    title: appToolRequestLabel(),
+    reason: formatMessage({
+      id: "hc.pendingRequest.appTool.reason",
+      defaultMessage: "Dynamic client-side tool execution is not implemented.",
+    }),
     body: toolCallRequestBody(params),
     metadata: toolCallRequestMetadata(params),
     questions: [],
-    acceptLabel: "Unsupported",
-    declineLabel: "Cancel",
+    acceptLabel: unsupportedLabel(),
+    declineLabel: cancelLabel(),
     canAccept: false,
-    acceptDisabledReason: "HiCodex can show this app-server request but cannot execute dynamic app tools from the UI shell yet.",
+    acceptDisabledReason: formatMessage({
+      id: "hc.pendingRequest.appTool.disabledReason",
+      defaultMessage: "HiCodex can show this app-server request but cannot execute dynamic app tools from the UI shell yet.",
+    }),
   };
 }
 
@@ -461,8 +553,10 @@ function optionPickerRequestModel(
     question,
     options,
     allowMultiple: source.allowMultiple === true || source.allow_multiple === true,
-    submitLabel: stringField(source, "submitLabel") || stringField(source, "submit_label") || "Submit",
-    skipLabel: stringField(source, "skipLabel") || stringField(source, "skip_label") || "Skip",
+    submitLabel: stringField(source, "submitLabel") || stringField(source, "submit_label")
+      || formatMessage({ id: "optionPickerRequest.submit", defaultMessage: "Submit" }),
+    skipLabel: stringField(source, "skipLabel") || stringField(source, "skip_label")
+      || formatMessage({ id: "optionPickerRequest.skip", defaultMessage: "Skip" }),
   };
 }
 
@@ -500,13 +594,33 @@ function commandApprovalQuestions(params: unknown): PendingRequestQuestion[] {
 
 function fileChangeApprovalQuestions(_params: unknown): PendingRequestQuestion[] {
   // codex: prompt + menu labels align to upstream ICU defaults —
-  //   patchApprovalRequest.prompt              = "Do you want to make these changes?"
-  //   execApprovalRequest.menu.runOnce         = "Yes"
-  //   execApprovalRequest.menu.runAlways       = "Yes, and don’t ask again this session"
-  return [approvalDecisionQuestion("Do you want to make these changes?", [
-    { value: "accept", label: "Yes", description: "Approve this patch application." },
-    { value: "acceptForSession", label: "Yes, and don’t ask again this session", description: "Approve patch applications until app-server restarts." },
-  ])];
+  //   patchApprovalRequest.prompt               = "Do you want to make these changes?"
+  //   patchApprovalRequest.menu.allowOnce       = "Yes"
+  //   patchApprovalRequest.menu.allowForSession = "Yes, and don't ask again this session"
+  return [approvalDecisionQuestion(
+    formatMessage({ id: "patchApprovalRequest.prompt", defaultMessage: "Do you want to make these changes?" }),
+    [
+      {
+        value: "accept",
+        label: formatMessage({ id: "patchApprovalRequest.menu.allowOnce", defaultMessage: "Yes" }),
+        description: formatMessage({
+          id: "hc.pendingRequest.fileChange.acceptDescription",
+          defaultMessage: "Approve this patch application.",
+        }),
+      },
+      {
+        value: "acceptForSession",
+        label: formatMessage({
+          id: "patchApprovalRequest.menu.allowForSession",
+          defaultMessage: "Yes, and don't ask again this session",
+        }),
+        description: formatMessage({
+          id: "hc.pendingRequest.fileChange.acceptForSessionDescription",
+          defaultMessage: "Approve patch applications until app-server restarts.",
+        }),
+      },
+    ],
+  )];
 }
 
 function approvalDecisionQuestion(
@@ -515,7 +629,7 @@ function approvalDecisionQuestion(
 ): PendingRequestQuestion {
   return {
     id: APPROVAL_DECISION_QUESTION_ID,
-    header: "Approval",
+    header: formatMessage({ id: "hc.pendingRequest.approvalHeader", defaultMessage: "Approval" }),
     question,
     kind: "singleSelect",
     isSecret: false,
@@ -523,6 +637,35 @@ function approvalDecisionQuestion(
     defaultAnswers: ["accept"],
     options,
   };
+}
+
+function planImplementationQuestion(): PendingRequestQuestion {
+  const prompt = formatMessage({ id: "implementPlanRequest.prompt", defaultMessage: "Implement this plan?" });
+  return {
+    id: PLAN_IMPLEMENTATION_QUESTION_ID,
+    header: prompt,
+    question: prompt,
+    kind: "singleSelect",
+    isSecret: false,
+    required: false,
+    defaultAnswers: [PLAN_IMPLEMENTATION_ACCEPT_VALUE],
+    isOther: true,
+    options: [{
+      value: PLAN_IMPLEMENTATION_ACCEPT_VALUE,
+      label: formatMessage({ id: "implementPlanRequest.option.implement", defaultMessage: "Yes, implement this plan" }),
+      description: "",
+    }],
+  };
+}
+
+function planImplementationAction(answers: Record<string, string[]>): "implement" | "custom" {
+  const value = answers[PLAN_IMPLEMENTATION_QUESTION_ID]?.[0]?.trim() ?? "";
+  return value === PLAN_IMPLEMENTATION_ACCEPT_VALUE ? "implement" : "custom";
+}
+
+function planImplementationFollowUp(answers: Record<string, string[]>): string | null {
+  const value = answers[PLAN_IMPLEMENTATION_QUESTION_ID]?.[0]?.trim() ?? "";
+  return value && value !== PLAN_IMPLEMENTATION_ACCEPT_VALUE ? value : null;
 }
 
 function commandApprovalOptions(params: unknown): PendingRequestOption[] {
@@ -533,19 +676,42 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
   //     execApprovalRequest.network.menu.allowAlways     = "Yes, and allow this host in the future"
   //   exec branch:
   //     execApprovalRequest.menu.runOnce                          = "Yes"
-  //     execApprovalRequest.menu.runAlwaysWithAmendment.prefix    = "Yes, and don’t ask again for commands that start with"
-  //     execApprovalRequest.menu.runAlways                        = "Yes, and don’t ask again this session"
+  //     execApprovalRequest.menu.runAlwaysWithAmendment.prefix    = "Yes, and don't ask again for commands that start with"
+  //     execApprovalRequest.menu.runAlways                        = "Yes, and don't ask again this session"
   const filterAvailable = (options: PendingRequestOption[]) =>
     filterAvailableCommandDecisionOptions(params, options);
   if (networkApprovalContext(params)) {
     return filterAvailable([
-      { value: "accept", label: "Yes, just this once", description: "Approve only the current network attempt." },
-      { value: "acceptForSession", label: "Yes, and allow this host for this conversation", description: "Approve this host for the current conversation." },
+      {
+        value: "accept",
+        label: formatMessage({ id: "execApprovalRequest.network.menu.allowOnce", defaultMessage: "Yes, just this once" }),
+        description: formatMessage({
+          id: "hc.pendingRequest.command.network.acceptDescription",
+          defaultMessage: "Approve only the current network attempt.",
+        }),
+      },
+      {
+        value: "acceptForSession",
+        label: formatMessage({
+          id: "execApprovalRequest.network.menu.allowForSession",
+          defaultMessage: "Yes, and allow this host for this conversation",
+        }),
+        description: formatMessage({
+          id: "hc.pendingRequest.command.network.acceptForSessionDescription",
+          defaultMessage: "Approve this host for the current conversation.",
+        }),
+      },
       ...(allowNetworkPolicyAmendment(params)
         ? [{
             value: "applyNetworkPolicyAmendment",
-            label: "Yes, and allow this host in the future",
-            description: "Save a host allowlist rule for future requests.",
+            label: formatMessage({
+              id: "execApprovalRequest.network.menu.allowAlways",
+              defaultMessage: "Yes, and allow this host in the future",
+            }),
+            description: formatMessage({
+              id: "hc.pendingRequest.command.network.allowAlwaysDescription",
+              defaultMessage: "Save a host allowlist rule for future requests.",
+            }),
           }]
         : []),
     ]);
@@ -553,19 +719,44 @@ function commandApprovalOptions(params: unknown): PendingRequestOption[] {
 
   const amendment = execPolicyAmendment(params);
   return filterAvailable([
-    { value: "accept", label: "Yes", description: "Approve this command execution." },
+    {
+      value: "accept",
+      label: formatMessage({ id: "execApprovalRequest.menu.runOnce", defaultMessage: "Yes" }),
+      description: formatMessage({
+        id: "hc.pendingRequest.command.acceptDescription",
+        defaultMessage: "Approve this command execution.",
+      }),
+    },
     amendment
       ? {
           value: "acceptWithExecpolicyAmendment",
-          label: "Yes, and don’t ask again for commands that start with",
-          description: "Approve commands with the same prefix.",
+          label: formatMessage({
+            id: "execApprovalRequest.menu.runAlwaysWithAmendment.prefix",
+            defaultMessage: "Yes, and don't ask again for commands that start with",
+          }),
+          description: formatMessage({
+            id: "hc.pendingRequest.command.amendmentDescription",
+            defaultMessage: "Approve commands with the same prefix.",
+          }),
           codePreview: execPolicyAmendmentText(amendment),
-          ariaLabel: `Yes, and don’t ask again for commands that start with ${execPolicyAmendmentText(amendment)}`,
+          ariaLabel: formatMessage(
+            {
+              id: "execApprovalRequest.menu.runAlwaysWithAmendment",
+              defaultMessage: "Yes, and don't ask again for commands that start with {command}",
+            },
+            { command: execPolicyAmendmentText(amendment) },
+          ),
         }
       : {
           value: "acceptForSession",
-          label: "Yes, and don’t ask again this session",
-          description: "Approve command executions until app-server restarts.",
+          label: formatMessage({
+            id: "execApprovalRequest.menu.runAlways",
+            defaultMessage: "Yes, and don't ask again this session",
+          }),
+          description: formatMessage({
+            id: "hc.pendingRequest.command.acceptForSessionDescription",
+            defaultMessage: "Approve command executions until app-server restarts.",
+          }),
         },
   ]);
 }
@@ -577,16 +768,32 @@ function commandApprovalTitle(params: unknown): string {
   const network = networkApprovalContext(params);
   if (network) {
     const host = stringField(network, "host");
-    return host ? `Do you want to approve network access to "${host}"?` : "Do you want to approve network access?";
+    return host
+      ? formatMessage(
+          { id: "execApprovalRequest.network.prompt", defaultMessage: "Do you want to approve network access to \"{host}\"?" },
+          { host },
+        )
+      : formatMessage({
+          id: "hc.pendingRequest.command.networkPromptNoHost",
+          defaultMessage: "Do you want to approve network access?",
+        });
   }
-  return "Do you want to run this command?";
+  return formatMessage({ id: "execApprovalRequest.prompt", defaultMessage: "Do you want to run this command?" });
 }
 
 function commandApprovalBody(params: unknown): string {
   const network = networkApprovalContext(params);
   if (network) {
     const host = stringField(network, "host");
-    return host ? `Reason: ${host} isn’t on the current network allowlist` : "Reason: host isn’t on the current network allowlist";
+    return host
+      ? formatMessage(
+          { id: "execApprovalRequest.network.reason", defaultMessage: "Reason: {host} isn't on the current network allowlist" },
+          { host },
+        )
+      : formatMessage(
+          { id: "execApprovalRequest.network.reason", defaultMessage: "Reason: {host} isn't on the current network allowlist" },
+          { host: "host" },
+        );
   }
   return [
     commandText(params),
@@ -725,7 +932,8 @@ export function requestUserInputQuestions(params: unknown): PendingRequestQuesti
     const isOther = record.isOther === true || record.is_other === true;
     return {
       id: stringField(record, "id") || `question_${index + 1}`,
-      header: stringField(record, "header") || stringField(record, "label") || `Question ${index + 1}`,
+      header: stringField(record, "header") || stringField(record, "label")
+        || formatMessage({ id: "hc.pendingRequest.questionFallbackHeader", defaultMessage: "Question {number}" }, { number: index + 1 }),
       question: text,
       kind: requestUserInputKind(record, options),
       isSecret: record.isSecret === true || record.is_secret === true,
@@ -804,14 +1012,22 @@ function mcpPersistQuestions(params: unknown): PendingRequestQuestion[] {
   const copyKind = mcpPersistCopyKind(params);
   return [{
     id: MCP_PERSIST_QUESTION_ID,
-    header: copyKind === "toolSuggestion" ? "Suggestion" : "Approval",
-    question: copyKind === "toolSuggestion" ? "Hide this suggestion in the future?" : "Remember this approval?",
+    header: copyKind === "toolSuggestion"
+      ? formatMessage({ id: "hc.pendingRequest.persist.suggestionHeader", defaultMessage: "Suggestion" })
+      : formatMessage({ id: "hc.pendingRequest.persist.approvalHeader", defaultMessage: "Approval" }),
+    question: copyKind === "toolSuggestion"
+      ? formatMessage({ id: "hc.pendingRequest.persist.suggestionQuestion", defaultMessage: "Hide this suggestion in the future?" })
+      : formatMessage({ id: "hc.pendingRequest.persist.approvalQuestion", defaultMessage: "Remember this approval?" }),
     kind: "singleSelect",
     isSecret: false,
     required: false,
     defaultAnswers: ["none"],
     options: [
-      { value: "none", label: "Don’t persist", description: "Apply this response only once." },
+      {
+        value: "none",
+        label: formatMessage({ id: "hc.pendingRequest.persist.none", defaultMessage: "Don’t persist" }),
+        description: formatMessage({ id: "hc.pendingRequest.persist.noneDescription", defaultMessage: "Apply this response only once." }),
+      },
       ...modes.map((mode) => ({
         value: mode,
         label: mcpPersistLabel(mode, copyKind),
@@ -835,17 +1051,17 @@ function mcpPersistCopyKind(params: unknown): "approval" | "toolSuggestion" {
 }
 
 function mcpPersistLabel(mode: string, copyKind: "approval" | "toolSuggestion"): string {
-  if (copyKind === "toolSuggestion") return "Don’t show again";
-  if (mode === "always") return "Always allow";
-  if (mode === "session") return "Allow for this chat";
+  if (copyKind === "toolSuggestion") return formatMessage({ id: "composer.toolSuggestion.persist.always", defaultMessage: "Don't show again" });
+  if (mode === "always") return formatMessage({ id: "composer.mcpToolCallApproval.persist.always", defaultMessage: "Always allow" });
+  if (mode === "session") return formatMessage({ id: "composer.mcpToolCallApproval.persist.session", defaultMessage: "Allow for this chat" });
   return mode;
 }
 
 function mcpPersistDescription(mode: string, copyKind: "approval" | "toolSuggestion"): string {
-  if (copyKind === "toolSuggestion") return "Hide matching tool suggestions in future sessions.";
-  if (mode === "always") return "Persist this approval across future sessions.";
-  if (mode === "session") return "Persist this approval for the current chat.";
-  return "Persist this approval choice.";
+  if (copyKind === "toolSuggestion") return formatMessage({ id: "hc.pendingRequest.persist.toolSuggestionDescription", defaultMessage: "Hide matching tool suggestions in future sessions." });
+  if (mode === "always") return formatMessage({ id: "hc.pendingRequest.persist.alwaysDescription", defaultMessage: "Persist this approval across future sessions." });
+  if (mode === "session") return formatMessage({ id: "hc.pendingRequest.persist.sessionDescription", defaultMessage: "Persist this approval for the current chat." });
+  return formatMessage({ id: "hc.pendingRequest.persist.genericDescription", defaultMessage: "Persist this approval choice." });
 }
 
 function mcpFieldQuestion(id: string, field: unknown, required: boolean): PendingRequestQuestion | null {
@@ -903,8 +1119,8 @@ function mcpFieldQuestion(id: string, field: unknown, required: boolean): Pendin
       required,
       defaultAnswers,
       options: [
-        { value: "true", label: "Yes", description: "" },
-        { value: "false", label: "No", description: "" },
+        { value: "true", label: formatMessage({ id: "hc.pendingRequest.boolean.yes", defaultMessage: "Yes" }), description: "" },
+        { value: "false", label: formatMessage({ id: "hc.pendingRequest.boolean.no", defaultMessage: "No" }), description: "" },
       ],
     };
   }
@@ -978,7 +1194,8 @@ function mcpElicitationBody(params: unknown): string {
   const url = mcpExternalActionUrl(params);
   if (url) {
     return [
-      stringField(params, "message") || stringField(objectRecord(params)?.action, "message") || "Open this link to continue.",
+      stringField(params, "message") || stringField(objectRecord(params)?.action, "message")
+        || formatMessage({ id: "hc.pendingRequest.openLinkBody", defaultMessage: "Open this link to continue." }),
       `URL: ${url}`,
     ].filter(Boolean).join("\n");
   }
@@ -996,21 +1213,35 @@ function mcpElicitationTitle(params: unknown): string {
   const suggestedTool = stringField(suggestion, "tool_name") || stringField(suggestion, "tool_id");
   if (kind === "toolSuggestion" || approvalKind === "tool_suggestion" || suggestion) {
     const suggestType = stringField(suggestion, "suggest_type") || stringField(meta, "suggest_type");
-    if (suggestedTool && suggestType === "install") return `Install ${suggestedTool}?`;
-    if (suggestedTool) return `Enable ${suggestedTool}?`;
-    return "Suggested tool";
+    if (suggestedTool && suggestType === "install") {
+      return formatMessage({ id: "composer.toolSuggestion.installTitle", defaultMessage: "Install {toolName}?" }, { toolName: suggestedTool });
+    }
+    if (suggestedTool) {
+      return formatMessage({ id: "hc.pendingRequest.suggestion.enableTitle", defaultMessage: "Enable {toolName}?" }, { toolName: suggestedTool });
+    }
+    return formatMessage({ id: "hc.pendingRequest.suggestion.fallbackTitle", defaultMessage: "Suggested tool" });
   }
   if (kind === "connectorAuth" || connectorAuth) {
     const connectorName = stringField(connectorAuth, "connector_name") || stringField(connectorAuth, "connector_id") || connector;
     const authReason = stringField(connectorAuth, "auth_reason");
-    if (connectorName && authReason === "missing_link") return `Sign in to ${connectorName}?`;
-    if (connectorName) return `Reconnect ${connectorName}?`;
-    return "Connect app?";
+    if (connectorName && authReason === "missing_link") {
+      return formatMessage({ id: "hc.pendingRequest.connectorAuth.signInTitle", defaultMessage: "Sign in to {connectorName}?" }, { connectorName });
+    }
+    if (connectorName) {
+      return formatMessage({ id: "hc.pendingRequest.connectorAuth.reconnectTitle", defaultMessage: "Reconnect {connectorName}?" }, { connectorName });
+    }
+    return formatMessage({ id: "hc.pendingRequest.connectorAuth.fallbackTitle", defaultMessage: "Connect app?" });
   }
-  if (kind === "urlAction" || mcpUrlActionUrl(params)) return "Action required";
-  if (stringField(params, "mode") === "url" || stringField(params, "url")) return "Open this URL?";
-  if (connector) return `Connect ${connector}?`;
-  return "MCP request";
+  if (kind === "urlAction" || mcpUrlActionUrl(params)) {
+    return formatMessage({ id: "hc.pendingRequest.urlAction.title", defaultMessage: "Action required" });
+  }
+  if (stringField(params, "mode") === "url" || stringField(params, "url")) {
+    return formatMessage({ id: "hc.pendingRequest.openUrl.title", defaultMessage: "Open this URL?" });
+  }
+  if (connector) {
+    return formatMessage({ id: "hc.pendingRequest.connector.title", defaultMessage: "Connect {connectorName}?" }, { connectorName: connector });
+  }
+  return formatMessage({ id: "hc.pendingRequest.mcpRequest.title", defaultMessage: "MCP request" });
 }
 
 function mcpToolApprovalTitle(params: unknown): string {
@@ -1027,9 +1258,18 @@ function mcpToolApprovalTitle(params: unknown): string {
     || stringField(record, "toolName")
     || stringField(meta, "tool_name")
     || stringField(meta, "toolName");
-  if (toolName) return `Allow ${connectorName} to run ${toolName} tool ?`;
+  // CODEX-REF: composer.mcpToolCallApproval.formattedToolTitlePrefix
+  //   ("Allow {connectorName} to run") + emphasized {toolName} + suffix
+  //   composer.mcpToolCallApproval.formattedToolTitleSuffix ("tool ?").
+  // HiCodex flattens the emphasized tool name into a plain string title.
+  const prefix = formatMessage(
+    { id: "composer.mcpToolCallApproval.formattedToolTitlePrefix", defaultMessage: "Allow {connectorName} to run" },
+    { connectorName },
+  );
+  const suffix = formatMessage({ id: "composer.mcpToolCallApproval.formattedToolTitleSuffix", defaultMessage: "tool ?" });
+  if (toolName) return `${prefix} ${toolName} ${suffix}`;
   if (message) return message;
-  return `Allow ${connectorName} to run tool ?`;
+  return `${prefix} ${suffix}`;
 }
 
 function mcpElicitationAcceptLabel(
@@ -1041,17 +1281,23 @@ function mcpElicitationAcceptLabel(
   const approvalKind = stringField(meta, "codex_approval_kind");
   const suggestion = objectRecord(objectRecord(params)?.suggestion);
   const connectorAuth = objectRecord(objectRecord(params)?.connector);
-  if (kind === "urlAction" || mcpUrlActionUrl(params)) return "Open link";
+  if (kind === "urlAction" || mcpUrlActionUrl(params)) {
+    return formatMessage({ id: "hc.pendingRequest.acceptLabel.openLink", defaultMessage: "Open link" });
+  }
   if (kind === "toolSuggestion" || approvalKind === "tool_suggestion" || suggestion) {
     const suggestType = stringField(suggestion, "suggest_type") || stringField(meta, "suggest_type");
-    return suggestType === "install" ? "Install" : "Enable";
+    return suggestType === "install"
+      ? formatMessage({ id: "composer.toolSuggestion.install", defaultMessage: "Install" })
+      : formatMessage({ id: "composer.toolSuggestion.enable", defaultMessage: "Enable" });
   }
   if (kind === "connectorAuth" || connectorAuth) {
     const authReason = stringField(connectorAuth, "auth_reason");
-    return authReason === "missing_link" || mcpConnectorAuthUrl(params) ? "Sign in" : "Reconnect";
+    return authReason === "missing_link" || mcpConnectorAuthUrl(params)
+      ? formatMessage({ id: "hc.pendingRequest.acceptLabel.signIn", defaultMessage: "Sign in" })
+      : formatMessage({ id: "composer.connectorAuth.reconnect.button.label", defaultMessage: "Reconnect" });
   }
-  if (questions.length > 0) return "Submit";
-  return "Allow";
+  if (questions.length > 0) return submitLabel();
+  return allowLabel();
 }
 
 function mcpExternalActionUrl(params: unknown): string | null {
@@ -1117,7 +1363,7 @@ function mcpToolApprovalConnectorName(params: unknown): string {
     || stringField(record, "connectorName")
     || stringField(approval, "connector_id")
     || stringField(meta, "connector_id")
-    || "Connector";
+    || formatMessage({ id: "composer.mcpToolCallApproval.connectorFallbackName", defaultMessage: "Connector" });
 }
 
 function mcpToolParamEntries(params: unknown): PendingRequestMcpToolParamEntry[] {
@@ -1266,31 +1512,54 @@ function normalizeAnswers(values: string[]): string[] {
 function permissionScopeQuestion(): PendingRequestQuestion {
   return {
     id: "scope",
-    header: "Scope",
-    question: "How long should this permission apply?",
+    header: formatMessage({ id: "hc.pendingRequest.scope.header", defaultMessage: "Scope" }),
+    question: formatMessage({ id: "hc.pendingRequest.scope.question", defaultMessage: "How long should this permission apply?" }),
     kind: "singleSelect",
     isSecret: false,
     required: true,
     defaultAnswers: ["turn"],
     options: [
-      { value: "turn", label: "Yes, allow for this turn", description: "Allow the requested access for the current turn only." },
-      { value: "session", label: "Yes, allow for this session", description: "Allow until this app-server session ends." },
+      {
+        value: "turn",
+        label: formatMessage({ id: "permissionRequest.menu.allowOnce", defaultMessage: "Yes, allow for this turn" }),
+        description: formatMessage({
+          id: "hc.pendingRequest.scope.turnDescription",
+          defaultMessage: "Allow the requested access for the current turn only.",
+        }),
+      },
+      {
+        value: "session",
+        label: formatMessage({ id: "permissionRequest.menu.allowForSession", defaultMessage: "Yes, allow for this session" }),
+        description: formatMessage({
+          id: "hc.pendingRequest.scope.sessionDescription",
+          defaultMessage: "Allow until this app-server session ends.",
+        }),
+      },
     ],
   };
 }
 
 function permissionRequestTitle(value: unknown): string {
-  if (!value || typeof value !== "object") return "Allow additional access?";
+  const additional = formatMessage({ id: "permissionRequest.title.additional", defaultMessage: "Allow additional access?" });
+  if (!value || typeof value !== "object") return additional;
   const record = value as Record<string, unknown>;
   const hasNetwork = hasNetworkPermission(record.network);
   const fileAccess = fileSystemAccessSummary(record.fileSystem);
-  if (hasNetwork && !fileAccess) return "Allow network access?";
-  if (!hasNetwork && fileAccess) {
-    if (fileAccess.access === "read") return `Allow read access to ${fileAccess.target}?`;
-    if (fileAccess.access === "write") return `Allow write access to ${fileAccess.target}?`;
-    if (fileAccess.access === "read and write") return `Allow read and write access to ${fileAccess.target}?`;
+  if (hasNetwork && !fileAccess) {
+    return formatMessage({ id: "permissionRequest.title.network", defaultMessage: "Allow network access?" });
   }
-  return "Allow additional access?";
+  if (!hasNetwork && fileAccess) {
+    if (fileAccess.access === "read") {
+      return formatMessage({ id: "permissionRequest.title.read", defaultMessage: "Allow read access to {path}?" }, { path: fileAccess.target });
+    }
+    if (fileAccess.access === "write") {
+      return formatMessage({ id: "permissionRequest.title.write", defaultMessage: "Allow write access to {path}?" }, { path: fileAccess.target });
+    }
+    if (fileAccess.access === "read and write") {
+      return formatMessage({ id: "permissionRequest.title.readWrite", defaultMessage: "Allow read and write access to {path}?" }, { path: fileAccess.target });
+    }
+  }
+  return additional;
 }
 
 function hasGrantablePermissions(value: unknown): boolean {
@@ -1463,22 +1732,31 @@ function requestMetadata(params: unknown, keys: string[]): PendingRequestMetadat
 }
 
 function describePermissions(value: unknown): string {
-  if (!value || typeof value !== "object") return "No additional permissions requested.";
+  const empty = formatMessage({
+    id: "hc.pendingRequest.permission.none",
+    defaultMessage: "No additional permissions requested.",
+  });
+  if (!value || typeof value !== "object") return empty;
   const record = value as Record<string, unknown>;
   const lines = [
     ...describeNetworkPermissions(record.network),
     ...describeFileSystemPermissions(record.fileSystem),
   ];
-  return lines.length > 0 ? lines.join("\n") : "No additional permissions requested.";
+  return lines.length > 0 ? lines.join("\n") : empty;
 }
 
 function describeNetworkPermissions(value: unknown): string[] {
   if (!value || typeof value !== "object") return [];
   const record = value as Record<string, unknown>;
-  // codex `permissionRequest.networkValue` = "Internet access" for a granted
-  // network request (not "enabled").
-  if (record.enabled === true) return ["Network: Internet access"];
-  if (record.enabled === false) return ["Network: disabled"];
+  // The "Network: " prefix is a structural row-label parsed downstream
+  // (pending-request-stack splits each body line on ": "); only the value is
+  // localized. codex `permissionRequest.networkValue` = "Internet access".
+  if (record.enabled === true) {
+    return [`Network: ${formatMessage({ id: "permissionRequest.networkValue", defaultMessage: "Internet access" })}`];
+  }
+  if (record.enabled === false) {
+    return [`Network: ${formatMessage({ id: "hc.pendingRequest.permission.networkDisabled", defaultMessage: "disabled" })}`];
+  }
   return [`Network: ${formatUnknown(value)}`];
 }
 

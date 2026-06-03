@@ -4,6 +4,7 @@
 // free of UI policy decisions.
 
 import { resolveKeymapOverride } from "./keymap-overrides";
+import { formatMessage } from "./i18n";
 
 // codex: electron-menu-shortcuts-*.js — command group keys.
 export type CommandGroup =
@@ -119,11 +120,18 @@ export function isMacPlatform(): boolean {
  * else→"Open in File Manager" (i18n `*.openInFinder/openInExplorer/openInFileManager`).
  */
 export function osRevealLabel(): string {
-  if (isMacPlatform()) return "Reveal in Finder";
+  // codex markdown.fileReference.openInFinder/openInExplorer/openInFileManager —
+  // the platform-switched reveal label goes through i18n so the ZH locale renders
+  // 在 Finder 中显示 / 在资源管理器中打开 / 在文件管理器中打开.
+  if (isMacPlatform()) {
+    return formatMessage({ id: "markdown.fileReference.openInFinder", defaultMessage: "Reveal in Finder" });
+  }
   const platform = typeof navigator !== "undefined" ? navigator.platform ?? "" : "";
   const ua = typeof navigator !== "undefined" ? navigator.userAgent ?? "" : "";
-  if (/Win/i.test(platform) || /Windows/i.test(ua)) return "Open in Explorer";
-  return "Open in File Manager";
+  if (/Win/i.test(platform) || /Windows/i.test(ua)) {
+    return formatMessage({ id: "markdown.fileReference.openInExplorer", defaultMessage: "Open in Explorer" });
+  }
+  return formatMessage({ id: "markdown.fileReference.openInFileManager", defaultMessage: "Open in File Manager" });
 }
 
 // codex: electron-menu-shortcuts-*.js — platform-specific keybinding

@@ -1825,6 +1825,41 @@ button {
   box-shadow: 0 0 0 0.5px var(--hc-border-default), 0 12px 28px rgb(0 0 0 / 40%);
 }
 
+/*
+ * codex composer-CwxGJF3C.js — plan-mode indicator tooltip: `flex flex-col
+ * items-center text-center leading-tight` with the shortcut keycap inline
+ * before "to toggle".
+ */
+.hc-plan-tooltip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.hc-plan-tooltip-shortcut-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hc-plan-tooltip-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 16px;
+  min-width: 16px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  color: currentColor;
+  font-family: inherit;
+  font-size: 11px;
+}
+
 .hc-thread-menu-item {
   display: flex;
   align-items: center;

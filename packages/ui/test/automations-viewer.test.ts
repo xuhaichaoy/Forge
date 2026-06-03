@@ -139,9 +139,10 @@ function projectsActiveThreadAutomationForRightRailSection(): void {
     },
   });
 
-  // codex automation-schedule-CNorTxWd.js — `rruleSummary` is Codex's STRUCTURED
-  // schedule label, NOT rrule's prose toText(); "FREQ=HOURLY" → "Hourly" (not
-  // "every hour"), matching Desktop's automation summary wording.
+  // codex automation-schedule-*.js — `rruleSummary` is Codex's STRUCTURED schedule
+  // label, NOT rrule's prose toText(); "FREQ=HOURLY" → "Hourly" (not "every hour"),
+  // matching Desktop's automation summary wording. `status` is threaded through so
+  // the rail "Next run" tooltip can render "-" for PAUSED (codex `Ao({status})`).
   assertDeepEqual(
     projectActiveThreadAutomation(model, "thread-1"),
     {
@@ -149,8 +150,9 @@ function projectsActiveThreadAutomationForRightRailSection(): void {
       name: "Thread heartbeat",
       rruleSummary: "Hourly",
       nextRunAtMs: Date.parse(isoNextRun),
+      status: "ACTIVE",
     },
-    "right rail automation section should humanize the heartbeat RRULE for the current thread",
+    "right rail automation section should humanize the heartbeat RRULE and carry status for the current thread",
   );
 
   assertEqual(
@@ -166,13 +168,16 @@ function projectsActiveThreadAutomationForRightRailSection(): void {
   );
 }
 
-// codex automation-schedule-CNorTxWd.js — humanizeRrule contract:
+// codex automation-schedule-*.js `dn`/`At`/`mn` — humanizeRrule contract:
 //   RRULE body / RRULE-prefixed → Codex STRUCTURED label ("Daily", "Hourly",
 //     "Weekdays", "Weekends", "{days} at {time}", "Every {n}h/m")
-//   cron / free-form text       → returned as-is (rrule cannot parse)
+//   MINUTELY 60/1440/10080      → "Hourly"/"Daily"/"Weekly" (mn normalization)
+//   multi-weekday               → Sunday-first conjunction / "Mon-Fri" range (At)
+//   cron / free-form / MONTHLY  → null (Codex renders "Custom schedule" fallback)
 //   null / empty / whitespace   → null (caller omits the field)
 function humanizesRruleStringsForRightRailSummary(): void {
-  // single weekday + BYHOUR → "{days} at {time}" (e.g. "Mondays at 9:00 AM")
+  // single weekday + BYHOUR → "{days} at {time}" (e.g. "Mondays at 9:00 AM").
+  // codex `At` length===1 long-style → plural day name.
   const weekly = humanizeRrule("FREQ=WEEKLY;BYDAY=MO;BYHOUR=9");
   assertEqual(
     typeof weekly === "string" && /^Mondays at /.test(weekly),
@@ -194,9 +199,38 @@ function humanizesRruleStringsForRightRailSummary(): void {
     "Sat-Sun RRULE should humanize to Codex's 'Weekends' label",
   );
 
+  // codex `At`/`jt` — exactly two non-weekend days use a singular long-name
+  // conjunction list, Sunday-first ("Sunday and Friday", NOT "Fridays, Sundays").
+  assertEqual(
+    humanizeRrule("FREQ=WEEKLY;BYDAY=FR,SU"),
+    "Sunday and Friday",
+    "two arbitrary weekdays should use a Sunday-first long-name conjunction list",
+  );
+
+  // codex `At`/`It` — three-plus consecutive days fold into a short-name range.
+  assertEqual(
+    humanizeRrule("FREQ=WEEKLY;BYDAY=MO,TU,WE"),
+    "Mon-Wed",
+    "three consecutive weekdays should fold into a 'Mon-Wed' range",
+  );
+
+  // codex `At`/`jt` — three-plus non-consecutive days use a short-name conjunction
+  // list (Oxford 'and'), Sunday-first.
+  assertEqual(
+    humanizeRrule("FREQ=WEEKLY;BYDAY=MO,WE,FR"),
+    "Mon, Wed, and Fri",
+    "three non-consecutive weekdays should use a short-name conjunction list",
+  );
+
   // FREQ alone → bare interval label ("Daily" / "Hourly" / "Weekly")
   assertEqual(humanizeRrule("FREQ=DAILY"), "Daily", "FREQ=DAILY → 'Daily'");
   assertEqual(humanizeRrule("FREQ=HOURLY;INTERVAL=2"), "Every 2h", "every-2-hours RRULE → 'Every 2h'");
+
+  // codex `mn` — equivalent MINUTELY intervals normalize to the named labels.
+  assertEqual(humanizeRrule("FREQ=MINUTELY;INTERVAL=60"), "Hourly", "MINUTELY 60 → 'Hourly'");
+  assertEqual(humanizeRrule("FREQ=MINUTELY;INTERVAL=1440"), "Daily", "MINUTELY 1440 → 'Daily'");
+  assertEqual(humanizeRrule("FREQ=MINUTELY;INTERVAL=10080"), "Weekly", "MINUTELY 10080 → 'Weekly'");
+  assertEqual(humanizeRrule("FREQ=MINUTELY;INTERVAL=30"), "Every 30m", "MINUTELY 30 → 'Every 30m'");
 
   // iCal-prefixed RRULE → same structured label
   assertEqual(
@@ -210,15 +244,22 @@ function humanizesRruleStringsForRightRailSummary(): void {
   assertEqual(humanizeRrule(""), null, "empty string should return null");
   assertEqual(humanizeRrule("   "), null, "whitespace-only string should return null");
 
+  // codex `dn` returns null for unparseable input AND for MONTHLY/YEARLY rules;
+  // the rail row then renders the localized "Custom schedule" fallback.
   assertEqual(
     humanizeRrule("0 9 * * 1"),
-    "0 9 * * 1",
-    "cron expressions that rrule cannot parse should fall back to the raw string",
+    null,
+    "cron expressions that rrule cannot parse should return null (rail shows 'Custom schedule')",
   );
   assertEqual(
     humanizeRrule("every Monday at 9am"),
-    "every Monday at 9am",
-    "already-humanized text should be returned unchanged",
+    null,
+    "already-humanized free-form text should return null (rail shows 'Custom schedule')",
+  );
+  assertEqual(
+    humanizeRrule("FREQ=MONTHLY;BYMONTHDAY=1"),
+    null,
+    "MONTHLY RRULE should return null so the rail shows 'Custom schedule' (matches Codex dn)",
   );
 }
 

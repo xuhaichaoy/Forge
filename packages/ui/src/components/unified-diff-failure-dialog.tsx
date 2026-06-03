@@ -50,10 +50,14 @@ export interface UnifiedDiffFailureDialogProps {
 }
 
 function firstErrorLine(text: string): string {
-  // Codex's fallback-error-line helper collapses multi-line git stderr to one line.
-  for (const line of text.split("\n")) {
+  // Codex's fallback-error-line helper (`Cw` in local-conversation-thread-*.js)
+  // collapses multi-line git stderr to one line, then caps it at 180 chars:
+  //   t.length<=180 ? t : `${t.slice(0,179)}…`
+  for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
-    if (trimmed.length > 0) return trimmed;
+    if (trimmed.length > 0) {
+      return trimmed.length <= 180 ? trimmed : `${trimmed.slice(0, 179)}…`;
+    }
   }
   return text.trim();
 }

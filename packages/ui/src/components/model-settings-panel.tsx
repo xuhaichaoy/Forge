@@ -44,6 +44,7 @@ import {
   isRefreshableSettingsPanel,
   settingsGroupHeadingTitle,
   settingsSectionTitle,
+  settingsSectionDescription,
   type SettingsSectionGroup,
 } from "../state/settings-panel-workflow";
 import { AppearanceSettingsPanel } from "./appearance-settings-panel";
@@ -152,8 +153,8 @@ export function SettingsPanel({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header>
-          <div><Settings size={17} /> Settings</div>
-          <button className="hc-icon-button" type="button" onClick={onClose} aria-label="Close settings">
+          <div><Settings size={17} /> {formatMessage({ id: "hc.settings.title", defaultMessage: "Settings" })}</div>
+          <button className="hc-icon-button" type="button" onClick={onClose} aria-label={formatMessage({ id: "hc.settings.close", defaultMessage: "Close settings" })}>
             <X size={16} />
           </button>
         </header>
@@ -191,7 +192,7 @@ export function SettingsPanel({
                          * per section — settings-shared-*.js returns null for
                          * every slug except mcp-settings.
                          */}
-                        {section.description ? <small>{section.description}</small> : null}
+                        {section.description ? <small>{settingsSectionDescription(section, formatMessage)}</small> : null}
                       </span>
                     </button>
                   ))}
@@ -206,7 +207,7 @@ export function SettingsPanel({
                 {settingsSectionIcon(activeSection.icon)}
                 <span>
                   <strong>{settingsSectionTitle(activeSection, formatMessage)}</strong>
-                  {activeSection.description ? <small>{activeSection.description}</small> : null}
+                  {activeSection.description ? <small>{settingsSectionDescription(activeSection, formatMessage)}</small> : null}
                 </span>
               </div>
               {refreshable && (

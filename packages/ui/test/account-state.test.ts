@@ -167,7 +167,8 @@ function projectsComposerQuotaBannerOnlyForBlockingLimits(): void {
     projectComposerQuotaBanner({ core: coreLimit }, null, "gpt-5"),
     {
       id: "rate-limit-window:core:default",
-      title: "Codex usage limit reached",
+      // codex: core out-of-messages title aligns to `codex.upsellBanner.general.title`
+      title: "You’re out of Codex messages",
       detail: "5h limit is fully used.",
       tone: "danger",
     },

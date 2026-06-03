@@ -77,6 +77,15 @@ export interface SidebarWorkspaceRootOption {
 export interface SidebarThreadStatusState {
   type: "idle" | "loading" | "error";
   unread: boolean;
+  /**
+   * Number of unread turns. Codex Desktop's `local-task-row-*.js` status slot
+   * renders a numeric badge (`Ee`, "3" / "99+") when `unreadCount > 0`, taking
+   * priority over the spinner and the plain unread dot. The generated app-server
+   * `Thread` type does not expose a count, so we read the Desktop-named loose
+   * `unreadCount`/`unread_count` field when present and otherwise fall back to 0
+   * (the boolean `unread` dot still covers the common case).
+   */
+  unreadCount: number;
 }
 
 /**
@@ -289,14 +298,15 @@ export function sidebarThreadRelativeTime(thread: Thread, nowMs = Date.now()): s
  * they are present on the payload.
  */
 export function sidebarThreadStatusState(thread: Thread): SidebarThreadStatusState {
-  const unread = threadHasUnreadTurn(thread);
-  if (threadHasSystemError(thread)) return { type: "error", unread };
-  if (threadHasActiveWork(thread)) return { type: "loading", unread };
-  return { type: "idle", unread };
+  const unreadCount = threadUnreadCount(thread);
+  const unread = unreadCount > 0 || threadHasUnreadTurn(thread);
+  if (threadHasSystemError(thread)) return { type: "error", unread, unreadCount };
+  if (threadHasActiveWork(thread)) return { type: "loading", unread, unreadCount };
+  return { type: "idle", unread, unreadCount };
 }
 
 export function sidebarThreadHasVisibleStatus(state: SidebarThreadStatusState): boolean {
-  return state.type !== "idle" || state.unread;
+  return state.type !== "idle" || state.unread || state.unreadCount > 0;
 }
 
 function threadProjectKey(thread: Thread): string {
@@ -374,6 +384,17 @@ function threadHasSystemError(thread: Thread): boolean {
 
 function threadHasUnreadTurn(thread: Thread): boolean {
   return looseBooleanField(thread, "hasUnreadTurn") === true || looseBooleanField(thread, "has_unread_turn") === true;
+}
+
+function threadUnreadCount(thread: Thread): number {
+  const value = looseNumberField(thread, "unreadCount") ?? looseNumberField(thread, "unread_count");
+  if (value == null) return 0;
+  return value > 0 ? Math.floor(value) : 0;
+}
+
+function looseNumberField(thread: Thread, key: string): number | null {
+  const value = (thread as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function looseBooleanField(thread: Thread, key: string): boolean | null {

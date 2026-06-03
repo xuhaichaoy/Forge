@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { memo, useEffect, useState, type ReactNode } from "react";
 import { stringField } from "../lib/format";
+import { formatMessage as formatMessageModule, type I18nValues } from "../state/i18n";
 import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 
 type FormatMessage = HiCodexIntlContextValue["formatMessage"];
@@ -33,6 +34,7 @@ import {
   type ToolActivityIcon,
 } from "../state/render-groups";
 import {
+  humanReadableToolLabel,
   isItemInProgress,
   itemText,
   itemType,
@@ -41,7 +43,7 @@ import {
   mcpSourceTitle,
   mcpToolName,
 } from "../state/thread-item-fields";
-import { isRunningSkillDefinitionRead } from "../state/tool-activity-grouping";
+import { isRunningSkillDefinitionRead, joinConjunction } from "../state/tool-activity-grouping";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import type { FileReference } from "./file-reference-types";
 import { CodeSnippet, Markdownish } from "./message-unit";
@@ -64,6 +66,18 @@ export function desktopCollapsedToolActivityChevronClassName(expanded: boolean):
     expanded ? "is-open opacity-100" : "opacity-0 group-hover/summary:opacity-100"
   }`;
 }
+
+/**
+ * Codex's running-command elapsed span is `whitespace-nowrap text-size-chat
+ * tabular-nums`. The shared stylesheet is out of this edit's scope, so the
+ * geometry-critical bits (non-wrapping + tabular figures so the ticking second
+ * doesn't shift width) are applied inline; `hc-tool-summary-elapsed` stays as a
+ * styling hook.
+ */
+const RUNNING_COMMAND_ELAPSED_STYLE = {
+  whiteSpace: "nowrap",
+  fontVariantNumeric: "tabular-nums",
+} as const;
 
 interface ToolActivityViewProps {
   unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
@@ -147,6 +161,7 @@ function PendingMcpToolCallsActivityView({
   onOpenThreadId?: OpenThreadHandler;
   threadId: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [viewState, setViewState] = useState<ToolActivityViewState>("collapsed");
   const detailItems = toolActivityDetailItems(unit);
   const expanded = viewState !== "collapsed";
@@ -155,7 +170,16 @@ function PendingMcpToolCallsActivityView({
   const headerItem = activeItem ?? fallbackItem;
   const headerLabel = activeItem
     ? pendingMcpActiveLabel(activeItem)
-    : `Used ${pendingMcpSourceList(unit.items)}`;
+    : // CODEX-REF local-conversation-thread-CEeZyOcp.js
+      //   id:`localConversationTurn.pendingMcpToolCalls.completedHeader`,
+      //   defaultMessage:`Used {apps}`
+      formatMessage(
+        {
+          id: "localConversationTurn.pendingMcpToolCalls.completedHeader",
+          defaultMessage: "Used {apps}",
+        },
+        { apps: pendingMcpSourceList(unit.items) },
+      );
 
   useEffect(() => {
     setViewState("collapsed");
@@ -216,8 +240,9 @@ function pendingMcpHeaderItem(items: Extract<ConversationRenderUnit, { kind: "to
 }
 
 function pendingMcpActiveLabel(item: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"][number]): string {
-  const tool = mcpToolName(item).trim() || "tool";
-  return `Calling ${tool}`;
+  // Codex's in-progress pending-MCP header (NS with completed:false) renders the
+  // human-readable, sentence-cased tool name — never a "Calling" verb prefix.
+  return humanReadableToolLabel(mcpToolName(item).trim() || "tool");
 }
 
 function pendingMcpSourceList(items: Extract<ConversationRenderUnit, { kind: "toolActivity" }>["items"]): string {
@@ -228,9 +253,10 @@ function pendingMcpSourceList(items: Extract<ConversationRenderUnit, { kind: "to
     if (!sources.includes(source)) sources.push(source);
   }
   if (sources.length === 0) return "MCP";
-  if (sources.length === 1) return sources[0] ?? "MCP";
-  const last = sources.at(-1);
-  return `${sources.slice(0, -1).join(", ")} and ${last}`;
+  // Codex builds the `{apps}` value of `pendingMcpToolCalls.completedHeader`
+  // ("Used {apps}") with Intl.ListFormat type:"conjunction" — Oxford-comma,
+  // localized — so reuse the shared joinConjunction helper here.
+  return joinConjunction(sources);
 }
 
 function MultiAgentActivityView({
@@ -365,6 +391,8 @@ function GenericToolActivityView({
   const hasDetails = detailItems.length > 0;
   const canExpand = hasDetails && isToolActivityExpandable(unit);
   const summaryLabel = useToolActivitySummaryLabel(unit);
+  const runningCommandElapsed = useRunningCommandElapsed(unit);
+  const { formatMessage } = useHiCodexIntl();
   const detail = unit.summary.details.find((value) => value !== unit.summary.label);
   const expanded = viewState !== "collapsed";
   const showInlineDetail = shouldShowToolActivityInlineDetail(unit, detail);
@@ -406,6 +434,14 @@ function GenericToolActivityView({
             className={summaryLabelClassName}
             compact={isCollapsedToolActivity}
           />
+          {runningCommandElapsed !== null && (
+            <span className="hc-tool-summary-elapsed" style={RUNNING_COMMAND_ELAPSED_STYLE}>
+              {formatMessage(
+                { id: "toolSummaryForCmd.runningTimer", defaultMessage: " for {elapsed}" },
+                { elapsed: runningCommandElapsed },
+              )}
+            </span>
+          )}
           {unit.summary.activeDiffStats && (
             <ToolActivityDiffStats
               added={unit.summary.activeDiffStats.linesAdded}
@@ -427,6 +463,14 @@ function GenericToolActivityView({
             className={summaryLabelClassName}
             compact={isCollapsedToolActivity}
           />
+          {runningCommandElapsed !== null && (
+            <span className="hc-tool-summary-elapsed" style={RUNNING_COMMAND_ELAPSED_STYLE}>
+              {formatMessage(
+                { id: "toolSummaryForCmd.runningTimer", defaultMessage: " for {elapsed}" },
+                { elapsed: runningCommandElapsed },
+              )}
+            </span>
+          )}
           {unit.summary.activeDiffStats && (
             <ToolActivityDiffStats
               added={unit.summary.activeDiffStats.linesAdded}
@@ -465,18 +509,20 @@ function GenericToolActivityView({
             const rows = workedForAggregateRows(unit);
             if (rows.length === 0) return null;
             /*
-             * CODEX-REF: Codex Mp 用两套 i18n key 区分 leading / compact：
+             * CODEX-REF: Codex `Mp` 用两套 i18n key 区分 leading / compact：
              *   localConversation.toolActivitySummary.created.leading
              *     → "{count, plural, one {Created # file} other {Created # files}}"  (大写动词)
              *   localConversation.toolActivitySummary.created
              *     → "{count, plural, one {created # file} other {created # files}}"  (小写动词)
-             * 由 `a.length === 0 ? leading : compact` 选择。HiCodex 的
-             * workedForAggregateRows 已用大小写动词区分，但 leading-when-only-running
-             * 的场景文案是小写起始（"running command(s)"），需强制 leading capitalize。
+             * 按列表位置 `a.length === 0 ? leading : compact` 选择：第 0 条用 leading
+             * 描述符，其余用 compact，再 formatMessage（ICU 复数 + ZH 词典）。
              */
             const segments = rows.map((row, index) => {
-              if (index === 0) return row.text.charAt(0).toUpperCase() + row.text.slice(1);
-              return row.text.charAt(0).toLowerCase() + row.text.slice(1);
+              const descriptor = index === 0 ? row.leading : row.compact;
+              return formatMessage(
+                { id: descriptor.id, defaultMessage: descriptor.defaultMessage },
+                descriptor.values,
+              );
             });
             const joined = typeof Intl !== "undefined" && typeof Intl.ListFormat === "function"
               ? new Intl.ListFormat(undefined, { type: "unit", style: "long" }).format(segments)
@@ -501,13 +547,37 @@ function GenericToolActivityView({
 }
 
 /*
- * 把 ToolActivitySummary.counts 转换成"聚合行"文案数组。
- * 进/完动词大小写区分：进行中用小写动名词 (running/created/editing/...)，
- * 完成用大写动词 (Ran/Created/Edited/...)。
+ * 把 ToolActivitySummary.counts 转换成"聚合行"。每行携带 Codex 的 leading / compact
+ * 两套 i18n 描述符（CODEX-REF local-conversation-thread-CEeZyOcp.js
+ * `localConversation.toolActivitySummary.*`，由 `a.length===0 ? leading : compact`
+ * 按列表位置选择，leading 用大写动词、compact 用小写动词）。渲染处按 index 选
+ * leading/compact 并 formatMessage，ICU 复数 + ZH 词典负责本地化。
  */
+interface WorkedForRowDescriptor {
+  id: string;
+  defaultMessage: string;
+  values?: I18nValues;
+}
+
 export interface WorkedForAggregateRow {
   key: string;
-  text: string;
+  leading: WorkedForRowDescriptor;
+  compact: WorkedForRowDescriptor;
+}
+
+// 大写/小写仅靠 .leading 后缀切换 id（defaultMessage 与 bundle 逐字一致）。
+function aggregateRow(
+  key: string,
+  baseId: string,
+  leadingDefault: string,
+  compactDefault: string,
+  values?: I18nValues,
+): WorkedForAggregateRow {
+  return {
+    key,
+    leading: { id: `${baseId}.leading`, defaultMessage: leadingDefault, values },
+    compact: { id: baseId, defaultMessage: compactDefault, values },
+  };
 }
 
 export function workedForAggregateRows(
@@ -525,99 +595,212 @@ export function workedForAggregateRows(
   const completedCommands = Math.max(ordinaryCommands - runningOrdinaryCommands, 0);
   const completedWebSearchCommands = Math.max(webSearchCommands - runningWebSearchCommands, 0);
   if (inProgress && runningOrdinaryCommands > 0) {
-    rows.push({ key: "commands.running", text: countNoun(runningOrdinaryCommands, "running command", "running commands") });
+    rows.push(aggregateRow(
+      "commands.running",
+      "localConversation.toolActivitySummary.commands.running",
+      "{count, plural, one {Running # command} other {Running # commands}}",
+      "{count, plural, one {running # command} other {running # commands}}",
+      { count: runningOrdinaryCommands },
+    ));
   }
   if (completedWebSearchCommands > 0) {
-    rows.push({ key: "webSearchCommands.completed", text: webSearchCommandCount("Searched web", completedWebSearchCommands) });
+    rows.push(aggregateRow(
+      "webSearchCommands.completed",
+      "localConversation.toolActivitySummary.webSearchCommands.searched",
+      "{count, plural, one {Searched web} other {Searched web # times}}",
+      "{count, plural, one {searched web} other {searched web # times}}",
+      { count: completedWebSearchCommands },
+    ));
   }
   if (completedCommands > 0) {
-    rows.push({ key: "commands.completed", text: actionCount("Ran", completedCommands, "command", "commands") });
+    rows.push(aggregateRow(
+      "commands.completed",
+      "localConversation.toolActivitySummary.commands",
+      "{count, plural, one {Ran # command} other {Ran # commands}}",
+      "{count, plural, one {ran # command} other {ran # commands}}",
+      { count: completedCommands },
+    ));
   }
   if (inProgress && runningWebSearchCommands > 0) {
-    rows.push({ key: "webSearchCommands.running", text: webSearchCommandCount("Searching the web", runningWebSearchCommands) });
+    rows.push(aggregateRow(
+      "webSearchCommands.running",
+      "localConversation.toolActivitySummary.webSearchCommands.searching",
+      "Searching the web",
+      "searching the web",
+    ));
   }
 
   // 文件创建
   const runningCreated = counts.runningCreatedFiles ?? 0;
   const completedCreated = Math.max(counts.createdFiles - runningCreated, 0);
   if (inProgress && runningCreated > 0) {
-    rows.push({ key: "created.running", text: countNoun(runningCreated, "creating file", "creating files") });
+    rows.push(aggregateRow(
+      "created.running",
+      "localConversation.toolActivitySummary.creating",
+      "{count, plural, one {Creating # file} other {Creating # files}}",
+      "{count, plural, one {creating # file} other {creating # files}}",
+      { count: runningCreated },
+    ));
   }
   if (completedCreated > 0) {
-    rows.push({ key: "created.completed", text: actionCount("Created", completedCreated, "file", "files") });
+    rows.push(aggregateRow(
+      "created.completed",
+      "localConversation.toolActivitySummary.created",
+      "{count, plural, one {Created # file} other {Created # files}}",
+      "{count, plural, one {created # file} other {created # files}}",
+      { count: completedCreated },
+    ));
   }
 
   // 文件编辑
   const runningEdited = counts.runningEditedFiles ?? 0;
   const completedEdited = Math.max(counts.editedFiles - runningEdited, 0);
   if (inProgress && runningEdited > 0) {
-    rows.push({ key: "edited.running", text: countNoun(runningEdited, "editing file", "editing files") });
+    rows.push(aggregateRow(
+      "edited.running",
+      "localConversation.toolActivitySummary.editing",
+      "{count, plural, one {Editing # file} other {Editing # files}}",
+      "{count, plural, one {editing # file} other {editing # files}}",
+      { count: runningEdited },
+    ));
   }
   if (completedEdited > 0) {
-    rows.push({ key: "edited.completed", text: actionCount("Edited", completedEdited, "file", "files") });
+    rows.push(aggregateRow(
+      "edited.completed",
+      "localConversation.toolActivitySummary.edited",
+      "{count, plural, one {Edited # file} other {Edited # files}}",
+      "{count, plural, one {edited # file} other {edited # files}}",
+      { count: completedEdited },
+    ));
   }
 
   // 文件删除
   const runningDeleted = counts.runningDeletedFiles ?? 0;
   const completedDeleted = Math.max(counts.deletedFiles - runningDeleted, 0);
   if (inProgress && runningDeleted > 0) {
-    rows.push({ key: "deleted.running", text: countNoun(runningDeleted, "deleting file", "deleting files") });
+    rows.push(aggregateRow(
+      "deleted.running",
+      "localConversation.toolActivitySummary.deleting",
+      "{count, plural, one {Deleting # file} other {Deleting # files}}",
+      "{count, plural, one {deleting # file} other {deleting # files}}",
+      { count: runningDeleted },
+    ));
   }
   if (completedDeleted > 0) {
-    rows.push({ key: "deleted.completed", text: actionCount("Deleted", completedDeleted, "file", "files") });
+    rows.push(aggregateRow(
+      "deleted.completed",
+      "localConversation.toolActivitySummary.deleted",
+      "{count, plural, one {Deleted # file} other {Deleted # files}}",
+      "{count, plural, one {deleted # file} other {deleted # files}}",
+      { count: completedDeleted },
+    ));
   }
 
-  // Exploration 聚合："Explored/Exploring {N files, M searches, K lists}"
+  // Exploration 聚合："Explored/Exploring {details}"，details 由子键 ListFormat 拼接
   if (counts.exploredFiles > 0 || counts.searches > 0 || counts.lists > 0) {
-    const detailParts: string[] = [];
-    if (counts.exploredFiles > 0) detailParts.push(countNoun(counts.exploredFiles, "file", "files"));
-    if (counts.searches > 0) detailParts.push(countNoun(counts.searches, "search", "searches"));
-    if (counts.lists > 0) detailParts.push(countNoun(counts.lists, "list", "lists"));
-    const details = detailParts.join(", ");
-    const verb = inProgress ? "Exploring" : "Explored";
-    rows.push({ key: "exploration", text: `${verb} ${details}` });
+    const details = explorationDetails(counts.exploredFiles, counts.searches, counts.lists);
+    if (inProgress) {
+      rows.push(aggregateRow(
+        "exploration",
+        "localConversation.toolActivitySummary.exploration.exploring",
+        "Exploring {details}",
+        "exploring {details}",
+        { details },
+      ));
+    } else {
+      rows.push(aggregateRow(
+        "exploration",
+        "localConversation.toolActivitySummary.exploration",
+        "Explored {details}",
+        "explored {details}",
+        { details },
+      ));
+    }
   }
 
   // Web 搜索
   if (counts.webSearches > 0) {
-    rows.push({
-      key: "webSearch.completed",
-      // codex: completed = "Searched web" (no "the"); in-progress = "Searching the web".
-      text: actionCount(inProgress ? "Searching the web" : "Searched web", counts.webSearches, "time", "times"),
-    });
+    if (inProgress) {
+      rows.push(aggregateRow(
+        "webSearch.completed",
+        "localConversation.toolActivitySummary.webSearches.searching",
+        "{count, plural, one {Searching the web # time} other {Searching the web # times}}",
+        "{count, plural, one {searching the web # time} other {searching the web # times}}",
+        { count: counts.webSearches },
+      ));
+    } else {
+      rows.push(aggregateRow(
+        "webSearch.completed",
+        "localConversation.toolActivitySummary.webSearches",
+        "{count, plural, one {Searched web # time} other {Searched web # times}}",
+        "{count, plural, one {searched web # time} other {searched web # times}}",
+        { count: counts.webSearches },
+      ));
+    }
   }
 
   // MCP 工具调用
   if (counts.mcpCalls > 0) {
-    const verb = inProgress ? "Calling" : "Called";
-    rows.push({ key: "mcp", text: actionCount(verb, counts.mcpCalls, "tool", "tools") });
+    rows.push(aggregateRow(
+      "mcp",
+      "localConversation.toolActivitySummary.mcpToolCalls",
+      "{count, plural, one {Called # tool} other {Called # tools}}",
+      "{count, plural, one {called # tool} other {called # tools}}",
+      { count: counts.mcpCalls },
+    ));
   }
 
   // 审批结果聚合（approved/denied requests）
   if (counts.approvedRequests && counts.approvedRequests > 0) {
-    rows.push({ key: "approved", text: actionCount("Approved", counts.approvedRequests, "request", "requests") });
+    rows.push(aggregateRow(
+      "approved",
+      "localConversation.toolActivitySummary.approvedRequests",
+      "{count, plural, one {Approved request} other {Approved # requests}}",
+      "{count, plural, one {approved request} other {approved # requests}}",
+      { count: counts.approvedRequests },
+    ));
   }
   if (counts.deniedRequests && counts.deniedRequests > 0) {
-    rows.push({ key: "denied", text: actionCount("Denied", counts.deniedRequests, "request", "requests") });
+    rows.push(aggregateRow(
+      "denied",
+      "localConversation.toolActivitySummary.deniedRequests",
+      "{count, plural, one {Denied request} other {Denied # requests}}",
+      "{count, plural, one {denied request} other {denied # requests}}",
+      { count: counts.deniedRequests },
+    ));
   }
 
   return rows;
 }
 
 /*
- * Count helpers keep running noun phrases ("1 running command") separate from
- * completed action phrases ("Ran 1 command").
+ * exploration `{details}` 值：CODEX 用 `exploration.files|searches|lists` 三个 ICU
+ * 复数子键（"# file" / "# search" / "# list"）再 Intl.ListFormat type:"unit" join。
+ * 该子串非 leading/compact 敏感，用模块级 formatMessage 按当前 locale 解析。
  */
-function countNoun(count: number, singular: string, plural: string): string {
-  return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
-}
-
-function actionCount(verb: string, count: number, singular: string, plural: string): string {
-  return `${verb} ${countNoun(count, singular, plural)}`;
-}
-
-function webSearchCommandCount(verb: string, count: number): string {
-  return count === 1 ? verb : `${verb} ${count} times`;
+function explorationDetails(exploredFiles: number, searches: number, lists: number): string {
+  const parts: string[] = [];
+  if (exploredFiles > 0) {
+    parts.push(formatMessageModule(
+      { id: "localConversation.toolActivitySummary.exploration.files", defaultMessage: "{count, plural, one {# file} other {# files}}" },
+      { count: exploredFiles },
+    ));
+  }
+  if (searches > 0) {
+    parts.push(formatMessageModule(
+      { id: "localConversation.toolActivitySummary.exploration.searches", defaultMessage: "{count, plural, one {# search} other {# searches}}" },
+      { count: searches },
+    ));
+  }
+  if (lists > 0) {
+    parts.push(formatMessageModule(
+      { id: "localConversation.toolActivitySummary.exploration.lists", defaultMessage: "{count, plural, one {# list} other {# lists}}" },
+      { count: lists },
+    ));
+  }
+  return typeof Intl !== "undefined" && typeof Intl.ListFormat === "function"
+    ? new Intl.ListFormat(undefined, { type: "unit", style: "long" }).format(parts)
+    : parts.join(", ");
 }
 
 /*
@@ -782,8 +965,15 @@ function ToolActivityIconMark({ icon }: { icon: ToolActivityIcon }) {
 }
 
 function ToolActivityDiffStats({ added, removed }: { added: number; removed: number }) {
+  const { formatMessage } = useHiCodexIntl();
   return (
-    <span className="hc-tool-summary-diff-stats" aria-label={`${added} lines added, ${removed} lines removed`}>
+    <span
+      className="hc-tool-summary-diff-stats"
+      aria-label={formatMessage(
+        { id: "hc.diffStats.linesAddedRemoved", defaultMessage: "{added} lines added, {removed} lines removed" },
+        { added, removed },
+      )}
+    >
       <span className="hc-tool-summary-diff-added">+{added}</span>
       <span className="hc-tool-summary-diff-removed">-{removed}</span>
     </span>
@@ -798,6 +988,7 @@ export function workedForExpandedDetailItems(
 }
 
 function useToolActivitySummaryLabel(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): string {
+  const { formatMessage } = useHiCodexIntl();
   const [now, setNow] = useState(() => Date.now());
   const workedForItem = unit.summary.groupType === "worked-for" ? workedForActivityItem(unit.items) : undefined;
   const status = typeof workedForItem?.status === "string" ? workedForItem.status : "";
@@ -812,7 +1003,15 @@ function useToolActivitySummaryLabel(unit: Extract<ConversationRenderUnit, { kin
 
   if (!workedForItem || startedAtMs === null || status !== "working") return unit.summary.label;
   const elapsedMs = Math.max((completedAtMs ?? now) - startedAtMs, 0);
-  return elapsedMs >= 1_000 ? `Working for ${formatWorkedDuration(elapsedMs)}` : "Working";
+  // CODEX-REF local-conversation-thread-CEeZyOcp.js
+  //   id:`localConversation.workingFor`, defaultMessage:`Working for {time}`
+  //   id:`localConversation.working`,    defaultMessage:`Working`
+  return elapsedMs >= 1_000
+    ? formatMessage(
+        { id: "localConversation.workingFor", defaultMessage: "Working for {time}" },
+        { time: formatWorkedDuration(elapsedMs) },
+      )
+    : formatMessage({ id: "localConversation.working", defaultMessage: "Working" });
 }
 
 export function initialToolActivityExpanded(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): boolean {
@@ -904,6 +1103,41 @@ function formatWorkedDuration(ms: number): string {
   return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
+/**
+ * Codex's single-command / exec summary row appends a live `toolSummaryForCmd
+ * .runningTimer` (" for {elapsed}", tabular-nums) span after the status text while
+ * the command runs (e.g. "Running command for 4s", ticking each second). HiCodex
+ * only timed the worked-for group, so this hook supplies the per-command elapsed
+ * for an in-progress single exec row in a collapsed-tool-activity unit.
+ *
+ * Scope mirrors the finding: a single in-progress `exec` item that is NOT routed to
+ * exploration (own group type) or a running web-search command. Uses the item's
+ * `startedAtMs` with the same floor-seconds format as worked-for.
+ */
+function runningCommandStartedAtMs(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): number | null {
+  if (unit.summary.groupType !== "collapsed-tool-activity" || !unit.summary.inProgress) return null;
+  if (unit.summary.counts.runningWebSearchCommands > 0) return null;
+  if (unit.items.length !== 1) return null;
+  const item = unit.items[0];
+  if (!item || itemType(item) !== "exec" || !isItemInProgress(item)) return null;
+  return numberField(item as Record<string, unknown>, "startedAtMs");
+}
+
+function useRunningCommandElapsed(unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>): string | null {
+  const startedAtMs = runningCommandStartedAtMs(unit);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (startedAtMs === null) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [startedAtMs]);
+
+  if (startedAtMs === null) return null;
+  const elapsedMs = Math.max(now - startedAtMs, 0);
+  return elapsedMs >= 1_000 ? formatWorkedDuration(elapsedMs) : null;
+}
+
 export function ToolBlock({
   contentSearchUnitKey,
   details,
@@ -939,6 +1173,7 @@ export function ToolBlock({
   tone?: "terminal" | EventTone;
   value: string;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [streamErrorExpanded, setStreamErrorExpanded] = useState(false);
   const [userInputExpanded, setUserInputExpanded] = useState(false);
   if (format === "diff") {
@@ -961,6 +1196,7 @@ export function ToolBlock({
     const statusContent = dividerStatus
       ? statusDividerContent({
           contextStatus,
+          formatMessage,
           inProgress,
           item,
           label,
@@ -1143,6 +1379,7 @@ function statusDividerIcon(type: string) {
 
 function statusDividerContent({
   contextStatus,
+  formatMessage,
   inProgress,
   item,
   label,
@@ -1150,6 +1387,7 @@ function statusDividerContent({
   onOpenRemoteTask,
 }: {
   contextStatus: boolean;
+  formatMessage: FormatMessage;
   inProgress: boolean;
   item?: Extract<ConversationRenderUnit, { kind: "event" }>["item"];
   label: string;
@@ -1168,20 +1406,33 @@ function statusDividerContent({
   if (type === "remote-task-created") {
     const taskId = item ? stringField(item, "taskId") || stringField(item, "task_id") : "";
     const canOpen = Boolean(taskId && onOpenRemoteTask);
+    // CODEX-REF local-conversation-thread-CEeZyOcp.js
+    //   id:`localConversation.remoteTaskCreated`, defaultMessage:`Created {taskLink} in Codex Cloud`
+    //   id:`localConversation.remoteTaskCreated.task`, defaultMessage:`task`
+    // {taskLink} is a rich-text node; resolve the surrounding text (leaving
+    // {taskLink} as a split marker) then inject the localized `task` button.
+    const taskLabel = formatMessage({ id: "localConversation.remoteTaskCreated.task", defaultMessage: "task" });
+    const taskLink = (
+      <button
+        className="hc-status-event-inline-link"
+        disabled={!canOpen}
+        type="button"
+        onClick={canOpen ? () => onOpenRemoteTask?.(taskId) : undefined}
+      >
+        {taskLabel}
+      </button>
+    );
+    const [before, after] = splitOnPlaceholder(
+      formatMessage({ id: "localConversation.remoteTaskCreated", defaultMessage: "Created {taskLink} in Codex Cloud" }),
+      "taskLink",
+    );
     return (
       <>
         {statusDividerIcon(type)}
         <span className="hc-status-event-rich-text" aria-label={label}>
-          Created{" "}
-          <button
-            className="hc-status-event-inline-link"
-            disabled={!canOpen}
-            type="button"
-            onClick={canOpen ? () => onOpenRemoteTask?.(taskId) : undefined}
-          >
-            task
-          </button>
-          {" "}in Codex Cloud
+          {before}
+          {taskLink}
+          {after}
         </span>
       </>
     );
@@ -1200,12 +1451,13 @@ function statusDividerContent({
           type="button"
           onClick={canOpen ? () => onOpenConversationThreadId?.(sourceConversationId) : undefined}
         >
-          {label}
+          {/* CODEX-REF localConversation.forkedFromConversation = `Forked from conversation` */}
+          {formatMessage({ id: "localConversation.forkedFromConversation", defaultMessage: "Forked from conversation" })}
         </button>
       </>
     );
   }
-  const warning = item ? statusDividerWarning(type, item) : null;
+  const warning = item ? statusDividerWarning(type, item, formatMessage) : null;
   return (
     <>
       {statusDividerIcon(type)}
@@ -1255,12 +1507,27 @@ function statusEventTooltipId(type: string, item: Extract<ConversationRenderUnit
   return `hc-status-event-tooltip-${rawId.replace(/[^A-Za-z0-9_-]+/g, "-")}`;
 }
 
+// Split a formatMessage result around an unreplaced ICU placeholder ("{name}")
+// so a rich-text node can be injected where Codex passes a React chunk/value.
+function splitOnPlaceholder(message: string, name: string): [string, string] {
+  const token = `{${name}}`;
+  const index = message.indexOf(token);
+  if (index < 0) return [message, ""];
+  return [message.slice(0, index), message.slice(index + token.length)];
+}
+
 function statusDividerWarning(
   type: string,
   item: Extract<ConversationRenderUnit, { kind: "event" }>["item"],
+  formatMessage: FormatMessage,
 ): StatusEventWarningModel | null {
   if (type === "auto-review-interruption-warning") {
-    const line = "Auto-review stopped this turn after repeated denials. Add more context or choose a different permission mode to continue.";
+    // CODEX-REF localConversation.autoReviewInterruptionWarning.nextSteps
+    const line = formatMessage({
+      id: "localConversation.autoReviewInterruptionWarning.nextSteps",
+      defaultMessage:
+        "Auto-review stopped this turn after repeated denials. Add more context or choose a different permission mode to continue.",
+    });
     return {
       ariaLabel: "Auto-review interruption guidance",
       content: <span>{line}</span>,
@@ -1268,8 +1535,15 @@ function statusDividerWarning(
     };
   }
   if (type === "model-changed") {
-    const line1 = "Changing models mid-conversation will degrade performance.";
-    const line2 = "Context may automatically compact.";
+    // CODEX-REF localConversation.modelChanged.warning.line1 / .line2
+    const line1 = formatMessage({
+      id: "localConversation.modelChanged.warning.line1",
+      defaultMessage: "Changing models mid-conversation will degrade performance.",
+    });
+    const line2 = formatMessage({
+      id: "localConversation.modelChanged.warning.line2",
+      defaultMessage: "Context may automatically compact.",
+    });
     return {
       ariaLabel: "Model change warning",
       content: (
@@ -1282,9 +1556,21 @@ function statusDividerWarning(
     };
   }
   if (type === "model-rerouted" && stringField(item, "reason") === "highRiskCyberActivity") {
-    const line1 = "Heads up, your request was re-routed to reduce cyber-abuse risk.";
-    const line2Prefix = "Think this is a mistake? Request a review at ";
-    const line2Suffix = " or report via /feedback";
+    // CODEX-REF localConversation.modelRerouted.warning.line1 / .line2
+    //   line2 = `Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback`
+    const line1 = formatMessage({
+      id: "localConversation.modelRerouted.warning.line1",
+      defaultMessage: "Heads up, your request was re-routed to reduce cyber-abuse risk.",
+    });
+    const line2 = formatMessage({
+      id: "localConversation.modelRerouted.warning.line2",
+      defaultMessage:
+        "Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback",
+    });
+    const link = /^([\s\S]*?)<link>([\s\S]*?)<\/link>([\s\S]*)$/.exec(line2);
+    const line2Prefix = link ? link[1] : line2;
+    const linkText = link ? link[2] : "chatgpt.com/cyber";
+    const line2Suffix = link ? link[3] : "";
     return {
       ariaLabel: "Model reroute warning",
       content: (
@@ -1292,12 +1578,12 @@ function statusDividerWarning(
           <span>{line1}</span>
           <span>
             {line2Prefix}
-            <a href="https://chatgpt.com/cyber" rel="noreferrer" target="_blank">chatgpt.com/cyber</a>
+            <a href="https://chatgpt.com/cyber" rel="noreferrer" target="_blank">{linkText}</a>
             {line2Suffix}
           </span>
         </>
       ),
-      title: `${line1}\n${line2Prefix}chatgpt.com/cyber${line2Suffix}`,
+      title: `${line1}\n${line2Prefix}${linkText}${line2Suffix}`,
     };
   }
   return null;
@@ -1411,7 +1697,8 @@ export function TurnDiffBlock({
 
   const singleFileName = model.fileCount === 1 && model.files.length === 1 ? model.files[0]!.path : null;
   const titleLabel = formatTurnDiffFileCount(model.fileCount, singleFileName, formatMessage);
-  const singleFileDetailsLabel = singleFileName == null ? null : "Details";
+  const singleFileDetailsLabel =
+    singleFileName == null ? null : formatMessage({ id: "hc.unifiedDiff.details", defaultMessage: "Details" });
 
   if (inProgress) {
     const progressTitleLabel = formatTurnDiffFilesChanged(model.fileCount, formatMessage);
@@ -1449,7 +1736,9 @@ export function TurnDiffBlock({
               <span className="hc-turn-diff-review-full">
                 {formatMessage({ id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review here" })}
               </span>
-              <span className="hc-turn-diff-review-short">Review</span>
+              <span className="hc-turn-diff-review-short">
+                {formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
+              </span>
             </button>
           )}
         </div>
@@ -1525,8 +1814,16 @@ export function TurnDiffBlock({
              * (local-conversation-thread-*.js). HiCodex tooltips align to single-word
              * Codex values; aria-label adds verb context for screen readers.
              */
-            title={patchActionForThisDiff === "undo" ? "Undo" : "Reapply"}
-            aria-label={patchActionForThisDiff === "undo" ? "Undo this patch" : "Reapply this patch"}
+            title={
+              patchActionForThisDiff === "undo"
+                ? formatMessage({ id: "codex.unifiedDiff.revertChangesTooltip", defaultMessage: "Undo" })
+                : formatMessage({ id: "codex.unifiedDiff.reapplyChangesTooltip", defaultMessage: "Reapply" })
+            }
+            aria-label={
+              patchActionForThisDiff === "undo"
+                ? formatMessage({ id: "hc.unifiedDiff.undoThisPatch", defaultMessage: "Undo this patch" })
+                : formatMessage({ id: "hc.unifiedDiff.reapplyThisPatch", defaultMessage: "Reapply this patch" })
+            }
             type="button"
             disabled={patchActionInFlight}
             onClick={(event) => {
@@ -1540,7 +1837,9 @@ export function TurnDiffBlock({
               onPatchAction(patchActionForThisDiff, value);
             }}
           >
-            {patchActionForThisDiff === "undo" ? "Undo" : "Reapply"}
+            {patchActionForThisDiff === "undo"
+              ? formatMessage({ id: "codex.unifiedDiff.revertChangesTooltip", defaultMessage: "Undo" })
+              : formatMessage({ id: "codex.unifiedDiff.reapplyChangesTooltip", defaultMessage: "Reapply" })}
           </button>
         )}
         {onOpenDiff && (
@@ -1580,8 +1879,8 @@ export function TurnDiffBlock({
               role="button"
               tabIndex={0}
               className="hc-turn-diff-file-review"
-              aria-label="Show file in review"
-              title="Show in review"
+              aria-label={formatMessage({ id: "hc.unifiedDiff.showFileInReview", defaultMessage: "Show file in review" })}
+              title={formatMessage({ id: "hc.unifiedDiff.showInReview", defaultMessage: "Show in review" })}
               onClick={(event) => {
                 event.stopPropagation();
                 handlePerFileReview(file.path);
@@ -1604,7 +1903,10 @@ export function TurnDiffBlock({
                   {showFileStats && <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />}
                   <span className="hc-turn-diff-file-too-large">
                     {/* codex: `Rv` — large-file row label */}
-                    Too large to render inline
+                    {formatMessage({
+                      id: "hc.unifiedDiff.tooLargeToRenderInline",
+                      defaultMessage: "Too large to render inline",
+                    })}
                   </span>
                   {reviewControl}
                 </div>
@@ -1728,8 +2030,15 @@ function splitDiffByFile(diff: string): Map<string, string> {
 }
 
 function TurnDiffStats({ added, removed }: { added: number; removed: number }) {
+  const { formatMessage } = useHiCodexIntl();
   return (
-    <span className="hc-turn-diff-stats" aria-label={`${added} lines added, ${removed} lines removed`}>
+    <span
+      className="hc-turn-diff-stats"
+      aria-label={formatMessage(
+        { id: "hc.diffStats.linesAddedRemoved", defaultMessage: "{added} lines added, {removed} lines removed" },
+        { added, removed },
+      )}
+    >
       <span className="hc-turn-diff-added">+{added}</span>
       <span className="hc-turn-diff-removed">-{removed}</span>
     </span>

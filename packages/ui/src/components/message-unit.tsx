@@ -1,4 +1,5 @@
 import {
+  ChevronDown,
   ChevronRight,
   FileText,
   GitFork,
@@ -14,6 +15,7 @@ import { createPortal } from "react-dom";
 import type { FormEvent, MouseEvent, ReactNode } from "react";
 import type { AssistantReviewComment, ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
+import type { I18nValues } from "../state/i18n";
 import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 import {
   assistantArtifactMediaSources,
@@ -23,7 +25,7 @@ import {
 } from "./assistant-message-artifacts";
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { AssistantResourceCards } from "./assistant-resource-cards";
-import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
+import { type SubmitTurnRatingEvent } from "./turn-rating-controls";
 // codex: local-conversation-thread-*.js — automation citation
 // extraction + chip row. Codex's assistant body interleaves `:citation{...}`
 // leaf directives into the markdown and hoists them into either the trailing
@@ -57,6 +59,7 @@ import {
   UserMessageAttachmentStrip,
   UserMessageTextContentView,
   hasInlineUserMessageContent,
+  hasUserMessageAttachments,
 } from "./user-message-content-render";
 import type { OpenThreadHandler } from "./open-thread";
 
@@ -162,6 +165,7 @@ function MessageUnitViewInner({
   patchActionInFlight?: boolean;
   memoryCitationRoot?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const assistantPhase = unit.role === "assistant" ? unit.assistantPhase ?? "unknown" : undefined;
   const streaming = unit.role === "assistant" && unit.isStreaming === true;
   const renderPlaceholder = unit.role === "assistant" && unit.renderPlaceholder === true;
@@ -296,7 +300,7 @@ function MessageUnitViewInner({
         : (
             renderPlaceholder
               ? (
-                  <div className="hc-assistant-placeholder" aria-label="Assistant response is loading">
+                  <div className="hc-assistant-placeholder" aria-label={formatMessage({ id: "hc.assistantMessage.responseLoading", defaultMessage: "Assistant response is loading" })}>
                     {/* codex pre-stream placeholder spinner = `.icon-sm` (18px), not 16px. */}
                     <Loader2 className="hc-spin" size={18} />
                   </div>
@@ -765,9 +769,12 @@ function UserMessageUnit({
         )}
       />
       {shouldRenderUserMessageBubble(unit) && (
-        <div className="hc-user-message-bubble">
+        <UserMessageBubble onBeginEdit={onEdit ? () => setEditing(true) : undefined}>
           <CollapsedUserText unit={unit} onOpenFileReference={onOpenFileReference} />
-        </div>
+        </UserMessageBubble>
+      )}
+      {!shouldRenderUserMessageBubble(unit) && hasUserMessageAttachments(unit) && (
+        <UserMessageNoContent />
       )}
       <UserMessageActions
         copyText={unit.copyText ?? unit.text}
@@ -785,10 +792,11 @@ function ParentThreadAttachmentChip({
   sourceConversationId: string;
   onOpenThreadId?: OpenThreadHandler;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const content = (
     <>
       <GitFork aria-hidden size={14} />
-      <span>Parent chat</span>
+      <span>{formatMessage({ id: "localConversation.parentThread", defaultMessage: "Parent chat" })}</span>
     </>
   );
   if (!onOpenThreadId) {
@@ -802,6 +810,63 @@ function ParentThreadAttachmentChip({
     >
       {content}
     </button>
+  );
+}
+
+// codex user-message-attachments-*.js — the most recent editable user bubble is
+// itself interactive: role="button" tabIndex=0, double-click or Enter/Space enters
+// edit mode, with a focus-visible ring and aria-label. Uses a div (not <button>) so
+// nested prompt chips / file links / the Show more toggle keep their own clicks.
+function UserMessageBubble({
+  children,
+  onBeginEdit,
+}: {
+  children: ReactNode;
+  onBeginEdit?: () => void;
+}) {
+  const { formatMessage } = useHiCodexIntl();
+  if (!onBeginEdit) {
+    return <div className="hc-user-message-bubble">{children}</div>;
+  }
+  return (
+    <div
+      className="hc-user-message-bubble is-editable"
+      role="button"
+      tabIndex={0}
+      aria-label={formatMessage({
+        id: "codex.userMessage.editBubbleAriaLabel",
+        defaultMessage: "Edit user message",
+        description: "Aria label for an editable user message bubble",
+      })}
+      onDoubleClick={() => onBeginEdit()}
+      onKeyDown={(event) => {
+        // Only act when the bubble itself is focused; nested buttons/links keep
+        // their own Enter/Space behavior.
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onBeginEdit();
+        }
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// codex user-message-attachments-*.js — when a user message has only
+// attachments/images and no visible body, the bubble slot shows a faded
+// "(No content)" line (text-size-chat text-token-description-foreground).
+function UserMessageNoContent() {
+  const { formatMessage } = useHiCodexIntl();
+  return (
+    <div className="hc-user-message-no-content">
+      {formatMessage({
+        id: "codex.userMessage.noContent",
+        defaultMessage: "(No content)",
+        description: "Text for when a user message has no content",
+      })}
+    </div>
   );
 }
 
@@ -829,6 +894,7 @@ function UserEditForm({
   onDraftChange: (draft: string) => void;
   onSubmit: (message: string) => void | Promise<void>;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const editorRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     window.requestAnimationFrame(() => {
@@ -856,8 +922,8 @@ function UserEditForm({
         <PromptEditor
           ref={editorRef}
           value={draft}
-          placeholder="Edit message"
-          ariaLabel="Edit message"
+          placeholder={formatMessage({ id: "codex.userMessage.editPlaceholder", defaultMessage: "Edit message" })}
+          ariaLabel={formatMessage({ id: "codex.userMessage.editTextareaAriaLabel", defaultMessage: "Edit message" })}
           minHeight="72px"
           onChange={(value) => {
             if (!disabled) onDraftChange(value);
@@ -872,8 +938,8 @@ function UserEditForm({
         <div className="hc-user-edit-error" role="alert">{errorMessage}</div>
       )}
       <div className="hc-user-edit-actions">
-        <button disabled={disabled} type="button" onClick={onCancel}>Cancel</button>
-        <button className="primary" disabled={disabled} type="submit">Send</button>
+        <button disabled={disabled} type="button" onClick={onCancel}>{formatMessage({ id: "codex.userMessage.cancelEditMessage", defaultMessage: "Cancel" })}</button>
+        <button className="primary" disabled={disabled} type="submit">{formatMessage({ id: "codex.userMessage.sendEditedMessage", defaultMessage: "Send" })}</button>
       </div>
     </form>
   );
@@ -886,6 +952,7 @@ function CollapsedUserText({
   unit: MessageRenderUnit;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [collapsible, setCollapsible] = useState(false);
@@ -924,9 +991,11 @@ function CollapsedUserText({
           className="hc-user-message-collapse-toggle"
           onClick={() => setExpanded((value) => !value)}
         >
-          <span>{expanded ? "Show less" : "Show more"}</span>
-          {/* codex collapse chevron = icon-2xs (14px) */}
-          <ChevronRight size={14} className={expanded ? "is-open" : ""} />
+          <span>{expanded
+            ? formatMessage({ id: "codex.userMessage.showLess", defaultMessage: "Show less" })
+            : formatMessage({ id: "codex.userMessage.showMore", defaultMessage: "Show more" })}</span>
+          {/* codex collapse chevron = icon-2xs (14px); collapsed points down, expanded rotate-180 (up) */}
+          <ChevronDown size={14} className={expanded ? "is-open" : ""} />
         </button>
       )}
     </div>
@@ -937,37 +1006,70 @@ function likelyLongUserMessage(text: string): boolean {
   return text.split(/\r\n|\r|\n/).length > 20 || text.length > 1800;
 }
 
-function userMessageMetaChips(item: Record<string, unknown>): string[] {
-  const chips: string[] = [];
+/*
+ * 用户消息元数据 chip。每条携带 Codex 的 `codex.userMessage.*` i18n 描述符
+ * （CODEX-REF user-message-attachments-DXOFthSZ.js + local-conversation-thread-CEeZyOcp.js），
+ * 由 UserMessageActions 用 formatMessage 解析，ZH 下本地化。
+ */
+interface UserMessageMetaChip {
+  id: string;
+  defaultMessage: string;
+  values?: I18nValues;
+}
+
+function userMessageMetaChips(item: Record<string, unknown>): UserMessageMetaChip[] {
+  const chips: UserMessageMetaChip[] = [];
   if (stringValue(item.deliveryStatus) === "not-sent" || booleanField(item, "hookBlocked")) {
-    chips.push("Hook blocked this message");
+    chips.push({ id: "codex.userMessage.hookBlocked", defaultMessage: "Hook blocked this message" });
   } else if (item.type === "hookPrompt" || booleanField(item, "hookFeedback")) {
-    chips.push("Hook feedback");
+    chips.push({ id: "codex.userMessage.hookFeedback", defaultMessage: "Hook feedback" });
   }
   const goalChip = threadGoalMetaChip(item);
   if (goalChip) chips.push(goalChip);
-  if (booleanField(item, "referencesPriorConversation")) chips.push("References prior conversation");
-  if (booleanField(item, "reviewMode")) chips.push("Review mode");
-  if (booleanField(item, "pullRequestFixMode")) chips.push("PR fix");
-  if (booleanField(item, "autoResolveSync")) chips.push("Auto resolve conflicts");
+  if (booleanField(item, "referencesPriorConversation")) {
+    chips.push({ id: "codex.userMessage.priorConversation", defaultMessage: "References prior conversation" });
+  }
+  if (booleanField(item, "reviewMode")) {
+    chips.push({ id: "codex.userMessage.reviewMode", defaultMessage: "Review mode" });
+  }
+  if (booleanField(item, "pullRequestFixMode")) {
+    chips.push({ id: "codex.userMessage.pullRequestFixMode", defaultMessage: "PR fix" });
+  }
+  if (booleanField(item, "autoResolveSync")) {
+    chips.push({ id: "codex.userMessage.autoResolveSync", defaultMessage: "Auto resolve conflicts" });
+  }
   const commentCount = numericField(item, "commentCount");
-  if (commentCount > 0) chips.push(commentCount === 1 ? "1 comment" : `${commentCount} comments`);
+  if (commentCount > 0) {
+    chips.push({
+      id: "codex.userMessage.commentCount",
+      defaultMessage: "{count, plural, one {# comment} other {# comments}}",
+      values: { count: commentCount },
+    });
+  }
   const pullRequestCheckCount = numericField(item, "pullRequestCheckCount");
   if (pullRequestCheckCount > 0) {
-    chips.push(pullRequestCheckCount === 1 ? "1 CI test" : `${pullRequestCheckCount} CI tests`);
+    chips.push({
+      id: "codex.userMessage.pullRequestCheckCount",
+      defaultMessage: "{count, plural, one {# CI test} other {# CI tests}}",
+      values: { count: pullRequestCheckCount },
+    });
   }
   // codex local-conversation-thread userMessage.pullRequestMergeConflict — gated on the
   // item's `hasPullRequestMergeConflict` boolean (same protocol field Codex reads, a
   // sibling of pullRequestFixMode/autoResolveSync), rendered near the end of the strip.
-  if (booleanField(item, "hasPullRequestMergeConflict")) chips.push("Merge conflicts");
+  if (booleanField(item, "hasPullRequestMergeConflict")) {
+    chips.push({ id: "codex.userMessage.pullRequestMergeConflict", defaultMessage: "Merge conflicts" });
+  }
   return chips;
 }
 
-function threadGoalMetaChip(item: Record<string, unknown>): string | null {
+function threadGoalMetaChip(item: Record<string, unknown>): UserMessageMetaChip | null {
   const goal = recordField(item, "_threadGoal");
   const objective = stringValue(goal.objective).trim();
   const status = stringValue(goal.status).trim();
-  if (objective || status || item.goal === true) return "Sent as goal";
+  if (objective || status || item.goal === true) {
+    return { id: "codex.userMessage.goal", defaultMessage: "Sent as goal" };
+  }
   return null;
 }
 
@@ -995,16 +1097,17 @@ function UserMessageActions({
   onEdit,
 }: {
   copyText: string;
-  meta: string[];
+  meta: UserMessageMetaChip[];
   onEdit?: () => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const hasActionChildren = Boolean(onEdit);
   const shouldRenderActionRow = shouldRenderMessageActionRow({ copyText, hasActionChildren });
   const actionRow = shouldRenderActionRow
     ? (
         <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
           {onEdit && (
-            <IconActionButton ariaLabel="Edit message" title="Edit" onClick={onEdit}>
+            <IconActionButton ariaLabel={formatMessage({ id: "codex.userMessage.editAriaLabel", defaultMessage: "Edit message" })} title={formatMessage({ id: "codex.userMessage.editTooltip", defaultMessage: "Edit" })} onClick={onEdit}>
               {/* HiCodex divergence: 12px (Codex action icon-xs = 16px), per product preference */}
               <Pencil size={12} />
             </IconActionButton>
@@ -1016,8 +1119,10 @@ function UserMessageActions({
   if (meta.length === 0) return actionRow;
   return (
     <div className="hc-user-message-action-strip">
-      {meta.map((label) => (
-        <span className="hc-message-action-status meta" key={label}>{label}</span>
+      {meta.map((chip) => (
+        <span className="hc-message-action-status meta" key={chip.id}>
+          {formatMessage({ id: chip.id, defaultMessage: chip.defaultMessage }, chip.values)}
+        </span>
       ))}
       {actionRow}
     </div>
@@ -1053,6 +1158,7 @@ function AssistantMessageActions({
   threadId?: string | null;
   turnId?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const autoReviewSummary = assistantAutoReviewSummary(item);
   /*
    * codex: local-conversation-thread-*.pretty.js + imported
@@ -1066,22 +1172,14 @@ function AssistantMessageActions({
    */
   const hookStatsSummary = assistantHookStatsSummary(item);
   const goalSummary = assistantCompletedThreadGoal(item);
-  const canRateTurn = Boolean(threadId && turnId && onSubmitTurnFeedback);
   const hasActionChildren = Boolean(onFork)
     || Boolean(autoReviewSummary)
     || Boolean(hookStatsSummary)
-    || Boolean(goalSummary)
-    || canRateTurn;
+    || Boolean(goalSummary);
   return (
     <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={messageSentAtMs(item)}>
-      <TurnRatingControls
-        hasArtifacts={hasArtifacts === true}
-        onSubmit={onSubmitTurnFeedback}
-        threadId={threadId}
-        turnId={turnId}
-      />
       {onFork && (
-        <IconActionButton ariaLabel="Fork from this point" title="Fork" onClick={onFork}>
+        <IconActionButton ariaLabel={formatMessage({ id: "assistantMessageContent.forkAriaLabel", defaultMessage: "Fork from this point" })} title={formatMessage({ id: "assistantMessageContent.forkTooltip", defaultMessage: "Fork" })} onClick={onFork}>
           {/* HiCodex divergence: 12px (Codex action icon-xs = 16px), per product preference */}
           <GitFork size={12} />
         </IconActionButton>
@@ -1154,13 +1252,26 @@ function AssistantHookStatsAction({ summary }: { summary: AssistantHookStatsSumm
 // (formatting `timeUsedSeconds*1000`) plus a small icon and divider; we mirror
 // the label + tooltip carrying the objective text.
 function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompletedGoalSummary }) {
+  const { formatMessage } = useHiCodexIntl();
+  // CODEX-REF local-conversation-thread-CEeZyOcp.js
+  //   id:`assistantMessageContent.goalAchieved`, defaultMessage:`Goal achieved in {totalTime}`
+  // When a duration is present, render the localized "Goal achieved in {totalTime}"
+  // chip; the no-duration fallback keeps the existing composer.threadGoal complete copy.
+  const visibleLabel = summary.durationLabel
+    ? formatMessage(
+        { id: "assistantMessageContent.goalAchieved", defaultMessage: "Goal achieved in {totalTime}" },
+        { totalTime: summary.durationLabel },
+      )
+    : formatMessage({ id: "composer.threadGoal.summary.complete", defaultMessage: "Goal complete" });
   return (
     <span
-      aria-label={summary.objective ? `Goal complete: ${summary.objective}` : "Goal complete"}
+      aria-label={summary.objective
+        ? formatMessage({ id: "hc.assistantMessage.goalCompleteWithObjective", defaultMessage: "Goal complete: {objective}" }, { objective: summary.objective })
+        : formatMessage({ id: "composer.threadGoal.summary.complete", defaultMessage: "Goal complete" })}
       className="hc-message-action-status text hc-message-goal-chip"
-      title={summary.objective || summary.label}
+      title={summary.objective || visibleLabel}
     >
-      {summary.label}
+      {visibleLabel}
     </span>
   );
 }
@@ -3449,6 +3560,7 @@ function MarkdownBlockView({
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
   references?: MarkdownReferenceDefinitions;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   switch (block.kind) {
     case "heading": {
       return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</Heading>;
@@ -3533,7 +3645,9 @@ function MarkdownBlockView({
         <ul className="hc-task-list">
           {block.items.map((item, index) => (
             <li key={index}>
-              <input aria-label={item.checked ? "Completed task" : "Pending task"} checked={item.checked} readOnly type="checkbox" />
+              <input aria-label={item.checked
+                ? formatMessage({ id: "hc.markdown.task.completed", defaultMessage: "Completed task" })
+                : formatMessage({ id: "hc.markdown.task.pending", defaultMessage: "Pending task" })} checked={item.checked} readOnly type="checkbox" />
               <span>
                 {renderInline(item.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}
               </span>
@@ -3596,6 +3710,7 @@ function MarkdownListItemView({
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
   references?: MarkdownReferenceDefinitions;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const text = typeof item === "string" ? item : item.text;
   const children = typeof item === "string" ? [] : item.children ?? [];
   const task = typeof item !== "string" && item.task === true;
@@ -3603,7 +3718,9 @@ function MarkdownListItemView({
   return (
     <li className={task ? "task-list-item" : undefined}>
       {task && (
-        <input aria-label={checked ? "Completed task" : "Pending task"} checked={checked} readOnly type="checkbox" />
+        <input aria-label={checked
+          ? formatMessage({ id: "hc.markdown.task.completed", defaultMessage: "Completed task" })
+          : formatMessage({ id: "hc.markdown.task.pending", defaultMessage: "Pending task" })} checked={checked} readOnly type="checkbox" />
       )}
       {loose
         ? text.length > 0 && (
@@ -3697,6 +3814,7 @@ function LazyMarkdownCodeBlock({ block }: { block: Extract<MarkdownBlock, { kind
 }
 
 function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; image: MarkdownImageBlock }) {
+  const { formatMessage } = useHiCodexIntl();
   const [previewState, setPreviewState] = useState<MarkdownImagePreviewState | null>(null);
   const src = resolveMarkdownMediaSrc(image.src);
   const mediaKind = markdownMediaKind(src);
@@ -3738,18 +3856,18 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
   if (mediaKind === "video") {
     return (
       <figure className={`hc-markdown-image ${allowWide ? "is-grid-item" : ""}`}>
-        <video aria-label={image.alt || "Video"} controls preload="metadata" src={src} title={image.title ?? undefined} />
+        <video aria-label={image.alt || formatMessage({ id: "markdown.videoPlayer", defaultMessage: "Video" })} controls preload="metadata" src={src} title={image.title ?? undefined} />
         {image.alt.trim().length > 0 && <figcaption>{image.alt}</figcaption>}
       </figure>
     );
   }
   const previewDialog = previewItem && typeof document !== "undefined"
     ? createPortal(
-        <div className={MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS} role="dialog" data-state="open" aria-modal="true" aria-label={previewItem.alt || "Image preview"}>
-          <button className="hc-markdown-image-preview-backdrop" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)} />
+        <div className={MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS} role="dialog" data-state="open" aria-modal="true" aria-label={previewItem.alt || formatMessage({ id: "imagePreviewDialog.label", defaultMessage: "Image preview" })}>
+          <button className="hc-markdown-image-preview-backdrop" type="button" aria-label={formatMessage({ id: "imagePreviewDialog.close", defaultMessage: "Close image preview" })} onClick={() => setPreviewState(null)} />
           {previewIndexes.previous !== null && (
             <button
-              aria-label="Previous image"
+              aria-label={formatMessage({ id: "imagePreviewDialog.previousImage", defaultMessage: "Previous image" })}
               className="hc-markdown-image-preview-nav previous"
               type="button"
               onClick={() => navigatePreview(previewIndexes.previous ?? 0)}
@@ -3759,7 +3877,7 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
           )}
           {previewIndexes.next !== null && (
             <button
-              aria-label="Next image"
+              aria-label={formatMessage({ id: "imagePreviewDialog.nextImage", defaultMessage: "Next image" })}
               className="hc-markdown-image-preview-nav next"
               type="button"
               onClick={() => navigatePreview(previewIndexes.next ?? 0)}
@@ -3768,7 +3886,7 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
             </button>
           )}
           <div className="hc-markdown-image-preview-content">
-            <button className="hc-markdown-image-preview-close" type="button" aria-label="Close image preview" onClick={() => setPreviewState(null)}>
+            <button className="hc-markdown-image-preview-close" type="button" aria-label={formatMessage({ id: "imagePreviewDialog.close", defaultMessage: "Close image preview" })} onClick={() => setPreviewState(null)}>
               <X size={16} />
             </button>
             <img alt={previewItem.alt} src={previewItem.src} title={previewItem.title ?? undefined} />
@@ -3783,7 +3901,7 @@ function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; 
     <>
       <figure className={`hc-markdown-image ${allowWide ? "is-grid-item" : ""}`}>
         <button
-          aria-label={image.alt || "Open image preview"}
+          aria-label={image.alt || formatMessage({ id: "markdown.imagePreviewButton", defaultMessage: "Open image preview" })}
           className="hc-markdown-image-trigger"
           data-markdown-image-preview-trigger="true"
           type="button"
@@ -3872,9 +3990,10 @@ function markdownMediaKind(src: string): "image" | "video" {
 // { displayMode: true, throwOnError: false })`; render failures fall back to
 // the raw source so a malformed equation cannot blow up the whole message.
 function MathDisplay({ text }: { text: string }) {
+  const { formatMessage } = useHiCodexIntl();
   const html = renderKatexHtml(text, true);
   return (
-    <div className="hc-math-display" role="img" aria-label={`Math: ${text}`}>
+    <div className="hc-math-display" role="img" aria-label={formatMessage({ id: "hc.markdown.math.label", defaultMessage: "Math: {text}" }, { text })}>
       {html
         ? <span dangerouslySetInnerHTML={{ __html: html }} />
         : <span className="hc-math-source">{text}</span>}
@@ -3887,10 +4006,12 @@ function MathDisplay({ text }: { text: string }) {
 // surrounding tokenizer (`parseMarkdownInlineMath`) rejects `$5` / `$ x` so
 // currency strings are not misread as math openings.
 function MathInline({ text }: { text: string }) {
+  const { formatMessage } = useHiCodexIntl();
   const html = renderKatexHtml(text, false);
+  const label = formatMessage({ id: "hc.markdown.math.label", defaultMessage: "Math: {text}" }, { text });
   return html
-    ? <span className="hc-math-inline" aria-label={`Math: ${text}`} dangerouslySetInnerHTML={{ __html: html }} />
-    : <span className="hc-math-inline" aria-label={`Math: ${text}`}>{text}</span>;
+    ? <span className="hc-math-inline" aria-label={label} dangerouslySetInnerHTML={{ __html: html }} />
+    : <span className="hc-math-inline" aria-label={label}>{text}</span>;
 }
 
 function renderKatexHtml(text: string, displayMode: boolean): string | null {
@@ -3942,7 +4063,8 @@ function MemoryCitationView({
   return (
     <details className="hc-memory-citations">
       <summary>
-        <ChevronRight size={12} />
+        {/* codex memory-citation chevron = icon-2xs (14px), group-open:rotate-90 */}
+        <ChevronRight size={14} />
         <span>{memoryCitationSummary(entries.length, formatMessage)}</span>
       </summary>
       <ol>

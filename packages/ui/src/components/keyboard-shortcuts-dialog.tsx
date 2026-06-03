@@ -14,9 +14,12 @@ import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   COMMAND_DESCRIPTORS,
+  commandDescriptorDescription,
+  commandDescriptorTitle,
   descriptorAcceleratorLabel,
 } from "../state/commands";
 import type { CommandDescriptor } from "../state/command-registry";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface KeyboardShortcutsDialogProps {
   open: boolean;
@@ -28,23 +31,26 @@ export interface KeyboardShortcutsDialogProps {
  * the same taxonomy as the command menu. HiCodex reuses the descriptor's
  * `commandMenuGroupKey` so the list mirrors the command palette taxonomy.
  */
-const GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "thread", title: "Chat" },
-  { key: "panels", title: "Panels" },
-  { key: "navigation", title: "Navigation" },
-  { key: "workspace", title: "Project" },
-  { key: "skills", title: "Skills" },
-  { key: "configure", title: "Configure" },
-  { key: "app", title: "App" },
+const GROUP_TITLE: ReadonlyArray<{ key: string; titleId: string; title: string }> = [
+  { key: "general", titleId: "keyboardShortcutsDialog.section.general", title: "General" },
+  { key: "thread", titleId: "keyboardShortcutsDialog.section.thread", title: "Chat" },
+  { key: "panels", titleId: "keyboardShortcutsDialog.section.panels", title: "Panels" },
+  { key: "navigation", titleId: "keyboardShortcutsDialog.section.navigation", title: "Navigation" },
+  { key: "workspace", titleId: "keyboardShortcutsDialog.section.workspace", title: "Project" },
+  { key: "skills", titleId: "keyboardShortcutsDialog.section.skills", title: "Skills" },
+  { key: "configure", titleId: "keyboardShortcutsDialog.section.configure", title: "Configure" },
+  { key: "app", titleId: "keyboardShortcutsDialog.section.app", title: "App" },
 ];
 
 interface Section {
   key: string;
+  titleId?: string;
   title: string;
   descriptors: CommandDescriptor[];
 }
 
 export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDialogProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [query, setQuery] = useState("");
 
   // codex: keyboard-shortcuts-search-input-*.js — substring filter on
@@ -64,7 +70,7 @@ export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDial
         role="dialog"
         data-state="open"
         aria-modal="true"
-        aria-label="Keyboard shortcuts"
+        aria-label={formatMessage({ id: "keyboardShortcutsDialog.title", defaultMessage: "Keyboard shortcuts" })}
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
@@ -74,11 +80,13 @@ export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDial
         }}
       >
         <header className="hc-keyboard-shortcuts-header">
-          <div className="hc-keyboard-shortcuts-title">Keyboard shortcuts</div>
+          <div className="hc-keyboard-shortcuts-title">
+            {formatMessage({ id: "keyboardShortcutsDialog.title", defaultMessage: "Keyboard shortcuts" })}
+          </div>
           <button
             type="button"
             className="hc-keyboard-shortcuts-close"
-            aria-label="Close"
+            aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })}
             onClick={onClose}
           >
             <X size={16} />
@@ -90,28 +98,36 @@ export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDial
             autoFocus
             type="search"
             value={query}
-            placeholder="Filter shortcuts…"
-            aria-label="Filter shortcuts"
+            placeholder={formatMessage({ id: "settings.keyboardShortcuts.search.placeholder", defaultMessage: "Search shortcuts" })}
+            aria-label={formatMessage({ id: "settings.keyboardShortcuts.search.ariaLabel", defaultMessage: "Search keyboard shortcuts" })}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
         <div className="hc-keyboard-shortcuts-body">
           {sections.length === 0 ? (
-            <div className="hc-keyboard-shortcuts-empty">No matching shortcuts</div>
+            <div className="hc-keyboard-shortcuts-empty">
+              {query.trim().length > 0
+                ? formatMessage({ id: "keyboardShortcutsDialog.noMatches", defaultMessage: "No matching shortcuts" })
+                : formatMessage({ id: "keyboardShortcutsDialog.empty", defaultMessage: "No active shortcuts" })}
+            </div>
           ) : (
             sections.map((section) => (
               <section className="hc-keyboard-shortcuts-section" key={section.key}>
-                <h3 className="hc-keyboard-shortcuts-section-title">{section.title}</h3>
+                <h3 className="hc-keyboard-shortcuts-section-title">
+                  {section.titleId
+                    ? formatMessage({ id: section.titleId, defaultMessage: section.title })
+                    : section.title}
+                </h3>
                 <ul className="hc-keyboard-shortcuts-list">
                   {section.descriptors.map((descriptor) => {
                     const accelerator = descriptorAcceleratorLabel(descriptor.id);
                     return (
                       <li className="hc-keyboard-shortcuts-row" key={descriptor.id}>
                         <div className="hc-keyboard-shortcuts-row-text">
-                          <span className="hc-keyboard-shortcuts-row-title">{descriptor.title}</span>
-                          {descriptor.description ? (
+                          <span className="hc-keyboard-shortcuts-row-title">{commandDescriptorTitle(descriptor)}</span>
+                          {commandDescriptorDescription(descriptor) ? (
                             <span className="hc-keyboard-shortcuts-row-desc">
-                              {descriptor.description}
+                              {commandDescriptorDescription(descriptor)}
                             </span>
                           ) : null}
                         </div>
@@ -155,7 +171,7 @@ function buildSections(query: string): Section[] {
   for (const entry of GROUP_TITLE) {
     const descriptors = buckets.get(entry.key);
     if (descriptors && descriptors.length > 0) {
-      sections.push({ key: entry.key, title: entry.title, descriptors });
+      sections.push({ key: entry.key, titleId: entry.titleId, title: entry.title, descriptors });
     }
   }
   // Any descriptor whose group is not in GROUP_TITLE falls into an "Other" bucket.
@@ -170,8 +186,8 @@ function matchesQuery(descriptor: CommandDescriptor, normalizedQuery: string): b
   if (normalizedQuery.length === 0) return true;
   const accelerator = descriptorAcceleratorLabel(descriptor.id) ?? "";
   const haystack = [
-    descriptor.title,
-    descriptor.description ?? "",
+    commandDescriptorTitle(descriptor),
+    commandDescriptorDescription(descriptor) ?? "",
     descriptor.id,
     accelerator,
   ]

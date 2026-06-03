@@ -1,5 +1,6 @@
 import { formatUnknown, stringField } from "../lib/format";
 
+import { formatMessage } from "./i18n";
 import type { ConversationDetailLevel, ItemRecord, ThreadItem, ToolActivityGroupType, ToolActivityIcon, ToolActivitySummary } from "./render-group-types";
 import { eventLabel } from "./event-projection";
 import {
@@ -10,7 +11,6 @@ import {
   commandText,
   dedupe,
   durationMs,
-  formatCount,
   formatDuration,
   isCompletedRecord,
   isItemInProgress,
@@ -140,8 +140,8 @@ export function summarizeToolActivity(
         details.push(commandActivityLabel);
         if (itemInProgress) {
           if (skillReadLabelParts) pushActiveDetail(commandActivityLabel);
-          else if (commandSearchesWebLikeCodexDesktop(item)) pushActiveDetail("Searching the web");
-          else if (commandCreatesFolderLikeCodexDesktop(item)) pushActiveDetail("Creating folder");
+          else if (commandSearchesWebLikeCodexDesktop(item)) pushActiveDetail(searchingTheWebLabel());
+          else if (commandCreatesFolderLikeCodexDesktop(item)) pushActiveDetail(creatingFolderLabel());
           else pushActiveDetail(commandLabel(item));
         }
       }
@@ -164,20 +164,19 @@ export function summarizeToolActivity(
       counts.mcpCalls += 1;
       const source = mcpToolCallSourceName(item);
       if (source) mcpToolCallSources.set(source, (mcpToolCallSources.get(source) ?? 0) + 1);
-      const label = `Called ${mcpServerName(item) || "mcp"}:${mcpToolName(item) || "tool"}`;
-      details.push(label);
-      if (itemInProgress) pushActiveDetail(label.replace(/^Called /, "Calling "));
+      const name = `${mcpServerName(item) || "mcp"}:${mcpToolName(item) || "tool"}`;
+      details.push(calledToolLabel(name, false));
+      if (itemInProgress) pushActiveDetail(calledToolLabel(name, true));
     } else if (type === "dynamic-tool-call") {
       counts.dynamicCalls += 1;
-      const label = `Called ${[stringField(record, "namespace"), stringField(record, "tool") || "tool"].filter(Boolean).join(".")}`;
-      details.push(label);
-      if (itemInProgress) pushActiveDetail(label.replace(/^Called /, "Calling "));
+      const name = [stringField(record, "namespace"), stringField(record, "tool") || "tool"].filter(Boolean).join(".");
+      details.push(calledToolLabel(name, false));
+      if (itemInProgress) pushActiveDetail(calledToolLabel(name, true));
     } else if (type === "web-search") {
       counts.webSearches += 1;
       const detail = webSearchDetailText(record);
-      const label = `Searched web${detail ? ` for ${detail}` : ""}`;
-      details.push(label);
-      if (itemInProgress) pushActiveDetail(`Searching the web${detail ? ` for ${detail}` : ""}`);
+      details.push(webSearchRowLabel(detail, false));
+      if (itemInProgress) pushActiveDetail(webSearchRowLabel(detail, true));
     } else if (type === "multi-agent-action") {
       const label = multiAgentActionRowLabel(item);
       details.push(label);
@@ -187,32 +186,32 @@ export function summarizeToolActivity(
       if (status === "approved") {
         activityCounts.approvedRequests += 1;
         counts.approvedRequests += 1;
-        details.push("Approved request");
+        details.push(approvedRequestRowLabel());
       } else if (status === "denied") {
         activityCounts.deniedRequests += 1;
         counts.deniedRequests += 1;
-        details.push("Denied request");
+        details.push(deniedRequestRowLabel());
       } else {
         counts.other += 1;
         details.push(eventLabel(item));
       }
     } else if (type === "reasoning") {
       counts.reasoning += 1;
-      if (itemInProgress) pushActiveDetail("Thinking");
+      if (itemInProgress) pushActiveDetail(thinkingLabel());
     } else if (type === "assistant-message") {
       counts.other += 1;
       const text = assistantMessageText(item).trim();
-      details.push(text || "Assistant update");
+      details.push(text || formatMessage({ id: "hc.toolActivity.assistantUpdate", defaultMessage: "Assistant update" }));
     } else if (type === "worked-for") {
       hasWorkedFor = true;
       workedForInProgress = workedForInProgress || itemInProgress;
       workedForDurationMs += durationMs(item);
     } else if (type === "plan") {
       counts.plans += 1;
-      details.push("Updated plan");
+      details.push(updatedPlanLabel());
     } else if (type === "todo-list") {
       counts.plans += 1;
-      details.push("Updated progress");
+      details.push(updatedProgressLabel());
     } else {
       counts.other += 1;
       details.push(eventLabel(item));
@@ -341,24 +340,30 @@ function activityLabel(
   activityCounts: { approvedRequests: number; deniedRequests: number } = { approvedRequests: 0, deniedRequests: 0 },
   mcpToolCallSources: ReadonlyMap<string, number> = new Map(),
 ): string {
-  if (groupType === "reasoning") return inProgress ? "Thinking" : totalDurationMs > 0 ? `Thought for ${formatDuration(totalDurationMs)}` : "Thought";
-  if (groupType === "exploration") return explorationSummaryLabel(counts, inProgress) ?? (inProgress ? "Exploring" : "Explored");
-  if (groupType === "todo-list") return "Updated progress";
-  if (groupType === "pending-mcp-tool-calls") return "Waiting on MCP tool";
+  if (groupType === "reasoning") {
+    if (inProgress) return thinkingLabel();
+    return totalDurationMs > 0 ? thoughtForLabel(totalDurationMs) : thoughtLabel();
+  }
+  if (groupType === "exploration") return explorationSummaryLabel(counts, inProgress) ?? (inProgress ? exploringLabel() : exploredLabel());
+  if (groupType === "todo-list") return updatedProgressLabel();
+  if (groupType === "pending-mcp-tool-calls") return waitingOnMcpToolLabel();
   if (groupType === "web-search-group") {
-    return inProgress ? "Searching the web" : "Searched web";
+    return inProgress ? searchingTheWebLabel() : searchedWebLabel();
   }
-  if (groupType === "multi-agent-group") return inProgress ? "Working with agents" : "Updated agents";
+  // multi-agent-group never reaches activityLabel — summarizeToolActivity routes it
+  // to multiAgentGroupLabelForItems (Codex `{action}{countLabel}` passthrough). The
+  // old "Working with agents"/"Updated agents" fallback here was both dead and absent
+  // from the Codex bundle, so it is removed.
   if (groupType === "worked-for") {
-    if (totalDurationMs > 0) return `${inProgress ? "Working for" : "Worked for"} ${formatDuration(totalDurationMs)}`;
-    return inProgress ? "Working" : "Worked";
+    if (totalDurationMs > 0) return workedForDurationLabel(totalDurationMs, inProgress);
+    return inProgress ? workingLabel() : workedLabel();
   }
-  if (inProgress) return "Working";
+  if (inProgress) return workingLabel();
   const completedLabel = completedActivitySummaryLabel(counts, activityCounts, mcpToolCallSources);
   if (completedLabel) return completedLabel;
-  if (counts.plans > 0) return "Updated plan";
-  if (counts.reasoning > 0) return "Thought";
-  return "Worked";
+  if (counts.plans > 0) return updatedPlanLabel();
+  if (counts.reasoning > 0) return thoughtLabel();
+  return workedLabel();
 }
 
 function completedActivitySummaryLabel(
@@ -375,9 +380,24 @@ function completedActivitySummaryLabel(
     requestSummarySegment("Denied", activityCounts.deniedRequests),
     webSearchCommandSummarySegment(counts.webSearchCommands),
     ordinaryCommandSummarySegment(counts),
-    mcpToolCallSources.size > 0 ? `Used ${joinConjunction(Array.from(mcpToolCallSources.keys()).map(mcpToolCallSourceLabel))}` : "",
-    genericMcpCalls > 0 ? `Called ${formatCount(genericMcpCalls, "tool")}` : "",
-    counts.webSearches > 0 ? `Searched web ${formatCount(counts.webSearches, "time")}` : "",
+    mcpToolCallSources.size > 0
+      ? formatMessage(
+          { id: "localConversation.toolActivitySummary.mcpToolCalls.sources.leading", defaultMessage: "Used {sources}" },
+          { sources: joinConjunction(Array.from(mcpToolCallSources.keys()).map(mcpToolCallSourceLabel)) },
+        )
+      : "",
+    genericMcpCalls > 0
+      ? formatMessage(
+          { id: "localConversation.toolActivitySummary.mcpToolCalls.leading", defaultMessage: "{count, plural, one {Called # tool} other {Called # tools}}" },
+          { count: genericMcpCalls },
+        )
+      : "",
+    counts.webSearches > 0
+      ? formatMessage(
+          { id: "localConversation.toolActivitySummary.webSearches.leading", defaultMessage: "{count, plural, one {Searched web # time} other {Searched web # times}}" },
+          { count: counts.webSearches },
+        )
+      : "",
   ].filter((value): value is string => Boolean(value));
   if (segments.length === 0) return null;
   return segments.map((segment, index) => index === 0 ? segment : lowerInitial(segment)).join(", ");
@@ -385,16 +405,33 @@ function completedActivitySummaryLabel(
 
 function webSearchCommandSummarySegment(count: number): string {
   if (count <= 0) return "";
-  return count === 1 ? "Searched web" : `Searched web ${count} times`;
+  return formatMessage(
+    { id: "localConversation.toolActivitySummary.webSearchCommands.searched.leading", defaultMessage: "{count, plural, one {Searched web} other {Searched web # times}}" },
+    { count },
+  );
 }
 
 function ordinaryCommandSummarySegment(counts: ToolActivitySummary["counts"]): string {
   const ordinaryCommands = Math.max(0, counts.commands - counts.webSearchCommands);
-  return ordinaryCommands > 0 ? `Ran ${formatCount(ordinaryCommands, "command")}` : "";
+  return ordinaryCommands > 0
+    ? formatMessage(
+        { id: "localConversation.toolActivitySummary.commands.leading", defaultMessage: "{count, plural, one {Ran # command} other {Ran # commands}}" },
+        { count: ordinaryCommands },
+      )
+    : "";
 }
 
 function requestSummarySegment(verb: "Approved" | "Denied", count: number): string {
-  return count > 0 ? `${verb} ${formatCount(count, "request")}` : "";
+  if (count <= 0) return "";
+  return verb === "Approved"
+    ? formatMessage(
+        { id: "localConversation.toolActivitySummary.approvedRequests.leading", defaultMessage: "{count, plural, one {Approved request} other {Approved # requests}}" },
+        { count },
+      )
+    : formatMessage(
+        { id: "localConversation.toolActivitySummary.deniedRequests.leading", defaultMessage: "{count, plural, one {Denied request} other {Denied # requests}}" },
+        { count },
+      );
 }
 
 interface ExplorationSummary {
@@ -520,7 +557,12 @@ function runningSkillDefinitionReadLabelParts(item: ThreadItem): { action: strin
   );
   if (!action) return null;
   const skillInfo = skillPathInfoForAction(action, item);
-  return skillInfo ? { action: "Reading", detail: `${skillInfo.skillName} skill` } : null;
+  return skillInfo
+    ? {
+        action: formatMessage({ id: "hc.toolActivity.skill.action.reading", defaultMessage: "Reading" }),
+        detail: formatMessage({ id: "hc.toolActivity.skillDetail", defaultMessage: "{skillName} skill" }, { skillName: skillInfo.skillName }),
+      }
+    : null;
 }
 
 export function isRunningSkillDefinitionRead(item: ThreadItem): boolean {
@@ -550,21 +592,29 @@ function explorationActionLabel(action: NormalizedCommandAction, inProgress: boo
   const skillLabel = skillExplorationLabel(action, item, inProgress);
   if (skillLabel) return skillLabel;
   if (action.type === "read") {
-    return `${inProgress ? "Reading" : "Read"} ${displayPath(inProgress ? action.path : action.name || action.path)}`;
+    const path = displayPath(inProgress ? action.path : action.name || action.path);
+    return inProgress
+      ? formatMessage({ id: "hc.toolActivity.read.reading", defaultMessage: "Reading {path}" }, { path })
+      : formatMessage({ id: "hc.toolActivity.read.read", defaultMessage: "Read {path}" }, { path });
   }
   if (action.type === "search") {
     if (inProgress) {
-      if (action.path) return `Searching files in ${displayPath(action.path)} folder`;
-      if (action.query) return `Searching for ${action.query}`;
-      return "Searching files";
+      if (action.path) return formatMessage({ id: "hc.toolActivity.search.searchingFilesInFolder", defaultMessage: "Searching files in {path} folder" }, { path: displayPath(action.path) });
+      if (action.query) return formatMessage({ id: "hc.toolActivity.search.searchingFor", defaultMessage: "Searching for {query}" }, { query: action.query });
+      return formatMessage({ id: "hc.toolActivity.search.searchingFiles", defaultMessage: "Searching files" });
     }
-    if (action.query && action.path) return `Searched for ${action.query} in ${displayPath(action.path)}`;
-    if (action.query) return `Searched for ${action.query}`;
-    return "Searched files";
+    if (action.query && action.path) return formatMessage({ id: "hc.toolActivity.search.searchedForInPath", defaultMessage: "Searched for {query} in {path}" }, { query: action.query, path: displayPath(action.path) });
+    if (action.query) return formatMessage({ id: "hc.toolActivity.search.searchedFor", defaultMessage: "Searched for {query}" }, { query: action.query });
+    return formatMessage({ id: "hc.toolActivity.search.searchedFiles", defaultMessage: "Searched files" });
   }
-  return action.path
-    ? `${inProgress ? "Listing" : "Listed"} files in ${displayPath(action.path)}${inProgress ? " folder" : ""}`
-    : `${inProgress ? "Listing" : "Listed"} files`;
+  if (action.path) {
+    return inProgress
+      ? formatMessage({ id: "hc.toolActivity.list.listingFilesInFolder", defaultMessage: "Listing files in {path} folder" }, { path: displayPath(action.path) })
+      : formatMessage({ id: "hc.toolActivity.list.listedFilesInPath", defaultMessage: "Listed files in {path}" }, { path: displayPath(action.path) });
+  }
+  return inProgress
+    ? formatMessage({ id: "hc.toolActivity.list.listingFiles", defaultMessage: "Listing files" })
+    : formatMessage({ id: "hc.toolActivity.list.listedFiles", defaultMessage: "Listed files" });
 }
 
 function skillExplorationLabel(
@@ -574,19 +624,20 @@ function skillExplorationLabel(
 ): string | null {
   const skillInfo = skillPathInfoForAction(action, item);
   if (!skillInfo) return null;
+  const skillName = skillInfo.skillName;
   if (action.type === "read") {
     if (skillInfo.isSkillDefinitionFile && (inProgress || action.finished === false)) {
-      return `Reading ${skillInfo.skillName} skill`;
+      return formatMessage({ id: "hc.toolActivity.skill.reading", defaultMessage: "Reading {skillName} skill" }, { skillName });
     }
-    return `Read ${skillInfo.skillName} skill`;
+    return formatMessage({ id: "hc.toolActivity.skill.read", defaultMessage: "Read {skillName} skill" }, { skillName });
   }
   if (action.type === "listFiles") {
-    return `Listed files in ${skillInfo.skillName} skill`;
+    return formatMessage({ id: "hc.toolActivity.skill.listedFiles", defaultMessage: "Listed files in {skillName} skill" }, { skillName });
   }
   const query = action.query.trim();
   return query
-    ? `Searched for ${query} in ${skillInfo.skillName} skill`
-    : `Searched in ${skillInfo.skillName} skill`;
+    ? formatMessage({ id: "hc.toolActivity.skill.searchedFor", defaultMessage: "Searched for {query} in {skillName} skill" }, { query, skillName })
+    : formatMessage({ id: "hc.toolActivity.skill.searchedIn", defaultMessage: "Searched in {skillName} skill" }, { skillName });
 }
 
 export interface DesktopSkillPathInfo {
@@ -734,7 +785,11 @@ function explorationSummaryLabel(
   const searches = counts.searches;
   const lists = counts.lists;
   if (reads === 0 && searches === 0 && lists === 0) return null;
-  if (reads === 0 && searches === 0 && lists > 0) return inProgress ? "Listing files" : "Listed files";
+  if (reads === 0 && searches === 0 && lists > 0) {
+    return inProgress
+      ? formatMessage({ id: "localConversation.toolActivitySummary.exploration.listingFiles.leading", defaultMessage: "Listing files" })
+      : formatMessage({ id: "localConversation.toolActivitySummary.exploration.listedFiles.leading", defaultMessage: "Listed files" });
+  }
   /*
    * Codex Desktop joins the exploration header counts with a plain ", " and NO
    * conjunction word — the ICU string `localConversationTurn.exploration.accordion
@@ -745,15 +800,19 @@ function explorationSummaryLabel(
    * only for the cross-type web-search/MCP summary — see `completedActivitySummaryLabel`
    * — and is intentionally left on `joinConjunction`.) Order stays files -> searches -> lists.
    */
+  const separator = formatMessage({ id: "localConversationTurn.exploration.accordion.count.separator", defaultMessage: ", " });
   const parts = [
-    reads > 0 ? formatCount(reads, "file") : "",
-    searches > 0 ? formatCount(searches, "search") : "",
-    lists > 0 ? formatCount(lists, "list") : "",
+    reads > 0 ? formatMessage({ id: "localConversation.toolActivitySummary.exploration.files", defaultMessage: "{count, plural, one {# file} other {# files}}" }, { count: reads }) : "",
+    searches > 0 ? formatMessage({ id: "localConversation.toolActivitySummary.exploration.searches", defaultMessage: "{count, plural, one {# search} other {# searches}}" }, { count: searches }) : "",
+    lists > 0 ? formatMessage({ id: "localConversation.toolActivitySummary.exploration.lists", defaultMessage: "{count, plural, one {# list} other {# lists}}" }, { count: lists }) : "",
   ].filter(Boolean);
-  return `${inProgress ? "Exploring" : "Explored"} ${parts.join(", ")}`;
+  const details = parts.join(separator);
+  return inProgress
+    ? formatMessage({ id: "localConversation.toolActivitySummary.exploration.exploring.leading", defaultMessage: "Exploring {details}" }, { details })
+    : formatMessage({ id: "localConversation.toolActivitySummary.exploration.leading", defaultMessage: "Explored {details}" }, { details });
 }
 
-function joinConjunction(parts: readonly string[]): string {
+export function joinConjunction(parts: readonly string[]): string {
   if (parts.length <= 1) return parts.join("");
   if (typeof Intl !== "undefined" && typeof Intl.ListFormat === "function") {
     try {
@@ -834,7 +893,7 @@ function patchSummary(item: ThreadItem): PatchSummary {
       runningEditedFiles: runningEdited,
       deletedFiles: deleted,
       runningDeletedFiles: runningDeleted,
-    }, false) ?? "Edited files",
+    }, false) ?? formatMessage({ id: "hc.toolActivity.patch.editedFilesFallback", defaultMessage: "Edited files" }),
     activeLabel: patchActionLabel(lastKind, lastPath, true),
     activeDiffStats,
   };
@@ -933,9 +992,19 @@ function patchPath(change: Record<string, unknown>): string {
 
 function patchActionLabel(kind: "add" | "delete" | "update", path: string, inProgress: boolean): string {
   const target = displayPath(path || "file");
-  if (kind === "add") return `${inProgress ? "Creating" : "Created"} ${target}`;
-  if (kind === "delete") return `${inProgress ? "Deleting" : "Deleted"} ${target}`;
-  return `${inProgress ? "Editing" : "Edited"} ${target}`;
+  if (kind === "add") {
+    return inProgress
+      ? formatMessage({ id: "hc.toolActivity.patch.creating", defaultMessage: "Creating {path}" }, { path: target })
+      : formatMessage({ id: "hc.toolActivity.patch.created", defaultMessage: "Created {path}" }, { path: target });
+  }
+  if (kind === "delete") {
+    return inProgress
+      ? formatMessage({ id: "hc.toolActivity.patch.deleting", defaultMessage: "Deleting {path}" }, { path: target })
+      : formatMessage({ id: "hc.toolActivity.patch.deleted", defaultMessage: "Deleted {path}" }, { path: target });
+  }
+  return inProgress
+    ? formatMessage({ id: "hc.toolActivity.patch.editing", defaultMessage: "Editing {path}" }, { path: target })
+    : formatMessage({ id: "hc.toolActivity.patch.edited", defaultMessage: "Edited {path}" }, { path: target });
 }
 
 function fileChangeSummaryLabel(
@@ -952,22 +1021,46 @@ function fileChangeSummaryLabel(
   const completedEdited = Math.max(0, counts.editedFiles - runningEdited);
   const completedDeleted = Math.max(0, counts.deletedFiles - runningDeleted);
   const segments = [
-    completedCreated > 0 ? fileChangeSegment(inProgress ? "Creating" : "Created", completedCreated, "file") : "",
-    stoppedCreated > 0 ? fileChangeSegment("Stopped creating", stoppedCreated, "file") : "",
-    runningCreated > 0
-      ? `${fileChangeSegment("Creating", runningCreated, "file")}${runningCreatedLineCount > 0 ? ` • writing ${formatCount(runningCreatedLineCount, "line")}` : ""}`
+    completedCreated > 0 ? fileChangeCountSegment(inProgress ? "creating" : "created", completedCreated) : "",
+    stoppedCreated > 0
+      ? formatMessage(
+          { id: "localConversation.toolActivitySummary.stoppedCreating.leading", defaultMessage: "{count, plural, one {Stopped creating # file} other {Stopped creating # files}}" },
+          { count: stoppedCreated },
+        )
       : "",
-    completedEdited > 0 ? fileChangeSegment(inProgress ? "Editing" : "Edited", completedEdited, "file") : "",
-    runningEdited > 0 ? fileChangeSegment("Editing", runningEdited, "file") : "",
-    completedDeleted > 0 ? fileChangeSegment(inProgress ? "Deleting" : "Deleted", completedDeleted, "file") : "",
-    runningDeleted > 0 ? fileChangeSegment("Deleting", runningDeleted, "file") : "",
+    runningCreated > 0 ? runningCreatedSegment(runningCreated, runningCreatedLineCount) : "",
+    completedEdited > 0 ? fileChangeCountSegment(inProgress ? "editing" : "edited", completedEdited) : "",
+    runningEdited > 0 ? fileChangeCountSegment("editing", runningEdited) : "",
+    completedDeleted > 0 ? fileChangeCountSegment(inProgress ? "deleting" : "deleted", completedDeleted) : "",
+    runningDeleted > 0 ? fileChangeCountSegment("deleting", runningDeleted) : "",
   ].filter(Boolean);
   if (segments.length === 0) return null;
   return segments.map((segment, index) => index === 0 ? segment : lowerInitial(segment)).join(", ");
 }
 
-function fileChangeSegment(verb: string, count: number, noun: string): string {
-  return `${verb} ${formatCount(count, noun)}`;
+const FILE_CHANGE_SEGMENT_MESSAGES: Record<"created" | "creating" | "edited" | "editing" | "deleted" | "deleting", { id: string; defaultMessage: string }> = {
+  created: { id: "localConversation.toolActivitySummary.created.leading", defaultMessage: "{count, plural, one {Created # file} other {Created # files}}" },
+  creating: { id: "localConversation.toolActivitySummary.creating.leading", defaultMessage: "{count, plural, one {Creating # file} other {Creating # files}}" },
+  edited: { id: "localConversation.toolActivitySummary.edited.leading", defaultMessage: "{count, plural, one {Edited # file} other {Edited # files}}" },
+  editing: { id: "localConversation.toolActivitySummary.editing.leading", defaultMessage: "{count, plural, one {Editing # file} other {Editing # files}}" },
+  deleted: { id: "localConversation.toolActivitySummary.deleted.leading", defaultMessage: "{count, plural, one {Deleted # file} other {Deleted # files}}" },
+  deleting: { id: "localConversation.toolActivitySummary.deleting.leading", defaultMessage: "{count, plural, one {Deleting # file} other {Deleting # files}}" },
+};
+
+function fileChangeCountSegment(kind: keyof typeof FILE_CHANGE_SEGMENT_MESSAGES, count: number): string {
+  return formatMessage(FILE_CHANGE_SEGMENT_MESSAGES[kind], { count });
+}
+
+function runningCreatedSegment(count: number, lineCount: number): string {
+  if (lineCount <= 0) return fileChangeCountSegment("creating", count);
+  const addedLineText = formatMessage(
+    { id: "localConversation.toolActivitySummary.addedLines", defaultMessage: "writing {lineCount, plural, one {# line} other {# lines}}" },
+    { lineCount },
+  );
+  return formatMessage(
+    { id: "localConversation.toolActivitySummary.creatingWithLines.leading", defaultMessage: "{count, plural, one {Creating # file} other {Creating # files}} • {addedLineText}" },
+    { count, addedLineText },
+  );
 }
 
 function displayPath(path: string): string {
@@ -1206,18 +1299,29 @@ function normalizedSearchDomain(domain: string): string | null {
 }
 
 function agentFallbackName(id: string): string {
-  return id ? `agent-${id.slice(0, 8)}` : "agent";
+  return id ? `agent-${id.slice(0, 8)}` : formatMessage({ id: "hc.toolActivity.agentFallback", defaultMessage: "agent" });
 }
 
 function multiAgentGroupLabelForItems(items: ThreadItem[]): string {
   const first = items[0];
-  if (!first) return "Updated agents";
+  // Defensive guard for an empty group (never produced by the `K` rollup, which
+  // only batches terminal actions). Codex has no "Updated agents" string, so fall
+  // back to the neutral passthrough verb rather than inventing copy.
+  if (!first) return multiAgentHeaderVerb("agent", "completed");
   // Terminal replay rows can occasionally lack receiverThreadIds, so keep a
   // conservative item-count fallback for the header count.
   const receiverCount = uniqueMultiAgentReceiverThreadIds(items).length;
   const inferredCount = receiverCount > 0 ? receiverCount : items.length;
-  const countLabel = inferredCount > 0 ? ` ${formatCount(inferredCount, "agent")}` : "";
-  return `${multiAgentHeaderVerb(multiAgentAction(first), multiAgentStatus(first))}${countLabel}`;
+  const countLabel = inferredCount > 0
+    ? formatMessage(
+        { id: "localConversation.multiAgentAction.header.count", defaultMessage: " {count, plural, one {# agent} other {# agents}}" },
+        { count: inferredCount },
+      )
+    : "";
+  return formatMessage(
+    { id: "localConversation.multiAgentAction.header", defaultMessage: "{action}{countLabel}" },
+    { action: multiAgentHeaderVerb(multiAgentAction(first), multiAgentStatus(first)), countLabel },
+  );
 }
 
 function multiAgentActionRowLabel(item: ThreadItem): string {
@@ -1226,16 +1330,25 @@ function multiAgentActionRowLabel(item: ThreadItem): string {
   const receivers = multiAgentReceiverThreadIds(item);
   const target = receivers.length > 0
     ? receivers.map((id) => stripLeadingAt(multiAgentReceiverTitle(item, id) || agentFallbackName(id))).join(", ")
-    : "agent";
+    : agentFallbackName("");
   const prompt = stringField(item as ItemRecord, "prompt").trim();
   const verb = multiAgentRowVerb(action, status);
   if (prompt && action === "spawnAgent" && status === "completed") {
-    return `Created ${target} with the instructions: ${prompt}`;
+    return formatMessage(
+      { id: "localConversation.multiAgentAction.row.spawn.createdWithInstructions", defaultMessage: "Created {agent} with the instructions: {instructions}" },
+      { agent: target, instructions: prompt },
+    );
   }
   if (prompt && action === "sendInput") {
-    return `${multiAgentSendInputPromptVerb(status)} ${target}: ${prompt}`;
+    return formatMessage(
+      { id: "localConversation.multiAgentAction.row.sendInput.messagedWithPrompt", defaultMessage: "{action} {agent}: {prompt}" },
+      { action: multiAgentSendInputPromptVerb(status), agent: target, prompt },
+    );
   }
-  return `${verb} ${target}`;
+  return formatMessage(
+    { id: "localConversation.multiAgentAction.row.agent", defaultMessage: "{action} {agent}{stateSuffix}" },
+    { action: verb, agent: target, stateSuffix: "" },
+  );
 }
 
 function uniqueMultiAgentReceiverThreadIds(items: ThreadItem[]): string[] {
@@ -1322,46 +1435,149 @@ function multiAgentStatus(item: ThreadItem): string {
 
 function multiAgentHeaderVerb(action: string, status: string): string {
   if (action === "spawnAgent") {
-    if (status === "inProgress") return "Spawning";
-    if (status === "failed") return "Failed to spawn";
-    return "Spawned";
+    if (status === "inProgress") return formatMessage({ id: "localConversation.multiAgentAction.header.spawn.inProgress", defaultMessage: "Spawning" });
+    if (status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.header.spawn.failed", defaultMessage: "Failed to spawn" });
+    return formatMessage({ id: "localConversation.multiAgentAction.header.spawn.completed", defaultMessage: "Spawned" });
   }
   if (action === "sendInput") {
-    if (status === "inProgress") return "Messaging";
-    if (status === "failed") return "Failed to message";
-    return "Messaged";
+    if (status === "inProgress") return formatMessage({ id: "localConversation.multiAgentAction.header.sendInput.inProgress", defaultMessage: "Messaging" });
+    if (status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.header.sendInput.failed", defaultMessage: "Failed to message" });
+    return formatMessage({ id: "localConversation.multiAgentAction.header.sendInput.completed", defaultMessage: "Messaged" });
   }
   if (action === "resumeAgent") {
-    if (status === "inProgress") return "Resuming";
-    if (status === "failed") return "Failed to resume";
-    return "Resumed";
+    if (status === "inProgress") return formatMessage({ id: "localConversation.multiAgentAction.header.resume.inProgress", defaultMessage: "Resuming" });
+    if (status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.header.resume.failed", defaultMessage: "Failed to resume" });
+    return formatMessage({ id: "localConversation.multiAgentAction.header.resume.completed", defaultMessage: "Resumed" });
   }
   if (action === "closeAgent") {
-    if (status === "inProgress") return "Closing";
-    if (status === "failed") return "Failed to close";
-    return "Closed";
+    if (status === "inProgress") return formatMessage({ id: "localConversation.multiAgentAction.header.close.inProgress", defaultMessage: "Closing" });
+    if (status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.header.close.failed", defaultMessage: "Failed to close" });
+    return formatMessage({ id: "localConversation.multiAgentAction.header.close.completed", defaultMessage: "Closed" });
   }
-  return status === "inProgress" ? "Working with agents" : "Updated agents";
+  // Codex's generic multi-agent header is `{action}{countLabel}` — the raw action
+  // is passed straight through (no "Updated agents"/"Working with agents" string
+  // exists in the bundle). Mirror that by returning the action verbatim for any
+  // unrecognized action value.
+  return action;
 }
 
 function multiAgentRowVerb(action: string, status: string): string {
-  if (action === "sendInput" && status === "completed") return "Messaged";
-  if (action === "sendInput" && status === "failed") return "Failed messaging";
-  if (action === "sendInput") return "Messaging";
-  if (action === "spawnAgent" && status === "completed") return "Spawned";
-  if (action === "spawnAgent" && status === "failed") return "Failed spawning";
-  if (action === "spawnAgent") return "Spawning";
-  if (action === "resumeAgent" && status === "completed") return "Resumed";
-  if (action === "resumeAgent" && status === "failed") return "Failed resuming";
-  if (action === "resumeAgent") return "Resuming";
-  if (action === "closeAgent" && status === "completed") return "Closed";
-  if (action === "closeAgent" && status === "failed") return "Failed closing";
-  if (action === "closeAgent") return "Closing";
+  if (action === "sendInput" && status === "completed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.sendInput.completed", defaultMessage: "Messaged" });
+  if (action === "sendInput" && status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.sendInput.failed", defaultMessage: "Failed messaging" });
+  if (action === "sendInput") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.sendInput.inProgress", defaultMessage: "Messaging" });
+  if (action === "spawnAgent" && status === "completed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.spawn.completed", defaultMessage: "Spawned" });
+  if (action === "spawnAgent" && status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.spawn.failed", defaultMessage: "Failed spawning" });
+  if (action === "spawnAgent") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.spawn.inProgress", defaultMessage: "Spawning" });
+  if (action === "resumeAgent" && status === "completed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.resume.completed", defaultMessage: "Resumed" });
+  if (action === "resumeAgent" && status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.resume.failed", defaultMessage: "Failed resuming" });
+  if (action === "resumeAgent") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.resume.inProgress", defaultMessage: "Resuming" });
+  if (action === "closeAgent" && status === "completed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.close.completed", defaultMessage: "Closed" });
+  if (action === "closeAgent" && status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.close.failed", defaultMessage: "Failed closing" });
+  if (action === "closeAgent") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.close.inProgress", defaultMessage: "Closing" });
   return multiAgentHeaderVerb(action, status);
 }
 
 function multiAgentSendInputPromptVerb(status: string): string {
-  if (status === "failed") return "Failed to message";
-  if (status === "completed") return "Messaged";
-  return "Messaging";
+  if (status === "failed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.sendInput.messaged.failed", defaultMessage: "Failed to message" });
+  if (status === "completed") return formatMessage({ id: "localConversation.multiAgentAction.rowAction.sendInput.messaged.completed", defaultMessage: "Messaged" });
+  return formatMessage({ id: "localConversation.multiAgentAction.rowAction.sendInput.messaged.inProgress", defaultMessage: "Messaging" });
+}
+
+// Activity header / row label helpers. These wrap the runtime formatMessage calls so the
+// in-loop `summarizeToolActivity` body and `activityLabel` stay readable; each resolves
+// against the active locale at call time (formatMessage reads the module-level i18n bundle).
+function thinkingLabel(): string {
+  return formatMessage({ id: "reasoningItem.thinking", defaultMessage: "Thinking" });
+}
+
+function thoughtLabel(): string {
+  return formatMessage({ id: "reasoningItem.thought", defaultMessage: "Thought" });
+}
+
+function thoughtForLabel(totalDurationMs: number): string {
+  return formatMessage(
+    { id: "reasoningItem.thoughtWithElapsed", defaultMessage: "Thought for {elapsed}" },
+    { elapsed: formatDuration(totalDurationMs) },
+  );
+}
+
+function exploringLabel(): string {
+  return formatMessage({ id: "localConversationTurn.exploration.accordion.header.active", defaultMessage: "Exploring" });
+}
+
+function exploredLabel(): string {
+  return formatMessage({ id: "localConversationTurn.exploration.accordion.header.complete", defaultMessage: "Explored" });
+}
+
+function searchingTheWebLabel(): string {
+  return formatMessage({ id: "codex.webSearch.summary.verb.inProgress", defaultMessage: "Searching the web" });
+}
+
+function searchedWebLabel(): string {
+  return formatMessage({ id: "codex.webSearch.summary.verb.completed", defaultMessage: "Searched web" });
+}
+
+function creatingFolderLabel(): string {
+  return formatMessage(
+    { id: "localConversation.toolActivitySummary.folders.creating.leading", defaultMessage: "{count, plural, one {Creating folder} other {Creating # folders}}" },
+    { count: 1 },
+  );
+}
+
+function workingLabel(): string {
+  return formatMessage({ id: "localConversation.working", defaultMessage: "Working" });
+}
+
+function workedLabel(): string {
+  return formatMessage({ id: "hc.toolActivity.worked", defaultMessage: "Worked" });
+}
+
+function workedForDurationLabel(totalDurationMs: number, inProgress: boolean): string {
+  const time = formatDuration(totalDurationMs);
+  return inProgress
+    ? formatMessage({ id: "localConversation.workingFor", defaultMessage: "Working for {time}" }, { time })
+    : formatMessage({ id: "localConversation.workedFor", defaultMessage: "Worked for {time}" }, { time });
+}
+
+function updatedPlanLabel(): string {
+  return formatMessage({ id: "hc.toolActivity.updatedPlan", defaultMessage: "Updated plan" });
+}
+
+function updatedProgressLabel(): string {
+  return formatMessage({ id: "hc.toolActivity.updatedProgress", defaultMessage: "Updated progress" });
+}
+
+function waitingOnMcpToolLabel(): string {
+  return formatMessage({ id: "hc.toolActivity.waitingOnMcpTool", defaultMessage: "Waiting on MCP tool" });
+}
+
+function approvedRequestRowLabel(): string {
+  return formatMessage(
+    { id: "localConversation.toolActivitySummary.approvedRequests.leading", defaultMessage: "{count, plural, one {Approved request} other {Approved # requests}}" },
+    { count: 1 },
+  );
+}
+
+function deniedRequestRowLabel(): string {
+  return formatMessage(
+    { id: "localConversation.toolActivitySummary.deniedRequests.leading", defaultMessage: "{count, plural, one {Denied request} other {Denied # requests}}" },
+    { count: 1 },
+  );
+}
+
+function calledToolLabel(name: string, inProgress: boolean): string {
+  return inProgress
+    ? formatMessage({ id: "hc.toolActivity.callingTool", defaultMessage: "Calling {name}" }, { name })
+    : formatMessage({ id: "hc.toolActivity.calledTool", defaultMessage: "Called {name}" }, { name });
+}
+
+function webSearchRowLabel(detail: string, inProgress: boolean): string {
+  const label = inProgress ? searchingTheWebLabel() : searchedWebLabel();
+  const details = detail
+    ? formatMessage({ id: "codex.webSearch.summary.details", defaultMessage: " for {query}" }, { query: detail })
+    : "";
+  return formatMessage(
+    { id: "codex.webSearch.summary", defaultMessage: "{label}{details}" },
+    { label, details },
+  );
 }

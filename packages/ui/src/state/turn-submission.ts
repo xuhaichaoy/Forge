@@ -60,3 +60,7 @@ export function composerModeRequiresUnavailablePlanMode(
 ): boolean {
   return mode === "plan" && !options?.collaborationMode;
 }
+
+export function shouldResetCreatedThreadComposerMode(mode: ComposerMode): boolean {
+  return mode === "default";
+}

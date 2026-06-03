@@ -17,9 +17,7 @@ import { ImagePreviewLightbox } from "./image-preview-lightbox";
 // (xlsx/xlsm/csv/tsv) renders through HiCodex's simplified SheetJS preview.
 import { SpreadsheetPreview, type SpreadsheetPreviewKind } from "./spreadsheet-preview";
 import {
-  ARTIFACT_PREVIEW_MAX_BYTES,
   clipArtifactPreviewText,
-  formatArtifactFileSize,
   isArtifactPreviewTooLarge,
   projectArtifactPreview,
 } from "../state/artifact-preview";
@@ -202,10 +200,10 @@ export function FilePreviewPanel({
         <div className="hc-file-preview-panel-actions">
           {canOpenExternal && (
             <button
-              aria-label="Open external"
+              aria-label={formatMessage({ id: "hc.filePreview.openExternal", defaultMessage: "Open external" })}
               className="hc-file-preview-panel-icon-button"
               onClick={openExternal}
-              title="Open external"
+              title={formatMessage({ id: "hc.filePreview.openExternal", defaultMessage: "Open external" })}
               type="button"
             >
               <ExternalLink size={14} />
@@ -226,10 +224,10 @@ export function FilePreviewPanel({
             {resize.fullWidth ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
           <button
-            aria-label="Close preview"
+            aria-label={formatMessage({ id: "hc.filePreview.closePreview", defaultMessage: "Close preview" })}
             className="hc-file-preview-panel-icon-button"
             onClick={onClose}
-            title="Close preview"
+            title={formatMessage({ id: "hc.filePreview.closePreview", defaultMessage: "Close preview" })}
             type="button"
           >
             <X size={14} />
@@ -337,6 +335,7 @@ function FilePreviewPanelBody({
   source: FilePreviewSource;
   workspaceRoot?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [state, setState] = useState<FilePreviewLoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -345,7 +344,11 @@ function FilePreviewPanelBody({
       return;
     }
     if (source.url && /^https?:\/\//i.test(source.url)) {
-      setState({ status: "binary", message: "Preview opens externally", metadata: null });
+      setState({
+        status: "binary",
+        message: formatMessage({ id: "hc.filePreview.opensExternally", defaultMessage: "Preview opens externally" }),
+        metadata: null,
+      });
       return;
     }
 
@@ -356,13 +359,19 @@ function FilePreviewPanelBody({
       .then(async ({ path, metadata }) => {
         if (cancelled) return;
         if (!metadata.isFile) {
-          setState({ status: "error", message: "Couldn’t load this preview" });
+          setState({
+            status: "error",
+            message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }),
+          });
           return;
         }
         if (isArtifactPreviewTooLarge(metadata)) {
           setState({
             status: "binary",
-            message: `This file is too large to preview in the side panel (${formatArtifactFileSize(ARTIFACT_PREVIEW_MAX_BYTES)} limit)`,
+            message: formatMessage({
+              id: "artifactTab.previewTooLarge",
+              defaultMessage: "This file is too large to preview in the side panel",
+            }),
             metadata,
           });
           return;
@@ -372,7 +381,7 @@ function FilePreviewPanelBody({
           return;
         }
         if (isPdfPath(path, metadata)) {
-          setState({ status: "binary", message: "Binary file not shown", metadata });
+          setState({ status: "binary", message: formatMessage({ id: "wham.diff.binaryFile", defaultMessage: "Binary file not shown" }), metadata });
           return;
         }
         if (isDocumentPath(path, metadata)) {
@@ -381,7 +390,7 @@ function FilePreviewPanelBody({
             if (!cancelled) setState({ status: "document", path, preview, metadata });
           } catch {
             if (!cancelled) {
-              setState({ status: "binary", message: "Binary file not shown", metadata });
+              setState({ status: "binary", message: formatMessage({ id: "wham.diff.binaryFile", defaultMessage: "Binary file not shown" }), metadata });
             }
           }
           return;
@@ -407,13 +416,13 @@ function FilePreviewPanelBody({
             });
           } catch {
             if (!cancelled) {
-              setState({ status: "binary", message: "Binary file not shown", metadata });
+              setState({ status: "binary", message: formatMessage({ id: "wham.diff.binaryFile", defaultMessage: "Binary file not shown" }), metadata });
             }
           }
           return;
         }
         if (isKnownBinaryDocumentPath(path, metadata)) {
-          setState({ status: "binary", message: "Binary file not shown", metadata });
+          setState({ status: "binary", message: formatMessage({ id: "wham.diff.binaryFile", defaultMessage: "Binary file not shown" }), metadata });
           return;
         }
         try {
@@ -431,18 +440,23 @@ function FilePreviewPanelBody({
           });
         } catch {
           if (!cancelled) {
-            setState({ status: "binary", message: "Binary file not shown", metadata });
+            setState({ status: "binary", message: formatMessage({ id: "wham.diff.binaryFile", defaultMessage: "Binary file not shown" }), metadata });
           }
         }
       })
       .catch(() => {
-        if (!cancelled) setState({ status: "error", message: "Couldn’t load this preview" });
+        if (!cancelled) {
+          setState({
+            status: "error",
+            message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }),
+          });
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [cwd, source.imageUrl, source.path, source.url, workspaceRoot]);
+  }, [cwd, formatMessage, source.imageUrl, source.path, source.url, workspaceRoot]);
 
   return (
     <div className="hc-file-preview-panel-body">
@@ -461,8 +475,13 @@ function FilePreviewStateView({
   state: FilePreviewLoadState;
   workspaceRoot?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   if (state.status === "loading") {
-    return <div className="hc-file-preview-empty">Preparing preview…</div>;
+    return (
+      <div className="hc-file-preview-empty">
+        {formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" })}
+      </div>
+    );
   }
   if (state.status === "error" || state.status === "binary") {
     return <div className="hc-file-preview-empty">{state.message}</div>;
@@ -470,7 +489,7 @@ function FilePreviewStateView({
   if (state.status === "image") {
     return (
       <ImagePreviewLightbox
-        alt="File preview"
+        alt={formatMessage({ id: "codex.diffView.imagePreviewAlt", defaultMessage: "Image preview" })}
         frameClassName="hc-file-preview-image-view"
         src={state.src}
         title={basename(state.path)}
@@ -506,7 +525,9 @@ function FilePreviewStateView({
         wrapMode="always"
       />
       {(state.truncatedLineCount > 0 || state.truncatedCharCount > 0) && (
-        <div className="hc-file-preview-truncation">Preview truncated</div>
+        <div className="hc-file-preview-truncation">
+          {formatMessage({ id: "hc.filePreview.previewTruncated", defaultMessage: "Preview truncated" })}
+        </div>
       )}
     </div>
   );
@@ -525,6 +546,7 @@ function DiffPreviewView({
   text: string;
   workspaceRoot?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const model = useMemo(() => projectDiffViewer(text), [text]);
   const [mode, setMode] = useState<"side-by-side" | "unified">("side-by-side");
   const [activeHunkId, setActiveHunkId] = useState<string>(model.hunkNav[0]?.id ?? "");
@@ -559,7 +581,11 @@ function DiffPreviewView({
   }, []);
 
   if (!model.hasChanges) {
-    return <div className="hc-file-preview-empty">No diff available</div>;
+    return (
+      <div className="hc-file-preview-empty">
+        {formatMessage({ id: "codex.diffView.noDiffData", defaultMessage: "No diff available" })}
+      </div>
+    );
   }
 
   return (
@@ -573,7 +599,7 @@ function DiffPreviewView({
         <div className="hc-file-diff-controls">
           {model.hunkNav.length > 1 && (
             <select
-              aria-label="Jump to hunk"
+              aria-label={formatMessage({ id: "hc.filePreview.jumpToHunk", defaultMessage: "Jump to hunk" })}
               value={activeHunkId}
               onChange={(event) => jumpToHunk(event.target.value)}
             >
@@ -584,20 +610,24 @@ function DiffPreviewView({
               ))}
             </select>
           )}
-          <div className="hc-file-diff-mode-toggle" role="group" aria-label="Diff layout">
+          <div
+            className="hc-file-diff-mode-toggle"
+            role="group"
+            aria-label={formatMessage({ id: "hc.filePreview.diffLayout", defaultMessage: "Diff layout" })}
+          >
             <button
               aria-pressed={mode === "side-by-side"}
               type="button"
               onClick={() => setMode("side-by-side")}
             >
-              Side by side
+              {formatMessage({ id: "hc.filePreview.sideBySide", defaultMessage: "Side by side" })}
             </button>
             <button
               aria-pressed={mode === "unified"}
               type="button"
               onClick={() => setMode("unified")}
             >
-              Unified
+              {formatMessage({ id: "hc.filePreview.unified", defaultMessage: "Unified" })}
             </button>
           </div>
         </div>
@@ -612,17 +642,19 @@ function DiffPreviewView({
             </small>
             <div className="hc-file-diff-file-actions">
               <button
-                aria-label={`Open file ${file.path}`}
+                aria-label={formatMessage({ id: "hc.filePreview.openFileNamed", defaultMessage: "Open file {path}" }, { path: file.path })}
                 onClick={() => openDiffFile(file.path)}
-                title="Open in editor"
+                title={formatMessage({ id: "codex.diff.fileHeader.openIn.tooltip", defaultMessage: "Open in editor" })}
                 type="button"
               >
                 <ExternalLink size={13} />
               </button>
               <button
-                aria-label={`Copy path ${file.path}`}
+                aria-label={formatMessage({ id: "hc.filePreview.copyPathNamed", defaultMessage: "Copy path {path}" }, { path: file.path })}
                 onClick={() => copyDiffPath(file.path)}
-                title={copiedPath === file.path ? "Copied" : "Copy path"}
+                title={copiedPath === file.path
+                  ? formatMessage({ id: "copyButton.copied", defaultMessage: "Copied" })
+                  : formatMessage({ id: "review.fileSource.copyPath", defaultMessage: "Copy path" })}
                 type="button"
               >
                 <Copy size={13} />
@@ -678,15 +710,24 @@ function UnifiedDiffHunk({ hunk }: { hunk: DiffViewerHunk }) {
 }
 
 function DocumentPreviewView({ preview }: { preview: DocumentPreview }) {
+  const { formatMessage } = useHiCodexIntl();
   if (preview.paragraphs.length === 0) {
-    return <div className="hc-file-preview-empty">Couldn’t load this preview</div>;
+    return (
+      <div className="hc-file-preview-empty">
+        {formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" })}
+      </div>
+    );
   }
   return (
     <div className="hc-file-preview-document-view">
       {preview.paragraphs.map((paragraph, index) => (
         <p key={`${index}:${paragraph.slice(0, 24)}`}>{paragraph}</p>
       ))}
-      {preview.truncated && <div className="hc-file-preview-truncation">Preview truncated</div>}
+      {preview.truncated && (
+        <div className="hc-file-preview-truncation">
+          {formatMessage({ id: "hc.filePreview.previewTruncated", defaultMessage: "Preview truncated" })}
+        </div>
+      )}
     </div>
   );
 }

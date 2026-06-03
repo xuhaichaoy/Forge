@@ -11,6 +11,7 @@
  * of the panel chrome is in place.
  */
 import { Search, X } from "lucide-react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface FileTreeSearchInputProps {
   searchQuery: string;
@@ -25,15 +26,22 @@ export function FileTreeSearchInput({
   autoFocus,
   inputId,
 }: FileTreeSearchInputProps) {
+  const { formatMessage } = useHiCodexIntl();
+  // codex: qc — placeholder/label/clear go through i18n (`codex.fileTreeSearch.*`)
+  // so the ZH locale renders 筛选文件… / 筛选文件 / 清除文件筛选.
+  const placeholderText = formatMessage({ id: "codex.fileTreeSearch.placeholder", defaultMessage: "Filter files…" });
+  const filterLabel = formatMessage({ id: "codex.fileTreeSearch.label", defaultMessage: "Filter files" });
+  const clearLabel = formatMessage({ id: "codex.fileTreeSearch.clear", defaultMessage: "Clear file filter" });
   return (
     <div className="hc-file-tree-search">
       <Search className="hc-file-tree-search-leading" size={13} aria-hidden="true" />
       <input
         id={inputId}
-        type="search"
+        // codex: qc input is type `text` (no native clear button).
+        type="text"
         className="hc-file-tree-search-input"
-        placeholder="Filter files…"
-        aria-label="Filter files"
+        placeholder={placeholderText}
+        aria-label={filterLabel}
         value={searchQuery}
         autoFocus={autoFocus}
         // codex: qc onChange (controlled, no debounce — fuzzy session streams on each keystroke)
@@ -44,7 +52,7 @@ export function FileTreeSearchInput({
         <button
           type="button"
           className="hc-file-tree-search-clear"
-          aria-label="Clear file filter"
+          aria-label={clearLabel}
           onClick={() => onQueryChange("")}
         >
           <X size={12} aria-hidden="true" />

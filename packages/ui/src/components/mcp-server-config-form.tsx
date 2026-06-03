@@ -87,7 +87,12 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
             <Server size={17} />
             <span>{action.title}</span>
           </div>
-          <button className="hc-icon-button" type="button" onClick={onClose} aria-label="Close MCP server form">
+          <button
+            className="hc-icon-button"
+            type="button"
+            onClick={onClose}
+            aria-label={formatMessage({ id: "hc.mcpForm.close", defaultMessage: "Close MCP server form" })}
+          >
             <X size={16} />
           </button>
         </header>
@@ -106,14 +111,22 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                         { id: "settings.mcp.detail.titleExisting", defaultMessage: "Update {name} MCP" },
                         { name: values.name },
                       )
-                    : "Update MCP"
+                    : formatMessage({ id: "hc.mcpForm.titleUpdateFallback", defaultMessage: "Update MCP" })
                   : formatMessage({ id: "settings.mcp.detail.titleNew", defaultMessage: "Connect to a custom MCP" })}
               </strong>
-              <span>Saved to Codex config.toml under mcp_servers.&lt;name&gt;.</span>
+              <span>
+                {formatMessage({
+                  id: "hc.mcpForm.savedHint",
+                  defaultMessage: "Saved to Codex config.toml under mcp_servers.<name>.",
+                })}
+              </span>
             </div>
             <div className="hc-mcp-tool-fields">
               <label className="hc-mcp-tool-field" data-error={errors.name ? "true" : "false"}>
-                <span className="hc-mcp-tool-field-header"><span>Name</span><em>Normalized</em></span>
+                <span className="hc-mcp-tool-field-header">
+                  <span>{formatMessage({ id: "settings.mcp.detail.name", defaultMessage: "Name" })}</span>
+                  <em>{formatMessage({ id: "hc.mcpForm.normalized", defaultMessage: "Normalized" })}</em>
+                </span>
                 <input
                   className="hc-mcp-tool-control"
                   placeholder="github"
@@ -125,57 +138,68 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
               </label>
 
               <label className="hc-mcp-tool-field">
-                <span className="hc-mcp-tool-field-header"><span>Transport</span></span>
+                <span className="hc-mcp-tool-field-header"><span>{formatMessage({ id: "hc.mcpForm.transport", defaultMessage: "Transport" })}</span></span>
                 <select
                   className="hc-mcp-tool-control"
                   value={values.transport}
                   onChange={(event) => setValue("transport", event.currentTarget.value as McpServerConfigFormValues["transport"])}
                 >
                   {/* codex: settings.mcp.detail.transport.{stdio,http} = "STDIO" / "Streamable HTTP" */}
-                  <option value="stdio">STDIO</option>
-                  <option value="streamable_http">Streamable HTTP</option>
+                  <option value="stdio">{formatMessage({ id: "settings.mcp.detail.transport.stdio", defaultMessage: "STDIO" })}</option>
+                  <option value="streamable_http">{formatMessage({ id: "settings.mcp.detail.transport.http", defaultMessage: "Streamable HTTP" })}</option>
                 </select>
+                {/* codex: settings.mcp.detail.switchTransportNotice — user-visible hint that transport changes require an uninstall first. */}
+                <small>
+                  {formatMessage({
+                    id: "settings.mcp.detail.switchTransportNotice",
+                    defaultMessage: "If you would like to switch MCP server type, please uninstall first.",
+                  })}
+                </small>
               </label>
 
               {isStdio ? (
                 <>
                   {/*
                    * Codex Desktop i18n (mcp-settings chunk, settings.mcp.detail.*):
-                   *   command            = "Command to launch"
+                   *   command            = "Command to launch"   (placeHolderValue: "openai-dev-mcp serve-sqlite")
                    *   args               = "Arguments"
-                   *   cwd                = "Working directory"
-                   *   envVarPassthrough  = "Environment variable passthrough"
-                   *   envVars            = "Environment variables"
+                   *   cwd                = "Working directory"    (placeHolderValue: "~/code")
+                   *   envVars            = "Environment variables"            -> bound to stdio.env  (inputType Record, config.env)
+                   *   envVarPassthrough  = "Environment variable passthrough" -> bound to stdio.envVars (inputType Array, config.env_vars)
+                   * The Record field (KEY=value -> config.env) is the one Codex labels
+                   * "Environment variables"; the Array field (bare names -> config.env_vars)
+                   * is "Environment variable passthrough". HiCodex previously had these two
+                   * labels swapped relative to their data bindings.
                    */}
                   <TextField
                     error={errors.command}
-                    label="Command to launch"
+                    label={formatMessage({ id: "settings.mcp.detail.command", defaultMessage: "Command to launch" })}
                     onChange={(value) => setValue("command", value)}
-                    placeholder="npx"
+                    placeholder="openai-dev-mcp serve-sqlite"
                     required
                     value={values.command}
                   />
                   <TextAreaField
-                    label="Arguments"
+                    label={formatMessage({ id: "settings.mcp.detail.args", defaultMessage: "Arguments" })}
                     onChange={(value) => setValue("args", value)}
                     placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/workspace"
                     value={values.args}
                   />
                   <TextField
-                    label="Working directory"
+                    label={formatMessage({ id: "settings.mcp.detail.cwd", defaultMessage: "Working directory" })}
                     onChange={(value) => setValue("cwd", value)}
-                    placeholder="/workspace"
+                    placeholder="~/code"
                     value={values.cwd}
                   />
                   <TextAreaField
                     error={errors.env}
-                    label="Environment variable passthrough"
+                    label={formatMessage({ id: "settings.mcp.detail.envVars", defaultMessage: "Environment variables" })}
                     onChange={(value) => setValue("env", value)}
                     placeholder="TOKEN=env-value"
                     value={values.env}
                   />
                   <TextAreaField
-                    label="Environment variables"
+                    label={formatMessage({ id: "settings.mcp.detail.envVarPassthrough", defaultMessage: "Environment variable passthrough" })}
                     onChange={(value) => setValue("envVars", value)}
                     placeholder="GITHUB_TOKEN"
                     value={values.envVars}
@@ -185,14 +209,14 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                 <>
                   <TextField
                     error={errors.url}
-                    label="URL"
+                    label={formatMessage({ id: "settings.mcp.detail.http.url", defaultMessage: "URL" })}
                     onChange={(value) => setValue("url", value)}
                     placeholder="https://example.com/mcp"
                     required
                     value={values.url}
                   />
                   <TextField
-                    label="Bearer token env var"
+                    label={formatMessage({ id: "settings.mcp.detail.http.bearerToken", defaultMessage: "Bearer token env var" })}
                     onChange={(value) => setValue("bearerTokenEnvVar", value)}
                     placeholder="LINEAR_API_KEY"
                     value={values.bearerTokenEnvVar}
@@ -204,14 +228,14 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                    */}
                   <TextAreaField
                     error={errors.httpHeaders}
-                    label="Headers"
+                    label={formatMessage({ id: "settings.mcp.detail.http.headers", defaultMessage: "Headers" })}
                     onChange={(value) => setValue("httpHeaders", value)}
                     placeholder="X-Header=value"
                     value={values.httpHeaders}
                   />
                   <TextAreaField
                     error={errors.envHttpHeaders}
-                    label="Headers from environment variables"
+                    label={formatMessage({ id: "settings.mcp.detail.http.envHeaders", defaultMessage: "Headers from environment variables" })}
                     onChange={(value) => setValue("envHttpHeaders", value)}
                     placeholder="Authorization=LINEAR_API_KEY"
                     value={values.envHttpHeaders}
@@ -226,7 +250,7 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                     type="checkbox"
                     onChange={(event) => setValue("enabled", event.currentTarget.checked)}
                   />
-                  <span>Enabled</span>
+                  <span>{formatMessage({ id: "hc.mcpForm.enabled", defaultMessage: "Enabled" })}</span>
                 </span>
               </label>
               <label className="hc-mcp-tool-field">
@@ -236,39 +260,39 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
                     type="checkbox"
                     onChange={(event) => setValue("required", event.currentTarget.checked)}
                   />
-                  <span>Required at startup</span>
+                  <span>{formatMessage({ id: "hc.mcpForm.requiredAtStartup", defaultMessage: "Required at startup" })}</span>
                 </span>
               </label>
 
               <TextAreaField
-                label="Enabled tools"
+                label={formatMessage({ id: "hc.mcpForm.enabledTools", defaultMessage: "Enabled tools" })}
                 onChange={(value) => setValue("enabledTools", value)}
                 placeholder="search&#10;read"
                 value={values.enabledTools}
               />
               <TextAreaField
-                label="Disabled tools"
+                label={formatMessage({ id: "hc.mcpForm.disabledTools", defaultMessage: "Disabled tools" })}
                 onChange={(value) => setValue("disabledTools", value)}
                 placeholder="write"
                 value={values.disabledTools}
               />
               <TextField
                 error={errors.startupTimeoutSec}
-                label="Startup timeout seconds"
+                label={formatMessage({ id: "hc.mcpForm.startupTimeoutSec", defaultMessage: "Startup timeout seconds" })}
                 onChange={(value) => setValue("startupTimeoutSec", value)}
                 placeholder="20"
                 value={values.startupTimeoutSec}
               />
               <TextField
                 error={errors.startupTimeoutMs}
-                label="Startup timeout milliseconds"
+                label={formatMessage({ id: "hc.mcpForm.startupTimeoutMs", defaultMessage: "Startup timeout milliseconds" })}
                 onChange={(value) => setValue("startupTimeoutMs", value)}
                 placeholder="20000"
                 value={values.startupTimeoutMs}
               />
               <TextField
                 error={errors.toolTimeoutSec}
-                label="Tool timeout seconds"
+                label={formatMessage({ id: "hc.mcpForm.toolTimeoutSec", defaultMessage: "Tool timeout seconds" })}
                 onChange={(value) => setValue("toolTimeoutSec", value)}
                 placeholder="90"
                 value={values.toolTimeoutSec}
@@ -278,7 +302,7 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
           <footer className="hc-mcp-tool-form-footer">
             <button className="hc-button" type="button" onClick={onClose}>
               <X size={15} />
-              <span>Cancel</span>
+              <span>{formatMessage({ id: "common.cancel", defaultMessage: "Cancel" })}</span>
             </button>
             {/* codex: settings.mcp.detail.save = "Save" */}
             <button className="hc-button hc-mcp-tool-submit" type="submit">
@@ -307,11 +331,12 @@ function TextField({
   required?: boolean;
   value: string;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   return (
     <label className="hc-mcp-tool-field" data-error={error ? "true" : "false"}>
       <span className="hc-mcp-tool-field-header">
         <span>{label}</span>
-        {required && <em>Required</em>}
+        {required && <em>{formatMessage({ id: "hc.mcpForm.required", defaultMessage: "Required" })}</em>}
       </span>
       <input
         className="hc-mcp-tool-control"

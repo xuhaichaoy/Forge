@@ -5,9 +5,11 @@ import {
   looksLikeCommandOrPath,
   PendingRequestStack,
   pendingRequestOptionArrowSelection,
+  pendingRequestOptionSelectionAction,
   pendingRequestOptionShortcut,
   pendingRequestShouldSubmitOnEnter,
 } from "../src/components/pending-request-stack";
+import { PLAN_IMPLEMENTATION_REQUEST_METHOD } from "../src/state/approval-requests";
 import type { PendingServerRequest } from "../src/state/codex-reducer";
 
 export default function runPendingRequestStackTests(): void {
@@ -17,13 +19,16 @@ export default function runPendingRequestStackTests(): void {
   rendersExecPolicyOptionCommandAsTruncatedCode();
   detectsSafeEnterSubmitScope();
   selectsRadioOptionsWithNumberKeysWithoutSubmitting();
+  advancesMouseSelectedOptionsWithDesktopNextOrSubmit();
   movesRadioSelectionWithArrowKeys();
   focusesOtherTextareaWithArrowDownLikeCodexDesktop();
   rendersMcpUrlAndToolRequestsAsComposerCards();
   rendersDynamicOptionPickerAsDesktopPills();
   rendersDynamicSetupContextPickerActions();
   rendersMcpToolApprovalWithDesktopParamPreview();
-  rendersUserInputDismissAsStopAction();
+  rendersMultiQuestionUserInputWithContinueAction();
+  rendersPlanImplementationAsDismissableUserInput();
+  rendersUserInputDismissAction();
   rendersBackgroundRequestActorLabel();
 }
 
@@ -87,7 +92,7 @@ function rendersExecPolicyOptionCommandAsTruncatedCode(): void {
 
   assertIncludes(html, "hc-request-option-code", "execpolicy option should render the command as a code preview");
   assertIncludes(html, 'data-code-layout="inline"', "single-line execpolicy previews should use Desktop's inline truncation layout");
-  assertIncludes(html, "Yes, and don’t ask again for commands that start with</span><code", "prefix and command should not be one unbroken text node");
+  assertIncludes(html, "Yes, and don&#x27;t ask again for commands that start with</span><code", "prefix and command should not be one unbroken text node");
 }
 
 function detectsSafeEnterSubmitScope(): void {
@@ -171,6 +176,24 @@ function selectsRadioOptionsWithNumberKeysWithoutSubmitting(): void {
     }),
     false,
     "number keys should not submit pending approvals",
+  );
+}
+
+function advancesMouseSelectedOptionsWithDesktopNextOrSubmit(): void {
+  assertEqual(
+    pendingRequestOptionSelectionAction({ questionIndex: 0, totalQuestions: 2 }),
+    "next",
+    "Desktop mouse option click should advance from a non-final question",
+  );
+  assertEqual(
+    pendingRequestOptionSelectionAction({ questionIndex: 1, totalQuestions: 2 }),
+    "submit",
+    "Desktop mouse option click should submit from the final question",
+  );
+  assertEqual(
+    pendingRequestOptionSelectionAction({ questionIndex: 0, totalQuestions: 1 }),
+    "submit",
+    "Desktop mouse option click should submit a single-question request",
   );
 }
 
@@ -371,7 +394,56 @@ function rendersMcpToolApprovalWithDesktopParamPreview(): void {
   assertEqual(html.includes("Tool parameters:"), false, "tool parameters should not be flattened into generic metadata rows");
 }
 
-function rendersUserInputDismissAsStopAction(): void {
+function rendersMultiQuestionUserInputWithContinueAction(): void {
+  const html = renderToStaticMarkup(createElement(PendingRequestStack, {
+    pendingRequests: [
+      request("input", "item/tool/requestUserInput", {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        itemId: "call-1",
+        questions: [
+          {
+            id: "target",
+            header: "HTML target",
+            question: "Where should this go?",
+            options: [{ label: "Standalone HTML", description: "" }],
+          },
+          {
+            id: "reader",
+            header: "Reader",
+            question: "Who reads it?",
+            options: [{ label: "Managers", description: "" }],
+          },
+        ],
+      }),
+    ],
+    onRespond: () => undefined,
+  }));
+
+  assertIncludes(html, "1 of 2", "multi-question request input should render Desktop's question stepper");
+  assertIncludes(html, "<span>Continue</span>", "non-final request input question should expose Continue instead of Submit");
+}
+
+function rendersPlanImplementationAsDismissableUserInput(): void {
+  const html = renderToStaticMarkup(createElement(PendingRequestStack, {
+    pendingRequests: [
+      request("implement-plan:turn-1", PLAN_IMPLEMENTATION_REQUEST_METHOD, {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        planContent: "## Plan\n\n- Patch\n- Verify",
+      }),
+    ],
+    onRespond: () => undefined,
+  }));
+
+  assertIncludes(html, 'data-request-kind="user-input"', "plan implementation should reuse Desktop's request input panel");
+  assertIncludes(html, "Implement this plan?", "plan implementation prompt should render");
+  assertIncludes(html, "Yes, implement this plan", "plan implementation option should render");
+  assertIncludes(html, 'data-selected="true"', "plan implementation should default to the first option");
+  assertIncludes(html, "<span>Dismiss</span>", "plan implementation secondary action should dismiss without Stop wording");
+}
+
+function rendersUserInputDismissAction(): void {
   const html = renderToStaticMarkup(createElement(PendingRequestStack, {
     pendingRequests: [
       request("input", "item/tool/requestUserInput", {
@@ -385,8 +457,8 @@ function rendersUserInputDismissAsStopAction(): void {
   }));
 
   assertIncludes(html, 'data-request-kind="user-input"', "request_user_input should render as user-input");
-  assertIncludes(html, "Stops the running turn instead of submitting an empty answer.", "Stop action should explain interrupt semantics");
-  assertIncludes(html, "<span>Stop</span>", "request_user_input secondary action should be Stop");
+  assertIncludes(html, "Stops the running turn instead of submitting an empty answer.", "Dismiss action should explain interrupt semantics");
+  assertIncludes(html, "<span>Dismiss</span>", "request_user_input secondary action aligns with requestInputPanel.dismiss");
 }
 
 function rendersBackgroundRequestActorLabel(): void {

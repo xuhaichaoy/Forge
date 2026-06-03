@@ -1,5 +1,6 @@
 import type { BranchDetailsViewModel } from "./branch-details";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { formatMessage } from "./i18n";
 import type { RailEntry } from "./render-groups";
 
 export const RAIL_LIST_PREVIEW_LIMIT = 6;
@@ -65,6 +66,11 @@ export interface RightRailAutomationInput {
   name: string;
   rruleSummary?: string;
   nextRunAtMs?: number | null;
+  // codex format-automation-next-run-label-*.js `s({intl, nextRunAt, status})` —
+  // the rail row passes the automation status so the "Next run" tooltip can show
+  // "-" for a PAUSED automation. Optional/raw string ("ACTIVE" | "PAUSED" | …);
+  // only "PAUSED" changes the rendered label.
+  status?: string | null;
 }
 
 // codex: local-conversation-thread-*.js browser-tabs — single browser tab
@@ -424,13 +430,27 @@ function rightRailSideSpace(contentWidthPx: number): number {
 // nextRunAtMs. HiCodex packs the same fields into the RailEntry slots that
 // `right-rail.tsx::railEntryIcon` / `RailEntryContent` already understand.
 function automationRailEntry(input: RightRailAutomationInput): RailEntry {
-  const nextRun = formatNextRunAt(input.nextRunAtMs);
+  const nextRun = formatNextRunAt(input.nextRunAtMs, input.status);
+  // codex local-conversation-thread-*.js `Ec({rrule, fallbackMessage})` — when the
+  // schedule cannot be reduced to a compact label (humanizeRrule → null for
+  // cron / free-form / MONTHLY / YEARLY), the row renders the localized
+  // "Custom schedule" fallback rather than leaking the raw RRULE/cron body.
+  const rrule = input.rruleSummary ?? rruleSummaryFallbackLabel();
   return {
     id: `automation:${input.id}`,
     title: input.name,
-    ...(input.rruleSummary ? { meta: input.rruleSummary } : {}),
+    meta: rrule,
     ...(nextRun ? { status: `Next run: ${nextRun}` } : {}),
   };
+}
+
+// codex settings.automations.rruleSummaryFallback — "Custom schedule" (EN) /
+// "自定义安排" (ZH). Resolved at call time so the active locale applies.
+function rruleSummaryFallbackLabel(): string {
+  return formatMessage({
+    id: "settings.automations.rruleSummaryFallback",
+    defaultMessage: "Custom schedule",
+  });
 }
 
 // codex: local-conversation-thread-*.js browserRow — single browser-tab row:
@@ -445,24 +465,47 @@ function browserRailEntry(input: RightRailBrowserInput): RailEntry {
   };
 }
 
-// codex format-automation-next-run-label-*.js: a relative-day label, NOT a raw
-// locale datetime — calendar-day delta via start-of-day diff (Math.round) → "Today
-// at {time}" (delta 0) / "Tomorrow at {time}" (1) / "{weekday} at {time}" (else),
-// with time = {hour:'numeric', minute:'2-digit'} and weekday:'long'; "Not scheduled"
-// when there is no next run. (Codex also maps PAUSED → "-", but HiCodex's rail input
-// carries no automation status, so that branch is omitted per "没有依据".)
-function formatNextRunAt(nextRunAtMs: number | null | undefined): string {
-  if (nextRunAtMs == null || !Number.isFinite(nextRunAtMs)) return "Not scheduled";
+// codex format-automation-next-run-label-*.js `s`/`c` — a relative-day label, NOT
+// a raw locale datetime. The calendar-day delta (start-of-day diff, Math.round)
+// drives:
+//   • status === "PAUSED"        → "-"                              (`s` first branch)
+//   • no next run                → "Not scheduled"                 (`s`, nextRun.none)
+//   • delta 0                    → "Today at {time}"               (relativeDate.today)
+//   • delta 1                    → "Tomorrow at {time}"            (relativeDate.tomorrow)
+//   • delta in [2, 6]            → "{weekday} at {time}" (long)    (relativeDate.weekday)
+//   • delta >= 7 OR delta < 0    → medium date + short time        (`c` final else)
+// time uses {hour:'numeric', minute:'2-digit'}; the >=7/past fallback uses the
+// locale's medium date + short time (e.g. "Jun 15, 2026, 9:00 AM").
+const NEXT_RUN_WEEKDAY_WINDOW_DAYS = 7; // codex `c` constant `o = 7`
+
+function formatNextRunAt(nextRunAtMs: number | null | undefined, status?: string | null): string {
+  // codex `s` — PAUSED automations render "-" regardless of the next-run time.
+  if (status === "PAUSED") return "-";
+  if (nextRunAtMs == null || !Number.isFinite(nextRunAtMs)) {
+    return formatMessage({ id: "inbox.automations.nextRun.none", defaultMessage: "Not scheduled" });
+  }
   try {
     const next = new Date(nextRunAtMs);
     const now = new Date();
     const startOfDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
     const deltaDays = Math.round((startOfDay(next) - startOfDay(now)) / 86_400_000);
     const time = next.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    if (deltaDays === 0) return `Today at ${time}`;
-    if (deltaDays === 1) return `Tomorrow at ${time}`;
-    const weekday = next.toLocaleDateString(undefined, { weekday: "long" });
-    return `${weekday} at ${time}`;
+    if (deltaDays === 0) {
+      return formatMessage({ id: "inbox.automations.relativeDate.today", defaultMessage: "Today at {time}" }, { time });
+    }
+    if (deltaDays === 1) {
+      return formatMessage({ id: "inbox.automations.relativeDate.tomorrow", defaultMessage: "Tomorrow at {time}" }, { time });
+    }
+    // codex `c` — only the [2, 6]-day window uses a bare weekday name; >= 7 days
+    // (or a past time, delta < 0) falls back to the unambiguous medium date.
+    if (deltaDays > 1 && deltaDays < NEXT_RUN_WEEKDAY_WINDOW_DAYS) {
+      const weekday = next.toLocaleDateString(undefined, { weekday: "long" });
+      return formatMessage(
+        { id: "inbox.automations.relativeDate.weekday", defaultMessage: "{weekday} at {time}" },
+        { weekday, time },
+      );
+    }
+    return next.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   } catch {
     return "";
   }

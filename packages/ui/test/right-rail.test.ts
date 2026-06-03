@@ -17,9 +17,20 @@ import {
   type RightRailPreferenceStorageLike,
 } from "../src/state/right-rail";
 
+declare const process: { cwd(): string };
+declare function require(id: string): unknown;
+
+const { readFileSync } = require("node:fs") as {
+  readFileSync(path: string, encoding: "utf8"): string;
+};
+const { join } = require("node:path") as {
+  join(...parts: string[]): string;
+};
+
 export default function runRightRailTests(): void {
   __resetSectionCollapseStateForTesting();
   keepsCodexDesktopSectionOrder();
+  rendersAutomationNextRunAndRruleFallbackLikeCodex();
   hidesEmptySections();
   keepsPopulatedBranchDetails();
   collapsesCompletedProgressByDefaultLikeCodexDesktop();
@@ -36,6 +47,7 @@ export default function runRightRailTests(): void {
   loadsAndPersistsRightRailPinnedPreference();
   computesDesktopRightRailDisplayModeAndContentShift();
   hidesRightRailWhileDesktopModeIsOverlay();
+  keepsOverlayRightRailVisibleInResponsiveCss();
 }
 
 function keepsCodexDesktopSectionOrder(): void {
@@ -548,7 +560,7 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
     "Git section should project only Desktop surface rows",
   );
   assertEqual(entryById(branchDetailsSection.allEntries, "changes").meta, "3 changed files", "Changes should carry diff summary");
-  assertEqual(entryById(branchDetailsSection.allEntries, "local").meta, "Work locally", "Local row should not expose cwd");
+  assertEqual(entryById(branchDetailsSection.allEntries, "local").meta, undefined, "Local row exposes no subtitle (matches Codex; no cwd)");
   assertEqual(entryById(branchDetailsSection.allEntries, "branch").meta, "main", "Branch row should expose branch name");
   assertEqual(entryById(branchDetailsSection.allEntries, "commit").meta, "Commit", "Commit row should be an action label, not a SHA");
   assertEqual(
@@ -602,6 +614,142 @@ function computesDesktopRightRailDisplayModeAndContentShift(): void {
 function hidesRightRailWhileDesktopModeIsOverlay(): void {
   assertEqual(rightRailShouldRender(1_095), false, "right rail should not render while Desktop display mode is overlay");
   assertEqual(rightRailShouldRender(1_096), true, "right rail should render once the Desktop display mode leaves overlay");
+}
+
+function keepsOverlayRightRailVisibleInResponsiveCss(): void {
+  const css = readFileSync(join(process.cwd(), "src/styles/responsive-turns.css"), "utf8");
+  const narrowRule = css.match(/@media\s*\(max-width:\s*1369px\)\s*\{(?<body>[\s\S]*?)\n\}/);
+  assertNotNull(narrowRule?.groups?.body, "expected narrow right-rail media rule");
+  assertStringIncludes(
+    narrowRule.groups.body,
+    ".hc-right-rail:not([data-display-mode=\"overlay\"])",
+    "narrow CSS should hide only non-overlay rails",
+  );
+  assertStringExcludes(
+    narrowRule.groups.body,
+    ".hc-right-rail {\n    display: none;",
+    "narrow CSS should not hide overlay rail popovers",
+  );
+}
+
+// codex format-automation-next-run-label-*.js `s`/`c` + local-conversation-thread
+// `Ec` fallback — the automation rail row's "Next run" tooltip and rrule slot.
+function rendersAutomationNextRunAndRruleFallbackLikeCodex(): void {
+  const DAY_MS = 86_400_000;
+  const automationSection = (automation: {
+    id: string;
+    name: string;
+    rruleSummary?: string;
+    nextRunAtMs?: number | null;
+    status?: string | null;
+  }) => sectionById(
+    projectRightRailSections({
+      progress: [],
+      automation,
+      branchDetails: { entries: [] },
+      artifacts: [],
+      sources: [],
+    }),
+    "automation",
+  ).entries[0];
+
+  // codex `s` first branch — a PAUSED automation renders "Next run: -" regardless
+  // of the computed next-run time.
+  const paused = automationSection({
+    id: "a-paused",
+    name: "Paused digest",
+    rruleSummary: "Daily",
+    nextRunAtMs: Date.now() + DAY_MS,
+    status: "PAUSED",
+  });
+  assertEqual(paused?.status, "Next run: -", "PAUSED automation tooltip should show 'Next run: -'");
+
+  // codex `s` nextRun.none — no next run renders "Not scheduled".
+  const unscheduled = automationSection({ id: "a-none", name: "No schedule", rruleSummary: "Daily" });
+  assertEqual(
+    unscheduled?.status,
+    "Next run: Not scheduled",
+    "automation without a next run should show 'Next run: Not scheduled'",
+  );
+
+  // codex `c` relativeDate.today / .tomorrow — same-day and next-day deltas. Any
+  // timestamp on today's calendar date is delta 0 (the label uses a start-of-day
+  // diff), so a fixed noon today is stable regardless of the current run hour.
+  const today = automationSection({
+    id: "a-today",
+    name: "Today",
+    rruleSummary: "Hourly",
+    nextRunAtMs: startOfDayPlus(0, 12),
+    status: "ACTIVE",
+  });
+  assertStringIncludes(today?.status ?? "", "Next run: Today at ", "delta 0 should render 'Today at {time}'");
+
+  const tomorrow = automationSection({
+    id: "a-tomorrow",
+    name: "Tomorrow",
+    rruleSummary: "Daily",
+    nextRunAtMs: startOfDayPlus(1, 9),
+    status: "ACTIVE",
+  });
+  assertStringIncludes(
+    tomorrow?.status ?? "",
+    "Next run: Tomorrow at ",
+    "delta 1 should render 'Tomorrow at {time}'",
+  );
+
+  // codex `c` relativeDate.weekday — a delta inside the [2, 6] window uses a bare
+  // weekday name.
+  const threeDaysOut = startOfDayPlus(3, 9);
+  const midweek = automationSection({
+    id: "a-midweek",
+    name: "Midweek",
+    rruleSummary: "Weekly",
+    nextRunAtMs: threeDaysOut,
+    status: "ACTIVE",
+  });
+  const expectedWeekday = new Date(threeDaysOut).toLocaleDateString(undefined, { weekday: "long" });
+  assertStringIncludes(
+    midweek?.status ?? "",
+    `Next run: ${expectedWeekday} at `,
+    "delta in [2,6] should render '{weekday} at {time}'",
+  );
+
+  // codex `c` final else — a delta >= 7 days falls back to the unambiguous medium
+  // date (NOT a bare weekday, which would be ambiguous across weeks).
+  const eightDaysOut = startOfDayPlus(8, 9);
+  const farOut = automationSection({
+    id: "a-far",
+    name: "Far out",
+    rruleSummary: "Weekly",
+    nextRunAtMs: eightDaysOut,
+    status: "ACTIVE",
+  });
+  const expectedMedium = new Date(eightDaysOut).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  assertEqual(
+    farOut?.status,
+    `Next run: ${expectedMedium}`,
+    "delta >= 7 should fall back to a medium date + short time",
+  );
+
+  // codex `Ec({rrule, fallbackMessage})` — a missing rrule summary (humanizeRrule
+  // returned null) renders the localized "Custom schedule" fallback, never an
+  // empty / raw slot.
+  const fallback = automationSection({ id: "a-custom", name: "Custom", status: "ACTIVE" });
+  assertEqual(
+    fallback?.meta,
+    "Custom schedule",
+    "automation row without a humanized rrule should render the 'Custom schedule' fallback",
+  );
+
+  // A present rrule summary is used verbatim (no fallback).
+  const summarized = automationSection({ id: "a-daily", name: "Daily", rruleSummary: "Daily at 9:00 AM", status: "ACTIVE" });
+  assertEqual(summarized?.meta, "Daily at 9:00 AM", "automation row should use the humanized rrule summary when present");
+}
+
+function startOfDayPlus(days: number, hour: number): number {
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + days, hour, 0, 0, 0);
+  return target.getTime();
 }
 
 function railEntry(id: string, title: string, status: string, meta: string) {

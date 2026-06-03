@@ -89,6 +89,7 @@ export function assistantMessagePhase(item: ThreadItem): AssistantMessagePhase {
 export function itemType(item: ThreadItem): string {
   const rawType = String((item as Record<string, unknown>).type ?? "");
   if (rawType === "workedFor") return "worked-for";
+  if (rawType === "planImplementation") return "plan-implementation";
   switch (item.type) {
     case "userMessage":
     case "hookPrompt":
@@ -220,6 +221,21 @@ export function mcpSourceTitle(server: string): string {
     .filter(Boolean)
     .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+/**
+ * Clean-room of Codex Desktop's tool-name fallback label (local-conversation-thread
+ * `US`/`WS`/`GS`): when there is no per-app/per-tool active i18n message, an in-progress
+ * MCP/tool row shows the human-readable tool name — tokenize on non-alphanumerics,
+ * join with spaces, then sentence-case (capitalize the first character only).
+ * e.g. `list_mac_apps` -> "List mac apps", `runJavaScript` -> "Run java script".
+ * No "Calling" verb prefix (Codex never renders that word).
+ */
+export function humanReadableToolLabel(tool: string): string {
+  const tokens = tool.trim().toLowerCase().split(/[^a-z0-9]+/g).filter(Boolean);
+  const phrase = tokens.length > 0 ? tokens.join(" ") : tool.trim();
+  if (!phrase) return tool.trim();
+  return phrase.slice(0, 1).toUpperCase() + phrase.slice(1);
 }
 
 function mcpInvocationField(item: ThreadItem, field: "server" | "tool"): string {

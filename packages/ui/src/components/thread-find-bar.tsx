@@ -25,10 +25,21 @@ export function ThreadFindBar({
 }: ThreadFindBarProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const canNavigate = matchCount > 0;
-  const countLabel = query.trim()
-    ? `${canNavigate ? currentIndex + 1 : 0}/${matchCount}`
-    : "0/0";
+  const hasQuery = query.trim().length > 0;
   const { formatMessage } = useHiCodexIntl();
+  // codex review-runtime-bridge ResultLabel `Re`: `{active} / {matches} results`,
+  // active = matches > 0 ? currentIndex + 1 : 0; zero matches renders `0 results`.
+  // The label row only appears once a query is present (Codex hides it otherwise),
+  // so HiCodex no longer shows the bare "0/0" placeholder.
+  const activeIndex = canNavigate ? currentIndex + 1 : 0;
+  const countLabel = !hasQuery
+    ? null
+    : canNavigate
+      ? formatMessage(
+          { id: "codex.threadFindBar.results", defaultMessage: "{active} / {matches} results" },
+          { active: activeIndex, matches: matchCount },
+        )
+      : formatMessage({ id: "codex.threadFindBar.noResults", defaultMessage: "0 results" });
   const findLabel = formatMessage({ id: "codex.threadFindBar.label", defaultMessage: "Find in chat" });
   const placeholderText = formatMessage({ id: "codex.threadFindBar.placeholder", defaultMessage: "Search chat…" });
   const previousLabel = formatMessage({ id: "codex.threadFindBar.previousResult", defaultMessage: "Previous result" });
@@ -49,7 +60,9 @@ export function ThreadFindBar({
         <Search size={14} aria-hidden="true" />
         <input
           ref={inputRef}
-          type="search"
+          // codex review-runtime-bridge input: type `text` (no native WebKit
+          // clear button — navigation/close are drawn as their own buttons).
+          type="text"
           value={query}
           placeholder={placeholderText}
           aria-label={findLabel}
@@ -63,7 +76,9 @@ export function ThreadFindBar({
           }}
         />
       </label>
-      <span className="hc-thread-find-count" aria-live="polite">{countLabel}</span>
+      {countLabel != null ? (
+        <span className="hc-thread-find-count" aria-live="polite">{countLabel}</span>
+      ) : null}
       <button
         type="button"
         className="hc-thread-find-icon-button"

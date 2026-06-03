@@ -11,6 +11,7 @@ import {
   commandOutputText,
   commandText,
   formatItemDetail,
+  humanReadableToolLabel,
   isItemInProgress,
   itemText,
   itemType,
@@ -286,6 +287,7 @@ export function ToolActivityDetail({
   onOpenThreadId?: OpenThreadHandler;
   threadId?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const detail = toolActivityDetailViewModel(item);
   const rawMcpOutput = rawMcpToolOutputForItem(item, detail.running);
   if (detail.kind === "webSearch") {
@@ -327,11 +329,13 @@ export function ToolActivityDetail({
               }
               return (
                 <button
-                  aria-label={`Open agent ${part.label}`}
+                  aria-label={formatMessage({ id: "hc.toolDetail.multiAgent.openAgentAriaLabel", defaultMessage: "Open agent {label}" }, { label: part.label })}
                   className="hc-tool-detail-agent hc-tool-detail-agent-button"
                   key={`${row.key}:agent:${part.threadId}`}
                   style={{ color: part.color }}
-                  title={part.title ? `Open agent ${part.label}. ${part.title}` : `Open agent ${part.label}`}
+                  title={part.title
+                    ? formatMessage({ id: "hc.toolDetail.multiAgent.openAgentTitleWithDetail", defaultMessage: "Open agent {label}. {title}" }, { label: part.label, title: part.title })
+                    : formatMessage({ id: "hc.toolDetail.multiAgent.openAgentAriaLabel", defaultMessage: "Open agent {label}" }, { label: part.label })}
                   type="button"
                   onClick={() => onOpenThreadId(part.threadId, {
                     displayName: part.label,
@@ -380,7 +384,8 @@ export function ToolActivityDetail({
           : (
             <div className="hc-tool-detail-row">
               {/* Current protocol payloads do not expose a specific patch error code here. */}
-              No file changes were provided.
+              {/* Aligns with Codex `codex.patch.change.noChanges` = "No changes". */}
+              {formatMessage({ id: "hc.toolDetail.patch.noFileChanges", defaultMessage: "No changes" })}
             </div>
           )}
       </section>
@@ -402,7 +407,7 @@ export function ToolActivityDetail({
           </div>
         )}
         {detail.toolKind !== "MCP" && detail.argumentsText && (
-          <LabeledCode label="Parameters" text={detail.argumentsText} />
+          <LabeledCode label={formatMessage({ id: "hc.toolDetail.tool.parametersLabel", defaultMessage: "Parameters" })} text={detail.argumentsText} />
         )}
         {/* content blocks 多类型渲染（MCP spec 6 种 block）。 */}
         {detail.resultBlocks && detail.resultBlocks.length > 0 ? (
@@ -411,7 +416,7 @@ export function ToolActivityDetail({
           detail.resultText
             ? <div className="hc-mcp-result-text-body">{detail.resultText}</div>
             : detail.toolKind === "MCP" && !detail.structuredResultText && !detail.errorText
-              ? <p className="hc-tool-detail-row">Tool returned no content</p>
+              ? <p className="hc-tool-detail-row">{formatMessage({ id: "codex.mcpTool.noResult", defaultMessage: "Tool returned no content" })}</p>
               : null
         )}
         {detail.structuredResultText && <CodeBlock text={detail.structuredResultText} />}
@@ -483,13 +488,14 @@ function PatchChangePath({
   change: PatchChangeViewModel;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   if (!onOpenFileReference) {
-    return <code title={`${change.path} — Open in editor`}>{change.path}</code>;
+    return <code title={formatMessage({ id: "hc.toolDetail.patch.openInEditorTooltip", defaultMessage: "{path} — Open in editor" }, { path: change.path })}>{change.path}</code>;
   }
   const lineStart = patchChangeFirstChangeLine(change.diff);
   return (
     <button
-      aria-label={`Open ${change.path}`}
+      aria-label={formatMessage({ id: "hc.toolDetail.patch.openFileAriaLabel", defaultMessage: "Open {path}" }, { path: change.path })}
       className="hc-tool-detail-change-path-button"
       title={change.path}
       type="button"
@@ -597,6 +603,7 @@ function AutoReviewDetail({ detail }: { detail: Extract<ToolActivityDetailViewMo
 }
 
 function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
+  const { formatMessage } = useHiCodexIntl();
   switch (block.kind) {
     case "text":
       // codex: local-conversation-thread-*.js — MCP text blocks render in a
@@ -608,8 +615,8 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
     case "image":
       return (
         <div className="hc-mcp-result-block hc-mcp-result-image">
-          <img alt="MCP image result" className="hc-mcp-result-image-thumb" src={block.dataUrl} />
-          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+          <img alt={formatMessage({ id: "hc.toolDetail.mcp.imageResultAlt", defaultMessage: "MCP image result" })} className="hc-mcp-result-image-thumb" src={block.dataUrl} />
+          {block.annotations && <small className="hc-mcp-result-annotations">{formatMessage({ id: "codex.mcpTool.contentBlock.annotationsLine", defaultMessage: "Annotations: {annotations}" }, { annotations: block.annotations })}</small>}
         </div>
       );
     case "audio":
@@ -617,7 +624,7 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
         <div className="hc-mcp-result-block hc-mcp-result-audio">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <audio controls src={block.dataUrl} />
-          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+          {block.annotations && <small className="hc-mcp-result-annotations">{formatMessage({ id: "codex.mcpTool.contentBlock.annotationsLine", defaultMessage: "Annotations: {annotations}" }, { annotations: block.annotations })}</small>}
         </div>
       );
     case "resourceLink": {
@@ -633,8 +640,8 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
       const label = block.title || block.name || block.uri;
       return (
         <div className="hc-mcp-result-block hc-mcp-result-resource-link">
-          <div className="hc-mcp-result-resource-link-text">Read {label}</div>
-          {block.annotations && <small className="hc-mcp-result-annotations">Annotations: {block.annotations}</small>}
+          <div className="hc-mcp-result-resource-link-text">{formatMessage({ id: "codex.mcpTool.resourceLink.reading", defaultMessage: "Read {resourceLinkName}" }, { resourceLinkName: label })}</div>
+          {block.annotations && <small className="hc-mcp-result-annotations">{formatMessage({ id: "codex.mcpTool.contentBlock.annotationsLine", defaultMessage: "Annotations: {annotations}" }, { annotations: block.annotations })}</small>}
         </div>
       );
     }
@@ -643,20 +650,20 @@ function McpResultBlockView({ block, index }: { block: McpResultBlock; index: nu
         <div className="hc-mcp-result-block hc-mcp-result-embedded-resource">
           {block.uri && (
             <div className="hc-mcp-result-resource-meta">
-              <span>URI</span><code>{block.uri}</code>
+              <span>{formatMessage({ id: "codex.mcpTool.embeddedResource.uriLabel", defaultMessage: "URI" })}</span><code>{block.uri}</code>
             </div>
           )}
           {block.mimeType && (
             <div className="hc-mcp-result-resource-meta">
-              <span>MIME type</span><code>{block.mimeType}</code>
+              <span>{formatMessage({ id: "codex.mcpTool.embeddedResource.mimeTypeLabel", defaultMessage: "MIME type" })}</span><code>{block.mimeType}</code>
             </div>
           )}
           {block.annotations && (
             <div className="hc-mcp-result-resource-meta">
-              <span>Annotations</span><span>{block.annotations}</span>
+              <span>{formatMessage({ id: "codex.mcpTool.embeddedResource.annotationsLabel", defaultMessage: "Annotations" })}</span><span>{block.annotations}</span>
             </div>
           )}
-          {block.text && <LabeledCode label="Content" text={block.text} />}
+          {block.text && <LabeledCode label={formatMessage({ id: "codex.mcpTool.embeddedResource.contentLabel", defaultMessage: "Content" })} text={block.text} />}
         </div>
       );
     case "unknown":
@@ -711,6 +718,7 @@ function McpAppToolDetail({
   rawOutput: { heading: string; text: string } | null;
   threadId: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const inlineFrame = detail.inlineFrame;
   const inlineFrameKey = inlineFrame
     ? `${inlineFrame.mimeType}:${inlineFrame.heightPx}:${inlineFrame.prefersBorder ? "1" : "0"}:${inlineFrame.html}`
@@ -791,7 +799,7 @@ function McpAppToolDetail({
   return (
     <section className={`hc-tool-detail-stack mcp-app ${detail.running ? "is-running" : ""}`}>
       <div className="hc-mcp-app-header">
-        <span className="hc-tool-detail-source">MCP app</span>
+        <span className="hc-tool-detail-source">{formatMessage({ id: "hc.toolDetail.mcpApp.sourceBadge", defaultMessage: "MCP app" })}</span>
         <span className="hc-tool-detail-title" title={detail.name}>{detail.name}</span>
         <small>{detail.status}</small>
       </div>
@@ -804,20 +812,20 @@ function McpAppToolDetail({
           threadId={threadId}
         />
       ) : frameTooLarge ? (
-        <div className="hc-tool-detail-row error">Failed to load MCP app: HTML exceeds the maximum supported size.</div>
+        <div className="hc-tool-detail-row error">{formatMessage({ id: "codex.mcpTool.mcpAppTooLarge", defaultMessage: "Failed to load MCP app: HTML exceeds the maximum supported size." })}</div>
       ) : resourceState.status === "loading" ? (
         <div
-          aria-label="Loading MCP app"
+          aria-label={formatMessage({ id: "codex.mcpTool.mcpAppLoading", defaultMessage: "Loading MCP app" })}
           className="hc-mcp-app-loading"
           data-mcp-app-loading="true"
           role="status"
         />
       ) : resourceState.status === "error" ? (
-        <div className="hc-tool-detail-row error">Failed to load MCP app: {resourceState.errorText}</div>
+        <div className="hc-tool-detail-row error">{formatMessage({ id: "codex.mcpTool.mcpAppLoadFailed", defaultMessage: "Failed to load MCP app: {message}" }, { message: resourceState.errorText })}</div>
       ) : (
-        <div className="hc-tool-detail-row">MCP app returned no HTML content</div>
+        <div className="hc-tool-detail-row">{formatMessage({ id: "codex.mcpTool.mcpAppNoContent", defaultMessage: "MCP app returned no HTML content" })}</div>
       )}
-      {!frame && fallbackText && <LabeledCode label={detail.errorText ? "Error" : "Result"} text={fallbackText} />}
+      {!frame && fallbackText && <LabeledCode label={detail.errorText ? formatMessage({ id: "hc.toolDetail.errorLabel", defaultMessage: "Error" }) : formatMessage({ id: "hc.toolDetail.resultLabel", defaultMessage: "Result" })} text={fallbackText} />}
       {showRawOutput && <RawToolOutputButton heading={rawOutput.heading} inlineApp={Boolean(frame && !frameTooLarge)} text={rawOutput.text} />}
     </section>
   );
@@ -834,6 +842,7 @@ function McpAppSandboxFrame({
   onMcpAppHostCall?: McpAppHostCallHandler;
   threadId: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const displayModeRef = useRef<McpAppDisplayMode>("inline");
   const hostPortRef = useRef<MessagePort | null>(null);
@@ -958,7 +967,7 @@ function McpAppSandboxFrame({
   }, [detail, displayMode, frameLoadNonce, widgetViewKey]);
 
   if (sandboxErrorText) {
-    return <div className="hc-tool-detail-row error">Failed to load MCP app: {sandboxErrorText}</div>;
+    return <div className="hc-tool-detail-row error">{formatMessage({ id: "codex.mcpTool.mcpAppLoadFailed", defaultMessage: "Failed to load MCP app: {message}" }, { message: sandboxErrorText })}</div>;
   }
 
   return (
@@ -968,9 +977,9 @@ function McpAppSandboxFrame({
     >
       {displayMode === "fullscreen" && (
         <button
-          aria-label="Exit fullscreen MCP app"
+          aria-label={formatMessage({ id: "hc.toolDetail.mcpApp.exitFullscreenAriaLabel", defaultMessage: "Exit fullscreen MCP app" })}
           className="hc-mcp-app-fullscreen-exit"
-          title="Exit fullscreen"
+          title={formatMessage({ id: "hc.toolDetail.mcpApp.exitFullscreenTooltip", defaultMessage: "Exit fullscreen" })}
           type="button"
           onClick={() => {
             displayModeRef.current = "inline";
@@ -998,7 +1007,7 @@ function McpAppSandboxFrame({
         sandbox={MCP_APP_IFRAME_SANDBOX_POLICY}
         srcDoc={srcDoc}
         style={{ backgroundColor: backgroundColor ?? undefined, height: heightPx }}
-        title={`${detail.name} MCP app`}
+        title={formatMessage({ id: "hc.toolDetail.mcpApp.iframeTitle", defaultMessage: "{name} MCP app" }, { name: detail.name })}
         onLoad={() => setFrameLoadNonce((current) => current + 1)}
       />
     </div>
@@ -1725,6 +1734,7 @@ function ExecShellDetail({
   detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>;
   forceExpanded?: boolean;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [expanded, setExpanded] = useState(() => initialExecShellExpanded(detail));
   const [copiedTarget, setCopiedTarget] = useState<ExecShellCopyTarget | null>(null);
   /*
@@ -1737,7 +1747,7 @@ function ExecShellDetail({
    */
   const [commandExpanded, setCommandExpanded] = useState<boolean>(forceExpanded);
   const bodyOpen = forceExpanded || detail.running || expanded;
-  const output = detail.output || (!detail.running && detail.footer ? "No output" : "");
+  const output = detail.output || (!detail.running && detail.footer ? formatMessage({ id: "codex.shell.noOutput", defaultMessage: "No output" }) : "");
 
   /*
    * Keep running output pinned to the newest line — but ONLY when the user is
@@ -1834,7 +1844,7 @@ function ExecShellDetail({
         <ExecShellCopyButton
           className="hc-exec-shell-command-copy"
           copied={copiedTarget === "command"}
-          label={copiedTarget === "command" ? "Copied" : "Copy command"}
+          label={copiedTarget === "command" ? formatMessage({ id: "copyButton.copied", defaultMessage: "Copied" }) : formatMessage({ id: "codex.shell.copyCommand", defaultMessage: "Copy command" })}
           onClick={() => copyTarget("command")}
         />
       </div>
@@ -1853,7 +1863,7 @@ function ExecShellDetail({
           <ExecShellCopyButton
             className="hc-exec-shell-output-copy"
             copied={copiedTarget === "output"}
-            label={copiedTarget === "output" ? "Copied" : "Copy output"}
+            label={copiedTarget === "output" ? formatMessage({ id: "copyButton.copied", defaultMessage: "Copied" }) : formatMessage({ id: "codex.shell.copyOutput", defaultMessage: "Copy output" })}
             onClick={() => copyTarget("output")}
           />
         </div>
@@ -2030,7 +2040,9 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         running,
         name,
         source: mcpSourceTitle(server),
-        label: `Calling ${tool}`,
+        // Codex's in-progress tool row (NS with completed:false) shows the
+        // human-readable, sentence-cased tool name — no "Calling" verb prefix.
+        label: humanReadableToolLabel(tool),
         status: status || "pending",
       };
     }
@@ -2166,6 +2178,7 @@ function formatJsonForRawMcpOutput(value: unknown): string {
 }
 
 function RawToolOutputButton({ heading, inlineApp = false, text }: { heading: string; inlineApp?: boolean; text: string }) {
+  const { formatMessage } = useHiCodexIntl();
   const [open, setOpen] = useState(false);
   if (!text.trim()) return null;
   const dialog = open ? (
@@ -2190,7 +2203,7 @@ function RawToolOutputButton({ heading, inlineApp = false, text }: { heading: st
         <header>
           <h2>{heading}</h2>
           <button
-            aria-label="Close raw tool call output"
+            aria-label={formatMessage({ id: "hc.toolDetail.rawOutput.closeAriaLabel", defaultMessage: "Close raw tool call output" })}
             type="button"
             autoFocus
             onClick={() => setOpen(false)}
@@ -2208,9 +2221,9 @@ function RawToolOutputButton({ heading, inlineApp = false, text }: { heading: st
   return (
     <div className={`hc-tool-raw-output ${inlineApp ? "is-inline-app" : ""}`}>
       <button
-        aria-label="Show raw tool call output"
+        aria-label={formatMessage({ id: "codex.mcpTool.rawOutputTriggerTooltip", defaultMessage: "Show raw tool call output" })}
         className="hc-tool-raw-output-trigger"
-        title="Show raw tool call output"
+        title={formatMessage({ id: "codex.mcpTool.rawOutputTriggerTooltip", defaultMessage: "Show raw tool call output" })}
         type="button"
         onClick={() => setOpen(true)}
       >
@@ -2242,6 +2255,7 @@ function CollapsibleLabeledCode({
   defaultCollapsed?: boolean;
   collapseThresholdLines?: number;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const lines = text.split(/\r?\n/);
   const isLong = lines.length > collapseThresholdLines;
   const [collapsed, setCollapsed] = useState(defaultCollapsed && isLong);
@@ -2258,7 +2272,9 @@ function CollapsibleLabeledCode({
             type="button"
             onClick={() => setCollapsed((value) => !value)}
           >
-            {collapsed ? `Show ${hiddenCount} more lines` : "Show less"}
+            {collapsed
+              ? formatMessage({ id: "hc.toolDetail.code.showMoreLines", defaultMessage: "Show {count} more lines" }, { count: hiddenCount })
+              : formatMessage({ id: "hc.toolDetail.code.showLess", defaultMessage: "Show less" })}
           </button>
         )}
       </div>

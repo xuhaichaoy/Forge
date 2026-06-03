@@ -23,7 +23,7 @@ import { MessageUnitView } from "./message-unit";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
 import { DynamicToolCallGroupView, ThreadItemView } from "./thread-item-view";
-import { TurnRatingControls, type SubmitTurnRatingEvent } from "./turn-rating-controls";
+import { type SubmitTurnRatingEvent } from "./turn-rating-controls";
 import {
   setThreadScrollDistanceFromBottom,
   threadScrollDistanceFromBottom,
@@ -689,17 +689,10 @@ function GeneratedImageGalleryOutput({
   threadId?: string | null;
 }) {
   const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);
-  const canRateTurn = Boolean(threadId && unit.turnId && onSubmitTurnFeedback);
   return (
     <div className="hc-message assistant hc-generated-image-output" data-role="assistant">
       <GeneratedImageGallery images={unit.images} hasPending={unit.hasPending} />
-      <MessageActionRow copyText="" hasActionChildren={canFork || canRateTurn}>
-        <TurnRatingControls
-          hasArtifacts
-          onSubmit={onSubmitTurnFeedback}
-          threadId={threadId}
-          turnId={unit.turnId}
-        />
+      <MessageActionRow copyText="" hasActionChildren={canFork}>
         {canFork && unit.turnId && (
           <IconActionButton
             ariaLabel="Fork from this point"

@@ -3,6 +3,7 @@ import { Pause, Pencil, Play, Target, X } from "lucide-react";
 import type { ThreadGoal } from "@hicodex/codex-protocol";
 import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type ThreadGoalBannerAction = "edit" | "status" | "clear";
 
@@ -99,6 +100,7 @@ export function ThreadGoalBanner({
   onSetGoalStatus,
   onClearGoal,
 }: ThreadGoalBannerProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -134,7 +136,9 @@ export function ThreadGoalBanner({
   };
 
   const nextStatus = summary.nextStatus;
-  const statusActionLabel = nextStatus === "paused" ? "Pause goal" : "Resume goal";
+  const statusActionLabel = nextStatus === "paused"
+    ? formatMessage({ id: "composer.threadGoal.pause", defaultMessage: "Pause goal" })
+    : formatMessage({ id: "composer.threadGoal.resume", defaultMessage: "Resume goal" });
 
   return (
     <>
@@ -158,15 +162,17 @@ export function ThreadGoalBanner({
                   aria-expanded={expanded}
                   onClick={() => setExpanded((value) => !value)}
                 >
-                  {expanded ? "Hide full goal" : "Show full goal"}
+                  {expanded
+                    ? formatMessage({ id: "composer.threadGoal.collapseObjective", defaultMessage: "Hide full goal" })
+                    : formatMessage({ id: "composer.threadGoal.expandObjective", defaultMessage: "Show full goal" })}
                 </button>
               )}
               {onEditGoal && (
                 <button
                   type="button"
                   className="hc-thread-goal-banner-action"
-                  aria-label="Edit goal"
-                  title="Edit goal"
+                  aria-label={formatMessage({ id: "composer.threadGoal.edit", defaultMessage: "Edit goal" })}
+                  title={formatMessage({ id: "composer.threadGoal.editTooltip", defaultMessage: "Edit goal" })}
                   disabled={allActionsDisabled}
                   onClick={() => {
                     setDraft(goal.objective.trim());
@@ -192,8 +198,8 @@ export function ThreadGoalBanner({
                 <button
                   type="button"
                   className="hc-thread-goal-banner-action"
-                  aria-label="Clear goal"
-                  title="Clear goal"
+                  aria-label={formatMessage({ id: "composer.threadGoal.clear", defaultMessage: "Clear goal" })}
+                  title={formatMessage({ id: "composer.threadGoal.clearTooltip", defaultMessage: "Clear goal" })}
                   disabled={allActionsDisabled}
                   onClick={() => void onClearGoal()}
                 >
@@ -231,14 +237,14 @@ export function ThreadGoalBanner({
               }}
             >
               <header>
-                <div id="hc-thread-goal-edit-title">Edit goal</div>
-                <button type="button" aria-label="Close" onClick={() => setEditing(false)}>
+                <div id="hc-thread-goal-edit-title">{formatMessage({ id: "composer.threadGoal.editDialog.title", defaultMessage: "Edit goal" })}</div>
+                <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={() => setEditing(false)}>
                   <X size={16} />
                 </button>
               </header>
               <div className="hc-thread-dialog-body">
                 <label>
-                  Goal objective
+                  {formatMessage({ id: "hc.threadGoal.objectiveLabel", defaultMessage: "Goal objective" })}
                   <textarea
                     autoFocus
                     value={draft}
@@ -251,14 +257,14 @@ export function ThreadGoalBanner({
               </div>
               <footer>
                 <button type="button" className="hc-mini-button ghost" onClick={() => setEditing(false)}>
-                  Cancel
+                  {formatMessage({ id: "composer.threadGoal.editDialog.cancel", defaultMessage: "Cancel" })}
                 </button>
                 <button
                   type="submit"
                   className="hc-mini-button accept"
                   disabled={!draft.trim() || draft.trim() === goal.objective.trim() || pendingAction === "edit"}
                 >
-                  Save
+                  {formatMessage({ id: "composer.threadGoal.editDialog.save", defaultMessage: "Save" })}
                 </button>
               </footer>
             </form>

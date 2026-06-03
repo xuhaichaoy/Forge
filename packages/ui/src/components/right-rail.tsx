@@ -1,5 +1,4 @@
 import {
-  Bot,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -11,6 +10,7 @@ import {
   Globe,
   ImageIcon,
   Laptop,
+  List,
   LoaderCircle,
   MessageSquareText,
   Network,
@@ -217,9 +217,18 @@ export function RightRail({
            * Codex 容器 className(7x7、rounded-sm、bg-transparent、tertiary)。
            * WorktreeMenuTrigger 已 deprecate(onOpenWorktreeMenu 无调用方,dead prop)。
            */
+          /*
+           * CODEX-REF: local-conversation-thread-CEeZyOcp.js — the Tasks (background
+           * -tasks) section header carries an `after` action button "View all processes"
+           * (opens the process manager). HiCodex has no process-manager view yet, so the
+           * button renders in its Codex form (size-6 rounded-sm tertiary, icon-xs glyph,
+           * aria-label/title via the Codex id) but disabled until the route is wired.
+           */
           headerAction={section.id === "branchDetails"
             ? <EnvironmentSelectorPlaceholder />
-            : undefined}
+            : section.id === "backgroundTasks"
+              ? <ViewAllProcessesPlaceholder />
+              : undefined}
         >
           {section.id === "branchDetails" && section.branchDetails
             ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
@@ -301,6 +310,7 @@ function BranchDetailsCard({
   canOpenEntry: (entry: RailEntry) => boolean;
   onOpenEntry: (entry: RailEntry) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   if (!details.hasData) {
     return (
       <div className="hc-rail-card">
@@ -311,7 +321,7 @@ function BranchDetailsCard({
 
   const localRow = details.rows.find((row) => row.id === "local");
   const githubRow = details.rows.find((row) => row.id === "github");
-  const githubLabel = githubRow?.value ?? details.githubStatus?.label ?? "GitHub CLI unavailable";
+  const githubLabel = githubRow?.value ?? details.githubStatus?.label ?? formatMessage({ id: "codex.localConversation.gitSummary.githubCliUnavailable", defaultMessage: "GitHub CLI unavailable" });
 
   const changesEntry: RailEntry = {
     id: "changes",
@@ -349,23 +359,25 @@ function BranchDetailsCard({
           clean-room match for the Os file-diff glyph; sized to 18px. */}
       <SummaryPanelRow
         icon={<FileDiff size={18} />}
-        label="Changes"
+        label={formatMessage({ id: "codex.localConversation.gitSummary.branchChangesLabel", defaultMessage: "Changes" })}
         trailing={changesTrailing}
         onClick={canOpenChanges ? () => onOpenEntry(changesEntry) : undefined}
         title={changesEntry.meta}
       />
-      {/* CODEX-REF: local-conversation-thread-DAwsPWah.js — worktree/execution-mode
-          trigger row. Codex renders the macbook glyph (lucide `Laptop`) at `icon-sm`
-          (app-main-DGDTSRlh.css `.icon-sm{width:18px;height:18px}`) for the local
-          execution mode; cloud→Cloud, worktree→GitBranch. BranchDetailsViewModel does
-          NOT expose the execution mode here (the `local` row carries only id/label/
-          value), so HiCodex always renders Laptop and cannot mode-swap the glyph yet.
-          HiCodex 没接 worktree handoff 数据流,沿用旧 localRow 数据承载 label。 */}
+      {/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Sf→Zc) — worktree/execution
+          -mode trigger row. Codex renders the macbook glyph (lucide `Laptop`) at
+          `icon-sm` (app-main `.icon-sm{18px}`) for the local execution mode (cloud→Cloud,
+          worktree→GitBranch) and labels the trigger with the SHORT mode name
+          `composer.mode.local.short` ("Local") + a chevron. BranchDetailsViewModel does
+          NOT expose the execution mode (the `local` row carries only id/label), so HiCodex
+          always renders Laptop + the static "Local" short label and cannot mode-swap yet.
+          The label is routed through the Codex `composer.mode.local.short` id so it is
+          i18n-backed (no invented "Work locally" subtitle — see branch-details.ts). */}
       {localRow ? (
         <SummaryPanelRow
           icon={<Laptop size={18} />}
-          label={localRow.label}
-          title={localRow.value || localRow.label}
+          label={formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" })}
+          title={formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" })}
           trailing={<ChevronDown size={12} />}
         />
       ) : null}
@@ -390,15 +402,54 @@ function BranchDetailsCard({
  * 此处 disabled 占位严格对齐 Codex path B 视觉。
  */
 function EnvironmentSelectorPlaceholder(): ReactNode {
+  const { formatMessage } = useHiCodexIntl();
+  // CODEX-REF: local-conversation-thread-CEeZyOcp.js — the Choose environment
+  // trigger uses i18n id `threadPage.runAction.environmentSelector.label`
+  // (defaultMessage "Choose environment") and renders its cog at `icon-xs` (16px),
+  // not `composer.environmentSelector.title`/14px. Aligned id + size here.
+  const chooseEnvironmentLabel = formatMessage({
+    id: "threadPage.runAction.environmentSelector.label",
+    defaultMessage: "Choose environment",
+  });
   return (
     <button
-      aria-label="Choose environment"
+      aria-label={chooseEnvironmentLabel}
       className="hc-rail-environment-selector"
       disabled
-      title="Choose environment"
+      title={chooseEnvironmentLabel}
       type="button"
     >
-      <Settings size={14} aria-hidden="true" />
+      <Settings size={16} aria-hidden="true" />
+    </button>
+  );
+}
+
+/*
+ * CODEX-REF: local-conversation-thread-CEeZyOcp.js — Tasks (background-tasks) section
+ * header `after` action: "View all processes" button that opens the process manager.
+ * Codex container className: `ms-auto inline-flex size-6 cursor-interaction items-center
+ * justify-center rounded-sm text-token-text-tertiary hover:text-token-foreground …` with
+ * an `icon-xs` (16px) glyph and aria-label/title from
+ * `codex.localConversation.backgroundTasks.viewAllProcessesLabel`. HiCodex has no
+ * process-manager route yet, so the button renders in Codex's form (reusing the
+ * environment-selector placeholder shape) but is disabled until the route is wired.
+ * lucide `List` is the clean-room match for the process-list glyph.
+ */
+function ViewAllProcessesPlaceholder(): ReactNode {
+  const { formatMessage } = useHiCodexIntl();
+  const viewAllProcessesLabel = formatMessage({
+    id: "codex.localConversation.backgroundTasks.viewAllProcessesLabel",
+    defaultMessage: "View all processes",
+  });
+  return (
+    <button
+      aria-label={viewAllProcessesLabel}
+      className="hc-rail-environment-selector"
+      disabled
+      title={viewAllProcessesLabel}
+      type="button"
+    >
+      <List size={16} aria-hidden="true" />
     </button>
   );
 }
@@ -420,10 +471,14 @@ function WorktreeMenuTrigger({
   worktreeLabel: string;
   onOpen: () => void;
 }): ReactNode {
+  const { formatMessage } = useHiCodexIntl();
   return (
     <button
       aria-haspopup="menu"
-      aria-label={`Open worktree menu (${worktreeLabel})`}
+      aria-label={formatMessage(
+        { id: "hc.rightRail.worktreeMenu.openLabel", defaultMessage: "Open worktree menu ({worktreeLabel})" },
+        { worktreeLabel },
+      )}
       className="hc-rail-section-action hc-rail-worktree-trigger"
       onClick={(event) => {
         event.stopPropagation();
@@ -483,8 +538,16 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
           {/* codex `Gd` section header: button children = [title, count, chevron] —
               the disclosure chevron is the TRAILING child (after the title + count),
               not leading. */}
+          {/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Xf) — the count is a
+              `titleSuffix` rendered alongside the title via `(0,Q.jsx)(Xf,{count:…length})`;
+              `Xf` returns null ONLY when `count===0` — it does NOT gate on expanded state, so
+              the badge stays visible whenever count>0 (expanded AND collapsed). HiCodex
+              previously hid it on expand. Per-section: only artifacts / side-chats /
+              background-subagents / background-tasks / tool-sources pass a `titleSuffix`;
+              automation, browser-tabs, environment (branchDetails) and progress pass NONE, so
+              they render no count badge even when count>0 (see sectionHasCountBadge). */}
           <span className="hc-rail-section-title">{title}</span>
-          {!expanded && count > 0 && id !== "progress" && <span className="hc-rail-section-count">{count}</span>}
+          {count > 0 && sectionHasCountBadge(id) && <span className="hc-rail-section-count">{count}</span>}
           <ChevronRight className="hc-rail-section-chevron" data-expanded={expanded ? "true" : "false"} size={14} />
         </button>
         {headerAction}
@@ -528,6 +591,7 @@ export function RailList({
   onCleanBackgroundTerminals?: () => void;
   onOpenEntry?: (entry: RailEntry) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [expanded, setExpanded] = useState(false);
   const clipped = shouldClipRailList(sectionId)
     ? clipRailEntries(entries, expanded)
@@ -549,29 +613,58 @@ export function RailList({
       {clipped.entries.map((entry) => {
         const isGeneratedImage = sectionId === "artifacts" && isGeneratedImageArtifact(entry);
         if (isGeneratedImage) generatedImageCount += 1;
+        const displayTitle = isGeneratedImage
+          ? formatMessage(
+              { id: "codex.localConversation.artifacts.generatedImage", defaultMessage: "Generated image {imageNumber}" },
+              { imageNumber: generatedImageCount },
+            )
+          : undefined;
+        // CODEX-REF: local-conversation-thread-CEeZyOcp.js — the background-terminal
+        // "Stop all" control is the row's trailing `actions` slot (cleanup button), not a
+        // separate card region. Threaded into SummaryPanelRow.trailing below.
+        const stopTerminalsAction = sectionId === "backgroundTasks" && isBackgroundTerminalEntry(entry) && onCleanBackgroundTerminals ? (
+          <button
+            aria-label={formatMessage({ id: "codex.localConversation.backgroundTerminals.stop", defaultMessage: "Stop all background terminals" })}
+            className="hc-rail-section-action hc-rail-card-action"
+            disabled={backgroundTerminalCleanupPending}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCleanBackgroundTerminals();
+            }}
+            title={formatMessage({ id: "codex.localConversation.backgroundTerminals.stopTooltip", defaultMessage: "Stop all background terminals" })}
+            type="button"
+          >
+            {backgroundTerminalCleanupPending
+              ? <LoaderCircle className="hc-rail-progress-spinner" size={12} />
+              : <Square size={12} />}
+          </button>
+        ) : undefined;
+        // CODEX-REF: local-conversation-thread-CEeZyOcp.js — every rail row EXCEPT the
+        // plan/progress step list is a single-line `summary-panel-row` (wc): `h-7
+        // items-center px-0 py-1`, label `text-base` (14px). Only the progress section
+        // renders the multi-line `line-clamp-3` step card. Route progress → RailEntryCard
+        // (card) and every other section → RailSummaryRow (single-line wc parity). This
+        // collapses the prior multi-line `hc-rail-card` rendering of automation / outputs /
+        // side-chats / subagents / terminals onto Codex's uniform single-line row model.
+        if (sectionId === "progress") {
+          return (
+            <RailEntryCard
+              entry={entry}
+              key={entry.id}
+              sectionId={sectionId}
+              displayTitle={displayTitle}
+              canOpen={canOpenEntry}
+              onOpen={onOpenEntry}
+            />
+          );
+        }
         return (
-          <RailEntryCard
+          <RailSummaryRow
             entry={entry}
             key={entry.id}
             sectionId={sectionId}
-            displayTitle={isGeneratedImage ? `Generated image ${generatedImageCount}` : undefined}
-            trailingAction={sectionId === "backgroundTasks" && isBackgroundTerminalEntry(entry) && onCleanBackgroundTerminals ? (
-              <button
-                aria-label="Stop all background terminals"
-                className="hc-rail-section-action hc-rail-card-action"
-                disabled={backgroundTerminalCleanupPending}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCleanBackgroundTerminals();
-                }}
-                title="Stop all background terminals"
-                type="button"
-              >
-                {backgroundTerminalCleanupPending
-                  ? <LoaderCircle className="hc-rail-progress-spinner" size={12} />
-                  : <Square size={12} />}
-              </button>
-            ) : undefined}
+            displayTitle={displayTitle}
+            trailingAction={stopTerminalsAction}
             canOpen={canOpenEntry}
             onOpen={onOpenEntry}
           />
@@ -579,14 +672,32 @@ export function RailList({
       })}
       {clipped.canToggle && (
         <button className="hc-rail-more-button" type="button" onClick={() => setExpanded((value) => !value)}>
-          {expanded ? "Show less" : `Show ${clipped.remainingCount} more`}
+          {expanded
+            ? formatMessage({ id: "codex.localConversation.summaryPanelExpandableList.showLess", defaultMessage: "Show less" })
+            : formatMessage(
+                { id: "codex.localConversation.summaryPanelExpandableList.showMore", defaultMessage: "Show {count} more" },
+                { count: clipped.remainingCount },
+              )}
         </button>
       )}
     </div>
   );
 }
 
-function RailEntryCard({
+/*
+ * CODEX-REF: local-conversation-thread-CEeZyOcp.js — single-line rail row (wc /
+ * summary-panel-row) used by every non-progress section. Mirrors Codex's uniform
+ * `h-7 items-center px-0 py-1` row with a `text-base` (14px) label, an optional
+ * leading icon (omitted for subagent `agent` rows whose `icon:null`), and a trailing
+ * slot (diff-stats / Stop-terminals action). Per-section label shapes:
+ *   - browser:  baseline `[title, displayUrl]` Fragment, shimmer-wrapped while active
+ *   - automation: baseline `[name(flex-1 truncate), rrule(max-w-48 shrink-0 truncate
+ *     secondary)]` Fragment
+ *   - backgroundSubagents: `[name, "is working" shimmer]` Fragment, no icon
+ *   - backgroundTasks (terminal): mono command text, "Background terminal" fallback
+ *   - outputs / side-chats: plain truncated label
+ */
+function RailSummaryRow({
   entry,
   sectionId,
   displayTitle,
@@ -598,6 +709,143 @@ function RailEntryCard({
   sectionId: RightRailSectionViewModel["id"];
   displayTitle?: string;
   trailingAction?: ReactNode;
+  canOpen?: (entry: RailEntry) => boolean;
+  onOpen?: (entry: RailEntry) => void;
+}) {
+  const { formatMessage } = useHiCodexIntl();
+  const title = displayTitle ?? entry.title;
+  const interactive = Boolean(canOpen?.(entry) && onOpen);
+  const onClick = interactive && onOpen ? () => onOpen(entry) : undefined;
+  const icon = railEntryIcon(entry, sectionId);
+
+  // codex: automation row tooltip = "Next run: …" (carried on entry.status); other rows
+  // tooltip the meta/title.
+  const tooltip = sectionId === "automation" && entry.status
+    ? entry.status
+    : entry.meta ?? title;
+
+  // ----- browser row: baseline [title, displayUrl], shimmer wrap while active -----
+  if (sectionId === "browser") {
+    const browserActive = entry.status === "active";
+    const label = (
+      <span
+        className={browserActive
+          ? "hc-rail-row-browser-label loading-shimmer-pure-text"
+          : "hc-rail-row-browser-label"}
+      >
+        <span className="hc-rail-card-browser-title">{title}</span>
+        {entry.meta && (
+          <span
+            className={browserActive
+              ? "hc-rail-card-browser-url"
+              : "hc-rail-card-browser-url hc-rail-card-browser-url-inactive"}
+          >
+            {entry.meta}
+          </span>
+        )}
+      </span>
+    );
+    return (
+      <SummaryPanelRow
+        icon={icon}
+        label={label}
+        labelClassName="hc-rail-row-label-baseline"
+        onClick={onClick}
+        title={tooltip}
+      />
+    );
+  }
+
+  // ----- automation row: baseline [name (flex-1 truncate), rrule (shrink-0 truncate)] -----
+  if (sectionId === "automation") {
+    const label = (
+      <>
+        <span className="hc-rail-row-automation-name">{title}</span>
+        {entry.meta && <span className="hc-rail-row-automation-rrule">{entry.meta}</span>}
+      </>
+    );
+    return (
+      <SummaryPanelRow
+        icon={icon}
+        label={label}
+        labelClassName="hc-rail-row-label-baseline"
+        onClick={onClick}
+        title={tooltip}
+      />
+    );
+  }
+
+  // ----- background subagent row: no icon, [name, "is working" shimmer], diff-stats trailing -----
+  if (sectionId === "backgroundSubagents") {
+    const isAgent = isBackgroundAgentEntry(entry);
+    const active = isAgent && entry.status === "active";
+    const stats = isAgent ? entry.diffStats ?? null : null;
+    const label = (
+      <>
+        <span className="hc-rail-row-subagent-name">{title}</span>
+        {active && (
+          /* CODEX-REF: backgroundAgents.activeLabel = `loading-shimmer-pure-text shrink-0
+             whitespace-nowrap text-token-description-foreground` */
+          <span className="hc-rail-card-working">{formatMessage({ id: "codex.localConversation.backgroundAgents.activeLabel", defaultMessage: "is working" })}</span>
+        )}
+      </>
+    );
+    return (
+      <SummaryPanelRow
+        icon={icon}
+        label={label}
+        labelClassName="hc-rail-row-label-baseline"
+        trailing={stats ? <RailDiffStats stats={stats} /> : undefined}
+        onClick={onClick}
+        title={tooltip}
+      />
+    );
+  }
+
+  // ----- background terminal row: mono command, "Background terminal" fallback, Stop trailing -----
+  if (sectionId === "backgroundTasks") {
+    // CODEX-REF: local-conversation-thread-CEeZyOcp.js — terminal label is
+    // `truncate font-mono text-sm` (13px monospace); empty command falls back to
+    // `codex.localConversation.backgroundTerminals.defaultLabel` ("Background terminal").
+    const commandText = (displayTitle ?? entry.title).trim();
+    const label = commandText
+      || formatMessage({ id: "codex.localConversation.backgroundTerminals.defaultLabel", defaultMessage: "Background terminal" });
+    return (
+      <SummaryPanelRow
+        icon={icon}
+        label={label}
+        labelClassName="hc-rail-row-terminal-label"
+        onClick={onClick}
+        trailing={trailingAction}
+        title={tooltip}
+      />
+    );
+  }
+
+  // ----- outputs / side-chats / fallback: plain truncated label -----
+  return (
+    <SummaryPanelRow
+      icon={icon}
+      label={title}
+      onClick={onClick}
+      trailing={trailingAction}
+      title={tooltip}
+    />
+  );
+}
+
+// CODEX-REF: local-conversation-thread-CEeZyOcp.js — progress-step card (the only
+// multi-line rail row). Single-line sections route through RailSummaryRow instead.
+function RailEntryCard({
+  entry,
+  sectionId,
+  displayTitle,
+  canOpen,
+  onOpen,
+}: {
+  entry: RailEntry;
+  sectionId: RightRailSectionViewModel["id"];
+  displayTitle?: string;
   canOpen?: (entry: RailEntry) => boolean;
   onOpen?: (entry: RailEntry) => void;
 }) {
@@ -614,7 +862,6 @@ function RailEntryCard({
           entry={entry}
           sectionId={sectionId}
           displayTitle={displayTitle}
-          trailingAction={trailingAction}
         />
       </button>
     );
@@ -626,108 +873,56 @@ function RailEntryCard({
         entry={entry}
         sectionId={sectionId}
         displayTitle={displayTitle}
-        trailingAction={trailingAction}
       />
     </div>
   );
 }
 
+/*
+ * CODEX-REF: local-conversation-thread-CEeZyOcp.js — the progress (plan/status) step
+ * list is the ONLY rail section that keeps the multi-line card layout: each step is a
+ * `line-clamp-3 text-base leading-normal` body next to an `icon-sm` status glyph. Every
+ * other section now renders through RailSummaryRow (single-line summary-panel-row). This
+ * component therefore only serves progress entries.
+ */
 function RailEntryContent({
   entry,
   sectionId,
   displayTitle,
-  trailingAction,
 }: {
   entry: RailEntry;
   sectionId: RightRailSectionViewModel["id"];
   displayTitle?: string;
-  trailingAction?: ReactNode;
 }) {
   const title = displayTitle ?? entry.title;
-  const isBrowser = sectionId === "browser";
-  const browserActive = isBrowser && entry.status === "active";
-  // codex: automation row — sublabel (rrule summary) 是二行 layout;
-  // browser 单独走 inline baseline gap-2,见下方 branch。
-  const showSecondary = sectionId === "branchDetails" || sectionId === "automation";
-  // codex: automation row — Desktop sets the row tooltip to "Next run: …" (entry.status
-  // for automation rows) rather than the rrule summary, so use status when
-  // present for automation rows; fall back to meta/title otherwise.
-  const tooltip = sectionId === "automation" && entry.status
-    ? entry.status
-    : entry.meta ?? title;
-  const diffStats = sectionId === "backgroundSubagents" && isBackgroundAgentEntry(entry) ? entry.diffStats ?? null : null;
-  // codex: browser row — Browser title shimmer while the tab is active。Codex 把整段
-  // (title + displayUrl) 用 `loading-shimmer-pure-text` 包裹,见 isBrowser 分支。
-  const titleClassName = [
-    "hc-rail-card-title",
-    sectionId === "progress" ? "hc-rail-card-title-progress" : null,
-  ].filter(Boolean).join(" ");
+  const tooltip = entry.meta ?? title;
   return (
     <div className="hc-rail-card-main">
       <span className="hc-rail-card-icon" aria-hidden="true">
         {railEntryIcon(entry, sectionId)}
       </span>
       <div className="hc-rail-card-copy">
-        {isBrowser ? (
-          /*
-           * CODEX-REF: local-conversation-thread-*.js (Browser row) —
-           * title 和 displayUrl 同一行 baseline-aligned。源码 className 精确:
-           *   active:  `flex min-w-0 items-baseline gap-2` 包在
-           *            `<span class="loading-shimmer-pure-text w-full max-w-full min-w-0">` 内
-           *   inactive: 同样 `flex items-baseline gap-2` 作为 labelClassName 传给 label 组件
-           * 子 span:
-           *   title:      `max-w-[60%] min-w-0 shrink truncate`
-           *   displayUrl: `max-w-[40%] min-w-0 shrink truncate text-sm`
-           *               + inactive 时 `text-token-text-secondary`(active 由 shimmer 接管)
-           */
-          <div
-            className={browserActive
-              ? "hc-rail-card-browser-label loading-shimmer-pure-text"
-              : "hc-rail-card-browser-label"}
-            title={tooltip}
-          >
-            <span className="hc-rail-card-browser-title">{title}</span>
-            {entry.meta && (
-              <span
-                className={browserActive
-                  ? "hc-rail-card-browser-url"
-                  : "hc-rail-card-browser-url hc-rail-card-browser-url-inactive"}
-              >
-                {entry.meta}
-              </span>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="hc-rail-card-title-row">
-              <div className={titleClassName} title={tooltip}>{title}</div>
-              {/* codex: an ACTIVE background subagent shows a shimmering "is working"
-                  label next to its name (backgroundAgents.activeLabel =
-                  loading-shimmer-pure-text + text-token-description-foreground). */}
-              {sectionId === "backgroundSubagents" && isBackgroundAgentEntry(entry) && entry.status === "active" && (
-                <span className="hc-rail-card-working">is working</span>
-              )}
-              {diffStats && <RailDiffStats stats={diffStats} />}
-            </div>
-            {showSecondary && entry.meta && <div className="hc-rail-card-meta">{entry.meta}</div>}
-            {/* codex automation row shows next-run only as the title tooltip, not a visible body line. */}
-            {showSecondary && entry.status && sectionId !== "automation" && (
-              <div className="hc-rail-card-status">{entry.status}</div>
-            )}
-            {showSecondary && entry.details?.map((detail) => (
-              <div className="hc-rail-card-status" key={detail}>{detail}</div>
-            ))}
-          </>
-        )}
+        <div className="hc-rail-card-title-row">
+          <div className="hc-rail-card-title hc-rail-card-title-progress" title={tooltip}>{title}</div>
+        </div>
       </div>
-      {trailingAction && <div className="hc-rail-card-actions">{trailingAction}</div>}
     </div>
   );
 }
 
 function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }) {
+  const { formatMessage } = useHiCodexIntl();
   return (
-    <span className="hc-rail-diff-stats" aria-label={`${stats.linesAdded} lines added, ${stats.linesRemoved} lines removed`}>
+    <span
+      className="hc-rail-diff-stats"
+      aria-label={formatMessage(
+        {
+          id: "hc.rightRail.diffStats.ariaLabel",
+          defaultMessage: "{linesAdded} lines added, {linesRemoved} lines removed",
+        },
+        { linesAdded: stats.linesAdded, linesRemoved: stats.linesRemoved },
+      )}
+    >
       <span className="hc-rail-diff-added">+{stats.linesAdded}</span>
       <span className="hc-rail-diff-removed">-{stats.linesRemoved}</span>
     </span>
@@ -742,23 +937,32 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
   if (sectionId === "automation") return <Clock size={16} />; // codex automation row icon = icon-xs (16px)
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
   if (sectionId === "sideChats") {
+    // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Tf) — side-chat row icon
+    // (message glyph / spinner) is `icon-sm` (18px), matching Changes/progress, not 14px.
     return normalizeProgressStatus(entry.status) === "inProgress"
-      ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
-      : <MessageSquareText size={14} />;
+      ? <LoaderCircle className="hc-rail-progress-spinner" size={18} />
+      : <MessageSquareText size={18} />;
   }
   if (sectionId === "backgroundSubagents") {
-    return entry.status === "active"
-      ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
-      : <Bot size={14} />;
+    // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Hu) — `case agent:` renders
+    // `wc({icon:null,…})`: the subagent row has NO leading icon. Active state is
+    // conveyed solely by the "is working" shimmer label next to the name; the spinner
+    // does NOT occupy the icon slot. HiCodex previously rendered Bot/LoaderCircle here —
+    // dropped to align (return null = empty icon slot).
+    return null;
   }
-  if (sectionId === "backgroundTasks") return <Terminal size={14} />;
+  // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Hu, terminal) — Tasks (background
+  // -terminal) row icon is `icon-sm` (18px): `vi className:\`icon-sm shrink-0 …\``, not 14px.
+  if (sectionId === "backgroundTasks") return <Terminal size={18} />;
   if (sectionId === "browser") {
     // codex: browser row — Desktop's active state shows a spinner; idle uses
     // a static Globe. HiCodex normalizes "active" (set by
     // browserRailEntry) to inProgress for the same spinner output.
+    // CODEX-REF: local-conversation-thread-CEeZyOcp.js — browser row icon is
+    // `icon-xs` (16px): `(isActive?…:go) className:\`icon-xs shrink-0\`` (go=Globe).
     return normalizeProgressStatus(entry.status) === "inProgress"
-      ? <LoaderCircle className="hc-rail-progress-spinner" size={14} />
-      : <Globe size={14} />;
+      ? <LoaderCircle className="hc-rail-progress-spinner" size={16} />
+      : <Globe size={16} />;
   }
   if (sectionId === "sources") {
     /*
@@ -784,6 +988,24 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
   return sectionId === "progress" || sectionId === "artifacts" || sectionId === "sources";
+}
+
+/*
+ * CODEX-REF: local-conversation-thread-CEeZyOcp.js — only a subset of rail sections pass
+ * a `titleSuffix:(0,Q.jsx)(Xf,{count:…})` count badge to the section header. Verified in
+ * the bundle: artifacts (Outputs), side-chats, background-subagents (Subagents),
+ * background-tasks (Tasks) and tool-sources (Sources) DO; automation, browser-tabs,
+ * environment (branchDetails) and progress do NOT. HiCodex mirrors that allow-list so a
+ * single-entry section like Browser/Automation does not sprout a stray "1" badge.
+ */
+function sectionHasCountBadge(sectionId: RightRailSectionViewModel["id"]): boolean {
+  return (
+    sectionId === "artifacts"
+    || sectionId === "sideChats"
+    || sectionId === "backgroundSubagents"
+    || sectionId === "backgroundTasks"
+    || sectionId === "sources"
+  );
 }
 
 /**

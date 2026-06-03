@@ -6,6 +6,7 @@ import type { PlanType } from "@hicodex/codex-protocol/generated/PlanType";
 import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
 import type { RateLimitWindow } from "@hicodex/codex-protocol/generated/v2/RateLimitWindow";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
+import { formatMessage } from "./i18n";
 import { projectRateLimitCompactSummary, type RateLimitCompactSummary } from "./rate-limit-summary";
 
 // Structural alias for the IntlProvider's formatMessage (optional at call sites).
@@ -615,15 +616,22 @@ function composerQuotaBannerForSnapshot(
   if (kind === "core" && snapshot.credits && !snapshot.credits.unlimited && !snapshot.credits.hasCredits) {
     return {
       id: "credits-depleted",
-      title: "Codex credits depleted",
-      detail: "No credits are available for this account.",
+      // codex: upsell banner credits state — ICU id
+      // `codex.upsellBanner.usageBased.credits.title` defaultMessage:`You're out of credits`
+      // (zh `你的额度已用完`) + `.headline`:`Your workspace is out of credits. Add credits to
+      // continue using Codex.` (zh `你的工作空间额度已用尽。请添加额度以继续使用 Codex。`).
+      title: formatMessage({ id: "codex.upsellBanner.usageBased.credits.title", defaultMessage: "You're out of credits" }),
+      detail: formatMessage({
+        id: "codex.upsellBanner.usageBased.credits.headline",
+        defaultMessage: "Your workspace is out of credits. Add credits to continue using Codex.",
+      }),
       tone: "danger",
     };
   }
   if (snapshot.rateLimitReachedType) {
     const label = kind === "model"
       ? `${quotaModelDisplayName(selectedModel ?? snapshot.limitName)} limit reached`
-      : "Codex usage limit reached";
+      : coreUsageLimitTitle();
     return {
       id: `rate-limit-reached:${kind}:${snapshot.limitId ?? snapshot.limitName ?? "default"}`,
       title: label,
@@ -637,10 +645,18 @@ function composerQuotaBannerForSnapshot(
     id: `rate-limit-window:${kind}:${snapshot.limitId ?? snapshot.limitName ?? "default"}`,
     title: kind === "model"
       ? `${quotaModelDisplayName(selectedModel ?? snapshot.limitName)} limit reached`
-      : "Codex usage limit reached",
+      : coreUsageLimitTitle(),
     detail: rateLimitWindowDetail(limitWindow),
     tone: "danger",
   };
+}
+
+// codex: upsell banner generic out-of-messages state — ICU id
+// `codex.upsellBanner.general.title` defaultMessage:`You’re out of Codex messages`
+// (zh `你的 Codex 消息限额已用尽`). The model-specific variant above is a HiCodex
+// extension (Codex's upsellBanner has no per-model title).
+function coreUsageLimitTitle(): string {
+  return formatMessage({ id: "codex.upsellBanner.general.title", defaultMessage: "You’re out of Codex messages" });
 }
 
 function fullyUsedRateLimitWindow(snapshot: RateLimitSnapshot): RateLimitWindow | null {
@@ -659,7 +675,14 @@ function rateLimitWindowDetail(window: RateLimitWindow): string {
     }
   }
   if (window.windowDurationMins) return `${usageWindowDurationLabel(window.windowDurationMins)} is fully used.`;
-  return "View status for rate-limit details.";
+  // codex: no reset/window metadata — fall back to upsell banner's legacy-plan
+  // no-reset headline `codex.upsellBanner.general.headline.noReset`
+  // defaultMessage:`You've reached your Codex usage limit.` (zh `你已达到 Codex 使用限额。`)
+  // instead of the self-authored "View status for rate-limit details." string.
+  return formatMessage({
+    id: "codex.upsellBanner.general.headline.noReset",
+    defaultMessage: "You've reached your Codex usage limit.",
+  });
 }
 
 function usageWindowDurationLabel(minutes: number): string {

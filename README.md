@@ -1,53 +1,130 @@
 # HiCodex
 
-HiCodex is a Codex-core desktop shell. The app is intentionally small:
+HiCodex is a Codex-core desktop shell. The app is intentionally small: the
 Codex app-server is the execution kernel, Rust owns the desktop/sidecar host,
 and React renders the conversation surface.
 
-## Shape
+## Architecture
 
-- `apps/desktop` - Tauri desktop app and Vite entrypoint.
-- `packages/ui` - Codex-like React UI, reducers, settings, and JSON-RPC client.
-- `packages/codex-protocol` - generated Codex app-server v2 TypeScript protocol types.
-- `crates/host` - Rust sidecar host for `codex app-server --listen stdio://`.
+An npm + Cargo workspace:
 
-## First Run
+| Path | Role |
+|------|------|
+| `apps/desktop` | Tauri 2 desktop app and Vite frontend entrypoint |
+| `packages/ui` | Codex-like React UI — reducers, settings, and the JSON-RPC client |
+| `packages/codex-protocol` | Generated Codex app-server v2 TypeScript protocol types |
+| `crates/host` | Rust sidecar host that drives `codex app-server --listen stdio://` |
+
+The desktop binary (`crates/host` + `apps/desktop/src-tauri`) launches the
+Codex CLI (`codex`) as a sidecar and bridges its app-server events to the
+React UI.
+
+## Prerequisites
+
+- **Node.js ≥ 20.19**
+- **Rust** (stable) with the platform toolchain:
+  - macOS — Xcode Command Line Tools
+  - Windows — the **MSVC** toolchain + Visual Studio Build Tools ("Desktop
+    development with C++"); WebView2 runtime (bundled with Windows 11)
+- A **Codex CLI binary** (`codex`) for the sidecar — built from the upstream
+  `codex-rs` workspace, or supplied directly (see [Codex sidecar](#codex-sidecar)).
+
+## Development
 
 ```sh
 npm install
-npm run sync:protocol
-npm run dev
+npm run sync:protocol   # regenerate protocol types from codex-rs
+npm run dev             # Vite dev server (browser preview of the UI)
 ```
 
-Use the real desktop shell with:
+Run the real desktop shell (Tauri window) with:
 
 ```sh
 npm run tauri:dev
 ```
 
-Prepare the packaged sidecar binary with:
+## Codex sidecar
+
+HiCodex runs the Codex CLI as a sidecar. Stage the bundled binary with:
 
 ```sh
 npm run sidecar:prepare
 ```
 
-The sidecar host looks for Codex in this order:
+By default this builds `codex` from `../codex/codex-rs`. Override the source:
 
-1. `HICODEX_CODEX_BIN`
-2. bundled `binaries/codex` next to the app binary or under macOS `Contents/Resources`
-3. `apps/desktop/src-tauri/binaries/codex` during local development
-4. `/Applications/Codex.app/Contents/Resources/codex`
-5. `codex` on `PATH`
+- `HICODEX_CODEX_SOURCE_DIR=/path/to/codex/codex-rs` — build from a custom checkout
+- `HICODEX_CODEX_BIN=/path/to/codex` — skip building and copy an existing binary
+  (e.g. `codex.exe` on Windows)
 
-Use `HICODEX_CODEX_BIN=/path/to/codex npm run tauri:dev` to run against a
-local Codex debug binary.
+At runtime the host resolves the binary in this order (the bundled name is
+`codex` on Unix, `codex.exe` on Windows):
 
-Set `HICODEX_CODEX_HOME` if you want to override the isolated Codex home.
-By default HiCodex uses `~/Library/Application Support/HiCodex/codex-home` on
-macOS.
+1. `codex_bin` from the start config
+2. `HICODEX_CODEX_BIN`
+3. bundled `binaries/codex[.exe]` next to the app binary (or under macOS
+   `Contents/Resources/binaries`)
+4. `binaries/codex[.exe]` / `apps/desktop/src-tauri/binaries/codex[.exe]` during
+   local development
+5. `/Applications/Codex.app/Contents/Resources/codex` (macOS)
+6. `codex` on `PATH`
 
-## Development Guide
+Run against a local Codex debug binary with
+`HICODEX_CODEX_BIN=/path/to/codex npm run tauri:dev`.
 
-Before changing code, read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). It is
-the single source of truth for architecture boundaries, UI parity rules, config
+### Codex home
+
+HiCodex keeps an isolated Codex home. Defaults:
+
+- macOS — `~/Library/Application Support/HiCodex/codex-home`
+- Windows / Linux — `<home>/.hicodex/codex-home` (`home` is `%USERPROFILE%` on
+  Windows, `$HOME` elsewhere)
+
+Override with `HICODEX_CODEX_HOME`.
+
+## Building / packaging
+
+Tauri apps must be packaged **on the target OS** — cross-compiling the GUI
+bundle (WebView2 linkage, NSIS/MSI installers) is not supported. The sidecar
+binary is not committed (`.gitignore` excludes `binaries/*`), so run
+`npm run sidecar:prepare` on each build machine first.
+
+**macOS** → `.dmg` + `.app`:
+
+```sh
+npm run sidecar:prepare
+npm run tauri:build
+```
+
+For a signed, auto-updating release see `scripts/release.sh` and
+`.github/workflows/macos-release.yml`.
+
+**Windows** → NSIS `.exe` + `.msi`:
+
+```bat
+set HICODEX_CODEX_SOURCE_DIR=C:\path\to\codex\codex-rs
+npm run sidecar:prepare
+npm install
+npm run tauri:build
+```
+
+Bundles land under `apps/desktop/src-tauri/target/release/bundle/`
+(`dmg/`, `macos/`, `nsis/`, `msi/`).
+
+## Scripts
+
+| Script | Does |
+|--------|------|
+| `npm run dev` | Vite dev server for the UI |
+| `npm run tauri:dev` | Run the Tauri desktop app (dev) |
+| `npm run tauri:build` | Build the desktop bundle for the current OS |
+| `npm run sidecar:prepare` | Build/copy the Codex `codex` sidecar into `binaries/` |
+| `npm run sync:protocol` | Regenerate `packages/codex-protocol` types from codex-rs |
+| `npm run typecheck` | Typecheck all workspaces |
+| `npm run test` | Run workspace tests + `cargo test --workspace` |
+
+## Development guide
+
+Before changing code, read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — the
+single source of truth for architecture boundaries, UI parity rules, config
 policy, file splitting, and verification.

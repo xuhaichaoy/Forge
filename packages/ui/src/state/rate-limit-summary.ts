@@ -1,5 +1,6 @@
 import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
 import type { RateLimitWindow } from "@hicodex/codex-protocol/generated/v2/RateLimitWindow";
+import { formatMessage } from "./i18n";
 
 export interface RateLimitDisplayWindow {
   id: "primary" | "secondary";
@@ -40,8 +41,13 @@ export function projectRateLimitSections(
     .map((entry) => {
       const windows = rateLimitWindows(entry.snapshot);
       if (windows.length === 0) return null;
+      // codex: model section header — ICU id `composer.mode.rateLimit.modelSectionLabel`
+      // defaultMessage:`{modelName} limit:` (zh `{modelName} 限额：`).
       const sectionLabel = entry.snapshot.limitName
-        ? `${formatLimitName(entry.snapshot.limitName)} limit:`
+        ? formatMessage(
+            { id: "composer.mode.rateLimit.modelSectionLabel", defaultMessage: "{modelName} limit:" },
+            { modelName: formatLimitName(entry.snapshot.limitName) },
+          )
         : null;
       return {
         id: entry.key,
@@ -65,7 +71,9 @@ export function projectRateLimitCompactSummary(
       return next.remainingPercent < current.remainingPercent ? next : current;
     }, null);
   return {
-    heading: "Usage remaining",
+    // codex: rate-limit panel heading — ICU id `composer.mode.rateLimit.heading`
+    // defaultMessage:`Usage remaining` (zh `剩余用量`).
+    heading: formatMessage({ id: "composer.mode.rateLimit.heading", defaultMessage: "Usage remaining" }),
     remainingText: mostConstrained?.remainingText ?? null,
     sections,
   };
@@ -121,12 +129,26 @@ function rateLimitWindow(window: RateLimitWindow | null, id: "primary" | "second
   if (!window || !Number.isFinite(window.usedPercent)) return null;
   const remainingPercent = clampPercent(100 - window.usedPercent);
   const resetText = compactResetText(window.resetsAt);
+  // codex: percent-remaining and reset metadata — ICU ids
+  // `composer.statusPlain.rateLimitPercent` defaultMessage:`{remaining}% left`,
+  // `composer.statusPlain.rateLimitReset`:`resets {time}`,
+  // `composer.statusPlain.rateLimitResetUnknown`:`reset time unavailable`,
+  // wrapped by `composer.statusPlain.rateLimitResetMetadata`:`({phrase})`.
+  const resetPhrase = resetText
+    ? formatMessage({ id: "composer.statusPlain.rateLimitReset", defaultMessage: "resets {time}" }, { time: resetText })
+    : formatMessage({ id: "composer.statusPlain.rateLimitResetUnknown", defaultMessage: "reset time unavailable" });
   return {
     id,
     label: `${statusWindowLabel(window.windowDurationMins)}:`,
     remainingPercent,
-    remainingText: `${formatPercent(remainingPercent)} left`,
-    resetMetadata: resetText ? `(resets ${resetText})` : "(reset time unavailable)",
+    remainingText: formatMessage(
+      { id: "composer.statusPlain.rateLimitPercent", defaultMessage: "{remaining}% left" },
+      { remaining: Math.round(clampPercent(remainingPercent)) },
+    ),
+    resetMetadata: formatMessage(
+      { id: "composer.statusPlain.rateLimitResetMetadata", defaultMessage: "({phrase})" },
+      { phrase: resetPhrase },
+    ),
     resetText,
   };
 }

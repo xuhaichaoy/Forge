@@ -158,7 +158,13 @@ import {
   refreshAccountState,
   type AccountState,
 } from "./state/account-state";
-import { buildApprovalResult, buildStopPendingRequestResult } from "./state/approval-requests";
+import {
+  PLAN_IMPLEMENTATION_ACCEPT_VALUE,
+  PLAN_IMPLEMENTATION_QUESTION_ID,
+  PLAN_IMPLEMENTATION_REQUEST_METHOD,
+  buildApprovalResult,
+  buildStopPendingRequestResult,
+} from "./state/approval-requests";
 // codex: local-conversation-thread-*.js — `projectActiveThreadAutomation`
 // selects the single heartbeat automation that targets the active thread so the
 // right-rail `automation` section can render its Clock + name + rrule body.
@@ -261,6 +267,7 @@ import {
 } from "./state/hooks-review";
 import {
   appRegistryEntriesFromResponse,
+  itemType,
   isThreadStatusInProgress,
   projectConversation,
   type AppRegistryEntry,
@@ -1382,15 +1389,35 @@ export function HiCodexApp() {
     }),
     [activeItems, activeTurnId, state.activeThreadId, state.pendingRequests],
   );
+  const [dismissedPlanImplementationRequestIds, setDismissedPlanImplementationRequestIds] = useState<ReadonlySet<string>>(() => new Set());
+  const activePlanImplementationRequest = useMemo(
+    () => planImplementationPendingRequest(activeItems, state.activeThreadId, dismissedPlanImplementationRequestIds),
+    [activeItems, dismissedPlanImplementationRequestIds, state.activeThreadId],
+  );
   const activePendingRequests = useMemo(
-    () => deriveComposerPendingRequests(state.pendingRequests, {
-      activeThreadId: state.activeThreadId,
+    () => {
+      const composerRequests = deriveComposerPendingRequests(state.pendingRequests, {
+        activeThreadId: state.activeThreadId,
+        activeTurnId,
+        activeItemIds: activeItems.map((item) => item.id),
+        backgroundThreadIds: backgroundPendingThreadIds,
+        itemsByThread,
+      });
+      if (!activePlanImplementationRequest) return composerRequests;
+      if (composerRequests.some((request) => String(request.id) === String(activePlanImplementationRequest.id))) {
+        return composerRequests;
+      }
+      return [...composerRequests, activePlanImplementationRequest];
+    },
+    [
+      activeItems,
+      activePlanImplementationRequest,
       activeTurnId,
-      activeItemIds: activeItems.map((item) => item.id),
-      backgroundThreadIds: backgroundPendingThreadIds,
+      backgroundPendingThreadIds,
       itemsByThread,
-    }),
-    [activeItems, activeTurnId, backgroundPendingThreadIds, itemsByThread, state.activeThreadId, state.pendingRequests],
+      state.activeThreadId,
+      state.pendingRequests,
+    ],
   );
   const backgroundSubagentPendingRequests = useMemo(
     () => deriveBackgroundPendingRequests(state.pendingRequests, {
@@ -1704,7 +1731,11 @@ export function HiCodexApp() {
       setCollaborationModes(modes);
       return modes;
     } catch (error) {
-      setCollaborationModes([]);
+      // A transient collaborationMode/list failure (its 120s timeout / a sidecar restart)
+      // must NOT wipe an already-loaded catalog: clearing it makes plan mode "unavailable"
+      // after it had been working — i.e. "plan auto-stops after a while". Keep prior state.
+      // Once the catalog holds plan, collaborationModesForComposerMode serves it from state
+      // and never re-fetches, so a later failure can no longer drop plan availability.
       dispatch({ type: "log", text: `collaborationMode/list failed: ${formatError(error)}`, level: "warn" });
       return [];
     }
@@ -4959,6 +4990,20 @@ export function HiCodexApp() {
     answers?: Record<string, string[]>,
   ) => {
     try {
+      if (request.method === PLAN_IMPLEMENTATION_REQUEST_METHOD) {
+        setDismissedPlanImplementationRequestIds((current) => new Set([...current, String(request.id)]));
+        dispatch({ type: "resolveServerRequest", id: request.id });
+        if (!accepted) return;
+        const followUp = planImplementationFollowUpText(request, answers);
+        if (!followUp) return;
+        setActiveComposerMode("default");
+        await sendTurn({
+          bypassSubmitState: true,
+          input: followUp,
+          mode: "default",
+        });
+        return;
+      }
       if (isHiCodexImageToolCall(request)) {
         if (!claimHiCodexImageToolRequest(handledImageToolRequestIdsRef.current, request)) {
           dispatch({ type: "resolveServerRequest", id: request.id });
@@ -5008,6 +5053,8 @@ export function HiCodexApp() {
     imageGenerationSettings,
     itemsByThread,
     modelDraft,
+    sendTurn,
+    setActiveComposerMode,
     state.activeThreadId,
     state.hostStatus?.codexHome,
     state.threadsRuntime,
@@ -5968,6 +6015,55 @@ function recordObject(value: unknown): Record<string, unknown> {
 function normalizeWorkspaceRoot(value: string): string {
   const trimmed = value.trim();
   return trimmed.replace(/[\\/]+$/, "") || trimmed;
+}
+
+function planImplementationPendingRequest(
+  items: Array<{ id: string; type: string } & Record<string, unknown>>,
+  activeThreadId: string | null,
+  dismissedRequestIds: ReadonlySet<string>,
+): PendingServerRequest | null {
+  if (!activeThreadId) return null;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index] as PendingServerRequestPlanImplementationItem;
+    if (itemType(item) !== "plan-implementation") continue;
+    if (item.isCompleted === true) continue;
+    const planContent = typeof item.planContent === "string" ? item.planContent.trim() : "";
+    if (!planContent) continue;
+    const turnId = typeof item.turnId === "string" && item.turnId.trim() ? item.turnId.trim() : null;
+    const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `implement-plan:${turnId ?? index}`;
+    if (dismissedRequestIds.has(id)) continue;
+    return {
+      id,
+      method: PLAN_IMPLEMENTATION_REQUEST_METHOD,
+      params: {
+        threadId: activeThreadId,
+        ...(turnId ? { turnId } : {}),
+        itemId: item.id,
+        planContent,
+      },
+      createdAt: 0,
+    };
+  }
+  return null;
+}
+
+interface PendingServerRequestPlanImplementationItem extends Record<string, unknown> {
+  id: string;
+  type: string;
+  turnId?: unknown;
+  planContent?: unknown;
+  isCompleted?: unknown;
+}
+
+function planImplementationFollowUpText(
+  request: PendingServerRequest,
+  answers: Record<string, string[]> | undefined,
+): string | null {
+  const answer = answers?.[PLAN_IMPLEMENTATION_QUESTION_ID]?.[0]?.trim() ?? "";
+  if (answer && answer !== PLAN_IMPLEMENTATION_ACCEPT_VALUE) return answer;
+  const params = recordObject(request.params);
+  const planContent = typeof params.planContent === "string" ? params.planContent.trim() : "";
+  return planContent ? `PLEASE IMPLEMENT THIS PLAN:\n${planContent}` : null;
 }
 
 function activeBackgroundSubagentThreadIds(entries: RailEntry[], activeThreadId: string | null): string[] {

@@ -142,19 +142,39 @@ export function ConversationChrome({
           </div>
         )}
         {/*
-          * codex thread-env-icon — local/worktree indicator before the title, with
-          * the same tooltip strings Codex uses on its env icon.
+          * codex thread-env-icon-*.js — local/worktree indicator before the title.
+          * Codex wraps the env icon's tooltip text in <FormattedMessage> with the
+          * `threadEnvIcon.{local,worktree}Tooltip` ids, so the string is localized.
+          * HiCodex routes both the tooltip content and the icon's accessible name
+          * through the same ids via formatMessage (defaultMessage matches the bundle
+          * verbatim) so ZH renders Codex's translation instead of the EN literal.
           */}
         <Tooltip
           content={
             env === "worktree"
-              ? "This conversation is running in a local git worktree."
-              : "This conversation is running locally."
+              ? formatMessage({
+                  id: "threadEnvIcon.worktreeTooltip",
+                  defaultMessage: "This conversation is running in a local git worktree.",
+                })
+              : formatMessage({
+                  id: "threadEnvIcon.localTooltip",
+                  defaultMessage: "This conversation is running locally.",
+                })
           }
         >
           <span
             className="hc-topbar-env-icon"
-            aria-label={env === "worktree" ? "Running in a local git worktree" : "Running locally"}
+            aria-label={
+              env === "worktree"
+                ? formatMessage({
+                    id: "threadEnvIcon.worktreeTooltip",
+                    defaultMessage: "This conversation is running in a local git worktree.",
+                  })
+                : formatMessage({
+                    id: "threadEnvIcon.localTooltip",
+                    defaultMessage: "This conversation is running locally.",
+                  })
+            }
           >
             {env === "worktree" ? <GitBranch size={14} aria-hidden="true" /> : <Laptop size={14} aria-hidden="true" />}
           </span>

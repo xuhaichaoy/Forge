@@ -864,7 +864,15 @@ export async function renameThread(
 
 export function threadTitle(thread: Thread, items?: ReadonlyArray<unknown> | null): string {
   const explicit = trimmedStringField(thread, "name") || trimmedStringField(thread, "preview");
-  if (explicit) return explicit;
+  if (explicit) {
+    // The backend may store the first prompt's raw text as the thread name/preview,
+    // where @/$ mentions are serialized as `[label](<path>)` links. Collapse them to
+    // their label (e.g. `$拆标`) so the title reads like the message instead of leaking
+    // raw markdown + an absolute path. No-op for hand-typed names (no `](`), so manual
+    // renames via renameThread() are unaffected.
+    const preview = titlePreviewFromPromptText(explicit).replace(/\s+/g, " ").trim();
+    return preview || explicit;
+  }
   // Codex Desktop's `local-conversation-thread-*.js` derives an unnamed thread's
   // header label from the first user message in the turn — `Wd` walks
   // `thread.turns[0].items` and takes the first `userMessage` text. Falling back

@@ -1,6 +1,7 @@
-import { MessageSquareText, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { McpAppFollowUpSource } from "../state/mcp-app-host";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type McpFollowUpDialogOptionId =
   | "current-thread"
@@ -30,10 +31,12 @@ export interface McpFollowUpDialogProps {
   onSend: (prompt: string, option: McpFollowUpDialogOption) => void | Promise<void>;
 }
 
+// codex: codex.mcpTool.confirmFollowUp.localProjectsOnlyTooltip / .newWorktreeRequiresGitProject —
+// Codex-style disabled tooltips that do not leak product name or host-implementation details.
 export const MCP_FOLLOW_UP_LOCAL_DISABLED_REASON =
-  "Local follow-up targets are disabled until HiCodex exposes a host thread-creation route.";
+  "Remote projects aren't available for new threads from MCP app follow-ups";
 export const MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON =
-  "Worktree mode is disabled: missing host createPendingWorktree.";
+  "New worktree requires a local git project";
 
 export const DEFAULT_MCP_FOLLOW_UP_OPTION_ID: McpFollowUpDialogOptionId = "current-thread";
 
@@ -74,6 +77,7 @@ export function McpFollowUpDialog({
   onClose,
   onSend,
 }: McpFollowUpDialogProps) {
+  const { formatMessage } = useHiCodexIntl();
   const options = useMemo(
     () => normalizeMcpFollowUpOptions(request.options),
     [request.options],
@@ -90,7 +94,6 @@ export function McpFollowUpDialog({
     ?? mcpFollowUpOptionById(options, DEFAULT_MCP_FOLLOW_UP_OPTION_ID)
     ?? options.find((option) => !option.disabled)
     ?? options[0];
-  const sourceSummary = mcpFollowUpSourceSummary(request.source);
 
   useEffect(() => {
     setDraft((current) => {
@@ -130,18 +133,19 @@ export function McpFollowUpDialog({
         role="dialog"
         data-state="open"
         aria-modal="true"
-        aria-label="Send follow-up?"
+        aria-label={formatMessage({ id: "codex.mcpTool.confirmFollowUp.title", defaultMessage: "Send follow-up?" })}
         onKeyDown={closeOnEscape}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <form onSubmit={submit}>
           <header>
-            <div><MessageSquareText size={16} /> Send follow-up from {request.source.server}?</div>
-            <button type="button" aria-label="Close" onClick={onClose}><X size={16} /></button>
+            {/* codex: codex.mcpTool.confirmFollowUp.title — static title, no {server} interpolation, no header icon. */}
+            <div>{formatMessage({ id: "codex.mcpTool.confirmFollowUp.title", defaultMessage: "Send follow-up?" })}</div>
+            <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={onClose}><X size={16} /></button>
           </header>
           <div className="hc-thread-dialog-body">
-            <span>An app wants to send this prompt</span>
-            <span>{sourceSummary}</span>
+            {/* codex: codex.mcpTool.confirmFollowUp.description — Codex shows this subtitle but no source (thread/server/tool) summary row. */}
+            <span>{formatMessage({ id: "codex.mcpTool.confirmFollowUp.description", defaultMessage: "An app wants to send this prompt" })}</span>
             <fieldset className="hc-mcp-follow-up-options">
               <legend>Send to</legend>
               {options.map((option) => {
@@ -184,23 +188,18 @@ export function McpFollowUpDialog({
             </label>
           </div>
           <footer>
-            <button type="button" className="hc-mini-button" onClick={onClose}>Cancel</button>
+            {/* codex: codex.mcpTool.confirmFollowUp.cancel / .confirm */}
+            <button type="button" className="hc-mini-button" onClick={onClose}>
+              {formatMessage({ id: "codex.mcpTool.confirmFollowUp.cancel", defaultMessage: "Cancel" })}
+            </button>
             <button type="submit" className="hc-mini-button accept" disabled={!draft.trim() || !selectedOption || selectedOption.disabled}>
-              Send
+              {formatMessage({ id: "codex.mcpTool.confirmFollowUp.confirm", defaultMessage: "Send" })}
             </button>
           </footer>
         </form>
       </section>
     </div>
   );
-}
-
-function mcpFollowUpSourceSummary(source: McpAppFollowUpSource): string {
-  return [
-    source.threadId ? `Thread ${source.threadId}` : "Current thread",
-    `Server ${source.server}`,
-    `Tool ${source.tool}`,
-  ].join(" · ");
 }
 
 export function normalizeMcpFollowUpOptions(

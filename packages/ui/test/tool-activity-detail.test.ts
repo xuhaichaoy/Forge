@@ -445,7 +445,7 @@ function buildsMcpDetails(): void {
       running: true,
       name: "github:list_prs",
       source: "GitHub",
-      label: "Calling list_prs",
+      label: "List prs",
       status: "inProgress",
     },
     "pending MCP rows should expose Desktop-style source and active tool label",

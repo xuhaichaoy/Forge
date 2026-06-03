@@ -41,6 +41,8 @@ export default function runCodexReducerTurnsTests(): void {
   hookNotificationsAreLoggedWithoutSyntheticTranscriptItems();
   surfacesTerminalErrorNotificationsInTheTranscript();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes();
+  synthesizesPlanImplementationItemWhenPlanTurnCompletes();
+  doesNotSynthesizePlanImplementationWithoutAPlanItemOrOnFailure();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
   turnsFailedTurnErrorsIntoStreamErrorItems();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
@@ -2989,6 +2991,99 @@ function isActiveTurnFixtureStatus(status: unknown): boolean {
     || record.status === "inProgress"
     || record.status === "running"
     || record.status === "active";
+}
+
+function planItem(id: string, text: string): ThreadItem {
+  return { type: "plan", id, text } as unknown as ThreadItem;
+}
+
+function startedPlanTurn(): CodexUiState {
+  return reduceNotification(initialCodexUiState, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-1", threadId: "thread-1", status: "inProgress", items: [], startedAt: 1 },
+    },
+  });
+}
+
+function synthesizesPlanImplementationItemWhenPlanTurnCompletes(): void {
+  // A completed turn that produced a proposed plan (raw wire item `type: "plan"`)
+  // must yield a client-synthesized `planImplementation` affordance — without it
+  // the composer never surfaces "Implement this plan?" and plan mode stops.
+  const completed = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Plan it"),
+          planItem("plan-1", "  1. step one\n2. step two  "),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+
+  const synthesized = items(completed, "thread-1").find((item) => item.type === "planImplementation");
+  assertEqual(Boolean(synthesized), true, "completing a plan turn should synthesize a planImplementation item");
+  assertEqual(synthesized?.id, "implement-plan:turn-1", "synthesized planImplementation id should be implement-plan:<turnId>");
+  assertEqual(
+    synthesized?.planContent as string,
+    "1. step one\n2. step two",
+    "planContent should be the trimmed text of the proposed-plan item",
+  );
+  assertEqual(synthesized?.isCompleted as boolean, false, "synthesized planImplementation should start not completed");
+  assertEqual(synthesized?.turnId as string, "turn-1", "synthesized planImplementation should carry its turnId");
+}
+
+function doesNotSynthesizePlanImplementationWithoutAPlanItemOrOnFailure(): void {
+  // No proposed plan in the turn → nothing to implement.
+  const noPlan = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [userMessage("user-1", "Just chat"), agentMessage("agent-1", "Hi")],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  assertEqual(
+    items(noPlan, "thread-1").some((item) => item.type === "planImplementation"),
+    false,
+    "a turn without a plan item must not synthesize a planImplementation affordance",
+  );
+
+  // A plan was produced but the turn did not complete cleanly → do not propose
+  // implementation (mirrors Codex gating on status === "completed").
+  const failedWithPlan = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "failed",
+        items: [userMessage("user-1", "Plan it"), planItem("plan-1", "1. step one")],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  assertEqual(
+    items(failedWithPlan, "thread-1").some((item) => item.type === "planImplementation"),
+    false,
+    "a failed turn must not synthesize a planImplementation affordance",
+  );
 }
 
 function userMessage(id: string, text: string): ThreadItem {

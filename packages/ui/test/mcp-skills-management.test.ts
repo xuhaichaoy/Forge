@@ -509,7 +509,7 @@ function rendersReusableManagementPanelControls(): void {
   }));
 
   assertIncludes(html, "hc-management-panel", "management component should render its reusable root");
-  assertIncludes(html, "Reload", "management component should expose reload");
+  assertIncludes(html, "Refresh", "management component should expose its Codex-aligned Refresh action");
   assertIncludes(html, "Insert prompt", "skill primary action should be labeled as prompt insertion");
 
   const pluginHtml = renderToStaticMarkup(createElement(McpSkillsManagementPanel, {

@@ -1,5 +1,5 @@
 @media (max-width: 1369px) {
-  .hc-right-rail {
+  .hc-right-rail:not([data-display-mode="overlay"]) {
     display: none;
   }
 }

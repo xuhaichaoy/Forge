@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileTree } from "./file-tree";
 import type { FileTreeSelectOptions } from "./file-tree";
 import { FileTreeSearchInput } from "./file-tree-search-input";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
   isTauriRuntime,
   readTextFile,
@@ -54,6 +55,7 @@ export function WorkspaceFilesPanel({
   searchWorkspaceFiles,
   includeHidden = false,
 }: WorkspaceFilesPanelProps) {
+  const { formatMessage } = useHiCodexIntl();
   // codex: _e — atom `me` { expandedPaths, scrollTop, searchQuery, selectedPath }.
   // MVP: hold equivalent state in component-local React state.
   const [entriesByDir, setEntriesByDir] = useState<Map<string, WorkspaceDirEntry[]>>(
@@ -285,13 +287,19 @@ export function WorkspaceFilesPanel({
         {loadError != null ? (
           <div className="hc-file-tree-error">{loadError}</div>
         ) : useRemoteSearch && remoteSearchForQuery?.status === "loading" ? (
-          <div className="hc-file-tree-empty">Searching files…</div>
+          <div className="hc-file-tree-empty">
+            {formatMessage({ id: "thread.fileTreePanel.searchingFiles", defaultMessage: "Searching files…" })}
+          </div>
         ) : useRemoteSearch && remoteSearchForQuery?.status === "error" ? (
           <div className="hc-file-tree-error">{remoteSearchForQuery.error ?? "File search failed."}</div>
         ) : rootState === "loading" ? (
-          <div className="hc-file-tree-empty">Loading directory entries…</div>
+          <div className="hc-file-tree-empty">
+            {formatMessage({ id: "threadSidePanel.workspaceBrowser.loading", defaultMessage: "Loading directory entries…" })}
+          </div>
         ) : rootState === "empty" ? (
-          <div className="hc-file-tree-empty">No files in this folder</div>
+          <div className="hc-file-tree-empty">
+            {formatMessage({ id: "threadSidePanel.workspaceBrowser.empty", defaultMessage: "No files in this folder" })}
+          </div>
         ) : (
           <FileTree
             rootEntries={rootEntries}

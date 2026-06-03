@@ -25,6 +25,7 @@ import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
   composerModeRequiresUnavailablePlanMode,
   selectNextQueuedFollowUp,
+  shouldResetCreatedThreadComposerMode,
   shouldQueueComposerFollowUp,
   shouldSteerQueuedFollowUp,
   turnStartOptionsFromComposerMode,
@@ -245,7 +246,9 @@ export function useTurnSubmission({
   const sendTurn = useCallback(async (options: ComposerSendOptions = {}) => {
     const draftInput = options.input ?? latestInputRef.current;
     const draftAttachments = options.attachments ?? latestComposerAttachmentsRef.current;
-    if (composerSubmitState.disabled) {
+    const draftMode = options.mode ?? composerMode;
+    const shouldClearDraft = options.input === undefined && options.attachments === undefined;
+    if (composerSubmitState.disabled && !options.bypassSubmitState) {
       if (composerSubmitState.submitBlockReason !== "empty" && composerSubmitState.disabledReason) {
         dispatch({ type: "log", text: composerSubmitState.disabledReason, level: "warn" });
       }
@@ -270,11 +273,11 @@ export function useTurnSubmission({
       });
       const modes = shouldQueueFollowUp
         ? collaborationModes
-        : await collaborationModesForComposerMode(composerMode);
+        : await collaborationModesForComposerMode(draftMode);
       const turnStartOptions = shouldQueueFollowUp
         ? null
-        : turnStartOptionsFromComposerMode(composerMode, modes, threadContextDefaults);
-      if (!shouldQueueFollowUp && composerModeRequiresUnavailablePlanMode(composerMode, turnStartOptions)) {
+        : turnStartOptionsFromComposerMode(draftMode, modes, threadContextDefaults);
+      if (!shouldQueueFollowUp && composerModeRequiresUnavailablePlanMode(draftMode, turnStartOptions)) {
         dispatch({ type: "log", text: PLAN_MODE_UNAVAILABLE_MESSAGE, level: "warn" });
         return;
       }
@@ -298,17 +301,21 @@ export function useTurnSubmission({
         if (isQueuedFollowUpDuplicate(existingQueue, { text: draftInput, attachments: sendAttachments })) {
           return;
         }
-        clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
+        if (shouldClearDraft) {
+          clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
+        }
         const queued = createQueuedFollowUp({
           text: draftInput,
           attachments: sendAttachments,
           cwd: workspace,
-          mode: composerMode,
+          mode: draftMode,
         });
         updateQueuedFollowUps(threadId, (queue) => [...queue, queued]);
         return;
       }
-      clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
+      if (shouldClearDraft) {
+        clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
+      }
       let optimistic: OptimisticUserMessageHandle | null = null;
       try {
         if (activeTurnId && activeThreadRunning) {
@@ -318,7 +325,9 @@ export function useTurnSubmission({
           await startTurn(client, threadId, content, workspace, threadContextDefaults, turnStartOptions);
           await refreshThreadMetadata(client, threadId, dispatch);
           rememberLatestCollaborationMode(threadId, turnStartOptions);
-          if (readyThread.source === "created") resetComposerSelectionAfterCreatedThread(threadId);
+          if (readyThread.source === "created" && shouldResetCreatedThreadComposerMode(draftMode)) {
+            resetComposerSelectionAfterCreatedThread(threadId);
+          }
         }
       } catch (error) {
         const recoverableSelectedThreadError = isThreadNotFound(error) || isThreadNeedsResume(error);
@@ -396,7 +405,9 @@ export function useTurnSubmission({
           throw subError;
         }
         rememberLatestCollaborationMode(nextThreadId, turnStartOptions);
-        resetComposerSelectionAfterCreatedThread(nextThreadId);
+        if (shouldResetCreatedThreadComposerMode(draftMode)) {
+          resetComposerSelectionAfterCreatedThread(nextThreadId);
+        }
       }
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });

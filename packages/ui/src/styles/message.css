@@ -536,6 +536,23 @@ button.hc-assistant-review-comment-row:focus-visible,
   overflow-wrap: anywhere;
 }
 
+/* codex: editable bubble is role=button with cursor-interaction (pointer) + focus-visible:ring-2 ring-token-focus-border */
+.hc-user-message-bubble.is-editable {
+  cursor: pointer;
+}
+
+.hc-user-message-bubble.is-editable:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+/* codex user-message noContent: text-size-chat mb-px text-token-description-foreground */
+.hc-user-message-no-content {
+  margin-bottom: 1px;
+  color: var(--hc-text-secondary, #6f716b);
+  font-size: var(--codex-chat-font-size);
+}
+
 .hc-user-edit-shell {
   width: 100%; /* codex edit wrapper is w-full (was min(720px,100%)+max-width 77%; A/B-pending) */
   padding: 1px;
@@ -742,7 +759,8 @@ button.hc-parent-thread-attachment:hover {
 }
 
 .hc-user-message-collapse-toggle svg.is-open {
-  transform: rotate(90deg);
+  /* codex showMore/less chevron: expanded = rotate-180 (points up) */
+  transform: rotate(180deg);
 }
 
 .hc-user-image-card {
