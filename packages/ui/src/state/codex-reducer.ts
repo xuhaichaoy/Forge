@@ -856,108 +856,34 @@ function applyInvalidation(
   }
 }
 
+/*
+ * `applyNotification` is a thin per-method dispatcher: it does the shared
+ * `params` extraction once, then routes each method (or fall-through group) to a
+ * domain handler below. Handlers are grouped by domain — thread lifecycle, turn
+ * lifecycle, item lifecycle/deltas, model, plan/diff — and each is a pure
+ * `(state, params[, message]) => state` slice of the original switch body, moved
+ * verbatim. The item-lifecycle fall-through group (9 methods that shared one
+ * case body) is preserved by routing all 9 labels to a single handler that
+ * still derives its completion bias from `message.method`.
+ */
 function applyNotification(state: CodexUiState, message: JsonRpcNotification): CodexUiState {
   const params = (message.params ?? {}) as Record<string, unknown>;
   switch (message.method) {
     case "error":
       return applyErrorNotification(state, params);
-    case "thread/started": {
-      const thread = params.thread as Thread | undefined;
-      if (!thread?.id) return state;
-      const snapshotItems = collectThreadItems(thread);
-      const runtime = selectThreadRuntime(state, thread.id);
-      const currentItems = runtime.items;
-      const terminalTurnIds = terminalTurnIdsForRuntime(runtime);
-      const activeTurnIds = activeTurnIdsFromThread(thread);
-      const staleActiveSnapshot = activeTurnIds.some((turnId) => terminalTurnIds.has(turnId));
-      const activeTurns = activeTurnsFromThread(thread, terminalTurnIds);
-      const nextActiveTurnId = activeTurns[thread.id] ?? (staleActiveSnapshot ? null : runtime.activeTurnId);
-      const hasLiveTurn = Boolean(nextActiveTurnId);
-      const shouldMergeSnapshot = hasLiveTurn || snapshotTouchesTurnIds(snapshotItems, terminalTurnIds);
-      const nextTurnOrder = turnOrderFromThread(thread, runtime.turnOrder);
-      const nextItems = snapshotItems.length > 0
-        ? shouldMergeSnapshot
-          ? mergeLiveThreadSnapshotItems(
-              currentItems,
-              snapshotItems,
-              staleActiveSnapshot ? terminalTurnIds : undefined,
-            )
-          : snapshotItems
-        : runtime.items;
-      const optimisticTurnState = snapshotItems.length > 0
-        ? pruneUnusedOptimisticTurnState(
-            nextTurnOrder,
-            runtime.pendingOptimisticTurns,
-            nextItems ?? [],
-          )
-        : {
-            turnOrder: nextTurnOrder,
-            pending: runtime.pendingOptimisticTurns,
-          };
-      const nextThreads = upsertThread(state.threads, threadWithNonRegressingStatus(
-        thread,
-        state.threads.find((item) => item.id === thread.id),
-        staleActiveSnapshot,
-        Boolean(activeTurns[thread.id]),
-      ));
-      const nextThreadsRuntime = enrichMultiAgentReceiverThreadsInRuntimes({
-        ...state.threadsRuntime,
-        [thread.id]: normalizeThreadRuntime({
-          ...runtime,
-          activeTurnId: nextActiveTurnId ?? null,
-          turnOrder: optimisticTurnState.turnOrder,
-          pendingOptimisticTurns: optimisticTurnState.pending,
-          items: snapshotItems.length > 0 ? nextItems ?? [] : runtime.items,
-        }),
-      }, nextThreads);
-      return withActiveComposerMode({
-        ...state,
-        threads: nextThreads,
-        activeThreadId: state.activeThreadId ?? thread.id,
-        threadsRuntime: nextThreadsRuntime,
-      });
-    }
-    case "thread/status/changed": {
-      const threadId = String(params.threadId ?? "");
-      if (!threadId) return state;
-      return {
-        ...state,
-        threads: state.threads.map((thread) =>
-          thread.id === threadId ? { ...thread, status: normalizeThreadStatus(params.status, thread.status) } : thread,
-        ),
-      };
-    }
-    case "thread/name/updated": {
-      const threadId = String(params.threadId ?? "");
-      if (!threadId) return state;
-      const nextName = typeof params.threadName === "string" ? params.threadName : null;
-      return {
-        ...state,
-        threads: state.threads.map((thread) =>
-          thread.id === threadId ? { ...thread, name: nextName } : thread,
-        ),
-      };
-    }
+    case "thread/started":
+      return handleThreadStartedNotification(state, params);
+    case "thread/status/changed":
+      return handleThreadStatusChangedNotification(state, params);
+    case "thread/name/updated":
+      return handleThreadNameUpdatedNotification(state, params);
     case "thread/settings/updated":
       return applyThreadSettingsUpdatedNotification(state, params);
     case "thread/archived":
-    case "thread/closed": {
-      const threadId = String(params.threadId ?? "");
-      if (!threadId) return state;
-      const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
-      const { [threadId]: _removed, ...threadsRuntime } = state.threadsRuntime;
-      return withActiveComposerMode({
-        ...state,
-        threads: nextThreads,
-        threadsRuntime,
-        activeThreadId: state.activeThreadId === threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
-      });
-    }
-    case "thread/unarchived": {
-      const threadId = String(params.threadId ?? "");
-      if (!threadId) return state;
-      return prependLog(state, `thread unarchived: ${shortThreadId(threadId)}`);
-    }
+    case "thread/closed":
+      return handleThreadRemovedNotification(state, params);
+    case "thread/unarchived":
+      return handleThreadUnarchivedNotification(state, params);
     case "thread/tokenUsage/updated":
       // codex: composer-*.js `/status` panel — projects the
       // `ThreadTokenUsage` payload (last-turn breakdown + `modelContextWindow`)
@@ -970,34 +896,8 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return applyThreadGoalUpdatedNotification(state, params);
     case "thread/goal/cleared":
       return applyThreadGoalClearedNotification(state, params);
-    case "turn/started": {
-      const turn = params.turn as TurnLike | undefined;
-      const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
-      if (!threadId) return state;
-      const baseState: CodexUiState = turn?.id
-        ? bindNextOptimisticTurn(state, threadId, turn.id)
-        : state;
-      const runtime = selectThreadRuntime(baseState, threadId);
-      const order = ensureTurnInOrder(runtime.turnOrder, turn?.id ?? null);
-      const tokenSpeedPatch = turn?.id ? startedTokenSpeedPatch(turn.id) : {};
-      return withActiveComposerMode({
-        ...baseState,
-        activeThreadId: baseState.activeThreadId ?? threadId,
-        threadsRuntime: {
-          ...baseState.threadsRuntime,
-          [threadId]: normalizeThreadRuntime({
-            ...runtime,
-            ...tokenSpeedPatch,
-            activeTurnId: turn?.id ?? runtime.activeTurnId,
-            turnOrder: order,
-            terminalTurnIds: turn?.id
-              ? runtime.terminalTurnIds.filter((id) => id !== turn.id)
-              : runtime.terminalTurnIds,
-            items: mergeItems(runtime.items, turnItemsWithWorkedFor(turn), order),
-          }),
-        },
-      });
-    }
+    case "turn/started":
+      return handleTurnStartedNotification(state, params);
     case "item/started":
     case "item/completed":
     case "item/autoApprovalReview/started":
@@ -1006,25 +906,8 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "item/fileChange/requestApproval":
     case "item/permissions/requestApproval":
     case "item/tool/call":
-    case "item/tool/requestUserInput": {
-      const threadId = String(params.threadId ?? "");
-      const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
-      const item = params.item as ThreadItem | undefined;
-      if (!threadId || !item?.id) return state;
-      // Codex Desktop's app-server-manager-signals carries a per-event
-      // completion bias on these item-level cases; treat any "/completed"
-      // suffix as terminal and everything else as in-progress so the merger
-      // can fold deltas into the same row.
-      const isCompletedEvent = message.method.endsWith("/completed");
-      const itemWithStatus = isCompletedEvent
-        ? { ...item, completed: true }
-        : { ...item, completed: false };
-      const stampedItem = itemWithLifecycleTiming(itemWithStatus as ThreadItem, params);
-      const reconciled = item.type === "userMessage"
-        ? reconcileUserMessage(state, threadId, turnIdParam, stampedItem)
-        : state;
-      return upsertItem(reconciled, threadId, stampedItem, turnIdParam);
-    }
+    case "item/tool/requestUserInput":
+      return handleItemLifecycleNotification(state, params, message);
     /*
      * Codex Desktop's `remote-conversation-page` dispatcher consumes 5 visible
      * item-level delta channels (docs §26.4). HiCodex used to subscribe to 3
@@ -1063,43 +946,12 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "item/fileChange/patchUpdated":
       // HiCodex extension (not in Codex Desktop's 5-channel set).
       return mergeItemFields(state, params, "fileChange", { changes: params.changes });
-    case "model/rerouted": {
-      /*
-       * Codex Desktop's app-server-manager onNotification handler for
-       * `model/rerouted` synthesizes a client-side timeline item
-       * ({ type:"modelRerouted", fromModel, toModel, reason }) and pushes it
-       * into the active turn; the renderer only surfaces reroutes whose reason
-       * is "highRiskCyberActivity" (see event-unit.tsx). HiCodex previously
-       * only logged the notification, so a live reroute never reached the
-       * transcript — it appeared only when a thread/read snapshot already held
-       * the item. Re-verified vs Codex Desktop v26.519.81530.
-       */
-      const threadId = String(params.threadId ?? "");
-      if (!threadId) return state;
-      const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
-      const fromModel = stringParam(params, "fromModel");
-      const toModel = stringParam(params, "toModel");
-      const reason = stringParam(params, "reason");
-      const id = stringParam(params, "itemId") || `model-rerouted:${turnIdParam || threadId}`;
-      const item = {
-        type: "modelRerouted",
-        id,
-        fromModel,
-        toModel,
-        reason,
-        completed: true,
-      } as unknown as ThreadItem;
-      const logged = prependLog(state, `model rerouted ${fromModel} -> ${toModel}${reason ? `: ${reason}` : ""}`, "warn");
-      return upsertItem(logged, threadId, item, turnIdParam);
-    }
+    case "model/rerouted":
+      return handleModelReroutedNotification(state, params);
     case "turn/plan/updated":
       return upsertTurnPlan(state, params);
-    case "turn/diff/updated": {
-      const threadId = String(params.threadId ?? "");
-      const diff = typeof params.diff === "string" ? params.diff : "";
-      if (!threadId) return state;
-      return threadRuntimePatch(state, threadId, { turnDiff: diff });
-    }
+    case "turn/diff/updated":
+      return handleTurnDiffUpdatedNotification(state, params);
     case "turn/completed":
       return finishTurn(state, params, "completed");
     case "turn/failed":
@@ -1108,15 +960,221 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "turn/cancelled":
       return finishTurn(state, params, "interrupted");
     case "serverRequest/resolved":
-      return {
-        ...state,
-        pendingRequests: state.pendingRequests.filter((request) => request.id !== params.requestId),
-      };
+      return handleServerRequestResolvedNotification(state, params);
     case "mcpServer/startupStatus/updated":
       return applyMcpServerStartupStatusNotification(state, params, message);
     default:
       return logNotificationIfUseful(state, message);
   }
+}
+
+// --- thread-domain notification handlers -------------------------------------
+
+function handleThreadStartedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const thread = params.thread as Thread | undefined;
+  if (!thread?.id) return state;
+  const snapshotItems = collectThreadItems(thread);
+  const runtime = selectThreadRuntime(state, thread.id);
+  const currentItems = runtime.items;
+  const terminalTurnIds = terminalTurnIdsForRuntime(runtime);
+  const activeTurnIds = activeTurnIdsFromThread(thread);
+  const staleActiveSnapshot = activeTurnIds.some((turnId) => terminalTurnIds.has(turnId));
+  const activeTurns = activeTurnsFromThread(thread, terminalTurnIds);
+  const nextActiveTurnId = activeTurns[thread.id] ?? (staleActiveSnapshot ? null : runtime.activeTurnId);
+  const hasLiveTurn = Boolean(nextActiveTurnId);
+  const shouldMergeSnapshot = hasLiveTurn || snapshotTouchesTurnIds(snapshotItems, terminalTurnIds);
+  const nextTurnOrder = turnOrderFromThread(thread, runtime.turnOrder);
+  const nextItems = snapshotItems.length > 0
+    ? shouldMergeSnapshot
+      ? mergeLiveThreadSnapshotItems(
+          currentItems,
+          snapshotItems,
+          staleActiveSnapshot ? terminalTurnIds : undefined,
+        )
+      : snapshotItems
+    : runtime.items;
+  const optimisticTurnState = snapshotItems.length > 0
+    ? pruneUnusedOptimisticTurnState(
+        nextTurnOrder,
+        runtime.pendingOptimisticTurns,
+        nextItems ?? [],
+      )
+    : {
+        turnOrder: nextTurnOrder,
+        pending: runtime.pendingOptimisticTurns,
+      };
+  const nextThreads = upsertThread(state.threads, threadWithNonRegressingStatus(
+    thread,
+    state.threads.find((item) => item.id === thread.id),
+    staleActiveSnapshot,
+    Boolean(activeTurns[thread.id]),
+  ));
+  const nextThreadsRuntime = enrichMultiAgentReceiverThreadsInRuntimes({
+    ...state.threadsRuntime,
+    [thread.id]: normalizeThreadRuntime({
+      ...runtime,
+      activeTurnId: nextActiveTurnId ?? null,
+      turnOrder: optimisticTurnState.turnOrder,
+      pendingOptimisticTurns: optimisticTurnState.pending,
+      items: snapshotItems.length > 0 ? nextItems ?? [] : runtime.items,
+    }),
+  }, nextThreads);
+  return withActiveComposerMode({
+    ...state,
+    threads: nextThreads,
+    activeThreadId: state.activeThreadId ?? thread.id,
+    threadsRuntime: nextThreadsRuntime,
+  });
+}
+
+function handleThreadStatusChangedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) return state;
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.id === threadId ? { ...thread, status: normalizeThreadStatus(params.status, thread.status) } : thread,
+    ),
+  };
+}
+
+function handleThreadNameUpdatedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) return state;
+  const nextName = typeof params.threadName === "string" ? params.threadName : null;
+  return {
+    ...state,
+    threads: state.threads.map((thread) =>
+      thread.id === threadId ? { ...thread, name: nextName } : thread,
+    ),
+  };
+}
+
+// Shared by `thread/archived` and `thread/closed`: drop the thread + its runtime
+// slice and re-home the active selection.
+function handleThreadRemovedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) return state;
+  const nextThreads = state.threads.filter((thread) => thread.id !== threadId);
+  const { [threadId]: _removed, ...threadsRuntime } = state.threadsRuntime;
+  return withActiveComposerMode({
+    ...state,
+    threads: nextThreads,
+    threadsRuntime,
+    activeThreadId: state.activeThreadId === threadId ? nextThreads[0]?.id ?? null : state.activeThreadId,
+  });
+}
+
+function handleThreadUnarchivedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) return state;
+  return prependLog(state, `thread unarchived: ${shortThreadId(threadId)}`);
+}
+
+// --- turn-domain notification handlers ---------------------------------------
+
+function handleTurnStartedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const turn = params.turn as TurnLike | undefined;
+  const threadId = String(params.threadId ?? turn?.threadId ?? state.activeThreadId ?? "");
+  if (!threadId) return state;
+  const baseState: CodexUiState = turn?.id
+    ? bindNextOptimisticTurn(state, threadId, turn.id)
+    : state;
+  const runtime = selectThreadRuntime(baseState, threadId);
+  const order = ensureTurnInOrder(runtime.turnOrder, turn?.id ?? null);
+  const tokenSpeedPatch = turn?.id ? startedTokenSpeedPatch(turn.id) : {};
+  return withActiveComposerMode({
+    ...baseState,
+    activeThreadId: baseState.activeThreadId ?? threadId,
+    threadsRuntime: {
+      ...baseState.threadsRuntime,
+      [threadId]: normalizeThreadRuntime({
+        ...runtime,
+        ...tokenSpeedPatch,
+        activeTurnId: turn?.id ?? runtime.activeTurnId,
+        turnOrder: order,
+        terminalTurnIds: turn?.id
+          ? runtime.terminalTurnIds.filter((id) => id !== turn.id)
+          : runtime.terminalTurnIds,
+        items: mergeItems(runtime.items, turnItemsWithWorkedFor(turn), order),
+      }),
+    },
+  });
+}
+
+function handleTurnDiffUpdatedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  const diff = typeof params.diff === "string" ? params.diff : "";
+  if (!threadId) return state;
+  return threadRuntimePatch(state, threadId, { turnDiff: diff });
+}
+
+// --- item-domain notification handlers ---------------------------------------
+
+// Handles the 9-method item-lifecycle fall-through group. Reads `message.method`
+// to derive the per-event completion bias (any `/completed` suffix is terminal),
+// matching Codex Desktop's app-server-manager-signals.
+function handleItemLifecycleNotification(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+  message: JsonRpcNotification,
+): CodexUiState {
+  const threadId = String(params.threadId ?? "");
+  const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
+  const item = params.item as ThreadItem | undefined;
+  if (!threadId || !item?.id) return state;
+  // Codex Desktop's app-server-manager-signals carries a per-event
+  // completion bias on these item-level cases; treat any "/completed"
+  // suffix as terminal and everything else as in-progress so the merger
+  // can fold deltas into the same row.
+  const isCompletedEvent = message.method.endsWith("/completed");
+  const itemWithStatus = isCompletedEvent
+    ? { ...item, completed: true }
+    : { ...item, completed: false };
+  const stampedItem = itemWithLifecycleTiming(itemWithStatus as ThreadItem, params);
+  const reconciled = item.type === "userMessage"
+    ? reconcileUserMessage(state, threadId, turnIdParam, stampedItem)
+    : state;
+  return upsertItem(reconciled, threadId, stampedItem, turnIdParam);
+}
+
+function handleModelReroutedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  /*
+   * Codex Desktop's app-server-manager onNotification handler for
+   * `model/rerouted` synthesizes a client-side timeline item
+   * ({ type:"modelRerouted", fromModel, toModel, reason }) and pushes it
+   * into the active turn; the renderer only surfaces reroutes whose reason
+   * is "highRiskCyberActivity" (see event-unit.tsx). HiCodex previously
+   * only logged the notification, so a live reroute never reached the
+   * transcript — it appeared only when a thread/read snapshot already held
+   * the item. Re-verified vs Codex Desktop v26.519.81530.
+   */
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) return state;
+  const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
+  const fromModel = stringParam(params, "fromModel");
+  const toModel = stringParam(params, "toModel");
+  const reason = stringParam(params, "reason");
+  const id = stringParam(params, "itemId") || `model-rerouted:${turnIdParam || threadId}`;
+  const item = {
+    type: "modelRerouted",
+    id,
+    fromModel,
+    toModel,
+    reason,
+    completed: true,
+  } as unknown as ThreadItem;
+  const logged = prependLog(state, `model rerouted ${fromModel} -> ${toModel}${reason ? `: ${reason}` : ""}`, "warn");
+  return upsertItem(logged, threadId, item, turnIdParam);
+}
+
+// --- server-request notification handlers ------------------------------------
+
+function handleServerRequestResolvedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
+  return {
+    ...state,
+    pendingRequests: state.pendingRequests.filter((request) => request.id !== params.requestId),
+  };
 }
 
 function applyMcpServerStartupStatusNotification(
@@ -2501,47 +2559,65 @@ function turnIdOf(item: AccumulatedThreadItem | ThreadItem | undefined | null): 
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function projectThreadGoalOntoUserMessages(
+/**
+ * Shared skeleton for the single-target item markers (thread-goal /
+ * completed-thread-goal projections): stamp a pair of marker keys onto the item
+ * at `targetIndex` and strip that same pair from every other item, with
+ * structural-sharing `changed` tracking so an already-consistent list is
+ * returned verbatim. Passing `targetIndex < 0` is the "clear all" form (no item
+ * is the target, so the marker is removed everywhere).
+ *
+ * Note the set-skip guard is keyed on object identity of `setValue` (matching
+ * the original `record._threadGoal === goal` reference checks), so callers must
+ * pass the same `goal`/`turnId` references the projection compares against.
+ */
+function projectSingleTargetItemMarker(
   items: AccumulatedThreadItem[],
-  goal: ThreadGoal,
-  turnId: string | null,
+  targetIndex: number,
+  valueKey: string,
+  turnKey: string,
+  setValue: unknown,
+  setTurn: unknown,
 ): AccumulatedThreadItem[] {
-  const targetIndex = threadGoalTargetUserMessageIndex(items, turnId);
   let changed = false;
   const next = items.map((item, index) => {
     const record = item as Record<string, unknown>;
-    const isTarget = index === targetIndex;
-    if (isTarget) {
-      if (record._threadGoal === goal && record._threadGoalTurnId === turnId) return item;
+    if (index === targetIndex) {
+      if (record[valueKey] === setValue && record[turnKey] === setTurn) return item;
       changed = true;
       return {
         ...item,
-        _threadGoal: goal,
-        _threadGoalTurnId: turnId,
+        [valueKey]: setValue,
+        [turnKey]: setTurn,
       };
     }
-    if (record._threadGoal === undefined && record._threadGoalTurnId === undefined) return item;
+    if (record[valueKey] === undefined && record[turnKey] === undefined) return item;
     const cleaned = { ...item } as AccumulatedThreadItem;
-    delete (cleaned as Record<string, unknown>)._threadGoal;
-    delete (cleaned as Record<string, unknown>)._threadGoalTurnId;
+    delete (cleaned as Record<string, unknown>)[valueKey];
+    delete (cleaned as Record<string, unknown>)[turnKey];
     changed = true;
     return cleaned;
   });
   return changed ? next : items;
 }
 
+function projectThreadGoalOntoUserMessages(
+  items: AccumulatedThreadItem[],
+  goal: ThreadGoal,
+  turnId: string | null,
+): AccumulatedThreadItem[] {
+  return projectSingleTargetItemMarker(
+    items,
+    threadGoalTargetUserMessageIndex(items, turnId),
+    "_threadGoal",
+    "_threadGoalTurnId",
+    goal,
+    turnId,
+  );
+}
+
 function clearThreadGoalProjection(items: AccumulatedThreadItem[]): AccumulatedThreadItem[] {
-  let changed = false;
-  const next = items.map((item) => {
-    const record = item as Record<string, unknown>;
-    if (record._threadGoal === undefined && record._threadGoalTurnId === undefined) return item;
-    const cleaned = { ...item } as AccumulatedThreadItem;
-    delete (cleaned as Record<string, unknown>)._threadGoal;
-    delete (cleaned as Record<string, unknown>)._threadGoalTurnId;
-    changed = true;
-    return cleaned;
-  });
-  return changed ? next : items;
+  return projectSingleTargetItemMarker(items, -1, "_threadGoal", "_threadGoalTurnId", undefined, undefined);
 }
 
 function projectCompletedThreadGoalOntoAssistantMessages(
@@ -2552,27 +2628,14 @@ function projectCompletedThreadGoalOntoAssistantMessages(
   const targetIndex = isCompletedThreadGoal(goal)
     ? threadGoalTargetAssistantMessageIndex(items, turnId)
     : -1;
-  let changed = false;
-  const next = items.map((item, index) => {
-    const record = item as Record<string, unknown>;
-    const isTarget = index === targetIndex;
-    if (isTarget) {
-      if (record._completedThreadGoal === goal && record._completedThreadGoalTurnId === turnId) return item;
-      changed = true;
-      return {
-        ...item,
-        _completedThreadGoal: goal,
-        _completedThreadGoalTurnId: turnId,
-      };
-    }
-    if (record._completedThreadGoal === undefined && record._completedThreadGoalTurnId === undefined) return item;
-    const cleaned = { ...item } as AccumulatedThreadItem;
-    delete (cleaned as Record<string, unknown>)._completedThreadGoal;
-    delete (cleaned as Record<string, unknown>)._completedThreadGoalTurnId;
-    changed = true;
-    return cleaned;
-  });
-  return changed ? next : items;
+  return projectSingleTargetItemMarker(
+    items,
+    targetIndex,
+    "_completedThreadGoal",
+    "_completedThreadGoalTurnId",
+    goal,
+    turnId,
+  );
 }
 
 function projectHookStatsOntoAssistantMessages(

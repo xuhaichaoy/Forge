@@ -97,6 +97,7 @@ import {
   type WorkspaceDirEntry,
 } from "./lib/tauri-host";
 import { useAppUpdater } from "./hooks/use-app-updater";
+import { useBrowserRuntime } from "./hooks/use-browser-runtime";
 import { useTurnPatchAction } from "./hooks/use-turn-patch-action";
 import { useClipboardCopyActions } from "./hooks/use-clipboard-copy-actions";
 import { useThreadPins } from "./hooks/use-thread-pins";
@@ -386,13 +387,7 @@ import {
   rightRailReservedInlineEndPx,
   saveRightRailPinned,
 } from "./state/right-rail";
-import {
-  loadBrowserRuntimeSnapshot,
-  listenBrowserRuntimeSnapshots,
-  openBrowserRuntime,
-  projectBrowserRailInput,
-  type BrowserRuntimeSnapshot,
-} from "./state/browser-runtime";
+import { openBrowserRuntime } from "./state/browser-runtime";
 import { TAB_KINDS } from "./state/side-panel-tab-host";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import { recordObject } from "./state/thread-item-fields";
@@ -2176,40 +2171,12 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   // codex: composer-*.js `/status` panel reads the context usage slice
   // populated by `thread/tokenUsage/updated`.
   const tokenUsageSnapshot = activeThreadRuntime.tokenUsage ?? null;
-  const [browserRuntimeSnapshot, setBrowserRuntimeSnapshot] = useState<BrowserRuntimeSnapshot | null>(null);
-  const refreshBrowserRuntime = useCallback(async () => {
-    const next = await loadBrowserRuntimeSnapshot();
-    setBrowserRuntimeSnapshot(next);
-    return next;
-  }, []);
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-    void refreshBrowserRuntime();
-  }, [refreshBrowserRuntime]);
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-    let cancelled = false;
-    let unlisten: (() => void) | null = null;
-    void listenBrowserRuntimeSnapshots((snapshot) => {
-      setBrowserRuntimeSnapshot(snapshot);
-    }).then((dispose) => {
-      if (cancelled) {
-        dispose?.();
-        return;
-      }
-      unlisten = dispose;
-    }).catch((error) => {
-      dispatch({ type: "log", text: `Browser runtime listener failed: ${formatError(error)}`, level: "warn" });
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [dispatch]);
-  const browserRailInput = useMemo(
-    () => projectBrowserRailInput(browserRuntimeSnapshot),
-    [browserRuntimeSnapshot],
-  );
+  // codex: browser-runtime snapshot ownership (state + Tauri boot/listen
+  // effects + on-demand refresh + rail projection) lives in useBrowserRuntime.
+  // setBrowserRuntimeSnapshot is returned because openBrowserSurface (side-panel
+  // tab host wiring, below) pushes live runtime snapshots back through the
+  // Browser tab's onRuntimeChange prop into the same state the rail reads.
+  const { browserRailInput, refreshBrowserRuntime, setBrowserRuntimeSnapshot } = useBrowserRuntime();
   const rightRailSections = useMemo(
     () => projectRightRailSections({
       progress: conversation.progress,
