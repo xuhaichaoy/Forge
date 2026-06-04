@@ -222,6 +222,7 @@
 
 .hc-composer-field {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -609,6 +610,7 @@
   min-width: 0;
   align-items: center;
   gap: 5px;
+  color: var(--hc-text-secondary);
 }
 
 .hc-composer-footer-right {
@@ -661,15 +663,21 @@
 }
 
 /*
- * codex fp (ExternalFooterSlot) home variant: `relative z-0 -mt-2` + a slide-in
- * (Framer `initial:{y:-100%} animate:{y:0}`). The footer tucks 8px under the
- * composer (behind it via z-0) and slides down on the empty/home screen. The
- * in-thread footer stays static (no animation / tuck).
+ * CODEX-REF: composer-external-footer-*.js home variant.
+ * Desktop wraps the empty-screen footer in `-mx-px -mt-4.5 rounded-b-2xl
+ * bg-token-side-bar-background dark:bg-token-bg-fog px-2 pt-[25px] pb-2`.
+ * This creates the visible lower tray behind the project/branch controls.
  */
 .hc-composer-external-footer[data-variant="home"] {
   position: relative;
   z-index: 0;
-  margin-top: -8px; /* codex -mt-2 */
+  margin-inline: -1px;
+  margin-top: -18px;
+  padding: 25px 8px 8px;
+  border-bottom-right-radius: var(--hc-radius-2xl);
+  border-bottom-left-radius: var(--hc-radius-2xl);
+  background: var(--hc-surface-sidebar);
+  corner-shape: superellipse(1.5);
   animation: hc-composer-footer-drawer-in 0.24s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
@@ -2150,7 +2158,21 @@
 /* ===== Dark-theme completeness (2026-05-30 workflow, role-mapped to --hc-* dark tokens; light untouched) ===== */
 /* Dark theme overrides for hardcoded light-only colors */
 .hc-app[data-theme="dark"] .hc-prompt-editor {
-  color: var(--hc-text-primary);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-field {
+  background: var(--hc-surface-composer);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-field[data-mode="request"] {
+  background: transparent;
+  box-shadow: none;
+}
+
+.hc-app[data-theme="dark"] .hc-prompt-editor .ProseMirror .placeholder::after {
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .hc-app[data-theme="dark"] .hc-prompt-mention {
@@ -2162,7 +2184,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-composer-plus:hover {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -2178,40 +2200,63 @@
   color: var(--hc-text-secondary);
 }
 
+.hc-app[data-theme="dark"] .hc-composer-external-footer[data-variant="home"] {
+  background: var(--hc-surface-main);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-footer-chip:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary-soft);
+}
+
+.hc-app[data-theme="dark"] .hc-composer-footer-chip-readonly:hover {
+  background: transparent;
+  color: inherit;
+}
+
+:root[data-hc-theme="dark"] .hc-composer-project-search,
 .hc-app[data-theme="dark"] .hc-composer-project-search {
   color: var(--hc-text-secondary);
   background: rgba(255, 255, 255, 0.05);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-project-search input,
 .hc-app[data-theme="dark"] .hc-composer-project-search input {
   color: var(--hc-text-primary);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-project-menu-title,
 .hc-app[data-theme="dark"] .hc-composer-project-menu-title {
   color: var(--hc-text-secondary);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-project-empty,
 .hc-app[data-theme="dark"] .hc-composer-project-empty {
   color: var(--hc-text-secondary);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-branch-search,
 .hc-app[data-theme="dark"] .hc-composer-branch-search {
   color: var(--hc-text-secondary);
   background: rgba(255, 255, 255, 0.05);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-branch-search input,
 .hc-app[data-theme="dark"] .hc-composer-branch-search input {
   color: var(--hc-text-primary);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-branch-empty,
 .hc-app[data-theme="dark"] .hc-composer-branch-empty {
   color: var(--hc-text-secondary);
 }
 
+:root[data-hc-theme="dark"] .hc-composer-branch-item-suffix,
 .hc-app[data-theme="dark"] .hc-composer-branch-item-suffix {
   color: var(--hc-text-secondary);
 }
 
+:root[data-hc-theme="dark"] .hc-branch-picker-default-chip,
 .hc-app[data-theme="dark"] .hc-branch-picker-default-chip {
   background: rgba(255, 255, 255, 0.08);
   color: var(--hc-text-secondary);

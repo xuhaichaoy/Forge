@@ -5047,17 +5047,19 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                   />
                 )}
               />
-              <ComposerExternalFooter
-                variant={!activeThread ? "home" : "default"}
-                branch={threadGitBranch(activeThread)}
-                cwd={activeThread?.cwd || workspace}
-                workMode={composerWorkMode}
-                workModeOptions={composerWorkModeOptions}
-                workspaceRoots={workspaceRootOptions}
-                onWorkspaceRootSelected={selectWorkspaceRoot}
-                onUseExistingFolder={useExistingWorkspaceFolder}
-                onWorkModeChange={setComposerWorkMode}
-              />
+              {onboardingEmptyStateVisible ? (
+                <ComposerExternalFooter
+                  variant="home"
+                  branch={threadGitBranch(activeThread)}
+                  cwd={activeThread?.cwd || workspace}
+                  workMode={composerWorkMode}
+                  workModeOptions={composerWorkModeOptions}
+                  workspaceRoots={workspaceRootOptions}
+                  onWorkspaceRootSelected={selectWorkspaceRoot}
+                  onUseExistingFolder={useExistingWorkspaceFolder}
+                  onWorkModeChange={setComposerWorkMode}
+                />
+              ) : null}
             </div>
           )}
         >

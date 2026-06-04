@@ -132,6 +132,34 @@ export const AUTHORITY_LABEL: Record<string, string> = {
   unconfirmed: "未确认",
 };
 
+/**
+ * 实体类型英文 key → 中文名映射（仅"翻译类型名"，不是写死业务库）。
+ * 档案中心左侧分类是从 Yuxi 真实实体的 entity_type 动态聚合出来的，
+ * 这里只负责把英文 key 显示成中文；映射里没有的未知类型回退到 ENTITY_TABS 的 label，
+ * 再回退到 key 本身（见 resolveTabConfig / entityTypeLabel）。
+ */
+export const ENTITY_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  ENTITY_TABS.map((tab) => [tab.id, tab.label]),
+);
+
+/**
+ * 把任意 entity_type（可能是 ENTITY_TABS 之外的未知类型）解析成一份 TabConfig。
+ * 已知类型直接复用 ENTITY_TABS 的配置；未知类型回退到一份通用配置，
+ * label 优先取传入的 fallbackLabel（Yuxi 返回的标签），否则用 key 本身。
+ */
+export function resolveTabConfig(type: string, fallbackLabel?: string | null): TabConfig {
+  const known = ENTITY_TABS.find((tab) => tab.id === type);
+  if (known) return known;
+  const label = (fallbackLabel && fallbackLabel.trim()) || ENTITY_TYPE_LABELS[type] || type;
+  return {
+    id: type as EntityTab,
+    label,
+    searchPlaceholder: `搜索${label}…`,
+    hints: [],
+    filters: [],
+  };
+}
+
 export function entityTags(item: YuxiEntity): string[] {
   const tags: string[] = [];
   if (item.description) tags.push(trimTag(item.description));

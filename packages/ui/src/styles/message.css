@@ -1531,7 +1531,15 @@ button.hc-user-attachment-pill:hover {
 }
 
 .hc-app[data-theme="dark"] .hc-message.assistant {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
+}
+
+.hc-app[data-theme="dark"] .hc-message.assistant .hc-markdown {
+  color: var(--hc-text-primary-soft);
+}
+
+.hc-app[data-theme="dark"] .hc-message.assistant .hc-markdown :where(p, li, blockquote, table, td, th, span) {
+  color: inherit;
 }
 
 .hc-app[data-theme="dark"] .hc-assistant-resource-card {
@@ -1667,7 +1675,7 @@ button.hc-user-attachment-pill:hover {
 
 .hc-app[data-theme="dark"] .hc-user-message-bubble {
   background: var(--hc-surface-soft);
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-user-chip-skill {
@@ -1894,7 +1902,7 @@ button.hc-automation-citation-chip {
 }
 
 .hc-app[data-theme="dark"] .hc-markdown-details > summary {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-markdown h1,
@@ -1903,7 +1911,7 @@ button.hc-automation-citation-chip {
 .hc-app[data-theme="dark"] .hc-markdown h4,
 .hc-app[data-theme="dark"] .hc-markdown h5,
 .hc-app[data-theme="dark"] .hc-markdown h6 {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-message-actions {

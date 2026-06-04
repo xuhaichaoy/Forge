@@ -583,7 +583,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-rail-card-title {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-rail-card-title-progress {
@@ -603,7 +603,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-rail-card-browser-title {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-rail-card-browser-url-inactive {
@@ -619,7 +619,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-rail-more-button:hover {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-summary-panel-row-icon {
@@ -627,7 +627,7 @@
 }
 
 .hc-app[data-theme="dark"] .hc-summary-panel-row-label {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-summary-panel-row-trailing {

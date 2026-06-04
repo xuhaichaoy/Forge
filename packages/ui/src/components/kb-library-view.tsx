@@ -33,10 +33,9 @@ import {
   type YuxiSearchGroup,
   type YuxiTask,
   uploadYuxiKnowledgeFile,
-  YUXI_CATEGORIES,
-  yuxiBusinessLineLabel,
-  yuxiCategoryMeta,
   yuxiLibraryGovernance,
+  type YuxiBusinessLine,
+  type YuxiCategoryMeta,
 } from "../lib/yuxi-client";
 import { KbYuxiConnectionControl } from "./kb-page-shell";
 import { KbLibraryIntegrationPanel } from "./kb-library-integration-panel";
@@ -44,14 +43,10 @@ import { KbLibraryIngestPipeline, uploadRunPipelineSteps } from "./kb-library-in
 import {
   toFileRow,
   updateUploadRun,
-  type BizLine,
   type LibraryGovernanceDraft,
   type LibraryUploadRun,
 } from "./kb-library-model";
-import {
-  BusinessLineFilter,
-  LibraryTreeFilter,
-} from "./kb-library-navigation";
+import { LibraryListFilter } from "./kb-library-navigation";
 import { KbLibraryDetailPanel } from "./kb-library-detail";
 import { KbLibraryPendingPanel } from "./kb-library-pending-panel";
 import { KbLibraryStoragePanel } from "./kb-library-storage-panel";
@@ -62,8 +57,8 @@ import { KbLibraryWorkspaceTabs, type KbLibraryWorkspaceTab } from "./kb-library
 import { projectTodos, todoBelongsToCurrentLibrary } from "./kb-todo-model";
 
 export function KbLibraryView() {
-  const [bizLine, setBizLine] = useState<BizLine>("training_presales");
-  const [activeCat, setActiveCat] = useState<string>("lecturer");
+  // 选中态直接是 Yuxi 真实库的 db_id；null 表示「全部」(展示所有库资料)。
+  const [activeDbId, setActiveDbId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [documents, setDocuments] = useState<YuxiLibraryDocument[]>([]);
   const [allDocuments, setAllDocuments] = useState<YuxiLibraryDocument[]>([]);
@@ -78,14 +73,12 @@ export function KbLibraryView() {
   const [libraryMode, setLibraryMode] = useState<KbLibraryWorkspaceTab>("documents");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [createLibraryDialog, setCreateLibraryDialog] = useState<{
-    categoryKey: string;
     name: string;
     description: string;
   } | null>(null);
   const [createLibrarySaving, setCreateLibrarySaving] = useState(false);
   const [documentStatusFilter, setDocumentStatusFilter] = useState<"all" | "indexed" | "processing" | "failed" | "unknown">("all");
   const [documentTypeFilter, setDocumentTypeFilter] = useState<"all" | "DOC" | "PDF" | "PPT" | "XLS" | "MD" | "TXT">("all");
-  const [uploadTargetDbId, setUploadTargetDbId] = useState<string>("");
   const [uploadRuns, setUploadRuns] = useState<LibraryUploadRun[]>([]);
   const [focusPendingIds, setFocusPendingIds] = useState<number[]>([]);
   const [governanceSaving, setGovernanceSaving] = useState(false);
@@ -111,24 +104,31 @@ export function KbLibraryView() {
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  const businessLine = bizLine === "all" ? null : bizLine;
-  const category = activeCat;
   const searchText = searchQuery.trim();
-  const currentCats = YUXI_CATEGORIES.filter((cat) => bizLine === "all" || cat.line === bizLine);
-  const selectedCategory = yuxiCategoryMeta(activeCat);
-  const selectedDatabases = useMemo(
-    () => databases.filter((db) => db.category === activeCat),
-    [activeCat, databases],
-  );
-  const currentTreeDatabases = useMemo(
-    () => databases.filter((db) => currentCats.some((cat) => cat.key === db.category)),
-    [currentCats, databases],
-  );
+  // 当前选中库（activeDbId 为 null 时表示「全部」，selectedDatabase 为 null）。
   const selectedDatabase = useMemo(
-    () => selectedDatabases.find((db) => db.db_id === uploadTargetDbId) ?? selectedDatabases.find((db) => db.db_id) ?? null,
-    [selectedDatabases, uploadTargetDbId],
+    () => (activeDbId ? databases.find((db) => db.db_id === activeDbId) ?? null : null),
+    [activeDbId, databases],
   );
-  const activeDbId = selectedDatabase?.db_id ?? (uploadTargetDbId || null);
+  // 选中库时合成一个 category 形态的对象给下游面板（设置/入库问题/系统来源/详情）复用，
+  // 这样导航改成纯库列表后这些面板的接口契约和功能不变（label/governance 回退仍走库自身字段）。
+  const selectedCategory = useMemo<YuxiCategoryMeta | null>(
+    () => databaseAsCategory(selectedDatabase),
+    [selectedDatabase],
+  );
+  // 选中库的业务线（库自身字段，用于按库过滤资料/任务/待处理；「全部」时不限定）。
+  const dbBusinessLine = selectedDatabase?.business_line;
+  const businessLine: YuxiBusinessLine | null =
+    dbBusinessLine === "training_presales" || dbBusinessLine === "bidding"
+      ? dbBusinessLine
+      : null;
+  // 选中库的资料查询/计数都以 db_id 为准；保留 category 仅作兼容传参（库有则带上）。
+  const category = selectedDatabase?.category ?? null;
+  // 「全部」视图下，下游面板按全部库聚合 pending/计数。
+  const selectedDatabases = useMemo(
+    () => (selectedDatabase ? [selectedDatabase] : databases),
+    [databases, selectedDatabase],
+  );
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -201,10 +201,6 @@ export function KbLibraryView() {
   }, [activeDbId, businessLine, category]);
 
   const loadPendingSummary = useCallback(async () => {
-    if (!selectedCategory) {
-      setPendingSummary(null);
-      return;
-    }
     const query = {
       scope: "team" as const,
       limit: 100,
@@ -224,7 +220,7 @@ export function KbLibraryView() {
       if (activeDbId) {
         libraryDbIds.add(activeDbId);
       } else {
-        for (const db of selectedDatabases) {
+        for (const db of databases) {
           if (db.db_id) libraryDbIds.add(db.db_id);
         }
       }
@@ -233,12 +229,12 @@ export function KbLibraryView() {
         entity: entity.items ?? [],
         dup: dup.items ?? [],
         force: force.items ?? [],
-      }, conflictResult.items ?? []).filter((item) => todoBelongsToCurrentLibrary(item.raw, selectedCategory.key, libraryDbIds));
+      }, conflictResult.items ?? []).filter((item) => todoBelongsToCurrentLibrary(item.raw, category, libraryDbIds));
       setPendingSummary(currentItems.length);
     } catch {
       setPendingSummary(null);
     }
-  }, [activeDbId, businessLine, category, selectedCategory, selectedDatabases]);
+  }, [activeDbId, businessLine, category, databases]);
 
   useEffect(() => {
     void loadDocuments();
@@ -252,20 +248,19 @@ export function KbLibraryView() {
     void loadPendingSummary();
   }, [loadPendingSummary]);
 
+  // 选中的库被删除/不存在时，回到「全部」。
   useEffect(() => {
-    if (!selectedCategory) {
-      setUploadTargetDbId("");
-      return;
+    if (activeDbId && !databases.some((db) => db.db_id === activeDbId)) {
+      setActiveDbId(null);
     }
-    if (selectedDatabases.some((db) => db.db_id === uploadTargetDbId)) return;
-    setUploadTargetDbId(selectedDatabases.find((db) => db.db_id)?.db_id ?? "");
-  }, [selectedCategory, selectedDatabases, uploadTargetDbId]);
+  }, [activeDbId, databases]);
 
+  // 「全部」视图下只看资料总览，管理类视图(设置/入库问题/系统来源/记录)需先选库。
   useEffect(() => {
-    if (!selectedCategory && libraryMode !== "documents") {
+    if (!selectedDatabase && libraryMode !== "documents") {
       setLibraryMode("documents");
     }
-  }, [libraryMode, selectedCategory]);
+  }, [libraryMode, selectedDatabase]);
 
   const allRows = useMemo(() => documents.map(toFileRow), [documents]);
   const hasDocuments = allRows.length > 0;
@@ -286,26 +281,36 @@ export function KbLibraryView() {
     [checkedRowIds, rows],
   );
   const totalCount = allDocuments.length;
-  const presalesCount = allDocuments.filter((file) => file.business_line === "training_presales").length;
-  const bidCount = allDocuments.filter((file) => file.business_line === "bidding").length;
-  const selectedCategoryCount = allDocuments.filter((file) => file.category === activeCat).length;
+  // 每个库的资料数：优先按库返回的 file_count/row_count，没有再用 allDocuments 按 db_id 兜底。
+  const documentCountByDb = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const file of allDocuments) {
+      if (!file.db_id) continue;
+      counts.set(file.db_id, (counts.get(file.db_id) ?? 0) + 1);
+    }
+    return counts;
+  }, [allDocuments]);
+  const navDatabases = useMemo(
+    () => databases.map((db) => {
+      const dbId = db.db_id ?? "";
+      const fallback = dbId ? documentCountByDb.get(dbId) : undefined;
+      const known = typeof db.file_count === "number"
+        ? db.file_count
+        : typeof db.row_count === "number" ? db.row_count : undefined;
+      return { ...db, file_count: known ?? fallback ?? 0 };
+    }),
+    [databases, documentCountByDb],
+  );
   const selectedDatabaseCount = selectedDatabase?.db_id
-    ? allDocuments.filter((file) => file.db_id === selectedDatabase.db_id).length
-    : selectedCategoryCount;
+    ? (documentCountByDb.get(selectedDatabase.db_id)
+      ?? (typeof selectedDatabase.file_count === "number" ? selectedDatabase.file_count : 0))
+    : totalCount;
   const activeTaskCount = useMemo(
     () => countActiveTasks(taskRows, activeDbId),
     [activeDbId, taskRows],
   );
   const pendingTotal = pendingSummary ?? 0;
-  const sourceSystemCount = yuxiLibraryGovernance(selectedCategory?.key)?.externalSystems.length ?? 0;
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const file of allDocuments) {
-      if (!file.category) continue;
-      counts.set(file.category, (counts.get(file.category) ?? 0) + 1);
-    }
-    return counts;
-  }, [allDocuments]);
+  const sourceSystemCount = yuxiLibraryGovernance(selectedDatabase?.category)?.externalSystems.length ?? 0;
   useEffect(() => {
     // 搜索态 rows 为空，但命中的文件在 allDocuments 里——两处都找不到才清空选中
     if (
@@ -538,52 +543,26 @@ export function KbLibraryView() {
     }
   }, [loadTasks]);
 
-  const ensureSelectedCategoryDatabase = useCallback(async (): Promise<YuxiKnowledgeDatabase> => {
-    if (!selectedCategory) {
-      throw new Error("请先在左侧选择一个知识库。");
+  // 上传/保存设置统一以「当前选中的库」为目标；未选库时提示先选或新建。
+  const requireSelectedDatabase = useCallback((): YuxiKnowledgeDatabase => {
+    if (!selectedDatabase?.db_id) {
+      throw new Error("请先在左侧选择一个知识库，或点击「新建库」。");
     }
-    const existing = selectedDatabases.find((db) => db.db_id === uploadTargetDbId)
-      ?? selectedDatabases.find((db) => db.db_id);
-    if (existing?.db_id) {
-      if (existing.db_id !== uploadTargetDbId) setUploadTargetDbId(existing.db_id);
-      return existing;
-    }
-    const embedModelName = await resolveYuxiEmbeddingModelName(databases);
-    const created = await createYuxiKnowledgeDatabase({
-      database_name: selectedCategory.label,
-      description: selectedCategory.description,
-      embed_model_name: embedModelName,
-      kb_type: "lightrag",
-      business_line: selectedCategory.line,
-      category: selectedCategory.key,
-      additional_params: {},
-      share_config: {},
-    });
-    if (!created.db_id) throw new Error("系统未返回知识库连接信息。");
-    setUploadTargetDbId(created.db_id);
-    setDatabases((prev) => {
-      if (prev.some((db) => db.db_id === created.db_id)) return prev;
-      return [...prev, created];
-    });
-    return created;
-  }, [databases, selectedCategory, selectedDatabases, uploadTargetDbId]);
+    return selectedDatabase;
+  }, [selectedDatabase]);
 
   const handleUploadFiles = useCallback(async (files: FileList | File[]) => {
     const selected = Array.from(files);
     if (selected.length === 0) return;
-    if (!selectedCategory) {
-      setError("请先在左侧选择一个知识库。");
-      return;
-    }
     let targetDb: YuxiKnowledgeDatabase;
     try {
-      targetDb = await ensureSelectedCategoryDatabase();
+      targetDb = requireSelectedDatabase();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       return;
     }
     const dbId = targetDb.db_id ?? "";
-    const targetName = targetDb.name || selectedCategory.label;
+    const targetName = targetDb.name || "知识库";
     if (!dbId) {
       setError("系统未返回知识库连接信息。");
       return;
@@ -633,8 +612,8 @@ export function KbLibraryView() {
             filename: uploaded.original_filename || uploaded.filename || file.name,
             file_size: uploaded.size ?? file.size,
             content_hash: contentHash,
-            business_line_hint: selectedCategory.line,
-            scenario_hint: selectedCategory.key,
+            business_line_hint: businessLine,
+            scenario_hint: targetDb.category ?? null,
             auto_ingest_db_id: dbId,
           });
           if (isQueuedIntake(intake)) queuedCount += 1;
@@ -695,7 +674,7 @@ export function KbLibraryView() {
     } else if (ingestedCount > 0) {
       setNotice(`${ingestedCount} 条资料已解析并入库`);
     }
-  }, [ensureSelectedCategoryDatabase, loadDocuments, loadTasks, selectedCategory]);
+  }, [businessLine, loadDocuments, loadTasks, requireSelectedDatabase]);
 
   const handleIngestUrl = useCallback(async () => {
     const rawUrl = urlValue.trim();
@@ -710,24 +689,19 @@ export function KbLibraryView() {
       return;
     }
 
-    if (!selectedCategory) {
-      setError("请先在左侧选择一个知识库。");
-      return;
-    }
-
     setUrlIngesting(true);
     setError(null);
     setNotice(null);
     let targetDb: YuxiKnowledgeDatabase;
     try {
-      targetDb = await ensureSelectedCategoryDatabase();
+      targetDb = requireSelectedDatabase();
     } catch (err) {
       setUrlIngesting(false);
       setError(err instanceof Error ? err.message : String(err));
       return;
     }
     const dbId = targetDb.db_id ?? "";
-    const targetName = targetDb.name || selectedCategory.label;
+    const targetName = targetDb.name || "知识库";
     if (!dbId) {
       setUrlIngesting(false);
       setError("系统未返回知识库连接信息。");
@@ -774,8 +748,8 @@ export function KbLibraryView() {
           filename: fetched.original_filename || fetched.filename || rawUrl,
           file_size: fetched.size ?? 0,
           content_hash: contentHash,
-          business_line_hint: selectedCategory.line,
-          scenario_hint: selectedCategory.key,
+          business_line_hint: businessLine,
+          scenario_hint: targetDb.category ?? null,
           auto_ingest_db_id: dbId,
         });
         queued = isQueuedIntake(intake);
@@ -836,22 +810,21 @@ export function KbLibraryView() {
     } finally {
       setUrlIngesting(false);
     }
-  }, [ensureSelectedCategoryDatabase, loadDocuments, loadTasks, selectedCategory, urlValue]);
+  }, [businessLine, loadDocuments, loadTasks, requireSelectedDatabase, urlValue]);
 
   const saveGovernance = useCallback(async (
     database: YuxiKnowledgeDatabase | null,
     draft: LibraryGovernanceDraft,
   ) => {
-    if (!selectedCategory) return;
     setGovernanceSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const targetDatabase = database?.db_id ? database : await ensureSelectedCategoryDatabase();
+      const targetDatabase = database?.db_id ? database : requireSelectedDatabase();
       if (!targetDatabase.db_id) throw new Error("系统未返回知识库连接信息。");
       await updateYuxiKnowledgeDatabase(targetDatabase.db_id, {
-        name: targetDatabase.name || selectedCategory.label,
-        description: targetDatabase.description || selectedCategory.description,
+        name: targetDatabase.name || "知识库",
+        description: targetDatabase.description || "",
         share_config: {
           ...(targetDatabase.share_config ?? {}),
           hicodex_governance: draft,
@@ -864,13 +837,9 @@ export function KbLibraryView() {
     } finally {
       setGovernanceSaving(false);
     }
-  }, [ensureSelectedCategoryDatabase, loadDocuments, selectedCategory]);
+  }, [loadDocuments, requireSelectedDatabase]);
 
-  const selectBizLine = useCallback((value: BizLine) => {
-    setBizLine(value);
-    const nextCategory = YUXI_CATEGORIES.find((cat) => value === "all" || cat.line === value)?.key ?? "lecturer";
-    setActiveCat(nextCategory);
-    setUploadTargetDbId("");
+  const resetSelectionView = useCallback(() => {
     setDocumentStatusFilter("all");
     setDocumentTypeFilter("all");
     setSelectedRowId(null);
@@ -878,46 +847,26 @@ export function KbLibraryView() {
     setLibraryMode("documents");
   }, []);
 
-  const selectCategory = useCallback((value: string) => {
-    setActiveCat(value);
-    setUploadTargetDbId("");
-    setDocumentStatusFilter("all");
-    setDocumentTypeFilter("all");
-    setSelectedRowId(null);
-    setCheckedRowIds(new Set());
-    setLibraryMode("documents");
-  }, []);
+  const selectAllLibraries = useCallback(() => {
+    setActiveDbId(null);
+    resetSelectionView();
+  }, [resetSelectionView]);
 
-  const selectDatabase = useCallback((categoryKey: string, dbId: string) => {
-    setActiveCat(categoryKey);
-    setUploadTargetDbId(dbId);
-    setDocumentStatusFilter("all");
-    setDocumentTypeFilter("all");
-    setSelectedRowId(null);
-    setCheckedRowIds(new Set());
+  const selectDatabase = useCallback((dbId: string) => {
+    setActiveDbId(dbId);
     setSearchQuery("");
-    setLibraryMode("documents");
-  }, []);
+    resetSelectionView();
+  }, [resetSelectionView]);
 
-  const openCreateLibraryDialog = useCallback((categoryKey: string) => {
-    const categoryMeta = yuxiCategoryMeta(categoryKey) ?? selectedCategory ?? currentCats[0];
-    if (!categoryMeta) {
-      setError("请先选择业务线和知识库分类。");
-      return;
-    }
-    setCreateLibraryDialog({
-      categoryKey: categoryMeta.key,
-      name: categoryMeta.label,
-      description: categoryMeta.description,
-    });
+  const openCreateLibraryDialog = useCallback(() => {
+    setCreateLibraryDialog({ name: "", description: "" });
     setError(null);
-  }, [currentCats, selectedCategory]);
+  }, []);
 
   const submitCreateLibrary = useCallback(async () => {
     if (!createLibraryDialog) return;
-    const categoryMeta = yuxiCategoryMeta(createLibraryDialog.categoryKey);
     const name = createLibraryDialog.name.trim();
-    if (!categoryMeta || !name) {
+    if (!name) {
       setError("请填写知识库名称。");
       return;
     }
@@ -928,19 +877,15 @@ export function KbLibraryView() {
       const embedModelName = await resolveYuxiEmbeddingModelName(databases);
       const created = await createYuxiKnowledgeDatabase({
         database_name: name,
-        description: createLibraryDialog.description.trim() || categoryMeta.description,
+        description: createLibraryDialog.description.trim(),
         embed_model_name: embedModelName,
         kb_type: "lightrag",
-        business_line: categoryMeta.line,
-        category: categoryMeta.key,
         additional_params: {},
         share_config: {},
       });
       if (!created.db_id) throw new Error("系统未返回知识库连接信息。");
       setDatabases((prev) => prev.some((db) => db.db_id === created.db_id) ? prev : [...prev, created]);
-      setBizLine(categoryMeta.line);
-      setActiveCat(categoryMeta.key);
-      setUploadTargetDbId(created.db_id);
+      setActiveDbId(created.db_id);
       setLibraryMode("documents");
       setCreateLibraryDialog(null);
       setNotice(`已创建知识库「${created.name || name}」`);
@@ -952,9 +897,8 @@ export function KbLibraryView() {
   }, [createLibraryDialog, databases]);
 
   const updatedLabel = lastUpdatedAt ? new Date(lastUpdatedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
-  const canUploadToSelectedLibrary = !!selectedCategory && !uploading && !urlIngesting;
-  const activeLibraryLabel = selectedDatabase?.name || selectedCategory?.label || "知识库";
-  const creatingCategory = createLibraryDialog ? yuxiCategoryMeta(createLibraryDialog.categoryKey) : null;
+  const canUploadToSelectedLibrary = !!selectedDatabase?.db_id && !uploading && !urlIngesting;
+  const activeLibraryLabel = selectedDatabase?.name || "全部知识库";
 
   return (
     <main className="hc-main hc-kb-main" aria-label="知识库管理">
@@ -992,20 +936,11 @@ export function KbLibraryView() {
           }}
         />
         <aside className="hc-kb-filters" aria-label="知识库列表">
-          <BusinessLineFilter
-            bizLine={bizLine}
-            totalCount={totalCount}
-            presalesCount={presalesCount}
-            bidCount={bidCount}
-            onSelect={selectBizLine}
-          />
-          <LibraryTreeFilter
-            activeCat={activeCat}
+          <LibraryListFilter
             activeDbId={activeDbId}
-            currentCats={currentCats}
-            categoryCounts={categoryCounts}
-            databases={currentTreeDatabases}
-            onSelectCategory={selectCategory}
+            databases={navDatabases}
+            totalCount={totalCount}
+            onSelectAll={selectAllLibraries}
             onSelectDatabase={selectDatabase}
             onCreateLibrary={openCreateLibraryDialog}
           />
@@ -1018,7 +953,7 @@ export function KbLibraryView() {
               <input
                 type="search"
                 className="hc-kb-search hc-kb-search--prominent"
-                placeholder={`搜索${selectedCategory?.label ?? "知识库"}资料`}
+                placeholder={`搜索${selectedDatabase?.name ?? "全部知识库"}资料`}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 aria-label="搜索知识库资料"
@@ -1047,7 +982,7 @@ export function KbLibraryView() {
               {!searchText && (
                 <KbLibraryWorkspaceTabs
                   active={libraryMode}
-                  disabledManagement={!selectedCategory}
+                  disabledManagement={!selectedDatabase}
                   counts={{
                     documents: selectedDatabaseCount,
                     pending: pendingTotal,
@@ -1249,7 +1184,7 @@ export function KbLibraryView() {
           {uploadDialogOpen && (
             <KbLibraryUploadPanel
               activeLibraryLabel={activeLibraryLabel}
-              categoryLabel={selectedCategory ? "" : "未选择知识库"}
+              categoryLabel={selectedDatabase ? "" : "未选择知识库"}
               canUpload={canUploadToSelectedLibrary}
               uploading={uploading}
               urlIngesting={urlIngesting}
@@ -1261,13 +1196,13 @@ export function KbLibraryView() {
               onClose={() => setUploadDialogOpen(false)}
             />
           )}
-          {createLibraryDialog && creatingCategory && (
+          {createLibraryDialog && (
             <div className="hc-kb-upload-dialog-backdrop" role="presentation">
               <div className="hc-kb-upload-dialog hc-kb-create-library-dialog" role="dialog" aria-modal="true" aria-label="新建知识库">
                 <div className="hc-kb-upload-dialog-head">
                   <div className="hc-kb-upload-dialog-title">
                     <strong>新建知识库</strong>
-                    <span>{yuxiBusinessLineLabel(creatingCategory.line)} / {creatingCategory.label}</span>
+                    <span>填写库名后即可创建，资料直接上传到该库</span>
                   </div>
                   <button
                     type="button"
@@ -1576,6 +1511,23 @@ function uploadRunStatusLabel(status: LibraryUploadRun["status"]): string {
 
 function uploadDoneMessage(): string {
   return "已解析、提取档案并入库；需要人工判断的内容会进入入库问题";
+}
+
+/**
+ * 把选中的 Yuxi 库映射成下游面板（设置/入库问题/系统来源/详情）需要的 category 形态对象。
+ * 导航已改为纯库列表，这里只为保持这些面板的接口契约不变——label 用库名，
+ * key/line/description 取库自身字段（库可能没有 category，则用空串占位、governance 回退自然为空）。
+ */
+function databaseAsCategory(database: YuxiKnowledgeDatabase | null): YuxiCategoryMeta | null {
+  if (!database?.db_id) return null;
+  const line: YuxiBusinessLine = database.business_line === "bidding" ? "bidding" : "training_presales";
+  return {
+    key: database.category ?? "",
+    label: database.name || "知识库",
+    line,
+    kind: "proposal",
+    description: database.description ?? "",
+  };
 }
 
 async function resolveYuxiEmbeddingModelName(databases: YuxiKnowledgeDatabase[]): Promise<string> {

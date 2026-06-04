@@ -1,7 +1,6 @@
 import {
   type YuxiBusinessLine,
   type YuxiLibraryDocument,
-  yuxiCategoryMeta,
 } from "../lib/yuxi-client";
 
 export type BizLine = "all" | YuxiBusinessLine;
@@ -54,7 +53,6 @@ export interface LibraryGovernanceDraft {
 }
 
 export function toFileRow(file: YuxiLibraryDocument): FileRow {
-  const meta = yuxiCategoryMeta(file.category);
   const name = file.filename || file.file_id || "未命名资料";
   return {
     id: `${file.db_id ?? "db"}:${file.file_id ?? name}`,
@@ -68,13 +66,12 @@ export function toFileRow(file: YuxiLibraryDocument): FileRow {
     versionLabel: versionLabel(file),
     pendingReason: file.pending_reason || pendingReason(file.status),
     bizLine: file.business_line === "training_presales" || file.business_line === "bidding" ? file.business_line : "all",
-    // 「所属知识库」列已用粗体展示库名（file.source）。这里只补一个分类标签，
-    // 且当分类名与库名相同时（如单库分类）不再重复打标签，避免出现两个一样的胶囊。
+    // 导航已按 Yuxi 真实库分组，「所属知识库」列已用粗体展示库名（file.source）。
+    // 这里不再用写死类目映射；仅当平台返回的 category 字段与库名不同时补一个原样标签。
     categories: (() => {
       const source = file.kb_name || "";
-      const label = meta ? meta.label : file.category || "";
-      const kind: FileRow["categories"][number]["kind"] = meta ? meta.kind : "proposal";
-      return label && label !== source ? [{ label, kind }] : [];
+      const label = file.category || "";
+      return label && label !== source ? [{ label, kind: "proposal" as const }] : [];
     })(),
     raw: file,
   };
