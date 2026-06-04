@@ -3,10 +3,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { formatUnknown, stringField } from "../lib/format";
 import {
-  mcpAppBridgeError,
-  serializeMcpAppBridgeError,
-} from "../state/mcp-app-host";
-import {
   assistantMessageText,
   commandOutputText,
   commandText,
@@ -21,14 +17,85 @@ import {
   mcpToolName,
   type AccumulatedThreadItem,
 } from "../state/render-groups";
+import {
+  displayPath,
+  execExitCode,
+  multiAgentAction,
+  multiAgentStatus,
+  patchChanges,
+  patchKind,
+  patchPath,
+  stripLeadingAt,
+  threadSpawnSourceField,
+  webSearchActionDetail,
+} from "../state/tool-activity-fields";
 import { desktopSkillPathInfoForCommandPath } from "../state/tool-activity-grouping";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import { useHiCodexIntl } from "./i18n-provider";
+import {
+  createMcpAppBridgeNonce,
+  handleMcpAppBridgeRequest,
+  MCP_APP_BRIDGE_HOST_SOURCE,
+  MCP_APP_IFRAME_SANDBOX_POLICY,
+  mcpAppBridgeReadyFromMessage,
+  mcpAppBridgeRequestFromMessage,
+  mcpAppCspMetaContent,
+  mcpAppFrameFromResourceReadResult,
+  mcpAppHtmlTooLarge,
+  mcpAppSandboxSrcDoc,
+  mcpAppToolOutputFromResult,
+  mcpAppWidgetDataKey,
+  mcpAppWidgetViewKey,
+  postMcpAppWidgetDataToPort,
+  postMcpAppWidgetViewToPort,
+  type McpAppDetailViewModel,
+  type McpAppDisplayMode,
+  type McpAppFrameViewModel,
+  type McpAppHostCallHandler,
+  type ReadMcpResourceHandler,
+} from "./mcp-app-sandbox";
 import type { FileReference } from "./file-reference-types";
 import type { OpenThreadHandler } from "./open-thread";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
+
+/*
+ * The MCP-App iframe protocol machinery now lives in ./mcp-app-sandbox. Re-export
+ * the symbols that external consumers (the unit tests and the components that
+ * wire up the MCP host bridge) historically imported from this module, so their
+ * import paths stay byte-identical after the split.
+ */
+export {
+  MCP_APP_HTML_MAX_BYTES,
+  MCP_APP_IFRAME_SANDBOX_POLICY,
+  createMcpAppBridgeNonce,
+  mcpAppBackgroundColorFromValue,
+  mcpAppCspMetaContent,
+  mcpAppDisplayModeFromValue,
+  mcpAppFrameFromResourceReadResult,
+  mcpAppHtmlTooLarge,
+  mcpAppSandboxSrcDoc,
+  mcpAppToolInputFromArguments,
+  mcpAppToolOutputFromResult,
+  mcpAppToolResultForWidget,
+  mcpAppWidgetDataUpdatePayload,
+  mcpAppWidgetStateFromBridgeArgs,
+  mcpAppWidgetStateFromValue,
+  mcpAppWidgetViewPayload,
+} from "./mcp-app-sandbox";
+export type {
+  McpAppCspViewModel,
+  McpAppDisplayMode,
+  McpAppFrameViewModel,
+  McpAppHostCallHandler,
+  McpAppHostCallRequest,
+  McpAppHostMethod,
+  McpAppWidgetDataUpdatePayload,
+  McpAppWidgetViewPayload,
+  McpResourceReadRequest,
+  ReadMcpResourceHandler,
+} from "./mcp-app-sandbox";
 
 /*
  * MCP result.content[] 单个 block 的类型化表示（MCP spec 6 种 block：
@@ -46,71 +113,6 @@ export type McpResultBlock =
   | { kind: "resourceLink"; uri: string; name?: string; title?: string; annotations?: string }
   | { kind: "embeddedResource"; mimeType?: string; uri?: string; text?: string; annotations?: string }
   | { kind: "unknown"; raw: string };
-
-export interface McpAppFrameViewModel {
-  csp: McpAppCspViewModel;
-  html: string;
-  heightPx: number;
-  mimeType: string;
-  prefersBorder: boolean;
-  widgetDomain: string | null;
-}
-
-export interface McpAppCspViewModel {
-  baseUriDomains: string[];
-  connectDomains: string[];
-  frameDomains: string[];
-  includeDefaultDomains: boolean;
-  isTrusted: boolean;
-  resourceDomains: string[];
-}
-
-export const MCP_APP_HTML_MAX_BYTES = 10_000_000;
-export const MCP_APP_IFRAME_SANDBOX_POLICY = "allow-forms allow-scripts";
-const MCP_APP_FRAME_MIN_HEIGHT_PX = 200;
-const MCP_APP_FRAME_DEFAULT_HEIGHT_PX = 240;
-const MCP_APP_FRAME_MAX_HEIGHT_PX = 720;
-const MCP_APP_BRIDGE_WIDGET_ID = "hicodex-inline-widget";
-const MCP_APP_BRIDGE_SOURCE = "hicodex:mcp-app";
-const MCP_APP_BRIDGE_HOST_SOURCE = "hicodex:mcp-app-host";
-const MCP_APP_SANDBOX_LOAD_ERROR = "The MCP app sandbox failed to load.";
-
-export type McpAppDisplayMode = "inline" | "fullscreen";
-
-export interface McpResourceReadRequest {
-  threadId?: string | null;
-  server: string;
-  uri: string;
-}
-
-export type ReadMcpResourceHandler = (request: McpResourceReadRequest) => Promise<unknown>;
-
-export type McpAppHostMethod =
-  | "callMcp"
-  | "callTool"
-  | "notifyBackgroundColor"
-  | "notifyEnvironmentError"
-  | "notifyIntrinsicHeight"
-  | "notifyIntrinsicWidth"
-  | "notifyNavigation"
-  | "notifySecurityPolicyViolation"
-  | "openExternal"
-  | "requestDisplayMode"
-  | "sendFollowUpMessage"
-  | "sendInstrument"
-  | "updateWidgetState";
-
-export interface McpAppHostCallRequest {
-  args: unknown[];
-  method: McpAppHostMethod;
-  resourceUri: string;
-  server: string;
-  threadId: string | null;
-  tool: string;
-  toolCallId: string;
-}
-
-export type McpAppHostCallHandler = (request: McpAppHostCallRequest) => Promise<unknown>;
 
 export type ToolActivityDetailViewModel =
   | {
@@ -154,24 +156,7 @@ export type ToolActivityDetailViewModel =
       /** Typed view of MCP result.content[] blocks. */
       resultBlocks?: McpResultBlock[];
     }
-  | {
-      kind: "mcpApp";
-      id: string;
-      running: boolean;
-      name: string;
-      server: string;
-      tool: string;
-      resourceUri: string;
-      inlineFrame: McpAppFrameViewModel | null;
-      toolArguments: unknown;
-      toolOutput: unknown;
-      toolResult: unknown;
-      toolResponseMetadata: unknown;
-      argumentsText: string;
-      resultText: string;
-      errorText: string;
-      status: string;
-    }
+  | McpAppDetailViewModel
   | {
       kind: "pendingTool";
       id: string;
@@ -1014,658 +999,6 @@ function McpAppSandboxFrame({
   );
 }
 
-interface McpAppBridgeRequest {
-  args: unknown[];
-  id: string;
-  method: McpAppHostMethod;
-}
-
-export interface McpAppWidgetDataUpdatePayload {
-  toolInput: unknown;
-  toolOutput: unknown;
-  toolResponseMetadata: unknown;
-  toolResult: Record<string, unknown> | null;
-  viewParams: unknown;
-  widgetId: string;
-  widgetState: Record<string, unknown> | null;
-}
-
-export interface McpAppWidgetViewPayload {
-  displayMode: McpAppDisplayMode;
-  isTombstone: boolean;
-  viewParams: unknown;
-  widgetId: string;
-}
-
-interface HandleMcpAppBridgeRequestOptions {
-  args: unknown[];
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
-  displayModeRef: { current: McpAppDisplayMode };
-  id: string;
-  method: McpAppHostMethod;
-  onMcpAppHostCall?: McpAppHostCallHandler;
-  port: MessagePort;
-  resourceUri: string;
-  setBackgroundColor: (backgroundColor: string | null) => void;
-  setDisplayMode: (displayMode: McpAppDisplayMode) => void;
-  setHeightPx: (heightPx: number) => void;
-  setSandboxErrorText: (errorText: string | null) => void;
-  threadId: string | null;
-  widgetStateRef: { current: unknown };
-}
-
-async function handleMcpAppBridgeRequest({
-  args,
-  detail,
-  displayModeRef,
-  id,
-  method,
-  onMcpAppHostCall,
-  port,
-  resourceUri,
-  setBackgroundColor,
-  setDisplayMode,
-  setHeightPx,
-  setSandboxErrorText,
-  threadId,
-  widgetStateRef,
-}: HandleMcpAppBridgeRequestOptions): Promise<void> {
-  try {
-    const result = await resolveMcpAppBridgeRequest({
-      args,
-      detail,
-      displayModeRef,
-      method,
-      onMcpAppHostCall,
-      resourceUri,
-      setBackgroundColor,
-      setDisplayMode,
-      setHeightPx,
-      setSandboxErrorText,
-      threadId,
-      widgetStateRef,
-    });
-    port.postMessage({
-      id,
-      result,
-      source: MCP_APP_BRIDGE_HOST_SOURCE,
-      status: "resolve",
-    });
-  } catch (error) {
-    port.postMessage({
-      error: serializeMcpAppBridgeError(error),
-      id,
-      source: MCP_APP_BRIDGE_HOST_SOURCE,
-      status: "reject",
-    });
-  }
-}
-
-async function resolveMcpAppBridgeRequest({
-  args,
-  detail,
-  displayModeRef,
-  method,
-  onMcpAppHostCall,
-  resourceUri,
-  setBackgroundColor,
-  setDisplayMode,
-  setHeightPx,
-  setSandboxErrorText,
-  threadId,
-  widgetStateRef,
-}: Omit<HandleMcpAppBridgeRequestOptions, "id" | "port">): Promise<unknown> {
-  switch (method) {
-    case "notifyIntrinsicHeight": {
-      const height = mcpAppIntrinsicHeightFromValue(args[0]);
-      if (height !== null) setHeightPx(height);
-      return {};
-    }
-    case "notifyBackgroundColor":
-      setBackgroundColor(mcpAppBackgroundColorFromValue(args[0]));
-      return {};
-    case "notifyEnvironmentError":
-      setSandboxErrorText(MCP_APP_SANDBOX_LOAD_ERROR);
-      return {};
-    case "notifyIntrinsicWidth":
-    case "notifyNavigation":
-    case "notifySecurityPolicyViolation":
-    case "sendInstrument":
-      return {};
-    case "requestDisplayMode": {
-      const mode = mcpAppDisplayModeFromValue(args[0], displayModeRef.current);
-      displayModeRef.current = mode;
-      setDisplayMode(mode);
-      return { mode };
-    }
-    case "updateWidgetState":
-      widgetStateRef.current = mcpAppWidgetStateFromBridgeArgs(args);
-      return {};
-    case "callMcp":
-    case "callTool":
-    case "openExternal":
-    case "sendFollowUpMessage":
-      if (!onMcpAppHostCall) throw mcpAppBridgeError("MCP app host bridge is unavailable.");
-      return onMcpAppHostCall({
-        args,
-        method,
-        resourceUri,
-        server: detail.server,
-        threadId,
-        tool: detail.tool,
-        toolCallId: detail.id,
-      });
-  }
-}
-
-function mcpAppBridgeRequestFromMessage(value: unknown): McpAppBridgeRequest | null {
-  const record = recordObject(value);
-  if (record.source !== MCP_APP_BRIDGE_SOURCE || record.type !== "request") return null;
-  const id = stringField(record, "id");
-  const method = mcpAppHostMethod(record.method);
-  if (!id || !method) return null;
-  return {
-    args: Array.isArray(record.args) ? record.args : [],
-    id,
-    method,
-  };
-}
-
-function mcpAppBridgeReadyFromMessage(value: unknown, bridgeNonce: string): boolean {
-  const record = recordObject(value);
-  return record.source === MCP_APP_BRIDGE_SOURCE
-    && record.type === "ready"
-    && stringField(record, "nonce") === bridgeNonce;
-}
-
-const MCP_APP_HOST_METHODS = new Set<McpAppHostMethod>([
-  "callMcp",
-  "callTool",
-  "notifyBackgroundColor",
-  "notifyEnvironmentError",
-  "notifyIntrinsicHeight",
-  "notifyIntrinsicWidth",
-  "notifyNavigation",
-  "notifySecurityPolicyViolation",
-  "openExternal",
-  "requestDisplayMode",
-  "sendFollowUpMessage",
-  "sendInstrument",
-  "updateWidgetState",
-]);
-
-function mcpAppHostMethod(value: unknown): McpAppHostMethod | null {
-  return typeof value === "string" && MCP_APP_HOST_METHODS.has(value as McpAppHostMethod)
-    ? value as McpAppHostMethod
-    : null;
-}
-
-function mcpAppIntrinsicHeightFromValue(value: unknown): number | null {
-  const direct = typeof value === "number" && Number.isFinite(value) ? value : null;
-  if (direct !== null) return clampMcpAppHeight(direct);
-  const record = recordObject(value);
-  const height = typeof record.height === "number" && Number.isFinite(record.height)
-    ? record.height
-    : typeof record.intrinsicHeight === "number" && Number.isFinite(record.intrinsicHeight)
-      ? record.intrinsicHeight
-      : null;
-  return height === null ? null : clampMcpAppHeight(height);
-}
-
-function clampMcpAppHeight(value: number): number {
-  return Math.max(MCP_APP_FRAME_MIN_HEIGHT_PX, Math.min(MCP_APP_FRAME_MAX_HEIGHT_PX, Math.round(value)));
-}
-
-export function mcpAppBackgroundColorFromValue(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-export function mcpAppWidgetStateFromValue(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-export function mcpAppWidgetStateFromBridgeArgs(args: unknown[]): Record<string, unknown> | null {
-  return mcpAppWidgetStateFromValue(args.length > 1 ? args[1] : args[0]);
-}
-
-function postMcpAppWidgetDataToPort({
-  detail,
-  lastWidgetDataKeyRef,
-  port,
-  widgetState,
-}: {
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
-  lastWidgetDataKeyRef: { current: string };
-  port: MessagePort;
-  widgetState: unknown;
-}): void {
-  const payload = mcpAppWidgetDataUpdatePayload(detail, widgetState);
-  const payloadKey = safeScriptJson(payload);
-  if (lastWidgetDataKeyRef.current === payloadKey) return;
-  lastWidgetDataKeyRef.current = payloadKey;
-  port.postMessage({
-    data: payload,
-    source: MCP_APP_BRIDGE_HOST_SOURCE,
-    type: "setWidgetData",
-  });
-
-  const toolInput = mcpAppToolInputNotificationPayload(payload.toolInput);
-  if (toolInput) {
-    port.postMessage({
-      data: toolInput,
-      source: MCP_APP_BRIDGE_HOST_SOURCE,
-      type: "notifyMcpAppsToolInput",
-    });
-  }
-
-  if (payload.toolResult) {
-    port.postMessage({
-      data: payload.toolResult,
-      source: MCP_APP_BRIDGE_HOST_SOURCE,
-      type: "notifyMcpAppsToolResult",
-    });
-  }
-}
-
-function postMcpAppWidgetViewToPort({
-  detail,
-  displayMode,
-  lastWidgetViewKeyRef,
-  port,
-}: {
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>;
-  displayMode: McpAppDisplayMode;
-  lastWidgetViewKeyRef: { current: string };
-  port: MessagePort;
-}): void {
-  const payload = mcpAppWidgetViewPayload(detail, displayMode);
-  const payloadKey = safeScriptJson(payload);
-  if (lastWidgetViewKeyRef.current === payloadKey) return;
-  lastWidgetViewKeyRef.current = payloadKey;
-  port.postMessage({
-    data: payload,
-    source: MCP_APP_BRIDGE_HOST_SOURCE,
-    type: "setWidgetView",
-  });
-  port.postMessage({
-    data: mcpAppHostContextPayload(displayMode),
-    source: MCP_APP_BRIDGE_HOST_SOURCE,
-    type: "notifyMcpAppsHostContext",
-  });
-}
-
-function mcpAppWidgetDataKey(
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
-): string {
-  return safeScriptJson(mcpAppWidgetDataUpdatePayload(detail, null));
-}
-
-function mcpAppWidgetViewKey(
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
-  displayMode: McpAppDisplayMode,
-): string {
-  return safeScriptJson(mcpAppWidgetViewPayload(detail, displayMode));
-}
-
-export function mcpAppWidgetDataUpdatePayload(
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
-  widgetState: unknown,
-): McpAppWidgetDataUpdatePayload {
-  return {
-    toolInput: mcpAppToolInputFromArguments(detail.toolArguments),
-    toolOutput: detail.toolOutput ?? null,
-    toolResponseMetadata: detail.toolResponseMetadata ?? null,
-    toolResult: mcpAppToolResultForWidget(detail.toolResult, detail.toolResponseMetadata),
-    viewParams: detail.toolOutput ?? null,
-    widgetId: MCP_APP_BRIDGE_WIDGET_ID,
-    widgetState: mcpAppWidgetStateFromValue(widgetState),
-  };
-}
-
-function mcpAppToolInputNotificationPayload(value: unknown): { arguments: unknown } | null {
-  return value === null || value === undefined ? null : { arguments: value };
-}
-
-export function mcpAppWidgetViewPayload(
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
-  displayMode: McpAppDisplayMode,
-): McpAppWidgetViewPayload {
-  return {
-    displayMode,
-    isTombstone: false,
-    viewParams: detail.toolOutput ?? null,
-    widgetId: MCP_APP_BRIDGE_WIDGET_ID,
-  };
-}
-
-function mcpAppHostContextPayload(displayMode: McpAppDisplayMode): Record<string, unknown> {
-  return { displayMode };
-}
-
-export function mcpAppDisplayModeFromValue(value: unknown, fallback: McpAppDisplayMode): McpAppDisplayMode {
-  if (value === "inline" || value === "fullscreen") return value;
-  const mode = recordObject(value).mode;
-  return mode === "inline" || mode === "fullscreen" ? mode : fallback;
-}
-
-export function createMcpAppBridgeNonce(): string {
-  const bytes = new Uint8Array(16);
-  const cryptoApi = globalThis.crypto;
-  if (cryptoApi?.getRandomValues) {
-    cryptoApi.getRandomValues(bytes);
-  } else {
-    for (let index = 0; index < bytes.length; index += 1) {
-      bytes[index] = Math.floor(Math.random() * 256);
-    }
-  }
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-export function mcpAppSandboxSrcDoc(
-  frame: McpAppFrameViewModel,
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
-  bridgeNonce = createMcpAppBridgeNonce(),
-): string {
-  const documentParts = mcpAppHtmlDocumentParts(frame.html);
-  const injections = [
-    mcpAppCspMetaTag(frame.csp, bridgeNonce),
-    `<script nonce="${escapeHtmlAttribute(bridgeNonce)}">${mcpAppSandboxBootstrapScript(detail, frame, bridgeNonce)}</script>`,
-  ].filter(Boolean).join("");
-  return [
-    documentParts.doctype,
-    `<html${documentParts.htmlAttributes}>`,
-    `<head>${injections}${documentParts.headContent}</head>`,
-    `<body${documentParts.bodyAttributes}>${documentParts.bodyContent}</body>`,
-    "</html>",
-  ].join("");
-}
-
-interface McpAppHtmlDocumentParts {
-  bodyAttributes: string;
-  bodyContent: string;
-  doctype: string;
-  headContent: string;
-  htmlAttributes: string;
-}
-
-function mcpAppHtmlDocumentParts(html: string): McpAppHtmlDocumentParts {
-  const doctypeMatch = /^\s*(<!doctype\b[^>]*>)/iu.exec(html);
-  const doctype = doctypeMatch ? doctypeMatch[1] : "<!doctype html>";
-  const htmlMatch = /<html\b([^>]*)>/iu.exec(html);
-  const head = mcpAppHtmlElement(html, "head");
-  const body = mcpAppHtmlElement(html, "body");
-  const bodyContent = body?.content ?? mcpAppHtmlWithoutDocumentShell(html, doctypeMatch?.[0] ?? "", htmlMatch?.[0] ?? "", head?.outer ?? "");
-  return {
-    bodyAttributes: body?.attributes ?? "",
-    bodyContent,
-    doctype,
-    headContent: head?.content ?? "",
-    htmlAttributes: htmlMatch?.[1] ?? "",
-  };
-}
-
-function mcpAppHtmlElement(html: string, tagName: "body" | "head"): {
-  attributes: string;
-  content: string;
-  outer: string;
-} | null {
-  const match = new RegExp(`<${tagName}\\b([^>]*)>([\\s\\S]*?)<\\/${tagName}>`, "iu").exec(html);
-  return match
-    ? {
-        attributes: match[1] ?? "",
-        content: match[2] ?? "",
-        outer: match[0],
-      }
-    : null;
-}
-
-function mcpAppHtmlWithoutDocumentShell(
-  html: string,
-  doctype: string,
-  htmlOpen: string,
-  headOuter: string,
-): string {
-  let body = html;
-  if (doctype) body = body.replace(doctype, "");
-  if (htmlOpen) body = body.replace(htmlOpen, "");
-  if (headOuter) body = body.replace(headOuter, "");
-  return body.replace(/<\/html\s*>/iu, "");
-}
-
-function mcpAppSandboxBootstrapScript(
-  detail: Extract<ToolActivityDetailViewModel, { kind: "mcpApp" }>,
-  frame: McpAppFrameViewModel,
-  bridgeNonce: string,
-): string {
-  const payload = {
-    bridgeNonce,
-    displayMode: "inline",
-    hostCapabilities: mcpAppHostCapabilities(frame.csp),
-    source: MCP_APP_BRIDGE_SOURCE,
-    hostSource: MCP_APP_BRIDGE_HOST_SOURCE,
-    toolInput: mcpAppToolInputFromArguments(detail.toolArguments),
-    toolOutput: detail.toolOutput ?? null,
-    toolResponseMetadata: detail.toolResponseMetadata ?? null,
-    viewParams: detail.toolOutput ?? null,
-    widgetId: MCP_APP_BRIDGE_WIDGET_ID,
-    widgetState: null,
-  };
-  return `
-(function () {
-  var initial = ${safeScriptJson(payload)};
-  var hostPort = null;
-  var queued = [];
-  var pending = new Map();
-  var nextId = 1;
-  var readyTimer = null;
-  function rejectPending(error) {
-    pending.forEach(function (entry) { entry.reject(error); });
-    pending.clear();
-  }
-  function postReady() {
-    window.parent.postMessage({
-      nonce: initial.bridgeNonce,
-      source: initial.source,
-      type: "ready"
-    }, "*");
-  }
-  function startPort(port) {
-    if (hostPort) return;
-    hostPort = port;
-    if (readyTimer !== null) {
-      window.clearInterval(readyTimer);
-      readyTimer = null;
-    }
-    hostPort.onmessage = function (event) {
-      var data = event.data || {};
-      if (data.source !== initial.hostSource) return;
-      if (data.type === "setWidgetData") {
-        applyWidgetData(data.data || {});
-        return;
-      }
-      if (data.type === "setWidgetView") {
-        applyWidgetView(data.data || {});
-        return;
-      }
-      if (data.type === "notifyMcpAppsHostContext") {
-        dispatchOpenaiEvent("openai:hostContext", data.data || {});
-        return;
-      }
-      if (data.type === "notifyMcpAppsToolInput") {
-        dispatchOpenaiEvent("openai:toolInput", data.data || {});
-        return;
-      }
-      if (data.type === "notifyMcpAppsToolResult") {
-        dispatchOpenaiEvent("openai:toolResult", data.data || {});
-        return;
-      }
-      if (!data.id) return;
-      var entry = pending.get(data.id);
-      if (!entry) return;
-      pending.delete(data.id);
-      if (data.status === "resolve") entry.resolve(data.result);
-      else entry.reject(data.error || { message: "MCP sandbox host call failed." });
-    };
-    if (typeof hostPort.start === "function") hostPort.start();
-    queued.splice(0).forEach(function (fn) { fn(); });
-  }
-  function callHost(method, args) {
-    return new Promise(function (resolve, reject) {
-      var id = String(nextId++);
-      var send = function () {
-        if (!hostPort) {
-          queued.push(send);
-          return;
-        }
-        pending.set(id, { resolve: resolve, reject: reject });
-        hostPort.postMessage({
-          args: Array.prototype.slice.call(args || []),
-          id: id,
-          method: method,
-          source: initial.source,
-          type: "request"
-        });
-      };
-      send();
-    });
-  }
-  function normalizeWidgetState(value) {
-    return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
-  }
-  function dispatchOpenaiEvent(type, detail) {
-    try {
-      window.dispatchEvent(new CustomEvent(type, { detail: detail }));
-    } catch (_error) {}
-  }
-  function applyWidgetData(data) {
-    openai.toolInput = Object.prototype.hasOwnProperty.call(data, "toolInput") ? data.toolInput : null;
-    openai.toolOutput = Object.prototype.hasOwnProperty.call(data, "toolOutput") ? data.toolOutput : null;
-    openai.toolResponseMetadata = Object.prototype.hasOwnProperty.call(data, "toolResponseMetadata") ? data.toolResponseMetadata : null;
-    openai.viewParams = Object.prototype.hasOwnProperty.call(data, "viewParams") ? data.viewParams : openai.toolOutput;
-    openai.widgetId = typeof data.widgetId === "string" && data.widgetId ? data.widgetId : initial.widgetId;
-    openai.widgetState = normalizeWidgetState(data.widgetState);
-    dispatchOpenaiEvent("openai:setWidgetData", data);
-  }
-  function applyWidgetView(data) {
-    var mode = data.displayMode === "fullscreen" ? "fullscreen" : "inline";
-    openai.displayMode = mode;
-    if (Object.prototype.hasOwnProperty.call(data, "viewParams")) openai.viewParams = data.viewParams;
-    if (typeof data.widgetId === "string" && data.widgetId) openai.widgetId = data.widgetId;
-    dispatchOpenaiEvent("openai:setWidgetView", data);
-  }
-  var openai = Object.assign({}, window.openai || {});
-  openai.callMcp = function (request) { return callHost("callMcp", [request]); };
-  openai.callTool = function (name, args) { return callHost("callTool", [name, args]); };
-  openai.openExternal = function (request) { return callHost("openExternal", [request]); };
-  openai.requestDisplayMode = function (request) { return callHost("requestDisplayMode", [request]); };
-  openai.sendFollowUpMessage = function (request) { return callHost("sendFollowUpMessage", [request]); };
-  openai.updateWidgetState = function () {
-    var args = Array.prototype.slice.call(arguments);
-    openai.widgetState = normalizeWidgetState(args.length > 1 ? args[1] : args[0]);
-    return callHost("updateWidgetState", args);
-  };
-  openai.notifyIntrinsicHeight = function (height) { return callHost("notifyIntrinsicHeight", [height]); };
-  openai.notifyIntrinsicWidth = function (width) { return callHost("notifyIntrinsicWidth", [width]); };
-  openai.toolInput = initial.toolInput;
-  openai.toolOutput = initial.toolOutput;
-  openai.toolResponseMetadata = initial.toolResponseMetadata;
-  openai.displayMode = initial.displayMode;
-  openai.viewParams = initial.viewParams;
-  openai.widgetId = initial.widgetId;
-  openai.widgetState = initial.widgetState;
-  openai.mcpApps = {
-    hostCapabilities: initial.hostCapabilities,
-    hostInfo: { name: "chatgpt" }
-  };
-  window.openai = openai;
-  window.addEventListener("message", function (event) {
-    var data = event.data || {};
-    if (event.source !== window.parent) return;
-    if (data.source !== initial.hostSource || data.type !== "init" || data.nonce !== initial.bridgeNonce) return;
-    if (!event.ports || !event.ports[0]) return;
-    startPort(event.ports[0]);
-  });
-  window.addEventListener("unload", function () {
-    rejectPending({ message: "MCP sandbox host call aborted." });
-    if (readyTimer !== null) window.clearInterval(readyTimer);
-    if (hostPort) hostPort.close();
-  });
-  postReady();
-  readyTimer = window.setInterval(postReady, 50);
-})();`.trim();
-}
-
-function mcpAppHostCapabilities(csp: McpAppCspViewModel): Record<string, unknown> {
-  return {
-    logging: {},
-    message: {},
-    openLinks: {},
-    serverResources: {},
-    serverTools: {},
-    updateModelContext: {},
-    ...(csp.isTrusted ? {
-      sandbox: {
-        csp: {
-          baseUriDomains: csp.baseUriDomains,
-          connectDomains: csp.connectDomains,
-          frameDomains: csp.frameDomains,
-          resourceDomains: csp.resourceDomains,
-        },
-      },
-    } : {}),
-  };
-}
-
-function safeScriptJson(value: unknown): string {
-  try {
-    return (JSON.stringify(value) ?? "null").replaceAll("<", "\\u003c");
-  } catch {
-    return "null";
-  }
-}
-
-function mcpAppCspMetaTag(csp: McpAppCspViewModel, bridgeNonce: string): string {
-  const content = mcpAppCspMetaContent(csp, bridgeNonce);
-  return content ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtmlAttribute(content)}">` : "";
-}
-
-export function mcpAppCspMetaContent(csp: McpAppCspViewModel, bridgeNonce = ""): string {
-  const resourceDomains = csp.isTrusted ? csp.resourceDomains : [];
-  const connectDomains = csp.isTrusted && csp.connectDomains.length > 0 ? csp.connectDomains : resourceDomains;
-  const frameDomains = csp.isTrusted ? csp.frameDomains : [];
-  const baseUriDomains = csp.isTrusted ? csp.baseUriDomains : [];
-  const resourceSources = dedupeStrings(["data:", "blob:", ...resourceDomains]);
-  const scriptSources = dedupeStrings([
-    bridgeNonce ? `'nonce-${bridgeNonce}'` : "",
-    "blob:",
-    ...resourceDomains,
-  ].filter(Boolean));
-  const styleSources = dedupeStrings(resourceDomains);
-  return [
-    "default-src 'none'",
-    `base-uri ${baseUriDomains.length > 0 ? baseUriDomains.join(" ") : "'none'"}`,
-    `connect-src ${connectDomains.length > 0 ? connectDomains.join(" ") : "'none'"}`,
-    "form-action 'none'",
-    `font-src ${resourceSources.length > 0 ? resourceSources.join(" ") : "'none'"}`,
-    `frame-src ${frameDomains.length > 0 ? frameDomains.join(" ") : "'none'"}`,
-    `img-src ${resourceSources.length > 0 ? resourceSources.join(" ") : "'none'"}`,
-    `media-src ${resourceSources.length > 0 ? resourceSources.join(" ") : "'none'"}`,
-    "object-src 'none'",
-    `script-src ${scriptSources.length > 0 ? scriptSources.join(" ") : "'none'"}`,
-    `style-src ${styleSources.length > 0 ? styleSources.join(" ") : "'none'"}`,
-  ].join("; ");
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
 /*
  * codex: the embedded exec header (`Nv` `he`) labels the block by SHELL TYPE,
  * derived from the command's leading program — `Lv(Av(command))`. `Av` (= `jv` +
@@ -2479,69 +1812,10 @@ function normalizeExecSummaryAction(record: Record<string, unknown>): ExecSummar
   return null;
 }
 
-function displayPath(path: string): string {
-  const trimmed = path.trim().replace(/^\.\/+/u, "").replace(/\\/gu, "/");
-  if (!trimmed) return "file";
-  return trimmed;
-}
-
-function execExitCode(record: ItemRecord): number | null {
-  if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
-  const output = recordObject(record.output);
-  return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
-}
-
 function webSearchDetail(record: ItemRecord): string {
   const action = webSearchActionDetail(record.action);
   const query = stringField(record, "query").trim();
   return action || query || (isItemInProgress(record) ? "Searching the web" : "Searched web");
-}
-
-function webSearchActionDetail(action: unknown): string {
-  if (!action || typeof action !== "object") return "";
-  const record = action as Record<string, unknown>;
-  const type = stringField(record, "type");
-  if (type === "search") {
-    const query = stringField(record, "query").trim();
-    if (query) return cleanWebSearchQuery(query);
-    const queries = Array.isArray(record.queries)
-      ? record.queries.flatMap((value) => typeof value === "string" && value.trim() ? [value.trim()] : [])
-      : [];
-    if (queries.length > 1) return `${cleanWebSearchQuery(queries[0] ?? "")} ...`;
-    return cleanWebSearchQuery(queries[0] ?? "");
-  }
-  if (type === "openPage") return stringField(record, "url").trim();
-  if (type === "findInPage") {
-    const pattern = stringField(record, "pattern").trim();
-    const url = stringField(record, "url").trim();
-    if (pattern && url) return `'${pattern}' in ${url}`;
-    return pattern ? `'${pattern}'` : url;
-  }
-  return "";
-}
-
-const WEB_SEARCH_SITE_RE = /\bsite:([^\s]+)/giu;
-const WEB_SEARCH_OR_RE = /\bOR\b/gu;
-
-function cleanWebSearchQuery(query: string): string {
-  const domains: string[] = [];
-  const withoutSites = query.replace(WEB_SEARCH_SITE_RE, (match, domain: string) => {
-    const normalized = normalizedSearchDomain(domain);
-    if (!normalized) return match;
-    if (!domains.includes(normalized)) domains.push(normalized);
-    return "";
-  });
-  if (domains.length === 0) return query;
-  const terms = withoutSites.replace(WEB_SEARCH_OR_RE, " ").replace(/\s+/gu, " ").trim();
-  return terms ? `${terms} | ${domains.join(" · ")}` : query;
-}
-
-function normalizedSearchDomain(domain: string): string | null {
-  try {
-    return new URL(`https://${domain}`).hostname.replace(/^www\./u, "");
-  } catch {
-    return null;
-  }
 }
 
 const WEB_SEARCH_URL_RE = /\bhttps?:\/\/[^\s"'<>]+/iu;
@@ -2790,219 +2064,6 @@ function parseJsonText(value: string): string {
   }
 }
 
-export function mcpAppToolOutputFromResult(value: unknown): unknown {
-  const record = recordObject(value);
-  const structured = record.structuredContent ?? record.structured_content;
-  if (isPlainObject(structured)) return structured;
-  const content = Array.isArray(record.content) ? record.content : [];
-  if (content.length !== 1) return null;
-  const only = content[0];
-  if (!only || typeof only !== "object" || Array.isArray(only)) return null;
-  const text = (only as Record<string, unknown>).text;
-  if (typeof text !== "string") return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return isPlainObject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-export function mcpAppToolResultForWidget(value: unknown, metadata: unknown = null): Record<string, unknown> | null {
-  if (value === null || value === undefined) return null;
-  const record = recordObject(value);
-  const content = Array.isArray(record.content) ? record.content : [];
-  const structured = record.structuredContent ?? record.structured_content;
-  const meta = metadata ?? record._meta;
-  return {
-    content,
-    ...(structured === null || structured === undefined ? {} : { structuredContent: structured }),
-    ...(meta === null || meta === undefined ? {} : { _meta: meta }),
-  };
-}
-
-export function mcpAppToolInputFromArguments(value: unknown): unknown {
-  return isPlainObject(value) ? value : null;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-const MCP_APP_HTML_MIME_TYPES = new Set(["text/html", "text/html;profile=mcp-app"]);
-
-const EMPTY_MCP_APP_CSP: McpAppCspViewModel = {
-  baseUriDomains: [],
-  connectDomains: [],
-  frameDomains: [],
-  includeDefaultDomains: false,
-  isTrusted: false,
-  resourceDomains: [],
-};
-
-export function mcpAppFrameFromResourceReadResult(value: unknown): McpAppFrameViewModel | null {
-  if (value === null || value === undefined) return null;
-  const record = recordObject(value);
-  const contents = recordArrayField(record, "contents");
-  for (const content of contents) {
-    const frame = mcpAppFrameFromResourceContent(content);
-    if (frame) return frame;
-  }
-
-  for (const content of recordArrayField(record, "content")) {
-    const frame = mcpAppFrameFromToolResultContent(content);
-    if (frame) return frame;
-  }
-  return mcpAppFrameFromResourceContent(record);
-}
-
-export function mcpAppHtmlTooLarge(html: string): boolean {
-  return mcpAppHtmlByteSize(html) > MCP_APP_HTML_MAX_BYTES;
-}
-
-function mcpAppHtmlByteSize(html: string): number {
-  if (typeof Blob !== "undefined") return new Blob([html]).size;
-  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(html).byteLength;
-  return html.length;
-}
-
-function mcpAppFrameFromToolResultContent(content: Record<string, unknown>): McpAppFrameViewModel | null {
-  if (stringField(content, "type") === "embedded_resource") {
-    return mcpAppFrameFromResourceContent(recordObject(content.resource));
-  }
-  return mcpAppFrameFromResourceContent(content);
-}
-
-function mcpAppFrameFromResourceContent(content: Record<string, unknown>): McpAppFrameViewModel | null {
-  const mimeType = normalizedMcpAppMimeType(stringField(content, "mimeType") || stringField(content, "mime_type"));
-  if (!mimeType) return null;
-  const html = stringField(content, "text");
-  if (!html) return null;
-  const meta = recordObject(content._meta);
-  return {
-    csp: mcpAppCspFromMeta(meta),
-    html,
-    heightPx: mcpAppFrameHeight(meta),
-    mimeType,
-    prefersBorder: meta["openai/widgetPrefersBorder"] === true,
-    widgetDomain: mcpAppWidgetDomain(meta),
-  };
-}
-
-function normalizedMcpAppMimeType(value: string): string {
-  const normalized = value.trim().toLowerCase();
-  return MCP_APP_HTML_MIME_TYPES.has(normalized) ? normalized : "";
-}
-
-function mcpAppFrameHeight(meta: Record<string, unknown>): number {
-  const value = meta["openai/widgetHeightHint"];
-  const height = typeof value === "number" && Number.isFinite(value) ? value : MCP_APP_FRAME_DEFAULT_HEIGHT_PX;
-  return clampMcpAppHeight(height);
-}
-
-function mcpAppWidgetDomain(meta: Record<string, unknown>): string | null {
-  const ui = recordObject(meta.ui);
-  return stringField(ui, "domain") || stringField(meta, "openai/widgetDomain") || null;
-}
-
-function mcpAppCspFromMeta(meta: Record<string, unknown>): McpAppCspViewModel {
-  const ui = recordObject(meta.ui);
-  const mcpAppCsp = recordObject(ui.csp);
-  const openaiWidgetCsp = recordObject(meta["openai/widgetCSP"]);
-  const hasMcpAppCsp = Object.keys(mcpAppCsp).length > 0;
-  const hasOpenaiWidgetCsp = Object.keys(openaiWidgetCsp).length > 0;
-  if (!hasMcpAppCsp && !hasOpenaiWidgetCsp) return EMPTY_MCP_APP_CSP;
-
-  const resourceDomains = cspDomains(mcpAppCsp, "resourceDomains")
-    ?? cspDomains(openaiWidgetCsp, "resourceDomains")
-    ?? cspDomains(openaiWidgetCsp, "resource_domains")
-    ?? [];
-  const connectDomains = dedupeStrings([
-    ...(cspDomains(mcpAppCsp, "connectDomains")
-      ?? cspDomains(openaiWidgetCsp, "connectDomains")
-      ?? cspDomains(openaiWidgetCsp, "connect_domains")
-      ?? []),
-    ...resourceDomains,
-  ]);
-  const frameDomains = cspDomains(mcpAppCsp, "frameDomains")
-    ?? cspDomains(openaiWidgetCsp, "frameDomains")
-    ?? cspDomains(openaiWidgetCsp, "frame_domains")
-    ?? [];
-  const baseUriDomains = cspDomains(mcpAppCsp, "baseUriDomains")
-    ?? cspDomains(openaiWidgetCsp, "baseUriDomains")
-    ?? cspDomains(openaiWidgetCsp, "base_uri_domains")
-    ?? [];
-
-  return {
-    baseUriDomains,
-    connectDomains,
-    frameDomains,
-    includeDefaultDomains: false,
-    isTrusted: true,
-    resourceDomains,
-  };
-}
-
-function cspDomains(record: Record<string, unknown>, key: string): string[] | null {
-  if (!(key in record)) return null;
-  const value = record[key];
-  if (!Array.isArray(value)) return [];
-  return dedupeStrings(value.flatMap((item) => {
-    if (typeof item !== "string") return [];
-    const normalized = normalizeMcpAppCspDomain(item);
-    return normalized ? [normalized] : [];
-  }));
-}
-
-const MCP_APP_CSP_ESCAPED_WILDCARD_RE = /^([a-z][a-z0-9+.-]*:\/\/)?%2a(?=\.)/iu;
-const MCP_APP_CSP_FORBIDDEN_RE = /[\s;,"']/u;
-
-function normalizeMcpAppCspDomain(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed || MCP_APP_CSP_FORBIDDEN_RE.test(trimmed)) return null;
-  if (trimmed === "blob:" || trimmed === "data:") return trimmed;
-  const wildcardNormalized = trimmed.replace(MCP_APP_CSP_ESCAPED_WILDCARD_RE, "$1*");
-  const urlText = /^[a-z][a-z0-9+.-]*:\/\//iu.test(wildcardNormalized)
-    ? wildcardNormalized
-    : `https://${wildcardNormalized}`;
-  let url: URL;
-  try {
-    url = new URL(urlText);
-  } catch {
-    return null;
-  }
-  if (
-    url.protocol !== "https:"
-    || url.hostname === "*"
-    || url.username.length > 0
-    || url.password.length > 0
-  ) {
-    return null;
-  }
-  const hostname = url.hostname.replace(/^%2a(?=\.)/iu, "*");
-  if (hostname.includes("*") && !hostname.startsWith("*.")) return null;
-  if (!isMcpAppCspHostnameAllowed(hostname)) return null;
-  return `${url.protocol}//${hostname}${url.port.length > 0 ? `:${url.port}` : ""}`;
-}
-
-function isMcpAppCspHostnameAllowed(hostname: string): boolean {
-  const normalized = hostname.startsWith("*.") ? hostname.slice(2) : hostname;
-  const lower = normalized.toLowerCase();
-  if (
-    lower === "localhost"
-    || lower.endsWith(".localhost")
-    || lower.endsWith(".local")
-    || lower.startsWith("[")
-  ) {
-    return false;
-  }
-  return !/^\d{1,3}(?:\.\d{1,3}){3}$/u.test(lower);
-}
-
-function dedupeStrings(values: string[]): string[] {
-  return Array.from(new Set(values));
-}
-
 function toolResultContentText(value: unknown): string {
   if (!value || typeof value !== "object") return formatUnknown(value);
   const record = value as Record<string, unknown>;
@@ -3102,14 +2163,6 @@ function multiAgentReceiverThreadIds(record: ItemRecord): string[] {
   return Array.from(ids).sort();
 }
 
-function multiAgentAction(record: ItemRecord): string {
-  return stringField(record, "action") || stringField(record, "tool") || "agent";
-}
-
-function multiAgentStatus(record: ItemRecord): string {
-  return stringField(record, "status") || "completed";
-}
-
 function multiAgentAgentPart(record: ItemRecord, threadId: string): MultiAgentRowPart {
   const receiver = multiAgentReceiverInfo(record, threadId);
   const label = stripLeadingAt(receiver.title || agentFallbackName(threadId));
@@ -3168,20 +2221,6 @@ function receiverTitle(receiver: Record<string, unknown>, thread: Record<string,
   ).trim();
 }
 
-function threadSpawnSourceField(thread: Record<string, unknown>, snakeKey: string, camelKey: string): string {
-  const source = thread.source;
-  if (!source || typeof source !== "object" || Array.isArray(source)) return "";
-  const sourceRecord = source as Record<string, unknown>;
-  const direct = stringField(sourceRecord, camelKey);
-  if (direct) return direct;
-  const subAgent = sourceRecord.subAgent;
-  if (!subAgent || typeof subAgent !== "object" || Array.isArray(subAgent)) return "";
-  const threadSpawn = (subAgent as Record<string, unknown>).thread_spawn;
-  if (!threadSpawn || typeof threadSpawn !== "object" || Array.isArray(threadSpawn)) return "";
-  return stringField(threadSpawn as Record<string, unknown>, snakeKey)
-    || stringField(threadSpawn as Record<string, unknown>, camelKey);
-}
-
 function multiAgentSpawnModel(record: ItemRecord): string {
   return multiAgentAction(record) === "spawnAgent" ? stringField(record, "model").trim() : "";
 }
@@ -3237,58 +2276,18 @@ function recordObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function recordArrayField(record: Record<string, unknown>, field: string): Record<string, unknown>[] {
-  const value = record[field];
-  return Array.isArray(value)
-    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
-    : [];
-}
-
 function objectField(value: unknown, key: string): string | null {
   if (!value || typeof value !== "object") return null;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : null;
 }
 
-function stripLeadingAt(value: string): string {
-  return value.trim().startsWith("@") ? value.trim().slice(1) : value.trim();
-}
-
 function agentFallbackName(id: string): string {
   return id ? `agent-${id.slice(0, 8)}` : "agent";
-}
-
-function patchChanges(record: ItemRecord): Record<string, unknown>[] {
-  if (Array.isArray(record.changes)) {
-    return record.changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object");
-  }
-  if (!record.changes || typeof record.changes !== "object") return [];
-  return Object.entries(record.changes as Record<string, unknown>).flatMap(([path, value]) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-    const change = value as Record<string, unknown>;
-    return [{ ...change, path: stringField(change, "path") || path }];
-  });
-}
-
-function patchKind(change: Record<string, unknown>): "add" | "delete" | "update" {
-  const directType = stringField(change, "type");
-  if (directType === "add" || directType === "delete") return directType;
-  if (directType === "update") return "update";
-  const kind = change.kind;
-  if (typeof kind === "string") return kind === "add" || kind === "delete" ? kind : "update";
-  if (kind && typeof kind === "object") {
-    const type = stringField(kind, "type");
-    return type === "add" || type === "delete" ? type : "update";
-  }
-  return "update";
 }
 
 function patchAction(kind: "add" | "delete" | "update"): PatchChangeViewModel["action"] {
   if (kind === "add") return "Created";
   if (kind === "delete") return "Deleted";
   return "Edited";
-}
-
-function patchPath(change: Record<string, unknown>): string {
-  return stringField(change, "path") || stringField(change, "newPath") || stringField(change, "oldPath") || "file";
 }

@@ -36,7 +36,6 @@ import { ComposerStatusPanel } from "./components/composer-status-panel";
 import { ThreadGoalBanner } from "./components/thread-goal-banner";
 import { HiCodexIntlProvider } from "./components/i18n-provider";
 import { ServicesProvider, useServices } from "./components/services-context";
-import { NavigationProvider } from "./components/navigation-context";
 import { focusComposerFromPlainTextKey } from "./components/composer-keyboard";
 import { PreConversationLoadingShell } from "./components/pre-conversation-loading-shell";
 import type { McpFollowUpDialogRequest } from "./components/mcp-follow-up-dialog";
@@ -265,6 +264,7 @@ import {
   fuzzyFileResultsToWorkspaceEntries,
   WorkspaceFuzzyFileSearchController,
   type WorkspaceFuzzyFileSearchSession,
+  type WorkspaceFuzzyFileSearchSessionUpdated,
 } from "./state/fuzzy-file-search-session";
 import {
   dedupeComposerMentionOptions,
@@ -477,6 +477,45 @@ function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
     BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX,
     Math.min(BACKGROUND_AGENT_PANEL_WIDTH_PX, containerWidthPx - BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX),
   );
+}
+
+/*
+ * Shared workspace-file-search session lifecycle: reuse the live session when
+ * the roots key matches, otherwise stop the previous one and start a fresh
+ * session, writing the session + roots-key refs back. The composer mention and
+ * command-menu getters share this exact flow; only the back-store refs, the
+ * close-failure warn wording (onCloseError), and the panel projection
+ * (onUpdated) differ, so those are injected.
+ */
+function createDedupedFileSearchSession(config: {
+  sessionRef: MutableRefObject<WorkspaceFuzzyFileSearchSession | null>;
+  rootsKeyRef: MutableRefObject<string>;
+  controllerRef: MutableRefObject<WorkspaceFuzzyFileSearchController | null>;
+  onCloseError: (error: unknown) => void;
+  onUpdated: (payload: WorkspaceFuzzyFileSearchSessionUpdated) => void;
+}): (roots: string[]) => Promise<WorkspaceFuzzyFileSearchSession> {
+  const { sessionRef, rootsKeyRef, controllerRef, onCloseError, onUpdated } = config;
+  return async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
+    const rootsKey = roots.join("\0");
+    if (sessionRef.current && rootsKeyRef.current === rootsKey) {
+      return sessionRef.current;
+    }
+    const previousSession = sessionRef.current;
+    sessionRef.current = null;
+    rootsKeyRef.current = "";
+    if (previousSession) {
+      await previousSession.stop().catch(onCloseError);
+    }
+    const controller = controllerRef.current;
+    if (!controller) throw new Error("Fuzzy file search is unavailable.");
+    const session = await controller.createSession({
+      roots,
+      onUpdated,
+    });
+    sessionRef.current = session;
+    rootsKeyRef.current = rootsKey;
+    return session;
+  };
 }
 
 
@@ -2448,79 +2487,51 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     });
   }, []);
 
-  const getFileSearchSession = useCallback(async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
-    const rootsKey = roots.join("\0");
-    if (fileSearchSessionRef.current && fileSearchSessionRootsKeyRef.current === rootsKey) {
-      return fileSearchSessionRef.current;
-    }
-    const previousSession = fileSearchSessionRef.current;
-    fileSearchSessionRef.current = null;
-    fileSearchSessionRootsKeyRef.current = "";
-    if (previousSession) {
-      await previousSession.stop().catch((error) => {
-        dispatch({ type: "log", text: `Failed to close fuzzy file search session: ${formatError(error)}`, level: "warn" });
-      });
-    }
-    const controller = fileSearchControllerRef.current;
-    if (!controller) throw new Error("Fuzzy file search is unavailable.");
-    const session = await controller.createSession({
-      roots,
-      onUpdated: ({ query, files }) => {
-        if (query !== fileSearchActiveQueryRef.current) return;
-        const entries = projectFileSearchEntries({ files });
-        setCommandPanel((current) => current?.panel === "files"
-          ? createCommandPanelState("files", {
-              status: entries.length > 0 ? "ready" : "empty",
-              title: "Search files",
-              message: entries.length > 0
-                ? `${entries.length} matching file(s). Select one to mention it.`
-                : "No matching files found.",
-              entries,
-            })
-          : current);
-      },
-    });
-    fileSearchSessionRef.current = session;
-    fileSearchSessionRootsKeyRef.current = rootsKey;
-    return session;
-  }, []);
+  const getFileSearchSession = useCallback(createDedupedFileSearchSession({
+    sessionRef: fileSearchSessionRef,
+    rootsKeyRef: fileSearchSessionRootsKeyRef,
+    controllerRef: fileSearchControllerRef,
+    onCloseError: (error) => {
+      dispatch({ type: "log", text: `Failed to close fuzzy file search session: ${formatError(error)}`, level: "warn" });
+    },
+    onUpdated: ({ query, files }) => {
+      if (query !== fileSearchActiveQueryRef.current) return;
+      const entries = projectFileSearchEntries({ files });
+      setCommandPanel((current) => current?.panel === "files"
+        ? createCommandPanelState("files", {
+            status: entries.length > 0 ? "ready" : "empty",
+            title: "Search files",
+            message: entries.length > 0
+              ? `${entries.length} matching file(s). Select one to mention it.`
+              : "No matching files found.",
+            entries,
+          })
+        : current);
+    },
+  }), []);
 
-  const getCommandMenuFileSearchSession = useCallback(async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
-    const rootsKey = roots.join("\0");
-    if (commandMenuFileSearchSessionRef.current && commandMenuFileSearchSessionRootsKeyRef.current === rootsKey) {
-      return commandMenuFileSearchSessionRef.current;
-    }
-    const previousSession = commandMenuFileSearchSessionRef.current;
-    commandMenuFileSearchSessionRef.current = null;
-    commandMenuFileSearchSessionRootsKeyRef.current = "";
-    if (previousSession) {
-      await previousSession.stop().catch((error) => {
-        dispatch({ type: "log", text: `Failed to close command menu file search session: ${formatError(error)}`, level: "warn" });
-      });
-    }
-    const controller = fileSearchControllerRef.current;
-    if (!controller) throw new Error("Fuzzy file search is unavailable.");
-    const session = await controller.createSession({
-      roots,
-      onUpdated: ({ query, files }) => {
-        const active = commandMenuFileSearchActiveRef.current;
-        if (!active || query !== active.query) return;
-        const fileEntries = projectFileSearchEntries({ files });
-        setCommandPanel((current) => isCommandMenuPanel(current)
-          ? createCommandPanelState("generic", {
-              status: "ready",
-              title: "Search commands and chats",
-              message: fileEntries.length > 0 ? `${fileEntries.length} workspace file result(s).` : "",
-              entries: [...active.baseEntries, ...fileEntries],
-              searchable: true,
-            })
-          : current);
-      },
-    });
-    commandMenuFileSearchSessionRef.current = session;
-    commandMenuFileSearchSessionRootsKeyRef.current = rootsKey;
-    return session;
-  }, []);
+  const getCommandMenuFileSearchSession = useCallback(createDedupedFileSearchSession({
+    sessionRef: commandMenuFileSearchSessionRef,
+    rootsKeyRef: commandMenuFileSearchSessionRootsKeyRef,
+    controllerRef: fileSearchControllerRef,
+    onCloseError: (error) => {
+      dispatch({ type: "log", text: `Failed to close command menu file search session: ${formatError(error)}`, level: "warn" });
+    },
+    onUpdated: ({ query, files }) => {
+      const active = commandMenuFileSearchActiveRef.current;
+      if (!active || query !== active.query) return;
+      const fileEntries = projectFileSearchEntries({ files });
+      setCommandPanel((current) => isCommandMenuPanel(current)
+        ? createCommandPanelState("generic", {
+            status: "ready",
+            title: "Search commands and chats",
+            message: fileEntries.length > 0 ? `${fileEntries.length} workspace file result(s).` : "",
+            entries: [...active.baseEntries, ...fileEntries],
+            searchable: true,
+          })
+        : current);
+    },
+  }), []);
 
   const openFileSearchPanel = useCallback(() => {
     fileSearchRequestSeqRef.current += 1;
@@ -4690,20 +4701,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   );
 
   return (
-    <NavigationProvider
-      activeAppTab={activeAppTab}
-      setActiveAppTab={setActiveAppTab}
-      sidebarOpen={sidebarOpen}
-      setSidebarOpen={setSidebarOpen}
-      toggleSidebar={toggleSidebar}
-      activeRemoteTaskId={activeRemoteTaskId}
-      setActiveRemoteTaskId={setActiveRemoteTaskId}
-      activeSettingsPanel={activeSettingsPanel}
-      setActiveSettingsPanel={setActiveSettingsPanel}
-      commandPanel={commandPanel}
-      setCommandPanel={setCommandPanel}
-      loadSettingsPanel={loadSettingsPanel}
-    >
     <FileCitationMenuContext.Provider value={fileCitationMenuActions}>
     <HiCodexIntlProvider locale={uiLocale}>
       <div
@@ -5309,7 +5306,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       </div>
     </HiCodexIntlProvider>
     </FileCitationMenuContext.Provider>
-    </NavigationProvider>
   );
 }
 
