@@ -3,9 +3,8 @@ import type { ThreadWorkflowDispatch } from "./thread-workflow";
 
 /**
  * Shared service singletons that the root HiCodexApp owns — the JSON-RPC
- * `client`, the reducer `dispatch`, and the connection lifecycle
- * (`connect`/`ensureConnected` plus the `connected`/`connecting` flags) — and
- * that nearly every feature subtree needs. Today these are drilled through the
+ * `client`, the reducer `dispatch`, and the `connected` flag — and that nearly
+ * every feature subtree needs. Today these are drilled through the
  * tree as props (client ~94 refs, dispatch ~80, ensureConnected ~40); the
  * services context provides them once so container/feature components can read
  * them via `useServices()` instead.
@@ -20,5 +19,4 @@ export interface ServicesContextValue {
   client: CodexJsonRpcClient;
   dispatch: ThreadWorkflowDispatch;
   connected: boolean;
-  connecting: boolean;
 }

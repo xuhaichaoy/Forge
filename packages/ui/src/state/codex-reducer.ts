@@ -3567,7 +3567,7 @@ function replaceTurnSegment(
       }
     }
     if (isWorkedForThreadItem(item)) {
-      const lastUserIndex = findLastIndex(inSegment, isUserMessageItem);
+      const lastUserIndex = findLastIndex(inSegment, isUserMessageThreadItem);
       const insertAt = lastUserIndex + 1;
       inSegment = [
         ...inSegment.slice(0, insertAt),
@@ -3613,10 +3613,6 @@ function dedupeConfirmedUserMessagesByContent(
     next.push(item);
   }
   return next;
-}
-
-function isUserMessageItem(item: AccumulatedThreadItem | ThreadItem): boolean {
-  return String((item as Record<string, unknown>).type ?? "") === "userMessage";
 }
 
 function turnStatusText(status: unknown): string {
