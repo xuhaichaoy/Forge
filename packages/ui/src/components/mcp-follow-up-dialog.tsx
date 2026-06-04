@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { McpAppFollowUpSource } from "../state/mcp-app-host";
+import type { McpAppHostCallRequest } from "./tool-activity-detail";
 import { useHiCodexIntl } from "./i18n-provider";
 
 export type McpFollowUpDialogOptionId =
@@ -9,6 +10,14 @@ export type McpFollowUpDialogOptionId =
   | "new-thread"
   | "local"
   | "worktree";
+
+export interface McpFollowUpDialogRequest {
+  prompt: string;
+  request: McpAppHostCallRequest;
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+  source: McpAppFollowUpSource;
+}
 
 export interface McpFollowUpDialogOption {
   description: string;

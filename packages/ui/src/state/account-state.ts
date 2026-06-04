@@ -783,3 +783,17 @@ function stringOrNull(value: unknown): string | null {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+export function isSuccessfulAccountLoginCompletedNotification(message: { method: string; params?: unknown }): boolean {
+  if (message.method !== "account/login/completed") return false;
+  const params = message.params;
+  return Boolean(params && typeof params === "object" && (params as { success?: unknown }).success === true);
+}
+
+export function authModeFromAccountUpdatedNotification(message: { method: string; params?: unknown }): string | null {
+  if (message.method !== "account/updated") return null;
+  const params = message.params;
+  if (!params || typeof params !== "object") return null;
+  const authMode = (params as { authMode?: unknown }).authMode;
+  return typeof authMode === "string" && authMode.trim() ? authMode.trim() : null;
+}

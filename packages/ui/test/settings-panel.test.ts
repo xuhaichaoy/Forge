@@ -5,8 +5,10 @@ import {
   desktopBackedLocalSettingsEntries,
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
+  isPluginBackedDesktopSettingsPanel,
   keyboardShortcutsSettingsEntries,
   localSettingsEntries,
+  pluginBackedDesktopSettingsInfo,
 } from "../src/state/settings-panel-workflow";
 import {
   COMPOSER_WORK_MODE_STORAGE_KEY,
@@ -24,12 +26,27 @@ import type { SettingsPanelId } from "../src/state/composer-workflow";
 import { loadSettingsPanelContent } from "../src/state/settings-panel-loader";
 import { initialCodexUiState } from "../src/state/codex-reducer";
 import { createCommandPanelState, type CommandPanelState } from "../src/state/command-panel";
+import {
+  formatComputerUseMcpProbeError,
+  projectComputerUseMcpProbeFailureEntries,
+  projectComputerUseMcpReadinessEntries,
+  projectComputerUseReadinessEntries,
+} from "../src/state/computer-use-readiness";
 
 export default async function runSettingsPanelTests(): Promise<void> {
   exposesUnifiedSettingsSectionsWithoutLogin();
   marksServerBackedSectionsRefreshable();
   projectsImageGenerationCapabilities();
   projectsDesktopBackedSettingsPanels();
+  projectsPluginBackedDesktopSettingsMetadata();
+  projectsComputerUseReadinessActions();
+  projectsComputerUseInvalidSignatureReadiness();
+  projectsComputerUseRepairAction();
+  projectsComputerUseMcpReadiness();
+  projectsComputerUseMcpProbeAction();
+  projectsComputerUseMcpProbeBlockedByInvalidSignature();
+  projectsComputerUseMcpProbeBlockedByMissingPermissions();
+  projectsComputerUseMcpProbeTimeoutDiagnostics();
   exposesKeyboardShortcutsCommandList();
   projectsNotificationPreferencesInGeneralSettings();
   projectsServiceTierSpeedInGeneralSettings();
@@ -41,6 +58,9 @@ export default async function runSettingsPanelTests(): Promise<void> {
   await createsPendingWorktreeThroughHostApi();
   await loadsWorktreesSettingsFromHostBeforeProtocolFallback();
   await fallsBackToGitDiffWhenHostUnavailable();
+  await loadsBrowserSettingsFromPluginLifecycle();
+  await loadsBrowserSettingsFromQualifiedBundledPluginId();
+  await loadsComputerUseSettingsFromPluginLifecycle();
   await loadsHooksSettingsWithReviewFocus();
   displaysCustomPermissionStateWithoutSelectableCustomMode();
   displaysCustomApprovalPolicyAsDegraded();
@@ -106,9 +126,9 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
 
 function marksServerBackedSectionsRefreshable(): void {
   assertDeepEqual(
-    (["images", "worktrees", "mcp", "skills", "hooks", "apps", "plugins", "experimental"] as SettingsPanelId[])
+    (["images", "worktrees", "mcp", "skills", "hooks", "apps", "plugins", "browser-use", "computer-use", "experimental"] as SettingsPanelId[])
       .map((panel) => isRefreshableSettingsPanel(panel)),
-    [true, true, true, true, true, true, true, true],
+    [true, true, true, true, true, true, true, true, true, true],
     "server-backed settings sections should expose a refresh action",
   );
   assertDeepEqual(
@@ -125,13 +145,11 @@ function marksServerBackedSectionsRefreshable(): void {
       "personalization",
       "keyboard-shortcuts",
       "usage",
-      "browser-use",
-      "computer-use",
       "local-environments",
       "data-controls",
     ] as SettingsPanelId[])
       .map((panel) => isRefreshableSettingsPanel(panel)),
-    [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+    [false, false, false, false, false, false, false, false, false, false, false, false, false, false],
     "local settings sections should not expose a refresh action",
   );
 }
@@ -184,6 +202,615 @@ function projectsDesktopBackedSettingsPanels(): void {
     desktopBackedLocalSettingsEntries("usage", { connected: false })[0]?.details?.includes("access hook: use-usage-settings-access"),
     true,
     "usage settings details should label the Desktop use-usage-settings-access hook accurately",
+  );
+}
+
+function projectsPluginBackedDesktopSettingsMetadata(): void {
+  assertDeepEqual(
+    [
+      isPluginBackedDesktopSettingsPanel("browser-use"),
+      isPluginBackedDesktopSettingsPanel("computer-use"),
+      isPluginBackedDesktopSettingsPanel("usage"),
+    ],
+    [true, true, false],
+    "Browser and Computer Use should be plugin-backed Desktop settings panels",
+  );
+  const browser = pluginBackedDesktopSettingsInfo("browser-use");
+  assertDeepEqual(
+    [
+      browser.pluginAliases.includes("browser"),
+      browser.pluginAliases.includes("browser-use"),
+      browser.sourceDetails.some((detail) => detail.includes("browser-use-origin-state-read")),
+    ],
+    [true, true, true],
+    "Browser settings should match current browser plugin identity and preserve Desktop source evidence",
+  );
+  const computerUse = pluginBackedDesktopSettingsInfo("computer-use");
+  assertDeepEqual(
+    [
+      computerUse.pluginAliases.includes("computer-use"),
+      computerUse.limitationDetails.some((detail) => detail.includes("OS permissions")),
+      computerUse.sourceDetails.some((detail) => detail.includes("computer-use-app-approvals-read")),
+    ],
+    [true, true, true],
+    "Computer Use settings should expose plugin aliases, native limits, and Desktop evidence",
+  );
+}
+
+function projectsComputerUseReadinessActions(): void {
+  const entries = projectComputerUseReadinessEntries({
+    bridgeAvailable: true,
+    helperAvailable: true,
+    helperAppPath: "/tmp/Codex Computer Use.app",
+    helperSignatureValid: true,
+    helperSignatureStatus: "valid",
+    mcpClientPath: "/tmp/SkyComputerUseClient",
+    mcpConfigPath: "/tmp/computer-use/.mcp.json",
+    mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+    mcpCommandPath: "/tmp/SkyComputerUseClient",
+    mcpCwd: ".",
+    mcpConfigTrusted: true,
+    mcpConfigStatus: "trusted",
+    mcpCommandExecutable: true,
+    mcpClientSignatureValid: true,
+    mcpClientSignatureStatus: "valid",
+    installerAppPath: "/tmp/Codex Computer Use Installer.app",
+    pluginRootPath: "/tmp/computer-use",
+    source: "installed-cache",
+    repairSourceAvailable: true,
+    repairSourcePath: "/tmp/computer-use",
+    repairStatus: "not needed",
+    candidates: [{
+      source: "installed-cache",
+      pluginRootPath: "/tmp/computer-use",
+      helperAppPath: "/tmp/Codex Computer Use.app",
+      helperSignatureValid: true,
+      helperSignatureStatus: "valid",
+      mcpClientPath: "/tmp/SkyComputerUseClient",
+      mcpConfigPath: "/tmp/computer-use/.mcp.json",
+      mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+      mcpCommandPath: "/tmp/SkyComputerUseClient",
+      mcpCwd: ".",
+      mcpConfigTrusted: true,
+      mcpConfigStatus: "trusted",
+      mcpCommandExecutable: true,
+      mcpClientSignatureValid: true,
+      mcpClientSignatureStatus: "valid",
+      installerAppPath: "/tmp/Codex Computer Use Installer.app",
+      installerSignatureValid: true,
+      installerSignatureStatus: "valid",
+      usableForRepair: true,
+    }],
+    screenRecordingStatus: "unknown",
+    accessibilityStatus: "unknown",
+    appApprovalsStatus: "unknown",
+    error: null,
+  }, "/tmp/codex-home");
+
+  const nativeEntry = entries.find((entry) => entry.id === "computer-use:native-readiness");
+  const helperEntry = entries.find((entry) => entry.id === "computer-use:helper-signatures");
+  const repairEntry = entries.find((entry) => entry.id === "computer-use:repair-sources");
+  const commandEntry = entries.find((entry) => entry.id === "computer-use:mcp-command");
+  const permissionEntry = entries.find((entry) => entry.id === "computer-use:permissions");
+
+  assertDeepEqual(
+    {
+      ids: entries.map((entry) => entry.id),
+      native: nativeEntry && {
+        id: nativeEntry.id,
+        status: nativeEntry.status,
+        actions: secondaryActionSummaries(nativeEntry),
+        controlClaim: nativeEntry.details?.some((detail) => detail.includes("GUI control is not marked ready")),
+        mcpConfigTrusted: nativeEntry.details?.some((detail) => detail === "MCP config trusted: yes (trusted)"),
+        mcpExecutable: nativeEntry.details?.some((detail) => detail === "MCP command executable: yes"),
+        helperSignature: nativeEntry.details?.some((detail) => detail === "Helper signature: valid"),
+        mcpClientSignature: nativeEntry.details?.some((detail) => detail === "MCP client signature: valid"),
+        repairStatus: nativeEntry.details?.some((detail) => detail === "Repair status: not needed"),
+        permissionNextStep: nativeEntry.details?.some((detail) => detail.includes("grant Screen Recording and Accessibility")),
+      },
+      repair: repairEntry && {
+        status: repairEntry.status,
+        usable: repairEntry.details?.some((detail) => detail === "Candidate 1 repair usable: yes"),
+        helperSignature: repairEntry.details?.some((detail) => detail.includes("signature valid")),
+      },
+      helper: helperEntry && {
+        status: helperEntry.status,
+        helperSignature: helperEntry.details?.some((detail) => detail === "Helper signature: valid"),
+        mcpClientSignature: helperEntry.details?.some((detail) => detail === "MCP client signature: valid"),
+      },
+      command: commandEntry && {
+        status: commandEntry.status,
+        executable: commandEntry.details?.some((detail) => detail === "MCP command executable: yes"),
+      },
+      permissions: permissionEntry && {
+        status: permissionEntry.status,
+        actions: secondaryActionSummaries(permissionEntry),
+        appApprovals: permissionEntry.details?.some((detail) => detail === "App approvals: unknown"),
+        currentProcessPreflight: permissionEntry.details?.some((detail) => detail.includes("current HiCodex host process")),
+        timeoutRisk: permissionEntry.details?.some((detail) => detail.includes("list_apps and GUI-control tool calls time out")),
+      },
+    },
+    {
+      ids: [
+        "computer-use:native-readiness",
+        "computer-use:repair-sources",
+        "computer-use:helper-signatures",
+        "computer-use:mcp-command",
+        "computer-use:permissions",
+      ],
+      native: {
+        id: "computer-use:native-readiness",
+        status: "permissions not proven",
+        actions: [
+          { type: "openComputerUseSetup", target: "helper", codexHome: "/tmp/codex-home" },
+          { type: "openComputerUseSetup", target: "installer", codexHome: "/tmp/codex-home" },
+          { type: "openComputerUseSetup", target: "screenRecording", codexHome: "/tmp/codex-home" },
+          { type: "openComputerUseSetup", target: "accessibility", codexHome: "/tmp/codex-home" },
+        ],
+        controlClaim: true,
+        mcpConfigTrusted: true,
+        mcpExecutable: true,
+        helperSignature: true,
+        mcpClientSignature: true,
+        repairStatus: true,
+        permissionNextStep: true,
+      },
+      repair: {
+        status: "not needed",
+        usable: true,
+        helperSignature: true,
+      },
+      helper: {
+        status: "available",
+        helperSignature: true,
+        mcpClientSignature: true,
+      },
+      command: {
+        status: "executable",
+        executable: true,
+      },
+      permissions: {
+        status: "not proven",
+        actions: [
+          { type: "openComputerUseSetup", target: "screenRecording", codexHome: "/tmp/codex-home" },
+          { type: "openComputerUseSetup", target: "accessibility", codexHome: "/tmp/codex-home" },
+        ],
+        appApprovals: true,
+        currentProcessPreflight: true,
+        timeoutRisk: true,
+      },
+    },
+    "Computer Use readiness should expose helper and permission setup actions without claiming GUI control readiness",
+  );
+}
+
+function projectsComputerUseInvalidSignatureReadiness(): void {
+  const entries = projectComputerUseReadinessEntries({
+    bridgeAvailable: true,
+    helperAvailable: true,
+    helperAppPath: "/tmp/Codex Computer Use.app",
+    helperSignatureValid: false,
+    helperSignatureStatus: "/tmp/Codex Computer Use.app: invalid signature",
+    mcpClientPath: "/tmp/SkyComputerUseClient",
+    mcpConfigPath: "/tmp/computer-use/.mcp.json",
+    mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+    mcpCommandPath: "/tmp/SkyComputerUseClient",
+    mcpCwd: ".",
+    mcpCommandExecutable: true,
+    mcpClientSignatureValid: false,
+    mcpClientSignatureStatus: "/tmp/SkyComputerUseClient.app: invalid signature",
+    installerAppPath: "/tmp/Codex Computer Use Installer.app",
+    pluginRootPath: "/tmp/computer-use",
+    source: "installed-cache",
+    repairSourceAvailable: false,
+    repairSourcePath: null,
+    repairStatus: "no valid signed source",
+    candidates: [{
+      source: "installed-cache",
+      pluginRootPath: "/tmp/computer-use",
+      helperAppPath: "/tmp/Codex Computer Use.app",
+      helperSignatureValid: false,
+      helperSignatureStatus: "/tmp/Codex Computer Use.app: invalid signature",
+      mcpClientPath: "/tmp/SkyComputerUseClient",
+      mcpConfigPath: "/tmp/computer-use/.mcp.json",
+      mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+      mcpCommandPath: "/tmp/SkyComputerUseClient",
+      mcpCwd: ".",
+      mcpCommandExecutable: true,
+      mcpClientSignatureValid: false,
+      mcpClientSignatureStatus: "/tmp/SkyComputerUseClient.app: invalid signature",
+      installerAppPath: "/tmp/Codex Computer Use Installer.app",
+      installerSignatureValid: false,
+      installerSignatureStatus: "/tmp/Codex Computer Use Installer.app: invalid signature",
+      usableForRepair: false,
+    }],
+    screenRecordingStatus: "unknown",
+    accessibilityStatus: "unknown",
+    appApprovalsStatus: "unknown",
+    error: null,
+  }, "/tmp/codex-home");
+
+  const nativeEntry = entries.find((entry) => entry.id === "computer-use:native-readiness");
+  const repairEntry = entries.find((entry) => entry.id === "computer-use:repair-sources");
+  const helperEntry = entries.find((entry) => entry.id === "computer-use:helper-signatures");
+
+  assertDeepEqual(
+    {
+      ids: entries.map((entry) => entry.id),
+      native: nativeEntry && {
+        status: nativeEntry.status,
+        timeoutWarning: nativeEntry.details?.some((detail) => detail.includes("MCP tool calls may time out")),
+        signedBundle: nativeEntry.details?.some((detail) => detail.includes("signed-valid Computer Use bundle")),
+        noRepairSource: nativeEntry.details?.some((detail) => detail.includes("No signed-valid local repair source")),
+        permissionCaution: nativeEntry.details?.some((detail) => detail.includes("Do not rely on macOS permission grants")),
+        helperSignature: nativeEntry.details?.some((detail) => detail.includes("Helper signature: invalid")),
+        mcpClientSignature: nativeEntry.details?.some((detail) => detail.includes("MCP client signature: invalid")),
+      },
+      repair: repairEntry && {
+        status: repairEntry.status,
+        repairStatus: repairEntry.details?.some((detail) => detail === "Repair status: no valid signed source"),
+        unusable: repairEntry.details?.some((detail) => detail === "Candidate 1 repair usable: no"),
+      },
+      helper: helperEntry && {
+        status: helperEntry.status,
+        timeoutWarning: helperEntry.details?.some((detail) => detail.includes("MCP tool calls time out")),
+        helperSignature: helperEntry.details?.some((detail) => detail.includes("Helper signature: invalid")),
+        mcpClientSignature: helperEntry.details?.some((detail) => detail.includes("MCP client signature: invalid")),
+      },
+    },
+    {
+      ids: [
+        "computer-use:native-readiness",
+        "computer-use:repair-sources",
+        "computer-use:helper-signatures",
+        "computer-use:mcp-command",
+        "computer-use:permissions",
+      ],
+      native: {
+        status: "signature invalid",
+        timeoutWarning: true,
+        signedBundle: true,
+        noRepairSource: true,
+        permissionCaution: true,
+        helperSignature: true,
+        mcpClientSignature: true,
+      },
+      repair: {
+        status: "not available",
+        repairStatus: true,
+        unusable: true,
+      },
+      helper: {
+        status: "signature invalid",
+        timeoutWarning: true,
+        helperSignature: true,
+        mcpClientSignature: true,
+      },
+    },
+    "Computer Use readiness should surface invalid helper signatures as a timeout risk",
+  );
+}
+
+function projectsComputerUseRepairAction(): void {
+  const entries = projectComputerUseReadinessEntries({
+    bridgeAvailable: true,
+    helperAvailable: true,
+    helperAppPath: "/tmp/installed/Codex Computer Use.app",
+    helperSignatureValid: false,
+    helperSignatureStatus: "/tmp/installed/Codex Computer Use.app: invalid signature",
+    mcpClientPath: "/tmp/installed/SkyComputerUseClient",
+    mcpConfigPath: "/tmp/installed/.mcp.json",
+    mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+    mcpCommandPath: "/tmp/installed/SkyComputerUseClient",
+    mcpCwd: ".",
+    mcpCommandExecutable: true,
+    mcpClientSignatureValid: false,
+    mcpClientSignatureStatus: "/tmp/installed/SkyComputerUseClient.app: invalid signature",
+    installerAppPath: "/tmp/installed/Codex Computer Use Installer.app",
+    pluginRootPath: "/tmp/installed",
+    source: "installed-cache",
+    repairSourceAvailable: true,
+    repairSourcePath: "/tmp/source",
+    repairStatus: "ready",
+    candidates: [{
+      source: "installed-cache",
+      pluginRootPath: "/tmp/installed",
+      helperAppPath: "/tmp/installed/Codex Computer Use.app",
+      helperSignatureValid: false,
+      helperSignatureStatus: "invalid signature",
+      mcpClientPath: "/tmp/installed/SkyComputerUseClient",
+      mcpConfigPath: "/tmp/installed/.mcp.json",
+      mcpCommandPath: "/tmp/installed/SkyComputerUseClient",
+      mcpCommandExecutable: true,
+      mcpClientSignatureValid: false,
+      mcpClientSignatureStatus: "invalid signature",
+      installerAppPath: "/tmp/installed/Codex Computer Use Installer.app",
+      installerSignatureValid: false,
+      installerSignatureStatus: "invalid signature",
+      usableForRepair: false,
+    }, {
+      source: "codex-desktop-app",
+      pluginRootPath: "/tmp/source",
+      helperAppPath: "/tmp/source/Codex Computer Use.app",
+      helperSignatureValid: true,
+      helperSignatureStatus: "valid",
+      mcpClientPath: "/tmp/source/SkyComputerUseClient",
+      mcpConfigPath: "/tmp/source/.mcp.json",
+      mcpCommandPath: "/tmp/source/SkyComputerUseClient",
+      mcpCommandExecutable: true,
+      mcpClientSignatureValid: true,
+      mcpClientSignatureStatus: "valid",
+      installerAppPath: "/tmp/source/Codex Computer Use Installer.app",
+      installerSignatureValid: true,
+      installerSignatureStatus: "valid",
+      usableForRepair: true,
+    }],
+    screenRecordingStatus: "unknown",
+    accessibilityStatus: "unknown",
+    appApprovalsStatus: "unknown",
+    error: null,
+  }, "/tmp/codex-home");
+
+  const nativeEntry = entries.find((entry) => entry.id === "computer-use:native-readiness");
+  const repairEntry = entries.find((entry) => entry.id === "computer-use:repair-sources");
+
+  assertDeepEqual(
+    {
+      native: {
+        readyRepairGuidance: nativeEntry?.details?.some((detail) => detail.includes("signed-valid local repair source")) ?? false,
+        repairSource: nativeEntry?.details?.some((detail) => detail === "Repair source: /tmp/source") ?? false,
+      },
+      repair: {
+        status: repairEntry?.status,
+        actions: repairEntry ? secondaryActionSummaries(repairEntry) : undefined,
+        usableSource: repairEntry?.details?.some((detail) => detail === "Candidate 2 repair usable: yes") ?? false,
+      },
+    },
+    {
+      native: {
+        readyRepairGuidance: true,
+        repairSource: true,
+      },
+      repair: {
+        status: "ready",
+        actions: [{
+          type: "repairComputerUseBundle",
+          codexHome: "/tmp/codex-home",
+        }],
+        usableSource: true,
+      },
+    },
+    "Computer Use readiness should expose a repair action only when a signed-valid local source exists",
+  );
+}
+
+function projectsComputerUseMcpReadiness(): void {
+  const entries = projectComputerUseMcpReadinessEntries(
+    {
+      data: [{
+        name: "computer-use",
+        authStatus: "unsupported",
+        tools: {
+          click: { description: "Click a point on screen" },
+          screenshot: {},
+        },
+      }],
+    },
+    {
+      "computer-use": { status: "failed", error: "permission denied", updatedAt: 1 },
+    },
+  );
+
+  assertDeepEqual(
+    entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      meta: entry.meta,
+      hasStartupError: entry.details?.some((detail) => detail.includes("permission denied")),
+      startupBeforeTools: detailIndex(entry, "Startup:") < detailIndex(entry, "Tool:"),
+      probeBeforeTools: detailIndex(entry, "Probe:") < detailIndex(entry, "Tool:"),
+      toolTimeoutBeforeTools: detailIndex(entry, "Tool timeout:") < detailIndex(entry, "Tool:"),
+      hasToolTimeout: entry.details?.some((detail) => detail.includes("120s default")) ?? false,
+      hasTimeoutRisk: entry.details?.some((detail) => detail.includes("can time out")),
+      tools: entry.details?.filter((detail) => detail.startsWith("Tool:")).length,
+    })),
+    [{
+      id: "computer-use:mcp-readiness",
+      status: "startup failed",
+      meta: "2 tools · auth unsupported",
+      hasStartupError: true,
+      startupBeforeTools: true,
+      probeBeforeTools: true,
+      toolTimeoutBeforeTools: true,
+      hasToolTimeout: true,
+      hasTimeoutRisk: true,
+      tools: 2,
+    }],
+    "Computer Use MCP readiness should prioritize startup, probe, and timeout diagnostics before tool inventory",
+  );
+}
+
+function projectsComputerUseMcpProbeAction(): void {
+  const entries = projectComputerUseMcpReadinessEntries(
+    {
+      data: [{
+        name: "computer-use",
+        authStatus: "unsupported",
+        tools: {
+          list_apps: { description: "List open applications" },
+          click: { description: "Click a point on screen" },
+        },
+      }],
+    },
+    null,
+    null,
+    { activeThreadId: "thread-1" },
+  );
+
+  assertDeepEqual(
+    entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      actions: secondaryActionSummaries(entry),
+      hasProbeDetail: entry.details?.some((detail) => detail.includes("list_apps can be called")),
+    })),
+    [{
+      id: "computer-use:mcp-readiness",
+      status: "available",
+      actions: [{
+        type: "probeComputerUseMcp",
+        threadId: "thread-1",
+        server: "computer-use",
+        tool: "list_apps",
+      }],
+      hasProbeDetail: true,
+    }],
+    "Computer Use MCP readiness should expose a safe probe action when list_apps and an active thread are available",
+  );
+}
+
+function projectsComputerUseMcpProbeBlockedByInvalidSignature(): void {
+  const entries = projectComputerUseMcpReadinessEntries(
+    {
+      data: [{
+        name: "computer-use",
+        authStatus: "unsupported",
+        tools: {
+          list_apps: { description: "List open applications" },
+        },
+      }],
+    },
+    null,
+    null,
+    {
+      activeThreadId: "thread-1",
+      nativeReadiness: {
+        bridgeAvailable: true,
+        helperAvailable: true,
+        helperAppPath: "/tmp/Codex Computer Use.app",
+        helperSignatureValid: false,
+        helperSignatureStatus: "invalid signature",
+        mcpClientPath: "/tmp/SkyComputerUseClient",
+        mcpConfigPath: "/tmp/computer-use/.mcp.json",
+        mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+        mcpCommandPath: "/tmp/SkyComputerUseClient",
+        mcpCwd: ".",
+        mcpCommandExecutable: true,
+        mcpClientSignatureValid: false,
+        mcpClientSignatureStatus: "invalid signature",
+        installerAppPath: "/tmp/Codex Computer Use Installer.app",
+        pluginRootPath: "/tmp/computer-use",
+        source: "installed-cache",
+        screenRecordingStatus: "unknown",
+        accessibilityStatus: "unknown",
+        appApprovalsStatus: "unknown",
+        error: null,
+      },
+    },
+  );
+  const entry = entries[0];
+
+  assertDeepEqual(
+    {
+      status: entry?.status,
+      actions: entry ? secondaryActionSummaries(entry) : undefined,
+      blockedDetail: entry?.details?.some((detail) => detail.includes("not exposed because the helper or MCP client signature is invalid")) ?? false,
+      timeoutRisk: entry?.details?.some((detail) => detail.includes("helper signatures fail")) ?? false,
+    },
+    {
+      status: "probe blocked",
+      actions: undefined,
+      blockedDetail: true,
+      timeoutRisk: true,
+    },
+    "Computer Use MCP probe should not be exposed when native readiness proves invalid helper signatures",
+  );
+}
+
+function projectsComputerUseMcpProbeBlockedByMissingPermissions(): void {
+  const entries = projectComputerUseMcpReadinessEntries(
+    {
+      data: [{
+        name: "computer-use",
+        authStatus: "unsupported",
+        tools: {
+          list_apps: { description: "List open applications" },
+        },
+      }],
+    },
+    null,
+    null,
+    {
+      activeThreadId: "thread-1",
+      nativeReadiness: {
+        bridgeAvailable: true,
+        helperAvailable: true,
+        helperAppPath: "/tmp/Codex Computer Use.app",
+        helperSignatureValid: true,
+        helperSignatureStatus: "valid",
+        mcpClientPath: "/tmp/SkyComputerUseClient",
+        mcpConfigPath: "/tmp/computer-use/.mcp.json",
+        mcpCommand: "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+        mcpCommandPath: "/tmp/SkyComputerUseClient",
+        mcpCwd: ".",
+        mcpConfigTrusted: true,
+        mcpConfigStatus: "trusted",
+        mcpCommandExecutable: true,
+        mcpClientSignatureValid: true,
+        mcpClientSignatureStatus: "valid",
+        installerAppPath: "/tmp/Codex Computer Use Installer.app",
+        pluginRootPath: "/tmp/computer-use",
+        source: "installed-cache",
+        screenRecordingStatus: "not granted",
+        accessibilityStatus: "granted",
+        appApprovalsStatus: "unknown",
+        error: null,
+      },
+    },
+  );
+  const entry = entries[0];
+
+  assertDeepEqual(
+    {
+      status: entry?.status,
+      actions: entry ? secondaryActionSummaries(entry) : undefined,
+      blockedDetail: entry?.details?.some((detail) => detail.includes("not exposed because Screen Recording is not granted")) ?? false,
+      timeoutRisk: entry?.details?.some((detail) => detail.includes("macOS permissions are missing")) ?? false,
+    },
+    {
+      status: "probe blocked",
+      actions: undefined,
+      blockedDetail: true,
+      timeoutRisk: true,
+    },
+    "Computer Use MCP probe should not be exposed when native permission preflight proves Screen Recording is not granted",
+  );
+}
+
+function projectsComputerUseMcpProbeTimeoutDiagnostics(): void {
+  const timeoutError = "tool call failed for `computer-use/list_apps`: timed out awaiting tools/call after 120s";
+  const message = formatComputerUseMcpProbeError("computer-use", "list_apps", timeoutError);
+  const entries = projectComputerUseMcpProbeFailureEntries("computer-use", "list_apps", timeoutError);
+  const diagnosticEntry = entries[0];
+
+  assertDeepEqual(
+    {
+      messageIncludesCause: message.includes("Screen Recording")
+        && message.includes("Accessibility")
+        && message.includes("app approvals"),
+      title: diagnosticEntry?.title,
+      status: diagnosticEntry?.status,
+      timeoutDetail: diagnosticEntry?.details?.some((detail) => detail.includes("tool-call deadline")) ?? false,
+      nextStep: diagnosticEntry?.details?.some((detail) => detail.includes("restart MCP or start a new thread")) ?? false,
+    },
+    {
+      messageIncludesCause: true,
+      title: "Computer Use probe failure",
+      status: "error",
+      timeoutDetail: true,
+      nextStep: true,
+    },
+    "Computer Use MCP probe timeout should explain helper, permission, app approval, and restart checks",
   );
 }
 
@@ -592,6 +1219,287 @@ async function fallsBackToGitDiffWhenHostUnavailable(): Promise<void> {
   );
 }
 
+async function loadsBrowserSettingsFromPluginLifecycle(): Promise<void> {
+  const host = fakeSettingsPanelHost((method, params) => {
+    if (method === "plugin/list") {
+      if (isRecord(params) && Array.isArray(params.marketplaceKinds)) {
+        return { marketplaces: [] };
+      }
+      return {
+        featuredPluginIds: ["browser"],
+        marketplaces: [{
+          name: "OpenAI",
+          interface: { displayName: "OpenAI" },
+          plugins: [{
+            id: "browser",
+            name: "browser",
+            remotePluginId: "browser",
+            installed: false,
+            enabled: false,
+            interface: {
+              displayName: "Browser",
+              shortDescription: "Use Codex's in-app browser.",
+            },
+          }],
+        }],
+      };
+    }
+    if (method === "plugin/installed") return { marketplaces: [] };
+    if (method === "plugin/share/list") return { data: [] };
+    if (method === "app/list") return { data: [] };
+    throw new Error(`unexpected protocol call: ${method}`);
+  });
+
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: () => undefined,
+    panel: "browser-use",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, connected: true },
+    workspace: "/workspace",
+  });
+
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      actions: secondaryActionSummaries(entry),
+    })),
+    [{
+      id: "plugin:browser",
+      status: "featured",
+      actions: [{ type: "installPlugin", pluginId: "browser", sourceSettingsPanel: "browser-use" }],
+    }, {
+      id: "browser-use:runtime-readiness",
+      status: "unavailable",
+      actions: [],
+    }],
+    "Browser settings should match the current browser plugin id and append runtime readiness",
+  );
+  assertDeepEqual(
+    [
+      host.panel?.message.includes("local Tauri Browser surface") ?? false,
+      host.panel?.entries[0]?.details?.some((detail) => detail.includes("Runtime readiness")) ?? false,
+      host.panel?.entries[0]?.details?.some((detail) => detail.includes("browser-use-origin-state-read")) ?? false,
+      host.panel?.entries[1]?.details?.some((detail) => detail.includes("not connected to the bundled Browser iab provider yet")) ?? false,
+    ],
+    [true, true, true, true],
+    "Browser settings should distinguish plugin lifecycle from local Browser runtime and iab agent control",
+  );
+}
+
+async function loadsBrowserSettingsFromQualifiedBundledPluginId(): Promise<void> {
+  const host = fakeSettingsPanelHost((method, params) => {
+    if (method === "plugin/list") {
+      if (isRecord(params) && Array.isArray(params.marketplaceKinds)) {
+        return { marketplaces: [] };
+      }
+      return {
+        marketplaces: [{
+          name: "openai-bundled",
+          interface: { displayName: "OpenAI Bundled" },
+          plugins: [{
+            id: "browser@openai-bundled",
+            name: "browser",
+            installed: true,
+            enabled: true,
+            interface: {
+              displayName: "Browser",
+              shortDescription: "Use Codex's in-app browser.",
+            },
+          }],
+        }],
+      };
+    }
+    if (method === "plugin/installed") return { marketplaces: [] };
+    if (method === "plugin/share/list") return { data: [] };
+    if (method === "app/list") return { data: [] };
+    if (method === "mcpServerStatus/list") {
+      return {
+        data: [{
+          name: "computer-use",
+          authStatus: "unsupported",
+          tools: {
+            click: { description: "Click a point on screen" },
+          },
+        }],
+      };
+    }
+    throw new Error(`unexpected protocol call: ${method}`);
+  });
+
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: () => undefined,
+    panel: "browser-use",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, connected: true },
+    workspace: "/workspace",
+  });
+
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      actions: secondaryActionSummaries(entry),
+    })),
+    [{
+      id: "plugin:browser@openai-bundled",
+      status: "enabled",
+      actions: [
+        {
+          type: "writePluginConfig",
+          pluginId: "browser@openai-bundled",
+          enabled: false,
+          sourceSettingsPanel: "browser-use",
+        },
+        {
+          type: "uninstallPlugin",
+          pluginId: "browser@openai-bundled",
+          sourceSettingsPanel: "browser-use",
+        },
+      ],
+    }, {
+      id: "browser-use:runtime-readiness",
+      status: "unavailable",
+      actions: [],
+    }],
+    "Browser settings should match qualified bundled plugin ids without rewriting action plugin ids and append runtime readiness",
+  );
+}
+
+async function loadsComputerUseSettingsFromPluginLifecycle(): Promise<void> {
+  const host = fakeSettingsPanelHost((method, params) => {
+    if (method === "plugin/list") {
+      if (isRecord(params) && Array.isArray(params.marketplaceKinds)) {
+        return { marketplaces: [] };
+      }
+      return {
+        marketplaces: [{
+          name: "OpenAI",
+          interface: { displayName: "OpenAI" },
+          plugins: [{
+            id: "computer-use",
+            name: "computer-use",
+            installed: true,
+            enabled: true,
+            interface: {
+              displayName: "Computer Use",
+              shortDescription: "Use applications on this computer.",
+            },
+          }],
+        }],
+      };
+    }
+    if (method === "plugin/installed") return { marketplaces: [] };
+    if (method === "plugin/share/list") return { data: [] };
+    if (method === "app/list") return { data: [] };
+    if (method === "mcpServerStatus/list") {
+      return {
+        data: [{
+          name: "computer-use",
+          authStatus: "unsupported",
+          tools: {
+            click: { description: "Click a point on screen" },
+          },
+        }],
+      };
+    }
+    throw new Error(`unexpected protocol call: ${method}`);
+  });
+
+  await loadSettingsPanelContent({
+    activeTurnId: null,
+    client: host.client,
+    ensureConnected: async () => true,
+    includeImageDynamicTool: false,
+    openSettingsPanelContent: () => undefined,
+    panel: "computer-use",
+    setSettingsPanelState: host.setPanel,
+    state: { ...initialCodexUiState, connected: true },
+    workspace: "/workspace",
+  });
+
+  assertDeepEqual(
+    host.panel?.entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      actions: secondaryActionSummaries(entry),
+    })),
+    [
+      {
+        id: "plugin:computer-use",
+        status: "enabled",
+        actions: [
+          {
+            type: "writePluginConfig",
+            pluginId: "computer-use",
+            enabled: false,
+            sourceSettingsPanel: "computer-use",
+          },
+          {
+            type: "uninstallPlugin",
+            pluginId: "computer-use",
+            sourceSettingsPanel: "computer-use",
+          },
+        ],
+      },
+      {
+        id: "computer-use:native-readiness",
+        status: "unknown",
+        actions: [],
+      },
+      {
+        id: "computer-use:repair-sources",
+        status: "unknown",
+        actions: undefined,
+      },
+      {
+        id: "computer-use:helper-signatures",
+        status: "setup required",
+        actions: undefined,
+      },
+      {
+        id: "computer-use:mcp-command",
+        status: "unknown",
+        actions: undefined,
+      },
+      {
+        id: "computer-use:permissions",
+        status: "not proven",
+        actions: undefined,
+      },
+      {
+        id: "computer-use:mcp-readiness",
+        status: "available",
+        actions: undefined,
+      },
+    ],
+    "Computer Use settings should project installed plugin state and existing config actions",
+  );
+  const nativeEntry = host.panel?.entries.find((entry) => entry.id === "computer-use:native-readiness");
+  const permissionEntry = host.panel?.entries.find((entry) => entry.id === "computer-use:permissions");
+  const mcpEntry = host.panel?.entries.find((entry) => entry.id === "computer-use:mcp-readiness");
+  assertDeepEqual(
+    [
+      host.panel?.message.includes("OS permissions") ?? false,
+      host.panel?.entries[0]?.details?.some((detail) => detail.includes("OS permissions")) ?? false,
+      host.panel?.entries[0]?.details?.some((detail) => detail.includes("computer-use-app-approvals-read")) ?? false,
+      nativeEntry?.details?.some((detail) => detail.includes("GUI control is not marked ready")) ?? false,
+      permissionEntry?.details?.some((detail) => detail.includes("list_apps and GUI-control tool calls time out")) ?? false,
+      mcpEntry?.details?.some((detail) => detail.includes("Tool: click")) ?? false,
+    ],
+    [true, true, true, true, true, true],
+    "Computer Use settings should keep native permissions and app approvals explicit",
+  );
+}
+
 async function loadsHooksSettingsWithReviewFocus(): Promise<void> {
   const host = fakeSettingsPanelHost((method, params) => {
     if (method === "hooks/list") {
@@ -760,10 +1668,69 @@ function hookSettingsFixture(key: string, source: string, pluginId: string | nul
   };
 }
 
+function secondaryActionSummaries(entry: CommandPanelState["entries"][number]) {
+  return entry.secondaryActions?.map((secondary) => {
+    const action = secondary.action;
+    if (action.type === "installPlugin") {
+      return {
+        type: action.type,
+        pluginId: action.pluginId,
+        sourceSettingsPanel: action.sourceSettingsPanel,
+      };
+    }
+    if (action.type === "writePluginConfig") {
+      return {
+        type: action.type,
+        pluginId: action.pluginId,
+        enabled: action.enabled,
+        sourceSettingsPanel: action.sourceSettingsPanel,
+      };
+    }
+    if (action.type === "uninstallPlugin") {
+      return {
+        type: action.type,
+        pluginId: action.pluginId,
+        sourceSettingsPanel: action.sourceSettingsPanel,
+      };
+    }
+    if (action.type === "openComputerUseSetup") {
+      return {
+        type: action.type,
+        target: action.target,
+        codexHome: action.codexHome,
+      };
+    }
+    if (action.type === "probeComputerUseMcp") {
+      return {
+        type: action.type,
+        threadId: action.threadId,
+        server: action.server,
+        tool: action.tool,
+      };
+    }
+    if (action.type === "repairComputerUseBundle") {
+      return {
+        type: action.type,
+        codexHome: action.codexHome,
+      };
+    }
+    return { type: action.type };
+  });
+}
+
+function detailIndex(entry: CommandPanelState["entries"][number], prefix: string): number {
+  const index = entry.details?.findIndex((detail) => detail.startsWith(prefix)) ?? -1;
+  return index < 0 ? Number.POSITIVE_INFINITY : index;
+}
+
 function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {
   const actualJson = JSON.stringify(actual);
   const expectedJson = JSON.stringify(expected);
   if (actualJson !== expectedJson) {
     throw new Error(`${message}: expected ${expectedJson}, got ${actualJson}`);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

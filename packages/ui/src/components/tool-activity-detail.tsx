@@ -2029,7 +2029,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
         toolResponseMetadata: resultRecord._meta ?? null,
         argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
         resultText: toolResultText(result),
-        errorText: mcpToolErrorText(record),
+        errorText: mcpToolErrorText(record, server, tool),
         status,
       };
     }
@@ -2058,7 +2058,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
       resultText: toolResultText(record.result),
       ...(structuredResultText ? { structuredResultText } : {}),
-      errorText: mcpToolErrorText(record),
+      errorText: mcpToolErrorText(record, server, tool),
       status,
       ...(resultBlocks.length > 0 ? { resultBlocks } : {}),
     };
@@ -2737,15 +2737,32 @@ function toolResultText(value: unknown): string {
   return formatUnknown(value);
 }
 
-function mcpToolErrorText(record: Record<string, unknown>): string {
+function mcpToolErrorText(record: Record<string, unknown>, server = "", tool = ""): string {
   const result = recordObject(record.result);
+  let errorText = "";
   if (stringField(result, "type") === "error") {
-    return stringField(result, "error") || stringField(recordObject(result.rawError), "message") || formatUnknown(result);
+    errorText = stringField(result, "error") || stringField(recordObject(result.rawError), "message") || formatUnknown(result);
+    return computerUseMcpToolErrorText(server, tool, errorText);
   }
   const error = record.error;
   if (error === null || error === undefined) return "";
   const message = stringField(recordObject(error), "message");
-  return message || formatUnknown(error);
+  errorText = message || formatUnknown(error);
+  return computerUseMcpToolErrorText(server, tool, errorText);
+}
+
+function computerUseMcpToolErrorText(server: string, tool: string, errorText: string): string {
+  if (normalizeMcpName(server) !== "computeruse") return errorText;
+  if (!/timeout|timed out|awaiting tools\/call/i.test(errorText)) return errorText;
+  return [
+    errorText,
+    "",
+    `Computer Use diagnostics: ${server || "computer-use"}:${tool || "tool"} timed out in the downstream MCP tools/call path. Check helper signatures, Screen Recording, Accessibility, app approvals, MCP startup or restart state, and whether a native prompt is blocking the helper.`,
+  ].join("\n");
+}
+
+function normalizeMcpName(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function mcpStructuredResultText(value: unknown): string {

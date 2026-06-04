@@ -73,3 +73,21 @@ export function themeModeDescription(mode: UiThemeMode, resolved: ResolvedUiThem
       return `Follow the operating system appearance. Currently ${resolved}.`;
   }
 }
+
+export function readSystemThemeVariant(): ResolvedUiTheme {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+export function subscribeSystemThemeVariant(onChange: (theme: ResolvedUiTheme) => void): () => void {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const listener = () => onChange(media.matches ? "dark" : "light");
+  listener();
+  if (typeof media.addEventListener === "function") {
+    media.addEventListener("change", listener);
+    return () => media.removeEventListener("change", listener);
+  }
+  media.addListener(listener);
+  return () => media.removeListener(listener);
+}

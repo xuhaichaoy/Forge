@@ -1,13 +1,13 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
-import { openExternalUrl } from "../lib/tauri-host";
+import { openComputerUseSetup, openExternalUrl, repairComputerUseBundle } from "../lib/tauri-host";
 import {
   mergeComposerAttachments,
   type ComposerAttachment,
   type SettingsPanelId,
 } from "../state/composer-workflow";
-import type { CodexUiAction } from "../state/codex-reducer";
 import {
   createCommandPanelState,
   projectCommandPanelEntries,
@@ -41,19 +41,45 @@ import {
   projectMcpManagementEntries,
 } from "../state/mcp-skills-management";
 import {
+  DEFAULT_BROWSER_RUNTIME_URL,
+  loadBrowserRuntimeSnapshot,
+  openBrowserRuntime,
+  projectBrowserRuntimeSettingsEntries,
+} from "../state/browser-runtime";
+import {
   mergeNotificationPreferences,
   notificationPolicyLabel,
   notificationSoundLabel,
   type NotificationPreferences,
 } from "../state/notification-preferences";
-import { projectNotificationSettingsEntry } from "../state/settings-panel-workflow";
-import { loadPluginManagementEntries } from "../state/settings-panel-loader";
+import {
+  COMPUTER_USE_MCP_PROBE_TIMEOUT_MS,
+  formatComputerUseMcpProbeError,
+  loadComputerUseReadiness,
+  loadComputerUseMcpReadinessEntries,
+  projectComputerUseMcpProbeFailureEntries,
+  projectComputerUseReadinessEntries,
+} from "../state/computer-use-readiness";
+import {
+  pluginBackedDesktopSettingsInfo,
+  projectNotificationSettingsEntry,
+  settingsPanelTitle,
+  type PluginBackedDesktopSettingsPanel,
+} from "../state/settings-panel-workflow";
+import {
+  loadPluginManagementEntries,
+  pluginBackedDesktopSettingsPanelEntries,
+} from "../state/settings-panel-loader";
 import { refreshThreadContextDefaults } from "../state/thread-workflow";
 import { themeModeLabel, type UiThemeMode } from "../state/theme";
 import { reducedMotionLabel, type ReducedMotionMode } from "../state/appearance";
 
 const MCP_RELOAD_RESTART_MESSAGE =
   "Reloaded MCP config. New threads use refreshed servers; running threads may need a thread restart or another MCP reload before tool changes appear.";
+
+function pluginActionPanelKind(sourceSettingsPanel?: PluginBackedDesktopSettingsPanel): CommandPanelKind {
+  return sourceSettingsPanel ? "generic" : "plugins";
+}
 
 function mcpSavedRestartMessage(server: string): string {
   return `${server} saved and MCP config reloaded. New threads use the update; running threads may need a thread restart or MCP reload before tool changes appear.`;
@@ -70,8 +96,6 @@ export type McpServerFormAction = Extract<NonNullable<CommandPanelEntry["action"
 export function useCommandPanelActions({
   activeThreadId,
   activeTurnId,
-  client,
-  dispatch,
   ensureConnected,
   openCommandPanel,
   setActiveSettingsPanel,
@@ -96,8 +120,6 @@ export function useCommandPanelActions({
 }: {
   activeThreadId: string | null;
   activeTurnId: string | null;
-  client: CodexJsonRpcClient;
-  dispatch: (action: CodexUiAction) => void;
   ensureConnected: () => Promise<boolean>;
   openCommandPanel: CommandPanelSink;
   setActiveSettingsPanel: Dispatch<SetStateAction<SettingsPanelId | null>>;
@@ -136,6 +158,7 @@ export function useCommandPanelActions({
   selectThreadById?: (threadId: string) => void | Promise<void>;
   workspace: string;
 }) {
+  const { client, dispatch } = useServices();
   const callMcpToolFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "callMcpTool" }>,
     sink: CommandPanelSink = openCommandPanel,
@@ -813,9 +836,120 @@ export function useCommandPanelActions({
     }
   }, [dispatch, openCommandPanel]);
 
+  const openComputerUseSetupFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openComputerUseSetup" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    try {
+      await openComputerUseSetup(action.codexHome, action.target);
+      dispatch({ type: "log", text: `${action.title} opened.`, level: "info" });
+    } catch (error) {
+      let entries: CommandPanelEntry[] = [];
+      try {
+        entries = projectBrowserRuntimeSettingsEntries(await loadBrowserRuntimeSnapshot());
+      } catch {
+        entries = [];
+      }
+      dispatch({ type: "log", text: `${action.title} failed: ${formatError(error)}`, level: "error" });
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries,
+      });
+    }
+  }, [dispatch, openCommandPanel]);
+
+  const repairComputerUseBundleFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "repairComputerUseBundle" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("generic", {
+      status: "loading",
+      title: action.title,
+      message: "Repairing Computer Use from the signed-valid local bundle source...",
+      entries: [],
+    });
+    try {
+      const result = await repairComputerUseBundle(action.codexHome);
+      const readiness = {
+        ...result.readiness,
+        bridgeAvailable: true,
+        error: null,
+      };
+      dispatch({ type: "log", text: result.message, level: result.repaired ? "info" : "warn" });
+      sink("generic", {
+        status: result.repaired ? "ready" : "idle",
+        title: action.title,
+        message: result.message,
+        entries: projectComputerUseReadinessEntries(readiness, action.codexHome),
+      });
+    } catch (error) {
+      const formatted = formatError(error);
+      dispatch({ type: "log", text: `${action.title} failed: ${formatted}`, level: "error" });
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: formatted,
+        entries: projectComputerUseReadinessEntries(await loadComputerUseReadiness(action.codexHome), action.codexHome),
+      });
+    }
+  }, [dispatch, openCommandPanel]);
+
+  const probeComputerUseMcpFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "probeComputerUseMcp" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    sink("generic", {
+      status: "loading",
+      title: action.title,
+      message: `Calling ${action.server}:${action.tool} from the active thread...`,
+      entries: [],
+    });
+    if (!(await ensureConnected())) {
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: "Runtime is offline.",
+        entries: [],
+      });
+      return;
+    }
+    try {
+      const result = await client.request<unknown>("mcpServer/tool/call", {
+        threadId: action.threadId,
+        server: action.server,
+        tool: action.tool,
+        arguments: action.arguments ?? {},
+      }, COMPUTER_USE_MCP_PROBE_TIMEOUT_MS);
+      sink("generic", {
+        status: "ready",
+        title: action.title,
+        message: `${action.server}:${action.tool} completed. This proves the MCP tool is callable; GUI control still depends on helper permissions and target app state.`,
+        entries: projectMcpToolCallResultEntries(action.server, action.tool, result),
+      });
+      dispatch({
+        type: "log",
+        text: `${action.server}:${action.tool} probe completed.`,
+        level: "info",
+      });
+    } catch (error) {
+      const rawMessage = formatError(error);
+      const message = formatComputerUseMcpProbeError(action.server, action.tool, rawMessage);
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: message,
+        entries: projectComputerUseMcpProbeFailureEntries(action.server, action.tool, rawMessage),
+      });
+      dispatch({ type: "log", text: `${action.title} failed: ${message}`, level: "error" });
+    }
+  }, [client, dispatch, ensureConnected, openCommandPanel]);
+
   const refreshPluginsPanel = useCallback(async (
     message: string,
     sink: CommandPanelSink = openCommandPanel,
+    sourceSettingsPanel?: PluginBackedDesktopSettingsPanel,
   ) => {
     const entries = await loadPluginManagementEntries({
       client,
@@ -823,6 +957,34 @@ export function useCommandPanelActions({
       threadId: activeThreadId,
       workspace,
     });
+    if (sourceSettingsPanel) {
+      const info = pluginBackedDesktopSettingsInfo(sourceSettingsPanel);
+      const computerUseReadiness = sourceSettingsPanel === "computer-use"
+        ? await loadComputerUseReadiness(undefined)
+        : null;
+      sink("generic", {
+        status: "ready",
+        title: settingsPanelTitle(sourceSettingsPanel),
+        message: `${message} ${info.message}`,
+        entries: await pluginBackedDesktopSettingsPanelEntries(
+          sourceSettingsPanel,
+          entries,
+          undefined,
+          {
+            computerUseReadinessEntries: computerUseReadiness
+              ? projectComputerUseReadinessEntries(computerUseReadiness, undefined)
+              : undefined,
+            mcpReadinessEntries: sourceSettingsPanel === "computer-use"
+              ? await loadComputerUseMcpReadinessEntries(client, null, {
+                  activeThreadId,
+                  nativeReadiness: computerUseReadiness,
+                })
+              : undefined,
+          },
+        ),
+      });
+      return;
+    }
     sink("plugins", {
       status: "ready",
       title: "Plugins",
@@ -831,18 +993,65 @@ export function useCommandPanelActions({
     });
   }, [activeThreadId, client, openCommandPanel, workspace]);
 
+  const openBrowserRuntimeFromPanel = useCallback(async (
+    action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "openBrowserRuntime" }>,
+    sink: CommandPanelSink = openCommandPanel,
+  ) => {
+    try {
+      const snapshot = await openBrowserRuntime(
+        action.url ?? (action.tabId ? null : DEFAULT_BROWSER_RUNTIME_URL),
+        action.tabId ?? null,
+      );
+      if (!snapshot.bridgeAvailable || !snapshot.available) {
+        throw new Error(snapshot.error || "Browser host bridge is unavailable.");
+      }
+      if (snapshot.error) {
+        throw new Error(snapshot.error);
+      }
+      const message = `${action.title} opened. Local Browser surface is not agent-controlled until the Browser iab backend is connected.`;
+      dispatch({ type: "log", text: message, level: "info" });
+      try {
+        if (await ensureConnected()) {
+          await refreshPluginsPanel(message, sink, "browser-use");
+          return;
+        }
+      } catch (refreshError) {
+        dispatch({
+          type: "log",
+          text: `Browser plugin lifecycle refresh failed: ${formatError(refreshError)}`,
+          level: "warn",
+        });
+      }
+      sink("generic", {
+        status: "ready",
+        title: "Browser",
+        message,
+        entries: projectBrowserRuntimeSettingsEntries(snapshot),
+      });
+    } catch (error) {
+      dispatch({ type: "log", text: `${action.title} failed: ${formatError(error)}`, level: "error" });
+      sink("generic", {
+        status: "error",
+        title: action.title,
+        error: formatError(error),
+        entries: [],
+      });
+    }
+  }, [dispatch, ensureConnected, openCommandPanel, refreshPluginsPanel]);
+
   const installPluginFromPanel = useCallback(async (
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "installPlugin" }>,
     sink: CommandPanelSink = openCommandPanel,
   ) => {
-    sink("plugins", {
+    const panelKind = pluginActionPanelKind(action.sourceSettingsPanel);
+    sink(panelKind, {
       status: "loading",
       title: action.title,
       message: "Installing plugin...",
       entries: [],
     });
     if (!(await ensureConnected())) {
-      sink("plugins", {
+      sink(panelKind, {
         status: "error",
         title: action.title,
         error: "Runtime is offline.",
@@ -869,9 +1078,9 @@ export function useCommandPanelActions({
         return;
       }
       const message = `${action.pluginName} installed.`;
-      await refreshPluginsPanel(message, sink);
+      await refreshPluginsPanel(message, sink, action.sourceSettingsPanel);
     } catch (error) {
-      sink("plugins", {
+      sink(panelKind, {
         status: "error",
         title: action.title,
         error: formatError(error),
@@ -919,14 +1128,15 @@ export function useCommandPanelActions({
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "uninstallPlugin" }>,
     sink: CommandPanelSink = openCommandPanel,
   ) => {
-    sink("plugins", {
+    const panelKind = pluginActionPanelKind(action.sourceSettingsPanel);
+    sink(panelKind, {
       status: "loading",
       title: action.title,
       message: "Uninstalling plugin...",
       entries: [],
     });
     if (!(await ensureConnected())) {
-      sink("plugins", {
+      sink(panelKind, {
         status: "error",
         title: action.title,
         error: "Runtime is offline.",
@@ -937,9 +1147,9 @@ export function useCommandPanelActions({
     try {
       await client.request("plugin/uninstall", { pluginId: action.pluginId }, 120_000);
       await refreshThreadContextDefaults(client, dispatch, workspace);
-      await refreshPluginsPanel(`${action.pluginId} uninstalled.`, sink);
+      await refreshPluginsPanel(`${action.pluginId} uninstalled.`, sink, action.sourceSettingsPanel);
     } catch (error) {
-      sink("plugins", {
+      sink(panelKind, {
         status: "error",
         title: action.title,
         error: formatError(error),
@@ -952,14 +1162,15 @@ export function useCommandPanelActions({
     action: Extract<NonNullable<CommandPanelEntry["action"]>, { type: "writePluginConfig" }>,
     sink: CommandPanelSink = openCommandPanel,
   ) => {
-    sink("plugins", {
+    const panelKind = pluginActionPanelKind(action.sourceSettingsPanel);
+    sink(panelKind, {
       status: "loading",
       title: action.title,
       message: action.enabled ? "Enabling plugin..." : "Disabling plugin...",
       entries: [],
     });
     if (!(await ensureConnected())) {
-      sink("plugins", {
+      sink(panelKind, {
         status: "error",
         title: action.title,
         error: "Runtime is offline.",
@@ -985,9 +1196,13 @@ export function useCommandPanelActions({
         reloadUserConfig: true,
       }), 120_000);
       await refreshThreadContextDefaults(client, dispatch, workspace);
-      await refreshPluginsPanel(`${action.pluginId} ${action.enabled ? "enabled" : "disabled"}.`, sink);
+      await refreshPluginsPanel(
+        `${action.pluginId} ${action.enabled ? "enabled" : "disabled"}.`,
+        sink,
+        action.sourceSettingsPanel,
+      );
     } catch (error) {
-      sink("plugins", {
+      sink(panelKind, {
         status: "error",
         title: action.title,
         error: formatConfigWriteError(error, "Plugin config write"),
@@ -1132,6 +1347,22 @@ export function useCommandPanelActions({
     }
     if (action.type === "openExternalUrl") {
       void openExternalUrlFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "openBrowserRuntime") {
+      void openBrowserRuntimeFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "openComputerUseSetup") {
+      void openComputerUseSetupFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "repairComputerUseBundle") {
+      void repairComputerUseBundleFromPanel(action, sink);
+      return;
+    }
+    if (action.type === "probeComputerUseMcp") {
+      void probeComputerUseMcpFromPanel(action, sink);
       return;
     }
     if (action.type === "installPlugin") {
@@ -1381,7 +1612,11 @@ export function useCommandPanelActions({
     installPluginFromPanel,
     loginMcpServerFromPanel,
     openCommandPanel,
+    openBrowserRuntimeFromPanel,
+    openComputerUseSetupFromPanel,
     openExternalUrlFromPanel,
+    probeComputerUseMcpFromPanel,
+    repairComputerUseBundleFromPanel,
     readMcpResourceFromPanel,
     readPluginSkillFromPanel,
     readSkillFileFromPanel,
@@ -1426,7 +1661,10 @@ export function useCommandPanelActions({
     checkoutPluginShareFromPanel,
     installPluginFromPanel,
     loginMcpServerFromPanel,
+    openBrowserRuntimeFromPanel,
+    openComputerUseSetupFromPanel,
     openExternalUrlFromPanel,
+    probeComputerUseMcpFromPanel,
     reloadMcpServersFromPanel,
     removeMcpServerFromPanel,
     readMcpResourceFromPanel,

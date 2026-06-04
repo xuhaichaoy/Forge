@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
 import type { OpenThreadOptions } from "../components/open-thread";
-import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { buildUserInputFromComposer } from "../state/composer-workflow";
 import type {
@@ -26,7 +26,6 @@ import {
   startSideConversation as startSideConversationWorkflow,
   threadStatusLabel,
   threadTitle,
-  type ThreadWorkflowDispatch,
 } from "../state/thread-workflow";
 import {
   normalizedAgentRole,
@@ -55,8 +54,6 @@ export interface SideChatSummary {
 }
 
 export function useBackgroundAgentPanel({
-  client,
-  dispatch,
   ensureConnected,
   hostDefaultCwd,
   activeThreadId,
@@ -65,8 +62,6 @@ export function useBackgroundAgentPanel({
   threadsRuntime,
   workspace,
 }: {
-  client: CodexJsonRpcClient;
-  dispatch: ThreadWorkflowDispatch;
   ensureConnected: () => Promise<boolean>;
   hostDefaultCwd?: string | null;
   activeThreadId?: string | null;
@@ -75,6 +70,7 @@ export function useBackgroundAgentPanel({
   threadsRuntime: Record<string, ThreadRuntimeSlice>;
   workspace: string;
 }) {
+  const { client, dispatch } = useServices();
   const [backgroundAgentPanel, setBackgroundAgentPanel] = useState<BackgroundAgentPanelState | null>(null);
   const [backgroundAgentMessageDraft, setBackgroundAgentMessageDraft] = useState("");
   const [backgroundAgentMessageError, setBackgroundAgentMessageError] = useState<string | null>(null);

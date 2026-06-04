@@ -404,3 +404,22 @@ function threadIdForItemId(
   }
   return null;
 }
+
+export function heartbeatPendingRequestType(
+  requests: PendingServerRequest[],
+): "userInput" | "approval" | "mcpServerElicitation" | "other" | null {
+  const request = requests[0];
+  if (!request) return null;
+  switch (request.method) {
+    case "item/tool/requestUserInput":
+      return "userInput";
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+    case "item/permissions/requestApproval":
+      return "approval";
+    case "mcpServer/elicitation/request":
+      return "mcpServerElicitation";
+    default:
+      return "other";
+  }
+}

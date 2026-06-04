@@ -1,6 +1,7 @@
 import type { JsonRpcNotification } from "@hicodex/codex-protocol";
 import type { FuzzyFileSearchResponse } from "@hicodex/codex-protocol/generated/FuzzyFileSearchResponse";
 import type { FuzzyFileSearchResult } from "@hicodex/codex-protocol/generated/FuzzyFileSearchResult";
+import type { WorkspaceDirEntry } from "../lib/tauri-host";
 
 export interface FuzzyFileSearchRequestClient {
   request<T = unknown>(method: string, params?: unknown, timeoutMs?: number | null): Promise<T>;
@@ -248,4 +249,41 @@ function isSessionNotFoundError(error: unknown): boolean {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export function fuzzyFileResultsToWorkspaceEntries(root: string, files: Array<{
+  root?: string;
+  path?: string;
+  file_name?: string;
+}>): WorkspaceDirEntry[] {
+  const seen = new Set<string>();
+  const entries: WorkspaceDirEntry[] = [];
+  for (const file of files) {
+    const path = workspaceRelativeFuzzyPath(root, file);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    entries.push({
+      type: "file",
+      path,
+      name: file.file_name || basenameFromPath(path),
+    });
+  }
+  return entries;
+}
+
+function workspaceRelativeFuzzyPath(root: string, file: { root?: string; path?: string; file_name?: string }): string {
+  const rawPath = (file.path || file.file_name || "").replace(/\\/g, "/").trim();
+  if (!rawPath) return "";
+  const normalizedRoot = (file.root || root).replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normalizedRoot && rawPath === normalizedRoot) return file.file_name || "";
+  if (normalizedRoot && rawPath.startsWith(`${normalizedRoot}/`)) {
+    return rawPath.slice(normalizedRoot.length + 1).replace(/^\/+/, "");
+  }
+  return rawPath.replace(/^\/+/, "");
+}
+
+export function basenameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const slash = normalized.lastIndexOf("/");
+  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
 }

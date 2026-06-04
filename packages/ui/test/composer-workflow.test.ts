@@ -625,6 +625,16 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
     "mcp should open MCP settings",
   );
   assertDeepEqual(
+    applySlashCommand("browser-use", { input: "/browser-use" }),
+    { action: "openSettings", panel: "browser-use", clearInput: true },
+    "browser-use should open Browser settings",
+  );
+  assertDeepEqual(
+    applySlashCommand("computer-use", { input: "/computer-use" }),
+    { action: "openSettings", panel: "computer-use", clearInput: true },
+    "computer-use should open Computer Use settings",
+  );
+  assertDeepEqual(
     applySlashCommand("skills", { input: "/skills reload" }),
     { action: "request", request: "listSkills", clearInput: true, payload: { detail: "reload" } },
     "skills should pass reload through to the skills list request",

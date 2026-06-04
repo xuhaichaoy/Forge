@@ -132,10 +132,7 @@ fn serve_bundle_file(uri_path: &str) -> Response<Vec<u8>> {
                 .body(bytes)
                 .unwrap_or_else(|_| not_found(b"response build error".to_vec()))
         }
-        Err(_) => not_found(
-            format!("not found: {}", file_path.display())
-                .into_bytes(),
-        ),
+        Err(_) => not_found(format!("not found: {}", file_path.display()).into_bytes()),
     }
 }
 
@@ -165,9 +162,7 @@ fn not_found(body: Vec<u8>) -> Response<Vec<u8>> {
 pub fn register<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.register_uri_scheme_protocol(
         BUNDLE_SCHEME,
-        |_ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>| {
-            handle_bundle_request(&request)
-        },
+        |_ctx: UriSchemeContext<'_, R>, request: Request<Vec<u8>>| handle_bundle_request(&request),
     )
 }
 

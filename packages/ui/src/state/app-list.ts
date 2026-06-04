@@ -1,4 +1,5 @@
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { recordObject } from "./thread-item-fields";
 
 export const DESKTOP_APP_LIST_LIMIT = 1000;
 
@@ -99,4 +100,20 @@ export async function loadAllApps(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function appListRefreshMessage(reason: AppListInvalidationReason): string {
+  if (reason === "app-connect-oauth-callback") return "Connector OAuth callback received.";
+  if (reason === "mcp-oauth-login-completed") return "MCP OAuth login completed.";
+  return "App list changed.";
+}
+
+export function mcpOauthLoginRefreshMessage(params: unknown): string {
+  const payload = recordObject(params);
+  const name = typeof payload.name === "string" && payload.name.trim()
+    ? payload.name.trim()
+    : "MCP server";
+  if (payload.success === false) return `${name} OAuth login completed with an error.`;
+  if (payload.success === true) return `${name} OAuth login completed.`;
+  return "MCP OAuth login completed.";
 }

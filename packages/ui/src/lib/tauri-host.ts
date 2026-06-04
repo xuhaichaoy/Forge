@@ -7,6 +7,7 @@ import type { BrowserStorageLike } from "../state/image-generation-tool";
 
 const APP_SERVER_EVENT_NAME = "hicodex://app-server-event";
 const NATIVE_SHELL_EVENT_NAME = "hicodex://native-shell-event";
+const BROWSER_RUNTIME_EVENT_NAME = "hicodex://browser-runtime-event";
 
 export interface HostStatus {
   running: boolean;
@@ -23,6 +24,92 @@ export interface HostInstallationState {
   installationId: string;
   firstLaunch: boolean;
   installationIdPath: string;
+}
+
+export type ComputerUseSetupTarget =
+  | "helper"
+  | "installer"
+  | "screenRecording"
+  | "accessibility";
+
+export interface ComputerUseReadiness {
+  helperAvailable: boolean;
+  helperAppPath?: string | null;
+  helperSignatureValid?: boolean | null;
+  helperSignatureStatus?: string | null;
+  mcpClientPath?: string | null;
+  mcpConfigPath?: string | null;
+  mcpCommand?: string | null;
+  mcpCommandPath?: string | null;
+  mcpCwd?: string | null;
+  mcpConfigTrusted?: boolean | null;
+  mcpConfigStatus?: string | null;
+  mcpCommandExecutable?: boolean | null;
+  mcpClientSignatureValid?: boolean | null;
+  mcpClientSignatureStatus?: string | null;
+  installerAppPath?: string | null;
+  pluginRootPath?: string | null;
+  source?: string | null;
+  repairSourceAvailable?: boolean | null;
+  repairSourcePath?: string | null;
+  repairStatus?: string | null;
+  candidates?: ComputerUseBundleCandidate[] | null;
+  screenRecordingStatus?: string | null;
+  accessibilityStatus?: string | null;
+  appApprovalsStatus?: string | null;
+}
+
+export interface ComputerUseRepairResult {
+  repaired: boolean;
+  sourcePath?: string | null;
+  installedPath?: string | null;
+  message: string;
+  readiness: ComputerUseReadiness;
+}
+
+export interface ComputerUseBundleCandidate {
+  source: string;
+  pluginRootPath: string;
+  helperAppPath?: string | null;
+  helperSignatureValid?: boolean | null;
+  helperSignatureStatus?: string | null;
+  mcpClientPath?: string | null;
+  mcpConfigPath?: string | null;
+  mcpCommand?: string | null;
+  mcpCommandPath?: string | null;
+  mcpCwd?: string | null;
+  mcpConfigTrusted?: boolean | null;
+  mcpConfigStatus?: string | null;
+  mcpCommandExecutable?: boolean | null;
+  mcpClientSignatureValid?: boolean | null;
+  mcpClientSignatureStatus?: string | null;
+  installerAppPath?: string | null;
+  installerSignatureValid?: boolean | null;
+  installerSignatureStatus?: string | null;
+  usableForRepair?: boolean | null;
+}
+
+export interface BrowserRuntimeTab {
+  tabId: string;
+  title: string;
+  url: string;
+  displayUrl: string;
+  open: boolean;
+  isAgentWorking: boolean;
+}
+
+export interface BrowserRuntimeStatus {
+  available: boolean;
+  activeTabId?: string | null;
+  tabs: BrowserRuntimeTab[];
+  error?: string | null;
+  iabBackendRegistered?: boolean | null;
+  iabBackendPath?: string | null;
+  iabBackendMode?: string | null;
+  extensionBackendRegistered?: boolean | null;
+  extensionBackendValidated?: boolean | null;
+  extensionBackendPath?: string | null;
+  extensionBackendMode?: string | null;
 }
 
 export interface AppServerStartConfig {
@@ -298,6 +385,10 @@ export function listenNativeShellEvents(handler: (event: NativeShellAction) => v
   return listen<NativeShellAction>(NATIVE_SHELL_EVENT_NAME, (event) => handler(event.payload));
 }
 
+export function listenBrowserRuntimeEvents(handler: (status: BrowserRuntimeStatus) => void): Promise<UnlistenFn> {
+  return listen<BrowserRuntimeStatus>(BROWSER_RUNTIME_EVENT_NAME, (event) => handler(event.payload));
+}
+
 export interface NativeFileDropEvent {
   type: DragDropEvent["type"];
   paths: string[];
@@ -335,6 +426,39 @@ export async function readInstallationState(
   const state = await invoke<HostInstallationState>("host_read_installation_state", { codexHome });
   recordHostOnboardingSignal(state, browserStorage());
   return state;
+}
+
+export function readComputerUseReadiness(
+  codexHome: string | null | undefined,
+): Promise<ComputerUseReadiness> {
+  return invoke<ComputerUseReadiness>("host_read_computer_use_readiness", { codexHome });
+}
+
+export function repairComputerUseBundle(
+  codexHome: string | null | undefined,
+): Promise<ComputerUseRepairResult> {
+  return invoke<ComputerUseRepairResult>("host_repair_computer_use_bundle", { codexHome });
+}
+
+export function openComputerUseSetup(
+  codexHome: string | null | undefined,
+  target: ComputerUseSetupTarget,
+): Promise<void> {
+  return invoke("host_open_computer_use_setup", { codexHome, target });
+}
+
+export function readBrowserRuntimeStatus(): Promise<BrowserRuntimeStatus> {
+  return invoke<BrowserRuntimeStatus>("host_browser_runtime_status");
+}
+
+export function openBrowserRuntimeTab(
+  url?: string | null,
+  tabId?: string | null,
+): Promise<BrowserRuntimeStatus> {
+  return invoke<BrowserRuntimeStatus>("host_open_browser_tab", {
+    url: url ?? null,
+    tabId: tabId ?? null,
+  });
 }
 
 export function openFileReference(path: string, line?: number | null): Promise<void> {

@@ -1,21 +1,19 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
 import type {
   CollaborationModeMask,
   JsonRpcNotification,
   ModelConfig,
   Thread,
-  ThreadGoalClearResponse,
-  ThreadGoalSetResponse,
 } from "@hicodex/codex-protocol";
-import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
-import { FileText, FolderOpen, Loader2, Plus, X } from "lucide-react";
+import { FileText, FolderOpen, Globe, Plus, X } from "lucide-react";
 import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
 import { KbArchiveView } from "./components/kb-archive-view";
 import { KbIngestView } from "./components/kb-ingest-view";
 import { KbLibraryView } from "./components/kb-library-view";
 import { KbTodoView } from "./components/kb-todo-view";
-import { AppToastViewport } from "./components/app-toast-viewport";
+import { AppOverlays } from "./components/app-overlays";
 import { AboveComposerPanelContainer } from "./components/above-composer-panel";
+import { BrowserTabContent } from "./components/browser-tab-content";
 import { FilesTabContent } from "./components/files-tab-content";
 // codex: thread-app-shell-chrome-*.js — right-side
 // "Side Panel + New Tab" landing page (4 cards) shown when the panel is open
@@ -28,55 +26,52 @@ import { SidePanelHost } from "./components/side-panel-host";
 import { useSidePanelTabHost } from "./hooks/use-side-panel-tab-host";
 // codex: keyboard-shortcuts-settings-*.js — standalone dialog rendering
 // all `COMMAND_DESCRIPTORS` with their platform-formatted accelerator.
-import { KeyboardShortcutsDialog } from "./components/keyboard-shortcuts-dialog";
 import { HooksReviewBanner } from "./components/hooks-review-banner";
 import { StatusTextPanel } from "./components/status-text-panel";
-import { CommandPanel } from "./components/command-panel";
+import { PanelOverlays } from "./components/panel-overlays";
 import { Composer } from "./components/composer";
 import { ComposerExternalFooter, ComposerSettingsChips } from "./components/composer-external-footer";
 import { ComposerQuotaBanner } from "./components/composer-quota-banner";
 import { ComposerStatusPanel } from "./components/composer-status-panel";
-import { ThreadGoalBanner, type ThreadGoalBannerAction } from "./components/thread-goal-banner";
-import { HiCodexIntlProvider, useHiCodexIntl } from "./components/i18n-provider";
-import { insertPromptEditorText } from "./components/prompt-editor";
+import { ThreadGoalBanner } from "./components/thread-goal-banner";
+import { HiCodexIntlProvider } from "./components/i18n-provider";
+import { ServicesProvider, useServices } from "./components/services-context";
+import { NavigationProvider } from "./components/navigation-context";
+import { focusComposerFromPlainTextKey } from "./components/composer-keyboard";
+import { PreConversationLoadingShell } from "./components/pre-conversation-loading-shell";
+import type { McpFollowUpDialogRequest } from "./components/mcp-follow-up-dialog";
 import {
   DEFAULT_PROVIDERS,
-  ModelPickerMenu,
-  decodeSelection,
-  encodeSelection,
   isSubscriptionProviderId,
   normalizeSubscriptionProviderId,
   resolveEffectiveModelSelection,
 } from "./components/model-picker-menu";
-import {
-  ReasoningPickerMenu,
-  normalizeReasoningEffortValue,
-} from "./components/reasoning-picker-menu";
+import { normalizeReasoningEffortValue } from "./components/reasoning-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { BackgroundSubagentsStack } from "./components/background-subagents-stack";
 import { ArtifactPreviewPanel } from "./components/artifact-preview-panel";
 import { AutomationsPreviewPanel } from "./components/automations-preview-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
-import type { PatchAction, PatchActionState } from "./components/conversation-view";
 // codex inline-mentions-*.js / user-message-attachments-*.js context-menu wrapper —
 // reveal + copy-contents actions for file-reference anchors + attachment pills,
 // provided once above the conversation.
 import { FileCitationMenuContext } from "./components/file-citation-menu";
-import type { SubmitTurnRatingEvent, TurnRatingEvent } from "./components/turn-rating-controls";
+import type { SubmitTurnRatingEvent } from "./components/turn-rating-controls";
+import {
+  turnFeedbackUploadClassification,
+  turnFeedbackUploadReason,
+  turnFeedbackUploadTags,
+} from "./components/turn-rating-controls";
 import {
   LiveTurnDiffPortal,
   shouldRenderLiveTurnDiffPortal,
 } from "./components/live-turn-diff-portal";
 import {
-  UnifiedDiffFailureDialog,
-  type UnifiedDiffFailure,
 } from "./components/unified-diff-failure-dialog";
-import { McpToolCallForm } from "./components/mcp-tool-call-form";
-import { McpServerConfigForm } from "./components/mcp-server-config-form";
-import { McpFollowUpDialog, type McpFollowUpDialogOption } from "./components/mcp-follow-up-dialog";
+import type { McpFollowUpDialogOption } from "./components/mcp-follow-up-dialog";
+import { McpDialogs } from "./components/mcp-dialogs";
 import { OnboardingEmptyState } from "./components/onboarding-empty-state";
-import { SettingsPanel } from "./components/model-settings-panel";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
 import { FilePreviewPanel, FileReferencePreviewTab } from "./components/file-preview-panel";
@@ -84,15 +79,12 @@ import { RightRail } from "./components/right-rail";
 import { RemoteTaskView } from "./components/remote-task-view";
 import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
-import { ThreadActionDialog } from "./components/thread-action-dialog";
-import { ForkFromOlderTurnDialog } from "./components/fork-from-older-turn-dialog";
+import { ThreadDialogs } from "./components/thread-dialogs";
 import { ThreadFindBar } from "./components/thread-find-bar";
 import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
-import { formatError } from "./lib/format";
+import { formatError, hostFromBaseUrl, patchFailurePathForOpen } from "./lib/format";
 import {
-  applyPatchAction,
-  ghPrStatus,
   openExternalUrl,
   revealPath,
   openThreadWindow,
@@ -103,11 +95,19 @@ import {
   pickWorkspaceFolder,
   readCodexAuthSummary,
   type CodexAuthSummary,
-  type GhPrInfo,
-  type PatchActionResult,
   type WorkspaceDirEntry,
 } from "./lib/tauri-host";
-import { applyUpdate, checkForUpdates } from "./lib/updater";
+import { useAppUpdater } from "./hooks/use-app-updater";
+import { useTurnPatchAction } from "./hooks/use-turn-patch-action";
+import { useClipboardCopyActions } from "./hooks/use-clipboard-copy-actions";
+import { useThreadPins } from "./hooks/use-thread-pins";
+import { useHooksReview } from "./hooks/use-hooks-review";
+import { useWorktreeGitAndPrStatus } from "./hooks/use-worktree-status";
+import { useThreadGoalActions } from "./hooks/use-thread-goal-actions";
+import { useReconnectRecovery } from "./hooks/use-reconnect-recovery";
+import { useThreadFind } from "./hooks/use-thread-find";
+import { useRemoteTaskActions } from "./hooks/use-remote-task-actions";
+import { useHiCodexImageToolResponder } from "./hooks/use-hicodex-image-tool-responder";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
@@ -133,22 +133,29 @@ import {
   DEFAULT_SUBSCRIPTION_PROVIDER_ID,
   DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
   DEFAULT_MODEL_REASONING_SUMMARY,
+  decodeSelection,
+  encodeSelection,
+  migrateSubscriptionModelSelection,
   EMPTY_MODEL,
   buildModelConfigFromConfig,
   modelSlugsForConfig,
   normalizeModelSlugs,
   normalizeModelConfig,
+  LEGACY_SELECTED_MODEL_STORAGE_KEY,
+  SELECTED_MODEL_STORAGE_KEY,
 } from "./model/model-settings";
 import {
   codexUiReducer,
   initialCodexUiState,
+  type CodexUiState,
   selectActiveThreadRuntime,
   selectItemsByThread,
   type PendingServerRequest,
 } from "./state/codex-reducer";
 import {
   accountRefreshScopeForNotification,
-  applyAccountNotification,
+  authModeFromAccountUpdatedNotification,
+  isSuccessfulAccountLoginCompletedNotification,
   beginAccountStateRefresh,
   hasOpenAiCredentialSummary,
   initialAccountState,
@@ -159,11 +166,11 @@ import {
   type AccountState,
 } from "./state/account-state";
 import {
-  PLAN_IMPLEMENTATION_ACCEPT_VALUE,
-  PLAN_IMPLEMENTATION_QUESTION_ID,
   PLAN_IMPLEMENTATION_REQUEST_METHOD,
   buildApprovalResult,
   buildStopPendingRequestResult,
+  planImplementationFollowUpText,
+  planImplementationPendingRequest,
 } from "./state/approval-requests";
 // codex: local-conversation-thread-*.js — `projectActiveThreadAutomation`
 // selects the single heartbeat automation that targets the active thread so the
@@ -172,16 +179,21 @@ import {
   projectActiveThreadAutomation,
   projectAutomationsSurface,
 } from "./state/automations-viewer";
-import { collectBackgroundSubagentStopThreadIds } from "./state/background-subagents-stop";
+import {
+  activeBackgroundSubagentThreadIds,
+  collectBackgroundSubagentStopThreadIds,
+  mergeBackgroundSubagentStopThreadIds,
+} from "./state/background-subagents-stop";
 import { resolveHiCodexBuildInfo } from "./state/build-info";
 import { projectBranchDetails } from "./state/branch-details";
 import {
+  normalizeWorkspaceRoot,
   projectSidebarThreads,
   projectSidebarWorkspaceRootOptions,
   sidebarThreadRelativeTime,
+  workspaceRootOptionsWithCurrent,
   type SidebarOrganizeMode,
   type SidebarSortKey,
-  type SidebarWorkspaceRootOption,
   threadProjectLabel,
 } from "./state/sidebar-projection";
 import {
@@ -224,6 +236,10 @@ import {
   projectPluginEntries,
   type CommandPanelOptions,
   type CommandPanelEntry,
+  commandPanelThreadGroup,
+  isAppBackedPanelState,
+  isCommandMenuPanel,
+  orderCommandPanelThreadsByPinned,
   type CommandPanelKind,
   type CommandPanelState,
 } from "./state/command-panel";
@@ -243,9 +259,10 @@ import {
   formatConfigWriteError,
   readConfigWriteTarget,
 } from "./state/config-write-target";
-import { buildConversationMarkdown } from "./state/conversation-markdown";
 import { threadIdFromCodexDeepLink } from "./state/deep-links";
 import {
+  basenameFromPath,
+  fuzzyFileResultsToWorkspaceEntries,
   WorkspaceFuzzyFileSearchController,
   type WorkspaceFuzzyFileSearchSession,
 } from "./state/fuzzy-file-search-session";
@@ -259,15 +276,10 @@ import {
   mentionOptionsFromSkillsResponse,
 } from "./state/mention-options";
 import {
-  buildTrustAllHooksEdits,
-  hookReviewProjectRoot,
-  projectHooksNeedingReview,
   type HooksSettingsFocus,
-  type HooksReviewSnapshot,
 } from "./state/hooks-review";
 import {
   appRegistryEntriesFromResponse,
-  itemType,
   isThreadStatusInProgress,
   projectConversation,
   type AppRegistryEntry,
@@ -297,15 +309,14 @@ import {
 } from "./state/mcp-app-host";
 import {
   invalidateAppList,
-  invalidateAppListForNotification,
   loadAllApps,
-  type AppListInvalidationReason,
 } from "./state/app-list";
 import { claimAppConnectOAuthCallback } from "./state/app-connect-oauth";
 import {
   deriveActivePendingRequests,
   deriveBackgroundPendingRequests,
   deriveComposerPendingRequests,
+  heartbeatPendingRequestType,
   pendingRequestOwnerThreadId,
   pendingRequestScope,
   summarizePendingRequestAwaitingByThread,
@@ -313,6 +324,7 @@ import {
 import {
   nextOpenFileWatchRefreshKey,
   openFileWatchTargetsFromSidePanelTabs,
+  watchIdFromFsChangedNotification,
   type OpenFileWatchTarget,
 } from "./state/open-file-watches";
 import {
@@ -323,11 +335,11 @@ import {
   loadImageGenerationSettings,
   saveImageGenerationSettings,
   shouldRegisterHiCodexImageDynamicTool,
-  type DynamicToolCallResponseLike,
   type ImageGenerationSettings,
 } from "./state/image-generation-tool";
 import {
   browserStorage,
+  memoriesRootFromCodexHome,
   slashCommandEntries,
   threadGitBranch,
 } from "./state/app-shell-helpers";
@@ -338,7 +350,7 @@ import {
   saveHiCodexLocale,
   type HiCodexLocale,
 } from "./state/i18n";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./state/hicodex-desktop-namespace";
+import { readMigratedStorageValue } from "./state/hicodex-desktop-namespace";
 import {
   loadNotificationPreferences,
   mergeNotificationPreferences,
@@ -349,11 +361,9 @@ import {
   createHostPendingWorktree,
   loadComposerWorkMode,
   projectWorktreeModeOptions,
-  readCurrentHostGitStatus,
   saveComposerWorkMode,
   selectableComposerWorkMode,
   type ComposerWorkMode,
-  type HostGitStatus,
   type PendingWorktree,
 } from "./state/worktrees";
 import {
@@ -377,15 +387,21 @@ import {
   saveRightRailPinned,
 } from "./state/right-rail";
 import {
-  loadPinnedThreadIds,
-  savePinnedThreadIds,
-  updatePinnedThreadIds,
-} from "./state/thread-pins";
+  loadBrowserRuntimeSnapshot,
+  listenBrowserRuntimeSnapshots,
+  openBrowserRuntime,
+  projectBrowserRailInput,
+  type BrowserRuntimeSnapshot,
+} from "./state/browser-runtime";
+import { TAB_KINDS } from "./state/side-panel-tab-host";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
+import { recordObject } from "./state/thread-item-fields";
 import { appendRpcDebugEvent } from "./state/rpc-debug";
 import {
   loadUiThemeMode,
   nextToggleThemeMode,
+  readSystemThemeVariant,
+  subscribeSystemThemeVariant,
   resolveUiThemeMode,
   saveUiThemeMode,
   type ResolvedUiTheme,
@@ -443,47 +459,17 @@ import {
   readWorkspaceDeveloperInstructions,
   sendPanelThreadMessage,
   startSideConversation,
+  cleanBackgroundTerminalsForThread,
+  readInProgressTurnId,
   refreshThreadContextDefaults,
   threadTitle,
   type TurnStartOptions,
   withWorkspaceDeveloperInstructions,
 } from "./state/thread-workflow";
 
-function hostFromBaseUrl(value: string | null | undefined, fallback: string): string {
-  const trimmed = value?.trim();
-  if (!trimmed) return fallback;
-  try {
-    return new URL(trimmed).host || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function isSuccessfulAccountLoginCompletedNotification(message: { method: string; params?: unknown }): boolean {
-  if (message.method !== "account/login/completed") return false;
-  const params = message.params;
-  return Boolean(params && typeof params === "object" && (params as { success?: unknown }).success === true);
-}
-
-function watchIdFromFsChangedNotification(params: unknown): string | null {
-  if (!params || typeof params !== "object") return null;
-  const watchId = (params as { watchId?: unknown }).watchId;
-  return typeof watchId === "string" && watchId.trim() ? watchId : null;
-}
-
-function authModeFromAccountUpdatedNotification(message: { method: string; params?: unknown }): string | null {
-  if (message.method !== "account/updated") return null;
-  const params = message.params;
-  if (!params || typeof params !== "object") return null;
-  const authMode = (params as { authMode?: unknown }).authMode;
-  return typeof authMode === "string" && authMode.trim() ? authMode.trim() : null;
-}
-
 const BACKGROUND_AGENT_PANEL_WIDTH_PX = 520;
 const BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX = 320;
 const BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX = 48;
-const COMMAND_PANEL_PINNED_CHATS_GROUP = { key: "pinned-chats", label: "Pinned chats" };
-const COMMAND_PANEL_RECENT_CHATS_GROUP = { key: "recent-chats", label: "Recent chats" };
 
 function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
   if (containerWidthPx <= 0) return BACKGROUND_AGENT_PANEL_WIDTH_PX;
@@ -493,137 +479,33 @@ function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
   );
 }
 
-function commandPanelThreadGroup(threadId: string, pinnedThreadIds: Set<string>): Pick<CommandPanelEntry, "groupKey" | "groupLabel"> {
-  const group = pinnedThreadIds.has(threadId)
-    ? COMMAND_PANEL_PINNED_CHATS_GROUP
-    : COMMAND_PANEL_RECENT_CHATS_GROUP;
-  return { groupKey: group.key, groupLabel: group.label };
-}
 
-function orderCommandPanelThreadsByPinned<T extends { id: string }>(threads: T[], pinnedThreadIds: Set<string>): T[] {
-  const pinnedThreads = threads.filter((thread) => pinnedThreadIds.has(thread.id));
-  const recentThreads = threads.filter((thread) => !pinnedThreadIds.has(thread.id));
-  return [...pinnedThreads, ...recentThreads];
-}
 
-function patchFailurePathForOpen(path: string, cwd: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) return "";
-  if (/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(trimmed)) return trimmed;
-  const root = cwd.trim().replace(/[\\/]+$/, "");
-  if (!root) return trimmed;
-  return `${root}/${trimmed.replace(/^(?:\.[\\/]|[\\/])+/, "")}`;
-}
-
-function fuzzyFileResultsToWorkspaceEntries(root: string, files: Array<{
-  root?: string;
-  path?: string;
-  file_name?: string;
-}>): WorkspaceDirEntry[] {
-  const seen = new Set<string>();
-  const entries: WorkspaceDirEntry[] = [];
-  for (const file of files) {
-    const path = workspaceRelativeFuzzyPath(root, file);
-    if (!path || seen.has(path)) continue;
-    seen.add(path);
-    entries.push({
-      type: "file",
-      path,
-      name: file.file_name || basenameFromPath(path),
-    });
-  }
-  return entries;
-}
-
-function workspaceRelativeFuzzyPath(root: string, file: { root?: string; path?: string; file_name?: string }): string {
-  const rawPath = (file.path || file.file_name || "").replace(/\\/g, "/").trim();
-  if (!rawPath) return "";
-  const normalizedRoot = (file.root || root).replace(/\\/g, "/").replace(/\/+$/, "");
-  if (normalizedRoot && rawPath === normalizedRoot) return file.file_name || "";
-  if (normalizedRoot && rawPath.startsWith(`${normalizedRoot}/`)) {
-    return rawPath.slice(normalizedRoot.length + 1).replace(/^\/+/, "");
-  }
-  return rawPath.replace(/^\/+/, "");
-}
-
-function basenameFromPath(path: string): string {
-  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
-  const slash = normalized.lastIndexOf("/");
-  return slash >= 0 ? normalized.slice(slash + 1) : normalized;
-}
-
-function turnFeedbackUploadClassification(event: TurnRatingEvent): string {
-  if (event.eventKind === "turn_rating") {
-    return event.rating === "thumbs_up" ? "good_result" : "bad_result";
-  }
-  return "other";
-}
-
-function turnFeedbackUploadReason(event: TurnRatingEvent): string {
-  if (event.eventKind === "turn_rating") return event.rating;
-  const selectedOption = event.metadata.selected_option ?? "none";
-  const details = event.metadata.details.trim();
-  return details ? `option=${selectedOption}\n\n${details}` : `option=${selectedOption}`;
-}
-
-function turnFeedbackUploadTags(event: TurnRatingEvent): Record<string, string> {
-  const baseTags = {
-    source: "hicodex_turn_rating",
-    event_kind: event.eventKind,
-    turn_id: event.turnId,
-  };
-  if (event.eventKind === "turn_rating") {
-    return {
-      ...baseTags,
-      rating: event.rating,
-    };
-  }
-  return {
-    ...baseTags,
-    action: event.action,
-    has_artifacts: event.metadata.has_artifacts ? "true" : "false",
-    selected_option: event.metadata.selected_option ?? "none",
-  };
-}
-
-const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
-const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;
 const LOCAL_SIDE_PANEL_HOST_ID = "local";
 
-function migrateSubscriptionModelSelection(value: string | null): string | null {
-  const decoded = decodeSelection(value);
-  if (!decoded || decoded.providerId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID) return value;
-  return encodeSelection(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID, decoded.model);
+
+
+interface HiCodexClientCallbacks {
+  onNotification: (message: JsonRpcNotification) => void;
+  onDebugEvent: (event: RpcDebugEvent) => void;
 }
 
-function readSystemThemeVariant(): ResolvedUiTheme {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+interface HiCodexAppBodyProps {
+  state: CodexUiState;
+  clientCallbacksRef: MutableRefObject<HiCodexClientCallbacks>;
+  fileSearchControllerRef: MutableRefObject<WorkspaceFuzzyFileSearchController | null>;
 }
 
-function subscribeSystemThemeVariant(onChange: (theme: ResolvedUiTheme) => void): () => void {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
-  const listener = () => onChange(media.matches ? "dark" : "light");
-  listener();
-  if (typeof media.addEventListener === "function") {
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
-  }
-  media.addListener(listener);
-  return () => media.removeListener(listener);
-}
-
-interface McpFollowUpDialogRequest {
-  prompt: string;
-  request: McpAppHostCallRequest;
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-  source: ReturnType<typeof mcpAppFollowUpSource>;
-}
-
-export function HiCodexApp() {
-  const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
+/*
+ * HiCodexAppBody holds the entire workbench: every feature hook, derivation, and
+ * the full JSX tree. It renders inside the shell's <ServicesProvider>, so it (and
+ * its subtree) reads the JSON-RPC client + reducer dispatch via useServices()
+ * instead of owning them. `state` and the two client-owned refs come from the
+ * shell as props; connect / ensureConnected / auto-reconnect remain defined here
+ * (unmoved) so no effect changes position.
+ */
+function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: HiCodexAppBodyProps) {
+  const { client, dispatch } = useServices();
   const buildInfo = useMemo(() => resolveHiCodexBuildInfo(
     (import.meta as unknown as { env?: Record<string, unknown> }).env,
   ), []);
@@ -636,11 +518,6 @@ export function HiCodexApp() {
     loadComposerWorkMode(browserStorage())
   );
   const [pendingWorktree, setPendingWorktree] = useState<PendingWorktree | null>(null);
-  const [worktreeHostGitStatus, setWorktreeHostGitStatus] = useState<HostGitStatus | null>(null);
-  // codex: local-conversation-thread-*.js row 4 `ga` PR widget — cached
-  // gh CLI PR status keyed off `worktreeStatusCwd`. Empty when there is no PR
-  // on the active branch (silently hides the row).
-  const [pullRequestStatus, setPullRequestStatus] = useState<GhPrInfo | null>(null);
   const [workspaceDeveloperInstructions, setWorkspaceDeveloperInstructions] = useState<{
     workspace: string;
     value: string | null;
@@ -832,7 +709,6 @@ export function HiCodexApp() {
   }, []);
   const [rightRailPopoverOpen, setRightRailPopoverOpen] = useState(false);
   const [composerStatusPanelOpen, setComposerStatusPanelOpen] = useState(false);
-  const [threadGoalPendingAction, setThreadGoalPendingAction] = useState<ThreadGoalBannerAction | null>(null);
   /*
    * Codex Desktop Summary Rail visibility (in
    * `local-conversation-thread-*.js`) is derived state, not
@@ -846,19 +722,14 @@ export function HiCodexApp() {
    * lives in `showRightRail` below; the storage-backed `rightRailOpen`
    * state has been removed.
    */
-  const [pinnedThreadIds, setPinnedThreadIds] = useState<Set<string>>(() => loadPinnedThreadIds(browserStorage()));
+  const { pinnedThreadIds, setThreadPinnedById, toggleThreadPinned } = useThreadPins();
   /*
    * Tauri auto-update state (mirror of Codex Desktop's update banner). The
    * `pendingUpdate` ref holds the Update plugin handle (the actual download
    * trigger); the visible state slice is only the version + progress + error
    * so React doesn't re-render on every plugin internal mutation.
    */
-  const [updateBadge, setUpdateBadge] = useState<{
-    version: string;
-    progress: number | null;
-    error: string | null;
-  } | null>(null);
-  const pendingUpdateRef = useRef<unknown>(null);
+  const { updateBadge, runUpdate } = useAppUpdater();
   const mcpFollowUpDialogPendingRef = useRef(false);
   const mcpFollowUpDialogDispatchingRef = useRef(false);
   const openSideConversationPanelRef = useRef<((thread: Thread) => void) | null>(null);
@@ -955,20 +826,10 @@ export function HiCodexApp() {
   const [activeSettingsPanel, setActiveSettingsPanel] = useState<SettingsPanelId | null>(null);
   const [settingsPanelState, setSettingsPanelState] = useState<CommandPanelState | null>(null);
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
-  const [threadFindOpen, setThreadFindOpen] = useState(false);
-  const [threadFindQuery, setThreadFindQuery] = useState("");
-  const [threadFindIndex, setThreadFindIndex] = useState(0);
-  const [threadFindFocusToken, setThreadFindFocusToken] = useState(0);
-  const [threadFindResult, setThreadFindResult] = useState<{ query: string; matches: ThreadFindMatch[] }>({
-    query: "",
-    matches: [],
-  });
-  const previousThreadFindQueryRef = useRef("");
   const [mcpServerForm, setMcpServerForm] = useState<McpServerFormAction | null>(null);
   const [mcpToolForm, setMcpToolForm] = useState<McpToolFormAction | null>(null);
   const [mcpFollowUpDialog, setMcpFollowUpDialog] = useState<McpFollowUpDialogRequest | null>(null);
   const [mcpServerStatuses, setMcpServerStatuses] = useState<unknown>(null);
-  const [mcpServerStatusNonce, setMcpServerStatusNonce] = useState(0);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
   const [imageGenerationSettings, setImageGenerationSettings] = useState<ImageGenerationSettings>(() =>
     loadImageGenerationSettings(browserStorage())
@@ -995,13 +856,7 @@ export function HiCodexApp() {
   const [fileReference, setFileReference] = useState<FileReferenceSelection | null>(null);
   const [backgroundTerminalCleanupPending, setBackgroundTerminalCleanupPending] = useState(false);
   const [backgroundSubagentsStopAllPending, setBackgroundSubagentsStopAllPending] = useState(false);
-  const [skillsChangedNonce, setSkillsChangedNonce] = useState(0);
-  const [hooksChangedNonce, setHooksChangedNonce] = useState(0);
-  const [appListChangedNonce, setAppListChangedNonce] = useState(0);
-  const [hooksReviewSnapshot, setHooksReviewSnapshot] = useState<HooksReviewSnapshot | null>(null);
   const [appRegistry, setAppRegistry] = useState<AppRegistryEntry[]>([]);
-  const [accountState, setAccountState] = useState<AccountState>(initialAccountState);
-  const [accountRefreshNonce, setAccountRefreshNonce] = useState(0);
   const [rpcDebugEvents, setRpcDebugEvents] = useState<RpcDebugEvent[]>([]);
   const [automationsPanelOpen, setAutomationsPanelOpen] = useState(false);
   const [automationsPayload, setAutomationsPayload] = useState<unknown>(null);
@@ -1016,19 +871,12 @@ export function HiCodexApp() {
   const accountStateRef = useRef<AccountState>(initialAccountState);
   const mcpStartupStatusPanelHandledRef = useRef(0);
   const appListChangedHandledRef = useRef(0);
-  const appListRefreshMessageRef = useRef("App list changed.");
-  const mcpServerStatusRefreshMessageRef = useRef("MCP startup status changed.");
   const openArtifactPreviewTabRef = useRef<((entry: RailEntry) => void) | null>(null);
-  const clientRef = useRef<CodexJsonRpcClient | null>(null);
   const refreshOpenFileWatchTabsRef = useRef<((watchId: string) => void) | null>(null);
   const authRefreshTokenOnNextRefreshRef = useRef(false);
   const accountRefreshTokenOnNextRefreshRef = useRef(false);
   const workspaceInitialized = useRef(false);
-  const hasConnectedOnceRef = useRef(false);
-  const needsReconnectRecoveryRef = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
-  const hooksReviewRequestSeqRef = useRef(0);
-  const fileSearchControllerRef = useRef<WorkspaceFuzzyFileSearchController | null>(null);
   const fileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
   const fileSearchSessionRootsKeyRef = useRef("");
   const fileSearchActiveQueryRef = useRef("");
@@ -1044,68 +892,43 @@ export function HiCodexApp() {
   const mainWidth = useElementInlineSize(mainRef);
   const setAccountProjectionState = useCallback((next: AccountState) => {
     accountStateRef.current = next;
-    setAccountState(next);
-  }, []);
+    dispatch({ type: "setAccount", account: next });
+  }, [dispatch]);
+  // Keep the shadow ref the refresh effects read in sync with the reducer's
+  // account slice: explicit setAccountProjectionState writes it eagerly, and
+  // this render-phase line covers notification-driven updates (the effects read
+  // .current to avoid stale closures).
+  accountStateRef.current = state.account;
   const accountViewModel = useMemo(
-    () => projectAccountViewModel(accountState, codexAuthSummary, formatUiMessage),
-    [accountState, codexAuthSummary, formatUiMessage],
+    () => projectAccountViewModel(state.account, codexAuthSummary, formatUiMessage),
+    [state.account, codexAuthSummary, formatUiMessage],
   );
-  const client = useMemo(() => {
-    const rpc = new CodexJsonRpcClient({
-      onHostStatus: (status) => dispatch({ type: "hostStatus", status }),
-      onNotification: (message) => {
-        fileSearchControllerRef.current?.handleNotification(message);
-        dispatch({ type: "notification", message });
-        const appListInvalidation = invalidateAppListForNotification(message.method);
-        if (appListInvalidation) {
-          appListRefreshMessageRef.current = appListRefreshMessage(appListInvalidation.reason);
-          setAppListChangedNonce((current) => current + 1);
+  clientCallbacksRef.current = {
+    onNotification: (message: JsonRpcNotification) => {
+      fileSearchControllerRef.current?.handleNotification(message);
+      dispatch({ type: "notification", message });
+      if (message.method === "fs/changed") {
+        const watchId = watchIdFromFsChangedNotification(message.params);
+        if (watchId) refreshOpenFileWatchTabsRef.current?.(watchId);
+      }
+      const accountRefreshScope = accountRefreshScopeForNotification(message);
+      if (accountRefreshScope) {
+        if (isSuccessfulAccountLoginCompletedNotification(message)) {
+          authRefreshTokenOnNextRefreshRef.current = true;
+          accountRefreshTokenOnNextRefreshRef.current = true;
         }
-        if (message.method === "skills/changed") {
-          setSkillsChangedNonce((current) => current + 1);
+      }
+      // OAuth completion → re-query auth status so the picker's Sign-in
+      // button + readyProviders flip immediately.
+      if (message.method === "account/login/completed"
+        || message.method === "account/updated") {
+        if (message.method === "account/updated") {
+          setOauthAuthMethod(authModeFromAccountUpdatedNotification(message));
         }
-        if (message.method === "hook/completed") {
-          setHooksChangedNonce((current) => current + 1);
-        }
-        if (message.method === "fs/changed") {
-          const watchId = watchIdFromFsChangedNotification(message.params);
-          if (watchId) refreshOpenFileWatchTabsRef.current?.(watchId);
-        }
-        if (message.method === "mcpServer/startupStatus/updated") {
-          mcpServerStatusRefreshMessageRef.current = "MCP startup status changed.";
-          setMcpServerStatusNonce((current) => current + 1);
-        }
-        if (message.method === "mcpServer/oauthLogin/completed") {
-          mcpServerStatusRefreshMessageRef.current = mcpOauthLoginRefreshMessage(message.params);
-          setMcpServerStatusNonce((current) => current + 1);
-        }
-        const accountRefreshScope = accountRefreshScopeForNotification(message);
-        if (accountRefreshScope) {
-          setAccountProjectionState(applyAccountNotification(accountStateRef.current, message));
-          if (isSuccessfulAccountLoginCompletedNotification(message)) {
-            authRefreshTokenOnNextRefreshRef.current = true;
-            accountRefreshTokenOnNextRefreshRef.current = true;
-          }
-          setAccountRefreshNonce((current) => current + 1);
-        }
-        // OAuth completion → re-query auth status so the picker's Sign-in
-        // button + readyProviders flip immediately.
-        if (message.method === "account/login/completed"
-          || message.method === "account/updated") {
-          if (message.method === "account/updated") {
-            setOauthAuthMethod(authModeFromAccountUpdatedNotification(message));
-          }
-          setAuthRefreshNonce((current) => current + 1);
-        }
-      },
-      onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
-      onLog: (text, level) => dispatch({ type: "log", text, level }),
-      onDebugEvent: (event) => setRpcDebugEvents((current) => appendRpcDebugEvent(current, event)),
-    });
-    clientRef.current = rpc;
-    fileSearchControllerRef.current = new WorkspaceFuzzyFileSearchController(rpc);
-    return rpc;
-  }, [setAccountProjectionState]);
+      }
+    },
+    onDebugEvent: (event: RpcDebugEvent) => setRpcDebugEvents((current) => appendRpcDebugEvent(current, event)),
+  };
   const submitTurnFeedback = useCallback<SubmitTurnRatingEvent>(async (event) => {
     try {
       await client.request("feedback/upload", {
@@ -1124,8 +947,6 @@ export function HiCodexApp() {
     }
   }, [client]);
 
-  /* Auth refresh — bumped by login/logout notifications + manual picker opens. */
-  const [authRefreshNonce, setAuthRefreshNonce] = useState(0);
   useEffect(() => {
     if (!state.connected) return;
     let cancelled = false;
@@ -1160,7 +981,7 @@ export function HiCodexApp() {
       }
     })();
     return () => { cancelled = true; };
-  }, [client, state.connected, authRefreshNonce]);
+  }, [client, state.connected, state.invalidation.authRefresh]);
 
   useEffect(() => {
     if (!state.connected) return;
@@ -1174,7 +995,7 @@ export function HiCodexApp() {
         if (!cancelled) setAccountProjectionState(next);
       });
     return () => { cancelled = true; };
-  }, [accountRefreshNonce, client, setAccountProjectionState, state.connected]);
+  }, [state.invalidation.accountRefresh, client, setAccountProjectionState, state.connected]);
 
   useEffect(() => {
     if (!state.connected) {
@@ -1183,7 +1004,7 @@ export function HiCodexApp() {
     }
     let cancelled = false;
     void loadAllApps(client, {
-      forceRefetch: appListChangedNonce > 0,
+      forceRefetch: state.invalidation.appList > 0,
       threadId: state.activeThreadId,
     })
       .then((apps) => {
@@ -1193,7 +1014,7 @@ export function HiCodexApp() {
         if (!cancelled) setAppRegistry([]);
       });
     return () => { cancelled = true; };
-  }, [appListChangedNonce, client, state.activeThreadId, state.connected]);
+  }, [state.invalidation.appList, client, state.activeThreadId, state.connected]);
 
   const signOutAccount = useCallback(async () => {
     const previous = accountStateRef.current;
@@ -1211,7 +1032,7 @@ export function HiCodexApp() {
         email: null,
         planType: null,
       });
-      setAuthRefreshNonce((current) => current + 1);
+      dispatch({ type: "invalidateAuth" });
       dispatch({ type: "log", text: "Logged out from the current Codex account.", level: "info" });
     } catch (error) {
       setAccountProjectionState({
@@ -1245,11 +1066,11 @@ export function HiCodexApp() {
       }
     })();
     return () => { cancelled = true; };
-  }, [state.connected, state.hostStatus?.codexHome, authRefreshNonce]);
+  }, [state.connected, state.hostStatus?.codexHome, state.invalidation.authRefresh]);
 
   // Re-check when the picker opens (covers OAuth completing while picker is closed).
   useEffect(() => {
-    if (modelPickerAnchor) setAuthRefreshNonce((current) => current + 1);
+    if (modelPickerAnchor) dispatch({ type: "invalidateAuth" });
   }, [modelPickerAnchor]);
 
   const activeThreadRuntime = selectActiveThreadRuntime(state);
@@ -1263,107 +1084,11 @@ export function HiCodexApp() {
   const itemsByThread = useMemo(() => selectItemsByThread(state), [state.threadsRuntime]);
   const activeThreadRunning = Boolean(activeTurnId) || isThreadStatusInProgress(activeThread?.status);
   const worktreeStatusCwd = activeThread?.cwd?.trim() || workspace.trim();
-  const hooksReviewCwd = activeThread ? "" : (workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "");
-  const showHooksReviewBanner = !activeThread
-    && (hooksReviewSnapshot?.count ?? 0) > 0
-    && input.trim().length === 0
-    && composerAttachments.length === 0;
-
-  /*
-   * Codex Desktop turn-diff Undo / Reapply state. Mirrors the two-useState
-   * local-state pattern in local-conversation-thread-*.js:
-   * `patchActionState` tracks which
-   * direction the toolbar button is currently in (undo ↔ reapply); `patchFailure`
-   * drives the `<UnifiedDiffFailureDialog/>` overlay. We hand the callback
-   * straight to `ConversationView`; it bubbles down to `TurnDiffBlock`'s
-   * `onPatchAction`.
-   */
-  const [patchActionState, setPatchActionState] = useState<PatchActionState>(null);
-  const [patchFailure, setPatchFailure] = useState<UnifiedDiffFailure | null>(null);
-  const [patchActionInFlight, setPatchActionInFlight] = useState(false);
-  /*
-   * Synchronous re-entrancy lock — `setPatchActionInFlight(true)` only updates
-   * state on the NEXT render, so a fast double-click can clear the `if
-   * (patchActionInFlight) return;` guard twice before React commits. A ref
-   * mutates immediately and blocks the second handler call before any git
-   * apply runs against the working tree.
-   */
-  const patchActionLockRef = useRef(false);
-  const handlePatchAction = useCallback(
-    (action: PatchAction, diff: string) => {
-      if (patchActionLockRef.current) return;
-      patchActionLockRef.current = true;
-      const cwd = worktreeStatusCwd;
-      if (!cwd) {
-        patchActionLockRef.current = false;
-        setPatchFailure({
-          action: action === "undo" ? "revert" : "reapply",
-          result: { appliedPaths: [], skippedPaths: [], conflictedPaths: [] },
-          errorCode: "not-git-repo",
-        });
-        return;
-      }
-      setPatchActionInFlight(true);
-      const apiAction = action === "undo" ? "revert" : "reapply";
-      applyPatchAction({ action: apiAction, diff, cwd })
-        .then((result: PatchActionResult) => {
-          const conflicted = result.conflictedPaths ?? [];
-          const skipped = result.skippedPaths ?? [];
-          const errorCode = result.errorCode ?? undefined;
-          const failed =
-            (errorCode != null && errorCode.length > 0)
-            || conflicted.length > 0
-            || skipped.length > 0;
-          if (failed) {
-            setPatchFailure({
-              action: result.action,
-              result: {
-                appliedPaths: result.appliedPaths ?? [],
-                skippedPaths: skipped,
-                conflictedPaths: conflicted,
-                execOutput: result.execOutput ?? null,
-              },
-              errorCode,
-            });
-            return;
-          }
-          // Clean apply / reverse — flip the toolbar button so the user can
-          // toggle back without re-mounting the row, then surface Codex's
-          // success toast (codex.unifiedDiff.revertPatchSuccess /
-          // reapplyPatchSuccess). Re-verified vs Codex Desktop v26.519.81530.
-          setPatchActionState({ action, diff });
-          dispatch({
-            type: "log",
-            text: apiAction === "revert" ? "Changes reverted" : "Changes reapplied",
-            level: "info",
-          });
-        })
-        .catch((error: unknown) => {
-          /*
-           * A thrown patch action (IPC error, or host_apply_patch_action
-           * returning Err before any structured result) surfaces as a danger
-           * toast (codex.unifiedDiff.revertPatchError / reapplyPatchError),
-           * matching Codex Desktop. The Failure Dialog is reserved for
-           * partial/conflicted RESULTS (the .then() failed branch) and the
-           * not-git-repo case. Re-verified vs Codex Desktop v26.519.81530.
-           */
-          const errorText = formatError(error);
-          if (errorText && typeof console !== "undefined") {
-            console.warn("patch action failed", errorText);
-          }
-          dispatch({
-            type: "log",
-            text: apiAction === "revert" ? "Failed to revert changes" : "Failed to reapply changes",
-            level: "error",
-          });
-        })
-        .finally(() => {
-          patchActionLockRef.current = false;
-          setPatchActionInFlight(false);
-        });
-    },
-    [worktreeStatusCwd],
-  );
+  // Turn-diff Undo / Reapply (state + re-entrancy lock + handler) lives in
+  // useTurnPatchAction; ConversationView gets onPatchAction, the failure dialog reads patchFailure.
+  const { handlePatchAction, patchActionState, patchActionInFlight, patchFailure, setPatchFailure } =
+    useTurnPatchAction({ worktreeStatusCwd });
+  const { worktreeHostGitStatus, pullRequestStatus } = useWorktreeGitAndPrStatus({ worktreeStatusCwd });
   const activeProgressPlan = activeThreadRuntime.turnPlan;
   const conversation = useMemo(
     () => projectConversation(activeItems, {
@@ -1500,36 +1225,13 @@ export function HiCodexApp() {
     [itemsByThread, state.pendingRequests],
   );
   const handledImageToolRequestIdsRef = useRef(new Set<string>());
-  useEffect(() => {
-    for (const request of state.pendingRequests) {
-      if (!isHiCodexImageToolCall(request)) continue;
-      if (!claimHiCodexImageToolRequest(handledImageToolRequestIdsRef.current, request)) continue;
-      void (async () => {
-        let result: DynamicToolCallResponseLike;
-        try {
-          result = await executeHiCodexImageToolCall(request, normalizeModelConfig(modelDraft), {
-            codexHome: state.hostStatus?.codexHome,
-            imageSettings: imageGenerationSettings,
-          });
-        } catch (error) {
-          result = {
-            success: false,
-            contentItems: [{ type: "inputText" as const, text: `Image generation request failed: ${formatError(error)}` }],
-          };
-        }
-        const failureText = imageToolFailureText(result);
-        if (failureText) dispatch({ type: "log", text: failureText, level: "error" });
-        try {
-          await client.respond(request.id, result);
-        } catch (error) {
-          dispatch({ type: "log", text: `Image generation response failed: ${formatError(error)}`, level: "error" });
-        }
-      })()
-        .finally(() => {
-          dispatch({ type: "resolveServerRequest", id: request.id });
-        });
-    }
-  }, [client, imageGenerationSettings, modelDraft, state.hostStatus?.codexHome, state.pendingRequests]);
+  useHiCodexImageToolResponder({
+    handledImageToolRequestIdsRef,
+    pendingRequests: state.pendingRequests,
+    modelDraft,
+    codexHome: state.hostStatus?.codexHome,
+    imageGenerationSettings,
+  });
   const activeModelSupportsImageInput = useMemo(() => {
     const providerId = state.threadContextDefaults?.modelProvider ?? "";
     const modelSlug = state.threadContextDefaults?.model ?? "";
@@ -1566,54 +1268,6 @@ export function HiCodexApp() {
     }),
     [activeDiff, activeThread, pullRequestStatus, worktreeHostGitStatus],
   );
-  useEffect(() => {
-    if (!worktreeStatusCwd || !isTauriRuntime()) {
-      setWorktreeHostGitStatus(null);
-      return;
-    }
-    let cancelled = false;
-    void readCurrentHostGitStatus(worktreeStatusCwd)
-      .then((status) => {
-        if (cancelled) return;
-        setWorktreeHostGitStatus(status);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setWorktreeHostGitStatus(null);
-        dispatch({ type: "log", text: `host git status failed: ${formatError(error)}`, level: "warn" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [dispatch, worktreeStatusCwd]);
-  /*
-   * codex: local-conversation-thread-*.js row 4 `ga` PR widget —
-   * fetches PR status via `gh pr status` and caches it for `projectBranchDetails`.
-   * Runs alongside the readCurrentHostGitStatus effect and is gated on the
-   * same `worktreeStatusCwd`. Failures are silent (the row simply doesn't
-   * render); they're logged once for triage but don't surface a banner.
-   */
-  useEffect(() => {
-    if (!worktreeStatusCwd || !isTauriRuntime()) {
-      setPullRequestStatus(null);
-      return;
-    }
-    let cancelled = false;
-    void ghPrStatus(worktreeStatusCwd)
-      .then((response) => {
-        if (cancelled) return;
-        setPullRequestStatus(response.pr);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // codex: PR row is best-effort; gh CLI absence / network failure should
-        // not block the rail — silently clear and skip the log noise.
-        setPullRequestStatus(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [worktreeStatusCwd]);
   const composerWorkModeOptions = useMemo(
     () => projectWorktreeModeOptions({
       hostGitStatus: worktreeHostGitStatus,
@@ -1622,60 +1276,22 @@ export function HiCodexApp() {
     }),
     [composerWorkMode, worktreeHostGitStatus],
   );
-  const activeThreadFindMatches = useMemo(
-    () => (threadFindResult.query === threadFindQuery ? threadFindResult.matches : []),
-    [threadFindQuery, threadFindResult],
-  );
-  const visibleThreadFindIndex = clampThreadFindIndex(threadFindIndex, activeThreadFindMatches.length);
-  const activeThreadFindMatch = activeThreadFindMatches[visibleThreadFindIndex] ?? null;
-  const openThreadFindBar = useCallback(() => {
-    setCommandPanel(null);
-    setActiveSettingsPanel(null);
-    setThreadFindOpen(true);
-    setThreadFindFocusToken((current) => current + 1);
-  }, []);
-  const closeThreadFindBar = useCallback(() => {
-    setThreadFindOpen(false);
-  }, []);
-  const goToThreadFindMatch = useCallback((direction: 1 | -1) => {
-    setThreadFindIndex((current) => nextThreadFindIndex(current, activeThreadFindMatches.length, direction));
-  }, [activeThreadFindMatches.length]);
-  useEffect(() => {
-    if (!threadFindOpen || typeof document === "undefined") return;
-    const root = document.querySelector<HTMLElement>("[data-thread-find-target='conversation']");
-    if (!root) {
-      setThreadFindResult({ query: threadFindQuery, matches: [] });
-      return;
-    }
-    clearThreadFindMarks(root);
-    const matches = findThreadFindMatches(collectThreadFindUnitsFromDom(root), threadFindQuery);
-    const queryChanged = previousThreadFindQueryRef.current !== threadFindQuery;
-    previousThreadFindQueryRef.current = threadFindQuery;
-    setThreadFindResult({ query: threadFindQuery, matches });
-    setThreadFindIndex((current) => queryChanged ? 0 : clampThreadFindIndex(current, matches.length));
-  }, [activeThreadScrollKey, conversation.units, threadFindOpen, threadFindQuery]);
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.querySelector<HTMLElement>("[data-thread-find-target='conversation']");
-    if (!root) return;
-    if (!threadFindOpen) {
-      clearThreadFindMarks(root);
-      return;
-    }
-    applyThreadFindMarks(root, activeThreadFindMatches, activeThreadFindMatch?.id ?? null);
-    if (activeThreadFindMatch) scrollThreadFindMatchIntoView(activeThreadFindMatch, root);
-    return () => clearThreadFindMarks(root);
-  }, [activeThreadFindMatch, activeThreadFindMatches, threadFindOpen]);
-  useEffect(() => {
-    if (!threadFindOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeThreadFindBar();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closeThreadFindBar, threadFindOpen]);
+  const {
+    threadFindOpen,
+    threadFindQuery,
+    setThreadFindQuery,
+    threadFindFocusToken,
+    visibleThreadFindIndex,
+    activeThreadFindMatches,
+    openThreadFindBar,
+    closeThreadFindBar,
+    goToThreadFindMatch,
+  } = useThreadFind({
+    setCommandPanel,
+    setActiveSettingsPanel,
+    activeThreadScrollKey,
+    conversationUnits: conversation.units,
+  });
   const hasFilePreviewSelection = artifactPreview !== null || fileReference !== null;
   /*
    * Codex Desktop opens file/artifact previews into the AppShell RightPanel
@@ -1858,61 +1474,12 @@ export function HiCodexApp() {
     return () => {
       cancelled = true;
     };
-  }, [client, mcpServerStatusNonce, state.connected]);
+  }, [client, state.invalidation.mcpStatus, state.connected]);
 
   useEffect(() => {
     setArtifactPreview(null);
     setFileReference(null);
   }, [state.activeThreadId]);
-
-  /*
-   * Tauri auto-update check. Runs once on mount (5s after the app settles so
-   * we don't compete with the initial connect/listThreads burst), and then
-   * every 6 hours for long-running sessions. Failures are silently swallowed
-   * (placeholder endpoint, offline, DNS, etc.) — the badge simply doesn't
-   * appear and the app continues to work normally.
-   */
-  useEffect(() => {
-    let cancelled = false;
-    const doCheck = async () => {
-      const result = await checkForUpdates();
-      if (cancelled) return;
-      if (result.state === "available") {
-        pendingUpdateRef.current = result.update;
-        setUpdateBadge({
-          version: result.update.version,
-          progress: null,
-          error: null,
-        });
-      }
-    };
-    const initialTimer = window.setTimeout(() => { void doCheck(); }, 5_000);
-    const periodicTimer = window.setInterval(() => { void doCheck(); }, 6 * 60 * 60 * 1000);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(initialTimer);
-      window.clearInterval(periodicTimer);
-    };
-  }, []);
-
-  const runUpdate = useCallback(async () => {
-    const update = pendingUpdateRef.current as { downloadAndInstall?: unknown } | null;
-    if (!update) return;
-    setUpdateBadge((current) => (current ? { ...current, progress: 0, error: null } : current));
-    try {
-      await applyUpdate(update as Parameters<typeof applyUpdate>[0], (loaded, total) => {
-        const fraction = total > 0 ? Math.min(loaded / total, 1) : 0;
-        setUpdateBadge((current) => (current ? { ...current, progress: fraction } : current));
-      });
-      // 走到这里说明 relaunch() 已经触发；进程要重启，UI 状态不再相关。
-    } catch (err) {
-      setUpdateBadge((current) => (current ? {
-        ...current,
-        progress: null,
-        error: err instanceof Error ? err.message : String(err),
-      } : current));
-    }
-  }, []);
 
   const ensureConnected = useCallback(async () => {
     if (state.connected) return true;
@@ -2082,97 +1649,22 @@ export function HiCodexApp() {
     ?? null;
   const composerQuotaBanner = useMemo(
     () => projectComposerQuotaBanner(
-      accountState.rateLimitsByLimitId,
-      accountState.rateLimits,
+      state.account.rateLimitsByLimitId,
+      state.account.rateLimits,
       composerSelectedModel,
     ),
-    [accountState.rateLimits, accountState.rateLimitsByLimitId, composerSelectedModel],
+    [state.account.rateLimits, state.account.rateLimitsByLimitId, composerSelectedModel],
   );
 
-  const updateActiveThreadGoal = useCallback(async (
-    patch: { objective?: string; status?: ThreadGoalStatus },
-    pendingAction: ThreadGoalBannerAction,
-  ) => {
-    const threadId = state.activeThreadId;
-    if (!threadId) {
-      dispatch({ type: "log", text: "Select or start a thread before editing a goal.", level: "warn" });
-      return;
-    }
-    if (!(await ensureConnected())) return;
-    setThreadGoalPendingAction(pendingAction);
-    try {
-      const response = await client.request<ThreadGoalSetResponse>("thread/goal/set", {
-        threadId,
-        ...patch,
-      }, 120_000);
-      const message: JsonRpcNotification = {
-        method: "thread/goal/updated",
-        params: { threadId, turnId: null, goal: response.goal },
-      };
-      dispatch({ type: "notification", message });
-    } catch (error) {
-      dispatch({ type: "log", text: `thread goal update failed: ${formatError(error)}`, level: "error" });
-    } finally {
-      setThreadGoalPendingAction(null);
-    }
-  }, [client, ensureConnected, state.activeThreadId]);
+  const { threadGoalPendingAction, editActiveThreadGoal, setActiveThreadGoalStatus, clearActiveThreadGoal } =
+    useThreadGoalActions({ ensureConnected, activeThreadId: state.activeThreadId });
 
-  const editActiveThreadGoal = useCallback((objective: string) => (
-    updateActiveThreadGoal({ objective }, "edit")
-  ), [updateActiveThreadGoal]);
-
-  const setActiveThreadGoalStatus = useCallback((status: ThreadGoalStatus) => (
-    updateActiveThreadGoal({ status }, "status")
-  ), [updateActiveThreadGoal]);
-
-  const clearActiveThreadGoal = useCallback(async () => {
-    const threadId = state.activeThreadId;
-    if (!threadId) {
-      dispatch({ type: "log", text: "Select or start a thread before clearing a goal.", level: "warn" });
-      return;
-    }
-    if (!(await ensureConnected())) return;
-    setThreadGoalPendingAction("clear");
-    try {
-      const response = await client.request<ThreadGoalClearResponse>("thread/goal/clear", { threadId }, 120_000);
-      if (response.cleared) {
-        const message: JsonRpcNotification = {
-          method: "thread/goal/cleared",
-          params: { threadId },
-        };
-        dispatch({ type: "notification", message });
-      }
-    } catch (error) {
-      dispatch({ type: "log", text: `thread goal clear failed: ${formatError(error)}`, level: "error" });
-    } finally {
-      setThreadGoalPendingAction(null);
-    }
-  }, [client, ensureConnected, state.activeThreadId]);
-
-  useEffect(() => {
-    if (!state.connected) {
-      if (hasConnectedOnceRef.current) needsReconnectRecoveryRef.current = true;
-      return;
-    }
-    if (!hasConnectedOnceRef.current) {
-      hasConnectedOnceRef.current = true;
-      return;
-    }
-    if (!needsReconnectRecoveryRef.current) return;
-    needsReconnectRecoveryRef.current = false;
-    dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
-    if (!state.activeThreadId) return;
-    const threadId = state.activeThreadId;
-    void resumeThreadWithMetadataRead(client, threadId, workspace, effectiveThreadContextDefaults)
-      .then((result) => dispatch({ type: "upsertThread", thread: result.thread, select: true }))
-      .catch((error) => {
-        dispatch({
-          type: "log",
-          text: `resume after reconnect failed: ${formatError(error)}`,
-          level: "warn",
-        });
-      });
-  }, [client, effectiveThreadContextDefaults, state.activeThreadId, state.connected, workspace]);
+  useReconnectRecovery({
+    connected: state.connected,
+    activeThreadId: state.activeThreadId,
+    workspace,
+    effectiveThreadContextDefaults,
+  });
 
   const readMcpResource = useCallback(async ({ server, threadId, uri }: McpResourceReadRequest) => {
     if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
@@ -2470,8 +1962,6 @@ export function HiCodexApp() {
     threadActionDialog,
   } = useThreadActions({
     activeThread,
-    client,
-    dispatch,
     ensureConnected,
     setComposerAttachments,
     setInput,
@@ -2577,8 +2067,6 @@ export function HiCodexApp() {
     sideChatRailEntries,
     setBackgroundAgentMessageDraft,
   } = useBackgroundAgentPanel({
-    client,
-    dispatch,
     ensureConnected,
     hostDefaultCwd: state.hostStatus?.defaultCwd,
     activeThreadId: state.activeThreadId,
@@ -2649,6 +2137,40 @@ export function HiCodexApp() {
   // codex: composer-*.js `/status` panel reads the context usage slice
   // populated by `thread/tokenUsage/updated`.
   const tokenUsageSnapshot = activeThreadRuntime.tokenUsage ?? null;
+  const [browserRuntimeSnapshot, setBrowserRuntimeSnapshot] = useState<BrowserRuntimeSnapshot | null>(null);
+  const refreshBrowserRuntime = useCallback(async () => {
+    const next = await loadBrowserRuntimeSnapshot();
+    setBrowserRuntimeSnapshot(next);
+    return next;
+  }, []);
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    void refreshBrowserRuntime();
+  }, [refreshBrowserRuntime]);
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void listenBrowserRuntimeSnapshots((snapshot) => {
+      setBrowserRuntimeSnapshot(snapshot);
+    }).then((dispose) => {
+      if (cancelled) {
+        dispose?.();
+        return;
+      }
+      unlisten = dispose;
+    }).catch((error) => {
+      dispatch({ type: "log", text: `Browser runtime listener failed: ${formatError(error)}`, level: "warn" });
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [dispatch]);
+  const browserRailInput = useMemo(
+    () => projectBrowserRailInput(browserRuntimeSnapshot),
+    [browserRuntimeSnapshot],
+  );
   const rightRailSections = useMemo(
     () => projectRightRailSections({
       progress: conversation.progress,
@@ -2665,11 +2187,13 @@ export function HiCodexApp() {
       sideChats: sideChatRailEntries,
       backgroundAgents: conversation.backgroundAgents,
       backgroundTerminals: conversation.backgroundTerminals,
+      ...(browserRailInput ? { browser: browserRailInput } : {}),
       sources: conversation.sources,
     }),
     [
       activeThreadAutomation,
       branchDetails,
+      browserRailInput,
       conversation,
       sideChatRailEntries,
     ],
@@ -2753,26 +2277,7 @@ export function HiCodexApp() {
     }
     void selectWorkbenchThread(thread);
   }, [selectWorkbenchThread, state.threads]);
-  const openRemoteTaskExternal = useCallback((taskId: string) => {
-    const normalizedTaskId = taskId.trim();
-    if (!normalizedTaskId) {
-      dispatch({ type: "log", text: "remote task id is missing", level: "warn" });
-      return;
-    }
-    void openExternalUrl(`https://chatgpt.com/codex/tasks/${encodeURIComponent(normalizedTaskId)}`)
-      .catch((error) => {
-        dispatch({ type: "log", text: `Failed to open remote task ${normalizedTaskId}: ${formatError(error)}`, level: "error" });
-      });
-  }, [dispatch]);
-  const openRemoteTask = useCallback((taskId: string) => {
-    const normalizedTaskId = taskId.trim();
-    if (!normalizedTaskId) {
-      dispatch({ type: "log", text: "remote task id is missing", level: "warn" });
-      return;
-    }
-    setActiveRemoteTaskId(normalizedTaskId);
-    setActiveAppTab("remoteTask");
-  }, [dispatch]);
+  const { openRemoteTask, openRemoteTaskExternal } = useRemoteTaskActions({ setActiveRemoteTaskId, setActiveAppTab });
 
   const openDeepLinkUrl = useCallback(async (url: string | null | undefined) => {
     const appConnectCallback = claimAppConnectOAuthCallback(url);
@@ -2790,9 +2295,8 @@ export function HiCodexApp() {
         const detail = appConnectCallback.oauthErrorDescription
           ? `${appConnectCallback.oauthError}: ${appConnectCallback.oauthErrorDescription}`
           : appConnectCallback.oauthError;
-        appListRefreshMessageRef.current = `${appName} OAuth failed.`;
         invalidateAppList("app-connect-oauth-callback");
-        setAppListChangedNonce((current) => current + 1);
+        dispatch({ type: "invalidateAppList", message: `${appName} OAuth failed.` });
         dispatch({
           type: "log",
           text: `${appName} OAuth failed: ${detail}. Refreshing app and plugin state.`,
@@ -2800,9 +2304,8 @@ export function HiCodexApp() {
         });
         return;
       }
-      appListRefreshMessageRef.current = `${appName} OAuth callback received.`;
       invalidateAppList("app-connect-oauth-callback");
-      setAppListChangedNonce((current) => current + 1);
+      dispatch({ type: "invalidateAppList", message: `${appName} OAuth callback received.` });
       dispatch({
         type: "log",
         text: `${appName} OAuth callback received. Refreshing app and plugin state.`,
@@ -3214,62 +2717,18 @@ export function HiCodexApp() {
     void loadSettingsPanel(activeSettingsPanel, { forceReload: true });
   }, [activeSettingsPanel, loadSettingsPanel]);
 
-  useEffect(() => {
-    const cwd = hooksReviewCwd.trim();
-    if (!state.connected || !hookReviewProjectRoot(cwd)) {
-      setHooksReviewSnapshot(null);
-      return;
-    }
-    let disposed = false;
-    const requestSeq = hooksReviewRequestSeqRef.current + 1;
-    hooksReviewRequestSeqRef.current = requestSeq;
-    void client.request<unknown>("hooks/list", { cwds: [cwd] }, 120_000)
-      .then((response) => {
-        if (disposed || hooksReviewRequestSeqRef.current !== requestSeq) return;
-        setHooksReviewSnapshot(projectHooksNeedingReview(response, cwd));
-      })
-      .catch((error) => {
-        if (disposed || hooksReviewRequestSeqRef.current !== requestSeq) return;
-        setHooksReviewSnapshot(null);
-        dispatch({ type: "log", text: `hooks review refresh failed: ${formatError(error)}`, level: "warn" });
-      });
-    return () => {
-      disposed = true;
-    };
-  }, [client, hooksChangedNonce, hooksReviewCwd, state.connected]);
-
-  const trustAllHooks = useCallback(async () => {
-    const snapshot = hooksReviewSnapshot;
-    if (!snapshot || snapshot.count <= 0) return;
-    if (!(await ensureConnected())) {
-      dispatch({ type: "log", text: "Runtime is offline.", level: "warn" });
-      return;
-    }
-    try {
-      const target = await readConfigWriteTarget(client, {
-        cwd: snapshot.cwd,
-        keyPaths: ["hooks.state"],
-        scope: "Hooks trust",
-      });
-      await client.request("config/batchWrite", buildConfigBatchWriteParams({
-        edits: buildTrustAllHooksEdits(snapshot.hooks),
-        target,
-        reloadUserConfig: true,
-      }), 120_000);
-      dispatch({ type: "log", text: "Trusted hooks", level: "info" });
-      const response = await client.request<unknown>("hooks/list", { cwds: [snapshot.cwd] }, 120_000);
-      setHooksReviewSnapshot(projectHooksNeedingReview(response, snapshot.cwd));
-    } catch (error) {
-      dispatch({ type: "log", text: `hooks trust failed: ${formatConfigWriteError(error, "Hooks trust")}`, level: "warn" });
-    }
-  }, [client, ensureConnected, hooksReviewSnapshot]);
-
-  const reviewHooks = useCallback(() => {
-    void loadSettingsPanel("hooks", {
-      forceReload: true,
-      hooksFocus: hooksReviewSnapshot?.focus ?? null,
-    });
-  }, [hooksReviewSnapshot?.focus, loadSettingsPanel]);
+  const { hooksReviewSnapshot, trustAllHooks, reviewHooks } = useHooksReview({
+    hooksChangedNonce: state.invalidation.hooks,
+    ensureConnected,
+    loadSettingsPanel,
+    activeThread,
+    workspace,
+    defaultCwd: state.hostStatus?.defaultCwd,
+  });
+  const showHooksReviewBanner = !activeThread
+    && (hooksReviewSnapshot?.count ?? 0) > 0
+    && input.trim().length === 0
+    && composerAttachments.length === 0;
 
   /*
    * codex: app-shell-tab-controller-*.js `x({ panelId: 'right', panelOpen$, setPanelOpen })`
@@ -3278,12 +2737,11 @@ export function HiCodexApp() {
    * thread-app-shell-chrome-*.js.
    *
    * `sidePanel` mirrors Codex's right-panel tab controller singleton. The Files
-   * card on the landing page opens a `file-tree` tab whose Component is HiCodex's
-   * existing `WorkspaceFilesPanel` wrapped as `FilesTabContent`. Other Codex
-   * cards (Browser/Terminal/Timeline/Side chat/Review) are intentionally
-   * omitted — per thread-app-shell-chrome-*.js the cards are gated by
-   * feature flags that HiCodex doesn't have an evidence-backed implementation
-   * for yet, so showing them would be dead UI.
+   * card opens a `file-tree` tab whose Component is HiCodex's existing
+   * `WorkspaceFilesPanel` wrapped as `FilesTabContent`; the Browser card opens
+   * the runtime-backed Browser control tab once the Tauri bridge is available.
+   * Terminal/Timeline/Side chat/Review stay omitted until HiCodex has matching
+   * host/protocol-backed implementations.
    */
   const sidePanel = useSidePanelTabHost({ panelId: "right" });
   /*
@@ -3293,6 +2751,27 @@ export function HiCodexApp() {
    * shortcut can deterministically check tab presence by id.
    */
   const FILES_TAB_ID = "file-tree";
+  const openBrowserSurface = useCallback((tabId?: string | null) => {
+    const normalizedTabId = tabId?.trim() || undefined;
+    const sidePanelTabId = normalizedTabId ? `browser:${normalizedTabId}` : "browser";
+    sidePanel.controller.openTab({
+      id: sidePanelTabId,
+      kind: TAB_KINDS.browser,
+      Component: BrowserTabContent,
+      title: "Browser",
+      tooltip: "Browser",
+      icon: <Globe size={14} aria-hidden="true" />,
+      props: {
+        ...(normalizedTabId ? { initialTabId: normalizedTabId } : {}),
+        onRuntimeChange: setBrowserRuntimeSnapshot,
+      },
+    });
+    if (normalizedTabId) {
+      void openBrowserRuntime(null, normalizedTabId).then(setBrowserRuntimeSnapshot);
+      return;
+    }
+    void refreshBrowserRuntime();
+  }, [refreshBrowserRuntime, sidePanel]);
 
   // codex: electron-menu-shortcuts-*.js (`toggleFileTreePanel` default = ⌘⇧E)
   // The legacy `workspaceFilesPanelOpen` flag is gone; the shortcut now routes
@@ -3686,12 +3165,11 @@ export function HiCodexApp() {
 
   useSkillsPanelRefresh({
     activeSettingsPanel,
-    client,
     commandPanelPanel: commandPanel?.panel,
     ensureConnected,
     setCommandPanel,
     setSettingsPanelState,
-    skillsChangedNonce,
+    skillsChangedNonce: state.invalidation.skills,
     workspace,
   });
 
@@ -3701,10 +3179,10 @@ export function HiCodexApp() {
     const settingsAppsOpen = activeSettingsPanel === "apps";
     const settingsPluginsOpen = activeSettingsPanel === "plugins";
     const hasOpenAppBackedPanel = commandAppsOpen || commandPluginsOpen || settingsAppsOpen || settingsPluginsOpen;
-    if (appListChangedNonce === 0 || !hasOpenAppBackedPanel) return;
-    if (appListChangedHandledRef.current === appListChangedNonce) return;
-    appListChangedHandledRef.current = appListChangedNonce;
-    const refreshMessage = appListRefreshMessageRef.current;
+    if (state.invalidation.appList === 0 || !hasOpenAppBackedPanel) return;
+    if (appListChangedHandledRef.current === state.invalidation.appList) return;
+    appListChangedHandledRef.current = state.invalidation.appList;
+    const refreshMessage = state.invalidation.appListMessage;
     let disposed = false;
     setCommandPanel((current) => isAppBackedPanelState(current)
       ? {
@@ -3817,7 +3295,7 @@ export function HiCodexApp() {
     };
   }, [
     activeSettingsPanel,
-    appListChangedNonce,
+    state.invalidation.appList,
     client,
     commandPanel?.panel,
     ensureConnected,
@@ -3826,11 +3304,11 @@ export function HiCodexApp() {
   ]);
 
   useEffect(() => {
-    if (mcpServerStatusNonce === 0 || activeSettingsPanel !== "mcp") return;
-    if (mcpStartupStatusPanelHandledRef.current === mcpServerStatusNonce) return;
-    mcpStartupStatusPanelHandledRef.current = mcpServerStatusNonce;
+    if (state.invalidation.mcpStatus === 0 || activeSettingsPanel !== "mcp") return;
+    if (mcpStartupStatusPanelHandledRef.current === state.invalidation.mcpStatus) return;
+    mcpStartupStatusPanelHandledRef.current = state.invalidation.mcpStatus;
     let disposed = false;
-    const refreshMessage = mcpServerStatusRefreshMessageRef.current;
+    const refreshMessage = state.invalidation.mcpStatusMessage;
     setSettingsPanelState((current) => current?.panel === "mcp"
       ? { ...current, status: "loading", message: `${refreshMessage} Refreshing...` }
       : current);
@@ -3881,7 +3359,7 @@ export function HiCodexApp() {
     activeSettingsPanel,
     client,
     ensureConnected,
-    mcpServerStatusNonce,
+    state.invalidation.mcpStatus,
     state.mcpServerStartupStatuses,
   ]);
 
@@ -3889,44 +3367,19 @@ export function HiCodexApp() {
     dispatch({ type: "setActiveComposerMode", mode });
   }, []);
 
-  const copyTextToClipboard = useCallback(async (label: string, value: string) => {
-    const text = value.trim();
-    // codex copy toasts read "Copied {noun}" with a lowercase mid-sentence noun
-    // (threadHeader.copyWorkingDirectorySuccess "Copied working directory",
-    // copyConversationMarkdownSuccess "Copied conversation as Markdown"); call sites pass the
-    // lowercase noun. The sentence-initial "unavailable" warning capitalizes it.
-    const sentenceLabel = label.charAt(0).toUpperCase() + label.slice(1);
-    if (!text) {
-      dispatch({ type: "log", text: `${sentenceLabel} is unavailable`, level: "warn" });
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      dispatch({ type: "log", text: `Copied ${label}`, level: "info" });
-    } catch (error) {
-      dispatch({ type: "log", text: `copy failed: ${formatError(error)}`, level: "error" });
-    }
-  }, []);
-
-  const copyWorkingDirectory = useCallback(() => {
-    void copyTextToClipboard("working directory", activeThread?.cwd || workspace || "");
-  }, [activeThread?.cwd, copyTextToClipboard, workspace]);
-
-  const copySessionId = useCallback(() => {
-    void copyTextToClipboard("session id", activeThread?.id ?? "");
-  }, [activeThread?.id, copyTextToClipboard]);
-
-  const copyThreadWorkingDirectory = useCallback((thread: Thread) => {
-    void copyTextToClipboard("working directory", thread.cwd || workspace || "");
-  }, [copyTextToClipboard, workspace]);
-
-  const copyThreadSessionId = useCallback((thread: Thread) => {
-    void copyTextToClipboard("session id", thread.id);
-  }, [copyTextToClipboard]);
-
-  const copyThreadDeeplink = useCallback((thread: Thread) => {
-    void copyTextToClipboard("Deeplink", `codex://threads/${thread.id}`);
-  }, [copyTextToClipboard]);
+  const {
+    copyTextToClipboard,
+    copyWorkingDirectory,
+    copySessionId,
+    copyThreadWorkingDirectory,
+    copyThreadSessionId,
+    copyThreadDeeplink,
+    copyConversationMarkdown,
+  } = useClipboardCopyActions({
+    activeThread,
+    workspace,
+    conversationUnits: conversation.units,
+  });
 
   const openThreadFolder = useCallback(async (thread: Thread) => {
     const cwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
@@ -3952,18 +3405,6 @@ export function HiCodexApp() {
     });
   }, []);
 
-  const setThreadPinnedById = useCallback((threadId: string, pinned: boolean) => {
-    setPinnedThreadIds((current) => {
-      const next = updatePinnedThreadIds(current, threadId, pinned);
-      savePinnedThreadIds(browserStorage(), next);
-      return next;
-    });
-  }, []);
-
-  const toggleThreadPinned = useCallback((thread: Thread, pinned: boolean) => {
-    setThreadPinnedById(thread.id, pinned);
-  }, [setThreadPinnedById]);
-
   const markThreadUnread = useCallback((thread: Thread) => {
     dispatch({
       type: "setThreads",
@@ -3974,17 +3415,6 @@ export function HiCodexApp() {
       ),
     });
   }, [state.threads]);
-
-  const copyConversationMarkdown = useCallback(() => {
-    if (!activeThread) {
-      dispatch({ type: "log", text: "Conversation markdown is unavailable", level: "warn" });
-      return;
-    }
-    void copyTextToClipboard("conversation as Markdown", buildConversationMarkdown({
-      title: threadTitle(activeThread),
-      units: conversation.units,
-    }));
-  }, [activeThread, conversation.units, copyTextToClipboard]);
 
   // codex: electron-menu-shortcuts-*.js#thread1..thread9 — slot helper.
   // Resolves the Nth visible thread in `state.threads` (Codex's keyboard
@@ -4320,11 +3750,15 @@ export function HiCodexApp() {
   } = useArtifactPreviewActions({
     activeThreadCwd: activeThread?.cwd,
     defaultCwd: state.hostStatus?.defaultCwd,
-    dispatch,
     setArtifactPreview,
     setFileReference,
     workspace,
   });
+  const handlePatchFailureOpenPath = useCallback((path: string) => {
+    const target = patchFailurePathForOpen(path, worktreeStatusCwd);
+    if (!target) return;
+    openFileReferenceExternal({ path: target, lineStart: 1, lineEnd: 1 });
+  }, [openFileReferenceExternal, worktreeStatusCwd]);
   const openFileReferenceSidePanelTab = useCallback((
     reference: { path: string; lineStart: number; lineEnd?: number; hostId?: string | null },
     options: {
@@ -4377,10 +3811,10 @@ export function HiCodexApp() {
     resolveFileSelection,
     sidePanel.controller,
   ]);
-  const memoryCitationRoot = useMemo(() => {
-    const codexHome = state.hostStatus?.codexHome?.trim();
-    return codexHome ? `${codexHome.replace(/[\\/]+$/, "")}/memories` : null;
-  }, [state.hostStatus?.codexHome]);
+  const memoryCitationRoot = useMemo(
+    () => memoriesRootFromCodexHome(state.hostStatus?.codexHome),
+    [state.hostStatus?.codexHome],
+  );
 
   /*
    * Late binding of the Files-tab opener (referenced from the early-defined
@@ -4442,12 +3876,12 @@ export function HiCodexApp() {
 
   /*
    * codex: thread-app-shell-chrome-*.js landing-page action
-   * list, gated by per-feature visibility. HiCodex only emits
-   * cards whose underlying behaviour is implemented:
+   * list, gated by per-feature visibility. HiCodex only emits cards whose
+   * underlying behaviour is implemented:
    *   • Files — wired to `openFilesTabRef.current()` above.
-   *   • Browser / Terminal / Timeline / Side chat / Review — omitted: no
-   *     evidence-backed HiCodex implementation, per the "如果拿不到依据就不要做"
-   *     directive. Adding them as no-op cards would be dead UI.
+   *   • Browser — wired to the Tauri Browser runtime bridge.
+   *   • Terminal / Timeline / Side chat / Review — omitted until backed by
+   *     host/protocol flows. Adding them as no-op cards would be dead UI.
    */
   const sidePanelNewTabActions = useMemo<readonly SidePanelNewTabAction[]>(() => {
     const actions: SidePanelNewTabAction[] = [];
@@ -4460,8 +3894,17 @@ export function HiCodexApp() {
         onSelect: () => openFilesTabRef.current?.(),
       });
     }
+    if (isTauriRuntime()) {
+      actions.push({
+        id: "open-browser",
+        title: "Browser",
+        description: "Open Browser",
+        icon: <Globe size={18} aria-hidden="true" />,
+        onSelect: () => openBrowserSurface(),
+      });
+    }
     return actions;
-  }, [worktreeStatusCwd]);
+  }, [openBrowserSurface, worktreeStatusCwd]);
 
   // CODEX-REF: local-conversation-thread-*.js + review-file-source-tab-*.js —
   // file/source opens route through the AppShell side panel tab controller,
@@ -4642,13 +4085,11 @@ export function HiCodexApp() {
     activeThreadId: state.activeThreadId,
     activeThreadRunning,
     activeTurnId,
-    client,
     collaborationModes,
     collaborationModesForComposerMode,
     composerAttachments,
     composerMode,
     composerSubmitState,
-    dispatch,
     ensureConnected,
     includeImageDynamicTool,
     input,
@@ -4726,7 +4167,7 @@ export function HiCodexApp() {
       threads: state.threads,
       threadContextDefaults: effectiveThreadContextDefaults,
       openSideConversationPanel,
-      accountState,
+      accountState: state.account,
       setAccountState: setAccountProjectionState,
       uiTheme: uiThemeSnapshot,
       logs: state.logs,
@@ -4735,7 +4176,7 @@ export function HiCodexApp() {
       onShowStatusPanel: () => setComposerStatusPanelOpen(true),
     })
   ), [
-    accountState,
+    state.account,
     activeThread,
     activeTurnId,
     buildInfo,
@@ -4950,8 +4391,6 @@ export function HiCodexApp() {
   } = useCommandPanelActions({
     activeThreadId: state.activeThreadId,
     activeTurnId,
-    client,
-    dispatch,
     ensureConnected,
     openCommandPanel,
     setActiveSettingsPanel,
@@ -4974,6 +4413,35 @@ export function HiCodexApp() {
     selectThreadById,
     workspace,
   });
+
+  const handleSettingsPanelSelectAction = useCallback(
+    (action: Parameters<typeof selectCommandPanelAction>[0]) => selectCommandPanelAction(action, openSettingsPanelContent),
+    [selectCommandPanelAction, openSettingsPanelContent],
+  );
+  const handleSettingsPanelSelectEntry = useCallback(
+    (entry: Parameters<NonNullable<import("./components/model-settings-panel").SettingsPanelProps["onSelectEntry"]>>[0]) => {
+      if (entry.disabled || !entry.action) return;
+      selectCommandPanelAction(entry.action, openSettingsPanelContent);
+    },
+    [selectCommandPanelAction, openSettingsPanelContent],
+  );
+
+  const handleMcpToolFormSubmit = useCallback((argumentsValue: Record<string, unknown>) => {
+    const action = mcpToolForm;
+    setMcpToolForm(null);
+    void callMcpToolFromPanel({ type: "callMcpTool", server: action!.server, tool: action!.tool, arguments: argumentsValue });
+  }, [mcpToolForm, callMcpToolFromPanel]);
+
+  const handleMcpServerFormSubmit = useCallback((name: string, config: Record<string, unknown>) => {
+    const formAction = mcpServerForm;
+    setMcpServerForm(null);
+    void writeMcpServerConfigFromPanel({
+      type: "writeMcpServerConfig",
+      title: formAction!.mode === "edit" ? `Save ${name}` : "Add MCP server",
+      name,
+      config,
+    }, openSettingsPanelContent);
+  }, [mcpServerForm, writeMcpServerConfigFromPanel, openSettingsPanelContent]);
 
   const interruptActiveTurn = useCallback(async () => {
     if (!state.activeThreadId || !activeTurnId) return;
@@ -5222,6 +4690,20 @@ export function HiCodexApp() {
   );
 
   return (
+    <NavigationProvider
+      activeAppTab={activeAppTab}
+      setActiveAppTab={setActiveAppTab}
+      sidebarOpen={sidebarOpen}
+      setSidebarOpen={setSidebarOpen}
+      toggleSidebar={toggleSidebar}
+      activeRemoteTaskId={activeRemoteTaskId}
+      setActiveRemoteTaskId={setActiveRemoteTaskId}
+      activeSettingsPanel={activeSettingsPanel}
+      setActiveSettingsPanel={setActiveSettingsPanel}
+      commandPanel={commandPanel}
+      setCommandPanel={setCommandPanel}
+      loadSettingsPanel={loadSettingsPanel}
+    >
     <FileCitationMenuContext.Provider value={fileCitationMenuActions}>
     <HiCodexIntlProvider locale={uiLocale}>
       <div
@@ -5475,8 +4957,8 @@ export function HiCodexApp() {
                   threadId={state.activeThreadId}
                   tokensUsed={tokenUsageSnapshot?.usedTokens}
                   contextWindow={tokenUsageSnapshot?.contextWindow}
-                  rateLimits={accountState.rateLimits}
-                  rateLimitsByLimitId={accountState.rateLimitsByLimitId}
+                  rateLimits={state.account.rateLimits}
+                  rateLimitsByLimitId={state.account.rateLimitsByLimitId}
                   onClose={() => setComposerStatusPanelOpen(false)}
                 />
               )}
@@ -5626,6 +5108,7 @@ export function HiCodexApp() {
             // `focusedAutomationSchedule`) so the panel can scope to that
             // schedule instead of the generic full list.
             onAutomationOpen={(automationId) => openAutomationsPanel(automationId)}
+            onBrowserOpen={openBrowserSurface}
           />
         )}
 
@@ -5740,405 +5223,138 @@ export function HiCodexApp() {
         <KbTodoView />
       ) : null}
 
-      {activeSettingsPanel && (
-        <SettingsPanel
-          activePanel={activeSettingsPanel}
-          modelDraft={modelDraft}
-          setModelDraft={setModelDraft}
-          imageGenerationDraft={imageGenerationDraft}
-          setImageGenerationDraft={setImageGenerationDraft}
-          models={state.models}
-          panelState={settingsPanelState}
-          onClose={() => setActiveSettingsPanel(null)}
-          onRefreshPanel={refreshActiveSettingsPanel}
-          onSaveModel={applyModelDraft}
-          onSaveImageGeneration={applyImageGenerationDraft}
-          onSelectAction={(action) => selectCommandPanelAction(action, openSettingsPanelContent)}
-          onSelectEntry={(entry) => {
-            if (entry.disabled || !entry.action) return;
-            selectCommandPanelAction(entry.action, openSettingsPanelContent);
-          }}
-          onSelectPanel={(panel) => void loadSettingsPanel(panel)}
-          // CODEX-REF: inline keyboard shortcuts editor needs direct setter
-          // wiring to the keymap-overrides module so capture-mode keystrokes
-          // commit immediately without round-tripping through the command
-          // action dispatch pipeline.
-          keymapOverrides={keymapOverrides}
-          onSetKeyboardShortcut={setUiKeyboardShortcut}
-          onResetKeyboardShortcut={resetUiKeyboardShortcut}
-          // CODEX-REF: inline appearance editor — same rationale (number input
-          // commits onBlur, can't ride the CommandPanelEntry action pipeline).
-          uiTheme={uiThemeSnapshot}
-          uiAppearance={uiAppearance}
-          uiLocale={uiLocale}
-          onSetUiTheme={setUiThemeMode}
-          onSetCodeFontSize={setUiCodeFontSize}
-          onSetReducedMotion={setUiReducedMotion}
-          onSetUiLocale={setUiLocale}
-        />
-      )}
-
-      {commandPanel && (
-        <CommandPanel
-          panel={commandPanel}
-          onClose={closeCommandPanel}
-          onSelectAction={(action) => selectCommandPanelAction(action)}
-          onSelectEntry={selectCommandPanelEntry}
-          onSearchQueryChange={commandPanel.panel === "files"
-            ? searchFilesFromCommandPanel
-            : isCommandMenuPanel(commandPanel)
-              ? searchCommandMenuFromPanel
-              : undefined}
-        />
-      )}
-
-      {mcpToolForm && (
-        <McpToolCallForm
-          action={mcpToolForm}
-          onClose={() => setMcpToolForm(null)}
-          onSubmit={(argumentsValue) => {
-            const action = mcpToolForm;
-            setMcpToolForm(null);
-            void callMcpToolFromPanel({
-              type: "callMcpTool",
-              server: action.server,
-              tool: action.tool,
-              arguments: argumentsValue,
-            });
-          }}
-        />
-      )}
-
-      {mcpServerForm && (
-        <McpServerConfigForm
-          action={mcpServerForm}
-          onClose={() => setMcpServerForm(null)}
-          onSubmit={(name, config) => {
-            const formAction = mcpServerForm;
-            setMcpServerForm(null);
-            void writeMcpServerConfigFromPanel({
-              type: "writeMcpServerConfig",
-              title: formAction.mode === "edit" ? `Save ${name}` : "Add MCP server",
-              name,
-              config,
-            }, openSettingsPanelContent);
-          }}
-        />
-      )}
-
-      {threadActionDialog && (
-        <ThreadActionDialog
-          action={threadActionDialog}
-          onClose={closeThreadActionDialog}
-          onRename={renameSelectedThread}
-          onArchive={archiveSelectedThread}
-        />
-      )}
-      <ForkFromOlderTurnDialog
-        open={forkConfirmOpen}
-        isSubmitting={forkConfirmSubmitting}
-        onClose={dismissForkFromOlderTurn}
-        onForkIntoLocal={confirmForkFromOlderTurn}
+      <PanelOverlays
+        activeSettingsPanel={activeSettingsPanel}
+        modelDraft={modelDraft}
+        setModelDraft={setModelDraft}
+        imageGenerationDraft={imageGenerationDraft}
+        setImageGenerationDraft={setImageGenerationDraft}
+        models={state.models}
+        panelState={settingsPanelState}
+        onClose={() => setActiveSettingsPanel(null)}
+        onRefreshPanel={refreshActiveSettingsPanel}
+        onSaveModel={applyModelDraft}
+        onSaveImageGeneration={applyImageGenerationDraft}
+        onSelectAction={handleSettingsPanelSelectAction}
+        onSelectEntry={handleSettingsPanelSelectEntry}
+        onSelectPanel={(panel) => void loadSettingsPanel(panel)}
+        keymapOverrides={keymapOverrides}
+        onSetKeyboardShortcut={setUiKeyboardShortcut}
+        onResetKeyboardShortcut={resetUiKeyboardShortcut}
+        uiTheme={uiThemeSnapshot}
+        uiAppearance={uiAppearance}
+        uiLocale={uiLocale}
+        onSetUiTheme={setUiThemeMode}
+        onSetCodeFontSize={setUiCodeFontSize}
+        onSetReducedMotion={setUiReducedMotion}
+        onSetUiLocale={setUiLocale}
+        commandPanel={commandPanel}
+        onCommandPanelClose={closeCommandPanel}
+        onCommandPanelSelectAction={(action) => selectCommandPanelAction(action)}
+        onCommandPanelSelectEntry={selectCommandPanelEntry}
+        onSearchFiles={searchFilesFromCommandPanel}
+        onSearchCommandMenu={searchCommandMenuFromPanel}
       />
 
-      {mcpFollowUpDialog && (
-        <McpFollowUpDialog
-          request={{ prompt: mcpFollowUpDialog.prompt, source: mcpFollowUpDialog.source }}
-          onClose={closeMcpFollowUpDialog}
-          onSend={confirmMcpFollowUpDialog}
-        />
-      )}
-      {patchFailure && (
-        <UnifiedDiffFailureDialog
-          failure={patchFailure}
-          onClose={() => setPatchFailure(null)}
-          onOpenPath={(path) => {
-            const target = patchFailurePathForOpen(path, worktreeStatusCwd);
-            if (!target) return;
-            openFileReferenceExternal({ path: target, lineStart: 1, lineEnd: 1 });
-          }}
-        />
-      )}
-      {modelPickerAnchor && (
-        <ModelPickerMenu
-          anchor={modelPickerAnchor}
-          providers={modelPickerProviders}
-          selectedKey={
-            effectiveModelSelection.noReadyProvider
-              ? selectedModelKey
-              : encodeSelection(effectiveModelSelection.providerId, effectiveModelSelection.model)
-          }
-          defaultKey={
-            state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
-              ? encodeSelection(
-                  normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider),
-                  state.threadContextDefaults.model,
-                )
-              : null
-          }
-          readyProviders={readyProviders}
-          onSelect={setSelectedModelKey}
-          onOpenSettings={() => loadSettingsPanel("models")}
-          onSignIn={() => { void runSlashRequest("loginChatgpt"); }}
-          onClose={() => setModelPickerAnchor(null)}
-        />
-      )}
-      {/*
-       * CODEX-REF: composer-*.js — Reasoning effort dropdown (Fa popover
-       * with Fa.Title + Fa.Item children). Anchor 在 composer footer trigger 上。
-       * 默认 effort 取自 effectiveThreadContextDefaults.reasoningEffort，由 user
-       * 点击切换写入 reasoningEffortOverride。
-       */}
-      {reasoningPickerAnchor && (
-        <ReasoningPickerMenu
-          anchor={reasoningPickerAnchor}
-          currentEffort={normalizeReasoningEffortValue(
-            effectiveThreadContextDefaults?.reasoningEffort
-            ?? state.threadContextDefaults?.reasoningEffort,
-          )}
-          onSelect={setReasoningEffortOverride}
-          onClose={() => setReasoningPickerAnchor(null)}
-        />
-      )}
-        {/*
-          * codex: keyboard-shortcuts-settings-*.js — standalone
-          * keyboard shortcuts dialog, triggered by ⌘⇧/.
-          */}
-        <KeyboardShortcutsDialog
-          open={keyboardShortcutsOpen}
-          onClose={() => setKeyboardShortcutsOpen(false)}
-        />
-        <AppToastViewport logs={state.logs} />
+      <McpDialogs
+        toolForm={mcpToolForm}
+        onToolFormClose={() => setMcpToolForm(null)}
+        onToolFormSubmit={handleMcpToolFormSubmit}
+        serverForm={mcpServerForm}
+        onServerFormClose={() => setMcpServerForm(null)}
+        onServerFormSubmit={handleMcpServerFormSubmit}
+        followUpDialog={mcpFollowUpDialog}
+        onFollowUpClose={closeMcpFollowUpDialog}
+        onFollowUpSend={confirmMcpFollowUpDialog}
+      />
+
+      <ThreadDialogs
+        threadActionDialog={threadActionDialog}
+        onThreadActionClose={closeThreadActionDialog}
+        onRename={renameSelectedThread}
+        onArchive={archiveSelectedThread}
+        forkConfirmOpen={forkConfirmOpen}
+        forkConfirmSubmitting={forkConfirmSubmitting}
+        onForkClose={dismissForkFromOlderTurn}
+        onForkConfirm={confirmForkFromOlderTurn}
+      />
+
+      <AppOverlays
+        patchFailure={patchFailure}
+        onPatchFailureClose={() => setPatchFailure(null)}
+        onPatchFailureOpenPath={handlePatchFailureOpenPath}
+        modelPickerAnchor={modelPickerAnchor}
+        modelPickerProviders={modelPickerProviders}
+        modelPickerSelectedKey={effectiveModelSelection.noReadyProvider
+          ? selectedModelKey
+          : encodeSelection(effectiveModelSelection.providerId, effectiveModelSelection.model)}
+        modelPickerDefaultKey={state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
+          ? encodeSelection(normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider), state.threadContextDefaults.model)
+          : null}
+        modelPickerReadyProviders={readyProviders}
+        onModelSelect={setSelectedModelKey}
+        onModelPickerOpenSettings={() => loadSettingsPanel("models")}
+        onModelPickerSignIn={() => { void runSlashRequest("loginChatgpt"); }}
+        onModelPickerClose={() => setModelPickerAnchor(null)}
+        reasoningPickerAnchor={reasoningPickerAnchor}
+        reasoningCurrentEffort={normalizeReasoningEffortValue(
+          effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort,
+        )}
+        onReasoningSelect={setReasoningEffortOverride}
+        onReasoningPickerClose={() => setReasoningPickerAnchor(null)}
+        keyboardShortcutsOpen={keyboardShortcutsOpen}
+        onKeyboardShortcutsClose={() => setKeyboardShortcutsOpen(false)}
+        toastLogs={state.logs}
+      />
       </div>
     </HiCodexIntlProvider>
     </FileCitationMenuContext.Provider>
+    </NavigationProvider>
   );
 }
 
-
-function PreConversationLoadingShell({
-  connected,
-  connecting,
-  startingConversation,
-}: {
-  connected: boolean;
-  connecting: boolean;
-  startingConversation: boolean;
-}) {
-  const { formatMessage } = useHiCodexIntl();
-  const appName = formatMessage({ id: "hc.app.name", defaultMessage: "HiCodex" });
-  const label = startingConversation
-    ? "Starting chat..."
-    : connecting
-      ? "Connecting runtime..."
-      : !connected
-        ? "Runtime offline"
-        : null;
-  if (!label) return null;
+export function HiCodexApp() {
+  const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
+  const clientRef = useRef<CodexJsonRpcClient | null>(null);
+  const clientCallbacksRef = useRef<HiCodexClientCallbacks>({
+    onNotification: () => {},
+    onDebugEvent: () => {},
+  });
+  const fileSearchControllerRef = useRef<WorkspaceFuzzyFileSearchController | null>(null);
+  /*
+   * Thin shell: owns the true global singletons (reducer state/dispatch + the
+   * JSON-RPC client) and provides them via ServicesContext so HiCodexAppBody and
+   * its subtree read them with useServices() rather than via prop-drilling. The
+   * client is built once here; its two body-coupled callbacks are reached through
+   * clientCallbacksRef, which HiCodexAppBody (re)assigns each render. connect /
+   * ensureConnected / auto-reconnect deliberately stay in the body (unmoved) so
+   * no effect changes position — this split is behaviour-preserving.
+   */
+  const client = useMemo(() => {
+    const rpc = new CodexJsonRpcClient({
+      onHostStatus: (status) => dispatch({ type: "hostStatus", status }),
+      onNotification: (message) => clientCallbacksRef.current.onNotification(message),
+      onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
+      onLog: (text, level) => dispatch({ type: "log", text, level }),
+      onDebugEvent: (event) => clientCallbacksRef.current.onDebugEvent(event),
+    });
+    clientRef.current = rpc;
+    fileSearchControllerRef.current = new WorkspaceFuzzyFileSearchController(rpc);
+    return rpc;
+  }, [dispatch]);
   return (
-    <div className="hc-preconversation-shell" role="status" aria-live="polite" aria-label={`${appName}: ${label}`}>
-      <div className="hc-preconversation-logo">
-        <Loader2 className={startingConversation || connecting ? "hc-spin" : undefined} size={18} />
-      </div>
-      <span>{label}</span>
-    </div>
+    <ServicesProvider
+      client={client}
+      dispatch={dispatch}
+      connected={state.connected}
+      connecting={state.connecting}
+    >
+      <HiCodexAppBody
+        state={state}
+        clientCallbacksRef={clientCallbacksRef}
+        fileSearchControllerRef={fileSearchControllerRef}
+      />
+    </ServicesProvider>
   );
 }
 
-function isAppBackedPanel(panel: CommandPanelKind | null | undefined): panel is "apps" | "plugins" {
-  return panel === "apps" || panel === "plugins";
-}
-
-function isCommandMenuPanel(panel: CommandPanelState | null | undefined): panel is CommandPanelState & { panel: "generic" } {
-  return panel?.panel === "generic" && panel.title === "Search commands and chats";
-}
-
-function focusComposerFromPlainTextKey(event: KeyboardEvent): boolean {
-  if (!isPlainTextComposerKey(event)) return false;
-  const target = event.target instanceof HTMLElement ? event.target : null;
-  if (isEditableKeyboardTarget(target)) return false;
-  if (target?.closest("[data-codex-terminal]")) return false;
-  if (document.querySelector('[role="dialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]')) return false;
-  const composer = document.querySelector<HTMLElement>("[data-codex-composer]");
-  if (!composer) return false;
-  event.preventDefault();
-  insertPromptEditorText(composer, event.key);
-  return true;
-}
-
-function isPlainTextComposerKey(event: KeyboardEvent): boolean {
-  return !event.defaultPrevented
-    && !event.isComposing
-    && !event.metaKey
-    && !event.ctrlKey
-    && event.key !== " "
-    && event.key !== "\u00a0"
-    && event.key.length === 1;
-}
-
-function isEditableKeyboardTarget(target: HTMLElement | null): boolean {
-  if (!target) return false;
-  if (target.isContentEditable) return true;
-  const tagName = target.tagName.toLowerCase();
-  return tagName === "input"
-    || tagName === "textarea"
-    || tagName === "select"
-    || target.closest("[contenteditable='true']") != null;
-}
-
-function isAppBackedPanelState(
-  state: CommandPanelState | null | undefined,
-): state is CommandPanelState & { panel: "apps" | "plugins" } {
-  return isAppBackedPanel(state?.panel);
-}
-
-function appListRefreshMessage(reason: AppListInvalidationReason): string {
-  if (reason === "app-connect-oauth-callback") return "Connector OAuth callback received.";
-  if (reason === "mcp-oauth-login-completed") return "MCP OAuth login completed.";
-  return "App list changed.";
-}
-
-function mcpOauthLoginRefreshMessage(params: unknown): string {
-  const payload = recordObject(params);
-  const name = typeof payload.name === "string" && payload.name.trim()
-    ? payload.name.trim()
-    : "MCP server";
-  if (payload.success === false) return `${name} OAuth login completed with an error.`;
-  if (payload.success === true) return `${name} OAuth login completed.`;
-  return "MCP OAuth login completed.";
-}
-
-function recordObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function normalizeWorkspaceRoot(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.replace(/[\\/]+$/, "") || trimmed;
-}
-
-function planImplementationPendingRequest(
-  items: Array<{ id: string; type: string } & Record<string, unknown>>,
-  activeThreadId: string | null,
-  dismissedRequestIds: ReadonlySet<string>,
-): PendingServerRequest | null {
-  if (!activeThreadId) return null;
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index] as PendingServerRequestPlanImplementationItem;
-    if (itemType(item) !== "plan-implementation") continue;
-    if (item.isCompleted === true) continue;
-    const planContent = typeof item.planContent === "string" ? item.planContent.trim() : "";
-    if (!planContent) continue;
-    const turnId = typeof item.turnId === "string" && item.turnId.trim() ? item.turnId.trim() : null;
-    const id = typeof item.id === "string" && item.id.trim() ? item.id.trim() : `implement-plan:${turnId ?? index}`;
-    if (dismissedRequestIds.has(id)) continue;
-    return {
-      id,
-      method: PLAN_IMPLEMENTATION_REQUEST_METHOD,
-      params: {
-        threadId: activeThreadId,
-        ...(turnId ? { turnId } : {}),
-        itemId: item.id,
-        planContent,
-      },
-      createdAt: 0,
-    };
-  }
-  return null;
-}
-
-interface PendingServerRequestPlanImplementationItem extends Record<string, unknown> {
-  id: string;
-  type: string;
-  turnId?: unknown;
-  planContent?: unknown;
-  isCompleted?: unknown;
-}
-
-function planImplementationFollowUpText(
-  request: PendingServerRequest,
-  answers: Record<string, string[]> | undefined,
-): string | null {
-  const answer = answers?.[PLAN_IMPLEMENTATION_QUESTION_ID]?.[0]?.trim() ?? "";
-  if (answer && answer !== PLAN_IMPLEMENTATION_ACCEPT_VALUE) return answer;
-  const params = recordObject(request.params);
-  const planContent = typeof params.planContent === "string" ? params.planContent.trim() : "";
-  return planContent ? `PLEASE IMPLEMENT THIS PLAN:\n${planContent}` : null;
-}
-
-function activeBackgroundSubagentThreadIds(entries: RailEntry[], activeThreadId: string | null): string[] {
-  const ids = new Set<string>();
-  for (const entry of entries) {
-    if (entry.status !== "active" || entry.action?.kind !== "thread") continue;
-    const threadId = entry.action.threadId.trim();
-    if (!threadId || threadId === activeThreadId || ids.has(threadId)) continue;
-    ids.add(threadId);
-  }
-  return Array.from(ids);
-}
-
-function mergeBackgroundSubagentStopThreadIds(
-  activeThreadIds: string[],
-  pendingRequests: PendingServerRequest[],
-  itemsByThread: Record<string, Array<{ id?: string }>>,
-): string[] {
-  const ids = new Set(activeThreadIds);
-  for (const request of pendingRequests) {
-    const threadId = pendingRequestOwnerThreadId(request, { itemsByThread });
-    if (!threadId || ids.has(threadId)) continue;
-    ids.add(threadId);
-  }
-  return Array.from(ids);
-}
-
-async function readInProgressTurnId(client: CodexJsonRpcClient, threadId: string): Promise<string | null> {
-  const result = await readThread(client, threadId, true);
-  const turns = result.thread?.turns ?? [];
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (turn.status === "inProgress") return turn.id;
-  }
-  return null;
-}
-
-async function cleanBackgroundTerminalsForThread(client: CodexJsonRpcClient, threadId: string): Promise<void> {
-  await client.request("thread/backgroundTerminals/clean", { threadId }, 120_000);
-}
-
-function heartbeatPendingRequestType(
-  requests: PendingServerRequest[],
-): "userInput" | "approval" | "mcpServerElicitation" | "other" | null {
-  const request = requests[0];
-  if (!request) return null;
-  switch (request.method) {
-    case "item/tool/requestUserInput":
-      return "userInput";
-    case "item/commandExecution/requestApproval":
-    case "item/fileChange/requestApproval":
-    case "item/permissions/requestApproval":
-      return "approval";
-    case "mcpServer/elicitation/request":
-      return "mcpServerElicitation";
-    default:
-      return "other";
-  }
-}
-
-function workspaceRootOptionsWithCurrent(
-  options: SidebarWorkspaceRootOption[],
-  roots: Array<string | null | undefined>,
-): SidebarWorkspaceRootOption[] {
-  const merged = [...options];
-  const seen = new Set(merged.map((option) => normalizeWorkspaceRoot(option.root)));
-  for (const rootValue of roots) {
-    const root = normalizeWorkspaceRoot(rootValue ?? "");
-    if (!root || seen.has(root) || root === "~") continue;
-    seen.add(root);
-    merged.unshift({ root, label: workspaceRootLabel(root) });
-  }
-  return merged;
-}
-
-function workspaceRootLabel(root: string): string {
-  return root.split(/[\\/]+/).filter(Boolean).pop() || root;
-}

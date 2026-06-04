@@ -5,6 +5,8 @@ import {
   DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
   DEFAULT_SUBSCRIPTION_PROVIDER_ID,
   DEFAULT_SUBSCRIPTION_MODELS,
+  decodeSelection,
+  encodeSelection,
   formatModelDisplayName,
 } from "../model/model-settings";
 
@@ -83,16 +85,6 @@ export function normalizeSubscriptionProviderId(providerId: string): string {
     : providerId;
 }
 
-/** Persisted selection: `${providerId}::${modelSlug}` */
-export function encodeSelection(providerId: string, model: string): string {
-  return `${providerId}::${model}`;
-}
-export function decodeSelection(value: string | null): { providerId: string; model: string } | null {
-  if (!value) return null;
-  const idx = value.indexOf("::");
-  if (idx < 0) return null;
-  return { providerId: value.slice(0, idx), model: value.slice(idx + 2) };
-}
 
 export interface ModelSelectionRef {
   providerId: string;

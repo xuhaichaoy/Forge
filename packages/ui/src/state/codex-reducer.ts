@@ -14,6 +14,17 @@ import type {
 import type { TurnEnvironmentParams } from "@hicodex/codex-protocol/generated/v2/TurnEnvironmentParams";
 import { stringField } from "../lib/format";
 import type { HostStatus } from "../lib/tauri-host";
+import {
+  accountRefreshScopeForNotification,
+  applyAccountNotification,
+  initialAccountState,
+  type AccountState,
+} from "./account-state";
+import {
+  appListRefreshMessage,
+  invalidateAppListForNotification,
+  mcpOauthLoginRefreshMessage,
+} from "./app-list";
 import { composerModeFromCollaborationMode } from "./collaboration-modes";
 import type { ComposerMode } from "./composer-workflow";
 import type { McpServerStartupStatus } from "./mcp-skills-management";
@@ -132,6 +143,17 @@ export interface ThreadRuntimeSlice {
   tokenSpeedTracker?: ThreadTokenSpeedTracker | null;
 }
 
+export interface NotificationInvalidationState {
+  appList: number;
+  appListMessage: string;
+  skills: number;
+  hooks: number;
+  mcpStatus: number;
+  mcpStatusMessage: string;
+  accountRefresh: number;
+  authRefresh: number;
+}
+
 export interface CodexUiState {
   connected: boolean;
   connecting: boolean;
@@ -146,6 +168,15 @@ export interface CodexUiState {
   models: ModelConfig[];
   threadContextDefaults: ThreadContextDefaults | null;
   mcpServerStartupStatuses: Record<string, McpServerStartupStatus>;
+  // Notification-driven invalidation counters: a notification of the given
+  // method bumps the counter so panels re-fetch. Folded out of HiCodexApp's
+  // ad-hoc nonce useStates so features decouple from the onNotification closure.
+  invalidation: NotificationInvalidationState;
+  // Account/auth projection (signed-in account + rate limits). Folded out of
+  // HiCodexApp's accountState useState so notification-driven account updates
+  // run in the reducer (via the pure applyAccountNotification) instead of an
+  // ad-hoc shadow reducer inside the onNotification closure.
+  account: AccountState;
   // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
   // in-app thread history stack (browser-style back/forward over the
   // sequence of activated threads). See `./thread-history.ts`.
@@ -156,6 +187,9 @@ export interface CodexUiState {
 export type CodexUiAction =
   | { type: "connecting"; value: boolean }
   | { type: "connected"; value: boolean }
+  | { type: "invalidateAppList"; message: string }
+  | { type: "setAccount"; account: AccountState }
+  | { type: "invalidateAuth" }
   | { type: "hostStatus"; status: HostStatus }
   | { type: "setThreads"; threads: Thread[] }
   | { type: "upsertThread"; thread: Thread; select?: boolean }
@@ -201,6 +235,8 @@ export const initialCodexUiState: CodexUiState = {
   models: [],
   threadContextDefaults: null,
   mcpServerStartupStatuses: {},
+  invalidation: { appList: 0, appListMessage: "App list changed.", skills: 0, hooks: 0, mcpStatus: 0, mcpStatusMessage: "MCP startup status changed.", accountRefresh: 0, authRefresh: 0 },
+  account: initialAccountState,
   // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
   // empty history; first `setActiveThread` populates the stack.
   threadHistoryStack: [],
@@ -362,8 +398,29 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       return setActiveComposerModeState(state, action.mode);
     case "resetThreadComposerMode":
       return resetThreadComposerModeState(state, action.threadId);
-    case "notification":
-      return applyNotification(state, action.message);
+    case "invalidateAppList":
+      return {
+        ...state,
+        invalidation: {
+          ...state.invalidation,
+          appList: state.invalidation.appList + 1,
+          appListMessage: action.message,
+        },
+      };
+    case "setAccount":
+      return action.account === state.account ? state : { ...state, account: action.account };
+    case "invalidateAuth":
+      return {
+        ...state,
+        invalidation: { ...state.invalidation, authRefresh: state.invalidation.authRefresh + 1 },
+      };
+    case "notification": {
+      const next = applyNotification(state, action.message);
+      const invalidation = applyInvalidation(next.invalidation, action.message);
+      const account = applyAccountNotification(next.account, action.message);
+      if (invalidation === next.invalidation && account === next.account) return next;
+      return { ...next, invalidation, account };
+    }
     case "serverRequest":
       return {
         ...state,
@@ -722,6 +779,45 @@ function markThreadsNeedResumeAfterReconnectState(state: CodexUiState): CodexUiS
     })),
     threadsRuntime,
   };
+}
+
+function applyInvalidation(
+  invalidation: NotificationInvalidationState,
+  message: JsonRpcNotification,
+): NotificationInvalidationState {
+  // Each block accumulates into `next` independently — mirroring the original
+  // HiCodexApp's independent `if` blocks so a notification method can trigger
+  // more than one counter (e.g. mcpServer/oauthLogin/completed bumps BOTH
+  // appList AND mcpStatus; an early-return would drop the second bump).
+  let next = invalidation;
+  const appListInvalidation = invalidateAppListForNotification(message.method);
+  if (appListInvalidation) {
+    next = {
+      ...next,
+      appList: next.appList + 1,
+      appListMessage: appListRefreshMessage(appListInvalidation.reason),
+    };
+  }
+  if (accountRefreshScopeForNotification(message)) {
+    const bumpsAuth = message.method === "account/login/completed" || message.method === "account/updated";
+    next = {
+      ...next,
+      accountRefresh: next.accountRefresh + 1,
+      authRefresh: bumpsAuth ? next.authRefresh + 1 : next.authRefresh,
+    };
+  }
+  switch (message.method) {
+    case "skills/changed":
+      return { ...next, skills: next.skills + 1 };
+    case "hook/completed":
+      return { ...next, hooks: next.hooks + 1 };
+    case "mcpServer/startupStatus/updated":
+      return { ...next, mcpStatus: next.mcpStatus + 1, mcpStatusMessage: "MCP startup status changed." };
+    case "mcpServer/oauthLogin/completed":
+      return { ...next, mcpStatus: next.mcpStatus + 1, mcpStatusMessage: mcpOauthLoginRefreshMessage(message.params) };
+    default:
+      return next;
+  }
 }
 
 function applyNotification(state: CodexUiState, message: JsonRpcNotification): CodexUiState {

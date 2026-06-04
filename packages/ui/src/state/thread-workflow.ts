@@ -1454,3 +1454,17 @@ function friendlyStatus(status: string): string {
       return normalized;
   }
 }
+
+export async function readInProgressTurnId(client: CodexJsonRpcClient, threadId: string): Promise<string | null> {
+  const result = await readThread(client, threadId, true);
+  const turns = result.thread?.turns ?? [];
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn.status === "inProgress") return turn.id;
+  }
+  return null;
+}
+
+export async function cleanBackgroundTerminalsForThread(client: CodexJsonRpcClient, threadId: string): Promise<void> {
+  await client.request("thread/backgroundTerminals/clean", { threadId }, 120_000);
+}
