@@ -3894,18 +3894,12 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   }) => {
     openFileReferenceSidePanelTab(reference, { isPreview: true });
   }, [openFileReferenceSidePanelTab]);
-  const previewRailArtifactAndOpenRail = useCallback<typeof previewRailArtifact>((entry) => {
-    return previewRailArtifact(entry);
-  }, [previewRailArtifact]);
   const previewRailFileReferenceAndOpenRail = useCallback((reference: RailEntryReference) => {
     openFileReferenceSidePanelTab(reference, { isPreview: true });
   }, [openFileReferenceSidePanelTab]);
-  const openRailUrlAndOpenRail = useCallback<typeof openRailUrl>((url) => {
-    return openRailUrl(url);
-  }, [openRailUrl]);
   const openAssistantArtifactInSidePanel = useCallback((entry: RailEntry) => {
     if (shouldOpenArtifactPreview(entry)) {
-      previewRailArtifactAndOpenRail(entry);
+      previewRailArtifact(entry);
       return;
     }
     if (entry.reference) {
@@ -3913,13 +3907,13 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       return;
     }
     if (entry.action?.kind === "url") {
-      openRailUrlAndOpenRail(entry.action.url);
+      openRailUrl(entry.action.url);
       return;
     }
-    previewRailArtifactAndOpenRail(entry);
+    previewRailArtifact(entry);
   }, [
-    openRailUrlAndOpenRail,
-    previewRailArtifactAndOpenRail,
+    openRailUrl,
+    previewRailArtifact,
     previewRailFileReferenceAndOpenRail,
   ]);
   const revealAssistantEndResource = useCallback((entry: RailEntry) => {
@@ -3967,7 +3961,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           cwd: previewPathContext.cwd,
           onOpenFileReference: openArtifactSourceInPlace,
           onOpenFileExternal: openRailArtifactFileExternal,
-          onOpenUrl: openRailUrlAndOpenRail,
+          onOpenUrl: openRailUrl,
         },
       });
     };
@@ -3976,7 +3970,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     };
   }, [
     openRailArtifactFileExternal,
-    openRailUrlAndOpenRail,
+    openRailUrl,
     previewPathContext.cwd,
     previewPathContext.workspaceRoot,
     openFileReferenceSidePanelTab,
@@ -5054,9 +5048,9 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
             sections={rightRailSections}
             displayMode={showRightRailPopover ? "overlay" : rightRailMode}
             isPinned={showRightRail ? rightRailPinned : true}
-            onOpenArtifactPreview={previewRailArtifactAndOpenRail}
+            onOpenArtifactPreview={previewRailArtifact}
             onOpenFileReference={previewRailFileReferenceAndOpenRail}
-            onOpenUrl={openRailUrlAndOpenRail}
+            onOpenUrl={openRailUrl}
             onOpenDiff={openActiveDiffPanel}
             onOpenThreadId={openBackgroundAgentThread}
             onCleanBackgroundTerminals={conversation.backgroundTerminals.length > 0
@@ -5168,7 +5162,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           onCloseFileReference={() => setFileReference(null)}
           onOpenArtifactFileExternal={openRailArtifactFileExternal}
           onOpenFileReferenceExternal={openFileReferenceExternal}
-          onOpenUrl={openRailUrlAndOpenRail}
+          onOpenUrl={openRailUrl}
         />
       </main>
       ) : remoteTaskVisible ? (

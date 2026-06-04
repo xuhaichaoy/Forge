@@ -21,7 +21,13 @@ export function ServicesProvider({
   client,
   dispatch,
   connected,
-  connecting,
+  // `connecting` is accepted but intentionally not placed on the context value:
+  // it has zero `useServices()` consumers, so the reducer's `state.connecting`
+  // (read directly in HiCodexApp) is the single live source. The prop itself is
+  // kept only so the existing `<ServicesProvider connecting={...}>` call site
+  // still type-checks; dropping the prop requires a paired edit at that call
+  // site (in HiCodexApp, outside this file) and is left for that change.
+  connecting: _connecting,
 }: {
   children: ReactNode;
   client: CodexJsonRpcClient;
@@ -30,8 +36,8 @@ export function ServicesProvider({
   connecting: boolean;
 }) {
   const value = useMemo<ServicesContextValue>(
-    () => ({ client, dispatch, connected, connecting }),
-    [client, dispatch, connected, connecting],
+    () => ({ client, dispatch, connected }),
+    [client, dispatch, connected],
   );
   return <ServicesContext.Provider value={value}>{children}</ServicesContext.Provider>;
 }
