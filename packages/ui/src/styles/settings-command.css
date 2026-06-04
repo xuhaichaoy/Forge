@@ -2479,11 +2479,18 @@ textarea.hc-mcp-tool-control {
 .hc-app[data-theme="dark"] .hc-settings-panel,
 .hc-app[data-theme="dark"] .hc-command-panel,
 .hc-app[data-theme="dark"] .hc-thread-dialog-panel,
+.hc-app[data-theme="dark"] .hc-settings-content,
 .hc-app[data-theme="dark"] .hc-settings-route-meta,
 .hc-app[data-theme="dark"] .hc-settings-route-evidence {
   background: var(--hc-surface-main);
   color: var(--hc-text-primary);
   border-color: var(--hc-border-strong);
+}
+
+.hc-app[data-theme="dark"] .hc-settings-panel header,
+.hc-app[data-theme="dark"] .hc-settings-content-header {
+  background: var(--hc-surface-main);
+  color: var(--hc-text-secondary);
 }
 
 .hc-app[data-theme="dark"] .hc-management-entry {
@@ -2511,7 +2518,10 @@ textarea.hc-mcp-tool-control {
 .hc-app[data-theme="dark"] .hc-management-section,
 .hc-app[data-theme="dark"] .hc-command-secondary-action,
 .hc-app[data-theme="dark"] .hc-mcp-tool-form-summary,
-.hc-app[data-theme="dark"] .hc-mcp-tool-field {
+.hc-app[data-theme="dark"] .hc-mcp-tool-field,
+.hc-app[data-theme="dark"] .hc-settings-panel header .hc-icon-button,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-button,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-mini-button {
   background: #2a2a2a; /* Codex .electron-dark elevated surface above editor-opaque #212121 */
   color: var(--hc-text-primary);
 }
@@ -2538,6 +2548,9 @@ textarea.hc-mcp-tool-control {
 /* ---- Hover / active fills -> Codex button-secondary-hover rgba(255,255,255,.08) -- */
 .hc-app[data-theme="dark"] .hc-settings-nav-item:hover,
 .hc-app[data-theme="dark"] .hc-settings-nav-item:focus-visible,
+.hc-app[data-theme="dark"] .hc-settings-panel header .hc-icon-button:hover,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-button:hover,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-mini-button:hover,
 .hc-app[data-theme="dark"] .hc-thread-dialog-panel header button:hover,
 .hc-app[data-theme="dark"] .hc-command-secondary-action:hover,
 .hc-app[data-theme="dark"] .hc-command-secondary-action:focus-visible,
@@ -2579,6 +2592,9 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-app[data-theme="dark"] .hc-settings-nav-item[aria-current="page"],
+.hc-app[data-theme="dark"] .hc-settings-panel header .hc-icon-button,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-button,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-mini-button,
 .hc-app[data-theme="dark"] .hc-fork-older-turn-option,
 .hc-app[data-theme="dark"] .hc-fork-older-turn-cancel,
 .hc-app[data-theme="dark"] .hc-mcp-follow-up-option,
@@ -2619,6 +2635,8 @@ textarea.hc-mcp-tool-control {
 
 /* ---- Primary / strong text: #222823 #242824 #252b31 #272c27 #2a2d2b #1f2329 #222 -> #fff */
 .hc-app[data-theme="dark"] .hc-settings-nav-item[aria-current="page"],
+.hc-app[data-theme="dark"] .hc-settings-panel header div,
+.hc-app[data-theme="dark"] .hc-settings-content-header strong,
 .hc-app[data-theme="dark"] .hc-settings-route-placeholder-copy h2,
 .hc-app[data-theme="dark"] .hc-settings-route-meta dd,
 .hc-app[data-theme="dark"] .hc-command-panel-search input,
@@ -2701,6 +2719,27 @@ textarea.hc-mcp-tool-control {
 .hc-app[data-theme="dark"] .hc-management-entry[data-disabled="true"],
 .hc-app[data-theme="dark"] .hc-model-field-hint {
   color: rgba(255, 255, 255, 0.50); /* Codex .electron-dark --color-text-foreground-tertiary */
+}
+
+/* Codex settings nav rows in Electron apply foreground with reduced opacity.
+ * Keep selected controls readable, but avoid pure-white settings chrome. */
+.hc-app[data-theme="dark"] .hc-settings-panel header div,
+.hc-app[data-theme="dark"] .hc-settings-content-header strong,
+.hc-app[data-theme="dark"] .hc-settings-nav-item[aria-current="page"],
+.hc-app[data-theme="dark"] .hc-appearance-row-title {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hc-app[data-theme="dark"] .hc-settings-panel header .hc-icon-button,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-button,
+.hc-app[data-theme="dark"] .hc-settings-content-header .hc-mini-button,
+.hc-app[data-theme="dark"] .hc-segmented-toggle-option {
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-segmented-toggle-option[data-selected="true"],
+.hc-app[data-theme="dark"] .hc-appearance-number-input input {
+  color: rgba(255, 255, 255, 0.86);
 }
 
 /* ---- Semantic TONE text — reuse HiCodex dark literals so dialog matches app -- */

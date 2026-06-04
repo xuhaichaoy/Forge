@@ -363,7 +363,7 @@ export function ComposerSettingsChips({
   onOpenReasoningPicker,
 }: ComposerSettingsChipsProps) {
   const { formatMessage } = useHiCodexIntl();
-  const intelligenceLabel = formatIntelligenceFooterLabel({ model, reasoningEffort });
+  const intelligenceLabel = formatIntelligenceFooterLabel({ model });
   const reasoningEffortNormalized: ReasoningKey = typeof reasoningEffort === "string"
     && REASONING_KEYS.includes(reasoningEffort.trim().toLowerCase() as ReasoningKey)
     ? (reasoningEffort.trim().toLowerCase() as ReasoningKey)
@@ -399,13 +399,7 @@ export function ComposerSettingsChips({
             data-interactive={onOpenModelPicker ? "true" : undefined}
             onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
           >
-            {/*
-             * codex composer-zFOdryLS.js `Np` (the intelligence trigger): in label mode
-             * (hideLabel=false) the children are [null, model+reasoning label, chevron] — NO
-             * leading icon. The leading icon only appears in the compact hideLabel variant
-             * (and even then it's an effort/model glyph, not a static Cpu). HiCodex always
-             * shows the label, so it matches Codex's label mode: label + chevron, no icon.
-             */}
+            {/* Desktop uses one intelligence trigger. HiCodex has a separate reasoning chip, so this label stays model-only. */}
             <span className="hc-composer-footer-chip-label">{intelligenceLabel}</span>
             <ChevronDown size={14} />
           </button>
@@ -569,16 +563,12 @@ function workspaceBasename(value: string): string {
 
 export function formatIntelligenceFooterLabel({
   model,
-  reasoningEffort,
 }: {
   model?: string | null;
-  reasoningEffort?: unknown;
-  reasoningSummary?: unknown;
 }): string {
   const trimmedModel = model?.trim() ?? "";
   if (!trimmedModel) return "";
-  const effort = formatReasoningEffort(reasoningEffort);
-  return [trimmedModel, effort].filter(Boolean).join(" ");
+  return trimmedModel.replace(/^gpt[-_]/iu, "");
 }
 
 export function formatPermissionsFooterLabel(input: {
@@ -622,29 +612,6 @@ function formatPermissionsFooterTitle(
     `approval_policy: ${formatApprovalPolicy(input.approvalPolicy ?? "on-request")}`,
     `approvals_reviewer: ${stringValue(input.approvalsReviewer) ?? "user"}`,
   ].join("\n");
-}
-
-function formatReasoningEffort(value?: unknown): string {
-  /*
-   * codex: reasoning-minimal-*.js — reasoning-effort label formatter, 6 labels:
-   *   composer.mode.local.reasoning.none.label    = "None"
-   *   composer.mode.local.reasoning.minimal.label = "Minimal"
-   *   composer.mode.local.reasoning.low.label     = "Low"
-   *   composer.mode.local.reasoning.medium.label  = "Medium"
-   *   composer.mode.local.reasoning.high.label    = "High"
-   *   composer.mode.local.reasoning.xhigh.label   = "Extra High"
-   * HiCodex previously rendered `none` as "No reasoning"; aligned to "None".
-   */
-  if (typeof value !== "string") return "";
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return "";
-  if (normalized === "none") return "None";
-  if (normalized === "minimal") return "Minimal";
-  if (normalized === "xhigh" || normalized === "extra_high") return "Extra High";
-  if (normalized === "high") return "High";
-  if (normalized === "medium") return "Medium";
-  if (normalized === "low") return "Low";
-  return value.trim();
 }
 
 function formatApprovalPolicy(value: unknown): string {

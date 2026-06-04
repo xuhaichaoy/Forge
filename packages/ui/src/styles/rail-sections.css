@@ -316,7 +316,7 @@
 
 .hc-app[data-theme="dark"] .hc-rail-section-header:hover,
 .hc-app[data-theme="dark"] .hc-rail-section-toggle:hover {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-rail-section-action {
@@ -328,11 +328,11 @@
 }
 
 .hc-app[data-theme="dark"] .hc-rail-environment-selector:not(:disabled):hover {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-rail-section-action:hover:not(:disabled) {
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-rail-worktree-trigger {

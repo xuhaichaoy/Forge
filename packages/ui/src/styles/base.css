@@ -49,6 +49,7 @@
   --hc-text-primary: #1a1c1f;
   --hc-text-strong: #171717;
   --hc-text-secondary: #6a6b6d;
+  --hc-text-primary-soft: #303133;
   --hc-editor-warning-foreground: #e25507;
   --hc-editor-warning-background: #ffe7d9;
   /* Codex has TWO muted text levels: token-text-secondary (= foreground 65%)
@@ -199,7 +200,7 @@
   --hc-surface-sidebar: #181818;
   --hc-surface-panel: rgba(33, 33, 33, 0.96);
   --hc-surface-panel-muted: rgba(33, 33, 33, 0.74);
-  --hc-surface-composer: rgba(33, 33, 33, 0.94);
+  --hc-surface-composer: #2a2a2a; /* Codex dark composer uses token-dropdown-background, elevated above #212121 */
   --hc-surface-hover: rgba(255, 255, 255, 0.08);
   --hc-surface-list-hover: rgba(255, 255, 255, 0.08); /* dark-visible list/tab hover (see light def) */
   --hc-surface-soft: rgba(255, 255, 255, 0.05);
@@ -216,6 +217,11 @@
      and border-heavy mis-stated as 12%.) */
   --hc-text-secondary: rgba(255, 255, 255, 0.70); /* codex --color-text-foreground-secondary (was 0.65; A/B-pending) */
   --hc-text-tertiary: rgba(255, 255, 255, 0.50); /* codex --color-text-foreground-tertiary (was 0.70, swapped; A/B-pending) */
+  --hc-text-primary-soft: rgba(255, 255, 255, 0.86);
+  --hc-conversation-body: color-mix(in oklab, var(--hc-text-primary) 60%, transparent);
+  --hc-non-assistant-body-descendant: color-mix(in oklab, var(--hc-text-primary) 50%, transparent);
+  --hc-sidebar-foreground: rgba(255, 255, 255, 0.72);
+  --hc-sidebar-active-foreground: rgba(255, 255, 255, 0.82);
   --hc-editor-warning-foreground: #ff8549;
   --hc-editor-warning-background: #4a2206;
   --hc-border-default: rgba(255, 255, 255, 0.08); /* = Codex token-border 8% */
@@ -608,6 +614,12 @@ button {
 .hc-app[data-theme="dark"] .hc-sidebar {
   background: var(--hc-surface-sidebar);
   border-right-color: var(--hc-border-subtle);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar {
+  --vscode-foreground: var(--hc-sidebar-foreground);
+  --vscode-descriptionForeground: var(--hc-text-tertiary);
+  color: var(--hc-sidebar-foreground);
 }
 
 .hc-app[data-theme="dark"] .hc-sidebar-resize-handle:hover::before,
@@ -1623,11 +1635,26 @@ button {
   background: transparent;
 }
 
-/* `.hc-sidebar-nav-item` hardcodes a light-mode color (#30332f) which, unlike the
-   thread rows (they inherit the dark root color), leaves the nav labels near-black
-   on the dark sidebar. Restore the inherited primary text in dark (light untouched). */
+/* Codex wraps the sidebar in `sidebar-foreground-muted`, so dark nav rows are
+   readable but not pure white. */
 .hc-app[data-theme="dark"] .hc-sidebar-nav-item {
-  color: var(--hc-text-primary);
+  color: var(--hc-sidebar-foreground);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-nav-item:hover,
+.hc-app[data-theme="dark"] .hc-sidebar-nav-item.is-active {
+  background: var(--hc-surface-list-hover);
+  color: var(--hc-sidebar-active-foreground);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-thread-row {
+  color: var(--hc-sidebar-foreground);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-thread-row:hover,
+.hc-app[data-theme="dark"] .hc-sidebar-thread-row:focus-within,
+.hc-app[data-theme="dark"] .hc-sidebar-thread-row[aria-current="page"] {
+  color: var(--hc-sidebar-active-foreground);
 }
 
 .hc-sidebar-nav-icon {
@@ -1678,7 +1705,7 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px; /* codex sidebar nav label = text-base = --text-base:14px */
-  font-weight: 520;
+  font-weight: 400; /* codex nav label has no weight utility; inherits body weight */
   line-height: 18px;
 }
 
@@ -1728,7 +1755,7 @@ button {
   white-space: nowrap;
   color: #777973;
   font-size: 12px;
-  font-weight: 560;
+  font-weight: 400;
   line-height: 16px;
 }
 
@@ -1818,7 +1845,7 @@ button {
   white-space: nowrap;
   color: #5f625b;
   font-size: 13px;
-  font-weight: 520;
+  font-weight: 400;
 }
 
 .hc-thread-menu-item:focus-visible {
@@ -1899,9 +1926,11 @@ button {
   font-size: 11px;
 }
 
+:root[data-hc-theme="dark"] .hc-tooltip,
 .hc-app[data-theme="dark"] .hc-tooltip {
-  background: color-mix(in srgb, var(--hc-surface-panel) 92%, transparent);
-  box-shadow: 0 0 0 0.5px var(--hc-border-default), 0 12px 28px rgb(0 0 0 / 40%);
+  background: color-mix(in srgb, var(--hc-surface-secondary) 92%, transparent);
+  color: var(--hc-text-primary-soft);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.14), 0 12px 28px rgb(0 0 0 / 44%);
 }
 
 /*
@@ -2082,6 +2111,17 @@ button {
   color: var(--hc-text-primary);
 }
 
+.hc-app[data-theme="dark"] .hc-sidebar-account,
+.hc-app[data-theme="dark"] .hc-sidebar-account-label {
+  color: var(--hc-sidebar-foreground);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-account-trigger:hover,
+.hc-app[data-theme="dark"] .hc-sidebar-account-trigger[aria-expanded="true"] {
+  color: var(--hc-sidebar-active-foreground);
+  background: var(--hc-surface-list-hover);
+}
+
 .hc-sidebar-account-avatar {
   flex: 0 0 auto;
   display: grid;
@@ -2228,6 +2268,49 @@ button.hc-sidebar-account-menu-item small {
 .hc-sidebar-account-menu-item[data-tone="danger"] strong,
 .hc-sidebar-account-menu-item[data-tone="danger"] small {
   color: #a14335;
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu {
+  background: color-mix(in srgb, var(--hc-surface-secondary) 94%, transparent);
+  border-color: var(--hc-border-default);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item {
+  color: var(--hc-text-primary-soft);
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item:hover:not(:disabled),
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item:hover:not(:disabled) {
+  background: var(--hc-surface-hover);
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item span,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item span {
+  color: var(--hc-text-secondary);
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item strong,
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item small,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item strong,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item small {
+  color: var(--hc-text-primary-soft);
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item[data-tone="warning"] strong,
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item[data-tone="warning"] small,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item[data-tone="warning"] strong,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item[data-tone="warning"] small {
+  color: var(--hc-editor-warning-foreground);
+}
+
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item[data-tone="danger"] strong,
+:root[data-hc-theme="dark"] .hc-sidebar-account-menu-item[data-tone="danger"] small,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item[data-tone="danger"] strong,
+.hc-app[data-theme="dark"] .hc-sidebar-account-menu-item[data-tone="danger"] small {
+  color: #ff9a8f;
 }
 
 .hc-sidebar-rate-limit-summary {
@@ -2410,6 +2493,31 @@ button.hc-sidebar-account-menu-item small {
 .hc-reasoning-picker-menu-item-label {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+:root[data-hc-theme="dark"] .hc-reasoning-picker-menu,
+.hc-app[data-theme="dark"] .hc-reasoning-picker-menu {
+  background: var(--hc-surface-secondary);
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary-soft);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-hc-theme="dark"] .hc-reasoning-picker-menu-header,
+.hc-app[data-theme="dark"] .hc-reasoning-picker-menu-header {
+  color: var(--hc-text-secondary);
+}
+
+:root[data-hc-theme="dark"] .hc-reasoning-picker-menu-item,
+.hc-app[data-theme="dark"] .hc-reasoning-picker-menu-item,
+:root[data-hc-theme="dark"] .hc-reasoning-picker-menu-item[data-active="true"],
+.hc-app[data-theme="dark"] .hc-reasoning-picker-menu-item[data-active="true"] {
+  color: var(--hc-text-primary-soft);
+}
+
+:root[data-hc-theme="dark"] .hc-reasoning-picker-menu-item:hover,
+.hc-app[data-theme="dark"] .hc-reasoning-picker-menu-item:hover {
+  background: var(--hc-surface-hover);
 }
 
 .hc-model-picker-menu-header {
@@ -2850,9 +2958,40 @@ button.hc-sidebar-account-menu-item small {
 .hc-app[data-theme="dark"] .hc-right-rail[data-display-mode="overlay"] {
   background: var(--hc-surface-panel);
 }
+:root[data-hc-theme="dark"] .hc-thread-menu,
 .hc-app[data-theme="dark"] .hc-thread-menu {
   background: var(--hc-surface-panel);
   border-color: var(--hc-border-default);
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-item,
+.hc-app[data-theme="dark"] .hc-thread-menu-item {
+  color: var(--hc-text-primary-soft);
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-title,
+.hc-app[data-theme="dark"] .hc-thread-menu-title,
+:root[data-hc-theme="dark"] .hc-thread-menu-check,
+.hc-app[data-theme="dark"] .hc-thread-menu-check {
+  color: var(--hc-text-secondary);
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-item:hover,
+.hc-app[data-theme="dark"] .hc-thread-menu-item:hover {
+  background: var(--hc-surface-hover);
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-item:disabled,
+.hc-app[data-theme="dark"] .hc-thread-menu-item:disabled {
+  color: var(--hc-text-tertiary);
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-item:disabled:hover,
+.hc-app[data-theme="dark"] .hc-thread-menu-item:disabled:hover {
+  background: transparent;
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-item.danger,
+.hc-app[data-theme="dark"] .hc-thread-menu-item.danger {
+  color: #ff9a8f;
+}
+:root[data-hc-theme="dark"] .hc-thread-menu-separator,
+.hc-app[data-theme="dark"] .hc-thread-menu-separator {
+  background: var(--hc-border-default);
 }
 .hc-app[data-theme="dark"] .hc-file-diff-viewer {
   background: var(--hc-surface-main);
@@ -2866,14 +3005,148 @@ button.hc-sidebar-account-menu-item small {
   border-color: var(--hc-border-default);
   color: var(--hc-text-primary);
 }
+:root[data-hc-theme="dark"] .hc-model-picker-menu,
+.hc-app[data-theme="dark"] .hc-model-picker-menu {
+  background: var(--hc-surface-secondary);
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-primary-soft);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.38), 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-menu-header,
+:root[data-hc-theme="dark"] .hc-model-picker-menu-meta,
+:root[data-hc-theme="dark"] .hc-model-picker-menu-footer,
+:root[data-hc-theme="dark"] .hc-model-picker-provider-host,
+:root[data-hc-theme="dark"] .hc-model-picker-provider-chevron,
+:root[data-hc-theme="dark"] .hc-model-picker-menu-icon,
+:root[data-hc-theme="dark"] .hc-model-picker-model-icon,
+:root[data-hc-theme="dark"] .hc-model-picker-signin-hint,
+:root[data-hc-theme="dark"] .hc-model-picker-edit-label,
+:root[data-hc-theme="dark"] .hc-model-picker-edit-hint,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-header,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-meta,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-footer,
+.hc-app[data-theme="dark"] .hc-model-picker-provider-host,
+.hc-app[data-theme="dark"] .hc-model-picker-provider-chevron,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-icon,
+.hc-app[data-theme="dark"] .hc-model-picker-model-icon,
+.hc-app[data-theme="dark"] .hc-model-picker-signin-hint,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-label,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-hint {
+  color: var(--hc-text-secondary);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-provider,
+:root[data-hc-theme="dark"] .hc-model-picker-menu-footer,
+:root[data-hc-theme="dark"] .hc-model-picker-settings-link,
+.hc-app[data-theme="dark"] .hc-model-picker-provider,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-footer,
+.hc-app[data-theme="dark"] .hc-model-picker-settings-link {
+  border-color: var(--hc-border-default);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-menu-item,
+:root[data-hc-theme="dark"] .hc-model-picker-provider-title,
+:root[data-hc-theme="dark"] .hc-model-picker-model-item,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-item,
+.hc-app[data-theme="dark"] .hc-model-picker-provider-title,
+.hc-app[data-theme="dark"] .hc-model-picker-model-item {
+  color: var(--hc-text-primary-soft);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-menu-item:hover,
+:root[data-hc-theme="dark"] .hc-model-picker-provider-title:hover,
+:root[data-hc-theme="dark"] .hc-model-picker-edit-toggle:hover,
+:root[data-hc-theme="dark"] .hc-model-picker-model-item:hover,
+:root[data-hc-theme="dark"] .hc-model-picker-settings-link:hover,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-item:hover,
+.hc-app[data-theme="dark"] .hc-model-picker-provider-title:hover,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-toggle:hover,
+.hc-app[data-theme="dark"] .hc-model-picker-model-item:hover,
+.hc-app[data-theme="dark"] .hc-model-picker-settings-link:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary-soft);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-menu-item[data-active="true"],
+.hc-app[data-theme="dark"] .hc-model-picker-menu-item[data-active="true"] {
+  background: var(--hc-surface-soft);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-toggle,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-toggle {
+  color: var(--hc-text-secondary);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-menu-check,
+:root[data-hc-theme="dark"] .hc-model-picker-model-check,
+.hc-app[data-theme="dark"] .hc-model-picker-menu-check,
+.hc-app[data-theme="dark"] .hc-model-picker-model-check {
+  color: var(--hc-text-accent);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-form,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-form {
+  background: var(--hc-surface-soft);
+  border-color: var(--hc-border-default);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-input,
+:root[data-hc-theme="dark"] .hc-model-picker-edit-textarea,
 .hc-app[data-theme="dark"] .hc-model-picker-edit-input,
 .hc-app[data-theme="dark"] .hc-model-picker-edit-textarea {
   background: var(--hc-surface-main);
   border-color: var(--hc-border-default);
   color: var(--hc-text-primary);
 }
+:root[data-hc-theme="dark"] .hc-model-picker-edit-input:focus,
+:root[data-hc-theme="dark"] .hc-model-picker-edit-textarea:focus,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-input:focus,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-textarea:focus {
+  border-color: var(--hc-border-strong);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-button-ghost,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-button-ghost {
+  background: transparent;
+  border-color: var(--hc-border-default);
+  color: var(--hc-text-secondary);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-button-ghost:hover:not(:disabled),
+.hc-app[data-theme="dark"] .hc-model-picker-edit-button-ghost:hover:not(:disabled) {
+  background: var(--hc-surface-hover);
+  border-color: var(--hc-border-strong);
+  color: var(--hc-text-primary-soft);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-button-primary,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-button-primary {
+  background: var(--hc-text-primary-soft);
+  border-color: var(--hc-text-primary-soft);
+  color: var(--hc-surface-main);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-button-primary:hover:not(:disabled),
+.hc-app[data-theme="dark"] .hc-model-picker-edit-button-primary:hover:not(:disabled) {
+  background: var(--hc-text-primary);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-hint code,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-hint code {
+  background: var(--hc-surface-hover);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-signin-row,
+.hc-app[data-theme="dark"] .hc-model-picker-signin-row {
+  background: color-mix(in oklab, var(--hc-editor-warning-foreground) 12%, transparent);
+  border-color: color-mix(in oklab, var(--hc-editor-warning-foreground) 55%, transparent);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-provider-warning,
+:root[data-hc-theme="dark"] .hc-model-picker-edit-error,
+.hc-app[data-theme="dark"] .hc-model-picker-provider-warning,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-error {
+  color: var(--hc-editor-warning-foreground);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-edit-error,
+.hc-app[data-theme="dark"] .hc-model-picker-edit-error {
+  background: color-mix(in oklab, var(--hc-editor-warning-foreground) 12%, transparent);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-signin-button,
 .hc-app[data-theme="dark"] .hc-model-picker-signin-button {
   background: var(--hc-surface-main);
+  border-color: color-mix(in oklab, var(--hc-editor-warning-foreground) 55%, transparent);
+  color: var(--hc-editor-warning-foreground);
+}
+:root[data-hc-theme="dark"] .hc-model-picker-signin-button:hover,
+.hc-app[data-theme="dark"] .hc-model-picker-signin-button:hover {
+  background: color-mix(in oklab, var(--hc-editor-warning-foreground) 12%, var(--hc-surface-main));
+  border-color: var(--hc-editor-warning-foreground);
 }
 /* Generic buttons hardcoded a white #fffdfa fill with no dark override → white
    buttons on dark (dialogs, MCP form, the unified-diff failure-dialog Close,

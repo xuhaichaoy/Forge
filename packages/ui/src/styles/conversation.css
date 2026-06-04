@@ -984,7 +984,7 @@
 .hc-app[data-theme="dark"] .hc-scroll-to-bottom {
   border-color: var(--hc-border-default);
   background: var(--hc-surface-panel);
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.34);
 }
 
@@ -1003,7 +1003,15 @@
 .hc-app[data-theme="dark"] .hc-sidebar-trigger:hover,
 .hc-app[data-theme="dark"] .hc-sidebar-trigger:focus-visible {
   background: var(--hc-surface-hover);
-  color: var(--hc-text-primary);
+  color: var(--hc-text-primary-soft);
+}
+
+.hc-app[data-theme="dark"] .hc-top-title {
+  color: var(--hc-text-primary-soft);
+}
+
+.hc-app[data-theme="dark"] .hc-topbar-env-icon {
+  color: var(--hc-text-primary-soft);
 }
 
 .hc-app[data-theme="dark"] .hc-thread-find-bar {

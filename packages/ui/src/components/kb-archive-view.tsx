@@ -10,15 +10,10 @@ import {
   getYuxiEntity,
   getYuxiEntityHistory,
   getYuxiEntityRelated,
-  listYuxiKnowledgeDatabases,
   listYuxiEntities,
   mergeYuxiEntity,
   refreshYuxiEntityMetrics,
   updateYuxiEntity,
-  YUXI_CATEGORIES,
-  yuxiBusinessLineLabel,
-  yuxiCategoryMeta,
-  type YuxiBusinessLine,
   type YuxiEntity,
   type YuxiEntityAttributeDiff,
   type YuxiEntityDetail,
@@ -26,27 +21,42 @@ import {
   type YuxiEntityMutationPayload,
   type YuxiEntityRelatedResponse,
   type YuxiEntityType,
-  type YuxiKnowledgeDatabase,
 } from "../lib/yuxi-client";
 import { EntityEditDialog, EntityMergeDialog } from "./kb-archive-entity-dialog";
 import { EntityDetailPanel } from "./kb-archive-detail";
 import {
-  ENTITY_TABS,
+  resolveTabConfig,
   type EntityTab,
 } from "./kb-archive-model";
 import { EntityTable } from "./kb-archive-table";
 
+/** 左侧动态档案分类：从真实实体聚合出的 distinct entity_type + 每类计数 + 中文标签。 */
+interface ArchiveCategory {
+  type: string;
+  label: string;
+  count: number;
+}
+
+/** 聚合一批实体里真实存在的 entity_type（去重 + 计数），按计数降序、同数按标签排序。 */
+function aggregateArchiveCategories(entities: YuxiEntity[]): ArchiveCategory[] {
+  const counts = new Map<string, number>();
+  for (const item of entities) {
+    const type = (item.entity_type ?? "").trim();
+    if (!type) continue;
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([type, count]) => ({ type, label: resolveTabConfig(type).label, count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "zh-CN"));
+}
+
 export function KbArchiveView() {
   const [activeTab, setActiveTab] = useState<EntityTab>("teacher");
-  const [archiveBizLine, setArchiveBizLine] = useState<"all" | YuxiBusinessLine>("all");
-  const [archiveCategory, setArchiveCategory] = useState("all");
-  const [sourceDbId, setSourceDbId] = useState("all");
-  const [queries, setQueries] = useState<Record<EntityTab, string>>(() => makeEntityTabRecord(""));
+  const [queries, setQueries] = useState<Record<string, string>>({});
   const [items, setItems] = useState<YuxiEntity[]>([]);
-  const [databases, setDatabases] = useState<YuxiKnowledgeDatabase[]>([]);
   const [authorityFilter, setAuthorityFilter] = useState("all");
   const [entityFilters, setEntityFilters] = useState<Record<string, string>>({});
-  const [counts, setCounts] = useState<Record<EntityTab, number>>(() => makeEntityTabRecord(0));
+  const [categories, setCategories] = useState<ArchiveCategory[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<YuxiEntityDetail | null>(null);
   const [related, setRelated] = useState<YuxiEntityRelatedResponse | null>(null);
@@ -67,34 +77,12 @@ export function KbArchiveView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const tab = ENTITY_TABS.find((item) => item.id === activeTab)!;
-  const query = queries[activeTab];
+  const tab = useMemo(() => {
+    const activeLabel = categories.find((category) => category.type === activeTab)?.label;
+    return resolveTabConfig(activeTab, activeLabel);
+  }, [activeTab, categories]);
+  const query = queries[activeTab] ?? "";
   const setQuery = (value: string) => setQueries((prev) => ({ ...prev, [activeTab]: value }));
-  const scopeFilters = useMemo(
-    () => ({
-      businessLine: archiveBizLine === "all" ? null : archiveBizLine,
-      category: archiveCategory === "all" ? null : archiveCategory,
-      dbId: sourceDbId === "all" ? null : sourceDbId,
-    }),
-    [archiveBizLine, archiveCategory, sourceDbId],
-  );
-  const sourceDatabases = useMemo(
-    () => databases.filter((database) => {
-      if (archiveBizLine !== "all" && database.business_line !== archiveBizLine) return false;
-      if (archiveCategory !== "all" && database.category !== archiveCategory) return false;
-      return true;
-    }),
-    [archiveBizLine, archiveCategory, databases],
-  );
-
-  const loadDatabases = useCallback(async () => {
-    try {
-      const result = await listYuxiKnowledgeDatabases();
-      setDatabases(result.databases ?? []);
-    } catch {
-      setDatabases([]);
-    }
-  }, []);
 
   const loadDetail = useCallback(async (entityId: number | null) => {
     if (entityId == null) {
@@ -139,26 +127,19 @@ export function KbArchiveView() {
     setLoading(true);
     setError(null);
     try {
-      const [current, ...countResults] = await Promise.all([
+      // 一次广撷（不按 type 过滤）→ 聚合出 Yuxi 真实存在的 entity_type 分类与计数；
+      // 同时按当前选中类型 + 搜索词单独拉一页用于右侧表格。
+      const [current, overview] = await Promise.all([
         listYuxiEntities({
           type: activeTab as YuxiEntityType,
           query: query.trim() || null,
-          businessLine: scopeFilters.businessLine,
-          category: scopeFilters.category,
-          dbId: scopeFilters.dbId,
           limit: 80,
         }),
-        ...ENTITY_TABS.map((item) => listYuxiEntities({
-          type: item.id as YuxiEntityType,
-          businessLine: scopeFilters.businessLine,
-          category: scopeFilters.category,
-          dbId: scopeFilters.dbId,
-          limit: 1,
-        }).catch(() => ({ total: 0, items: [] }))),
+        listYuxiEntities({ limit: 200 }).catch(() => ({ total: 0, items: [] })),
       ]);
       const nextItems = current.items ?? [];
       setItems(nextItems);
-      setCounts(Object.fromEntries(ENTITY_TABS.map((item, index) => [item.id, countResults[index]?.total ?? 0])) as Record<EntityTab, number>);
+      setCategories(aggregateArchiveCategories(overview.items ?? []));
       if (selectedId != null && !nextItems.some((item) => item.id === selectedId)) {
         setSelectedId(null);
         setDetail(null);
@@ -173,32 +154,29 @@ export function KbArchiveView() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, query, scopeFilters.businessLine, scopeFilters.category, scopeFilters.dbId, selectedId]);
+  }, [activeTab, query, selectedId]);
 
   useEffect(() => {
     void loadEntities();
   }, [loadEntities]);
 
   useEffect(() => {
-    void loadDatabases();
-  }, [loadDatabases]);
-
-  useEffect(() => {
-    if (sourceDbId === "all") return;
-    if (sourceDatabases.some((database) => database.db_id === sourceDbId)) return;
-    setSourceDbId("all");
-  }, [sourceDatabases, sourceDbId]);
-
-  useEffect(() => {
     void loadDetail(selectedId);
   }, [loadDetail, selectedId]);
 
+  // 选中的分类若在真实分类里已不存在（例如该类型被清空），回退到第一个真实分类。
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (categories.some((category) => category.type === activeTab)) return;
+    setActiveTab(categories[0].type as EntityTab);
+    setAuthorityFilter("all");
+    setEntityFilters({});
+  }, [activeTab, categories]);
+
   const pendingCount = useMemo(() => items.filter((item) => item.authority_status !== "authoritative").length, [items]);
-  const presalesArchiveCount = counts.teacher + counts.course + counts.case + counts.customer;
-  const biddingArchiveCount = counts.bid_project + counts.bid_requirement + counts.bid_risk + counts.bid_competitor + counts.bid_template;
-  const archiveTabs = useMemo(
-    () => ENTITY_TABS.filter((item) => archiveBizLine === "all" || entityTabBusinessLine(item.id) === archiveBizLine),
-    [archiveBizLine],
+  const totalArchiveCount = useMemo(
+    () => categories.reduce((sum, category) => sum + category.count, 0),
+    [categories],
   );
   const visibleItems = useMemo(
     () => applyEntityFilters(items, authorityFilter, entityFilters, tab.filters),
@@ -219,17 +197,12 @@ export function KbArchiveView() {
     setAttributeDiffs([]);
   }, []);
 
-  const selectArchiveBusinessLine = useCallback((value: "all" | YuxiBusinessLine) => {
-    setArchiveBizLine(value);
-    setArchiveCategory("all");
-    setSourceDbId("all");
-    if (value !== "all" && entityTabBusinessLine(activeTab) !== value) {
-      setActiveTab(firstEntityTabForLine(value));
-      setAuthorityFilter("all");
-      setEntityFilters({});
-    }
+  const selectArchiveCategory = useCallback((type: string) => {
+    setActiveTab(type as EntityTab);
+    setAuthorityFilter("all");
+    setEntityFilters({});
     resetSelection();
-  }, [activeTab, resetSelection]);
+  }, [resetSelection]);
 
   const changeAuthority = useCallback(async (status: string) => {
     if (selectedId == null) return;
@@ -387,55 +360,25 @@ export function KbArchiveView() {
       <div className="hc-kb-body">
         <aside className="hc-kb-filters hc-kb-archive-sidebar" aria-label="档案分类">
           <div className="hc-kb-filter-section">
-            <div className="hc-kb-filter-label">业务线</div>
-            <button
-              type="button"
-              className="hc-kb-filter-opt"
-              data-active={archiveBizLine === "all" ? "true" : undefined}
-              onClick={() => selectArchiveBusinessLine("all")}
-            >
-              <span className="hc-kb-filter-opt-name">全部档案</span>
-              <span className="hc-kb-filter-opt-count">{(presalesArchiveCount + biddingArchiveCount).toLocaleString()}</span>
-            </button>
-            <button
-              type="button"
-              className="hc-kb-filter-opt"
-              data-active={archiveBizLine === "training_presales" ? "true" : undefined}
-              onClick={() => selectArchiveBusinessLine("training_presales")}
-            >
-              <span className="hc-kb-filter-opt-name">售前</span>
-              <span className="hc-kb-filter-opt-count">{presalesArchiveCount.toLocaleString()}</span>
-            </button>
-            <button
-              type="button"
-              className="hc-kb-filter-opt"
-              data-active={archiveBizLine === "bidding" ? "true" : undefined}
-              onClick={() => selectArchiveBusinessLine("bidding")}
-            >
-              <span className="hc-kb-filter-opt-name">投标</span>
-              <span className="hc-kb-filter-opt-count">{biddingArchiveCount.toLocaleString()}</span>
-            </button>
-          </div>
-
-          <div className="hc-kb-filter-section">
             <div className="hc-kb-filter-label">档案分类</div>
-            {archiveTabs.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                className="hc-kb-filter-opt"
-                data-active={activeTab === id ? "true" : undefined}
-                onClick={() => {
-                  setActiveTab(id);
-                  setAuthorityFilter("all");
-                  setEntityFilters({});
-                  resetSelection();
-                }}
-              >
-                <span className="hc-kb-filter-opt-name">{label}</span>
-                <span className="hc-kb-filter-opt-count">{counts[id].toLocaleString()}</span>
-              </button>
-            ))}
+            {categories.length === 0 ? (
+              <div className="hc-kb-tree-empty">
+                {loading ? "正在读取档案分类…" : "暂无档案，上传资料并提取档案后会出现在这里。"}
+              </div>
+            ) : (
+              categories.map(({ type, label, count }) => (
+                <button
+                  key={type}
+                  type="button"
+                  className="hc-kb-filter-opt"
+                  data-active={activeTab === type ? "true" : undefined}
+                  onClick={() => selectArchiveCategory(type)}
+                >
+                  <span className="hc-kb-filter-opt-name">{label}</span>
+                  <span className="hc-kb-filter-opt-count">{count.toLocaleString()}</span>
+                </button>
+              ))
+            )}
           </div>
         </aside>
 
@@ -448,7 +391,7 @@ export function KbArchiveView() {
                   <span>{visibleItems.length.toLocaleString()} 条</span>
                 </div>
                 <p>
-                  {yuxiBusinessLineLabel(entityTabBusinessLine(activeTab))} · {scopeSummaryLabel(archiveBizLine, archiveCategory, sourceDbId, sourceDatabases)}
+                  共 {totalArchiveCount.toLocaleString()} 条档案 · {categories.length} 个分类
                   {pendingCount > 0 ? ` · ${pendingCount} 条待确认` : ""}
                 </p>
               </div>
@@ -561,37 +504,6 @@ export function KbArchiveView() {
       )}
     </KbPageShell>
   );
-}
-
-function makeEntityTabRecord<T>(value: T): Record<EntityTab, T> {
-  return Object.fromEntries(ENTITY_TABS.map((item) => [item.id, value])) as Record<EntityTab, T>;
-}
-
-function entityTabBusinessLine(tab: EntityTab): YuxiBusinessLine {
-  return tab.startsWith("bid_") ? "bidding" : "training_presales";
-}
-
-function firstEntityTabForLine(line: YuxiBusinessLine): EntityTab {
-  return line === "bidding" ? "bid_project" : "teacher";
-}
-
-function scopeSummaryLabel(
-  businessLine: "all" | YuxiBusinessLine,
-  category: string,
-  dbId: string,
-  databases: YuxiKnowledgeDatabase[],
-): string {
-  if (dbId !== "all") {
-    const database = databases.find((item) => item.db_id === dbId);
-    return database?.name || dbId;
-  }
-  if (category !== "all") {
-    return yuxiCategoryMeta(category)?.label || category;
-  }
-  if (businessLine !== "all") {
-    return `${yuxiBusinessLineLabel(businessLine)}档案`;
-  }
-  return "全部档案";
 }
 
 function applyEntityFilters(
