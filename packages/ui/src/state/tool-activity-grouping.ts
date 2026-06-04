@@ -19,9 +19,20 @@ import {
   mcpElicitationServer,
   mcpServerName,
   mcpToolName,
-  recordObject,
   statusText,
 } from "./thread-item-fields";
+import {
+  displayPath,
+  execExitCode,
+  multiAgentAction,
+  multiAgentStatus,
+  patchChanges,
+  patchKind,
+  patchPath,
+  stripLeadingAt,
+  threadSpawnSourceField,
+  webSearchActionDetail,
+} from "./tool-activity-fields";
 
 export function formatItemDetail(item: ThreadItem): string {
   const type = itemType(item);
@@ -908,34 +919,6 @@ function patchDetail(item: ThreadItem): string {
   }).join("\n\n");
 }
 
-function patchChanges(item: ThreadItem): Record<string, unknown>[] {
-  const changes = (item as ItemRecord).changes;
-  if (Array.isArray(changes)) {
-    return changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object");
-  }
-  if (!changes || typeof changes !== "object") return [];
-  return Object.entries(changes as Record<string, unknown>).flatMap(([path, value]) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-    const change = value as Record<string, unknown>;
-    return [{ ...change, path: stringField(change, "path") || path }];
-  });
-}
-
-function patchKind(change: Record<string, unknown>): "add" | "delete" | "update" {
-  const directType = stringField(change, "type");
-  if (directType === "add" || directType === "delete") return directType;
-  if (directType === "update") return "update";
-  const kind = change.kind;
-  if (typeof kind === "string") {
-    return kind === "add" || kind === "delete" ? kind : "update";
-  }
-  if (kind && typeof kind === "object") {
-    const type = stringField(kind, "type");
-    return type === "add" || type === "delete" ? type : "update";
-  }
-  return "update";
-}
-
 function patchSuccess(item: ThreadItem): boolean | null {
   const record = item as ItemRecord;
   const success = record.success;
@@ -984,10 +967,6 @@ function lineCount(value: string): number {
   const normalized = value.replace(/\r\n/gu, "\n");
   const lines = normalized.split("\n");
   return lines.length > 0 && lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
-}
-
-function patchPath(change: Record<string, unknown>): string {
-  return stringField(change, "path") || stringField(change, "newPath") || stringField(change, "oldPath") || "file";
 }
 
 function patchActionLabel(kind: "add" | "delete" | "update", path: string, inProgress: boolean): string {
@@ -1063,12 +1042,6 @@ function runningCreatedSegment(count: number, lineCount: number): string {
   );
 }
 
-function displayPath(path: string): string {
-  const trimmed = path.trim().replace(/^\.\/+/u, "").replace(/\\/gu, "/");
-  if (!trimmed) return "file";
-  return trimmed;
-}
-
 function lowerInitial(value: string): string {
   return value.length === 0 ? value : value[0].toLowerCase() + value.slice(1);
 }
@@ -1134,13 +1107,6 @@ function isExternalWebUrlLikeCodexDesktop(value: string): boolean {
 
 function commandCreatesFolderLikeCodexDesktop(item: ThreadItem): boolean {
   return /^\s*mkdir(?:\s|$)/u.test(commandText(item));
-}
-
-function execExitCode(item: ThreadItem): number | null {
-  const record = item as ItemRecord;
-  if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
-  const output = recordObject(record.output);
-  return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
 }
 
 export function toolActivityGroupKey(item: ThreadItem, groupType: ToolActivityGroupType): string {
@@ -1251,53 +1217,6 @@ function webSearchDetailText(record: ItemRecord): string {
   return stringField(record, "query").trim();
 }
 
-function webSearchActionDetail(action: unknown): string {
-  if (!action || typeof action !== "object") return "";
-  const record = action as Record<string, unknown>;
-  const type = stringField(record, "type");
-  if (type === "search") {
-    const query = stringField(record, "query").trim();
-    if (query) return cleanWebSearchQuery(query);
-    const queries = Array.isArray(record.queries)
-      ? record.queries.flatMap((value) => typeof value === "string" && value.trim() ? [value.trim()] : [])
-      : [];
-    if (queries.length > 1) return `${cleanWebSearchQuery(queries[0] ?? "")} ...`;
-    return cleanWebSearchQuery(queries[0] ?? "");
-  }
-  if (type === "openPage") return stringField(record, "url").trim();
-  if (type === "findInPage") {
-    const pattern = stringField(record, "pattern").trim();
-    const url = stringField(record, "url").trim();
-    if (pattern && url) return `'${pattern}' in ${url}`;
-    return pattern ? `'${pattern}'` : url;
-  }
-  return "";
-}
-
-const WEB_SEARCH_SITE_RE = /\bsite:([^\s]+)/giu;
-const WEB_SEARCH_OR_RE = /\bOR\b/gu;
-
-function cleanWebSearchQuery(query: string): string {
-  const domains: string[] = [];
-  const withoutSites = query.replace(WEB_SEARCH_SITE_RE, (match, domain: string) => {
-    const normalized = normalizedSearchDomain(domain);
-    if (!normalized) return match;
-    if (!domains.includes(normalized)) domains.push(normalized);
-    return "";
-  });
-  if (domains.length === 0) return query;
-  const terms = withoutSites.replace(WEB_SEARCH_OR_RE, " ").replace(/\s+/gu, " ").trim();
-  return terms ? `${terms} | ${domains.join(" · ")}` : query;
-}
-
-function normalizedSearchDomain(domain: string): string | null {
-  try {
-    return new URL(`https://${domain}`).hostname.replace(/^www\./u, "");
-  } catch {
-    return null;
-  }
-}
-
 function agentFallbackName(id: string): string {
   return id ? `agent-${id.slice(0, 8)}` : formatMessage({ id: "hc.toolActivity.agentFallback", defaultMessage: "agent" });
 }
@@ -1403,34 +1322,6 @@ function multiAgentReceiverTitle(item: ThreadItem, threadId: string): string {
     ).trim();
   }
   return "";
-}
-
-function threadSpawnSourceField(thread: Record<string, unknown>, snakeKey: string, camelKey: string): string {
-  const source = thread.source;
-  if (!source || typeof source !== "object" || Array.isArray(source)) return "";
-  const sourceRecord = source as Record<string, unknown>;
-  const direct = stringField(sourceRecord, camelKey);
-  if (direct) return direct;
-  const subAgent = sourceRecord.subAgent;
-  if (!subAgent || typeof subAgent !== "object" || Array.isArray(subAgent)) return "";
-  const threadSpawn = (subAgent as Record<string, unknown>).thread_spawn;
-  if (!threadSpawn || typeof threadSpawn !== "object" || Array.isArray(threadSpawn)) return "";
-  return stringField(threadSpawn as Record<string, unknown>, snakeKey)
-    || stringField(threadSpawn as Record<string, unknown>, camelKey);
-}
-
-function stripLeadingAt(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
-}
-
-function multiAgentAction(item: ThreadItem): string {
-  const record = item as ItemRecord;
-  return stringField(record, "action") || stringField(record, "tool") || "agent";
-}
-
-function multiAgentStatus(item: ThreadItem): string {
-  return stringField(item as ItemRecord, "status") || "completed";
 }
 
 function multiAgentHeaderVerb(action: string, status: string): string {

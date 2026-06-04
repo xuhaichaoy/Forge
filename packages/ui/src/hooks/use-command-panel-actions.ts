@@ -1658,26 +1658,9 @@ export function useCommandPanelActions({
 
   return {
     callMcpToolFromPanel,
-    checkoutPluginShareFromPanel,
-    installPluginFromPanel,
-    loginMcpServerFromPanel,
-    openBrowserRuntimeFromPanel,
-    openComputerUseSetupFromPanel,
-    openExternalUrlFromPanel,
-    probeComputerUseMcpFromPanel,
-    reloadMcpServersFromPanel,
-    removeMcpServerFromPanel,
-    readMcpResourceFromPanel,
-    readPluginSkillFromPanel,
-    readSkillFileFromPanel,
     selectCommandPanelAction,
     selectCommandPanelEntry,
-    uninstallPluginFromPanel,
-    writeAppConfigFromPanel,
-    writeConfigFromPanel,
     writeMcpServerConfigFromPanel,
-    writePluginConfigFromPanel,
-    writeSkillConfigFromPanel,
   };
 }
 

@@ -464,20 +464,37 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
   }
 }
 
-function normalizeThreadRuntime(runtime: Partial<ThreadRuntimeSlice> | undefined): ThreadRuntimeSlice {
+function normalizeThreadRuntime(
+  runtime: Partial<ThreadRuntimeSlice> | undefined,
+  options?: { reuseProjectedItems?: boolean },
+): ThreadRuntimeSlice {
   const threadGoal = runtime?.threadGoal ?? null;
   const threadGoalTurnId = runtime?.threadGoalTurnId ?? null;
   const hookRunsByTurn = runtime?.hookRunsByTurn ?? {};
   const rawItems = runtime?.items ?? [];
-  const hookStatusProjectedItems = projectHookBlockedOntoUserMessages(rawItems, hookRunsByTurn);
-  const goalProjectedItems = threadGoal
-    ? projectCompletedThreadGoalOntoAssistantMessages(
-        projectThreadGoalOntoUserMessages(hookStatusProjectedItems, threadGoal, threadGoalTurnId),
-        threadGoal,
-        threadGoalTurnId,
-      )
-    : hookStatusProjectedItems;
-  const items = projectHookStatsOntoAssistantMessages(goalProjectedItems, hookRunsByTurn);
+  // Hot-path projection skip: the four item projections below depend only on
+  // `items`, `hookRunsByTurn`, `threadGoal`, and `threadGoalTurnId`. When a
+  // patch touches none of those (e.g. a `tokenSpeed` tick or `turnDiff` update),
+  // the already-projected `runtime.items` are still projection-consistent — the
+  // projections are idempotent on their own output — so we reuse them verbatim
+  // and skip 2–4 full-transcript `items.map()` passes. Every other field below
+  // is normalized identically to the full path, so the output shape is unchanged.
+  const items = options?.reuseProjectedItems
+    ? rawItems
+    : projectHookStatsOntoAssistantMessages(
+        threadGoal
+          ? projectCompletedThreadGoalOntoAssistantMessages(
+              projectThreadGoalOntoUserMessages(
+                projectHookBlockedOntoUserMessages(rawItems, hookRunsByTurn),
+                threadGoal,
+                threadGoalTurnId,
+              ),
+              threadGoal,
+              threadGoalTurnId,
+            )
+          : projectHookBlockedOntoUserMessages(rawItems, hookRunsByTurn),
+        hookRunsByTurn,
+      );
   const terminalTurnIds = dedupeStrings(runtime?.terminalTurnIds ?? []);
   return {
     activeTurnId: runtime?.activeTurnId ?? null,
@@ -541,12 +558,31 @@ function updateThreadRuntime(
   };
 }
 
+// The item projections in `normalizeThreadRuntime` consume exactly these four
+// fields. A patch that sets none of them cannot change the projected `items`,
+// so the projection pipeline can be skipped for it. `in` is used (rather than a
+// truthiness check) so an explicit `threadGoal: null` / `hookRunsByTurn: {}`
+// reset still takes the full projection path, matching the unoptimized reducer.
+const ITEM_PROJECTION_PATCH_KEYS: ReadonlyArray<keyof ThreadRuntimeSlice> = [
+  "items",
+  "hookRunsByTurn",
+  "threadGoal",
+  "threadGoalTurnId",
+];
+
+function patchAffectsItemProjection(patch: Partial<ThreadRuntimeSlice>): boolean {
+  return ITEM_PROJECTION_PATCH_KEYS.some((key) => key in patch);
+}
+
 function threadRuntimePatch(
   state: CodexUiState,
   threadId: string,
   patch: Partial<ThreadRuntimeSlice>,
 ): CodexUiState {
-  return updateThreadRuntime(state, threadId, (runtime) => normalizeThreadRuntime({ ...runtime, ...patch }));
+  const reuseProjectedItems = !patchAffectsItemProjection(patch);
+  return updateThreadRuntime(state, threadId, (runtime) =>
+    normalizeThreadRuntime({ ...runtime, ...patch }, { reuseProjectedItems }),
+  );
 }
 
 function withActiveComposerMode(state: CodexUiState): CodexUiState {
