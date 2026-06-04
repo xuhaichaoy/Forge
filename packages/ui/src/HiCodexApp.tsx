@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   CollaborationModeMask,
   JsonRpcNotification,
@@ -198,10 +198,14 @@ import {
 } from "./state/sidebar-projection";
 import {
   loadSidebarPreferences,
+  normalizeSidebarPreferences,
+  normalizeSidebarWidthPx,
   saveSidebarPreferences,
   sidebarCollapsedGroupKeys as sidebarCollapsedGroupKeysFromPreferences,
   sidebarCollapsedGroupsFromKeys,
   sidebarPreferenceStorage,
+  SIDEBAR_WIDTH_MAX_PX,
+  SIDEBAR_WIDTH_MIN_PX,
   type SidebarPreferences,
 } from "./state/sidebar-preferences";
 import {
@@ -707,6 +711,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     loadSidebarPreferences(sidebarPreferenceStorage())
   ));
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
   const [activeAppTab, setActiveAppTab] = useState<AppNavigationTab>("workbench");
   const [activeRemoteTaskId, setActiveRemoteTaskId] = useState<string | null>(null);
   const openWorkbenchTab = useCallback(() => {
@@ -720,11 +725,14 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   ), [sidebarPreferences.collapsedGroups]);
   const setSidebarPreferences = useCallback((patch: Partial<SidebarPreferences>) => {
     setSidebarPreferencesState((current) => {
-      const next = { ...current, ...patch };
+      const next = normalizeSidebarPreferences({ ...current, ...patch });
       saveSidebarPreferences(sidebarPreferenceStorage(), next);
       return next;
     });
   }, []);
+  const setSidebarWidthPx = useCallback((widthPx: number) => {
+    setSidebarPreferences({ widthPx: normalizeSidebarWidthPx(widthPx) });
+  }, [setSidebarPreferences]);
   const setSidebarSortKey = useCallback((sortKey: SidebarSortKey) => {
     setSidebarPreferences({ sortKey });
   }, [setSidebarPreferences]);
@@ -4653,7 +4661,65 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const workbenchVisible = activeAppTab === "workbench";
   const remoteTaskVisible = activeAppTab === "remoteTask" && activeRemoteTaskId !== null;
   const sidebarVisible = workbenchVisible && sidebarOpen;
+  const sidebarWidthPx = normalizeSidebarWidthPx(sidebarPreferences.widthPx);
+  const appShellStyle = useMemo(() => ({
+    "--hc-sidebar-preferred-width": `${sidebarWidthPx}px`,
+  }) as CSSProperties, [sidebarWidthPx]);
   const appClassName = workbenchVisible && showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app";
+  const startSidebarResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidebarVisible || event.button !== 0) return;
+    event.preventDefault();
+    const appShell = event.currentTarget.closest(".hc-app") as HTMLElement | null;
+    const startX = event.clientX;
+    const startWidth = sidebarWidthPx;
+    let latestWidth = normalizeSidebarWidthPx(startWidth);
+    let pendingFrame = 0;
+    const applyWidth = () => {
+      pendingFrame = 0;
+      appShell?.style.setProperty("--hc-sidebar-preferred-width", `${latestWidth}px`);
+    };
+    const scheduleWidth = () => {
+      if (pendingFrame !== 0) return;
+      pendingFrame = window.requestAnimationFrame(applyWidth);
+    };
+    if (appShell) appShell.dataset.sidebarResizing = "true";
+    setSidebarResizing(true);
+    appShell?.style.setProperty("--hc-sidebar-preferred-width", `${latestWidth}px`);
+
+    const move = (moveEvent: PointerEvent) => {
+      latestWidth = normalizeSidebarWidthPx(startWidth + moveEvent.clientX - startX);
+      scheduleWidth();
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      if (pendingFrame !== 0) {
+        window.cancelAnimationFrame(pendingFrame);
+        pendingFrame = 0;
+      }
+      appShell?.style.setProperty("--hc-sidebar-preferred-width", `${latestWidth}px`);
+      if (appShell) delete appShell.dataset.sidebarResizing;
+      setSidebarResizing(false);
+      setSidebarWidthPx(latestWidth);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  }, [setSidebarWidthPx, sidebarVisible, sidebarWidthPx]);
+  const resizeSidebarByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!sidebarVisible) return;
+    const step = event.shiftKey ? 24 : 12;
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") nextWidth = sidebarPreferences.widthPx - step;
+    else if (event.key === "ArrowRight") nextWidth = sidebarPreferences.widthPx + step;
+    else if (event.key === "Home") nextWidth = SIDEBAR_WIDTH_MIN_PX;
+    else if (event.key === "End") nextWidth = SIDEBAR_WIDTH_MAX_PX;
+    if (nextWidth == null) return;
+    event.preventDefault();
+    setSidebarWidthPx(nextWidth);
+  }, [setSidebarWidthPx, sidebarPreferences.widthPx, sidebarVisible]);
   // codex: inline file references carry the workspace-file context menu; provide the
   // reveal + copy-contents actions (host + path resolution) to every FileCitationAnchor.
   const fileCitationMenuActions = useMemo(
@@ -4669,9 +4735,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         data-app-tab={activeAppTab}
         data-locale={uiLocale}
         data-sidebar-open={sidebarVisible ? "true" : "false"}
+        data-sidebar-resizing={sidebarResizing ? "true" : undefined}
         data-theme={resolvedUiTheme}
         data-theme-mode={uiThemeMode}
         lang={uiLocale}
+        style={appShellStyle}
       >
       <AppNavigationRail
         activeTab={activeAppTab}
@@ -4729,6 +4797,24 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           collapsedGroupKeys={sidebarCollapsedGroupKeys}
           onCollapsedGroupKeysChange={setSidebarCollapsedGroupKeys}
           getThreadTitle={(thread) => threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null)}
+        />
+      )}
+
+      {workbenchVisible && (
+        <div
+          className="hc-sidebar-resize-handle"
+          role="separator"
+          aria-label="Resize sidebar"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_WIDTH_MIN_PX}
+          aria-valuemax={SIDEBAR_WIDTH_MAX_PX}
+          aria-valuenow={sidebarWidthPx}
+          data-visible={sidebarVisible ? "true" : "false"}
+          data-resizing={sidebarResizing ? "true" : undefined}
+          tabIndex={sidebarVisible ? 0 : -1}
+          title="Resize sidebar"
+          onPointerDown={startSidebarResize}
+          onKeyDown={resizeSidebarByKeyboard}
         />
       )}
 
@@ -5314,4 +5400,3 @@ export function HiCodexApp() {
     </ServicesProvider>
   );
 }
-

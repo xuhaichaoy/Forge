@@ -445,10 +445,13 @@
 }
 
 .hc-topbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid #dedbd1;
+  user-select: none;
+  -webkit-app-region: drag;
 }
 
 .hc-topbar {
@@ -462,8 +465,20 @@
   display: flex;
   min-width: 0;
   flex: 1 1 auto;
+  align-self: stretch;
   align-items: center;
   gap: 8px;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.hc-topbar-drag-fill {
+  min-width: 24px;
+  min-height: 100%;
+  flex: 1 1 auto;
+  cursor: default;
+  -webkit-app-region: drag;
 }
 
 .hc-sidebar-trigger {
@@ -479,6 +494,7 @@
   color: #5f625b;
   cursor: pointer;
   view-transition-name: sidebar-trigger;
+  -webkit-app-region: no-drag;
 }
 
 .hc-sidebar-trigger:hover,
@@ -516,6 +532,7 @@
   background: transparent;
   color: var(--hc-text-secondary);
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .hc-topbar-nav-button:hover:not(:disabled),
@@ -544,6 +561,9 @@
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
+  align-self: stretch;
+  cursor: default;
+  -webkit-app-region: drag;
 }
 
 .hc-rail-trigger {
@@ -558,6 +578,7 @@
   background: transparent;
   color: #5f625b;
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .hc-rail-trigger:hover,
@@ -595,6 +616,9 @@
   line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: drag;
 }
 
 /* codex thread-env-icon — a muted local/worktree env indicator before the title.
@@ -605,6 +629,9 @@
   flex: 0 0 auto;
   color: var(--hc-text-primary); /* codex: env icon→title spacing is the gap-2 (8px) alone; removed extra 2px margin (A/B-pending) */
   opacity: 0.55;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: drag;
 }
 
 .hc-thread-find-bar {

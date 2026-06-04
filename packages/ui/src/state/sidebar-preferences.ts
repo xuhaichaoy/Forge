@@ -16,6 +16,10 @@ export const SIDEBAR_ORGANIZE_MODE_STORAGE_KEY = "sidebar-organize-mode-v1";
 export const SIDEBAR_SORT_KEY_STORAGE_KEY = "thread-sort-key";
 export const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-sections-v1";
 export const SIDEBAR_SECTION_ORDER_STORAGE_KEY = "sidebar-section-order-v1";
+export const SIDEBAR_WIDTH_STORAGE_KEY = "hicodex:sidebar-width-v1";
+export const SIDEBAR_WIDTH_MIN_PX = 260;
+export const SIDEBAR_WIDTH_MAX_PX = 420;
+export const SIDEBAR_WIDTH_DEFAULT_PX = SIDEBAR_WIDTH_MIN_PX;
 
 const LEGACY_SIDEBAR_PREFERENCES_STORAGE_KEY = "hicodex:sidebar-preferences";
 /*
@@ -41,6 +45,7 @@ export interface SidebarPreferences {
   sortKey: SidebarSortKey;
   collapsedGroups: SidebarCollapsedGroups;
   sectionOrder: string[];
+  widthPx: number;
 }
 
 export const DEFAULT_SIDEBAR_PREFERENCES: SidebarPreferences = {
@@ -48,6 +53,7 @@ export const DEFAULT_SIDEBAR_PREFERENCES: SidebarPreferences = {
   sortKey: DEFAULT_SIDEBAR_SORT_KEY,
   collapsedGroups: {},
   sectionOrder: DEFAULT_SIDEBAR_SECTION_ORDER,
+  widthPx: SIDEBAR_WIDTH_DEFAULT_PX,
 };
 
 export function sidebarPreferenceStorage(): SidebarPreferenceStorageLike | null {
@@ -84,6 +90,9 @@ export function loadSidebarPreferences(
   const sectionOrder = readStoredJson(storage, SIDEBAR_SECTION_ORDER_STORAGE_KEY);
   if (sectionOrder !== undefined) next.sectionOrder = normalizeSidebarSectionOrder(sectionOrder);
 
+  const widthPx = parseSidebarWidthPx(readStoredText(storage, SIDEBAR_WIDTH_STORAGE_KEY));
+  if (widthPx != null) next.widthPx = widthPx;
+
   return normalizeSidebarPreferences(next);
 }
 
@@ -97,6 +106,7 @@ export function saveSidebarPreferences(
   safeSetItem(storage, SIDEBAR_SORT_KEY_STORAGE_KEY, normalized.sortKey);
   safeSetItem(storage, SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(normalized.collapsedGroups));
   safeSetItem(storage, SIDEBAR_SECTION_ORDER_STORAGE_KEY, JSON.stringify(normalized.sectionOrder));
+  safeSetItem(storage, SIDEBAR_WIDTH_STORAGE_KEY, String(normalized.widthPx));
   safeRemoveItem(storage, LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY);
 }
 
@@ -112,7 +122,14 @@ export function normalizeSidebarPreferences(
       : DEFAULT_SIDEBAR_SORT_KEY,
     collapsedGroups: normalizeSidebarCollapsedGroups(preferences.collapsedGroups),
     sectionOrder: normalizeSidebarSectionOrder(preferences.sectionOrder),
+    widthPx: normalizeSidebarWidthPx(preferences.widthPx),
   };
+}
+
+export function normalizeSidebarWidthPx(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return SIDEBAR_WIDTH_DEFAULT_PX;
+  return Math.min(SIDEBAR_WIDTH_MAX_PX, Math.max(SIDEBAR_WIDTH_MIN_PX, Math.round(numeric)));
 }
 
 export function sidebarCollapsedGroupKeys(collapsedGroups: SidebarCollapsedGroups): string[] {
@@ -229,6 +246,11 @@ function parseSidebarSortKey(value: unknown): SidebarSortKey | null {
 
 function parseSidebarOrganizeMode(value: unknown): SidebarOrganizeMode | null {
   return isSidebarOrganizeMode(value) ? value : null;
+}
+
+function parseSidebarWidthPx(value: unknown): number | null {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) ? normalizeSidebarWidthPx(numeric) : null;
 }
 
 function isSidebarSortKey(value: unknown): value is SidebarSortKey {

@@ -389,7 +389,7 @@ fn host_open_thread_window(app: AppHandle, thread_id: String) -> Result<(), Stri
     let encoded = serde_json::to_string(thread_id).map_err(|error| error.to_string())?;
     let init_script = format!("window.__HICODEX_INITIAL_THREAD__ = {encoded};");
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::default())
-        .title("HiCodex")
+        .title("Forge")
         .inner_size(1280.0, 820.0)
         .initialization_script(&init_script)
         .build()
@@ -407,7 +407,7 @@ fn open_new_window_impl(app: &AppHandle) -> Result<(), String> {
     let n = NEW_WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let label = format!("new-window-{n}");
     WebviewWindowBuilder::new(app, &label, WebviewUrl::default())
-        .title("HiCodex")
+        .title("Forge")
         .inner_size(1280.0, 820.0)
         .initialization_script("window.__HICODEX_INITIAL_NEW_CHAT__ = true;")
         .build()
@@ -586,7 +586,7 @@ fn host_notify_turn_completed(
     app: AppHandle,
     request: TurnCompletionNotificationRequest,
 ) -> Result<(), String> {
-    let title = notification_text(request.title, "Codex turn completed", 96);
+    let title = notification_text(request.title, "Forge turn completed", 96);
     let body = notification_text(request.body, "The background turn has finished.", 240);
     let builder = app.notification().builder().title(title).body(body);
     let builder = if request.sound.unwrap_or(true) {
@@ -2304,7 +2304,7 @@ mod tests {
         }));
 
         assert_eq!(info["type"], "iab");
-        assert_eq!(info["name"], "HiCodex Browser");
+        assert_eq!(info["name"], "Forge Browser");
         assert_eq!(info["metadata"]["codexSessionId"], "session-1");
         assert_eq!(info["metadata"]["codexAppBuildFlavor"], "prod");
         assert_eq!(info["metadata"]["hicodexIabMode"], "probe");
@@ -2319,7 +2319,7 @@ mod tests {
         }));
 
         assert_eq!(info["type"], "extension");
-        assert_eq!(info["name"], "HiCodex Browser Extension Spike");
+        assert_eq!(info["name"], "Forge Browser Extension Spike");
         assert_eq!(
             info["metadata"]["extensionId"],
             "hicodex-host-compatible-extension"
@@ -3855,7 +3855,7 @@ fn browser_iab_backend_info_result(params: &Value) -> Value {
     );
     metadata.insert("hicodexIabMode".to_string(), json!(BROWSER_IAB_MODE));
     json!({
-        "name": "HiCodex Browser",
+        "name": "Forge Browser",
         "type": "iab",
         "metadata": metadata,
         "capabilities": {
@@ -3881,7 +3881,7 @@ fn browser_extension_backend_info_payload() -> Value {
         json!(BROWSER_EXTENSION_BACKEND_MODE),
     );
     json!({
-        "name": "HiCodex Browser Extension Spike",
+        "name": "Forge Browser Extension Spike",
         "type": "extension",
         "metadata": metadata,
         "capabilities": {
@@ -4059,7 +4059,7 @@ fn browser_iab_execute_cdp(app: &AppHandle, params: &Value) -> Result<(Vec<Value
                 Ok((Vec::new(), json!({})))
             } else {
                 Err(format!(
-                    "HiCodex Browser iab probe only exposes the current navigation history entry; entry {entry_id} is not available."
+                    "Forge Browser iab probe only exposes the current navigation history entry; entry {entry_id} is not available."
                 ))
             }
         }
@@ -4275,7 +4275,7 @@ fn browser_iab_execute_cdp(app: &AppHandle, params: &Value) -> Result<(Vec<Value
             ))
         }
         other => Err(format!(
-            "HiCodex Browser iab probe does not support CDP method {other} yet."
+            "Forge Browser iab probe does not support CDP method {other} yet."
         )),
     }
 }
@@ -4305,7 +4305,7 @@ fn browser_iab_execute_unhandled_command(app: &AppHandle, params: &Value) -> Res
         }
         "playwright_wait_for_load_state" => Ok(json!({})),
         other => Err(format!(
-            "HiCodex Browser iab probe does not support Browser command {other} yet."
+            "Forge Browser iab probe does not support Browser command {other} yet."
         )),
     }
 }
@@ -4557,7 +4557,7 @@ fn browser_iab_runtime_evaluate_result(
         });
     }
     let text = fallback_error.unwrap_or_else(|| {
-        "HiCodex Browser iab probe supports only basic read-only Runtime.evaluate calls."
+        "Forge Browser iab probe supports only basic read-only Runtime.evaluate calls."
             .to_string()
     });
     json!({
@@ -4739,7 +4739,7 @@ fn browser_iab_runtime_evaluate_script(expression: &str) -> String {
     if (__hicodexValue && typeof __hicodexValue.then === "function") {
       return {
         ok: false,
-        text: "HiCodex Browser iab probe cannot await Promise results from Runtime.evaluate.",
+        text: "Forge Browser iab probe cannot await Promise results from Runtime.evaluate.",
         description: "Use a synchronous expression or a supported Browser iab evaluate path.",
       };
     }
@@ -5622,7 +5622,7 @@ fn browser_iab_capture_screenshot_bytes(
             stderr
         };
         return Err(format!(
-            "macOS screencapture failed for Browser iab visible-window screenshot: {detail}. Check Screen Recording permission for HiCodex/Codex."
+            "macOS screencapture failed for Browser iab visible-window screenshot: {detail}. Check Screen Recording permission for Forge."
         ));
     }
     let bytes = fs::read(&output_path)
@@ -5644,7 +5644,7 @@ fn browser_iab_capture_screenshot_bytes(
     _params: &Value,
 ) -> Result<Vec<u8>, String> {
     Err(
-        "HiCodex Browser iab visible-window screenshots are only implemented for macOS right now."
+        "Forge Browser iab visible-window screenshots are only implemented for macOS right now."
             .to_string(),
     )
 }
@@ -5982,7 +5982,7 @@ fn browser_iab_unsupported_response(id: Value) -> Value {
     json_rpc_error(
         id,
         -32000,
-        "HiCodex Browser iab probe supports discovery, tab inventory, basic navigation, page JS evaluation, layout metrics, visible-window screenshots, and basic event input; full DOM snapshots, full-page capture, user tab claiming, and file transfer are not implemented yet.",
+        "Forge Browser iab probe supports discovery, tab inventory, basic navigation, page JS evaluation, layout metrics, visible-window screenshots, and basic event input; full DOM snapshots, full-page capture, user tab claiming, and file transfer are not implemented yet.",
     )
 }
 
@@ -6024,7 +6024,7 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let settings = MenuItemBuilder::with_id(MENU_SETTINGS, "Settings")
         .accelerator("CmdOrCtrl+,")
         .build(handle)?;
-    let quit = MenuItemBuilder::with_id(MENU_QUIT, "Quit HiCodex")
+    let quit = MenuItemBuilder::with_id(MENU_QUIT, "Quit Forge")
         .accelerator("CmdOrCtrl+Q")
         .build(handle)?;
     let new_chat = MenuItemBuilder::with_id(MENU_NEW_CHAT, "New Chat")
@@ -6056,7 +6056,7 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let paste = PredefinedMenuItem::paste(handle, None)?;
     let select_all = PredefinedMenuItem::select_all(handle, None)?;
 
-    let app_menu = SubmenuBuilder::new(handle, "HiCodex")
+    let app_menu = SubmenuBuilder::new(handle, "Forge")
         .item(&settings)
         .separator()
         .item(&quit)
@@ -6101,7 +6101,7 @@ fn handle_native_menu_event(app: &AppHandle, id: &str) {
         MENU_RELOAD => emit_unsupported_native_menu_action(
             app,
             "reload",
-            "Reload is unsupported because HiCodex has no separate browser panel.",
+            "Reload is unsupported because Forge has no separate browser panel.",
         ),
         MENU_CLOSE => {
             // codex closeTabOrWindow (⌘W). §M-44/§M-55 added real secondary windows
@@ -6118,7 +6118,7 @@ fn handle_native_menu_event(app: &AppHandle, id: &str) {
                 emit_unsupported_native_menu_action(
                     app,
                     "closeWindow",
-                    "Close Window is unsupported for the main window because HiCodex has no tab target.",
+                    "Close Window is unsupported for the main window because Forge has no tab target.",
                 );
             }
         }
@@ -6157,7 +6157,7 @@ fn activate_main_window(app: &AppHandle) -> tauri::Result<()> {
 
 fn emit_unsupported_native_menu_action(app: &AppHandle, action: &str, message: &str) {
     emit_native_shell_action(app, action, false, Some(message), None);
-    eprintln!("HiCodex native shell: {message}");
+    eprintln!("Forge native shell: {message}");
 }
 
 fn handle_deep_link_url(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -6168,7 +6168,7 @@ fn handle_deep_link_url(app: &AppHandle, url: &str) -> Result<(), String> {
         );
     }
     emit_native_shell_action(app, "openDeepLink", true, None, Some(trimmed));
-    eprintln!("HiCodex native shell: received deep link {trimmed}");
+    eprintln!("Forge native shell: received deep link {trimmed}");
     Ok(())
 }
 
@@ -6178,7 +6178,7 @@ where
 {
     for url in urls {
         if let Err(error) = handle_deep_link_url(app, url) {
-            eprintln!("HiCodex native shell: ignored deep link {url}: {error}");
+            eprintln!("Forge native shell: ignored deep link {url}: {error}");
         }
     }
 }
@@ -6190,7 +6190,7 @@ fn handle_single_instance_activation(app: &AppHandle, args: Vec<String>, cwd: St
         .map(String::as_str)
         .filter(|arg| is_supported_native_shell_url(arg.trim()));
     handle_deep_link_urls(app, deep_link_args);
-    eprintln!("HiCodex native shell: focused existing instance from cwd {cwd}");
+    eprintln!("Forge native shell: focused existing instance from cwd {cwd}");
 }
 
 fn is_supported_native_shell_url(url: &str) -> bool {
@@ -6215,7 +6215,7 @@ fn install_deep_link_handlers(app: &tauri::App) {
         }
         Ok(None) => {}
         Err(error) => {
-            eprintln!("HiCodex native shell: failed to read startup deep links: {error}");
+            eprintln!("Forge native shell: failed to read startup deep links: {error}");
         }
     }
 
@@ -6232,7 +6232,7 @@ fn install_deep_link_handlers(app: &tauri::App) {
 
 fn log_unsupported_native_shell_boundaries() {
     eprintln!(
-        "HiCodex native shell: release update endpoints/signing and product notification entitlement/distribution policy still need production configuration"
+        "Forge native shell: release update endpoints/signing and product notification entitlement/distribution policy still need production configuration"
     );
 }
 
@@ -6456,5 +6456,5 @@ fn main() {
             codex_bundle::open_codex_bundle_window
         ])
         .run(tauri::generate_context!())
-        .expect("error while running HiCodex desktop");
+        .expect("error while running Forge desktop");
 }

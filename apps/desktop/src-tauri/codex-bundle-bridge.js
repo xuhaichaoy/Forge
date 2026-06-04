@@ -313,8 +313,8 @@
   function runInitHandshake() {
     rpcRaw("hicodex-bundle-init", "initialize", {
       clientInfo: {
-        name: "hicodex_desktop",
-        title: "HiCodex Desktop",
+        name: "forge_desktop",
+        title: "Forge Desktop",
         version: "0.1.0",
       },
       capabilities: {

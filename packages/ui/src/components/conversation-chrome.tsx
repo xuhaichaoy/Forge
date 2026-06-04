@@ -1,11 +1,13 @@
 import { ArrowLeft, ArrowRight, GitBranch, Laptop, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { Thread } from "@hicodex/codex-protocol";
+import type { MouseEvent } from "react";
 // codex: electron-menu-shortcuts-*.js — Codex header buttons surface
 // the accelerator in their tooltip. HiCodex mirrors that on sidebar toggle.
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 // codex thread-env-icon-*.js wraps the env indicator in <Tooltip/> (tooltip-*.js).
 import { Tooltip } from "./tooltip";
 import { useHiCodexIntl } from "./i18n-provider";
+import { startWindowDrag } from "../lib/tauri-host";
 
 export interface ConversationChromeProps {
   title: string;
@@ -100,9 +102,17 @@ export function ConversationChrome({
   const rightRailActionLabel = showRightRailPopoverToggle ? "Toggle summary" : "Toggle pinned summary";
   const rightRailActionPressed = showRightRailPopoverToggle ? rightRailPopoverOpen : rightRailPinned;
   const rightRailActionHandler = showRightRailPopoverToggle ? onToggleRightRailPopover : onToggleRightRailPinned;
+  const startTopbarDrag = (event: MouseEvent<HTMLElement>) => {
+    if (event.button !== 0 || event.defaultPrevented) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("button,a,input,textarea,select,[role='button'],[data-no-window-drag='true']")) {
+      return;
+    }
+    void startWindowDrag().catch(() => undefined);
+  };
   return (
-    <header className="hc-topbar">
-      <div className="hc-topbar-main">
+    <header className="hc-topbar" data-tauri-drag-region onMouseDown={startTopbarDrag}>
+      <div className="hc-topbar-main" data-tauri-drag-region>
         {onToggleSidebar && (
           <button
             type="button"
@@ -179,10 +189,11 @@ export function ConversationChrome({
             {env === "worktree" ? <GitBranch size={14} aria-hidden="true" /> : <Laptop size={14} aria-hidden="true" />}
           </span>
         </Tooltip>
-        <div className="hc-top-title" title={displayTitle}>{displayTitle}</div>
+        <div className="hc-top-title" data-tauri-drag-region title={displayTitle}>{displayTitle}</div>
+        <div className="hc-topbar-drag-fill" data-tauri-drag-region aria-hidden="true" />
       </div>
       {showRightRailAction && (
-        <div className="hc-topbar-actions">
+        <div className="hc-topbar-actions" data-tauri-drag-region>
           <button
             type="button"
             className="hc-rail-trigger"

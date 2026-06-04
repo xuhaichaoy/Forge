@@ -109,7 +109,7 @@ function handleTurnCompletionNotification(event: HostEvent): void {
   lastNotifiedTurnKey = key;
 
   const failed = status === "failed" || message.method === "turn/failed";
-  const title = failed ? "Codex turn failed" : "Codex turn completed";
+  const title = failed ? "Forge turn failed" : "Forge turn completed";
   const body = threadId
     ? `Thread ${shortId(threadId)} ${failed ? "failed" : "finished"}.`
     : `Background turn ${failed ? "failed" : "finished"}.`;

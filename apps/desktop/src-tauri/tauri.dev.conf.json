@@ -1,10 +1,10 @@
 {
-  "productName": "HiCodex Dev",
-  "identifier": "com.hicodex.desktop.dev",
+  "productName": "Forge Dev",
+  "identifier": "com.forge.desktop.dev",
   "plugins": {
     "deep-link": {
       "desktop": {
-        "name": "com.hicodex.desktop.dev.codex"
+        "name": "com.forge.desktop.dev.deeplink"
       }
     }
   }

@@ -1,11 +1,11 @@
 [package]
-name = "hicodex-desktop"
+name = "forge-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "hicodex-desktop"
+name = "forge"
 path = "src/main.rs"
 
 [build-dependencies]

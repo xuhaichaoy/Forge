@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { JsonRpcMessage } from "@hicodex/codex-protocol";
 import { recordHostOnboardingSignal } from "../state/onboarding";
 import type { BrowserStorageLike } from "../state/image-generation-tool";
@@ -584,6 +585,11 @@ export function isTauriRuntime(): boolean {
     __TAURI__?: unknown;
   };
   return Boolean(runtimeWindow.__TAURI_INTERNALS__ || runtimeWindow.__TAURI__);
+}
+
+export function startWindowDrag(): Promise<void> {
+  if (!isTauriRuntime()) return Promise.resolve();
+  return getCurrentWindow().startDragging();
 }
 
 export function convertLocalFileSrc(path: string): string {
