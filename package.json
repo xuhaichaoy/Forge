@@ -1,23 +1,23 @@
 {
-  "name": "hicodex",
+  "name": "forge",
   "private": true,
   "version": "0.1.0",
-  "description": "Codex-core desktop shell.",
+  "description": "Local AI development desktop shell.",
   "type": "module",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @hicodex/desktop",
-    "build": "npm run build --workspace @hicodex/desktop",
+    "dev": "npm run dev --workspace @forge/desktop",
+    "build": "npm run build --workspace @forge/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present && cargo test --workspace",
     "sync:protocol": "node scripts/sync-codex-protocol.mjs",
     "sidecar:prepare": "node scripts/prepare-codex-sidecar.mjs",
     "extract:asar": "node scripts/extract-codex-asar.mjs",
-    "tauri:dev": "npm run tauri:dev --workspace @hicodex/desktop",
-    "tauri:build": "npm run tauri:build --workspace @hicodex/desktop"
+    "tauri:dev": "npm run tauri:dev --workspace @forge/desktop",
+    "tauri:build": "npm run tauri:build --workspace @forge/desktop"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

@@ -4,6 +4,10 @@ import {
   SIDEBAR_ORGANIZE_MODE_STORAGE_KEY,
   SIDEBAR_SECTION_ORDER_STORAGE_KEY,
   SIDEBAR_SORT_KEY_STORAGE_KEY,
+  SIDEBAR_WIDTH_DEFAULT_PX,
+  SIDEBAR_WIDTH_MAX_PX,
+  SIDEBAR_WIDTH_MIN_PX,
+  SIDEBAR_WIDTH_STORAGE_KEY,
   loadSidebarPreferences,
   saveSidebarPreferences,
   sidebarCollapsedGroupKeys,
@@ -28,6 +32,7 @@ export default function runSidebarPreferencesTests(): void {
   migratesLegacyPreferencesWhileDesktopKeysWin();
   migratesHiCodexLegacyCollapsedGroupsKey();
   desktopCollapsedSectionsKeyWinsOverHiCodexLegacy();
+  clampsStoredSidebarWidth();
   savingDropsHiCodexLegacyCollapsedGroupsKey();
   toleratesUnavailableStorage();
 }
@@ -64,6 +69,7 @@ function loadsDefaultsWithoutBrowserStorage(): void {
   assertEqual(preferences.sortKey, DEFAULT_SIDEBAR_PREFERENCES.sortKey, "default sort key");
   assertEqual(sidebarCollapsedGroupKeys(preferences.collapsedGroups).length, 0, "default collapsed groups");
   assertEqual(preferences.sectionOrder.join(","), "projects", "default section order");
+  assertEqual(preferences.widthPx, SIDEBAR_WIDTH_DEFAULT_PX, "default sidebar width");
 }
 
 function loadsExactDesktopPreferenceKeys(): void {
@@ -76,6 +82,7 @@ function loadsExactDesktopPreferenceKeys(): void {
     "/work/closed": true,
   }));
   storage.setItem(SIDEBAR_SECTION_ORDER_STORAGE_KEY, JSON.stringify(["threads", "projects", "threads"]));
+  storage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, "320");
 
   const preferences = loadSidebarPreferences(storage);
   assertEqual(preferences.organizeMode, "current_workspace", "organize mode should load from Desktop key");
@@ -86,6 +93,7 @@ function loadsExactDesktopPreferenceKeys(): void {
     "collapsed groups should keep only true values",
   );
   assertEqual(preferences.sectionOrder.join(","), "threads,projects", "section order should dedupe stored ids");
+  assertEqual(preferences.widthPx, 320, "sidebar width should load from HiCodex width key");
 }
 
 function savesExactDesktopPreferenceKeys(): void {
@@ -95,6 +103,7 @@ function savesExactDesktopPreferenceKeys(): void {
     sortKey: "created_at",
     collapsedGroups: sidebarCollapsedGroupsFromKeys(["recent", "local"]),
     sectionOrder: ["threads", "projects", "threads"],
+    widthPx: 360,
   });
 
   assertEqual(storage.getItem(SIDEBAR_ORGANIZE_MODE_STORAGE_KEY), "recent", "organize mode storage key");
@@ -109,6 +118,7 @@ function savesExactDesktopPreferenceKeys(): void {
     JSON.stringify(["threads", "projects"]),
     "section order storage key",
   );
+  assertEqual(storage.getItem(SIDEBAR_WIDTH_STORAGE_KEY), "360", "sidebar width storage key");
 }
 
 function migratesLegacyPreferencesWhileDesktopKeysWin(): void {
@@ -129,6 +139,7 @@ function migratesLegacyPreferencesWhileDesktopKeysWin(): void {
     "legacy-a,legacy-b",
     "legacy collapsed group keys should migrate",
   );
+  assertEqual(preferences.widthPx, SIDEBAR_WIDTH_DEFAULT_PX, "legacy aggregate should not override default sidebar width");
 }
 
 function migratesHiCodexLegacyCollapsedGroupsKey(): void {
@@ -147,6 +158,16 @@ function migratesHiCodexLegacyCollapsedGroupsKey(): void {
     "legacy:/work/app,legacy:/work/closed",
     "HiCodex legacy collapsed-groups key should migrate when Desktop key is absent",
   );
+}
+
+function clampsStoredSidebarWidth(): void {
+  const tooSmall = new MemoryStorage();
+  tooSmall.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(SIDEBAR_WIDTH_MIN_PX - 100));
+  assertEqual(loadSidebarPreferences(tooSmall).widthPx, SIDEBAR_WIDTH_MIN_PX, "stored width should clamp to min");
+
+  const tooLarge = new MemoryStorage();
+  tooLarge.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(SIDEBAR_WIDTH_MAX_PX + 100));
+  assertEqual(loadSidebarPreferences(tooLarge).widthPx, SIDEBAR_WIDTH_MAX_PX, "stored width should clamp to max");
 }
 
 function desktopCollapsedSectionsKeyWinsOverHiCodexLegacy(): void {
@@ -185,6 +206,7 @@ function savingDropsHiCodexLegacyCollapsedGroupsKey(): void {
     sortKey: "updated_at",
     collapsedGroups: sidebarCollapsedGroupsFromKeys(["legacy:/migrated"]),
     sectionOrder: ["projects"],
+    widthPx: SIDEBAR_WIDTH_MIN_PX,
   });
 
   assertEqual(
@@ -207,6 +229,7 @@ function toleratesUnavailableStorage(): void {
     sortKey: "updated_at",
     collapsedGroups: {},
     sectionOrder: ["projects"],
+    widthPx: SIDEBAR_WIDTH_MIN_PX,
   });
   assert(true, "throwing storage save should be swallowed");
 }

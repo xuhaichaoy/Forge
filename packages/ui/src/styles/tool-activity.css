@@ -1548,9 +1548,9 @@ button.hc-tool-summary:hover svg:last-child,
   flex-direction: column;
   max-width: 100%;
   overflow: hidden;
-  border: 1px solid #dedbd1;
+  border: 1px solid rgba(22, 24, 29, 0.1);
   border-radius: 10px; /* Codex: exec card rounded-lg --radius-lg .625rem = 10px */
-  background: #f3f1eb;
+  background: var(--hc-surface-muted, #f1f3f5);
   color: #27313d;
 }
 
@@ -1587,7 +1587,7 @@ button.hc-tool-summary:hover svg:last-child,
   align-items: flex-start;
   gap: 7px;
   padding: 4px 10px 0;
-  color: #4f5855;
+  color: #4f5961;
   font-family: ui-monospace, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.45;
@@ -1603,7 +1603,7 @@ button.hc-tool-summary:hover svg:last-child,
 }
 
 .hc-exec-shell-toggle:hover {
-  color: #27313d;
+  color: #20272e;
 }
 
 /*
@@ -1650,7 +1650,7 @@ button.hc-tool-summary:hover svg:last-child,
   background: transparent;
   padding: 8px 10px;
   overflow: auto;
-  color: #626b68;
+  color: #606870;
 }
 
 .hc-exec-shell-copy-button {
@@ -1663,7 +1663,7 @@ button.hc-tool-summary:hover svg:last-child,
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #74776f;
+  color: #747980;
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
@@ -1671,8 +1671,8 @@ button.hc-tool-summary:hover svg:last-child,
 
 .hc-exec-shell-copy-button:hover,
 .hc-exec-shell-copy-button.is-copied {
-  background: rgba(39, 49, 61, 0.08);
-  color: #27313d;
+  background: rgba(22, 24, 29, 0.08);
+  color: #20272e;
 }
 
 .hc-exec-shell-command-row:hover .hc-exec-shell-command-copy,
@@ -1701,7 +1701,7 @@ button.hc-tool-summary:hover svg:last-child,
   min-height: 22px;
   border: 0;
   padding: 2px 10px 4px; /* Codex: px-2.5 pt-0.5 pb-1 = 10px/2px/4px */
-  color: #74776f;
+  color: #737980;
   font-size: 14px; /* Codex footer text-size-chat --text-base = 14px */
 }
 
@@ -2227,7 +2227,7 @@ button.hc-tool-summary:hover svg:last-child,
 }
 
 .hc-mcp-result-resource-meta code {
-  background: var(--hc-surface-muted, #f3f1ea);
+  background: var(--hc-surface-muted, #f1f3f5);
   padding: 1px 6px;
   border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2300,7 +2300,7 @@ button.hc-tool-summary:hover svg:last-child,
   display: grid;
   place-items: center;
   color: var(--hc-text-tertiary, #8a8c87);
-  background: var(--hc-surface-muted, #f3f1ea);
+  background: var(--hc-surface-muted, #f1f3f5);
 }
 
 .hc-generated-image-thumb-img {
@@ -2332,7 +2332,7 @@ button.hc-tool-summary:hover svg:last-child,
   border-radius: 12px;
   border: 1px solid var(--hc-border-default, #dedbd1);
   color: var(--hc-text-tertiary, #8a8c87);
-  background: var(--hc-surface-muted, #f3f1ea);
+  background: var(--hc-surface-muted, #f1f3f5);
 }
 
 /*

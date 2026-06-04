@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "HiCodex",
+  "productName": "Forge",
   "version": "0.1.0",
-  "identifier": "com.hicodex.desktop",
+  "identifier": "com.forge.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -13,12 +13,14 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "HiCodex",
+        "title": "Forge",
         "width": 1280,
         "height": 820,
         "minWidth": 960,
         "minHeight": 640,
         "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "dragDropEnabled": true,
         "center": true
       }
@@ -54,7 +56,7 @@
     "deep-link": {
       "desktop": {
         "schemes": ["codex"],
-        "name": "com.hicodex.desktop.codex",
+        "name": "com.forge.desktop.deeplink",
         "role": "Viewer"
       }
     },

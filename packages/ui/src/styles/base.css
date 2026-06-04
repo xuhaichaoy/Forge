@@ -4,9 +4,9 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--hc-surface-app);
   color: var(--hc-text-primary);
-  --hc-surface-app: #f6f5f1;
+  --hc-surface-app: #f4f7fa;
   --hc-surface-main: #fff; /* Codex light: bg-token-main-surface-primary -> --color-background-surface -> --gray-0 = #fff */
-  --hc-surface-sidebar: #f6f5f1;
+  --hc-surface-sidebar: #f8fafc;
   --hc-surface-panel: rgba(255, 253, 250, 0.94);
   --hc-surface-panel-muted: rgba(255, 253, 250, 0.5);
   --hc-surface-composer: rgba(255, 253, 250, 0.92);
@@ -31,9 +31,9 @@
      `--hc-tab-bg` (set per pill state) for the fade/overlay to fade INTO. */
   --hc-tab-surface: #fffdfa;
   /* Muted fill (exec/tool-result boxes). Previously only used as an inline
-     fallback `var(--hc-surface-muted, #f3f1ea)`; defined here so it carries a
+     fallback `var(--hc-surface-muted, #f1f3f5)`; defined here so it carries a
      dark value too (matching the #2a2a2a dark fallback already in the code). */
-  --hc-surface-muted: #f3f1ea;
+  --hc-surface-muted: #f1f3f5;
   /*
    * Consumed (with light fallbacks) by the settings/appearance + command surfaces
    * in settings-command.css. Defined here so `.hc-app[data-theme="dark"]` (below)
@@ -302,13 +302,16 @@ button {
   color: var(--hc-text-primary);
   background: var(--hc-surface-app);
   --hc-app-rail-width: 56px;
-  --hc-sidebar-width: 300px;
+  --hc-sidebar-preferred-width: 260px;
+  --hc-sidebar-width: var(--hc-sidebar-preferred-width);
   --hc-right-rail-width: 300px;
   --hc-right-rail-gap: 16px;
   --hc-right-panel-offset: 0px;
 }
 
 .hc-app-rail {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -316,8 +319,9 @@ button {
   align-items: center;
   gap: 14px;
   padding: 42px 4px 10px;
-  background: color-mix(in oklab, var(--hc-surface-sidebar) 86%, #dce8ee);
-  border-right: 1px solid var(--hc-border-subtle);
+  background:
+    linear-gradient(180deg, rgba(239, 244, 249, 0.88) 0%, rgba(248, 250, 252, 0.96) 68%);
+  border-right: 1px solid rgba(34, 38, 43, 0.055);
 }
 
 .hc-app-rail-brand {
@@ -349,7 +353,7 @@ button {
 .hc-app-rail-tab,
 .hc-app-rail-settings {
   border: 1px solid transparent;
-  color: #555a55;
+  color: #606a6d;
   cursor: pointer;
   transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
@@ -377,14 +381,15 @@ button {
 .hc-app-rail-tab:focus-visible,
 .hc-app-rail-settings:hover,
 .hc-app-rail-settings:focus-visible {
-  background: rgba(34, 38, 43, 0.08);
+  background: rgba(34, 38, 43, 0.055);
   color: var(--hc-text-primary);
 }
 
 .hc-app-rail-tab[data-active="true"] {
-  color: #fffdfa;
-  background: #5d7468;
-  box-shadow: 0 6px 14px rgba(49, 74, 62, 0.16);
+  color: #365346;
+  background: rgba(112, 139, 125, 0.23);
+  border-color: rgba(73, 99, 86, 0.08);
+  box-shadow: 0 4px 12px rgba(49, 74, 62, 0.08);
 }
 
 .hc-app-rail-tab:focus-visible,
@@ -400,8 +405,8 @@ button {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 999px;
-  background: rgba(255, 253, 250, 0.72);
-  box-shadow: 0 4px 14px rgba(34, 38, 43, 0.08);
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 4px 14px rgba(34, 38, 43, 0.055);
 }
 
 .hc-toast-viewport {
@@ -520,7 +525,7 @@ button {
 @property --hc-sidebar-width {
   syntax: "<length>";
   inherits: false;
-  initial-value: 300px;
+  initial-value: 260px;
 }
 
 .hc-app,
@@ -528,12 +533,60 @@ button {
   transition: --hc-sidebar-width var(--hc-codex-transition);
 }
 
+.hc-app[data-sidebar-resizing="true"],
+.hc-app--with-right-rail[data-sidebar-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+  transition: none;
+}
+
 .hc-app[data-sidebar-open="false"],
 .hc-app--with-right-rail[data-sidebar-open="false"] {
   --hc-sidebar-width: 0px;
 }
 
+.hc-sidebar-resize-handle {
+  position: relative;
+  z-index: 8;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  width: 8px;
+  height: 100%;
+  transform: translateX(4px);
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.hc-sidebar-resize-handle::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+
+.hc-sidebar-resize-handle:hover::before,
+.hc-sidebar-resize-handle:focus-visible::before,
+.hc-sidebar-resize-handle[data-resizing="true"]::before {
+  background: rgba(34, 38, 43, 0.18);
+  box-shadow: 0 0 0 2px rgba(34, 38, 43, 0.045);
+}
+
+.hc-sidebar-resize-handle[data-visible="false"] {
+  width: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
 .hc-sidebar {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   min-height: 0;
   /*
@@ -543,11 +596,32 @@ button {
    * collapsed track during the cubic-bezier ease-out.
    */
   overflow: hidden;
-  background: var(--hc-surface-sidebar);
-  border-right: 1px solid var(--hc-border-subtle);
+  background:
+    linear-gradient(180deg, rgba(250, 252, 253, 0.98) 0%, rgba(247, 249, 251, 0.96) 100%);
+  border-right: 1px solid rgba(34, 38, 43, 0.055);
   view-transition-name: sidebar;
   /* codex: animations-*.js — fade content alongside width collapse. */
   transition: opacity var(--hc-codex-transition);
+}
+
+.hc-app[data-theme="dark"] .hc-app-rail,
+.hc-app[data-theme="dark"] .hc-sidebar {
+  background: var(--hc-surface-sidebar);
+  border-right-color: var(--hc-border-subtle);
+}
+
+.hc-app[data-theme="dark"] .hc-sidebar-resize-handle:hover::before,
+.hc-app[data-theme="dark"] .hc-sidebar-resize-handle:focus-visible::before,
+.hc-app[data-theme="dark"] .hc-sidebar-resize-handle[data-resizing="true"]::before {
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+
+.hc-app[data-theme="dark"] .hc-app-rail-tab[data-active="true"] {
+  color: #fffdfa;
+  background: #5d7468;
+  border-color: transparent;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.28);
 }
 
 .hc-app[data-sidebar-open="false"] .hc-sidebar {
@@ -559,6 +633,11 @@ button {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+.hc-app[data-app-tab="workbench"] > .hc-main {
+  grid-column: 3;
+  grid-row: 1;
 }
 
 /*
@@ -1374,7 +1453,7 @@ button {
   display: grid;
   flex: 0 0 auto;
   gap: 4px;
-  padding: 12px 10px 8px;
+  padding: 36px 10px 8px;
 }
 
 /*
@@ -2073,10 +2152,11 @@ button {
   flex-direction: column;
   gap: 2px;
   padding: 6px;
-  border: 1px solid rgba(42, 42, 38, 0.13);
+  border: 1px solid rgba(34, 38, 43, 0.075);
   border-radius: 8px;
-  background: #fbfaf6;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 22px rgba(34, 38, 43, 0.08);
+  backdrop-filter: blur(10px);
 }
 
 .hc-sidebar-account-menu-item {
@@ -2103,7 +2183,7 @@ button.hc-sidebar-account-menu-item small {
 }
 
 .hc-sidebar-account-menu-item:hover:not(:disabled) {
-  background: rgba(34, 38, 43, 0.07);
+  background: rgba(34, 38, 43, 0.045);
 }
 
 .hc-sidebar-account-menu-item:disabled {
