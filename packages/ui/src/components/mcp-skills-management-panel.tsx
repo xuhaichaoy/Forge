@@ -305,5 +305,11 @@ function secondaryActionIcon(action: CommandPanelEntryAction) {
   if (action.type === "openExternalUrl") {
     return <ExternalLink size={13} />;
   }
+  if (action.type === "openComputerUseSetup") {
+    return <ExternalLink size={13} />;
+  }
+  if (action.type === "repairComputerUseBundle") {
+    return <Wrench size={13} />;
+  }
   return <Play size={13} />;
 }

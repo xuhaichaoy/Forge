@@ -1,3 +1,7 @@
+import type { PendingServerRequest } from "./codex-reducer";
+import { pendingRequestOwnerThreadId } from "./pending-request-scope";
+import type { RailEntry } from "./render-groups";
+
 export interface BackgroundSubagentStopPlanOptions {
   activeThreadId?: string | null;
   maxThreads?: number;
@@ -86,4 +90,29 @@ function arrayStringIds(value: unknown): string[] {
 
 function normalizedId(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function activeBackgroundSubagentThreadIds(entries: RailEntry[], activeThreadId: string | null): string[] {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.status !== "active" || entry.action?.kind !== "thread") continue;
+    const threadId = entry.action.threadId.trim();
+    if (!threadId || threadId === activeThreadId || ids.has(threadId)) continue;
+    ids.add(threadId);
+  }
+  return Array.from(ids);
+}
+
+export function mergeBackgroundSubagentStopThreadIds(
+  activeThreadIds: string[],
+  pendingRequests: PendingServerRequest[],
+  itemsByThread: Record<string, Array<{ id?: string }>>,
+): string[] {
+  const ids = new Set(activeThreadIds);
+  for (const request of pendingRequests) {
+    const threadId = pendingRequestOwnerThreadId(request, { itemsByThread });
+    if (!threadId || ids.has(threadId)) continue;
+    ids.add(threadId);
+  }
+  return Array.from(ids);
 }

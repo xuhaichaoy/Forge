@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
+import { useServices } from "../components/services-context";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
-import type { CodexUiAction } from "../state/codex-reducer";
 import {
   normalizeFileReference,
   resolveFileReferencePathCandidates,
@@ -18,18 +18,17 @@ export interface ArtifactPreviewPathContext {
 export function useArtifactPreviewActions({
   activeThreadCwd,
   defaultCwd,
-  dispatch,
   setArtifactPreview,
   setFileReference,
   workspace,
 }: {
   activeThreadCwd?: string | null;
   defaultCwd?: string | null;
-  dispatch: (action: CodexUiAction) => void;
   setArtifactPreview: (entry: RailEntry | null) => void;
   setFileReference: (reference: FileReferenceSelection | null) => void;
   workspace: string;
 }) {
+  const { dispatch } = useServices();
   const previewPathContext = useMemo(
     () => ({
       workspaceRoot: defaultCwd || workspace,

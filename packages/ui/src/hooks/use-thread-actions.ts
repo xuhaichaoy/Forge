@@ -1,13 +1,10 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { Thread } from "@hicodex/codex-protocol";
 import type { ThreadActionDialogState } from "../components/thread-action-dialog";
-import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { createPendingWorktree, findRolloutForThread, getHostStatus, isTauriRuntime } from "../lib/tauri-host";
-import type {
-  CodexUiAction,
-  ThreadContextDefaults,
-} from "../state/codex-reducer";
+import type { ThreadContextDefaults } from "../state/codex-reducer";
 import type { ComposerAttachment } from "../state/composer-workflow";
 import {
   archiveThread,
@@ -24,8 +21,6 @@ import {
 
 export function useThreadActions({
   activeThread,
-  client,
-  dispatch,
   ensureConnected,
   setComposerAttachments,
   setInput,
@@ -34,8 +29,6 @@ export function useThreadActions({
   workspace,
 }: {
   activeThread: Thread | null;
-  client: CodexJsonRpcClient;
-  dispatch: (action: CodexUiAction) => void;
   ensureConnected: () => Promise<boolean>;
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setInput: Dispatch<SetStateAction<string>>;
@@ -43,6 +36,7 @@ export function useThreadActions({
   threads: Thread[];
   workspace: string;
 }) {
+  const { client, dispatch } = useServices();
   const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
   const threadSelectionRequestId = useRef(0);
 

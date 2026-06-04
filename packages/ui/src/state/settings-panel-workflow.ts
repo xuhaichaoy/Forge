@@ -307,6 +307,8 @@ export function isRefreshableSettingsPanel(panel: SettingsPanelId): boolean {
     || panel === "hooks"
     || panel === "apps"
     || panel === "plugins"
+    || panel === "browser-use"
+    || panel === "computer-use"
     || panel === "worktrees"
     || panel === "experimental";
 }
@@ -406,6 +408,58 @@ export type DesktopBackedLocalSettingsPanel =
   | "computer-use"
   | "browser-use";
 
+export type PluginBackedDesktopSettingsPanel = "browser-use" | "computer-use";
+
+export interface PluginBackedDesktopSettingsInfo {
+  panel: PluginBackedDesktopSettingsPanel;
+  title: string;
+  route: string;
+  pluginAliases: string[];
+  message: string;
+  limitationDetails: string[];
+  sourceDetails: string[];
+}
+
+export function isPluginBackedDesktopSettingsPanel(
+  panel: SettingsPanelId,
+): panel is PluginBackedDesktopSettingsPanel {
+  return panel === "browser-use" || panel === "computer-use";
+}
+
+export function pluginBackedDesktopSettingsInfo(
+  panel: PluginBackedDesktopSettingsPanel,
+): PluginBackedDesktopSettingsInfo {
+  const source = DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE[panel];
+  if (panel === "browser-use") {
+    return {
+      panel,
+      title: "Browser",
+      route: source.slug,
+      pluginAliases: ["browser", "browser-use", "Browser", "Browser Use"],
+      message: "Browser setup is loaded from app-server plugin data. Runtime readiness is shown separately for the local Tauri Browser surface.",
+      limitationDetails: [
+        "Plugin lifecycle: loaded from plugin/list, plugin/installed, plugin/share/list, and app/list.",
+        "Runtime readiness: the separate Browser runtime row opens a local Tauri Browser surface; it does not prove bundled iab agent control.",
+        "Settings bridge: origin allowlist and approval-mode host queries are still Desktop evidence only in HiCodex.",
+      ],
+      sourceDetails: desktopBackedLocalSettingsSourceDetails(panel),
+    };
+  }
+  return {
+    panel,
+    title: "Computer use",
+    route: source.slug,
+    pluginAliases: ["computer-use", "computer", "Computer Use", "Computer"],
+    message: "Computer Use setup is loaded from app-server plugin data. OS permissions and app approvals remain native setup requirements.",
+    limitationDetails: [
+      "Plugin lifecycle: loaded from plugin/list, plugin/installed, plugin/share/list, and app/list.",
+      "OS permissions: HiCodex preflights Screen Recording and Accessibility for the current host process; helper-specific proof and app approvals remain native setup requirements.",
+      "Execution bridge: this settings page does not add native mouse, keyboard, window, or screenshot control.",
+    ],
+    sourceDetails: desktopBackedLocalSettingsSourceDetails(panel),
+  };
+}
+
 export function isDesktopBackedLocalSettingsPanel(
   panel: SettingsPanelId,
 ): panel is DesktopBackedLocalSettingsPanel {
@@ -434,12 +488,43 @@ export function desktopBackedLocalSettingsEntries(
     kind: "status",
     status: "Desktop route",
     meta: source.slug,
-    details: [
-      `settings-sections slug: ${source.slug}`,
-      `lazy chunk: ${source.chunk}`,
-      ...source.evidence,
-    ],
+    details: desktopBackedLocalSettingsSourceDetails(panel),
   }];
+}
+
+export function desktopBackedLocalSettingsSourceDetails(
+  panel: DesktopBackedLocalSettingsPanel,
+): string[] {
+  const source = DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE[panel];
+  return [
+    `settings-sections slug: ${source.slug}`,
+    `lazy chunk: ${source.chunk}`,
+    ...source.evidence,
+  ];
+}
+
+export function pluginBackedDesktopSettingsFallbackEntry(
+  panel: PluginBackedDesktopSettingsPanel,
+  context: { connected: boolean; error?: string | null },
+): CommandPanelEntry {
+  const info = pluginBackedDesktopSettingsInfo(panel);
+  return {
+    id: `${panel}:plugin-lifecycle`,
+    title: info.title,
+    kind: "status",
+    status: context.connected ? "protocol-limited" : "offline",
+    meta: "Plugin lifecycle",
+    details: [
+      context.error
+        ? `Plugin data error: ${context.error}`
+        : context.connected
+          ? `No matching plugin row returned for aliases: ${info.pluginAliases.join(", ")}`
+          : "Runtime is offline; plugin/list and plugin/installed were not queried.",
+      ...info.limitationDetails,
+      ...info.sourceDetails,
+    ],
+    disabled: true,
+  };
 }
 
 const DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE: Record<DesktopBackedLocalSettingsPanel, {

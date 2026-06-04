@@ -18,6 +18,7 @@ import {
   Sun,
   TerminalSquare,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -437,6 +438,18 @@ function secondaryActionIcon(action: CommandPanelEntryAction) {
   }
   if (action.type === "openExternalUrl") {
     return <ExternalLink size={13} />;
+  }
+  if (action.type === "openBrowserRuntime") {
+    return <Monitor size={13} />;
+  }
+  if (action.type === "openComputerUseSetup") {
+    return <ExternalLink size={13} />;
+  }
+  if (action.type === "probeComputerUseMcp") {
+    return <CheckCircle2 size={13} />;
+  }
+  if (action.type === "repairComputerUseBundle") {
+    return <Wrench size={13} />;
   }
   if (action.type === "connectRequiredApp") {
     return <ExternalLink size={13} />;

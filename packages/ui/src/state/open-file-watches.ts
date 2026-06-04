@@ -84,3 +84,9 @@ function hashOpenFileWatchKey(value: string): string {
   }
   return (hash >>> 0).toString(36);
 }
+
+export function watchIdFromFsChangedNotification(params: unknown): string | null {
+  if (!params || typeof params !== "object") return null;
+  const watchId = (params as { watchId?: unknown }).watchId;
+  return typeof watchId === "string" && watchId.trim() ? watchId : null;
+}

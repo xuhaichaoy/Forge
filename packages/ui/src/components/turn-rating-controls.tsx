@@ -405,3 +405,37 @@ function TurnRatingButton({
     </button>
   );
 }
+
+export function turnFeedbackUploadClassification(event: TurnRatingEvent): string {
+  if (event.eventKind === "turn_rating") {
+    return event.rating === "thumbs_up" ? "good_result" : "bad_result";
+  }
+  return "other";
+}
+
+export function turnFeedbackUploadReason(event: TurnRatingEvent): string {
+  if (event.eventKind === "turn_rating") return event.rating;
+  const selectedOption = event.metadata.selected_option ?? "none";
+  const details = event.metadata.details.trim();
+  return details ? `option=${selectedOption}\n\n${details}` : `option=${selectedOption}`;
+}
+
+export function turnFeedbackUploadTags(event: TurnRatingEvent): Record<string, string> {
+  const baseTags = {
+    source: "hicodex_turn_rating",
+    event_kind: event.eventKind,
+    turn_id: event.turnId,
+  };
+  if (event.eventKind === "turn_rating") {
+    return {
+      ...baseTags,
+      rating: event.rating,
+    };
+  }
+  return {
+    ...baseTags,
+    action: event.action,
+    has_artifacts: event.metadata.has_artifacts ? "true" : "false",
+    selected_option: event.metadata.selected_option ?? "none",
+  };
+}

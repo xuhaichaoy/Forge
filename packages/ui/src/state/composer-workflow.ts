@@ -472,6 +472,8 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("mcp", "MCP", "Show MCP server status", "mcp", "direct", ["tools", "server"], "verbose"),
   command("apps", "Apps", "List connected apps and connectors.", "tools", "direct", ["connectors"]),
   command("plugins", "Plugins", "List installed and marketplace plugins.", "tools", "direct", ["plugin"]),
+  command("browser-use", "Browser", "Open Browser runtime settings.", "tools", "direct", ["browser", "iab"]),
+  command("computer-use", "Computer use", "Open Computer Use readiness settings.", "tools", "direct", ["computer", "desktop control"]),
   command("worktrees", "Worktrees", "Inspect local, worktree, and cloud work modes.", "workspace", "panel", ["git", "branch", "cloud"]),
   command("login", "Login", "Sign in to ChatGPT (OpenAI subscription).", "settings", "direct", ["account", "oauth", "signin"]),
   command("logout", "Logout", "Sign out from the current Codex account.", "settings", "direct", ["account"]),
@@ -972,6 +974,10 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
       return { action: "request", request: "listApps", clearInput: true };
     case "plugins":
       return { action: "request", request: "listPlugins", clearInput: true };
+    case "browser-use":
+      return { action: "openSettings", panel: "browser-use", clearInput: true };
+    case "computer-use":
+      return { action: "openSettings", panel: "computer-use", clearInput: true };
     case "worktrees":
       return { action: "openSettings", panel: "worktrees", clearInput: true };
     case "login":

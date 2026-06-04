@@ -791,6 +791,30 @@ function buildsMcpDetails(): void {
     },
     "Desktop MCP error-union results should keep the visible error message",
   );
+  const computerUseTimeout = toolActivityDetailViewModel({
+    type: "mcpToolCall",
+    id: "mcp-computer-use-timeout-1",
+    server: "computer-use",
+    tool: "list_apps",
+    status: "failed",
+    arguments: {},
+    result: null,
+    error: { message: "tool call failed for computer-use/list_apps: timed out awaiting tools/call after 120s" },
+  });
+  if (computerUseTimeout.kind !== "tool") {
+    throw new Error("Computer Use timeout should render as a tool detail");
+  }
+  assertDeepEqual(
+    [
+      computerUseTimeout.errorText.includes("timed out awaiting tools/call after 120s"),
+      computerUseTimeout.errorText.includes("Computer Use diagnostics"),
+      computerUseTimeout.errorText.includes("helper signatures"),
+      computerUseTimeout.errorText.includes("Screen Recording"),
+      computerUseTimeout.errorText.includes("app approvals"),
+    ],
+    [true, true, true, true, true],
+    "Computer Use MCP timeout should append actionable diagnostics in transcript tool details",
+  );
 }
 
 function buildsMcpAppDetails(): void {

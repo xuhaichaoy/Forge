@@ -1,4 +1,5 @@
 import type { InputModality, JsonValue, ModelConfig, ModelServiceTier } from "@hicodex/codex-protocol";
+import { HICODEX_DESKTOP_CONFIG_KEYS } from "../state/hicodex-desktop-namespace";
 
 export type { ModelConfig };
 
@@ -266,3 +267,24 @@ function normalizeModelServiceTiers(value: ModelServiceTier[] | null | undefined
       description: tier.description.trim(),
     }));
 }
+
+/** Persisted selection: `${providerId}::${modelSlug}` */
+export function encodeSelection(providerId: string, model: string): string {
+  return `${providerId}::${model}`;
+}
+
+export function decodeSelection(value: string | null): { providerId: string; model: string } | null {
+  if (!value) return null;
+  const idx = value.indexOf("::");
+  if (idx < 0) return null;
+  return { providerId: value.slice(0, idx), model: value.slice(idx + 2) };
+}
+
+export function migrateSubscriptionModelSelection(value: string | null): string | null {
+  const decoded = decodeSelection(value);
+  if (!decoded || decoded.providerId !== DEFAULT_SUBSCRIPTION_PROVIDER_ID) return value;
+  return encodeSelection(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID, decoded.model);
+}
+
+export const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
+export const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;

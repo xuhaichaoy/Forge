@@ -41,10 +41,13 @@ import {
   SETTINGS_SECTIONS,
   SETTINGS_SECTION_GROUP_HEADINGS,
   isDesktopBackedLocalSettingsPanel,
+  isPluginBackedDesktopSettingsPanel,
   isRefreshableSettingsPanel,
+  pluginBackedDesktopSettingsInfo,
   settingsGroupHeadingTitle,
   settingsSectionTitle,
   settingsSectionDescription,
+  type PluginBackedDesktopSettingsPanel,
   type SettingsSectionGroup,
 } from "../state/settings-panel-workflow";
 import { AppearanceSettingsPanel } from "./appearance-settings-panel";
@@ -275,6 +278,14 @@ export function SettingsPanel({
                 onSetShortcut={onSetKeyboardShortcut ?? (() => undefined)}
                 onResetShortcut={onResetKeyboardShortcut ?? (() => undefined)}
               />
+            ) : isPluginBackedDesktopSettingsPanel(activePanel) ? (
+              <PluginBackedDesktopSettingsContent
+                panel={activePanel}
+                panelState={panelState}
+                section={activeSection}
+                onSelectAction={onSelectAction}
+                onSelectEntry={onSelectEntry}
+              />
             ) : isDesktopBackedLocalSettingsPanel(activePanel) ? (
               <DesktopBackedSettingsContent
                 panelState={panelState}
@@ -290,6 +301,63 @@ export function SettingsPanel({
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function PluginBackedDesktopSettingsContent({
+  panel,
+  panelState,
+  section,
+  onSelectEntry,
+  onSelectAction,
+}: {
+  panel: PluginBackedDesktopSettingsPanel;
+  panelState: CommandPanelState | null;
+  section: (typeof SETTINGS_SECTIONS)[number];
+  onSelectEntry?: (entry: CommandPanelEntry) => void;
+  onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
+}) {
+  const { formatMessage } = useHiCodexIntl();
+  const info = pluginBackedDesktopSettingsInfo(panel);
+  return (
+    <div className="hc-settings-route-placeholder">
+      <div className="hc-settings-route-placeholder-main">
+        <div className="hc-settings-route-placeholder-icon" aria-hidden="true">
+          {settingsSectionIcon(section.icon)}
+        </div>
+        <div className="hc-settings-route-placeholder-copy">
+          <div>
+            <h2>{settingsSectionTitle(section, formatMessage)}</h2>
+            <span>Plugin lifecycle</span>
+          </div>
+          <p>{info.message}</p>
+        </div>
+      </div>
+
+      <SettingsCommandContent
+        panelState={panelState}
+        onSelectAction={onSelectAction}
+        onSelectEntry={onSelectEntry}
+      />
+
+      <details className="hc-settings-route-evidence" open>
+        <summary>Native/backend limits</summary>
+        <ul>
+          {info.limitationDetails.map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ul>
+      </details>
+
+      <details className="hc-settings-route-evidence">
+        <summary>Desktop source evidence</summary>
+        <ul>
+          {info.sourceDetails.map((detail) => (
+            <li key={detail}>{detail}</li>
+          ))}
+        </ul>
+      </details>
     </div>
   );
 }
@@ -534,7 +602,7 @@ function ModelSettingsForm({
         <div className="hc-muted">
           已配置 {configuredModels.length} 个模型 · 当前共 {models.length} 套模型档案
         </div>
-        <button className="hc-button hc-button-primary" onClick={onSave} type="button"><KeyRound size={15} /> 保存并应用</button>
+        <button className="hc-button hc-button-primary hc-settings-footer-action" onClick={onSave} type="button"><KeyRound size={15} /> 保存并应用</button>
       </div>
     </>
   );
@@ -562,7 +630,7 @@ function ImageGenerationSettingsForm({
       </div>
       <div className="hc-settings-footer">
         <div className="hc-muted">Blank fields reuse the active model profile.</div>
-        <button className="hc-button hc-button-primary" onClick={onSave} type="button"><ImageIcon size={15} /> Save image endpoint</button>
+        <button className="hc-button hc-button-primary hc-settings-footer-action" onClick={onSave} type="button"><ImageIcon size={15} /> Save image endpoint</button>
       </div>
     </>
   );

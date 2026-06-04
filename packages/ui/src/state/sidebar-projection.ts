@@ -422,3 +422,29 @@ function threadHasSubagentParentSource(thread: Thread): boolean {
   }
   return false;
 }
+
+export function normalizeWorkspaceRoot(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.replace(/[\\/]+$/, "") || trimmed;
+}
+
+// HiCodex divergence from this module's `workspaceRootLabel` (which maps ~ / / to
+// "Local"): the workspace-root *option* label is just the trailing path segment.
+function workspaceRootOptionLabel(root: string): string {
+  return root.split(/[\\/]+/).filter(Boolean).pop() || root;
+}
+
+export function workspaceRootOptionsWithCurrent(
+  options: SidebarWorkspaceRootOption[],
+  roots: Array<string | null | undefined>,
+): SidebarWorkspaceRootOption[] {
+  const merged = [...options];
+  const seen = new Set(merged.map((option) => normalizeWorkspaceRoot(option.root)));
+  for (const rootValue of roots) {
+    const root = normalizeWorkspaceRoot(rootValue ?? "");
+    if (!root || seen.has(root) || root === "~") continue;
+    seen.add(root);
+    merged.unshift({ root, label: workspaceRootOptionLabel(root) });
+  }
+  return merged;
+}

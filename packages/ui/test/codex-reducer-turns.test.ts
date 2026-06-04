@@ -38,6 +38,8 @@ export default function runCodexReducerTurnsTests(): void {
   threadCompactedNotificationAddsCompletedContextCompactionEvent();
   threadGoalNotificationsProjectOntoUserMessages();
   fsChangedNotificationsAreLogged();
+  notificationsBumpInvalidationCounters();
+  accountNotificationsUpdateReducerAccount();
   hookNotificationsAreLoggedWithoutSyntheticTranscriptItems();
   surfacesTerminalErrorNotificationsInTheTranscript();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes();
@@ -1300,6 +1302,46 @@ function fsChangedNotificationsAreLogged(): void {
     "filesystem changed for watch watch-1: /workspace/a.ts, /workspace/b.ts, /workspace/c.ts (+1 more)",
     "fs/changed should leave an observable log entry",
   );
+}
+
+function notificationsBumpInvalidationCounters(): void {
+  const afterSkills = reduceNotification(initialCodexUiState, { method: "skills/changed", params: {} });
+  assertEqual(afterSkills.invalidation.skills, 1, "skills/changed should bump invalidation.skills");
+  assertEqual(afterSkills.invalidation.hooks, 0, "skills/changed should not bump hooks");
+  const afterHook = reduceNotification(afterSkills, { method: "hook/completed", params: {} });
+  assertEqual(afterHook.invalidation.hooks, 1, "hook/completed should bump invalidation.hooks");
+  assertEqual(afterHook.invalidation.skills, 1, "hook/completed should preserve the skills counter");
+  const afterMcp = reduceNotification(afterHook, { method: "mcpServer/startupStatus/updated", params: {} });
+  assertEqual(afterMcp.invalidation.mcpStatus, 1, "mcpServer/startupStatus/updated should bump invalidation.mcpStatus");
+  assertEqual(afterMcp.invalidation.mcpStatusMessage, "MCP startup status changed.", "mcpStatus carries the default refresh message");
+  const afterWarning = reduceNotification(afterMcp, { method: "warning", params: { message: "x" } });
+  assertEqual(afterWarning.invalidation, afterMcp.invalidation, "an unrelated notification keeps the invalidation slice identity");
+  const afterOAuth = codexUiReducer(initialCodexUiState, { type: "invalidateAppList", message: "Acme OAuth failed." });
+  assertEqual(afterOAuth.invalidation.appList, 1, "invalidateAppList action should bump invalidation.appList");
+  assertEqual(afterOAuth.invalidation.appListMessage, "Acme OAuth failed.", "invalidateAppList action carries its custom refresh message");
+  // mcpServer/oauthLogin/completed must bump BOTH appList AND mcpStatus (mirrors the
+  // original onNotification independent if-blocks; the early-return bug dropped mcpStatus).
+  const afterMcpOAuth = reduceNotification(initialCodexUiState, {
+    method: "mcpServer/oauthLogin/completed",
+    params: { name: "my-server", success: true },
+  });
+  assertEqual(afterMcpOAuth.invalidation.appList, 1, "mcpServer/oauthLogin/completed should bump appList");
+  assertEqual(afterMcpOAuth.invalidation.mcpStatus, 1, "mcpServer/oauthLogin/completed should ALSO bump mcpStatus");
+  assertEqual(
+    afterMcpOAuth.invalidation.mcpStatusMessage.includes("my-server"),
+    true,
+    "mcpStatusMessage should carry the per-server message from mcpOauthLoginRefreshMessage",
+  );
+}
+
+function accountNotificationsUpdateReducerAccount(): void {
+  const afterUpdate = reduceNotification(initialCodexUiState, { method: "account/updated", params: { authMode: "chatgpt" } });
+  assertEqual(afterUpdate.account.invalidated, true, "account/updated should mark the reducer account slice invalidated");
+  const replaced = codexUiReducer(initialCodexUiState, {
+    type: "setAccount",
+    account: { ...initialCodexUiState.account, invalidated: true },
+  });
+  assertEqual(replaced.account.invalidated, true, "setAccount action should replace the reducer account slice");
 }
 
 function hookNotificationsAreLoggedWithoutSyntheticTranscriptItems(): void {

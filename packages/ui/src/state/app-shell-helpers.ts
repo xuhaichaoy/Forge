@@ -87,3 +87,8 @@ export function slashCommandEntries(mode: ComposerMode): CommandPanelEntry[] {
       };
     });
 }
+
+export function memoriesRootFromCodexHome(codexHome: string | null | undefined): string | null {
+  const trimmed = codexHome?.trim();
+  return trimmed ? `${trimmed.replace(/[\\/]+$/, "")}/memories` : null;
+}

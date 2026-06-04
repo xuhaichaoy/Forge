@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { CollaborationModeMask, Thread, UserInput } from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { readImageDataUrl } from "../lib/tauri-host";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
@@ -54,13 +55,11 @@ export interface UseTurnSubmissionInput {
   activeThreadId: string | null;
   activeThreadRunning: boolean;
   activeTurnId: string | null;
-  client: CodexJsonRpcClient;
   collaborationModes: CollaborationModeMask[];
   collaborationModesForComposerMode: (mode: ComposerMode) => Promise<CollaborationModeMask[]>;
   composerAttachments: ComposerAttachment[];
   composerMode: ComposerMode;
   composerSubmitState: ComposerSubmitState;
-  dispatch: ThreadWorkflowDispatch;
   ensureConnected: () => Promise<boolean>;
   includeImageDynamicTool: boolean;
   input: string;
@@ -91,13 +90,11 @@ export function useTurnSubmission({
   activeThreadId,
   activeThreadRunning,
   activeTurnId,
-  client,
   collaborationModes,
   collaborationModesForComposerMode,
   composerAttachments,
   composerMode,
   composerSubmitState,
-  dispatch,
   ensureConnected,
   includeImageDynamicTool,
   input,
@@ -110,6 +107,7 @@ export function useTurnSubmission({
   threadIds,
   workspace,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
+  const { client, dispatch } = useServices();
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
   const [startingConversation, setStartingConversation] = useState(false);
   const sendingQueuedFollowUpId = useRef<string | null>(null);

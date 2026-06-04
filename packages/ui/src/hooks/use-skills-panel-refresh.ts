@@ -1,5 +1,5 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import {
   createCommandPanelState,
@@ -13,7 +13,6 @@ import { loadRecommendedSkillPluginDetails } from "../state/settings-panel-loade
 
 export function useSkillsPanelRefresh({
   activeSettingsPanel,
-  client,
   commandPanelPanel,
   ensureConnected,
   setCommandPanel,
@@ -22,7 +21,6 @@ export function useSkillsPanelRefresh({
   workspace,
 }: {
   activeSettingsPanel: SettingsPanelId | null;
-  client: CodexJsonRpcClient;
   commandPanelPanel: CommandPanelKind | null | undefined;
   ensureConnected: () => Promise<boolean>;
   setCommandPanel: Dispatch<SetStateAction<CommandPanelState | null>>;
@@ -30,6 +28,7 @@ export function useSkillsPanelRefresh({
   skillsChangedNonce: number;
   workspace: string;
 }) {
+  const { client } = useServices();
   const skillsChangedHandledRef = useRef(0);
 
   useEffect(() => {

@@ -49,3 +49,22 @@ export function stripAnsiEscapes(value: string): string {
   if (!value) return value;
   return value.replace(ANSI_ESCAPE_PATTERN, "");
 }
+
+export function hostFromBaseUrl(value: string | null | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  if (!trimmed) return fallback;
+  try {
+    return new URL(trimmed).host || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export function patchFailurePathForOpen(path: string, cwd: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) return "";
+  if (/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(trimmed)) return trimmed;
+  const root = cwd.trim().replace(/[\\/]+$/, "");
+  if (!root) return trimmed;
+  return `${root}/${trimmed.replace(/^(?:\.[\\/]|[\\/])+/, "")}`;
+}

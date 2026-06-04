@@ -12,6 +12,16 @@ import {
   type CommandPanelOptions,
   type CommandPanelState,
 } from "./command-panel";
+import {
+  loadBrowserRuntimeSettingsEntries,
+} from "./browser-runtime";
+import {
+  loadComputerUseReadiness,
+  loadComputerUseMcpReadinessEntries,
+  loadComputerUseReadinessEntries,
+  projectComputerUseMcpReadinessEntries,
+  projectComputerUseReadinessEntries,
+} from "./computer-use-readiness";
 import type { SettingsPanelId } from "./composer-workflow";
 import {
   HICODEX_IMAGE_TOOL_NAME,
@@ -36,8 +46,12 @@ import {
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
   isDesktopBackedLocalSettingsPanel,
+  isPluginBackedDesktopSettingsPanel,
   localSettingsEntries,
   modelSettingsEntries,
+  pluginBackedDesktopSettingsFallbackEntry,
+  pluginBackedDesktopSettingsInfo,
+  type PluginBackedDesktopSettingsPanel,
   settingsPanelCommandKind,
   settingsPanelTitle,
 } from "./settings-panel-workflow";
@@ -259,6 +273,87 @@ export async function loadSettingsPanelContent({
       message: "",
       entries: [],
     }));
+    return;
+  }
+
+  if (isPluginBackedDesktopSettingsPanel(panel)) {
+    const title = settingsPanelTitle(panel);
+    const info = pluginBackedDesktopSettingsInfo(panel);
+    setSettingsPanelState(createCommandPanelState("generic", {
+      status: "loading",
+      title,
+      message: info.message,
+      entries: [pluginBackedDesktopSettingsFallbackEntry(panel, {
+        connected: state.connected,
+      })],
+    }));
+    if (!(await ensureConnected())) {
+      const entries = await pluginBackedDesktopSettingsPanelEntries(panel, [pluginBackedDesktopSettingsFallbackEntry(panel, {
+        connected: false,
+      })], state.hostStatus?.codexHome ?? null, {
+        mcpReadinessEntries: projectComputerUseMcpReadinessEntries(
+          null,
+          state.mcpServerStartupStatuses,
+          "Runtime is offline.",
+        ),
+      });
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "error",
+        title,
+        message: "Runtime is offline. Plugin lifecycle data could not be loaded.",
+        entries,
+      }));
+      return;
+    }
+    try {
+      const pluginEntries = await loadPluginManagementEntries({
+        client,
+        forceReload,
+        threadId: state.activeThreadId,
+        workspace,
+      });
+      const computerUseReadiness = panel === "computer-use"
+        ? await loadComputerUseReadiness(state.hostStatus?.codexHome ?? null)
+        : null;
+      const mcpReadinessEntries = panel === "computer-use"
+        ? await loadComputerUseMcpReadinessEntries(client, state.mcpServerStartupStatuses, {
+            activeThreadId: state.activeThreadId,
+            nativeReadiness: computerUseReadiness,
+          })
+        : undefined;
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "ready",
+        title,
+        message: forceReload ? `Refreshed ${title} plugin lifecycle data.` : info.message,
+        entries: await pluginBackedDesktopSettingsPanelEntries(
+          panel,
+          pluginEntries,
+          state.hostStatus?.codexHome ?? null,
+          {
+            computerUseReadinessEntries: computerUseReadiness
+              ? projectComputerUseReadinessEntries(computerUseReadiness, state.hostStatus?.codexHome ?? null)
+              : undefined,
+            mcpReadinessEntries,
+          },
+        ),
+      }));
+    } catch (error) {
+      const message = formatError(error);
+      const entries = await pluginBackedDesktopSettingsPanelEntries(panel, [pluginBackedDesktopSettingsFallbackEntry(panel, {
+        connected: true,
+        error: message,
+      })], state.hostStatus?.codexHome ?? null, {
+        mcpReadinessEntries: panel === "computer-use"
+          ? projectComputerUseMcpReadinessEntries(null, state.mcpServerStartupStatuses, message)
+          : undefined,
+      });
+      setSettingsPanelState(createCommandPanelState("generic", {
+        status: "error",
+        title,
+        message: `Could not load ${title} plugin lifecycle data: ${message}`,
+        entries,
+      }));
+    }
     return;
   }
 
@@ -627,4 +722,100 @@ function fieldText(value: unknown, key: string): string {
   if (typeof field === "string") return field.trim();
   if (typeof field === "number" || typeof field === "boolean" || typeof field === "bigint") return String(field);
   return "";
+}
+
+export function pluginBackedDesktopSettingsEntries(
+  panel: PluginBackedDesktopSettingsPanel,
+  entries: CommandPanelEntry[],
+): CommandPanelEntry[] {
+  const info = pluginBackedDesktopSettingsInfo(panel);
+  const aliases = new Set(info.pluginAliases.map(normalizePluginSettingsAlias).filter(Boolean));
+  const matched = entries.filter((entry) => {
+    const pluginId = entry.id.startsWith("plugin:") ? entry.id.slice("plugin:".length) : "";
+    return pluginSettingsAliasCandidates(pluginId, entry.title)
+      .some((candidate) => aliases.has(normalizePluginSettingsAlias(candidate)));
+  });
+  if (matched.length === 0) {
+    return [pluginBackedDesktopSettingsFallbackEntry(panel, { connected: true })];
+  }
+  return matched.map((entry) => {
+    const sourcedEntry = withPluginSettingsSource(entry, panel);
+    return {
+      ...sourcedEntry,
+      details: [
+        ...(sourcedEntry.details ?? []),
+        ...info.limitationDetails,
+        ...info.sourceDetails,
+      ],
+    };
+  });
+}
+
+function pluginSettingsAliasCandidates(pluginId: string, title: string): string[] {
+  return [
+    pluginId,
+    unqualifiedPluginSettingsAlias(pluginId),
+    title,
+  ].filter(Boolean);
+}
+
+function unqualifiedPluginSettingsAlias(value: string): string {
+  const withoutPromptScheme = value.startsWith("plugin://") ? value.slice("plugin://".length) : value;
+  return withoutPromptScheme.split("@", 1)[0] ?? withoutPromptScheme;
+}
+
+function withPluginSettingsSource(
+  entry: CommandPanelEntry,
+  panel: PluginBackedDesktopSettingsPanel,
+): CommandPanelEntry {
+  return {
+    ...entry,
+    action: withPluginSettingsActionSource(entry.action, panel),
+    secondaryActions: entry.secondaryActions?.map((secondary) => ({
+      ...secondary,
+      action: withPluginSettingsActionSource(secondary.action, panel) ?? secondary.action,
+    })),
+  };
+}
+
+function withPluginSettingsActionSource(
+  action: CommandPanelEntry["action"],
+  panel: PluginBackedDesktopSettingsPanel,
+): CommandPanelEntry["action"] {
+  if (!action) return action;
+  if (action.type === "installPlugin" || action.type === "uninstallPlugin" || action.type === "writePluginConfig") {
+    return {
+      ...action,
+      sourceSettingsPanel: panel,
+    };
+  }
+  return action;
+}
+
+function normalizePluginSettingsAlias(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+export async function pluginBackedDesktopSettingsPanelEntries(
+  panel: PluginBackedDesktopSettingsPanel,
+  entries: CommandPanelEntry[],
+  codexHome?: string | null,
+  context: {
+    computerUseReadinessEntries?: CommandPanelEntry[];
+    mcpReadinessEntries?: CommandPanelEntry[];
+  } = {},
+): Promise<CommandPanelEntry[]> {
+  const pluginEntries = pluginBackedDesktopSettingsEntries(panel, entries);
+  if (panel === "browser-use") {
+    return [
+      ...pluginEntries,
+      ...await loadBrowserRuntimeSettingsEntries(),
+    ];
+  }
+  if (panel !== "computer-use") return pluginEntries;
+  return [
+    ...pluginEntries,
+    ...(context.computerUseReadinessEntries ?? await loadComputerUseReadinessEntries(codexHome)),
+    ...(context.mcpReadinessEntries ?? []),
+  ];
 }

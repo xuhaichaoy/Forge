@@ -580,8 +580,22 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 12px 14px 14px;
   border-top: 1px solid #dedbd1;
+}
+
+.hc-settings-footer .hc-muted {
+  min-width: 0;
+}
+
+.hc-settings-footer-action {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+  padding-inline: 12px;
+  white-space: nowrap;
 }
 
 .hc-command-panel-message {

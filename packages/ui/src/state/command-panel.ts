@@ -160,6 +160,26 @@ export type CommandPanelEntryAction =
   | { type: "writeAppConfig"; title: string; appId: string; enabled: boolean; configWriteTarget?: ConfigWriteTarget }
   | { type: "connectRequiredApp"; title: string; appId: string; appName: string; installUrl?: string | null }
   | { type: "openExternalUrl"; title: string; url: string }
+  | { type: "openBrowserRuntime"; title: string; url?: string | null; tabId?: string | null }
+  | {
+      type: "probeComputerUseMcp";
+      title: string;
+      threadId: string;
+      server: string;
+      tool: string;
+      arguments?: Record<string, unknown>;
+    }
+  | {
+      type: "openComputerUseSetup";
+      title: string;
+      target: "helper" | "installer" | "screenRecording" | "accessibility";
+      codexHome?: string | null;
+    }
+  | {
+      type: "repairComputerUseBundle";
+      title: string;
+      codexHome?: string | null;
+    }
   | {
       type: "installPlugin";
       title: string;
@@ -168,9 +188,17 @@ export type CommandPanelEntryAction =
       marketplaceName: string;
       marketplacePath?: string | null;
       remotePluginId?: string | null;
+      sourceSettingsPanel?: "browser-use" | "computer-use";
     }
-  | { type: "uninstallPlugin"; title: string; pluginId: string }
-  | { type: "writePluginConfig"; title: string; pluginId: string; enabled: boolean; configWriteTarget?: ConfigWriteTarget }
+  | { type: "uninstallPlugin"; title: string; pluginId: string; sourceSettingsPanel?: "browser-use" | "computer-use" }
+  | {
+      type: "writePluginConfig";
+      title: string;
+      pluginId: string;
+      enabled: boolean;
+      configWriteTarget?: ConfigWriteTarget;
+      sourceSettingsPanel?: "browser-use" | "computer-use";
+    }
   | { type: "checkoutPluginShare"; title: string; remotePluginId: string; pluginName: string }
   | { type: "setThreadMemoryMode"; title: string; threadId: string; mode: "enabled" | "disabled" }
   | { type: "setThreadPinned"; title: string; threadId: string; pinned: boolean }
@@ -2152,4 +2180,34 @@ function panelMessage(panel: CommandPanelKind, status: CommandPanelStatus, error
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function isAppBackedPanel(panel: CommandPanelKind | null | undefined): panel is "apps" | "plugins" {
+  return panel === "apps" || panel === "plugins";
+}
+
+export function isCommandMenuPanel(panel: CommandPanelState | null | undefined): panel is CommandPanelState & { panel: "generic" } {
+  return panel?.panel === "generic" && panel.title === "Search commands and chats";
+}
+
+export function isAppBackedPanelState(
+  state: CommandPanelState | null | undefined,
+): state is CommandPanelState & { panel: "apps" | "plugins" } {
+  return isAppBackedPanel(state?.panel);
+}
+
+const COMMAND_PANEL_PINNED_CHATS_GROUP = { key: "pinned-chats", label: "Pinned chats" };
+const COMMAND_PANEL_RECENT_CHATS_GROUP = { key: "recent-chats", label: "Recent chats" };
+
+export function commandPanelThreadGroup(threadId: string, pinnedThreadIds: Set<string>): Pick<CommandPanelEntry, "groupKey" | "groupLabel"> {
+  const group = pinnedThreadIds.has(threadId)
+    ? COMMAND_PANEL_PINNED_CHATS_GROUP
+    : COMMAND_PANEL_RECENT_CHATS_GROUP;
+  return { groupKey: group.key, groupLabel: group.label };
+}
+
+export function orderCommandPanelThreadsByPinned<T extends { id: string }>(threads: T[], pinnedThreadIds: Set<string>): T[] {
+  const pinnedThreads = threads.filter((thread) => pinnedThreadIds.has(thread.id));
+  const recentThreads = threads.filter((thread) => !pinnedThreadIds.has(thread.id));
+  return [...pinnedThreads, ...recentThreads];
 }
