@@ -23,6 +23,7 @@ import {
   type YuxiEntityType,
 } from "../lib/yuxi-client";
 import { EntityEditDialog, EntityMergeDialog } from "./kb-archive-entity-dialog";
+import { useConfirmDialog } from "./confirm-dialog";
 import { EntityDetailPanel } from "./kb-archive-detail";
 import {
   resolveTabConfig,
@@ -59,6 +60,8 @@ function aggregateArchiveCategories(entities: YuxiEntity[]): ArchiveCategory[] {
 }
 
 export function KbArchiveView() {
+  // 应用内确认对话框（Tauri WebView 的 window.confirm 是 no-op，不能用）
+  const { confirmDialog, confirmDialogNode } = useConfirmDialog();
   const [activeTab, setActiveTab] = useState<EntityTab>(() => archiveViewSnapshot?.activeTab ?? "teacher");
   const [queries, setQueries] = useState<Record<string, string>>({});
   const [items, setItems] = useState<YuxiEntity[]>(() => archiveViewSnapshot?.items ?? []);
@@ -283,7 +286,7 @@ export function KbArchiveView() {
   const deleteEntity = useCallback(async () => {
     if (selectedId == null || !detail) return;
     const name = detail.canonical_name || `未命名档案 #${selectedId}`;
-    if (!globalThis.confirm(`确定删除档案「${name}」吗？来源引用也会解除关联。`)) return;
+    if (!(await confirmDialog(`确定删除档案「${name}」吗？来源引用也会解除关联。`))) return;
     setMutationBusy(true);
     setDetailError(null);
     try {
@@ -300,7 +303,7 @@ export function KbArchiveView() {
     } finally {
       setMutationBusy(false);
     }
-  }, [detail, loadEntities, selectedId]);
+  }, [confirmDialog, detail, loadEntities, selectedId]);
 
   const mergeEntity = useCallback(async (targetId: number, mergeAttributes: boolean) => {
     if (selectedId == null) return;
@@ -530,6 +533,7 @@ export function KbArchiveView() {
           onSubmit={(targetId, mergeAttributes) => void mergeEntity(targetId, mergeAttributes)}
         />
       )}
+      {confirmDialogNode}
     </KbPageShell>
   );
 }

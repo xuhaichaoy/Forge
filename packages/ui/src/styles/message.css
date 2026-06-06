@@ -1885,6 +1885,11 @@ button.hc-automation-citation-chip {
 }
 
 .hc-app[data-theme="dark"] .hc-user-attachment-pill {
+  /* Base pill is a light cream fill (rgba(255,253,250,.82)) with a dark border —
+   * both invisible/wrong on a dark background, leaving a bright washed-out pill.
+   * Dark mode needs the surface + border tokens, not just the text colour. */
+  background: var(--hc-surface-soft);
+  border-color: var(--hc-border-default);
   color: var(--hc-text-secondary);
 }
 

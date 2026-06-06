@@ -2,6 +2,7 @@ import {
   fileReferenceDisplayPath,
   fileReferenceKey,
   fileReferenceLineLabel,
+  fileReferenceResolutionContext,
   fileReferenceSidePanelContextMenuItems,
   fileReferenceSidePanelTabKind,
   fileReferenceSidePanelTabId,
@@ -19,6 +20,37 @@ export default function runFileReferenceTests(): void {
   prefersWorkspaceRootForRepoRelativePaths();
   prefersCwdForBareAndDotRelativePaths();
   walksUpFromNestedThreadCwdForRepoRelativePaths();
+  dropsHostDefaultCwdSoBareRefsDoNotAnchorToHome();
+}
+
+function dropsHostDefaultCwdSoBareRefsDoNotAnchorToHome(): void {
+  const home = "/Users/haichao";
+  // Workspace-less thread: workspace + thread cwd both come from the host default
+  // ($HOME). codex never resolves against $HOME, so those roots are dropped → a bare
+  // filename stays relative instead of mis-anchoring to /Users/haichao/<name>.
+  const noWorkspace = fileReferenceResolutionContext({ workspace: home, threadCwd: home, defaultCwd: home });
+  assertDeepEqual(
+    noWorkspace,
+    { workspaceRoot: "", cwd: "" },
+    "a workspace-less thread (cwd == host default) must not use $HOME as a resolution root",
+  );
+  assertDeepEqual(
+    resolveFileReferencePathCandidates("报价表.docx", noWorkspace),
+    ["报价表.docx"],
+    "a bare filename with no real workspace stays relative (no $HOME/<name> candidate)",
+  );
+  // A real workspace / thread cwd (different from the host default) is preserved.
+  assertDeepEqual(
+    fileReferenceResolutionContext({ workspace: "/repo/app", threadCwd: "/repo/app/pkg", defaultCwd: home }),
+    { workspaceRoot: "/repo/app", cwd: "/repo/app/pkg" },
+    "a real workspace/thread cwd is preserved as the resolution root",
+  );
+  // Absolute references resolve as-is regardless of the (empty) context.
+  assertDeepEqual(
+    resolveFileReferencePathCandidates("/Users/haichao/Downloads/拆标输出/标项一.docx", noWorkspace),
+    ["/Users/haichao/Downloads/拆标输出/标项一.docx"],
+    "absolute references resolve as-is even with no workspace",
+  );
 }
 
 function normalizesClickedReferenceForPreview(): void {

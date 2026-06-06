@@ -51,6 +51,7 @@ import { LibraryListFilter } from "./kb-library-navigation";
 import { KbLibraryDetailPanel } from "./kb-library-detail";
 import { KbLibraryPendingPanel } from "./kb-library-pending-panel";
 import { KbLibraryStoragePanel } from "./kb-library-storage-panel";
+import { useConfirmDialog } from "./confirm-dialog";
 import { KbLibraryTaskPanel } from "./kb-library-task-panel";
 import { LibraryDocumentsTable, SearchResultsTable } from "./kb-library-tables";
 import { KbLibraryUploadPanel } from "./kb-library-upload-panel";
@@ -104,8 +105,22 @@ export function KbLibraryView() {
   const [notice, setNotice] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  // 应用内确认对话框（Tauri WebView 的 window.confirm 是 no-op，不能用）
+  const { confirmDialog, confirmDialogNode } = useConfirmDialog();
+  // 防抖后的检索词：每个 KB 的检索底层要跑一次关键词 LLM，逐字符触发会让中间态
+  // 废请求在后端排队、挤占真正的最终查询（也是检索超时的放大器）。
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  // 回车强制重搜的计数器：同词重按回车也要重新请求（重试失败的库）。
+  const [searchNonce, setSearchNonce] = useState(0);
+  // 乱序竞态守卫：慢的旧请求后返回时不得覆盖新结果。
+  const requestSeqRef = useRef(0);
 
-  const searchText = searchQuery.trim();
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const searchText = debouncedSearch.trim();
   // 当前选中库（activeDbId 为 null 时表示「全部」，selectedDatabase 为 null）。
   const selectedDatabase = useMemo(
     () => (activeDbId ? databases.find((db) => db.db_id === activeDbId) ?? null : null),
@@ -132,6 +147,9 @@ export function KbLibraryView() {
   );
 
   const loadDocuments = useCallback(async () => {
+    // 竞态守卫：只有最新一次请求才有权写入状态（慢的旧响应直接丢弃）。
+    const seq = ++requestSeqRef.current;
+    const isStale = () => seq !== requestSeqRef.current;
     setLoading(true);
     setError(null);
     setNotice(null);
@@ -150,11 +168,19 @@ export function KbLibraryView() {
             maxKbs: activeDbId ? 1 : 16,
           }),
         ]);
+        if (isStale()) return;
+        const dbList = dbResult.databases ?? [];
         setAllDocuments(all.items ?? []);
-        setDatabases(dbResult.databases ?? []);
+        setDatabases(dbList);
         setDocuments([]);
         setSearchGroups(filtered.groups ?? []);
-        setSearchErrors(filtered.errors ?? []);
+        // 失败明细补库名，前端能点名"哪个库、什么原因"
+        setSearchErrors(
+          (filtered.errors ?? []).map((item) => ({
+            ...item,
+            kb_name: dbList.find((db) => db.db_id === item.db_id)?.name,
+          })),
+        );
         setSearchedKbCount(filtered.total_kbs_searched ?? 0);
         setLastUpdatedAt(Date.now());
         return;
@@ -164,6 +190,7 @@ export function KbLibraryView() {
         databasesPromise,
         listYuxiLibraryDocuments({ businessLine, category, dbId: activeDbId, limit: 500 }),
       ]);
+      if (isStale()) return;
       setAllDocuments(all.items ?? []);
       setDatabases(dbResult.databases ?? []);
       setDocuments(filtered.items ?? []);
@@ -172,15 +199,18 @@ export function KbLibraryView() {
       setSearchedKbCount(0);
       setLastUpdatedAt(Date.now());
     } catch (err) {
+      if (isStale()) return;
       setError(err instanceof Error ? err.message : String(err));
       setDocuments([]);
       setSearchGroups([]);
       setSearchErrors([]);
       setSearchedKbCount(0);
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
-  }, [activeDbId, businessLine, category, searchText]);
+    // searchNonce 仅用于"同词回车强制重搜"，不参与请求参数
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDbId, businessLine, category, searchText, searchNonce]);
 
   const loadTasks = useCallback(async () => {
     setTasksLoading(true);
@@ -426,7 +456,7 @@ export function KbLibraryView() {
   }, []);
 
   const handleDelete = useCallback(async (file: ReturnType<typeof toFileRow>) => {
-    if (!globalThis.confirm(`确定删除「${file.name}」吗？`)) return;
+    if (!(await confirmDialog(`确定删除「${file.name}」吗？`))) return;
     setError(null);
     setNotice(null);
     try {
@@ -439,7 +469,7 @@ export function KbLibraryView() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [loadDocuments, selectedRowId]);
+  }, [confirmDialog, loadDocuments, selectedRowId]);
 
   const toggleCheckedRow = useCallback((file: ReturnType<typeof toFileRow>, checked: boolean) => {
     setCheckedRowIds((prev) => {
@@ -469,7 +499,7 @@ export function KbLibraryView() {
       setError("请先选择要删除的资料。");
       return;
     }
-    if (!globalThis.confirm(`确定批量删除 ${total} 条资料吗？`)) return;
+    if (!(await confirmDialog(`确定批量删除 ${total} 条资料吗？`))) return;
     setError(null);
     setNotice(null);
     try {
@@ -484,7 +514,7 @@ export function KbLibraryView() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [checkedRows, loadDocuments]);
+  }, [checkedRows, confirmDialog, loadDocuments]);
 
   const handleCancelTask = useCallback(async (task: YuxiTask) => {
     if (!task.id) return;
@@ -499,7 +529,7 @@ export function KbLibraryView() {
 
   const handleDeleteTask = useCallback(async (task: YuxiTask) => {
     if (!task.id) return;
-    if (!globalThis.confirm(`清理处理记录「${task.name || task.id}」吗？这不会影响已入库资料。`)) return;
+    if (!(await confirmDialog(`清理处理记录「${task.name || task.id}」吗？这不会影响已入库资料。`))) return;
     setTasksError(null);
     try {
       await deleteYuxiTask(task.id);
@@ -507,7 +537,7 @@ export function KbLibraryView() {
     } catch (err) {
       setTasksError(err instanceof Error ? err.message : String(err));
     }
-  }, [loadTasks]);
+  }, [confirmDialog, loadTasks]);
 
   const handleRetryTask = useCallback(async (task: YuxiTask) => {
     const payload = task.payload ?? {};
@@ -957,6 +987,13 @@ export function KbLibraryView() {
                 placeholder={`搜索${selectedDatabase?.name ?? "全部知识库"}资料`}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    // 跳过防抖立即生效；同词回车也强制重搜（重试失败的库）
+                    setDebouncedSearch(searchQuery);
+                    setSearchNonce((n) => n + 1);
+                  }
+                }}
                 aria-label="搜索知识库资料"
               />
               {searchQuery && (
@@ -1270,6 +1307,7 @@ export function KbLibraryView() {
           )}
         </div>
       </div>
+      {confirmDialogNode}
     </main>
   );
 }

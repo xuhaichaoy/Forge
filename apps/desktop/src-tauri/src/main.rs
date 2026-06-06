@@ -202,6 +202,21 @@ struct CreatePendingWorktreeResponse {
     base_sha: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateProjectlessThreadCwdRequest {
+    directory_name: Option<String>,
+    prompt: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateProjectlessThreadCwdResponse {
+    cwd: String,
+    output_directory: String,
+    workspace_root: String,
+}
+
 impl Default for AppState {
     fn default() -> Self {
         Self {
@@ -1400,6 +1415,127 @@ fn host_create_pending_worktree(
     request: CreatePendingWorktreeRequest,
 ) -> Result<CreatePendingWorktreeResponse, String> {
     create_pending_worktree(request)
+}
+
+#[tauri::command]
+fn host_create_projectless_thread_cwd(
+    request: CreateProjectlessThreadCwdRequest,
+) -> Result<CreateProjectlessThreadCwdResponse, String> {
+    create_projectless_thread_cwd(request, SystemTime::now())
+}
+
+/// Mirror Codex Desktop's projectless working-directory generator (bundle `Iy`):
+/// a thread with no workspace gets a unique `~/Documents/Codex/<YYYY-MM-DD>/<slug>/`
+/// directory with `outputs/` and `work/` subdirectories, so file references resolve
+/// against a real session cwd instead of $HOME (Codex never uses $HOME as cwd).
+fn create_projectless_thread_cwd(
+    request: CreateProjectlessThreadCwdRequest,
+    now: SystemTime,
+) -> Result<CreateProjectlessThreadCwdResponse, String> {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .ok_or_else(|| "HOME is not set".to_string())?;
+    // codex `My`: ~/Documents/Codex is the projectless workspace root.
+    let workspace_root = home.join("Documents").join("Codex");
+    // codex `Fy`/`Ny`: a per-day subdirectory, YYYY-MM-DD.
+    let seconds = now
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    let (year, month, day) = civil_from_days(seconds.div_euclid(86_400));
+    let date_dir = workspace_root.join(format!("{year:04}-{month:02}-{day:02}"));
+    let slug = projectless_slug(request.directory_name.as_deref(), request.prompt.as_deref());
+    std::fs::create_dir_all(&date_dir)
+        .map_err(|err| format!("failed to create projectless date directory: {err}"))?;
+    // codex `Iy`: first attempt is the bare slug, then `${slug}-${n+1}`, up to 100.
+    for attempt in 0..100 {
+        let name = if attempt == 0 {
+            slug.clone()
+        } else {
+            format!("{slug}-{}", attempt + 1)
+        };
+        let cwd = date_dir.join(&name);
+        if cwd.exists() {
+            continue;
+        }
+        std::fs::create_dir(&cwd)
+            .map_err(|err| format!("failed to create projectless thread directory: {err}"))?;
+        // createSplitDirectories=true (codex default): deliverables in outputs/, scratch in work/.
+        let output_directory = cwd.join("outputs");
+        std::fs::create_dir_all(&output_directory)
+            .map_err(|err| format!("failed to create outputs directory: {err}"))?;
+        std::fs::create_dir_all(cwd.join("work"))
+            .map_err(|err| format!("failed to create work directory: {err}"))?;
+        return Ok(CreateProjectlessThreadCwdResponse {
+            cwd: cwd.to_string_lossy().to_string(),
+            output_directory: output_directory.to_string_lossy().to_string(),
+            workspace_root: workspace_root.to_string_lossy().to_string(),
+        });
+    }
+    Err("Unable to create a unique projectless thread directory".to_string())
+}
+
+/// codex `Py`: slug from directoryName (first 6 lowercase alphanumeric words) or
+/// prompt (all such words), joined with `-` and capped at 80 chars; empty → "new-chat".
+fn projectless_slug(directory_name: Option<&str>, prompt: Option<&str>) -> String {
+    let (source, max_words) = match directory_name.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(name) => (name, Some(6usize)),
+        None => (prompt.unwrap_or(""), None),
+    };
+    let mut words: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for ch in source.chars() {
+        if ch.is_ascii_alphanumeric() {
+            current.push(ch.to_ascii_lowercase());
+        } else if !current.is_empty() {
+            words.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    if let Some(max) = max_words {
+        words.truncate(max);
+    }
+    let mut slug = words.join("-");
+    if slug.len() > 80 {
+        slug.truncate(80); // slug is ASCII (alnum + '-'), so a byte cut is a char boundary.
+    }
+    if slug.is_empty() {
+        "new-chat".to_string()
+    } else {
+        slug
+    }
+}
+
+#[cfg(test)]
+mod projectless_slug_tests {
+    use super::projectless_slug;
+
+    #[test]
+    fn directory_name_takes_first_six_words() {
+        assert_eq!(
+            projectless_slug(Some("My Big Report For The Q3 Board Meeting"), None),
+            "my-big-report-for-the-q3",
+        );
+    }
+
+    #[test]
+    fn prompt_keeps_all_words_and_splits_on_non_alnum() {
+        // Underscores / dots / CJK are not [a-z0-9] → word separators (matches codex Py).
+        assert_eq!(
+            projectless_slug(None, Some("修改一下 util/config/archery_token.txt 内容")),
+            "util-config-archery-token-txt",
+        );
+    }
+
+    #[test]
+    fn empty_or_symbol_only_falls_back_to_new_chat() {
+        assert_eq!(projectless_slug(None, Some("！！！ 。。。")), "new-chat");
+        assert_eq!(projectless_slug(None, None), "new-chat");
+        assert_eq!(projectless_slug(Some("   "), Some("")), "new-chat");
+    }
 }
 
 /// Recover the rollout JSONL path for a given thread by scanning the
@@ -6447,6 +6583,7 @@ fn main() {
             host_gh_pr_status,
             host_apply_patch_action,
             host_create_pending_worktree,
+            host_create_projectless_thread_cwd,
             host_find_rollout_for_thread,
             host_read_thread_tool_history,
             host_notify_turn_completed,

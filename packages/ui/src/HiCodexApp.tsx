@@ -4090,6 +4090,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     threadContextDefaults: effectiveThreadContextDefaults,
     threadIds,
     workspace,
+    defaultCwd: state.hostStatus?.defaultCwd,
   });
 
   useEffect(() => {

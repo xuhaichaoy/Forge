@@ -4,7 +4,7 @@ import type { CollaborationModeMask, Thread, UserInput } from "@hicodex/codex-pr
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
-import { isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
+import { createProjectlessThreadCwd, isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
 import {
   buildUserInputFromComposer,
@@ -36,13 +36,16 @@ import {
   dispatchOptimisticUserMessage,
   dropOptimisticUserMessage,
   ensureThreadReadyForTurn,
+  isProjectlessWorkspace,
   isThreadNotFound,
   isThreadStatusNotLoaded,
   isThreadNeedsResume,
+  projectlessThreadInstructions,
   refreshThreadMetadata,
   resumeSelectedThreadAndStartTurn,
   startTurn,
   steerTurn,
+  withWorkspaceDeveloperInstructions,
   type OptimisticUserMessageHandle,
   type ThreadWorkflowDispatch,
   type TurnStartOptions,
@@ -71,6 +74,7 @@ export interface UseTurnSubmissionInput {
   threadContextDefaults: ThreadContextDefaults | null;
   threadIds: string[];
   workspace: string;
+  defaultCwd?: string | null;
 }
 
 export interface UseTurnSubmissionResult {
@@ -106,6 +110,7 @@ export function useTurnSubmission({
   threadContextDefaults,
   threadIds,
   workspace,
+  defaultCwd,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
   const { client, dispatch } = useServices();
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
@@ -281,15 +286,37 @@ export function useTurnSubmission({
       }
       const selectedThreadId = activeThreadId;
       const creatingInitialThread = !selectedThreadId;
+      // codex: a projectless thread (no real workspace) gets a generated working
+      // directory under ~/Documents/Codex/<date>/<slug>/ plus a system prompt that
+      // steers writes there instead of $HOME. Generate it once, then thread the
+      // resulting cwd/context through both creation and the first turn.
+      let turnWorkspace = workspace;
+      let turnContext = threadContextDefaults;
+      if (creatingInitialThread && isTauriRuntime() && isProjectlessWorkspace(workspace, defaultCwd)) {
+        try {
+          const projectless = await createProjectlessThreadCwd({ prompt: draftInput });
+          turnWorkspace = projectless.cwd;
+          turnContext = withWorkspaceDeveloperInstructions(
+            threadContextDefaults,
+            projectlessThreadInstructions(projectless.cwd, projectless.outputDirectory),
+          );
+        } catch (error) {
+          dispatch({
+            type: "log",
+            text: `Couldn't prepare a projectless workspace; using the default directory. ${formatError(error)}`,
+            level: "warn",
+          });
+        }
+      }
       if (creatingInitialThread) setStartingConversation(true);
       const readyThread = await ensureThreadReadyForTurn({
         client,
         activeThread,
         activeThreadId: selectedThreadId,
         input: content,
-        workspace,
+        workspace: turnWorkspace,
         dispatch,
-        context: threadContextDefaults,
+        context: turnContext,
         threadCreationOptions: { includeDynamicTools: includeImageDynamicTool },
       });
       const threadId = readyThread.threadId;
@@ -320,7 +347,7 @@ export function useTurnSubmission({
           await steerTurnWithOptimistic({ client, content, dispatch, threadId, turnId: activeTurnId });
         } else {
           optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
-          await startTurn(client, threadId, content, workspace, threadContextDefaults, turnStartOptions);
+          await startTurn(client, threadId, content, turnWorkspace, turnContext, turnStartOptions);
           await refreshThreadMetadata(client, threadId, dispatch);
           rememberLatestCollaborationMode(threadId, turnStartOptions);
           if (readyThread.source === "created" && shouldResetCreatedThreadComposerMode(draftMode)) {
@@ -380,15 +407,15 @@ export function useTurnSubmission({
         dispatch({ type: "removeThread", threadId });
         const nextThreadId = await createAndSelectThreadForTurn(
           client,
-          workspace,
+          turnWorkspace,
           dispatch,
-          threadContextDefaults,
+          turnContext,
           { includeDynamicTools: includeImageDynamicTool },
         );
         if (!nextThreadId) throw error;
         optimistic = dispatchOptimisticUserMessage(dispatch, nextThreadId, content);
         try {
-          await startTurn(client, nextThreadId, content, workspace, threadContextDefaults, turnStartOptions);
+          await startTurn(client, nextThreadId, content, turnWorkspace, turnContext, turnStartOptions);
           await refreshThreadMetadata(client, nextThreadId, dispatch);
         } catch (subError) {
           dropOptimisticUserMessage(dispatch, optimistic);
@@ -427,6 +454,7 @@ export function useTurnSubmission({
     composerSubmitState.isQueueingEnabled,
     composerSubmitState.submitBlockReason,
     composerSubmitState.submitButtonMode,
+    defaultCwd,
     dispatch,
     ensureConnected,
     includeImageDynamicTool,

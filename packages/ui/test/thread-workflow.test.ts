@@ -11,11 +11,13 @@ import {
   forkThreadIntoWorktree,
   IMAGE_TOOL_RESUME_FALLBACK_MESSAGE,
   interruptThreadTurn,
+  isProjectlessWorkspace,
   isThreadNotFound,
   isThreadNotMaterialized,
   isThreadNeedsResume,
   isThreadStatusNotLoaded,
   mergeThreadListPage,
+  projectlessThreadInstructions,
   projectThreadContextDefaults,
   readWorkspaceDeveloperInstructions,
   readThread,
@@ -112,6 +114,8 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   await loadsWorkspaceDeveloperInstructionsFromAncestors();
   await prefersOverrideAgentsAndStopsAtProjectRoot();
   mergesWorkspaceDeveloperInstructionsIntoContext();
+  detectsProjectlessWorkspace();
+  buildsProjectlessThreadInstructions();
   buildsPaginatedThreadListParams();
   buildsStartThreadRequestsWithoutHardcodedWorkspace();
   buildsThreadLifecycleRequests();
@@ -671,6 +675,64 @@ Agent rule.`,
       developerInstructions: "Workspace developer instructions:\n\nInstructions from /repo/AGENTS.md:\nAgent rule.",
     },
     "workspace developer instructions should create context when config has no developer instructions",
+  );
+}
+
+function detectsProjectlessWorkspace(): void {
+  assertEqual(
+    isProjectlessWorkspace("", "/Users/me"),
+    true,
+    "an empty workspace is projectless",
+  );
+  assertEqual(
+    isProjectlessWorkspace("   ", "/Users/me"),
+    true,
+    "a whitespace-only workspace is projectless",
+  );
+  assertEqual(
+    isProjectlessWorkspace("/Users/me", "/Users/me"),
+    true,
+    "a workspace equal to the host default ($HOME) is projectless (codex treats `~` as projectless)",
+  );
+  assertEqual(
+    isProjectlessWorkspace("  /Users/me  ", "/Users/me"),
+    true,
+    "the default-cwd comparison ignores surrounding whitespace",
+  );
+  assertEqual(
+    isProjectlessWorkspace("/repo/project", "/Users/me"),
+    false,
+    "a real picked workspace is not projectless",
+  );
+  assertEqual(
+    isProjectlessWorkspace("/repo/project", null),
+    false,
+    "a real workspace stays non-projectless even without a known default cwd",
+  );
+}
+
+function buildsProjectlessThreadInstructions(): void {
+  assertEqual(
+    projectlessThreadInstructions(
+      "/Users/me/Documents/Codex/2026-06-06/new-chat",
+      "/Users/me/Documents/Codex/2026-06-06/new-chat/outputs",
+    ),
+    `### Projectless Chat
+This projectless thread starts in a generated directory under the user's Documents/Codex folder.
+Prefer answering inline in chat unless using local files would make the result more useful.
+Use work/ for intermediate files, scratch analysis, scripts, drafts, and temporary assets. Use /Users/me/Documents/Codex/2026-06-06/new-chat/outputs only for user-facing deliverables that should appear as outputs.
+When referring to saved deliverables in the final response, link only files from /Users/me/Documents/Codex/2026-06-06/new-chat/outputs.
+Do not write directly in the home directory unless the user explicitly asks.`,
+    "split-directory projectless prompt steers deliverables to outputs/ and scratch to work/",
+  );
+  assertEqual(
+    projectlessThreadInstructions("/Users/me/Documents/Codex/2026-06-06/new-chat"),
+    `### Projectless Chat
+This projectless thread starts in a generated directory under the user's Documents/Codex folder.
+Prefer answering inline in chat unless using local files would make the result more useful.
+When using local files for this projectless thread, write scratch files, drafts, generated assets, and other outputs under /Users/me/Documents/Codex/2026-06-06/new-chat.
+Do not write directly in the home directory unless the user explicitly asks.`,
+    "without a distinct output directory the prompt points writes at the thread cwd",
   );
 }
 

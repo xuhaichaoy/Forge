@@ -30,6 +30,7 @@ import {
   type YuxiPresalesStatsResponse,
   type YuxiSupportedFileTypesResponse,
 } from "../lib/yuxi-client";
+import { useConfirmDialog } from "./confirm-dialog";
 import { parseYuxiTimestamp } from "./kb-library-model";
 
 interface IntegrationSnapshot {
@@ -77,6 +78,8 @@ export function KbLibraryIntegrationPanel({
   selectedCategory: YuxiCategoryMeta | null;
   selectedDatabase: YuxiKnowledgeDatabase | null;
 }) {
+  // 应用内确认对话框（Tauri WebView 的 window.confirm 是 no-op，不能用）
+  const { confirmDialog, confirmDialogNode } = useConfirmDialog();
   const [snapshot, setSnapshot] = useState<IntegrationSnapshot>({
     presales: null,
     knowledge: null,
@@ -243,7 +246,7 @@ export function KbLibraryIntegrationPanel({
 
   const deleteServer = useCallback(async (server: YuxiMcpServer) => {
     if (!server.name) return;
-    if (!globalThis.confirm(`删除来源系统「${server.name}」吗？`)) return;
+    if (!(await confirmDialog(`删除来源系统「${server.name}」吗？`))) return;
     setError(null);
     try {
       await deleteYuxiMcpServer(server.name);
@@ -255,7 +258,7 @@ export function KbLibraryIntegrationPanel({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [loadSnapshot, selectedToolServer]);
+  }, [confirmDialog, loadSnapshot, selectedToolServer]);
 
   if (!selectedCategory) {
     return (
@@ -609,6 +612,7 @@ export function KbLibraryIntegrationPanel({
           )}
         </section>
       </div>
+      {confirmDialogNode}
     </section>
   );
 }

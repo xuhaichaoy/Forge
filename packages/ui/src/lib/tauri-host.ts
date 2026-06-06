@@ -229,6 +229,23 @@ export function createPendingWorktree(
   return invoke("host_create_pending_worktree", { request });
 }
 
+export interface ProjectlessThreadCwd {
+  cwd: string;
+  outputDirectory: string;
+  workspaceRoot: string;
+}
+
+/**
+ * codex projectless-thread-cwd: generate a `~/Documents/Codex/<date>/<slug>/`
+ * working directory (with `outputs/` + `work/`) for a thread that has no workspace,
+ * so file references resolve against a real cwd instead of $HOME.
+ */
+export function createProjectlessThreadCwd(
+  request: { directoryName?: string | null; prompt?: string | null },
+): Promise<ProjectlessThreadCwd> {
+  return invoke("host_create_projectless_thread_cwd", { request });
+}
+
 // codex: composer-footer-branch-switcher-*.js — branch picker host API.
 // `lastCommitMs` mirrors the `committerdate:unix * 1000` we emit on the Rust
 // side; the renderer uses it to sort recents to the top.
