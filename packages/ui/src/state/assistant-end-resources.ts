@@ -101,7 +101,12 @@ function editedFilePaths(items: ThreadItem[]): string[] {
   return dedupeStrings(paths.map(stripLineSuffix).filter(Boolean));
 }
 
-function isDirectEndResourceFilePath(path: string): boolean {
+/**
+ * codex: app-server-manager-signals-SKi6YePu.js `YC` — `_x(e) ∈ pC` where
+ * `pC = {...fC, md, mdx}`. Exported so the inline assistant resource cards can
+ * apply the same card-extension whitelist Codex uses for end resources.
+ */
+export function isDirectEndResourceFilePath(path: string): boolean {
   const extension = pathExtension(path);
   return extension ? DIRECT_END_RESOURCE_FILE_EXTENSIONS.has(extension) : false;
 }

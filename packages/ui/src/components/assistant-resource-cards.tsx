@@ -2,6 +2,7 @@ import { FileText, ImageIcon, Presentation, ScrollText, Sheet, type LucideIcon }
 
 import type { RailEntry } from "../state/render-group-types";
 import { projectArtifactPreview } from "../state/artifact-preview";
+import { isDirectEndResourceFilePath } from "../state/assistant-end-resources";
 import { convertLocalFileSrc } from "../lib/tauri-host";
 
 export interface AssistantResourceCardViewModel {
@@ -19,6 +20,16 @@ export function assistantResourceCardViewModels(entries: RailEntry[]): Assistant
   return entries.flatMap((entry) => {
     const preview = projectArtifactPreview(entry);
     if (preview.kind === "url") return [];
+    /*
+     * codex: app-server-manager-signals-SKi6YePu.js `vC`/`YC` — Codex's inline
+     * post-reply file cards are extension-whitelisted (`pC` = office/csv/tsv/
+     * pdf/image formats + md/mdx). A mentioned or edited file with any other
+     * extension (txt, source code, …) never becomes a card there — such turns
+     * surface through the Edited/Review turn-diff card instead. Apply the same
+     * gate to the inline cards; the side rail keeps the full artifact list.
+     */
+    const filePath = preview.reference?.path ?? null;
+    if (filePath && !isDirectEndResourceFilePath(filePath)) return [];
     return [{
       entry,
       icon: assistantResourceIcon(preview.kind),

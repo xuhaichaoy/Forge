@@ -1904,6 +1904,51 @@ function synthesizeTurnDiffForTurn(
   return [...items.slice(0, lastTurnIndex + 1), synthesized, ...items.slice(lastTurnIndex + 1)];
 }
 
+/*
+ * Post-merge worked-for synthesis for the live completion path.
+ *
+ * Wire fact (probed against the sidecar app-server, 2026-06-06): the
+ * `turn/completed` notification carries `startedAt`/`completedAt`/`durationMs`
+ * but its `turn.items` is EMPTY (`itemsView: "notLoaded"`) — the activity items
+ * only exist in the accumulated runtime list, having streamed in via `item/*`
+ * notifications. `turnItemsWithWorkedFor(turn)` therefore never sees agent
+ * activity on this path and the divider starves, leaving the collapse header on
+ * the previous-messages fallback ("上 N 条消息") even though Codex shows
+ * "Worked for {time}" (qh branch ② via turn.durationMs,
+ * local-conversation-thread-CNXrCEaG :8381).
+ *
+ * Same lesson as synthesizeTurnDiffForTurn: gate on the MERGED segment.
+ * Idempotent — workedForItemFromTurn bails when the segment already has a
+ * worked-for item (snapshot reloads keep working through collectThreadItems).
+ */
+function synthesizeWorkedForForTurn(
+  items: AccumulatedThreadItem[],
+  turnId: string,
+  turn: TurnLike | undefined,
+  options: { hasExtraActivity?: boolean } = {},
+): AccumulatedThreadItem[] {
+  if (!turnId || !turn) return items;
+  const first = items.findIndex((item) => turnIdOf(item) === turnId);
+  if (first < 0) return items;
+  const last = findLastIndex(items, (item) => turnIdOf(item) === turnId);
+  const segment = items.slice(first, last + 1).filter((item) => turnIdOf(item) === turnId);
+  const turnWithId: TurnLike = turn.id ? turn : { ...turn, id: turnId };
+  const workedFor = workedForItemFromTurn(turnWithId, segment, options.hasExtraActivity === true);
+  if (!workedFor) return items;
+  const [stamped] = attachTurnMetadataToAll([workedFor], turnId, turnStatusText(turn.status));
+  if (!stamped) return items;
+  // Codex places the divider between the user message and the first activity
+  // row (see insertWorkedForAfterLastUserMessage) — after the segment's last
+  // user message, else at the segment head.
+  let insertAt = first;
+  for (let index = first; index <= last; index += 1) {
+    const item = items[index];
+    if (turnIdOf(item) !== turnId) continue;
+    if (String((item as Record<string, unknown>).type ?? "") === "userMessage") insertAt = index + 1;
+  }
+  return [...items.slice(0, insertAt), stamped, ...items.slice(insertAt)];
+}
+
 function workedForItemFromTurn(
   turn: TurnLike,
   items: Array<AccumulatedThreadItem | ThreadItem>,
@@ -3538,12 +3583,18 @@ function finishTurn(
   // completion (see withSynthesizedPlanImplementation); replicate it so a
   // finished plan turn surfaces "Implement this plan?" instead of stopping.
   const withPlan = withSynthesizedPlanImplementation(mergedItems, turnId, turnStatus);
-  // Operate on the merged items (not turn.items): live turns stream their patches
-  // into the running list, so the completion snapshot alone can miss them.
+  // Operate on the merged items (not turn.items): live turns stream their
+  // activity/patch items into the running list, so the completion snapshot
+  // alone can miss them — `turn/completed` even arrives with EMPTY items
+  // (`itemsView: "notLoaded"`, probed 2026-06-06). Both syntheses below gate
+  // on the merged segment for that reason.
+  const withWorkedFor = synthesizeWorkedForForTurn(withPlan, turnId, turn, {
+    hasExtraActivity: Boolean(errorText),
+  });
   // codex ES prefers the live `turn/diff/updated` payload (`e.diff`) over the
   // patch rebuild — but only when it belongs to this turn.
   const liveTurnDiff = turnId && runtime.turnDiffTurnId === turnId ? runtime.turnDiff : undefined;
-  const nextItems = synthesizeTurnDiffForTurn(withPlan, turnId, liveTurnDiff);
+  const nextItems = synthesizeTurnDiffForTurn(withWorkedFor, turnId, liveTurnDiff);
   const tokenSpeedPatch = turnId ? completedTokenSpeedPatch(runtime, turnId, turn) : {};
   return {
     ...state,

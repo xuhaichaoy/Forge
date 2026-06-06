@@ -51,6 +51,7 @@ export default function runCodexReducerTurnsTests(): void {
   synthesizesTurnDiffForFailedTurnWithAppliedChanges();
   turnDiffCarriesPatchBatchesAndTracksCommandCwd();
   prefersLiveTurnDiffNotificationOverPatchRebuild();
+  synthesizesWorkedForWhenTurnCompletedArrivesWithEmptyItems();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
   turnsFailedTurnErrorsIntoStreamErrorItems();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
@@ -1555,19 +1556,26 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
   // Without an optimistic insert, the user item arrives last from the server,
   // so within each turn it sits after the error item. The regression we are
   // fixing is that user-N must NOT spill out of its turn segment into the
-  // global tail. Codex-aligned `xt = vt.length > 0` gate (codex-reducer.ts
-  // `hasAgentActivityItem`) suppresses worked-for when the `turn/failed`
-  // payload's items array is empty — the stream-error item lives in runtime
-  // state (added by the earlier `error` notification) but gets replaced via
-  // `replaceTurnSegment`, leaving each turn with [stream-error, user] only.
+  // global tail. The worked-for divider IS synthesized for these failed turns:
+  // Codex's agent body (`vt`) includes the stream-error row, so the divider
+  // mounts (same rationale as finishTurn's error-path `hasExtraActivity`), and
+  // the post-merge synthesis sees the runtime stream-error item even though the
+  // `turn/failed` payload's own items array is empty (`itemsView: "notLoaded"`
+  // on the wire).
+  // (worked-for sits at the segment head here because the user message only
+  // arrives AFTER turn/failed; the renderer extracts worked-for as its own
+  // unit, so the raw index inside the segment does not affect placement.)
   const ids = items(state, "thread-1").map((item) => item.id);
   assertDeepEqual(
     ids,
     [
+      "worked-for:turn-1",
       "stream-error:turn-1",
       "user-1",
+      "worked-for:turn-2",
       "stream-error:turn-2",
       "user-2",
+      "worked-for:turn-3",
       "stream-error:turn-3",
       "user-3",
     ],
@@ -1819,18 +1827,21 @@ function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
   }
 
   const ids = items(state, "thread-1").map((item) => item.id);
-  // Codex-aligned gate (codex-reducer.ts `hasAgentActivityItem`): empty
-  // `turn/failed` payloads suppress worked-for synthesis. Stream-error rows
-  // from prior `error` notifications still live in runtime and lead each
-  // turn segment along with the optimistic user bubble.
+  // The post-merge worked-for synthesis sees the runtime stream-error rows
+  // (Codex's agent body `vt` includes stream errors, so the divider mounts for
+  // failed turns) and lands between the user bubble and the activity — exactly
+  // Codex's divider placement.
   assertDeepEqual(
     ids,
     [
       "real-user-1",
+      "worked-for:turn-1",
       "stream-error:turn-1",
       "real-user-2",
+      "worked-for:turn-2",
       "stream-error:turn-2",
       "real-user-3",
+      "worked-for:turn-3",
       "stream-error:turn-3",
     ],
     "with optimistic insert each user bubble must lead its turn segment, matching Codex Desktop",
@@ -3422,6 +3433,68 @@ function prefersLiveTurnDiffNotificationOverPatchRebuild(): void {
     ((rebuilt?.unifiedDiff as string) ?? "").includes("diff --git a/src/app.ts b/src/app.ts"),
     true,
     "a stale other-turn diff must be ignored in favor of the patch rebuild",
+  );
+}
+
+function synthesizesWorkedForWhenTurnCompletedArrivesWithEmptyItems(): void {
+  // Wire fact (probed against the sidecar app-server, 2026-06-06): the
+  // turn/completed notification carries startedAt/completedAt/durationMs but
+  // its turn.items is EMPTY (`itemsView: "notLoaded"`) — the activity items
+  // only exist as streamed item/* updates. The worked-for divider must gate on
+  // the MERGED segment, else the collapse header falls back to "N previous
+  // messages" while Codex shows "Worked for {time}" via turn.durationMs
+  // (qh branch ②, local-conversation-thread-CNXrCEaG :8381).
+  const streamed = reduceNotification(startedPlanTurn(), {
+    method: "item/completed",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      item: { type: "commandExecution", id: "cmd-1", command: "printf '7' > t.txt", status: "completed", cwd: "/repo" } as unknown as ThreadItem,
+    },
+  });
+  const completed = reduceNotification(streamed, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [],
+        startedAt: 100,
+        completedAt: 123,
+        durationMs: 23_000,
+      },
+    },
+  });
+  const workedFor = items(completed, "thread-1").find((item) => item.type === "worked-for") as
+    | Record<string, unknown>
+    | undefined;
+  assertEqual(
+    Boolean(workedFor),
+    true,
+    "a completed turn with streamed activity but an empty completion payload must still synthesize worked-for",
+  );
+  assertEqual(workedFor?.durationMs, 23_000, "synthesized worked-for should carry the payload durationMs");
+  assertEqual(workedFor?.status, "completed", "synthesized worked-for should be in the completed state");
+
+  // Pure-text turns stay suppressed: agentMessage is not agent activity, so the
+  // merged-segment gate must NOT resurrect the spurious divider for plain Q&A.
+  const textStreamed = reduceNotification(startedPlanTurn(), {
+    method: "item/completed",
+    params: { threadId: "thread-1", turnId: "turn-1", item: agentMessage("agent-1", "Hi") },
+  });
+  const textCompleted = reduceNotification(textStreamed, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: { id: "turn-1", threadId: "thread-1", status: "completed", items: [], startedAt: 100, completedAt: 105, durationMs: 5_000 },
+    },
+  });
+  assertEqual(
+    items(textCompleted, "thread-1").some((item) => item.type === "worked-for"),
+    false,
+    "a pure-text turn must not synthesize worked-for even with payload timing",
   );
 }
 
