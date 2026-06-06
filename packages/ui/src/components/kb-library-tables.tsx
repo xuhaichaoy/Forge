@@ -3,6 +3,7 @@ import {
   yuxiBusinessLineLabel,
   yuxiCategoryMeta,
   type YuxiSearchGroup,
+  type YuxiSearchSnippet,
 } from "../lib/yuxi-client";
 import { summarizeSearchResult, type FileRow } from "./kb-library-model";
 
@@ -282,25 +283,35 @@ export function SearchResultsTable({
 }: {
   groups: YuxiSearchGroup[];
   loading: boolean;
-  errors?: Array<{ db_id?: string; error?: string }>;
+  errors?: Array<{ db_id?: string; error?: string; kb_name?: string }>;
   searchedKbCount?: number;
   onOpen?: (target: { fileId: string; chunkId: string }) => void;
 }) {
   const rows = groups.flatMap((group) => (group.results ?? []).map((result, index) => {
+    // 服务端已规整的片段优先；缺失时（旧版后端）降级走启发式解析
+    const snippets = Array.isArray(result.snippets) && result.snippets.length > 0 ? result.snippets : null;
     const raw = (result.result ?? {}) as Record<string, unknown>;
-    const chunkId = typeof raw.chunk_id === "string" ? raw.chunk_id : "";
-    const fileId = typeof raw.file_id === "string"
-      ? raw.file_id
-      : chunkId
-        ? chunkId.split("#")[0]
-        : "";
+    // 行点击打开文件详情：优先取片段携带的 file_id/chunk_id（服务端已映射）
+    const locatedSnippet = snippets?.find((s) => s.file_id);
+    const chunkId = locatedSnippet?.chunk_id
+      ?? (typeof raw.chunk_id === "string" ? raw.chunk_id : "");
+    const fileId = locatedSnippet?.file_id
+      ?? (typeof raw.file_id === "string"
+        ? raw.file_id
+        : chunkId
+          ? chunkId.split("#")[0]
+          : "");
+    const snippetEvidence = snippets
+      ? [...new Set(snippets.map((s) => snippetEvidenceLabel(s)).filter(Boolean))]
+      : null;
     return {
       id: `${group.business_line ?? "line"}:${group.category ?? "cat"}:${result.db_id ?? index}:${index}`,
       kbName: result.kb_name || "知识库",
       category: group.label || yuxiCategoryMeta(group.category)?.label || group.category || "未分类",
       businessLine: yuxiBusinessLineLabel(group.business_line),
-      result: summarizeSearchResult(result.result),
-      evidence: summarizeSearchEvidence(result.result),
+      snippets,
+      result: snippets ? "" : summarizeSearchResult(result.result),
+      evidence: snippetEvidence ?? summarizeSearchEvidence(result.result),
       fileId,
       chunkId,
     };
@@ -309,8 +320,15 @@ export function SearchResultsTable({
     return (
       <div className="hc-kb-empty">
         <div className="hc-kb-empty-content">
+          {loading && (
+            <div className="hc-kb-empty-icon">
+              <RefreshCw size={20} className="hc-kb-search-loading-icon" />
+            </div>
+          )}
           <div className="hc-kb-empty-title">{loading ? "正在检索知识库" : "暂无检索结果"}</div>
-          <div className="hc-kb-empty-subtitle">{loading ? "正在读取检索结果。" : "换一个关键词，或切换左侧知识库。"}</div>
+          <div className="hc-kb-empty-subtitle">
+            {loading ? "逐库语义检索中，通常需要几秒到十几秒。" : "换一个关键词，或切换左侧知识库。"}
+          </div>
         </div>
       </div>
     );
@@ -320,7 +338,19 @@ export function SearchResultsTable({
       <div className="hc-kb-search-audit">
         <span>已检索 {searchedKbCount || rows.length} 个知识库</span>
         <span>命中 {rows.length} 组结果</span>
-        {errors.length > 0 && <span data-tone="danger">{errors.length} 个知识库检索失败</span>}
+        {errors.length > 0 && (
+          <span
+            data-tone="danger"
+            title={errors.map((item) => `${item.kb_name || item.db_id || "未知库"}：${item.error || "未知错误"}`).join("\n")}
+          >
+            {errors.map((item) => item.kb_name || item.db_id).filter(Boolean).join("、")} 检索失败（可回车重试）
+          </span>
+        )}
+        {loading && (
+          <span className="hc-kb-search-refreshing">
+            <RefreshCw size={12} className="hc-kb-search-loading-icon" aria-hidden="true" /> 检索中…
+          </span>
+        )}
       </div>
       <table className="hc-kb-table">
         <thead>
@@ -344,7 +374,18 @@ export function SearchResultsTable({
                 <div className="hc-kb-file-meta">{row.businessLine}</div>
               </td>
               <td><span className="hc-kb-tag">{row.category}</span></td>
-              <td style={{ fontSize: 12, color: "var(--hc-text-secondary)", lineHeight: 1.5 }}>{row.result}</td>
+              <td style={{ fontSize: 12, color: "var(--hc-text-secondary)", lineHeight: 1.5 }}>
+                {row.snippets
+                  ? row.snippets.map((snippet, snippetIndex) => (
+                      <div key={snippetIndex} style={{ marginBottom: snippetIndex < row.snippets!.length - 1 ? 6 : 0 }}>
+                        {snippet.matched === false && (
+                          <span className="hc-kb-tag" style={{ marginRight: 6 }}>弱相关</span>
+                        )}
+                        {snippet.text}
+                      </div>
+                    ))
+                  : row.result}
+              </td>
               <td>
                 <div className="hc-kb-evidence-list">
                   {row.evidence.length > 0 ? row.evidence.map((item) => <span key={item}>{item}</span>) : <span>系统未返回文件/段落定位</span>}
@@ -356,6 +397,11 @@ export function SearchResultsTable({
       </table>
     </>
   );
+}
+
+function snippetEvidenceLabel(snippet: YuxiSearchSnippet): string {
+  const chunk = snippet.chunk_id ? `段 ${snippet.chunk_id.replace(/^chunk-/, "").slice(0, 8)}` : "";
+  return [snippet.filename, chunk].filter(Boolean).join(" · ");
 }
 
 function summarizeSearchEvidence(value: unknown): string[] {

@@ -836,6 +836,19 @@
   margin-bottom: 4px;
 }
 
+/* 检索加载态的旋转图标（hc-spin keyframes 复用自 settings-command.css） */
+.hc-kb-search-loading-icon {
+  animation: hc-spin 900ms linear infinite;
+}
+
+/* 已有旧结果时的"检索中"内联指示（audit 行内） */
+.hc-kb-search-refreshing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hc-text-secondary);
+}
+
 .hc-kb-empty-title {
   color: var(--hc-text-primary);
   font-size: 15px;

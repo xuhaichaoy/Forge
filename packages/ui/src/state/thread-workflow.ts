@@ -655,6 +655,51 @@ export function withWorkspaceDeveloperInstructions(
   };
 }
 
+/**
+ * codex `qf` (src-*.js): the projectless system prompt the desktop shell injects via
+ * developerInstructions when a thread has no workspace. The codex app-server has no
+ * `workspaceKind`/projectless concept, so HiCodex must build this client-side too.
+ * With split directories (the default), deliverables go to `outputDirectory` and
+ * scratch to `work/`; the prompt steers the agent away from writing to $HOME.
+ */
+export function projectlessThreadInstructions(
+  cwd: string,
+  outputDirectory?: string | null,
+): string {
+  const trimmedOutput = outputDirectory?.trim() ?? "";
+  const split = trimmedOutput.length > 0 && trimmedOutput !== cwd;
+  const deliverables = split ? trimmedOutput : cwd;
+  return [
+    "### Projectless Chat",
+    "This projectless thread starts in a generated directory under the user's Documents/Codex folder.",
+    "Prefer answering inline in chat unless using local files would make the result more useful.",
+    ...(split
+      ? [
+          `Use work/ for intermediate files, scratch analysis, scripts, drafts, and temporary assets. Use ${deliverables} only for user-facing deliverables that should appear as outputs.`,
+          `When referring to saved deliverables in the final response, link only files from ${deliverables}.`,
+        ]
+      : [
+          `When using local files for this projectless thread, write scratch files, drafts, generated assets, and other outputs under ${deliverables}.`,
+        ]),
+    "Do not write directly in the home directory unless the user explicitly asks.",
+  ].join("\n");
+}
+
+/**
+ * A thread is "projectless" (codex) when it has no real workspace — the cwd is empty
+ * or just the host default ($HOME). codex treats a bare `~` workspace as projectless
+ * too, so `workspace === defaultCwd` (the $HOME the host reports) counts. Such threads
+ * get a generated `~/Documents/Codex/<date>/<slug>/` working directory.
+ */
+export function isProjectlessWorkspace(
+  workspace: string | null | undefined,
+  defaultCwd: string | null | undefined,
+): boolean {
+  const trimmed = workspace?.trim() ?? "";
+  const home = defaultCwd?.trim() ?? "";
+  return trimmed.length === 0 || (home.length > 0 && trimmed === home);
+}
+
 export async function sendPanelThreadMessage(
   client: CodexJsonRpcClient,
   threadId: string,

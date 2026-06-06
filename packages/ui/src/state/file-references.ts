@@ -58,6 +58,33 @@ export function resolveFileReferencePathCandidates(
   ]);
 }
 
+/**
+ * Build the resolution context for opening a conversation file reference, mirroring
+ * Codex: references resolve against the thread / workspace cwd, **never** against the
+ * host's default directory (which is $HOME). A thread with no real workspace seeds its
+ * cwd from that default; using it as a resolution root would mis-anchor a bare filename
+ * to `$HOME/<name>` (the reported "点开去 /Users/<me>/<name>" bug). So any root equal to
+ * `defaultCwd` is dropped — with no real workspace the roots are empty, a bare relative
+ * reference stays relative and fails honestly (the same as Codex's `cwd: null`) instead
+ * of silently opening the wrong $HOME path. Absolute references resolve as-is regardless.
+ */
+export function fileReferenceResolutionContext(input: {
+  workspace?: string | null;
+  threadCwd?: string | null;
+  defaultCwd?: string | null;
+}): { workspaceRoot: string; cwd: string } {
+  const hostDefault = input.defaultCwd?.trim() ?? "";
+  const anchoredRoot = (value: string | null | undefined): string => {
+    const trimmed = value?.trim() ?? "";
+    return trimmed && trimmed !== hostDefault ? trimmed : "";
+  };
+  const workspaceRoot = anchoredRoot(input.workspace);
+  return {
+    workspaceRoot,
+    cwd: anchoredRoot(input.threadCwd) || workspaceRoot,
+  };
+}
+
 export function fileReferenceKey(reference: FileReferenceSelection): string {
   return `${reference.hostId ? `${reference.hostId}:` : ""}${reference.path}:${reference.lineStart}-${reference.lineEnd}`;
 }

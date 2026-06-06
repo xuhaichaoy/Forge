@@ -237,6 +237,17 @@ export interface YuxiKnowledgeDatabasesResponse {
   message?: string;
 }
 
+export interface YuxiSearchSnippet {
+  text?: string;
+  /** false = 语义近邻兜底（不含查询原词），渲染时标"弱相关" */
+  matched?: boolean;
+  filename?: string;
+  file_path?: string;
+  /** Yuxi 文件 ID，配合 chunk_id 可打开文件详情并定位段落 */
+  file_id?: string;
+  chunk_id?: string;
+}
+
 export interface YuxiSearchGroup {
   business_line?: string | null;
   category?: string | null;
@@ -244,6 +255,9 @@ export interface YuxiSearchGroup {
   results?: Array<{
     db_id?: string | null;
     kb_name?: string | null;
+    /** Yuxi 服务端已把各 KB 异构结果规整为统一片段 */
+    snippets?: YuxiSearchSnippet[];
+    /** 旧字段：仅当后端未升级时存在，作降级解析用 */
     result?: unknown;
   }>;
 }

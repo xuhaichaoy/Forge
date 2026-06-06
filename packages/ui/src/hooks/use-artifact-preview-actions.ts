@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useServices } from "../components/services-context";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import {
+  fileReferenceResolutionContext,
   normalizeFileReference,
   resolveFileReferencePathCandidates,
   type FileReferenceSelection,
@@ -29,11 +30,11 @@ export function useArtifactPreviewActions({
   workspace: string;
 }) {
   const { dispatch } = useServices();
+  // codex resolves file references against the thread/workspace cwd, never $HOME.
+  // fileReferenceResolutionContext drops any root equal to the host default ($HOME),
+  // so a bare filename in a workspace-less thread no longer mis-anchors to $HOME/<name>.
   const previewPathContext = useMemo(
-    () => ({
-      workspaceRoot: defaultCwd || workspace,
-      cwd: activeThreadCwd || workspace,
-    }),
+    () => fileReferenceResolutionContext({ workspace, threadCwd: activeThreadCwd, defaultCwd }),
     [activeThreadCwd, defaultCwd, workspace],
   );
 
