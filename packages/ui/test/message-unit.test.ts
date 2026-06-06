@@ -159,6 +159,23 @@ function formatsAssistantSpreadsheetResourceCards(): void {
     [{ title: "beijing_weather_next_7_days.csv", typeLabel: "Spreadsheet · csv" }],
     "assistant file resources should use Desktop-style spreadsheet labels",
   );
+
+  // codex: app-server-manager-signals-SKi6YePu.js `vC`/`YC` — inline file
+  // cards are extension-whitelisted (`pC`); txt/source files never card.
+  assertDeepEqual(
+    assistantResourceCardViewModels([
+      {
+        id: "artifact:token",
+        title: "archery_token.txt",
+        meta: "util/config/archery_token.txt",
+        status: "edited",
+        reference: { path: "util/config/archery_token.txt", lineStart: 1 },
+        action: { kind: "file", reference: { path: "util/config/archery_token.txt", lineStart: 1 } },
+      },
+    ]),
+    [],
+    "non-whitelisted file mentions (txt) must not become inline resource cards",
+  );
 }
 
 function formatsAssistantWebsiteAndGoogleDriveEndResources(): void {
