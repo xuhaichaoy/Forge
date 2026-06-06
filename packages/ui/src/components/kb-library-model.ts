@@ -84,10 +84,19 @@ function versionLabel(file: YuxiLibraryDocument): string {
 }
 
 function pendingReason(status: string | null | undefined): string {
-  if (status === "failed" || status === "error" || status === "error_parsing") return "解析或入库失败";
+  if (status === "failed" || status === "error" || status === "error_parsing" || status === "error_indexing")
+    return "解析或入库失败";
   if (status === "uploaded") return "待解析";
   if (status === "parsed") return "待入库";
-  if (status === "processing" || status === "pending" || status === "running") return "处理中";
+  if (
+    status === "processing" ||
+    status === "pending" ||
+    status === "running" ||
+    status === "indexing" ||
+    status === "parsing" ||
+    status === "waiting"
+  )
+    return "处理中";
   return "无待处理";
 }
 
@@ -144,9 +153,43 @@ function fileExt(filename: string, fileType: string | null | undefined): FileRow
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "未记录时间";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  const date = parseYuxiTimestamp(value);
+  if (!date) return value;
   return date.toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * Yuxi 返回的 created_at/updated_at 是 UTC 时间，但有时不带时区标记
+ * （形如 `2026-06-04T10:37:00` 或 `2026-06-04 10:37:00`）。JS 的
+ * `new Date("2026-06-04T10:37:00")` 会把无时区的串当成「本地时间」解析，
+ * 于是把 UTC 的钟面值原样当本地显示——这正是「上传时间差 8 小时」的根因
+ * （北京 18:37 上传，Yuxi 存的是 10:37 UTC，无标记被当本地→显示 10:37）。
+ *
+ * 这里统一把无时区标记的串补上 `Z`（按 UTC 解析），随后由调用方的
+ * `toLocaleString` 自然转换到运行环境本地时区（北京 UTC+8）。已带 `Z`/
+ * `+hh:mm` 等偏移的串保持不变。解析失败返回 null，由调用方回退显示原串。
+ */
+export function parseYuxiTimestamp(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = normalizeUtcTimestamp(trimmed);
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) {
+    const fallback = new Date(trimmed);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
+  return date;
+}
+
+function normalizeUtcTimestamp(value: string): string {
+  // 已经带显式时区（Z 或 ±hh[:mm]）的不动。
+  if (/[zZ]$/.test(value) || /[+-]\d{2}:?\d{2}$/.test(value)) return value;
+  // 仅当形如日期时间（含小时分钟）时才补 UTC 标记，避免把纯日期（如
+  // `2026-06-04`，本就是 UTC 午夜）再次偏移；纯日期交给原生解析即可。
+  const dateTime = value.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)$/);
+  if (dateTime) return `${dateTime[1]}T${dateTime[2]}Z`;
+  return value;
 }
 
 function trimLong(value: string): string {

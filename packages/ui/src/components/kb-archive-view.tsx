@@ -37,6 +37,14 @@ interface ArchiveCategory {
   count: number;
 }
 
+interface ArchiveViewSnapshot {
+  activeTab: EntityTab;
+  categories: ArchiveCategory[];
+  items: YuxiEntity[];
+}
+
+let archiveViewSnapshot: ArchiveViewSnapshot | null = null;
+
 /** 聚合一批实体里真实存在的 entity_type（去重 + 计数），按计数降序、同数按标签排序。 */
 function aggregateArchiveCategories(entities: YuxiEntity[]): ArchiveCategory[] {
   const counts = new Map<string, number>();
@@ -51,12 +59,12 @@ function aggregateArchiveCategories(entities: YuxiEntity[]): ArchiveCategory[] {
 }
 
 export function KbArchiveView() {
-  const [activeTab, setActiveTab] = useState<EntityTab>("teacher");
+  const [activeTab, setActiveTab] = useState<EntityTab>(() => archiveViewSnapshot?.activeTab ?? "teacher");
   const [queries, setQueries] = useState<Record<string, string>>({});
-  const [items, setItems] = useState<YuxiEntity[]>([]);
+  const [items, setItems] = useState<YuxiEntity[]>(() => archiveViewSnapshot?.items ?? []);
   const [authorityFilter, setAuthorityFilter] = useState("all");
   const [entityFilters, setEntityFilters] = useState<Record<string, string>>({});
-  const [categories, setCategories] = useState<ArchiveCategory[]>([]);
+  const [categories, setCategories] = useState<ArchiveCategory[]>(() => archiveViewSnapshot?.categories ?? []);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<YuxiEntityDetail | null>(null);
   const [related, setRelated] = useState<YuxiEntityRelatedResponse | null>(null);
@@ -74,7 +82,8 @@ export function KbArchiveView() {
   const [entityDialogMode, setEntityDialogMode] = useState<"create" | "edit" | null>(null);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => archiveViewSnapshot == null);
+  const [hasLoadedEntities, setHasLoadedEntities] = useState(() => archiveViewSnapshot != null);
   const [error, setError] = useState<string | null>(null);
 
   const tab = useMemo(() => {
@@ -138,8 +147,14 @@ export function KbArchiveView() {
         listYuxiEntities({ limit: 200 }).catch(() => ({ total: 0, items: [] })),
       ]);
       const nextItems = current.items ?? [];
+      const nextCategories = aggregateArchiveCategories(overview.items ?? []);
       setItems(nextItems);
-      setCategories(aggregateArchiveCategories(overview.items ?? []));
+      setCategories(nextCategories);
+      archiveViewSnapshot = {
+        activeTab,
+        categories: nextCategories,
+        items: nextItems,
+      };
       if (selectedId != null && !nextItems.some((item) => item.id === selectedId)) {
         setSelectedId(null);
         setDetail(null);
@@ -152,6 +167,7 @@ export function KbArchiveView() {
       setError(err instanceof Error ? err.message : String(err));
       setItems([]);
     } finally {
+      setHasLoadedEntities(true);
       setLoading(false);
     }
   }, [activeTab, query, selectedId]);
@@ -159,6 +175,11 @@ export function KbArchiveView() {
   useEffect(() => {
     void loadEntities();
   }, [loadEntities]);
+
+  useEffect(() => {
+    if (!hasLoadedEntities) return;
+    archiveViewSnapshot = { activeTab, categories, items };
+  }, [activeTab, categories, hasLoadedEntities, items]);
 
   useEffect(() => {
     void loadDetail(selectedId);
@@ -171,6 +192,8 @@ export function KbArchiveView() {
     setActiveTab(categories[0].type as EntityTab);
     setAuthorityFilter("all");
     setEntityFilters({});
+    setItems([]);
+    setLoading(true);
   }, [activeTab, categories]);
 
   const pendingCount = useMemo(() => items.filter((item) => item.authority_status !== "authoritative").length, [items]);
@@ -178,6 +201,7 @@ export function KbArchiveView() {
     () => categories.reduce((sum, category) => sum + category.count, 0),
     [categories],
   );
+  const initialArchiveLoading = loading && !hasLoadedEntities && categories.length === 0 && items.length === 0;
   const visibleItems = useMemo(
     () => applyEntityFilters(items, authorityFilter, entityFilters, tab.filters),
     [authorityFilter, entityFilters, items, tab.filters],
@@ -198,11 +222,15 @@ export function KbArchiveView() {
   }, []);
 
   const selectArchiveCategory = useCallback((type: string) => {
+    if (type === activeTab) return;
     setActiveTab(type as EntityTab);
     setAuthorityFilter("all");
     setEntityFilters({});
+    setItems([]);
+    setError(null);
+    setLoading(true);
     resetSelection();
-  }, [resetSelection]);
+  }, [activeTab, resetSelection]);
 
   const changeAuthority = useCallback(async (status: string) => {
     if (selectedId == null) return;
@@ -361,11 +389,7 @@ export function KbArchiveView() {
         <aside className="hc-kb-filters hc-kb-archive-sidebar" aria-label="档案分类">
           <div className="hc-kb-filter-section">
             <div className="hc-kb-filter-label">档案分类</div>
-            {categories.length === 0 ? (
-              <div className="hc-kb-tree-empty">
-                {loading ? "正在读取档案分类…" : "暂无档案，上传资料并提取档案后会出现在这里。"}
-              </div>
-            ) : (
+            {categories.length > 0 && (
               categories.map(({ type, label, count }) => (
                 <button
                   key={type}
@@ -388,10 +412,12 @@ export function KbArchiveView() {
               <div>
                 <div className="hc-kb-archive-title-row">
                   <h2>{tab.label}档案</h2>
-                  <span>{visibleItems.length.toLocaleString()} 条</span>
+                  <span>{initialArchiveLoading ? "读取中" : `${visibleItems.length.toLocaleString()} 条`}</span>
                 </div>
                 <p>
-                  共 {totalArchiveCount.toLocaleString()} 条档案 · {categories.length} 个分类
+                  {initialArchiveLoading
+                    ? "正在读取档案分类和统计"
+                    : `共 ${totalArchiveCount.toLocaleString()} 条档案 · ${categories.length} 个分类`}
                   {pendingCount > 0 ? ` · ${pendingCount} 条待确认` : ""}
                 </p>
               </div>
@@ -424,7 +450,9 @@ export function KbArchiveView() {
               <div className="hc-kb-empty">
                 <div className="hc-kb-empty-content">
                   <div className="hc-kb-empty-title">{loading ? "正在读取档案" : "暂无档案"}</div>
-                  <div className="hc-kb-empty-subtitle">资料上传并提取档案后，会出现在当前分类下。</div>
+                  <div className="hc-kb-empty-subtitle">
+                    {loading ? "正在同步当前分类内容。" : "资料上传并提取档案后，会出现在当前分类下。"}
+                  </div>
                 </div>
               </div>
             ) : (

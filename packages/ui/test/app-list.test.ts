@@ -36,8 +36,8 @@ function invalidatesAppListFromDesktopNotifications(): void {
 
   assertEqual(
     appListInvalidationReasonForNotification("app/list/updated"),
-    "app-list-updated",
-    "app/list/updated should invalidate app-list backed surfaces",
+    null,
+    "app/list/updated should not recursively force-refresh app-list backed surfaces",
   );
   assertEqual(
     appListInvalidationReasonForNotification("mcpServer/oauthLogin/completed"),
@@ -50,7 +50,6 @@ function invalidatesAppListFromDesktopNotifications(): void {
     "unrelated notifications should not invalidate app-list backed surfaces",
   );
 
-  const appListInvalidation = invalidateAppListForNotification("app/list/updated");
   const oauthInvalidation = invalidateAppListForNotification("mcpServer/oauthLogin/completed");
   const ignored = invalidateAppListForNotification("thread/started");
   const connectorCallback = invalidateAppList("app-connect-oauth-callback");
@@ -59,24 +58,21 @@ function invalidatesAppListFromDesktopNotifications(): void {
 
   assertDeepEqual(
     {
-      appListInvalidation,
       oauthInvalidation,
       connectorCallback,
       ignored,
       seen,
     },
     {
-      appListInvalidation: { reason: "app-list-updated", version: before + 1 },
-      oauthInvalidation: { reason: "mcp-oauth-login-completed", version: before + 2 },
-      connectorCallback: { reason: "app-connect-oauth-callback", version: before + 3 },
+      oauthInvalidation: { reason: "mcp-oauth-login-completed", version: before + 1 },
+      connectorCallback: { reason: "app-connect-oauth-callback", version: before + 2 },
       ignored: null,
       seen: [
-        { reason: "app-list-updated", version: before + 1 },
-        { reason: "mcp-oauth-login-completed", version: before + 2 },
-        { reason: "app-connect-oauth-callback", version: before + 3 },
+        { reason: "mcp-oauth-login-completed", version: before + 1 },
+        { reason: "app-connect-oauth-callback", version: before + 2 },
       ],
     },
-    "Desktop app/OAuth notifications should publish app-list invalidation versions",
+    "OAuth notifications and explicit callbacks should publish app-list invalidation versions",
   );
 }
 

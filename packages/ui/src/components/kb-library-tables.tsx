@@ -54,12 +54,15 @@ export function LibraryDocumentsTable({
   onEmptyAction?: () => void;
 }) {
   if (rows.length === 0) {
+    if (loading) {
+      return <div className="hc-kb-empty" aria-busy="true" aria-live="polite" />;
+    }
     return (
       <div className="hc-kb-empty">
         <div className="hc-kb-empty-content">
-          <div className="hc-kb-empty-title">{loading ? "正在读取资料" : emptyTitle ?? "暂无匹配资料"}</div>
-          <div className="hc-kb-empty-subtitle">{loading ? "正在读取知识库内容。" : emptySubtitle ?? "当前知识库还没有资料，或筛选条件没有命中。"}</div>
-          {!loading && emptyActionLabel && onEmptyAction && (
+          <div className="hc-kb-empty-title">{emptyTitle ?? "暂无匹配资料"}</div>
+          <div className="hc-kb-empty-subtitle">{emptySubtitle ?? "当前知识库还没有资料，或筛选条件没有命中。"}</div>
+          {emptyActionLabel && onEmptyAction && (
             <button type="button" className="hc-kb-topbar-btn hc-kb-topbar-btn--primary" onClick={onEmptyAction}>
               <Upload size={13} strokeWidth={2.2} aria-hidden="true" />
               {emptyActionLabel}
@@ -244,17 +247,29 @@ export function LibraryDocumentsTable({
 
 function documentStatusLabel(value: string | null | undefined): string {
   if (value === "indexed" || value === "done" || value === "completed" || value === "success") return "已入库";
+  if (value === "indexing") return "入库中";
+  if (value === "parsing") return "解析中";
+  if (value === "waiting") return "排队中";
   if (value === "parsed") return "已解析";
   if (value === "uploaded") return "已上传";
   if (value === "processing" || value === "pending" || value === "running") return "处理中";
+  if (value === "error_indexing") return "入库失败";
   if (value === "failed" || value === "error" || value === "error_parsing") return "失败";
   return value || "未记录";
 }
 
 function documentStatusTone(value: string | null | undefined): "ok" | "fail" | "pending" | "archive" {
   if (value === "indexed" || value === "done" || value === "completed" || value === "success") return "ok";
-  if (value === "failed" || value === "error" || value === "error_parsing") return "fail";
-  if (value === "uploaded" || value === "parsed" || value === "processing") return "pending";
+  if (value === "failed" || value === "error" || value === "error_parsing" || value === "error_indexing") return "fail";
+  if (
+    value === "uploaded" ||
+    value === "parsed" ||
+    value === "processing" ||
+    value === "indexing" ||
+    value === "parsing" ||
+    value === "waiting"
+  )
+    return "pending";
   return "archive";
 }
 

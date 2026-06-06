@@ -38,7 +38,6 @@ export function appEnabledConfigEdit(appId: string, enabled: boolean): AppConfig
 export function appListInvalidationReasonForNotification(
   method: string,
 ): AppListInvalidationReason | null {
-  if (method === "app/list/updated") return "app-list-updated";
   if (method === "mcpServer/oauthLogin/completed") return "mcp-oauth-login-completed";
   return null;
 }

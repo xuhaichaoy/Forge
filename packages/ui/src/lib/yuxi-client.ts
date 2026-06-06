@@ -1,5 +1,4 @@
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/hicodex-desktop-namespace";
-import { isYuxiMockEnabled, resolveYuxiMock } from "./yuxi-mock";
 
 export const DEFAULT_YUXI_BASE_URL = "http://127.0.0.1:5050";
 export const YUXI_CONNECTION_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.yuxiConnection;
@@ -8,6 +7,7 @@ export type YuxiBusinessLine = "training_presales" | "bidding";
 export type YuxiEntityType =
   | "teacher"
   | "course"
+  | "training_requirement"
   | "case"
   | "customer"
   | "bid_project"
@@ -830,6 +830,7 @@ export function yuxiBusinessLineLabel(value: string | null | undefined): string 
 export function yuxiEntityTypeLabel(value: string | null | undefined): string {
   if (value === "teacher") return "讲师";
   if (value === "course") return "课程";
+  if (value === "training_requirement") return "培训需求";
   if (value === "case") return "案例";
   if (value === "customer") return "客户";
   if (value === "bid_project") return "投标项目";
@@ -1708,10 +1709,6 @@ async function yuxiRequest<T>(
   responseType: "json" | "blob" = "json",
 ): Promise<T> {
   const config = readYuxiConnectionConfig();
-  if (responseType === "json" && isYuxiMockEnabled(config)) {
-    const mocked = resolveYuxiMock<T>(path, init);
-    if (mocked !== undefined) return mocked;
-  }
   const headers = new Headers(init.headers);
   if (!(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");

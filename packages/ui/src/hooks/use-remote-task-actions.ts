@@ -20,7 +20,7 @@ export function useRemoteTaskActions({
   setActiveAppTab,
 }: {
   setActiveRemoteTaskId: Dispatch<SetStateAction<string | null>>;
-  setActiveAppTab: Dispatch<SetStateAction<AppNavigationTab>>;
+  setActiveAppTab: (tab: AppNavigationTab) => void;
 }): {
   openRemoteTask: (taskId: string) => void;
   openRemoteTaskExternal: (taskId: string) => void;
@@ -45,7 +45,7 @@ export function useRemoteTaskActions({
     }
     setActiveRemoteTaskId(normalizedTaskId);
     setActiveAppTab("remoteTask");
-  }, [dispatch]);
+  }, [dispatch, setActiveAppTab, setActiveRemoteTaskId]);
 
   return { openRemoteTask, openRemoteTaskExternal };
 }

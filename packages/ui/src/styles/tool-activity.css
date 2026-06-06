@@ -2286,7 +2286,10 @@ button.hc-tool-summary:hover svg:last-child,
   cursor: pointer;
   overflow: hidden;
   border-radius: 16px;
-  border: 0;
+  /* codex token-border (8%): a 1px theme-aware ring so a dark generated image
+   * (e.g. a dark screenshot) has a visible edge against the dark conversation
+   * background instead of blending in. Light/dark values resolve via the token. */
+  border: 1px solid var(--hc-border-default);
   padding: 0;
   background: var(--hc-surface-main, #faf9f5);
 }

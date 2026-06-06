@@ -36,7 +36,7 @@ import { ComposerStatusPanel } from "./components/composer-status-panel";
 import { ThreadGoalBanner } from "./components/thread-goal-banner";
 import { HiCodexIntlProvider } from "./components/i18n-provider";
 import { ServicesProvider, useServices } from "./components/services-context";
-import { focusComposerFromPlainTextKey } from "./components/composer-keyboard";
+import { focusComposerFromPlainTextKey, requestComposerElementFocus } from "./components/composer-keyboard";
 import { PreConversationLoadingShell } from "./components/pre-conversation-loading-shell";
 import type { McpFollowUpDialogRequest } from "./components/mcp-follow-up-dialog";
 import {
@@ -179,6 +179,7 @@ import {
   projectActiveThreadAutomation,
   projectAutomationsSurface,
 } from "./state/automations-viewer";
+import { loadActiveAppTab, saveActiveAppTab } from "./state/app-navigation-preferences";
 import {
   activeBackgroundSubagentThreadIds,
   collectBackgroundSubagentStopThreadIds,
@@ -712,11 +713,15 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   ));
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarResizing, setSidebarResizing] = useState(false);
-  const [activeAppTab, setActiveAppTab] = useState<AppNavigationTab>("workbench");
+  const [activeAppTab, setActiveAppTabState] = useState<AppNavigationTab>(() => loadActiveAppTab(browserStorage()));
   const [activeRemoteTaskId, setActiveRemoteTaskId] = useState<string | null>(null);
-  const openWorkbenchTab = useCallback(() => {
-    setActiveAppTab("workbench");
+  const changeActiveAppTab = useCallback((tab: AppNavigationTab) => {
+    setActiveAppTabState(tab);
+    saveActiveAppTab(browserStorage(), tab);
   }, []);
+  const openWorkbenchTab = useCallback(() => {
+    changeActiveAppTab("workbench");
+  }, [changeActiveAppTab]);
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((current) => !current);
   }, []);
@@ -2014,10 +2019,14 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const createWorkbenchThread = useCallback(async () => {
     openWorkbenchTab();
     await createThread();
+    requestComposerElementFocus();
   }, [createThread, openWorkbenchTab]);
   const selectWorkbenchThread = useCallback(async (thread: Thread) => {
     openWorkbenchTab();
-    await selectThread(thread);
+    const selection = selectThread(thread);
+    requestComposerElementFocus();
+    await selection;
+    requestComposerElementFocus();
   }, [openWorkbenchTab, selectThread]);
   const workspaceRootOptions = useMemo(() => (
     workspaceRootOptionsWithCurrent(
@@ -2291,7 +2300,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     }
     void selectWorkbenchThread(thread);
   }, [selectWorkbenchThread, state.threads]);
-  const { openRemoteTask, openRemoteTaskExternal } = useRemoteTaskActions({ setActiveRemoteTaskId, setActiveAppTab });
+  const { openRemoteTask, openRemoteTaskExternal } = useRemoteTaskActions({ setActiveRemoteTaskId, setActiveAppTab: changeActiveAppTab });
 
   const openDeepLinkUrl = useCallback(async (url: string | null | undefined) => {
     const appConnectCallback = claimAppConnectOAuthCallback(url);
@@ -4743,7 +4752,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       >
       <AppNavigationRail
         activeTab={activeAppTab}
-        onTabChange={setActiveAppTab}
+        onTabChange={changeActiveAppTab}
         onOpenSettings={() => void loadSettingsPanel("general")}
       />
 
