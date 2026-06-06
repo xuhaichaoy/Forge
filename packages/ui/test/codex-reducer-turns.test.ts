@@ -47,7 +47,10 @@ export default function runCodexReducerTurnsTests(): void {
   doesNotSynthesizePlanImplementationWithoutAPlanItemOrOnFailure();
   synthesizesTurnDiffItemWhenCodeEditTurnCompletes();
   synthesizesTurnDiffForHistoricalTurnOnThreadSnapshot();
-  doesNotSynthesizeTurnDiffWithoutChangesOrOnFailure();
+  doesNotSynthesizeTurnDiffWithoutChangesOrOnPatchFailure();
+  synthesizesTurnDiffForFailedTurnWithAppliedChanges();
+  turnDiffCarriesPatchBatchesAndTracksCommandCwd();
+  prefersLiveTurnDiffNotificationOverPatchRebuild();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
   turnsFailedTurnErrorsIntoStreamErrorItems();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
@@ -136,6 +139,7 @@ function marksKnownThreadsNotLoadedAfterReconnect(): void {
         latestCollaborationMode: null,
         turnPlan: null,
         turnDiff: "",
+        turnDiffTurnId: null,
         composerMode: null,
         threadGoal: null,
         threadGoalTurnId: null,
@@ -3225,8 +3229,9 @@ function synthesizesTurnDiffForHistoricalTurnOnThreadSnapshot(): void {
   );
 }
 
-function doesNotSynthesizeTurnDiffWithoutChangesOrOnFailure(): void {
-  // No file changes and no backend diff → nothing to show.
+function doesNotSynthesizeTurnDiffWithoutChangesOrOnPatchFailure(): void {
+  // No file changes and no backend diff → nothing to show (codex ES only
+  // pushes the item when `_.length > 0`).
   const noChanges = reduceNotification(startedPlanTurn(), {
     method: "turn/completed",
     params: {
@@ -3247,7 +3252,48 @@ function doesNotSynthesizeTurnDiffWithoutChangesOrOnFailure(): void {
     "a turn without file changes must not synthesize a turn-diff item",
   );
 
-  // Files changed but the turn failed → no card (mirrors Codex status gating).
+  // Patch-level failure: codex jM skips fileChange items whose status is
+  // failed/declined (`r.status === `failed` || r.status === `declined` || ...`,
+  // app-server-manager-signals-SKi6YePu.js :19615) — nothing applied, no card.
+  const patchFailed = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Edit it"),
+          fileChangeItem(
+            "fc-1",
+            [{ path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" }],
+            "failed",
+          ),
+          fileChangeItem(
+            "fc-2",
+            [{ path: "src/other.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-a\n+b" }],
+            "declined",
+          ),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  assertEqual(
+    items(patchFailed, "thread-1").some((item) => item.type === "turn-diff"),
+    false,
+    "failed/declined patches must not synthesize a turn-diff item",
+  );
+}
+
+function synthesizesTurnDiffForFailedTurnWithAppliedChanges(): void {
+  // Turn-level status does NOT gate the synthesis: codex ES (:15149) has no
+  // status check — `_.length > 0 && o.push({ type: `turn-diff`, ... })` — so a
+  // failed/interrupted turn whose patches DID apply still gets the card. The
+  // render side hides it only while the turn is `in_progress`
+  // (`fn = !G && ...`, local-conversation-thread-CNXrCEaG :28619).
   const failedWithChanges = reduceNotification(startedPlanTurn(), {
     method: "turn/completed",
     params: {
@@ -3269,8 +3315,113 @@ function doesNotSynthesizeTurnDiffWithoutChangesOrOnFailure(): void {
   });
   assertEqual(
     items(failedWithChanges, "thread-1").some((item) => item.type === "turn-diff"),
-    false,
-    "a failed turn must not synthesize a turn-diff item",
+    true,
+    "a failed turn with applied patches must still synthesize a turn-diff item",
+  );
+}
+
+function turnDiffCarriesPatchBatchesAndTracksCommandCwd(): void {
+  // codex jM tracks the working dir from commandExecution items and stamps it
+  // on each batch; ES stores `patchBatches` + `cwd` on the synthesized item
+  // (`...(m.length > 0 ? { patchBatches: m } : {}), cwd: m[0]?.cwd ?? ...`).
+  const completed = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Edit it"),
+          { type: "commandExecution", id: "cmd-1", command: "cd", cwd: "/repo/sub", status: "completed" } as unknown as ThreadItem,
+          fileChangeItem("fc-1", [
+            { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+          ]),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  const synthesized = items(completed, "thread-1").find((item) => item.type === "turn-diff") as
+    | (Record<string, unknown> & { patchBatches?: Array<{ changes: Record<string, unknown>; cwd: string | null }> })
+    | undefined;
+  assertEqual(Boolean(synthesized), true, "code-edit turn should synthesize a turn-diff item");
+  assertEqual(synthesized?.cwd as string, "/repo/sub", "synthesized turn-diff cwd should come from the tracked commandExecution cwd");
+  assertEqual(synthesized?.patchBatches?.length, 1, "synthesized turn-diff should carry its patch batches");
+  assertEqual(synthesized?.patchBatches?.[0]?.cwd, "/repo/sub", "patch batch should be stamped with the tracked cwd");
+  assertEqual(
+    Boolean(synthesized?.patchBatches?.[0]?.changes["src/app.ts"]),
+    true,
+    "patch batch changes should be keyed by path (codex k_ map shape)",
+  );
+}
+
+function prefersLiveTurnDiffNotificationOverPatchRebuild(): void {
+  // codex ES: `_ = e.diff != null && e.diff.length > 0 ? e.diff : lS(m)` —
+  // `e.diff` is only filled by the live `turn/diff/updated` notification
+  // (:13076 `this.updateTurnState(i, e, (e) => { e.diff = t })`).
+  const liveDiff = "diff --git a/live.ts b/live.ts\n--- a/live.ts\n+++ b/live.ts\n@@ -1 +1 @@\n-l\n+L\n";
+  const withLiveDiff = reduceNotification(startedPlanTurn(), {
+    method: "turn/diff/updated",
+    params: { threadId: "thread-1", turnId: "turn-1", diff: liveDiff },
+  });
+  const completed = reduceNotification(withLiveDiff, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Edit it"),
+          fileChangeItem("fc-1", [
+            { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+          ]),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  const synthesized = items(completed, "thread-1").find((item) => item.type === "turn-diff");
+  assertEqual(
+    synthesized?.unifiedDiff as string,
+    liveDiff,
+    "the live turn/diff/updated payload must win over the patch rebuild (codex ES e.diff priority)",
+  );
+
+  // A diff that belongs to a DIFFERENT turn must not leak into this turn's card.
+  const staleDiffState = reduceNotification(startedPlanTurn(), {
+    method: "turn/diff/updated",
+    params: { threadId: "thread-1", turnId: "turn-0", diff: liveDiff },
+  });
+  const completedOther = reduceNotification(staleDiffState, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Edit it"),
+          fileChangeItem("fc-1", [
+            { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+          ]),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  const rebuilt = items(completedOther, "thread-1").find((item) => item.type === "turn-diff");
+  assertEqual(
+    ((rebuilt?.unifiedDiff as string) ?? "").includes("diff --git a/src/app.ts b/src/app.ts"),
+    true,
+    "a stale other-turn diff must be ignored in favor of the patch rebuild",
   );
 }
 

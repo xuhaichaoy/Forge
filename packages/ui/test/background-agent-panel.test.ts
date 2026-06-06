@@ -128,6 +128,7 @@ function projectsSideChatRailEntriesForReopeningPanelThreads(): void {
       latestCollaborationMode: null,
       turnPlan: null,
       turnDiff: "",
+      turnDiffTurnId: null,
       composerMode: null,
       threadGoal: null,
       threadGoalTurnId: null,

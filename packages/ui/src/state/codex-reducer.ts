@@ -35,7 +35,7 @@ import {
   pushThreadHistoryEntry,
 } from "./thread-history";
 import { isThreadStatusInProgress } from "./thread-item-fields";
-import { unifiedDiffFromTurnPatchItems } from "./turn-diff-from-patches";
+import { turnPatchBatchesFromItems, unifiedDiffFromPatchBatches } from "./turn-diff-from-patches";
 
 export interface PendingServerRequest {
   id: RequestId;
@@ -130,6 +130,12 @@ export interface ThreadRuntimeSlice {
   latestCollaborationMode: CollaborationMode | null;
   turnPlan: TurnPlanSnapshot | null;
   turnDiff: string;
+  // codex: app-server-manager-signals-*.js — `turn/diff/updated` carries a
+  // `turnId` and Codex stores the diff *on that turn* (`e.diff = t` inside
+  // `updateTurnState(i, e, ...)`). The runtime keeps a flat string, so pair it
+  // with the owning turn id so finishTurn can apply the ES priority
+  // `e.diff ?? lS(patchBatches)` only to the matching turn.
+  turnDiffTurnId: string | null;
   composerMode: ComposerMode | null;
   threadGoal: ThreadGoal | null;
   threadGoalTurnId: string | null;
@@ -252,6 +258,7 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   latestCollaborationMode: null,
   turnPlan: null,
   turnDiff: "",
+  turnDiffTurnId: null,
   composerMode: null,
   threadGoal: null,
   threadGoalTurnId: null,
@@ -505,6 +512,7 @@ function normalizeThreadRuntime(
     latestCollaborationMode: runtime?.latestCollaborationMode ?? null,
     turnPlan: runtime?.turnPlan ?? null,
     turnDiff: runtime?.turnDiff ?? "",
+    turnDiffTurnId: runtime?.turnDiffTurnId ?? null,
     composerMode: runtime?.composerMode ?? null,
     threadGoal,
     threadGoalTurnId,
@@ -1107,7 +1115,11 @@ function handleTurnDiffUpdatedNotification(state: CodexUiState, params: Record<s
   const threadId = String(params.threadId ?? "");
   const diff = typeof params.diff === "string" ? params.diff : "";
   if (!threadId) return state;
-  return threadRuntimePatch(state, threadId, { turnDiff: diff });
+  // codex: `case `turn/diff/updated``  — `let { turnId: e, diff: t } = r.params;
+  // this.updateTurnState(i, e, (e) => { e.diff = t })` (app-server-manager-
+  // signals-SKi6YePu.js :13076). Keep the owning turn id alongside the diff.
+  const turnId = String(params.turnId ?? "");
+  return threadRuntimePatch(state, threadId, { turnDiff: diff, turnDiffTurnId: turnId || null });
 }
 
 // --- item-domain notification handlers ---------------------------------------
@@ -1811,7 +1823,9 @@ function collectThreadItems(thread: Thread): AccumulatedThreadItem[] {
   // per-turn diff card here too. Operate on the full assembled list so each turn's
   // file-change items are visible regardless of segment ordering.
   for (const turn of turns) {
-    items = synthesizeTurnDiffForTurn(items, turn?.id ? String(turn.id) : "", turnStatusText(turn?.status));
+    // Snapshot turns carry no live diff (Codex rebuilds them with `diff: null`,
+    // app-server-manager-signals :7236) — always rebuild from patches.
+    items = synthesizeTurnDiffForTurn(items, turn?.id ? String(turn.id) : "");
   }
   return items;
 }
@@ -1827,68 +1841,61 @@ function turnItemsWithWorkedFor(
   return attachTurnMetadataToAll(normalized, turn.id, turnStatusText(turn.status));
 }
 
-// Codex keeps the turn-level diff only as the transient `turn/diff/updated`
-// notification (runtime.turnDiff), never as a ThreadItem; the webview client
-// synthesizes a persistent `turn-diff` item from the turn's file-change patches so
-// the static "Edited N files +X -Y / Undo / Review" card shows after the live diff
-// portal (gated on isThreadRunning) disappears, and on snapshot reload too.
-// HiCodex already had every downstream half (splitTurnItems → unifiedDiffItem,
-// shouldRenderStaticTurnDiff, TurnDiffBlock's completed branch) but never produced
-// the item, so finished code-edit turns showed no card. Mirrors Codex
-// `_ = e.diff ?? Fx(patchBatches)`.
+// Codex keeps the turn-level diff out of the ThreadItem protocol stream — the
+// webview synthesizes a `turn-diff` item itself at the tail of every turn's
+// projection so the static "Edited N files +X -Y / Undo / Review" card shows
+// after the live diff portal disappears, and on snapshot reload too.
+//
+// codex: app-server-manager-signals-SKi6YePu.js (26.602.40724, beautified) —
+// turn projection `ES` (:15149):
+//   let g = lS(m),                                  // rebuild from patch batches
+//       _ = e.diff != null && e.diff.length > 0 ? e.diff : g;
+//   _.length > 0 && o.push({ type: `turn-diff`, unifiedDiff: _,
+//       ...(m.length > 0 ? { patchBatches: m } : {}), cwd: m[0]?.cwd ?? ... });
+// Notes pinned to that source:
+//   - NO turn-status filter — interrupted/failed turns with applied patches
+//     still get the card; the render side hides it only while the turn is
+//     `in_progress` (`fn = !G && ...`, local-conversation-thread :28619).
+//   - `e.diff` is only ever populated by a live `turn/diff/updated`
+//     notification (:13076); snapshot turns are rebuilt with `diff: null`
+//     (:7236), so the reopen path always rebuilds from patches.
 //
 // IMPORTANT: this operates on the *full accumulated* items array (not a single
 // turn's snapshot), because live turns stream their file-change items into the
-// running list — `turn.items` from the completion notification can be incomplete.
-// finishTurn calls it on the merged items with its authoritative turnStatus;
-// collectThreadItems calls it per turn for snapshot loads.
+// running list — `turn.items` from the completion notification can be
+// incomplete. finishTurn calls it with the thread's live `turn/diff/updated`
+// payload when it belongs to this turn; collectThreadItems calls it per turn
+// for snapshot loads (no live diff, like Codex's `diff: null` snapshot turns).
 const TURN_DIFF_SYNTHESIZED_ID_PREFIX = "turn-diff:";
 
 function synthesizeTurnDiffForTurn(
   items: AccumulatedThreadItem[],
   turnId: string,
-  turnStatus: string,
+  liveTurnDiff?: string,
 ): AccumulatedThreadItem[] {
   if (!turnId) return items;
-  const patchItems = items.filter(
-    (item) => turnIdOf(item) === turnId && (item as { type?: unknown }).type === "fileChange",
-  );
-  const unifiedDiff = unifiedDiffFromTurnPatchItems(patchItems).trim();
-  // TEMP turn-diff diagnostic — fires only when a turn touched files. Remove once
-  // the card is confirmed. Open the webview devtools Console to read it.
-  if (patchItems.length > 0) {
-    const firstChange = ((): Record<string, unknown> | undefined => {
-      const raw = (patchItems[0] as { changes?: unknown }).changes;
-      if (Array.isArray(raw)) return raw[0] as Record<string, unknown> | undefined;
-      if (raw && typeof raw === "object") return Object.values(raw as Record<string, unknown>)[0] as Record<string, unknown> | undefined;
-      return undefined;
-    })();
-    try {
-      // eslint-disable-next-line no-console
-      console.log("[turn-diff-debug]", JSON.stringify({
-        turnId,
-        turnStatus,
-        patchCount: patchItems.length,
-        firstChangeKeys: firstChange ? Object.keys(firstChange) : null,
-        firstChangeKind: firstChange ? firstChange.kind ?? null : null,
-        producedDiffLen: unifiedDiff.length,
-        producedDiffHead: unifiedDiff.slice(0, 80),
-      }));
-    } catch {
-      // ignore diagnostic failures
-    }
-  }
-  if (turnStatus !== "completed") return items;
-  // Idempotent: never add a second turn-diff for this turn.
+  // Idempotent: never add a second turn-diff for this turn. (Codex re-projects
+  // turns from scratch each pass; the accumulated model adds the item once.)
   if (items.some((item) => (item as { type?: unknown }).type === "turn-diff" && turnIdOf(item) === turnId)) {
     return items;
   }
-  if (!unifiedDiff) return items;
+  const turnItems = items.filter((item) => turnIdOf(item) === turnId);
+  const patchBatches = turnPatchBatchesFromItems(turnItems);
+  // codex ES: `_ = e.diff != null && e.diff.length > 0 ? e.diff : lS(m)`.
+  const unifiedDiff = liveTurnDiff != null && liveTurnDiff.length > 0
+    ? liveTurnDiff
+    : unifiedDiffFromPatchBatches(patchBatches);
+  if (unifiedDiff.length === 0) return items;
   const synthesized: AccumulatedThreadItem = {
     id: `${TURN_DIFF_SYNTHESIZED_ID_PREFIX}${turnId}`,
     type: "turn-diff",
     turnId,
     unifiedDiff,
+    // codex ES item shape: `{ type, unifiedDiff, ...(m.length > 0 ?
+    // { patchBatches: m } : {}), cwd: m[0]?.cwd ?? (e.params.cwd ...) }`.
+    // The accumulated view has no turn params, so the cwd fallback stays null.
+    ...(patchBatches.length > 0 ? { patchBatches } : {}),
+    cwd: patchBatches[0]?.cwd ?? null,
     _turnId: turnId,
   };
   // Insert at the tail of this turn's segment (after its last item).
@@ -3533,7 +3540,10 @@ function finishTurn(
   const withPlan = withSynthesizedPlanImplementation(mergedItems, turnId, turnStatus);
   // Operate on the merged items (not turn.items): live turns stream their patches
   // into the running list, so the completion snapshot alone can miss them.
-  const nextItems = synthesizeTurnDiffForTurn(withPlan, turnId, turnStatus);
+  // codex ES prefers the live `turn/diff/updated` payload (`e.diff`) over the
+  // patch rebuild — but only when it belongs to this turn.
+  const liveTurnDiff = turnId && runtime.turnDiffTurnId === turnId ? runtime.turnDiff : undefined;
+  const nextItems = synthesizeTurnDiffForTurn(withPlan, turnId, liveTurnDiff);
   const tokenSpeedPatch = turnId ? completedTokenSpeedPatch(runtime, turnId, turn) : {};
   return {
     ...state,
