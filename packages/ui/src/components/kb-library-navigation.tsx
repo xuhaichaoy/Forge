@@ -40,9 +40,7 @@ export function LibraryListFilter({
           <span className="hc-kb-filter-opt-name">全部</span>
           <span className="hc-kb-filter-opt-count">{totalCount}</span>
         </button>
-        {databases.length === 0 ? (
-          <div className="hc-kb-tree-empty">还没有知识库，点击右上角 + 新建。</div>
-        ) : (
+        {databases.length > 0 && (
           databases.map((db) => {
             const dbId = db.db_id ?? "";
             const dbCount = typeof db.file_count === "number"

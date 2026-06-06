@@ -2192,6 +2192,85 @@
   text-align: right;
 }
 
+/* 上传弹窗内的进度区：每个文件一行（状态 + 文件名 + 目标库 + 处理结果 + 阶段条）。 */
+.hc-kb-upload-dialog-progress {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--hc-surface-subtle, var(--hc-surface-main));
+}
+
+.hc-kb-upload-dialog-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hc-kb-upload-dialog-progress-head strong {
+  color: var(--hc-text-primary);
+  font-size: 12.5px;
+  font-weight: 680;
+}
+
+.hc-kb-upload-dialog-progress-head span {
+  color: var(--hc-text-secondary);
+  font-size: 11.5px;
+}
+
+.hc-kb-upload-dialog-progress-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.hc-kb-upload-dialog-progress-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 6px;
+  background: var(--hc-surface-main);
+}
+
+.hc-kb-upload-dialog-progress-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hc-kb-upload-dialog-progress-row-head .hc-kb-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-kb-upload-dialog-progress-row-head .hc-kb-tag {
+  flex-shrink: 0;
+}
+
+.hc-kb-upload-dialog-progress-row-body {
+  display: grid;
+  gap: 6px;
+}
+
+.hc-kb-upload-dialog-progress-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .hc-kb-upload-note {
   flex-shrink: 0;
   padding: 2px 7px;

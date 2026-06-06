@@ -839,6 +839,7 @@ export function Sidebar({
         {accountView ? (
           <SidebarAccountSummary
             accountView={accountView}
+            resolvedUiTheme={resolvedUiTheme ?? "light"}
             onSignOut={signOut}
             onOpenSettings={onOpenSettings}
           />
@@ -1116,10 +1117,12 @@ function approxCadenceCount(minutes: number, unitMinutes: number): number | null
 
 function SidebarAccountSummary({
   accountView,
+  resolvedUiTheme,
   onSignOut,
   onOpenSettings,
 }: {
   accountView: AccountViewModel;
+  resolvedUiTheme: "light" | "dark";
   onSignOut: () => void;
   onOpenSettings: () => void;
 }) {
@@ -1220,7 +1223,11 @@ function SidebarAccountSummary({
         </div>
       )}
       {confirmingSignOut && createPortal(
-        <LogOutConfirmDialog onCancel={cancelSignOut} onConfirm={confirmSignOut} />,
+        <LogOutConfirmDialog
+          resolvedUiTheme={resolvedUiTheme}
+          onCancel={cancelSignOut}
+          onConfirm={confirmSignOut}
+        />,
         document.body,
       )}
     </div>
@@ -1235,18 +1242,20 @@ function SidebarAccountSummary({
  * codex.profileDropdown.logOutConfirmation.*.
  */
 function LogOutConfirmDialog({
+  resolvedUiTheme,
   onCancel,
   onConfirm,
 }: {
+  resolvedUiTheme: "light" | "dark";
   onCancel: () => void;
   onConfirm: () => void;
 }) {
   const { formatMessage } = useHiCodexIntl();
   const title = formatMessage({ id: "codex.profileDropdown.logOutConfirmation.title", defaultMessage: "Log out?" });
   return (
-    <div className="hc-settings-backdrop" role="presentation" onMouseDown={onCancel}>
+    <div className="hc-settings-backdrop hc-log-out-confirm-backdrop" data-theme={resolvedUiTheme} role="presentation" onMouseDown={onCancel}>
       <section
-        className="hc-thread-dialog-panel"
+        className="hc-thread-dialog-panel hc-log-out-confirm-dialog"
         role="dialog"
         data-state="open"
         aria-modal="true"

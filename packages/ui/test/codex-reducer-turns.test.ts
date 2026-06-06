@@ -45,6 +45,9 @@ export default function runCodexReducerTurnsTests(): void {
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes();
   synthesizesPlanImplementationItemWhenPlanTurnCompletes();
   doesNotSynthesizePlanImplementationWithoutAPlanItemOrOnFailure();
+  synthesizesTurnDiffItemWhenCodeEditTurnCompletes();
+  synthesizesTurnDiffForHistoricalTurnOnThreadSnapshot();
+  doesNotSynthesizeTurnDiffWithoutChangesOrOnFailure();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
   turnsFailedTurnErrorsIntoStreamErrorItems();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
@@ -1316,6 +1319,12 @@ function notificationsBumpInvalidationCounters(): void {
   assertEqual(afterMcp.invalidation.mcpStatusMessage, "MCP startup status changed.", "mcpStatus carries the default refresh message");
   const afterWarning = reduceNotification(afterMcp, { method: "warning", params: { message: "x" } });
   assertEqual(afterWarning.invalidation, afterMcp.invalidation, "an unrelated notification keeps the invalidation slice identity");
+  const afterAppListUpdated = reduceNotification(afterWarning, { method: "app/list/updated", params: { data: [] } });
+  assertEqual(
+    afterAppListUpdated.invalidation,
+    afterWarning.invalidation,
+    "app/list/updated should not force another app/list refresh",
+  );
   const afterOAuth = codexUiReducer(initialCodexUiState, { type: "invalidateAppList", message: "Acme OAuth failed." });
   assertEqual(afterOAuth.invalidation.appList, 1, "invalidateAppList action should bump invalidation.appList");
   assertEqual(afterOAuth.invalidation.appListMessage, "Acme OAuth failed.", "invalidateAppList action carries its custom refresh message");
@@ -3039,6 +3048,14 @@ function planItem(id: string, text: string): ThreadItem {
   return { type: "plan", id, text } as unknown as ThreadItem;
 }
 
+function fileChangeItem(
+  id: string,
+  changes: { path: string; kind: { type: string; move_path?: string | null }; diff: string }[],
+  status: string = "completed",
+): ThreadItem {
+  return { type: "fileChange", id, changes, status } as unknown as ThreadItem;
+}
+
 function startedPlanTurn(): CodexUiState {
   return reduceNotification(initialCodexUiState, {
     method: "turn/started",
@@ -3125,6 +3142,135 @@ function doesNotSynthesizePlanImplementationWithoutAPlanItemOrOnFailure(): void 
     items(failedWithPlan, "thread-1").some((item) => item.type === "planImplementation"),
     false,
     "a failed turn must not synthesize a planImplementation affordance",
+  );
+}
+
+function synthesizesTurnDiffItemWhenCodeEditTurnCompletes(): void {
+  // A completed turn that edited files must yield a client-synthesized
+  // `turn-diff` item so the static "Edited N files +X -Y / Undo / Review" card
+  // survives after the live diff portal (gated on isThreadRunning) disappears.
+  // The backend sends no turn/diff/updated here, so the diff is rebuilt from the
+  // turn's file-change patches (Codex `_ = e.diff ?? Fx(patchBatches)`).
+  const completed = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Edit it"),
+          fileChangeItem("fc-1", [
+            { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+          ]),
+          agentMessage("agent-1", "Done."),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+
+  const synthesized = items(completed, "thread-1").find((item) => item.type === "turn-diff");
+  assertEqual(Boolean(synthesized), true, "completing a code-edit turn should synthesize a turn-diff item");
+  assertEqual(synthesized?.id, "turn-diff:turn-1", "synthesized turn-diff id should be turn-diff:<turnId>");
+  assertEqual(synthesized?.turnId as string, "turn-1", "synthesized turn-diff should carry its turnId");
+  const rebuiltDiff = (synthesized?.unifiedDiff as string) ?? "";
+  assertEqual(
+    rebuiltDiff.includes("diff --git a/src/app.ts b/src/app.ts"),
+    true,
+    "rebuilt diff should carry a git header so turnDiffViewModel counts the file",
+  );
+  assertEqual(
+    rebuiltDiff.includes("+new") && rebuiltDiff.includes("-old"),
+    true,
+    "rebuilt diff should preserve the added and removed lines",
+  );
+}
+
+function synthesizesTurnDiffForHistoricalTurnOnThreadSnapshot(): void {
+  // The card must also appear when a past code-edit turn is re-loaded from a
+  // thread snapshot (re-opening a conversation). That path runs through
+  // collectThreadItems, not finishTurn, so the synthesis lives in the shared
+  // per-turn builder (turnItemsWithWorkedFor). Without it, historical turns
+  // show no diff card even though the live turn did.
+  const thread = threadWithTurns("thread-1", [
+    {
+      id: "turn-1",
+      status: "completed",
+      items: [
+        userMessage("user-1", "Edit it"),
+        fileChangeItem("fc-1", [
+          { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+        ]),
+      ],
+    },
+  ]);
+  const state = reduceNotification(initialCodexUiState, {
+    method: "thread/started",
+    params: { thread },
+  });
+  const synthesized = items(state, "thread-1").find((item) => item.type === "turn-diff");
+  assertEqual(
+    Boolean(synthesized),
+    true,
+    "re-loading a code-edit turn from a snapshot should synthesize a turn-diff item",
+  );
+  assertEqual(synthesized?.id, "turn-diff:turn-1", "snapshot-synthesized turn-diff id should be turn-diff:<turnId>");
+  assertEqual(
+    ((synthesized?.unifiedDiff as string) ?? "").includes("diff --git a/src/app.ts b/src/app.ts"),
+    true,
+    "snapshot-synthesized diff should carry a git header so the card renders",
+  );
+}
+
+function doesNotSynthesizeTurnDiffWithoutChangesOrOnFailure(): void {
+  // No file changes and no backend diff → nothing to show.
+  const noChanges = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [userMessage("user-1", "Just chat"), agentMessage("agent-1", "Hi")],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  assertEqual(
+    items(noChanges, "thread-1").some((item) => item.type === "turn-diff"),
+    false,
+    "a turn without file changes must not synthesize a turn-diff item",
+  );
+
+  // Files changed but the turn failed → no card (mirrors Codex status gating).
+  const failedWithChanges = reduceNotification(startedPlanTurn(), {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "failed",
+        items: [
+          userMessage("user-1", "Edit it"),
+          fileChangeItem("fc-1", [
+            { path: "src/app.ts", kind: { type: "update", move_path: null }, diff: "@@ -1 +1 @@\n-old\n+new" },
+          ]),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+      },
+    },
+  });
+  assertEqual(
+    items(failedWithChanges, "thread-1").some((item) => item.type === "turn-diff"),
+    false,
+    "a failed turn must not synthesize a turn-diff item",
   );
 }
 

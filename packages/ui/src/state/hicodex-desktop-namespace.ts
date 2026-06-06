@@ -16,6 +16,7 @@ export const HICODEX_DESKTOP_CONFIG_KEYS = {
   // CODEX-REF: settings.general.appearance.reducedMotion.label — Codex Desktop
   // exposes a 3-way toggle (system / on / off). HiCodex stores the same triple.
   appearanceReducedMotion: desktopHiCodexKey("appearance", "reducedMotion"),
+  activeAppTab: desktopHiCodexKey("app", "activeTab"),
   composerWorkMode: desktopHiCodexKey("composer", "workMode"),
   imageGeneration: desktopHiCodexKey("imageGeneration"),
   locale: desktopHiCodexKey("locale"),

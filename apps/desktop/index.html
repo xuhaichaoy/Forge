@@ -4,6 +4,56 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HiCodex</title>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        const themeKey = "desktop.hicodex.appearanceTheme";
+        const legacyThemeKey = "hicodex:appearance-theme";
+        let storedTheme = null;
+        try {
+          storedTheme = window.localStorage.getItem(themeKey)
+            ?? window.localStorage.getItem(legacyThemeKey);
+        } catch {
+          storedTheme = null;
+        }
+        const mode = storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
+          ? storedTheme
+          : "system";
+        const systemDark = typeof window.matchMedia === "function"
+          && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const resolved = mode === "dark" || (mode === "system" && systemDark) ? "dark" : "light";
+        root.dataset.hcTheme = resolved;
+        root.dataset.hcThemeMode = mode;
+        root.classList.toggle("dark", resolved === "dark");
+        root.classList.toggle("electron-dark", resolved === "dark");
+        root.style.colorScheme = resolved;
+      })();
+    </script>
+    <style>
+      html {
+        background: #f4f7fa;
+        color-scheme: light;
+      }
+
+      html,
+      body,
+      #root {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      html[data-hc-theme="dark"],
+      html.dark,
+      html.electron-dark {
+        background: #181818;
+        color-scheme: dark;
+      }
+
+      body,
+      #root {
+        background: inherit;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

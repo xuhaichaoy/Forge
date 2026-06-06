@@ -30,6 +30,7 @@ import {
   type YuxiPresalesStatsResponse,
   type YuxiSupportedFileTypesResponse,
 } from "../lib/yuxi-client";
+import { parseYuxiTimestamp } from "./kb-library-model";
 
 interface IntegrationSnapshot {
   presales: YuxiPresalesStatsResponse | null;
@@ -747,8 +748,9 @@ function sourceUpdatedLabel(server: YuxiMcpServer | null, database: YuxiKnowledg
   const value = server?.updated_at || server?.created_at || database?.updated_at || null;
   if (!server) return "未同步";
   if (!value) return "已配置";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  // Yuxi 时间戳是 UTC（可能不带时区标记），统一按 UTC 解析再转本地时区显示。
+  const date = parseYuxiTimestamp(value);
+  if (!date) return value;
   return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 

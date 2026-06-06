@@ -1,4 +1,4 @@
-import { insertPromptEditorText } from "./prompt-editor";
+import { focusPromptEditorElement, insertPromptEditorText } from "./prompt-editor";
 
 /*
  * Global plain-text-key → composer redirect, lifted verbatim out of HiCodexApp.
@@ -18,6 +18,21 @@ export function focusComposerFromPlainTextKey(event: KeyboardEvent): boolean {
   if (!composer) return false;
   event.preventDefault();
   insertPromptEditorText(composer, event.key);
+  return true;
+}
+
+export function requestComposerElementFocus(): void {
+  if (typeof window === "undefined") return;
+  window.requestAnimationFrame(() => {
+    focusComposerElement();
+  });
+}
+
+export function focusComposerElement(): boolean {
+  if (typeof document === "undefined") return false;
+  const composer = document.querySelector<HTMLElement>("[data-codex-composer]");
+  if (!composer) return false;
+  focusPromptEditorElement(composer);
   return true;
 }
 

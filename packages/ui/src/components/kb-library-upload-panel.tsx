@@ -1,5 +1,18 @@
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { Link2, Loader2, Upload, X } from "lucide-react";
+import {
+  isTauriRuntime,
+  listenNativeFileDropEvents,
+  readFileBytesBase64,
+  readFileMetadata,
+} from "../lib/tauri-host";
+import { KbLibraryIngestPipeline, uploadRunPipelineSteps } from "./kb-library-ingest-pipeline";
+import { type LibraryUploadRun } from "./kb-library-model";
+
+// 与 host_read_file_bytes_base64 的 clamp 上限对齐（src-tauri/src/main.rs:692）。
+// 超过此大小该命令直接报错（不是截断），这里显式传上限以放宽默认 16MiB 限制，
+// 并在拖入超大文件时给出明确提示。
+const TAURI_DROP_MAX_BYTES = 64 * 1024 * 1024;
 
 export function KbLibraryUploadPanel({
   activeLibraryLabel,
@@ -8,10 +21,14 @@ export function KbLibraryUploadPanel({
   uploading,
   urlIngesting,
   urlValue,
+  uploadRuns,
   onChooseFiles,
   onUploadFiles,
   onUrlChange,
   onSubmitUrl,
+  onClearRuns,
+  onOpenPending,
+  onOpenTasks,
   onClose,
 }: {
   activeLibraryLabel: string;
@@ -20,14 +37,32 @@ export function KbLibraryUploadPanel({
   uploading: boolean;
   urlIngesting: boolean;
   urlValue: string;
+  uploadRuns: LibraryUploadRun[];
   onChooseFiles: () => void;
-  onUploadFiles: (files: FileList) => void;
+  onUploadFiles: (files: File[]) => void;
   onUrlChange: (value: string) => void;
   onSubmitUrl: () => void;
+  onClearRuns: () => void;
+  onOpenPending: (pendingIds: number[]) => void;
+  onOpenTasks: () => void;
   onClose: () => void;
 }) {
   const [webLinkOpen, setWebLinkOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [dropError, setDropError] = useState<string | null>(null);
+  const dropzoneRef = useRef<HTMLDivElement | null>(null);
+
+  const uploadDisabled = !canUpload || uploading;
+  // 原生拖放监听只注册一次，但回调里要读到最新的禁用态与最新的 onUploadFiles
+  // （view 层的 handleUploadFiles 是依赖会变的 useCallback），用 ref 透传避免闭包捕获旧值。
+  const uploadDisabledRef = useRef(uploadDisabled);
+  const onUploadFilesRef = useRef(onUploadFiles);
+  useEffect(() => {
+    uploadDisabledRef.current = uploadDisabled;
+  }, [uploadDisabled]);
+  useEffect(() => {
+    onUploadFilesRef.current = onUploadFiles;
+  }, [onUploadFiles]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -38,18 +73,97 @@ export function KbLibraryUploadPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const uploadDisabled = !canUpload || uploading;
+  /*
+   * Tauri 的 `dragDropEnabled` 会把 OS 文件拖放截走，HTML5 的 onDrop 收不到
+   * 文件（dataTransfer.files 为空）。因此在 Tauri 运行时改用原生
+   * onDragDropEvent（复用 composer.tsx 的同款封装 listenNativeFileDropEvents）。
+   * 原生事件给的是「文件路径」而非 File 对象——通过 readFileBytesBase64 +
+   * readFileMetadata 把路径读成字节，再构造 File 喂给上游的
+   * uploadYuxiKnowledgeFile。非 Tauri（web 预览）环境监听返回 null，仍走下方
+   * HTML5 onDrop fallback。
+   */
+  useEffect(() => {
+    if (!isTauriRuntime()) return undefined;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+
+    void listenNativeFileDropEvents((event) => {
+      if (event.type === "leave") {
+        setDragging(false);
+        return;
+      }
+      const insideDropzone = event.position
+        ? isNativeDropInsideElement(dropzoneRef.current, event.position)
+        : false;
+      if (event.type === "enter" || event.type === "over") {
+        setDragging(insideDropzone && !uploadDisabledRef.current);
+        return;
+      }
+      if (event.type === "drop") {
+        setDragging(false);
+        if (uploadDisabledRef.current) return;
+        if (event.paths.length === 0) return;
+        if (!insideDropzone) return;
+        void acceptDroppedPaths(event.paths);
+      }
+    }).then((next) => {
+      if (cancelled) next?.();
+      else unlisten = next;
+    }).catch(() => {
+      // 监听失败时静默回退到 HTML5 onDrop（web 预览仍可用）。
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // 监听只注册一次；回调通过 onUploadFilesRef/uploadDisabledRef 读最新值，故空依赖。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function acceptDroppedPaths(paths: string[]) {
+    setDropError(null);
+    const files: File[] = [];
+    const failures: string[] = [];
+    for (const path of paths) {
+      try {
+        files.push(await readPathAsFile(path));
+      } catch (err) {
+        const name = basename(path);
+        const reason = err instanceof Error ? err.message : String(err);
+        failures.push(`${name}（${reason}）`);
+      }
+    }
+    if (failures.length > 0) {
+      setDropError(`部分文件无法读取：${failures.join("；")}`);
+    }
+    if (files.length > 0) onUploadFilesRef.current(files);
+  }
+
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (uploadDisabled) return;
     event.preventDefault();
     setDragging(true);
   };
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+  // 非 Tauri（web 预览）fallback：HTML5 拖放此时能拿到真实 File 对象。
+  const handleHtml5Drop = (event: DragEvent<HTMLDivElement>) => {
+    if (isTauriRuntime()) {
+      // Tauri 下原生事件已接管；阻止默认避免浏览器打开文件。
+      event.preventDefault();
+      setDragging(false);
+      return;
+    }
     if (uploadDisabled) return;
     event.preventDefault();
     setDragging(false);
-    if (event.dataTransfer.files.length > 0) onUploadFiles(event.dataTransfer.files);
+    const dropped = Array.from(event.dataTransfer.files);
+    if (dropped.length > 0) onUploadFiles(dropped);
   };
+
+  const hasRuns = uploadRuns.length > 0;
+  const summary = summarizeRuns(uploadRuns);
+  const allPendingIds = uploadRuns.flatMap((run) => run.pendingIds ?? []);
+  const settled = summary.processing === 0;
 
   return (
     <div
@@ -80,6 +194,7 @@ export function KbLibraryUploadPanel({
         </div>
         <div className="hc-kb-upload-dialog-body">
           <div
+            ref={dropzoneRef}
             className="hc-kb-upload-dropzone"
             data-dragging={dragging ? "true" : undefined}
             data-disabled={uploadDisabled ? "true" : undefined}
@@ -90,7 +205,7 @@ export function KbLibraryUploadPanel({
               if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
               setDragging(false);
             }}
-            onDrop={handleDrop}
+            onDrop={handleHtml5Drop}
           >
             <div className="hc-kb-upload-dropzone-icon">
               {uploading ? (
@@ -117,6 +232,71 @@ export function KbLibraryUploadPanel({
               {uploading ? "上传中" : "选择文件"}
             </button>
           </div>
+
+          {dropError && (
+            <div className="hc-kb-inline-alert" data-tone="danger">{dropError}</div>
+          )}
+
+          {hasRuns && (
+            <section className="hc-kb-upload-dialog-progress" aria-label="上传进度">
+              <div className="hc-kb-upload-dialog-progress-head">
+                <strong>上传进度</strong>
+                <span>
+                  {uploadRuns.length} 条 · 已入库 {summary.done} · 需处理 {summary.queued} · 失败 {summary.failed}
+                </span>
+              </div>
+              <ul className="hc-kb-upload-dialog-progress-list">
+                {uploadRuns.map((run) => (
+                  <li key={run.id} className="hc-kb-upload-dialog-progress-row" data-status={run.status}>
+                    <div className="hc-kb-upload-dialog-progress-row-head">
+                      <span className={`hc-kb-status hc-kb-status--${runStatusTone(run.status)}`}>
+                        {runStatusLabel(run.status)}
+                      </span>
+                      <span className="hc-kb-file-name" title={run.filename}>{run.filename}</span>
+                      <span className="hc-kb-tag">{run.targetName}</span>
+                    </div>
+                    <div className="hc-kb-upload-dialog-progress-row-body">
+                      <div className="hc-kb-upload-batch-message">
+                        {typeof run.progress === "number" && <span>{Math.round(run.progress)}%</span>}
+                        <strong>{run.message}</strong>
+                      </div>
+                      <KbLibraryIngestPipeline steps={uploadRunPipelineSteps(run)} compact />
+                    </div>
+                    {run.status === "queued" && (run.pendingIds?.length ?? 0) > 0 && (
+                      <div className="hc-kb-row-actions hc-kb-row-actions--always">
+                        <button type="button" className="hc-kb-topbar-btn" onClick={() => onOpenPending(run.pendingIds ?? [])}>
+                          去处理
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <div className="hc-kb-upload-dialog-progress-foot">
+                {summary.queued > 0 && (
+                  <button type="button" className="hc-kb-topbar-btn" onClick={() => onOpenPending(allPendingIds)}>
+                    去处理入库问题
+                  </button>
+                )}
+                {summary.processing > 0 && (
+                  <button type="button" className="hc-kb-topbar-btn" onClick={onOpenTasks}>
+                    查看处理记录
+                  </button>
+                )}
+                <button type="button" className="hc-kb-topbar-btn" onClick={onClearRuns} disabled={!settled}>
+                  清空进度
+                </button>
+                <button
+                  type="button"
+                  className="hc-kb-topbar-btn hc-kb-topbar-btn--primary"
+                  onClick={onClose}
+                  disabled={!settled}
+                >
+                  {settled ? "完成" : "处理中…"}
+                </button>
+              </div>
+            </section>
+          )}
 
           <div className="hc-kb-upload-secondary">
             <button
@@ -167,4 +347,87 @@ export function KbLibraryUploadPanel({
       </section>
     </div>
   );
+}
+
+/**
+ * 把 Tauri 原生拖放给的文件路径读成可上传的 File 对象：
+ *   readFileBytesBase64(path) → base64 字节 → Uint8Array → File。
+ * mimeType/文件名分别来自 readFileMetadata 与路径 basename。
+ * 超过 host_read_file_bytes_base64 的大小上限时该命令会抛错，向上传递。
+ */
+async function readPathAsFile(path: string): Promise<File> {
+  const [base64, metadata] = await Promise.all([
+    readFileBytesBase64(path, TAURI_DROP_MAX_BYTES),
+    readFileMetadata(path).catch(() => null),
+  ]);
+  const bytes = decodeBase64ToBytes(base64);
+  const type = metadata?.mimeType ?? "";
+  // File 第一个参数接受 BlobPart[]。直接传底层 ArrayBuffer，绕过 TS 5.x 把
+  // Uint8Array 收窄成 Uint8Array<ArrayBufferLike> 后与 BlobPart 不匹配的误报
+  //（decodeBase64ToBytes 新建的 Uint8Array offset 为 0，buffer 即完整内容）。
+  return new File([bytes.buffer as ArrayBuffer], basename(path), type ? { type } : undefined);
+}
+
+function decodeBase64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const length = binary.length;
+  const bytes = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    bytes[i] = binary.charCodeAt(i) & 0xff;
+  }
+  return bytes;
+}
+
+function basename(path: string): string {
+  const cleaned = path.replace(/[\\/]+$/, "");
+  const parts = cleaned.split(/[\\/]/);
+  return parts[parts.length - 1] || cleaned || "未命名文件";
+}
+
+function summarizeRuns(runs: LibraryUploadRun[]): { done: number; failed: number; queued: number; processing: number } {
+  return runs.reduce((acc, run) => {
+    if (run.status === "done") acc.done += 1;
+    else if (run.status === "failed") acc.failed += 1;
+    else if (run.status === "queued") acc.queued += 1;
+    else acc.processing += 1;
+    return acc;
+  }, { done: 0, failed: 0, queued: 0, processing: 0 });
+}
+
+function runStatusLabel(status: LibraryUploadRun["status"]): string {
+  if (status === "done") return "完成";
+  if (status === "failed") return "失败";
+  if (status === "queued") return "需处理";
+  return "处理中";
+}
+
+function runStatusTone(status: LibraryUploadRun["status"]): "ok" | "fail" | "pending" {
+  if (status === "done") return "ok";
+  if (status === "failed") return "fail";
+  return "pending";
+}
+
+/*
+ * 复用 composer.tsx 的原生拖放命中检测逻辑：Tauri 2.x 把位置标注为
+ * PhysicalPosition，但 macOS 下实为 CSS 像素（不能再除 devicePixelRatio），
+ * Windows 下才需要按 DPR 还原。此处与 composer 保持一致以免命中失败。
+ */
+function isNativeDropInsideElement(
+  element: HTMLElement | null,
+  position: { x: number; y: number },
+): boolean {
+  if (!element || typeof window === "undefined") return false;
+  const scale = isMacOSPlatform() ? 1 : (window.devicePixelRatio || 1);
+  const rect = element.getBoundingClientRect();
+  const x = position.x / scale;
+  const y = position.y / scale;
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function isMacOSPlatform(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const platform = navigator.platform ?? "";
+  if (platform.startsWith("Mac")) return true;
+  const ua = navigator.userAgent ?? "";
+  return /Mac|iPhone|iPad|iPod/.test(ua);
 }

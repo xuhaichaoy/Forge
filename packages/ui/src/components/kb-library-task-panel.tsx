@@ -3,6 +3,7 @@ import {
   type YuxiKnowledgeDatabase,
   type YuxiTask,
 } from "../lib/yuxi-client";
+import { parseYuxiTimestamp } from "./kb-library-model";
 
 const KNOWLEDGE_TASK_TYPES = new Set(["knowledge_ingest", "knowledge_parse", "knowledge_index"]);
 
@@ -156,7 +157,8 @@ function stringArray(value: unknown): string[] {
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "未记录时间";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
+  // Yuxi 时间戳是 UTC（可能不带时区标记），统一按 UTC 解析再转本地时区显示。
+  const date = parseYuxiTimestamp(value);
+  if (!date) return value;
   return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }

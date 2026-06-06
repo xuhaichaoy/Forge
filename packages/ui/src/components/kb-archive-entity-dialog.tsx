@@ -225,6 +225,13 @@ const ENTITY_ATTRIBUTE_FIELDS: Partial<Record<YuxiEntityType, EntityAttributeFie
     { key: "format", label: "授课形式", placeholder: "工作坊 / 沙盘" },
     { key: "teachers", label: "可授讲师", placeholder: "王老师、刘老师" },
   ],
+  training_requirement: [
+    { key: "target_audiences", label: "赋能人群", placeholder: "干部及骨干人才" },
+    { key: "available_documents", label: "可用资料", placeholder: "方案.doc、培训计划.pptx" },
+    { key: "relation_strengths", label: "关系强度", placeholder: "强 / 中 / 弱" },
+    { key: "gaps", label: "缺口", placeholder: "缺少政策案例、课程大纲" },
+    { key: "next_steps", label: "下一步建议", placeholder: "补充材料后扩写方案" },
+  ],
   case: [
     { key: "industry", label: "客户行业", placeholder: "金融 / 制造业" },
     { key: "customer", label: "客户名称", placeholder: "A 银行" },

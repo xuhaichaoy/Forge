@@ -3,6 +3,7 @@ import type { YuxiEntity, YuxiEntityReference } from "../lib/yuxi-client";
 export type EntityTab =
   | "teacher"
   | "course"
+  | "training_requirement"
   | "case"
   | "customer"
   | "bid_project"
@@ -42,6 +43,18 @@ export const ENTITY_TABS: TabConfig[] = [
       { label: "目标人群", options: ["高管", "中层", "基层"] },
       { label: "学时", options: ["<= 8h", "8-16h", "16h+"] },
       { label: "排序", options: ["被提及次数", "反馈分", "采购次数"] },
+    ],
+  },
+  {
+    id: "training_requirement",
+    label: "培训需求",
+    searchPlaceholder: "搜索需求名称、赋能人群或缺口…",
+    hints: ["需要新写的培训需求", "已有强匹配方案", "干部及骨干人才培训"],
+    filters: [
+      { label: "赋能人群", options: ["干部及骨干人才", "数智科技人才", "在线营销服务人才", "一线生产转型人才"] },
+      { label: "关系强度", options: ["强", "中强", "中", "弱"] },
+      { label: "处理状态", options: ["需新写", "可复用", "需补充素材"] },
+      { label: "排序", options: ["被提及次数", "最近活跃"] },
     ],
   },
   {
@@ -236,6 +249,17 @@ export function businessFieldLabel(key: string | null | undefined): string {
     status: "状态",
     course: "课程",
     courses: "课程",
+    training_requirement: "培训需求",
+    target_audience: "赋能人群",
+    target_audiences: "赋能人群",
+    available_documents: "可用资料",
+    relation_strength: "关系强度",
+    relation_strengths: "关系强度",
+    reusable_content: "可复用内容",
+    gaps: "缺口",
+    next_step: "下一步建议",
+    next_steps: "下一步建议",
+    source_rows: "来源行",
     region: "区域",
     location: "区域",
     project_name: "项目",

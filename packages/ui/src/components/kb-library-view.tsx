@@ -38,6 +38,7 @@ import {
   type YuxiCategoryMeta,
 } from "../lib/yuxi-client";
 import { KbYuxiConnectionControl } from "./kb-page-shell";
+import { startTopbarWindowDrag } from "../lib/window-drag";
 import { KbLibraryIntegrationPanel } from "./kb-library-integration-panel";
 import { KbLibraryIngestPipeline, uploadRunPipelineSteps } from "./kb-library-ingest-pipeline";
 import {
@@ -567,7 +568,7 @@ export function KbLibraryView() {
       setError("系统未返回知识库连接信息。");
       return;
     }
-    setUploadDialogOpen(false);
+    // 选完文件后不再关闭弹窗——进度/结果直接在弹窗内展示，用户在弹窗里看全过程。
     setUploading(true);
     setError(null);
     setNotice(null);
@@ -708,7 +709,7 @@ export function KbLibraryView() {
       return;
     }
 
-    setUploadDialogOpen(false);
+    // 网页抓取进度同样留在弹窗内展示，不在选完后立即关闭。
     const id = `${dbId}:url:${Date.now()}`;
     const createdAt = Date.now();
     setUploadRuns((prev) => [{
@@ -902,11 +903,11 @@ export function KbLibraryView() {
 
   return (
     <main className="hc-main hc-kb-main" aria-label="知识库管理">
-      <header className="hc-topbar">
-        <div className="hc-topbar-main">
-          <div className="hc-top-title">知识库</div>
+      <header className="hc-topbar" data-tauri-drag-region onMouseDown={startTopbarWindowDrag}>
+        <div className="hc-topbar-main" data-tauri-drag-region>
+          <div className="hc-top-title" data-tauri-drag-region>知识库</div>
         </div>
-        <div className="hc-topbar-actions">
+        <div className="hc-topbar-actions" data-tauri-drag-region>
           <button
             type="button"
             className="hc-kb-topbar-btn"
@@ -1009,7 +1010,8 @@ export function KbLibraryView() {
             </div>
           </div>
 
-          {uploadRuns.length > 0 && (
+          {/* 弹窗打开时进度在弹窗内展示；关闭弹窗后这里仍保留结果区，便于回看上一批结果。 */}
+          {uploadRuns.length > 0 && !uploadDialogOpen && (
             <UploadBatchTable
               runs={uploadRuns}
               onClear={() => setUploadRuns([])}
@@ -1086,7 +1088,8 @@ export function KbLibraryView() {
                       <select
                         value={documentStatusFilter}
                         onChange={(event) => {
-                          setDocumentStatusFilter(event.currentTarget.value as typeof documentStatusFilter);
+                          const nextValue = event.currentTarget.value as typeof documentStatusFilter;
+                          setDocumentStatusFilter(nextValue);
                           setCheckedRowIds(new Set());
                         }}
                         aria-label="按处理状态筛选"
@@ -1100,7 +1103,8 @@ export function KbLibraryView() {
                       <select
                         value={documentTypeFilter}
                         onChange={(event) => {
-                          setDocumentTypeFilter(event.currentTarget.value as typeof documentTypeFilter);
+                          const nextValue = event.currentTarget.value as typeof documentTypeFilter;
+                          setDocumentTypeFilter(nextValue);
                           setCheckedRowIds(new Set());
                         }}
                         aria-label="按文件类型筛选"
@@ -1136,7 +1140,7 @@ export function KbLibraryView() {
                     onToggleAll={toggleAllCheckedRows}
                     onDownload={(file) => void handleDownload(file)}
                     onDelete={(file) => void handleDelete(file)}
-                    emptyTitle={hasDocuments ? "暂无匹配资料" : `${activeLibraryLabel}还没有资料`}
+                    emptyTitle={hasDocuments ? "暂无匹配资料" : "暂无资料"}
                     emptySubtitle={hasDocuments ? "换一个状态、类型或关键词再试。" : "上传资料后会进入解析、提取档案和入库；异常事项会进入入库问题。"}
                     emptyActionLabel={hasDocuments ? undefined : "上传资料"}
                     onEmptyAction={hasDocuments ? undefined : () => setUploadDialogOpen(true)}
@@ -1189,10 +1193,21 @@ export function KbLibraryView() {
               uploading={uploading}
               urlIngesting={urlIngesting}
               urlValue={urlValue}
+              uploadRuns={uploadRuns}
               onChooseFiles={() => uploadInputRef.current?.click()}
               onUploadFiles={(files) => void handleUploadFiles(files)}
               onUrlChange={setUrlValue}
               onSubmitUrl={() => void handleIngestUrl()}
+              onClearRuns={() => setUploadRuns([])}
+              onOpenPending={(pendingIds) => {
+                setFocusPendingIds(pendingIds);
+                setLibraryMode("pending");
+                setUploadDialogOpen(false);
+              }}
+              onOpenTasks={() => {
+                setLibraryMode("tasks");
+                setUploadDialogOpen(false);
+              }}
               onClose={() => setUploadDialogOpen(false)}
             />
           )}
@@ -1218,7 +1233,10 @@ export function KbLibraryView() {
                     <span>知识库名称</span>
                     <input
                       value={createLibraryDialog.name}
-                      onChange={(event) => setCreateLibraryDialog((prev) => prev ? { ...prev, name: event.currentTarget.value } : prev)}
+                      onChange={(event) => {
+                        const nextValue = event.currentTarget.value;
+                        setCreateLibraryDialog((prev) => prev ? { ...prev, name: nextValue } : prev);
+                      }}
                       autoFocus
                     />
                   </label>
@@ -1226,7 +1244,10 @@ export function KbLibraryView() {
                     <span>资料范围</span>
                     <textarea
                       value={createLibraryDialog.description}
-                      onChange={(event) => setCreateLibraryDialog((prev) => prev ? { ...prev, description: event.currentTarget.value } : prev)}
+                      onChange={(event) => {
+                        const nextValue = event.currentTarget.value;
+                        setCreateLibraryDialog((prev) => prev ? { ...prev, description: nextValue } : prev);
+                      }}
                       rows={3}
                     />
                   </label>

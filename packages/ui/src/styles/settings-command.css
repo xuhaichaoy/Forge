@@ -2784,6 +2784,55 @@ textarea.hc-mcp-tool-control {
   background: rgb(0 0 0 / 55%);
 }
 
+/* Log-out confirmation is portaled to document.body, so it cannot inherit the
+ * usual `.hc-app[data-theme="dark"] …` selectors. Theme it from the portal root. */
+.hc-log-out-confirm-backdrop[data-theme="dark"] {
+  background: rgb(0 0 0 / 55%);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog {
+  background: var(--hc-surface-main);
+  color: var(--hc-text-primary);
+  border-color: var(--hc-border-strong);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 52%);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog header,
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog footer {
+  border-color: var(--hc-border-strong);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog header {
+  color: var(--hc-text-secondary);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog header button {
+  color: var(--hc-text-muted);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog header button:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog .hc-thread-dialog-body span,
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog .hc-mini-button.ghost {
+  color: var(--hc-text-secondary);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog .hc-mini-button.ghost:hover {
+  background: var(--hc-surface-hover);
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog .hc-mini-button.decline {
+  background: rgba(255, 103, 100, 0.1);
+  color: #ff6764;
+}
+
+.hc-log-out-confirm-backdrop[data-theme="dark"] .hc-log-out-confirm-dialog .hc-mini-button.decline:hover {
+  background: rgba(255, 103, 100, 0.18);
+}
+
 
 /* ===== Dark-theme completeness, batch 2 (2026-05-30 workflow; role-mapped to --hc-* dark tokens, light untouched) ===== */
 /* Dark theme overrides for remaining gaps — toggle track off-state background */

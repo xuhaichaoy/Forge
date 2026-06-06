@@ -4,7 +4,7 @@ import type { CollaborationModeMask, Thread, UserInput } from "@hicodex/codex-pr
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
-import { readImageDataUrl } from "../lib/tauri-host";
+import { isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
 import {
   buildUserInputFromComposer,
@@ -502,6 +502,15 @@ export function useTurnSubmission({
 export async function attachmentsWithDataImagePreviews(
   attachments: ComposerAttachment[],
 ): Promise<ComposerAttachment[]> {
+  // codex `vl`: on a local host (HiCodex is always local) an image that has a real disk
+  // path is sent as {type:"localImage", path} — NOT inlined as base64 — so the codex
+  // sidecar reads the file to both show the model the image AND expose the path to the
+  // agent's tools (python/shell can then edit the real file). Mirrors Codex's
+  // `if (!isRemoteHost && localPath) return { type: "localImage", path }`. The downstream
+  // imageAttachmentToUserInput already maps a bare path → localImage{path}, so we just keep
+  // the localImage attachments as-is here. Only on web — where there is no host to read the
+  // path — do we fall back to inlining a data URL (the original behaviour).
+  if (isTauriRuntime()) return attachments;
   const resolved: ComposerAttachment[] = [];
   for (const attachment of attachments) {
     if (attachment.type !== "localImage") {

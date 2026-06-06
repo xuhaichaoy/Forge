@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { Settings2, X } from "lucide-react";
+import { startTopbarWindowDrag } from "../lib/window-drag";
 import {
   readYuxiConnectionConfig,
   writeYuxiConnectionConfig,
   type YuxiConnectionConfig,
 } from "../lib/yuxi-client";
-import { isYuxiMockEnabled, setYuxiMockState } from "../lib/yuxi-mock";
 
 /**
  * 资料管理系列视图（知识库 / 上传 / 档案中心）的公共页面骨架。
@@ -34,11 +34,11 @@ export function KbPageShell({
 }) {
   return (
     <main className="hc-main hc-kb-main" aria-label={ariaLabel ?? title}>
-      <header className="hc-topbar">
-        <div className="hc-topbar-main">
-          <div className="hc-top-title">{title}</div>
+      <header className="hc-topbar" data-tauri-drag-region onMouseDown={startTopbarWindowDrag}>
+        <div className="hc-topbar-main" data-tauri-drag-region>
+          <div className="hc-top-title" data-tauri-drag-region>{title}</div>
         </div>
-        <div className="hc-topbar-actions">
+        <div className="hc-topbar-actions" data-tauri-drag-region>
           {actions}
           <KbYuxiConnectionControl />
         </div>
@@ -51,10 +51,8 @@ export function KbPageShell({
 export function KbYuxiConnectionControl() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<YuxiConnectionConfig>(() => readYuxiConnectionConfig());
-  const [mock, setMock] = useState<boolean>(() => isYuxiMockEnabled(readYuxiConnectionConfig()));
   const save = () => {
     writeYuxiConnectionConfig(draft);
-    setYuxiMockState(mock);
     setOpen(false);
     if (typeof window !== "undefined") window.location.reload();
   };
@@ -68,7 +66,6 @@ export function KbYuxiConnectionControl() {
         onClick={() => {
           const config = readYuxiConnectionConfig();
           setDraft(config);
-          setMock(isYuxiMockEnabled(config));
           setOpen((value) => !value);
         }}
       >
@@ -100,20 +97,8 @@ export function KbYuxiConnectionControl() {
               placeholder="yxkey_..."
             />
           </label>
-          <label
-            className="hc-kb-connection-field"
-            style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
-          >
-            <span>演示数据（内置示例）</span>
-            <input
-              type="checkbox"
-              checked={mock}
-              onChange={(event) => setMock(event.target.checked)}
-              style={{ width: 16, height: 16 }}
-            />
-          </label>
           <p style={{ margin: "0 0 4px", fontSize: 11.5, color: "var(--hc-text-secondary)", lineHeight: 1.5 }}>
-            {mock ? "正在使用内置示例数据，无需后端。" : "连接真实来源系统，关闭示例数据。"}保存后会刷新页面生效。
+            连接真实来源系统。保存后会刷新页面生效。
           </p>
           <div className="hc-kb-connection-actions">
             <button type="button" className="hc-kb-topbar-btn" onClick={() => setOpen(false)}>取消</button>
