@@ -34,13 +34,15 @@ function formatsProjectDropdownLabelLikeDesktopFooter(): void {
 }
 
 function formatsContextChipLabels(): void {
+  // formatIntelligenceFooterLabel now mirrors Codex's model chip: model-only
+  // input, `gpt-`/`gpt_` prefix stripped (composer-external-footer.tsx:564).
   assert(
-    formatIntelligenceFooterLabel({
-      model: "gpt-5.5",
-      reasoningEffort: "medium",
-      reasoningSummary: "concise",
-    }) === "gpt-5.5 Medium",
-    "intelligence label should include model and effort only",
+    formatIntelligenceFooterLabel({ model: "gpt-5.5" }) === "5.5",
+    "intelligence label should render the model with its gpt- prefix stripped",
+  );
+  assert(
+    formatIntelligenceFooterLabel({ model: null }) === "",
+    "intelligence label should be empty without a model",
   );
   assert(
     formatPermissionsFooterLabel({
@@ -97,8 +99,12 @@ function rendersContextChipsWithOverflowHooks(): void {
     "interactive intelligence chip should expose the interactive styling hook",
   );
   assert(
-    chips.includes("gpt-5.5 Medium"),
-    "intelligence chip should show the Desktop-style model and effort label",
+    chips.includes(">5.5<"),
+    "intelligence chip should show the gpt-stripped model label (composer-external-footer.tsx:564)",
+  );
+  assert(
+    chips.includes('data-chip="reasoning"') && chips.includes(">Medium<"),
+    "reasoning effort should render on its own chip, not inside the intelligence label",
   );
   assert(
     !chips.includes("Auto summaries") && !chips.includes(" / "),
