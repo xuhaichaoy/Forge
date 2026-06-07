@@ -2,6 +2,7 @@ import { ChevronDown, FileText, FolderOpen, Globe2, ImageIcon, Presentation, Scr
 import { useCallback, useRef, useState, type RefObject } from "react";
 
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
+import { useHiCodexIntl } from "./i18n-provider";
 import { projectArtifactPreview } from "../state/artifact-preview";
 import type { AssistantEndResource, RailEntry } from "../state/render-group-types";
 
@@ -67,6 +68,42 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
   });
 }
 
+// codex: localConversation.endResource.* — the view-model stays locale-free
+// (English title/typeLabel, keeps the pure projection + tests stable); the
+// renderer maps the English label back to the Codex key. "Website" typeLabel and
+// file titles / directory fallbacks are not localized (no bundle key).
+const END_RESOURCE_FILE_TYPE_KEY: Record<string, string> = {
+  Document: "documentFileType",
+  Spreadsheet: "spreadsheetFileType",
+  Slides: "presentationFileType",
+  Image: "imageFileType",
+};
+const END_RESOURCE_GOOGLE_SUBTITLE_KEY: Record<string, string> = {
+  Docs: "googleDocsSubtitle",
+  Sheets: "googleSheetsSubtitle",
+  Slides: "googleSlidesSubtitle",
+  Drive: "googleDriveSubtitle",
+};
+function localizeEndResourceTitle(title: string, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): string {
+  return title === "Web preview"
+    ? formatMessage({ id: "localConversation.endResource.websiteTitle", defaultMessage: "Web preview" })
+    : title;
+}
+function localizeEndResourceTypeLabel(typeLabel: string, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): string {
+  const fileMatch = /^(Document|Spreadsheet|Slides|Image) · (.+)$/.exec(typeLabel);
+  if (fileMatch) {
+    const kind = fileMatch[1]!;
+    return formatMessage(
+      { id: `localConversation.endResource.${END_RESOURCE_FILE_TYPE_KEY[kind]}`, defaultMessage: `${kind} · {extension}` },
+      { extension: fileMatch[2]! },
+    );
+  }
+  const googleKey = END_RESOURCE_GOOGLE_SUBTITLE_KEY[typeLabel];
+  return googleKey
+    ? formatMessage({ id: `localConversation.endResource.${googleKey}`, defaultMessage: typeLabel })
+    : typeLabel;
+}
+
 export function AssistantEndResourceCards({
   resources,
   onOpenArtifact,
@@ -76,6 +113,7 @@ export function AssistantEndResourceCards({
   onOpenArtifact?: (entry: RailEntry) => void;
   onRevealResource?: (entry: RailEntry) => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const cards = assistantEndResourceCardViewModels(resources);
   const [expanded, setExpanded] = useState(false);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
@@ -93,7 +131,7 @@ export function AssistantEndResourceCards({
         const menuOpen = openMenuKey === card.key;
         const subtitle = (
           <span className="hc-assistant-resource-card-subtitles">
-            <span className="hc-assistant-resource-card-type">{card.typeLabel}</span>
+            <span className="hc-assistant-resource-card-type">{localizeEndResourceTypeLabel(card.typeLabel, formatMessage)}</span>
             {card.hoverLabel ? (
               <span className="hc-assistant-resource-card-hover-type">{card.hoverLabel}</span>
             ) : null}
@@ -109,7 +147,7 @@ export function AssistantEndResourceCards({
               <Icon size={24} />
             </span>
             <span className="hc-assistant-resource-card-copy">
-              <span className="hc-assistant-resource-card-title">{card.title}</span>
+              <span className="hc-assistant-resource-card-title">{localizeEndResourceTitle(card.title, formatMessage)}</span>
               {subtitle}
             </span>
             <EndResourceOpenInControl
@@ -152,7 +190,7 @@ export function AssistantEndResourceCards({
           aria-expanded={expanded}
           onClick={() => setExpanded(true)}
         >
-          <span>Show {hiddenCount} more</span>
+          <span>{formatMessage({ id: "localConversation.endResource.showMore", defaultMessage: "Show {count, number} more" }, { count: hiddenCount })}</span>
           {/* codex show-more button renders a trailing chevron (icon-xs = 16px). */}
           <ChevronDown size={16} aria-hidden />
         </button>
@@ -174,6 +212,7 @@ function EndResourceOpenInControl({
   onRevealResource?: (entry: RailEntry) => void;
   refForOpenMenu: RefObject<HTMLSpanElement | null>;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const canRevealInFolder = card.entry.action?.kind === "file" && Boolean(onRevealResource);
   if (!canRevealInFolder) {
     return <span className="hc-assistant-resource-card-open-label">{card.trailingLabel}</span>;
@@ -206,7 +245,7 @@ function EndResourceOpenInControl({
             }}
           >
             <FolderOpen size={13} aria-hidden />
-            <span>Open in folder</span>
+            <span>{formatMessage({ id: "localConversation.endResource.openInFolder", defaultMessage: "Open in folder" })}</span>
           </button>
         </span>
       )}

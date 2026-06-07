@@ -18,6 +18,7 @@ import { createContext } from "react";
 import { osRevealLabel } from "../state/command-registry";
 import type { ContextMenuItem } from "./context-menu";
 import type { FileReference } from "./file-reference-types";
+import type { HiCodexIntlContextValue } from "./i18n-provider";
 
 export interface FileCitationMenuActions {
   /** codex `workspace-file-reveal-path` — reveal in the OS file manager. */
@@ -40,21 +41,23 @@ export function fileReferenceContextMenuItems({
   reference,
   onOpenFileReference,
   menuActions,
+  formatMessage,
 }: {
   reference: FileReference;
   onOpenFileReference?: (reference: FileReference) => void;
   menuActions: FileCitationMenuActions | null;
+  formatMessage: HiCodexIntlContextValue["formatMessage"];
 }): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
   if (onOpenFileReference) {
     // codex markdown.fileReference.viewFile "Open file" — reuse the in-app open path.
-    items.push({ id: "open-file", label: "Open file", onSelect: () => onOpenFileReference(reference) });
+    items.push({ id: "open-file", label: formatMessage({ id: "markdown.fileReference.viewFile", defaultMessage: "Open file" }), onSelect: () => onOpenFileReference(reference) });
     items.push({ id: "open-separator", separator: true });
   }
   // codex markdown.fileReference.copyPath
   items.push({
     id: "copy-path",
-    label: "Copy path",
+    label: formatMessage({ id: "markdown.fileReference.copyPath", defaultMessage: "Copy path" }),
     onSelect: () => {
       void navigator.clipboard?.writeText(reference.path);
     },
@@ -62,7 +65,7 @@ export function fileReferenceContextMenuItems({
   if (menuActions?.onCopyContents) {
     // codex markdown.fileReference.copyFileContents
     const onCopyContents = menuActions.onCopyContents;
-    items.push({ id: "copy-contents", label: "Copy file contents", onSelect: () => onCopyContents(reference) });
+    items.push({ id: "copy-contents", label: formatMessage({ id: "markdown.fileReference.copyFileContents", defaultMessage: "Copy file contents" }), onSelect: () => onCopyContents(reference) });
   }
   if (menuActions?.onReveal) {
     // codex markdown.fileReference.openInFinder / openInExplorer / openInFileManager

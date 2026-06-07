@@ -466,9 +466,19 @@ type RequestKind =
   | "unknown";
 
 function RequestDetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  const { formatMessage } = useHiCodexIntl();
+  // codex pending-request-item-panel localizes the structural row labels
+  // (permissionRequest.network/fileRead/fileWrite/fileReadWrite). The describe*
+  // layer keeps the English label as a parsing key; localize it for display here.
+  const displayLabel =
+    label === "Network" ? formatMessage({ id: "permissionRequest.network", defaultMessage: "Network" })
+    : label === "Read" ? formatMessage({ id: "permissionRequest.fileRead", defaultMessage: "Read" })
+    : label === "Write" ? formatMessage({ id: "permissionRequest.fileWrite", defaultMessage: "Write" })
+    : label === "Read and write" ? formatMessage({ id: "permissionRequest.fileReadWrite", defaultMessage: "Read and write" })
+    : label;
   return (
     <div className="hc-request-detail-row">
-      <span>{label}</span>
+      <span>{displayLabel}</span>
       <span>{children}</span>
     </div>
   );
@@ -487,7 +497,7 @@ function requestPanelTitle(detail: PendingRequestDetail): string {
 // `kn` `font-mono leading-5` code lines), not a single comma-joined value.
 function detailRowFromLabelValue(label: string, value: string): RequestDetailItem {
   const code = isTechnicalDetail(label, value);
-  if ((label === "Read" || label === "Write") && value.includes(", ")) {
+  if ((label === "Read" || label === "Write" || label === "Read and write") && value.includes(", ")) {
     const values = value.split(", ").map((path) => path.trim()).filter(Boolean);
     if (values.length > 1) return { label, value, code, values };
   }

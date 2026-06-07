@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil, RotateCcw, Search, Trash2 } from "lucide-react";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
   COMMAND_DESCRIPTORS,
   commandDescriptorDescription,
@@ -41,9 +42,10 @@ import { resolveKeymapOverride, type KeymapOverrides } from "../state/keymap-ove
  */
 
 const GROUP_TITLE: ReadonlyArray<{ key: string; title: string }> = [
+  // codex: electron-menu-shortcuts-*.js section order — navigation precedes panels.
   { key: "thread", title: "Chat" },
-  { key: "panels", title: "Panels" },
   { key: "navigation", title: "Navigation" },
+  { key: "panels", title: "Panels" },
   { key: "workspace", title: "Project" },
   { key: "skills", title: "Skills" },
   { key: "configure", title: "Configure" },
@@ -61,6 +63,7 @@ export function KeyboardShortcutsSettingsPanel({
   onSetShortcut,
   onResetShortcut,
 }: KeyboardShortcutsSettingsPanelProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [captured, setCaptured] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -139,8 +142,8 @@ export function KeyboardShortcutsSettingsPanel({
         <input
           type="search"
           value={query}
-          placeholder="Search shortcuts"
-          aria-label="Search keyboard shortcuts"
+          placeholder={formatMessage({ id: "settings.keyboardShortcuts.search.placeholder", defaultMessage: "Search shortcuts" })}
+          aria-label={formatMessage({ id: "settings.keyboardShortcuts.search.ariaLabel", defaultMessage: "Search keyboard shortcuts" })}
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
@@ -226,6 +229,7 @@ function Row({
   onReset,
   onCancel,
 }: RowProps) {
+  const { formatMessage } = useHiCodexIntl();
   const accelerator = descriptorAcceleratorLabel(descriptor.id);
   const isMac = isMacPlatform();
   return (
@@ -247,7 +251,7 @@ function Row({
             ref={inputRef}
             readOnly
             className="hc-keyboard-settings-capture-input"
-            placeholder="Press shortcut"
+            placeholder={formatMessage({ id: "settings.keyboardShortcuts.capturePrompt", defaultMessage: "Press shortcut" })}
             value={captured ? formatAccelerator(captured, isMac) : ""}
             onBlur={onCancel}
             aria-label={`Capture new shortcut for ${descriptor.title}`}
@@ -308,7 +312,7 @@ function Row({
                 <button
                   type="button"
                   className="hc-keyboard-settings-icon-button"
-                  aria-label={`Reset shortcut for ${descriptor.title}`}
+                  aria-label={formatMessage({ id: "settings.keyboardShortcuts.resetAriaLabel", defaultMessage: "Reset shortcut for {commandTitle}" }, { commandTitle: descriptor.title })}
                   onClick={onReset}
                 >
                   <RotateCcw size={14} />

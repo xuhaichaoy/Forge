@@ -3,6 +3,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { renderableLocalImageSrc } from "../lib/local-image-src";
 import type { ThreadItem } from "../state/render-groups";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
+import { useHiCodexIntl } from "./i18n-provider";
 
 /*
  * Codex Desktop `JC` gallery (local-conversation-thread-*.js) — horizontal
@@ -105,6 +106,7 @@ export function GeneratedImageGallery({
   const [containerWidthPx, setContainerWidthPx] = useState<number | null>(null);
   const [aspectRatios, setAspectRatios] = useState<Record<string, number>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const { formatMessage } = useHiCodexIntl();
 
   /*
    * Codex `T = cc(callback)` uses ResizeObserver on the
@@ -248,9 +250,9 @@ export function GeneratedImageGallery({
       {selectedImage != null && selectedSrc.length > 0 && (
         <ImagePreviewLightbox
           src={selectedSrc}
-          alt={`Generated image ${selectedIndex + 1}`}
+          alt={formatMessage({ id: "codex.localConversation.generatedImage", defaultMessage: "Generated image {imageNumber}" }, { imageNumber: selectedIndex + 1 })}
           imageReferrerPolicy="no-referrer"
-          title={`Generated image ${selectedIndex + 1}`}
+          title={formatMessage({ id: "codex.localConversation.generatedImage", defaultMessage: "Generated image {imageNumber}" }, { imageNumber: selectedIndex + 1 })}
           viewportClassName="hc-preview-lightbox-viewport--thread-content"
           onClose={handleClosePreview}
           onPreviousImage={selectedIndex > 0 ? handlePreviousImageInLightbox : undefined}
@@ -287,7 +289,8 @@ function GalleryThumbnail({
   onAspectRatioChange: (ratio: number) => void;
   onOpenPreview: () => void;
 }) {
-  const alt = `Generated image ${imageNumber}`;
+  const { formatMessage } = useHiCodexIntl();
+  const alt = formatMessage({ id: "codex.localConversation.generatedImage", defaultMessage: "Generated image {imageNumber}" }, { imageNumber });
   const frameHeightPx = heightPx > 0 ? heightPx : undefined;
   const frameWidthPx = frameHeightPx == null
     ? undefined
@@ -353,6 +356,7 @@ function GalleryOverflowControls({
   onPrev: () => void;
   onNext: () => void;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   // Hide the "+N" indicator entirely once the user has scrolled into the
   // overflowed range, matching Codex's `group-focus-within:opacity-0
   // group-hover:opacity-0` rule on the badge container.
@@ -375,7 +379,7 @@ function GalleryOverflowControls({
         <button
           type="button"
           className="hc-generated-image-gallery-nav-button"
-          aria-label="Previous images"
+          aria-label={formatMessage({ id: "codex.localConversation.generatedImageGallery.previousImages", defaultMessage: "Previous images" })}
           disabled={!canGoPrev}
           onClick={onPrev}
           onPointerUp={(event) => event.currentTarget.blur()}
@@ -385,7 +389,7 @@ function GalleryOverflowControls({
         <button
           type="button"
           className="hc-generated-image-gallery-nav-button"
-          aria-label="Next images"
+          aria-label={formatMessage({ id: "codex.localConversation.generatedImageGallery.nextImages", defaultMessage: "Next images" })}
           disabled={!canGoNext}
           onClick={onNext}
           onPointerUp={(event) => event.currentTarget.blur()}

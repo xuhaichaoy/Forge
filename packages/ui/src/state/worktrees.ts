@@ -154,29 +154,31 @@ export function composerWorkModeTitle(mode: ComposerWorkMode): string {
 
 export function projectWorktreeModeOptions(input: {
   cloudWorkspacesAvailable?: boolean;
+  formatMessage?: FormatMessage;
   hostGitStatus?: HostGitStatus | null;
   mode: ComposerWorkMode;
   tauriRuntimeAvailable?: boolean;
 }): WorktreeModeOption[] {
   const worktreeReady = worktreeModeAvailable(input);
   const cloudReady = input.cloudWorkspacesAvailable === true;
+  const { formatMessage } = input;
   return [
     {
       id: "local",
-      label: composerWorkModeLabel("local"),
+      label: composerWorkModeLabel("local", formatMessage),
       description: "Use the selected project folder for new local Codex threads.",
       status: input.mode === "local" ? "selected" : "ready",
     },
     {
       id: "worktree",
-      label: composerWorkModeLabel("worktree"),
+      label: composerWorkModeLabel("worktree", formatMessage),
       description: "Prepare an isolated git worktree for the next task.",
       status: !worktreeReady ? "disabled" : input.mode === "worktree" ? "selected" : "ready",
       disabledReason: worktreeReady ? undefined : HOST_WORKTREE_DISABLED_REASON,
     },
     {
       id: "cloud",
-      label: composerWorkModeLabel("cloud"),
+      label: composerWorkModeLabel("cloud", formatMessage),
       description: "Hand the next task to a cloud workspace.",
       status: !cloudReady ? "disabled" : input.mode === "cloud" ? "selected" : "ready",
       disabledReason: cloudReady ? undefined : CLOUD_DISABLED_REASON,

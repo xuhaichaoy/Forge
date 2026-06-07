@@ -530,8 +530,15 @@ button.hc-assistant-review-comment-row:focus-visible,
   /* codex user bubble is `rounded-2xl` (--radius-2xl 16px → 20px squircle w/ corner-shape). */
   border-radius: var(--hc-radius-2xl);
   corner-shape: superellipse(1.5);
-  background: rgba(34, 38, 43, 0.05);
-  padding: 8px 12px;
+  /* codex `bg-token-bg-primary/75` → electron-light --gray-50 (#f9f9f9) at 75%
+     (a light surface fill), NOT a dark-ink tint. Dark theme keeps its own
+     override below. A/B-pending: exact render depends on the page bg beneath. */
+  background: rgba(249, 249, 249, 0.75);
+  /* codex `py-3 pr-2.5 pl-3` = 12px top/bottom, 10px right, 12px left. */
+  padding: 12px 10px 12px 12px;
+  /* codex `shadow-[0_0_0_1px_var(--color-token-border-default)]` 1px outline ring;
+     --hc-border-default (rgba(34,38,43,.08)) matches Codex's 8%-ink border token. */
+  box-shadow: 0 0 0 1px var(--hc-border-default);
   color: #1a1c1f; /* codex electron --color-text-foreground=#1a1c1f (was #22262b; A/B-pending) */
   overflow-wrap: anywhere;
 }

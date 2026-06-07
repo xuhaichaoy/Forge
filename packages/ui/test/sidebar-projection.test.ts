@@ -133,6 +133,15 @@ function formatsCompactUpdatedAtTimeLikeDesktopSidebar(): void {
     sidebarThreadRelativeTime(makeThread({ updatedAt: (now - 2 * 24 * 60 * 60_000) / 1000 }), now) === "2d",
     "days should use compact sidebar form",
   );
+  // codex format-relative-date-time-*.js derives days from CALENDAR-day diff, not
+  // elapsed ms: 27h spanning two calendar dates reads "2d" (elapsed-ms math gives
+  // "1d"). Built from local Date parts so the calendar diff is timezone-stable.
+  const calNow = new Date(2026, 5, 7, 2, 0, 0).getTime();
+  const calThen = new Date(2026, 5, 5, 23, 0, 0).getTime();
+  assert(
+    sidebarThreadRelativeTime(makeThread({ updatedAt: calThen / 1000 }), calNow) === "2d",
+    "27h spanning two calendar dates should read 2d like Codex (calendar-day, not elapsed-ms)",
+  );
 }
 
 function projectsActiveThreadStatusLikeDesktopSidebar(): void {

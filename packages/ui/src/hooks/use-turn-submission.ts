@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { CollaborationModeMask, Thread, UserInput } from "@hicodex/codex-protocol";
+import type { CollaborationModeMask, Thread, ThreadGoalSetResponse, UserInput } from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
+import { useHiCodexIntl } from "../components/i18n-provider";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { createProjectlessThreadCwd, isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
@@ -55,9 +56,12 @@ export interface UseTurnSubmissionInput {
   activeModelSupportsImageInput: boolean;
   activePendingRequestCount: number;
   activeThread: Thread | null;
+  activeThreadGoal: boolean;
   activeThreadId: string | null;
   activeThreadRunning: boolean;
   activeTurnId: string | null;
+  composerGoalMode: boolean;
+  setComposerGoalMode: (on: boolean) => void;
   collaborationModes: CollaborationModeMask[];
   collaborationModesForComposerMode: (mode: ComposerMode) => Promise<CollaborationModeMask[]>;
   composerAttachments: ComposerAttachment[];
@@ -66,6 +70,7 @@ export interface UseTurnSubmissionInput {
   ensureConnected: () => Promise<boolean>;
   includeImageDynamicTool: boolean;
   input: string;
+  onRequestGoalReplace?: (objective: string) => void;
   rememberLatestCollaborationMode: (threadId: string, options: TurnStartOptions | null | undefined) => void;
   resetComposerSelectionAfterCreatedThread: (threadId: string) => void;
   setActiveComposerMode: (mode: ComposerMode) => void;
@@ -91,9 +96,12 @@ export function useTurnSubmission({
   activeModelSupportsImageInput,
   activePendingRequestCount,
   activeThread,
+  activeThreadGoal,
   activeThreadId,
   activeThreadRunning,
   activeTurnId,
+  composerGoalMode,
+  setComposerGoalMode,
   collaborationModes,
   collaborationModesForComposerMode,
   composerAttachments,
@@ -102,6 +110,7 @@ export function useTurnSubmission({
   ensureConnected,
   includeImageDynamicTool,
   input,
+  onRequestGoalReplace,
   rememberLatestCollaborationMode,
   resetComposerSelectionAfterCreatedThread,
   setActiveComposerMode,
@@ -113,6 +122,7 @@ export function useTurnSubmission({
   defaultCwd,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
   const { client, dispatch } = useServices();
+  const { formatMessage } = useHiCodexIntl();
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
   const [startingConversation, setStartingConversation] = useState(false);
   const sendingQueuedFollowUpId = useRef<string | null>(null);
@@ -259,6 +269,54 @@ export function useTurnSubmission({
     }
     if (composerHasImageAttachments(draftAttachments) && !activeModelSupportsImageInput) {
       dispatch({ type: "log", text: "Remove images or switch models to send this message", level: "warn" });
+      return;
+    }
+    // codex composer goal mode: submitting while "Pursue goal" is active sets the
+    // thread goal (thread/goal/set) instead of sending a turn, then turns the goal
+    // toggle off. Gated on composerGoalMode (independent of plan) so default/plan
+    // submits are entirely unaffected; plan mode is left untouched on purpose.
+    if (composerGoalMode) {
+      const objective = draftInput.trim();
+      if (!objective) return;
+      if (!activeThreadId) {
+        dispatch({ type: "log", text: "Select or start a thread before setting a goal.", level: "warn" });
+        return;
+      }
+      // codex composer.threadGoal.replaceConfirmation — replacing an existing goal
+      // prompts for confirmation first; the host owns the dialog + the actual set.
+      if (activeThreadGoal && onRequestGoalReplace) {
+        if (shouldClearDraft) {
+          clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
+        }
+        setComposerGoalMode(false);
+        onRequestGoalReplace(objective);
+        return;
+      }
+      // Failure paths (not connected / RPC error) intentionally KEEP goal mode +
+      // the typed objective so the user can retry without re-typing — only the
+      // success path clears the draft and turns the goal toggle off.
+      if (!(await ensureConnected())) return;
+      try {
+        const response = await client.request<ThreadGoalSetResponse>(
+          "thread/goal/set",
+          { threadId: activeThreadId, objective },
+          120_000,
+        );
+        dispatch({
+          type: "notification",
+          message: { method: "thread/goal/updated", params: { threadId: activeThreadId, turnId: null, goal: response.goal } },
+        });
+        if (shouldClearDraft) {
+          clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
+        }
+        setComposerGoalMode(false);
+      } catch (error) {
+        dispatch({
+          type: "log",
+          text: `${formatMessage({ id: "composer.threadGoal.setError", defaultMessage: "Failed to set goal" })}: ${formatError(error)}`,
+          level: "error",
+        });
+      }
       return;
     }
     const sendAttachments = await attachmentsWithDataImagePreviews(draftAttachments);
@@ -442,6 +500,7 @@ export function useTurnSubmission({
   }, [
     activeModelSupportsImageInput,
     activeThread,
+    activeThreadGoal,
     activeThreadId,
     activeThreadRunning,
     activeTurnId,
@@ -457,10 +516,13 @@ export function useTurnSubmission({
     defaultCwd,
     dispatch,
     ensureConnected,
+    formatMessage,
     includeImageDynamicTool,
+    onRequestGoalReplace,
     queuedFollowUpsByThread,
     rememberLatestCollaborationMode,
     resetComposerSelectionAfterCreatedThread,
+    setActiveComposerMode,
     setComposerAttachments,
     setInput,
     threadContextDefaults,

@@ -1286,7 +1286,7 @@ export function ToolBlock({
             {rows.map((row, index) => (
               <div className="hc-user-input-response-detail" key={`${row.question}-${index}`}>
                 <span className="hc-user-input-response-question">{row.question}</span>
-                <span className="hc-user-input-response-answer">{row.answer}</span>
+                <span className="hc-user-input-response-answer">{row.answer === "No answer provided" ? formatMessage({ id: "localConversation.userInputRequest.noAnswer", defaultMessage: "No answer provided" }) : row.answer}</span>
               </div>
             ))}
           </AnimatedDisclosure>
@@ -1296,9 +1296,23 @@ export function ToolBlock({
   }
   if (format === "stream-error") {
     const hasDetails = Boolean(details?.trim());
+    // Localize the Codex "Reconnecting N/M" progress string (data layer keeps the
+    // English content for tests; render reverse-maps via the attempt/maxAttempts).
+    const reconnectMatch = /^Reconnecting\s+(\d+)\/(\d+)$/.exec((value ?? "").trim());
+    const streamErrorText = reconnectMatch
+      ? formatMessage(
+          { id: "localConversation.streamError.reconnecting", defaultMessage: "Reconnecting {progress}" },
+          {
+            progress: `${reconnectMatch[1]}${formatMessage(
+              { id: "localConversation.streamError.reconnectingProgressDenominator", defaultMessage: "/{maxAttempts}" },
+              { maxAttempts: reconnectMatch[2] },
+            )}`,
+          },
+        )
+      : value || label;
     const summaryContent = (
       <>
-        <span className="hc-error-event-text">{value || label}</span>
+        <span className="hc-error-event-text">{streamErrorText}</span>
         {hasDetails && <ChevronDown aria-hidden className={streamErrorExpanded ? "is-open" : ""} size={14} />}
       </>
     );
@@ -1726,15 +1740,17 @@ export function TurnDiffBlock({
               })}
             >
               {/*
-               * Codex Desktop i18n (local-conversation-thread-*.js):
-               *   codex.unifiedDiff.reviewChanges       = "Review here"
-               *   codex.unifiedDiff.reviewShort         = "Review"
-               *   codex.unifiedDiff.viewDiffTooltip     = "Review"
+               * Codex Desktop i18n (local-conversation-thread-*.js), build 26.602:
+               *   codex.unifiedDiff.reviewChanges       = "Review" (button label; desc:
+               *     "Button label to view and follow changes in the diff for a Codex task")
+               *   codex.unifiedDiff.viewDiffTooltip     = "Review" (narrow-width label + title)
                *   codex.unifiedDiff.reviewChangedFiles  = "Review changed files" (aria-label)
                *   codex.unifiedDiff.reviewChangesHover  = "Review changes" (hover/header subtitle)
+               * The bundle renders a single "Review" label; HiCodex keeps a responsive
+               * full/short split that resolves to the same "Review" text at any width.
                */}
               <span className="hc-turn-diff-review-full">
-                {formatMessage({ id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review here" })}
+                {formatMessage({ id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review" })}
               </span>
               <span className="hc-turn-diff-review-short">
                 {formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
@@ -1902,9 +1918,9 @@ export function TurnDiffBlock({
                   <span className="hc-turn-diff-file-path">{rowLabel}</span>
                   {showFileStats && <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />}
                   <span className="hc-turn-diff-file-too-large">
-                    {/* codex: `Rv` — large-file row label */}
+                    {/* codex: `Rv` — large-file row label (codex.unifiedDiff.inlineLargeFile) */}
                     {formatMessage({
-                      id: "hc.unifiedDiff.tooLargeToRenderInline",
+                      id: "codex.unifiedDiff.inlineLargeFile",
                       defaultMessage: "Too large to render inline",
                     })}
                   </span>

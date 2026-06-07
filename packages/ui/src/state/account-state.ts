@@ -302,9 +302,15 @@ export function projectAccountViewModel(
   const rateLimitSummary = signedIn
     ? projectRateLimitCompactSummary(state.rateLimitsByLimitId, state.rateLimits)
     : null;
-  const usageAlert = signedIn
-    ? projectAccountUsageAlert(state.rateLimitsByLimitId, state.rateLimits)
-    : null;
+  // codex gates the sidebar usage-alert behind a default-OFF Statsig experiment
+  // (app-main `_S={enabled:!1,…}`, gates personal `3605558075`/workspace_owner
+  // `1385051397`) plus an audience restriction (personal free/go/plus/prolite/pro,
+  // or self-serve-business owner). HiCodex has no Statsig, so it matches the
+  // shipped DEFAULT — the card is not surfaced. This mirrors the round-1 principle
+  // that HiCodex should match a Statsig-default-off feature's off state.
+  // `projectAccountUsageAlert` is retained (and still unit-tested) so this is a
+  // one-line re-enable if the experiment ever ships on.
+  const usageAlert = null;
   return {
     signedIn,
     displayName: identity.displayName,

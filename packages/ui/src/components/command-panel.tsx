@@ -224,6 +224,7 @@ export function CommandPanelEntryList({
   showSections?: boolean;
   subMode?: CommandPanelSubMode;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   if (entries.length === 0) return null;
   // codex: app-main-DG-Mf4Wj.js — chats / files sub-modes only render their
   // flat result list; section headings (Thread / Panels / ...) are gated on
@@ -254,7 +255,7 @@ export function CommandPanelEntryList({
   // titles come from GROUP_TITLE_ORDER inside groupCommandPanelEntries; the
   // existing per-entry group headers (Pinned chats / Recent chats) are
   // emitted inside each section by groupCommandPanelEntriesForRendering.
-  const sections = groupCommandPanelEntries(entries);
+  const sections = groupCommandPanelEntries(entries, formatMessage);
   return (
     <div className="hc-command-panel-list">
       {sections.map((section) => (

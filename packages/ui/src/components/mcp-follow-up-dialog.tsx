@@ -47,6 +47,22 @@ export const MCP_FOLLOW_UP_LOCAL_DISABLED_REASON =
 export const MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON =
   "New worktree requires a local git project";
 
+// codex: codex.mcpTool.confirmFollowUp.* — the disabled-target tooltips are
+// localized. The option data stays locale-free (English consts, used by the pure
+// normalize fn + tests); the renderer maps the reason back to the Codex key.
+function localizeMcpFollowUpDisabledReason(
+  reason: string,
+  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"],
+): string {
+  if (reason === MCP_FOLLOW_UP_LOCAL_DISABLED_REASON) {
+    return formatMessage({ id: "codex.mcpTool.confirmFollowUp.localProjectsOnlyTooltip", defaultMessage: reason });
+  }
+  if (reason === MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON) {
+    return formatMessage({ id: "codex.mcpTool.confirmFollowUp.newWorktreeRequiresGitProject", defaultMessage: reason });
+  }
+  return reason;
+}
+
 export const DEFAULT_MCP_FOLLOW_UP_OPTION_ID: McpFollowUpDialogOptionId = "current-thread";
 
 export const DEFAULT_MCP_FOLLOW_UP_OPTIONS: readonly McpFollowUpDialogOption[] = [
@@ -160,7 +176,7 @@ export function McpFollowUpDialog({
               {options.map((option) => {
                 const selected = option.id === selectedOption?.id;
                 const detail = option.disabled && option.disabledReason
-                  ? option.disabledReason
+                  ? localizeMcpFollowUpDisabledReason(option.disabledReason, formatMessage)
                   : option.description;
                 return (
                   <label
@@ -186,9 +202,9 @@ export function McpFollowUpDialog({
               })}
             </fieldset>
             <label>
-              Prompt
+              {formatMessage({ id: "codex.mcpTool.confirmFollowUp.promptAriaLabel", defaultMessage: "Prompt" })}
               <textarea
-                aria-label="Prompt"
+                aria-label={formatMessage({ id: "codex.mcpTool.confirmFollowUp.promptAriaLabel", defaultMessage: "Prompt" })}
                 autoFocus
                 rows={5}
                 value={draft}

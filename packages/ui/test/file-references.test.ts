@@ -9,6 +9,12 @@ import {
   normalizeFileReference,
   resolveFileReferencePathCandidates,
 } from "../src/state/file-references";
+import { createI18nBundle, formatI18nMessage } from "../src/state/i18n";
+
+const enFormat = (
+  descriptor: Parameters<typeof formatI18nMessage>[1],
+  values?: Parameters<typeof formatI18nMessage>[2],
+) => formatI18nMessage(createI18nBundle("en-US"), descriptor, values);
 
 export default function runFileReferenceTests(): void {
   normalizesClickedReferenceForPreview();
@@ -107,7 +113,7 @@ function buildsDesktopWorkspaceFileContextMenuSubset(): void {
     onCopyContents: () => undefined,
     onRevealPath: () => undefined,
     revealLabel: "Reveal in Finder",
-  });
+  }, enFormat);
   assertEqual(items.length, 5, "source tab menu should include open, separator, copy, contents, reveal");
   assertEqual(items[0]?.id, "workspace-file-open-file", "first row is Open file");
   assertEqual(items[1]?.separator, true, "open section should be separated from file actions");

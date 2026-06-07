@@ -107,7 +107,7 @@ export function AppearanceSettingsPanel({
           }))}
           value={uiLocale}
           onChange={(value) => onSetUiLocale(value as HiCodexLocale)}
-          ariaLabel="Language"
+          ariaLabel={formatMessage({ id: "settings.ide.language.label", defaultMessage: "Language" })}
         />
       </AppearanceRow>
       {/*
@@ -155,7 +155,7 @@ export function AppearanceSettingsPanel({
           }))}
           value={uiAppearance.reducedMotion}
           onChange={(value) => onSetReducedMotion(value as ReducedMotionMode)}
-          ariaLabel="Reduce motion"
+          ariaLabel={formatMessage({ id: "settings.general.appearance.reducedMotion.label", defaultMessage: "Reduce motion" })}
         />
       </AppearanceRow>
     </div>
@@ -287,7 +287,7 @@ function CodeFontSizeInput({
         max={CODE_FONT_SIZE_MAX}
         step={CODE_FONT_SIZE_STEP}
         inputMode="numeric"
-        aria-label="Code font size"
+        aria-label={formatMessage({ id: "settings.general.appearance.codeFontSize.row", defaultMessage: "Code font size" })}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={tryCommit}

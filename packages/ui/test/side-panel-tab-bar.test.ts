@@ -3,6 +3,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SidePanelTabBar, sidePanelTabContextMenuItems } from "../src/components/side-panel-tab-bar";
 import { SidePanelTabHostController } from "../src/state/side-panel-tab-host-controller";
 import type { SidePanelTabComponent } from "../src/state/side-panel-tab-host";
+import { createI18nBundle, formatI18nMessage } from "../src/state/i18n";
+
+const enFormat = (
+  descriptor: Parameters<typeof formatI18nMessage>[1],
+  values?: Parameters<typeof formatI18nMessage>[2],
+) => formatI18nMessage(createI18nBundle("en-US"), descriptor, values);
 
 export default function runSidePanelTabBarTests(): void {
   buildsContextMenuWithCustomItemsAndClose();
@@ -31,7 +37,7 @@ function buildsContextMenuWithCustomItemsAndClose(): void {
   const tab = controller.getSnapshot().tabsById[tabId];
   if (!tab) throw new Error("expected tab to exist");
 
-  const items = sidePanelTabContextMenuItems(tab, controller);
+  const items = sidePanelTabContextMenuItems(tab, controller, enFormat);
   assertEqual(items.length, 3, "custom item, separator, close should be present");
   assertEqual(items[0]?.label, "Custom item", "custom item should come first");
   assertEqual(items[1]?.separator, true, "separator should split custom and close");
@@ -60,7 +66,7 @@ function preservesCustomContextMenuSeparators(): void {
   const tab = controller.getSnapshot().tabsById[tabId];
   if (!tab) throw new Error("expected tab to exist");
 
-  const items = sidePanelTabContextMenuItems(tab, controller);
+  const items = sidePanelTabContextMenuItems(tab, controller, enFormat);
   assertEqual(items[1]?.separator, true, "custom separator should be preserved");
   assertEqual(items[3]?.separator, true, "custom items should still be separated from Close");
 }

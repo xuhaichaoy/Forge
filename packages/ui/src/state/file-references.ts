@@ -1,4 +1,5 @@
 import type { SidePanelTabContextMenuItem } from "./side-panel-tab-host";
+import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 
 export interface FileReferenceInput {
   path?: string | null;
@@ -111,6 +112,7 @@ export interface FileReferenceSidePanelContextMenuHandlers {
 
 export function fileReferenceSidePanelContextMenuItems(
   handlers: FileReferenceSidePanelContextMenuHandlers,
+  formatMessage: (descriptor: I18nMessageDescriptor, values?: I18nValues) => string,
 ): readonly SidePanelTabContextMenuItem[] {
   /*
    * codex workspace-file-context-menu-*.js emits open target(s), a separator,
@@ -118,10 +120,10 @@ export function fileReferenceSidePanelContextMenuItems(
    * OS app-target query, so the first row is Codex's own `viewFile` label.
    */
   return [
-    { id: "workspace-file-open-file", label: "Open file", onSelect: handlers.onOpenFile },
+    { id: "workspace-file-open-file", label: formatMessage({ id: "markdown.fileReference.viewFile", defaultMessage: "Open file" }), onSelect: handlers.onOpenFile },
     { id: "workspace-file-open-separator", separator: true },
-    { id: "workspace-file-copy-path", label: "Copy path", onSelect: handlers.onCopyPath },
-    { id: "workspace-file-copy-contents", label: "Copy file contents", onSelect: handlers.onCopyContents },
+    { id: "workspace-file-copy-path", label: formatMessage({ id: "markdown.fileReference.copyPath", defaultMessage: "Copy path" }), onSelect: handlers.onCopyPath },
+    { id: "workspace-file-copy-contents", label: formatMessage({ id: "markdown.fileReference.copyFileContents", defaultMessage: "Copy file contents" }), onSelect: handlers.onCopyContents },
     { id: "workspace-file-reveal-path", label: handlers.revealLabel, onSelect: handlers.onRevealPath },
   ];
 }

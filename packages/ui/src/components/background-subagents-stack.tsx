@@ -3,6 +3,8 @@ import { useState } from "react";
 import type { RailDiffStats, RailEntry } from "../state/render-groups";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
 import { DiffStatsDisplay } from "./diff-stats-display";
+import { useHiCodexIntl } from "./i18n-provider";
+import type { HiCodexIntlContextValue } from "./i18n-provider";
 import type { OpenThreadHandler } from "./open-thread";
 
 export interface BackgroundSubagentsStackProps {
@@ -22,10 +24,14 @@ export function BackgroundSubagentsStack({
   onStopAll,
   stopAllPending = false,
 }: BackgroundSubagentsStackProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [expanded, setExpanded] = useState(defaultExpanded);
   if (entries.length === 0) return null;
 
-  const summary = `${entries.length} background agent${entries.length === 1 ? "" : "s"}`;
+  const summary = formatMessage(
+    { id: "composer.backgroundSubagents.summary", defaultMessage: "{count, plural, one {# background agent} other {# background agents}}" },
+    { count: entries.length },
+  );
   const totalDiffStats = sumDiffStats(entries);
   const showStopAll = canStopAll && onStopAll;
   return (
@@ -38,12 +44,14 @@ export function BackgroundSubagentsStack({
             type="button"
             className="hc-background-subagents-toggle"
             aria-expanded={expanded}
-            aria-label={expanded ? "Collapse background agent details" : "Expand background agent details"}
+            aria-label={expanded
+              ? formatMessage({ id: "composer.backgroundSubagents.collapse", defaultMessage: "Collapse background agent details" })
+              : formatMessage({ id: "composer.backgroundSubagents.expand", defaultMessage: "Expand background agent details" })}
             onClick={() => setExpanded((value) => !value)}
           >
             {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             <Bot size={13} />
-            <span>{expanded ? `${summary} (@ to tag agents)` : summary}</span>
+            <span>{expanded ? `${summary} ${formatMessage({ id: "composer.backgroundSubagents.invokeAgents", defaultMessage: "(@ to tag agents)" })}` : summary}</span>
           </button>
         )}
         trailing={totalDiffStats || showStopAll ? (
@@ -59,15 +67,15 @@ export function BackgroundSubagentsStack({
               <button
                 type="button"
                 className="hc-background-subagents-stop-all"
-                aria-label="Stop all background agents"
+                aria-label={formatMessage({ id: "composer.backgroundSubagents.stopAllTooltip", defaultMessage: "Stop all subagents in this chat" })}
                 disabled={stopAllPending}
-                title={stopAllPending ? "Stopping all background agents" : "Stop all background agents"}
+                title={stopAllPending ? "Stopping all background agents" : formatMessage({ id: "composer.backgroundSubagents.stopAllTooltip", defaultMessage: "Stop all subagents in this chat" })}
                 onClick={onStopAll}
               >
                 {stopAllPending
                   ? <LoaderCircle className="hc-background-subagents-spinner" size={12} />
                   : <Square size={11} />}
-                <span>Stop all</span>
+                <span>{formatMessage({ id: "composer.backgroundSubagents.stopAll", defaultMessage: "Stop all" })}</span>
               </button>
             ) : null}
           </div>
@@ -95,12 +103,16 @@ function BackgroundSubagentRow({
   entry: RailEntry;
   onOpenThread?: OpenThreadHandler;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const threadAction = entry.action?.kind === "thread" ? entry.action : null;
   const displayName = threadAction?.displayName || entry.title;
-  const metadata = [threadAction?.role, threadAction?.model ? `Uses ${threadAction.model}` : null]
+  const metadata = [
+    threadAction?.role,
+    threadAction?.model ? formatMessage({ id: "composer.backgroundSubagents.row.modelTooltip", defaultMessage: "Uses {model}" }, { model: threadAction.model }) : null,
+  ]
     .filter(Boolean)
     .join("\n");
-  const statusLabel = backgroundSubagentStatusLabel(entry.status);
+  const statusLabel = backgroundSubagentStatusLabel(entry.status, formatMessage);
   return (
     <PanelRow
       className="hc-background-subagents-row"
@@ -143,15 +155,15 @@ function BackgroundSubagentRow({
   );
 }
 
-function backgroundSubagentStatusLabel(status?: string): string {
+function backgroundSubagentStatusLabel(status: string | undefined, formatMessage: HiCodexIntlContextValue["formatMessage"]): string {
   switch (status) {
     case "active":
-      return "is working";
+      return formatMessage({ id: "composer.backgroundSubagents.row.activeLabel", defaultMessage: "is working" });
     case "waiting":
-      return "is awaiting instruction";
+      return formatMessage({ id: "composer.backgroundSubagents.row.waitingLabel", defaultMessage: "is awaiting instruction" });
     case "done":
     case "completed":
-      return "is done";
+      return formatMessage({ id: "composer.backgroundSubagents.row.doneLabel", defaultMessage: "is done" });
     case "failed":
       return "failed";
     default:

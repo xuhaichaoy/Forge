@@ -51,7 +51,7 @@ function rendersStopAllControlForActiveDescendants(): void {
     onStopAll: () => undefined,
   }));
 
-  assert(html.includes("aria-label=\"Stop all background agents\""), "active descendants should expose Desktop's stop-all control");
+  assert(html.includes("aria-label=\"Stop all subagents in this chat\""), "active descendants should expose Desktop's stop-all control");
   assert(html.includes("Stop all"), "stop-all control should use Desktop's label");
 }
 

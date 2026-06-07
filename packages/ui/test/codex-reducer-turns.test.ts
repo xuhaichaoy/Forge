@@ -8,8 +8,10 @@ import {
   type ThreadRuntimeSlice,
 } from "../src/state/codex-reducer";
 import type { AccumulatedThreadItem } from "../src/state/render-groups";
+import { formatDuration } from "../src/state/thread-item-fields";
 
 export default function runCodexReducerTurnsTests(): void {
+  formatsDurationWithDaysTierAndHoursModulo();
   refreshThreadListPreservesDraftNewThreadState();
   refreshThreadListDoesNotKeepMissingActiveThread();
   marksKnownThreadsNotLoadedAfterReconnect();
@@ -32,7 +34,9 @@ export default function runCodexReducerTurnsTests(): void {
   commandExecutionTerminalInteractionParsesStdinIntoCommandActions();
   turnScopesDeltaCreatedAssistantAndReasoningItems();
   preservesItemLifecycleTimestampsFromProtocolNotifications();
+  synthesizesAutoApprovalReviewItemFromLiveNotifications();
   completingTurnProjectsTurnTimingAsWorkedForItem();
+  worksForCapsAtAnswerStartWhenSegmentCarriesItemTimestamps();
   completingTurnPreservesLongerAccumulatedAgentText();
   normalizesThreadStatusChangedNotifications();
   threadCompactedNotificationAddsCompletedContextCompactionEvent();
@@ -42,6 +46,7 @@ export default function runCodexReducerTurnsTests(): void {
   accountNotificationsUpdateReducerAccount();
   hookNotificationsAreLoggedWithoutSyntheticTranscriptItems();
   surfacesTerminalErrorNotificationsInTheTranscript();
+  projectsReconnectErrorsAsStreamErrorRows();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnCompletes();
   synthesizesPlanImplementationItemWhenPlanTurnCompletes();
   doesNotSynthesizePlanImplementationWithoutAPlanItemOrOnFailure();
@@ -378,6 +383,9 @@ function threadSettingsUpdatedRefreshesActiveThreadContextAndComposerMode(): voi
       approvalPolicy: "never",
       approvalsReviewer: "auto_review",
       sandbox: "workspace-write",
+      // codex Jd/$d: this fixture's policy sets networkAccess:true, a non-default
+      // workspace-write detail, so the projected context flags it (→ custom mode).
+      sandboxIsNonDefault: true,
       permissions: ":workspace",
       reasoningEffort: "high",
       reasoningSummary: "detailed",
@@ -1040,6 +1048,61 @@ function preservesItemLifecycleTimestampsFromProtocolNotifications(): void {
   assertEqual(item.status, "completed", "item/completed should still merge the terminal item fields");
 }
 
+function formatsDurationWithDaysTierAndHoursModulo(): void {
+  // codex composer md formatter: days tier + hours modulo 24, zero units trimmed.
+  // Sub-24h output is unchanged from the prior hours-tier formatter.
+  assertEqual(formatDuration(90_000_000), "1d 1h", "25h should roll into a days tier with hours modulo 24");
+  assertEqual(formatDuration(86_400_000), "1d", "exactly 24h should read 1d with zero units trimmed");
+  assertEqual(formatDuration(180_000_000), "2d 2h", "50h should read 2d 2h");
+  assertEqual(formatDuration(3_661_000), "1h 1m 1s", "sub-24h durations keep the existing hours tier");
+  assertEqual(formatDuration(90_000), "1m 30s", "sub-hour durations are unchanged");
+}
+
+function synthesizesAutoApprovalReviewItemFromLiveNotifications(): void {
+  // Codex Desktop synthesizes a client-side automatic-approval-review timeline
+  // item from item/autoApprovalReview/started|completed (the payload IS the
+  // review — there is no params.item). HiCodex used to route these through the
+  // generic item-lifecycle handler, whose params.item?.id guard dropped every
+  // one, so the Auto-review entry never appeared mid-turn.
+  const started = reduceNotification(initialCodexUiState, {
+    method: "item/autoApprovalReview/started",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      reviewId: "review-9",
+      targetItemId: "command-1",
+      startedAtMs: 5_000,
+      action: { type: "command", command: "rm -rf build", cwd: "/repo" },
+      review: { status: "inProgress", riskLevel: null, userAuthorization: null, rationale: null },
+    },
+  });
+  const pending = itemById(started, "thread-1", "automatic-approval-review:review-9") as Record<string, unknown>;
+  assertEqual(pending.type, "automatic-approval-review", "started auto-review should synthesize a client-side item (not be dropped)");
+  assertEqual(pending.status, "inProgress", "started auto-review should carry the review status");
+  assertEqual(pending.startedAtMs, 5_000, "started auto-review should keep the protocol startedAtMs");
+  assertEqual(pending.completedAtMs, null, "in-progress auto-review should have no completedAtMs");
+
+  const completed = reduceNotification(started, {
+    method: "item/autoApprovalReview/completed",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      reviewId: "review-9",
+      targetItemId: "command-1",
+      startedAtMs: 5_000,
+      completedAtMs: 9_000,
+      action: { type: "command", command: "rm -rf build", cwd: "/repo" },
+      review: { status: "denied", riskLevel: "high", userAuthorization: null, rationale: "Destructive command" },
+    },
+  });
+  const resolved = itemById(completed, "thread-1", "automatic-approval-review:review-9") as Record<string, unknown>;
+  assertEqual(resolved.status, "denied", "completed auto-review should update the status in place");
+  assertEqual(resolved.riskLevel, "high", "completed auto-review should carry the review riskLevel");
+  assertEqual(resolved.rationale, "Destructive command", "completed auto-review should carry the review rationale");
+  assertEqual(resolved.startedAtMs, 5_000, "completed auto-review should preserve the original startedAtMs");
+  assertEqual(resolved.completedAtMs, 9_000, "completed auto-review should record completedAtMs");
+}
+
 function completingTurnProjectsTurnTimingAsWorkedForItem(): void {
   const state = {
     ...initialCodexUiState,
@@ -1072,6 +1135,70 @@ function completingTurnProjectsTurnTimingAsWorkedForItem(): void {
   assertEqual(workedFor.type, "worked-for", "turn/completed should add worked-for item from turn timing");
   assertEqual(workedFor.status, "completed", "turn/completed worked-for item should be completed");
   assertEqual(workedFor.durationMs, 65_000, "turn/completed worked-for item should keep duration");
+}
+
+function worksForCapsAtAnswerStartWhenSegmentCarriesItemTimestamps(): void {
+  // Codex caps "Worked for {time}" at the answer's start (the exploration/tool
+  // phase), not the whole turn (app-server-manager-signals qx/LS). When the
+  // segment carries item timestamps, HiCodex reconstructs that span: first work
+  // item start → answer start, dropping the answer-streaming time the old
+  // whole-turn span wrongly counted.
+  const withAnswerStamp = threadWithTurns("thread-1", [
+    {
+      id: "turn-1",
+      status: "completed",
+      startedAt: 1, // 1_000 ms
+      completedAt: 40, // 40_000 ms — whole-turn end (answer streamed to here)
+      durationMs: 39_000,
+      items: [
+        {
+          type: "exec",
+          id: "exec-1",
+          command: "ls",
+          completed: true,
+          output: { exitCode: 0 },
+          parsedCmd: { type: "read", path: "ls" },
+          startedAtMs: 2_000,
+          completedAtMs: 5_000,
+        } as unknown as ThreadItem,
+        { type: "agentMessage", id: "agent-1", text: "Done.", phase: null, memoryCitation: null, startedAtMs: 6_000 } as unknown as ThreadItem,
+      ],
+    },
+  ]);
+  const state = reduceNotification(initialCodexUiState, { method: "thread/started", params: { thread: withAnswerStamp } });
+  const workedFor = itemById(state, "thread-1", "worked-for:turn-1") as Record<string, unknown>;
+  assertEqual(workedFor.startedAtMs, 2_000, "worked-for should start at the first work item, not the server turn start");
+  assertEqual(workedFor.completedAtMs, 6_000, "worked-for should cap at the assistant answer start, not the whole-turn end");
+  assertEqual(workedFor.durationMs, 4_000, "worked-for duration should be the pre-answer work span (6000-2000), not the whole turn (39000)");
+
+  // Fallback: when the answer item carries no start stamp, cap at the last work
+  // item's completion (the work phase ends when the last tool finishes).
+  const withoutAnswerStamp = threadWithTurns("thread-2", [
+    {
+      id: "turn-2",
+      status: "completed",
+      startedAt: 1,
+      completedAt: 40,
+      durationMs: 39_000,
+      items: [
+        {
+          type: "exec",
+          id: "exec-2",
+          command: "ls",
+          completed: true,
+          output: { exitCode: 0 },
+          parsedCmd: { type: "read", path: "ls" },
+          startedAtMs: 2_000,
+          completedAtMs: 5_000,
+        } as unknown as ThreadItem,
+        agentMessage("agent-2", "Done."),
+      ],
+    },
+  ]);
+  const state2 = reduceNotification(initialCodexUiState, { method: "thread/started", params: { thread: withoutAnswerStamp } });
+  const workedFor2 = itemById(state2, "thread-2", "worked-for:turn-2") as Record<string, unknown>;
+  assertEqual(workedFor2.completedAtMs, 5_000, "without an answer stamp, worked-for caps at the last work item completion");
+  assertEqual(workedFor2.durationMs, 3_000, "fallback duration should be first-work-start (2000) to last-work-completion (5000)");
 }
 
 function completingTurnPreservesLongerAccumulatedAgentText(): void {
@@ -1183,6 +1310,42 @@ function surfacesTerminalErrorNotificationsInTheTranscript(): void {
     eventAdditionalDetails(next, "thread-1", "stream-error:turn-1"),
     "Start a shorter thread.",
     "stream-error items should preserve additional details",
+  );
+}
+
+function projectsReconnectErrorsAsStreamErrorRows(): void {
+  // codex projects a retrying (willRetry:true) error to a low-key `stream-error`
+  // row with a "Reconnecting N/M" progress, and does NOT terminalize the turn.
+  // HiCodex previously dropped these entirely (log-only), so reconnect attempts
+  // were invisible in the transcript.
+  const state = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
+    activeThreadId: "thread-1",
+    threadsRuntime: {
+      "thread-1": runtimeSlice({ activeTurnId: "turn-1" }),
+    },
+  };
+
+  const next = reduceNotification(state, {
+    method: "error",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      willRetry: true,
+      error: { message: "Reconnecting 2/5", codexErrorInfo: null, additionalDetails: null },
+    },
+  });
+
+  const item = itemById(next, "thread-1", "stream-error:turn-1") as Record<string, unknown>;
+  assertEqual(item.type, "stream-error", "reconnect errors should add a stream-error row, not be dropped");
+  assertEqual(item.content, "Reconnecting 2/5", "reconnect stream-error content should show the Reconnecting progress");
+  assertEqual(item.reconnectAttempt, 2, "reconnect stream-error should parse the attempt number");
+  assertEqual(item.reconnectMaxAttempts, 5, "reconnect stream-error should parse the max attempts");
+  assertEqual(
+    threadStatus(next, "thread-1"),
+    "active",
+    "a retrying error must not terminalize the turn into systemError",
   );
 }
 

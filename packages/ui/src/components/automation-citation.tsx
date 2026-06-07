@@ -8,11 +8,27 @@
 
 import { Clock } from "lucide-react";
 import type { CitationDirective } from "../state/automation-citations";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export interface AutomationCitationChipProps {
   citation: CitationDirective;
   onOpen?: () => void;
 }
+
+// codex automation.updateDirective.* — the chip verb is one of a fixed set the
+// data layer emits in English (automationCitationActionLabel). Reverse-map the
+// English literal to its i18n id so Chinese mode shows the localized verb while
+// the locale-free data layer / tests stay stable. Covers both citation sources
+// (computed-from-item and markdown-attr directives).
+const AUTOMATION_ACTION_I18N: Record<string, { id: string; defaultMessage: string }> = {
+  Created: { id: "automation.updateDirective.created", defaultMessage: "Created" },
+  Updated: { id: "automation.updateDirective.updated", defaultMessage: "Updated" },
+  Deleted: { id: "automation.updateDirective.deleted", defaultMessage: "Deleted" },
+  Missing: { id: "automation.updateDirective.missing", defaultMessage: "Missing" },
+  Proposed: { id: "automation.updateDirective.proposed", defaultMessage: "Proposed" },
+  "Proposed update": { id: "automation.updateDirective.proposedUpdate", defaultMessage: "Proposed update" },
+  Automation: { id: "automation.updateDirective.automation", defaultMessage: "Automation" },
+};
 
 // codex: local-conversation-thread-*.js — single chip render. The
 // Codex card surfaces `name||"Untitled automation"` as the primary line and
@@ -20,8 +36,14 @@ export interface AutomationCitationChipProps {
 // (title || id) and the optional url subtitle; the rest of the bag goes into
 // the `title` attribute for hover discoverability.
 export function AutomationCitationChip({ citation, onOpen }: AutomationCitationChipProps) {
-  const label = (citation.title?.trim() || citation.id).trim();
-  const actionLabel = citation.actionLabel?.trim() || "";
+  const { formatMessage } = useHiCodexIntl();
+  const rawLabel = (citation.title?.trim() || citation.id).trim();
+  const label = rawLabel === "Untitled automation"
+    ? formatMessage({ id: "automation.updateDirective.untitled", defaultMessage: "Untitled automation" })
+    : rawLabel;
+  const rawAction = citation.actionLabel?.trim() || "";
+  const actionDescriptor = rawAction ? AUTOMATION_ACTION_I18N[rawAction] : undefined;
+  const actionLabel = actionDescriptor ? formatMessage(actionDescriptor) : rawAction;
   const tooltipPieces: string[] = [];
   if (actionLabel) tooltipPieces.push(actionLabel);
   if (citation.title) tooltipPieces.push(citation.title);

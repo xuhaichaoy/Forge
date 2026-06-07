@@ -90,11 +90,15 @@ function workedForLabel({
 function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const hours = Math.floor(totalSeconds / 3_600);
+  // codex (composer md formatter): days tier + hours modulo 24, zero units trimmed.
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor(totalSeconds / 3_600) % 24;
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    const parts = [`${hours}h`];
+  if (days > 0 || hours > 0) {
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
     if (seconds > 0) parts.push(`${seconds}s`);
     return parts.join(" ");

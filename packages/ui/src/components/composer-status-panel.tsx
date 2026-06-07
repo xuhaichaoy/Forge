@@ -4,6 +4,9 @@ import {
   formatRateLimitProgress,
   projectRateLimitSections,
 } from "../state/rate-limit-summary";
+import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+
+type FormatMessage = HiCodexIntlContextValue["formatMessage"];
 
 export interface ComposerStatusPanelProps {
   threadId: string | null;
@@ -26,6 +29,7 @@ export function ComposerStatusPanel({
   rateLimitsByLimitId,
   onClose,
 }: ComposerStatusPanelProps): ReactElement {
+  const { formatMessage } = useHiCodexIntl();
   const [copied, setCopied] = useState(false);
   const rows = useMemo(() => composerStatusRows({
     threadId,
@@ -33,12 +37,14 @@ export function ComposerStatusPanel({
     contextWindow,
     rateLimits,
     rateLimitsByLimitId,
-  }), [contextWindow, rateLimits, rateLimitsByLimitId, threadId, tokensUsed]);
+  }, formatMessage), [contextWindow, formatMessage, rateLimits, rateLimitsByLimitId, threadId, tokensUsed]);
 
   const copyThreadId = () => {
     if (!threadId || typeof navigator === "undefined" || !navigator.clipboard) return;
     void navigator.clipboard.writeText(threadId).then(() => {
       setCopied(true);
+      // codex composer-B7sGHJVq.js (session copy, anchored on
+      // composer.statusPlain.sessionCopyAriaLabel): setTimeout(()=>{h(!1)},2e3).
       window.setTimeout(() => setCopied(false), 2_000);
     }).catch(() => undefined);
   };
@@ -47,13 +53,13 @@ export function ComposerStatusPanel({
     <div className="hc-composer-status-panel">
       <div className="hc-composer-status-panel-card">
         <div className="hc-composer-status-panel-header">
-          <strong>Status</strong>
+          <strong>{formatMessage({ id: "composer.statusPlain.heading", defaultMessage: "Status" })}</strong>
           <button
             type="button"
             className="hc-composer-status-panel-close"
             onClick={onClose}
           >
-            Close
+            {formatMessage({ id: "composer.status.close", defaultMessage: "Close" })}
           </button>
         </div>
         <div className="hc-composer-status-panel-grid">
@@ -67,8 +73,12 @@ export function ComposerStatusPanel({
                   <button
                     type="button"
                     className="hc-composer-status-panel-session"
-                    aria-label={copied ? "Copied session id" : "Copy session id"}
-                    title={copied ? "Copied ID" : "Copy ID"}
+                    aria-label={copied
+                      ? formatMessage({ id: "composer.statusPlain.sessionCopiedAriaLabel", defaultMessage: "Copied session id" })
+                      : formatMessage({ id: "composer.statusPlain.sessionCopyAriaLabel", defaultMessage: "Copy session id" })}
+                    title={copied
+                      ? formatMessage({ id: "composer.statusPlain.sessionCopiedTooltip", defaultMessage: "Copied ID" })
+                      : formatMessage({ id: "composer.statusPlain.sessionCopyTooltip", defaultMessage: "Copy ID" })}
                     onClick={copyThreadId}
                   >
                     {row.value}
@@ -102,29 +112,44 @@ interface ComposerStatusRowsInput {
   rateLimitsByLimitId?: Record<string, RateLimitSnapshot> | null;
 }
 
-export function composerStatusRows(input: ComposerStatusRowsInput): ComposerStatusRow[] {
+// codex composer.statusPlain.* — formatMessage is optional so the locale-free
+// callers (and the deep-equal projection test, which runs under the default
+// en-US locale) keep the English row labels unchanged.
+export function composerStatusRows(input: ComposerStatusRowsInput, formatMessage?: FormatMessage): ComposerStatusRow[] {
   const rows: ComposerStatusRow[] = [];
 
   if (input.threadId) {
     rows.push({
       id: "session",
-      label: "Session:",
+      label: formatMessage
+        ? formatMessage({ id: "composer.statusPlain.sessionLabel", defaultMessage: "Session:" })
+        : "Session:",
       value: input.threadId,
     });
   }
 
-  const contextUsage = contextUsageLabel(input.tokensUsed, input.contextWindow);
+  const contextUsage = contextUsageLabel(input.tokensUsed, input.contextWindow, formatMessage);
   if (contextUsage) {
     rows.push({
       id: "context",
-      label: "Context:",
+      label: formatMessage
+        ? formatMessage({ id: "composer.statusPlain.contextLabel", defaultMessage: "Context:" })
+        : "Context:",
       value: contextUsage,
     });
   }
 
   const rateLimitRows = rateLimitStatusRows(input.rateLimits, input.rateLimitsByLimitId);
   if (rateLimitRows.length === 0) {
-    rows.push({ id: "rate-limit", label: "Rate limit:", value: "Unavailable" });
+    rows.push({
+      id: "rate-limit",
+      label: formatMessage
+        ? formatMessage({ id: "composer.statusPlain.rateLimitFallbackLabel", defaultMessage: "Rate limit:" })
+        : "Rate limit:",
+      value: formatMessage
+        ? formatMessage({ id: "composer.statusPlain.rateLimitUnavailable", defaultMessage: "Unavailable" })
+        : "Unavailable",
+    });
   } else {
     rows.push(...rateLimitRows);
   }
@@ -132,14 +157,27 @@ export function composerStatusRows(input: ComposerStatusRowsInput): ComposerStat
   return rows;
 }
 
-function contextUsageLabel(tokensUsed: number | null | undefined, contextWindow: number | null | undefined): string | null {
+function contextUsageLabel(
+  tokensUsed: number | null | undefined,
+  contextWindow: number | null | undefined,
+  formatMessage?: FormatMessage,
+): string | null {
   if (!Number.isFinite(tokensUsed) || !Number.isFinite(contextWindow) || !contextWindow || contextWindow <= 0) {
     return null;
   }
   const used = Math.max(0, Math.round(tokensUsed ?? 0));
   const total = Math.max(0, Math.round(contextWindow));
   const remaining = Math.max(0, Math.round(100 - (used / total) * 100));
-  return `${remaining}% left (${formatStatusNumber(used)} used / ${formatContextWindow(total)})`;
+  const remainingPart = formatMessage
+    ? formatMessage({ id: "composer.statusPlain.contextValueRemaining", defaultMessage: "{remaining}% left" }, { remaining: String(remaining) })
+    : `${remaining}% left`;
+  const metadataPart = formatMessage
+    ? formatMessage(
+        { id: "composer.statusPlain.contextValueMetadata", defaultMessage: "({used} used / {total})" },
+        { used: formatStatusNumber(used), total: formatContextWindow(total) },
+      )
+    : `(${formatStatusNumber(used)} used / ${formatContextWindow(total)})`;
+  return `${remainingPart} ${metadataPart}`;
 }
 
 function rateLimitStatusRows(

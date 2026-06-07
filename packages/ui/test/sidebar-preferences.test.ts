@@ -143,12 +143,12 @@ function migratesLegacyPreferencesWhileDesktopKeysWin(): void {
 }
 
 function migratesHiCodexLegacyCollapsedGroupsKey(): void {
-  // Older HiCodex builds wrote collapsed-section state under the (non-Desktop)
-  // key `sidebar-collapsed-groups`. When that legacy slot is the only source,
-  // load should still surface the state under the Desktop-aligned key.
+  // Older HiCodex builds wrote project-group collapse under the bundle's FIXED-
+  // section key `sidebar-collapsed-sections-v1`. When that legacy slot is the only
+  // source, load should still surface the state under the Desktop group key.
   const storage = new MemoryStorage();
   storage.setItem(
-    "sidebar-collapsed-groups",
+    "sidebar-collapsed-sections-v1",
     JSON.stringify({ "legacy:/work/app": true, "legacy:/work/closed": true }),
   );
 
@@ -171,12 +171,12 @@ function clampsStoredSidebarWidth(): void {
 }
 
 function desktopCollapsedSectionsKeyWinsOverHiCodexLegacy(): void {
-  // When both keys exist, the Desktop-aligned `sidebar-collapsed-sections-v1`
-  // must win and the HiCodex legacy slot is ignored. This protects users who
-  // already adopted the Desktop key from being reverted by stale legacy data.
+  // When both keys exist, the Desktop-aligned `sidebar-collapsed-groups` must win
+  // and the HiCodex legacy `sidebar-collapsed-sections-v1` slot is ignored. This
+  // protects users who already adopted the Desktop key from stale legacy data.
   const storage = new MemoryStorage();
   storage.setItem(
-    "sidebar-collapsed-groups",
+    "sidebar-collapsed-sections-v1",
     JSON.stringify({ "legacy:/should-not-load": true }),
   );
   storage.setItem(
@@ -188,7 +188,7 @@ function desktopCollapsedSectionsKeyWinsOverHiCodexLegacy(): void {
   assertEqual(
     sidebarCollapsedGroupKeys(preferences.collapsedGroups).sort().join(","),
     "desktop:/wins",
-    "Desktop sidebar-collapsed-sections-v1 must take precedence over HiCodex legacy key",
+    "Desktop sidebar-collapsed-groups must take precedence over the HiCodex legacy sections key",
   );
 }
 
@@ -197,7 +197,7 @@ function savingDropsHiCodexLegacyCollapsedGroupsKey(): void {
   // slot is removed so the same value is not read back twice on next load.
   const storage = new MemoryStorage();
   storage.setItem(
-    "sidebar-collapsed-groups",
+    "sidebar-collapsed-sections-v1",
     JSON.stringify({ "legacy:/migrated": true }),
   );
 
@@ -215,9 +215,9 @@ function savingDropsHiCodexLegacyCollapsedGroupsKey(): void {
     "saved state should land on the Desktop key",
   );
   assertEqual(
-    storage.getItem("sidebar-collapsed-groups"),
+    storage.getItem("sidebar-collapsed-sections-v1"),
     null,
-    "HiCodex legacy collapsed-groups key should be removed after save",
+    "HiCodex legacy sections-key collapse state should be removed after save",
   );
 }
 

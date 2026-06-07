@@ -14,7 +14,12 @@ import {
  */
 export const SIDEBAR_ORGANIZE_MODE_STORAGE_KEY = "sidebar-organize-mode-v1";
 export const SIDEBAR_SORT_KEY_STORAGE_KEY = "thread-sort-key";
-export const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-sections-v1";
+// codex sidebar-signals-*.js: per-PROJECT-GROUP collapse persists to
+// `sidebar-collapsed-groups`; the FIXED top-level sections (chats/cloud/pinned/
+// threads) use `sidebar-collapsed-sections-v1`. HiCodex tracks only project-group
+// collapse, so it uses the group key. (Earlier HiCodex builds wrongly wrote group
+// collapse to the sections key — migrated below.)
+export const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-groups";
 export const SIDEBAR_SECTION_ORDER_STORAGE_KEY = "sidebar-section-order-v1";
 export const SIDEBAR_WIDTH_STORAGE_KEY = "hicodex:sidebar-width-v1";
 export const SIDEBAR_WIDTH_MIN_PX = 260;
@@ -23,13 +28,12 @@ export const SIDEBAR_WIDTH_DEFAULT_PX = SIDEBAR_WIDTH_MIN_PX;
 
 const LEGACY_SIDEBAR_PREFERENCES_STORAGE_KEY = "hicodex:sidebar-preferences";
 /*
- * Earlier HiCodex builds wrote collapsed-section state under
- * `sidebar-collapsed-groups`, which never matched any Codex Desktop key.
- * Keep the legacy name only long enough to migrate existing local state
- * into the Desktop-aligned `sidebar-collapsed-sections-v1` slot on the
- * next load/save cycle.
+ * Earlier HiCodex builds wrote project-group collapse to
+ * `sidebar-collapsed-sections-v1` — that is the bundle's FIXED-section key, not
+ * the group key. Migrate that old state into the Desktop-aligned
+ * `sidebar-collapsed-groups` slot on the next load/save cycle.
  */
-const LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-groups";
+const LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-sections-v1";
 const DEFAULT_SIDEBAR_SECTION_ORDER = ["projects"];
 
 export interface SidebarPreferenceStorageLike {

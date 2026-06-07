@@ -100,6 +100,13 @@ export const THREAD_LIST_PAGE_SIZE = 100;
 export const THREAD_LIST_MAX_PAGES = 20;
 const DEFAULT_THREAD_PERSONALITY = "friendly";
 const DEFAULT_USER_THREAD_SOURCE: ThreadSource = "user";
+// codex bounds turn/start & turn/steer acks at 30s (app-server-manager-signals
+// `timeoutMs: Yc`, Yc=3e4). HiCodex deliberately passes null (no short ack
+// timeout) — guarded by thread-workflow.test.ts "should not use the short
+// default RPC timeout". Kept as-is: this is a documented intentional divergence,
+// and there is no evidence a 30s bound is safe for HiCodex's sidecar ack timing
+// (memory reference_hicodex_sidecar_wire_facts: acks return fast, but the author
+// chose unbounded on purpose). INFO-severity edge-case only.
 const TURN_START_TIMEOUT_MS: number | null = null;
 const TURN_STEER_TIMEOUT_MS: number | null = null;
 const ROLLOUT_DYNAMIC_TOOL_HEAD_MAX_BYTES = 512_000;

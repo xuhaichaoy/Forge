@@ -86,7 +86,8 @@ async function refreshesAccountAndRateLimitProjection(): Promise<void> {
       quotaDetail: "Credits 12.50 | Primary window 300m",
       quotaTone: "success",
       rateLimitHeading: "Usage remaining",
-      rateLimitRemaining: "58% left",
+      // codex compact heading shows the bare percent; the plain window keeps "% left".
+      rateLimitRemaining: "58%",
       rateLimitSections: [{
         label: "Codex limit:",
         windows: [{

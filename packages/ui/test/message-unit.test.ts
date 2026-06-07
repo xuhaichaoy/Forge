@@ -1,5 +1,11 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createI18nBundle, formatI18nMessage } from "../src/state/i18n";
+
+// codex: en-US formatMessage stub for data-adapter tests (returns the English
+// defaultMessage path) — assistantHookStatsSummary now localizes its labels.
+const enFormatMessage = (descriptor: { id: string; defaultMessage: string }, values?: Record<string, string | number | boolean | null | undefined>) =>
+  formatI18nMessage(createI18nBundle("en-US"), descriptor, values);
 
 import { assistantResourceCardViewModels } from "../src/components/assistant-resource-cards";
 import { AssistantEndResourceCards, assistantEndResourceCardViewModels } from "../src/components/assistant-end-resource-cards";
@@ -1133,7 +1139,7 @@ function summarizesAssistantHookStatsLikeCodexDesktop(): void {
         { kind: "PostCommand", text: "" },
       ],
     },
-  });
+  }, enFormatMessage);
   assertDeepEqual(
     summary,
     {
@@ -1152,7 +1158,7 @@ function summarizesAssistantHookStatsLikeCodexDesktop(): void {
   );
 
   assertEqual(
-    assistantHookStatsSummary({}),
+    assistantHookStatsSummary({}, enFormatMessage),
     null,
     "missing hookStats payload should suppress the chip",
   );

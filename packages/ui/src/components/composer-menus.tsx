@@ -13,6 +13,7 @@ import {
   Settings as SettingsIcon,
   Slash,
   Sparkles,
+  Target,
   Wrench,
   X,
 } from "lucide-react";
@@ -44,22 +45,20 @@ import {
 type MentionPickerStatus = "closed" | "idle" | "loading" | "ready" | "error";
 
 /*
- * codex: at-mention-list-with-sources-*.js — section order
- * (Live agents / Custom agents / Skills / Apps / Plugins / Files). HiCodex
- * does not distinguish Live vs Custom agents, so they collapse into one
- * "Agents" section; the rest mirrors Codex.
- */
-/*
- * codex at-mention-list-GuqX2GsW.js — the @ list has no standalone "Apps"
- * section: app results are grouped under "Plugins" (atMentionList.appPlugins).
- * `composer.skillMentionList.app` ("App", singular) belongs to the $ skill
- * list, not here. So HiCodex folds the `app` kind into the Plugins section and
- * keeps the Codex `atMentionList.*` ids. Each section can match several kinds.
+ * codex: at-mention-list-CX3nvds1.js (26.602) — the @ list is assembled by a
+ * pure concatenation `Pe([{sections:[agents]},{sections:S},skills,files])` where
+ * S = [mcp-servers?, plugins]. So the section order is Agents → [MCP servers] →
+ * Plugins → Skills → Files (Plugins BEFORE Skills). HiCodex collapses Live/Custom
+ * agents into one "Agents" section and has no standalone "Apps" section (the `app`
+ * kind folds into Plugins, keeping the Codex `atMentionList.*` ids). HiCodex lacks
+ * the MCP-servers @ section (no `mcpServer` mention kind); for the sections it does
+ * render, the order matches the bundle: Agents → Plugins → Skills → Files. Each
+ * section can match several kinds.
  */
 const MENTION_SECTION_ORDER: ReadonlyArray<{ kinds: ReadonlyArray<NonNullable<ComposerMentionOption["kind"]>>; title: string; i18nId: string }> = [
   { kinds: ["agent"], title: "Agents", i18nId: "composer.atMentionList.agents" },
-  { kinds: ["skill"], title: "Skills", i18nId: "composer.atMentionList.skills" },
   { kinds: ["plugin", "app"], title: "Plugins", i18nId: "composer.atMentionList.plugins" },
+  { kinds: ["skill"], title: "Skills", i18nId: "composer.atMentionList.skills" },
   { kinds: ["file"], title: "Files", i18nId: "composer.atMentionList.files" },
 ];
 
@@ -180,6 +179,8 @@ function attachIcon(actionId: AttachActionId) {
       return <Paperclip size={15} />;
     case "plan":
       return <ListChecks size={15} />;
+    case "goal":
+      return <Target size={15} />;
     case "plugins":
       return <PlugZap size={15} />;
     case "mention":
@@ -362,6 +363,7 @@ interface ComposerAttachMenuProps {
   actions: AttachAction[];
   selectedAction: AttachAction | undefined;
   mode: ComposerMode;
+  goalMode: boolean;
   onSelect: (actionId: AttachActionId) => void;
 }
 
@@ -369,14 +371,18 @@ export function ComposerAttachMenu({
   actions,
   selectedAction,
   mode,
+  goalMode,
   onSelect,
 }: ComposerAttachMenuProps) {
   const { formatMessage } = useHiCodexIntl();
   return (
     <div className="hc-composer-menu attach" role="menu" aria-label={formatMessage({ id: "hc.composer.attach.menuLabel", defaultMessage: "Attach context" })} data-state="open">
       {actions.map((action) => {
-        const isPlanAction = action.id === "plan";
-        const checked = isPlanAction && mode === "plan";
+        // codex composer "+" menu: Plan mode AND Pursue goal render as toggle
+        // switches; they are INDEPENDENT (both can be on) — plan reflects the
+        // composer mode, goal reflects the separate goal-input flag.
+        const isModeAction = action.id === "plan" || action.id === "goal";
+        const checked = action.id === "plan" ? mode === "plan" : action.id === "goal" ? goalMode : false;
         return (
           <button
             className="hc-composer-menu-row"
@@ -384,8 +390,8 @@ export function ComposerAttachMenu({
             data-checked={checked}
             key={action.id}
             type="button"
-            role={isPlanAction ? "switch" : "menuitem"}
-            aria-checked={isPlanAction ? checked : undefined}
+            role={isModeAction ? "switch" : "menuitem"}
+            aria-checked={isModeAction ? checked : undefined}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => void onSelect(action.id)}
           >
@@ -394,7 +400,7 @@ export function ComposerAttachMenu({
               <strong>{action.title}</strong>
               <small>{action.description}</small>
             </span>
-            {isPlanAction && (
+            {isModeAction && (
               <span className="hc-composer-menu-switch" aria-hidden="true">
                 <span />
               </span>

@@ -1,9 +1,15 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createI18nBundle, formatI18nMessage } from "../src/state/i18n";
 import {
   planSummaryCompleted,
   planSummaryContent,
 } from "../src/components/plan-summary-card";
+
+const enFormat = (
+  descriptor: Parameters<typeof formatI18nMessage>[1],
+  values?: Parameters<typeof formatI18nMessage>[2],
+) => formatI18nMessage(createI18nBundle("en-US"), descriptor, values);
 import { ThreadItemView } from "../src/components/thread-item-view";
 import {
   autoReviewBody,
@@ -59,17 +65,17 @@ function formatsDesktopExecThreadItemSummaries(): void {
 
 function formatsDesktopAutoReviewTitles(): void {
   assertEqual(
-    autoReviewTitle({ status: "approved" }),
+    autoReviewTitle({ status: "approved" }, enFormat),
     "Auto-review approved",
     "approved auto-review title should match Desktop wording",
   );
   assertEqual(
-    autoReviewTitle({ status: "denied", riskLevel: "high" }),
+    autoReviewTitle({ status: "denied", riskLevel: "high" }, enFormat),
     "Auto-review denied high risk",
     "high-risk denied auto-review title should match Desktop wording",
   );
   assertEqual(
-    autoReviewTitle({ status: "inProgress" }),
+    autoReviewTitle({ status: "inProgress" }, enFormat),
     "Auto-reviewing",
     "running auto-review title should match Desktop wording",
   );
@@ -77,17 +83,17 @@ function formatsDesktopAutoReviewTitles(): void {
 
 function formatsDesktopAutoReviewBodies(): void {
   assertEqual(
-    autoReviewBody({ status: "approved", rationale: "Command matches policy" }),
+    autoReviewBody({ status: "approved", rationale: "Command matches policy" }, enFormat),
     "Command matches policy",
     "explicit rationale should win for auto-review body copy",
   );
   assertEqual(
-    autoReviewBody({ status: "timedOut" }),
+    autoReviewBody({ status: "timedOut" }, enFormat),
     "A carefully prompted reviewer agent timed out before Codex ran this request.",
     "timeout auto-review body should match Desktop wording",
   );
   assertEqual(
-    autoReviewBody({ status: "inProgress" }),
+    autoReviewBody({ status: "inProgress" }, enFormat),
     "A carefully prompted reviewer agent is reviewing this request before Codex runs it.",
     "running auto-review body should match Desktop wording",
   );

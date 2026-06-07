@@ -69,16 +69,16 @@ function keepsCodexDesktopSectionOrder(): void {
     sources: [railEntry("source-1", "github:list_prs", "completed", "MCP tool")],
   });
 
-  // CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — section order:
-  // Progress, Automation (single), Environment/Outputs, Side chats,
-  // background-subagents ("Subagents"), background-tasks ("Tasks"), Browser,
-  // Sources. Codex 仅 single automation。Desktop 把 subagents/tasks 拆成
-  // 两个独立 section（不再合并成 "Subagents and tasks"）。
+  // CODEX-REF: local-conversation-thread-CNXrCEaG.js (26.602.40724) rail children
+  // [automation, environment, progress, outputs, side-chats, subagents, tasks,
+  // browser, sources]. Environment/Outputs are mutually exclusive on git-kind, so
+  // a non-git rail reads Automations, Progress, Outputs, … Codex 仅 single
+  // automation；subagents/tasks 拆成两个独立 section。
   assertDeepEqual(
     sections.map((section) => section.title),
     [
-      "Progress",
       "Automations",
+      "Progress",
       "Outputs",
       "Side chats",
       "Subagents",

@@ -1,6 +1,8 @@
 import { X } from "lucide-react";
 import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { ContextMenu, type ContextMenuItem } from "./context-menu";
+import { useHiCodexIntl } from "./i18n-provider";
+import type { HiCodexIntlContextValue } from "./i18n-provider";
 import type {
   SidePanelTab,
   SidePanelTabHostController,
@@ -90,6 +92,7 @@ interface SidePanelTabPillProps {
 }
 
 function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) {
+  const { formatMessage } = useHiCodexIntl();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   // codex: title sits in a `relative min-w-0 flex-1 overflow-hidden` wrapper with a
   // sibling right-edge gradient fade (NOT a CSS ellipsis) so long titles dissolve.
@@ -111,7 +114,7 @@ function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) 
     event.stopPropagation();
     controller.closeTab(tab.tabId);
   };
-  const contextMenuItems = useMemo(() => sidePanelTabContextMenuItems(tab, controller), [controller, tab]);
+  const contextMenuItems = useMemo(() => sidePanelTabContextMenuItems(tab, controller, formatMessage), [controller, tab, formatMessage]);
   const onContextMenu = (event: MouseEvent<HTMLDivElement>) => {
     if (contextMenuItems.length === 0) return;
     event.preventDefault();
@@ -147,7 +150,7 @@ function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) 
             type="button"
             data-tab-preview-pin-exempt="true"
             // codex `codex.tabs.closeNamed` defaultMessage "Close {title} tab" — per-tab named label.
-            aria-label={`Close ${tabTitleText(tab.title)} tab`}
+            aria-label={formatMessage({ id: "codex.tabs.closeNamed", defaultMessage: "Close {title} tab" }, { title: tabTitleText(tab.title) })}
             className="hc-side-panel-tab-pill__close"
             onClick={onClickClose}
           >
@@ -171,12 +174,13 @@ function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) 
 export function sidePanelTabContextMenuItems(
   tab: SidePanelTab,
   controller: SidePanelTabHostController,
+  formatMessage: HiCodexIntlContextValue["formatMessage"],
 ): ContextMenuItem[] {
   const customItems = (tab.contextMenuItems ?? []).map(sidePanelTabContextMenuItem);
   if (!tab.isClosable) return customItems;
   const closeItem: ContextMenuItem = {
     id: `close:${tab.tabId}`,
-    label: "Close",
+    label: formatMessage({ id: "codex.tabs.contextMenu.close", defaultMessage: "Close" }),
     onSelect: () => controller.closeTab(tab.tabId),
   };
   return customItems.length > 0

@@ -7,6 +7,7 @@ import {
   Plus,
   Sparkles,
   Square,
+  Target,
   X,
 } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -102,6 +103,8 @@ export interface ComposerProps {
   onBrowseFiles?: (kind: ComposerBrowseKind) => Promise<ComposerAttachment[]>;
   onMentionSearch?: (query: string, marker: ComposerMentionMarker) => Promise<ComposerMentionOption[]>;
   onPlanSelected?: () => void;
+  onPursueGoal?: () => void;
+  goalMode?: boolean;
   onOpenPlugins?: () => void;
   showPlanKeywordSuggestion?: boolean;
   pendingRequestContent?: ReactNode;
@@ -134,6 +137,8 @@ export function Composer({
   onBrowseFiles,
   onMentionSearch,
   onPlanSelected,
+  onPursueGoal,
+  goalMode = false,
   onOpenPlugins,
   showPlanKeywordSuggestion = true,
   pendingRequestContent,
@@ -160,7 +165,7 @@ export function Composer({
   const [dropActive, setDropActive] = useState(false);
   const [imagePreview, setImagePreview] = useState<{ src: string; label: string } | null>(null);
   const slashQuery = useMemo(() => slashSearchText(input), [input]);
-  const attachActions = useMemo(() => attachActionsForComposerMode(mode), [mode]);
+  const attachActions = useMemo(() => attachActionsForComposerMode(mode, goalMode), [mode, goalMode]);
   const availableSlashCommands = useMemo(() => slashCommandsForComposerMode(mode, DEFAULT_SLASH_COMMANDS), [mode]);
   const slashCommands = useMemo(
     () => filterSlashCommands(slashQuery, availableSlashCommands).filter((command) => !command.hidden),
@@ -512,6 +517,13 @@ export function Composer({
       return;
     }
 
+    if (actionId === "goal") {
+      closeComposerPopovers();
+      onPursueGoal?.();
+      requestComposerFocus(promptEditorRef.current);
+      return;
+    }
+
     if (actionId === "plugins") {
       closeComposerPopovers();
       onOpenPlugins?.();
@@ -846,6 +858,7 @@ export function Composer({
                 actions={attachActions}
                 selectedAction={selectedAttachAction}
                 mode={mode}
+                goalMode={goalMode}
                 onSelect={(actionId) => void selectAttachmentMode(actionId)}
               />
             )}
@@ -876,7 +889,9 @@ export function Composer({
                   ref={footerLeftMeasureRef}
                   attachmentPickerOpen={attachmentPicker.status !== "closed"}
                   mode={mode}
+                  goalMode={goalMode}
                   onPlanSelected={onPlanSelected}
+                  onPursueGoal={onPursueGoal}
                   onShowAttachmentMenu={showAttachmentMenu}
                 />
               )}
@@ -1029,7 +1044,9 @@ export function Composer({
                   ref={footerLeftMeasureRef}
                   attachmentPickerOpen={attachmentPicker.status !== "closed"}
                   mode={mode}
+                  goalMode={goalMode}
                   onPlanSelected={onPlanSelected}
+                  onPursueGoal={onPursueGoal}
                   onShowAttachmentMenu={showAttachmentMenu}
                 />
                 <div className="hc-composer-footer-middle">{footerSettings}</div>
@@ -1092,14 +1109,18 @@ function alternateFollowUpSubmitAction(
 interface ComposerFooterLeftProps {
   attachmentPickerOpen: boolean;
   mode: ComposerMode;
+  goalMode: boolean;
   onPlanSelected?: () => void;
+  onPursueGoal?: () => void;
   onShowAttachmentMenu: () => void;
 }
 
 const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftProps>(function ComposerFooterLeft({
   attachmentPickerOpen,
   mode,
+  goalMode,
   onPlanSelected,
+  onPursueGoal,
   onShowAttachmentMenu,
 }, ref) {
   const { formatMessage } = useHiCodexIntl();
@@ -1139,6 +1160,23 @@ const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftProps>(f
             <span className="composer-footer__label--sm">{formatMessage({ id: "composer.planModeIndicator", defaultMessage: "Plan" })}</span>
           </button>
         </Tooltip>
+      )}
+      {goalMode && (
+        /*
+         * codex composer-CwxGJF3C.js — goal-mode indicator pill: label
+         * composer.goalModeIndicator = "Goal", tooltip composer.goalModeIndicator.tooltip
+         * = "Clear goal". Clicking it toggles goal mode back off (onPursueGoal).
+         */
+        <button
+          type="button"
+          className="hc-composer-mode-pill"
+          aria-label={formatMessage({ id: "composer.goalDropdown.ariaLabel", defaultMessage: "Goal" })}
+          title={formatMessage({ id: "composer.goalModeIndicator.tooltip", defaultMessage: "Clear goal" })}
+          onClick={() => onPursueGoal?.()}
+        >
+          <Target size={13} />
+          <span className="composer-footer__label--sm">{formatMessage({ id: "composer.goalModeIndicator", defaultMessage: "Goal" })}</span>
+        </button>
       )}
     </div>
   );

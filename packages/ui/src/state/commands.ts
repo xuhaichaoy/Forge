@@ -124,7 +124,9 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     id: COMMAND_IDS.findInThread,
     title: "Find",
     description: "Search the current chat",
-    group: "thread",
+    // codex: electron-menu-shortcuts-*.js#findInThread — commandMenuGroupKey
+    // `navigation` (the command menu lists Find under Navigation, not Chat).
+    group: "navigation",
     scope: "webview",
     availableIn: ["electron", "browser"],
     defaultKeybindings: {
@@ -206,8 +208,10 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     scope: "webview",
     availableIn: ["electron", "browser"],
     defaultKeybindings: {
-      macOS: ["CmdOrCtrl+Shift+["],
-      default: ["CmdOrCtrl+Shift+["],
+      // codex electron-menu-shortcuts: previousThread carries TWO accelerators —
+      // mac [⌘⇧[, ⌘⌥←], non-mac [Ctrl+Shift+[, Ctrl+PageUp].
+      macOS: ["CmdOrCtrl+Shift+[", "Cmd+Alt+Left"],
+      default: ["CmdOrCtrl+Shift+[", "Ctrl+PageUp"],
     },
   },
   // codex: electron-menu-shortcuts-*.js nextThread — ⌘⇧].
@@ -219,8 +223,10 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     scope: "webview",
     availableIn: ["electron", "browser"],
     defaultKeybindings: {
-      macOS: ["CmdOrCtrl+Shift+]"],
-      default: ["CmdOrCtrl+Shift+]"],
+      // codex electron-menu-shortcuts: nextThread carries TWO accelerators —
+      // mac [⌘⇧], ⌘⌥→], non-mac [Ctrl+Shift+], Ctrl+PageDown].
+      macOS: ["CmdOrCtrl+Shift+]", "Cmd+Alt+Right"],
+      default: ["CmdOrCtrl+Shift+]", "Ctrl+PageDown"],
     },
   },
   // codex: electron-menu-shortcuts-*.js settings — ⌘,.
@@ -228,7 +234,10 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     id: COMMAND_IDS.settings,
     title: "Settings…",
     description: "Open Codex settings",
-    group: "configure",
+    // codex: electron-menu-shortcuts-*.js#settings — commandMenuGroupKey `app`
+    // (Settings sits under the App section in Codex's command menu, not Configure;
+    // `configure` stays the home of Keyboard Shortcuts only).
+    group: "app",
     scope: "webview",
     availableIn: ["electron", "browser"],
     defaultKeybindings: {
@@ -275,7 +284,12 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
       default: ["CmdOrCtrl+Alt+P"],
     },
   },
-  // codex: electron-menu-shortcuts-*.js#navigateBack — ⌘[.
+  // codex: electron-menu-shortcuts-*.js#navigateBack — ⌘[ + Mouse Back.
+  // Codex's base `defaultKeybindings:[{key:`CmdOrCtrl+[`},{key:`MouseBack`}]`
+  // binds the mouse "back" side button (button 3) alongside the keyboard
+  // accelerator. The `MouseBack` pseudo-key is consumed by the global mouse
+  // navigation handler in HiCodexApp (mirrors app-main `Ij`/`Fj`); the keyboard
+  // matcher treats it as an inert entry (no DOM key is ever named "MouseBack").
   {
     id: COMMAND_IDS.navigateBack,
     title: "Back",
@@ -284,11 +298,11 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     scope: "webview",
     availableIn: ["electron"],
     defaultKeybindings: {
-      macOS: ["CmdOrCtrl+["],
-      default: ["CmdOrCtrl+["],
+      macOS: ["CmdOrCtrl+[", "MouseBack"],
+      default: ["CmdOrCtrl+[", "MouseBack"],
     },
   },
-  // codex: electron-menu-shortcuts-*.js#navigateForward — ⌘].
+  // codex: electron-menu-shortcuts-*.js#navigateForward — ⌘] + Mouse Forward.
   {
     id: COMMAND_IDS.navigateForward,
     title: "Forward",
@@ -297,8 +311,8 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
     scope: "webview",
     availableIn: ["electron"],
     defaultKeybindings: {
-      macOS: ["CmdOrCtrl+]"],
-      default: ["CmdOrCtrl+]"],
+      macOS: ["CmdOrCtrl+]", "MouseForward"],
+      default: ["CmdOrCtrl+]", "MouseForward"],
     },
   },
   // codex: electron-menu-shortcuts-*.js#copySessionId — ⌘⌥C.
@@ -513,23 +527,27 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
  * id) and `thread1`..`thread9` render through a parameterized original id.
  */
 const COMMAND_TITLE_INTL_ID: Readonly<Record<string, string>> = {
+  // codex dialog/palette title resolver: `"titleIntlId" in cmd ?
+  // formatMessage(codex.command.X) : formatMessage(codex.commandMenuTitle.X)`.
+  // Webview commands that own a codex.command.* title use it (localized, sentence
+  // case e.g. "New chat"); the menu-only ones fall back to commandMenuTitle.*.
   [COMMAND_IDS.openCommandMenu]: "codex.commandMenuTitle.openCommandMenu",
   [COMMAND_IDS.newWindow]: "codex.commandMenuTitle.newWindow",
-  [COMMAND_IDS.openFolder]: "codex.commandMenuTitle.openFolder",
-  [COMMAND_IDS.findInThread]: "codex.commandMenuTitle.findInThread",
-  [COMMAND_IDS.toggleSidebar]: "codex.commandMenuTitle.toggleSidebar",
+  [COMMAND_IDS.openFolder]: "codex.command.openFolder",
+  [COMMAND_IDS.findInThread]: "codex.command.findInThread",
+  [COMMAND_IDS.toggleSidebar]: "codex.command.toggleSidebar",
   [COMMAND_IDS.toggleFileTreePanel]: "codex.commandMenuTitle.toggleFileTreePanel",
   [COMMAND_IDS.searchChats]: "codex.commandMenuTitle.searchChats",
   [COMMAND_IDS.searchFiles]: "codex.commandMenuTitle.searchFiles",
-  [COMMAND_IDS.newThread]: "codex.commandMenuTitle.newThread",
-  [COMMAND_IDS.previousThread]: "codex.commandMenuTitle.previousThread",
-  [COMMAND_IDS.nextThread]: "codex.commandMenuTitle.nextThread",
-  [COMMAND_IDS.settings]: "codex.commandMenuTitle.settings",
-  [COMMAND_IDS.archiveThread]: "codex.commandMenuTitle.archiveThread",
+  [COMMAND_IDS.newThread]: "codex.command.newThread",
+  [COMMAND_IDS.previousThread]: "codex.command.previousThread",
+  [COMMAND_IDS.nextThread]: "codex.command.nextThread",
+  [COMMAND_IDS.settings]: "codex.command.settings",
+  [COMMAND_IDS.archiveThread]: "codex.command.archiveThread",
   [COMMAND_IDS.renameThread]: "codex.commandMenuTitle.renameThread",
-  [COMMAND_IDS.toggleThreadPin]: "codex.commandMenuTitle.toggleThreadPin",
-  [COMMAND_IDS.navigateBack]: "codex.commandMenuTitle.navigateBack",
-  [COMMAND_IDS.navigateForward]: "codex.commandMenuTitle.navigateForward",
+  [COMMAND_IDS.toggleThreadPin]: "codex.command.toggleThreadPin",
+  [COMMAND_IDS.navigateBack]: "codex.command.navigateBack",
+  [COMMAND_IDS.navigateForward]: "codex.command.navigateForward",
   [COMMAND_IDS.copySessionId]: "codex.commandMenuTitle.copySessionId",
   [COMMAND_IDS.copyWorkingDirectory]: "codex.commandMenuTitle.copyWorkingDirectory",
   [COMMAND_IDS.copyConversationPath]: "codex.commandMenuTitle.copyConversationPath",
@@ -539,7 +557,7 @@ const COMMAND_TITLE_INTL_ID: Readonly<Record<string, string>> = {
   // upstream `codex.commandMenuTitle.copyConversationMarkdown`. HiCodex surfaces
   // it as a command-menu entry, so its title keeps a HiCodex-original id.
   [COMMAND_IDS.copyConversationMarkdown]: "hc.command.copyConversationMarkdown.title",
-  [COMMAND_IDS.showKeyboardShortcuts]: "codex.commandMenuTitle.showKeyboardShortcuts",
+  [COMMAND_IDS.showKeyboardShortcuts]: "codex.command.showKeyboardShortcuts",
 };
 
 const COMMAND_DESCRIPTION_INTL_ID: Readonly<Record<string, string>> = {

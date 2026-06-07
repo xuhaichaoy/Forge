@@ -28,6 +28,7 @@ import {
   emptyMcpToolArgumentValues,
   projectMcpToolArgumentFields,
 } from "../src/state/mcp-tool-arguments";
+import { createI18nBundle, formatI18nMessage } from "../src/state/i18n";
 
 export default function runCommandPanelTests(): void {
   projectsMcpServerNamesToolsAndAuthStatus();
@@ -51,6 +52,43 @@ export default function runCommandPanelTests(): void {
   derivesCommandPanelSubModeAndPlaceholder();
   handlesCommandPanelEscapeAsTwoStage();
   splitsCommandMenuEntriesIntoTaxonomySections();
+  localizesCommandMenuSectionTitles();
+}
+
+// codex: app-main-*.js `codex.commandGroup.<key>` — command menu section titles
+// are localized in Codex. With a zh formatMessage the taxonomy headers must
+// resolve to the Codex zh-CN labels (对话/项目/技能/配置/应用) instead of the
+// English defaultMessage fallback.
+function localizesCommandMenuSectionTitles(): void {
+  const zh = createI18nBundle("zh-CN");
+  const formatMessage = (descriptor: { id: string; defaultMessage: string }) =>
+    formatI18nMessage(zh, descriptor);
+  const entries: CommandPanelEntry[] = [
+    { id: "command:new", title: "/new", kind: "status", groupKey: "thread" },
+    { id: "command:search-files", title: "Search files", kind: "file", groupKey: "workspace" },
+    { id: "skill:code-review", title: "Code review", kind: "skill", groupKey: "skills" },
+    { id: "command:settings", title: "Settings", kind: "status", groupKey: "app" },
+  ];
+  assertDeepEqual(
+    groupCommandPanelEntries(entries, formatMessage).map((section) => ({
+      groupKey: section.groupKey,
+      title: section.title,
+    })),
+    [
+      { groupKey: "thread", title: "对话" },
+      { groupKey: "workspace", title: "项目" },
+      { groupKey: "skills", title: "技能" },
+      { groupKey: "app", title: "应用" },
+    ],
+    "zh formatMessage should localize command menu section titles via codex.commandGroup.*",
+  );
+
+  // Without formatMessage the English defaultMessage labels are preserved.
+  assertEqual(
+    groupCommandPanelEntries([{ id: "command:new", title: "/new", kind: "status", groupKey: "thread" }])[0]?.title,
+    "Chat",
+    "missing formatMessage should fall back to the English section title",
+  );
 }
 
 function splitsCommandMenuEntriesIntoTaxonomySections(): void {

@@ -3,7 +3,16 @@
 // summaries, falling back to "Custom schedule" when the rule is not
 // representable by its compact automation UI.
 
+import { formatMessage } from "./i18n";
+
+// codex: automation-schedule-*.js — `settings.automations.rruleSummaryFallback`
+// ("Custom schedule" / "自定义安排"). Resolved at call time so the active locale
+// applies (the exported const stays for back-compat callers that need a literal).
 export const AUTOMATION_SCHEDULE_FALLBACK = "Custom schedule";
+
+function automationScheduleFallbackLabel(): string {
+  return formatMessage({ id: "settings.automations.rruleSummaryFallback", defaultMessage: "Custom schedule" });
+}
 
 const WEEKDAY_ORDER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR"] as const;
@@ -23,7 +32,7 @@ interface ParsedRrule {
 
 export function automationScheduleSummary(
   rrule: string | null | undefined,
-  fallbackMessage = AUTOMATION_SCHEDULE_FALLBACK,
+  fallbackMessage = automationScheduleFallbackLabel(),
 ): string | null {
   const parsed = parseRrule(rrule);
   if (!parsed) return rrule?.trim() ? fallbackMessage : null;
@@ -34,7 +43,9 @@ export function automationScheduleSummary(
     return intervalSummary(minutelyIntervalLabel(parsed.interval), everyDay, weekdays);
   }
   if (parsed.freq === "HOURLY") {
-    const interval = parsed.interval === 1 ? "Hourly" : `Every ${parsed.interval}h`;
+    const interval = parsed.interval === 1
+      ? formatMessage({ id: "settings.automations.scheduleSummary.intervalHourly", defaultMessage: "Hourly" })
+      : formatMessage({ id: "settings.automations.scheduleSummary.interval", defaultMessage: "Every {count}h" }, { count: parsed.interval });
     return intervalSummary(interval, everyDay, weekdays);
   }
   if (parsed.freq !== "DAILY" && parsed.freq !== "WEEKLY") return fallbackMessage;
@@ -132,28 +143,34 @@ function formatScheduleTime(time: { hour: number; minute: number }): string | nu
 }
 
 function minutelyIntervalLabel(interval: number): string {
-  if (interval === 1) return "Every minute";
-  if (interval === 60) return "Hourly";
-  if (interval === 1440) return "Daily";
-  if (interval === 10080) return "Weekly";
-  return `Every ${interval}m`;
+  if (interval === 1) return formatMessage({ id: "settings.automations.scheduleSummary.intervalMinute", defaultMessage: "Every minute" });
+  if (interval === 60) return formatMessage({ id: "settings.automations.scheduleSummary.intervalHourly", defaultMessage: "Hourly" });
+  if (interval === 1440) return formatMessage({ id: "settings.automations.scheduleSummary.intervalDaily", defaultMessage: "Daily" });
+  if (interval === 10080) return formatMessage({ id: "settings.automations.scheduleSummary.intervalWeekly", defaultMessage: "Weekly" });
+  return formatMessage({ id: "settings.automations.scheduleSummary.intervalMinutes", defaultMessage: "Every {count}m" }, { count: interval });
 }
 
 function intervalSummary(interval: string, everyDay: boolean, weekdays: WeekdayCode[]): string {
   if (everyDay) return interval;
-  return `${interval} on ${weekdayCountLabel(weekdays.length)}`;
+  return formatMessage(
+    { id: "settings.automations.scheduleSummary.intervalDays", defaultMessage: "{interval} on {days}" },
+    { interval, days: weekdayCountLabel(weekdays.length) },
+  );
 }
 
 function weekdayCountLabel(count: number): string {
-  return count === 1 ? "1 day" : `${count} days`;
+  return formatMessage(
+    { id: "settings.automations.scheduleSummary.intervalDayCount", defaultMessage: "{count, plural, one {# day} other {# days}}" },
+    { count },
+  );
 }
 
 function dailyWeeklySummary(timeLabel: string, weekdays: WeekdayCode[], everyDay: boolean): string | null {
-  if (everyDay) return `Daily at ${timeLabel}`;
-  if (sameWeekdays(weekdays, WEEKDAYS)) return `Weekdays at ${timeLabel}`;
-  if (sameWeekdays(weekdays, WEEKENDS)) return `Weekends at ${timeLabel}`;
+  if (everyDay) return formatMessage({ id: "settings.automations.scheduleSummary.daily", defaultMessage: "Daily at {time}" }, { time: timeLabel });
+  if (sameWeekdays(weekdays, WEEKDAYS)) return formatMessage({ id: "settings.automations.scheduleSummary.weekdays", defaultMessage: "Weekdays at {time}" }, { time: timeLabel });
+  if (sameWeekdays(weekdays, WEEKENDS)) return formatMessage({ id: "settings.automations.scheduleSummary.weekends", defaultMessage: "Weekends at {time}" }, { time: timeLabel });
   const days = weekdaysSummary(weekdays);
-  return days ? `${days} at ${timeLabel}` : null;
+  return days ? formatMessage({ id: "settings.automations.scheduleSummary.weekly", defaultMessage: "{days} at {time}" }, { days, time: timeLabel }) : null;
 }
 
 function weekdaysSummary(weekdays: WeekdayCode[]): string | null {

@@ -4,6 +4,7 @@ import type { SettingsPanelId } from "./composer-workflow";
 import { HICODEX_IMAGE_TOOL_NAME } from "./image-generation-tool";
 import {
   HICODEX_SUPPORTED_LOCALES,
+  formatMessage,
   localeDescription,
   localeLabel,
   type HiCodexLocale,
@@ -108,36 +109,32 @@ type SettingsSectionIcon =
   | "archive";          // Codex archive icon (slug data-controls)
 
 /*
- * CODEX-REF: Section grouping mirrors Codex Desktop's group descriptor in
- * settings-page-*.js:
+ * CODEX-REF: Section grouping mirrors Codex Desktop 26.602.40724's group
+ * descriptor `$e` in settings-page-*.js — FOUR groups (an earlier build used a
+ * 2-group app/host split, which HiCodex had cloned; the live build regrouped):
  *   [
- *     {key:`app`,slugs:[`general-settings`,`profile`,
- *           `appearance`,`appshots`,`connections`,`git-settings`,`usage`]},
- *     {key:`connection`,slugs:[`agent`,`personalization`,
- *           `keyboard-shortcuts`,`mcp-settings`,`hooks-settings`,`browser-use`,
- *           `computer-use`,`local-environments`,`worktrees`,`data-controls`]}
+ *     {key:`personal`,    heading:`Personal`,     slugs:[general-settings, profile,
+ *           appearance, agent, personalization, keyboard-shortcuts, usage]},
+ *     {key:`integrations`,heading:`Integrations`, slugs:[appshots, codex-micro,
+ *           mcp-settings, plugins-settings, skills-settings, browser-use, computer-use]},
+ *     {key:`coding`,      heading:`Coding`,       slugs:[hooks-settings, connections,
+ *           git-settings, local-environments, environments, worktrees]},
+ *     {key:`archived`,    heading:`Archived`,     slugs:[data-controls]}
  *   ]
- * Heading strings:
- *   {appHeading:{id:`settings.nav.heading.app`,defaultMessage:`App`},
- *    hostHeading:{id:`settings.nav.heading.host`,defaultMessage:`Host`}}
- *
- * Codex defines exactly 2 groups; HiCodex has no third group either.
- * HiCodex-only sections (models / images / permissions / approvals / apps /
- * experimental) that have no Codex Desktop counterpart are folded into the
- * Codex group whose semantic they most match:
- *   - models, images   → app   (local client-side endpoint config)
- *   - permissions      → host  (agent runtime policy)
- *   - approvals        → host  (agent runtime policy)
- *   - apps             → host  (sits next to plugins / skills)
- *   - experimental     → host  (feature gates, adjacent to data-controls)
+ * Heading i18n: settings.nav.heading.{personal,integrations,coding,archived}.
+ * profile / codex-micro are Codex-only (absent here). HiCodex-only sections with
+ * no Codex counterpart are folded into the group whose semantic they most match:
+ *   - models, images, apps → integrations (endpoints / connected apps, by MCP/plugins)
+ *   - permissions, approvals, experimental → coding (agent runtime + dev config)
  */
-export type SettingsSectionGroup = "app" | "host";
+export type SettingsSectionGroup = "personal" | "integrations" | "coding" | "archived";
 
 export const SETTINGS_SECTION_GROUP_HEADINGS: Record<SettingsSectionGroup, string | null> = {
-  // Codex Desktop: settings.nav.heading.app defaultMessage "App"
-  app: "App",
-  // Codex Desktop: settings.nav.heading.host defaultMessage "Host"
-  host: "Host",
+  // Codex Desktop: settings.nav.heading.{personal,integrations,coding,archived}
+  personal: "Personal",
+  integrations: "Integrations",
+  coding: "Coding",
+  archived: "Archived",
 };
 
 export const SETTINGS_SECTIONS: Array<{
@@ -147,70 +144,46 @@ export const SETTINGS_SECTIONS: Array<{
   icon: SettingsSectionIcon;
   group: SettingsSectionGroup;
 }> = [
-  // === App group (Codex _e[0].slugs order, sans Codex-only `profile`;
-  // HiCodex-only models/images inserted near the end before usage to stay
-  // adjacent to general/appearance/connections client-side settings) ===
-  // Codex Desktop label "General" (settings-shared-*.js: settings.nav.general-settings)
-  { id: "general", title: "General", description: "Runtime and workspace", icon: "general", group: "app" },
-  // Codex Desktop label "Appearance" (settings.nav.appearance) — no subtitle
-  { id: "appearance", title: "Appearance", description: "", icon: "appearance", group: "app" },
-  // Codex Desktop label "Appshots" (settings.nav.appshots) — no subtitle
-  { id: "appshots", title: "Appshots", description: "", icon: "appshots", group: "app" },
-  // Codex Desktop label "Connections" (settings.nav.connections) — no subtitle
-  { id: "connections", title: "Connections", description: "", icon: "connections", group: "app" },
-  // Codex Desktop label "Git" (settings.nav.git-settings) — no subtitle
-  { id: "git-settings", title: "Git", description: "", icon: "git", group: "app" },
-  // HiCodex-only: local model endpoint config — no Codex counterpart, lives in app
-  { id: "models", title: "Models", description: "Provider and model profile", icon: "models", group: "app" },
-  // HiCodex-only: local image generation endpoint — no Codex counterpart, lives in app
-  { id: "images", title: "Images", description: "Image generation endpoint", icon: "images", group: "app" },
-  // Codex Desktop label "Usage & billing" (settings.nav.usage) — no subtitle
-  { id: "usage", title: "Usage & billing", description: "", icon: "usage", group: "app" },
+  // === Personal (codex $e personal.slugs: general-settings, profile, appearance,
+  // agent, personalization, keyboard-shortcuts, usage; `profile` is Codex-only) ===
+  { id: "general", title: "General", description: "Runtime and workspace", icon: "general", group: "personal" },
+  { id: "appearance", title: "Appearance", description: "", icon: "appearance", group: "personal" },
+  { id: "agent", title: "Configuration", description: "", icon: "agent", group: "personal" },
+  { id: "personalization", title: "Personalization", description: "", icon: "personalization", group: "personal" },
+  { id: "keyboard-shortcuts", title: "Keyboard shortcuts", description: "", icon: "keyboard", group: "personal" },
+  { id: "usage", title: "Usage & billing", description: "", icon: "usage", group: "personal" },
 
-  // === Host group (Codex _e[1].slugs order, with HiCodex-only items folded
-  // into semantic-adjacent positions) ===
-  // Codex Desktop label "Configuration" (settings.nav.agent) — no subtitle
-  { id: "agent", title: "Configuration", description: "", icon: "agent", group: "host" },
-  // Codex Desktop label "Personalization" (settings.nav.personalization) — no subtitle
-  { id: "personalization", title: "Personalization", description: "", icon: "personalization", group: "host" },
-  // Codex Desktop label "Keyboard shortcuts" (settings.nav.keyboard-shortcuts) — no subtitle
-  { id: "keyboard-shortcuts", title: "Keyboard shortcuts", description: "", icon: "keyboard", group: "host" },
-  // Codex Desktop label "MCP servers" with subtitle "Connect external tools and data sources."
-  // (settings-shared-*.js subtitle for the mcp-settings case)
-  { id: "mcp", title: "MCP servers", description: "Connect external tools and data sources.", icon: "mcp", group: "host" },
-  // Codex Desktop label "Hooks" with subtitle "Manage lifecycle hooks from config and enabled
-  // plugins." (bundle: "Subtitle for hooks settings"). Codex appends a "<a>Learn more</a>" docs
-  // link, omitted here — the nav subtitle renders as plain text and that link targets Codex's
-  // hosted docs, which HiCodex doesn't ship.
-  { id: "hooks", title: "Hooks", description: "Manage lifecycle hooks from config and enabled plugins.", icon: "hooks", group: "host" },
-  // Codex Desktop label "Plugins" (settings.nav.plugins-settings) — gated in Codex but always shown in HiCodex
-  { id: "plugins", title: "Plugins", description: "", icon: "plugins", group: "host" },
-  // Codex Desktop label "Skills" with subtitle "Give Codex superpowers." (bundle: "Subheading
-  // shown above the skills sections"). Codex's "<link>Learn more</link>" docs link is omitted —
-  // the nav subtitle is plain text. Gated in Codex but always shown in HiCodex.
-  { id: "skills", title: "Skills", description: "Give Codex superpowers.", icon: "skills", group: "host" },
-  // HiCodex-only: agent runtime policy — fits next to other agent-scope settings
-  { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions", group: "host" },
-  // HiCodex-only: agent approval policy — same rationale as permissions
-  { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions", group: "host" },
-  // HiCodex-only: connected apps — semantic neighbor to plugins/skills
-  { id: "apps", title: "Apps", description: "Connected apps", icon: "apps", group: "host" },
-  // Codex Desktop label "Browser" with subtitle "Manage Codex's browser." (bundle: "Subtitle
-  // for in-app browser settings"). Codex's trailing "Google Chrome can be set up in
-  // <computerUseSettingsLink>…</computerUseSettingsLink>" clause is dropped — it needs a
-  // cross-section link the plain-text nav subtitle can't render.
-  { id: "browser-use", title: "Browser", description: "Manage Codex’s browser.", icon: "browser", group: "host" },
-  // Codex Desktop label "Computer use" with subtitle "Manage how Codex uses other applications
-  // on your computer" (bundle: "Subtitle for computer use settings").
-  { id: "computer-use", title: "Computer use", description: "Manage how Codex uses other applications on your computer", icon: "computer", group: "host" },
-  // Codex Desktop label "Environments" (settings.nav.local-environments) — no subtitle
-  { id: "local-environments", title: "Environments", description: "", icon: "environments", group: "host" },
-  // Codex Desktop label "Worktrees" (settings.nav.worktrees) — no subtitle
-  { id: "worktrees", title: "Worktrees", description: "Local, worktree, cloud modes", icon: "worktrees", group: "host" },
-  // HiCodex-only: feature gates — sits with other lifecycle / data settings near data-controls
-  { id: "experimental", title: "Experimental", description: "Feature gates", icon: "experimental", group: "host" },
-  // Codex Desktop label "Archived chats" (settings.nav.data-controls) — no subtitle (last in Codex _e order)
-  { id: "data-controls", title: "Archived chats", description: "", icon: "archive", group: "host" },
+  // === Integrations (codex $e integrations.slugs: appshots, codex-micro,
+  // mcp-settings, plugins-settings, skills-settings, browser-use, computer-use;
+  // `codex-micro` is Codex-only. HiCodex-only models/images/apps folded in here.) ===
+  { id: "appshots", title: "Appshots", description: "", icon: "appshots", group: "integrations" },
+  { id: "mcp", title: "MCP servers", description: "Connect external tools and data sources.", icon: "mcp", group: "integrations" },
+  // Codex gates plugins/skills out of the nav; HiCodex keeps them (it manages its own).
+  { id: "plugins", title: "Plugins", description: "", icon: "plugins", group: "integrations" },
+  { id: "skills", title: "Skills", description: "Give Codex superpowers.", icon: "skills", group: "integrations" },
+  // HiCodex-only: connected apps — semantic neighbor to plugins/skills/mcp.
+  { id: "apps", title: "Apps", description: "Connected apps", icon: "apps", group: "integrations" },
+  { id: "browser-use", title: "Browser", description: "Manage Codex’s browser.", icon: "browser", group: "integrations" },
+  { id: "computer-use", title: "Computer use", description: "Manage how Codex uses other applications on your computer", icon: "computer", group: "integrations" },
+  // HiCodex-only: local model + image-gen endpoint config — provider integrations.
+  { id: "models", title: "Models", description: "Provider and model profile", icon: "models", group: "integrations" },
+  { id: "images", title: "Images", description: "Image generation endpoint", icon: "images", group: "integrations" },
+
+  // === Coding (codex $e coding.slugs: hooks-settings, connections, git-settings,
+  // local-environments, environments, worktrees. HiCodex-only permissions/
+  // approvals/experimental folded in — agent runtime + dev config.) ===
+  { id: "hooks", title: "Hooks", description: "Manage lifecycle hooks from config and enabled plugins.", icon: "hooks", group: "coding" },
+  { id: "connections", title: "Connections", description: "", icon: "connections", group: "coding" },
+  { id: "git-settings", title: "Git", description: "", icon: "git", group: "coding" },
+  { id: "local-environments", title: "Environments", description: "", icon: "environments", group: "coding" },
+  { id: "worktrees", title: "Worktrees", description: "Local, worktree, cloud modes", icon: "worktrees", group: "coding" },
+  // HiCodex-only: agent runtime policy + approval policy + feature gates.
+  { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions", group: "coding" },
+  { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions", group: "coding" },
+  { id: "experimental", title: "Experimental", description: "Feature gates", icon: "experimental", group: "coding" },
+
+  // === Archived (codex $e archived.slugs: data-controls) ===
+  { id: "data-controls", title: "Archived chats", description: "", icon: "archive", group: "archived" },
 ];
 
 /*
@@ -249,8 +222,10 @@ const SETTINGS_SECTION_I18N_IDS: Partial<Record<SettingsPanelId, string>> = {
 };
 
 const SETTINGS_GROUP_HEADING_I18N_IDS: Record<SettingsSectionGroup, string> = {
-  app: "settings.nav.heading.app",
-  host: "settings.nav.heading.host",
+  personal: "settings.nav.heading.personal",
+  integrations: "settings.nav.heading.integrations",
+  coding: "settings.nav.heading.coding",
+  archived: "settings.nav.heading.archived",
 };
 
 // Localize a settings-nav section title. formatMessage is optional so callers
@@ -334,7 +309,17 @@ export function settingsPanelCommandKind(panel: SettingsPanelId): CommandPanelKi
   }
 }
 
+// Localized settings-panel header title. The English switch below is the
+// defaultMessage; module-level formatMessage resolves the already-present zh
+// values (settings.nav.*) in Chinese mode and falls back to English otherwise,
+// so en-US rendering is unchanged.
 export function settingsPanelTitle(panel: SettingsPanelId): string {
+  const defaultMessage = settingsPanelTitleEn(panel);
+  const id = SETTINGS_SECTION_I18N_IDS[panel];
+  return id ? formatMessage({ id, defaultMessage }) : defaultMessage;
+}
+
+function settingsPanelTitleEn(panel: SettingsPanelId): string {
   switch (panel) {
     case "mcp":
       return "MCP";

@@ -1,4 +1,5 @@
 import { formatUnknown, stringField } from "../lib/format";
+import { formatMessage } from "./i18n";
 
 import type { AssistantMessagePhase, ItemRecord, RailEntry, ThreadItem } from "./render-group-types";
 
@@ -332,10 +333,24 @@ function patchChanges(item: ThreadItem): Record<string, unknown>[] {
     return [{ ...change, path: stringField(change, "path") || path }];
   });
 }
+// codex toolSummaryForCmd / active.command.*.detail action verbs — localized via
+// module formatMessage. The en-US dict resolves each id back to the original
+// English, so the locale-free projection tests (which run under the default
+// en-US locale) keep asserting the same strings while Chinese mode localizes.
+function commandActionVerb(state: "ran" | "running" | "stopped"): string {
+  if (state === "running") return formatMessage({ id: "hc.toolActivity.command.action.running", defaultMessage: "Running" });
+  if (state === "stopped") return formatMessage({ id: "hc.toolActivity.command.action.stopped", defaultMessage: "Stopped" });
+  return formatMessage({ id: "hc.toolActivity.command.action.ran", defaultMessage: "Ran" });
+}
+
 export function commandLabel(item: ThreadItem): string {
   const command = commandText(item);
-  if (!command) return isItemInProgress(item) ? "Running command" : "Ran command";
-  return `${isItemInProgress(item) ? "Running" : "Ran"} ${command}`;
+  if (!command) {
+    return isItemInProgress(item)
+      ? formatMessage({ id: "toolSummaryForCmd.runningGenericCommand", defaultMessage: "Running command" })
+      : formatMessage({ id: "toolSummaryForCmd.ranGenericCommand", defaultMessage: "Ran command" });
+  }
+  return `${commandActionVerb(isItemInProgress(item) ? "running" : "ran")} ${command}`;
 }
 
 /**
@@ -350,8 +365,8 @@ export function commandLabelParts(item: ThreadItem): { action: string; detail: s
   if (!command) return null;
   const record = item as ItemRecord;
   const executionStatus = typeof record.executionStatus === "string" ? record.executionStatus : "";
-  if (executionStatus === "interrupted") return { action: "Stopped", detail: command };
-  return { action: isItemInProgress(item) ? "Running" : "Ran", detail: command };
+  if (executionStatus === "interrupted") return { action: commandActionVerb("stopped"), detail: command };
+  return { action: commandActionVerb(isItemInProgress(item) ? "running" : "ran"), detail: command };
 }
 
 function shellCommandText(value: unknown): string {
@@ -408,11 +423,15 @@ export function formatDuration(ms: number): string {
   // codex `zu`/`Bu`: floor to whole seconds (not round) + hours tier, zero units trimmed.
   const totalSeconds = Math.floor(ms / 1_000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const hours = Math.floor(totalSeconds / 3_600);
+  // codex (composer md formatter): days tier + hours modulo 24, zero units trimmed.
+  const days = Math.floor(totalSeconds / 86_400);
+  const hours = Math.floor(totalSeconds / 3_600) % 24;
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    const parts = [`${hours}h`];
+  if (days > 0 || hours > 0) {
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
     if (minutes > 0) parts.push(`${minutes}m`);
     if (seconds > 0) parts.push(`${seconds}s`);
     return parts.join(" ");

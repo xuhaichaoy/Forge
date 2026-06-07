@@ -200,30 +200,41 @@ export function rightRailReservedInlineEndPx(
   return DESKTOP_RIGHT_RAIL_WIDTH_PX + (DESKTOP_RIGHT_RAIL_GAP_PX * 2);
 }
 
+// codex local-conversation-thread-*.js rail section titles are intl messages with
+// stable ids; HiCodex previously hardcoded the English titles. Route them through
+// formatMessage so non-English locales localize (en-US is unchanged via defaultMessage).
+function railSectionTitle(
+  id: "progress" | "automations" | "environment" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
+): string {
+  switch (id) {
+    case "progress": return formatMessage({ id: "codex.localConversation.progressSidebar.title", defaultMessage: "Progress" });
+    case "automations": return formatMessage({ id: "codex.localConversation.heartbeatAutomation.title", defaultMessage: "Automations" });
+    case "environment": return formatMessage({ id: "codex.localConversation.environmentSummary.title", defaultMessage: "Environment" });
+    case "outputs": return formatMessage({ id: "codex.localConversation.outputs.title", defaultMessage: "Outputs" });
+    case "sideChats": return formatMessage({ id: "codex.localConversation.sideChats.title", defaultMessage: "Side chats" });
+    case "subagents": return formatMessage({ id: "codex.localConversation.backgroundTasks.title.subagents", defaultMessage: "Subagents" });
+    case "tasks": return formatMessage({ id: "codex.localConversation.backgroundTasks.title.tasks", defaultMessage: "Tasks" });
+    case "browser": return formatMessage({ id: "codex.localConversation.browserUse.title", defaultMessage: "Browser" });
+    case "sources": return formatMessage({ id: "codex.localConversation.sources.title", defaultMessage: "Sources" });
+  }
+}
+
 export function projectRightRailSections(input: RightRailProjectionInput): RightRailSection[] {
   const sections: RightRailSection[] = [];
 
-  if (input.progress.length > 0) {
-    sections.push(projectEntrySection(
-      "progress",
-      "Progress",
-      input.progress,
-      true,
-      undefined,
-      allProgressEntriesCompleted(input.progress),
-    ));
-  }
-
-  // codex: local-conversation-thread-*.js automation — single-entry section
-  // with a Clock icon, label=name, meta=rrule summary, status carries the
-  // humanized "Next run: …" string used as title in Desktop. Sort: directly
-  // after progress, before automations/branchDetails (Desktop order
-  // progress→automation→environment).
+  // codex local-conversation-thread-*.js (26.602.40724) assembles the rail
+  // children as [automation, environment, progress, outputs, side-chats, …];
+  // environment is git-gated and outputs is non-git-gated (mutually exclusive).
+  // HiCodex previously placed Progress FIRST (an older-build order); match the
+  // live order automation → environment → progress → outputs.
+  //
+  // codex automation — single-entry section with a Clock icon, label=name,
+  // meta=rrule summary, status carries the humanized "Next run: …" title.
   if (input.automation) {
     const entry = automationRailEntry(input.automation);
     sections.push({
       id: "automation",
-      title: "Automations",
+      title: railSectionTitle("automations"),
       count: 1,
       entries: [entry],
       allEntries: [entry],
@@ -250,7 +261,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     // gh-status row require GitHub CLI integration; HiCodex no data source yet.
     sections.push({
       id: "branchDetails",
-      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? "Environment",
+      title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? railSectionTitle("environment"),
       count: branchEntries.length,
       entries: branchEntries,
       allEntries: branchEntries,
@@ -260,17 +271,29 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     });
   }
 
+  // codex rail order: progress follows automation + environment, before outputs.
+  if (input.progress.length > 0) {
+    sections.push(projectEntrySection(
+      "progress",
+      railSectionTitle("progress"),
+      input.progress,
+      true,
+      undefined,
+      allProgressEntriesCompleted(input.progress),
+    ));
+  }
+
   // CODEX-REF: local-conversation-thread-*.js —
   // Codex Desktop renders the Git summary when the rail is Git-backed and renders
   // Outputs only when it is not, so the Outputs section is suppressed for
   // Git-backed rails even if artifact entries exist.
   const shouldShowOutputs = input.showOutputs ?? !hasBranchDetails;
   if (shouldShowOutputs) {
-    sections.push(projectEntrySection("artifacts", "Outputs", input.artifacts, true));
+    sections.push(projectEntrySection("artifacts", railSectionTitle("outputs"), input.artifacts, true));
   }
 
   if (input.sideChats && input.sideChats.length > 0) {
-    sections.push(projectEntrySection("sideChats", "Side chats", input.sideChats, false));
+    sections.push(projectEntrySection("sideChats", railSectionTitle("sideChats"), input.sideChats, false));
   }
 
   // CODEX-REF: local-conversation-thread-DAwsPWah.js Wf — `Ve` then `He`.
@@ -287,7 +310,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   if (backgroundSubagents.length > 0) {
     sections.push(projectEntrySection(
       "backgroundSubagents",
-      "Subagents",
+      railSectionTitle("subagents"),
       backgroundSubagents,
       false,
     ));
@@ -297,7 +320,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   if (backgroundTasks.length > 0) {
     sections.push(projectEntrySection(
       "backgroundTasks",
-      "Tasks",
+      railSectionTitle("tasks"),
       backgroundTasks,
       false,
     ));
@@ -311,7 +334,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     const entry = browserRailEntry(input.browser);
     sections.push({
       id: "browser",
-      title: "Browser",
+      title: railSectionTitle("browser"),
       count: 1,
       entries: [entry],
       allEntries: [entry],
@@ -325,7 +348,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   // (`tool-sources`, sectionKey:"tool-sources") **总是渲染**(无渲染条件),空态由
   // section 内部 "No sources yet" empty row 承载。HiCodex 原条件 `sources.length>0 ||
   // sections.length>0` 没源码依据,已对齐 always。
-  sections.push(projectEntrySection("sources", "Sources", input.sources, true));
+  sections.push(projectEntrySection("sources", railSectionTitle("sources"), input.sources, true));
 
   return sections;
 }
@@ -440,7 +463,16 @@ function automationRailEntry(input: RightRailAutomationInput): RailEntry {
     id: `automation:${input.id}`,
     title: input.name,
     meta: rrule,
-    ...(nextRun ? { status: `Next run: ${nextRun}` } : {}),
+    // codex: local-conversation-thread-*.js — `codex.localConversation.heartbeatAutomation.nextRun`
+    // ("Next run: {nextRunLabel}" / "下次运行：{nextRunLabel}") feeds the automation-row tooltip.
+    ...(nextRun
+      ? {
+          status: formatMessage(
+            { id: "codex.localConversation.heartbeatAutomation.nextRun", defaultMessage: "Next run: {nextRunLabel}" },
+            { nextRunLabel: nextRun },
+          ),
+        }
+      : {}),
   };
 }
 

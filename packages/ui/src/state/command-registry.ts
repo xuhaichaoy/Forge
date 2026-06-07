@@ -200,6 +200,15 @@ function formatToken(token: string, isMac: boolean): string {
         break;
     }
   }
+  // codex: electron-menu-shortcuts-*.js — friendly labels for pseudo-keys that
+  // are not physical keyboard keys. Codex's display switch maps
+  // `MouseBack`→"Mouse Back" / `MouseForward`→"Mouse Forward" so the shortcuts
+  // UI can list the mouse side-button bindings on navigateBack/navigateForward.
+  const keyDisplayNames: Record<string, string> = {
+    MouseBack: "Mouse Back",
+    MouseForward: "Mouse Forward",
+  };
+  if (key != null) key = keyDisplayNames[key] ?? key;
   // codex: electron-menu-shortcuts-*.js — Mac collapses Shift+/ → ?.
   if (isMac && key === "/" && mods.has("Shift")) {
     mods.delete("Shift");
@@ -240,4 +249,19 @@ export function commandAcceleratorLabel(id: string): string | undefined {
   const accelerator = commandAccelerator(id);
   if (accelerator == null) return undefined;
   return formatAccelerator(accelerator, isMacPlatform());
+}
+
+// codex: app-main-*.js#Ij — map a mouse button index to a navigation
+// direction. Codex binds the mouse "back" (button 3) and "forward" (button 4)
+// side buttons to history navigation, each gated on whether the corresponding
+// command still carries its `MouseBack`/`MouseForward` pseudo-key binding so a
+// user keymap override that drops it also disables the mouse gesture.
+export function mouseNavigationDirection(
+  button: number,
+  backEnabled: boolean,
+  forwardEnabled: boolean,
+): "back" | "forward" | null {
+  if (backEnabled && button === 3) return "back";
+  if (forwardEnabled && button === 4) return "forward";
+  return null;
 }

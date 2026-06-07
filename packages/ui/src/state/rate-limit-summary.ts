@@ -74,7 +74,9 @@ export function projectRateLimitCompactSummary(
     // codex: rate-limit panel heading — ICU id `composer.mode.rateLimit.heading`
     // defaultMessage:`Usage remaining` (zh `剩余用量`).
     heading: formatMessage({ id: "composer.mode.rateLimit.heading", defaultMessage: "Usage remaining" }),
-    remainingText: mostConstrained?.remainingText ?? null,
+    // codex compact rate-limit heading shows the bare most-constrained percent
+    // (`${round(remaining)}%`), not the plain status-panel's "{n}% left" phrasing.
+    remainingText: mostConstrained ? `${Math.round(clampPercent(mostConstrained.remainingPercent))}%` : null,
     sections,
   };
 }

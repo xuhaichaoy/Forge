@@ -127,12 +127,15 @@ function projectsCodexDesktopComposerPlaceholders(): void {
       composerPlaceholderText({ hasConversation: false }),
       composerPlaceholderText({ hasConversation: true }),
       composerPlaceholderText({ hasConversation: true, hasBackgroundAgentsPanel: true }),
+      // codex composer.placeholder.goal — goal mode (independent of plan) overrides the prompt.
+      composerPlaceholderText({ hasConversation: true, goalMode: true }),
     ],
     [
       "Ask Codex anything. @ to use plugins or mention files",
       "Ask for follow-up changes",
       // codex: composer.placeholder.localFollowUp.locallyWithAgents drops the hyphen
       "Ask for follow up changes or @ to tag an agent",
+      "What should Codex keep working toward?",
     ],
     "composer placeholders should follow Desktop new-task and local follow-up wording",
   );
@@ -611,6 +614,23 @@ function updatesPlanCommandTextForComposerMode(): void {
     activeAttachPlan?.description.includes("Turn off") === true,
     "active attach plan action should disable plan mode",
   );
+
+  // codex: Plan mode and Pursue goal are INDEPENDENT — both can be active at once.
+  // With plan mode on AND goalMode on, each "+" action reports its own off-state.
+  const both = attachActionsForComposerMode("plan", true);
+  assert(
+    both.find((action) => action.id === "plan")?.description.includes("Turn off planning") === true,
+    "plan action stays togglable while goal mode is also on",
+  );
+  assert(
+    both.find((action) => action.id === "goal")?.description.includes("Turn off goal") === true,
+    "goal action reflects goal mode independently of plan mode",
+  );
+  // goalMode defaults false → goal action describes setting a goal regardless of plan.
+  assert(
+    attachActionsForComposerMode("plan").find((action) => action.id === "goal")?.description.includes("Set a goal") === true,
+    "goal action is unaffected by plan mode when goal mode is off",
+  );
 }
 
 function appliesSlashCommandsAsDeclarativeActions(): void {
@@ -719,15 +739,16 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
 function exposesAttachActions(): void {
   assertDeepEqual(
     DEFAULT_ATTACH_ACTIONS.map((action) => action.title),
-    // codex: composer-D0cvMZjq.js — Codex's attach menu surfaces ~6 entries
-    // (file picker / mention / plain text / image URL / plan toggle / plugins).
-    // localImage stays implicit via paste/drag-drop in the composer field.
+    // codex: composer-D0cvMZjq.js — Codex's "+" menu surfaces the file picker /
+    // mention / plain text / image URL, then the Plan mode + Pursue goal toggles,
+    // then Plugins. localImage stays implicit via paste/drag-drop in the field.
     [
       "Add photos & files",
       "Mention a file or app",
       "Add plain text",
       "Add image from URL",
       "Plan mode",
+      "Pursue goal",
       "Plugins",
     ],
     "DEFAULT_ATTACH_ACTIONS should match the Codex Desktop plus menu",

@@ -17,6 +17,7 @@ import type { FileReference } from "./file-reference-types";
 // workspace-file context menu as inline refs (shared via ./file-citation-menu).
 import { ContextMenu } from "./context-menu";
 import { FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type UserMessageMarkdownRenderer = (
   text: string,
@@ -367,6 +368,7 @@ function UserMessageChipView({
   // codex: file/attachment chips carry the shared workspace-file context menu;
   // reveal + copy-contents arrive via context (provided above the conversation).
   const menuActions = useContext(FileCitationMenuContext);
+  const { formatMessage } = useHiCodexIntl();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { icon, label, prefix } = chipVisual(part);
   const displayLabel = `${prefix}${label}`;
@@ -386,7 +388,7 @@ function UserMessageChipView({
   const isInteractive = (part.chipKind === "mention" || part.chipKind === "file") && Boolean(part.path) && Boolean(onOpenFileReference);
   if (isInteractive) {
     const reference = { path: part.path, lineStart: 1 };
-    const items = fileReferenceContextMenuItems({ reference, onOpenFileReference, menuActions });
+    const items = fileReferenceContextMenuItems({ reference, onOpenFileReference, menuActions, formatMessage });
     return (
       <>
         <button
@@ -477,6 +479,7 @@ function UserMessageImagePartView({
 }: {
   part: Extract<UserMessageContentPart, { kind: "image" }>;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const src = userImageSrc(part);
@@ -510,7 +513,7 @@ function UserMessageImagePartView({
       <div aria-label={part.label} aria-modal="true" className="hc-image-preview-dialog" role="dialog" data-state="open">
         <div className="hc-image-preview-header">
           <span>{part.label}</span>
-          <button aria-label="Close image preview" type="button" onClick={() => setPreviewOpen(false)}>
+          <button aria-label={formatMessage({ id: "imagePreviewDialog.close", defaultMessage: "Close image preview" })} type="button" onClick={() => setPreviewOpen(false)}>
             <X size={16} />
           </button>
         </div>
