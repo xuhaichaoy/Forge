@@ -9,6 +9,7 @@
 // section sourced from `git branch -r`, and a "Create new branch" form that
 // shells out to `git checkout -b`.
 import { ChevronDown, GitBranch, Plus, Search } from "lucide-react";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
   useCallback,
   useEffect,
@@ -60,6 +61,7 @@ export function ComposerFooterBranchSwitcher({
   onBranchSwitched,
   onError,
 }: ComposerFooterBranchSwitcherProps) {
+  const { formatMessage } = useHiCodexIntl();
   const trimmedCwd = typeof cwd === "string" ? cwd.trim() : "";
   const trimmedCurrent = typeof currentBranch === "string" ? currentBranch.trim() : "";
   const [state, setState] = useState<BranchSwitcherState>(INITIAL_STATE);
@@ -362,7 +364,7 @@ export function ComposerFooterBranchSwitcher({
                 autoFocus
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search branches"
+                placeholder={formatMessage({ id: "codex.composer.searchBranches", defaultMessage: "Search branches" })}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") close();
                 }}
@@ -464,7 +466,7 @@ export function ComposerFooterBranchSwitcher({
                   className="hc-branch-picker-create-input"
                   type="text"
                   value={newBranchName}
-                  placeholder="Branch name"
+                  placeholder={formatMessage({ id: "localConversationPage.gitActions.branchNameLabel", defaultMessage: "Branch name" })}
                   onChange={(event) => setNewBranchName(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -500,7 +502,7 @@ export function ComposerFooterBranchSwitcher({
                 disabled={state.status === "loading" || switching !== null}
               >
                 <Plus size={13} />
-                <span>Create and checkout new branch…</span>
+                <span>{formatMessage({ id: "composer.footer.branchSwitch.createAndCheckout", defaultMessage: "Create and checkout new branch…" })}</span>
               </button>
             )}
           </div>

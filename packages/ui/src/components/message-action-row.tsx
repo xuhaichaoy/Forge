@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 // codex copy-button-*.js wraps the action button in <Tooltip tooltipContent={...}/>.
 import { Tooltip } from "./tooltip";
+import { useHiCodexIntl } from "./i18n-provider";
 
 /*
  * CODEX-REF: copy-button-*.js — Codex Desktop's copy affordance.
@@ -14,7 +15,11 @@ import { Tooltip } from "./tooltip";
  * Aligned with Codex:
  *   - aria-label strings ("Copy" / "Copied") match Codex's i18n
  *     `copyButton.copyAriaLabel` / `copyButton.copiedAriaLabel` defaultMessages
- *   - timeout standardized to 2000ms (Codex's `2e3`, this file previously used 1500ms)
+ *   - copied-state reset is 1500ms — Codex's copy buttons reset at 1500ms
+ *     (bundle: `navigator.clipboard.writeText(...).then(()=>{setCopied(!0),
+ *     setTimeout(()=>setCopied(!1),1500)})` for the user_message copy). The
+ *     earlier "Codex's `2e3`" attribution was wrong: the bundle's `2e3`
+ *     timeouts are non-copy (transient/toast), and no copy button uses 2e3.
  *   - icon swap (Copy → Check) mirrors Codex's dual-state render
  *
  * Diverged from Codex (intentional, no Codex source to override):
@@ -28,7 +33,7 @@ import { Tooltip } from "./tooltip";
  *     actions chunks contain no per-message timestamp affordance.
  */
 
-const COPIED_RESET_TIMEOUT_MS = 2000;
+const COPIED_RESET_TIMEOUT_MS = 1500;
 
 /*
  * Codex Desktop's message action row renders a per-message timestamp as its
@@ -54,6 +59,11 @@ export function MessageActionRow({
 }) {
   const trimmedCopyText = copyText.trim();
   const [copied, setCopied] = useState(false);
+  const { formatMessage } = useHiCodexIntl();
+  // codex copy-button-*.js — aria-label/tooltip swap localized via copyButton.*.
+  const copyLabel = copied
+    ? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
+    : formatMessage({ id: "copyButton.copyAriaLabel", defaultMessage: "Copy" });
   if (!shouldRenderMessageActionRow({ copyText, hasActionChildren })) return null;
   const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -72,8 +82,8 @@ export function MessageActionRow({
            * CopyButton wraps the button in <Tooltip tooltipContent={...}/>, so HiCodex now
            * does the same via the shared Tooltip (the aria-label stays for a11y).
            */
-          <Tooltip content={copied ? "Copied" : "Copy"}>
-            <button aria-label={copied ? "Copied" : "Copy"} type="button" onClick={handleCopy}>
+          <Tooltip content={copyLabel}>
+            <button aria-label={copyLabel} type="button" onClick={handleCopy}>
               {/* HiCodex divergence: action-row icons at 12px (Codex icon-xs = 16px); shrunk per product preference */}
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </button>
@@ -127,6 +137,7 @@ export function IconActionButton({
 }
 
 function CopyFeedbackToast() {
+  const { formatMessage } = useHiCodexIntl();
   /*
    * `.hc-copy-toast` uses `position: fixed`, but the conversation scroll
    * container (`hc-thread-scroll-body` in conversation.css:46) has
@@ -148,7 +159,7 @@ function CopyFeedbackToast() {
   const toast = (
     <div className="hc-copy-toast" role="status" aria-live="polite">
       <span className="hc-copy-toast-icon" aria-hidden="true"><Check size={15} /></span>
-      <span>Copied</span>
+      <span>{formatMessage({ id: "copyButton.copied", defaultMessage: "Copied" })}</span>
     </div>
   );
   if (typeof document === "undefined") return toast;

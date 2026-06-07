@@ -67,7 +67,9 @@ function summarizesActiveBudgetedGoalLikeCodexDesktop(): void {
     {
       statusLabel: "Pursuing goal",
       objective: "Ship the Desktop parity pass",
-      detail: "12K / 20K",
+      // codex composer-*.js: formatNumber(n, {notation:"compact", maximumFractionDigits:1})
+      // → "12.3K" (locale-aware Intl compact, not a rounded-to-integer "12K").
+      detail: "12.3K / 20K",
       nextStatus: "paused",
     },
     "active budgeted goals should show token progress and pause as the next status",

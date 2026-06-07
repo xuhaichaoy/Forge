@@ -7,6 +7,7 @@ import type {
 import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
 
 import type { ThreadGoalBannerAction } from "../components/thread-goal-banner";
+import { useHiCodexIntl } from "../components/i18n-provider";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 
@@ -29,6 +30,7 @@ export function useThreadGoalActions({
   clearActiveThreadGoal: () => Promise<void>;
 } {
   const { client, dispatch } = useServices();
+  const { formatMessage } = useHiCodexIntl();
   const [threadGoalPendingAction, setThreadGoalPendingAction] = useState<ThreadGoalBannerAction | null>(null);
 
   const updateActiveThreadGoal = useCallback(async (
@@ -53,11 +55,16 @@ export function useThreadGoalActions({
       };
       dispatch({ type: "notification", message });
     } catch (error) {
-      dispatch({ type: "log", text: `thread goal update failed: ${formatError(error)}`, level: "error" });
+      // codex composer.threadGoal.{statusUpdateError|setError} — status change vs
+      // objective set. HiCodex keeps the RPC detail appended for debugging.
+      const descriptor = pendingAction === "status"
+        ? { id: "composer.threadGoal.statusUpdateError", defaultMessage: "Failed to update goal" }
+        : { id: "composer.threadGoal.setError", defaultMessage: "Failed to set goal" };
+      dispatch({ type: "log", text: `${formatMessage(descriptor)}: ${formatError(error)}`, level: "error" });
     } finally {
       setThreadGoalPendingAction(null);
     }
-  }, [client, ensureConnected, activeThreadId]);
+  }, [client, ensureConnected, activeThreadId, formatMessage]);
 
   const editActiveThreadGoal = useCallback((objective: string) => (
     updateActiveThreadGoal({ objective }, "edit")
@@ -85,11 +92,11 @@ export function useThreadGoalActions({
         dispatch({ type: "notification", message });
       }
     } catch (error) {
-      dispatch({ type: "log", text: `thread goal clear failed: ${formatError(error)}`, level: "error" });
+      dispatch({ type: "log", text: `${formatMessage({ id: "composer.threadGoal.clearError", defaultMessage: "Failed to clear goal" })}: ${formatError(error)}`, level: "error" });
     } finally {
       setThreadGoalPendingAction(null);
     }
-  }, [client, ensureConnected, activeThreadId]);
+  }, [client, ensureConnected, activeThreadId, formatMessage]);
 
   return { threadGoalPendingAction, editActiveThreadGoal, setActiveThreadGoalStatus, clearActiveThreadGoal };
 }

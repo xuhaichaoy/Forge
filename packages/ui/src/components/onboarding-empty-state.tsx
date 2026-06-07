@@ -138,9 +138,12 @@ function OnboardingFirstThreadPromo({
       </button>
       <div className="hc-onboarding-empty-promo-body">
         <h3 className="hc-onboarding-empty-promo-title">Welcome to HiCodex</h3>
-        {/* codex first-run codex.legal.mistakes.* — AI fallibility / review-output disclaimer. */}
+        {/* codex first-run codex.legal.mistakes.* — AI fallibility / review-output disclaimer.
+            Keeps the "Codex" brand verbatim (bundle defaultMessage). */}
         <p className="hc-onboarding-empty-promo-disclaimer">
-          Codex can make mistakes. Review the code it writes and commands it runs.
+          {formatMessage({ id: "codex.legal.mistakes.title", defaultMessage: "Codex can make mistakes" })}
+          {" "}
+          {formatMessage({ id: "codex.legal.mistakes.review", defaultMessage: "Review the code it writes and commands it runs" })}
         </p>
       </div>
       <div className="hc-onboarding-empty-promo-actions">

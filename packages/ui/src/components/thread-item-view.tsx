@@ -353,6 +353,7 @@ function ExecThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const detail = toolActivityDetailViewModel(unit.item);
   const canExpand = detail.kind === "exec";
   const [expanded, setExpanded] = useState(() => detail.kind === "exec" && initialExecShellExpanded(detail));
@@ -391,9 +392,12 @@ function ExecThreadItemView({
   }
 
   const bodyOpen = detail.running || expanded;
-  const label = execThreadItemSummaryLabel(detail, bodyOpen);
+  const label = execThreadItemSummaryLabel(detail, bodyOpen, formatMessage);
   const runningTimer = running && startedAtMs != null && nowMs - startedAtMs >= 1000
-    ? ` for ${formatDuration(nowMs - startedAtMs)}`
+    ? formatMessage(
+        { id: "toolSummaryForCmd.runningTimer", defaultMessage: " for {elapsed}" },
+        { elapsed: formatDuration(nowMs - startedAtMs) },
+      )
     : null;
 
   return (
@@ -434,24 +438,74 @@ function ExecThreadItemView({
   );
 }
 
+// codex toolSummaryForCmd.* — Codex wraps the verb in a <status> tag and appends
+// {timer}; HiCodex renders the status tag-free (its own span styling) and appends
+// the live timer separately (runningTimer), so the i18n values here are the
+// tag/timer-stripped base. formatMessage is optional so the locale-free callers
+// (and tests) keep the English output unchanged.
 export function execThreadItemSummaryLabel(
   detail: Extract<ReturnType<typeof toolActivityDetailViewModel>, { kind: "exec" }>,
   expanded: boolean,
+  formatMessage?: HiCodexIntlContextValue["formatMessage"],
 ): string {
-  if (detail.running) return "Running command";
-  if (detail.footer === "Stopped") return expanded ? "Stopped command" : `Stopped ${detail.command}`;
+  if (detail.running) {
+    return formatMessage
+      ? formatMessage({ id: "toolSummaryForCmd.runningGenericCommand", defaultMessage: "Running command" })
+      : "Running command";
+  }
+  if (detail.footer === "Stopped") {
+    if (expanded) {
+      return formatMessage
+        ? formatMessage({ id: "toolSummaryForCmd.stoppedGenericCommand", defaultMessage: "Stopped command" })
+        : "Stopped command";
+    }
+    return formatMessage
+      ? formatMessage({ id: "toolSummaryForCmd.stoppedSpecificCommand", defaultMessage: "Stopped {command}" }, { command: detail.command })
+      : `Stopped ${detail.command}`;
+  }
   const command = normalizeDesktopShellCommand(detail.command).trim();
-  return !expanded && command ? `Ran ${command}` : "Ran command";
+  if (!expanded && command) {
+    return formatMessage
+      ? formatMessage({ id: "toolSummaryForCmd.ranSpecificCommand", defaultMessage: "Ran {command}" }, { command })
+      : `Ran ${command}`;
+  }
+  return formatMessage
+    ? formatMessage({ id: "toolSummaryForCmd.ranGenericCommand", defaultMessage: "Ran command" })
+    : "Ran command";
 }
+
+// codex localConversation.appControlToolCall.* — the manage_codex_threads action
+// labels Codex localizes. Only the six actions whose HiCodex English exactly
+// matches the bundle are mapped here (list/read/sendMessage/setArchived/
+// setPinned/setTitle); create/create_in_worktree keep HiCodex's "thread"
+// wording (Codex rebranded those to "chat") so they stay locale-free. Reverse-
+// mapped at render so the locale-free dynamicToolCallLabel + its tests are stable.
+const APP_CONTROL_LABEL_I18N: Record<string, { id: string; defaultMessage: string }> = {
+  "Listing threads": { id: "localConversation.appControlToolCall.threadsList.active", defaultMessage: "Listing threads" },
+  "Listed threads": { id: "localConversation.appControlToolCall.threadsList.completed", defaultMessage: "Listed threads" },
+  "Reading thread": { id: "localConversation.appControlToolCall.threadsRead.active", defaultMessage: "Reading thread" },
+  "Read thread": { id: "localConversation.appControlToolCall.threadsRead.completed", defaultMessage: "Read thread" },
+  "Sending message to thread": { id: "localConversation.appControlToolCall.threadsSendMessage.active", defaultMessage: "Sending message to thread" },
+  "Sent message to thread": { id: "localConversation.appControlToolCall.threadsSendMessage.completed", defaultMessage: "Sent message to thread" },
+  "Updating thread archive": { id: "localConversation.appControlToolCall.threadsSetArchived.active", defaultMessage: "Updating thread archive" },
+  "Updated thread archive": { id: "localConversation.appControlToolCall.threadsSetArchived.completed", defaultMessage: "Updated thread archive" },
+  "Updating thread pin": { id: "localConversation.appControlToolCall.threadsSetPinned.active", defaultMessage: "Updating thread pin" },
+  "Updated thread pin": { id: "localConversation.appControlToolCall.threadsSetPinned.completed", defaultMessage: "Updated thread pin" },
+  "Renaming thread": { id: "localConversation.appControlToolCall.threadsSetTitle.active", defaultMessage: "Renaming thread" },
+  "Renamed thread": { id: "localConversation.appControlToolCall.threadsSetTitle.completed", defaultMessage: "Renamed thread" },
+};
 
 function DynamicToolCallThreadItemView({
   unit,
 }: {
   unit: ThreadItemUnit;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const running = isItemInProgress(unit.item);
-  const label = dynamicToolCallLabel(unit.item);
+  const rawLabel = dynamicToolCallLabel(unit.item);
   const appControl = isManageCodexThreadsItem(unit.item);
+  const labelDescriptor = appControl ? APP_CONTROL_LABEL_I18N[rawLabel] : undefined;
+  const label = labelDescriptor ? formatMessage(labelDescriptor) : rawLabel;
   return (
     <div
       className="hc-thread-item-row group"
@@ -477,9 +531,10 @@ export function DynamicToolCallGroupView({
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "dynamicToolCallGroup" }>;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const [expanded, setExpanded] = useState(false);
   const running = unit.items.some((item) => isItemInProgress(item));
-  const summary = dynamicToolCallGroupSummary(unit.items);
+  const summary = dynamicToolCallGroupSummary(unit.items, formatMessage);
   return (
     <div className="hc-thread-item-row group" data-content-search-unit-key={unit.key} data-item-type="dynamic-tool-call-group">
       <button
@@ -515,6 +570,7 @@ export function DynamicToolCallGroupView({
  */
 function dynamicToolCallGroupSummary(
   items: Extract<ConversationRenderUnit, { kind: "dynamicToolCallGroup" }>["items"],
+  formatMessage?: HiCodexIntlContextValue["formatMessage"],
 ): string {
   const groups: { label: string; count: number }[] = [];
   for (const item of items) {
@@ -523,7 +579,15 @@ function dynamicToolCallGroupSummary(
     if (existing) existing.count += 1;
     else groups.push({ label, count: 1 });
   }
-  return groups.map((group) => (group.count > 1 ? `${group.label} ${group.count} times` : group.label)).join(", ");
+  return groups.map((group) => {
+    if (group.count <= 1) return group.label;
+    // codex localConversation.dynamicToolCallGroup.repeatCount = " {count} times"
+    // (zh "{count} 次") — appended directly to the label like the bundle does.
+    const repeat = formatMessage
+      ? formatMessage({ id: "localConversation.dynamicToolCallGroup.repeatCount", defaultMessage: " {count} times" }, { count: String(group.count) })
+      : ` ${group.count} times`;
+    return `${group.label}${repeat}`;
+  }).join(", ");
 }
 
 function McpServerElicitationThreadItemView({
@@ -531,6 +595,7 @@ function McpServerElicitationThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   return (
     <div
       className="hc-thread-item-row group"
@@ -539,7 +604,7 @@ function McpServerElicitationThreadItemView({
       data-item-type="mcp-server-elicitation"
     >
       <div className="hc-thread-item-inline text-[13px] leading-5 text-stone-500">
-        <span className="hc-thinking-shimmer-text truncate">Awaiting approval</span>
+        <span className="hc-thinking-shimmer-text truncate">{formatMessage({ id: "localConversation.approvalRequest.inProgress", defaultMessage: "Awaiting approval" })}</span>
       </div>
     </div>
   );
@@ -550,9 +615,10 @@ function AutoReviewThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const record = unit.item as Record<string, unknown>;
-  const title = autoReviewTitle(record);
-  const body = autoReviewBody(record);
+  const title = autoReviewTitle(record, formatMessage);
+  const body = autoReviewBody(record, formatMessage);
   const running = stringField(record, "status") === "inProgress";
   const highRiskDenied = stringField(record, "status") === "denied" && stringField(record, "riskLevel") === "high";
   const canExpand = body.length > 0;
@@ -631,29 +697,34 @@ export function dynamicToolCallLabel(item: ThreadItemUnit["item"]): string {
   return DYNAMIC_TOOL_COMPLETED_LABELS[tool] ?? humanizeToolLabel(tool);
 }
 
-export function autoReviewTitle(record: Record<string, unknown>): string {
+// codex: localConversation.automaticApprovalReview.title.* — status-keyed title.
+export function autoReviewTitle(record: Record<string, unknown>, formatMessage: HiCodexIntlContextValue["formatMessage"]): string {
   const status = stringField(record, "status");
-  if (status === "approved") return "Auto-review approved";
-  if (status === "denied") return stringField(record, "riskLevel") === "high" ? "Auto-review denied high risk" : "Auto-review denied";
-  if (status === "timedOut") return "Auto-review timed out";
-  if (status === "aborted") return "Auto-review stopped";
-  return "Auto-reviewing";
+  if (status === "approved") return formatMessage({ id: "localConversation.automaticApprovalReview.title.approved", defaultMessage: "Auto-review approved" });
+  if (status === "denied") return stringField(record, "riskLevel") === "high"
+    ? formatMessage({ id: "localConversation.automaticApprovalReview.title.deniedHighRisk", defaultMessage: "Auto-review denied high risk" })
+    : formatMessage({ id: "localConversation.automaticApprovalReview.title.denied", defaultMessage: "Auto-review denied" });
+  if (status === "timedOut") return formatMessage({ id: "localConversation.automaticApprovalReview.title.timedOut", defaultMessage: "Auto-review timed out" });
+  if (status === "aborted") return formatMessage({ id: "localConversation.automaticApprovalReview.title.aborted", defaultMessage: "Auto-review stopped" });
+  return formatMessage({ id: "localConversation.automaticApprovalReview.title.inProgress", defaultMessage: "Auto-reviewing" });
 }
 
-export function autoReviewBody(record: Record<string, unknown>): string {
+// codex: localConversation.automaticApprovalReview.summary.* — status-keyed body
+// (a non-empty `rationale` from the reviewer agent is shown verbatim instead).
+export function autoReviewBody(record: Record<string, unknown>, formatMessage: HiCodexIntlContextValue["formatMessage"]): string {
   const rationale = stringField(record, "rationale").trim();
   if (rationale) return rationale;
   const status = stringField(record, "status");
   if (status === "aborted") {
-    return "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it.";
+    return formatMessage({ id: "localConversation.automaticApprovalReview.summary.aborted", defaultMessage: "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it." });
   }
   if (status === "timedOut") {
-    return "A carefully prompted reviewer agent timed out before Codex ran this request.";
+    return formatMessage({ id: "localConversation.automaticApprovalReview.summary.timedOut", defaultMessage: "A carefully prompted reviewer agent timed out before Codex ran this request." });
   }
   if (status === "inProgress") {
-    return "A carefully prompted reviewer agent is reviewing this request before Codex runs it.";
+    return formatMessage({ id: "localConversation.automaticApprovalReview.summary.inProgress", defaultMessage: "A carefully prompted reviewer agent is reviewing this request before Codex runs it." });
   }
-  return "A carefully prompted reviewer agent reviewed this request.";
+  return formatMessage({ id: "localConversation.automaticApprovalReview.summary.completed", defaultMessage: "A carefully prompted reviewer agent reviewed this request." });
 }
 
 function objectField(value: unknown, key: string): Record<string, unknown> {

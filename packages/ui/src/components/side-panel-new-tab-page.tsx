@@ -5,6 +5,7 @@ import {
   computeSidePanelTabGrid,
 } from "../state/side-panel-tab-grid";
 import { SidePanelTabActionCard, type SidePanelTabActionCardProps } from "./side-panel-tab-action-card";
+import { useHiCodexIntl } from "./i18n-provider";
 
 /*
  * Side-panel new-tab landing page.
@@ -59,8 +60,6 @@ export interface SidePanelNewTabPageProps {
   readonly suggestedHeading?: ReactNode;
 }
 
-const DEFAULT_EMPTY_STATE_LABEL = "No tabs are available for this thread";
-const DEFAULT_SUGGESTED_HEADING = "Suggested";
 
 /*
  * Codex line 877-887: `xt = (entry, container) => {
@@ -80,11 +79,17 @@ export function SidePanelNewTabPage({
   actions,
   target = "right",
   suggestedSlot,
-  emptyStateLabel = DEFAULT_EMPTY_STATE_LABEL,
-  suggestedHeading = DEFAULT_SUGGESTED_HEADING,
+  emptyStateLabel,
+  suggestedHeading,
 }: SidePanelNewTabPageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [gridTemplateColumns, setGridTemplateColumns] = useState<string | undefined>(undefined);
+  const { formatMessage } = useHiCodexIntl();
+  // codex thread.sidePanel.newTab.* — localized empty-state + suggested heading defaults.
+  const resolvedEmptyStateLabel = emptyStateLabel
+    ?? formatMessage({ id: "thread.sidePanel.newTab.empty", defaultMessage: "No tabs are available for this thread" });
+  const resolvedSuggestedHeading = suggestedHeading
+    ?? formatMessage({ id: "thread.sidePanel.newTab.suggested.heading", defaultMessage: "Suggested" });
 
   /*
    * codex: line 877-893 — measure `[data-thread-side-panel-new-tab-action-label]`
@@ -145,11 +150,11 @@ export function SidePanelNewTabPage({
             ))}
           </div>
         ) : (
-          <div className="hc-side-panel-new-tab__empty">{emptyStateLabel}</div>
+          <div className="hc-side-panel-new-tab__empty">{resolvedEmptyStateLabel}</div>
         )}
         {suggestedSlot != null && (
           <div className="hc-side-panel-new-tab__suggested">
-            <h3 className="hc-side-panel-new-tab__suggested-heading">{suggestedHeading}</h3>
+            <h3 className="hc-side-panel-new-tab__suggested-heading">{resolvedSuggestedHeading}</h3>
             {suggestedSlot}
           </div>
         )}

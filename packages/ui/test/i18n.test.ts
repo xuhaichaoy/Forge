@@ -18,8 +18,169 @@ export default function runI18nTests(): void {
   formatsDesktopPluralMessages();
   formatsMigratedSurfaceMessages();
   formatsSettingsNavLabels();
+  formatsDeepSweepLocalizations();
+  formatsDeepSweep2Localizations();
+  formatsDeepSweep3Localizations();
   persistsLocalePreference();
   rendersProviderConsumerWithLocalizedMessages();
+}
+
+// Locks zh-CN for the round-2 deep-sweep batch (automation schedule, auto-review,
+// end-resource cards, mcp follow-up, side panel, copy/code, command groups).
+function formatsDeepSweep2Localizations(): void {
+  const en = createI18nBundle("en-US");
+  const zh = createI18nBundle("zh-CN");
+  const z = (id: string, defaultMessage: string, values?: Record<string, string | number>) =>
+    formatI18nMessage(zh, { id, defaultMessage }, values);
+  const e = (id: string, defaultMessage: string, values?: Record<string, string | number>) =>
+    formatI18nMessage(en, { id, defaultMessage }, values);
+
+  // Automation schedule summaries (incl. ICU number/plural + zh word reorder).
+  assertEqual(z("settings.automations.scheduleSummary.daily", "Daily at {time}", { time: "9:00 AM" }), "每天 9:00 AM", "schedule daily zh");
+  assertEqual(z("settings.automations.scheduleSummary.intervalMinutes", "Every {count}m", { count: 5 }), "每 5 分钟", "schedule intervalMinutes zh");
+  assertEqual(z("settings.automations.scheduleSummary.intervalDayCount", "{count, plural, one {# day} other {# days}}", { count: 3 }), "3 天", "schedule intervalDayCount zh plural-other");
+  assertEqual(e("settings.automations.scheduleSummary.daily", "Daily at {time}", { time: "9:00 AM" }), "Daily at 9:00 AM", "schedule daily en unchanged");
+
+  // Auto-review titles/summaries.
+  assertEqual(z("localConversation.automaticApprovalReview.title.inProgress", "Auto-reviewing"), "自动审核中", "autoReview title inProgress zh");
+  assertEqual(z("localConversation.automaticApprovalReview.summary.completed", "x"), "经优化提示的审查智能体已审查此请求。", "autoReview summary completed zh");
+  assertEqual(z("localConversation.approvalRequest.inProgress", "Awaiting approval"), "待批准", "approvalRequest inProgress zh");
+
+  // End-resource cards (title + ICU {extension} fileType + google subtitle).
+  assertEqual(z("localConversation.endResource.websiteTitle", "Web preview"), "网页预览", "endResource websiteTitle zh");
+  assertEqual(z("localConversation.endResource.documentFileType", "Document · {extension}", { extension: "PDF" }), "文档 · PDF", "endResource documentFileType {extension} zh");
+  assertEqual(z("localConversation.endResource.googleDocsSubtitle", "Docs"), "文档", "endResource googleDocsSubtitle zh");
+  assertEqual(z("localConversation.endResource.showMore", "Show {count, number} more", { count: 1234 }), "显示另外 1,234 个", "endResource showMore {count, number} zh");
+
+  // mcp follow-up + side panel + copy/code + command groups + composer suggestion.
+  assertEqual(z("codex.mcpTool.confirmFollowUp.promptAriaLabel", "Prompt"), "提示", "mcp promptAriaLabel zh");
+  assertEqual(z("thread.sidePanel.openFile", "Files"), "文件", "sidePanel openFile zh");
+  assertEqual(z("codex.tabs.closeNamed", "Close {title} tab", { title: "Source" }), "关闭Source标签页", "tabs closeNamed {title} zh");
+  assertEqual(z("copyButton.copyCode", "Copy code"), "复制代码", "copyButton copyCode zh");
+  assertEqual(z("composer.aboveSuggestion.plan.title", "Create a plan"), "创建计划", "aboveSuggestion plan.title zh");
+}
+
+// Locks zh-CN for the round-3 deep-sweep batch (settings nav titles, worktree mode
+// menu, sidebar groups, reconnecting, automation directives, exec command verbs,
+// composer status panel, app-control tool labels, exec-detail exploration verbs,
+// multi-agent rows). en-US keeps the bundle defaultMessage so English is unchanged.
+function formatsDeepSweep3Localizations(): void {
+  const en = createI18nBundle("en-US");
+  const zh = createI18nBundle("zh-CN");
+  const z = (id: string, defaultMessage: string, values?: Record<string, string | number>) =>
+    formatI18nMessage(zh, { id, defaultMessage }, values);
+  const e = (id: string, defaultMessage: string, values?: Record<string, string | number>) =>
+    formatI18nMessage(en, { id, defaultMessage }, values);
+
+  // Settings nav panel titles (zh present, en falls back to the switch defaultMessage).
+  assertEqual(z("settings.nav.computer-use", "Computer use"), "电脑操控", "settings.nav computer-use zh");
+  assertEqual(z("settings.nav.data-controls", "Archived chats"), "已归档对话", "settings.nav data-controls zh");
+  assertEqual(e("settings.nav.mcp-settings", "MCP"), "MCP", "settings.nav mcp en fallback");
+
+  // Worktree mode menu items.
+  assertEqual(z("composer.mode.local.short", "Local"), "本地", "worktree mode local zh");
+  assertEqual(z("composer.mode.worktreeSegment", "Worktree"), "工作树", "worktree mode worktree zh");
+  assertEqual(z("composer.mode.runInCloud", "Cloud"), "云端", "worktree mode cloud zh");
+
+  // Sidebar groups + reconnecting progress.
+  assertEqual(z("sidebarElectron.recentThreads", "Recent chats"), "近期对话", "sidebar recentThreads zh");
+  assertEqual(z("sidebarElectron.connectionGroup.local", "Local"), "本地", "sidebar connectionGroup.local zh");
+  assertEqual(z("localConversation.streamError.reconnecting", "Reconnecting {progress}", { progress: "1/5" }), "正在重新连接 1/5", "stream-error reconnecting zh");
+
+  // Automation directive verbs.
+  assertEqual(z("automation.updateDirective.created", "Created"), "已创建", "automation directive created zh");
+  assertEqual(z("automation.updateDirective.proposedUpdate", "Proposed update"), "建议更新", "automation directive proposedUpdate zh");
+
+  // Exec command verbs (Cluster A toolSummaryForCmd + Cluster B action verbs).
+  assertEqual(z("toolSummaryForCmd.ranSpecificCommand", "Ran {command}", { command: "npm test" }), "已运行 npm test", "exec ranSpecificCommand zh");
+  assertEqual(z("hc.toolActivity.command.action.running", "Running"), "正在运行", "exec command action running zh");
+  assertEqual(e("hc.toolActivity.command.action.ran", "Ran"), "Ran", "exec command action ran en unchanged");
+  assertEqual(z("localConversation.dynamicToolCallGroup.repeatCount", " {count} times", { count: 3 }), "3 次", "dynamicToolCallGroup repeatCount zh");
+
+  // Composer status panel.
+  assertEqual(z("composer.statusPlain.heading", "Status"), "状态", "status heading zh");
+  assertEqual(z("composer.statusPlain.sessionLabel", "Session:"), "会话：", "status sessionLabel zh");
+  assertEqual(z("composer.statusPlain.contextValueRemaining", "{remaining}% left", { remaining: 89 }), "剩余 89%", "status contextValueRemaining zh");
+  assertEqual(z("composer.statusPlain.rateLimitUnavailable", "Unavailable"), "不可用", "status rateLimitUnavailable zh");
+  assertEqual(e("composer.statusPlain.contextValueMetadata", "({used} used / {total})", { used: "28,300", total: "249K" }), "(28,300 used / 249K)", "status contextValueMetadata en unchanged");
+
+  // App-control (manage_codex_threads) tool labels.
+  assertEqual(z("localConversation.appControlToolCall.threadsList.completed", "Listed threads"), "已列出对话线程", "appControl threadsList completed zh");
+  assertEqual(z("localConversation.appControlToolCall.threadsSetTitle.active", "Renaming thread"), "正在重命名对话线程", "appControl threadsSetTitle active zh");
+
+  // Exec-detail exploration verbs.
+  assertEqual(z("toolSummaryForCmd.exploringFilesInPath", "Listing files in {path}", { path: "packages/ui" }), "正在列出 packages/ui 中的文件", "exec exploringFilesInPath zh");
+  assertEqual(z("hc.toolActivity.skill.read", "Read {skillName} skill", { skillName: "Code Review" }), "已读取 Code Review 技能", "exec skill read zh");
+
+  // Multi-agent rows + state + meta.
+  assertEqual(z("localConversation.multiAgentAction.rowAction.spawn.inProgress", "Spawning"), "正在生成", "multiAgent rowAction spawn inProgress zh");
+  assertEqual(z("localConversation.multiAgentAction.agentState.running", "running"), "正在运行", "multiAgent agentState running zh");
+  assertEqual(z("localConversation.multiAgentAction.meta.prompt", "Input: {prompt}", { prompt: "x" }), "输入：x", "multiAgent meta.prompt zh");
+  assertEqual(z("localConversation.multiAgentAction.row.spawn.createdWithInstructions", "Created {agent} with the instructions: {instructions}", { agent: "A", instructions: "B" }), "已根据以下指令创建 A：B", "multiAgent createdWithInstructions zh reorder");
+
+  // deep-sweep-4 residuals: copyConversationMarkdown command title (was missing
+  // from both dicts → leaked English in zh) + tool-activity-detail's second
+  // autoReview copy (now routes through the shared keys).
+  assertEqual(z("hc.command.copyConversationMarkdown.title", "Copy as Markdown"), "复制为 Markdown", "copyConversationMarkdown command title zh");
+  assertEqual(e("hc.command.copyConversationMarkdown.title", "Copy as Markdown"), "Copy as Markdown", "copyConversationMarkdown command title en unchanged");
+  assertEqual(z("localConversation.automaticApprovalReview.title.approved", "Auto-review approved"), "自动审核已批准", "autoReview approved zh (tool-activity-detail copy)");
+
+  // thread-goal objective length cap (4000 chars, codex composer-B7sGHJVq.js cd=4e3).
+  assertEqual(z("composer.threadGoal.objectiveTooLong", "Goal must be {maxCharacters, number} characters or fewer", { maxCharacters: 4000 }), "目标不能超过 4,000 个字符", "goal objectiveTooLong zh ICU number");
+  assertEqual(e("composer.threadGoal.objectiveTooLong", "Goal must be {maxCharacters, number} characters or fewer", { maxCharacters: 4000 }), "Goal must be 4,000 characters or fewer", "goal objectiveTooLong en ICU number");
+
+  // "Pursue goal" composer goal-mode feature (composer "+" toggle + indicator + placeholder).
+  assertEqual(z("composer.goalDropdown", "Pursue goal"), "追求目标", "goalDropdown zh");
+  assertEqual(z("composer.placeholder.goal", "What should Codex keep working toward?"), "Codex 应继续朝哪个目标努力？", "goal placeholder zh");
+  assertEqual(z("composer.goalModeIndicator", "Goal"), "目标", "goalModeIndicator zh");
+  assertEqual(z("composer.threadGoal.setError", "Failed to set goal"), "无法设置目标", "goal setError zh");
+  assertEqual(z("composer.threadGoal.replaceConfirmation.title", "Replace current goal?"), "替换当前目标吗？", "goal replaceConfirmation title zh");
+  assertEqual(z("composer.threadGoal.replaceConfirmation.confirm", "Replace goal"), "替换目标", "goal replaceConfirmation confirm zh");
+  assertEqual(z("composer.threadGoal.resumeConfirmation.title", "Resume paused goal?"), "恢复已暂停的目标吗？", "goal resumeConfirmation title zh");
+  assertEqual(z("composer.threadGoal.resumeConfirmation.keepPaused", "Keep paused"), "保持暂停", "goal resumeConfirmation keepPaused zh");
+  assertEqual(z("composer.threadGoal.resumeConfirmation.notNow", "Not now"), "暂不", "goal resumeConfirmation notNow zh");
+}
+
+// Locks the zh-CN values for the strings the multi-agent deep-sweep found leaking
+// English in HiCodex (verbatim-aligned to Codex Desktop bundle 26.602). en-US keeps
+// the bundle defaultMessage so English output is unchanged.
+function formatsDeepSweepLocalizations(): void {
+  const en = createI18nBundle("en-US");
+  const zh = createI18nBundle("zh-CN");
+  const z = (id: string, defaultMessage: string, values?: Record<string, string | number>) =>
+    formatI18nMessage(zh, { id, defaultMessage }, values);
+  const e = (id: string, defaultMessage: string, values?: Record<string, string | number>) =>
+    formatI18nMessage(en, { id, defaultMessage }, values);
+
+  // Permission-request row labels (completes the RequestDetailRow localization).
+  assertEqual(z("permissionRequest.network", "Network"), "网络", "permissionRequest.network zh");
+  assertEqual(z("permissionRequest.fileRead", "Read"), "读取", "permissionRequest.fileRead zh");
+  assertEqual(z("permissionRequest.fileWrite", "Write"), "写入", "permissionRequest.fileWrite zh");
+  assertEqual(z("permissionRequest.fileReadWrite", "Read and write"), "读取和写入", "permissionRequest.fileReadWrite zh");
+  assertEqual(e("permissionRequest.network", "Network"), "Network", "permissionRequest.network en unchanged");
+
+  // Patch per-change verbs (bare, status-aware).
+  assertEqual(z("codex.patch.change.creating", "Creating"), "正在创建", "patch.change.creating zh");
+  assertEqual(z("codex.patch.change.stoppedDeleting", "Stopped deleting"), "已停止删除", "patch.change.stoppedDeleting zh");
+  assertEqual(z("codex.patch.change.rejected-add", "Rejected"), "已拒绝", "patch.change.rejected zh");
+  assertEqual(e("codex.patch.change.edited", "Edited"), "Edited", "patch.change.edited en unchanged");
+
+  // Exec footer labels (incl. ICU {code}).
+  assertEqual(z("execFooter.success", "Success"), "成功", "execFooter.success zh");
+  assertEqual(z("execFooter.stopped", "Stopped"), "已停止", "execFooter.stopped zh");
+  assertEqual(z("execFooter.exitCode", "Exit code {code}", { code: 1 }), "退出码 1", "execFooter.exitCode {code} zh");
+  assertEqual(z("execFooter.exitCode.unknown", "unknown"), "未知", "execFooter.exitCode.unknown zh");
+
+  // Hooks summary + automation next-run + browser-use source + sidebar empty state.
+  assertEqual(z("assistantMessage.hookStats.title", "Hooks summary"), "钩子摘要", "hookStats.title zh");
+  assertEqual(z("assistantMessage.hookStats.blockedCount", "Blocked"), "已阻止", "hookStats.blockedCount zh");
+  assertEqual(
+    z("codex.localConversation.heartbeatAutomation.nextRun", "Next run: {nextRunLabel}", { nextRunLabel: "9:00 AM" }),
+    "下次运行：9:00 AM",
+    "heartbeatAutomation.nextRun {nextRunLabel} zh",
+  );
+  assertEqual(z("localConversation.toolActivitySummary.mcpToolCalls.source.browser", "the browser"), "浏览器", "mcpToolCalls.source.browser zh");
+  assertEqual(z("sidebarElectron.noRecentChats", "No chats"), "暂无对话", "sidebarElectron.noRecentChats zh (暂无 prefix)");
 }
 
 // Locks the zh-CN copy + ICU wiring for the literals migrated to the catalog in
@@ -62,8 +223,19 @@ function formatsMigratedSurfaceMessages(): void {
   const showMore = { id: "codex.unifiedDiff.showMoreFiles", defaultMessage: "{count, plural, one {Show # more file} other {Show # more files}}" };
   assertEqual(formatI18nMessage(en, showMore, { count: 1 }), "Show 1 more file", "unifiedDiff showMoreFiles en singular");
   assertEqual(formatI18nMessage(zh, showMore, { count: 2 }), "再显示 2 个文件", "unifiedDiff showMoreFiles zh");
+
+  // Summary-panel expandable list — ICU `{count, number}` argument (Codex uses locale-aware number formatting).
+  const summaryShowMore = { id: "codex.localConversation.summaryPanelExpandableList.showMore", defaultMessage: "Show {count, number} more" };
+  assertEqual(formatI18nMessage(en, summaryShowMore, { count: 3 }), "Show 3 more", "summaryPanel showMore {count, number} en");
+  assertEqual(formatI18nMessage(zh, summaryShowMore, { count: 3 }), "再显示 3 个", "summaryPanel showMore {count, number} zh");
+  assertEqual(formatI18nMessage(en, summaryShowMore, { count: 1234 }), "Show 1,234 more", "summaryPanel showMore {count, number} en thousands grouping");
+
+  // Codex EN-source parity — exact English must match Codex Desktop's defaultMessage (audited verbatim).
+  assertEqual(formatI18nMessage(en, { id: "codex.appUpsellBanner.learnMoreLowercase", defaultMessage: "learn more" }), "learn more", "appUpsell learnMoreLowercase en (lowercase per key name)");
+  assertEqual(formatI18nMessage(en, { id: "codex.localConversation.closeGeneratedImagePreview", defaultMessage: "Close image preview" }), "Close image preview", "closeGeneratedImagePreview en");
+  assertEqual(formatI18nMessage(en, { id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review" }), "Review", "unifiedDiff reviewChanges en");
   assertEqual(formatI18nMessage(zh, { id: "codex.unifiedDiff.collapseFiles", defaultMessage: "Collapse files" }), "收起文件", "unifiedDiff collapseFiles zh");
-  assertEqual(formatI18nMessage(zh, { id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review here" }), "审查", "unifiedDiff reviewChanges zh");
+  assertEqual(formatI18nMessage(zh, { id: "codex.unifiedDiff.reviewChanges", defaultMessage: "Review" }), "审查", "unifiedDiff reviewChanges zh");
   assertEqual(formatI18nMessage(zh, { id: "codex.unifiedDiff.reviewChangesHover", defaultMessage: "Review changes" }), "查看更改", "unifiedDiff reviewChangesHover zh");
   assertEqual(formatI18nMessage(zh, { id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" }), "审核", "unifiedDiff viewDiffTooltip zh");
 
@@ -193,8 +365,10 @@ function formatsSettingsNavLabels(): void {
   assertEqual(settingsSectionTitle({ id: "data-controls", title: "Archived chats" }, zhFormat), "已归档对话", "settings nav data-controls zh");
   assertEqual(settingsSectionTitle({ id: "models", title: "Models" }, zhFormat), "模型", "HiCodex-only section (models) now localized in zh");
   assertEqual(settingsSectionTitle({ id: "appearance", title: "Appearance" }), "Appearance", "no formatMessage → English");
-  assertEqual(settingsGroupHeadingTitle("app", "App", zhFormat), "应用", "settings nav group heading app zh");
-  assertEqual(settingsGroupHeadingTitle("host", "Host", zhFormat), "主机", "settings nav group heading host zh");
+  assertEqual(settingsGroupHeadingTitle("personal", "Personal", zhFormat), "个人", "settings nav group heading personal zh");
+  assertEqual(settingsGroupHeadingTitle("integrations", "Integrations", zhFormat), "集成", "settings nav group heading integrations zh");
+  assertEqual(settingsGroupHeadingTitle("coding", "Coding", zhFormat), "编码", "settings nav group heading coding zh");
+  assertEqual(settingsGroupHeadingTitle("archived", "Archived", zhFormat), "已归档", "settings nav group heading archived zh");
   assertEqual(settingsSectionDescription({ id: "general", description: "Runtime and workspace" }, zhFormat), "运行时与工作区", "settings nav general subtitle zh");
   assertEqual(settingsSectionDescription({ id: "models", description: "Provider and model profile" }, zhFormat), "提供方与模型档案", "settings nav models subtitle zh");
   assertEqual(settingsSectionDescription({ id: "models", description: "Provider and model profile" }), "Provider and model profile", "no formatMessage → English subtitle");

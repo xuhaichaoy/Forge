@@ -93,31 +93,33 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
   assertDeepEqual(
     SETTINGS_SECTIONS.map((section) => section.id),
     [
-      // App group (Codex _e[0].slugs + HiCodex-only models/images folded in)
+      // Personal (codex $e personal.slugs, sans Codex-only profile)
       "general",
       "appearance",
-      "appshots",
-      "connections",
-      "git-settings",
-      "models",
-      "images",
-      "usage",
-      // Host group (Codex _e[1].slugs + HiCodex-only permissions/approvals/apps/experimental folded in)
       "agent",
       "personalization",
       "keyboard-shortcuts",
+      "usage",
+      // Integrations (codex $e integrations.slugs + HiCodex-only apps/models/images)
+      "appshots",
       "mcp",
-      "hooks",
       "plugins",
       "skills",
-      "permissions",
-      "approvals",
       "apps",
       "browser-use",
       "computer-use",
+      "models",
+      "images",
+      // Coding (codex $e coding.slugs + HiCodex-only permissions/approvals/experimental)
+      "hooks",
+      "connections",
+      "git-settings",
       "local-environments",
       "worktrees",
+      "permissions",
+      "approvals",
       "experimental",
+      // Archived (codex $e archived.slugs)
       "data-controls",
     ],
     "settings center should expose Codex Desktop route slugs alongside existing HiCodex sections",

@@ -815,7 +815,13 @@ export function Sidebar({
             >
               {effectiveCollapsedGroupKeys.has(group.key) ? <ChevronRight size={14} className="hc-sidebar-group-chevron" /> : <ChevronDown size={14} className="hc-sidebar-group-chevron" />}
               <Folder size={16} />
-              <span className="hc-project-name">{group.label}</span>
+              <span className="hc-project-name">{
+                group.key === "recent"
+                  ? formatMessage({ id: "sidebarElectron.recentThreads", defaultMessage: group.label })
+                  : group.label === "Local"
+                    ? formatMessage({ id: "sidebarElectron.connectionGroup.local", defaultMessage: "Local" })
+                    : group.label
+              }</span>
             </button>
             {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.length === 0 && (
               <div className="hc-empty-group">{formatMessage({ id: "hc.sidebar.noChats", defaultMessage: "No chats" })}</div>

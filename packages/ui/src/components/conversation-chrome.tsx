@@ -99,7 +99,9 @@ export function ConversationChrome({
     : PanelRightOpen;
   const showNavButtons = Boolean(onNavigateBack) || Boolean(onNavigateForward);
   const showRightRailAction = showRightRailToggle || showRightRailPopoverToggle;
-  const rightRailActionLabel = showRightRailPopoverToggle ? "Toggle summary" : "Toggle pinned summary";
+  const rightRailActionLabel = showRightRailPopoverToggle
+    ? formatMessage({ id: "localConversation.summaryPanel.toggle", defaultMessage: "Toggle summary" })
+    : formatMessage({ id: "localConversation.summaryPanel.togglePinned", defaultMessage: "Toggle pinned summary" });
   const rightRailActionPressed = showRightRailPopoverToggle ? rightRailPopoverOpen : rightRailPinned;
   const rightRailActionHandler = showRightRailPopoverToggle ? onToggleRightRailPopover : onToggleRightRailPinned;
   const startTopbarDrag = (event: MouseEvent<HTMLElement>) => {

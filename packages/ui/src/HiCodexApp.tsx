@@ -5,6 +5,7 @@ import type {
   ModelConfig,
   Thread,
 } from "@hicodex/codex-protocol";
+import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
 import { FileText, FolderOpen, Globe, Plus, X } from "lucide-react";
 import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
 import { KbArchiveView } from "./components/kb-archive-view";
@@ -33,7 +34,7 @@ import { Composer } from "./components/composer";
 import { ComposerExternalFooter, ComposerSettingsChips } from "./components/composer-external-footer";
 import { ComposerQuotaBanner } from "./components/composer-quota-banner";
 import { ComposerStatusPanel } from "./components/composer-status-panel";
-import { ThreadGoalBanner } from "./components/thread-goal-banner";
+import { ThreadGoalBanner, ThreadGoalReplaceConfirm, ThreadGoalResumeConfirm } from "./components/thread-goal-banner";
 import { HiCodexIntlProvider } from "./components/i18n-provider";
 import { ServicesProvider, useServices } from "./components/services-context";
 import { focusComposerFromPlainTextKey, requestComposerElementFocus } from "./components/composer-keyboard";
@@ -45,7 +46,7 @@ import {
   normalizeSubscriptionProviderId,
   resolveEffectiveModelSelection,
 } from "./components/model-picker-menu";
-import { normalizeReasoningEffortValue } from "./components/reasoning-picker-menu";
+import { normalizeReasoningEffortValue, type ReasoningEffortValue } from "./components/reasoning-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { BackgroundSubagentsStack } from "./components/background-subagents-stack";
 import { ArtifactPreviewPanel } from "./components/artifact-preview-panel";
@@ -108,6 +109,7 @@ import { useReconnectRecovery } from "./hooks/use-reconnect-recovery";
 import { useThreadFind } from "./hooks/use-thread-find";
 import { useRemoteTaskActions } from "./hooks/use-remote-task-actions";
 import { useHiCodexImageToolResponder } from "./hooks/use-hicodex-image-tool-responder";
+import { usePermissionAutoDeny } from "./hooks/use-permission-auto-deny";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
@@ -254,6 +256,7 @@ import {
   commandAccelerator,
   commandAccelerators,
   getCommand,
+  mouseNavigationDirection,
   osRevealLabel,
   registerCommand,
   unregisterCommand,
@@ -1123,6 +1126,13 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const activeThreadRuntime = selectActiveThreadRuntime(state);
   const activeItems = activeThreadRuntime.items;
   const composerMode = state.composerMode;
+  // codex: "Pursue goal" is an INDEPENDENT toggle from Plan mode (both can be on
+  // together), so goal-input mode is tracked as its own flag rather than a
+  // ComposerMode value. Reset when switching threads (like composerMode does).
+  const [composerGoalMode, setComposerGoalMode] = useState(false);
+  useEffect(() => {
+    setComposerGoalMode(false);
+  }, [state.activeThreadId]);
   const activeThread = state.threads.find((thread) => thread.id === state.activeThreadId) ?? null;
   const activeThreadScrollKey = state.activeThreadId ?? "new-thread";
   const initialThreadScrollOffset = threadScrollOffsetsRef.current.get(activeThreadScrollKey) ?? 0;
@@ -1279,6 +1289,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     codexHome: state.hostStatus?.codexHome,
     imageGenerationSettings,
   });
+  const handledPermissionAutoDenyRef = useRef(new Set<string>());
+  usePermissionAutoDeny({
+    handledRequestIdsRef: handledPermissionAutoDenyRef,
+    pendingRequests: state.pendingRequests,
+  });
   const activeModelSupportsImageInput = useMemo(() => {
     const providerId = state.threadContextDefaults?.modelProvider ?? "";
     const modelSlug = state.threadContextDefaults?.model ?? "";
@@ -1286,6 +1301,25 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       ?? state.models.find((item) => item.model === modelSlug)
       ?? null;
     return model?.supportsImageInput !== false;
+  }, [state.models, state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
+  /*
+   * codex composer reasoning picker: render the ACTIVE model's advertised
+   * `supportedReasoningEfforts` (e.g. some models only allow "medium") instead
+   * of a static list. Resolve the active model the same way as image-input
+   * support above. Falls back to undefined → the picker uses its full default set.
+   */
+  const activeModelSupportedEfforts = useMemo<readonly ReasoningEffortValue[] | undefined>(() => {
+    const providerId = state.threadContextDefaults?.modelProvider ?? "";
+    const modelSlug = state.threadContextDefaults?.model ?? "";
+    const model = state.models.find((item) => item.id === providerId)
+      ?? state.models.find((item) => item.model === modelSlug)
+      ?? null;
+    const efforts = model?.supportedReasoningEfforts;
+    if (!efforts || efforts.length === 0) return undefined;
+    const normalized = efforts
+      .map((effort) => normalizeReasoningEffortValue(effort))
+      .filter((effort): effort is ReasoningEffortValue => effort !== null);
+    return normalized.length > 0 ? normalized : undefined;
   }, [state.models, state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
   const includeImageDynamicTool = useMemo(
     () => shouldRegisterHiCodexImageDynamicTool(imageGenerationSettings),
@@ -1320,8 +1354,9 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       hostGitStatus: worktreeHostGitStatus,
       mode: composerWorkMode,
       tauriRuntimeAvailable: isTauriRuntime(),
+      formatMessage: formatUiMessage,
     }),
-    [composerWorkMode, worktreeHostGitStatus],
+    [composerWorkMode, worktreeHostGitStatus, formatUiMessage],
   );
   const {
     threadFindOpen,
@@ -2184,6 +2219,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const composerPlaceholder = composerPlaceholderText({
     hasConversation: conversation.units.length > 0,
     hasBackgroundAgentsPanel: backgroundAgentPanel != null,
+    goalMode: composerGoalMode,
   }, formatUiMessage);
   // codex: composer-*.js `/status` panel reads the context usage slice
   // populated by `thread/tokenUsage/updated`.
@@ -3593,6 +3629,40 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     workspace,
   ]);
 
+  // codex: app-main-*.js#Ij/Fj — mouse "back"/"forward" side buttons (button
+  // 3/4) drive history navigation, mirroring Codex Desktop. The gesture is gated
+  // on each command still carrying its MouseBack/MouseForward pseudo-key (so a
+  // keymap override that drops it also disables the gesture); button 3/4 presses
+  // are suppressed on mousedown/auxclick (preventDefault + stopPropagation) and
+  // navigation fires on a trusted mouseup. Reuses the same in-app history actions
+  // as the ⌘[ / ⌘] keyboard accelerators (navigateBack/navigateForward handlers).
+  useEffect(() => {
+    const backEnabled = commandAccelerators(COMMAND_IDS.navigateBack).includes("MouseBack");
+    const forwardEnabled = commandAccelerators(COMMAND_IDS.navigateForward).includes("MouseForward");
+    if (!backEnabled && !forwardEnabled) return;
+    const suppress = (event: MouseEvent) => {
+      if (event.button === 3 || event.button === 4) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    const handleMouseUp = (event: MouseEvent) => {
+      suppress(event);
+      if (!event.isTrusted) return;
+      const direction = mouseNavigationDirection(event.button, backEnabled, forwardEnabled);
+      if (direction === "back") dispatch({ type: "navigateBackInHistory" });
+      else if (direction === "forward") dispatch({ type: "navigateForwardInHistory" });
+    };
+    window.addEventListener("mousedown", suppress, true);
+    window.addEventListener("mouseup", handleMouseUp, true);
+    window.addEventListener("auxclick", suppress, true);
+    return () => {
+      window.removeEventListener("mousedown", suppress, true);
+      window.removeEventListener("mouseup", handleMouseUp, true);
+      window.removeEventListener("auxclick", suppress, true);
+    };
+  }, [dispatch]);
+
   // codex: use-hotkey-*.js — one useHotkey call per ported command
   // from the second wave (archive/rename/pin/navigate/copy/threadN).
   useHotkey({
@@ -3786,7 +3856,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         onCopyContents: () => copyFileReferenceContents(tabReference),
         onRevealPath: () => revealFileReference(tabReference),
         revealLabel: osRevealLabel(),
-      }),
+      }, formatUiMessage),
       props: {
         path: resolvedReference.path,
         lineStart: resolvedReference.lineStart,
@@ -3883,8 +3953,8 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     if (worktreeStatusCwd) {
       actions.push({
         id: "open-file",
-        title: "Files",
-        description: "Browse project files",
+        title: formatUiMessage({ id: "thread.sidePanel.openFile", defaultMessage: "Files" }),
+        description: formatUiMessage({ id: "thread.sidePanel.newTab.openFile.description", defaultMessage: "Browse project files" }),
         icon: <FolderOpen size={18} aria-hidden="true" />,
         onSelect: () => openFilesTabRef.current?.(),
       });
@@ -4059,6 +4129,38 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     dispatch({ type: "resetThreadComposerMode", threadId });
   }, []);
 
+  // codex composer.threadGoal.replaceConfirmation — submitting a goal while one
+  // already exists routes through a confirm dialog before the replace.
+  const [pendingGoalReplace, setPendingGoalReplace] = useState<string | null>(null);
+  const onRequestGoalReplace = useCallback((objective: string) => {
+    setPendingGoalReplace(objective);
+  }, []);
+
+  // codex composer.threadGoal.resumeConfirmation — when a thread is resumed with a
+  // paused/blocked/usage-limited goal, prompt once to resume it (codex tui
+  // maybe_prompt_resume_paused_goal_after_resume). Tracked per thread/session so
+  // switching back doesn't re-prompt after the user answers.
+  const resumeGoalPromptedRef = useRef<Set<string>>(new Set());
+  const [resumeGoalPrompt, setResumeGoalPrompt] = useState<{ threadId: string; objective: string; status: ThreadGoalStatus } | null>(null);
+  const activeGoalStatus = activeThreadRuntime.threadGoal?.status ?? null;
+  const activeGoalObjective = activeThreadRuntime.threadGoal?.objective ?? "";
+  useEffect(() => {
+    const threadId = state.activeThreadId;
+    // Drop a stale prompt once the goal is resumed/cleared elsewhere (the dialog
+    // would otherwise hold an obsolete status/objective).
+    if (!threadId || activeGoalStatus === null || activeGoalStatus === "active" || activeGoalStatus === "complete") {
+      setResumeGoalPrompt((current) => (current ? null : current));
+      return;
+    }
+    if (resumeGoalPromptedRef.current.has(threadId)) return;
+    if (activeGoalStatus === "paused" || activeGoalStatus === "blocked" || activeGoalStatus === "usageLimited") {
+      resumeGoalPromptedRef.current.add(threadId);
+      setResumeGoalPrompt({ threadId, objective: activeGoalObjective, status: activeGoalStatus });
+    }
+    // Depend on the intrinsic goal fields (not the runtime object reference) so
+    // the effect doesn't re-run on unrelated thread-runtime updates.
+  }, [state.activeThreadId, activeGoalStatus, activeGoalObjective]);
+
   const {
     activeQueuedFollowUps,
     deleteQueuedFollowUp,
@@ -4071,9 +4173,13 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     activeModelSupportsImageInput,
     activePendingRequestCount: activePendingRequests.length,
     activeThread,
+    activeThreadGoal: activeThreadRuntime.threadGoal != null,
     activeThreadId: state.activeThreadId,
     activeThreadRunning,
     activeTurnId,
+    composerGoalMode,
+    setComposerGoalMode,
+    onRequestGoalReplace,
     collaborationModes,
     collaborationModesForComposerMode,
     composerAttachments,
@@ -4245,6 +4351,15 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           setInput("");
         }
         return;
+      case "setGoalMode":
+        // codex /goal slash → enter goal-input mode (independent of plan); the
+        // next submit sets the goal through the replace-confirm gate. Clear the
+        // "/goal" slash text so the goal placeholder shows (pre-fill if an
+        // objective arg was supplied).
+        setComposerGoalMode(action.on);
+        setInput(action.text ?? "");
+        setComposerAttachments([]);
+        return;
       case "request":
         setInput("");
         setComposerAttachments([]);
@@ -4371,6 +4486,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     }
     void enableComposerPlanMode();
   }, [composerMode, enableComposerPlanMode, setActiveComposerMode]);
+  // codex composer.goalDropdown "Pursue goal" — toggles goal mode; submitting in
+  // goal mode sets the thread goal (handled in useTurnSubmission's sendTurn).
+  const pursueComposerGoal = useCallback(() => {
+    setComposerGoalMode((on) => !on);
+  }, []);
   const hasPlanComposerMode = hasCollaborationModePreset(collaborationModes, "plan");
 
   const {
@@ -4950,6 +5070,30 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                     onSetGoalStatus={setActiveThreadGoalStatus}
                     onClearGoal={clearActiveThreadGoal}
                   />
+                  {pendingGoalReplace !== null && (
+                    <ThreadGoalReplaceConfirm
+                      objective={pendingGoalReplace}
+                      pending={threadGoalPendingAction === "edit"}
+                      onConfirm={() => {
+                        const objective = pendingGoalReplace;
+                        setPendingGoalReplace(null);
+                        void editActiveThreadGoal(objective);
+                      }}
+                      onCancel={() => setPendingGoalReplace(null)}
+                    />
+                  )}
+                  {resumeGoalPrompt && (
+                    <ThreadGoalResumeConfirm
+                      objective={resumeGoalPrompt.objective}
+                      status={resumeGoalPrompt.status}
+                      pending={threadGoalPendingAction === "status"}
+                      onResume={() => {
+                        setResumeGoalPrompt(null);
+                        void setActiveThreadGoalStatus("active");
+                      }}
+                      onDismiss={() => setResumeGoalPrompt(null)}
+                    />
+                  )}
                   <BackgroundSubagentsStack
                     canStopAll={backgroundSubagentStopThreadIds.length > 0}
                     entries={conversation.backgroundAgents}
@@ -5021,6 +5165,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                 input={input}
                 attachments={composerAttachments}
                 mode={composerMode}
+                goalMode={composerGoalMode}
                 placeholder={composerPlaceholder}
                 onInputChange={setInput}
                 onAttachmentsChange={setComposerAttachments}
@@ -5031,6 +5176,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                 conversationId={state.activeThreadId}
                 hasPlanMode={hasPlanComposerMode}
                 onPlanSelected={selectComposerPlan}
+                onPursueGoal={pursueComposerGoal}
                 onOpenPlugins={() => void loadSettingsPanel("plugins")}
                 pendingRequestContent={activePendingRequests.length > 0 ? (
                   <PendingRequestStack
@@ -5202,8 +5348,8 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                 <button
                   type="button"
                   className="hc-side-panel-tab-bar-button"
-                  aria-label="Open side panel tab"
-                  title="Open side panel tab"
+                  aria-label={formatUiMessage({ id: "thread.sidePanel.openTab", defaultMessage: "Open side panel tab" })}
+                  title={formatUiMessage({ id: "thread.sidePanel.openTab", defaultMessage: "Open side panel tab" })}
                   onClick={() => {
                     sidePanel.controller.activateTab(null);
                     sidePanel.setPanelOpen(true);
@@ -5356,6 +5502,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         reasoningCurrentEffort={normalizeReasoningEffortValue(
           effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort,
         )}
+        reasoningSupportedEfforts={activeModelSupportedEfforts}
         onReasoningSelect={setReasoningEffortOverride}
         onReasoningPickerClose={() => setReasoningPickerAnchor(null)}
         keyboardShortcutsOpen={keyboardShortcutsOpen}

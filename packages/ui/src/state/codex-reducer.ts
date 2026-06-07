@@ -60,6 +60,12 @@ export interface ThreadContextDefaults {
   approvalPolicy?: unknown;
   approvalsReviewer?: unknown;
   sandbox?: unknown;
+  // codex Jd/Qd/$d: a sandbox policy whose details deviate from the named-mode
+  // defaults (read-only with network, or workspace-write with network /
+  // exclude_slash_tmp / exclude_tmpdir_env_var) resolves to the `custom`
+  // permission mode. The collapsed `sandbox` string can't carry these, so we
+  // flag it here from the structured policy.
+  sandboxIsNonDefault?: boolean;
   permissions?: string;
   environments?: TurnEnvironmentParams[];
   baseInstructions?: string;
@@ -909,8 +915,6 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
       return handleTurnStartedNotification(state, params);
     case "item/started":
     case "item/completed":
-    case "item/autoApprovalReview/started":
-    case "item/autoApprovalReview/completed":
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
     case "item/permissions/requestApproval":
@@ -955,6 +959,11 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "item/fileChange/patchUpdated":
       // HiCodex extension (not in Codex Desktop's 5-channel set).
       return mergeItemFields(state, params, "fileChange", { changes: params.changes });
+    case "item/autoApprovalReview/started":
+    case "item/autoApprovalReview/completed":
+      // Codex synthesizes a client-side automatic-approval-review timeline item
+      // from these notifications (payload is the review itself, no params.item).
+      return handleAutoApprovalReviewNotification(state, params);
     case "model/rerouted":
       return handleModelReroutedNotification(state, params);
     case "turn/plan/updated":
@@ -1181,6 +1190,49 @@ function handleModelReroutedNotification(state: CodexUiState, params: Record<str
   return upsertItem(logged, threadId, item, turnIdParam);
 }
 
+function handleAutoApprovalReviewNotification(
+  state: CodexUiState,
+  params: Record<string, unknown>,
+): CodexUiState {
+  /*
+   * Codex Desktop's app-server-manager routes
+   * `item/autoApprovalReview/started|completed` to a dedicated synthesizer
+   * (bundle `gy`/`hy`): the notification payload IS the review
+   * ({ threadId, turnId, startedAtMs, reviewId, targetItemId, review, action }
+   * — there is NO `params.item`), so it builds a client-side timeline item and
+   * pushes it into the active turn. HiCodex previously folded both kinds into
+   * handleItemLifecycleNotification, whose `params.item?.id` guard dropped
+   * every one — so the Auto-review entry never appeared mid-turn (it surfaced
+   * only from a later thread/read snapshot). This mirrors the modelRerouted
+   * synthesis above. The item is stored with the kebab
+   * `automatic-approval-review` type the renderer + grouping already consume;
+   * the v2 ThreadItem union has no `automaticApprovalReview` member (it is
+   * purely client-synthesized) so itemType() needs no new case. Re-verified vs
+   * Codex Desktop 26.602.40724 (app-server-manager-signals hy()/gy()).
+   */
+  const threadId = String(params.threadId ?? "");
+  if (!threadId) return state;
+  const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
+  const reviewId = stringParam(params, "reviewId");
+  if (!reviewId) return state;
+  const review = recordParam(params.review) ?? {};
+  const status = stringParam(review, "status") || "inProgress";
+  const startedAtMs = numberParam(params, "startedAtMs");
+  const item = {
+    type: "automatic-approval-review",
+    id: `automatic-approval-review:${reviewId}`,
+    targetItemId: stringParam(params, "targetItemId") || null,
+    action: params.action ?? null,
+    startedAtMs: startedAtMs || null,
+    completedAtMs: status === "inProgress" ? null : numberParam(params, "completedAtMs") || Date.now(),
+    status,
+    riskLevel: review.riskLevel ?? null,
+    userAuthorization: review.userAuthorization ?? null,
+    rationale: review.rationale ?? null,
+  } as unknown as ThreadItem;
+  return upsertItem(state, threadId, item, turnIdParam);
+}
+
 // --- server-request notification handlers ------------------------------------
 
 function handleServerRequestResolvedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
@@ -1214,15 +1266,45 @@ function applyMcpServerStartupStatusNotification(
 function applyErrorNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
   const error = recordParam(params.error);
   const text = turnErrorMessage(error) || formatUnknownForLog(params);
-  const retryText = params.willRetry === true ? " (will retry)" : "";
+  const willRetry = params.willRetry === true;
+  const retryText = willRetry ? " (will retry)" : "";
   const logged = text ? prependLog(state, `${text}${retryText}`, "error") : state;
-  if (params.willRetry === true) return logged;
 
   const threadId = String(params.threadId ?? "");
   if (!threadId || !text) return logged;
   const turnId = String(params.turnId ?? "");
   const runtime = selectThreadRuntime(logged, threadId);
   const order = ensureTurnInOrder(runtime.turnOrder, turnId || null);
+
+  /*
+   * Codex projects the `error` notification by `willRetry`
+   * (app-server-manager-signals :20244-20264): a retrying/reconnect error
+   * becomes a low-key `stream-error` row carrying a "Reconnecting N/M" progress
+   * when the message encodes it. HiCodex previously DROPPED willRetry errors
+   * entirely (log-only early return), so reconnect attempts were invisible in
+   * the transcript — fixed here.
+   *
+   * Codex renders a FATAL error as a `system-error` block (vs `stream-error`).
+   * HiCodex keeps fatal errors on `stream-error` for now: the fatal `error`
+   * notification and the `turn/failed` path both surface the same error and
+   * unify on `stream-error:${turnId}` (one row); reclassifying to system-error
+   * would also require reclassifying the turn/failed path, which this audit did
+   * not verify against the bundle. Tracked as a follow-up.
+   */
+  if (willRetry) {
+    return {
+      ...logged,
+      threadsRuntime: {
+        ...logged.threadsRuntime,
+        [threadId]: normalizeThreadRuntime({
+          ...runtime,
+          turnOrder: order,
+          items: mergeItems(runtime.items, [reconnectStreamErrorItem(turnId, error, text)], order),
+        }),
+      },
+    };
+  }
+
   return {
     ...logged,
     threads: logged.threads.map((thread) =>
@@ -1538,6 +1620,7 @@ function threadContextDefaultsFromThreadSettings(settings: Record<string, unknow
     approvalPolicy: settings.approvalPolicy,
     approvalsReviewer: stringParam(settings, "approvalsReviewer"),
     sandbox: sandboxModeFromSandboxPolicy(settings.sandboxPolicy),
+    sandboxIsNonDefault: sandboxPolicyIsNonDefault(settings.sandboxPolicy),
     permissions: permissionsFromActivePermissionProfile(settings.activePermissionProfile),
     reasoningEffort: settings.effort,
     reasoningSummary: settings.summary,
@@ -1563,6 +1646,24 @@ function compactThreadContext(context: ThreadContextDefaults): ThreadContextDefa
   return Object.fromEntries(
     Object.entries(context).filter(([, value]) => value !== undefined && value !== null && value !== ""),
   ) as ThreadContextDefaults;
+}
+
+// codex src-*.js Jd resolver: a sandbox policy resolves to a named permission
+// mode only when its details match the mode defaults. Qd requires read-only to
+// have networkAccess===false; $d requires workspace-write to have networkAccess
+// / excludeSlashTmp / excludeTmpdirEnvVar all ===false. Anything else is `custom`.
+// dangerFullAccess has no detail gate, so it is never flagged here.
+function sandboxPolicyIsNonDefault(value: unknown): boolean {
+  const policy = recordParam(value);
+  if (!policy) return false;
+  const type = stringParam(policy, "type");
+  if (type === "readOnly") return policy.networkAccess === true;
+  if (type === "workspaceWrite") {
+    return policy.networkAccess === true
+      || policy.excludeSlashTmp === true
+      || policy.excludeTmpdirEnvVar === true;
+  }
+  return false;
 }
 
 function sandboxModeFromSandboxPolicy(value: unknown): unknown {
@@ -1805,6 +1906,33 @@ function streamErrorItem(
   };
 }
 
+// codex DS regex (app-server-manager-signals :19904): a reconnect error message
+// of the form "Reconnecting[...] N/M" is split into attempt/maxAttempts so the
+// stream-error row can show a "Reconnecting {progress}" indicator.
+const RECONNECTING_MESSAGE_PATTERN = /^Reconnecting(?:\.\.\.)?\s+(\d+)\/(\d+)$/;
+
+function reconnectStreamErrorItem(
+  turnId: string,
+  error: Record<string, unknown> | null | undefined,
+  fallbackText: string,
+): AccumulatedThreadItem {
+  const message = turnErrorMessage(error) || fallbackText;
+  const match = RECONNECTING_MESSAGE_PATTERN.exec(message.trim());
+  const reconnect = match
+    ? { reconnectAttempt: Number(match[1]), reconnectMaxAttempts: Number(match[2]) }
+    : null;
+  return {
+    id: turnId ? `stream-error:${turnId}` : `stream-error:${fallbackText}`,
+    type: "stream-error",
+    // codex: `content: e == null ? n.message : `Reconnecting ${attempt}/${maxAttempts}``.
+    content: reconnect ? `Reconnecting ${reconnect.reconnectAttempt}/${reconnect.reconnectMaxAttempts}` : message,
+    additionalDetails: stringParam(error, "additionalDetails"),
+    completed: true,
+    ...(reconnect ?? {}),
+    ...(turnId ? { _turnId: turnId } : {}),
+  } as AccumulatedThreadItem;
+}
+
 type TurnLike = {
   id?: string;
   items?: ThreadItem[];
@@ -1979,13 +2107,36 @@ function workedForItemFromTurn(
    */
   if (!hasExtraActivity && !hasAgentActivityItem(items)) return null;
 
-  const startedAtMs = secondsTimestampToMs(turn.startedAt);
-  const completedAtMs = secondsTimestampToMs(turn.completedAt);
-  const durationMs = typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs) && turn.durationMs > 0
-    ? turn.durationMs
-    : null;
+  /*
+   * Codex measures worked-for as the EXPLORATION/TOOL phase BEFORE the answer:
+   * firstTurnWorkItemStartedAtMs → finalAssistantStartedAtMs
+   * (app-server-manager-signals qx/LS), capping the timer at answer-start so
+   * the long answer-streaming phase is NOT counted. HiCodex keeps the reducer
+   * pure (server item timestamps, never Date.now()), so we reconstruct the
+   * same span post-hoc from the merged segment: the first work item's start to
+   * the assistant answer's start. Answer-start = the first agentMessage's
+   * startedAtMs when stamped (item/started), else the last work item's
+   * completedAtMs (the work phase ends when the last tool finishes). When the
+   * segment carries no item timestamps (e.g. the turn/completed fast-path whose
+   * `turn.items` are not loaded), both anchors are null and we fall back to the
+   * server turn span — behavior unchanged. This drops the answer-streaming time
+   * the old whole-turn (turn.startedAt → turn.completedAt) span wrongly counted.
+   */
+  const serverStartedAtMs = secondsTimestampToMs(turn.startedAt);
+  const serverCompletedAtMs = secondsTimestampToMs(turn.completedAt);
+  const startedAtMs = firstWorkItemStartedAtMs(items) ?? serverStartedAtMs;
+  const answerCapMs = assistantAnswerStartedAtMs(items) ?? lastWorkItemCompletedAtMs(items);
   const status = turnStatusText(turn.status);
   const working = status === "inProgress" || status === "running" || status === "active";
+  // While working, cap at answer-start once it begins (null = still exploring).
+  // When done, prefer the answer-start cap, falling back to the server turn end.
+  const completedAtMs = working ? answerCapMs : answerCapMs ?? serverCompletedAtMs;
+  const durationMs =
+    startedAtMs !== null && completedAtMs !== null && completedAtMs >= startedAtMs
+      ? completedAtMs - startedAtMs
+      : typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs) && turn.durationMs > 0
+        ? turn.durationMs
+        : null;
 
   if (startedAtMs === null && durationMs === null) return null;
 
@@ -1994,9 +2145,46 @@ function workedForItemFromTurn(
     type: "worked-for",
     status: working ? "working" : "completed",
     ...(startedAtMs !== null ? { startedAtMs } : {}),
-    ...(working ? { completedAtMs: null } : completedAtMs !== null ? { completedAtMs } : {}),
+    ...(working ? { completedAtMs: answerCapMs } : completedAtMs !== null ? { completedAtMs } : {}),
     ...(durationMs !== null ? { durationMs } : {}),
   };
+}
+
+/**
+ * Worked-for timing anchors reconstructed from a turn's accumulated segment, so
+ * the reducer stays pure (no Date.now()) while matching Codex's client-tracked
+ * "work before the answer" span. See workedForItemFromTurn.
+ */
+function firstWorkItemStartedAtMs(items: Array<AccumulatedThreadItem | ThreadItem>): number | null {
+  for (const item of items) {
+    const type = String((item as Record<string, unknown>).type ?? "");
+    if (type === "userMessage" || type === "hookPrompt" || type === "worked-for") continue;
+    const started = (item as Record<string, unknown>).startedAtMs;
+    if (typeof started === "number" && Number.isFinite(started) && started >= 0) return started;
+  }
+  return null;
+}
+
+function assistantAnswerStartedAtMs(items: Array<AccumulatedThreadItem | ThreadItem>): number | null {
+  for (const item of items) {
+    if (String((item as Record<string, unknown>).type ?? "") !== "agentMessage") continue;
+    const started = (item as Record<string, unknown>).startedAtMs;
+    if (typeof started === "number" && Number.isFinite(started) && started >= 0) return started;
+  }
+  return null;
+}
+
+function lastWorkItemCompletedAtMs(items: Array<AccumulatedThreadItem | ThreadItem>): number | null {
+  let max: number | null = null;
+  for (const item of items) {
+    const type = String((item as Record<string, unknown>).type ?? "");
+    if (type === "userMessage" || type === "hookPrompt" || type === "worked-for" || type === "agentMessage") continue;
+    const completed = (item as Record<string, unknown>).completedAtMs;
+    if (typeof completed === "number" && Number.isFinite(completed) && completed >= 0 && (max === null || completed > max)) {
+      max = completed;
+    }
+  }
+  return max;
 }
 
 /**

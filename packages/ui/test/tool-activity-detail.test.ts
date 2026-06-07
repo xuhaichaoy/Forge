@@ -35,6 +35,7 @@ export default function runToolActivityDetailTests(): void {
   preservesDesktopPathTextInExecSummaryRows();
   labelsSkillExecSummaryRowsLikeDesktop();
   buildsPatchDetails();
+  buildsStatusAwarePatchLabels();
   buildsMcpDetails();
   buildsMcpAppDetails();
   normalizesMcpAppToolPayloadsLikeDesktop();
@@ -406,6 +407,29 @@ function keepsCompletedExecShellCollapsedLikeDesktop(): void {
   );
 }
 
+function buildsStatusAwarePatchLabels(): void {
+  // codex patch-item-content: the change verb tracks the patch status — present
+  // participle while running, "Rejected"/"Stopped …" for declined/aborted, past
+  // tense once completed. HiCodex previously always showed the past tense.
+  const labelFor = (status: string, kind: string): string => {
+    const vm = toolActivityDetailViewModel({
+      type: "fileChange",
+      id: "patch-x",
+      status,
+      changes: [{ path: "a.ts", kind: { type: kind } }],
+    });
+    return vm && vm.kind === "patch" ? String(vm.changes[0]?.action ?? "") : "";
+  };
+  assertEqual(labelFor("inProgress", "add"), "Creating", "in-progress add should read Creating");
+  assertEqual(labelFor("inProgress", "delete"), "Deleting", "in-progress delete should read Deleting");
+  assertEqual(labelFor("inProgress", "update"), "Editing", "in-progress update should read Editing");
+  assertEqual(labelFor("declined", "add"), "Rejected", "declined change should read Rejected");
+  assertEqual(labelFor("interrupted", "delete"), "Stopped deleting", "interrupted delete should read Stopped deleting");
+  assertEqual(labelFor("aborted", "update"), "Stopped editing", "aborted update should read Stopped editing");
+  assertEqual(labelFor("completed", "add"), "Created", "completed add should still read Created");
+  assertEqual(labelFor("completed", "delete"), "Deleted", "completed delete should still read Deleted");
+}
+
 function buildsPatchDetails(): void {
   assertDeepEqual(
     toolActivityDetailViewModel({
@@ -421,11 +445,11 @@ function buildsPatchDetails(): void {
       id: "patch-1",
       running: false,
       changes: [
-        { action: "Edited", path: "src/app.ts", diff: "@@ -1 +1 @@\n-old\n+new" },
+        { action: "Edited", kind: "update", path: "src/app.ts", diff: "@@ -1 +1 @@\n-old\n+new" },
       ],
       status: "completed",
     },
-    "patch detail should expose action, path, and diff",
+    "patch detail should expose action, path, kind, and diff",
   );
 }
 

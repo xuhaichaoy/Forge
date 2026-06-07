@@ -125,6 +125,28 @@ export default function runModelSettingsTests(): void {
     "model/list projection should preserve serviceTiers advertised by app-server",
   );
 
+  // codex: the reasoning picker renders the active model's advertised
+  // supportedReasoningEfforts (e.g. a model limited to "medium") instead of a
+  // static list. The model/list projection must capture them.
+  assertDeepEqual(
+    buildModelConfigFromListEntry({
+      id: "openai",
+      model: "gpt-5.2-codex",
+      supportedReasoningEfforts: [
+        { reasoningEffort: "low", description: "" },
+        { reasoningEffort: "medium", description: "Balanced" },
+        { reasoningEffort: "high", description: "" },
+      ],
+    }).supportedReasoningEfforts,
+    ["low", "medium", "high"],
+    "model/list projection should capture advertised supportedReasoningEfforts (effort values)",
+  );
+  assertEqual(
+    buildModelConfigFromListEntry({ id: "openai", model: "gpt-5.2" }).supportedReasoningEfforts,
+    undefined,
+    "models with no advertised efforts should omit supportedReasoningEfforts",
+  );
+
   assertDeepEqual(
     buildLocalModelCatalogEntry(testModel({ name: "" })),
     {

@@ -991,12 +991,12 @@ function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CEeZyOcp.js — only a subset of rail sections pass
- * a `titleSuffix:(0,Q.jsx)(Xf,{count:…})` count badge to the section header. Verified in
- * the bundle: artifacts (Outputs), side-chats, background-subagents (Subagents),
- * background-tasks (Tasks) and tool-sources (Sources) DO; automation, browser-tabs,
- * environment (branchDetails) and progress do NOT. HiCodex mirrors that allow-list so a
- * single-entry section like Browser/Automation does not sprout a stray "1" badge.
+ * CODEX-REF: local-conversation-thread-CNXrCEaG.js — only a subset of rail sections pass
+ * a count badge to the header. Re-verified in 26.602.40724: artifacts (Outputs),
+ * side-chats, background-subagents (Subagents), background-tasks (Tasks), tool-sources
+ * (Sources) AND browser-tabs all DO (browser-tabs builds `titleSuffix:(0,Q.jsx)(vp,{count:
+ * p.length})` at :5890, vp returns null only when count===0); automation, environment
+ * (branchDetails) and progress do NOT. (An earlier HiCodex note wrongly excluded browser.)
  */
 function sectionHasCountBadge(sectionId: RightRailSectionViewModel["id"]): boolean {
   return (
@@ -1005,6 +1005,7 @@ function sectionHasCountBadge(sectionId: RightRailSectionViewModel["id"]): boole
     || sectionId === "backgroundSubagents"
     || sectionId === "backgroundTasks"
     || sectionId === "sources"
+    || sectionId === "browser"
   );
 }
 

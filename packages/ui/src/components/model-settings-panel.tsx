@@ -171,8 +171,8 @@ export function SettingsPanel({
            * by `<a {...e.heading}/>` only when present (HiCodex-only group
            * skips its heading per SETTINGS_SECTION_GROUP_HEADINGS.hicodex = null).
            */}
-          <nav className="hc-settings-nav" aria-label="Settings sections">
-            {(["app", "host"] as const).map((group: SettingsSectionGroup) => {
+          <nav className="hc-settings-nav" aria-label={formatMessage({ id: "settings.nav.ariaLabel", defaultMessage: "Settings" })}>
+            {(["personal", "integrations", "coding", "archived"] as const).map((group: SettingsSectionGroup) => {
               const heading = SETTINGS_SECTION_GROUP_HEADINGS[group];
               const sections = SETTINGS_SECTIONS.filter((section) => section.group === group);
               if (sections.length === 0) return null;
@@ -189,13 +189,14 @@ export function SettingsPanel({
                     >
                       {settingsSectionIcon(section.icon)}
                       <span>
-                        <strong>{settingsSectionTitle(section, formatMessage)}</strong>
                         {/*
-                         * CODEX-REF: Codex Desktop renders no subtitle/description
-                         * per section — settings-shared-*.js returns null for
-                         * every slug except mcp-settings.
+                         * codex settings-page-*.js nav items are icon + title only —
+                         * the nav renderer (`ye`/`ve(slug)`) resolves just the title;
+                         * per-section subtitles live in-page, not in the nav. So the
+                         * nav item shows no subtitle (the active-section page below
+                         * still renders the in-page description).
                          */}
-                        {section.description ? <small>{settingsSectionDescription(section, formatMessage)}</small> : null}
+                        <strong>{settingsSectionTitle(section, formatMessage)}</strong>
                       </span>
                     </button>
                   ))}
@@ -221,7 +222,7 @@ export function SettingsPanel({
                   disabled={panelState?.status === "loading"}
                 >
                   {panelState?.status === "loading" ? <Loader2 className="hc-spin" size={13} /> : <RefreshCw size={13} />}
-                  <span>Refresh</span>
+                  <span>{formatMessage({ id: "settings.worktrees.refresh", defaultMessage: "Refresh" })}</span>
                 </button>
               )}
             </div>

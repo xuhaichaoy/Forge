@@ -32,14 +32,17 @@ export interface KeyboardShortcutsDialogProps {
  * `commandMenuGroupKey` so the list mirrors the command palette taxonomy.
  */
 const GROUP_TITLE: ReadonlyArray<{ key: string; titleId: string; title: string }> = [
-  { key: "general", titleId: "keyboardShortcutsDialog.section.general", title: "General" },
+  // codex: electron-menu-shortcuts-*.js `var i=[thread,navigation,panels,workspace,
+  // skills,configure,app]` consumed in app-main as `[...i,general]` — navigation
+  // precedes panels and general is appended last.
   { key: "thread", titleId: "keyboardShortcutsDialog.section.thread", title: "Chat" },
-  { key: "panels", titleId: "keyboardShortcutsDialog.section.panels", title: "Panels" },
   { key: "navigation", titleId: "keyboardShortcutsDialog.section.navigation", title: "Navigation" },
+  { key: "panels", titleId: "keyboardShortcutsDialog.section.panels", title: "Panels" },
   { key: "workspace", titleId: "keyboardShortcutsDialog.section.workspace", title: "Project" },
   { key: "skills", titleId: "keyboardShortcutsDialog.section.skills", title: "Skills" },
   { key: "configure", titleId: "keyboardShortcutsDialog.section.configure", title: "Configure" },
   { key: "app", titleId: "keyboardShortcutsDialog.section.app", title: "App" },
+  { key: "general", titleId: "keyboardShortcutsDialog.section.general", title: "General" },
 ];
 
 interface Section {

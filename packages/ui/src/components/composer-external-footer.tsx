@@ -122,8 +122,8 @@ export function ComposerExternalFooter({
     return "Project";
   }, [cwd, rootOptions]);
   const resolvedWorkModeOptions = useMemo(
-    () => workModeOptions ?? projectWorktreeModeOptions({ mode: workMode }),
-    [workMode, workModeOptions],
+    () => workModeOptions ?? projectWorktreeModeOptions({ mode: workMode, formatMessage }),
+    [workMode, workModeOptions, formatMessage],
   );
   const visibleRootOptions = useMemo(
     () => filterWorkspaceRoots(rootOptions, projectSearch),
@@ -197,7 +197,7 @@ export function ComposerExternalFooter({
                   <input
                     value={projectSearch}
                     onChange={(event) => setProjectSearch(event.target.value)}
-                    placeholder="Search projects"
+                    placeholder={formatMessage({ id: "composer.localCwdDropdown.searchPlaceholder", defaultMessage: "Search projects" })}
                   />
                 </label>
                 <div className="hc-composer-project-list">
@@ -217,7 +217,7 @@ export function ComposerExternalFooter({
                     </button>
                   ))}
                   {visibleRootOptions.length === 0 && (
-                    <div className="hc-composer-project-empty">No folders found</div>
+                    <div className="hc-composer-project-empty">{formatMessage({ id: "composer.localCwdDropdown.noResults", defaultMessage: "No folders found" })}</div>
                   )}
                 </div>
                 {onUseExistingFolder && (
@@ -230,7 +230,7 @@ export function ComposerExternalFooter({
                       onClick={useExistingFolder}
                     >
                       <Folder size={13} />
-                      <span>Use an existing folder</span>
+                      <span>{formatMessage({ id: "projectSetup.addProjectMenu.useExistingFolder", defaultMessage: "Use an existing folder" })}</span>
                     </button>
                   </>
                 )}
@@ -377,7 +377,7 @@ export function ComposerSettingsChips({
   const PermissionsIcon = PERMISSIONS_FOOTER_ICON[permissionsLabel] ?? ShieldCheck;
   return (
     <div className="hc-composer-settings-chips">
-      <Tooltip content={onOpenPermissions ? "Change permissions" : permissionsTitle}>
+      <Tooltip content={onOpenPermissions ? formatMessage({ id: "composer.permissionsDropdown.trigger.tooltip", defaultMessage: "Change permissions" }) : permissionsTitle}>
         <button
           type="button"
           className="hc-composer-footer-chip hc-composer-footer-permissions"
@@ -391,7 +391,7 @@ export function ComposerSettingsChips({
         </button>
       </Tooltip>
       {intelligenceLabel && (
-        <Tooltip content={onOpenModelPicker ? "Select model" : intelligenceLabel}>
+        <Tooltip content={onOpenModelPicker ? formatMessage({ id: "composer.intelligenceDropdown.tooltip", defaultMessage: "Select model" }) : intelligenceLabel}>
           <button
             type="button"
             className="hc-composer-footer-chip hc-composer-footer-model hc-composer-footer-intelligence"

@@ -30,7 +30,7 @@ function rendersDesktopTurnDiffCardInAboveComposerSlot(): void {
   assertIncludes(html, "hc-live-turn-diff-portal", "live diff should render in the portal wrapper");
   assertIncludes(html, "hc-turn-diff-progress", "live diff should use Desktop's in-progress turn-diff row");
   assertIncludes(html, "1 file changed", "live diff should show Desktop's in-progress changed-file title");
-  assertIncludes(html, "Review here", "in-progress live diff should use Desktop review copy");
+  assertIncludes(html, "hc-turn-diff-review-full\">Review<", "in-progress live diff should use Desktop review copy (bundle reviewChanges = \"Review\")");
   assertExcludes(html, "hc-turn-diff-header-icon", "in-progress live diff should not render the completed-card icon");
   assertExcludes(html, "Edited app.ts", "in-progress live diff should not use the completed-card title");
   assertExcludes(html, "Live diff preview", "live diff should not use the old raw preview label");

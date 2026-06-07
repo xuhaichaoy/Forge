@@ -1805,6 +1805,19 @@
   min-height: 96px;
 }
 
+.hc-thread-goal-edit-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--hc-danger, #b91c1c);
+}
+
+.hc-thread-goal-resume-objective {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--hc-text-secondary);
+  white-space: pre-wrap;
+}
+
 .hc-hooks-review-banner {
   background: color-mix(in oklab, var(--hc-editor-warning-background) 20%, transparent);
 }
@@ -2350,6 +2363,14 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* The active-mode (data-checked) row uses a light green tint in light theme
+   (#edf4ef); without this dark override it leaked that near-white onto the dark
+   menu, making the white row text unreadable (the Pursue goal / Plan mode rows).
+   Use a subtle dark-green accent so the brand-green switch still reads on top. */
+.hc-app[data-theme="dark"] .hc-composer-menu-row[data-checked="true"] {
+  background: rgba(23, 71, 63, 0.22);
+}
+
 .hc-app[data-theme="dark"] .hc-composer-menu-row small {
   color: var(--hc-text-tertiary);
 }
@@ -2365,6 +2386,12 @@
 
 .hc-app[data-theme="dark"] .hc-composer-menu-row .hc-composer-menu-switch span {
   background: rgba(0, 0, 0, 0.2);
+}
+
+/* The checked switch keeps the brand-green track (#17473f) in dark too; give its
+   knob a light fill so the "on" thumb stays visible against the green. */
+.hc-app[data-theme="dark"] .hc-composer-menu-row[data-checked="true"] .hc-composer-menu-switch span {
+  background: #fffdfa;
 }
 
 .hc-app[data-theme="dark"] .hc-attachment-input-panel {

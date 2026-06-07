@@ -51,6 +51,16 @@ export function permissionModeFromThreadContext(context: ThreadContextDefaults |
   const approvalPolicy = context?.approvalPolicy ?? "on-request";
   const approvalsReviewer = stringValue(context?.approvalsReviewer) ?? "user";
 
+  // codex Jd/Qd/$d: a sandbox policy whose details deviate from the named-mode
+  // defaults (network on read-only, or network/exclude_slash_tmp/
+  // exclude_tmpdir_env_var on workspace-write) is not a named mode — it resolves
+  // to `custom`. The collapsed `sandbox` string lost these details, so we rely on
+  // the structured flag computed at thread-settings projection time.
+  // (dangerFullAccess has no such gate, so the flag is never set for it.)
+  if (context?.sandboxIsNonDefault === true) {
+    return "custom";
+  }
+
   if (sandboxMode === "read-only" && approvalPolicy === "on-request" && approvalsReviewer === "user") {
     return "read-only";
   }

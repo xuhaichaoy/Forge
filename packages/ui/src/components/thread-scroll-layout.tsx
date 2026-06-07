@@ -9,6 +9,7 @@ import {
   useContext,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 const DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX = 24;
 const DESKTOP_FOOTER_SCROLL_PADDING_PX = 16;
@@ -78,6 +79,7 @@ export function ThreadScrollLayout({
   const scrollListenersRef = useRef(new Set<(distanceFromBottomPx: number) => void>());
   const [footerHeight, setFooterHeight] = useState(0);
   const [isScrolledFromBottom, setIsScrolledFromBottom] = useState(false);
+  const { formatMessage } = useHiCodexIntl();
 
   const setScrolledFromBottom = useCallback((next: boolean) => {
     isScrolledFromBottomRef.current = next;
@@ -260,7 +262,7 @@ export function ThreadScrollLayout({
                 <div className="hc-scroll-to-bottom-anchor">
                   <button
                     aria-hidden={!isScrolledFromBottom}
-                    aria-label="Scroll to bottom"
+                    aria-label={formatMessage({ id: "localConversation.scrollToBottomButton", defaultMessage: "Scroll to bottom" })}
                     className={isScrolledFromBottom
                       ? "hc-scroll-to-bottom"
                       : "hc-scroll-to-bottom is-hidden"}

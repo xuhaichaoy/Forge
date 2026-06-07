@@ -19,6 +19,7 @@ import type { FileReference } from "./file-reference-types";
 import { GeneratedImageGallery } from "./generated-image-gallery";
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { IconActionButton, MessageActionRow } from "./message-action-row";
+import { useHiCodexIntl } from "./i18n-provider";
 import { MessageUnitView } from "./message-unit";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
@@ -688,6 +689,7 @@ function GeneratedImageGalleryOutput({
   onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   threadId?: string | null;
 }) {
+  const { formatMessage } = useHiCodexIntl();
   const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);
   return (
     <div className="hc-message assistant hc-generated-image-output" data-role="assistant">
@@ -695,8 +697,8 @@ function GeneratedImageGalleryOutput({
       <MessageActionRow copyText="" hasActionChildren={canFork}>
         {canFork && unit.turnId && (
           <IconActionButton
-            ariaLabel="Fork from this point"
-            title="Fork"
+            ariaLabel={formatMessage({ id: "assistantMessageContent.forkAriaLabel", defaultMessage: "Fork from this point" })}
+            title={formatMessage({ id: "assistantMessageContent.forkTooltip", defaultMessage: "Fork" })}
             onClick={() => onForkTurn?.(unit.turnId ?? "")}
           >
             <GitFork size={13} />

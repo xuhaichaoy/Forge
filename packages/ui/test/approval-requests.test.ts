@@ -4,6 +4,7 @@ import {
   PLAN_IMPLEMENTATION_REQUEST_METHOD,
   buildApprovalResult,
   buildStopPendingRequestResult,
+  isAutoDeniablePermissionRequest,
   pendingRequestDetail,
 } from "../src/state/approval-requests";
 import type { PendingServerRequest } from "../src/state/codex-reducer";
@@ -717,4 +718,43 @@ export default function runApprovalRequestTests(): void {
     "Stop all should dismiss dynamic setup context pickers",
   );
   assertEqual(buildStopPendingRequestResult(unknownRequest), null, "Stop all unsupported request result is null");
+
+  // codex auto-deny: a permission request with nothing grantable (no network +
+  // no fileSystem) is auto-declined ({ permissions: {}, scope: "turn" }) and
+  // never shown, rather than left as a stuck non-acceptable panel.
+  const emptyPermissionRequest = request("item/permissions/requestApproval", { permissions: {} });
+  assertEqual(
+    isAutoDeniablePermissionRequest(emptyPermissionRequest),
+    true,
+    "permission request with no network/fileSystem is auto-deniable",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(emptyPermissionRequest),
+    { permissions: {}, scope: "turn" },
+    "auto-deniable permission request declines with empty permissions, turn scope",
+  );
+  assertEqual(
+    isAutoDeniablePermissionRequest(request("item/permissions/requestApproval", { permissions: { network: { enabled: true } } })),
+    false,
+    "permission request with network present is NOT auto-deniable",
+  );
+  assertEqual(
+    isAutoDeniablePermissionRequest(request("item/permissions/requestApproval", { permissions: { fileSystem: { read: ["/x"] } } })),
+    false,
+    "permission request with fileSystem present is NOT auto-deniable",
+  );
+  assertEqual(
+    isAutoDeniablePermissionRequest(request("item/commandExecution/requestApproval", { command: ["ls"] })),
+    false,
+    "non-permission requests are never auto-deniable",
+  );
+
+  // codex `readWrite` case: a path requested for both read and write collapses
+  // into one "Read and write" row; read-only and write-only paths stay separate.
+  const rwDetail = pendingRequestDetail(request("item/permissions/requestApproval", {
+    permissions: { fileSystem: { read: ["/repo/a", "/repo/b"], write: ["/repo/a", "/repo/c"] } },
+  }));
+  assertIncludes(rwDetail.body, "Read and write: /repo/a", "shared read+write path collapses into one row");
+  assertIncludes(rwDetail.body, "Read: /repo/b", "read-only path stays a Read row");
+  assertIncludes(rwDetail.body, "Write: /repo/c", "write-only path stays a Write row");
 }

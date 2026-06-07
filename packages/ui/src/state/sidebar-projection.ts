@@ -273,20 +273,27 @@ export function threadProjectLabel(thread: Thread): string {
 export function sidebarThreadRelativeTime(thread: Thread, nowMs = Date.now()): string {
   const at = threadSortAt(thread, "updated_at");
   if (at <= 0) return "";
-  const elapsed = Math.max(0, nowMs - at);
-  const minute = 60_000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  const week = 7 * day;
-  const month = 30 * day;
-  const year = 365 * day;
-  if (elapsed < minute) return "1m";
-  if (elapsed < hour) return `${Math.floor(elapsed / minute)}m`;
-  if (elapsed < day) return `${Math.floor(elapsed / hour)}h`;
-  if (elapsed < week) return `${Math.floor(elapsed / day)}d`;
-  if (elapsed < month) return `${Math.floor(elapsed / week)}w`;
-  if (elapsed < year) return `${Math.floor(elapsed / month)}mo`;
-  return `${Math.floor(elapsed / year)}y`;
+  // codex format-relative-date-time-*.js: minutes/hours derive from floored
+  // elapsed minutes, but days/weeks/months/years derive from the CALENDAR-day
+  // diff (local midnight, rounded) — NOT elapsed ms. So 27h spanning two
+  // calendar dates reads "2d" (matching Codex), not "1d".
+  const now = new Date(nowMs);
+  const then = new Date(at);
+  const elapsedMinutes = Math.floor(Math.max(0, nowMs - at) / 60_000);
+  const calendarDays = Math.round(
+    (new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+      - new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime())
+    / 86_400_000,
+  );
+  const minutes = Math.max(1, elapsedMinutes);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.max(1, calendarDays);
+  if (days < 7) return `${days}d`;
+  if (days < 30) return `${Math.floor(days / 7)}w`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
 }
 
 /**

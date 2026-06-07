@@ -125,6 +125,7 @@ export type SlashCommandAction =
   | { action: "clearInput" }
   | { action: "insertText"; text: string }
   | { action: "setComposerMode"; mode: ComposerMode; text?: string }
+  | { action: "setGoalMode"; on: boolean; text?: string }
   | { action: "request"; request: SlashCommandRequest; clearInput: true; payload?: Record<string, unknown> }
   | { action: "showCommands"; clearInput: true }
   /*
@@ -142,6 +143,9 @@ export interface SlashCommandContext {
   mode?: ComposerMode;
 }
 
+// codex composer: "Plan mode" and "Pursue goal" are INDEPENDENT toggles that can
+// be active together. ComposerMode is the turn/collaboration mode (plan); the
+// goal-input toggle is tracked separately as a boolean so the two coexist.
 export type ComposerMode = "default" | "plan";
 export type FollowUpSubmitAction = "queue" | "steer";
 
@@ -172,6 +176,7 @@ export function composerPlaceholderText(
   input: {
     hasConversation: boolean;
     hasBackgroundAgentsPanel?: boolean;
+    goalMode?: boolean;
   },
   formatMessage?: FormatMessage,
 ): string {
@@ -182,6 +187,11 @@ export function composerPlaceholderText(
   // (Upstream intentionally drops the hyphen in the with-agents variant.)
   const fm = (id: string, defaultMessage: string): string =>
     formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
+  // codex composer.placeholder.goal — goal mode swaps the composer prompt to ask
+  // for the objective Codex should keep working toward.
+  if (input.goalMode) {
+    return fm("composer.placeholder.goal", "What should Codex keep working toward?");
+  }
   if (!input.hasConversation) {
     return fm("composer.placeholder.newTask.locally.v2", "Ask Codex anything. @ to use plugins or mention files");
   }
@@ -205,6 +215,7 @@ export type AttachActionId =
   | "plainText"
   | "filePath"
   | "plan"
+  | "goal"
   | "plugins";
 
 /*
@@ -533,6 +544,14 @@ export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
     placeholder: "",
   },
   {
+    // codex composer.goalDropdown = "Pursue goal" — toggles goal mode, where the
+    // next composer submit sets a thread goal Codex keeps working toward.
+    id: "goal",
+    title: "Pursue goal",
+    description: "Set a goal Codex keeps working toward.",
+    placeholder: "",
+  },
+  {
     id: "plugins",
     title: "Plugins",
     description: "Browse available plugins.",
@@ -813,6 +832,13 @@ export function filterSlashCommands<T extends Pick<SlashCommand, "id" | "title">
   commands: T[] = DEFAULT_SLASH_COMMANDS as unknown as T[],
 ) {
   const normalized = normalizeSlashQuery(query);
+  // NOTE (parity): codex sorts the no-query slash list by [group, title]
+  // (local-remote-selection `sortBy(e,[e=>e.group ?? "", e=>e.title])`). HiCodex
+  // keeps declaration order here — left as-is on purpose: HiCodex's `category` is
+  // not a verified 1:1 of Codex's `group`, the slash command SET itself differs
+  // (CLI-adapted vs Desktop), and the menu renders flat (no group headers), so a
+  // category-clustered or title-flat sort can't be confirmed to match the bundle
+  // without a live A/B. Deferred until the slash SET is aligned.
   if (!normalized) return commands;
   /*
    * codex: slash-command-item-*.js — Codex Desktop ranks slash matches
@@ -910,14 +936,23 @@ export function slashCommandsForComposerMode(
 
 export function attachActionsForComposerMode(
   mode: ComposerMode,
+  goalMode = false,
   actions: AttachAction[] = DEFAULT_ATTACH_ACTIONS,
 ): AttachAction[] {
   return actions.map((action) => {
-    if (action.id !== "plan") return action;
-    return {
-      ...action,
-      description: mode === "plan" ? "Turn off planning mode." : "Create a plan before making changes.",
-    };
+    if (action.id === "plan") {
+      return {
+        ...action,
+        description: mode === "plan" ? "Turn off planning mode." : "Create a plan before making changes.",
+      };
+    }
+    if (action.id === "goal") {
+      return {
+        ...action,
+        description: goalMode ? "Turn off goal mode." : "Set a goal Codex keeps working toward.",
+      };
+    }
+    return action;
   });
 }
 
@@ -1011,7 +1046,14 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
         ...(args ? { text: args } : {}),
       };
     case "goal":
-      return { action: "request", request: "showGoal", clearInput: true, payload: optionalPayload("objective", args) };
+      // codex composer-*.js: the /goal slash opens goal mode (onOpenGoalEditor),
+      // so the next composer submit sets the goal through the replace-confirm gate
+      // — it does NOT set directly. HiCodex enters goal mode here, pre-filling the
+      // optional objective arg; `/goal clear` keeps the direct clear path.
+      if (args.trim().toLowerCase() === "clear") {
+        return { action: "request", request: "showGoal", clearInput: true, payload: { objective: "clear" } };
+      }
+      return { action: "setGoalMode", on: true, ...(args ? { text: args } : {}) };
     case "collab":
       return { action: "request", request: "showCollaborationModes", clearInput: true };
     case "agent":
@@ -1198,6 +1240,7 @@ export function createAttachmentFromInput(actionId: AttachActionId, value: strin
     case "filePath":
       return { type: "filePath", path: normalizeAttachmentPath(trimmed) };
     case "plan":
+    case "goal":
     case "plugins":
       return null;
   }

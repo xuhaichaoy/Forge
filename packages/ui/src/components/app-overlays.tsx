@@ -26,6 +26,7 @@ export function AppOverlays({
   onModelPickerClose,
   reasoningPickerAnchor,
   reasoningCurrentEffort,
+  reasoningSupportedEfforts,
   onReasoningSelect,
   onReasoningPickerClose,
   keyboardShortcutsOpen,
@@ -46,6 +47,7 @@ export function AppOverlays({
   onModelPickerClose: () => void;
   reasoningPickerAnchor: HTMLElement | null;
   reasoningCurrentEffort: ReasoningPickerMenuProps["currentEffort"];
+  reasoningSupportedEfforts?: ReasoningPickerMenuProps["supportedEfforts"];
   onReasoningSelect: (effort: string | null) => void;
   onReasoningPickerClose: () => void;
   keyboardShortcutsOpen: boolean;
@@ -84,6 +86,7 @@ export function AppOverlays({
         <ReasoningPickerMenu
           anchor={reasoningPickerAnchor as HTMLElement}
           currentEffort={reasoningCurrentEffort}
+          supportedEfforts={reasoningSupportedEfforts}
           onSelect={onReasoningSelect}
           onClose={onReasoningPickerClose}
         />

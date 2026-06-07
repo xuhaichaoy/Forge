@@ -1229,7 +1229,7 @@ function AssistantMessageActions({
    * artifacts" button here. HiCodex has no Codex analytics feedback surface
    * yet, so artifact presence must not invent an action-row child.
    */
-  const hookStatsSummary = assistantHookStatsSummary(item);
+  const hookStatsSummary = assistantHookStatsSummary(item, formatMessage);
   const goalSummary = assistantCompletedThreadGoal(item);
   const hasActionChildren = Boolean(onFork)
     || Boolean(autoReviewSummary)
@@ -1321,12 +1321,12 @@ function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompleted
         { id: "assistantMessageContent.goalAchieved", defaultMessage: "Goal achieved in {totalTime}" },
         { totalTime: summary.durationLabel },
       )
-    : formatMessage({ id: "composer.threadGoal.summary.complete", defaultMessage: "Goal complete" });
+    : formatMessage({ id: "composer.threadGoal.summary.complete", defaultMessage: "Goal achieved" });
   return (
     <span
       aria-label={summary.objective
-        ? formatMessage({ id: "hc.assistantMessage.goalCompleteWithObjective", defaultMessage: "Goal complete: {objective}" }, { objective: summary.objective })
-        : formatMessage({ id: "composer.threadGoal.summary.complete", defaultMessage: "Goal complete" })}
+        ? formatMessage({ id: "hc.assistantMessage.goalCompleteWithObjective", defaultMessage: "Goal achieved: {objective}" }, { objective: summary.objective })
+        : formatMessage({ id: "composer.threadGoal.summary.complete", defaultMessage: "Goal achieved" })}
       className="hc-message-action-status text hc-message-goal-chip"
       title={summary.objective || visibleLabel}
     >
@@ -1352,7 +1352,7 @@ function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompleted
 // to light up once the reducer slice exists; do not delete the helper. See
 // docs/DEVELOPMENT.md for the longer note tying this to Codex's user-message
 // `hookStats`/`hookRuns` rule.
-export function assistantHookStatsSummary(item: Record<string, unknown>): AssistantHookStatsSummary | null {
+export function assistantHookStatsSummary(item: Record<string, unknown>, formatMessage: FormatMessage): AssistantHookStatsSummary | null {
   const raw = (item as { hookStats?: unknown }).hookStats;
   if (!raw || typeof raw !== "object") return null;
   const record = raw as Record<string, unknown>;
@@ -1376,10 +1376,13 @@ export function assistantHookStatsSummary(item: Record<string, unknown>): Assist
   const total = count > 0 ? count : entries.length;
   const label = total === 1 ? "1 hook" : `${total} hooks`;
   const rows: Array<{ label: string; value: string }> = [];
-  if (count > 0) rows.push({ label: "Ran", value: String(count) });
-  if (blocked > 0) rows.push({ label: "Blocked", value: String(blocked) });
-  if (errorCount > 0) rows.push({ label: "Errors", value: String(errorCount) });
-  return { label, title: "Hooks summary", rows, entries };
+  // codex: user-message-attachments-*.js — hooks-summary row labels + title are
+  // localized via assistantMessage.hookStats.* (the "{n} hooks" chip label itself
+  // is a HiCodex affordance and stays literal).
+  if (count > 0) rows.push({ label: formatMessage({ id: "assistantMessage.hookStats.ranCount", defaultMessage: "Ran" }), value: String(count) });
+  if (blocked > 0) rows.push({ label: formatMessage({ id: "assistantMessage.hookStats.blockedCount", defaultMessage: "Blocked" }), value: String(blocked) });
+  if (errorCount > 0) rows.push({ label: formatMessage({ id: "assistantMessage.hookStats.errorCount", defaultMessage: "Errors" }), value: String(errorCount) });
+  return { label, title: formatMessage({ id: "assistantMessage.hookStats.title", defaultMessage: "Hooks summary" }), rows, entries };
 }
 
 // codex: local-conversation-thread-*.js — `timeUsedSeconds*1e3` formatted to
@@ -2496,7 +2499,8 @@ function FileCitationAnchor({
 }) {
   const menuActions = useContext(FileCitationMenuContext);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions });
+  const { formatMessage } = useHiCodexIntl();
+  const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions, formatMessage });
 
   return (
     <>

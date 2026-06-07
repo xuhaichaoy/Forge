@@ -46,6 +46,40 @@ function derivesDesktopPermissionModesFromThreadContext(): void {
     "granular",
     "granular mode should map from Desktop's granular approval object",
   );
+
+  // codex Jd/Qd/$d: a sandbox policy whose details deviate from the named-mode
+  // defaults (network on read-only, or network/exclude_slash_tmp/
+  // exclude_tmpdir_env_var on workspace-write) resolves to `custom`, even though
+  // the collapsed mode string would otherwise match a named mode.
+  assertEqual(
+    permissionModeFromThreadContext({
+      sandbox: "read-only",
+      sandboxIsNonDefault: true,
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+    }),
+    "custom",
+    "read-only with network access (non-default policy) should resolve to custom",
+  );
+  assertEqual(
+    permissionModeFromThreadContext({
+      sandbox: "workspace-write",
+      sandboxIsNonDefault: true,
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+    }),
+    "custom",
+    "workspace-write with non-default details should resolve to custom, not auto",
+  );
+  assertEqual(
+    permissionModeFromThreadContext({
+      sandbox: "workspace-write",
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+    }),
+    "auto",
+    "default workspace-write (no non-default flag) still resolves to the named mode",
+  );
 }
 
 function projectsModeRowsWithConfigWrites(): void {

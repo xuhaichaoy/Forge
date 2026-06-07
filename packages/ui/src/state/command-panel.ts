@@ -411,14 +411,16 @@ export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[
 // `commandMenuGroupKey` taxonomy declared by the command catalog (see
 // state/commands.ts COMMAND_DESCRIPTORS / state/command-registry.ts
 // CommandGroup). Sections without entries are skipped at render time.
-const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; title: string }> = [
-  { key: "thread",     title: "Chat" },
-  { key: "navigation", title: "Navigation" },
-  { key: "panels",     title: "Panels" },
-  { key: "workspace",  title: "Project" },
-  { key: "skills",     title: "Skills" },
-  { key: "configure",  title: "Configure" },
-  { key: "app",        title: "App" },
+// titleId mirrors Codex's `codex.commandGroup.<key>` section labels (localized
+// in the command menu); `title` is the English defaultMessage fallback.
+const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; titleId: string; title: string }> = [
+  { key: "thread",     titleId: "codex.commandGroup.thread",     title: "Chat" },
+  { key: "navigation", titleId: "codex.commandGroup.navigation", title: "Navigation" },
+  { key: "panels",     titleId: "codex.commandGroup.panels",     title: "Panels" },
+  { key: "workspace",  titleId: "codex.commandGroup.workspace",  title: "Project" },
+  { key: "skills",     titleId: "codex.commandGroup.skills",     title: "Skills" },
+  { key: "configure",  titleId: "codex.commandGroup.configure",  title: "Configure" },
+  { key: "app",        titleId: "codex.commandGroup.app",        title: "App" },
 ];
 
 // codex: app-main-*.js — bucket the command menu's kind-typed
@@ -464,7 +466,10 @@ export interface CommandGroupSection {
 // already carry a per-entry groupLabel) are emitted in a leading "Other"
 // section preserving their original order so the existing
 // groupCommandPanelEntriesForRendering pass still produces sub-headers.
-export function groupCommandPanelEntries(entries: CommandPanelEntry[]): CommandGroupSection[] {
+export function groupCommandPanelEntries(
+  entries: CommandPanelEntry[],
+  formatMessage?: FormatMessage,
+): CommandGroupSection[] {
   const bucketed = new Map<string, CommandPanelEntry[]>();
   const otherKey = "other";
   const knownKeys = new Set<string>(GROUP_TITLE_ORDER.map((item) => item.key));
@@ -496,10 +501,11 @@ export function groupCommandPanelEntries(entries: CommandPanelEntry[]): CommandG
   if (otherEntries && otherEntries.length > 0) {
     sections.push({ groupKey: otherKey, title: "Other", entries: otherEntries });
   }
-  for (const { key, title } of GROUP_TITLE_ORDER) {
+  for (const { key, titleId, title } of GROUP_TITLE_ORDER) {
     const groupEntries = bucketed.get(key);
     if (groupEntries && groupEntries.length > 0) {
-      sections.push({ groupKey: key, title, entries: groupEntries });
+      const sectionTitle = formatMessage ? formatMessage({ id: titleId, defaultMessage: title }) : title;
+      sections.push({ groupKey: key, title: sectionTitle, entries: groupEntries });
     }
   }
   return sections;

@@ -356,6 +356,21 @@ export function buildApprovalResult(
   }
 }
 
+/*
+ * codex pending-request-item-panel: a permission request that resolves to
+ * nothing grantable (neither `network` nor `fileSystem` present) is auto-declined
+ * with `{ permissions: {}, scope: "turn" }` and never rendered — there is nothing
+ * for the user to approve. This mirrors Codex's shallow presence check
+ * (`T = !(network != null || fileSystem != null)`); HiCodex previously left a
+ * stuck, non-acceptable panel requiring a manual Cancel.
+ */
+export function isAutoDeniablePermissionRequest(request: PendingServerRequest): boolean {
+  if (request.method !== "item/permissions/requestApproval") return false;
+  const permissions = (request.params as { permissions?: { network?: unknown; fileSystem?: unknown } } | undefined)
+    ?.permissions;
+  return permissions?.network == null && permissions?.fileSystem == null;
+}
+
 export function buildStopPendingRequestResult(request: PendingServerRequest): unknown | null {
   switch (request.method) {
     case "item/commandExecution/requestApproval":
@@ -1767,8 +1782,22 @@ function describeFileSystemPermissions(value: unknown): string[] {
   const lines: string[] = [];
   const read = arrayOfStrings(record.read);
   const write = arrayOfStrings(record.write);
-  if (read.length > 0) lines.push(`Read: ${read.join(", ")}`);
-  if (write.length > 0) lines.push(`Write: ${write.join(", ")}`);
+  // codex `readWrite` case: a path requested for BOTH read and write collapses
+  // into one "Read and write" row. (The English label stays a structural parsing
+  // key split downstream; pending-request-stack localizes it for display.)
+  const writeSet = new Set(write);
+  const both = read.filter((path) => writeSet.has(path));
+  if (both.length > 0) {
+    const bothSet = new Set(both);
+    lines.push(`Read and write: ${both.join(", ")}`);
+    const readOnly = read.filter((path) => !bothSet.has(path));
+    const writeOnly = write.filter((path) => !bothSet.has(path));
+    if (readOnly.length > 0) lines.push(`Read: ${readOnly.join(", ")}`);
+    if (writeOnly.length > 0) lines.push(`Write: ${writeOnly.join(", ")}`);
+  } else {
+    if (read.length > 0) lines.push(`Read: ${read.join(", ")}`);
+    if (write.length > 0) lines.push(`Write: ${write.join(", ")}`);
+  }
   if (Array.isArray(record.entries)) {
     for (const entry of record.entries) {
       const line = describeFileSystemEntry(entry);

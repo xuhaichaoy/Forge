@@ -6,6 +6,7 @@ import {
 import type { CSSProperties } from "react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
+import { useHiCodexIntl } from "./i18n-provider";
 
 export type CodeSnippetWrapMode = "always" | "off" | "user-controlled";
 
@@ -28,9 +29,15 @@ export function CodeSnippet({
 }) {
   const [userWrapped, setUserWrapped] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { formatMessage } = useHiCodexIntl();
   const normalizedLanguage = language.trim().toLowerCase();
   const wrapped = wrapMode === "always" || (wrapMode === "user-controlled" && userWrapped);
   const showWrapToggle = wrapMode === "user-controlled";
+  // codex code-snippet-*.js — word-wrap toggle + copy-code labels are localized.
+  const wrapLabel = wrapped
+    ? formatMessage({ id: "codeSnippet.wrap.disable", defaultMessage: "Disable word wrap" })
+    : formatMessage({ id: "codeSnippet.wrap.enable", defaultMessage: "Enable word wrap" });
+  const copyCodeLabel = formatMessage({ id: "copyButton.copyCode", defaultMessage: "Copy code" });
   const title = codeBlockTitle(normalizedLanguage);
   const isDiff = normalizedLanguage === "diff";
   const shouldPreviewSvg = shouldRenderSvgCodePreview(normalizedLanguage, text);
@@ -85,6 +92,7 @@ export function CodeSnippet({
       await navigator.clipboard.writeText(selectedText || text);
       setCopied(true);
       window.setTimeout(() => {
+        // codex shared copy-button (copy-button-*.js) resets at 2e3.
         if (mountedRef.current) setCopied(false);
       }, 2_000);
     } catch {
@@ -109,16 +117,16 @@ export function CodeSnippet({
             <div className="hc-code-actions">
               {showWrapToggle && (
                 <button
-                  aria-label={wrapped ? "Disable word wrap" : "Enable word wrap"}
+                  aria-label={wrapLabel}
                   aria-pressed={wrapped}
-                  title={wrapped ? "Disable word wrap" : "Enable word wrap"}
+                  title={wrapLabel}
                   type="button"
                   onClick={() => setUserWrapped((value) => !value)}
                 >
                   <WrapText size={13} />
                 </button>
               )}
-              <button aria-label="Copy code" title="Copy code" type="button" onClick={handleCopy}>
+              <button aria-label={copyCodeLabel} title={copyCodeLabel} type="button" onClick={handleCopy}>
                 {copied ? <Check size={13} /> : <Copy size={13} />}
               </button>
             </div>
@@ -668,10 +676,11 @@ function mermaidLevels(
 }
 
 function MermaidFlowchartPreview({ model }: { model: MermaidPreviewModel }) {
+  const { formatMessage } = useHiCodexIntl();
   const nodeById = new Map(model.nodes.map((node) => [node.id, node]));
   return (
     <div className="hc-mermaid-preview" data-mermaid-kind="flowchart">
-      <svg aria-label="Mermaid diagram" role="img" viewBox={`0 0 ${model.width} ${model.height}`}>
+      <svg aria-label={formatMessage({ id: "mermaidDiagram.ariaLabel", defaultMessage: "Mermaid diagram" })} role="img" viewBox={`0 0 ${model.width} ${model.height}`}>
         <defs>
           <marker id="hc-mermaid-arrow" markerHeight="8" markerWidth="8" orient="auto" refX="7" refY="4">
             <path d="M 0 0 L 8 4 L 0 8 z" />

@@ -1298,6 +1298,10 @@ function rendersTrailingAutomationCitationsInlineLikeDesktop(): void {
 }
 
 function rendersItemAutomationCitationsInlineLikeDesktop(): void {
+  // automationScheduleSummary now localizes via formatMessage; this assertion
+  // checks the English schedule copy, so pin the default locale (a prior subtest
+  // may have flipped it to zh-CN).
+  setActiveI18nLocale(HICODEX_DEFAULT_LOCALE);
   const html = renderToStaticMarkup(createElement(ConversationUnitView, {
     unit: {
       kind: "message",

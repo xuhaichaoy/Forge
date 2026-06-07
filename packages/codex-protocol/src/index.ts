@@ -88,6 +88,9 @@ export interface ModelConfig {
   supportsImageInput?: boolean;
   serviceTiers?: ModelServiceTier[];
   defaultServiceTier?: string | null;
+  // codex model/list: per-model advertised reasoning-effort values (e.g. some
+  // models only allow "medium"). Drives the reasoning picker's option list.
+  supportedReasoningEfforts?: string[];
 }
 
 export interface TeamSummary {

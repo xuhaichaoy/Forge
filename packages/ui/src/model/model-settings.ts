@@ -55,6 +55,10 @@ export interface ModelListEntry {
   inputModalities?: InputModality[];
   serviceTiers?: ModelServiceTier[];
   defaultServiceTier?: string | null;
+  // codex Model.supportedReasoningEfforts / defaultReasoningEffort — the
+  // per-model reasoning-effort options advertised by model/list.
+  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+  defaultReasoningEffort?: string;
 }
 
 export interface NormalizedModelConfig extends ModelConfig {
@@ -161,6 +165,9 @@ export function buildModelConfigFromListEntry(entry: ModelListEntry): ModelConfi
     supportsImageInput: entry.inputModalities?.includes("image") ?? true,
     serviceTiers,
     defaultServiceTier: typeof entry.defaultServiceTier === "string" ? entry.defaultServiceTier : null,
+    ...(entry.supportedReasoningEfforts && entry.supportedReasoningEfforts.length > 0
+      ? { supportedReasoningEfforts: entry.supportedReasoningEfforts.map((option) => option.reasoningEffort) }
+      : {}),
   };
 }
 

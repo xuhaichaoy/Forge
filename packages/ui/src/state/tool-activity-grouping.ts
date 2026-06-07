@@ -1184,7 +1184,11 @@ function mcpToolCallSourceName(item: ThreadItem): string | null {
 }
 
 function mcpToolCallSourceLabel(source: string): string {
-  return source === "browser-use" ? "the browser" : source;
+  // codex: local-conversation-thread-*.js — browser-use source label is localized
+  // via `localConversation.toolActivitySummary.mcpToolCalls.source.browser`.
+  return source === "browser-use"
+    ? formatMessage({ id: "localConversation.toolActivitySummary.mcpToolCalls.source.browser", defaultMessage: "the browser" })
+    : source;
 }
 
 function isDesktopInlineMcpTool(item: ThreadItem): boolean {

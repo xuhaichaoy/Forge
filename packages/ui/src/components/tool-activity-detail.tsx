@@ -31,7 +31,23 @@ import {
 } from "../state/tool-activity-fields";
 import { desktopSkillPathInfoForCommandPath } from "../state/tool-activity-grouping";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+
+type ToolDetailFormatMessage = HiCodexIntlContextValue["formatMessage"];
+
+// codex toolSummaryForCmd.* / hc.toolActivity.* — localize an exec-detail summary
+// label. formatMessage is optional so the locale-free view-model + its tests keep
+// the English output; the en-US dict resolves each id back to that same English.
+function localizeToolSummary(
+  formatMessage: ToolDetailFormatMessage | undefined,
+  id: string,
+  defaultMessage: string,
+  values?: Record<string, string>,
+): string {
+  return formatMessage
+    ? formatMessage({ id, defaultMessage }, values)
+    : defaultMessage.replace(/\{(\w+)\}/g, (_match, key: string) => values?.[key] ?? `{${key}}`);
+}
 import {
   createMcpAppBridgeNonce,
   handleMcpAppBridgeRequest,
@@ -243,7 +259,8 @@ export function multiAgentAgentColor(threadId: string): string {
 }
 
 export interface PatchChangeViewModel {
-  action: "Created" | "Deleted" | "Edited";
+  action: string;
+  kind: "add" | "delete" | "update";
   path: string;
   diff: string;
 }
@@ -273,8 +290,8 @@ export function ToolActivityDetail({
   threadId?: string | null;
 }) {
   const { formatMessage } = useHiCodexIntl();
-  const detail = toolActivityDetailViewModel(item);
-  const rawMcpOutput = rawMcpToolOutputForItem(item, detail.running);
+  const detail = toolActivityDetailViewModel(item, formatMessage);
+  const rawMcpOutput = rawMcpToolOutputForItem(item, detail.running, formatMessage);
   if (detail.kind === "webSearch") {
     return (
       <div className="hc-tool-detail-row hc-tool-detail-web-search-row">
@@ -360,10 +377,20 @@ export function ToolActivityDetail({
           ? detail.changes.map((change, index) => (
               <div className="hc-tool-detail-change" key={`${change.path}:${index}`}>
                 <div className="hc-tool-detail-change-title">
-                  <span>{change.action}</span>
+                  <span>{localizePatchChangeAction(change.action, change.kind, formatMessage)}</span>
                   <PatchChangePath change={change} onOpenFileReference={onOpenFileReference} />
                 </div>
-                {change.diff && <CodeBlock diff text={change.diff} />}
+                {change.diff
+                  ? <CodeBlock diff text={change.diff} />
+                  : (
+                    // codex patch-item-content: a change with no unified diff shows a
+                    // per-change body — "Contents deleted" for a delete, else "No changes".
+                    <div className="hc-tool-detail-row">
+                      {change.kind === "delete"
+                        ? formatMessage({ id: "hc.toolDetail.patch.contentsDeleted", defaultMessage: "Contents deleted" })
+                        : formatMessage({ id: "hc.toolDetail.patch.noFileChanges", defaultMessage: "No changes" })}
+                    </div>
+                  )}
               </div>
             ))
           : (
@@ -1202,16 +1229,39 @@ function ExecShellDetail({
         </div>
       )}
       {/* Codex embedded: the footer (zv) is the second child of the card wrapper and always renders. */}
-      {renderExecFooter(detail)}
+      {renderExecFooter(detail, formatMessage)}
     </section>
   );
+}
+
+// codex: local-conversation-thread-*.js — the exec footer labels are localized
+// via `execFooter.*` (Success/Stopped/Exit code {code}/unknown). detail.footer
+// stays the locale-free English source (the status discriminant below keys off
+// it); only the displayed label is localized so zh-CN shows 成功 / 已停止 /
+// 退出码 {code} instead of leaking English. defaultMessage keeps en-US unchanged.
+function localizeExecFooter(footer: string, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): string {
+  if (footer === "Success") return formatMessage({ id: "execFooter.success", defaultMessage: "Success" });
+  if (footer === "Stopped") return formatMessage({ id: "execFooter.stopped", defaultMessage: "Stopped" });
+  if (footer === "Exit code unknown") {
+    return formatMessage(
+      { id: "execFooter.exitCode", defaultMessage: "Exit code {code}" },
+      { code: formatMessage({ id: "execFooter.exitCode.unknown", defaultMessage: "unknown" }) },
+    );
+  }
+  if (footer.startsWith("Exit code ")) {
+    return formatMessage(
+      { id: "execFooter.exitCode", defaultMessage: "Exit code {code}" },
+      { code: footer.slice("Exit code ".length) },
+    );
+  }
+  return footer;
 }
 
 /*
  * Derive a compact footer state from the existing exec view model. Newer data
  * can set a structured status; older fixtures still arrive as footer strings.
  */
-function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>): ReactNode {
+function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): ReactNode {
   if (detail.running) {
     return <div aria-hidden="true" className="hc-exec-shell-footer" data-exec-status="in-progress" />;
   }
@@ -1230,7 +1280,7 @@ function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "
     <div className="hc-exec-shell-footer" data-exec-status={status}>
       {/* codex `zv` exec footer: only the success branch carries an icon (a check); Stopped/Exit-code are text-only. */}
       {isSuccess && <Check aria-hidden className="hc-exec-footer-icon-success" size={12} />}
-      <span>{detail.footer}</span>
+      <span>{localizeExecFooter(detail.footer, formatMessage)}</span>
     </div>
   );
 }
@@ -1298,13 +1348,13 @@ function MultiAgentPrompt({ text }: { text: string }) {
   );
 }
 
-export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetailViewModel {
+export function toolActivityDetailViewModel(item: ThreadItem, formatMessage?: ToolDetailFormatMessage): ToolActivityDetailViewModel {
   const type = itemType(item);
   const record = item as ItemRecord;
   const running = isItemInProgress(item);
   const status = statusLabel(record.status);
   if (type === "exec") {
-    const summary = execSummaryLabel(record, running);
+    const summary = execSummaryLabel(record, running, formatMessage);
     if (summary) {
       return {
         kind: "execSummary",
@@ -1326,15 +1376,20 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
     };
   }
   if (type === "patch") {
+    const form = patchChangeForm(stringField(record, "status"), running);
     return {
       kind: "patch",
       id: item.id,
       running,
-      changes: patchChanges(record).map((change) => ({
-        action: patchAction(patchKind(change)),
-        path: patchPath(change),
-        diff: stringField(change, "diff"),
-      })),
+      changes: patchChanges(record).map((change) => {
+        const changeKind = patchKind(change);
+        return {
+          action: patchAction(changeKind, form),
+          kind: changeKind,
+          path: patchPath(change),
+          diff: stringField(change, "diff"),
+        };
+      }),
       status,
     };
   }
@@ -1415,8 +1470,8 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       kind: "autoReview",
       id: item.id,
       running,
-      title: autoReviewTitle(record),
-      body: autoReviewBody(record),
+      title: autoReviewTitle(record, formatMessage),
+      body: autoReviewBody(record, formatMessage),
       highRiskDenied: stringField(record, "status") === "denied" && stringField(record, "riskLevel") === "high",
     };
   }
@@ -1434,7 +1489,7 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
       kind: "multiAgent",
       id: item.id,
       running,
-      rows: multiAgentRows(record),
+      rows: multiAgentRows(record, formatMessage),
     };
   }
   if (type === "assistant-message") {
@@ -1454,32 +1509,39 @@ export function toolActivityDetailViewModel(item: ThreadItem): ToolActivityDetai
   };
 }
 
-function autoReviewTitle(record: ItemRecord): string {
+// codex localConversation.automaticApprovalReview.* — status-keyed title/body.
+// formatMessage is optional so the locale-free view-model (and its tests) keep the
+// English; the en-US dict resolves each id back to that same English.
+function autoReviewTitle(record: ItemRecord, formatMessage?: ToolDetailFormatMessage): string {
+  const fm = (id: string, defaultMessage: string): string => (formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage);
   const status = stringField(record, "status");
-  if (status === "approved") return "Auto-review approved";
-  if (status === "denied") return stringField(record, "riskLevel") === "high" ? "Auto-review denied high risk" : "Auto-review denied";
-  if (status === "timedOut") return "Auto-review timed out";
-  if (status === "aborted") return "Auto-review stopped";
-  return "Auto-reviewing";
+  if (status === "approved") return fm("localConversation.automaticApprovalReview.title.approved", "Auto-review approved");
+  if (status === "denied") return stringField(record, "riskLevel") === "high"
+    ? fm("localConversation.automaticApprovalReview.title.deniedHighRisk", "Auto-review denied high risk")
+    : fm("localConversation.automaticApprovalReview.title.denied", "Auto-review denied");
+  if (status === "timedOut") return fm("localConversation.automaticApprovalReview.title.timedOut", "Auto-review timed out");
+  if (status === "aborted") return fm("localConversation.automaticApprovalReview.title.aborted", "Auto-review stopped");
+  return fm("localConversation.automaticApprovalReview.title.inProgress", "Auto-reviewing");
 }
 
-function autoReviewBody(record: ItemRecord): string {
+function autoReviewBody(record: ItemRecord, formatMessage?: ToolDetailFormatMessage): string {
   const rationale = stringField(record, "rationale").trim();
   if (rationale) return rationale;
+  const fm = (id: string, defaultMessage: string): string => (formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage);
   const status = stringField(record, "status");
   if (status === "inProgress") {
-    return "A carefully prompted reviewer agent is reviewing this request before Codex runs it.";
+    return fm("localConversation.automaticApprovalReview.summary.inProgress", "A carefully prompted reviewer agent is reviewing this request before Codex runs it.");
   }
   if (status === "aborted") {
-    return "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it.";
+    return fm("localConversation.automaticApprovalReview.summary.aborted", "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it.");
   }
   if (status === "timedOut") {
-    return "A carefully prompted reviewer agent timed out before Codex ran this request.";
+    return fm("localConversation.automaticApprovalReview.summary.timedOut", "A carefully prompted reviewer agent timed out before Codex ran this request.");
   }
-  return "A carefully prompted reviewer agent reviewed this request.";
+  return fm("localConversation.automaticApprovalReview.summary.completed", "A carefully prompted reviewer agent reviewed this request.");
 }
 
-function rawMcpToolOutputForItem(item: ThreadItem, running: boolean): { heading: string; text: string } | null {
+function rawMcpToolOutputForItem(item: ThreadItem, running: boolean, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): { heading: string; text: string } | null {
   if (itemType(item) !== "mcp-tool-call") return null;
   const record = item as ItemRecord;
   if (running && record.result == null) return null;
@@ -1492,7 +1554,8 @@ function rawMcpToolOutputForItem(item: ThreadItem, running: boolean): { heading:
     arguments: record.arguments ?? null,
   };
   return {
-    heading: `Raw ${server}.${tool} tool call output`,
+    // codex: codex.mcpTool.rawOutputHeading — "Raw {server}.{tool} tool call output".
+    heading: formatMessage({ id: "codex.mcpTool.rawOutputHeading", defaultMessage: "Raw {server}.{tool} tool call output" }, { server, tool }),
     text: formatJsonForRawMcpOutput({
       callId: stringField(record, "callId") || record.id,
       invocation: Object.keys(invocation).length > 0 ? invocation : fallbackInvocation,
@@ -1723,50 +1786,74 @@ function stripDesktopShellQuotes(value: string): string {
   return text;
 }
 
-function execSummaryLabel(record: ItemRecord, running: boolean): string {
+function execSummaryLabel(record: ItemRecord, running: boolean, formatMessage?: ToolDetailFormatMessage): string {
   const action = execSummaryAction(record);
   if (!action) return "";
-  const skillLabel = execSkillSummaryLabel(action, stringField(record, "cwd"), running);
+  const skillLabel = execSkillSummaryLabel(action, stringField(record, "cwd"), running, formatMessage);
   if (skillLabel) return skillLabel;
   if (action.type === "read") {
     if (running && !action.finished) return "";
-    return `${action.finished === false ? "Reading" : "Read"} ${displayPath(action.name || action.path)}`;
+    const path = displayPath(action.name || action.path);
+    return action.finished === false
+      ? localizeToolSummary(formatMessage, "hc.toolActivity.read.reading", "Reading {path}", { path })
+      : localizeToolSummary(formatMessage, "hc.toolActivity.read.read", "Read {path}", { path });
   }
   if (action.type === "search") {
-    const verb = running || action.finished === false ? "Searching" : "Searched";
+    const inProgress = running || action.finished === false;
     const query = action.query.trim();
     const path = action.path.trim();
-    if (query && path) return `${verb} for ${query} in ${displayPath(path)}`;
-    if (query) return `${verb} for ${query}`;
-    if (path) return `${verb} ${displayPath(path)}`;
-    return `${verb} files`;
+    if (query && path) {
+      return inProgress
+        ? localizeToolSummary(formatMessage, "toolSummaryForCmd.searchingForInPath", "Searching for {query} in {path}", { query, path: displayPath(path) })
+        : localizeToolSummary(formatMessage, "hc.toolActivity.search.searchedForInPath", "Searched for {query} in {path}", { query, path: displayPath(path) });
+    }
+    if (query) {
+      return inProgress
+        ? localizeToolSummary(formatMessage, "hc.toolActivity.search.searchingFor", "Searching for {query}", { query })
+        : localizeToolSummary(formatMessage, "hc.toolActivity.search.searchedFor", "Searched for {query}", { query });
+    }
+    // Codex has no path-only ("Searching {path}") exec-summary key, so keep this
+    // branch English — there is no bundle evidence to localize it against.
+    if (path) return `${inProgress ? "Searching" : "Searched"} ${displayPath(path)}`;
+    return inProgress
+      ? localizeToolSummary(formatMessage, "hc.toolActivity.search.searchingFiles", "Searching files")
+      : localizeToolSummary(formatMessage, "hc.toolActivity.search.searchedFiles", "Searched files");
   }
   if (action.type === "list_files") {
-    const verb = running || action.finished === false ? "Listing" : "Listed";
-    return action.path.trim() ? `${verb} files in ${displayPath(action.path)}` : `${verb} files`;
+    const inProgress = running || action.finished === false;
+    if (action.path.trim()) {
+      return inProgress
+        ? localizeToolSummary(formatMessage, "toolSummaryForCmd.exploringFilesInPath", "Listing files in {path}", { path: displayPath(action.path) })
+        : localizeToolSummary(formatMessage, "hc.toolActivity.list.listedFilesInPath", "Listed files in {path}", { path: displayPath(action.path) });
+    }
+    return inProgress
+      ? localizeToolSummary(formatMessage, "hc.toolActivity.list.listingFiles", "Listing files")
+      : localizeToolSummary(formatMessage, "hc.toolActivity.list.listedFiles", "Listed files");
   }
   return "";
 }
 
-function execSkillSummaryLabel(action: ExecSummaryAction, cwd: string, running: boolean): string {
+function execSkillSummaryLabel(action: ExecSummaryAction, cwd: string, running: boolean, formatMessage?: ToolDetailFormatMessage): string {
   if (action.type === "read") {
     const skillInfo = desktopSkillPathInfoForCommandPath(action.path, cwd);
     if (!skillInfo) return "";
     if (skillInfo.isSkillDefinitionFile && (running || action.finished === false)) {
-      return `Reading ${skillInfo.skillName} skill`;
+      return localizeToolSummary(formatMessage, "hc.toolActivity.skill.reading", "Reading {skillName} skill", { skillName: skillInfo.skillName });
     }
-    return `Read ${skillInfo.skillName} skill`;
+    return localizeToolSummary(formatMessage, "hc.toolActivity.skill.read", "Read {skillName} skill", { skillName: skillInfo.skillName });
   }
   if (action.type === "list_files") {
     const skillInfo = desktopSkillPathInfoForCommandPath(action.path, cwd);
-    return skillInfo ? `Listed files in ${skillInfo.skillName} skill` : "";
+    return skillInfo
+      ? localizeToolSummary(formatMessage, "hc.toolActivity.skill.listedFiles", "Listed files in {skillName} skill", { skillName: skillInfo.skillName })
+      : "";
   }
   const skillInfo = desktopSkillPathInfoForCommandPath(action.path, cwd);
   if (!skillInfo) return "";
   const query = action.query.trim();
   return query
-    ? `Searched for ${query} in ${skillInfo.skillName} skill`
-    : `Searched in ${skillInfo.skillName} skill`;
+    ? localizeToolSummary(formatMessage, "hc.toolActivity.skill.searchedFor", "Searched for {query} in {skillName} skill", { query, skillName: skillInfo.skillName })
+    : localizeToolSummary(formatMessage, "hc.toolActivity.skill.searchedIn", "Searched in {skillName} skill", { skillName: skillInfo.skillName });
 }
 
 type ExecSummaryAction =
@@ -2081,18 +2168,60 @@ function toolResultContentText(value: unknown): string {
   return formatUnknown(value);
 }
 
-function multiAgentRows(record: ItemRecord): MultiAgentRowViewModel[] {
+// codex localConversation.multiAgentAction.row.* / meta.prompt — render an ICU
+// template that embeds non-text parts ({agent}/{instructions}/{prompt}). Format
+// with sentinel tokens for the embedded slots, then split the localized string
+// back into text segments interleaved with the parts, so per-locale word order is
+// preserved (zh reorders "Created {agent}…" → "已根据…创建 {agent}…"). With no
+// formatMessage the English defaultMessage is interpolated, keeping the locale-free
+// view-model (and its tests) byte-identical.
+function localizeRowParts(
+  formatMessage: ToolDetailFormatMessage | undefined,
+  id: string,
+  defaultMessage: string,
+  slots: Record<string, MultiAgentRowPart | string>,
+): Array<string | MultiAgentRowPart> {
+  const values: Record<string, string> = {};
+  const partBySentinel = new Map<string, MultiAgentRowPart>();
+  let i = 0;
+  for (const [name, slot] of Object.entries(slots)) {
+    if (typeof slot === "string") {
+      values[name] = slot;
+      continue;
+    }
+    const sentinel = `\u0000${i++}\u0000`;
+    values[name] = sentinel;
+    partBySentinel.set(sentinel, slot);
+  }
+  const text = formatMessage
+    ? formatMessage({ id, defaultMessage }, values)
+    : defaultMessage.replace(/\{(\w+)\}/g, (_match, key: string) => values[key] ?? `{${key}}`);
+  const out: Array<string | MultiAgentRowPart> = [];
+  const sentinelRe = /\u0000\d+\u0000/;
+  let rest = text;
+  let match: RegExpExecArray | null;
+  while ((match = sentinelRe.exec(rest))) {
+    if (match.index > 0) out.push(rest.slice(0, match.index));
+    const part = partBySentinel.get(match[0]);
+    if (part) out.push(part);
+    rest = rest.slice(match.index + match[0].length);
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
+function multiAgentRows(record: ItemRecord, formatMessage?: ToolDetailFormatMessage): MultiAgentRowViewModel[] {
   const receiverIds = multiAgentReceiverThreadIds(record);
   const action = multiAgentAction(record);
   const status = multiAgentStatus(record);
   const prompt = stringField(record, "prompt").trim();
   if (receiverIds.length === 0) {
-    return [textMultiAgentRow(`row-generic-${record.id}`, multiAgentRowVerb(action, status))];
+    return [textMultiAgentRow(`row-generic-${record.id}`, multiAgentRowVerb(action, status, formatMessage))];
   }
 
   const rows: MultiAgentRowViewModel[] = receiverIds.map((threadId) => {
     const agent = multiAgentAgentPart(record, threadId);
-    const stateSuffix = multiAgentStateSuffix(record, threadId);
+    const stateSuffix = multiAgentStateSuffix(record, threadId, formatMessage);
     if (action === "spawnAgent" && status !== "failed" && prompt) {
       // Codex renders "Created {agent} with the instructions: {instructions}"
       // (multiAgentAction.row) as soon as the agent is spawned — while the
@@ -2101,30 +2230,36 @@ function multiAgentRows(record: ItemRecord): MultiAgentRowViewModel[] {
       // HiCodex previously gated this on status === "completed", so an
       // in-progress spawn showed a bare "Spawning" verb instead of the named
       // instructions row. Re-verified vs Codex Desktop v26.519.81530.
-      return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
-        "Created ",
-        agent,
-        " with the instructions: ",
-        { kind: "prompt", text: prompt },
-      ]);
+      return agentMultiAgentRow(`row-${record.id}-${threadId}`, localizeRowParts(
+        formatMessage,
+        "localConversation.multiAgentAction.row.spawn.createdWithInstructions",
+        "Created {agent} with the instructions: {instructions}",
+        { agent, instructions: { kind: "prompt", text: prompt } },
+      ));
     }
     if (action === "sendInput" && prompt) {
-      return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
-        `${multiAgentSendInputPromptVerb(status)} `,
-        agent,
-        ": ",
-        { kind: "prompt", text: prompt },
-      ]);
+      return agentMultiAgentRow(`row-${record.id}-${threadId}`, localizeRowParts(
+        formatMessage,
+        "localConversation.multiAgentAction.row.sendInput.messagedWithPrompt",
+        "{action} {agent}: {prompt}",
+        { action: multiAgentSendInputPromptVerb(status, formatMessage), agent, prompt: { kind: "prompt", text: prompt } },
+      ));
     }
-    return agentMultiAgentRow(`row-${record.id}-${threadId}`, [
-      `${multiAgentRowVerb(action, status)} `,
-      agent,
-      stateSuffix,
-    ]);
+    return agentMultiAgentRow(`row-${record.id}-${threadId}`, localizeRowParts(
+      formatMessage,
+      "localConversation.multiAgentAction.row.agent",
+      "{action} {agent}{stateSuffix}",
+      { action: multiAgentRowVerb(action, status, formatMessage), agent, stateSuffix },
+    ));
   });
 
   if (action !== "spawnAgent" && action !== "sendInput" && prompt) {
-    rows.push(agentMultiAgentRow(`meta-prompt-${record.id}`, ["Input: ", { kind: "prompt", text: prompt }]));
+    rows.push(agentMultiAgentRow(`meta-prompt-${record.id}`, localizeRowParts(
+      formatMessage,
+      "localConversation.multiAgentAction.meta.prompt",
+      "Input: {prompt}",
+      { prompt: { kind: "prompt", text: prompt } },
+    )));
   }
   return rows;
 }
@@ -2225,7 +2360,7 @@ function multiAgentSpawnModel(record: ItemRecord): string {
   return multiAgentAction(record) === "spawnAgent" ? stringField(record, "model").trim() : "";
 }
 
-function multiAgentStateSuffix(record: ItemRecord, threadId: string): string {
+function multiAgentStateSuffix(record: ItemRecord, threadId: string, formatMessage?: ToolDetailFormatMessage): string {
   const action = multiAgentAction(record);
   if (action === "closeAgent" || action === "resumeAgent") return "";
   const states = record.agentsStates;
@@ -2233,43 +2368,53 @@ function multiAgentStateSuffix(record: ItemRecord, threadId: string): string {
   const state = (states as Record<string, unknown>)[threadId];
   if (!state || typeof state !== "object") return "";
   const stateRecord = state as Record<string, unknown>;
-  const status = multiAgentStateStatusLabel(stringField(stateRecord, "status"));
+  const status = multiAgentStateStatusLabel(stringField(stateRecord, "status"), formatMessage);
   if (!status) return "";
   const message = stringField(stateRecord, "message").trim();
   return message ? ` (${status}: ${message})` : ` (${status})`;
 }
 
-function multiAgentStateStatusLabel(status: string): string {
-  switch (status) {
-    case "pendingInit":
-      return "pending init";
-    case "notFound":
-      return "not found";
-    default:
-      return status;
-  }
+const MULTI_AGENT_STATE_STATUS_I18N: Record<string, { id: string; defaultMessage: string }> = {
+  pendingInit: { id: "localConversation.multiAgentAction.agentState.pendingInit", defaultMessage: "pending init" },
+  notFound: { id: "localConversation.multiAgentAction.agentState.notFound", defaultMessage: "not found" },
+  running: { id: "localConversation.multiAgentAction.agentState.running", defaultMessage: "running" },
+  completed: { id: "localConversation.multiAgentAction.agentState.completed", defaultMessage: "completed" },
+  errored: { id: "localConversation.multiAgentAction.agentState.errored", defaultMessage: "errored" },
+  interrupted: { id: "localConversation.multiAgentAction.agentState.interrupted", defaultMessage: "interrupted" },
+  shutdown: { id: "localConversation.multiAgentAction.agentState.shutdown", defaultMessage: "shutdown" },
+};
+
+function multiAgentStateStatusLabel(status: string, formatMessage?: ToolDetailFormatMessage): string {
+  const descriptor = MULTI_AGENT_STATE_STATUS_I18N[status];
+  if (descriptor) return formatMessage ? formatMessage(descriptor) : descriptor.defaultMessage;
+  return status;
 }
 
-function multiAgentRowVerb(action: string, status: string): string {
-  if (action === "sendInput" && status === "completed") return "Messaged";
-  if (action === "sendInput" && status === "failed") return "Failed messaging";
-  if (action === "sendInput") return "Messaging";
-  if (action === "spawnAgent" && status === "completed") return "Spawned";
-  if (action === "spawnAgent" && status === "failed") return "Failed spawning";
-  if (action === "spawnAgent") return "Spawning";
-  if (action === "resumeAgent" && status === "completed") return "Resumed";
-  if (action === "resumeAgent" && status === "failed") return "Failed resuming";
-  if (action === "resumeAgent") return "Resuming";
-  if (action === "closeAgent" && status === "completed") return "Closed";
-  if (action === "closeAgent" && status === "failed") return "Failed closing";
-  if (action === "closeAgent") return "Closing";
+// codex localConversation.multiAgentAction.rowAction.* — the per-row action verb,
+// keyed by action+status. The trailing "Working with agents"/"Updated agents"
+// fallback has no Codex key (unknown action), so it stays English.
+function multiAgentRowVerb(action: string, status: string, formatMessage?: ToolDetailFormatMessage): string {
+  const fm = (id: string, defaultMessage: string): string => (formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage);
+  if (action === "sendInput" && status === "completed") return fm("localConversation.multiAgentAction.rowAction.sendInput.completed", "Messaged");
+  if (action === "sendInput" && status === "failed") return fm("localConversation.multiAgentAction.rowAction.sendInput.failed", "Failed messaging");
+  if (action === "sendInput") return fm("localConversation.multiAgentAction.rowAction.sendInput.inProgress", "Messaging");
+  if (action === "spawnAgent" && status === "completed") return fm("localConversation.multiAgentAction.rowAction.spawn.completed", "Spawned");
+  if (action === "spawnAgent" && status === "failed") return fm("localConversation.multiAgentAction.rowAction.spawn.failed", "Failed spawning");
+  if (action === "spawnAgent") return fm("localConversation.multiAgentAction.rowAction.spawn.inProgress", "Spawning");
+  if (action === "resumeAgent" && status === "completed") return fm("localConversation.multiAgentAction.rowAction.resume.completed", "Resumed");
+  if (action === "resumeAgent" && status === "failed") return fm("localConversation.multiAgentAction.rowAction.resume.failed", "Failed resuming");
+  if (action === "resumeAgent") return fm("localConversation.multiAgentAction.rowAction.resume.inProgress", "Resuming");
+  if (action === "closeAgent" && status === "completed") return fm("localConversation.multiAgentAction.rowAction.close.completed", "Closed");
+  if (action === "closeAgent" && status === "failed") return fm("localConversation.multiAgentAction.rowAction.close.failed", "Failed closing");
+  if (action === "closeAgent") return fm("localConversation.multiAgentAction.rowAction.close.inProgress", "Closing");
   return status === "inProgress" ? "Working with agents" : "Updated agents";
 }
 
-function multiAgentSendInputPromptVerb(status: string): string {
-  if (status === "failed") return "Failed to message";
-  if (status === "completed") return "Messaged";
-  return "Messaging";
+function multiAgentSendInputPromptVerb(status: string, formatMessage?: ToolDetailFormatMessage): string {
+  const fm = (id: string, defaultMessage: string): string => (formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage);
+  if (status === "failed") return fm("localConversation.multiAgentAction.rowAction.sendInput.messaged.failed", "Failed to message");
+  if (status === "completed") return fm("localConversation.multiAgentAction.rowAction.sendInput.messaged.completed", "Messaged");
+  return fm("localConversation.multiAgentAction.rowAction.sendInput.messaged.inProgress", "Messaging");
 }
 
 function recordObject(value: unknown): Record<string, unknown> {
@@ -2286,8 +2431,60 @@ function agentFallbackName(id: string): string {
   return id ? `agent-${id.slice(0, 8)}` : "agent";
 }
 
-function patchAction(kind: "add" | "delete" | "update"): PatchChangeViewModel["action"] {
-  if (kind === "add") return "Created";
-  if (kind === "delete") return "Deleted";
+type PatchChangeForm = "inProgress" | "rejected" | "stopped" | "done";
+
+// codex patch-item-content: the change verb is status-aware. A still-running
+// patch shows the present participle ("Creating"), a declined one shows
+// "Rejected", an interrupted/aborted/failed one shows "Stopped …", and a
+// completed one the past tense ("Created").
+function patchChangeForm(status: string, running: boolean): PatchChangeForm {
+  if (running || status === "inProgress") return "inProgress";
+  if (status === "declined" || status === "rejected") return "rejected";
+  if (status === "interrupted" || status === "aborted" || status === "failed") return "stopped";
+  return "done";
+}
+
+function patchAction(kind: "add" | "delete" | "update", form: PatchChangeForm): string {
+  if (form === "rejected") return "Rejected";
+  if (kind === "add") {
+    if (form === "inProgress") return "Creating";
+    if (form === "stopped") return "Stopped creating";
+    return "Created";
+  }
+  if (kind === "delete") {
+    if (form === "inProgress") return "Deleting";
+    if (form === "stopped") return "Stopped deleting";
+    return "Deleted";
+  }
+  if (form === "inProgress") return "Editing";
+  if (form === "stopped") return "Stopped editing";
   return "Edited";
+}
+
+// codex: patch-item-content-*.js — the per-change verb is localized via
+// `codex.patch.change.<verb>`. patchAction stays locale-free (the view-model is
+// pure); the renderer maps the English verb back to the Codex key so zh-CN shows
+// 正在创建 / 已拒绝 etc. instead of leaking the English label. defaultMessage
+// carries the English so en-US is unchanged.
+const PATCH_CHANGE_ACTION_KEY: Record<string, string> = {
+  Creating: "creating",
+  Created: "created",
+  "Stopped creating": "stoppedCreating",
+  Deleting: "deleting",
+  Deleted: "deleted",
+  "Stopped deleting": "stoppedDeleting",
+  Editing: "editing",
+  Edited: "edited",
+  "Stopped editing": "stoppedEditing",
+};
+function localizePatchChangeAction(
+  action: string,
+  kind: "add" | "delete" | "update",
+  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"],
+): string {
+  const suffix = action === "Rejected"
+    ? `rejected-${kind === "delete" ? "delete" : kind === "update" ? "edit" : "add"}`
+    : PATCH_CHANGE_ACTION_KEY[action];
+  if (suffix == null) return action;
+  return formatMessage({ id: `codex.patch.change.${suffix}`, defaultMessage: action });
 }
