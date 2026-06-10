@@ -19,27 +19,53 @@
   position: relative;
   display: flex;
   flex-direction: column-reverse;
-  flex: 1;
-  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
   min-width: 0;
   overflow-y: auto;
   overflow-anchor: none;
   padding-top: var(--thread-content-top-inset);
   scroll-padding-bottom: var(--thread-scroll-padding-bottom, 0);
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
   container-name: thread-content;
   container-type: inline-size;
+}
+
+/* Short threads should not show a scrollbar; overflow is toggled from JS once
+   content height exceeds the viewport (WebView2 otherwise invents phantom range). */
+.hc-thread-scroll-container:not([data-content-overflows="true"]) {
+  overflow-y: hidden;
 }
 
 .hc-thread-scroll-container:has([data-thread-scroll-footer="true"]:focus-within) {
   scroll-padding-bottom: 0;
 }
 
+/*
+ * Home hero / pre-conversation shells fit in the viewport. The sticky-footer
+ * scroll-padding is only needed once the thread has messages to scroll through;
+ * keeping it on the empty home view creates phantom overflow (min-height 100%
+ * + footer height + scroll-padding-bottom).
+ */
+.hc-thread-scroll-container:has([data-onboarding-empty="true"]),
+.hc-thread-scroll-container:has(.hc-preconversation-shell) {
+  overflow-y: hidden;
+  scroll-padding-bottom: 0;
+}
+
+.hc-thread-scroll-container:has([data-onboarding-empty="true"]) .hc-thread-scroll-content,
+.hc-thread-scroll-container:has(.hc-preconversation-shell) .hc-thread-scroll-content {
+  min-height: 0;
+  height: 100%;
+}
+
 .hc-thread-scroll-content {
   display: flex;
-  flex: 0 0 auto;
-  min-height: 100%;
+  flex: 1 0 auto;
+  align-self: stretch;
+  min-height: 0;
   min-width: 0;
+  width: 100%;
   flex-direction: column;
   justify-content: flex-start;
   padding-right: var(--thread-scroll-inline-end-inset, 0px);
@@ -52,7 +78,8 @@
   width: 100%;
   max-width: var(--thread-content-max-width);
   min-width: 0;
-  flex: 1 0 auto;
+  min-height: 0;
+  flex: 1 1 0;
   flex-direction: column;
   margin-inline: auto;
   padding-inline: var(--thread-body-padding-inline);

@@ -2981,6 +2981,7 @@ button.hc-sidebar-account-menu-item small {
 
 .hc-model-picker-menu-providers {
   max-height: 380px;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 4px 6px;
 }
@@ -2988,6 +2989,7 @@ button.hc-sidebar-account-menu-item small {
 .hc-model-picker-provider {
   padding: 4px 0;
   border-bottom: 1px solid rgba(34, 38, 43, 0.06);
+  overflow: hidden;
 }
 .hc-model-picker-provider:last-child { border-bottom: 0; }
 
@@ -3014,14 +3016,18 @@ button.hc-sidebar-account-menu-item small {
   letter-spacing: 0.01em;
   color: #202124;
   transition: background 120ms ease;
-  /* Long provider labels + status hints must stay on one line; the label
-     truncates instead of wrapping the header onto two rows. */
+  /* Long provider labels + status hints must stay on one line; both the label
+     and host meta truncate instead of wrapping or spawning a horizontal bar. */
   white-space: nowrap;
   min-width: 0;
+  overflow: hidden;
+  max-width: 100%;
 }
 .hc-model-picker-provider-title > span:first-of-type {
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 .hc-model-picker-provider-title:hover {
   background: rgba(34, 38, 43, 0.04);
@@ -3043,7 +3049,10 @@ button.hc-sidebar-account-menu-item small {
   font-weight: 400;
   letter-spacing: 0;
   white-space: nowrap;
-  flex-shrink: 0;
+  min-width: 0;
+  flex: 1 1 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hc-model-picker-edit-toggle {

@@ -68,6 +68,7 @@ export function ThreadScrollLayout({
   contentVersion = 0,
 }: ThreadScrollLayoutProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const footerRef = useRef<HTMLDivElement | null>(null);
   const activeScrollKey = threadScrollKey(resetKey);
   const activeScrollKeyRef = useRef(activeScrollKey);
@@ -78,6 +79,7 @@ export function ThreadScrollLayout({
   const userScrollIntentUntilRef = useRef(0);
   const scrollListenersRef = useRef(new Set<(distanceFromBottomPx: number) => void>());
   const [footerHeight, setFooterHeight] = useState(0);
+  const [contentOverflows, setContentOverflows] = useState(false);
   const [isScrolledFromBottom, setIsScrolledFromBottom] = useState(false);
   const { formatMessage } = useHiCodexIntl();
 
@@ -183,6 +185,17 @@ export function ThreadScrollLayout({
     return requestScrollDistanceFromBottom(restoredDistance, "instant");
   }, [activeScrollKey, initialOffset, requestScrollDistanceFromBottom]);
 
+  const measureContentOverflow = useCallback(() => {
+    const scrollElement = scrollRef.current;
+    const contentElement = contentRef.current;
+    if (!scrollElement || !contentElement) return;
+    const overflows = threadScrollContentOverflows(
+      contentElement.offsetHeight,
+      scrollElement.clientHeight,
+    );
+    setContentOverflows((current) => (current === overflows ? current : overflows));
+  }, []);
+
   useLayoutEffect(() => {
     const footerElement = footerRef.current;
     if (!footerElement || typeof ResizeObserver === "undefined") return;
@@ -193,6 +206,19 @@ export function ThreadScrollLayout({
     observer.observe(footerElement);
     return () => observer.disconnect();
   }, []);
+
+  useLayoutEffect(() => {
+    const scrollElement = scrollRef.current;
+    const contentElement = contentRef.current;
+    if (!scrollElement || !contentElement || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      measureContentOverflow();
+    });
+    observer.observe(scrollElement);
+    observer.observe(contentElement);
+    measureContentOverflow();
+    return () => observer.disconnect();
+  }, [contentVersion, footerHeight, measureContentOverflow]);
 
   useLayoutEffect(() => {
     const pendingDistance = pendingRestoreDistanceRef.current;
@@ -230,7 +256,9 @@ export function ThreadScrollLayout({
   }), [scrollToBottom, scrollToDistanceFromBottom]);
 
   const scrollStyle = {
-    "--thread-scroll-padding-bottom": `${footerHeight + DESKTOP_FOOTER_SCROLL_PADDING_PX}px`,
+    "--thread-scroll-padding-bottom": contentOverflows
+      ? `${footerHeight + DESKTOP_FOOTER_SCROLL_PADDING_PX}px`
+      : "0px",
   } as CSSProperties;
   const shellStyle = {
     "--thread-scroll-inline-end-inset": `${Math.max(0, inlineEndInset)}px`,
@@ -245,10 +273,11 @@ export function ThreadScrollLayout({
         <div
           className="hc-thread-scroll-container"
           data-thread-scroll-container="true"
+          data-content-overflows={contentOverflows ? "true" : undefined}
           ref={scrollRef}
           style={scrollStyle}
         >
-          <div className="hc-thread-scroll-content" style={contentStyle}>
+          <div className="hc-thread-scroll-content" ref={contentRef} style={contentStyle}>
             <div className="hc-thread-scroll-body" data-mcp-app-portal-target="true">
               {children}
             </div>
@@ -319,6 +348,10 @@ export function nextThreadStickToBottomState(
 export function threadScrollKey(resetKey: string | null | undefined): string {
   const normalized = resetKey?.trim() ?? "";
   return normalized || DEFAULT_SCROLL_KEY;
+}
+
+export function threadScrollContentOverflows(contentHeightPx: number, viewportHeightPx: number): boolean {
+  return contentHeightPx > viewportHeightPx + 2;
 }
 
 function isReverseThreadScroll(element: HTMLElement): boolean {

@@ -1,6 +1,7 @@
 import {
   nextThreadStickToBottomState,
   setThreadScrollDistanceFromBottom,
+  threadScrollContentOverflows,
   threadScrollDistanceFromBottom,
   threadScrollKey,
   threadScrollTopForDistanceFromBottom,
@@ -12,6 +13,7 @@ export default function runThreadScrollLayoutTests(): void {
   computesReverseBottomDistanceLikeDesktopThreadScroll();
   preservesStickToBottomAcrossLayoutScrollMeasurements();
   normalizesThreadScrollPersistenceKeys();
+  detectsThreadContentOverflowAgainstViewport();
 }
 
 function computesBottomDistanceLikeDesktopScrollController(): void {
@@ -100,6 +102,19 @@ function normalizesThreadScrollPersistenceKeys(): void {
     threadScrollKey("   "),
     "__hicodex_default_thread_scroll__",
     "blank reset keys should use the default scroll persistence key",
+  );
+}
+
+function detectsThreadContentOverflowAgainstViewport(): void {
+  assertEqual(
+    threadScrollContentOverflows(500, 500),
+    false,
+    "content that fits the viewport should not enable thread scrolling",
+  );
+  assertEqual(
+    threadScrollContentOverflows(620, 500),
+    true,
+    "content taller than the viewport should enable thread scrolling",
   );
 }
 
