@@ -321,7 +321,7 @@ export function shouldProjectArtifactsFromItem(item: ThreadItem): boolean {
   return !hasFailedOutcome(item);
 }
 
-function patchChanges(item: ThreadItem): Record<string, unknown>[] {
+export function patchChanges(item: ThreadItem): Record<string, unknown>[] {
   const changes = (item as ItemRecord).changes;
   if (Array.isArray(changes)) {
     return changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object");
@@ -381,7 +381,20 @@ function shellArgText(value: unknown): string {
   return /[\s"'\\$`]/.test(value) ? JSON.stringify(value) : value;
 }
 
-function execExitCode(item: ThreadItem): number | null {
+/*
+ * codex plan/status step states — the same wire steps feed the right-rail
+ * progress section and the standalone todo-list item renderer; keep one
+ * normalization so the two surfaces can't drift.
+ */
+export function normalizePlanStepStatus(status: string | undefined): "completed" | "inProgress" | "pending" {
+  if (status === "completed" || status === "complete" || status === "done") return "completed";
+  if (status === "inProgress" || status === "in_progress" || status === "running" || status === "active") {
+    return "inProgress";
+  }
+  return "pending";
+}
+
+export function execExitCode(item: ThreadItem): number | null {
   const record = item as ItemRecord;
   if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
   const output = recordObject(record.output);

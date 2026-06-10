@@ -4118,7 +4118,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     activeThreadCwd: activeThread?.cwd,
     defaultCwd: state.hostStatus?.defaultCwd,
     setArtifactPreview,
-    setFileReference,
     workspace,
   });
   const handlePatchFailureOpenPath = useCallback((path: string) => {

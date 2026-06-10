@@ -1,3 +1,7 @@
+// Windows release builds must use the GUI subsystem — without this the app
+// binary keeps a console and every launch drags a black console window along.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use base64::{engine::general_purpose, Engine as _};
 use hicodex_host::{
     AppServerHost, AppServerStartConfig, CodexAuthSummary, ComputerUseReadiness,
@@ -1108,7 +1112,7 @@ fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, String> {
     let current_branch =
         git_stdout_optional(cwd_path, &["branch", "--show-current"]).unwrap_or(None);
 
-    let output = match Command::new("gh")
+    let output = match new_command("gh")
         .arg("pr")
         .arg("status")
         .arg("--json")
@@ -1330,7 +1334,7 @@ fn git_apply_with_stdin(
     args: &[&str],
     diff: &str,
 ) -> Result<std::process::Output, String> {
-    let mut child = Command::new("git")
+    let mut child = new_command("git")
         .arg("-C")
         .arg(cwd)
         .args(args)
@@ -1707,7 +1711,7 @@ fn create_pending_worktree(
         .unwrap_or(default_name);
     let (worktree_path, branch_name) = unique_pending_worktree_target(&repo_path, &base_name)?;
 
-    let output = Command::new("git")
+    let output = new_command("git")
         .arg("-C")
         .arg(&repo_path)
         .args(["worktree", "add", "-b"])
@@ -1799,8 +1803,24 @@ fn read_git_diff(repo_path: &Path, has_head: bool) -> Result<String, String> {
     Err(format_git_failure("failed to read git diff", &output))
 }
 
+/// `Command::new` that never flashes a console window on Windows. A GUI-
+/// subsystem parent gives console-subsystem children (git/gh/curl/cmd/...)
+/// a brand-new console unless CREATE_NO_WINDOW is set; on other platforms
+/// this is a plain `Command::new`.
+pub(crate) fn new_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
 fn run_git(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String> {
-    Command::new("git")
+    new_command("git")
         .arg("-C")
         .arg(cwd)
         .args(args)
@@ -2110,7 +2130,7 @@ fn host_generate_image(request: ImageGenerationRequest) -> Result<Value, String>
         .map_err(|error| format!("failed to serialize image request: {error}"))?;
     let header_path = write_image_request_headers(request.api_key.as_deref())?;
     let header_arg = format!("@{}", header_path.to_string_lossy());
-    let mut command = Command::new("curl");
+    let mut command = new_command("curl");
     command
         .args([
             "--fail-with-body",
@@ -3149,7 +3169,7 @@ fn pick_file_references(kind: Option<&str>, multiple: bool) -> Result<Vec<String
     } else {
         format!("set selectedFiles to {{{choose_file}}}")
     };
-    let output = Command::new("osascript")
+    let output = new_command("osascript")
         .args([
             "-e",
             &choose_statement,
@@ -3189,7 +3209,7 @@ fn pick_file_references(kind: Option<&str>, multiple: bool) -> Result<Vec<String
 
 #[cfg(target_os = "macos")]
 fn pick_workspace_folder() -> Result<Option<String>, String> {
-    let output = Command::new("osascript")
+    let output = new_command("osascript")
         .args([
             "-e",
             "set selectedFolder to choose folder with prompt \"Use an existing folder\"",
@@ -3275,18 +3295,18 @@ fn is_word_document_path(path: &Path) -> bool {
 fn open_path(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open").arg(path).spawn().map(|_| ())
+        new_command("open").arg(path).spawn().map(|_| ())
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
+        new_command("cmd")
             .args(["/C", "start", "", &path.to_string_lossy()])
             .spawn()
             .map(|_| ())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        Command::new("xdg-open").arg(path).spawn().map(|_| ())
+        new_command("xdg-open").arg(path).spawn().map(|_| ())
     }
 }
 
@@ -3307,11 +3327,11 @@ fn open_existing_path(path: &str) -> Result<(), String> {
 fn reveal_path(path: &Path) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open").arg("-R").arg(path).spawn().map(|_| ())
+        new_command("open").arg("-R").arg(path).spawn().map(|_| ())
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("explorer")
+        new_command("explorer")
             .arg(format!("/select,{}", path.to_string_lossy()))
             .spawn()
             .map(|_| ())
@@ -3319,7 +3339,7 @@ fn reveal_path(path: &Path) -> std::io::Result<()> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let target = path.parent().unwrap_or(path);
-        Command::new("xdg-open").arg(target).spawn().map(|_| ())
+        new_command("xdg-open").arg(target).spawn().map(|_| ())
     }
 }
 
@@ -3343,24 +3363,24 @@ fn normalized_external_url(value: &str) -> Result<String, String> {
 fn open_external_url(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open").arg(url).spawn().map(|_| ())
+        new_command("open").arg(url).spawn().map(|_| ())
     }
     #[cfg(target_os = "windows")]
     {
-        Command::new("cmd")
+        new_command("cmd")
             .args(["/C", "start", "", url])
             .spawn()
             .map(|_| ())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        Command::new("xdg-open").arg(url).spawn().map(|_| ())
+        new_command("xdg-open").arg(url).spawn().map(|_| ())
     }
 }
 
 #[cfg(target_os = "macos")]
 fn open_macos_system_settings_url(url: &str) -> Result<(), String> {
-    Command::new("open")
+    new_command("open")
         .arg(url)
         .spawn()
         .map(|_| ())
@@ -5755,7 +5775,7 @@ fn browser_iab_capture_screenshot_bytes(
         "{},{},{},{}",
         region.x, region.y, region.width, region.height
     );
-    let output = Command::new("/usr/sbin/screencapture")
+    let output = new_command("/usr/sbin/screencapture")
         .args(["-x", "-t", capture_type, "-R", &rect])
         .arg(&output_path)
         .output()

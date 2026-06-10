@@ -11,7 +11,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
-import { formatDuration, isItemInProgress, itemType } from "../state/thread-item-fields";
+import { formatDuration, isItemInProgress, itemType, normalizePlanStepStatus } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 import { PlanSummaryCard } from "./plan-summary-card";
@@ -191,7 +191,7 @@ function TodoListThreadItemView({
   const [expanded, setExpanded] = useState(true);
   const activePlanItemRef = useRef<HTMLLIElement | null>(null);
   const summary = todoListSummaryLabel(unit.item, formatMessage);
-  const activePlanIndex = plan.findIndex((entry) => normalizedTodoStatus(entry.status) === "inProgress");
+  const activePlanIndex = plan.findIndex((entry) => normalizePlanStepStatus(entry.status) === "inProgress");
 
   // codex: local-conversation-thread-*.js — Desktop tracks the
   // current `in_progress` plan index and calls `scrollIntoView({block:
@@ -265,7 +265,7 @@ function TodoListThreadItemView({
                 </span>
                 <span
                   className="hc-inline-plan-step"
-                  data-status={normalizedTodoStatus(entry.status)}
+                  data-status={normalizePlanStepStatus(entry.status)}
                 >
                   {entry.step}
                 </span>
@@ -291,7 +291,7 @@ export function todoListSummaryLabel(
   const plan = todoPlanItems(item);
   const total = plan.length;
   const completed = plan.reduce((count, entry) =>
-    count + (normalizedTodoStatus(entry.status) === "completed" ? 1 : 0), 0);
+    count + (normalizePlanStepStatus(entry.status) === "completed" ? 1 : 0), 0);
   return formatMessage({
     id: "localConversationPage.planItemsCompleted",
     defaultMessage: "{completedItems} out of {totalItems, plural, one {# task completed} other {# tasks completed}}",
@@ -324,14 +324,6 @@ function todoPlanItems(item: ThreadItemUnit["item"]): Array<{ step: string; stat
   });
 }
 
-function normalizedTodoStatus(status: string): "completed" | "inProgress" | "pending" {
-  if (status === "completed" || status === "complete" || status === "done") return "completed";
-  if (status === "in_progress" || status === "inProgress" || status === "running" || status === "active") {
-    return "inProgress";
-  }
-  return "pending";
-}
-
 function todoStatusIcon(status: string) {
   // codex `ow`/`uw` (the REACHABLE standalone todo-list step icon) is `icon-3xs` = 10px
   // (completed → check, else → empty circle; Codex's in-progress glyph `or` is a hair
@@ -339,7 +331,7 @@ function todoStatusIcon(status: string) {
   // 12px) by mistake — `nT` never renders in the aligned flow (the last todo-list is
   // hoisted out of grouping). HiCodex keeps a subtle spinner as its in-progress
   // affordance, sized to the 10px step-icon row.
-  const normalized = normalizedTodoStatus(status);
+  const normalized = normalizePlanStepStatus(status);
   if (normalized === "completed") return <CheckCircle2 size={10} />;
   if (normalized === "inProgress") return <LoaderCircle className="hc-inline-plan-spinner" size={10} />;
   return <Circle size={10} />;

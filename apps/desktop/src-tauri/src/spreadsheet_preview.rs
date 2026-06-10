@@ -2,7 +2,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,7 +198,7 @@ fn xlsx_sheet_path_for_relationship(path: &Path, rel_id: &str) -> Option<String>
 
 fn unzip_member_text(path: &Path, member: &str) -> Result<Option<String>, String> {
     let path_text = path.to_string_lossy().to_string();
-    let output = Command::new("unzip")
+    let output = crate::new_command("unzip")
         .args(["-p", path_text.as_str(), member])
         .output()
         .map_err(|error| format!("failed to start unzip: {error}"))?;

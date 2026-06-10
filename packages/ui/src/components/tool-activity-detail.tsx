@@ -19,6 +19,7 @@ import {
 } from "../state/render-groups";
 import {
   displayPath,
+  execCommandActionRecords,
   execExitCode,
   multiAgentAction,
   multiAgentStatus,
@@ -1861,19 +1862,26 @@ type ExecSummaryAction =
   | { type: "search"; path: string; query: string; finished: boolean | null }
   | { type: "list_files"; path: string; finished: boolean | null };
 
+/*
+ * Source ordering is the shared `execCommandActionRecords` (commandActions
+ * first — bundle-backed, see tool-activity-fields). The old local version
+ * read the derived `parsedCmd` object FIRST and let an empty (filtered)
+ * `commandActions` array block the fallback — both deviations from the
+ * grouping side, now folded into the shared helper.
+ */
 function execSummaryAction(record: ItemRecord): ExecSummaryAction | null {
-  const direct = normalizeExecSummaryAction(recordObject(record.parsedCmd));
-  if (direct) return direct;
-  const actions = Array.isArray(record.commandActions)
-    ? record.commandActions
-    : Array.isArray(record.parsedCmd) ? record.parsedCmd : [];
-  for (const raw of actions) {
+  for (const raw of execCommandActionRecords(record as ThreadItem)) {
     const action = normalizeExecSummaryAction(recordObject(raw));
     if (action) return action;
   }
   return null;
 }
 
+// Surface-specific shape: returns ONE summary action for the expanded exec
+// detail; `null` for a read without a path so the summary falls back to the
+// raw command text. The collapsed-row twin is tool-activity-grouping's
+// `normalizeCommandAction` (coerces "file" for its label rows) — same wire
+// fields, intentionally different fallbacks; keep both in sight when editing.
 function normalizeExecSummaryAction(record: Record<string, unknown>): ExecSummaryAction | null {
   const type = stringField(record, "type");
   const finished = typeof record.isFinished === "boolean" ? record.isFinished : null;

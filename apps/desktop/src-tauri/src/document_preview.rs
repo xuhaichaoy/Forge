@@ -1,7 +1,6 @@
 use serde::Serialize;
 use std::io::Read;
 use std::path::Path;
-use std::process::Command;
 
 const MAX_LEGACY_DOC_STREAM_BYTES: u64 = 20 * 1024 * 1024;
 
@@ -90,7 +89,7 @@ fn read_doc_preview(
 
 fn read_doc_with_textutil(path: &Path) -> Result<String, String> {
     let path_text = path.to_string_lossy().to_string();
-    let output = Command::new("textutil")
+    let output = crate::new_command("textutil")
         .args(["-convert", "txt", "-stdout", path_text.as_str()])
         .output()
         .map_err(|error| format!("failed to start textutil: {error}"))?;
@@ -127,7 +126,7 @@ fn read_doc_word_document_stream(path: &Path) -> Result<String, String> {
 
 fn unzip_member_text(path: &Path, member: &str) -> Result<Option<String>, String> {
     let path_text = path.to_string_lossy().to_string();
-    let output = Command::new("unzip")
+    let output = crate::new_command("unzip")
         .args(["-p", path_text.as_str(), member])
         .output()
         .map_err(|error| format!("failed to start unzip: {error}"))?;

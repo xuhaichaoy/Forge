@@ -15,7 +15,12 @@
  */
 import { stringField } from "../lib/format";
 
-import { recordObject } from "./thread-item-fields";
+import { execExitCode, patchChanges, recordObject } from "./thread-item-fields";
+
+// 60a83dd dedup follow-through: the canonical implementations live in
+// thread-item-fields (this module already depends on it); re-exported so
+// tool-activity consumers keep their import path.
+export { execExitCode, patchChanges };
 import type { ItemRecord, ThreadItem } from "./render-group-types";
 
 const WEB_SEARCH_SITE_RE = /\bsite:([^\s]+)/giu;
@@ -71,24 +76,30 @@ export function displayPath(path: string): string {
   return trimmed;
 }
 
-export function execExitCode(item: ThreadItem): number | null {
-  const record = item as ItemRecord;
-  if (typeof record.exitCode === "number" && Number.isFinite(record.exitCode)) return record.exitCode;
-  const output = recordObject(record.output);
-  return typeof output.exitCode === "number" && Number.isFinite(output.exitCode) ? output.exitCode : null;
-}
 
-export function patchChanges(item: ThreadItem): Record<string, unknown>[] {
-  const changes = (item as ItemRecord).changes;
-  if (Array.isArray(changes)) {
-    return changes.filter((change): change is Record<string, unknown> => Boolean(change) && typeof change === "object");
+/*
+ * codex app-server-manager-signals `u_` (approval → exec item synthesis):
+ * `commandActions` is the wire-level source of truth and `parsedCmd` is
+ * DERIVED from `commandActions[0]` (`s = r[0] ?? {type:"unknown",cmd}` →
+ * `parsedCmd: Wg(s,!1)`). This shared ordering mirrors that: the full
+ * `commandActions` array first, then `parsedCmd` (array or single object) as
+ * the fallback for items that only carry the derived field. Consumed by BOTH
+ * the collapsed exploration rows (tool-activity-grouping) and the expanded
+ * exec summary (tool-activity-detail) so the two surfaces read the same
+ * action source.
+ */
+export function execCommandActionRecords(item: ThreadItem): Record<string, unknown>[] {
+  const record = item as ItemRecord;
+  const actions = record.commandActions;
+  const normalizedActions = Array.isArray(actions)
+    ? actions.filter((action): action is Record<string, unknown> => Boolean(action) && typeof action === "object")
+    : [];
+  if (normalizedActions.length > 0) return normalizedActions;
+  const parsedCmd = record.parsedCmd;
+  if (Array.isArray(parsedCmd)) {
+    return parsedCmd.filter((action): action is Record<string, unknown> => Boolean(action) && typeof action === "object");
   }
-  if (!changes || typeof changes !== "object") return [];
-  return Object.entries(changes as Record<string, unknown>).flatMap(([path, value]) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-    const change = value as Record<string, unknown>;
-    return [{ ...change, path: stringField(change, "path") || path }];
-  });
+  return parsedCmd && typeof parsedCmd === "object" ? [parsedCmd as Record<string, unknown>] : [];
 }
 
 export function patchKind(change: Record<string, unknown>): "add" | "delete" | "update" {

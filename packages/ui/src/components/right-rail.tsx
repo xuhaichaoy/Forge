@@ -26,6 +26,7 @@ import { useSectionCollapse } from "../hooks/use-section-collapse";
 import { convertLocalFileSrc } from "../lib/tauri-host";
 import { fileIconFor } from "../lib/file-icon";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
+import { normalizePlanStepStatus } from "../state/thread-item-fields";
 import type { BranchDetailsViewModel } from "../state/branch-details";
 import { DiffStatsDisplay } from "./diff-stats-display";
 import { SummaryPanelRow } from "./summary-panel-row";
@@ -849,7 +850,7 @@ function RailEntryCard({
   canOpen?: (entry: RailEntry) => boolean;
   onOpen?: (entry: RailEntry) => void;
 }) {
-  const progressStatus = sectionId === "progress" ? normalizeProgressStatus(entry.status) : undefined;
+  const progressStatus = sectionId === "progress" ? normalizePlanStepStatus(entry.status) : undefined;
   if (canOpen?.(entry) && onOpen) {
     return (
       <button
@@ -939,7 +940,7 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
   if (sectionId === "sideChats") {
     // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Tf) — side-chat row icon
     // (message glyph / spinner) is `icon-sm` (18px), matching Changes/progress, not 14px.
-    return normalizeProgressStatus(entry.status) === "inProgress"
+    return normalizePlanStepStatus(entry.status) === "inProgress"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={18} />
       : <MessageSquareText size={18} />;
   }
@@ -960,7 +961,7 @@ function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["i
     // browserRailEntry) to inProgress for the same spinner output.
     // CODEX-REF: local-conversation-thread-CEeZyOcp.js — browser row icon is
     // `icon-xs` (16px): `(isActive?…:go) className:\`icon-xs shrink-0\`` (go=Globe).
-    return normalizeProgressStatus(entry.status) === "inProgress"
+    return normalizePlanStepStatus(entry.status) === "inProgress"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={16} />
       : <Globe size={16} />;
   }
@@ -1082,19 +1083,11 @@ function SourcesIconRow({ entries }: { entries: readonly RailEntry[] }): ReactNo
 }
 
 function progressEntryIcon(status: string | undefined): ReactNode {
-  const normalized = normalizeProgressStatus(status);
+  const normalized = normalizePlanStepStatus(status);
   // codex plan/status step icon is `icon-sm` (18px), not 14px.
   if (normalized === "completed") return <CheckCircle2 size={18} />;
   if (normalized === "inProgress") return <LoaderCircle className="hc-rail-progress-spinner" size={18} />;
   return <Circle size={18} />;
-}
-
-function normalizeProgressStatus(status: string | undefined): "completed" | "inProgress" | "pending" {
-  if (status === "completed" || status === "complete" || status === "done") return "completed";
-  if (status === "inProgress" || status === "in_progress" || status === "running" || status === "active") {
-    return "inProgress";
-  }
-  return "pending";
 }
 
 interface RailEntryOpenHandlers {

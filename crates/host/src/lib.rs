@@ -296,6 +296,15 @@ impl AppServerHost {
         }
 
         let mut command = Command::new(&codex_bin);
+        // codex.exe is a console-subsystem binary: spawned from the GUI app on
+        // Windows it would open its own black console window at startup unless
+        // CREATE_NO_WINDOW is set. Stdio stays piped either way.
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
         command
             .arg("app-server")
             .arg("--listen")

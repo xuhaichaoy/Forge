@@ -23,6 +23,7 @@ import {
 } from "./thread-item-fields";
 import {
   displayPath,
+  execCommandActionRecords,
   execExitCode,
   multiAgentAction,
   multiAgentStatus,
@@ -455,7 +456,7 @@ interface ExplorationSummary {
 }
 
 function explorationSummary(item: ThreadItem): ExplorationSummary | null {
-  const actions = commandActions(item).map(normalizeCommandAction).filter((action) => action !== null);
+  const actions = execCommandActionRecords(item).map(normalizeCommandAction).filter((action) => action !== null);
   if (actions.length === 0) return null;
   if (runningSkillDefinitionReadAction(actions, item)) return null;
 
@@ -506,25 +507,10 @@ function normalizeSearchPathSegments(value: string): string {
 }
 
 function explorationDetail(item: ThreadItem): string {
-  const actions = commandActions(item).map(normalizeCommandAction).filter((action) => action !== null);
+  const actions = execCommandActionRecords(item).map(normalizeCommandAction).filter((action) => action !== null);
   if (actions.length === 0) return "";
   const inProgress = isItemInProgress(item);
   return actions.map((action) => explorationActionLabel(action, inProgress, item)).join("\n");
-}
-
-function commandActions(item: ThreadItem): Record<string, unknown>[] {
-  const record = item as ItemRecord;
-  const actions = record.commandActions;
-  const normalizedActions = Array.isArray(actions)
-    ? actions.filter((action): action is Record<string, unknown> => Boolean(action) && typeof action === "object")
-    : [];
-  if (normalizedActions.length > 0) return normalizedActions;
-
-  const parsedCmd = record.parsedCmd;
-  if (Array.isArray(parsedCmd)) {
-    return parsedCmd.filter((action): action is Record<string, unknown> => Boolean(action) && typeof action === "object");
-  }
-  return parsedCmd && typeof parsedCmd === "object" ? [parsedCmd as Record<string, unknown>] : [];
 }
 
 type NormalizedCommandAction =
@@ -563,7 +549,7 @@ function directRunningSkillDefinitionReadLabelParts(
 
 function runningSkillDefinitionReadLabelParts(item: ThreadItem): { action: string; detail: string } | null {
   const action = runningSkillDefinitionReadAction(
-    commandActions(item).map(normalizeCommandAction).filter((candidate) => candidate !== null),
+    execCommandActionRecords(item).map(normalizeCommandAction).filter((candidate) => candidate !== null),
     item,
   );
   if (!action) return null;
@@ -578,7 +564,7 @@ function runningSkillDefinitionReadLabelParts(item: ThreadItem): { action: strin
 
 export function isRunningSkillDefinitionRead(item: ThreadItem): boolean {
   return Boolean(runningSkillDefinitionReadAction(
-    commandActions(item).map(normalizeCommandAction).filter((candidate) => candidate !== null),
+    execCommandActionRecords(item).map(normalizeCommandAction).filter((candidate) => candidate !== null),
     item,
   ));
 }

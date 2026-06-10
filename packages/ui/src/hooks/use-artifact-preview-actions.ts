@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from "react";
 import { useServices } from "../components/services-context";
-import { shouldOpenArtifactPreview } from "../state/artifact-preview";
 import {
   fileReferenceResolutionContext,
   normalizeFileReference,
@@ -20,13 +19,11 @@ export function useArtifactPreviewActions({
   activeThreadCwd,
   defaultCwd,
   setArtifactPreview,
-  setFileReference,
   workspace,
 }: {
   activeThreadCwd?: string | null;
   defaultCwd?: string | null;
   setArtifactPreview: (entry: RailEntry | null) => void;
-  setFileReference: (reference: FileReferenceSelection | null) => void;
   workspace: string;
 }) {
   const { dispatch } = useServices();
@@ -49,19 +46,9 @@ export function useArtifactPreviewActions({
     return resolvedPath ? { ...nextReference, path: resolvedPath } : nextReference;
   }, [previewPathContext]);
 
-  const previewConversationFileReference = useCallback((reference: { path: string; lineStart: number; lineEnd?: number }) => {
-    const nextReference = resolveFileSelection(reference);
-    if (nextReference) setFileReference(nextReference);
-  }, [resolveFileSelection, setFileReference]);
-
   const previewRailArtifact = useCallback((entry: RailEntry) => {
     setArtifactPreview(entry);
   }, [setArtifactPreview]);
-
-  const previewRailFileReference = useCallback((reference: RailEntryReference) => {
-    setArtifactPreview(null);
-    previewConversationFileReference(reference);
-  }, [previewConversationFileReference, setArtifactPreview]);
 
   const openFileReferenceExternal = useCallback((reference: FileReferenceSelection) => {
     void openFileReference(reference.path, reference.lineStart).catch((error) => {
@@ -112,32 +99,17 @@ export function useArtifactPreviewActions({
     }
   }, [dispatch]);
 
-  const openAssistantArtifact = useCallback((entry: RailEntry) => {
-    if (shouldOpenArtifactPreview(entry)) {
-      previewRailArtifact(entry);
-      return;
-    }
-    if (entry.reference) {
-      previewRailFileReference(entry.reference);
-      return;
-    }
-    if (entry.action?.kind === "url") {
-      openRailUrl(entry.action.url);
-      return;
-    }
-    previewRailArtifact(entry);
-  }, [openRailUrl, previewRailArtifact, previewRailFileReference]);
-
+  // NOTE: the artifact-open ROUTING (preview vs file-ref vs url) lives in
+  // HiCodexApp's side-panel variant (openAssistantArtifactInSidePanel) — this
+  // hook only exposes the leaf actions. A routing copy used to live here too
+  // and drifted; don't re-add one without a single shared implementation.
   return {
     copyFileReferenceContents,
-    openAssistantArtifact,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
     openRailUrl,
-    previewConversationFileReference,
     previewPathContext,
     previewRailArtifact,
-    previewRailFileReference,
     resolveFileSelection,
     revealFileReference,
   };
