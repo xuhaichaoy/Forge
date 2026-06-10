@@ -75,7 +75,10 @@
   --vscode-menu-border: var(--hc-border-strong);
   --text-sm: 12px;
   --text-sm--line-height: calc(1.25 / .875);
-  --text-base: 14px;
+  /* Scaled by the "UI font size" setting (settings.general.appearance.sansFontSize)
+     so the few var(--text-base)/var(--codex-chat-font-size) consumers track the
+     same --hc-ui-font-scale the literal font-sizes use. Default 14 → scale 1. */
+  --text-base: calc(14px * var(--hc-ui-font-scale, 1));
   --text-base--line-height: calc(1.5 / 1);
   --padding-row-x: 8px;
   --padding-row-y: 5px;
@@ -109,7 +112,7 @@
    * line-height to calc(--markdown-font-size + 8px) (= 22px at 14px), so we
    * mirror that exact formula here instead of a bespoke multiplier.
    */
-  --codex-chat-font-size: 14px; /* codex chain -> --text-base = 14px; 13px was the dead fallback (A/B-pending) */
+  --codex-chat-font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex chain -> --text-base = 14px; scaled by --hc-ui-font-scale (UI font size). 13px was the dead fallback (A/B-pending) */
   --codex-chat-code-font-size: 12px;
   --hc-chat-line-height: calc(var(--codex-chat-font-size) + 8px); /* codex --markdown-line-height = font + 8px = 22px (was 1.86 ≈ 24-26px; A/B-pending) */
   /*
@@ -315,6 +318,301 @@ button {
   --hc-right-panel-offset: 0px;
 }
 
+.hc-team-auth-gate {
+  position: relative;
+  display: grid;
+  min-height: 100dvh;
+  overflow: hidden;
+  place-items: center;
+  padding: 28px;
+  color: var(--hc-text-primary);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(18, 22, 24, 0.08) 0%, rgba(18, 22, 24, 0.78) 72%),
+    linear-gradient(180deg, rgba(12, 14, 16, 0.72) 0%, rgba(12, 14, 16, 0.88) 100%),
+    url("../assets/forge-auth-bg.png") center / cover no-repeat,
+    linear-gradient(180deg, color-mix(in oklab, var(--hc-surface-app) 86%, var(--hc-surface-main)) 0%, var(--hc-surface-app) 100%);
+}
+
+.hc-team-auth-gate[data-theme="light"] {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02) 0%, rgba(244, 248, 249, 0.18) 76%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(241, 246, 247, 0.18) 100%),
+    url("../assets/forge-auth-bg-light.png") center / cover no-repeat,
+    linear-gradient(180deg, color-mix(in oklab, var(--hc-surface-app) 86%, var(--hc-surface-main)) 0%, var(--hc-surface-app) 100%);
+}
+
+.hc-team-auth-window-drag {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 0;
+  height: 100px;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.hc-team-auth-theme-toggle {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  z-index: 1;
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--hc-border-default) 82%, transparent);
+  border-radius: 8px;
+  color: var(--hc-text-secondary);
+  background: color-mix(in oklab, var(--hc-surface-main) 84%, transparent);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-theme-toggle:hover,
+.hc-team-auth-theme-toggle:focus-visible {
+  color: var(--hc-text-primary);
+  border-color: color-mix(in oklab, var(--vscode-focusBorder) 56%, var(--hc-border-default));
+  background: var(--hc-surface-main);
+  outline: none;
+}
+
+.hc-team-auth-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 520px);
+  padding: 28px;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 8px;
+  background: var(--hc-surface-main);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.22);
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-service-settings {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--hc-border-default) 82%, transparent);
+  border-radius: 7px;
+  color: var(--hc-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-service-settings:hover,
+.hc-team-auth-service-settings:focus-visible,
+.hc-team-auth-service-settings[aria-expanded="true"] {
+  color: var(--hc-text-primary);
+  background: var(--hc-surface-soft);
+  outline: none;
+}
+
+.hc-team-auth-service-popover {
+  position: absolute;
+  top: 60px;
+  right: 20px;
+  z-index: 3;
+  width: min(360px, calc(100% - 40px));
+  padding: 12px;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 8px;
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-header {
+  margin-bottom: 22px;
+}
+
+.hc-team-auth-header h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.hc-team-auth-service {
+  display: grid;
+  width: 100%;
+  gap: 7px;
+  color: var(--hc-text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.hc-team-auth-service span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-team-auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.hc-team-auth-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hc-team-auth-field {
+  display: grid;
+  gap: 7px;
+  color: var(--hc-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.hc-team-auth-field--reserved {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.hc-team-auth-field input,
+.hc-team-auth-service input {
+  width: 100%;
+  height: 38px;
+  min-width: 0;
+  padding: 0 11px;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 7px;
+  color: var(--hc-text-primary);
+  background: var(--hc-surface-composer);
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-service input {
+  height: 34px;
+  font-size: 12px;
+}
+
+.hc-team-auth-field input:focus,
+.hc-team-auth-service input:focus {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--vscode-focusBorder) 18%, transparent);
+}
+
+.hc-team-auth-error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--hc-editor-warning-foreground) 30%, transparent);
+  border-radius: 7px;
+  color: var(--hc-editor-warning-foreground);
+  background: color-mix(in oklab, var(--hc-editor-warning-background) 70%, transparent);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.hc-team-auth-submit {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 7px;
+  color: #fff;
+  background: #2d8797;
+  cursor: pointer;
+  font-weight: 700;
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-submit:hover:not(:disabled),
+.hc-team-auth-submit:focus-visible:not(:disabled) {
+  background: #257987;
+}
+
+.hc-team-auth-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.hc-team-auth-alt-login {
+  display: flex;
+  justify-content: center;
+}
+
+.hc-team-auth-dingtalk {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 7px;
+  color: #1477f8;
+  background: var(--hc-surface-main);
+  font-weight: 650;
+  -webkit-app-region: no-drag;
+}
+
+.hc-team-auth-dingtalk:disabled {
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+
+.hc-team-auth-dingtalk-icon {
+  width: 21px;
+  height: 21px;
+  flex: 0 0 auto;
+}
+
+.hc-team-auth-checking {
+  margin-top: 16px;
+  color: var(--hc-text-secondary);
+  font-size: 13px;
+}
+
+.hc-team-auth-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 8px;
+  color: var(--hc-text-secondary);
+  background: var(--hc-surface-main);
+  box-shadow: var(--hc-shadow-panel);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.hc-team-auth-loading strong {
+  color: var(--hc-text-primary);
+  font-size: 15px;
+}
+
+@media (max-width: 560px) {
+  .hc-team-auth-gate {
+    align-items: stretch;
+    padding: 16px;
+  }
+
+  .hc-team-auth-panel {
+    align-self: center;
+    padding: 22px;
+  }
+
+  .hc-team-auth-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .hc-app-rail {
   grid-column: 1;
   grid-row: 1;
@@ -341,10 +639,80 @@ button {
   background:
     radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.28), transparent 24%),
     linear-gradient(135deg, #4f63d7, #5367da 48%, #4d55a9);
-  font-size: 15px;
+  font-size: calc(15px * var(--hc-ui-font-scale, 1));
   font-weight: 760;
   line-height: 1;
   box-shadow: 0 6px 14px rgba(52, 68, 148, 0.16);
+}
+
+.hc-app-rail-account {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.hc-app-rail-brand {
+  cursor: pointer;
+  border: 0;
+}
+
+.hc-app-rail-brand:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.hc-app-rail-account-menu {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 10px);
+  z-index: var(--hc-z-popover);
+  display: grid;
+  width: 230px;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--hc-border-default);
+  border-radius: 8px;
+  color: var(--hc-text-primary);
+  background: var(--hc-surface-panel);
+  box-shadow: var(--hc-shadow-panel);
+}
+
+.hc-app-rail-account-card {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--hc-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.hc-app-rail-account-card strong {
+  color: var(--hc-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.hc-app-rail-account-card small {
+  color: var(--hc-text-tertiary);
+}
+
+.hc-app-rail-account-action {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--hc-text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.hc-app-rail-account-action:hover,
+.hc-app-rail-account-action:focus-visible {
+  background: var(--hc-surface-hover);
 }
 
 .hc-app-rail-tabs {
@@ -373,7 +741,7 @@ button {
   flex-direction: column;
   gap: 3px;
   border-radius: 8px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--hc-ui-font-scale, 1));
   font-weight: 560;
   letter-spacing: 0;
   line-height: 1.15;
@@ -447,7 +815,7 @@ button {
 .hc-app-toast p {
   min-width: 0;
   margin: 0;
-  font-size: 14px; /* codex toast _alert font-size = --text-base 14px (was 12px; A/B-pending) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex toast _alert font-size = --text-base 14px (was 12px; A/B-pending) */
   line-height: 1.45;
   overflow-wrap: anywhere;
 }
@@ -850,14 +1218,14 @@ button {
 
 .hc-file-preview-panel-title span {
   /* codex artifact-preview-header `Le` h2: `text-sm` (12px) `font-medium` (500). */
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   line-height: 1.3;
 }
 
 .hc-file-preview-panel-title small {
   color: #7a7c77;
-  font-size: 12px; /* codex secondary header label is `text-sm` = --text-sm:12px */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex secondary header label is `text-sm` = --text-sm:12px */
   font-weight: 500;
   line-height: 1.25;
 }
@@ -908,7 +1276,7 @@ button {
   background: rgba(255, 253, 250, 0.9);
   color: #6f716b;
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   box-shadow: 0 2px 8px rgba(34, 38, 43, 0.06);
 }
@@ -947,7 +1315,7 @@ button {
   color: #8a8c85;
   padding: 24px;
   text-align: center;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-file-preview-image-view {
@@ -1144,7 +1512,7 @@ button {
   min-width: 64px; /* codex image-preview-dialog zoom readout = min-w-16 (64px) */
   padding: 0 6px;
   text-align: center;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-variant-numeric: tabular-nums;
 }
 
@@ -1154,7 +1522,7 @@ button {
   overflow: auto;
   padding: 18px 22px 28px;
   color: #27313d;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.65;
 }
 
@@ -1175,7 +1543,7 @@ button {
   background: rgba(255, 253, 250, 0.94);
   color: #6f716b;
   padding: 6px 16px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-file-diff-viewer {
@@ -1208,7 +1576,7 @@ button {
 }
 
 .hc-file-diff-summary {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-file-diff-added {
@@ -1228,7 +1596,7 @@ button {
   background: #fffdfa;
   color: #27313d;
   padding: 4px 7px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-file-diff-mode-toggle {
@@ -1242,7 +1610,7 @@ button {
   background: transparent;
   color: #6f716b;
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   cursor: pointer;
 }
@@ -1264,7 +1632,7 @@ button {
   gap: 10px;
   padding: 11px 14px;
   background: #f6f3ea;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -1328,7 +1696,7 @@ button {
   background: #f0f3f4;
   color: #51636b;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-file-diff-hunk-header code {
@@ -1340,7 +1708,7 @@ button {
   border-collapse: collapse;
   table-layout: fixed;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
 }
 
@@ -1377,7 +1745,7 @@ button {
 
 .hc-file-diff-unified {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
 }
 
@@ -1413,7 +1781,7 @@ button {
 .hc-top-meta,
 .hc-muted {
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-top-meta {
@@ -1484,7 +1852,7 @@ button {
   border-radius: 999px;
   background: color-mix(in oklab, #f59e0b 12%, #fdfaf3);
   color: #b35a00;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   line-height: 1.4;
   cursor: pointer;
@@ -1552,7 +1920,7 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 560;
   line-height: 17px;
 }
@@ -1581,7 +1949,7 @@ button {
 
 .hc-sidebar-usage-alert-reset {
   color: var(--hc-text-secondary);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 16px;
 }
 
@@ -1681,7 +2049,7 @@ button {
   background: rgba(34, 38, 43, 0.08);
   color: var(--hc-text-secondary);
   font-family: var(--hc-font-sans, inherit);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   line-height: 16px;
   letter-spacing: 0.02em;
@@ -1704,7 +2072,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px; /* codex sidebar nav label = text-base = --text-base:14px */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex sidebar nav label = text-base = --text-base:14px */
   font-weight: 400; /* codex nav label has no weight utility; inherits body weight */
   line-height: 18px;
 }
@@ -1754,7 +2122,7 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #777973;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 400;
   line-height: 16px;
 }
@@ -1844,7 +2212,7 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #5f625b;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 400;
 }
 
@@ -1900,7 +2268,7 @@ button {
   box-shadow: 0 0 0 0.5px var(--hc-border-default), 0 12px 28px rgb(25 30 25 / 18%);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 16px;
   user-select: none;
 }
@@ -1923,7 +2291,7 @@ button {
   background: color-mix(in srgb, currentColor 10%, transparent);
   color: currentColor;
   font-family: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 :root[data-hc-theme="dark"] .hc-tooltip,
@@ -1965,7 +2333,7 @@ button {
   background: color-mix(in srgb, currentColor 10%, transparent);
   color: currentColor;
   font-family: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-thread-menu-item {
@@ -1980,13 +2348,13 @@ button {
   cursor: pointer;
   padding: 7px 8px;
   text-align: left;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-thread-menu-title {
   padding: 5px 8px 3px;
   color: #777973;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 560;
   line-height: 14px;
 }
@@ -2107,7 +2475,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-primary);
 }
 
@@ -2131,7 +2499,7 @@ button {
   border-radius: 999px;
   background: #e8e1d3;
   color: #4b463d;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   line-height: 1;
 }
@@ -2153,14 +2521,14 @@ button {
 }
 
 .hc-sidebar-account-name {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 520;
   line-height: 16px;
 }
 
 .hc-sidebar-account-meta {
   color: #8a8b84;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 14px;
 }
 
@@ -2246,7 +2614,7 @@ button.hc-sidebar-account-menu-item small {
 }
 
 .hc-sidebar-account-menu-item span {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 15px;
   color: #77786f;
   font-weight: 520;
@@ -2254,7 +2622,7 @@ button.hc-sidebar-account-menu-item small {
 
 .hc-sidebar-account-menu-item strong,
 .hc-sidebar-account-menu-item small {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 15px;
   color: #202124;
   font-weight: 540;
@@ -2319,7 +2687,7 @@ button.hc-sidebar-account-menu-item small {
   gap: 6px;
   padding: 6px 7px;
   color: var(--hc-text-primary);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-sidebar-rate-limit-summary-heading {
@@ -2340,7 +2708,7 @@ button.hc-sidebar-account-menu-item small {
 
 .hc-sidebar-rate-limit-summary-heading small {
   color: var(--hc-text-tertiary);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   white-space: nowrap;
 }
 
@@ -2387,7 +2755,7 @@ button.hc-sidebar-account-menu-item small {
   grid-column: 1 / -1;
   overflow: hidden;
   color: var(--hc-text-tertiary);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2409,10 +2777,10 @@ button.hc-sidebar-account-menu-item small {
  * API-provider rows come from the configured model draft (`model` + `models[]`);
  * subscription rows use HiCodex's default subscription catalog.
  *
- * Selecting a model writes to localStorage (`hicodex.selectedModelKey`) and
- * overrides `threadContextDefaults.model + .modelProvider` for the next
- * `thread/start` / `thread/fork` RPC — see HiCodexApp.tsx
- * `effectiveThreadContextDefaults` for the override logic.
+ * Selecting a model writes to localStorage (`hicodex.selectedModelKey`),
+ * overrides `threadContextDefaults.model + .modelProvider` for new/resumed
+ * threads, and for the active thread asks app-server to update next-turn
+ * settings without selecting a new conversation.
  */
 .hc-model-picker-menu {
   z-index: var(--hc-z-popover, 70);
@@ -2425,7 +2793,7 @@ button.hc-sidebar-account-menu-item small {
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
   overflow: hidden;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 /*
@@ -2444,13 +2812,13 @@ button.hc-sidebar-account-menu-item small {
   corner-shape: superellipse(1.5);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
   overflow: hidden;
-  font-size: 12px; /* codex dropdown item text-sm = --text-sm 12px (was 13px; A/B-pending) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex dropdown item text-sm = --text-sm 12px (was 13px; A/B-pending) */
 }
 
 .hc-reasoning-picker-menu-header {
   padding: 8px 12px 4px;
   color: #8a8b84;
-  font-size: 12px; /* codex Na.Title text-sm = --text-sm 12px (was 11px; A/B-pending) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex Na.Title text-sm = --text-sm 12px (was 11px; A/B-pending) */
   font-weight: 500;
   letter-spacing: normal; /* codex Na.Title has no tracking (was 0.04em; A/B-pending) */
   text-transform: none; /* codex renders mixed-case "Reasoning" (was uppercase; A/B-pending) */
@@ -2523,7 +2891,7 @@ button.hc-sidebar-account-menu-item small {
 .hc-model-picker-menu-header {
   padding: 10px 14px 6px;
   color: #8a8b84;
-  font-size: 12px; /* codex Na.Title text-sm = 12px (was 11px; A/B-pending) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex Na.Title text-sm = 12px (was 11px; A/B-pending) */
   font-weight: 400; /* codex Na.Title normal weight (was 500; A/B-pending) */
   letter-spacing: normal; /* codex Na.Title no tracking (was 0.04em; A/B-pending) */
   text-transform: none; /* codex Na.Title mixed-case (was uppercase; matches reasoning header §M-61; A/B-pending) */
@@ -2587,7 +2955,7 @@ button.hc-sidebar-account-menu-item small {
 
 .hc-model-picker-menu-meta {
   color: #8a8b84;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2605,7 +2973,7 @@ button.hc-sidebar-account-menu-item small {
   padding: 8px 14px 12px;
   border-top: 1px solid rgba(34, 38, 43, 0.08);
   color: #8a8b84;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 
@@ -2641,11 +3009,19 @@ button.hc-sidebar-account-menu-item small {
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0.01em;
   color: #202124;
   transition: background 120ms ease;
+  /* Long provider labels + status hints must stay on one line; the label
+     truncates instead of wrapping the header onto two rows. */
+  white-space: nowrap;
+  min-width: 0;
+}
+.hc-model-picker-provider-title > span:first-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hc-model-picker-provider-title:hover {
   background: rgba(34, 38, 43, 0.04);
@@ -2663,9 +3039,11 @@ button.hc-sidebar-account-menu-item small {
 .hc-model-picker-provider-host {
   margin-left: auto;
   color: #8a8b84;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--hc-ui-font-scale, 1));
   font-weight: 400;
   letter-spacing: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .hc-model-picker-edit-toggle {
@@ -2708,7 +3086,7 @@ button.hc-sidebar-account-menu-item small {
   color: #202124;
   cursor: pointer;
   text-align: left;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--hc-ui-font-scale, 1));
   transition: background 120ms ease;
 }
 .hc-model-picker-model-item:hover {
@@ -2733,7 +3111,7 @@ button.hc-sidebar-account-menu-item small {
 }
 .hc-model-picker-model-name {
   flex: 1;
-  font-size: 12px; /* codex model name = UI sans (removed monospace; A/B-pending) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex model name = UI sans (removed monospace; A/B-pending) */
 }
 .hc-model-picker-model-check {
   color: #2c5e6f;
@@ -2759,7 +3137,7 @@ button.hc-sidebar-account-menu-item small {
   gap: 4px;
 }
 .hc-model-picker-edit-label {
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   color: #8a8b84;
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -2772,7 +3150,7 @@ button.hc-sidebar-account-menu-item small {
   border-radius: 6px;
   background: #fffdfa;
   color: #202124;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--hc-ui-font-scale, 1));
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   line-height: 1.4;
   outline: none;
@@ -2793,7 +3171,7 @@ button.hc-sidebar-account-menu-item small {
 
 .hc-model-picker-edit-error {
   color: #b35a00;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--hc-ui-font-scale, 1));
   padding: 4px 6px;
   background: rgba(245, 158, 11, 0.1);
   border-radius: 4px;
@@ -2809,7 +3187,7 @@ button.hc-sidebar-account-menu-item small {
 .hc-model-picker-edit-button {
   padding: 5px 12px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   cursor: pointer;
   border: 1px solid transparent;
   transition: background 120ms ease, border-color 120ms ease;
@@ -2839,7 +3217,7 @@ button.hc-sidebar-account-menu-item small {
 }
 
 .hc-model-picker-edit-hint {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--hc-ui-font-scale, 1));
   color: #8a8b84;
   padding-top: 2px;
 }
@@ -2867,7 +3245,7 @@ button.hc-sidebar-account-menu-item small {
   border-top: 1px solid rgba(34, 38, 43, 0.08);
   background: transparent;
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   text-align: left;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -2908,7 +3286,7 @@ button.hc-sidebar-account-menu-item small {
   border-radius: 6px;
   background: #fffdfa;
   color: #b35a00;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -2920,7 +3298,7 @@ button.hc-sidebar-account-menu-item small {
 
 .hc-model-picker-signin-hint {
   color: #8a8b84;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 

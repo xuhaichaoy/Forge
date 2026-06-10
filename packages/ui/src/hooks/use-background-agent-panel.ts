@@ -23,7 +23,6 @@ import {
   isThreadNotFound,
   refreshThreadMetadata,
   sendPanelThreadMessage,
-  startSideConversation as startSideConversationWorkflow,
   threadStatusLabel,
   threadTitle,
 } from "../state/thread-workflow";
@@ -227,37 +226,6 @@ export function useBackgroundAgentPanel({
     });
   }, [dispatch, openBackgroundAgentThread, registerSideChat, threadContextDefaults?.model]);
 
-  const openSideChatFromThread = useCallback(async (thread: Thread) => {
-    try {
-      if (!(await ensureConnected())) return;
-      const cwd = thread.cwd || workspace.trim() || hostDefaultCwd || "";
-      const result = await startSideConversationWorkflow(
-        client,
-        thread.id,
-        cwd,
-        threadContextDefaults,
-      );
-      const title = registerSideChat(thread.id, result.thread);
-      dispatch({ type: "upsertThread", thread: result.thread, select: false });
-      void openBackgroundAgentThread(result.thread.id, {
-        displayName: title,
-        panelKind: "sideChat",
-        model: threadContextDefaults?.model ?? null,
-      });
-    } catch (error) {
-      dispatch({ type: "log", text: `Failed to open side chat: ${formatError(error)}`, level: "error" });
-    }
-  }, [
-    client,
-    dispatch,
-    ensureConnected,
-    hostDefaultCwd,
-    openBackgroundAgentThread,
-    registerSideChat,
-    threadContextDefaults,
-    workspace,
-  ]);
-
   const sendBackgroundAgentPanelMessage = useCallback(async () => {
     const panel = backgroundAgentPanel;
     const threadId = panel?.threadId;
@@ -364,7 +332,6 @@ export function useBackgroundAgentPanel({
     backgroundAgentTitle,
     closeBackgroundAgentPanel,
     openBackgroundAgentThread,
-    openSideChatFromThread,
     openSideConversationPanel,
     sideChatRailEntries,
     interruptBackgroundAgentPanelTurn,

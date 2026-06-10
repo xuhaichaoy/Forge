@@ -259,6 +259,37 @@ export default function runModelSettingsTests(): void {
   );
   assertDeepEqual(
     buildModelConfigFromConfig({
+      model: " team-runtime-model ",
+      model_provider: " team_model_gateway ",
+      model_providers: {
+        hicodex_local: {
+          name: " Personal Gateway ",
+          base_url: " http://127.0.0.1:8890/v1/// ",
+          experimental_bearer_token: " personal-token ",
+        },
+        team_model_gateway: {
+          name: "团队模型",
+          base_url: "http://127.0.0.1:5050/api/team-gateway/v1",
+          experimental_bearer_token: "team-token",
+        },
+      },
+    }, { excludedProviderIds: ["team_model_gateway"] }),
+    {
+      id: DEFAULT_MODEL_PROVIDER_ID,
+      name: "Personal Gateway",
+      protocol: "openai",
+      baseUrl: "http://127.0.0.1:8890/v1",
+      apiKey: "personal-token",
+      model: "Qwen3.6-27B-mxfp4",
+      models: ["Qwen3.6-27B-mxfp4"],
+      temperature: 0.2,
+      maxTokens: null,
+      supportsImageInput: true,
+    },
+    "buildModelConfigFromConfig skips runtime-only team providers for the editable settings form",
+  );
+  assertDeepEqual(
+    buildModelConfigFromConfig({
       model: "",
       model_provider: "",
       model_providers: {},

@@ -5,7 +5,11 @@ import {
   CODE_FONT_SIZE_MIN,
   CODE_FONT_SIZE_STEP,
   REDUCED_MOTION_MODES,
+  UI_FONT_SIZE_MAX,
+  UI_FONT_SIZE_MIN,
+  UI_FONT_SIZE_STEP,
   clampCodeFontSize,
+  clampUiFontSize,
   reducedMotionLabel,
   type ReducedMotionMode,
   type UiAppearancePreferences,
@@ -41,6 +45,7 @@ export interface AppearanceSettingsPanelProps {
   uiAppearance: UiAppearancePreferences;
   uiLocale: HiCodexLocale;
   onSetUiTheme: (mode: UiThemeMode) => void;
+  onSetUiFontSize: (size: number) => void;
   onSetCodeFontSize: (size: number) => void;
   onSetReducedMotion: (mode: ReducedMotionMode) => void;
   onSetUiLocale: (locale: HiCodexLocale) => void;
@@ -51,6 +56,7 @@ export function AppearanceSettingsPanel({
   uiAppearance,
   uiLocale,
   onSetUiTheme,
+  onSetUiFontSize,
   onSetCodeFontSize,
   onSetReducedMotion,
   onSetUiLocale,
@@ -111,6 +117,35 @@ export function AppearanceSettingsPanel({
         />
       </AppearanceRow>
       {/*
+        * CODEX-REF: general-settings-*.js — "UI font size" row (id
+        * settings.general.appearance.sansFontSize.row, "Sans font size" base
+        * key). Codex sets `--vscode-font-size`; HiCodex publishes
+        * `--hc-ui-font-scale` (see HiCodexApp apply effect) which every
+        * stylesheet `font-size` calc multiplies by. Brand word dropped per the
+        * HiCodex convention ("…used for the UI", not "…the Codex UI").
+        */}
+      <AppearanceRow
+        title={formatMessage({
+          id: "settings.general.appearance.sansFontSize.row",
+          defaultMessage: "UI font size",
+        })}
+        description={formatMessage({
+          id: "settings.general.appearance.sansFontSize.row.description",
+          defaultMessage: "Adjust the base size used for the UI",
+        })}
+      >
+        <FontSizeInput
+          value={uiAppearance.uiFontSize}
+          min={UI_FONT_SIZE_MIN}
+          max={UI_FONT_SIZE_MAX}
+          step={UI_FONT_SIZE_STEP}
+          clamp={clampUiFontSize}
+          ariaLabel={formatMessage({ id: "settings.general.appearance.sansFontSize.row", defaultMessage: "UI font size" })}
+          unitLabel={formatMessage({ id: "settings.general.appearance.sansFontSize.units", defaultMessage: "px" })}
+          onCommit={onSetUiFontSize}
+        />
+      </AppearanceRow>
+      {/*
         * CODEX-REF: appearance-settings-*.js §4 — Code font size.
         * Codex spec: <input type="number" min={8} max={24} step={1}>, commit
         * onBlur, Enter triggers blur, NaN reverts. HiCodex mirrors verbatim.
@@ -125,8 +160,14 @@ export function AppearanceSettingsPanel({
           defaultMessage: "Adjust the base size used for code across chats and diffs",
         })}
       >
-        <CodeFontSizeInput
+        <FontSizeInput
           value={uiAppearance.codeFontSize}
+          min={CODE_FONT_SIZE_MIN}
+          max={CODE_FONT_SIZE_MAX}
+          step={CODE_FONT_SIZE_STEP}
+          clamp={clampCodeFontSize}
+          ariaLabel={formatMessage({ id: "settings.general.appearance.codeFontSize.row", defaultMessage: "Code font size" })}
+          unitLabel={formatMessage({ id: "settings.general.appearance.codeFontSize.units", defaultMessage: "px" })}
           onCommit={onSetCodeFontSize}
         />
       </AppearanceRow>
@@ -230,9 +271,10 @@ function SegmentedToggle({
 }
 
 /*
- * CODEX-REF: appearance-settings-*.js §4 number-input control.
+ * CODEX-REF: appearance-settings-*.js §4 number-input control (shared by the
+ * "UI font size" and "Code font size" rows).
  *
- *   <input type="number" min={8} max={24} step={1}>
+ *   <input type="number" min max step>
  *   onBlur  → parse → NaN ? revert : commit
  *   onKeyDown Enter → blur
  *
@@ -241,14 +283,25 @@ function SegmentedToggle({
  * "1" before "12") don't trigger an onCommit. The commit happens on blur or
  * Enter; cancel via Escape reverts the draft to the current persisted value.
  */
-function CodeFontSizeInput({
+function FontSizeInput({
   value,
+  min,
+  max,
+  step,
+  clamp,
+  ariaLabel,
+  unitLabel,
   onCommit,
 }: {
   value: number;
+  min: number;
+  max: number;
+  step: number;
+  clamp: (value: number) => number;
+  ariaLabel: string;
+  unitLabel: string;
   onCommit: (next: number) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
   const [draft, setDraft] = useState<string>(String(value));
   const valueRef = useRef(value);
   // Escape sets this so the synchronous blur() it triggers reverts instead of
@@ -271,7 +324,7 @@ function CodeFontSizeInput({
       setDraft(String(valueRef.current));
       return;
     }
-    const next = clampCodeFontSize(parsed);
+    const next = clamp(parsed);
     if (next !== valueRef.current) {
       onCommit(next);
     } else {
@@ -283,11 +336,11 @@ function CodeFontSizeInput({
     <div className="hc-appearance-number-input">
       <input
         type="number"
-        min={CODE_FONT_SIZE_MIN}
-        max={CODE_FONT_SIZE_MAX}
-        step={CODE_FONT_SIZE_STEP}
+        min={min}
+        max={max}
+        step={step}
         inputMode="numeric"
-        aria-label={formatMessage({ id: "settings.general.appearance.codeFontSize.row", defaultMessage: "Code font size" })}
+        aria-label={ariaLabel}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onBlur={tryCommit}
@@ -304,10 +357,7 @@ function CodeFontSizeInput({
           }
         }}
       />
-      {/* CODEX-REF: settings.general.appearance.codeFontSize.units defaultMessage "px" */}
-      <span className="hc-appearance-number-input-unit">
-        {formatMessage({ id: "settings.general.appearance.codeFontSize.units", defaultMessage: "px" })}
-      </span>
+      <span className="hc-appearance-number-input-unit">{unitLabel}</span>
     </div>
   );
 }

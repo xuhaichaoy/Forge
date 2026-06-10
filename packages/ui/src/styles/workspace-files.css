@@ -100,7 +100,7 @@
 .hc-file-tree-empty,
 .hc-file-tree-error {
   padding: 8px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
 }
 
@@ -123,7 +123,7 @@
   background: transparent;
   color: var(--hc-text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   text-align: left;
   cursor: pointer;
   border-radius: 4px;
@@ -185,7 +185,7 @@
   justify-content: center;
   width: 14px;
   height: 14px;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   color: #fff;
   background: #d97706;
@@ -202,7 +202,7 @@
 
 .hc-file-tree-label-parent {
   color: var(--hc-text-secondary);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

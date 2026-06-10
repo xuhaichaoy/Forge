@@ -61,7 +61,7 @@
   background: transparent;
   padding: 2px 4px 2px 0;
   color: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font: inherit;
   letter-spacing: 0;
   text-align: left;
@@ -149,7 +149,7 @@
   gap: 4px;
   padding: 0 6px;
   height: 22px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font: inherit;
   color: #6f716b;
   letter-spacing: 0;
@@ -204,7 +204,7 @@
   color: inherit;
   /* codex: section header is `text-base` (--text-base:14px) with a bare `truncate`
      title that inherits body weight --vscode-font-weight:430 — NOT 13px/650. */
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 430;
 }
 
@@ -218,7 +218,7 @@
   color: #6f716b;
   opacity: 0.5;
   padding: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 430;
 }
 
@@ -283,7 +283,7 @@
   padding: 0 6px 5px;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 
@@ -296,7 +296,7 @@
 
 .hc-empty-group {
   padding: 6px 12px 6px 28px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
   color: var(--token-description-foreground, #8a8478);
   font-style: italic;

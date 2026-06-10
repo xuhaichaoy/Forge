@@ -154,6 +154,14 @@ export interface ThreadRuntimeSlice {
   tokenUsage?: ThreadTokenUsageSnapshot | null;
   tokenSpeed?: ThreadTokenSpeedSnapshot | null;
   tokenSpeedTracker?: ThreadTokenSpeedTracker | null;
+  /**
+   * The (model, modelProvider) the runtime reported for this thread on the
+   * last thread/start / thread/resume response. The Thread protocol type only
+   * carries modelProvider, so this is the client's only per-thread record of
+   * the model actually in use — the model picker checkmark and the composer
+   * model chip read it for active chats.
+   */
+  resolvedModel?: { model: string | null; modelProvider: string | null } | null;
 }
 
 export interface NotificationInvalidationState {
@@ -206,6 +214,7 @@ export type CodexUiAction =
   | { type: "hostStatus"; status: HostStatus }
   | { type: "setThreads"; threads: Thread[] }
   | { type: "upsertThread"; thread: Thread; select?: boolean }
+  | { type: "renameThread"; threadId: string; name: string }
   | { type: "setActiveThread"; threadId: string | null }
   | { type: "removeThread"; threadId: string }
   | { type: "markThreadsNeedResumeAfterReconnect" }
@@ -219,6 +228,7 @@ export type CodexUiAction =
   | { type: "setModels"; models: ModelConfig[] }
   | { type: "upsertModel"; model: ModelConfig }
   | { type: "setThreadContextDefaults"; context: ThreadContextDefaults | null }
+  | { type: "setThreadResolvedModel"; threadId: string; model: string | null; modelProvider: string | null }
   | {
       type: "optimisticUserMessage";
       threadId: string;
@@ -342,6 +352,14 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       });
     case "upsertThread":
       return upsertThreadState(state, action.thread, action.select === true);
+    case "renameThread":
+      // Narrow patch on purpose: callers hold a render-time thread snapshot,
+      // and merging that whole object back would roll back concurrent updates.
+      return {
+        ...state,
+        threads: state.threads.map((thread) =>
+          thread.id === action.threadId ? { ...thread, name: action.name } : thread),
+      };
     case "setActiveThread": {
       // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
       // every explicit thread switch participates in the navigation
@@ -467,6 +485,10 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       };
     case "setThreadContextDefaults":
       return { ...state, threadContextDefaults: action.context };
+    case "setThreadResolvedModel":
+      return threadRuntimePatch(state, action.threadId, {
+        resolvedModel: { model: action.model, modelProvider: action.modelProvider },
+      });
     case "optimisticUserMessage":
       return applyOptimisticUserMessage(state, action);
     case "bindOptimisticTurn":
@@ -530,6 +552,7 @@ function normalizeThreadRuntime(
     tokenUsage: runtime?.tokenUsage ?? null,
     tokenSpeed: runtime?.tokenSpeed ?? { tokensPerSecond: 0, turnId: null },
     tokenSpeedTracker: runtime?.tokenSpeedTracker ?? null,
+    resolvedModel: runtime?.resolvedModel ?? null,
   };
 }
 
@@ -593,8 +616,11 @@ function threadRuntimePatch(
   state: CodexUiState,
   threadId: string,
   patch: Partial<ThreadRuntimeSlice>,
+  options?: { reuseProjectedItems?: boolean },
 ): CodexUiState {
-  const reuseProjectedItems = !patchAffectsItemProjection(patch);
+  // Callers may force-reuse when they can prove the patch leaves projection
+  // inputs untouched even though it carries `items` (text-append deltas).
+  const reuseProjectedItems = options?.reuseProjectedItems ?? !patchAffectsItemProjection(patch);
   return updateThreadRuntime(state, threadId, (runtime) =>
     normalizeThreadRuntime({ ...runtime, ...patch }, { reuseProjectedItems }),
   );
@@ -759,16 +785,26 @@ function applyDropOptimisticUserMessage(
   });
 }
 
+/*
+ * Monotonic log id: the previous `Date.now()+logs.length` scheme collided once
+ * the log buffer hit its 120-entry cap (length pinned) and two logs landed in
+ * the same millisecond — duplicate React keys in the toast viewport and
+ * dismiss-by-id hiding both lines. Same pattern as thread-workflow's
+ * optimistic id counter.
+ */
+let logIdCounter = 0;
+
 function prependLog(
   state: CodexUiState,
   text: string,
   level: "info" | "warn" | "error" | "success" = "info",
 ): CodexUiState {
+  logIdCounter += 1;
   return {
     ...state,
     logs: [
       {
-        id: `${Date.now().toString(36)}-${state.logs.length}`,
+        id: `log-${logIdCounter}`,
         at: Date.now(),
         level,
         text,
@@ -1174,10 +1210,10 @@ function handleModelReroutedNotification(state: CodexUiState, params: Record<str
   const threadId = String(params.threadId ?? "");
   if (!threadId) return state;
   const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
-  const fromModel = stringParam(params, "fromModel");
-  const toModel = stringParam(params, "toModel");
-  const reason = stringParam(params, "reason");
-  const id = stringParam(params, "itemId") || `model-rerouted:${turnIdParam || threadId}`;
+  const fromModel = stringField(params, "fromModel");
+  const toModel = stringField(params, "toModel");
+  const reason = stringField(params, "reason");
+  const id = stringField(params, "itemId") || `model-rerouted:${turnIdParam || threadId}`;
   const item = {
     type: "modelRerouted",
     id,
@@ -1213,15 +1249,15 @@ function handleAutoApprovalReviewNotification(
   const threadId = String(params.threadId ?? "");
   if (!threadId) return state;
   const turnIdParam = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
-  const reviewId = stringParam(params, "reviewId");
+  const reviewId = stringField(params, "reviewId");
   if (!reviewId) return state;
   const review = recordParam(params.review) ?? {};
-  const status = stringParam(review, "status") || "inProgress";
+  const status = stringField(review, "status") || "inProgress";
   const startedAtMs = numberParam(params, "startedAtMs");
   const item = {
     type: "automatic-approval-review",
     id: `automatic-approval-review:${reviewId}`,
-    targetItemId: stringParam(params, "targetItemId") || null,
+    targetItemId: stringField(params, "targetItemId") || null,
     action: params.action ?? null,
     startedAtMs: startedAtMs || null,
     completedAtMs: status === "inProgress" ? null : numberParam(params, "completedAtMs") || Date.now(),
@@ -1247,11 +1283,11 @@ function applyMcpServerStartupStatusNotification(
   params: Record<string, unknown>,
   message: JsonRpcNotification,
 ): CodexUiState {
-  const name = stringParam(params, "name");
+  const name = stringField(params, "name");
   if (!name) return logNotificationIfUseful(state, message);
   const startup: McpServerStartupStatus = {
     status: formatUnknownForLog(params.status) || "unknown",
-    error: stringParam(params, "error") || null,
+    error: stringField(params, "error") || null,
     updatedAt: Date.now(),
   };
   return logNotificationIfUseful({
@@ -1329,7 +1365,7 @@ function applyThreadTokenUsageUpdatedNotification(
   state: CodexUiState,
   params: Record<string, unknown>,
 ): CodexUiState {
-  const threadId = stringParam(params, "threadId");
+  const threadId = stringField(params, "threadId");
   if (!threadId) return state;
   const tokenUsage = recordParam(params.tokenUsage);
   if (!tokenUsage) return state;
@@ -1403,9 +1439,9 @@ function newTokenSpeedTracker(turnId: string, now: number): ThreadTokenSpeedTrac
 }
 
 function updateLiveTokenSpeed(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
-  const threadId = stringParam(params, "threadId");
+  const threadId = stringField(params, "threadId");
   const turnId = turnIdParam(params);
-  const delta = stringParam(params, "delta");
+  const delta = stringField(params, "delta");
   if (!threadId || !turnId || !delta) return state;
   const bytes = tokenSpeedDeltaBytes(delta);
   if (bytes === 0) return state;
@@ -1509,12 +1545,12 @@ function tokenUsageOutputTokens(tokenUsage: Record<string, unknown>): number | n
 }
 
 function applyThreadCompactedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
-  const threadId = stringParam(params, "threadId");
-  const turnId = stringParam(params, "turnId");
+  const threadId = stringField(params, "threadId");
+  const turnId = stringField(params, "turnId");
   if (!threadId) return state;
 
-  const id = stringParam(params, "itemId")
-    || stringParam(params, "id")
+  const id = stringField(params, "itemId")
+    || stringField(params, "id")
     || `context-compaction:${turnId || threadId}`;
   const item = {
     type: "contextCompaction",
@@ -1526,25 +1562,21 @@ function applyThreadCompactedNotification(state: CodexUiState, params: Record<st
 }
 
 function applyThreadGoalUpdatedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
-  const threadId = stringParam(params, "threadId");
+  const threadId = stringField(params, "threadId");
   const goal = threadGoalParam(params.goal);
   if (!threadId || !goal) return state;
-  const turnId = stringParam(params, "turnId") || null;
-  const runtime = selectThreadRuntime(state, threadId);
-  const projectedItems = projectCompletedThreadGoalOntoAssistantMessages(
-    projectThreadGoalOntoUserMessages(runtime.items, goal, turnId),
-    goal,
-    turnId,
-  );
+  const turnId = stringField(params, "turnId") || null;
+  // No manual pre-projection here: the patch carries `threadGoal`, so
+  // `threadRuntimePatch` already runs the full projection pipeline over the
+  // runtime items — projecting first just did the same work twice.
   return threadRuntimePatch(state, threadId, {
     threadGoal: goal,
     threadGoalTurnId: turnId,
-    items: projectedItems,
   });
 }
 
 function applyThreadGoalClearedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
-  const threadId = stringParam(params, "threadId");
+  const threadId = stringField(params, "threadId");
   if (!threadId) return state;
   const runtime = selectThreadRuntime(state, threadId);
   return threadRuntimePatch(state, threadId, {
@@ -1555,8 +1587,8 @@ function applyThreadGoalClearedNotification(state: CodexUiState, params: Record<
 }
 
 function applyHookRunNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
-  const threadId = stringParam(params, "threadId");
-  const turnId = stringParam(params, "turnId");
+  const threadId = stringField(params, "threadId");
+  const turnId = stringField(params, "turnId");
   const run = recordParam(params.run);
   if (!threadId || !turnId || !run) return state;
   const runtime = selectThreadRuntime(state, threadId);
@@ -1573,12 +1605,12 @@ function applyThreadSettingsUpdatedNotification(
   state: CodexUiState,
   params: Record<string, unknown>,
 ): CodexUiState {
-  const threadId = stringParam(params, "threadId");
+  const threadId = stringField(params, "threadId");
   const settings = recordParam(params.threadSettings);
   if (!threadId || !settings) return state;
 
-  const cwd = stringParam(settings, "cwd");
-  const modelProvider = stringParam(settings, "modelProvider");
+  const cwd = stringField(settings, "cwd");
+  const modelProvider = stringField(settings, "modelProvider");
   const context = threadContextDefaultsFromThreadSettings(settings);
   const collaborationMode = collaborationModeParam(settings.collaborationMode);
   const runtime = selectThreadRuntime(state, threadId);
@@ -1614,11 +1646,11 @@ function applyThreadSettingsUpdatedNotification(
 
 function threadContextDefaultsFromThreadSettings(settings: Record<string, unknown>): ThreadContextDefaults {
   return compactThreadContext({
-    model: stringParam(settings, "model"),
-    modelProvider: stringParam(settings, "modelProvider"),
+    model: stringField(settings, "model"),
+    modelProvider: stringField(settings, "modelProvider"),
     serviceTier: settings.serviceTier,
     approvalPolicy: settings.approvalPolicy,
-    approvalsReviewer: stringParam(settings, "approvalsReviewer"),
+    approvalsReviewer: stringField(settings, "approvalsReviewer"),
     sandbox: sandboxModeFromSandboxPolicy(settings.sandboxPolicy),
     sandboxIsNonDefault: sandboxPolicyIsNonDefault(settings.sandboxPolicy),
     permissions: permissionsFromActivePermissionProfile(settings.activePermissionProfile),
@@ -1656,7 +1688,7 @@ function compactThreadContext(context: ThreadContextDefaults): ThreadContextDefa
 function sandboxPolicyIsNonDefault(value: unknown): boolean {
   const policy = recordParam(value);
   if (!policy) return false;
-  const type = stringParam(policy, "type");
+  const type = stringField(policy, "type");
   if (type === "readOnly") return policy.networkAccess === true;
   if (type === "workspaceWrite") {
     return policy.networkAccess === true
@@ -1668,7 +1700,7 @@ function sandboxPolicyIsNonDefault(value: unknown): boolean {
 
 function sandboxModeFromSandboxPolicy(value: unknown): unknown {
   const policy = recordParam(value);
-  const type = stringParam(policy, "type");
+  const type = stringField(policy, "type");
   switch (type) {
     case "dangerFullAccess":
       return "danger-full-access";
@@ -1684,7 +1716,7 @@ function sandboxModeFromSandboxPolicy(value: unknown): unknown {
 }
 
 function permissionsFromActivePermissionProfile(value: unknown): string | undefined {
-  return stringParam(value, "id") || undefined;
+  return stringField(value, "id") || undefined;
 }
 
 function personalityParam(value: unknown): ThreadContextDefaults["personality"] | undefined {
@@ -1695,7 +1727,7 @@ function collaborationModeParam(value: unknown): CollaborationMode | null | unde
   if (value === null) return null;
   const mode = recordParam(value);
   if (!mode) return undefined;
-  const kind = stringParam(mode, "mode");
+  const kind = stringField(mode, "mode");
   if (kind !== "plan" && kind !== "default") return undefined;
   if (!recordParam(mode.settings)) return undefined;
   return mode as unknown as CollaborationMode;
@@ -1784,10 +1816,10 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
   switch (message.method) {
     case "warning":
     case "guardianWarning":
-      return prependLog(state, stringParam(params, "message") || formatUnknownForLog(params), "warn");
+      return prependLog(state, stringField(params, "message") || formatUnknownForLog(params), "warn");
     case "configWarning": {
-      const summary = stringParam(params, "summary") || "config warning";
-      const details = stringParam(params, "details");
+      const summary = stringField(params, "summary") || "config warning";
+      const details = stringField(params, "details");
       return prependLog(state, details ? `${summary}: ${details}` : summary, "warn");
     }
     // `model/rerouted` is intercepted by applyNotification (synthesizes a
@@ -1795,9 +1827,9 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
     case "model/verification":
       return prependLog(state, `model verification required: ${formatUnknownForLog(params.verifications)}`, "warn");
     case "mcpServer/startupStatus/updated": {
-      const name = stringParam(params, "name") || "mcp server";
+      const name = stringField(params, "name") || "mcp server";
       const status = formatUnknownForLog(params.status);
-      const error = stringParam(params, "error");
+      const error = stringField(params, "error");
       return prependLog(state, error ? `${name} ${status}: ${error}` : `${name} ${status}`, error ? "warn" : "info");
     }
     case "account/updated": {
@@ -1807,13 +1839,13 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
     }
     case "account/login/completed": {
       const success = params.success === true;
-      const error = stringParam(params, "error");
+      const error = stringField(params, "error");
       return prependLog(state, success ? "account login completed" : `account login failed${error ? `: ${error}` : ""}`, success ? "info" : "error");
     }
     case "thread/realtime/error":
-      return prependLog(state, stringParam(params, "message") || formatUnknownForLog(params), "error");
+      return prependLog(state, stringField(params, "message") || formatUnknownForLog(params), "error");
     case "deprecationNotice":
-      return prependLog(state, stringParam(params, "message") || formatUnknownForLog(params), "warn");
+      return prependLog(state, stringField(params, "message") || formatUnknownForLog(params), "warn");
     case "fs/changed":
       return prependLog(state, fsChangedLogText(params));
     case "hook/started":
@@ -1830,7 +1862,7 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
 }
 
 function fsChangedLogText(params: Record<string, unknown>): string {
-  const watchId = stringParam(params, "watchId") || "unknown";
+  const watchId = stringField(params, "watchId") || "unknown";
   const paths = Array.isArray(params.changedPaths)
     ? params.changedPaths.filter((path): path is string => typeof path === "string")
     : [];
@@ -1840,13 +1872,13 @@ function fsChangedLogText(params: Record<string, unknown>): string {
 }
 
 function hookLogText(phase: "started" | "completed", params: Record<string, unknown>): string {
-  const threadId = stringParam(params, "threadId");
-  const turnId = stringParam(params, "turnId");
+  const threadId = stringField(params, "threadId");
+  const turnId = stringField(params, "turnId");
   const run = recordParam(params.run);
-  const eventName = stringParam(run, "eventName") || "hook";
-  const sourcePath = stringParam(run, "sourcePath");
-  const status = stringParam(run, "status");
-  const statusMessage = stringParam(run, "statusMessage");
+  const eventName = stringField(run, "eventName") || "hook";
+  const sourcePath = stringField(run, "sourcePath");
+  const status = stringField(run, "status");
+  const statusMessage = stringField(run, "statusMessage");
   const location = [
     threadId ? `thread ${shortThreadId(threadId)}` : "",
     turnId ? `turn ${shortThreadId(turnId)}` : "",
@@ -1862,13 +1894,7 @@ function hookLogText(phase: "started" | "completed", params: Record<string, unkn
 
 function hookRunStatus(params: Record<string, unknown>): string {
   const run = recordParam(params.run);
-  return stringParam(run, "status");
-}
-
-function stringParam(value: unknown, key: string): string {
-  if (!value || typeof value !== "object") return "";
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : "";
+  return stringField(run, "status");
 }
 
 function formatUnknownForLog(value: unknown): string {
@@ -1887,7 +1913,7 @@ function recordParam(value: unknown): Record<string, unknown> | null {
 }
 
 function turnErrorMessage(error: Record<string, unknown> | null | undefined): string {
-  return stringParam(error, "message");
+  return stringField(error, "message");
 }
 
 function streamErrorItem(
@@ -1900,7 +1926,7 @@ function streamErrorItem(
     id,
     type: "stream-error",
     content: turnErrorMessage(error) || fallbackText,
-    additionalDetails: stringParam(error, "additionalDetails"),
+    additionalDetails: stringField(error, "additionalDetails"),
     completed: true,
     ...(turnId ? { _turnId: turnId } : {}),
   };
@@ -1926,7 +1952,7 @@ function reconnectStreamErrorItem(
     type: "stream-error",
     // codex: `content: e == null ? n.message : `Reconnecting ${attempt}/${maxAttempts}``.
     content: reconnect ? `Reconnecting ${reconnect.reconnectAttempt}/${reconnect.reconnectMaxAttempts}` : message,
-    additionalDetails: stringParam(error, "additionalDetails"),
+    additionalDetails: stringField(error, "additionalDetails"),
     completed: true,
     ...(reconnect ?? {}),
     ...(turnId ? { _turnId: turnId } : {}),
@@ -2721,7 +2747,7 @@ function collabReceiverThreadIds(record: Record<string, unknown>): string[] {
     for (const receiver of record.receiverThreads) {
       if (!receiver || typeof receiver !== "object" || Array.isArray(receiver)) continue;
       const receiverRecord = receiver as Record<string, unknown>;
-      const id = stringParam(receiverRecord, "threadId") || stringParam(receiverRecord, "id");
+      const id = stringField(receiverRecord, "threadId") || stringField(receiverRecord, "id");
       if (id.trim()) ids.add(id.trim());
     }
   }
@@ -2740,7 +2766,7 @@ function collabReceiverThreadsById(record: Record<string, unknown>): Map<string,
   for (const receiver of record.receiverThreads) {
     if (!receiver || typeof receiver !== "object" || Array.isArray(receiver)) continue;
     const receiverRecord = receiver as Record<string, unknown>;
-    const id = stringParam(receiverRecord, "threadId") || stringParam(receiverRecord, "id");
+    const id = stringField(receiverRecord, "threadId") || stringField(receiverRecord, "id");
     if (id.trim()) byId.set(id.trim(), receiverRecord);
   }
   return byId;
@@ -3023,18 +3049,18 @@ function hookRunsBlockUserPrompt(runs: unknown[] | undefined): boolean {
   return runs.some((value) => {
     const run = recordParam(value);
     if (!run) return false;
-    return stringParam(run, "eventName") === "userPromptSubmit" && stringParam(run, "status") === "blocked";
+    return stringField(run, "eventName") === "userPromptSubmit" && stringField(run, "status") === "blocked";
   });
 }
 
 function upsertHookRun(existingRuns: unknown[], run: Record<string, unknown>): unknown[] {
-  const runId = stringParam(run, "id") || stringParam(run, "runId");
+  const runId = stringField(run, "id") || stringField(run, "runId");
   if (!runId) return [...existingRuns, run];
   let replaced = false;
   const next = existingRuns.map((existing) => {
     const existingRecord = recordParam(existing);
     if (!existingRecord) return existing;
-    const existingId = stringParam(existingRecord, "id") || stringParam(existingRecord, "runId");
+    const existingId = stringField(existingRecord, "id") || stringField(existingRecord, "runId");
     if (existingId !== runId) return existing;
     replaced = true;
     return run;
@@ -3050,16 +3076,16 @@ function hookStatsFromRuns(runs: unknown[] | undefined): Record<string, unknown>
   for (const value of runs) {
     const run = recordParam(value);
     if (!run) continue;
-    const status = stringParam(run, "status");
+    const status = stringField(run, "status");
     if (status === "blocked") blockedCount += 1;
     if (status === "failed") errorCount += 1;
     const rawEntries = Array.isArray(run.entries) ? run.entries : [];
     for (const rawEntry of rawEntries) {
       const entry = recordParam(rawEntry);
       if (!entry) continue;
-      const kind = stringParam(entry, "kind");
+      const kind = stringField(entry, "kind");
       if (kind !== "error" && kind !== "feedback" && kind !== "stop") continue;
-      entries.push({ kind, text: stringParam(entry, "text") });
+      entries.push({ kind, text: stringField(entry, "text") });
     }
   }
   return {
@@ -3484,19 +3510,33 @@ function appendItemText(
   const order = turnId ? ensureTurnInOrder(runtime.turnOrder, turnId) : runtime.turnOrder;
   const items = runtime.items;
   let found = false;
+  // Hot-path guard: the item projections key off item identity, `type`,
+  // `turnId`, and `completed` — never off message text. A delta that only
+  // appends to an already-typed, already-turn-attached item cannot change any
+  // projection input, so re-running the pipeline is a provable no-op that
+  // costs 2–6 full-transcript passes per streamed token. The first delta of an
+  // item (creation, or stamping type/turnId/completed) still takes the full
+  // projection path.
+  let projectionInputsChanged = false;
   let next = items.map((item) => {
     if (item.id !== itemId) return item;
     found = true;
-    const previous = String((item as Record<string, unknown>)[field] ?? "");
+    const record = item as Record<string, unknown>;
+    const projectionSafe = Boolean(record.type)
+      && (!turnId || record.turnId === turnId)
+      && (expectedType !== "agentMessage" || record.completed !== undefined);
+    if (!projectionSafe) projectionInputsChanged = true;
+    const previous = String(record[field] ?? "");
     const updated = {
       ...item,
       type: item.type || expectedType,
-      ...(expectedType === "agentMessage" && (item as Record<string, unknown>).completed !== true ? { completed: false } : {}),
+      ...(expectedType === "agentMessage" && record.completed !== true ? { completed: false } : {}),
       [field]: previous + delta,
     };
     return turnId ? attachTurnId(updated as AccumulatedThreadItem, turnId) : updated;
   });
   if (!found) {
+    projectionInputsChanged = true;
     const incoming = {
       id: itemId,
       type: expectedType,
@@ -3505,7 +3545,12 @@ function appendItemText(
     } as unknown as AccumulatedThreadItem;
     next = placeItemInTurn(next, turnId ? attachTurnId(incoming, turnId) : incoming, order);
   }
-  return threadRuntimePatch(state, threadId, { items: next, turnOrder: order });
+  return threadRuntimePatch(
+    state,
+    threadId,
+    { items: next, turnOrder: order },
+    { reuseProjectedItems: !projectionInputsChanged },
+  );
 }
 
 export function parseTerminalInteractionInput(

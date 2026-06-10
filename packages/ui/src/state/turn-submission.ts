@@ -42,6 +42,9 @@ export function selectNextQueuedFollowUp(input: {
   queue: QueuedFollowUp[];
 }): QueuedFollowUp | null {
   if (input.activeThreadRunning || input.activeThreadNeedsResume || input.pendingRequestCount > 0) return null;
+  // A follow-up flips to "sending" before its turn/start round-trips, so the
+  // thread still reads as idle here. Draining past it would double-send.
+  if (input.queue.some((message) => message.status === "sending")) return null;
   return input.queue.find((message) => message.status === "queued") ?? null;
 }
 

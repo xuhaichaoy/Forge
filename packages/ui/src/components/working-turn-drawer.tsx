@@ -14,10 +14,15 @@
  *
  * HiCodex has no framer-motion → animation is plain CSS transitions on
  * `[data-expanded="true"]` (see .hc-working-turn-drawer-body in composer.css).
+ *
+ * STATUS: faithful clone of Desktop's latest-turn drawer but NOT WIRED yet —
+ * no call site renders it. Kept (not dead code) until the aboveComposerContent
+ * integration lands; keep shared helpers (formatDuration) in sync meanwhile.
  */
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { AboveComposerPanel } from "./above-composer-panel";
+import { formatDuration } from "../state/thread-item-fields";
 
 export interface WorkingTurnDrawerProps {
   isTurnInProgress: boolean;
@@ -120,18 +125,3 @@ function useElapsedMs(startedAtMs: number | null, tick: boolean): number {
   return Math.max(now - startedAtMs, 0);
 }
 
-// codex `zu`/`Bu`: floor to whole seconds (not round) + hours tier, zero units trimmed.
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  const hours = Math.floor(totalSeconds / 3_600);
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    const parts = [`${hours}h`];
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0) parts.push(`${seconds}s`);
-    return parts.join(" ");
-  }
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
-}

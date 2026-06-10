@@ -73,6 +73,10 @@ export interface ModelConfigEdit {
   mergeStrategy: "replace";
 }
 
+export interface BuildModelConfigFromConfigOptions {
+  excludedProviderIds?: readonly string[];
+}
+
 export function providerIdForModel(model: Pick<ModelConfig, "id">): string {
   const normalized = model.id.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
   return normalized || DEFAULT_MODEL_PROVIDER_ID;
@@ -175,24 +179,32 @@ export function buildModelConfigsFromList(entries: ModelListEntry[]): ModelConfi
   return entries.map(buildModelConfigFromListEntry);
 }
 
-export function buildModelConfigFromConfig(config: Record<string, unknown> | null | undefined): ModelConfig {
+export function buildModelConfigFromConfig(
+  config: Record<string, unknown> | null | undefined,
+  options: BuildModelConfigFromConfigOptions = {},
+): ModelConfig {
   const activeModel = stringConfigValue(config?.model) || DEFAULT_MODEL_NAME;
   const activeProviderId = stringConfigValue(config?.model_provider) || DEFAULT_MODEL_PROVIDER_ID;
-  const provider = configRecord(config?.model_providers)?.[activeProviderId];
+  const providers = configRecord(config?.model_providers);
+  const editableProviderId = editableModelProviderId(activeProviderId, providers, options.excludedProviderIds ?? []);
+  const provider = providers?.[editableProviderId];
   const providerRecord = configRecord(provider);
+  const model = editableProviderId === activeProviderId
+    ? activeModel
+    : stringConfigValue(providerRecord?.model) || DEFAULT_MODEL_NAME;
   const providerName = stringConfigValue(providerRecord?.name)
-    || (activeProviderId === DEFAULT_MODEL_PROVIDER_ID ? DEFAULT_MODEL_PROVIDER_NAME : activeProviderId);
+    || (editableProviderId === DEFAULT_MODEL_PROVIDER_ID ? DEFAULT_MODEL_PROVIDER_NAME : editableProviderId);
   const providerBaseUrl = stringConfigValue(providerRecord?.base_url)
     || stringConfigValue(providerRecord?.baseUrl)
     || DEFAULT_MODEL_BASE_URL;
   return normalizeModelConfig({
-    id: activeProviderId,
+    id: editableProviderId,
     name: providerName,
     protocol: "openai",
     baseUrl: providerBaseUrl,
     apiKey: stringConfigValue(providerRecord?.experimental_bearer_token),
-    model: activeModel,
-    models: [activeModel],
+    model,
+    models: [model],
     temperature: 0.2,
     maxTokens: null,
     supportsImageInput: true,
@@ -258,6 +270,23 @@ function configRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function editableModelProviderId(
+  activeProviderId: string,
+  providers: Record<string, unknown> | null,
+  excludedProviderIds: readonly string[],
+): string {
+  const excluded = new Set(excludedProviderIds.map((id) => id.trim()).filter(Boolean));
+  if (activeProviderId && !excluded.has(activeProviderId)) return activeProviderId;
+  if (providers?.[DEFAULT_MODEL_PROVIDER_ID] && !excluded.has(DEFAULT_MODEL_PROVIDER_ID)) {
+    return DEFAULT_MODEL_PROVIDER_ID;
+  }
+  for (const providerId of Object.keys(providers ?? {})) {
+    const normalized = providerId.trim();
+    if (normalized && !excluded.has(normalized)) return normalized;
+  }
+  return DEFAULT_MODEL_PROVIDER_ID;
 }
 
 function normalizeModelServiceTiers(value: ModelServiceTier[] | null | undefined): ModelServiceTier[] {

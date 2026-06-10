@@ -55,7 +55,7 @@
   corner-shape: superellipse(1.5);
   border: 1px solid var(--hc-border-default, #d6d2c6);
   padding: 12px;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary, #6f716b);
 }
 
@@ -67,7 +67,7 @@
 .hc-side-panel-new-tab__suggested-heading {
   /* codex line 931-937: text-base font-semibold text-token-text-secondary */
   margin: 0 0 8px;
-  font-size: 14px; /* codex text-base = --text-base:14px (not 16px) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex text-base = --text-base:14px (not 16px) */
   font-weight: 600;
   color: var(--hc-text-secondary, #6f716b);
 }
@@ -142,7 +142,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px; /* codex text-base = --text-base:14px (not 16px) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex text-base = --text-base:14px (not 16px) */
   font-weight: 600;
   color: var(--hc-text-primary, #1d1f1c);
 }
@@ -154,6 +154,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px; /* codex text-sm = --text-sm:12px (not 14px) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex text-sm = --text-sm:12px (not 14px) */
   color: var(--hc-text-secondary, #6f716b);
 }

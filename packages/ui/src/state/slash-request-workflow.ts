@@ -68,7 +68,6 @@ export interface SlashRequestWorkflowContext {
   pid?: number | null;
   modelCount: number;
   pendingRequestCount: number;
-  threads: Thread[];
   threadContextDefaults?: ThreadContextDefaults | null;
   openSideConversationPanel?: (thread: Thread) => void;
   accountState?: AccountState;
@@ -99,7 +98,6 @@ export async function runSlashRequestWorkflow(
     activeTurnId,
     activeItems = [],
     connected,
-    threads,
     threadContextDefaults = null,
     openSideConversationPanel,
     accountState,
@@ -164,7 +162,10 @@ export async function runSlashRequestWorkflow(
           return;
         }
         const result = await resumeThread(client, threadId, workspace.trim() || defaultCwd || "", threadContextDefaults);
-        dispatch({ type: "setThreads", threads: [result.thread, ...threads.filter((thread) => thread.id !== result.thread.id)] });
+        // upsert instead of wholesale setThreads: the `threads` closure is a
+        // render-time snapshot and would roll back updates that landed during
+        // the RPC. Sidebar order is recency-sorted, so prepending was cosmetic.
+        dispatch({ type: "upsertThread", thread: result.thread });
         dispatch({ type: "setActiveThread", threadId: result.thread.id });
         dispatch({ type: "notification", message: { method: "thread/started", params: { thread: result.thread } } });
         return;
@@ -221,7 +222,7 @@ export async function runSlashRequestWorkflow(
           activeThread?.cwd || workspace.trim() || defaultCwd || "",
           threadContextDefaults,
         );
-        dispatch({ type: "setThreads", threads: [result.thread, ...threads.filter((thread) => thread.id !== result.thread.id)] });
+        dispatch({ type: "upsertThread", thread: result.thread });
         dispatch({ type: "setActiveThread", threadId: result.thread.id });
         dispatch({ type: "notification", message: { method: "thread/started", params: { thread: result.thread } } });
         dispatch({ type: "log", text: `Forked active thread to ${result.thread.id}.`, level: "success" });
@@ -240,10 +241,7 @@ export async function runSlashRequestWorkflow(
           return;
         }
         await client.request("thread/name/set", { threadId, name: name.trim() });
-        dispatch({
-          type: "setThreads",
-          threads: threads.map((thread) => thread.id === threadId ? { ...thread, name: name.trim() } : thread),
-        });
+        dispatch({ type: "renameThread", threadId, name: name.trim() });
         dispatch({ type: "log", text: `Renamed active thread to ${name.trim()}.`, level: "success" });
         return;
       }

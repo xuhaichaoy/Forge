@@ -6,16 +6,13 @@ import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { useHiCodexIntl } from "./i18n-provider";
 import { Markdownish } from "./message-unit";
-import { type SubmitTurnRatingEvent } from "./turn-rating-controls";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
 export function PlanSummaryCard({
-  onSubmitTurnFeedback,
   threadId,
   unit,
 }: {
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   threadId?: string | null;
   unit: ThreadItemUnit;
 }) {

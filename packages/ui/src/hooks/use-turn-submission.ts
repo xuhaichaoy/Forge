@@ -6,6 +6,11 @@ import { useHiCodexIntl } from "../components/i18n-provider";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { createProjectlessThreadCwd, isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
+import {
+  CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
+  PROVIDER_SWITCH_FAILED_MESSAGE,
+  isCrossAccountProviderSwitch,
+} from "../model/model-provider-switch";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
 import {
   buildUserInputFromComposer,
@@ -37,15 +42,21 @@ import {
   dispatchOptimisticUserMessage,
   dropOptimisticUserMessage,
   ensureThreadReadyForTurn,
+  assertThreadProviderSwitchApplied,
   isProjectlessWorkspace,
+  isThreadProviderSwitchMismatchError,
+  type ThreadProviderSwitchMismatchError,
   isThreadNotFound,
   isThreadStatusNotLoaded,
   isThreadNeedsResume,
   projectlessThreadInstructions,
+  readThread,
   refreshThreadMetadata,
+  resumeThread,
   resumeSelectedThreadAndStartTurn,
   startTurn,
   steerTurn,
+  dispatchThreadContextDefaultsFromRuntimeResponse,
   withWorkspaceDeveloperInstructions,
   type OptimisticUserMessageHandle,
   type ThreadWorkflowDispatch,
@@ -72,6 +83,7 @@ export interface UseTurnSubmissionInput {
   input: string;
   onRequestGoalReplace?: (objective: string) => void;
   rememberLatestCollaborationMode: (threadId: string, options: TurnStartOptions | null | undefined) => void;
+  restartRuntimeForProviderSwitch?: () => Promise<boolean>;
   resetComposerSelectionAfterCreatedThread: (threadId: string) => void;
   setActiveComposerMode: (mode: ComposerMode) => void;
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
@@ -79,7 +91,6 @@ export interface UseTurnSubmissionInput {
   threadContextDefaults: ThreadContextDefaults | null;
   threadIds: string[];
   workspace: string;
-  defaultCwd?: string | null;
 }
 
 export interface UseTurnSubmissionResult {
@@ -90,6 +101,45 @@ export interface UseTurnSubmissionResult {
   sendQueuedFollowUpNow: (message: QueuedFollowUp) => void;
   sendTurn: (options?: ComposerSendOptions) => Promise<void>;
   startingConversation: boolean;
+}
+
+class CrossAccountProviderSwitchError extends Error {
+  constructor() {
+    super(CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE);
+    this.name = "CrossAccountProviderSwitchError";
+  }
+}
+
+function isCrossAccountProviderSwitchError(error: unknown): error is CrossAccountProviderSwitchError {
+  return error instanceof CrossAccountProviderSwitchError;
+}
+
+function assertSupportedProviderSwitch(
+  activeThread: Thread | null | undefined,
+  context?: ThreadContextDefaults | null,
+): void {
+  if (isCrossAccountProviderSwitch(activeThread?.modelProvider, context?.modelProvider)) {
+    throw new CrossAccountProviderSwitchError();
+  }
+}
+
+function userFacingProviderSwitchError(error: ThreadProviderSwitchMismatchError): Error {
+  if (isCrossAccountProviderSwitch(error.actualProvider, error.expectedProvider)) {
+    return new CrossAccountProviderSwitchError();
+  }
+  return new Error(PROVIDER_SWITCH_FAILED_MESSAGE);
+}
+
+async function assertActualThreadProviderForSubmission(
+  client: CodexJsonRpcClient,
+  threadId: string | null,
+  context?: ThreadContextDefaults | null,
+): Promise<void> {
+  const expectedProvider = context?.modelProvider?.trim() ?? "";
+  if (!threadId || !expectedProvider) return;
+  const result = await readThread(client, threadId, false);
+  if (!result.thread) return;
+  assertThreadProviderSwitchApplied(threadId, { thread: result.thread }, context);
 }
 
 export function useTurnSubmission({
@@ -112,6 +162,7 @@ export function useTurnSubmission({
   input,
   onRequestGoalReplace,
   rememberLatestCollaborationMode,
+  restartRuntimeForProviderSwitch,
   resetComposerSelectionAfterCreatedThread,
   setActiveComposerMode,
   setComposerAttachments,
@@ -119,7 +170,6 @@ export function useTurnSubmission({
   threadContextDefaults,
   threadIds,
   workspace,
-  defaultCwd,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
   const { client, dispatch } = useServices();
   const { formatMessage } = useHiCodexIntl();
@@ -138,6 +188,46 @@ export function useTurnSubmission({
   useEffect(() => {
     latestComposerAttachmentsRef.current = composerAttachments;
   }, [composerAttachments]);
+
+  const ensureThreadReadyForSubmission = useCallback(async (
+    input: Parameters<typeof ensureThreadReadyForTurn>[0],
+  ) => {
+    assertSupportedProviderSwitch(input.activeThread, input.context);
+    try {
+      const ready = await ensureThreadReadyForTurn(input);
+      await assertActualThreadProviderForSubmission(input.client, ready.threadId, input.context);
+      return ready;
+    } catch (error) {
+      if (isThreadProviderSwitchMismatchError(error)
+        && isCrossAccountProviderSwitch(error.actualProvider, error.expectedProvider)) {
+        throw userFacingProviderSwitchError(error);
+      }
+      if (!isThreadProviderSwitchMismatchError(error) || !restartRuntimeForProviderSwitch) {
+        throw error;
+      }
+      if (!(await restartRuntimeForProviderSwitch())) {
+        throw new Error(PROVIDER_SWITCH_FAILED_MESSAGE);
+      }
+      try {
+        const result = await resumeThread(input.client, error.threadId, input.workspace, input.context);
+        assertThreadProviderSwitchApplied(error.threadId, result, input.context);
+        await assertActualThreadProviderForSubmission(input.client, result.thread.id, input.context);
+        input.dispatch({ type: "upsertThread", thread: result.thread, select: true });
+        // Guarded shared helper: a resume response missing all context fields
+        // yields null, which must NOT wipe the global defaults.
+        dispatchThreadContextDefaultsFromRuntimeResponse(input.dispatch, result, input.context);
+        return {
+          threadId: result.thread.id,
+          source: "resumed" as const,
+        };
+      } catch (retryError) {
+        if (isThreadProviderSwitchMismatchError(retryError)) {
+          throw userFacingProviderSwitchError(retryError);
+        }
+        throw retryError;
+      }
+    }
+  }, [dispatch, restartRuntimeForProviderSwitch]);
 
   const updateQueuedFollowUps = useCallback((
     threadId: string,
@@ -170,7 +260,10 @@ export function useTurnSubmission({
   }, [threadIds]);
 
   const sendQueuedFollowUp = useCallback(async (threadId: string, message: QueuedFollowUp) => {
-    if (sendingQueuedFollowUpId.current === message.id) return;
+    // Single-flight across the whole queue (not just per-id): the drain effect
+    // re-fires on queue state changes and manual "send now" can race the
+    // in-flight send before its turn/start lands.
+    if (sendingQueuedFollowUpId.current !== null) return;
     sendingQueuedFollowUpId.current = message.id;
     updateQueuedFollowUps(threadId, (queue) => updateQueuedFollowUpStatus(queue, message.id, "sending"));
     try {
@@ -209,10 +302,21 @@ export function useTurnSubmission({
           dispatch({ type: "log", text: PLAN_MODE_UNAVAILABLE_MESSAGE, level: "warn" });
           return;
         }
-        optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
         try {
-          await startTurn(client, threadId, content, message.cwd, threadContextDefaults, turnStartOptions);
-          rememberLatestCollaborationMode(threadId, turnStartOptions);
+          const readyThread = await ensureThreadReadyForSubmission({
+            client,
+            activeThread: threadId === activeThreadId ? activeThread : null,
+            activeThreadId: threadId,
+            input: content,
+            workspace: message.cwd,
+            dispatch,
+            context: threadContextDefaults,
+          });
+          const targetThreadId = readyThread.threadId;
+          if (!targetThreadId) throw new Error("No active Codex thread");
+          optimistic = dispatchOptimisticUserMessage(dispatch, targetThreadId, content);
+          await startTurn(client, targetThreadId, content, message.cwd, threadContextDefaults, turnStartOptions);
+          rememberLatestCollaborationMode(targetThreadId, turnStartOptions);
         } catch (error) {
           if (!isThreadNotFound(error) && !isThreadNeedsResume(error)) {
             dropOptimisticUserMessage(dispatch, optimistic);
@@ -238,12 +342,17 @@ export function useTurnSubmission({
       updateQueuedFollowUps(threadId, (queue) =>
         updateQueuedFollowUpStatus(queue, message.id, "paused", formatError(error)),
       );
-      dispatch({ type: "log", text: formatError(error), level: "error" });
+      dispatch({
+        type: "log",
+        text: formatError(error),
+        level: isCrossAccountProviderSwitchError(error) ? "warn" : "error",
+      });
     } finally {
       sendingQueuedFollowUpId.current = null;
     }
   }, [
     activeModelSupportsImageInput,
+    activeThread,
     activeThreadId,
     activeThreadRunning,
     activeTurnId,
@@ -251,6 +360,7 @@ export function useTurnSubmission({
     collaborationModesForComposerMode,
     dispatch,
     ensureConnected,
+    ensureThreadReadyForSubmission,
     rememberLatestCollaborationMode,
     threadContextDefaults,
     updateQueuedFollowUps,
@@ -278,12 +388,9 @@ export function useTurnSubmission({
     if (composerGoalMode) {
       const objective = draftInput.trim();
       if (!objective) return;
-      if (!activeThreadId) {
-        dispatch({ type: "log", text: "Select or start a thread before setting a goal.", level: "warn" });
-        return;
-      }
       // codex composer.threadGoal.replaceConfirmation — replacing an existing goal
-      // prompts for confirmation first; the host owns the dialog + the actual set.
+      // (only possible on an existing thread) prompts for confirmation first; the
+      // host owns the dialog + the actual set.
       if (activeThreadGoal && onRequestGoalReplace) {
         if (shouldClearDraft) {
           clearComposerDraft(setInput, setComposerAttachments, latestInputRef, latestComposerAttachmentsRef);
@@ -296,6 +403,23 @@ export function useTurnSubmission({
       // the typed objective so the user can retry without re-typing — only the
       // success path clears the draft and turns the goal toggle off.
       if (!(await ensureConnected())) return;
+      // codex composer goal mode sets the goal on the ACTIVE thread. HiCodex does
+      // NOT spin up a brand-new thread (and its generated projectless `new-chat`
+      // working directory) just to set a goal: the app-server's thread/goal/set is
+      // gated on the backend `Goals` feature, so creating a thread first would
+      // strand an empty `new-chat` thread whenever that feature is disabled. Require
+      // a real conversation and let the existing-thread set surface any backend error.
+      if (!activeThreadId) {
+        dispatch({
+          type: "log",
+          text: formatMessage({
+            id: "composer.threadGoal.requiresThread",
+            defaultMessage: "Select or start a thread before setting a goal.",
+          }),
+          level: "warn",
+        });
+        return;
+      }
       try {
         const response = await client.request<ThreadGoalSetResponse>(
           "thread/goal/set",
@@ -350,7 +474,7 @@ export function useTurnSubmission({
       // resulting cwd/context through both creation and the first turn.
       let turnWorkspace = workspace;
       let turnContext = threadContextDefaults;
-      if (creatingInitialThread && isTauriRuntime() && isProjectlessWorkspace(workspace, defaultCwd)) {
+      if (creatingInitialThread && isTauriRuntime() && isProjectlessWorkspace(workspace)) {
         try {
           const projectless = await createProjectlessThreadCwd({ prompt: draftInput });
           turnWorkspace = projectless.cwd;
@@ -367,16 +491,19 @@ export function useTurnSubmission({
         }
       }
       if (creatingInitialThread) setStartingConversation(true);
-      const readyThread = await ensureThreadReadyForTurn({
-        client,
-        activeThread,
-        activeThreadId: selectedThreadId,
-        input: content,
-        workspace: turnWorkspace,
-        dispatch,
-        context: turnContext,
-        threadCreationOptions: { includeDynamicTools: includeImageDynamicTool },
-      });
+      const steeringActiveTurn = Boolean(activeTurnId && activeThreadRunning);
+      const readyThread = shouldQueueFollowUp && selectedThreadId
+        ? { threadId: selectedThreadId, source: "selected" as const }
+        : await ensureThreadReadyForSubmission({
+            client,
+            activeThread,
+            activeThreadId: selectedThreadId,
+            input: content,
+            workspace: turnWorkspace,
+            dispatch,
+            context: steeringActiveTurn ? null : turnContext,
+            threadCreationOptions: { includeDynamicTools: includeImageDynamicTool },
+          });
       const threadId = readyThread.threadId;
       if (!threadId) throw new Error("No active Codex thread");
       if (shouldQueueFollowUp) {
@@ -493,7 +620,11 @@ export function useTurnSubmission({
         }
       }
     } catch (error) {
-      dispatch({ type: "log", text: formatError(error), level: "error" });
+      dispatch({
+        type: "log",
+        text: formatError(error),
+        level: isCrossAccountProviderSwitchError(error) ? "warn" : "error",
+      });
     } finally {
       if (!activeThreadId) setStartingConversation(false);
     }
@@ -513,9 +644,9 @@ export function useTurnSubmission({
     composerSubmitState.isQueueingEnabled,
     composerSubmitState.submitBlockReason,
     composerSubmitState.submitButtonMode,
-    defaultCwd,
     dispatch,
     ensureConnected,
+    ensureThreadReadyForSubmission,
     formatMessage,
     includeImageDynamicTool,
     onRequestGoalReplace,

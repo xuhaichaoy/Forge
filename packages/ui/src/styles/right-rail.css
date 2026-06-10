@@ -225,7 +225,7 @@
   background: transparent;
   color: inherit;
   text-align: left;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   cursor: pointer;
 }
 
@@ -275,7 +275,7 @@
   padding: 2px 8px;
   background: var(--hc-surface-hover);
   color: #4b4e49;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   line-height: 1.4;
 }

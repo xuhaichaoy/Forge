@@ -13,6 +13,10 @@ export const HICODEX_DESKTOP_CONFIG_KEYS = {
   // section 4). HiCodex namespaces it under desktop.hicodex.* for parity with
   // appearanceTheme.
   appearanceCodeFontSize: desktopHiCodexKey("appearance", "codeFontSize"),
+  // CODEX-REF: settings.general.appearance.sansFontSize.row ("UI font size") —
+  // Codex Desktop persists the whole-UI base font size; HiCodex stores it under
+  // the same desktop.hicodex.* namespace and derives `--hc-ui-font-scale` from it.
+  appearanceUiFontSize: desktopHiCodexKey("appearance", "sansFontSize"),
   // CODEX-REF: settings.general.appearance.reducedMotion.label — Codex Desktop
   // exposes a 3-way toggle (system / on / off). HiCodex stores the same triple.
   appearanceReducedMotion: desktopHiCodexKey("appearance", "reducedMotion"),
@@ -21,8 +25,14 @@ export const HICODEX_DESKTOP_CONFIG_KEYS = {
   imageGeneration: desktopHiCodexKey("imageGeneration"),
   locale: desktopHiCodexKey("locale"),
   notificationPreferences: desktopHiCodexKey("notificationPreferences"),
+  // CODEX-REF: composer-*.js setModelAndReasoningEffort — the picked effort
+  // persists alongside selectedModelKey (HiCodex stores it as its own key).
+  reasoningEffortOverride: desktopHiCodexKey("reasoningEffortOverride"),
   rightRailPinned: desktopHiCodexKey("rightRail", "isPinned"),
   selectedModelKey: desktopHiCodexKey("selectedModelKey"),
+  // codex `k(!0)` full-access confirmation memory (composer permissions dropdown).
+  skipFullAccessConfirm: desktopHiCodexKey("permissions", "skipFullAccessConfirm"),
+  teamServiceAuth: desktopHiCodexKey("teamService", "auth"),
   yuxiConnection: desktopHiCodexKey("yuxi", "connection"),
 } as const;
 

@@ -25,6 +25,24 @@ export function stringField(value: unknown, key: string): string {
 }
 
 /*
+ * Canonical record guard for defensive payload parsing. Arrays are rejected:
+ * every `record["key"]` consumer wants a keyed object, and an array slipping
+ * through reads as `undefined` everywhere. The state layer still carries
+ * older private variants with diverging array semantics — prefer this export
+ * in new code instead of minting another local copy.
+ */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `isRecord` as an extractor: the keyed-object field at `key`, or null. */
+export function objectRecord(value: unknown, key: string): Record<string, unknown> | null {
+  if (!isRecord(value)) return null;
+  const field = value[key];
+  return isRecord(field) ? field : null;
+}
+
+/*
  * ANSI CSI / SGR escape sequences emitted by Rust `tracing-subscriber` when
  * the codex app-server writes to a TTY-like pipe (`\x1b[31m` red, `\x1b[2m`
  * dim, `\x1b[3m` italic, `\x1b[0m` reset, `\x1b[2J` clear screen, …).

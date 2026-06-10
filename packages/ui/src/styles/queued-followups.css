@@ -89,7 +89,7 @@
   align-items: flex-start;
   gap: 6px;
   color: #60635e;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
 }
 
@@ -105,7 +105,7 @@
   flex: 0 0 auto;
   margin-top: 1px;
   color: #7c7f77;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-queued-followup-warning {
@@ -118,7 +118,7 @@
 .hc-queued-followup-error {
   grid-column: 2 / -1;
   color: #963d2f;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
 }
 
@@ -151,7 +151,7 @@
   color: #5f625d;
   cursor: pointer;
   padding: 0 6px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-queued-followup-actions button:hover {

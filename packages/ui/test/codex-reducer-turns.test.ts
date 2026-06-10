@@ -29,6 +29,8 @@ export default function runCodexReducerTurnsTests(): void {
   repositionsExplicitWorkedForItemsFromThreadSnapshots();
   startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage();
   upsertsExistingThreadWithoutMovingItToTheTop();
+  renameThreadPatchesNameWithoutTouchingOtherState();
+  streamingDeltaFastPathMatchesFullProjection();
   upsertingRunningThreadSnapshotPreservesStreamingItems();
   appendsStreamingDeltasToAgentReasoningAndCommandItems();
   commandExecutionTerminalInteractionParsesStdinIntoCommandActions();
@@ -423,6 +425,97 @@ function upsertsExistingThreadWithoutMovingItToTheTop(): void {
     "selecting an existing thread should not reorder the sidebar list",
   );
   assertEqual(next.activeThreadId, "thread-selected", "upsertThread should still select the requested thread");
+}
+
+function renameThreadPatchesNameWithoutTouchingOtherState(): void {
+  const concurrentlyUpdated = { ...threadWithTurns("thread-renamed", []), status: { type: "active", activeFlags: [] } as Thread["status"] };
+  const state = {
+    ...initialCodexUiState,
+    threads: [
+      threadWithTurns("thread-first", []),
+      concurrentlyUpdated,
+    ],
+    activeThreadId: "thread-first",
+  };
+
+  const next = codexUiReducer(state, {
+    type: "renameThread",
+    threadId: "thread-renamed",
+    name: "Fresh name",
+  });
+
+  assertDeepEqual(
+    next.threads.map((thread) => thread.id),
+    ["thread-first", "thread-renamed"],
+    "renameThread should not reorder the sidebar list",
+  );
+  assertEqual(next.threads[1]?.name, "Fresh name", "renameThread should patch the thread name");
+  assertDeepEqual(
+    next.threads[1]?.status,
+    { type: "active", activeFlags: [] },
+    "renameThread must not roll back fields that changed while the rename RPC was in flight",
+  );
+  assertEqual(next.activeThreadId, "thread-first", "renameThread should not change the selection");
+  assertEqual(
+    codexUiReducer(state, { type: "renameThread", threadId: "thread-missing", name: "x" }).threads[1]?.name,
+    state.threads[1]?.name,
+    "renameThread for an unknown thread id should be a no-op on existing threads",
+  );
+}
+
+/*
+ * Streaming text deltas skip the goal/hook projection pipeline (a per-token
+ * full-transcript pass) once the item is created. This pins the safety
+ * invariant: forcing the full pipeline afterwards must change nothing.
+ */
+function streamingDeltaFastPathMatchesFullProjection(): void {
+  let state = codexUiReducer(initialCodexUiState, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-stream", [
+      { id: "turn-1", status: "inProgress", items: [userMessage("user-1", "Pursue the goal")] },
+    ]),
+  });
+  state = reduceNotification(state, {
+    method: "thread/goal/updated",
+    params: {
+      threadId: "thread-stream",
+      turnId: "turn-1",
+      goal: goalFixture({ threadId: "thread-stream", objective: "Stream safely" }),
+    },
+  });
+  // First delta creates the item → full projection path stamps it.
+  state = reduceNotification(state, {
+    method: "item/agentMessage/delta",
+    params: { threadId: "thread-stream", turnId: "turn-1", itemId: "agent-1", delta: "Hello" },
+  });
+  // Subsequent deltas take the projection-reuse fast path.
+  state = reduceNotification(state, {
+    method: "item/agentMessage/delta",
+    params: { threadId: "thread-stream", turnId: "turn-1", itemId: "agent-1", delta: ", world" },
+  });
+
+  const assistant = itemById(state, "thread-stream", "agent-1") as Record<string, unknown>;
+  assertEqual(assistant.text, "Hello, world", "deltas should accumulate text on the fast path");
+  const user = itemById(state, "thread-stream", "user-1") as Record<string, unknown>;
+  assertEqual(
+    (user._threadGoal as Record<string, unknown> | undefined)?.objective,
+    "Stream safely",
+    "goal projection stamps must survive the fast path",
+  );
+
+  const reprojected = reduceNotification(state, {
+    method: "thread/goal/updated",
+    params: {
+      threadId: "thread-stream",
+      turnId: "turn-1",
+      goal: goalFixture({ threadId: "thread-stream", objective: "Stream safely" }),
+    },
+  });
+  assertDeepEqual(
+    items(reprojected, "thread-stream"),
+    items(state, "thread-stream"),
+    "forcing the full projection after streamed deltas must be a no-op (fast path skipped nothing)",
+  );
 }
 
 function upsertingRunningThreadSnapshotPreservesStreamingItems(): void {

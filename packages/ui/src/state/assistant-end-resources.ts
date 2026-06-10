@@ -4,6 +4,7 @@ import type {
   ThreadItem,
 } from "./render-group-types";
 import { filePathsFromItem, itemType } from "./thread-item-fields";
+import { isProjectlessThreadCwd } from "./thread-workflow";
 
 interface AssistantEndResourcesInput {
   items: ThreadItem[];
@@ -42,15 +43,33 @@ export function assistantEndResourcesForTurn(input: AssistantEndResourcesInput):
   const assistantText = input.assistantText ?? "";
   const resources: AssistantEndResource[] = [];
 
+  /*
+   * In a PROJECTLESS thread (a "new chat" with no real workspace — its
+   * ~/Documents/Codex/<date>/new-chat-N cwd is a generated slug dir, not a
+   * codebase), a *cited* file is not a local workspace file: it's the source
+   * document a tool (e.g. the Yuxi knowledge-base search) read. Rendering it as
+   * a local-file end-resource card resolves to `cwd/<basename>`, which does not
+   * exist → "无法加载此预览 / file does not exist" (reported KB-search bug). So we
+   * drop cited FILE resources and bare linked filenames here; EDITED files stay
+   * (apply_patch really created them under the projectless cwd), as do explicit
+   * local artifact links, web resources, and Drive resources.
+   * Real workspaces still require cited / linked assistant file references to
+   * carry path context; a bare `source.docx` from a KB result is provenance, not
+   * proof that `cwd/source.docx` exists.
+   */
+  const projectless = isProjectlessThreadCwd(input.cwd ?? null);
+
   for (const path of editedFilePaths(input.items)) {
     if (path && isDirectEndResourceFilePath(path)) {
       resources.push({ type: "file", path });
     }
   }
 
-  for (const path of referencedFileCitationPaths(assistantText)) {
-    if (isReferencedEndResourceFilePath(path)) {
-      resources.push({ type: "file", path });
+  if (!projectless) {
+    for (const path of referencedFileCitationPaths(assistantText)) {
+      if (isReferencedEndResourceFilePath(path) && hasLocalPathContext(path)) {
+        resources.push({ type: "file", path });
+      }
     }
   }
 
@@ -61,7 +80,9 @@ export function assistantEndResourcesForTurn(input: AssistantEndResourcesInput):
       continue;
     }
     const path = filePathFromMarkdownDestination(link.destination);
-    if (path && isLinkedEndResourceFilePath(path)) {
+    if (!path) continue;
+    const hasPathContext = projectless ? hasExplicitLocalPathContext(path) : hasLocalPathContext(path);
+    if (hasPathContext && isLinkedEndResourceFilePath(path)) {
       resources.push({ type: "file", path });
     }
   }
@@ -124,6 +145,19 @@ function isReferencedEndResourceFilePath(path: string): boolean {
 function isDiffCoverageFilePath(path: string): boolean {
   const extension = pathExtension(path);
   return extension ? DIFF_COVERAGE_FILE_EXTENSIONS.has(extension) : false;
+}
+
+function hasLocalPathContext(path: string): boolean {
+  const normalized = stripLineSuffix(path).replaceAll("\\", "/");
+  if (!normalized || isHttpUrl(normalized)) return false;
+  return normalized.startsWith("/") || normalized.startsWith("./") || normalized.startsWith("../") || normalized.includes("/");
+}
+
+function hasExplicitLocalPathContext(path: string | null): boolean {
+  if (!path) return false;
+  const normalized = stripLineSuffix(path).replaceAll("\\", "/");
+  if (!normalized || isHttpUrl(normalized)) return false;
+  return normalized.startsWith("/") || normalized.startsWith("./") || normalized.startsWith("../");
 }
 
 function filePathFromMarkdownDestination(destination: string): string | null {

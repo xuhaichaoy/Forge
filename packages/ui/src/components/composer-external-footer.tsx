@@ -21,7 +21,7 @@
 // or similar entries land in `state/commands.ts`, then thread tooltips
 // through `descriptorAcceleratorLabel(commandId)` (already exported by
 // `state/commands.ts`).
-import { ChevronDown, Folder, Hand, Search, Settings, ShieldAlert, ShieldCheck, ShieldUser, type LucideIcon } from "lucide-react";
+import { ChevronDown, Folder, FolderX, Hand, Search, Settings, ShieldAlert, ShieldCheck, ShieldUser, type LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -40,6 +40,7 @@ import {
   type ComposerWorkMode,
   type WorktreeModeOption,
 } from "../state/worktrees";
+import { isProjectlessWorkspace } from "../state/thread-workflow";
 import { WorktreeModeMenuItems } from "./worktree-mode-menu";
 // codex: composer-footer-branch-switcher-*.js — chip + dropdown.
 import { ComposerFooterBranchSwitcher } from "./composer-footer-branch-switcher";
@@ -61,6 +62,11 @@ export interface ComposerExternalFooterProps {
   workspaceRoots?: ComposerWorkspaceRootOption[];
   onWorkspaceRootSelected?: (root: string) => void | Promise<void>;
   onUseExistingFolder?: () => void | Promise<void>;
+  /**
+   * codex `composer.localCwdDropdown.clearProject` ("Don't work in a project"):
+   * drop the active project → projectless. Only shown when a project is selected.
+   */
+  onSelectProjectless?: () => void | Promise<void>;
   onWorkModeChange?: (mode: ComposerWorkMode) => void;
   /**
    * codex: composer-footer-branch-switcher-*.js — fired after a
@@ -89,6 +95,7 @@ export function ComposerExternalFooter({
   workspaceRoots = [],
   onWorkspaceRootSelected,
   onUseExistingFolder,
+  onSelectProjectless,
   onWorkModeChange,
   onBranchSwitched,
   onBranchSwitchError,
@@ -112,15 +119,23 @@ export function ComposerExternalFooter({
   // (`de` workspace-root dropdown), not a bare "+". Label it with the active root's
   // name (matched option label, else the cwd basename, else "Project").
   const projectLabel = useMemo(() => {
+    // codex `composer.localCwdDropdown.homeWorkInProject`: a projectless workspace —
+    // empty, the `~` sentinel, OR a generated `~/Documents/Codex` cwd that got synced
+    // in from an active projectless thread — shows the "Work in a project" chip (a
+    // call-to-action to pick a project), NOT a folder name and NOT "Chats" (the
+    // composer uses project-language; only the SIDEBAR groups projectless threads
+    // under "Chats"). A real path (even $HOME) keeps its folder name.
+    if (isProjectlessWorkspace(cwd)) {
+      return formatMessage({ id: "composer.localCwdDropdown.homeWorkInProject", defaultMessage: "Work in a project" });
+    }
+    const normalizedCwd = (cwd ?? "").trim();
     const matched = rootOptions.find((option) => option.root === cwd);
     if (matched) return matched.label;
-    if (cwd) {
-      const trimmed = cwd.replace(/[\\/]+$/u, "");
-      const base = trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
-      if (base.length > 0) return base;
-    }
+    const trimmed = normalizedCwd.replace(/[\\/]+$/u, "");
+    const base = trimmed.slice(Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\")) + 1);
+    if (base.length > 0) return base;
     return "Project";
-  }, [cwd, rootOptions]);
+  }, [cwd, rootOptions, formatMessage]);
   const resolvedWorkModeOptions = useMemo(
     () => workModeOptions ?? projectWorktreeModeOptions({ mode: workMode, formatMessage }),
     [workMode, workModeOptions, formatMessage],
@@ -143,6 +158,17 @@ export function ComposerExternalFooter({
     setProjectSearch("");
     void onUseExistingFolder?.();
   }
+
+  function selectProjectless() {
+    setProjectMenuOpen(false);
+    setProjectSearch("");
+    void onSelectProjectless?.();
+  }
+
+  // codex: the "Don't work in a project" row only appears when a real project IS
+  // selected (you can't "clear" an already-projectless workspace — empty, `~`, or a
+  // generated ~/Documents/Codex cwd all count as projectless).
+  const projectSelected = !isProjectlessWorkspace(cwd);
 
   return (
     // CODEX-REF: composer-*.js — the composer footer is a
@@ -231,6 +257,20 @@ export function ComposerExternalFooter({
                     >
                       <Folder size={13} />
                       <span>{formatMessage({ id: "projectSetup.addProjectMenu.useExistingFolder", defaultMessage: "Use an existing folder" })}</span>
+                    </button>
+                  </>
+                )}
+                {onSelectProjectless && projectSelected && (
+                  <>
+                    <div className="hc-thread-menu-separator" />
+                    <button
+                      type="button"
+                      className="hc-thread-menu-item"
+                      role="menuitem"
+                      onClick={selectProjectless}
+                    >
+                      <FolderX size={13} />
+                      <span>{formatMessage({ id: "composer.localCwdDropdown.clearProject", defaultMessage: "Don't work in a project" })}</span>
                     </button>
                   </>
                 )}
@@ -390,7 +430,14 @@ export function ComposerSettingsChips({
           <ChevronDown size={14} />
         </button>
       </Tooltip>
-      {intelligenceLabel && (
+      {/*
+       * The model chip is the ONLY entry point to the model picker, so it must
+       * stay visible even when the current model name is unknown (an active
+       * thread without an explicit re-pick keeps its birth model, which the
+       * client does not track) — fall back to a generic label instead of
+       * hiding the trigger.
+       */}
+      {(intelligenceLabel || onOpenModelPicker) && (
         <Tooltip content={onOpenModelPicker ? formatMessage({ id: "composer.intelligenceDropdown.tooltip", defaultMessage: "Select model" }) : intelligenceLabel}>
           <button
             type="button"
@@ -400,7 +447,9 @@ export function ComposerSettingsChips({
             onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
           >
             {/* Desktop uses one intelligence trigger. HiCodex has a separate reasoning chip, so this label stays model-only. */}
-            <span className="hc-composer-footer-chip-label">{intelligenceLabel}</span>
+            <span className="hc-composer-footer-chip-label">
+              {intelligenceLabel || formatMessage({ id: "composer.intelligenceDropdown.fallbackLabel", defaultMessage: "模型" })}
+            </span>
             <ChevronDown size={14} />
           </button>
         </Tooltip>
@@ -568,7 +617,13 @@ export function formatIntelligenceFooterLabel({
 }): string {
   const trimmedModel = model?.trim() ?? "";
   if (!trimmedModel) return "";
-  return trimmedModel.replace(/^gpt[-_]/iu, "");
+  // Team gateway model ids are `provider_id:model_id`; the chip shows the
+  // model part (the provider context lives in the picker's section header).
+  const colonIndex = trimmedModel.indexOf(":");
+  const displayModel = colonIndex > 0 && colonIndex < trimmedModel.length - 1
+    ? trimmedModel.slice(colonIndex + 1)
+    : trimmedModel;
+  return displayModel.replace(/^gpt[-_]/iu, "");
 }
 
 export function formatPermissionsFooterLabel(input: {

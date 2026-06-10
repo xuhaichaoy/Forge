@@ -283,7 +283,6 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
     },
     threadId: "thread-image",
     onForkTurn: () => undefined,
-    onSubmitTurnFeedback: () => undefined,
   }));
 
   assertEqual(

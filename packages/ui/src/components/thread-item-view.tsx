@@ -23,20 +23,17 @@ import {
   ToolActivityDetail,
   toolActivityDetailViewModel,
 } from "./tool-activity-detail";
-import type { SubmitTurnRatingEvent } from "./turn-rating-controls";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
 export function ThreadItemView({
   onMcpAppHostCall,
   onReadMcpResource,
-  onSubmitTurnFeedback,
   threadId = null,
   unit,
 }: {
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   threadId?: string | null;
   unit: ThreadItemUnit;
 }) {
@@ -55,7 +52,7 @@ export function ThreadItemView({
   if (type === "mcp-server-elicitation") return <McpServerElicitationThreadItemView unit={unit} />;
   if (type === "todo-list") return <TodoListThreadItemView unit={unit} />;
   if (type === "proposed-plan") {
-    return <PlanSummaryCard unit={unit} threadId={threadId} onSubmitTurnFeedback={onSubmitTurnFeedback} />;
+    return <PlanSummaryCard unit={unit} threadId={threadId} />;
   }
   /*
    * Plan ThreadItem 独立渲染。
@@ -67,7 +64,7 @@ export function ThreadItemView({
    * 不渲染为 standalone row：hook 由 user-message hookStats 字段承担，reasoning 仅
    * thinking-placeholder 渲染，其他由 event-projection 处理为 markdown event 或丢弃。
    */
-  if (type === "plan") return <PlanSummaryCard unit={unit} threadId={threadId} onSubmitTurnFeedback={onSubmitTurnFeedback} />;
+  if (type === "plan") return <PlanSummaryCard unit={unit} threadId={threadId} />;
   if (type === "automatic-approval-review") return <AutoReviewThreadItemView unit={unit} />;
   return <DynamicToolCallThreadItemView unit={unit} />;
 }

@@ -117,7 +117,7 @@
 .hc-above-composer-suggestion-title {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   line-height: 18px;
   text-overflow: ellipsis;
@@ -127,7 +127,7 @@
 .hc-above-composer-suggestion-meta {
   display: none;
   color: var(--hc-text-secondary);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1;
   white-space: nowrap;
 }
@@ -156,7 +156,7 @@
   border-radius: 8px;
   background: var(--hc-surface-soft);
   color: var(--hc-text-primary);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   line-height: 16px;
 }
@@ -206,7 +206,7 @@
   background: var(--hc-surface-soft);
   color: var(--hc-text-primary);
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 560;
   line-height: 16px;
 }
@@ -342,7 +342,7 @@
   background: rgba(255, 253, 249, 0.96);
   box-shadow: 0 8px 22px rgba(31, 41, 35, 0.14);
   color: #43514a;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   line-height: 18px;
   padding: 4px 12px;
@@ -362,7 +362,7 @@
   border: 1px solid rgba(67, 81, 74, 0.34);
   border-radius: 6px;
   color: #303a35;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   line-height: 18px;
   padding: 0 6px;
@@ -374,7 +374,7 @@
   max-height: 25dvh;
   overflow-y: auto;
   color: #22262b;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
 }
 
@@ -630,7 +630,7 @@
   border-radius: 999px;
   color: #4f625d;
   background: transparent;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   padding: 0 8px;
   cursor: pointer;
@@ -659,7 +659,7 @@
   gap: 5px;
   padding: 0 24px 0;
   color: #6f716b;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 /*
@@ -778,7 +778,7 @@
   background: transparent;
   color: inherit;
   padding: 0 8px; /* Codex: size:composer = `px-2` = 8px */
-  font-size: 12px; /* Codex: button size:composer = text-sm = 12px (don't inherit 13px from footer) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* Codex: button size:composer = text-sm = 12px (don't inherit 13px from footer) */
   cursor: pointer;
 }
 
@@ -842,7 +842,7 @@
   outline: 0;
   background: transparent;
   color: #27313d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-project-list {
@@ -855,7 +855,7 @@
 .hc-composer-project-menu-title {
   padding: 4px 8px 3px;
   color: #7c7f78;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   line-height: 16px;
   text-transform: uppercase;
@@ -864,7 +864,7 @@
 .hc-composer-project-empty {
   padding: 8px;
   color: #7c7f78;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-footer-model {
@@ -874,6 +874,80 @@
 
 .hc-composer-footer-permissions {
   max-width: min(190px, 22vw);
+}
+
+/*
+ * CODEX-REF: composer-B7sGHJVq.js — composer permissions dropdown (`so`
+ * DropdownMenu). Reuses the .hc-thread-menu popover surface (incl. its dark
+ * overrides); the menu is portal-positioned via an inline position:fixed style,
+ * so reset the surface's absolute anchoring like .hc-composer-project-menu.
+ * Each row overrides the single-line .hc-thread-menu-item into Codex's two-line
+ * `oo.Item`: icon-sm + (label over muted SubText) + a right-edge check.
+ * Text colors use the theme-aware --hc-text-* tokens (no separate dark rules).
+ */
+.hc-composer-permissions-menu {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  gap: 1px;
+}
+
+.hc-composer-permissions-title {
+  padding: 6px 8px 5px;
+  color: var(--hc-text-secondary);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+}
+
+.hc-composer-permissions-item {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+}
+
+.hc-composer-permissions-item-icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--hc-text-primary);
+  opacity: 0.7;
+}
+
+.hc-composer-permissions-item:hover .hc-composer-permissions-item-icon {
+  opacity: 1;
+}
+
+.hc-composer-permissions-item-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.hc-composer-permissions-item-label {
+  color: var(--hc-text-primary);
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  font-weight: 550;
+  line-height: 18px;
+}
+
+.hc-composer-permissions-item-subtext {
+  color: var(--hc-text-secondary);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+}
+
+.hc-composer-permissions-item-check {
+  flex: none;
+  margin-top: 2px;
+  color: var(--hc-text-secondary);
+}
+
+/* codex zm — full-access confirm reuses the shared dialog panel; cap its width. */
+.hc-full-access-confirm {
+  max-width: 420px;
 }
 
 .hc-composer-footer-branch {
@@ -925,7 +999,7 @@
   outline: 0;
   background: transparent;
   color: #27313d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-branch-list {
@@ -938,7 +1012,7 @@
 .hc-composer-branch-empty {
   padding: 8px;
   color: #7c7f78;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-branch-error {
@@ -947,7 +1021,7 @@
 
 .hc-composer-branch-item {
   /* Inherits .hc-thread-menu-item base styles. */
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-branch-item[data-current="true"] {
@@ -965,14 +1039,14 @@
 .hc-composer-branch-item-suffix {
   margin-left: auto;
   color: #7c7f78;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-branch-error-row {
   padding: 6px 8px;
   border-top: 1px solid #e6e2d6;
   color: #b1431d;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
 }
 
@@ -985,7 +1059,7 @@
   border-radius: 999px;
   background: #ece9df;
   color: #5d6258;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   letter-spacing: 0.02em;
   text-transform: none;
@@ -1004,7 +1078,7 @@
 .hc-branch-picker-section-heading {
   padding: 6px 8px 2px;
   color: #7c7f78;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1026,7 +1100,7 @@
   border-radius: 6px;
   background: transparent;
   color: #27313d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   cursor: pointer;
   transition: background 120ms ease;
@@ -1055,7 +1129,7 @@
   border-radius: 6px;
   background: #fbfaf5;
   color: #27313d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   outline: none;
 }
 
@@ -1116,7 +1190,7 @@
   top: -10000px;
   visibility: hidden;
   white-space: pre;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
   pointer-events: none;
 }
@@ -1152,13 +1226,13 @@
   background: #fffdfa;
   color: #2f3a37;
   padding: 2px 4px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-tool-detail-prose {
   min-width: 0;
   color: #27313d;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.55;
   white-space: pre-wrap;
 }
@@ -1211,7 +1285,7 @@
   min-width: auto;
   flex: 0 0 auto;
   color: #767b74;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0;
   line-height: 16px;
@@ -1272,7 +1346,7 @@
   border-bottom: 1px solid #e3dfd2;
   padding: 8px 10px;
   color: #30352f;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -1333,7 +1407,7 @@
 
 .hc-composer-menu-section-label {
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   line-height: 16px;
   padding: 3px 8px 5px;
@@ -1345,7 +1419,7 @@
   align-items: center;
   gap: 6px;
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   padding: 7px 8px;
 }
 
@@ -1387,7 +1461,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-menu-row small {
@@ -1397,12 +1471,12 @@
   white-space: nowrap;
   margin-top: 2px;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-composer-menu-row em {
   color: #6f716b;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-style: normal;
   text-transform: uppercase;
 }
@@ -1483,13 +1557,13 @@
 }
 
 .hc-attachment-input-heading strong {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-attachment-input-heading small,
 .hc-attachment-input-error {
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-attachment-input-heading button {
@@ -1516,7 +1590,7 @@
   background: #fffdfa;
   padding: 8px 9px;
   color: #20262d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-attachment-input-panel textarea {
@@ -1559,7 +1633,7 @@
  */
 .hc-composer-menu-row em.hc-command-args {
   flex: 0 0 auto;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   text-transform: none;
   opacity: 0.8;
 }
@@ -1668,7 +1742,7 @@
   justify-content: space-between;
   gap: 8px;
   padding-block: 2px;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 
@@ -1764,7 +1838,7 @@
 .hc-thread-goal-banner-text-action {
   min-height: 22px;
   padding: 0 7px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 22px;
   white-space: nowrap;
 }
@@ -1796,7 +1870,7 @@
   overflow: auto;
   padding: 0 12px 8px 32px;
   color: var(--hc-text-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
   white-space: pre-wrap;
 }
@@ -1807,13 +1881,13 @@
 
 .hc-thread-goal-edit-error {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-danger, #b91c1c);
 }
 
 .hc-thread-goal-resume-objective {
   margin: 8px 0 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
   white-space: pre-wrap;
 }
@@ -1841,7 +1915,7 @@
   padding: 0 8px;
   border-radius: 999px;
   color: var(--hc-text-primary);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
   cursor: pointer;
 }
@@ -1898,7 +1972,7 @@
   color: var(--hc-text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
   white-space: nowrap;
 }
@@ -1960,7 +2034,7 @@
   border-radius: 12px 12px 0 0;
   background: var(--hc-surface-composer);
   color: var(--hc-text-primary);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   text-wrap: pretty;
 }
 
@@ -1993,7 +2067,7 @@
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 16px;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
 }
 
@@ -2078,7 +2152,7 @@
   border: 0;
   background: transparent;
   color: var(--hc-text-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1;
   cursor: pointer;
 }
@@ -2142,7 +2216,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
 }
 
@@ -2160,7 +2234,7 @@
   max-height: 30dvh;
   overflow-y: auto;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.5;
   color: var(--hc-text-secondary);
   white-space: pre-wrap;

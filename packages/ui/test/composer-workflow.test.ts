@@ -12,7 +12,6 @@ import {
   composerAttachmentPreviewSrc,
   composerAttachmentsFromPaths,
   composerFilePath,
-  composerEnterAction,
   composerPlaceholderText,
   composerSubmitTooltip,
   confirmAttachmentInput,
@@ -53,7 +52,6 @@ function assertHasIds(items: Array<{ id: string }>, ids: string[], message: stri
 }
 
 export default function runComposerWorkflowTests(): void {
-  detectsEnterComposerActions();
   projectsCodexDesktopComposerPlaceholders();
   projectsCodexDesktopComposerSubmitState();
   projectsCodexDesktopSubmitTooltips();
@@ -131,7 +129,7 @@ function projectsCodexDesktopComposerPlaceholders(): void {
       composerPlaceholderText({ hasConversation: true, goalMode: true }),
     ],
     [
-      "Ask Codex anything. @ to use plugins or mention files",
+      "Ask Forge anything. @ to use plugins or mention files",
       "Ask for follow-up changes",
       // codex: composer.placeholder.localFollowUp.locallyWithAgents drops the hyphen
       "Ask for follow up changes or @ to tag an agent",
@@ -395,54 +393,6 @@ function projectsCodexDesktopComposerSubmitState(): void {
       requestCount: 0,
     },
     "connecting composer should be disabled before runtime actions",
-  );
-}
-
-function detectsEnterComposerActions(): void {
-  assertDeepEqual(
-    composerEnterAction("send this", { key: "Enter" }),
-    { action: "send", preventDefault: true },
-    "plain Enter should send composer input",
-  );
-  assertDeepEqual(
-    composerEnterAction("line one", { key: "Enter", shiftKey: true }),
-    { action: "newline", preventDefault: false },
-    "Shift+Enter should keep multiline editing behavior",
-  );
-  assertDeepEqual(
-    composerEnterAction("line one", { key: "Enter", altKey: true }),
-    { action: "newline", preventDefault: false },
-    "Alt+Enter should keep multiline editing behavior",
-  );
-  assertDeepEqual(
-    composerEnterAction("send shortcut", { key: "Enter", metaKey: true }),
-    { action: "send", preventDefault: true },
-    "Meta+Enter should send composer input",
-  );
-  assertDeepEqual(
-    composerEnterAction("send shortcut", { key: "Enter", ctrlKey: true }),
-    { action: "send", preventDefault: true },
-    "Ctrl+Enter should send composer input",
-  );
-  assertDeepEqual(
-    composerEnterAction("ime composing", { key: "Enter", isComposing: true }),
-    { action: "none", preventDefault: false },
-    "IME composing Enter should not send",
-  );
-  assertDeepEqual(
-    composerEnterAction("ime composing", { key: "Enter", nativeEvent: { isComposing: true } }),
-    { action: "none", preventDefault: false },
-    "IME composing from nativeEvent should not send",
-  );
-  assertDeepEqual(
-    composerEnterAction("   ", { key: "Enter" }),
-    { action: "none", preventDefault: false },
-    "blank input should not send",
-  );
-  assertDeepEqual(
-    composerEnterAction("send this", { key: "a" }),
-    { action: "none", preventDefault: false },
-    "non-Enter keys should not send",
   );
 }
 

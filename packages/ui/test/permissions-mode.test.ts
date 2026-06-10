@@ -1,6 +1,7 @@
 import {
   permissionModeConfigEdits,
   permissionModeFromThreadContext,
+  permissionModeThreadSettingsPatch,
   projectPermissionModeCommandEntries,
 } from "../src/state/permissions-mode";
 
@@ -8,6 +9,7 @@ export default function runPermissionsModeTests(): void {
   derivesDesktopPermissionModesFromThreadContext();
   projectsModeRowsWithConfigWrites();
   writesGranularModeWithDesktopPolicyShape();
+  mapsModesToThreadSettingsUpdatePatch();
   disablesModesBlockedByRuntimeRequirements();
 }
 
@@ -145,6 +147,33 @@ function writesGranularModeWithDesktopPolicyShape(): void {
       },
     ],
     "granular mode should write Desktop's workspace-write granular policy shape",
+  );
+}
+
+function mapsModesToThreadSettingsUpdatePatch(): void {
+  assertDeepEqual(
+    permissionModeThreadSettingsPatch("auto"),
+    {
+      approvalPolicy: "on-request",
+      approvalsReviewer: "user",
+      sandboxPolicy: {
+        type: "workspaceWrite",
+        writableRoots: [],
+        networkAccess: false,
+        excludeTmpdirEnvVar: false,
+        excludeSlashTmp: false,
+      },
+    },
+    "composer permissions should send structured workspace-write policy through thread/settings/update",
+  );
+  assertDeepEqual(
+    permissionModeThreadSettingsPatch("full-access"),
+    {
+      approvalPolicy: "never",
+      approvalsReviewer: "user",
+      sandboxPolicy: { type: "dangerFullAccess" },
+    },
+    "full-access should send structured dangerFullAccess policy through thread/settings/update",
   );
 }
 

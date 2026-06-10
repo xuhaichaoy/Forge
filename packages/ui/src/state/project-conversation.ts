@@ -1026,16 +1026,18 @@ function assistantEndResourcesRenderUnit({
 
 function segmentCwd(segment: ThreadItem[]): string | null {
   for (const item of segment) {
-    const cwd = stringField(item, "cwd");
+    const cwd = trimmedStringField(item, "cwd");
     if (cwd) return cwd;
     const params = recordField(item, "params");
-    const paramsCwd = stringField(params, "cwd");
+    const paramsCwd = trimmedStringField(params, "cwd");
     if (paramsCwd) return paramsCwd;
   }
   return null;
 }
 
-function stringField(value: unknown, key: string): string {
+// NOT lib/format.stringField: this variant trims — renamed so the two
+// behaviors can't be conflated under one grep-able name.
+function trimmedStringField(value: unknown, key: string): string {
   if (!value || typeof value !== "object") return "";
   const raw = (value as Record<string, unknown>)[key];
   return typeof raw === "string" ? raw.trim() : "";

@@ -9,22 +9,23 @@ import {
   encodeSelection,
   formatModelDisplayName,
 } from "../model/model-settings";
+import { isCrossAccountProviderSwitch } from "../model/model-provider-switch";
 
 /*
  * Footer model picker popover (selection-only).
  *
  * Provider configuration (API key, base URL, OAuth) lives in Settings →
- * Models / Codex auth, not here. The picker only changes the active
- * (provider, model) pair for the next new chat. DEFAULT_PROVIDERS is a
- * fallback/catalog seed; the app should pass runtime providers when available.
+ * Models / Codex auth, not here. The picker changes the active (provider,
+ * model) pair. DEFAULT_PROVIDERS is a fallback/catalog seed; the app should
+ * pass runtime providers when available.
  *
  * Codex protocol pipeline:
  *   selection → effectiveThreadContextDefaults → ThreadStartParams.model /
  *   .modelProvider → codex-rs uses the [model_providers.X] block in config.toml
  *
- * Active chats keep their model (protocol locks model per thread). To switch
- * a running chat, the user must fork it (thread/fork accepts the same
- * model/modelProvider override).
+ * Existing running turns keep the model/provider they started with. On the next
+ * idle send, a provider change stays in the same conversation by cold-resuming
+ * the selected thread with ThreadResumeParams.modelProvider before turn/start.
  */
 export interface ModelPickerProvider {
   /** Matches `[model_providers.X]` key in config.toml */
@@ -37,6 +38,12 @@ export interface ModelPickerProvider {
   baseUrl: string;
   /** List of model slugs available under this provider */
   models: string[];
+  /**
+   * Optional display names keyed by model slug — e.g. the team gateway's
+   * canonical ids are `provider_id:model_id` and advertise a friendlier
+   * `display_name` alongside.
+   */
+  modelLabels?: Record<string, string>;
   /**
    * `"oauth"` = provider uses ChatGPT subscription via `codex login` flow,
    * no API key required (e.g. OpenAI 官方);
@@ -121,12 +128,19 @@ export function resolveEffectiveModelSelection(args: {
   intended: ModelSelectionRef | null;
   providers: readonly { id: string; models: readonly string[] }[];
   readyProviders: ReadonlySet<string>;
+  allowFallback?: boolean;
 }): ResolvedModelSelection {
-  const { intended, providers, readyProviders } = args;
+  const { intended, providers, readyProviders, allowFallback = true } = args;
   const intendedReady =
-    intended != null && intended.providerId.length > 0 && readyProviders.has(intended.providerId);
+    intended != null
+    && intended.providerId.length > 0
+    && isModelSelectionAvailable(intended, providers)
+    && readyProviders.has(intended.providerId);
   if (intendedReady) {
     return { providerId: intended!.providerId, model: intended!.model, intended, fellBack: false, noReadyProvider: false };
+  }
+  if (intended != null && !allowFallback) {
+    return { providerId: intended.providerId, model: intended.model, intended, fellBack: false, noReadyProvider: true };
   }
   const fallback = providers.find((provider) => readyProviders.has(provider.id) && provider.models.length > 0);
   if (fallback) {
@@ -143,6 +157,15 @@ export function resolveEffectiveModelSelection(args: {
   };
 }
 
+export function isModelSelectionAvailable(
+  selection: ModelSelectionRef | null,
+  providers: readonly { id: string; models: readonly string[] }[],
+): selection is ModelSelectionRef {
+  if (!selection) return false;
+  const provider = providers.find((item) => item.id === selection.providerId);
+  return Boolean(provider && provider.models.includes(selection.model));
+}
+
 export interface ModelPickerMenuProps {
   anchor: HTMLElement;
   providers: ModelPickerProvider[];
@@ -152,11 +175,27 @@ export interface ModelPickerMenuProps {
   defaultKey: string | null;
   /** Provider ids whose auth is verified (OAuth logged in OR api key configured). */
   readyProviders: ReadonlySet<string>;
+  /**
+   * Provider the active chat is bound to, if any. Subscription and API/team
+   * providers cannot be switched within one chat (different account/credit
+   * pools), so providers on the other side are locked with an explanation
+   * instead of failing at send time.
+   */
+  activeThreadProviderId?: string | null;
   onSelect: (key: string | null) => void;
   onOpenSettings: () => void;
   /** Trigger OAuth sign-in for an `authMode: "oauth"` provider. */
   onSignIn?: (providerId: string) => void | Promise<void>;
   onClose: () => void;
+}
+
+export const CROSS_ACCOUNT_PICKER_LOCK_REASON = "订阅模型和个人/团队模型不能在同一个聊天中互切，请新建聊天后选择";
+
+export function isProviderLockedForActiveThread(
+  providerId: string,
+  activeThreadProviderId: string | null | undefined,
+): boolean {
+  return isCrossAccountProviderSwitch(activeThreadProviderId, providerId);
 }
 
 const MENU_WIDTH_PX = 340;
@@ -168,13 +207,29 @@ export function ModelPickerMenu({
   selectedKey,
   defaultKey,
   readyProviders,
+  activeThreadProviderId,
   onSelect,
   onOpenSettings,
   onSignIn,
   onClose,
 }: ModelPickerMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => new Set());
+  /*
+   * Subscription sections start collapsed: mixing ChatGPT subscription with
+   * personal/team API providers is the rare case — most users live entirely
+   * on personal/team models, so the subscription block stays one click away
+   * unless it holds the current selection.
+   */
+  const [collapsedProviders, setCollapsedProviders] = useState<Set<string>>(() => {
+    const activeProviderId = decodeSelection(selectedKey ?? defaultKey)?.providerId ?? null;
+    const collapsed = new Set<string>();
+    for (const provider of providers) {
+      if (isSubscriptionProviderId(provider.id) && provider.id !== activeProviderId) {
+        collapsed.add(provider.id);
+      }
+    }
+    return collapsed;
+  });
   /*
    * Anchor the popover to the chip but clamp position so it never overflows
    * the viewport. Without clamping, the bottom-right chip + 340px popover
@@ -240,11 +295,12 @@ export function ModelPickerMenu({
         transform: "translateY(-100%)",
       }}
     >
-      <div className="hc-model-picker-menu-header">Default for new chats</div>
+      <div className="hc-model-picker-menu-header">Model</div>
       <div className="hc-model-picker-menu-providers">
         {providers.map((provider) => {
           const isCollapsed = collapsedProviders.has(provider.id);
           const isReady = readyProviders.has(provider.id);
+          const isCrossAccountLocked = isProviderLockedForActiveThread(provider.id, activeThreadProviderId);
           return (
             <section key={provider.id} className="hc-model-picker-provider">
               <button
@@ -268,6 +324,12 @@ export function ModelPickerMenu({
                 <span>{provider.label}</span>
                 <span className="hc-model-picker-provider-host">
                   {provider.host}
+                  {isCrossAccountLocked && (
+                    <span className="hc-model-picker-provider-warning" title={CROSS_ACCOUNT_PICKER_LOCK_REASON}>
+                      {" · "}
+                      需新建聊天
+                    </span>
+                  )}
                   {!isReady && (
                     <span className="hc-model-picker-provider-warning" title={
                       provider.authMode === "oauth"
@@ -314,8 +376,11 @@ export function ModelPickerMenu({
                      * login), so there is no upstream idiom to mirror — we lock
                      * the rows and steer the user to the inline Sign-in row
                      * (oauth) or Settings → Models (api key).
+                     * Cross-account rows (subscription vs API/team while a chat
+                     * is active) are locked for the same reason: picking one
+                     * could only fail later, at send time.
                      */
-                    const isLocked = !isReady;
+                    const isLocked = !isReady || isCrossAccountLocked;
                     return (
                       <li key={modelSlug} role="none">
                         <button
@@ -328,7 +393,9 @@ export function ModelPickerMenu({
                           data-locked={isLocked ? "true" : undefined}
                           title={
                             isLocked
-                              ? provider.authMode === "oauth"
+                              ? isCrossAccountLocked
+                                ? CROSS_ACCOUNT_PICKER_LOCK_REASON
+                                : provider.authMode === "oauth"
                                 ? "Sign in with ChatGPT to use this model"
                                 : "Set an API key in Settings → Models to use this model"
                               : undefined
@@ -342,7 +409,9 @@ export function ModelPickerMenu({
                           <span className="hc-model-picker-model-icon" aria-hidden>
                             <Cpu size={12} />
                           </span>
-                          <span className="hc-model-picker-model-name">{formatModelDisplayName(modelSlug)}</span>
+                          <span className="hc-model-picker-model-name">
+                            {provider.modelLabels?.[modelSlug] ?? formatModelDisplayName(modelSlug)}
+                          </span>
                           {isActive && (
                             <span className="hc-model-picker-model-check" aria-hidden>
                               <Check size={13} />
@@ -370,7 +439,7 @@ export function ModelPickerMenu({
         <span>Configure providers · API keys · sign-in</span>
       </button>
       <div className="hc-model-picker-menu-footer">
-        Active chats keep their model. To switch a running chat, fork it.
+        切换在下一轮生效，只影响当前聊天和新聊天。订阅模型与个人/团队模型互切需新建聊天。
       </div>
     </div>
   );

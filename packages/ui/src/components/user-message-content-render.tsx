@@ -42,39 +42,9 @@ export type UserMessageMarkdownRenderer = (
  *     rendered in original order so $skill / @path chips flow with the
  *     surrounding prose (mirrors the Desktop pre-wrap text div).
  *
- * `UserMessageContentView` keeps the legacy wrapper that pairs both, but
- * the live call site (`message-unit.tsx`) places the image strip OUTSIDE
+ * The live call site (`message-unit.tsx`) places the image strip OUTSIDE
  * the bubble and the text view INSIDE so the layout matches Codex.
  */
-
-export function UserMessageContentView({
-  unit,
-  onOpenFileReference,
-  renderMarkdown,
-}: {
-  unit: Extract<ConversationRenderUnit, { kind: "message" }>;
-  onOpenFileReference?: (reference: FileReference) => void;
-  renderMarkdown: UserMessageMarkdownRenderer;
-}) {
-  const hasContent = (unit.userContent?.length ?? 0) > 0;
-  if (!hasContent) {
-    return <>{renderMarkdown(unit.text, onOpenFileReference)}</>;
-  }
-  return (
-    <div className="hc-user-message-content">
-      <UserMessageAttachmentStrip
-        unit={unit}
-        onOpenFileReference={onOpenFileReference}
-        renderMarkdown={renderMarkdown}
-      />
-      <UserMessageTextContentView
-        unit={unit}
-        onOpenFileReference={onOpenFileReference}
-        renderMarkdown={renderMarkdown}
-      />
-    </div>
-  );
-}
 
 /*
  * Mirrors Codex's unified user attachment strip: file attachment pills and
@@ -86,12 +56,6 @@ export function UserMessageAttachmentStrip({
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "message" }>;
   onOpenFileReference?: (reference: FileReference) => void;
-  /*
-   * `renderMarkdown` is still accepted for the legacy
-   * `UserMessageContentView` call signature but the strip renders only
-   * structured attachment parts.
-   */
-  renderMarkdown?: UserMessageMarkdownRenderer;
 }) {
   const attachments = userMessageAttachmentParts(unit);
   if (attachments.length === 0) return null;

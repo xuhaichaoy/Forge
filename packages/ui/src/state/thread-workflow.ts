@@ -88,6 +88,14 @@ export interface ThreadCreationOptions {
   threadSource?: ThreadSource | null;
 }
 
+export interface ThreadRuntimeContextResponse {
+  thread: Thread;
+  model?: string | null;
+  modelProvider?: string | null;
+  serviceTier?: unknown;
+  reasoningEffort?: unknown;
+}
+
 export const IMAGE_TOOL_RESUME_FALLBACK_MESSAGE =
   "Selected thread does not expose a restorable image_gen tool; starting a new image-capable thread for this image request.";
 
@@ -210,7 +218,7 @@ export async function startThread(
   context?: ThreadContextDefaults | null,
   options?: ThreadCreationOptions,
 ) {
-  return client.request<{ thread?: Thread }>(
+  return client.request<ThreadRuntimeContextResponse & { thread?: Thread }>(
     "thread/start",
     buildThreadStartParams(workspace, context, options),
   );
@@ -225,6 +233,13 @@ export async function readThread(
     threadId,
     includeTurns,
   });
+}
+
+export async function unsubscribeThread(
+  client: CodexJsonRpcClient,
+  threadId: string,
+) {
+  return client.request("thread/unsubscribe", { threadId }, 120_000);
 }
 
 export async function readThreadForDisplay(
@@ -281,6 +296,7 @@ export async function createAndSelectThreadForTurn(
   const threadId = thread?.id ?? null;
   if (thread) {
     dispatch({ type: "upsertThread", thread, select: true });
+    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
   }
   return threadId;
 }
@@ -315,6 +331,24 @@ export interface EnsureThreadReadyForTurnInput {
 export interface ReadyThreadForTurn {
   threadId: string | null;
   source: ReadyThreadForTurnSource;
+}
+
+export class ThreadProviderSwitchMismatchError extends Error {
+  readonly threadId: string;
+  readonly expectedProvider: string;
+  readonly actualProvider: string;
+
+  constructor(threadId: string, expectedProvider: string, actualProvider: string) {
+    super(`thread ${threadId} resumed with provider ${actualProvider || "(unknown)"} instead of ${expectedProvider}`);
+    this.name = "ThreadProviderSwitchMismatchError";
+    this.threadId = threadId;
+    this.expectedProvider = expectedProvider;
+    this.actualProvider = actualProvider;
+  }
+}
+
+export function isThreadProviderSwitchMismatchError(error: unknown): error is ThreadProviderSwitchMismatchError {
+  return error instanceof ThreadProviderSwitchMismatchError;
 }
 
 export async function ensureThreadReadyForTurn({
@@ -354,7 +388,21 @@ export async function ensureThreadReadyForTurn({
     }
     await readThreadResumeMetadata(client, activeThreadId);
     const result = await resumeThread(client, activeThreadId, workspace, context);
+    assertThreadProviderSwitchApplied(activeThreadId, result, context);
     dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
+    return {
+      threadId: result.thread.id,
+      source: "resumed",
+    };
+  }
+
+  if (shouldResumeForModelProviderSwitch(activeThread, context)) {
+    await unsubscribeThread(client, activeThreadId);
+    const result = await resumeThread(client, activeThreadId, workspace, context);
+    assertThreadProviderSwitchApplied(activeThreadId, result, context);
+    dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     return {
       threadId: result.thread.id,
       source: "resumed",
@@ -365,6 +413,153 @@ export async function ensureThreadReadyForTurn({
     threadId: activeThreadId,
     source: "selected",
   };
+}
+
+function shouldResumeForModelProviderSwitch(
+  activeThread: Thread | null | undefined,
+  context?: ThreadContextDefaults | null,
+): boolean {
+  if (!isThreadStatusLoadedNonRunning(activeThread?.status)) return false;
+  const activeProvider = activeThread?.modelProvider?.trim() ?? "";
+  const nextProvider = context?.modelProvider?.trim() ?? "";
+  return Boolean(activeProvider && nextProvider && activeProvider !== nextProvider);
+}
+
+function isThreadStatusLoadedNonRunning(status: unknown): boolean {
+  if (isThreadStatusNotLoaded(status)) return false;
+  if (typeof status === "string") return status !== "active";
+  if (!status || typeof status !== "object") return false;
+  const record = status as Record<string, unknown>;
+  const statusType = trimmedStringField(record, "type") || trimmedStringField(record, "status");
+  return Boolean(statusType && statusType !== "active");
+}
+
+export function assertThreadProviderSwitchApplied(
+  threadId: string,
+  result: { thread: Thread; modelProvider?: string | null },
+  context?: ThreadContextDefaults | null,
+): void {
+  const expectedProvider = context?.modelProvider?.trim() ?? "";
+  if (!expectedProvider) return;
+  const actualProvider = (result.modelProvider ?? result.thread.modelProvider ?? "").trim();
+  if (actualProvider && actualProvider !== expectedProvider) {
+    throw new ThreadProviderSwitchMismatchError(threadId, expectedProvider, actualProvider);
+  }
+}
+
+export function threadContextDefaultsFromRuntimeResponse(
+  result: ThreadRuntimeContextResponse,
+  current?: ThreadContextDefaults | null,
+): ThreadContextDefaults | null {
+  const patch = compactParams({
+    model: stringOverride(result.model),
+    modelProvider: stringOverride(result.modelProvider),
+    serviceTier: result.serviceTier,
+    reasoningEffort: result.reasoningEffort,
+  }) as ThreadContextDefaults;
+  if (Object.keys(patch).length === 0) return null;
+  const next = compactParams({ ...(current ?? {}), ...patch }) as ThreadContextDefaults;
+  return Object.keys(next).length > 0 ? next : null;
+}
+
+export function dispatchThreadContextDefaultsFromRuntimeResponse(
+  dispatch: ThreadWorkflowDispatch,
+  result: ThreadRuntimeContextResponse,
+  current?: ThreadContextDefaults | null,
+): void {
+  const context = threadContextDefaultsFromRuntimeResponse(result, current);
+  if (context) dispatch({ type: "setThreadContextDefaults", context });
+  dispatchThreadResolvedModelFromRuntimeResponse(dispatch, result);
+}
+
+/*
+ * Record the (model, modelProvider) the runtime reported for THIS thread.
+ * `setThreadContextDefaults` above is a global slot that the last resume
+ * wins; this per-thread record is what the model picker checkmark and the
+ * composer chip read, so switching between chats on different providers
+ * cannot cross-contaminate the display.
+ */
+export function dispatchThreadResolvedModelFromRuntimeResponse(
+  dispatch: ThreadWorkflowDispatch,
+  result: ThreadRuntimeContextResponse,
+): void {
+  const model = stringOverride(result.model) ?? null;
+  const modelProvider = stringOverride(result.modelProvider)
+    ?? stringOverride(result.thread.modelProvider)
+    ?? null;
+  if (!model && !modelProvider) return;
+  dispatch({
+    type: "setThreadResolvedModel",
+    threadId: result.thread.id,
+    model,
+    modelProvider,
+  });
+}
+
+/*
+ * Extract the model a recorded session was using from its rollout JSONL:
+ * `session_meta.payload.model_provider` (line 1) + the last
+ * `turn_context.payload.model` present in the text. The thread protocol's
+ * read/list responses carry modelProvider only, so for a not-yet-resumed
+ * historical chat this is the only way to show its actual model.
+ */
+export function threadResolvedModelFromRolloutText(
+  text: string,
+): { model: string | null; modelProvider: string | null } | null {
+  let model: string | null = null;
+  let modelProvider: string | null = null;
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) continue;
+    let record: unknown;
+    try {
+      record = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!record || typeof record !== "object") continue;
+    const { type, payload } = record as { type?: unknown; payload?: unknown };
+    if (!payload || typeof payload !== "object") continue;
+    if (type === "session_meta") {
+      const provider = (payload as { model_provider?: unknown }).model_provider;
+      if (typeof provider === "string" && provider.trim()) modelProvider = provider.trim();
+    } else if (type === "turn_context") {
+      const turnModel = (payload as { model?: unknown }).model;
+      if (typeof turnModel === "string" && turnModel.trim()) model = turnModel.trim();
+    }
+  }
+  return model || modelProvider ? { model, modelProvider } : null;
+}
+
+/*
+ * Display-only hydration for opening a historical chat: read the head of the
+ * rollout file (session_meta + the early turn_context records always fit in
+ * the host's 240KB text-read cap) and record the thread's actual model so
+ * the composer chip / picker checkmark show it before the first resume.
+ * Resume/start responses overwrite this with the runtime-reported value.
+ */
+export async function hydrateThreadResolvedModelFromRollout(
+  thread: Thread,
+  dispatch: ThreadWorkflowDispatch,
+  readRolloutText: (path: string, maxBytes?: number) => Promise<string> = readTextFile,
+): Promise<boolean> {
+  const path = thread.path?.trim();
+  if (!path) return false;
+  if (readRolloutText === readTextFile && !isTauriRuntime()) return false;
+  try {
+    const parsed = threadResolvedModelFromRolloutText(await readRolloutText(path, 240_000));
+    if (!parsed) return false;
+    dispatch({
+      type: "setThreadResolvedModel",
+      threadId: thread.id,
+      model: parsed.model,
+      modelProvider: parsed.modelProvider ?? thread.modelProvider?.trim() ?? null,
+    });
+    return true;
+  } catch {
+    // Display-only nicety — a missing/unreadable rollout keeps the neutral label.
+    return false;
+  }
 }
 
 export async function shouldCreateImageCapableThreadInsteadOfResume(input: {
@@ -435,6 +630,7 @@ export async function resumeSelectedThreadAndStartTurn(
     await readThreadResumeMetadata(client, threadId);
     const result = await resumeThread(client, threadId, workspace, context);
     dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     await startTurn(client, result.thread.id, input, workspace, context, options);
     return true;
   } catch (error) {
@@ -485,7 +681,7 @@ export async function resumeThread(
    */
   const rolloutPathParam =
     rolloutPath && rolloutPath.trim().length > 0 ? { path: rolloutPath.trim() } : {};
-  return client.request<{ thread: Thread }>("thread/resume", {
+  return client.request<ThreadRuntimeContextResponse>("thread/resume", {
     threadId,
     ...rolloutPathParam,
     ...buildThreadResumeParams(workspace, context),
@@ -693,18 +889,45 @@ export function projectlessThreadInstructions(
 }
 
 /**
- * A thread is "projectless" (codex) when it has no real workspace — the cwd is empty
- * or just the host default ($HOME). codex treats a bare `~` workspace as projectless
- * too, so `workspace === defaultCwd` (the $HOME the host reports) counts. Such threads
- * get a generated `~/Documents/Codex/<date>/<slug>/` working directory.
+ * codex `app-server-manager-signals` projectless-cwd matcher (verbatim `cm`): a
+ * generated projectless working directory ends with
+ * `…/Documents/Codex/<YYYY-MM-DD>-<slug>` (legacy flat) or
+ * `…/Documents/Codex/<YYYY-MM-DD>/<slug>` (current nested), where the slug is
+ * `[a-z0-9][a-z0-9-]*`. Anchored + case-sensitive so the host-created `outputs/`/
+ * `work/` sub-directories and any real project under Documents/Codex are NOT matched.
  */
-export function isProjectlessWorkspace(
-  workspace: string | null | undefined,
-  defaultCwd: string | null | undefined,
-): boolean {
+const PROJECTLESS_THREAD_CWD_RE =
+  /^(.*(?:^|[\\/])Documents[\\/]+Codex)[\\/]+(?:\d{4}-\d{2}-\d{2}-[a-z0-9][a-z0-9-]*|\d{4}-\d{2}-\d{2}[\\/]+[a-z0-9][a-z0-9-]*)[\\/]*$/;
+
+/**
+ * True when a cwd is a generated projectless working directory (codex `lm`). The
+ * app-server protocol omits `workspaceKind`, so HiCodex infers projectless-ness from
+ * the cwd via codex's own matcher. Used both for sidebar grouping and (below) so the
+ * composer treats a workspace that has been synced to a projectless thread's cwd as
+ * projectless rather than a real project.
+ */
+export function isProjectlessThreadCwd(cwd: string | null | undefined): boolean {
+  const trimmed = cwd?.trim() ?? "";
+  if (!trimmed) return false;
+  return PROJECTLESS_THREAD_CWD_RE.test(trimmed);
+}
+
+/**
+ * A thread is "projectless" (codex) when no project/workspace has been selected.
+ * codex's composer predicate (`projectless-thread-*.js`: `n(e)=e.length===0||e.length===1&&e[0]==='~'`)
+ * tests the workspace-roots array for empty OR a single literal `~` sentinel — it
+ * NEVER compares the cwd to the resolved home path. HiCodex models the unselected
+ * workspace as the empty string (its native "no workspace" idiom: `normalizedCwd`
+ * maps "" → null, the wire-level projectless signal). A real path — even one that
+ * equals $HOME — is an explicitly-chosen project, so it is NOT projectless and is
+ * used as the turn cwd. Additionally, because HiCodex's `workspace` state syncs to
+ * the ACTIVE thread's cwd, a workspace that has been set to a *generated* projectless
+ * cwd (`~/Documents/Codex/<date>/<slug>`) must also count as projectless — otherwise
+ * that generated dir would leak into the project picker/chip as a fake "project".
+ */
+export function isProjectlessWorkspace(workspace: string | null | undefined): boolean {
   const trimmed = workspace?.trim() ?? "";
-  const home = defaultCwd?.trim() ?? "";
-  return trimmed.length === 0 || (home.length > 0 && trimmed === home);
+  return trimmed.length === 0 || trimmed === "~" || isProjectlessThreadCwd(trimmed);
 }
 
 export async function sendPanelThreadMessage(

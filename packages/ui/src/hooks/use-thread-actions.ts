@@ -12,6 +12,7 @@ import {
   forkThread as forkThreadWorkflow,
   forkThreadFromTurn as forkThreadFromTurnWorkflow,
   forkThreadIntoWorktree as forkThreadIntoWorktreeWorkflow,
+  hydrateThreadResolvedModelFromRollout,
   isThreadNotFound,
   isThreadNotMaterialized,
   readThreadForDisplay,
@@ -25,7 +26,6 @@ export function useThreadActions({
   setComposerAttachments,
   setInput,
   threadContextDefaults,
-  threads,
   workspace,
 }: {
   activeThread: Thread | null;
@@ -33,12 +33,17 @@ export function useThreadActions({
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setInput: Dispatch<SetStateAction<string>>;
   threadContextDefaults: ThreadContextDefaults | null;
-  threads: Thread[];
   workspace: string;
 }) {
   const { client, dispatch } = useServices();
   const [threadActionDialog, setThreadActionDialog] = useState<ThreadActionDialogState | null>(null);
   const threadSelectionRequestId = useRef(0);
+  /*
+   * Threads whose recorded model was already read from their rollout this
+   * session — the read is a display-only nicety, once per thread is enough
+   * (start/resume responses keep the value fresh afterwards).
+   */
+  const rolloutModelHydratedThreadIds = useRef(new Set<string>());
 
   // codex: local-conversation-thread-Kn0WAsVa#J (L25912-25927) — Codex Desktop
   // routes any `turnId !== latestTurnId` edit through `zi(u, Wd, {...})` (the
@@ -69,6 +74,15 @@ export function useThreadActions({
       if (threadSelectionRequestId.current !== requestId) return;
       if (displayThread) {
         dispatch({ type: "upsertThread", thread: displayThread, select: true });
+      }
+      if (!rolloutModelHydratedThreadIds.current.has(thread.id)) {
+        rolloutModelHydratedThreadIds.current.add(thread.id);
+        void hydrateThreadResolvedModelFromRollout(displayThread ?? thread, dispatch)
+          .then((hydrated) => {
+            // Allow a retry on the next selection when the rollout was not
+            // readable yet (e.g. thread not materialized on disk).
+            if (!hydrated) rolloutModelHydratedThreadIds.current.delete(thread.id);
+          });
       }
     } catch (error) {
       if (threadSelectionRequestId.current !== requestId) return;
@@ -276,15 +290,12 @@ export function useThreadActions({
     try {
       if (!(await ensureConnected())) return;
       await renameThreadWorkflow(client, thread.id, name);
-      dispatch({
-        type: "setThreads",
-        threads: threads.map((item) => item.id === thread.id ? { ...item, name: name.trim() } : item),
-      });
+      dispatch({ type: "renameThread", threadId: thread.id, name: name.trim() });
       setThreadActionDialog(null);
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
     }
-  }, [client, dispatch, ensureConnected, threads]);
+  }, [client, dispatch, ensureConnected]);
 
   const archiveSelectedThread = useCallback(async (thread: Thread) => {
     setThreadActionDialog(null);

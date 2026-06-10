@@ -146,7 +146,14 @@ export function KbLibraryDetailPanel({
         )}
       </DetailBlock>
 
-      <DetailBlock title="内容预览">
+      <DetailBlock title="入库文本预览">
+        <div className="hc-kb-ingested-preview-note">
+          <span>系统解析后的可搜索文本，不是原始文件版式。</span>
+          <button type="button" className="hc-kb-inline-link" onClick={() => onDownload(file)}>
+            <Download size={12} strokeWidth={2.2} aria-hidden="true" />
+            原文件
+          </button>
+        </div>
         {loading ? (
           <div className="hc-kb-detail-muted">正在读取内容</div>
         ) : readingPreview.length > 0 ? (

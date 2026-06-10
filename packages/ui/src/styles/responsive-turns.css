@@ -36,7 +36,7 @@
   }
   .hc-app-rail-tab {
     min-height: 52px;
-    font-size: 10px;
+    font-size: calc(10px * var(--hc-ui-font-scale, 1));
   }
   .hc-settings-shell {
     grid-template-columns: 1fr;
@@ -61,7 +61,7 @@
   align-items: center;
   margin: 0;
   color: #6f716b;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-turn-collapse-toggle {
@@ -74,7 +74,7 @@
   background: transparent;
   color: #6f716b;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
@@ -183,7 +183,7 @@
 .hc-worked-for-live-label {
   /* Codex worked-for label — `text-token-foreground/60`. */
   color: #767779; /* Codex: text-token-foreground/60 = color-mix(in oklab, #1a1c1f 60%, transparent) over light surface */
-  font-size: 14px; /* Codex: text-size-chat = --codex-chat-font-size -> --vscode-font-size -> --text-base = 14px */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* Codex: text-size-chat = --codex-chat-font-size -> --vscode-font-size -> --text-base = 14px */
   line-height: 1.45;
 }
 
@@ -296,7 +296,7 @@
   padding: 6px 8px 6px 12px;
   color: #504f49;
   font: inherit;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 400;
   line-height: 20px;
   text-align: left;
@@ -339,7 +339,7 @@
   align-items: start;
   gap: 8px;
   color: #4b4d48;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   /* codex: plan item spans use leading-4 = line-height 16px (calc(--spacing * 4)). */
   line-height: 16px;
 }
@@ -456,7 +456,7 @@
   margin: 0;
   overflow: hidden;
   color: var(--hc-text-primary);
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 600; /* codex plan title = `text-base font-semibold` = 600 (not 650) */
   line-height: 20px;
   text-overflow: ellipsis;
@@ -529,7 +529,7 @@
 }
 
 .hc-plan-summary-body .hc-markdown {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.6;
 }
 
@@ -557,7 +557,7 @@
   border-radius: 7px;
   background: #22262b;
   color: #fffdfa;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 560;
   line-height: 18px;
   padding: 6px 10px;

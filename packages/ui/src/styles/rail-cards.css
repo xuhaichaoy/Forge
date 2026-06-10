@@ -126,7 +126,7 @@
   color: #2a2d2b;
   /* codex: rail rows render via summary-panel-row, label is `text-base` (14px) with
      no weight class → inherits body --vscode-font-weight:430 (not 12px/600). */
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 430;
   line-height: 1.45;
 }
@@ -138,7 +138,7 @@
   white-space: normal;
   color: #6f716b;
   /* codex: progress step text is `text-base leading-normal` = 14px / line-height 1.5. */
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 400;
   line-height: 1.5;
 }
@@ -153,14 +153,14 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
   word-break: break-word;
 }
 
 .hc-rail-card-status {
   color: #2d5562;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 /* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Browser row) — title span is
@@ -175,7 +175,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 430;
   color: #2a2d2b;
 }
@@ -191,7 +191,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-rail-card-browser-url-inactive {
@@ -234,7 +234,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   color: #2a2d2b;
 }
 
@@ -244,7 +244,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px; /* codex text-size-chat */
+  font-size: calc(13px * var(--hc-ui-font-scale, 1)); /* codex text-size-chat */
   color: #6f716b;
 }
 
@@ -258,7 +258,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   color: #2a2d2b;
 }
 
@@ -271,7 +271,7 @@
   flex: 1 1 auto;
   min-width: 0;
   font-family: var(--hc-font-mono, ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   color: #2a2d2b;
 }
 
@@ -290,7 +290,7 @@
   flex: 0 0 auto;
   gap: 4px;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   line-height: 1;
 }
@@ -333,7 +333,7 @@
   color: #6f716b;
   cursor: pointer;
   padding: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   line-height: 18px;
   font-weight: normal;
   white-space: nowrap;
@@ -361,7 +361,7 @@
   gap: 5px;
   border-radius: 6px;
   padding: 5px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-mini-button:disabled {
@@ -471,7 +471,7 @@
   flex: 1 1 auto;
   min-width: 0;
   /* codex: summary-panel-row label is `text-base` = --text-base:14px. */
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
   color: #2a2d2b;
 }
@@ -535,7 +535,7 @@
   align-items: center;
   gap: 4px;
   line-height: 1;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.005em;
 }
@@ -566,7 +566,7 @@
  * `text-base` = 14px (was 13px). */
 .hc-rail-empty-state {
   padding: 4px 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
   color: #6f716b;
 }

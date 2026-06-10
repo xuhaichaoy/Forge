@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { GitFork } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MutableRefObject, ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { isItemInProgress } from "../state/thread-item-fields";
 import {
@@ -24,7 +24,6 @@ import { MessageUnitView } from "./message-unit";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
 import { DynamicToolCallGroupView, ThreadItemView } from "./thread-item-view";
-import { type SubmitTurnRatingEvent } from "./turn-rating-controls";
 import {
   setThreadScrollDistanceFromBottom,
   threadScrollDistanceFromBottom,
@@ -95,7 +94,6 @@ export interface ConversationViewProps {
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
   memoryCitationRoot?: string | null;
@@ -113,9 +111,17 @@ export interface ConversationViewProps {
   onPatchAction?: PatchActionHandler;
   patchActionState?: PatchActionState;
   patchActionInFlight?: boolean;
+  /**
+   * Late-binding imperative jump for ⌘F: the virtualized turn list assigns a
+   * `(unitKey) => boolean` here so thread-find can scroll to matches whose
+   * turn is outside the rendered window (Desktop's find navigates via the
+   * virtual list, not the DOM). Returns false for unknown unit keys.
+   */
+  scrollToUnitKeyRef?: ScrollToUnitKeyRef;
 }
 
 export type PatchActionHandler = (action: PatchAction, diff: string) => void;
+export type ScrollToUnitKeyRef = MutableRefObject<((unitKey: string) => boolean) | null>;
 
 export function ConversationView({
   units,
@@ -126,7 +132,6 @@ export function ConversationView({
   onRevealAssistantEndResource,
   onOpenDiff,
   onForkTurn,
-  onSubmitTurnFeedback,
   onOpenFileReference,
   onOpenAutomation,
   memoryCitationRoot,
@@ -138,6 +143,7 @@ export function ConversationView({
   onPatchAction,
   patchActionState,
   patchActionInFlight,
+  scrollToUnitKeyRef,
 }: ConversationViewProps) {
   const groups = useMemo(() => groupUnitsByTurn(units), [units]);
   const [turnCollapseState, setTurnCollapseState] = useState<Record<string, boolean>>({});
@@ -159,7 +165,6 @@ export function ConversationView({
       onRevealAssistantEndResource={onRevealAssistantEndResource}
       onOpenDiff={onOpenDiff}
       onForkTurn={onForkTurn}
-      onSubmitTurnFeedback={onSubmitTurnFeedback}
       onOpenFileReference={onOpenFileReference}
       onOpenAutomation={onOpenAutomation}
       memoryCitationRoot={memoryCitationRoot}
@@ -178,6 +183,7 @@ export function ConversationView({
   return (
     <VirtualizedTurnList
       groups={groups}
+      scrollToUnitKeyRef={scrollToUnitKeyRef}
       renderGroup={(group, index) => {
         const isMostRecentTurn = Boolean(group.turnId) && index === groups.length - 1;
         const renderGroupUnit = (unit: ConversationRenderUnit, key: string) =>
@@ -385,9 +391,11 @@ function turnBottomDistanceFromBottom(
 function VirtualizedTurnList({
   groups,
   renderGroup,
+  scrollToUnitKeyRef,
 }: {
   groups: ReturnType<typeof groupUnitsByTurn>;
   renderGroup: (group: ReturnType<typeof groupUnitsByTurn>[number], index: number) => ReactNode;
+  scrollToUnitKeyRef?: ScrollToUnitKeyRef;
 }) {
   const scrollController = useThreadScrollController();
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -486,6 +494,57 @@ function VirtualizedTurnList({
     viewportHeight: scrollState.viewportHeight,
   }), [heightVersion, scrollState.distanceFromBottom, scrollState.viewportHeight, turnKeys]);
 
+  // ⌘F jump support: map every render-unit key (incl. assistantAfter
+  // sub-units, which mount inside their parent message) to its turn index.
+  const groupIndexByUnitKey = useMemo(() => {
+    const map = new Map<string, number>();
+    groups.forEach((group, index) => {
+      for (const unit of group.units) {
+        map.set(unit.key, index);
+        if (unit.kind === "message") {
+          for (const after of unit.assistantAfter ?? []) map.set(after.key, index);
+        }
+      }
+    });
+    return map;
+  }, [groups]);
+
+  const scrollToTurnIndex = useCallback((index: number): boolean => {
+    if (index < 0 || index >= turnKeys.length) return false;
+    const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
+    const viewportHeight = Math.max(1, scrollElement?.clientHeight || 900);
+    const heights = rowHeightsRef.current;
+    const offsets = turnOffsetsByKey(turnKeys, heights, DESKTOP_TURN_ESTIMATED_HEIGHT_PX, DESKTOP_TURN_GAP_PX);
+    const totalHeight = (offsets[turnKeys.length - 1] ?? 0)
+      + turnHeightByKey(heights, turnKeys[turnKeys.length - 1], DESKTOP_TURN_ESTIMATED_HEIGHT_PX);
+    const top = offsets[index] ?? 0;
+    const height = turnHeightByKey(heights, turnKeys[index], DESKTOP_TURN_ESTIMATED_HEIGHT_PX);
+    // Aim the turn's center at the viewport center; unmeasured rows use the
+    // estimate, so the caller fine-tunes with scrollIntoView once mounted.
+    const maxDistance = Math.max(0, totalHeight - viewportHeight);
+    const centered = totalHeight - (top + height / 2) - viewportHeight / 2;
+    const distance = Math.min(maxDistance, Math.max(0, centered));
+    stickToBottomRef.current = distance <= DESKTOP_STICKY_BOTTOM_THRESHOLD_PX;
+    if (scrollController) {
+      scrollController.scrollToDistanceFromBottomPx(distance, "instant");
+      return true;
+    }
+    if (!scrollElement) return false;
+    setThreadScrollDistanceFromBottom(scrollElement, distance);
+    return true;
+  }, [scrollController, turnKeys]);
+
+  useEffect(() => {
+    if (!scrollToUnitKeyRef) return;
+    scrollToUnitKeyRef.current = (unitKey: string) => {
+      const index = groupIndexByUnitKey.get(unitKey);
+      return index == null ? false : scrollToTurnIndex(index);
+    };
+    return () => {
+      scrollToUnitKeyRef.current = null;
+    };
+  }, [groupIndexByUnitKey, scrollToTurnIndex, scrollToUnitKeyRef]);
+
   return (
     <div className="hc-turn-list" ref={listRef}>
       {range.paddingTop > 0 && (
@@ -562,7 +621,6 @@ export function ConversationUnitView({
   onRevealAssistantEndResource,
   onOpenDiff,
   onForkTurn,
-  onSubmitTurnFeedback,
   onPatchAction,
   patchActionState,
   patchActionInFlight,
@@ -584,7 +642,6 @@ export function ConversationUnitView({
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
   onForkTurn?: (turnId: string) => void;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
   patchActionInFlight?: boolean;
@@ -598,7 +655,6 @@ export function ConversationUnitView({
         onOpenAssistantArtifact={onOpenAssistantArtifact}
         onRevealAssistantEndResource={onRevealAssistantEndResource}
         onForkTurn={onForkTurn}
-        onSubmitTurnFeedback={onSubmitTurnFeedback}
         threadId={threadId}
         onOpenThreadId={onOpenThreadId}
         onOpenFileReference={onOpenFileReference}
@@ -618,7 +674,6 @@ export function ConversationUnitView({
         onMcpAppHostCall={onMcpAppHostCall}
         onReadMcpResource={onReadMcpResource}
         threadId={threadId}
-        onSubmitTurnFeedback={onSubmitTurnFeedback}
       />
     );
   }
@@ -642,7 +697,6 @@ export function ConversationUnitView({
       <GeneratedImageGalleryOutput
         unit={unit}
         onForkTurn={onForkTurn}
-        onSubmitTurnFeedback={onSubmitTurnFeedback}
         threadId={threadId}
       />
     );
@@ -681,12 +735,10 @@ export function ConversationUnitView({
 function GeneratedImageGalleryOutput({
   unit,
   onForkTurn,
-  onSubmitTurnFeedback,
   threadId,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>;
   onForkTurn?: (turnId: string) => void;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   threadId?: string | null;
 }) {
   const { formatMessage } = useHiCodexIntl();

@@ -1,6 +1,16 @@
+import type {
+  AssistantEndResource,
+  ConversationRenderUnit,
+} from "./render-group-types";
+
 export interface ThreadFindUnit {
   unitKey: string;
   text: string;
+}
+
+export interface ThreadFindCurrentRef {
+  unitKey: string;
+  matchIndex: number;
 }
 
 export interface ThreadFindMatch {
@@ -80,6 +90,134 @@ export function clampThreadFindIndex(currentIndex: number, matchCount: number): 
   if (matchCount <= 0) return 0;
   if (!Number.isFinite(currentIndex)) return 0;
   return Math.min(Math.max(0, currentIndex), matchCount - 1);
+}
+
+/*
+ * State-side searchable units. Codex Desktop computes ⌘F matches from state
+ * (local-conversation-thread-*.js groups state matches by unitKey before any
+ * DOM work) because the turn list is virtualized — a DOM query only ever sees
+ * the mounted window, so long conversations would be mostly unsearchable.
+ * The strings here approximate the rendered text (markdown is searched as
+ * source); the DOM marking pass re-derives exact offsets per mounted unit, so
+ * highlight placement never depends on these strings.
+ */
+export function collectThreadFindUnitsFromConversation(
+  units: readonly ConversationRenderUnit[],
+): ThreadFindUnit[] {
+  const seen = new Set<string>();
+  const collected: ThreadFindUnit[] = [];
+  const push = (unitKey: string | undefined, parts: Array<string | null | undefined>) => {
+    if (!unitKey || seen.has(unitKey)) return;
+    const text = parts
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join("\n");
+    if (!text.trim()) return;
+    seen.add(unitKey);
+    collected.push({ unitKey, text });
+  };
+  for (const unit of units) {
+    switch (unit.kind) {
+      case "message": {
+        const parts: Array<string | null | undefined> = [];
+        if (unit.userContent && unit.userContent.length > 0) {
+          for (const part of unit.userContent) {
+            parts.push(part.kind === "text" ? part.text : part.label);
+          }
+        } else {
+          parts.push(unit.text);
+        }
+        push(unit.key, parts);
+        for (const after of unit.assistantAfter ?? []) {
+          if (after.kind === "assistantAfterEvent") {
+            push(after.key, [after.label, after.text, after.details]);
+          } else if (after.kind === "assistantEndResources") {
+            push(after.key, after.resources.map(assistantEndResourceSearchText));
+          } else if (after.kind === "assistantReviewComments") {
+            push(after.key, after.comments.flatMap((comment) => [comment.title, comment.body, comment.path]));
+          }
+          // generatedImageGallery: thumbnails carry no searchable text
+        }
+        break;
+      }
+      case "event":
+        push(unit.key, [unit.label, unit.text, unit.details]);
+        break;
+      case "toolActivity":
+        push(unit.key, [unit.summary.label, unit.summary.activeDetail, ...unit.summary.details]);
+        break;
+      case "threadItem":
+        push(unit.key, threadItemSearchableStrings(unit.item));
+        break;
+      case "dynamicToolCallGroup":
+        push(unit.key, unit.items.flatMap((item) => threadItemSearchableStrings(item)));
+        break;
+      case "assistantEndResources":
+        push(unit.key, unit.resources.map(assistantEndResourceSearchText));
+        break;
+      default:
+        break; // generatedImageGallery
+    }
+  }
+  return collected;
+}
+
+function assistantEndResourceSearchText(resource: AssistantEndResource): string {
+  if (resource.type === "file") return resource.path;
+  if (resource.type === "website") return resource.target;
+  return resource.title || resource.url;
+}
+
+// Best-effort text projection for protocol thread items (plans, todo lists,
+// errors, ...). Deliberately shallow — the DOM marking pass owns exact text;
+// this only decides whether ⌘F can count/navigate to the unit.
+function threadItemSearchableStrings(item: Record<string, unknown>): string[] {
+  const parts: string[] = [];
+  const pushString = (value: unknown) => {
+    if (typeof value === "string" && value.trim()) parts.push(value);
+  };
+  pushString(item.text);
+  pushString(item.title);
+  pushString(item.name);
+  pushString(item.summary);
+  pushString(item.message);
+  pushString(item.description);
+  const steps = Array.isArray(item.steps) ? item.steps : Array.isArray(item.plan) ? item.plan : null;
+  for (const step of steps ?? []) {
+    if (typeof step === "string") {
+      pushString(step);
+    } else if (step && typeof step === "object") {
+      const record = step as Record<string, unknown>;
+      pushString(record.step ?? record.text ?? record.title);
+    }
+  }
+  return parts;
+}
+
+/*
+ * Marking stays DOM-local on purpose: state matches carry offsets into state
+ * strings, not into rendered text, so the mounted window re-runs the query
+ * against its own text nodes (Desktop equally only decorates the mounted
+ * subset). The current match is correlated by (unitKey, matchIndex) and
+ * clamped when the rendered text yields fewer matches than the projection.
+ */
+export function applyThreadFindMarksForQuery(
+  root: ParentNode,
+  query: string,
+  current: ThreadFindCurrentRef | null,
+): void {
+  const matches = findThreadFindMatches(collectThreadFindUnitsFromDom(root), query);
+  applyThreadFindMarks(root, matches, currentDomThreadFindMatchId(matches, current));
+}
+
+export function currentDomThreadFindMatchId(
+  domMatches: ThreadFindMatch[],
+  current: ThreadFindCurrentRef | null,
+): string | null {
+  if (!current) return null;
+  const unitMatches = domMatches.filter((match) => match.unitKey === current.unitKey);
+  if (unitMatches.length === 0) return null;
+  const exact = unitMatches.find((match) => match.matchIndex === current.matchIndex);
+  return (exact ?? unitMatches[unitMatches.length - 1]).id;
 }
 
 export function collectThreadFindUnitsFromDom(root: ParentNode): ThreadFindUnit[] {

@@ -1,4 +1,5 @@
 import type { Thread } from "@hicodex/codex-protocol";
+import { isProjectlessThreadCwd } from "./thread-workflow";
 
 /**
  * Codex Desktop's `local-environments-*.js` keys per-thread sort time
@@ -62,7 +63,22 @@ export interface SidebarThreadGroup {
   label: string;
   path: string | null;
   threads: Thread[];
+  /**
+   * codex sidebar group kind. Projectless threads (those whose generated working
+   * directory lives under `~/Documents/Codex`) collapse into a single `chats`
+   * group — Codex Desktop's builder assigns `workspaceKind==='projectless' → 'chats'`
+   * (sidebarElectron.recentChats = "Chats", "List label for projectless threads")
+   * and explicitly excludes them from per-project grouping
+   * (`.filter(e => e.workspaceKind!=='projectless')`). Real workspaces are `project`
+   * groups keyed by cwd.
+   */
+  kind: "chats" | "project";
 }
+
+// codex sidebar: the single group that holds every projectless thread, so the
+// generated `new-chat`/`new-chat-2`/… working directories never surface as
+// individual project folders.
+export const CHATS_GROUP_KEY = "chats";
 
 export interface SidebarPinnedThreadSplit {
   pinnedThreads: Thread[];
@@ -147,7 +163,7 @@ export function projectSidebarThreadGroups(
     // "Recent chats" group label; the bare "Recent" was an internal inconsistency.
     return threads.length === 0
       ? []
-      : [{ key: "recent", label: "Recent chats", path: null, threads: [...threads] }];
+      : [{ key: "recent", label: "Recent chats", path: null, threads: [...threads], kind: "chats" }];
   }
   const seedRoots = normalizeSeedWorkspaceRoots(context.selectedWorkspaceRoots);
   if (organizeMode === "current_workspace") {
@@ -176,21 +192,41 @@ function projectLocalWorkspaceThreadGroups(
       label: workspaceRootLabel(root),
       path: root,
       threads: [],
+      kind: "project",
     };
     byKey.set(key, group);
     groups.push(group);
   }
+  // codex: projectless threads do NOT each get a project folder — they all
+  // collapse into a single "chats" group (mirrors the desktop builder's
+  // `workspaceKind==='projectless' → 'chats'` plus its
+  // `.filter(e => e.workspaceKind!=='projectless')` project exclusion). Without
+  // this, every generated `new-chat`/`new-chat-2`/… working directory surfaces as
+  // its own project row.
+  const chatsGroup: SidebarThreadGroup = {
+    key: CHATS_GROUP_KEY,
+    label: "Chats",
+    path: null,
+    threads: [],
+    kind: "chats",
+  };
   for (const thread of threads) {
+    if (isProjectlessThreadCwd(threadProjectPath(thread))) {
+      chatsGroup.threads.push(thread);
+      continue;
+    }
     const key = threadProjectKey(thread);
     let group = byKey.get(key);
     if (!group) {
-      group = { key, label: threadProjectLabel(thread), path: threadProjectPath(thread), threads: [] };
+      group = { key, label: threadProjectLabel(thread), path: threadProjectPath(thread), threads: [], kind: "project" };
       byKey.set(key, group);
       groups.push(group);
     }
     group.threads.push(thread);
   }
-  return groups;
+  // codex default section order is ND = ['threads','chats'] (app-main bundle): the
+  // per-project groups come FIRST, the projectless "chats" group LAST.
+  return chatsGroup.threads.length > 0 ? [...groups, chatsGroup] : groups;
 }
 
 function projectCurrentWorkspaceThreadGroups(
@@ -211,6 +247,7 @@ function projectCurrentWorkspaceThreadGroups(
       label: "Current workspace",
       path: currentRoot,
       threads: currentThreads,
+      kind: "project",
     });
   }
   const remainingSeedRoots = seedRoots.filter((root) => threadProjectKeyForRoot(root) !== currentRoot);
@@ -255,6 +292,10 @@ export function projectSidebarWorkspaceRootOptions(threads: Thread[]): SidebarWo
   for (const thread of projectSidebarThreads(threads)) {
     const root = threadProjectPath(thread);
     if (!root || root === "~") continue;
+    // codex excludes projectless threads from project options the same way it
+    // excludes them from sidebar project groups; their generated `new-chat` cwd is
+    // not a real workspace the user can re-open.
+    if (isProjectlessThreadCwd(root)) continue;
     const normalized = root.replace(/[\\/]+$/, "") || root;
     if (seen.has(normalized)) continue;
     seen.add(normalized);
@@ -326,6 +367,10 @@ function threadProjectPath(thread: Thread): string | null {
   const cwd = typeof thread.cwd === "string" ? thread.cwd.trim() : "";
   return cwd || null;
 }
+
+// codex projectless-cwd matcher lives in thread-workflow (shared with
+// isProjectlessWorkspace); re-exported here for the sidebar grouping consumers/tests.
+export { isProjectlessThreadCwd };
 
 function normalizeSidebarWorkspaceRoot(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? "";
@@ -450,6 +495,10 @@ export function workspaceRootOptionsWithCurrent(
   for (const rootValue of roots) {
     const root = normalizeWorkspaceRoot(rootValue ?? "");
     if (!root || seen.has(root) || root === "~") continue;
+    // codex: a generated projectless cwd (synced into `workspace`/activeThread.cwd) is
+    // NOT a real project — keep it out of the project picker so it never appears as a
+    // "2-3"-style fake project.
+    if (isProjectlessThreadCwd(root)) continue;
     seen.add(root);
     merged.unshift({ root, label: workspaceRootOptionLabel(root) });
   }

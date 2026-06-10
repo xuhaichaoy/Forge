@@ -15,6 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(not(target_os = "windows"))]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -1476,12 +1477,14 @@ fn create_projectless_thread_cwd(
     Err("Unable to create a unique projectless thread directory".to_string())
 }
 
-/// codex `Py`: slug from directoryName (first 6 lowercase alphanumeric words) or
-/// prompt (all such words), joined with `-` and capped at 80 chars; empty → "new-chat".
+/// codex `Py` (main-*.js): `(t??n)?.toLowerCase().match(/[a-z0-9]+/g)` then
+/// `(t==null ? r.slice(0,6) : r).join('-').slice(0,80)`. So a directoryName keeps
+/// ALL its lowercase-alphanumeric words, but when there is no directoryName the
+/// prompt is truncated to its first 6 words. Empty result → "new-chat".
 fn projectless_slug(directory_name: Option<&str>, prompt: Option<&str>) -> String {
     let (source, max_words) = match directory_name.map(str::trim).filter(|value| !value.is_empty()) {
-        Some(name) => (name, Some(6usize)),
-        None => (prompt.unwrap_or(""), None),
+        Some(name) => (name, None),
+        None => (prompt.unwrap_or(""), Some(6usize)),
     };
     let mut words: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -1514,16 +1517,24 @@ mod projectless_slug_tests {
     use super::projectless_slug;
 
     #[test]
-    fn directory_name_takes_first_six_words() {
+    fn directory_name_keeps_all_words() {
+        // codex Py: a directoryName (t != null) uses ALL its words — no 6-word cap.
         assert_eq!(
             projectless_slug(Some("My Big Report For The Q3 Board Meeting"), None),
-            "my-big-report-for-the-q3",
+            "my-big-report-for-the-q3-board-meeting",
         );
     }
 
     #[test]
-    fn prompt_keeps_all_words_and_splits_on_non_alnum() {
+    fn prompt_takes_first_six_words_and_splits_on_non_alnum() {
+        // codex Py: with no directoryName (t == null) the prompt is truncated to
+        // its first 6 words (r.slice(0,6)).
+        assert_eq!(
+            projectless_slug(None, Some("one two three four five six seven eight")),
+            "one-two-three-four-five-six",
+        );
         // Underscores / dots / CJK are not [a-z0-9] → word separators (matches codex Py).
+        // Here only 5 ASCII words survive, so the 6-word cap is a no-op.
         assert_eq!(
             projectless_slug(None, Some("修改一下 util/config/archery_token.txt 内容")),
             "util-config-archery-token-txt",
@@ -6155,6 +6166,13 @@ fn notification_text(value: Option<String>, fallback: &str, max_chars: usize) ->
     text
 }
 
+#[cfg(target_os = "windows")]
+fn install_native_menu(_app: &mut tauri::App) -> tauri::Result<()> {
+    // Tauri renders native menus as an in-window menu bar on Windows.
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
 fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let handle = app.handle();
     let settings = MenuItemBuilder::with_id(MENU_SETTINGS, "Settings")

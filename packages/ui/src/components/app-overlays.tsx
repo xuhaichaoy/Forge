@@ -1,9 +1,11 @@
 import { AppToastViewport } from "./app-toast-viewport";
+import { ComposerPermissionsDropdown } from "./composer-permissions-dropdown";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
 import { ModelPickerMenu, type ModelPickerProvider } from "./model-picker-menu";
 import { ReasoningPickerMenu, type ReasoningPickerMenuProps } from "./reasoning-picker-menu";
 import { UnifiedDiffFailureDialog, type UnifiedDiffFailure } from "./unified-diff-failure-dialog";
 import type { LogLine } from "../state/codex-reducer";
+import type { PermissionMode, PermissionModeStatus } from "../state/permissions-mode";
 
 /*
  * Global overlay group extracted from HiCodexApp's return: patch-failure
@@ -20,6 +22,7 @@ export function AppOverlays({
   modelPickerSelectedKey,
   modelPickerDefaultKey,
   modelPickerReadyProviders,
+  modelPickerActiveThreadProviderId,
   onModelSelect,
   onModelPickerOpenSettings,
   onModelPickerSignIn,
@@ -29,6 +32,12 @@ export function AppOverlays({
   reasoningSupportedEfforts,
   onReasoningSelect,
   onReasoningPickerClose,
+  permissionsPickerAnchor,
+  permissionsCurrentMode,
+  permissionsRequirements,
+  onPermissionApplyMode,
+  onPermissionOpenCustomSettings,
+  onPermissionsPickerClose,
   keyboardShortcutsOpen,
   onKeyboardShortcutsClose,
   toastLogs,
@@ -41,6 +50,7 @@ export function AppOverlays({
   modelPickerSelectedKey: string | null;
   modelPickerDefaultKey: string | null;
   modelPickerReadyProviders: ReadonlySet<string>;
+  modelPickerActiveThreadProviderId?: string | null;
   onModelSelect: (key: string | null) => void;
   onModelPickerOpenSettings: () => void;
   onModelPickerSignIn?: (providerId: string) => void | Promise<void>;
@@ -50,6 +60,12 @@ export function AppOverlays({
   reasoningSupportedEfforts?: ReasoningPickerMenuProps["supportedEfforts"];
   onReasoningSelect: (effort: string | null) => void;
   onReasoningPickerClose: () => void;
+  permissionsPickerAnchor: HTMLElement | null;
+  permissionsCurrentMode: PermissionModeStatus;
+  permissionsRequirements?: unknown;
+  onPermissionApplyMode: (mode: PermissionMode) => void;
+  onPermissionOpenCustomSettings: () => void;
+  onPermissionsPickerClose: () => void;
   keyboardShortcutsOpen: boolean;
   onKeyboardShortcutsClose: () => void;
   toastLogs: LogLine[];
@@ -70,6 +86,7 @@ export function AppOverlays({
           selectedKey={modelPickerSelectedKey}
           defaultKey={modelPickerDefaultKey}
           readyProviders={modelPickerReadyProviders}
+          activeThreadProviderId={modelPickerActiveThreadProviderId}
           onSelect={onModelSelect}
           onOpenSettings={onModelPickerOpenSettings}
           onSignIn={onModelPickerSignIn}
@@ -89,6 +106,22 @@ export function AppOverlays({
           supportedEfforts={reasoningSupportedEfforts}
           onSelect={onReasoningSelect}
           onClose={onReasoningPickerClose}
+        />
+      )}
+      {/*
+       * CODEX-REF: composer-B7sGHJVq.js — composer permissions dropdown (`so`
+       * DropdownMenu) opened from the footer permissions chip, replacing the
+       * old loadSettingsPanel("permissions") full-modal behavior. Anchor 由
+       * chip 的 onClick 通过 setPermissionsPickerAnchor 打开。
+       */}
+      {permissionsPickerAnchor && (
+        <ComposerPermissionsDropdown
+          anchor={permissionsPickerAnchor as HTMLElement}
+          currentMode={permissionsCurrentMode}
+          requirements={permissionsRequirements}
+          onApplyMode={onPermissionApplyMode}
+          onOpenCustomSettings={onPermissionOpenCustomSettings}
+          onClose={onPermissionsPickerClose}
         />
       )}
       {/*

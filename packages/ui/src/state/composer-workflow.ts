@@ -6,23 +6,6 @@ import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 // sites: when omitted, English defaultMessage is returned.
 type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 
-export type ComposerEnterResult =
-  | { action: "none"; preventDefault: false }
-  | { action: "newline"; preventDefault: false }
-  | { action: "send"; preventDefault: true };
-
-export interface ComposerKeyEventLike {
-  key?: string;
-  shiftKey?: boolean;
-  metaKey?: boolean;
-  ctrlKey?: boolean;
-  altKey?: boolean;
-  isComposing?: boolean;
-  nativeEvent?: {
-    isComposing?: boolean;
-  };
-}
-
 export interface SlashCommand {
   id: string;
   title: string;
@@ -181,7 +164,7 @@ export function composerPlaceholderText(
   formatMessage?: FormatMessage,
 ): string {
   // codex: placeholder strings align verbatim to upstream ICU defaults —
-  //   composer.placeholder.newTask.locally.v2              = "Ask Codex anything. @ to use plugins or mention files"
+  //   composer.placeholder.newTask.locally.v2              = Forge-branded new-chat prompt
   //   composer.placeholder.localFollowUp.locallyWithAgents = "Ask for follow up changes or @ to tag an agent"
   //   composer.placeholder.localFollowUp.locally           = "Ask for follow-up changes"
   // (Upstream intentionally drops the hyphen in the with-agents variant.)
@@ -193,7 +176,7 @@ export function composerPlaceholderText(
     return fm("composer.placeholder.goal", "What should Codex keep working toward?");
   }
   if (!input.hasConversation) {
-    return fm("composer.placeholder.newTask.locally.v2", "Ask Codex anything. @ to use plugins or mention files");
+    return fm("composer.placeholder.newTask.locally.v2", "Ask Forge anything. @ to use plugins or mention files");
   }
   return input.hasBackgroundAgentsPanel
     ? fm("composer.placeholder.localFollowUp.locallyWithAgents", "Ask for follow up changes or @ to tag an agent")
@@ -810,14 +793,6 @@ export function removeMentionTriggerText(input: string, trigger: ComposerMention
   const prefix = input.slice(0, trigger.from);
   const suffix = input.slice(trigger.to);
   return suffix ? `${prefix}${suffix}` : prefix.trimEnd();
-}
-
-export function composerEnterAction(input: string, event: ComposerKeyEventLike): ComposerEnterResult {
-  if (event.key !== "Enter") return { action: "none", preventDefault: false };
-  if (event.isComposing || event.nativeEvent?.isComposing) return { action: "none", preventDefault: false };
-  if (event.shiftKey || event.altKey) return { action: "newline", preventDefault: false };
-  if (!input.trim()) return { action: "none", preventDefault: false };
-  return { action: "send", preventDefault: true };
 }
 
 export function filterSlashCommands(

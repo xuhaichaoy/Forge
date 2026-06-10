@@ -33,7 +33,7 @@
 
 .hc-automations-panel-title h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   line-height: 1.25;
 }
 
@@ -41,7 +41,7 @@
   display: block;
   margin-top: 2px;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   text-transform: uppercase;
 }
@@ -92,7 +92,7 @@
   background: #f8f6ef;
   color: #5f625d;
   padding: 9px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 
@@ -115,7 +115,7 @@
   border: 1px solid rgba(34, 38, 43, 0.10);
   border-radius: 7px;
   padding: 9px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-automations-heartbeat span {
@@ -124,7 +124,7 @@
 
 .hc-automations-heartbeat strong {
   color: #8f3b2f;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -153,14 +153,14 @@
 }
 
 .hc-automations-schedule-row h3 {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-automations-schedule-row p {
   margin-top: 3px;
   color: #6f716b;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-automations-schedule-row dl {
@@ -169,7 +169,7 @@
   justify-content: flex-end;
   gap: 8px;
   margin: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-automations-schedule-row dt {
@@ -188,7 +188,7 @@
   border-radius: 7px;
   color: #6f716b;
   padding: 12px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-automations-hooks {
@@ -199,7 +199,7 @@
 .hc-automations-hooks code {
   color: #27313d;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   white-space: pre-wrap;
 }
 

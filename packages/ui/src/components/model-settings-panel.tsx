@@ -94,6 +94,7 @@ export interface SettingsPanelProps {
   uiAppearance?: UiAppearancePreferences;
   uiLocale?: HiCodexLocale;
   onSetUiTheme?: (mode: UiThemeMode) => void;
+  onSetUiFontSize?: (size: number) => void;
   onSetCodeFontSize?: (size: number) => void;
   onSetReducedMotion?: (mode: ReducedMotionMode) => void;
   onSetUiLocale?: (locale: HiCodexLocale) => void;
@@ -121,6 +122,7 @@ export function SettingsPanel({
   uiAppearance,
   uiLocale,
   onSetUiTheme,
+  onSetUiFontSize,
   onSetCodeFontSize,
   onSetReducedMotion,
   onSetUiLocale,
@@ -259,9 +261,10 @@ export function SettingsPanel({
                */
               <AppearanceSettingsPanel
                 uiTheme={uiTheme ?? { mode: "system", resolved: "light" }}
-                uiAppearance={uiAppearance ?? { codeFontSize: 12, reducedMotion: "system" }}
+                uiAppearance={uiAppearance ?? { uiFontSize: 14, codeFontSize: 12, reducedMotion: "system" }}
                 uiLocale={uiLocale ?? "en-US"}
                 onSetUiTheme={onSetUiTheme ?? (() => undefined)}
+                onSetUiFontSize={onSetUiFontSize ?? (() => undefined)}
                 onSetCodeFontSize={onSetCodeFontSize ?? (() => undefined)}
                 onSetReducedMotion={onSetReducedMotion ?? (() => undefined)}
                 onSetUiLocale={onSetUiLocale ?? (() => undefined)}
@@ -458,6 +461,16 @@ function ModelSettingsForm({
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const configuredModels = modelSlugsForConfig(modelDraft);
   const configuredModelsText = configuredModels.join("\n");
+  const [availableModelsText, setAvailableModelsText] = useState(() => configuredModelsText);
+  const lastConfiguredModelsTextRef = useRef(configuredModelsText);
+  useEffect(() => {
+    if (configuredModelsText === lastConfiguredModelsTextRef.current) return;
+    lastConfiguredModelsTextRef.current = configuredModelsText;
+    setAvailableModelsText((current) => {
+      const currentCanonical = parseModelSlugsInput(current).join("\n");
+      return currentCanonical === configuredModelsText ? current : configuredModelsText;
+    });
+  }, [configuredModelsText]);
   const setPrimaryModel = (model: string) => {
     setModelDraft({
       ...modelDraft,
@@ -545,8 +558,12 @@ function ModelSettingsForm({
               <span className="hc-model-field-label">可用模型</span>
               <textarea
                 rows={3}
-                value={configuredModelsText}
-                onChange={(event) => setAvailableModels(event.target.value)}
+                value={availableModelsText}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setAvailableModelsText(nextValue);
+                  setAvailableModels(nextValue);
+                }}
                 placeholder={"每行一个模型名,例如\ngpt-4o\ngpt-4o-mini"}
               />
               <span className="hc-model-field-hint">每行一个,模型名按你接入的服务命名,例如 gpt-4o。</span>
@@ -566,7 +583,7 @@ function ModelSettingsForm({
               ) : (
                 <input value={modelDraft.model} onChange={(event) => setPrimaryModel(event.target.value)} disabled placeholder="先在上方添加可用模型" />
               )}
-              <span className="hc-model-field-hint">新会话默认使用这一个,可在对话中临时切换。</span>
+              <span className="hc-model-field-hint">保存后会重启模型运行时，当前对话下一轮会使用新连接。</span>
             </label>
             <label className="hc-model-field">
               <span className="hc-model-field-label">采样温度</span>
@@ -601,9 +618,9 @@ function ModelSettingsForm({
       </div>
       <div className="hc-settings-footer">
         <div className="hc-muted">
-          已配置 {configuredModels.length} 个模型 · 当前共 {models.length} 套模型档案
+          已配置 {configuredModels.length} 个模型 · 当前共 {models.length} 套模型档案 · 保存会重启运行时以加载 API 地址和 Key
         </div>
-        <button className="hc-button hc-button-primary hc-settings-footer-action" onClick={onSave} type="button"><KeyRound size={15} /> 保存并应用</button>
+        <button className="hc-button hc-button-primary hc-settings-footer-action" onClick={onSave} type="button"><KeyRound size={15} /> 保存并重启运行时</button>
       </div>
     </>
   );

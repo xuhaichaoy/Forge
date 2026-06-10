@@ -106,7 +106,7 @@
 .hc-markdown-image figcaption {
   margin-top: 4px;
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-markdown-image-preview-dialog {
@@ -196,7 +196,7 @@
 .hc-markdown-image-preview-caption {
   max-width: min(92vw, 860px);
   color: #ffffff;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
   text-align: center;
 }
@@ -244,7 +244,9 @@
   background: transparent;
   padding: 0;
   color: #22262b;
-  font-size: 12px;
+  /* Code body rides the independent "Code font size" setting
+     (--codex-chat-code-font-size), NOT the UI font scale. */
+  font-size: var(--codex-chat-code-font-size, 12px);
   line-height: 1.45;
   white-space: pre;
 }
@@ -257,7 +259,7 @@
   gap: 10px;
   padding: 4px 8px;
   color: #70757c;
-  font-size: 12px; /* codex code-block header = text-sm = 12px (body stays --codex-chat-code-font-size = 12px) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex code-block header = text-sm = 12px (body stays --codex-chat-code-font-size = 12px) */
   user-select: none;
 }
 
@@ -330,7 +332,9 @@
   display: block;
   background: transparent;
   padding: 0;
-  font-size: 12px;
+  /* Code body rides --codex-chat-code-font-size (the "Code font size" setting),
+     independent of the UI font scale. */
+  font-size: var(--codex-chat-code-font-size, 12px);
   line-height: 1.45;
 }
 
@@ -613,7 +617,7 @@
 
 .hc-mermaid-nodes text {
   fill: var(--hc-text-primary);
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   text-anchor: middle;
   dominant-baseline: middle;
@@ -621,7 +625,7 @@
 
 .hc-mermaid-edge-label {
   fill: color-mix(in srgb, var(--hc-text-primary) 64%, transparent);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   text-anchor: middle;
   dominant-baseline: middle;
   paint-order: stroke;
@@ -676,7 +680,7 @@
   border-collapse: separate;
   border-spacing: 0;
   color: #27313d;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   table-layout: auto;
 }
 
@@ -820,10 +824,17 @@
   text-decoration: none;
 }
 
+/* Projectless conversations render file citations as plain, non-clickable
+   provenance text (DelinkFileCitationsContext) — no chip box / link color, just
+   a muted inline source name. --hc-text-secondary is theme-aware (no dark rule). */
+.hc-markdown .hc-file-citation-plain {
+  color: var(--hc-text-secondary);
+}
+
 .hc-memory-citations {
   margin-top: 12px;
   color: #6f716b;
-  font-size: 13px; /* codex text-size-chat-sm */
+  font-size: calc(13px * var(--hc-ui-font-scale, 1)); /* codex text-size-chat-sm */
 }
 
 .hc-memory-citations summary {

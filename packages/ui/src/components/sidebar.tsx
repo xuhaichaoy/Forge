@@ -36,6 +36,7 @@ import {
   type RateLimitCompactSummary,
 } from "../state/rate-limit-summary";
 import {
+  CHATS_GROUP_KEY,
   DEFAULT_SIDEBAR_ORGANIZE_MODE,
   projectSidebarThreadGroups,
   sidebarThreadHasVisibleStatus,
@@ -44,6 +45,7 @@ import {
   splitSidebarThreadsByPinned,
   type SidebarOrganizeMode,
   type SidebarSortKey,
+  type SidebarThreadGroup,
   type SidebarThreadStatusState,
 } from "../state/sidebar-projection";
 import { threadTitle } from "../state/thread-workflow";
@@ -209,21 +211,27 @@ export function Sidebar({
     currentWorkspaceRoot,
     selectedWorkspaceRoots,
   });
-  // codex app-main chats-section-header: the projectless (recent) group uses the
-  // "Chats" label (sidebarElectron.recentChats); project modes use the "Projects"
-  // heading (sidebarElectron.projectsNavLink → "Projects" / "项目", the project
-  // section's nav label in the bundle). Folder rows carry the per-project grouping
-  // under this heading.
+  // codex renders TWO peer sidebar sections in the order ND = ['threads','chats']
+  // (app-main bundle): the per-project "Projects" section FIRST, then the
+  // projectless "Chats" section BELOW. Projectless threads are excluded from the
+  // project groups and listed flat under "Chats".
+  const projectGroups = threadGroups.filter((group) => group.key !== CHATS_GROUP_KEY);
+  const chatsThreads = threadGroups.find((group) => group.key === CHATS_GROUP_KEY)?.threads ?? [];
+  // codex project section header (sidebarElectron.projectsNavLink → "Projects" /
+  // "项目"); the chronological ("recent") mode reuses the "Chats" label for its
+  // single flat group. The standalone Chats section header below uses recentChats.
   const sectionLabel =
     effectiveOrganizeMode === "recent"
       ? formatMessage({ id: "sidebarElectron.recentChats", defaultMessage: "Chats" })
       : formatMessage({ id: "sidebarElectron.projectsNavLink", defaultMessage: "Projects" });
+  // codex scopes the Projects "collapse all" + the section collapse state to the
+  // per-project groups only; the flat Chats list is not part of it.
   const sectionCollapseAction = projectSectionCollapseAction(
-    threadGroups.map((group) => group.key),
+    projectGroups.map((group) => group.key),
     effectiveCollapsedGroupKeys,
     previouslyExpandedGroupKeys,
   );
-  const showProjectSection = threadGroups.length > 0 || Boolean(onUseExistingFolder);
+  const showProjectSection = projectGroups.length > 0 || Boolean(onUseExistingFolder);
   const usageAlert = accountView?.usageAlert ?? null;
   const showUsageAlert = usageAlert != null && !dismissedUsageAlertKeys.has(usageAlert.dismissalKey);
 
@@ -293,7 +301,7 @@ export function Sidebar({
 
   const runSectionCollapseAction = () => {
     setOpenSectionMenu(null);
-    const groupKeys = threadGroups.map((group) => group.key);
+    const groupKeys = projectGroups.map((group) => group.key);
     if (sectionCollapseAction === "collapse-all") {
       const expanded = groupKeys.filter((key) => !effectiveCollapsedGroupKeys.has(key));
       updateCollapsedGroupKeys(() => new Set(groupKeys));
@@ -617,6 +625,38 @@ export function Sidebar({
     );
   });
 
+  // codex per-project sidebar group row: folder glyph + project name, collapsible.
+  // (The projectless "Chats" section is rendered separately as a flat list below
+  // the Projects section — see the render body — not through this helper.)
+  const renderThreadGroup = (group: SidebarThreadGroup) => {
+    const collapsed = effectiveCollapsedGroupKeys.has(group.key);
+    return (
+      <div className="hc-thread-group" key={group.key}>
+        <button
+          className="hc-project-row"
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={() => toggleGroup(group.key)}
+          title={group.path ?? group.label}
+        >
+          {collapsed ? <ChevronRight size={14} className="hc-sidebar-group-chevron" /> : <ChevronDown size={14} className="hc-sidebar-group-chevron" />}
+          <Folder size={16} />
+          <span className="hc-project-name">{
+            group.key === "recent"
+              ? formatMessage({ id: "sidebarElectron.recentThreads", defaultMessage: group.label })
+              : group.label === "Local"
+                ? formatMessage({ id: "sidebarElectron.connectionGroup.local", defaultMessage: "Local" })
+                : group.label
+          }</span>
+        </button>
+        {!collapsed && group.threads.length === 0 && (
+          <div className="hc-empty-group">{formatMessage({ id: "hc.sidebar.noChats", defaultMessage: "No chats" })}</div>
+        )}
+        {!collapsed && renderThreadRows(group.threads)}
+      </div>
+    );
+  };
+
   return (
     <aside className="hc-sidebar" id="hc-sidebar">
       {renderUpdateBadge()}
@@ -804,31 +844,21 @@ export function Sidebar({
                 )}
               </div>
             </div>
-            {threadGroups.map((group) => (
-          <div className="hc-thread-group" key={group.key}>
-            <button
-              className="hc-project-row"
-              type="button"
-              aria-expanded={!effectiveCollapsedGroupKeys.has(group.key)}
-              onClick={() => toggleGroup(group.key)}
-              title={group.path ?? group.label}
-            >
-              {effectiveCollapsedGroupKeys.has(group.key) ? <ChevronRight size={14} className="hc-sidebar-group-chevron" /> : <ChevronDown size={14} className="hc-sidebar-group-chevron" />}
-              <Folder size={16} />
-              <span className="hc-project-name">{
-                group.key === "recent"
-                  ? formatMessage({ id: "sidebarElectron.recentThreads", defaultMessage: group.label })
-                  : group.label === "Local"
-                    ? formatMessage({ id: "sidebarElectron.connectionGroup.local", defaultMessage: "Local" })
-                    : group.label
-              }</span>
-            </button>
-            {!effectiveCollapsedGroupKeys.has(group.key) && group.threads.length === 0 && (
-              <div className="hc-empty-group">{formatMessage({ id: "hc.sidebar.noChats", defaultMessage: "No chats" })}</div>
-            )}
-            {!effectiveCollapsedGroupKeys.has(group.key) && renderThreadRows(group.threads)}
-          </div>
-            ))}
+            {projectGroups.map(renderThreadGroup)}
+          </>
+        )}
+        {chatsThreads.length > 0 && (
+          <>
+            {/* codex 'chats' section (default order ND = ['threads','chats']): a peer
+                section BELOW Projects that lists every projectless thread FLAT — never
+                as a per-cwd "new-chat" project folder. Header uses recentChats; the
+                section toggle carries no leading glyph in Codex Desktop. */}
+            <div className="hc-thread-section-header">
+              <div className="hc-thread-section-label">{formatMessage({ id: "sidebarElectron.recentChats", defaultMessage: "Chats" })}</div>
+            </div>
+            <div className="hc-thread-group">
+              {renderThreadRows(chatsThreads)}
+            </div>
           </>
         )}
       </div>

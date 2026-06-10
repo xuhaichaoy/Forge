@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
+import { createPortal } from "react-dom";
 import { Pause, Pencil, Play, Target, X } from "lucide-react";
 import type { ThreadGoal } from "@hicodex/codex-protocol";
 import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
@@ -112,6 +113,29 @@ function nextThreadGoalStatus(status: ThreadGoalStatus): ThreadGoalStatus | null
 // characters or fewer.
 const THREAD_GOAL_OBJECTIVE_MAX_CHARS = 4000;
 
+// Window-level Escape: these dialogs are hand-rolled (not Radix), so without
+// this the only dismiss affordances are pointer-based.
+function useEscapeToClose(onClose: () => void): void {
+  useEffect(() => {
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+}
+
+/*
+ * The goal dialogs mount in the composer footer subtree, which lives inside
+ * `.hc-thread-scroll-content` — that wrapper always carries a `transform`, so
+ * a `position: fixed` backdrop rendered inline re-anchors to the scroll
+ * content box and gets clipped by the scroll container's overflow. Portal to
+ * <body>, same fix as user-message-content-render.tsx / image-preview-lightbox.tsx.
+ */
+function portalDialogToBody(dialog: ReactElement) {
+  return typeof document !== "undefined" ? createPortal(dialog, document.body) : dialog;
+}
+
 // codex composer.threadGoal.replaceConfirmation.* — shown before replacing an
 // already-saved goal with a new objective typed in goal mode.
 export function ThreadGoalReplaceConfirm({
@@ -126,7 +150,8 @@ export function ThreadGoalReplaceConfirm({
   onCancel: () => void;
 }) {
   const { formatMessage } = useHiCodexIntl();
-  return (
+  useEscapeToClose(onCancel);
+  return portalDialogToBody(
     <div
       className="hc-settings-backdrop"
       role="presentation"
@@ -159,7 +184,7 @@ export function ThreadGoalReplaceConfirm({
           </button>
         </footer>
       </section>
-    </div>
+    </div>,
   );
 }
 
@@ -185,7 +210,8 @@ export function ThreadGoalResumeConfirm({
   const title = status === "paused"
     ? formatMessage({ id: "composer.threadGoal.resumeConfirmation.title", defaultMessage: "Resume paused goal?" })
     : formatMessage({ id: "composer.threadGoal.resumeConfirmation.resumableTitle", defaultMessage: "Resume goal?" });
-  return (
+  useEscapeToClose(onDismiss);
+  return portalDialogToBody(
     <div
       className="hc-settings-backdrop"
       role="presentation"
@@ -222,7 +248,7 @@ export function ThreadGoalResumeConfirm({
           </button>
         </footer>
       </section>
-    </div>
+    </div>,
   );
 }
 
@@ -258,6 +284,15 @@ export function ThreadGoalBanner({
     }
     setDraft(goal.objective.trim());
   }, [goal]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setEditing(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [editing]);
 
   if (!goal || !summary) return null;
 
@@ -350,7 +385,7 @@ export function ThreadGoalBanner({
           </div>
         )}
       </AboveComposerPanel>
-      {editing && (
+      {editing && portalDialogToBody(
         <div
           className="hc-settings-backdrop"
           role="presentation"

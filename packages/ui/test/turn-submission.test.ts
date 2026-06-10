@@ -101,10 +101,19 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
-      queue: [paused, sending, queued],
+      queue: [paused, queued],
     }),
     queued,
-    "auto drain should skip paused and sending queued follow-ups",
+    "auto drain should skip paused queued follow-ups",
+  );
+  assertDeepEqual(
+    selectNextQueuedFollowUp({
+      activeThreadRunning: false,
+      pendingRequestCount: 0,
+      queue: [paused, sending, queued],
+    }),
+    null,
+    "auto drain should wait while another follow-up is sending (double-send guard)",
   );
   assertDeepEqual(
     selectNextQueuedFollowUp({

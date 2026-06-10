@@ -29,7 +29,7 @@
   border: 1px solid transparent;
   border-radius: 4px;
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   cursor: pointer;
   white-space: nowrap;
   color: var(--hc-text-secondary, rgba(0, 0, 0, 0.6));
@@ -51,7 +51,7 @@
   overflow: auto;
   padding: 8px;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-spreadsheet-table-wrap table {
@@ -84,5 +84,5 @@
   padding: 20px;
   text-align: center;
   color: var(--hc-text-secondary, rgba(0, 0, 0, 0.6));
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }

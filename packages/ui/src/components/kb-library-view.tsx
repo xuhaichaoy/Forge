@@ -37,7 +37,6 @@ import {
   type YuxiBusinessLine,
   type YuxiCategoryMeta,
 } from "../lib/yuxi-client";
-import { KbYuxiConnectionControl } from "./kb-page-shell";
 import { startTopbarWindowDrag } from "../lib/window-drag";
 import { KbLibraryIntegrationPanel } from "./kb-library-integration-panel";
 import { KbLibraryIngestPipeline, uploadRunPipelineSteps } from "./kb-library-ingest-pipeline";
@@ -949,7 +948,6 @@ export function KbLibraryView() {
             <RefreshCw size={13} strokeWidth={2.2} aria-hidden="true" />
             {loading ? "同步中" : "同步"}
           </button>
-          <KbYuxiConnectionControl />
         </div>
       </header>
 

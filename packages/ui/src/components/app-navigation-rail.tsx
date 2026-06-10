@@ -1,4 +1,7 @@
-import { Archive, BookOpen, ClipboardList, LayoutDashboard, Settings } from "lucide-react";
+import { Archive, BookOpen, ClipboardList, LayoutDashboard, LogOut, Settings } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
+import type { TeamServiceAuthSession } from "../lib/team-service-auth";
 
 export type AppNavigationTab = "workbench" | "knowledge" | "ingest" | "archive" | "todo" | "remoteTask";
 
@@ -21,15 +24,60 @@ const appNavigationItems: Array<{
 export function AppNavigationRail({
   activeTab,
   onOpenSettings,
+  onProductSignOut,
+  productAccount,
   onTabChange,
 }: {
   activeTab: AppNavigationTab;
   onOpenSettings?: () => void;
+  onProductSignOut?: () => void;
+  productAccount?: TeamServiceAuthSession | null;
   onTabChange: (tab: AppNavigationTab) => void;
 }) {
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement | null>(null);
+  const closeAccount = useCallback(() => setAccountOpen(false), []);
+  useDismissibleLayer(accountOpen, accountRef, closeAccount);
+  const username = productAccount?.user?.username ?? "Forge 账号";
+  const role = productAccount?.user?.role ?? null;
+  const accountInitial = accountInitialFromUsername(username);
+
   return (
     <aside className="hc-app-rail" aria-label="全部项目">
-      <div className="hc-app-rail-brand" aria-label="HiCodex">H</div>
+      <div className="hc-app-rail-account" ref={accountRef}>
+        <button
+          type="button"
+          className="hc-app-rail-brand"
+          aria-label="Forge 账号"
+          aria-expanded={accountOpen}
+          aria-haspopup="menu"
+          title="Forge 账号"
+          onClick={() => setAccountOpen((current) => !current)}
+        >
+          {accountInitial}
+        </button>
+        {accountOpen && (
+          <div className="hc-app-rail-account-menu" role="menu">
+            <div className="hc-app-rail-account-card" role="menuitem">
+              <span>Forge 账号</span>
+              <strong>{username}</strong>
+              {role ? <small>{role}</small> : null}
+            </div>
+            <button
+              type="button"
+              className="hc-app-rail-account-action"
+              role="menuitem"
+              onClick={() => {
+                setAccountOpen(false);
+                onProductSignOut?.();
+              }}
+            >
+              <LogOut size={14} aria-hidden="true" />
+              <span>退出 Forge 账号</span>
+            </button>
+          </div>
+        )}
+      </div>
       <nav className="hc-app-rail-tabs" aria-label="全部项目">
         {appNavigationItems.map(({ id, label, Icon }) => (
           <button
@@ -58,4 +106,10 @@ export function AppNavigationRail({
       )}
     </aside>
   );
+}
+
+function accountInitialFromUsername(username: string): string {
+  const trimmed = username.trim();
+  if (!trimmed || trimmed === "Forge 账号") return "H";
+  return trimmed.slice(0, 1).toUpperCase();
 }

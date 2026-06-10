@@ -24,7 +24,6 @@ import {
 } from "./assistant-message-artifacts";
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { AssistantResourceCards } from "./assistant-resource-cards";
-import { type SubmitTurnRatingEvent } from "./turn-rating-controls";
 // codex: local-conversation-thread-*.js — automation citation
 // extraction + chip row. Codex's assistant body interleaves `:citation{...}`
 // leaf directives into the markdown and hoists them into either the trailing
@@ -45,7 +44,7 @@ import type { FileReference } from "./file-reference-types";
 // codex inline-mentions-*.js wraps inline file references with the workspace-file
 // context menu; HiCodex shares the menu definition via ./file-citation-menu.
 import { ContextMenu } from "./context-menu";
-import { FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
+import { DelinkFileCitationsContext, FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
 import { GeneratedImageGallery } from "./generated-image-gallery";
 import { TurnDiffBlock, type PatchAction, type PatchActionState } from "./event-unit";
 import {
@@ -196,7 +195,6 @@ function MessageUnitViewInner({
   onRevealAssistantEndResource,
   onForkTurn,
   onOpenThreadId,
-  onSubmitTurnFeedback,
   onOpenFileReference,
   onOpenFileReferenceExternal,
   onOpenAutomation,
@@ -213,7 +211,6 @@ function MessageUnitViewInner({
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onRevealAssistantEndResource?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   onOpenThreadId?: OpenThreadHandler;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
@@ -413,7 +410,6 @@ function MessageUnitViewInner({
                         hasArtifacts={unit.hasArtifacts === true}
                         item={unit.item}
                         onFork={onFork}
-                        onSubmitTurnFeedback={onSubmitTurnFeedback}
                                   threadId={threadId}
                         turnId={turnId}
                       />
@@ -449,7 +445,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
       && prev.onOpenAssistantArtifact === next.onOpenAssistantArtifact
       && prev.onRevealAssistantEndResource === next.onRevealAssistantEndResource
       && prev.onForkTurn === next.onForkTurn
-      && prev.onSubmitTurnFeedback === next.onSubmitTurnFeedback
+      && prev.onOpenThreadId === next.onOpenThreadId
       && prev.onOpenFileReference === next.onOpenFileReference
       && prev.onOpenAutomation === next.onOpenAutomation
       && prev.onOpenDiff === next.onOpenDiff
@@ -465,7 +461,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (prev.onOpenAssistantArtifact !== next.onOpenAssistantArtifact) return false;
   if (prev.onRevealAssistantEndResource !== next.onRevealAssistantEndResource) return false;
   if (prev.onForkTurn !== next.onForkTurn) return false;
-  if (prev.onSubmitTurnFeedback !== next.onSubmitTurnFeedback) return false;
+  if (prev.onOpenThreadId !== next.onOpenThreadId) return false;
   if (prev.onOpenFileReference !== next.onOpenFileReference) return false;
   if (prev.onOpenAutomation !== next.onOpenAutomation) return false;
   if (prev.onOpenDiff !== next.onOpenDiff) return false;
@@ -823,9 +819,6 @@ function UserMessageUnit({
       <UserMessageAttachmentStrip
         unit={unit}
         onOpenFileReference={onOpenFileReference}
-        renderMarkdown={(text, openFileReference) => (
-          <Markdownish text={text} onOpenFileReference={openFileReference} />
-        )}
       />
       {shouldRenderUserMessageBubble(unit) && (
         <UserMessageBubble onBeginEdit={onEdit ? () => setEditing(true) : undefined}>
@@ -1205,7 +1198,6 @@ function AssistantMessageActions({
   hasArtifacts,
   item,
   onFork,
-  onSubmitTurnFeedback,
   threadId,
   turnId,
 }: {
@@ -1213,7 +1205,6 @@ function AssistantMessageActions({
   hasArtifacts?: boolean;
   item: Record<string, unknown>;
   onFork?: () => void;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   threadId?: string | null;
   turnId?: string | null;
 }) {
@@ -2498,9 +2489,20 @@ function FileCitationAnchor({
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
 }) {
   const menuActions = useContext(FileCitationMenuContext);
+  const delink = useContext(DelinkFileCitationsContext);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { formatMessage } = useHiCodexIntl();
   const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions, formatMessage });
+
+  // Projectless conversation: the citation is a knowledge-base / tool source, not
+  // a local file — render plain, non-clickable provenance instead of a dead link.
+  if (delink) {
+    return (
+      <span className="hc-file-citation-plain">
+        {displayCitationPath(displayPath)} {memoryCitationLineLabel(entry)}
+      </span>
+    );
+  }
 
   return (
     <>

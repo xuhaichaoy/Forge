@@ -9,6 +9,7 @@
  * has no "Let's build" subtitle (letsBuild appears 0× in app-main).
  */
 import { useMemo } from "react";
+import { isProjectlessWorkspace } from "../state/thread-workflow";
 import { useHiCodexIntl } from "./i18n-provider";
 
 interface OnboardingEmptyStateProps {
@@ -26,6 +27,10 @@ function projectBasename(workspace: string): string | null {
   const trimmed = workspace.trim();
   if (trimmed.length === 0) return null;
   if (GENERIC_WORKSPACE_VALUES.has(trimmed)) return null;
+  // codex: a projectless workspace (empty / `~` / a generated ~/Documents/Codex cwd
+  // synced in from an active projectless thread) has no project name — the hero shows
+  // the generic "What should we work on?", never "…in 2-3?".
+  if (isProjectlessWorkspace(trimmed)) return null;
   // Strip trailing path separators (POSIX or Windows) before extracting tail.
   const normalized = trimmed.replace(/[\\/]+$/, "");
   if (normalized.length === 0) return null;

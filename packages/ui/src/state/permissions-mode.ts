@@ -94,6 +94,59 @@ export function permissionModeConfigEdits(mode: PermissionMode): ConfigWriteActi
   ];
 }
 
+export function permissionModeThreadSettingsPatch(mode: PermissionMode): {
+  approvalPolicy: unknown;
+  approvalsReviewer: string;
+  sandboxPolicy: Record<string, unknown>;
+} {
+  const config = permissionModeConfig(mode);
+  return {
+    approvalPolicy: config.approvalPolicy,
+    approvalsReviewer: config.approvalsReviewer,
+    sandboxPolicy: sandboxPolicyFromPermissionConfig(config),
+  };
+}
+
+// codex composer-B7sGHJVq.js — the composer permissions DROPDOWN exposes only four
+// rows (NOT the five settings modes): the default/"Ask for approval" row folds in
+// read-only/auto/granular; guardian-approvals/full-access/custom map 1:1.
+export type PermissionDropdownKey = "default" | "guardian-approvals" | "full-access" | "custom";
+
+// codex `G`/`Jd`: which dropdown row carries the checkmark for a resolved mode.
+// read-only / auto / granular all collapse to the default ("Ask for approval") row.
+export function permissionsDropdownSelectedKey(mode: PermissionModeStatus): PermissionDropdownKey {
+  if (mode === "guardian-approvals") return "guardian-approvals";
+  if (mode === "full-access") return "full-access";
+  if (mode === "custom") return "custom";
+  return "default";
+}
+
+// codex `Ee`/`Oe`/`ke`: the named PermissionMode each clickable row applies. The
+// default row applies the workspace-write default ("auto"); "custom" has no
+// writable named-mode config (it routes to the settings panel) so it is excluded.
+export const PERMISSION_DROPDOWN_APPLY_MODE: Record<Exclude<PermissionDropdownKey, "custom">, PermissionMode> = {
+  "default": "auto",
+  "guardian-approvals": "guardian-approvals",
+  "full-access": "full-access",
+};
+
+export function permissionDropdownApplyMode(
+  key: Exclude<PermissionDropdownKey, "custom">,
+  currentMode: PermissionModeStatus,
+): PermissionMode | null {
+  if (key === permissionsDropdownSelectedKey(currentMode)) return null;
+  return PERMISSION_DROPDOWN_APPLY_MODE[key];
+}
+
+export function permissionDropdownBlockedReason(
+  key: PermissionDropdownKey,
+  requirementsInput?: PermissionRequirementsInput,
+): string {
+  if (key === "custom" || requirementsInput === undefined) return "";
+  const requirements = permissionRequirementsFromInput(requirementsInput);
+  return permissionModeBlockedReason(PERMISSION_DROPDOWN_APPLY_MODE[key], requirements);
+}
+
 function permissionModeEntry(
   mode: PermissionMode,
   currentMode: PermissionModeStatus,
@@ -169,6 +222,29 @@ function permissionModeConfig(mode: PermissionMode): {
         approvalsReviewer: "user",
         sandboxWorkspaceWrite: null,
       };
+  }
+}
+
+function sandboxPolicyFromPermissionConfig(
+  config: ReturnType<typeof permissionModeConfig>,
+): Record<string, unknown> {
+  switch (config.sandboxMode) {
+    case "read-only":
+      return { type: "readOnly", networkAccess: false };
+    case "workspace-write": {
+      const workspace = recordValue(config.sandboxWorkspaceWrite);
+      return {
+        type: "workspaceWrite",
+        writableRoots: Array.isArray(workspace?.writable_roots) ? workspace.writable_roots : [],
+        networkAccess: workspace?.network_access === true,
+        excludeTmpdirEnvVar: workspace?.exclude_tmpdir_env_var === true,
+        excludeSlashTmp: workspace?.exclude_slash_tmp === true,
+      };
+    }
+    case "danger-full-access":
+      return { type: "dangerFullAccess" };
+    default:
+      return { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
   }
 }
 

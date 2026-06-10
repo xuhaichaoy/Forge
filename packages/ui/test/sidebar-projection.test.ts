@@ -1,4 +1,6 @@
 import {
+  CHATS_GROUP_KEY,
+  isProjectlessThreadCwd,
   isSubagentThread,
   projectSidebarThreadGroups,
   projectSidebarThreads,
@@ -33,6 +35,9 @@ export default function runSidebarProjectionTests(): void {
   groupsThreadsByLocalProjectWithoutReordering();
   groupsThreadsAsRecentWhenOrganizeModeRequestsRecent();
   groupsCurrentWorkspaceThreadsBeforeOtherLocalProjects();
+  collapsesProjectlessThreadsIntoOneChatsGroup();
+  detectsProjectlessThreadCwdUnderDocumentsCodex();
+  excludesProjectlessThreadsFromWorkspaceRootOptions();
 }
 
 function makeThread(overrides: Partial<Thread> & Record<string, unknown>): Thread {
@@ -282,4 +287,61 @@ function groupsCurrentWorkspaceThreadsBeforeOtherLocalProjects(): void {
     `expected current workspace group to preserve matching thread order, got ${groups[0]?.threads.map((thread) => thread.id).join(",")}`,
   );
   assert(groups[1]?.label === "other", `expected remaining local project group, got ${groups[1]?.label}`);
+}
+
+function collapsesProjectlessThreadsIntoOneChatsGroup(): void {
+  // codex: projectless threads (generated working dirs under ~/Documents/Codex) do
+  // NOT each become a `new-chat`/`new-chat-2` project folder — they all collapse
+  // into a single "chats" group rendered ahead of the real project groups.
+  const groups = projectSidebarThreadGroups([
+    makeThread({ id: "real", cwd: ("/work/app" as unknown) as Thread["cwd"], updatedAt: 300 }),
+    makeThread({ id: "chat-a", cwd: ("/Users/me/Documents/Codex/2026-06-08/new-chat" as unknown) as Thread["cwd"], updatedAt: 200 }),
+    makeThread({ id: "chat-b", cwd: ("/Users/me/Documents/Codex/2026-06-08/new-chat-2" as unknown) as Thread["cwd"], updatedAt: 100 }),
+  ]);
+  assert(groups.length === 2, `expected one project group plus the chats group, got ${groups.length}`);
+  // codex default section order ND = ['threads','chats']: the real project group is FIRST.
+  assert(groups[0]?.label === "app", `expected the real workspace project group first, got ${groups[0]?.label}`);
+  assert(groups[0]?.kind === "project", `expected project kind, got ${groups[0]?.kind}`);
+  // both projectless new-chat dirs collapse into ONE chats group, rendered LAST.
+  assert(groups[1]?.key === CHATS_GROUP_KEY, `expected chats group last, got ${groups[1]?.key}`);
+  assert(groups[1]?.kind === "chats", `expected chats kind, got ${groups[1]?.kind}`);
+  assert(
+    groups[1]?.threads.map((thread) => thread.id).join(",") === "chat-a,chat-b",
+    `expected both projectless threads in the chats group, got ${groups[1]?.threads.map((thread) => thread.id).join(",")}`,
+  );
+}
+
+function detectsProjectlessThreadCwdUnderDocumentsCodex(): void {
+  assert(
+    isProjectlessThreadCwd("/Users/me/Documents/Codex/2026-06-08/new-chat") === true,
+    "nested Documents/Codex/<date>/<slug> cwd should be projectless",
+  );
+  assert(
+    isProjectlessThreadCwd("/Users/me/Documents/Codex/2026-04-22-new-chat") === true,
+    "flat Documents/Codex/<date-slug> cwd should be projectless",
+  );
+  assert(isProjectlessThreadCwd("/work/app") === false, "a real workspace cwd is not projectless");
+  assert(isProjectlessThreadCwd("~") === false, "bare home stays the existing Local group, not chats");
+  assert(isProjectlessThreadCwd(null) === false, "missing cwd is not projectless");
+  // codex's matcher is anchored, so the host-created outputs/ + work/ sub-dirs and a
+  // real project that merely lives under Documents/Codex are NOT projectless.
+  assert(
+    isProjectlessThreadCwd("/Users/me/Documents/Codex/2026-06-08/new-chat/outputs") === false,
+    "a sub-directory of a projectless slug dir is not itself projectless",
+  );
+  assert(
+    isProjectlessThreadCwd("/Users/me/Documents/Codex/my-real-project") === false,
+    "a non-date folder directly under Documents/Codex is not projectless",
+  );
+}
+
+function excludesProjectlessThreadsFromWorkspaceRootOptions(): void {
+  // codex excludes projectless threads from the composer's project dropdown the
+  // same way it excludes them from the sidebar project groups.
+  const options = projectSidebarWorkspaceRootOptions([
+    makeThread({ id: "real", cwd: ("/work/app" as unknown) as Thread["cwd"], updatedAt: 300 }),
+    makeThread({ id: "chat", cwd: ("/Users/me/Documents/Codex/2026-06-08/new-chat" as unknown) as Thread["cwd"], updatedAt: 200 }),
+  ]);
+  assert(options.length === 1, `expected the projectless cwd excluded from project options, got ${options.length}`);
+  assert(options[0]?.root === "/work/app", `expected only the real workspace root, got ${options[0]?.root}`);
 }

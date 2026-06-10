@@ -961,7 +961,6 @@ function parsesKatexBlockAndInlineMathLikeDesktop(): void {
 function omitsAssistantTurnRatingThumbs(): void {
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
     threadId: "thread-rating",
-    onSubmitTurnFeedback: () => undefined,
     onForkTurn: () => undefined,
     unit: {
       kind: "message",

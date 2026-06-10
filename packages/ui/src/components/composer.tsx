@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
+import { createPortal } from "react-dom";
 import { convertLocalFileSrc, listenNativeFileDropEvents } from "../lib/tauri-host";
 import { AboveComposerPlanSuggestion } from "./above-composer-plan-suggestion";
 import {
@@ -175,7 +176,7 @@ export function Composer({
   const submitTitle = composerSubmitTooltip(submitState, formatMessage);
   const placeholder = placeholderText ?? formatMessage({
     id: "composer.placeholder.newTask.locally.v2",
-    defaultMessage: "Ask Codex anything. @ to use plugins or mention files",
+    defaultMessage: "Ask Forge anything. @ to use plugins or mention files",
   });
   const mentionOpen = mentionPicker.status !== "closed";
   const hasComposerPopover = slashOpen || attachmentPicker.status !== "closed" || mentionOpen;
@@ -650,6 +651,32 @@ export function Composer({
     && !input.includes("\n")
     && measuredSingleLine;
 
+  /*
+   * Must escape the composer's render tree: the composer mounts in the thread
+   * scroll footer, inside `.hc-thread-scroll-content` whose permanent
+   * `transform` re-anchors `position: fixed` and lets the scroll container
+   * clip the backdrop. Same portal fix as user-message-content-render.tsx.
+   */
+  const imagePreviewOverlay = imagePreview ? (
+    <div
+      className="hc-image-preview-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setImagePreview(null);
+      }}
+    >
+      <div className="hc-image-preview-dialog" role="dialog" aria-modal="true" aria-label={imagePreview.label} data-state="open">
+        <div className="hc-image-preview-header">
+          <span title={imagePreview.label}>{imagePreview.label}</span>
+          <button type="button" aria-label={formatMessage({ id: "codex.localConversation.closeGeneratedImagePreview", defaultMessage: "Close preview" })} title={formatMessage({ id: "hc.composer.preview.close", defaultMessage: "Close" })} onClick={() => setImagePreview(null)}>
+            <X size={16} />
+          </button>
+        </div>
+        <img alt={imagePreview.label} src={imagePreview.src} />
+      </div>
+    </div>
+  ) : null;
+
   return (
     <form
       ref={composerRef}
@@ -1062,25 +1089,9 @@ export function Composer({
         )}
         </div>
       </div>
-      {imagePreview && (
-        <div
-          className="hc-image-preview-backdrop"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setImagePreview(null);
-          }}
-        >
-          <div className="hc-image-preview-dialog" role="dialog" aria-modal="true" aria-label={imagePreview.label} data-state="open">
-            <div className="hc-image-preview-header">
-              <span title={imagePreview.label}>{imagePreview.label}</span>
-              <button type="button" aria-label={formatMessage({ id: "codex.localConversation.closeGeneratedImagePreview", defaultMessage: "Close preview" })} title={formatMessage({ id: "hc.composer.preview.close", defaultMessage: "Close" })} onClick={() => setImagePreview(null)}>
-                <X size={16} />
-              </button>
-            </div>
-            <img alt={imagePreview.label} src={imagePreview.src} />
-          </div>
-        </div>
-      )}
+      {imagePreviewOverlay && (typeof document !== "undefined"
+        ? createPortal(imagePreviewOverlay, document.body)
+        : imagePreviewOverlay)}
     </form>
   );
 }

@@ -11,7 +11,6 @@ import { ConversationView } from "./conversation-view";
 import type { FileReference } from "./file-reference-types";
 import type { OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
-import type { SubmitTurnRatingEvent } from "./turn-rating-controls";
 
 export interface BackgroundAgentPanelProps {
   error?: string | null;
@@ -28,7 +27,6 @@ export interface BackgroundAgentPanelProps {
   onMcpAppHostCall?: McpAppHostCallHandler;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
-  onSubmitTurnFeedback?: SubmitTurnRatingEvent;
   memoryCitationRoot?: string | null;
   onOpenThreadId?: OpenThreadHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
@@ -55,7 +53,6 @@ export function BackgroundAgentPanel({
   onMcpAppHostCall,
   onOpenFileReference,
   onOpenAutomation,
-  onSubmitTurnFeedback,
   memoryCitationRoot,
   onOpenThreadId,
   onReadMcpResource,
@@ -130,7 +127,6 @@ export function BackgroundAgentPanel({
             onMcpAppHostCall={onMcpAppHostCall}
             onOpenFileReference={onOpenFileReference}
             onOpenAutomation={onOpenAutomation}
-            onSubmitTurnFeedback={onSubmitTurnFeedback}
             memoryCitationRoot={memoryCitationRoot}
             onOpenThreadId={onOpenThreadId}
             onReadMcpResource={onReadMcpResource}

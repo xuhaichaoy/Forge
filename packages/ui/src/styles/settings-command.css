@@ -77,7 +77,7 @@
 .hc-settings-nav-group-heading {
   padding: 6px 8px 4px;
   color: #8a8f95;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0.03em;
 }
@@ -124,7 +124,7 @@
 
 .hc-settings-nav-item strong,
 .hc-settings-content-header strong {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
 }
 
@@ -132,7 +132,7 @@
 .hc-settings-content-header small {
   overflow: hidden;
   color: #73777d;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -182,7 +182,7 @@
 .hc-settings-empty {
   padding: 14px;
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-command-panel {
@@ -396,7 +396,7 @@
   display: grid;
   gap: 6px;
   color: #63665f;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -440,13 +440,13 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   color: #252b31;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
 .hc-thread-dialog-body span {
   color: #6f716b;
-  font-size: 14px; /* codex dialog body text `text-base` = 14px (was 12px, A/B-pending) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex dialog body text `text-base` = 14px (was 12px, A/B-pending) */
   line-height: 1.45;
 }
 
@@ -456,7 +456,7 @@
   display: block;
   max-height: none;
   color: #6f716b;
-  font-size: 14px; /* codex dialog subtitle slot `text-base` = 14px (was 12px, A/B-pending) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex dialog subtitle slot `text-base` = 14px (was 12px, A/B-pending) */
   font-weight: 400;
   line-height: 1.45;
 }
@@ -483,7 +483,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
   color: #1f2329;
 }
@@ -501,7 +501,7 @@
 .hc-fork-older-turn-subtitle {
   margin: 0;
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.5;
 }
 
@@ -551,13 +551,13 @@
 }
 
 .hc-fork-older-turn-option-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   color: #1f2329;
 }
 
 .hc-fork-older-turn-option-desc {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
   color: #6f716b;
 }
@@ -577,7 +577,7 @@
   border-radius: 7px;
   background: transparent;
   color: #252b31;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   cursor: pointer;
   transition: background 100ms ease, border-color 100ms ease;
 }
@@ -610,7 +610,7 @@
 .hc-mcp-follow-up-options legend {
   margin: 0 0 2px;
   color: #63665f;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -654,14 +654,14 @@
 
 .hc-mcp-follow-up-option strong {
   color: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   line-height: 1.25;
 }
 
 .hc-mcp-follow-up-option small {
   color: #6f716b;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
 }
 
@@ -680,7 +680,7 @@
   display: grid;
   gap: 6px;
   color: #63665f;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -717,7 +717,7 @@
   padding: 12px 14px;
   border-bottom: 1px solid #ece8dc;
   color: #5b5f59;
-  font-size: 14px; /* codex command-menu message text-base = 14px (was 12px; A/B-pending) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex command-menu message text-base = 14px (was 12px; A/B-pending) */
 }
 
 .hc-command-panel-message[data-status="error"] {
@@ -730,7 +730,7 @@
   padding: 10px 14px;
   border-bottom: 1px solid #ece8dc;
   color: #63665f;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -772,7 +772,7 @@
 .hc-command-panel-group {
   padding: 3px 2px 0;
   color: #777a72;
-  font-size: 12px; /* codex command-menu group heading text-sm = 12px (was 11px; A/B-pending) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex command-menu group heading text-sm = 12px (was 11px; A/B-pending) */
   font-weight: 400; /* codex group heading no weight utility = normal (was 700; A/B-pending) */
   line-height: 1.2;
 }
@@ -835,7 +835,7 @@
   margin: 0;
   overflow: hidden;
   color: #222823;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -848,7 +848,7 @@
   background: #eef1f3;
   color: #4b5651;
   padding: 3px 7px;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   line-height: 1.2;
   text-transform: uppercase;
@@ -858,7 +858,7 @@
   margin: 0;
   max-width: 460px;
   color: #6a6e66;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
 }
 
@@ -880,7 +880,7 @@
 
 .hc-settings-route-meta dt {
   color: #777a72;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 700;
 }
 
@@ -888,7 +888,7 @@
   margin: 0;
   overflow: hidden;
   color: #272c27;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -899,7 +899,7 @@
   border-radius: 8px;
   background: #ffffff;
   color: #5f625d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-settings-route-evidence summary {
@@ -924,7 +924,7 @@
   gap: 8px;
   padding: 8px 2px 2px;
   color: #5f6159;
-  font-size: 12px; /* codex group heading text-sm = 12px (was 11px; A/B-pending) */
+  font-size: calc(12px * var(--hc-ui-font-scale, 1)); /* codex group heading text-sm = 12px (was 11px; A/B-pending) */
   font-weight: 400; /* codex group heading normal weight (was 700; A/B-pending) */
   letter-spacing: normal; /* codex group heading no tracking (was 0.04em; A/B-pending) */
   line-height: 1.2;
@@ -933,7 +933,7 @@
 
 .hc-command-panel-section-count {
   color: #97968d;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -948,7 +948,7 @@
   padding: 18px 14px;
   text-align: center;
   color: #6f716b;
-  font-size: 14px; /* codex command-menu empty-state text-base = 14px (was 12px; A/B-pending) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex command-menu empty-state text-base = 14px (was 12px; A/B-pending) */
 }
 
 .hc-command-panel-chat-empty button {
@@ -1017,13 +1017,13 @@
 .hc-command-panel-row h3 {
   margin: 0;
   color: #222823;
-  font-size: 14px; /* codex command item title text-base = 14px (was 13px; A/B-pending) */
+  font-size: calc(14px * var(--hc-ui-font-scale, 1)); /* codex command item title text-base = 14px (was 13px; A/B-pending) */
 }
 
 .hc-command-panel-row p {
   margin: 4px 0 0;
   color: color-mix(in oklab, #1a1c1f 50%, transparent); /* codex description-foreground = 50% fg (was opaque #6f716b; A/B-pending) */
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
   word-break: break-word;
 }
@@ -1034,7 +1034,7 @@
   background: #ece9df;
   color: #4b5651;
   padding: 3px 7px;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   text-transform: uppercase;
 }
@@ -1056,7 +1056,7 @@
   color: #6f716b;
   padding: 2px 6px; /* codex kbd py-0.5 px-1.5 = 2px 6px (was 1px 5px; A/B-pending) */
   font-family: var(--hc-font-sans); /* codex kbd !font-sans (was monospace; A/B-pending) */
-  font-size: 11px; /* codex kbd !text-xs = 11px (was 10px; A/B-pending) */
+  font-size: calc(11px * var(--hc-ui-font-scale, 1)); /* codex kbd !text-xs = 11px (was 10px; A/B-pending) */
   line-height: 1.4;
   letter-spacing: 0.02em;
   opacity: 0.65;
@@ -1090,7 +1090,7 @@
   color: #4b5651;
   padding: 0 7px;
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 700;
   cursor: pointer;
 }
@@ -1117,7 +1117,7 @@
   margin: 9px 0 0;
   padding-left: 16px;
   color: #4b4f4a;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
   word-break: break-word;
 }
@@ -1173,14 +1173,14 @@
 
 .hc-management-summary-item strong {
   color: #222823;
-  font-size: 16px;
+  font-size: calc(16px * var(--hc-ui-font-scale, 1));
   line-height: 1;
 }
 
 .hc-management-summary-item span {
   overflow: hidden;
   color: #696d65;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -1222,7 +1222,7 @@
 .hc-management-section > header strong {
   overflow: hidden;
   color: #222823;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1232,7 +1232,7 @@
   flex: 0 1 auto;
   overflow: hidden;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1298,7 +1298,7 @@
 .hc-management-entry-copy strong {
   overflow: hidden;
   color: #222823;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1307,7 +1307,7 @@
 .hc-management-entry-copy p {
   margin: 0;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -1325,7 +1325,7 @@
   background: #eef1f3;
   color: #4b5651;
   padding: 3px 7px;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   text-transform: uppercase;
 }
@@ -1336,7 +1336,7 @@
   margin: 0;
   padding-left: 18px;
   color: #4b4f4a;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -1367,12 +1367,12 @@
 
 .hc-mcp-tool-form-summary strong {
   color: #222823;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-mcp-tool-form-summary span {
   color: #5f625d;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 
@@ -1400,7 +1400,7 @@
   justify-content: space-between;
   gap: 10px;
   color: #222823;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
 }
 
@@ -1409,7 +1409,7 @@
   background: #eef1f3;
   color: #4b5651;
   padding: 2px 6px;
-  font-size: 10px;
+  font-size: calc(10px * var(--hc-ui-font-scale, 1));
   font-style: normal;
   font-weight: 750;
   text-transform: uppercase;
@@ -1417,7 +1417,7 @@
 
 .hc-mcp-tool-field small {
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.4;
 }
 
@@ -1429,7 +1429,7 @@
   background: #ffffff;
   color: #222823;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   padding: 8px 9px;
 }
 
@@ -1455,7 +1455,7 @@ textarea.hc-mcp-tool-control {
   background: #ffffff;
   color: #222823;
   padding: 7px 9px;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
@@ -1529,7 +1529,7 @@ textarea.hc-mcp-tool-control {
  * in the description tone, sitting above the path list. */
 .hc-unified-diff-failure-intro {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
   color: #6f716b;             /* text-token-description-foreground */
 }
@@ -1551,7 +1551,7 @@ textarea.hc-mcp-tool-control {
 
 .hc-unified-diff-path-heading {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0;
 }
@@ -1566,7 +1566,7 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-unified-diff-path-row {
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   word-break: break-all;
@@ -1643,7 +1643,7 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-keyboard-shortcuts-title {
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
 }
 
@@ -1696,7 +1696,7 @@ textarea.hc-mcp-tool-control {
 
 .hc-keyboard-shortcuts-section-title {
   margin: 8px 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1733,12 +1733,12 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-keyboard-shortcuts-row-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-primary);
 }
 
 .hc-keyboard-shortcuts-row-desc {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1753,7 +1753,7 @@ textarea.hc-mcp-tool-control {
   background: var(--hc-surface-soft);
   color: var(--hc-text-secondary);
   font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1769,7 +1769,7 @@ textarea.hc-mcp-tool-control {
   padding: 24px 16px;
   text-align: center;
   color: var(--hc-text-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 /*
@@ -1797,7 +1797,7 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-key-capture-title {
-  font-size: 14px;
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
 }
 
@@ -1810,13 +1810,13 @@ textarea.hc-mcp-tool-control {
 
 .hc-key-capture-command {
   margin: 0;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-primary);
 }
 
 .hc-key-capture-current {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
 }
 
@@ -1827,7 +1827,7 @@ textarea.hc-mcp-tool-control {
   background: var(--hc-surface-subtle, #ebe7dc);
   color: var(--hc-text-primary);
   font-family: var(--hc-font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-key-capture-input {
@@ -1847,7 +1847,7 @@ textarea.hc-mcp-tool-control {
 
 .hc-key-capture-hint {
   margin: 0;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
 }
 
@@ -1899,7 +1899,7 @@ textarea.hc-mcp-tool-control {
 
 .hc-keyboard-settings-section-title {
   margin: 8px 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1915,7 +1915,7 @@ textarea.hc-mcp-tool-control {
 .hc-keyboard-settings-thead th {
   padding: 8px 6px;
   text-align: left;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   color: var(--hc-text-secondary);
   border-bottom: 1px solid var(--hc-border-subtle, rgba(0, 0, 0, 0.04));
@@ -1924,7 +1924,7 @@ textarea.hc-mcp-tool-control {
 .hc-keyboard-settings-section-row th {
   padding: 14px 6px 6px;
   text-align: left;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1982,13 +1982,13 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-keyboard-settings-command-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   color: var(--hc-text-primary);
 }
 
 .hc-keyboard-settings-command-desc {
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
   margin-top: 2px;
 }
@@ -2000,7 +2000,7 @@ textarea.hc-mcp-tool-control {
   background: var(--hc-surface-subtle, #ebe7dc);
   color: var(--hc-text-primary);
   font-family: var(--hc-font-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-keyboard-settings-kbd--empty {
@@ -2052,7 +2052,7 @@ textarea.hc-mcp-tool-control {
 
 .hc-keyboard-settings-conflict {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   color: #b35a00;
 }
 
@@ -2060,7 +2060,7 @@ textarea.hc-mcp-tool-control {
   padding: 24px 16px;
   text-align: center;
   color: var(--hc-text-secondary);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 /*
@@ -2099,13 +2099,13 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-appearance-row-title {
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 500;
   color: var(--hc-text-primary);
 }
 
 .hc-appearance-row-desc {
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
   margin-top: 2px;
 }
@@ -2128,7 +2128,7 @@ textarea.hc-mcp-tool-control {
   background: transparent;
   color: var(--hc-text-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   cursor: pointer;
 }
 
@@ -2164,7 +2164,7 @@ textarea.hc-mcp-tool-control {
 }
 
 .hc-appearance-number-input-unit {
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-secondary);
 }
 
@@ -2208,7 +2208,7 @@ textarea.hc-mcp-tool-control {
   padding: 0;
   margin: 0 0 4px;
   color: #222823;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   font-weight: 750;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -2218,7 +2218,7 @@ textarea.hc-mcp-tool-control {
   clear: both; /* clear legend float */
   margin: 0 0 12px;
   color: #6f716b;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
 }
 
@@ -2243,13 +2243,13 @@ textarea.hc-mcp-tool-control {
 
 .hc-model-field-label {
   color: #63665f;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 650;
 }
 
 .hc-model-field-hint {
   color: #8a8c84;
-  font-size: 11px;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
   line-height: 1.35;
 }
 
@@ -2264,7 +2264,7 @@ textarea.hc-mcp-tool-control {
   background: #f8f6f1;
   color: #222823;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   padding: 0 9px;
 }
 
@@ -2337,7 +2337,7 @@ textarea.hc-mcp-tool-control {
   padding: 0 9px;
   color: #222823;
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
 .hc-model-field-input-action {

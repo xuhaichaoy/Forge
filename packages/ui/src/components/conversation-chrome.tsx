@@ -1,13 +1,12 @@
 import { ArrowLeft, ArrowRight, GitBranch, Laptop, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { Thread } from "@hicodex/codex-protocol";
-import type { MouseEvent } from "react";
 // codex: electron-menu-shortcuts-*.js — Codex header buttons surface
 // the accelerator in their tooltip. HiCodex mirrors that on sidebar toggle.
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 // codex thread-env-icon-*.js wraps the env indicator in <Tooltip/> (tooltip-*.js).
 import { Tooltip } from "./tooltip";
 import { useHiCodexIntl } from "./i18n-provider";
-import { startWindowDrag } from "../lib/tauri-host";
+import { startTopbarWindowDrag } from "../lib/window-drag";
 
 export interface ConversationChromeProps {
   title: string;
@@ -104,16 +103,8 @@ export function ConversationChrome({
     : formatMessage({ id: "localConversation.summaryPanel.togglePinned", defaultMessage: "Toggle pinned summary" });
   const rightRailActionPressed = showRightRailPopoverToggle ? rightRailPopoverOpen : rightRailPinned;
   const rightRailActionHandler = showRightRailPopoverToggle ? onToggleRightRailPopover : onToggleRightRailPinned;
-  const startTopbarDrag = (event: MouseEvent<HTMLElement>) => {
-    if (event.button !== 0 || event.defaultPrevented) return;
-    const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("button,a,input,textarea,select,[role='button'],[data-no-window-drag='true']")) {
-      return;
-    }
-    void startWindowDrag().catch(() => undefined);
-  };
   return (
-    <header className="hc-topbar" data-tauri-drag-region onMouseDown={startTopbarDrag}>
+    <header className="hc-topbar" data-tauri-drag-region onMouseDown={startTopbarWindowDrag}>
       <div className="hc-topbar-main" data-tauri-drag-region>
         {onToggleSidebar && (
           <button

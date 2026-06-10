@@ -376,7 +376,7 @@ function formatsSettingsNavLabels(): void {
   // Composer placeholder — each branch resolves to the right Codex id + zh copy.
   assertEqual(
     composerPlaceholderText({ hasConversation: false }, zhFormat),
-    "可向 Codex 询问任何事。输入 @ 使用插件或提及文件",
+    "可向 Forge 询问任何事。输入 @ 使用插件或提及文件",
     "composer placeholder newTask zh",
   );
   assertEqual(
@@ -391,7 +391,7 @@ function formatsSettingsNavLabels(): void {
   );
   assertEqual(
     composerPlaceholderText({ hasConversation: false }),
-    "Ask Codex anything. @ to use plugins or mention files",
+    "Ask Forge anything. @ to use plugins or mention files",
     "composer placeholder English unchanged without formatMessage",
   );
 }

@@ -30,6 +30,17 @@ export interface FileCitationMenuActions {
 export const FileCitationMenuContext = createContext<FileCitationMenuActions | null>(null);
 
 /*
+ * True for a PROJECTLESS conversation (a "new chat" with no real workspace). A
+ * `【F:name†L】` citation there is not a local workspace file — it's the source
+ * document a tool (e.g. the Yuxi knowledge-base search) read, which lives in the
+ * KB, not on disk. Opening it resolves to a non-existent `cwd/<name>` ("无法加载
+ * 此预览 / file does not exist"), so the anchors render the citation as plain,
+ * non-clickable provenance text instead. Provided once above the conversation in
+ * HiCodexApp; defaults false (real workspaces keep clickable file citations).
+ */
+export const DelinkFileCitationsContext = createContext<boolean>(false);
+
+/*
  * Build the workspace-file context-menu items for a single file reference,
  * matching the subset HiCodex can support (the "Open in {target}" / "Open with"
  * / "View in browser" rows need OS app-discovery / an in-app browser HiCodex

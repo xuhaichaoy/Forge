@@ -9,10 +9,16 @@ import {
 export default function runModelPickerMenuTests(): void {
   locksModelsForUnverifiedProviders();
   keepsModelsSelectableForVerifiedProviders();
+  locksCrossAccountProvidersWhileAChatIsActive();
+  keepsSameAccountProvidersSelectableWhileAChatIsActive();
+  rendersServerDisplayLabelsForModels();
   usesIntendedModelWhenItsProviderIsReady();
+  rejectsReadyProviderWhenModelIsNotInThatProvider();
   fallsBackToReadyProviderWhenIntendedIsNotSignedIn();
+  blocksExplicitProviderSelectionWhenIntendedIsNotSignedIn();
   blocksWhenNoProviderIsReady();
   picksReadyDefaultWithoutFlaggingFallbackWhenNoIntention();
+  describesCrossAccountProviderLimitInFooter();
 }
 
 const RESOLVER_PROVIDERS = [
@@ -33,8 +39,22 @@ function usesIntendedModelWhenItsProviderIsReady(): void {
   assertEqual(r.noReadyProvider, false, "ready provider exists");
 }
 
-// The screenshot case: default is gpt-5.5 but ChatGPT is not signed in, while
-// the local gateway is ready → fall back to it instead of sending to nowhere.
+function rejectsReadyProviderWhenModelIsNotInThatProvider(): void {
+  const r = resolveEffectiveModelSelection({
+    intended: { providerId: "openai_http", model: "team-prefix:Qwen3.6-27B-mxfp4" },
+    providers: RESOLVER_PROVIDERS,
+    readyProviders: new Set(["hicodex_local", "openai_http"]),
+    allowFallback: false,
+  });
+  assertEqual(r.providerId, "openai_http", "provider identity is preserved for explicit invalid picks");
+  assertEqual(r.model, "team-prefix:Qwen3.6-27B-mxfp4", "invalid model is preserved for display/debug");
+  assertEqual(r.fellBack, false, "explicit invalid pick does not fall back");
+  assertEqual(r.noReadyProvider, true, "caller should not send a model that is not in the provider catalog");
+}
+
+// Config/default resolution: if there is no explicit picker override and the
+// configured provider is unavailable, use a ready provider instead of sending
+// to nowhere.
 function fallsBackToReadyProviderWhenIntendedIsNotSignedIn(): void {
   const r = resolveEffectiveModelSelection({
     intended: { providerId: "openai_http", model: "gpt-5.5" },
@@ -46,6 +66,20 @@ function fallsBackToReadyProviderWhenIntendedIsNotSignedIn(): void {
   assertEqual(r.fellBack, true, "fellBack flagged so the UI can explain the swap");
   assertEqual(r.noReadyProvider, false, "a ready provider exists");
   assertEqual(r.intended?.providerId, "openai_http", "intended pick is preserved for the sign-in hint");
+}
+
+// Explicit user provider picks must not silently route to a different provider.
+function blocksExplicitProviderSelectionWhenIntendedIsNotSignedIn(): void {
+  const r = resolveEffectiveModelSelection({
+    intended: { providerId: "openai_http", model: "gpt-5.5" },
+    providers: RESOLVER_PROVIDERS,
+    readyProviders: new Set(["hicodex_local"]),
+    allowFallback: false,
+  });
+  assertEqual(r.providerId, "openai_http", "explicit provider pick stays selected");
+  assertEqual(r.model, "gpt-5.5", "explicit model pick stays selected");
+  assertEqual(r.fellBack, false, "explicit provider pick does not fall back");
+  assertEqual(r.noReadyProvider, true, "caller should avoid silently sending to another provider");
 }
 
 // Nothing ready (not signed in AND local gateway not configured) → caller blocks send.
@@ -70,6 +104,146 @@ function picksReadyDefaultWithoutFlaggingFallbackWhenNoIntention(): void {
   assertEqual(r.providerId, "hicodex_local", "uses the ready provider as default");
   assertEqual(r.fellBack, false, "no intention → not a fallback");
   assertEqual(r.noReadyProvider, false, "a ready provider exists");
+}
+
+function describesCrossAccountProviderLimitInFooter(): void {
+  const markup = render(new Set(["ready_provider", "locked_provider"]));
+  assertIncludes(
+    markup,
+    "订阅模型与个人/团队模型互切需新建聊天",
+    "footer should not claim every provider change keeps the current chat",
+  );
+}
+
+/*
+ * Subscription vs API/team providers use different account/credit pools, so
+ * they cannot be switched within one chat. With an active chat bound to an
+ * API provider, the subscription provider's rows must be locked (and vice
+ * versa) instead of failing at send time.
+ */
+function locksCrossAccountProvidersWhileAChatIsActive(): void {
+  // Account class is derived from the real subscription provider ids
+  // (openai / openai_http) — the fixture must use them.
+  const subscriptionProvider: ModelPickerProvider = {
+    id: "openai_http",
+    label: "ChatGPT 订阅 · OpenAI HTTP",
+    host: "chatgpt.com",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
+    models: ["gpt-5.5", "gpt-5.4"],
+    authMode: "oauth",
+  };
+  // API-provider chat: the subscription section starts collapsed (rare
+  // scenario) and its header explains the cross-account limit.
+  const apiChatMarkup = renderToStaticMarkup(
+    createElement(ModelPickerMenu, {
+      anchor: fakeAnchor,
+      providers: [readyProvider, subscriptionProvider],
+      selectedKey: null,
+      defaultKey: null,
+      readyProviders: new Set(["ready_provider", "openai_http"]),
+      activeThreadProviderId: "ready_provider",
+      onSelect: () => {},
+      onOpenSettings: () => {},
+      onSignIn: () => {},
+      onClose: () => {},
+    }),
+  );
+  assertEqual(
+    occurrences(apiChatMarkup, "GPT-5.5"),
+    0,
+    "subscription models should start collapsed — mixing account classes is the rare case",
+  );
+  assertIncludes(
+    apiChatMarkup,
+    "需新建聊天",
+    "cross-account lock should explain that a new chat is required",
+  );
+  // Subscription chat: the section is expanded (it holds the selection) and
+  // the API provider's row is the locked side.
+  const subscriptionChatMarkup = renderToStaticMarkup(
+    createElement(ModelPickerMenu, {
+      anchor: fakeAnchor,
+      providers: [readyProvider, subscriptionProvider],
+      selectedKey: "openai_http::gpt-5.5",
+      defaultKey: null,
+      readyProviders: new Set(["ready_provider", "openai_http"]),
+      activeThreadProviderId: "openai_http",
+      onSelect: () => {},
+      onOpenSettings: () => {},
+      onSignIn: () => {},
+      onClose: () => {},
+    }),
+  );
+  assertIncludes(
+    subscriptionChatMarkup,
+    "GPT-5.5",
+    "subscription section holding the current selection should stay expanded",
+  );
+  assertEqual(
+    occurrences(subscriptionChatMarkup, 'data-locked="true"'),
+    1,
+    "the API provider's model should be locked while a subscription chat is active",
+  );
+}
+
+function keepsSameAccountProvidersSelectableWhileAChatIsActive(): void {
+  const teamProvider: ModelPickerProvider = {
+    id: "team_model_gateway",
+    label: "团队模型",
+    host: "127.0.0.1:5050",
+    baseUrl: "http://127.0.0.1:5050/api/team-gateway/v1",
+    models: ["123123:Qwen3.6-27B-mxfp4"],
+    authMode: "api-key",
+  };
+  const markup = renderToStaticMarkup(
+    createElement(ModelPickerMenu, {
+      anchor: fakeAnchor,
+      providers: [readyProvider, teamProvider],
+      selectedKey: null,
+      defaultKey: null,
+      readyProviders: new Set(["ready_provider", "team_model_gateway"]),
+      activeThreadProviderId: "ready_provider",
+      onSelect: () => {},
+      onOpenSettings: () => {},
+      onSignIn: () => {},
+      onClose: () => {},
+    }),
+  );
+  assertEqual(
+    occurrences(markup, 'data-locked="true"'),
+    0,
+    "personal ↔ team (same account class) switching stays available in-chat",
+  );
+}
+
+function rendersServerDisplayLabelsForModels(): void {
+  const teamProvider: ModelPickerProvider = {
+    id: "team_model_gateway",
+    label: "团队模型",
+    host: "127.0.0.1:5050",
+    baseUrl: "http://127.0.0.1:5050/api/team-gateway/v1",
+    models: ["123123:Qwen3.6-27B-mxfp4"],
+    modelLabels: { "123123:Qwen3.6-27B-mxfp4": "Qwen3.6 27B" },
+    authMode: "api-key",
+  };
+  const markup = renderToStaticMarkup(
+    createElement(ModelPickerMenu, {
+      anchor: fakeAnchor,
+      providers: [teamProvider],
+      selectedKey: null,
+      defaultKey: null,
+      readyProviders: new Set(["team_model_gateway"]),
+      onSelect: () => {},
+      onOpenSettings: () => {},
+      onSignIn: () => {},
+      onClose: () => {},
+    }),
+  );
+  assertIncludes(markup, "Qwen3.6 27B", "server display label should be rendered");
+  assert(
+    !markup.includes("123123:Qwen3.6-27B-mxfp4</span>"),
+    "the raw provider-scoped id should not be the visible row label when a display label exists",
+  );
 }
 
 // renderToStaticMarkup runs the component body (incl. the position useState
@@ -100,7 +274,10 @@ const lockedProvider: ModelPickerProvider = {
   authMode: "oauth",
 };
 
-function render(readyProviders: ReadonlySet<string>): string {
+function render(
+  readyProviders: ReadonlySet<string>,
+  options: { activeThreadProviderId?: string | null } = {},
+): string {
   return renderToStaticMarkup(
     createElement(ModelPickerMenu, {
       anchor: fakeAnchor,
@@ -108,6 +285,7 @@ function render(readyProviders: ReadonlySet<string>): string {
       selectedKey: null,
       defaultKey: null,
       readyProviders,
+      activeThreadProviderId: options.activeThreadProviderId ?? null,
       onSelect: () => {},
       onOpenSettings: () => {},
       onSignIn: () => {},
@@ -118,6 +296,12 @@ function render(readyProviders: ReadonlySet<string>): string {
 
 function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
+}
+
+function assertIncludes(haystack: string, needle: string, message: string): void {
+  if (!haystack.includes(needle)) {
+    throw new Error(`${message}: expected ${JSON.stringify(haystack)} to include ${JSON.stringify(needle)}`);
+  }
 }
 
 // The bug this guards against: a provider showing "not signed in" / "no key"

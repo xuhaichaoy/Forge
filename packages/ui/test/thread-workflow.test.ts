@@ -11,6 +11,7 @@ import {
   forkThreadIntoWorktree,
   IMAGE_TOOL_RESUME_FALLBACK_MESSAGE,
   interruptThreadTurn,
+  isThreadProviderSwitchMismatchError,
   isProjectlessWorkspace,
   isThreadNotFound,
   isThreadNotMaterialized,
@@ -36,6 +37,9 @@ import {
   steerTurn,
   threadStatusLabel,
   threadTitle,
+  threadContextDefaultsFromRuntimeResponse,
+  threadResolvedModelFromRolloutText,
+  hydrateThreadResolvedModelFromRollout,
   unarchiveThread,
   withWorkspaceDeveloperInstructions,
 } from "../src/state/thread-workflow";
@@ -111,6 +115,9 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   detectsNotLoadedThreadStatus();
   detectsRecoverableThreadErrors();
   projectsThreadContextFromCodexConfig();
+  projectsThreadContextFromRuntimeResponse();
+  parsesThreadResolvedModelFromRolloutText();
+  await hydratesThreadResolvedModelFromRolloutFile();
   await loadsWorkspaceDeveloperInstructionsFromAncestors();
   await prefersOverrideAgentsAndStopsAtProjectRoot();
   mergesWorkspaceDeveloperInstructionsIntoContext();
@@ -576,6 +583,41 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
   );
 }
 
+function projectsThreadContextFromRuntimeResponse(): void {
+  assertDeepEqual(
+    threadContextDefaultsFromRuntimeResponse(
+      {
+        thread: threadFixture({ id: "team-thread", modelProvider: "team_model_gateway" }),
+        model: "123123:Qwen3.6-27B-mxfp4",
+        modelProvider: "team_model_gateway",
+        serviceTier: null,
+        reasoningEffort: "high",
+      },
+      {
+        model: "Qwen3.6-27B-mxfp4",
+        modelProvider: "team_model_gateway",
+        developerInstructions: "Keep workspace instructions",
+      },
+    ),
+    {
+      model: "123123:Qwen3.6-27B-mxfp4",
+      modelProvider: "team_model_gateway",
+      developerInstructions: "Keep workspace instructions",
+      reasoningEffort: "high",
+    },
+    "runtime response model should replace stale config/default model while preserving non-model context",
+  );
+
+  assertDeepEqual(
+    threadContextDefaultsFromRuntimeResponse(
+      { thread: threadFixture({ id: "thread-without-runtime-model" }) },
+      { model: "gpt-5.2" },
+    ),
+    null,
+    "missing runtime model fields should not dispatch a no-op context update",
+  );
+}
+
 async function loadsWorkspaceDeveloperInstructionsFromAncestors(): Promise<void> {
   const files = new Map<string, string>([
     ["/repo/AGENTS.md", "Root agent rule."],
@@ -679,35 +721,43 @@ Agent rule.`,
 }
 
 function detectsProjectlessWorkspace(): void {
+  // codex `projectless-thread-*.js` `n(e)=e.length===0||e.length===1&&e[0]==='~'`:
+  // projectless iff the workspace is empty OR the literal `~` sentinel. A real path
+  // — even one equal to $HOME — is an explicitly-chosen project, NOT projectless.
   assertEqual(
-    isProjectlessWorkspace("", "/Users/me"),
+    isProjectlessWorkspace(""),
     true,
     "an empty workspace is projectless",
   );
   assertEqual(
-    isProjectlessWorkspace("   ", "/Users/me"),
+    isProjectlessWorkspace("   "),
     true,
     "a whitespace-only workspace is projectless",
   );
   assertEqual(
-    isProjectlessWorkspace("/Users/me", "/Users/me"),
+    isProjectlessWorkspace("~"),
     true,
-    "a workspace equal to the host default ($HOME) is projectless (codex treats `~` as projectless)",
+    "the bare `~` sentinel is projectless (codex roots === ['~'])",
   );
   assertEqual(
-    isProjectlessWorkspace("  /Users/me  ", "/Users/me"),
-    true,
-    "the default-cwd comparison ignores surrounding whitespace",
+    isProjectlessWorkspace("/Users/me"),
+    false,
+    "a real path equal to $HOME is an explicitly-chosen project, not projectless (codex never compares cwd to resolved home)",
   );
   assertEqual(
-    isProjectlessWorkspace("/repo/project", "/Users/me"),
+    isProjectlessWorkspace("  /Users/me  "),
+    false,
+    "surrounding whitespace does not turn a real path into projectless",
+  );
+  assertEqual(
+    isProjectlessWorkspace("/repo/project"),
     false,
     "a real picked workspace is not projectless",
   );
   assertEqual(
-    isProjectlessWorkspace("/repo/project", null),
-    false,
-    "a real workspace stays non-projectless even without a known default cwd",
+    isProjectlessWorkspace("/Users/me/Documents/Codex/2026-06-08/2-3"),
+    true,
+    "a generated ~/Documents/Codex projectless cwd (synced into workspace) is projectless, so it never leaks as a fake project",
   );
 }
 
@@ -986,7 +1036,18 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
   );
   assertDeepEqual(
     createdActions,
-    [{ type: "upsertThread", thread: createdHydratedThread, select: true }],
+    [
+      { type: "upsertThread", thread: createdHydratedThread, select: true },
+      // The runtime-reported (model, modelProvider) is recorded per thread so
+      // the picker checkmark / composer chip reflect THIS thread, not the
+      // global defaults.
+      {
+        type: "setThreadResolvedModel",
+        threadId: "created-thread",
+        model: null,
+        modelProvider: "openai",
+      },
+    ],
     "newly created thread should select the hydrated app-server metadata snapshot",
   );
 
@@ -1068,6 +1129,12 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     [
       { type: "log", text: IMAGE_TOOL_RESUME_FALLBACK_MESSAGE, level: "warn" },
       { type: "upsertThread", thread: imageFallbackHydrated, select: true },
+      {
+        type: "setThreadResolvedModel",
+        threadId: "image-thread",
+        model: null,
+        modelProvider: "openai",
+      },
     ],
     "old image request fallback should warn and select the image-capable thread",
   );
@@ -1116,6 +1183,241 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     dispatch: () => {},
   });
   assertEqual(selected.requests.length, 0, "loaded selected thread should be reused without lifecycle RPCs");
+
+  const sameProviderSwitch = createClientRecorder();
+  const sameProviderReady = await ensureThreadReadyForTurn({
+    client: sameProviderSwitch.client,
+    activeThread: threadFixture({ id: "team-thread", status: { type: "idle" }, modelProvider: "team_model_gateway" }),
+    activeThreadId: "team-thread",
+    workspace: " /workspace/project ",
+    dispatch: () => {},
+    context: {
+      model: "team-model-b",
+      modelProvider: "team_model_gateway",
+    },
+  });
+  assertEqual(sameProviderReady.threadId, "team-thread", "same-provider model switch should keep the active thread id");
+  assertEqual(sameProviderReady.source, "selected", "same-provider model switch should reuse the selected loaded thread");
+  assertEqual(sameProviderSwitch.requests.length, 0, "same-provider model switch should not resume the thread");
+
+  const providerSwitchCases = [
+    {
+      name: "subscription to team",
+      activeProvider: "openai",
+      nextProvider: "team_model_gateway",
+      nextModel: "123123:Qwen3.6-27B-mxfp4",
+    },
+    {
+      name: "team to subscription http",
+      activeProvider: "team_model_gateway",
+      nextProvider: "openai_http",
+      nextModel: "gpt-5.5",
+    },
+    {
+      name: "team to personal",
+      activeProvider: "team_model_gateway",
+      nextProvider: "personal_qwen",
+      nextModel: "Qwen3.6-27B-mxfp4",
+    },
+  ];
+  for (const testCase of providerSwitchCases) {
+    const threadId = `${testCase.activeProvider}-to-${testCase.nextProvider}-thread`;
+    const providerSwitchThread = threadFixture({
+      id: threadId,
+      status: { type: "idle" },
+      modelProvider: testCase.nextProvider,
+    });
+    const providerSwitch = createClientRecorder({ thread: providerSwitchThread });
+    const providerSwitchActions: unknown[] = [];
+    const providerSwitchReady = await ensureThreadReadyForTurn({
+      client: providerSwitch.client,
+      activeThread: threadFixture({
+        id: threadId,
+        status: { type: "idle" },
+        modelProvider: testCase.activeProvider,
+      }),
+      activeThreadId: threadId,
+      workspace: " /workspace/project ",
+      dispatch: (action: unknown) => {
+        providerSwitchActions.push(action);
+      },
+      context: {
+        model: testCase.nextModel,
+        modelProvider: testCase.nextProvider,
+      },
+    });
+    assertEqual(providerSwitchReady.threadId, threadId, `${testCase.name} should keep the active thread id`);
+    assertEqual(
+      providerSwitchReady.source,
+      "resumed",
+      `${testCase.name} should resume the selected thread with the selected provider`,
+    );
+    assertRequest(
+      providerSwitch.requests,
+      0,
+      "thread/unsubscribe",
+      { threadId },
+      `${testCase.name} should first unsubscribe so app-server can cold-resume with a new provider`,
+    );
+    assertRequest(
+      providerSwitch.requests,
+      1,
+      "thread/resume",
+      {
+        threadId,
+        cwd: "/workspace/project",
+        model: testCase.nextModel,
+        modelProvider: testCase.nextProvider,
+      },
+      `${testCase.name} should resume the selected thread with the selected provider context`,
+    );
+    assertDeepEqual(
+      providerSwitchActions,
+      [
+        { type: "upsertThread", thread: providerSwitchThread, select: true },
+        {
+          type: "setThreadResolvedModel",
+          threadId,
+          model: null,
+          modelProvider: testCase.nextProvider,
+        },
+      ],
+      `${testCase.name} should keep the same selected thread after resume`,
+    );
+  }
+
+  const systemErrorProviderSwitchThread = threadFixture({
+    id: "failed-team-thread",
+    status: { type: "idle" },
+    modelProvider: "openai_http",
+  });
+  const systemErrorProviderSwitch = createClientRecorder({ thread: systemErrorProviderSwitchThread, modelProvider: "openai_http" });
+  const systemErrorReady = await ensureThreadReadyForTurn({
+    client: systemErrorProviderSwitch.client,
+    activeThread: threadFixture({
+      id: "failed-team-thread",
+      status: { type: "systemError" },
+      modelProvider: "team_model_gateway",
+    }),
+    activeThreadId: "failed-team-thread",
+    workspace: "/workspace/project",
+    dispatch: () => {},
+    context: {
+      model: "gpt-5.5",
+      modelProvider: "openai_http",
+    },
+  });
+  assertEqual(systemErrorReady.threadId, "failed-team-thread", "system-error provider switch should keep the active thread id");
+  assertEqual(systemErrorReady.source, "resumed", "system-error provider switch should attempt a resume before sending");
+  assertRequest(
+    systemErrorProviderSwitch.requests,
+    0,
+    "thread/unsubscribe",
+    { threadId: "failed-team-thread" },
+    "system-error provider switch should unsubscribe the cached failed session",
+  );
+  assertRequest(
+    systemErrorProviderSwitch.requests,
+    1,
+    "thread/resume",
+    {
+      threadId: "failed-team-thread",
+      cwd: "/workspace/project",
+      model: "gpt-5.5",
+      modelProvider: "openai_http",
+    },
+    "system-error provider switch should resume with the selected provider",
+  );
+
+  const ignoredProviderSwitch = createClientRecorder({
+    thread: threadFixture({ id: "ignored-provider-thread", status: { type: "systemError" }, modelProvider: "team_model_gateway" }),
+    modelProvider: "team_model_gateway",
+  });
+  let ignoredProviderError: unknown = null;
+  try {
+    await ensureThreadReadyForTurn({
+      client: ignoredProviderSwitch.client,
+      activeThread: threadFixture({
+        id: "ignored-provider-thread",
+        status: { type: "systemError" },
+        modelProvider: "team_model_gateway",
+      }),
+      activeThreadId: "ignored-provider-thread",
+      workspace: "/workspace/project",
+      dispatch: () => {},
+      context: {
+        model: "gpt-5.5",
+        modelProvider: "openai_http",
+      },
+    });
+  } catch (error) {
+    ignoredProviderError = error;
+  }
+  assertEqual(
+    isThreadProviderSwitchMismatchError(ignoredProviderError),
+    true,
+    "provider switch must fail closed when app-server keeps the old loaded provider",
+  );
+
+  const runningProviderSwitch = createClientRecorder();
+  const runningReady = await ensureThreadReadyForTurn({
+    client: runningProviderSwitch.client,
+    activeThread: threadFixture({
+      id: "running-openai-thread",
+      status: { type: "active", activeFlags: [] },
+      modelProvider: "openai",
+    }),
+    activeThreadId: "running-openai-thread",
+    workspace: "/workspace/project",
+    dispatch: () => {},
+    context: {
+      model: "123123:Qwen3.6-27B-mxfp4",
+      modelProvider: "team_model_gateway",
+    },
+  });
+  assertEqual(runningReady.threadId, "running-openai-thread", "running provider switch should keep the active thread id");
+  assertEqual(runningReady.source, "selected", "running provider switch should not resume while a turn is active");
+  assertEqual(runningProviderSwitch.requests.length, 0, "running provider switch must not unsubscribe or resume the active thread");
+
+  const providerSwitchNotLoaded = createClientRecorder({
+    thread: threadFixture({ id: "old-openai-thread", modelProvider: "team_model_gateway", status: { type: "idle" } }),
+    modelProvider: "team_model_gateway",
+  });
+  await ensureThreadReadyForTurn({
+    client: providerSwitchNotLoaded.client,
+    activeThread: threadFixture({ id: "old-openai-thread", status: { type: "notLoaded" }, modelProvider: "openai" }),
+    activeThreadId: "old-openai-thread",
+    workspace: "/workspace/project",
+    dispatch: () => {},
+    context: {
+      model: "123123:Qwen3.6-27B-mxfp4",
+      modelProvider: "team_model_gateway",
+    },
+  });
+  assertRequest(
+    providerSwitchNotLoaded.requests,
+    0,
+    "thread/read",
+    { threadId: "old-openai-thread", includeTurns: false },
+    "provider switch from a historical thread should still read selected thread metadata",
+  );
+  assertRequest(
+    providerSwitchNotLoaded.requests,
+    1,
+    "thread/resume",
+    {
+      threadId: "old-openai-thread",
+      cwd: "/workspace/project",
+      model: "123123:Qwen3.6-27B-mxfp4",
+      modelProvider: "team_model_gateway",
+    },
+    "provider switch from a historical thread should resume the selected thread with the selected provider context",
+  );
+  assertEqual(
+    providerSwitchNotLoaded.requests.some((request) => request.method === "thread/start"),
+    false,
+    "provider switch from a historical thread must not start a new thread",
+  );
 }
 
 async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void> {
@@ -1181,7 +1483,15 @@ async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void
   );
   assertDeepEqual(
     actions,
-    [{ type: "upsertThread", thread: resumedThread, select: true }],
+    [
+      { type: "upsertThread", thread: resumedThread, select: true },
+      {
+        type: "setThreadResolvedModel",
+        threadId: "thread-history",
+        model: null,
+        modelProvider: "openai",
+      },
+    ],
     "selected historical thread recovery should select the resumed thread",
   );
 
@@ -1887,4 +2197,60 @@ function interruptsPanelThreadTurnsWithoutChangingMainThreadSelection(): void {
     "panel stop should interrupt the panel thread's active turn directly",
   );
   assertEqual(recorder.requests[0]?.timeout, 120_000, "panel stop should use the interrupt RPC timeout");
+}
+
+function parsesThreadResolvedModelFromRolloutText(): void {
+  const rollout = [
+    JSON.stringify({ type: "session_meta", payload: { id: "t", model_provider: "openai_http" } }),
+    "not json",
+    JSON.stringify({ type: "turn_context", payload: { turn_id: "1", model: "gpt-5.4" } }),
+    JSON.stringify({ type: "response_item", payload: {} }),
+    // A later turn may run a different model (mid-thread switch) — last wins.
+    JSON.stringify({ type: "turn_context", payload: { turn_id: "2", model: "gpt-5.5" } }),
+  ].join("\n");
+  assertDeepEqual(
+    threadResolvedModelFromRolloutText(rollout),
+    { model: "gpt-5.5", modelProvider: "openai_http" },
+    "rollout text should yield the session provider and the last turn_context model",
+  );
+  assertDeepEqual(
+    threadResolvedModelFromRolloutText("garbage\n{\"type\":\"other\",\"payload\":{}}"),
+    null,
+    "rollout text without model info should yield null",
+  );
+}
+
+async function hydratesThreadResolvedModelFromRolloutFile(): Promise<void> {
+  const actions: unknown[] = [];
+  const thread = threadFixture({ id: "rollout-thread", path: "/tmp/rollout.jsonl", modelProvider: "openai" });
+  const hydrated = await hydrateThreadResolvedModelFromRollout(
+    thread,
+    (action: unknown) => {
+      actions.push(action);
+    },
+    async () => [
+      JSON.stringify({ type: "session_meta", payload: { model_provider: "team_model_gateway" } }),
+      JSON.stringify({ type: "turn_context", payload: { model: "123123:Qwen3.6-27B-mxfp4" } }),
+    ].join("\n"),
+  );
+  assertEqual(hydrated, true, "rollout hydration should report success when model info exists");
+  assertDeepEqual(
+    actions,
+    [{
+      type: "setThreadResolvedModel",
+      threadId: "rollout-thread",
+      model: "123123:Qwen3.6-27B-mxfp4",
+      modelProvider: "team_model_gateway",
+    }],
+    "rollout hydration should record the recorded session's model per thread",
+  );
+
+  const noPath = await hydrateThreadResolvedModelFromRollout(
+    threadFixture({ id: "no-path-thread", path: null }),
+    () => {
+      throw new Error("should not dispatch without a rollout path");
+    },
+    async () => "",
+  );
+  assertEqual(noPath, false, "threads without a rollout path should be skipped");
 }

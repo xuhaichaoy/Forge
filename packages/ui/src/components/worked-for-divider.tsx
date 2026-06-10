@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ConversationRenderUnit } from "../state/render-groups";
+import { formatDuration } from "../state/thread-item-fields";
 
 type WorkedForUnit = Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
 
@@ -77,31 +78,5 @@ function workedForLabel({
   if (status === "working") {
     return elapsedMs >= 1_000 ? `Working for ${formatDuration(elapsedMs)}` : "Working";
   }
-  return `Worked for ${formatDuration(elapsedMs)}`;
-}
-
-/*
- * codex `zu`/`Bu` (composer-*.js): truncate to whole completed seconds
- * (Math.floor, like a stopwatch — NOT round) and carry an hours tier with zero
- * units trimmed: "1h", "1h 1m 40s", "2h 2m 5s". Floor matches Codex for every
- * duration (round was +1s ahead for half of each second); the hours tier
- * matches turns running >= 1h ("1h", not "60m").
- */
-function formatDuration(ms: number): string {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
-  if (totalSeconds < 60) return `${totalSeconds}s`;
-  // codex (composer md formatter): days tier + hours modulo 24, zero units trimmed.
-  const days = Math.floor(totalSeconds / 86_400);
-  const hours = Math.floor(totalSeconds / 3_600) % 24;
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  const seconds = totalSeconds % 60;
-  if (days > 0 || hours > 0) {
-    const parts: string[] = [];
-    if (days > 0) parts.push(`${days}d`);
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0) parts.push(`${seconds}s`);
-    return parts.join(" ");
-  }
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return elapsedMs >= 1_000 ? `Worked for ${formatDuration(elapsedMs)}` : "Worked for 0s";
 }

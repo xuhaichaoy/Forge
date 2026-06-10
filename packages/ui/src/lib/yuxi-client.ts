@@ -237,6 +237,11 @@ export interface YuxiKnowledgeDatabasesResponse {
   message?: string;
 }
 
+export type RawYuxiKnowledgeDatabase = YuxiKnowledgeDatabase & {
+  kb_id?: string | null;
+  database_name?: string | null;
+};
+
 export interface YuxiSearchSnippet {
   text?: string;
   /** false = 语义近邻兜底（不含查询原词），渲染时标"弱相关" */
@@ -864,6 +869,10 @@ export async function listYuxiLibraryDocuments(
     offset?: number;
   } = {},
 ): Promise<YuxiLibraryDocumentsResponse> {
+  // presales-dev keeps /api/presales/library/documents (the full document listing,
+  // incl. file_size/category/business_line/entities/duplicate_status). Its `db_id`
+  // query + response field carry the kb_id VALUE, which matches what the databases
+  // adapter below surfaces as db_id — so the original call works unchanged.
   const params = new URLSearchParams();
   if (filters.businessLine) params.set("business_line", filters.businessLine);
   if (filters.category) params.set("category", filters.category);
@@ -874,7 +883,22 @@ export async function listYuxiLibraryDocuments(
 }
 
 export async function listYuxiKnowledgeDatabases(): Promise<YuxiKnowledgeDatabasesResponse> {
-  return yuxiRequest<YuxiKnowledgeDatabasesResponse>("/api/knowledge/databases");
+  // New knowledge router keys databases by `kb_id` (not db_id). Adapter: surface it as
+  // db_id so the existing UI (and the presales endpoints, whose db_id field carries the
+  // same kb_id value) stay consistent; document count is `row_count` (no file_count).
+  const res = await yuxiRequest<{ databases?: RawYuxiKnowledgeDatabase[]; message?: string }>(
+    "/api/knowledge/databases",
+  );
+  const databases = (res.databases ?? []).map(normalizeYuxiKnowledgeDatabase);
+  return { databases, message: res.message };
+}
+
+export function normalizeYuxiKnowledgeDatabase(raw: RawYuxiKnowledgeDatabase): YuxiKnowledgeDatabase {
+  return {
+    ...raw,
+    db_id: raw.kb_id ?? raw.db_id ?? null,
+    name: raw.name ?? raw.database_name ?? null,
+  };
 }
 
 export async function getYuxiSupportedFileTypes(): Promise<YuxiSupportedFileTypesResponse> {
@@ -963,20 +987,27 @@ export async function toggleYuxiMcpTool(
 }
 
 export async function createYuxiKnowledgeDatabase(payload: YuxiKnowledgeDatabaseInput): Promise<YuxiKnowledgeDatabase> {
-  return yuxiRequest<YuxiKnowledgeDatabase>("/api/knowledge/databases", {
-    method: "POST",
-    body: JSON.stringify({
-      database_name: payload.database_name,
-      description: payload.description,
-      embed_model_name: payload.kb_type === "dify" ? payload.embed_model_name ?? null : payload.embed_model_name,
-      kb_type: payload.kb_type ?? "lightrag",
-      additional_params: payload.additional_params ?? {},
-      llm_info: payload.llm_info ?? null,
-      share_config: payload.share_config ?? null,
-      business_line: payload.business_line ?? null,
-      category: payload.category ?? null,
-    }),
-  });
+  const res = await yuxiRequest<RawYuxiKnowledgeDatabase | { database?: RawYuxiKnowledgeDatabase }>(
+    "/api/knowledge/databases",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        database_name: payload.database_name,
+        description: payload.description,
+        embed_model_name: payload.kb_type === "dify" ? payload.embed_model_name ?? null : payload.embed_model_name,
+        kb_type: payload.kb_type ?? "lightrag",
+        additional_params: payload.additional_params ?? {},
+        llm_info: payload.llm_info ?? null,
+        share_config: payload.share_config ?? null,
+        business_line: payload.business_line ?? null,
+        category: payload.category ?? null,
+      }),
+    },
+  );
+  const raw: RawYuxiKnowledgeDatabase = "database" in res && res.database
+    ? res.database
+    : res as RawYuxiKnowledgeDatabase;
+  return normalizeYuxiKnowledgeDatabase(raw);
 }
 
 export async function updateYuxiKnowledgeDatabase(
@@ -1059,6 +1090,8 @@ export async function searchYuxiLibrary(filters: {
   topKPerKb?: number;
   maxKbs?: number;
 }): Promise<YuxiSearchResponse> {
+  // presales-dev keeps the cross-library /api/presales/library/search (grouped results).
+  // db_ids carries the kb_id VALUE (same as the databases adapter surfaces as db_id).
   return yuxiRequest<YuxiSearchResponse>("/api/presales/library/search", {
     method: "POST",
     body: JSON.stringify({
@@ -1188,7 +1221,8 @@ export async function generateYuxiHydeQuestions(payload: {
 export async function uploadYuxiKnowledgeFile(file: File, dbId?: string | null): Promise<YuxiUploadResponse> {
   const form = new FormData();
   form.set("file", file, file.name);
-  const suffix = dbId ? `?db_id=${encodeURIComponent(dbId)}` : "";
+  // New Yuxi keys the upload target by kb_id (was db_id).
+  const suffix = dbId ? `?kb_id=${encodeURIComponent(dbId)}` : "";
   return yuxiRequest<YuxiUploadResponse>(`/api/knowledge/files/upload${suffix}`, {
     method: "POST",
     body: form,
@@ -1200,7 +1234,7 @@ export async function fetchYuxiKnowledgeUrl(url: string, dbId?: string | null): 
     method: "POST",
     body: JSON.stringify({
       url,
-      db_id: dbId ?? null,
+      kb_id: dbId ?? null,
     }),
   });
 }

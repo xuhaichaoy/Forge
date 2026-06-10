@@ -37,11 +37,13 @@ import { ComposerStatusPanel } from "./components/composer-status-panel";
 import { ThreadGoalBanner, ThreadGoalReplaceConfirm, ThreadGoalResumeConfirm } from "./components/thread-goal-banner";
 import { HiCodexIntlProvider } from "./components/i18n-provider";
 import { ServicesProvider, useServices } from "./components/services-context";
+import { TeamServiceAuthGate } from "./components/team-service-auth-gate";
 import { focusComposerFromPlainTextKey, requestComposerElementFocus } from "./components/composer-keyboard";
 import { PreConversationLoadingShell } from "./components/pre-conversation-loading-shell";
 import type { McpFollowUpDialogRequest } from "./components/mcp-follow-up-dialog";
 import {
   DEFAULT_PROVIDERS,
+  isModelSelectionAvailable,
   isSubscriptionProviderId,
   normalizeSubscriptionProviderId,
   resolveEffectiveModelSelection,
@@ -56,13 +58,7 @@ import { ConversationView } from "./components/conversation-view";
 // codex inline-mentions-*.js / user-message-attachments-*.js context-menu wrapper —
 // reveal + copy-contents actions for file-reference anchors + attachment pills,
 // provided once above the conversation.
-import { FileCitationMenuContext } from "./components/file-citation-menu";
-import type { SubmitTurnRatingEvent } from "./components/turn-rating-controls";
-import {
-  turnFeedbackUploadClassification,
-  turnFeedbackUploadReason,
-  turnFeedbackUploadTags,
-} from "./components/turn-rating-controls";
+import { DelinkFileCitationsContext, FileCitationMenuContext } from "./components/file-citation-menu";
 import {
   LiveTurnDiffPortal,
   shouldRenderLiveTurnDiffPortal,
@@ -84,6 +80,10 @@ import { ThreadFindBar } from "./components/thread-find-bar";
 import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
 import { formatError, hostFromBaseUrl, patchFailurePathForOpen } from "./lib/format";
+import {
+  clearTeamServiceAuthSession,
+  readTeamServiceAuthSession,
+} from "./lib/team-service-auth";
 import {
   openExternalUrl,
   revealPath,
@@ -110,6 +110,7 @@ import { useThreadFind } from "./hooks/use-thread-find";
 import { useRemoteTaskActions } from "./hooks/use-remote-task-actions";
 import { useHiCodexImageToolResponder } from "./hooks/use-hicodex-image-tool-responder";
 import { usePermissionAutoDeny } from "./hooks/use-permission-auto-deny";
+import { useTeamModelGateway } from "./hooks/use-team-model-gateway";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
@@ -147,12 +148,18 @@ import {
   SELECTED_MODEL_STORAGE_KEY,
 } from "./model/model-settings";
 import {
+  CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
+  isCrossAccountModelSelectionForThread,
+} from "./model/model-provider-switch";
+import { TEAM_MODEL_GATEWAY_PROVIDER_ID } from "./model/team-model-gateway";
+import {
   codexUiReducer,
   initialCodexUiState,
   type CodexUiState,
   selectActiveThreadRuntime,
   selectItemsByThread,
   type PendingServerRequest,
+  type ThreadContextDefaults,
 } from "./state/codex-reducer";
 import {
   accountRefreshScopeForNotification,
@@ -269,6 +276,11 @@ import {
 } from "./state/config-write-target";
 import { threadIdFromCodexDeepLink } from "./state/deep-links";
 import {
+  permissionModeFromThreadContext,
+  permissionModeThreadSettingsPatch,
+  type PermissionMode,
+} from "./state/permissions-mode";
+import {
   basenameFromPath,
   fuzzyFileResultsToWorkspaceEntries,
   WorkspaceFuzzyFileSearchController,
@@ -359,7 +371,7 @@ import {
   saveHiCodexLocale,
   type HiCodexLocale,
 } from "./state/i18n";
-import { readMigratedStorageValue } from "./state/hicodex-desktop-namespace";
+import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./state/hicodex-desktop-namespace";
 import {
   loadNotificationPreferences,
   mergeNotificationPreferences,
@@ -419,9 +431,12 @@ import {
  */
 import {
   clampCodeFontSize,
+  clampUiFontSize,
   loadUiAppearance,
   saveUiCodeFontSize,
+  saveUiFontSize,
   saveUiReducedMotion,
+  uiFontScale,
   type ReducedMotionMode,
   type UiAppearancePreferences,
 } from "./state/appearance";
@@ -463,6 +478,7 @@ import {
   sendPanelThreadMessage,
   startSideConversation,
   cleanBackgroundTerminalsForThread,
+  isProjectlessWorkspace,
   readInProgressTurnId,
   refreshThreadContextDefaults,
   threadTitle,
@@ -524,6 +540,32 @@ function createDedupedFileSearchSession(config: {
 
 
 const LOCAL_SIDE_PANEL_HOST_ID = "local";
+
+const SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS = [
+  TEAM_MODEL_GATEWAY_PROVIDER_ID,
+  DEFAULT_SUBSCRIPTION_PROVIDER_ID,
+  DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
+] as const;
+
+function isSettingsModelProviderExcluded(providerId: string): boolean {
+  return SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS.includes(providerId as typeof SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS[number]);
+}
+
+function isSubscriptionCatalogModel(model: string | null | undefined): boolean {
+  const trimmed = model?.trim() ?? "";
+  return /^gpt[-_]/iu.test(trimmed);
+}
+
+function omitThreadModelSelection(context: ThreadContextDefaults | null): ThreadContextDefaults | null {
+  if (!context) return null;
+  const {
+    model: _model,
+    modelProvider: _modelProvider,
+    serviceTier: _serviceTier,
+    ...rest
+  } = context;
+  return Object.keys(rest).length > 0 ? rest : null;
+}
 
 
 
@@ -591,6 +633,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const [notificationPreferences, setNotificationPreferencesState] = useState<NotificationPreferences>(() => (
     loadNotificationPreferences(browserStorage())
   ));
+  const [teamServiceAuthSession, setTeamServiceAuthSession] = useState(() => readTeamServiceAuthSession());
   const notificationPreferencesRef = useRef(notificationPreferences);
   const [onboardingSnapshot, setOnboardingSnapshot] = useState(() => (
     loadOnboardingSnapshot(browserStorage())
@@ -614,6 +657,17 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     const clamped = clampCodeFontSize(size);
     setUiAppearanceState((prev) => prev.codeFontSize === clamped ? prev : { ...prev, codeFontSize: clamped });
     saveUiCodeFontSize(browserStorage(), clamped);
+  }, []);
+  /*
+   * CODEX-REF: settings.general.appearance.sansFontSize.row ("UI font size").
+   * Codex sets `--vscode-font-size` and relies on its rem cascade; HiCodex's CSS
+   * is hardcoded px, so the commit publishes `--hc-ui-font-scale` (see the apply
+   * effect below) which every `font-size` calc multiplies by. clamp = 10-20.
+   */
+  const setUiFontSize = useCallback((size: number) => {
+    const clamped = clampUiFontSize(size);
+    setUiAppearanceState((prev) => prev.uiFontSize === clamped ? prev : { ...prev, uiFontSize: clamped });
+    saveUiFontSize(browserStorage(), clamped);
   }, []);
   /*
    * CODEX-REF: settings.general.appearance.reducedMotion.label commit. Mode
@@ -653,6 +707,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const setUiLocale = useCallback((locale: HiCodexLocale) => {
     setUiLocaleState(locale);
     saveHiCodexLocale(browserStorage(), locale);
+  }, []);
+  const signOutTeamServiceAccount = useCallback(() => {
+    clearTeamServiceAuthSession();
+    setTeamServiceAuthSession(null);
+    if (typeof window !== "undefined") window.location.reload();
   }, []);
   const setNotificationPreferences = useCallback((patch: Partial<NotificationPreferences>) => {
     const next = mergeNotificationPreferences(notificationPreferencesRef.current, patch);
@@ -705,12 +764,19 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     if (typeof document === "undefined") return;
     const root = document.documentElement;
     root.style.setProperty("--codex-chat-code-font-size", `${uiAppearance.codeFontSize}px`);
+    /*
+     * CODEX-REF: settings.general.appearance.sansFontSize.row — whole-UI font
+     * scale. Every stylesheet `font-size` is `calc(Npx * var(--hc-ui-font-scale))`,
+     * so publishing the factor here resizes all UI text live (default 14 → 1.0).
+     * Code blocks are excluded (they read --codex-chat-code-font-size instead).
+     */
+    root.style.setProperty("--hc-ui-font-scale", `${uiFontScale(uiAppearance.uiFontSize)}`);
     if (uiAppearance.reducedMotion === "system") {
       delete root.dataset.hcReduceMotion;
     } else {
       root.dataset.hcReduceMotion = uiAppearance.reducedMotion;
     }
-  }, [uiAppearance.codeFontSize, uiAppearance.reducedMotion]);
+  }, [uiAppearance.codeFontSize, uiAppearance.uiFontSize, uiAppearance.reducedMotion]);
   const [sidebarPreferences, setSidebarPreferencesState] = useState<SidebarPreferences>(() => (
     loadSidebarPreferences(sidebarPreferenceStorage())
   ));
@@ -784,14 +850,16 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const mcpFollowUpDialogDispatchingRef = useRef(false);
   const openSideConversationPanelRef = useRef<((thread: Thread) => void) | null>(null);
   /*
-   * User-overridden model selection for new chats. Persisted under the
+   * User-overridden composer model selection. Persisted under the
    * `desktop.hicodex.*` app namespace. When non-null, applied to ThreadStart /
-   * ThreadFork params (codex-protocol v2 ThreadStartParams.modelProvider /
-   * .model accept overrides — see thread-workflow.ts buildThreadContextParams).
+   * ThreadResume / ThreadFork params (codex-protocol v2 start/resume/fork
+   * modelProvider + model overrides — see thread-workflow.ts context builders).
    *
    * `null` falls through to the config.toml default (state.threadContextDefaults).
-   * Existing in-flight threads keep their original model (protocol locks model
-   * per-thread); to change model for an active conversation users must fork it.
+   * Existing running turns keep the model/provider they started with. The next
+   * idle send stays in the same conversation; when provider differs from the
+   * loaded thread, thread-workflow cold-resumes that thread with the selected
+   * provider before starting the turn because turn/start can override model only.
    */
   /* Selected `${providerId}::${modelSlug}`; null = follow config.toml default. */
   const [selectedModelKey, setSelectedModelKeyState] = useState<string | null>(() => {
@@ -822,7 +890,23 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       // localStorage not available — selection still works in memory
     }
   }, []);
-
+  /*
+   * Per-thread model overrides (`${providerId}::${model}` keyed by thread id).
+   * Threads are bound to the provider/model they were started with; picking a
+   * model while a chat is active overrides ONLY that chat (plus the global
+   * intent above for future chats). Other loaded chats keep their provider —
+   * the selection never leaks across threads. In-memory on purpose: after a
+   * reload the thread's own recorded model/provider is the source of truth.
+   */
+  const [threadModelSelections, setThreadModelSelections] = useState<Record<string, string>>({});
+  const setThreadModelSelection = useCallback((threadId: string, key: string | null) => {
+    setThreadModelSelections((current) => {
+      if (key) return { ...current, [threadId]: key };
+      if (!(threadId in current)) return current;
+      const { [threadId]: _removed, ...rest } = current;
+      return rest;
+    });
+  }, []);
   /*
    * CODEX-REF: composer-*.js — Codex setter `f(d.model, t) =
    * setModelAndReasoningEffort` writes selected effort to modelSettings, which
@@ -832,20 +916,21 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
    */
   const [reasoningEffortOverride, setReasoningEffortOverrideState] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    try {
-      return window.localStorage.getItem("hicodex.reasoningEffortOverride");
-    } catch {
-      return null;
-    }
+    return readMigratedStorageValue(
+      window.localStorage,
+      HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride,
+      [LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY],
+    );
   });
   const setReasoningEffortOverride = useCallback((effort: string | null) => {
     setReasoningEffortOverrideState(effort);
     try {
       if (effort) {
-        window.localStorage.setItem("hicodex.reasoningEffortOverride", effort);
+        window.localStorage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride, effort);
       } else {
-        window.localStorage.removeItem("hicodex.reasoningEffortOverride");
+        window.localStorage.removeItem(HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride);
       }
+      window.localStorage.removeItem(LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY);
     } catch {
       // localStorage not available — selection still works in memory
     }
@@ -862,6 +947,16 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const [reasoningPickerAnchor, setReasoningPickerAnchor] = useState<HTMLElement | null>(null);
   const toggleReasoningPickerAnchor = useCallback((anchor: HTMLElement) => {
     setReasoningPickerAnchor((current) => (current === anchor ? null : anchor));
+  }, []);
+  /*
+   * CODEX-REF: composer-B7sGHJVq.js — permissions chip opens the inline
+   * permissions dropdown (not the Settings > Permissions modal). Same anchor
+   * pattern as the model/reasoning pickers: the chip onClick passes its element.
+   */
+  const [permissionsPickerAnchor, setPermissionsPickerAnchor] = useState<HTMLElement | null>(null);
+  const [permissionsRequirements, setPermissionsRequirements] = useState<unknown | undefined>(undefined);
+  const togglePermissionsPickerAnchor = useCallback((anchor: HTMLElement) => {
+    setPermissionsPickerAnchor((current) => (current === anchor ? null : anchor));
   }, []);
   /*
    * Auth status from codex-rs's `getAuthStatus` RPC. The actual `client` is
@@ -922,10 +1017,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const mcpStartupStatusPanelHandledRef = useRef(0);
   const appListChangedHandledRef = useRef(0);
   const openArtifactPreviewTabRef = useRef<((entry: RailEntry) => void) | null>(null);
+  // ⌘F jump target: assigned by ConversationView's virtualized turn list.
+  const threadFindScrollToUnitRef = useRef<((unitKey: string) => boolean) | null>(null);
   const refreshOpenFileWatchTabsRef = useRef<((watchId: string) => void) | null>(null);
   const authRefreshTokenOnNextRefreshRef = useRef(false);
   const accountRefreshTokenOnNextRefreshRef = useRef(false);
-  const workspaceInitialized = useRef(false);
   const fileSearchRequestSeqRef = useRef(0);
   const fileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
   const fileSearchSessionRootsKeyRef = useRef("");
@@ -979,24 +1075,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     },
     onDebugEvent: (event: RpcDebugEvent) => setRpcDebugEvents((current) => appendRpcDebugEvent(current, event)),
   };
-  const submitTurnFeedback = useCallback<SubmitTurnRatingEvent>(async (event) => {
-    try {
-      await client.request("feedback/upload", {
-        classification: turnFeedbackUploadClassification(event),
-        reason: turnFeedbackUploadReason(event),
-        threadId: event.threadId,
-        includeLogs: false,
-        tags: turnFeedbackUploadTags(event),
-      }, 120_000);
-      if (event.eventKind === "action") {
-        dispatch({ type: "log", text: "Turn feedback sent.", level: "info" });
-      }
-    } catch (error) {
-      const prefix = event.eventKind === "action" ? "Turn feedback submit failed" : "Turn rating failed";
-      dispatch({ type: "log", text: `${prefix}: ${formatError(error)}`, level: "warn" });
-    }
-  }, [client]);
-
   useEffect(() => {
     if (!state.connected) return;
     let cancelled = false;
@@ -1294,33 +1372,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     handledRequestIdsRef: handledPermissionAutoDenyRef,
     pendingRequests: state.pendingRequests,
   });
-  const activeModelSupportsImageInput = useMemo(() => {
-    const providerId = state.threadContextDefaults?.modelProvider ?? "";
-    const modelSlug = state.threadContextDefaults?.model ?? "";
-    const model = state.models.find((item) => item.id === providerId)
-      ?? state.models.find((item) => item.model === modelSlug)
-      ?? null;
-    return model?.supportsImageInput !== false;
-  }, [state.models, state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
-  /*
-   * codex composer reasoning picker: render the ACTIVE model's advertised
-   * `supportedReasoningEfforts` (e.g. some models only allow "medium") instead
-   * of a static list. Resolve the active model the same way as image-input
-   * support above. Falls back to undefined → the picker uses its full default set.
-   */
-  const activeModelSupportedEfforts = useMemo<readonly ReasoningEffortValue[] | undefined>(() => {
-    const providerId = state.threadContextDefaults?.modelProvider ?? "";
-    const modelSlug = state.threadContextDefaults?.model ?? "";
-    const model = state.models.find((item) => item.id === providerId)
-      ?? state.models.find((item) => item.model === modelSlug)
-      ?? null;
-    const efforts = model?.supportedReasoningEfforts;
-    if (!efforts || efforts.length === 0) return undefined;
-    const normalized = efforts
-      .map((effort) => normalizeReasoningEffortValue(effort))
-      .filter((effort): effort is ReasoningEffortValue => effort !== null);
-    return normalized.length > 0 ? normalized : undefined;
-  }, [state.models, state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
   const includeImageDynamicTool = useMemo(
     () => shouldRegisterHiCodexImageDynamicTool(imageGenerationSettings),
     [imageGenerationSettings],
@@ -1373,6 +1424,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     setActiveSettingsPanel,
     activeThreadScrollKey,
     conversationUnits: conversation.units,
+    scrollToUnitKeyRef: threadFindScrollToUnitRef,
   });
   const hasFilePreviewSelection = artifactPreview !== null || fileReference !== null;
   /*
@@ -1465,34 +1517,18 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     return () => window.clearTimeout(timer);
   }, [connect, reconnectAttempt, state.connected, state.connecting]);
 
-  useEffect(() => {
-    if (workspaceInitialized.current || !state.hostStatus?.defaultCwd) return;
-    workspaceInitialized.current = true;
-    /*
-     * CODEX-REF: thread-context-*.js / use-webview-execution-target-*.js
-     * Codex 桌面版 thread.cwd 来自 Environment/worktree picker 的 workspaceRoot，
-     * 永远是用户实际工作目录（非进程 CWD）。HiCodex 之前用 host 上报的 defaultCwd
-     * 作为 workspace 初值——Rust 端 host 已修为优先 `$HOME`，但前端仍兜底过滤：
-     * 拒绝明显是 Tauri 进程目录 / 仓内构建目录的路径，防止旧 host bin 仍 leak 出错误值。
-     */
-    setWorkspace((current) => {
-      if (current.trim()) return current;
-      const candidate = (state.hostStatus?.defaultCwd ?? "").trim();
-      if (!candidate) return "";
-      const lower = candidate.toLowerCase();
-      if (
-        lower.endsWith("/src-tauri")
-        || lower.includes("/src-tauri/")
-        || lower.includes("/node_modules/")
-        || lower.includes("/target/")
-      ) {
-        // host bin 还在报告进程 cwd 的旧路径——丢弃，让用户后续 setWorkspace
-        // (例如打开 thread 时 activeThread.cwd 同步) 设入正确值。
-        return "";
-      }
-      return candidate;
-    });
-  }, [state.hostStatus?.defaultCwd]);
+  /*
+   * CODEX-REF: projectless default. Codex starts every session PROJECTLESS — the
+   * composer workspace-roots default to the `~` sentinel (no project selected), so a
+   * first chat lands in "Chats" with a generated ~/Documents/Codex/<date>/<slug> cwd.
+   * HiCodex models the unselected workspace as the empty string (see
+   * `isProjectlessWorkspace`), so we deliberately do NOT seed `workspace` from the
+   * host's defaultCwd ($HOME) anymore — seeding $HOME made every new chat look like a
+   * "$HOME project" and (via the old `workspace === defaultCwd` rule) forced it
+   * projectless even when the user explicitly picked $HOME as a project. `workspace`
+   * is promoted to a real path only when the user opens a project thread (the
+   * activeThread.cwd sync effect below) or selects a folder (`selectWorkspaceRoot`).
+   */
 
   useEffect(() => {
     const threadCwd = activeThread?.cwd?.trim();
@@ -1528,9 +1564,26 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     if (!state.connected) return;
     void refreshThreadContextDefaults(client, dispatch, workspace)
       .then((config) => {
-        if (config) setModelDraft(buildModelConfigFromConfig(config));
+        if (config) {
+          setModelDraft(buildModelConfigFromConfig(config, {
+            excludedProviderIds: SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS,
+          }));
+        }
       });
   }, [client, state.connected, workspace]);
+
+  useEffect(() => {
+    if (activeSettingsPanel !== "models" || !state.connected) return;
+    if (!isSettingsModelProviderExcluded(modelDraft.id.trim())) return;
+    void refreshThreadContextDefaults(client, dispatch, workspace)
+      .then((config) => {
+        if (config) {
+          setModelDraft(buildModelConfigFromConfig(config, {
+            excludedProviderIds: SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS,
+          }));
+        }
+      });
+  }, [activeSettingsPanel, client, dispatch, modelDraft.id, state.connected, workspace]);
 
   useEffect(() => {
     if (!state.connected) return;
@@ -1568,6 +1621,65 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     return connect();
   }, [connect, state.connected]);
 
+  const restartRuntimeForProviderSwitch = useCallback(async (): Promise<boolean> => {
+    try {
+      await client.disconnect();
+      dispatch({ type: "connected", value: false });
+      dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
+      return await connect();
+    } catch (error) {
+      dispatch({
+        type: "log",
+        text: `provider switch runtime restart failed: ${formatError(error)}`,
+        level: "warn",
+      });
+      return false;
+    }
+  }, [client, connect, dispatch]);
+
+  useEffect(() => {
+    if (!permissionsPickerAnchor) {
+      setPermissionsRequirements(undefined);
+      return;
+    }
+    let cancelled = false;
+    setPermissionsRequirements(undefined);
+    void (async () => {
+      if (!(await ensureConnected())) return;
+      try {
+        const requirements = await client.request<unknown>("configRequirements/read", {}, 120_000);
+        if (!cancelled) setPermissionsRequirements(requirements);
+      } catch (error) {
+        if (!cancelled) {
+          dispatch({
+            type: "log",
+            text: `Failed to load permission requirements: ${formatError(error)}`,
+            level: "warn",
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, dispatch, ensureConnected, permissionsPickerAnchor]);
+
+  const {
+    provider: teamModelGatewayProvider,
+    handleModelSelect,
+  } = useTeamModelGateway({
+    client,
+    dispatch,
+    connect,
+    connected: state.connected,
+    codexHome: state.hostStatus?.codexHome,
+    threadContextDefaults: state.threadContextDefaults,
+    personalModelDraft: modelDraft,
+    selectedModelKey,
+    setSelectedModelKey,
+    refreshKey: modelPickerAnchor,
+  });
+
   /*
    * Effective ThreadContextDefaults for thread/start + thread/fork calls.
    * If the user picked a (provider, model) pair in the UI picker, override
@@ -1585,7 +1697,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     const activeProviderId = state.threadContextDefaults?.modelProvider?.trim() || localFallback.id;
     const draftProviderId = modelDraft.id.trim();
     const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
-    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSubscriptionProviderId(draftProviderId);
+    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSettingsModelProviderExcluded(draftProviderId);
     const localProviderId = useDraftForLocalProvider
       ? draftProviderId
       : (!activeIsSubscription ? activeProviderId : localFallback.id);
@@ -1595,7 +1707,9 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     const subscriptionModels = subscriptionProvider
       ? normalizeModelSlugs([
           ...subscriptionProvider.models,
-          activeIsSubscription ? state.threadContextDefaults?.model : null,
+          activeIsSubscription && isSubscriptionCatalogModel(state.threadContextDefaults?.model)
+            ? state.threadContextDefaults?.model
+            : null,
         ])
       : [];
     return [
@@ -1613,6 +1727,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           : localFallback.baseUrl,
         models: localModels.length > 0 ? localModels : localFallback.models,
       },
+      ...(teamModelGatewayProvider ? [teamModelGatewayProvider] : []),
       ...(subscriptionProvider
         ? [{
             ...subscriptionProvider,
@@ -1628,6 +1743,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     modelDraft.name,
     state.threadContextDefaults?.model,
     state.threadContextDefaults?.modelProvider,
+    teamModelGatewayProvider,
   ]);
 
   /*
@@ -1646,62 +1762,165 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const readyProviders = useMemo(() => {
     const ready = new Set<string>();
     const active = state.threadContextDefaults?.modelProvider ?? "";
+    const configuredPersonalProviderId = modelDraft.id.trim();
     // `getAuthStatus` is provider-scoped: local gateways with
     // `requires_openai_auth = false` report no OpenAI auth even when ChatGPT
     // OAuth is complete. Keep the subscription provider ready when either the
     // live RPC reports an auth method or the isolated Codex auth.json contains
     // a ChatGPT/API-key credential.
-    if (active && !isSubscriptionProviderId(active)) {
+    if (configuredPersonalProviderId
+      && !isSettingsModelProviderExcluded(configuredPersonalProviderId)
+      && modelDraft.apiKey.trim()) {
+      ready.add(configuredPersonalProviderId);
+    }
+    if (active && !isSubscriptionProviderId(active)
+      && (active !== TEAM_MODEL_GATEWAY_PROVIDER_ID || teamModelGatewayProvider)) {
       ready.add(active);
+    }
+    if (teamModelGatewayProvider) {
+      ready.add(TEAM_MODEL_GATEWAY_PROVIDER_ID);
     }
     if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredentialSummary(codexAuthSummary)) {
       ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
       ready.add(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
     }
     return ready;
-  }, [codexAuthSummary, state.threadContextDefaults?.modelProvider, oauthAuthMethod]);
+  }, [
+    codexAuthSummary,
+    modelDraft.apiKey,
+    modelDraft.id,
+    state.threadContextDefaults?.modelProvider,
+    oauthAuthMethod,
+    teamModelGatewayProvider,
+  ]);
 
+  const decodedSelectedModelSelection = useMemo(() => {
+    const decoded = decodeSelection(selectedModelKey);
+    return isModelSelectionAvailable(decoded, modelPickerProviders) ? decoded : null;
+  }, [modelPickerProviders, selectedModelKey]);
+  /* The active thread's explicit override, if the user re-picked a model for it. */
+  const decodedActiveThreadModelSelection = useMemo(() => {
+    const key = state.activeThreadId ? threadModelSelections[state.activeThreadId] ?? null : null;
+    const decoded = decodeSelection(key);
+    return isModelSelectionAvailable(decoded, modelPickerProviders) ? decoded : null;
+  }, [modelPickerProviders, state.activeThreadId, threadModelSelections]);
   /*
-   * If the intended model's provider is not signed in, resolve to a ready
-   * provider+model so a new chat actually sends instead of spinning on
-   * "Reconnecting…". The intended pick stays in selectedModelKey / config, so
-   * signing in restores it automatically. `noReadyProvider` → the composer
-   * blocks send and prompts sign-in / configuration instead.
+   * What the runtime reported this thread is actually using (recorded from
+   * thread/start + thread/resume responses). Display-only: the picker
+   * checkmark and the composer chip read it, so a chat born on another
+   * provider never shows the global default as "current".
+   */
+  const activeThreadResolvedModel = state.activeThreadId
+    ? state.threadsRuntime[state.activeThreadId]?.resolvedModel ?? null
+    : null;
+  const selectedModelKeyForPicker = decodedSelectedModelSelection
+    ? encodeSelection(decodedSelectedModelSelection.providerId, decodedSelectedModelSelection.model)
+    : null;
+  const defaultModelSelection = useMemo(() => (
+    state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
+      ? {
+          providerId: normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider),
+          model: state.threadContextDefaults.model,
+        }
+      : null
+  ), [state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
+  /*
+   * What the active chat shows as its current model — the SINGLE source for
+   * both the picker checkmark and the composer model chip, so they can never
+   * disagree. Resolution order:
+   *   1. explicit per-thread re-pick;
+   *   2. what the runtime reported on start/resume (exact);
+   *   3. display-only inference until the first resume: the config default
+   *      when the thread lives on the default provider, else the provider's
+   *      only model when unambiguous;
+   *   4. unknown → both surfaces show the neutral placeholder / no checkmark.
+   */
+  const activeThreadDisplayModelSelection = useMemo(() => {
+    if (!state.activeThreadId) return null;
+    if (decodedActiveThreadModelSelection) return decodedActiveThreadModelSelection;
+    const rawProviderId = activeThreadResolvedModel?.modelProvider?.trim()
+      || activeThread?.modelProvider?.trim()
+      || "";
+    const providerId = normalizeSubscriptionProviderId(rawProviderId);
+    if (!providerId) return null;
+    const resolvedModelName = activeThreadResolvedModel?.model?.trim();
+    if (resolvedModelName) {
+      const selection = { providerId, model: resolvedModelName };
+      return isModelSelectionAvailable(selection, modelPickerProviders) ? selection : null;
+    }
+    if (defaultModelSelection && defaultModelSelection.providerId === providerId) {
+      return isModelSelectionAvailable(defaultModelSelection, modelPickerProviders)
+        ? defaultModelSelection
+        : null;
+    }
+    const provider = modelPickerProviders.find((candidate) => candidate.id === providerId);
+    return provider && provider.models.length === 1
+      ? { providerId, model: provider.models[0] }
+      : null;
+  }, [
+    activeThread?.modelProvider,
+    activeThreadResolvedModel,
+    decodedActiveThreadModelSelection,
+    defaultModelSelection,
+    modelPickerProviders,
+    state.activeThreadId,
+  ]);
+  /*
+   * If there is no explicit, valid picker override and the config default is
+   * unavailable, resolve to a ready provider+model so a new chat actually sends
+   * instead of spinning on "Reconnecting…". Explicit user picks are not silently
+   * routed to another provider.
    */
   const effectiveModelSelection = useMemo(() => {
-    const intendedKey = selectedModelKey
-      ?? (state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
-        ? encodeSelection(
-            normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider),
-            state.threadContextDefaults.model,
-          )
-        : null);
+    /*
+     * Active threads resolve from their own override (or stay on their birth
+     * provider — no intent); only chat-less composers consider the global
+     * pick and the config default, with not-signed-in fallback.
+     */
+    const intended = state.activeThreadId
+      ? decodedActiveThreadModelSelection
+      : decodedSelectedModelSelection ?? defaultModelSelection;
     return resolveEffectiveModelSelection({
-      intended: decodeSelection(intendedKey),
+      intended,
       providers: modelPickerProviders,
       readyProviders,
+      allowFallback: !state.activeThreadId && decodedSelectedModelSelection == null,
     });
   }, [
+    decodedActiveThreadModelSelection,
+    decodedSelectedModelSelection,
+    defaultModelSelection,
     modelPickerProviders,
     readyProviders,
-    selectedModelKey,
-    state.threadContextDefaults?.model,
-    state.threadContextDefaults?.modelProvider,
+    state.activeThreadId,
   ]);
 
   const effectiveThreadContextDefaults = useMemo(() => {
-    const picked = decodeSelection(selectedModelKey);
+    /*
+     * Birth binding: an active thread only gets a model/provider override
+     * when the user explicitly re-picked one FOR THAT THREAD; the global
+     * picker intent applies to new chats only. Without an override the
+     * model selection is omitted, so resume/turn params keep the thread's
+     * recorded provider.
+     */
+    const picked = state.activeThreadId
+      ? decodedActiveThreadModelSelection
+      : decodedSelectedModelSelection;
+    const shouldApplyDefaultModelSelection = !state.activeThreadId;
     let modelContext = picked ? {
       ...(state.threadContextDefaults ?? {}),
       model: picked.model,
       modelProvider: normalizeSubscriptionProviderId(picked.providerId),
-    } : state.threadContextDefaults;
+    } : shouldApplyDefaultModelSelection
+      ? state.threadContextDefaults
+      : omitThreadModelSelection(state.threadContextDefaults);
     /*
      * Apply the not-signed-in fallback: when the intended provider is not ready
      * but another is, send to the ready (provider, model) instead. Skip when
      * nothing is ready (the composer surfaces a sign-in prompt and disables send).
      */
-    if (!effectiveModelSelection.noReadyProvider
+    if ((picked || shouldApplyDefaultModelSelection)
+      && !effectiveModelSelection.noReadyProvider
       && (effectiveModelSelection.providerId !== (modelContext?.modelProvider ?? "")
         || effectiveModelSelection.model !== (modelContext?.model ?? ""))) {
       modelContext = {
@@ -1725,7 +1944,74 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       ? workspaceDeveloperInstructions.value
       : null;
     return withWorkspaceDeveloperInstructions(modelContext, workspaceInstructions);
-  }, [effectiveModelSelection, reasoningEffortOverride, selectedModelKey, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
+  }, [decodedActiveThreadModelSelection, decodedSelectedModelSelection, effectiveModelSelection, reasoningEffortOverride, state.activeThreadId, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
+  const modelPickerDefaultKey = defaultModelSelection && isModelSelectionAvailable(defaultModelSelection, modelPickerProviders)
+    ? encodeSelection(defaultModelSelection.providerId, defaultModelSelection.model)
+    : null;
+  const handleComposerModelSelect = useCallback((key: string | null) => {
+    // Backstop for the picker-level cross-account lock (rows are disabled
+    // with an explanation; this guards programmatic callers).
+    if (activeThread && isCrossAccountModelSelectionForThread({
+      currentProvider: activeThread.modelProvider,
+      selectedKey: key,
+      fallbackProvider: defaultModelSelection?.providerId ?? state.threadContextDefaults?.modelProvider,
+    })) {
+      dispatch({
+        type: "log",
+        text: CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
+        level: "warn",
+      });
+      return;
+    }
+    if (activeThread) {
+      /*
+       * Picking while a chat is active overrides THAT chat. `null` means
+       * "the config default row" in picker terms — for an existing thread
+       * that is still an explicit switch to the default (provider, model),
+       * so pin the resolved key instead of clearing the override.
+       */
+      setThreadModelSelection(activeThread.id, key ?? modelPickerDefaultKey);
+    }
+    handleModelSelect(key);
+  }, [
+    activeThread,
+    defaultModelSelection?.providerId,
+    dispatch,
+    handleModelSelect,
+    modelPickerDefaultKey,
+    setThreadModelSelection,
+    state.threadContextDefaults?.modelProvider,
+  ]);
+  const handleReasoningSelect = useCallback((effort: string | null) => {
+    setReasoningEffortOverride(effort);
+  }, [
+    setReasoningEffortOverride,
+  ]);
+  const activeModelSupportsImageInput = useMemo(() => {
+    const providerId = effectiveThreadContextDefaults?.modelProvider ?? "";
+    const modelSlug = effectiveThreadContextDefaults?.model ?? "";
+    const model = state.models.find((item) => item.id === providerId)
+      ?? state.models.find((item) => item.model === modelSlug)
+      ?? null;
+    return model?.supportsImageInput !== false;
+  }, [effectiveThreadContextDefaults?.model, effectiveThreadContextDefaults?.modelProvider, state.models]);
+  /*
+   * codex composer reasoning picker: render the effective next-turn model's
+   * advertised supportedReasoningEfforts instead of using the config default.
+   */
+  const activeModelSupportedEfforts = useMemo<readonly ReasoningEffortValue[] | undefined>(() => {
+    const providerId = effectiveThreadContextDefaults?.modelProvider ?? "";
+    const modelSlug = effectiveThreadContextDefaults?.model ?? "";
+    const model = state.models.find((item) => item.id === providerId)
+      ?? state.models.find((item) => item.model === modelSlug)
+      ?? null;
+    const efforts = model?.supportedReasoningEfforts;
+    if (!efforts || efforts.length === 0) return undefined;
+    const normalized = efforts
+      .map((effort) => normalizeReasoningEffortValue(effort))
+      .filter((effort): effort is ReasoningEffortValue => effort !== null);
+    return normalized.length > 0 ? normalized : undefined;
+  }, [effectiveThreadContextDefaults?.model, effectiveThreadContextDefaults?.modelProvider, state.models]);
   const composerSelectedModel = effectiveThreadContextDefaults?.model
     ?? normalizeModelConfig(modelDraft).model
     ?? null;
@@ -2048,7 +2334,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     setComposerAttachments,
     setInput,
     threadContextDefaults: effectiveThreadContextDefaults,
-    threads: state.threads,
     workspace,
   });
   const createWorkbenchThread = useCallback(async () => {
@@ -2080,6 +2365,16 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       current.includes(normalized) ? current : [normalized, ...current]
     ));
     setWorkspace(normalized);
+    void createWorkbenchThread();
+  }, [createWorkbenchThread]);
+
+  // codex `composer.localCwdDropdown.clearProject` ("Don't work in a project"):
+  // drop the active project → projectless ("" sentinel) so the next chat lands in
+  // "Chats" with a generated ~/Documents/Codex cwd. Mirrors selectWorkspaceRoot for
+  // the no-project state (does NOT add to selectedWorkspaceRoots).
+  const selectProjectlessWorkspace = useCallback(() => {
+    setPendingWorktree(null);
+    setWorkspace("");
     void createWorkbenchThread();
   }, [createWorkbenchThread]);
 
@@ -2147,7 +2442,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     closeBackgroundAgentPanel,
     interruptBackgroundAgentPanelTurn,
     openBackgroundAgentThread,
-    openSideChatFromThread,
     openSideConversationPanel,
     sendBackgroundAgentPanelMessage,
     sideChatRailEntries,
@@ -2161,7 +2455,15 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     threadsRuntime: state.threadsRuntime,
     workspace,
   });
-  openSideConversationPanelRef.current = openSideConversationPanel;
+  // Late binding for the MCP side-chat callback defined above this hook's
+  // consumer (HiCodexApp.tsx ~2129) — write in an effect, not during render,
+  // matching openFilesTabRef / openArtifactPreviewTabRef.
+  useEffect(() => {
+    openSideConversationPanelRef.current = openSideConversationPanel;
+    return () => {
+      openSideConversationPanelRef.current = null;
+    };
+  }, [openSideConversationPanel]);
 
   const refreshAutomationsPanel = useCallback(async () => {
     setAutomationsPanelOpen(true);
@@ -4189,6 +4491,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     includeImageDynamicTool,
     input,
     rememberLatestCollaborationMode,
+    restartRuntimeForProviderSwitch,
     resetComposerSelectionAfterCreatedThread,
     setActiveComposerMode,
     setComposerAttachments,
@@ -4196,7 +4499,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     threadContextDefaults: effectiveThreadContextDefaults,
     threadIds,
     workspace,
-    defaultCwd: state.hostStatus?.defaultCwd,
   });
 
   useEffect(() => {
@@ -4260,7 +4562,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       pid: state.hostStatus?.pid,
       modelCount: state.models.length,
       pendingRequestCount: state.pendingRequests.length,
-      threads: state.threads,
       threadContextDefaults: effectiveThreadContextDefaults,
       openSideConversationPanel,
       accountState: state.account,
@@ -4293,7 +4594,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     setComposerStatusPanelOpen,
     rpcDebugEvents,
     effectiveThreadContextDefaults,
-    state.threads,
     uiThemeSnapshot,
     workspace,
   ]);
@@ -4535,6 +4835,32 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     },
     [selectCommandPanelAction, openSettingsPanelContent],
   );
+  // CODEX-REF: composer-*.js / use-permissions-mode-*.js — composer quick
+  // permission choices apply to the current thread's next turns, not global
+  // config.toml defaults.
+  const applyComposerPermissionMode = useCallback(
+    (mode: PermissionMode) => {
+      const threadId = state.activeThreadId;
+      if (!threadId) {
+        dispatch({ type: "log", text: "Select or start a thread before changing permissions.", level: "warn" });
+        setPermissionsPickerAnchor(null);
+        return;
+      }
+      setPermissionsPickerAnchor(null);
+      void (async () => {
+        if (!(await ensureConnected())) return;
+        try {
+          await client.request("thread/settings/update", {
+            threadId,
+            ...permissionModeThreadSettingsPatch(mode),
+          }, 120_000);
+        } catch (error) {
+          dispatch({ type: "log", text: `Failed to update permissions: ${formatError(error)}`, level: "error" });
+        }
+      })();
+    },
+    [client, dispatch, ensureConnected, state.activeThreadId],
+  );
 
   const handleMcpToolFormSubmit = useCallback((argumentsValue: Record<string, unknown>) => {
     const action = mcpToolForm;
@@ -4747,6 +5073,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const applyModelDraft = useCallback(() => {
     const nextModel = normalizeModelConfig(modelDraft);
     if (nextModel.model) {
+      setSelectedModelKey(encodeSelection(nextModel.id, nextModel.model));
       dispatch({
         type: "setThreadContextDefaults",
         context: {
@@ -4765,14 +5092,23 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       modelDraft,
       connected: state.connected,
       codexHome: state.hostStatus?.codexHome,
-    }).then(() => refreshThreadContextDefaults(client, dispatch, workspace));
+      restartRuntime: true,
+      // models.json is a full overwrite — keep the team gateway entries alive.
+      additionalCatalogModels: teamModelGatewayProvider?.models ?? [],
+    }).then((result) => {
+      if (!result.restartedRuntime) {
+        void refreshThreadContextDefaults(client, dispatch, workspace);
+      }
+    });
   }, [
     client,
     connect,
     modelDraft,
+    setSelectedModelKey,
     state.connected,
     state.hostStatus?.codexHome,
     state.threadContextDefaults,
+    teamModelGatewayProvider?.models,
     workspace,
   ]);
 
@@ -4859,6 +5195,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
 
   return (
     <FileCitationMenuContext.Provider value={fileCitationMenuActions}>
+    <DelinkFileCitationsContext.Provider value={isProjectlessWorkspace(activeThread?.cwd || workspace)}>
     <HiCodexIntlProvider locale={uiLocale}>
       <div
         className={appClassName}
@@ -4875,6 +5212,8 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         activeTab={activeAppTab}
         onTabChange={changeActiveAppTab}
         onOpenSettings={() => void loadSettingsPanel("general")}
+        productAccount={teamServiceAuthSession}
+        onProductSignOut={signOutTeamServiceAccount}
       />
 
       {/*
@@ -5192,12 +5531,20 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                 onSlashCommand={executeSlashCommand}
                 footerSettings={(
                   <ComposerSettingsChips
-                    model={effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model}
+                    model={
+                      // Same source as the picker checkmark
+                      // (activeThreadDisplayModelSelection) so chip and menu
+                      // can never disagree about the chat's current model.
+                      (state.activeThreadId
+                        ? activeThreadDisplayModelSelection?.model
+                        : effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model)
+                        ?? null
+                    }
                     approvalPolicy={effectiveThreadContextDefaults?.approvalPolicy ?? state.threadContextDefaults?.approvalPolicy}
                     approvalsReviewer={effectiveThreadContextDefaults?.approvalsReviewer ?? state.threadContextDefaults?.approvalsReviewer}
                     reasoningEffort={effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort}
                     sandboxMode={effectiveThreadContextDefaults?.sandbox ?? state.threadContextDefaults?.sandbox}
-                    onOpenPermissions={() => void loadSettingsPanel("permissions")}
+                    onOpenPermissions={togglePermissionsPickerAnchor}
                     onOpenModelPicker={toggleModelPickerAnchor}
                     onOpenReasoningPicker={toggleReasoningPickerAnchor}
                   />
@@ -5213,6 +5560,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                   workspaceRoots={workspaceRootOptions}
                   onWorkspaceRootSelected={selectWorkspaceRoot}
                   onUseExistingFolder={useExistingWorkspaceFolder}
+                  onSelectProjectless={selectProjectlessWorkspace}
                   onWorkModeChange={setComposerWorkMode}
                 />
               ) : null}
@@ -5222,6 +5570,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           <section className="hc-conversation" data-thread-find-target="conversation">
             <ConversationView
               units={conversation.units}
+              scrollToUnitKeyRef={threadFindScrollToUnitRef}
               emptyState={conversationEmptyState}
               threadId={state.activeThreadId}
               onEditLastUserMessage={editLastUserTurn}
@@ -5229,7 +5578,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
               onRevealAssistantEndResource={revealAssistantEndResource}
               onOpenDiff={openActiveDiffPanel}
               onForkTurn={forkActiveThreadFromTurn}
-              onSubmitTurnFeedback={submitTurnFeedback}
               onOpenFileReference={previewConversationFileReferenceAndOpenRail}
               onOpenAutomation={openAutomationFromConversation}
               memoryCitationRoot={memoryCitationRoot}
@@ -5266,7 +5614,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
             onMcpAppHostCall={handleMcpAppHostCall}
             onOpenFileReference={previewConversationFileReferenceAndOpenRail}
             onOpenAutomation={openAutomationFromConversation}
-            onSubmitTurnFeedback={submitTurnFeedback}
             memoryCitationRoot={memoryCitationRoot}
             onOpenThreadId={openBackgroundAgentThread}
             onReadMcpResource={readMcpResource}
@@ -5447,6 +5794,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         uiAppearance={uiAppearance}
         uiLocale={uiLocale}
         onSetUiTheme={setUiThemeMode}
+        onSetUiFontSize={setUiFontSize}
         onSetCodeFontSize={setUiCodeFontSize}
         onSetReducedMotion={setUiReducedMotion}
         onSetUiLocale={setUiLocale}
@@ -5487,14 +5835,24 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         onPatchFailureOpenPath={handlePatchFailureOpenPath}
         modelPickerAnchor={modelPickerAnchor}
         modelPickerProviders={modelPickerProviders}
-        modelPickerSelectedKey={effectiveModelSelection.noReadyProvider
-          ? selectedModelKey
-          : encodeSelection(effectiveModelSelection.providerId, effectiveModelSelection.model)}
-        modelPickerDefaultKey={state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
-          ? encodeSelection(normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider), state.threadContextDefaults.model)
-          : null}
+        modelPickerSelectedKey={state.activeThreadId
+          ? (activeThreadDisplayModelSelection
+              ? encodeSelection(activeThreadDisplayModelSelection.providerId, activeThreadDisplayModelSelection.model)
+              : null)
+          : (decodedSelectedModelSelection
+              ? selectedModelKeyForPicker
+              : (!effectiveModelSelection.noReadyProvider
+                  ? encodeSelection(effectiveModelSelection.providerId, effectiveModelSelection.model)
+                  : null))}
+        modelPickerDefaultKey={
+          // Active chats highlight what THEY are using (selectedKey above) —
+          // never the config default row; a default-row checkmark inside a
+          // locked cross-account section reads as "current model unusable".
+          state.activeThreadId ? null : modelPickerDefaultKey
+        }
         modelPickerReadyProviders={readyProviders}
-        onModelSelect={setSelectedModelKey}
+        modelPickerActiveThreadProviderId={activeThread?.modelProvider ?? null}
+        onModelSelect={handleComposerModelSelect}
         onModelPickerOpenSettings={() => loadSettingsPanel("models")}
         onModelPickerSignIn={() => { void runSlashRequest("loginChatgpt"); }}
         onModelPickerClose={() => setModelPickerAnchor(null)}
@@ -5503,17 +5861,30 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort,
         )}
         reasoningSupportedEfforts={activeModelSupportedEfforts}
-        onReasoningSelect={setReasoningEffortOverride}
+        onReasoningSelect={handleReasoningSelect}
         onReasoningPickerClose={() => setReasoningPickerAnchor(null)}
+        permissionsPickerAnchor={permissionsPickerAnchor}
+        permissionsCurrentMode={permissionModeFromThreadContext(
+          effectiveThreadContextDefaults ?? state.threadContextDefaults ?? null,
+        )}
+        permissionsRequirements={permissionsRequirements}
+        onPermissionApplyMode={applyComposerPermissionMode}
+        onPermissionOpenCustomSettings={() => loadSettingsPanel("permissions")}
+        onPermissionsPickerClose={() => setPermissionsPickerAnchor(null)}
         keyboardShortcutsOpen={keyboardShortcutsOpen}
         onKeyboardShortcutsClose={() => setKeyboardShortcutsOpen(false)}
         toastLogs={state.logs}
       />
       </div>
     </HiCodexIntlProvider>
+    </DelinkFileCitationsContext.Provider>
     </FileCitationMenuContext.Provider>
   );
 }
+
+// Pre-registry storage key for the reasoning-effort override ("hicodex." is the
+// retired legacy namespace; live keys go through HICODEX_DESKTOP_CONFIG_KEYS).
+const LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY = "hicodex.reasoningEffortOverride";
 
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);
@@ -5549,13 +5920,14 @@ export function HiCodexApp() {
       client={client}
       dispatch={dispatch}
       connected={state.connected}
-      connecting={state.connecting}
     >
-      <HiCodexAppBody
-        state={state}
-        clientCallbacksRef={clientCallbacksRef}
-        fileSearchControllerRef={fileSearchControllerRef}
-      />
+      <TeamServiceAuthGate>
+        <HiCodexAppBody
+          state={state}
+          clientCallbacksRef={clientCallbacksRef}
+          fileSearchControllerRef={fileSearchControllerRef}
+        />
+      </TeamServiceAuthGate>
     </ServicesProvider>
   );
 }

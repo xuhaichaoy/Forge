@@ -372,9 +372,9 @@ function threadGitInfo(thread: Thread | null): {
 } {
   const gitInfo = recordObject(thread?.gitInfo);
   return {
-    branch: stringField(gitInfo, "branch"),
-    originUrl: stringField(gitInfo, "originUrl"),
-    sha: stringField(gitInfo, "sha"),
+    branch: trimmedStringField(gitInfo, "branch"),
+    originUrl: trimmedStringField(gitInfo, "originUrl"),
+    sha: trimmedStringField(gitInfo, "sha"),
   };
 }
 
@@ -384,7 +384,7 @@ function gitDiffSummary(value: unknown): {
   label: string;
 } {
   const record = recordObject(value);
-  const diff = stringField(record, "diff");
+  const diff = trimmedStringField(record, "diff");
   const changedFiles = diffFileCount(diff);
   const hasDiff = diff.trim().length > 0;
   if (changedFiles > 0) {
@@ -430,7 +430,9 @@ function recordObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function stringField(record: Record<string, unknown> | null, key: string): string {
+// NOT lib/format.stringField: this variant trims — renamed so the two
+// behaviors can't be conflated under one grep-able name.
+function trimmedStringField(record: Record<string, unknown> | null, key: string): string {
   const value = record?.[key];
   return typeof value === "string" ? value.trim() : "";
 }

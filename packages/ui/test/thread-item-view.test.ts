@@ -242,7 +242,6 @@ function rendersProposedPlanSummaryCard(): void {
   assertEqual(planSummaryCompleted(completeItem as never), true, "completed proposed plan should use completed=true");
   const completeHtml = renderToStaticMarkup(createElement(ThreadItemView, {
     threadId: "thread-plan",
-    onSubmitTurnFeedback: () => undefined,
     unit: {
       kind: "threadItem",
       key: "item:proposed-plan:plan-1",

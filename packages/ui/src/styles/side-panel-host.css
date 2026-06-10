@@ -91,7 +91,7 @@
   border-radius: 8px;
   color: var(--hc-text-secondary, #6f716b);
   background: var(--hc-surface-muted, #f3f1ea);
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 1.45;
 }
 
@@ -246,7 +246,7 @@
   overflow: hidden;
   white-space: nowrap;
   /* codex tab title is `text-sm` (--text-sm:12px), bare span inherits body weight 430. */
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   font-weight: 430;
   color: var(--hc-text-primary, #1d1f1c);
 }
@@ -392,7 +392,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
   font-weight: 600;
 }
 
@@ -400,7 +400,7 @@
 .hc-browser-tab-error {
   margin-top: 4px;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
   color: var(--hc-text-muted);
 }
 
