@@ -76,29 +76,32 @@ export function ThreadFindBar({
           }}
         />
       </label>
-      {countLabel != null ? (
-        <span className="hc-thread-find-count" aria-live="polite">{countLabel}</span>
-      ) : null}
-      <button
-        type="button"
-        className="hc-thread-find-icon-button"
-        aria-label={previousLabel}
-        title={previousLabel}
-        disabled={!canNavigate}
-        onClick={onPrevious}
-      >
-        <ChevronUp size={14} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className="hc-thread-find-icon-button"
-        aria-label={nextLabel}
-        title={nextLabel}
-        disabled={!canNavigate}
-        onClick={onNext}
-      >
-        <ChevronDown size={14} aria-hidden="true" />
-      </button>
+      {/* codex review-runtime-bridge Frame: row 1 = Input | Navigation | Close
+          (grid minmax(0,1fr) auto auto); the ResultLabel is NOT an inline cell —
+          it spans row 2 (col 1/4, right-aligned, slide/fade). Inline fixed-width
+          count used to overlap the chevrons. */}
+      <div className="hc-thread-find-nav">
+        <button
+          type="button"
+          className="hc-thread-find-icon-button"
+          aria-label={previousLabel}
+          title={previousLabel}
+          disabled={!canNavigate}
+          onClick={onPrevious}
+        >
+          <ChevronUp size={14} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="hc-thread-find-icon-button"
+          aria-label={nextLabel}
+          title={nextLabel}
+          disabled={!canNavigate}
+          onClick={onNext}
+        >
+          <ChevronDown size={14} aria-hidden="true" />
+        </button>
+      </div>
       <button
         type="button"
         className="hc-thread-find-icon-button"
@@ -108,6 +111,13 @@ export function ThreadFindBar({
       >
         <X size={14} aria-hidden="true" />
       </button>
+      <span
+        className="hc-thread-find-count"
+        data-open={hasQuery || undefined}
+        aria-live="polite"
+      >
+        {countLabel}
+      </span>
     </div>
   );
 }
