@@ -130,7 +130,7 @@ import { useThreadActions } from "./hooks/use-thread-actions";
 // state.threadHistoryStack / state.threadHistoryIndex (see thread-history.ts).
 import { canNavigateBackInHistory, canNavigateForwardInHistory } from "./state/thread-history";
 import { artifactPreviewTabId, projectArtifactPreview, shouldOpenArtifactPreview } from "./state/artifact-preview";
-import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
+import { refreshModels, restartRuntimeForUpdatedProviderConfig, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
   DEFAULT_MODEL_REASONING_SUMMARY,
   encodeSelection,
@@ -1185,10 +1185,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
 
   const restartRuntimeForProviderSwitch = useCallback(async (): Promise<boolean> => {
     try {
-      await client.disconnect();
-      dispatch({ type: "connected", value: false });
-      dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
-      return await connect();
+      return await restartRuntimeForUpdatedProviderConfig(client, dispatch, connect);
     } catch (error) {
       dispatch({
         type: "log",

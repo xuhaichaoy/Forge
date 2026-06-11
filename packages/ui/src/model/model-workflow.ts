@@ -27,6 +27,25 @@ import {
 
 export type CodexUiDispatch = (action: CodexUiAction) => void;
 
+/*
+ * The one runtime-restart sequence for provider-config changes: loaded chats
+ * hold app-server sessions bound to the old provider connection, so every
+ * config writer tears the connection down, marks all threads for resume, and
+ * reconnects. Keep the lockstep in ONE place — this existed as three drifting
+ * inline copies (saveModelDraft, provisionTeamModelGatewayProvider, and
+ * HiCodexApp's provider-switch retry) before being unified.
+ */
+export async function restartRuntimeForUpdatedProviderConfig(
+  client: CodexJsonRpcClient,
+  dispatch: CodexUiDispatch,
+  connect: () => Promise<boolean>,
+): Promise<boolean> {
+  await client.disconnect();
+  dispatch({ type: "connected", value: false });
+  dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
+  return connect();
+}
+
 export interface SaveModelDraftOptions {
   client: CodexJsonRpcClient;
   dispatch: CodexUiDispatch;
@@ -106,10 +125,7 @@ export async function saveModelDraft({
           text: "saved model config; restarting Codex runtime so loaded chats use the updated provider connection",
         });
         try {
-          await client.disconnect();
-          dispatch({ type: "connected", value: false });
-          dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
-          restartedRuntime = await connect();
+          restartedRuntime = await restartRuntimeForUpdatedProviderConfig(client, dispatch, connect);
           dispatch({
             type: "log",
             text: restartedRuntime
@@ -227,10 +243,7 @@ export async function provisionTeamModelGatewayProvider({
         // chats hold sessions with the stale token, so restart once. ONE
         // success toast total — startup must not stack notifications.
         try {
-          await client.disconnect();
-          dispatch({ type: "connected", value: false });
-          dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
-          restartedRuntime = await connect();
+          restartedRuntime = await restartRuntimeForUpdatedProviderConfig(client, dispatch, connect);
           dispatch({
             type: "log",
             text: restartedRuntime
