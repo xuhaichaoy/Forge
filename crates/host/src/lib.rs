@@ -35,6 +35,11 @@ unsafe extern "C" {
 
 const INSTALLED_CODEX_BIN: &str = "/Applications/Codex.app/Contents/Resources/codex";
 const INSTALLATION_ID_FILENAME: &str = "installation_id";
+// Webview-independent persistence for desktop.hicodex.* settings: WKWebView
+// localStorage is keyed by the app bundle identifier, so a rebrand or webview
+// data-container change wipes it. codex-home survives those, making it the
+// durable home for connection/auth/model-selection settings.
+const APP_SETTINGS_FILENAME: &str = "hicodex-app-settings.json";
 const OPENAI_BUNDLED_MARKETPLACE_NAME: &str = "openai-bundled";
 const OPENAI_BUNDLED_BROWSER_PLUGIN_ID: &str = "browser@openai-bundled";
 const OPENAI_BUNDLED_COMPUTER_USE_PLUGIN_NAME: &str = "computer-use";
@@ -430,6 +435,29 @@ impl AppServerHost {
         fs::write(&models_path, model_catalog_json(&config))
             .map_err(|error| HostError::Profile(error.to_string()))?;
         Ok(models_path.to_string_lossy().to_string())
+    }
+
+    pub fn read_app_settings(&self, codex_home: Option<String>) -> Result<String, HostError> {
+        let codex_home = resolve_codex_home(codex_home.as_deref());
+        let path = codex_home.join(APP_SETTINGS_FILENAME);
+        if !path.is_file() {
+            return Ok(String::new());
+        }
+        fs::read_to_string(&path).map_err(|error| HostError::Profile(error.to_string()))
+    }
+
+    pub fn write_app_settings(
+        &self,
+        codex_home: Option<String>,
+        settings_json: String,
+    ) -> Result<(), HostError> {
+        let codex_home = resolve_codex_home(codex_home.as_deref());
+        fs::create_dir_all(&codex_home).map_err(|error| HostError::Profile(error.to_string()))?;
+        let path = codex_home.join(APP_SETTINGS_FILENAME);
+        let tmp_path = codex_home.join(format!("{APP_SETTINGS_FILENAME}.tmp"));
+        fs::write(&tmp_path, settings_json)
+            .map_err(|error| HostError::Profile(error.to_string()))?;
+        fs::rename(&tmp_path, &path).map_err(|error| HostError::Profile(error.to_string()))
     }
 
     pub fn read_codex_auth_summary(

@@ -8,7 +8,7 @@ import type {
   ThreadGoalSetResponse,
 } from "@hicodex/codex-protocol";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "../lib/codex-json-rpc-client";
-import { formatError, formatUnknown } from "../lib/format";
+import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 import {
@@ -17,7 +17,7 @@ import {
 } from "./account-state";
 import { loadAllApps } from "./app-list";
 import { projectBackgroundTerminalEntries } from "./background-terminals";
-import { buildInfoDetails, type HiCodexBuildInfo } from "./build-info";
+import type { HiCodexBuildInfo } from "./build-info";
 import type { SlashCommandRequest } from "./composer-workflow";
 import {
   projectCommandPanelEntries,
@@ -27,19 +27,19 @@ import {
   type CommandPanelEntry,
   type CommandPanelKind,
   type CommandPanelOptions,
-  type CommandPanelSecondaryAction,
 } from "./command-panel";
 import type { LogLine, ThreadContextDefaults } from "./codex-reducer";
 import { projectPersonalityCommandEntries } from "./personality";
 import { projectRpcDebugEntries, rpcDebugPanelMessage } from "./rpc-debug";
 import type { AccumulatedThreadItem } from "./render-groups";
 import {
-  effectiveThreadMemoryPreferences,
   forkThread,
   resumeThread,
   startSideConversation,
   type ThreadWorkflowDispatch,
 } from "./thread-workflow";
+import { projectMemoryCommandEntries } from "./slash-memory-panel";
+import { projectDebugConfigEntries } from "./slash-debug-config-panel";
 import {
   UI_THEME_MODES,
   nextToggleThemeMode,
@@ -577,261 +577,6 @@ function cleanGoalDetails(values: string[]): string[] {
   return values.map((value) => value.trim()).filter(Boolean);
 }
 
-function projectMemoryCommandEntries(
-  activeThreadId: string | null,
-  context: ThreadContextDefaults | null,
-  formatMessage?: FormatMessage,
-): CommandPanelEntry[] {
-  const fm = (id: string, defaultMessage: string): string =>
-    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
-  // Composite bullet "<label>: <description>" — both halves have Codex ids, so
-  // they localize together (the "Use memories"/"Generate memories" prefix is
-  // composer.memoriesSlashCommand.{use,generate}MemoriesLabel).
-  const bullet = (labelId: string, labelEn: string, descId: string, descEn: string): string =>
-    `${fm(`composer.memoriesSlashCommand.${labelId}`, labelEn)}: ${fm(`composer.memoriesSlashCommand.${descId}`, descEn)}`;
-  const preferences = effectiveThreadMemoryPreferences(context);
-  const entries: CommandPanelEntry[] = [{
-    id: "memories:defaults",
-    title: "New chats",
-    kind: "status",
-    status: memorySummary(preferences.useMemories, preferences.generateMemories),
-    // codex: subtitle aligned to upstream
-    //   composer.memoriesSlashCommand.newThreadDialogSubtitle =
-    //     "These switches apply to the chat started from this composer"
-    meta: fm("composer.memoriesSlashCommand.newThreadDialogSubtitle", "These switches apply to the chat started from this composer"),
-    // codex: detail bullets align to upstream ICU defaults —
-    //   composer.memoriesSlashCommand.useMemoriesDescription      = "Let Codex bring existing memories into this chat’s context"
-    //   composer.memoriesSlashCommand.generateMemoriesDescription = "Allow Codex to use this chat when creating new memories later"
-    details: [
-      bullet("useMemoriesLabel", "Use memories", "useMemoriesDescription", "Let Codex bring existing memories into this chat’s context"),
-      bullet("generateMemoriesLabel", "Generate memories", "generateMemoriesDescription", "Allow Codex to use this chat when creating new memories later"),
-    ],
-    secondaryActions: [
-      memoryConfigAction("use", !preferences.useMemories),
-      memoryConfigAction("generate", !preferences.generateMemories),
-    ],
-  }];
-
-  if (activeThreadId) {
-    entries.push({
-      id: `memories:thread:${activeThreadId}`,
-      // codex: panel title aligned to upstream
-      //   composer.memoriesSlashCommand.dialogTitle = "Chat memories"
-      title: fm("composer.memoriesSlashCommand.dialogTitle", "Chat memories"),
-      kind: "status",
-      // codex: subtitle aligned to upstream
-      //   composer.memoriesSlashCommand.existingThreadDialogSubtitle = "These switches apply to the current chat"
-      status: fm("composer.memoriesSlashCommand.existingThreadDialogSubtitle", "These switches apply to the current chat"),
-      meta: `thread ${activeThreadId}`,
-      // codex: first bullet aligns to upstream
-      //   composer.memoriesSlashCommand.useMemoriesStartedDescription = "Cannot be changed after conversation has started"
-      details: [
-        bullet("useMemoriesLabel", "Use memories", "useMemoriesStartedDescription", "Cannot be changed after conversation has started"),
-        "Generate memories controls whether this chat remains eligible for future memory generation.",
-      ],
-      secondaryActions: [
-        {
-          id: `memories:thread:${activeThreadId}:enable`,
-          label: "Enable",
-          title: "Enable memory generation for this chat",
-          tone: "success",
-          action: {
-            type: "setThreadMemoryMode",
-            title: "Memories",
-            threadId: activeThreadId,
-            mode: "enabled",
-          },
-        },
-        {
-          id: `memories:thread:${activeThreadId}:disable`,
-          label: "Disable",
-          title: "Disable memory generation for this chat",
-          tone: "danger",
-          action: {
-            type: "setThreadMemoryMode",
-            title: "Memories",
-            threadId: activeThreadId,
-            mode: "disabled",
-          },
-        },
-      ],
-    });
-  }
-
-  return entries;
-}
-
-function memoryConfigAction(kind: "use" | "generate", enabled: boolean): CommandPanelSecondaryAction {
-  const title = kind === "use" ? "Use memories" : "Generate memories";
-  const keyPath = kind === "use" ? "memories.use_memories" : "memories.generate_memories";
-  return {
-    id: `memories:defaults:${kind}:${enabled ? "on" : "off"}`,
-    label: enabled ? "Turn on" : "Turn off",
-    title: `${enabled ? "Enable" : "Disable"} ${title.toLowerCase()}`,
-    tone: enabled ? "success" : "danger",
-    action: {
-      type: "writeConfig",
-      title: "Memories",
-      message: `${title} ${enabled ? "enabled" : "disabled"} for new chats.`,
-      edits: [{ keyPath, value: enabled, mergeStrategy: "upsert" }],
-      reloadUserConfig: true,
-    },
-  };
-}
-
-function memorySummary(useMemories: boolean, generateMemories: boolean): string {
-  return `use ${useMemories ? "on" : "off"} · generate ${generateMemories ? "on" : "off"}`;
-}
-
-function projectDebugConfigEntries(
-  value: unknown,
-  cwd: string,
-  buildInfo?: HiCodexBuildInfo,
-): CommandPanelEntry[] {
-  const buildEntry = buildInfo ? [projectBuildInfoEntry(buildInfo)] : [];
-  const root = recordValue(value);
-  if (!root) {
-    return [
-      ...buildEntry,
-      {
-        id: "debug-config:raw",
-        title: "Config response",
-        kind: "status",
-        meta: cwd || "global config",
-        details: [formatUnknown(value)],
-        action: {
-          type: "copyText",
-          title: "Debug config",
-          label: "Debug config",
-          text: compactDebugJson(value),
-        },
-      },
-    ];
-  }
-
-  const effectiveConfig = firstRecordField(root, ["config", "settings", "effective", "effectiveConfig"]) ?? root;
-  const layers = firstArrayField(root, ["layers", "configLayers", "config_layers"]);
-  const entries: CommandPanelEntry[] = [...buildEntry, {
-    id: "debug-config:effective",
-    title: "Effective config",
-    kind: "status",
-    status: `${Object.keys(effectiveConfig).length} key(s)`,
-    meta: cwd || "global config",
-    details: summarizeDebugConfig(effectiveConfig),
-    action: {
-      type: "copyText",
-      title: "Debug config",
-      label: "Debug config",
-      text: compactDebugJson(value),
-    },
-  }];
-
-  layers.forEach((layer, index) => {
-    const layerConfig = firstRecordField(layer, ["config", "settings", "values"]) ?? layer;
-    entries.push({
-      id: `debug-config:layer:${index}`,
-      title: debugLayerTitle(layer, index),
-      kind: "status",
-      status: debugLayerStatus(layer),
-      meta: debugLayerMeta(layer),
-      details: summarizeDebugConfig(layerConfig),
-    });
-  });
-
-  return entries;
-}
-
-function projectBuildInfoEntry(buildInfo: HiCodexBuildInfo): CommandPanelEntry {
-  return {
-    id: "debug-config:build",
-    title: "HiCodex build",
-    kind: "status",
-    status: `${buildInfo.flavor} / ${buildInfo.channel}`,
-    meta: buildInfo.version,
-    details: buildInfoDetails(buildInfo),
-    action: {
-      type: "copyText",
-      title: "Build info",
-      label: "Build info",
-      text: JSON.stringify(buildInfo, null, 2),
-    },
-  };
-}
-
-function summarizeDebugConfig(config: Record<string, unknown>): string[] {
-  const preferredKeys = [
-    "model",
-    "model_provider",
-    "approval_policy",
-    "approvals_reviewer",
-    "sandbox_mode",
-    "profile",
-    "model_reasoning_effort",
-    "model_reasoning_summary",
-    "instructions",
-    "developer_instructions",
-  ];
-  const details: string[] = [];
-  const seen = new Set<string>();
-  for (const key of preferredKeys) {
-    const formatted = debugConfigDetail(config, key);
-    if (!formatted) continue;
-    seen.add(key);
-    details.push(formatted);
-  }
-  const memories = recordField(config, "memories");
-  if (memories) {
-    for (const key of ["use_memories", "generate_memories"]) {
-      const formatted = debugConfigDetail(memories, key, `memories.${key}`);
-      if (formatted) details.push(formatted);
-    }
-  }
-  for (const [key, value] of Object.entries(config)) {
-    if (details.length >= 10) break;
-    if (seen.has(key) || key === "memories") continue;
-    const formatted = formatDebugValue(value);
-    if (formatted) details.push(`${key}: ${formatted}`);
-  }
-  return details.length > 0 ? details : ["No scalar config values returned."];
-}
-
-function debugConfigDetail(config: Record<string, unknown>, key: string, label = key): string {
-  const formatted = formatDebugValue(config[key]);
-  return formatted ? `${label}: ${formatted}` : "";
-}
-
-function formatDebugValue(value: unknown): string {
-  if (typeof value === "string") return truncateDebugValue(value.trim());
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (value === null) return "null";
-  return "";
-}
-
-function truncateDebugValue(value: string): string {
-  if (!value) return "";
-  return value.length > 160 ? `${value.slice(0, 157)}...` : value;
-}
-
-function debugLayerTitle(layer: Record<string, unknown>, index: number): string {
-  return fieldText(layer, "name")
-    || fieldText(layer, "source")
-    || fieldText(layer, "path")
-    || `Config layer ${index + 1}`;
-}
-
-function debugLayerStatus(layer: Record<string, unknown>): string | undefined {
-  return fieldText(layer, "status")
-    || fieldText(layer, "kind")
-    || (layer.enabled === false ? "disabled" : undefined);
-}
-
-function debugLayerMeta(layer: Record<string, unknown>): string | undefined {
-  return fieldText(layer, "path")
-    || fieldText(layer, "cwd")
-    || fieldText(layer, "profile")
-    || undefined;
-}
-
 function formatGoalDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return "0s";
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -1016,47 +761,6 @@ function shortThreadId(id: string): string {
 function stringPayload(payload: Record<string, unknown> | undefined, key: string): string {
   const value = payload?.[key];
   return typeof value === "string" ? value.trim() : "";
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function recordField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
-  return recordValue(value[key]);
-}
-
-function firstRecordField(value: Record<string, unknown>, keys: string[]): Record<string, unknown> | null {
-  for (const key of keys) {
-    const record = recordField(value, key);
-    if (record) return record;
-  }
-  return null;
-}
-
-function firstArrayField(value: Record<string, unknown>, keys: string[]): Record<string, unknown>[] {
-  for (const key of keys) {
-    const field = value[key];
-    if (Array.isArray(field)) return field.map(recordValue).filter((item): item is Record<string, unknown> => item != null);
-  }
-  return [];
-}
-
-function fieldText(value: Record<string, unknown>, key: string): string {
-  const field = value[key];
-  if (typeof field === "string") return field.trim();
-  if (typeof field === "number" || typeof field === "boolean" || typeof field === "bigint") return String(field);
-  return "";
-}
-
-function compactDebugJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return formatUnknown(value);
-  }
 }
 
 function diffLineCount(value: string): number {

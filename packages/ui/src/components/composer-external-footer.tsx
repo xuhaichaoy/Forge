@@ -383,6 +383,12 @@ const PERMISSIONS_FOOTER_LABEL_ID: Record<string, string> = {
 
 export interface ComposerSettingsChipsProps {
   model?: string | null;
+  /**
+   * Provider context shown in the model chip tooltip ("团队模型 ·
+   * 127.0.0.1:5050") — personal/team gateways can serve identically named
+   * models, so the model name alone cannot tell which service a send hits.
+   */
+  modelProviderHint?: string | null;
   approvalPolicy?: unknown;
   approvalsReviewer?: unknown;
   reasoningEffort?: unknown;
@@ -394,6 +400,7 @@ export interface ComposerSettingsChipsProps {
 
 export function ComposerSettingsChips({
   model,
+  modelProviderHint,
   approvalPolicy,
   approvalsReviewer,
   reasoningEffort,
@@ -438,7 +445,12 @@ export function ComposerSettingsChips({
        * hiding the trigger.
        */}
       {(intelligenceLabel || onOpenModelPicker) && (
-        <Tooltip content={onOpenModelPicker ? formatMessage({ id: "composer.intelligenceDropdown.tooltip", defaultMessage: "Select model" }) : intelligenceLabel}>
+        <Tooltip content={
+          modelProviderHint
+            ?? (onOpenModelPicker
+              ? formatMessage({ id: "composer.intelligenceDropdown.tooltip", defaultMessage: "Select model" })
+              : intelligenceLabel)
+        }>
           <button
             type="button"
             className="hc-composer-footer-chip hc-composer-footer-model hc-composer-footer-intelligence"

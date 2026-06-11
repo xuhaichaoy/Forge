@@ -23,6 +23,10 @@ export interface WorkspaceFuzzyFileSearchSession {
   stop(): Promise<void>;
 }
 
+interface MutableRefLike<T> {
+  current: T;
+}
+
 type SessionSupport = "unknown" | "supported" | "unsupported";
 type UpdatedCallback = (payload: WorkspaceFuzzyFileSearchSessionUpdated) => void;
 type CompletedCallback = (payload: WorkspaceFuzzyFileSearchSessionCompleted) => void;
@@ -230,6 +234,45 @@ export class WorkspaceFuzzyFileSearchController {
       }
     }
   }
+}
+
+/*
+ * Shared workspace-file-search session lifecycle: reuse the live session when
+ * the roots key matches, otherwise stop the previous one and start a fresh
+ * session, writing the session + roots-key refs back. The composer mention and
+ * command-menu getters share this exact flow; only the back-store refs, the
+ * close-failure warn wording (onCloseError), and the panel projection
+ * (onUpdated) differ, so those are injected.
+ */
+export function createDedupedFileSearchSession(config: {
+  sessionRef: MutableRefLike<WorkspaceFuzzyFileSearchSession | null>;
+  rootsKeyRef: MutableRefLike<string>;
+  controllerRef: MutableRefLike<WorkspaceFuzzyFileSearchController | null>;
+  onCloseError: (error: unknown) => void;
+  onUpdated: (payload: WorkspaceFuzzyFileSearchSessionUpdated) => void;
+}): (roots: string[]) => Promise<WorkspaceFuzzyFileSearchSession> {
+  const { sessionRef, rootsKeyRef, controllerRef, onCloseError, onUpdated } = config;
+  return async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
+    const rootsKey = roots.join("\0");
+    if (sessionRef.current && rootsKeyRef.current === rootsKey) {
+      return sessionRef.current;
+    }
+    const previousSession = sessionRef.current;
+    sessionRef.current = null;
+    rootsKeyRef.current = "";
+    if (previousSession) {
+      await previousSession.stop().catch(onCloseError);
+    }
+    const controller = controllerRef.current;
+    if (!controller) throw new Error("Fuzzy file search is unavailable.");
+    const session = await controller.createSession({
+      roots,
+      onUpdated,
+    });
+    sessionRef.current = session;
+    rootsKeyRef.current = rootsKey;
+    return session;
+  };
 }
 
 function createSessionId(): string {

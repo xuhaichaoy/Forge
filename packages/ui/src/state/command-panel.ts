@@ -5,11 +5,61 @@ import {
   type McpToolArgumentField,
 } from "./mcp-tool-arguments";
 import { mcpAppResourceUriFromMeta } from "./thread-item-fields";
-import type { HiCodexLocale, I18nMessageDescriptor, I18nValues } from "./i18n";
+import { isAbsolutePath } from "./command-panel-file-search";
+import {
+  booleanField,
+  cleanSecondaryActions,
+  firstLine,
+  inferNameFromPath,
+  numberField,
+  recordField,
+  stringArrayField,
+} from "./command-panel-value-utils";
+import {
+  ensureTrailingSpace,
+  escapePromptPath,
+  joinFixedPath,
+  skillConfigToggleAction,
+  skillFileReadAction,
+  skillPromptText,
+  skillScopeLabel,
+  starterSkillContents,
+} from "./command-panel-skill-helpers";
+import type { HiCodexLocale } from "./i18n";
 import type { NotificationPreferences } from "./notification-preferences";
 import type { UiThemeMode } from "./theme";
 
-type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
+export {
+  groupCommandPanelEntries,
+  groupCommandPanelEntriesForRendering,
+} from "./command-panel-groups";
+export {
+  commandPanelChatCreateEntry,
+  commandPanelHandleEscape,
+  commandPanelHasSearchInput,
+  commandPanelShouldShowChatCreateEmptyState,
+  commandPanelSubModeFromKind,
+  commandPanelSubModeFromPanel,
+  commandPanelSubModePlaceholder,
+  createCommandPanelState,
+} from "./command-panel-state";
+export type {
+  CommandPanelEscapeInput,
+  CommandPanelEscapeResult,
+  CommandPanelOptions,
+} from "./command-panel-state";
+export {
+  commandPanelThreadGroup,
+  isAppBackedPanel,
+  isAppBackedPanelState,
+  isCommandMenuPanel,
+  orderCommandPanelThreadsByPinned,
+} from "./command-panel-selectors";
+export {
+  joinRootRelativePath,
+  projectFileSearchEntries,
+} from "./command-panel-file-search";
+export type { CommandGroupSection } from "./command-panel-groups";
 
 export interface ConfigWriteActionEdit {
   keyPath: string;
@@ -274,15 +324,6 @@ const CONNECTOR_PROTOCOL_LIMITED_DETAIL =
   "Protocol-limited: app-server returned app/list metadata only; no native connector OAuth method or browser setup URL is available.";
 const STARTER_SKILL_NAME = "starter-skill";
 
-export interface CommandPanelOptions {
-  status?: CommandPanelStatus;
-  entries?: CommandPanelEntry[];
-  error?: string;
-  message?: string;
-  title?: string;
-  searchable?: boolean;
-}
-
 export interface FileSearchResult {
   root?: string;
   path?: string;
@@ -291,234 +332,6 @@ export interface FileSearchResult {
   relativePathWithoutFileName?: string;
   score?: number;
   match_type?: string;
-}
-
-export function createCommandPanelState(
-  panel: CommandPanelKind,
-  options: CommandPanelOptions = {},
-): CommandPanelState {
-  const entries = options.entries ?? [];
-  const requestedStatus = options.status ?? "idle";
-  const status = requestedStatus === "ready" && entries.length === 0 ? "empty" : requestedStatus;
-  return {
-    panel,
-    status,
-    title: options.title ?? panelTitle(panel),
-    entries,
-    message: options.message ?? panelMessage(panel, status, options.error),
-    ...(options.searchable ? { searchable: true } : {}),
-  };
-}
-
-export function commandPanelHasSearchInput(panel: CommandPanelState): boolean {
-  return panel.searchable === true || panel.entries.length > 0 || panel.panel === "files";
-}
-
-export function commandPanelShouldShowChatCreateEmptyState(panel: CommandPanelState, query: string): boolean {
-  return panel.searchable === true
-    && panel.title === "Search chats"
-    && panel.entries.length === 0
-    && query.trim().length === 0;
-}
-
-// codex: app-main-*.js — cmdk Hd atom (root/chats/files modes).
-// Maps a CommandPanelKind to the Codex sub-mode used by the upstream dialog.
-// `files` always maps to the file picker; every other kind starts in `root`
-// because chat picking is tracked via the searchable "Search chats" title
-// rather than a dedicated CommandPanelKind value.
-export function commandPanelSubModeFromKind(kind: CommandPanelKind | null): CommandPanelSubMode {
-  if (kind === "files") return "files";
-  return "root";
-}
-
-// codex: app-main-*.js — derive the cmdk Hd value from a live
-// CommandPanelState. We treat the dedicated "Search chats" panel (used by
-// openChatSearchPanel) as the `chats` sub-mode so the placeholder, Esc, and
-// back-button behaviors match Codex without adding a new field to
-// CommandPanelState.
-export function commandPanelSubModeFromPanel(panel: CommandPanelState | null): CommandPanelSubMode {
-  if (!panel) return "root";
-  if (panel.panel === "files") return "files";
-  if (panel.title === "Search chats") return "chats";
-  return "root";
-}
-
-// codex: app-main-*.js — three placeholders that ride with the Hd
-// atom: root → "Type command", chats → "Search chats", files → "Search files".
-export function commandPanelSubModePlaceholder(subMode: CommandPanelSubMode, formatMessage?: FormatMessage): string {
-  const fm = (id: string, defaultMessage: string): string =>
-    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
-  switch (subMode) {
-    case "files":
-      return fm("codex.commandMenu.fileSearchPlaceholder", "Search files");
-    case "chats":
-      return fm("codex.commandMenu.chatSearchPlaceholder", "Search chats");
-    case "root":
-    default:
-      return fm("codex.commandMenu.searchPlaceholder", "Type command");
-  }
-}
-
-// codex: app-main-*.js — command-dialog Esc handler. First Esc
-// clears any query and/or steps the sub-mode back to root; second Esc closes
-// the dialog. The caller owns the local query state (CommandPanel manages
-// its own input), so we return the next-state intent and let the component
-// apply it.
-export interface CommandPanelEscapeInput {
-  subMode: CommandPanelSubMode;
-  query: string;
-}
-
-export interface CommandPanelEscapeResult {
-  shouldClose: boolean;
-  // Whether the caller should clear its local query string. Together with the
-  // sub-mode reset this matches Codex's first-Esc behavior.
-  clearQuery: boolean;
-  // The sub-mode the panel should land in after the keystroke (only meaningful
-  // when shouldClose is false).
-  nextSubMode: CommandPanelSubMode;
-}
-
-export function commandPanelHandleEscape(input: CommandPanelEscapeInput): CommandPanelEscapeResult {
-  const hasQuery = input.query.length > 0;
-  const inSubMode = input.subMode !== "root";
-  if (inSubMode || hasQuery) {
-    return { shouldClose: false, clearQuery: hasQuery, nextSubMode: "root" };
-  }
-  return { shouldClose: true, clearQuery: false, nextSubMode: "root" };
-}
-
-export function groupCommandPanelEntriesForRendering(entries: CommandPanelEntry[]): CommandPanelRenderedItem[] {
-  const renderedItems: CommandPanelRenderedItem[] = [];
-  let currentGroupKey: string | null = null;
-  for (const entry of entries) {
-    const groupLabel = entry.groupLabel?.trim();
-    const groupKey = entry.groupKey?.trim() || groupLabel;
-    if (groupLabel && groupKey && groupKey !== currentGroupKey) {
-      renderedItems.push({ type: "group", key: `group:${groupKey}`, label: groupLabel });
-      currentGroupKey = groupKey;
-    }
-    if (!groupKey) {
-      currentGroupKey = null;
-    }
-    renderedItems.push({ type: "entry", key: entry.id, entry });
-  }
-  return renderedItems;
-}
-
-// codex: app-main-*.js — command menu group taxonomy. The Codex dialog
-// renders top-level sections in this fixed order, mirroring the
-// `commandMenuGroupKey` taxonomy declared by the command catalog (see
-// state/commands.ts COMMAND_DESCRIPTORS / state/command-registry.ts
-// CommandGroup). Sections without entries are skipped at render time.
-// titleId mirrors Codex's `codex.commandGroup.<key>` section labels (localized
-// in the command menu); `title` is the English defaultMessage fallback.
-const GROUP_TITLE_ORDER: ReadonlyArray<{ key: string; titleId: string; title: string }> = [
-  { key: "thread",     titleId: "codex.commandGroup.thread",     title: "Chat" },
-  { key: "navigation", titleId: "codex.commandGroup.navigation", title: "Navigation" },
-  { key: "panels",     titleId: "codex.commandGroup.panels",     title: "Panels" },
-  { key: "workspace",  titleId: "codex.commandGroup.workspace",  title: "Project" },
-  { key: "skills",     titleId: "codex.commandGroup.skills",     title: "Skills" },
-  { key: "configure",  titleId: "codex.commandGroup.configure",  title: "Configure" },
-  { key: "app",        titleId: "codex.commandGroup.app",        title: "App" },
-];
-
-// codex: app-main-*.js — bucket the command menu's kind-typed
-// entries under the taxonomy when an entry doesn't already declare a
-// `commandMenuGroupKey`. Anything we can't classify is forwarded to the
-// catch-all "Other" section so chat-specific groups (pinned-chats /
-// recent-chats) keep their existing rendering.
-function defaultGroupKeyForKind(kind: CommandPanelEntryKind): string {
-  switch (kind) {
-    case "thread":
-    case "diff":
-      return "thread";
-    case "file":
-      return "workspace";
-    case "skill":
-      return "skills";
-    case "mcpServer":
-    case "mcpTool":
-    case "mcpResource":
-    case "mcpResourceTemplate":
-    case "hook":
-    case "experimentalFeature":
-    case "collaborationMode":
-    case "theme":
-    case "status":
-      return "configure";
-    case "app":
-    case "plugin":
-      return "app";
-    default:
-      return "other";
-  }
-}
-
-export interface CommandGroupSection {
-  groupKey: string;
-  title: string;
-  entries: CommandPanelEntry[];
-}
-
-// codex: app-main-*.js — split flat command menu entries into the
-// Codex command menu's top-level sections. Pinned / Recent chats (which
-// already carry a per-entry groupLabel) are emitted in a leading "Other"
-// section preserving their original order so the existing
-// groupCommandPanelEntriesForRendering pass still produces sub-headers.
-export function groupCommandPanelEntries(
-  entries: CommandPanelEntry[],
-  formatMessage?: FormatMessage,
-): CommandGroupSection[] {
-  const bucketed = new Map<string, CommandPanelEntry[]>();
-  const otherKey = "other";
-  const knownKeys = new Set<string>(GROUP_TITLE_ORDER.map((item) => item.key));
-
-  for (const entry of entries) {
-    const declared = entry.groupKey?.trim();
-    // Per-entry groupLabel (pinned-chats / recent-chats) signals an
-    // existing sub-group that the renderer already handles. These keys are
-    // not part of the taxonomy, so we surface them in the leading "Other"
-    // bucket without dropping their per-entry headers.
-    const taxonomyKey = declared && knownKeys.has(declared)
-      ? declared
-      : entry.groupLabel
-        ? otherKey
-        : declared || defaultGroupKeyForKind(entry.kind);
-    const finalKey = knownKeys.has(taxonomyKey) ? taxonomyKey : otherKey;
-    const bucket = bucketed.get(finalKey);
-    if (bucket) {
-      bucket.push(entry);
-    } else {
-      bucketed.set(finalKey, [entry]);
-    }
-  }
-
-  const sections: CommandGroupSection[] = [];
-  // Emit the "Other" bucket first so pinned / recent chats stay at the
-  // top of the panel (matching Codex's chat-first ordering).
-  const otherEntries = bucketed.get(otherKey);
-  if (otherEntries && otherEntries.length > 0) {
-    sections.push({ groupKey: otherKey, title: "Other", entries: otherEntries });
-  }
-  for (const { key, titleId, title } of GROUP_TITLE_ORDER) {
-    const groupEntries = bucketed.get(key);
-    if (groupEntries && groupEntries.length > 0) {
-      const sectionTitle = formatMessage ? formatMessage({ id: titleId, defaultMessage: title }) : title;
-      sections.push({ groupKey: key, title: sectionTitle, entries: groupEntries });
-    }
-  }
-  return sections;
-}
-
-export function commandPanelChatCreateEntry(): CommandPanelEntry {
-  return {
-    id: "chat:create",
-    title: "Create chat",
-    kind: "thread",
-    meta: "Create a chat to get started!",
-    action: { type: "runSlashCommand", title: "Create chat", commandId: "new" },
-  };
 }
 
 export function projectCommandPanelEntries(value: {
@@ -539,57 +352,6 @@ export function projectCommandPanelEntries(value: {
     ...projectExperimentalFeatureEntries(value.experimental),
     ...projectCollaborationModeEntries(value.collaboration),
   ];
-}
-
-export function projectFileSearchEntries(result: { files?: FileSearchResult[] }): CommandPanelEntry[] {
-  return (result.files ?? []).slice(0, 25).map((file, index) => {
-    const attachmentPath = fuzzyFileSearchFsPath(file);
-    const displayPath = fuzzyFileSearchDisplayPath(file, attachmentPath);
-    return {
-      id: `file:${attachmentPath ?? displayPath ?? file.file_name ?? index}`,
-      title: file.file_name || displayPath || attachmentPath || "file",
-      kind: "file",
-      status: file.match_type,
-      meta: displayPath ?? attachmentPath,
-      details: [`score: ${file.score ?? "unknown"}`],
-      action: attachmentPath
-        ? {
-            type: "attachMention",
-            name: file.file_name || displayPath || attachmentPath,
-            path: attachmentPath,
-          }
-        : undefined,
-    };
-  });
-}
-
-function fuzzyFileSearchFsPath(file: FileSearchResult): string | undefined {
-  if (file.fsPath) return file.fsPath;
-  if (!file.path) return undefined;
-  return joinRootRelativePath(file.root, file.path);
-}
-
-function fuzzyFileSearchDisplayPath(
-  file: FileSearchResult,
-  attachmentPath: string | undefined,
-): string | undefined {
-  if (!file.path) return attachmentPath;
-  if (file.root && !isAbsolutePath(file.path)) return normalizeSeparators(file.path);
-  return file.path;
-}
-
-export function joinRootRelativePath(root: string | undefined, path: string): string {
-  if (!root || isAbsolutePath(path)) return path;
-  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
-  return `${root.replace(/[\\/]+$/, "")}${separator}${path.replace(/^[\\/]+/, "")}`;
-}
-
-function normalizeSeparators(path: string): string {
-  return path.replace(/\\/g, "/");
-}
-
-function isAbsolutePath(path: string): boolean {
-  return path.startsWith("/") || /^\\\\/.test(path) || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 export function projectSkillManagementEntries(
@@ -1477,34 +1239,6 @@ export function starterSkillTarget(workspace: string | undefined): StarterSkillT
   };
 }
 
-function starterSkillContents(skillName: string): string {
-  return `---
-name: ${skillName}
-description: Use when the user asks to try or customize the starter skill workflow.
-metadata:
-  short-description: Starter skill
----
-
-# Starter Skill
-
-Use this file to capture a focused workflow, domain rule, or repeatable task.
-
-## Workflow
-
-1. Identify when this skill should apply.
-2. Follow the project-specific steps here.
-3. Verify the result before responding.
-`;
-}
-
-function joinFixedPath(root: string, ...parts: string[]): string {
-  const separator = root.includes("\\") && !root.includes("/") ? "\\" : "/";
-  return [root, ...parts].map((part, index) => {
-    if (index === 0) return part.replace(/[\\/]+$/u, "");
-    return part.replace(/^[\\/]+|[\\/]+$/gu, "");
-  }).filter(Boolean).join(separator);
-}
-
 function skillDependencyLabel(dependency: Record<string, unknown>): string {
   const value = fieldText(dependency, "value") || fieldText(dependency, "type");
   const transport = fieldText(dependency, "transport");
@@ -1516,72 +1250,6 @@ function skillDependencyLabel(dependency: Record<string, unknown>): string {
     url,
   ]).join(" · ");
   return detail ? `${value} (${detail})` : value;
-}
-
-function skillFileReadAction(skill: {
-  displayName: string;
-  path: string;
-}): CommandPanelSecondaryAction {
-  return {
-    id: `skill:${skill.path}:read`,
-    label: "View",
-    title: `View ${skill.displayName} source`,
-    action: {
-      type: "readSkillFile",
-      title: `View ${skill.displayName}`,
-      path: skill.path,
-    },
-  };
-}
-
-function skillConfigToggleAction(skill: {
-  name: string;
-  displayName: string;
-  path: string;
-  enabled: boolean;
-}): CommandPanelSecondaryAction {
-  const nextEnabled = !skill.enabled;
-  const label = nextEnabled ? "Enable" : "Disable";
-  return {
-    id: `skill:${skill.name}:${nextEnabled ? "enable" : "disable"}`,
-    label,
-    title: `${label} ${skill.displayName}`,
-    tone: nextEnabled ? "success" : "danger",
-    action: {
-      type: "writeSkillConfig",
-      title: `${label} ${skill.displayName}`,
-      name: skill.name,
-      path: skill.path || undefined,
-      enabled: nextEnabled,
-    },
-  };
-}
-
-function skillPromptText(skill: { name: string; path: string; defaultPrompt: string }): string {
-  const prompt = skill.defaultPrompt.trim();
-  const reference = skillPromptReference(skill.name, skill.path);
-  if (!prompt) return ensureTrailingSpace(reference);
-
-  const lowerPrompt = prompt.toLowerCase();
-  const lowerName = skill.name.toLowerCase();
-  if (lowerPrompt.includes(`[$${lowerName}](`)) return ensureTrailingSpace(prompt);
-  if (!skill.path && lowerPrompt.includes(`$${lowerName}`)) return ensureTrailingSpace(prompt);
-  return ensureTrailingSpace(`${prompt} ${reference}`);
-}
-
-function skillPromptReference(name: string, path: string): string {
-  return path ? `[$${name}](${escapePromptPath(path)})` : `$${name}`;
-}
-
-function ensureTrailingSpace(value: string): string {
-  return value.endsWith(" ") ? value : `${value} `;
-}
-
-function escapePromptPath(value: string): string {
-  if (/[\s()<>]/.test(value)) {
-    return `<${value.replace(/\\/g, "\\\\").replace(/>/g, "\\>")}>`;
-  }
-  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }
 
 function skillErrorEntry(error: Record<string, unknown>, cwd = ""): CommandPanelEntry {
@@ -2044,20 +1712,6 @@ function arrayField(value: unknown, key: string): Record<string, unknown>[] {
   return Array.isArray(field) ? field.filter(isRecord) : [];
 }
 
-function stringArrayField(value: unknown, key: string): string[] {
-  if (!isRecord(value)) return [];
-  const field = value[key];
-  return Array.isArray(field)
-    ? field.map((item) => typeof item === "string" ? item.trim() : "").filter(Boolean)
-    : [];
-}
-
-function recordField(value: unknown, key: string): Record<string, unknown> {
-  if (!isRecord(value)) return {};
-  const field = value[key];
-  return isRecord(field) ? field : {};
-}
-
 function fieldText(value: unknown, key: string): string {
   if (!isRecord(value)) return "";
   const field = value[key];
@@ -2066,49 +1720,8 @@ function fieldText(value: unknown, key: string): string {
   return "";
 }
 
-function booleanField(value: unknown, key: string): boolean {
-  return isRecord(value) && value[key] === true;
-}
-
-function numberField(value: unknown, key: string): number | null {
-  if (!isRecord(value)) return null;
-  const field = value[key];
-  return typeof field === "number" && Number.isFinite(field) ? field : null;
-}
-
 function cleanList(values: Array<string | false | null | undefined>): string[] {
   return values.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
-}
-
-function cleanSecondaryActions(
-  values: Array<CommandPanelSecondaryAction | false | null | undefined>,
-): CommandPanelSecondaryAction[] {
-  return values.filter((value): value is CommandPanelSecondaryAction => Boolean(value));
-}
-
-function firstLine(value: string): string {
-  const line = value.trim().split(/\r?\n/, 1)[0] ?? "";
-  return line.length > 72 ? `${line.slice(0, 69)}...` : line;
-}
-
-function inferNameFromPath(path: string): string {
-  const trimmed = path.trim().replace(/\/+$/, "");
-  return trimmed.split(/[\\/]/).filter(Boolean).pop() || trimmed || "skill";
-}
-
-function skillScopeLabel(scope: string): string {
-  switch (scope) {
-    case "system":
-      return "System";
-    case "repo":
-      return "Repo";
-    case "user":
-      return "User";
-    case "admin":
-      return "Admin";
-    default:
-      return "";
-  }
 }
 
 function countLabel(count: number, singular: string, empty: string): string {
@@ -2125,95 +1738,6 @@ function mcpServerMeta(toolCount: number, resourceCount: number, templateCount: 
   return labels.join(" · ");
 }
 
-function panelTitle(panel: CommandPanelKind): string {
-  switch (panel) {
-    case "mcp":
-      return "MCP servers";
-    case "skills":
-      return "Skills";
-    case "hooks":
-      return "Hooks";
-    case "apps":
-      return "Apps";
-    case "plugins":
-      return "Plugins";
-    case "experimental":
-      // codex: settings.general.experimentalFeatures defaultMessage
-      // `Experimental features (Beta)` (verified in asar chunks).
-      return "Experimental features (Beta)";
-    case "collaboration":
-      return "Collaboration modes";
-    case "status":
-      return "Status";
-    case "theme":
-      return "Theme";
-    case "files":
-      return "Files";
-    case "diff":
-      return "Diff";
-    default:
-      return "Command";
-  }
-}
-
-// codex: several panels ship DEDICATED loading/empty strings rather than the generic
-// "{title}" template — Codex lowercases the noun in loading messages
-// (`Loading skills…`) and uses bespoke empties. These are the byte-exact Codex
-// strings (keys: skills.page.*, skills.appsPage.loading, plugins.page.loading,
-// agent-settings experimentalFeatures.*); loading ellipses use U+2026 to match the
-// rest of HiCodex. Panels without a known Codex string fall through to the generic
-// builder. (mcp empty is intentionally left generic — Codex has both "connected" and
-// "configured" variants and HiCodex's panel semantics don't cleanly pick one.)
-const PANEL_MESSAGE_OVERRIDES: Partial<Record<CommandPanelKind, { loading?: string; empty?: string }>> = {
-  experimental: { loading: "Loading experimental features…", empty: "No beta experimental features available" },
-  skills: { loading: "Loading skills…", empty: "No skills found" },
-  apps: { loading: "Loading apps…" },
-  plugins: { loading: "Loading plugins…" },
-  hooks: { loading: "Loading hooks…" },
-  // codex settings.mcp.empty — fixes the generic builder's lowercased "mcp" acronym.
-  mcp: { empty: "No MCP servers connected" },
-};
-
-function panelMessage(panel: CommandPanelKind, status: CommandPanelStatus, error?: string): string {
-  if (status === "error") return error || `${panelTitle(panel)} failed.`;
-  const override = PANEL_MESSAGE_OVERRIDES[panel];
-  if (status === "loading") return override?.loading ?? `Loading ${panelTitle(panel)}…`;
-  // codex command-panel empties have no trailing period (e.g. `No apps found`,
-  // `No skills found`) — match that convention for every panel's generic empty.
-  if (status === "empty") return override?.empty ?? `No ${panelTitle(panel).toLowerCase()} found`;
-  return "";
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-export function isAppBackedPanel(panel: CommandPanelKind | null | undefined): panel is "apps" | "plugins" {
-  return panel === "apps" || panel === "plugins";
-}
-
-export function isCommandMenuPanel(panel: CommandPanelState | null | undefined): panel is CommandPanelState & { panel: "generic" } {
-  return panel?.panel === "generic" && panel.title === "Search commands and chats";
-}
-
-export function isAppBackedPanelState(
-  state: CommandPanelState | null | undefined,
-): state is CommandPanelState & { panel: "apps" | "plugins" } {
-  return isAppBackedPanel(state?.panel);
-}
-
-const COMMAND_PANEL_PINNED_CHATS_GROUP = { key: "pinned-chats", label: "Pinned chats" };
-const COMMAND_PANEL_RECENT_CHATS_GROUP = { key: "recent-chats", label: "Recent chats" };
-
-export function commandPanelThreadGroup(threadId: string, pinnedThreadIds: Set<string>): Pick<CommandPanelEntry, "groupKey" | "groupLabel"> {
-  const group = pinnedThreadIds.has(threadId)
-    ? COMMAND_PANEL_PINNED_CHATS_GROUP
-    : COMMAND_PANEL_RECENT_CHATS_GROUP;
-  return { groupKey: group.key, groupLabel: group.label };
-}
-
-export function orderCommandPanelThreadsByPinned<T extends { id: string }>(threads: T[], pinnedThreadIds: Set<string>): T[] {
-  const pinnedThreads = threads.filter((thread) => pinnedThreadIds.has(thread.id));
-  const recentThreads = threads.filter((thread) => !pinnedThreadIds.has(thread.id));
-  return [...pinnedThreads, ...recentThreads];
 }

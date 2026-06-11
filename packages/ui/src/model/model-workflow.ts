@@ -224,27 +224,24 @@ export async function provisionTeamModelGatewayProvider({
 
       if (existingProvider !== undefined) {
         // Credentials of an already-provisioned provider changed; loaded
-        // chats hold sessions with the stale token, so restart once.
-        dispatch({
-          type: "log",
-          text: "team model connection updated; restarting Codex runtime so loaded chats use the new credentials",
-        });
+        // chats hold sessions with the stale token, so restart once. ONE
+        // success toast total — startup must not stack notifications.
         try {
           await client.disconnect();
           dispatch({ type: "connected", value: false });
           dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
           restartedRuntime = await connect();
-          if (!restartedRuntime) {
-            dispatch({
-              type: "log",
-              text: "team model connection updated, but Codex runtime did not reconnect",
-              level: "warn",
-            });
-          }
+          dispatch({
+            type: "log",
+            text: restartedRuntime
+              ? "团队模型连接已更新"
+              : "团队模型连接已更新，但模型服务暂未重连，将自动重试",
+            level: restartedRuntime ? "info" : "warn",
+          });
         } catch (restartError) {
           dispatch({
             type: "log",
-            text: `team model connection updated, but runtime restart failed: ${formatError(restartError)}`,
+            text: `团队模型连接已更新，但服务重启失败: ${formatError(restartError)}`,
             level: "warn",
           });
         }

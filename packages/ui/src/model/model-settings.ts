@@ -211,6 +211,22 @@ export function buildModelConfigFromConfig(
   });
 }
 
+/*
+ * Whether a provider has a REAL definition in config.toml. The settings draft
+ * always materializes a factory placeholder (127.0.0.1:8890) even on a fresh
+ * install; only providers the user actually saved may participate in default
+ * resolution / fallback, or a new install silently sends to a dead endpoint.
+ */
+export function isModelProviderConfigured(
+  config: Record<string, unknown> | null | undefined,
+  providerId: string | null | undefined,
+): boolean {
+  const normalized = providerId?.trim();
+  if (!normalized) return false;
+  const providers = configRecord(config?.model_providers);
+  return Boolean(providers && configRecord(providers[normalized]));
+}
+
 export function parseModelSlugsInput(value: string): string[] {
   return normalizeModelSlugs(value.split(/[\n,，;；]+/g));
 }

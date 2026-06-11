@@ -556,6 +556,19 @@ export function readTextFile(path: string, maxBytes?: number): Promise<string> {
   return invoke("host_read_text_file", { path, maxBytes });
 }
 
+/*
+ * Webview-independent settings persistence (hicodex-app-settings.json in
+ * codex-home). WKWebView localStorage is keyed by the app bundle identifier,
+ * so rebrands/reinstalls can wipe it; codex-home survives them.
+ */
+export function readAppSettingsFile(codexHome?: string | null): Promise<string> {
+  return invoke("host_read_app_settings", { codexHome });
+}
+
+export function writeAppSettingsFile(settingsJson: string, codexHome?: string | null): Promise<void> {
+  return invoke("host_write_app_settings", { codexHome, settingsJson });
+}
+
 // CODEX-REF: open-workspace-file-*.js — Codex loads xlsx
 // bytes into its WASM viewer; HiCodex's simplified preview needs the same
 // bytes for SheetJS in the renderer. Returns base64 so the IPC bridge stays

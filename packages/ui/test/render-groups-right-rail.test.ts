@@ -1,9 +1,11 @@
 import { projectConversation, type AccumulatedThreadItem as ThreadItem } from "../src/state/render-groups";
+import { artifactsFromText } from "../src/state/rail-projection";
 
 export default function runRenderGroupsRightRailTests(): void {
   usesLatestTodoListPlanForProgress();
   usesReducerPlanFactsForProgress();
   dedupesArtifactsAcrossFileChangesAndAssistantText();
+  extractsMarkdownLinksWithoutLookbehindSyntax();
   ignoresPunctuationOnlyFileArtifacts();
   stripsTrailingCjkPunctuationFromArtifactTargets();
   projectsBareBacktickedFilenamesAsArtifacts();
@@ -126,6 +128,18 @@ function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
       "localhost:5178/review?tab=files",
     ],
     "website artifact labels should match Codex Desktop host/path/search formatting",
+  );
+}
+
+function extractsMarkdownLinksWithoutLookbehindSyntax(): void {
+  const artifacts = artifactsFromText(
+    "Preview ![screenshot](artifacts/screen.png) and read [notes](docs/result.md).",
+  );
+
+  assertDeepEqual(
+    artifacts.map((entry) => entry.meta),
+    ["artifacts/screen.png", "docs/result.md"],
+    "markdown image and link extraction should not depend on WebKit lookbehind support",
   );
 }
 

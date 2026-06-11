@@ -1,5 +1,6 @@
 import type { ImageDetail, UserInput } from "@hicodex/codex-protocol";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
+import { filterSlashCommandList } from "./composer-slash-filter";
 
 // Structural alias for the IntlProvider's formatMessage, so this state module
 // localizes labels without importing the components layer. Optional at call
@@ -229,14 +230,12 @@ export interface ComposerMentionOption {
   brandColor?: string | null;
 }
 
-export type ComposerMentionMarker = "@" | "$";
-
-export interface ComposerMentionTrigger {
-  marker: ComposerMentionMarker;
-  query: string;
-  from: number;
-  to: number;
-}
+export {
+  findActiveMentionTrigger,
+  removeMentionTriggerText,
+  type ComposerMentionMarker,
+  type ComposerMentionTrigger,
+} from "./composer-mentions";
 
 export interface ComposerTransferFileLike {
   name?: string;
@@ -273,145 +272,14 @@ export const CLOSED_ATTACHMENT_PICKER_STATE: ComposerAttachmentPickerState = {
   error: null,
 };
 
-export type ComposerSubmitButtonMode = "send" | "queue" | "stop";
-
-export type ComposerThreadRuntimeStatus =
-  | "idle"
-  | "running"
-  | "waitingForRequest"
-  | "connecting";
-
-export interface ComposerSubmitStateInput {
-  input: string;
-  attachmentCount: number;
-  connecting: boolean;
-  threadRunning: boolean;
-  activeTurnId: string | null;
-  pendingRequestCount: number;
-  queueingEnabled?: boolean;
-}
-
-export interface ComposerSubmitState {
-  submitButtonMode: ComposerSubmitButtonMode;
-  threadRuntimeStatus: ComposerThreadRuntimeStatus;
-  hasContent: boolean;
-  disabled: boolean;
-  disabledReason?: string;
-  submitBlockReason?: "empty" | "connecting" | "pendingRequest" | "missingActiveTurn";
-  canStopFromEscape: boolean;
-  isQueueingEnabled: boolean;
-  requestCount: number;
-}
-
-export function projectComposerSubmitState(input: ComposerSubmitStateInput): ComposerSubmitState {
-  const hasContent = input.input.trim().length > 0 || input.attachmentCount > 0;
-  const hasActiveTurn = Boolean(input.activeTurnId);
-  const requestCount = Math.max(0, input.pendingRequestCount);
-  const threadRuntimeStatus = input.connecting
-    ? "connecting"
-    : requestCount > 0
-      ? "waitingForRequest"
-      : input.threadRunning
-        ? "running"
-        : "idle";
-
-  if (input.connecting) {
-    return {
-      submitButtonMode: "send",
-      threadRuntimeStatus,
-      hasContent,
-      disabled: true,
-      disabledReason: "Connecting to Codex app-server",
-      submitBlockReason: "connecting",
-      canStopFromEscape: false,
-      isQueueingEnabled: false,
-      requestCount,
-    };
-  }
-
-  if (input.threadRunning && !hasContent) {
-    return {
-      submitButtonMode: "stop",
-      threadRuntimeStatus,
-      hasContent,
-      disabled: !hasActiveTurn,
-      disabledReason: hasActiveTurn ? undefined : "Waiting for active turn before stopping",
-      submitBlockReason: hasActiveTurn ? undefined : "missingActiveTurn",
-      canStopFromEscape: hasActiveTurn,
-      isQueueingEnabled: false,
-      requestCount,
-    };
-  }
-
-  if (requestCount > 0) {
-    return {
-      submitButtonMode: input.threadRunning ? "queue" : "send",
-      threadRuntimeStatus,
-      hasContent,
-      disabled: true,
-      disabledReason: requestCount === 1
-        ? "Resolve the pending request before sending more input"
-        : `Resolve ${requestCount} pending requests before sending more input`,
-      submitBlockReason: "pendingRequest",
-      canStopFromEscape: false,
-      isQueueingEnabled: false,
-      requestCount,
-    };
-  }
-
-  if (input.threadRunning) {
-    const isQueueingEnabled = hasActiveTurn && input.queueingEnabled !== false;
-    return {
-      submitButtonMode: "queue",
-      threadRuntimeStatus,
-      hasContent,
-      disabled: !hasActiveTurn,
-      disabledReason: hasActiveTurn ? undefined : "Waiting for active turn before queueing a follow-up",
-      submitBlockReason: hasActiveTurn ? undefined : "missingActiveTurn",
-      canStopFromEscape: false,
-      isQueueingEnabled,
-      requestCount,
-    };
-  }
-
-  return {
-    submitButtonMode: "send",
-    threadRuntimeStatus,
-    hasContent,
-    disabled: !hasContent,
-    disabledReason: hasContent ? undefined : "Enter a prompt or add context",
-    submitBlockReason: hasContent ? undefined : "empty",
-    canStopFromEscape: false,
-    isQueueingEnabled: false,
-    requestCount,
-  };
-}
-
-export function composerSubmitTooltip(
-  state: ComposerSubmitState,
-  formatMessage?: FormatMessage,
-): string {
-  if (state.disabledReason) return state.disabledReason;
-
-  // codex composer-CwxGJF3C.js — the submit-button tooltip label is a single
-  // verb: composer.submitButtonTooltip.{send,queue,steer,stop}. The keyboard
-  // shortcut is NOT baked into the label string; Codex renders it separately.
-  const fm = (id: string, defaultMessage: string): string =>
-    formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
-
-  if (state.submitButtonMode === "stop") {
-    return fm("composer.submitButtonTooltip.stop", "Stop");
-  }
-
-  if (state.submitButtonMode === "queue") {
-    // Primary action: queue when queueing is enabled (Enter), otherwise steer.
-    return state.isQueueingEnabled
-      ? fm("composer.submitButtonTooltip.queue", "Queue")
-      : fm("composer.submitButtonTooltip.steer", "Steer");
-  }
-
-  return fm("composer.submitButtonTooltip.send", "Send");
-}
+export {
+  composerSubmitTooltip,
+  projectComposerSubmitState,
+  type ComposerSubmitButtonMode,
+  type ComposerSubmitState,
+  type ComposerSubmitStateInput,
+  type ComposerThreadRuntimeStatus,
+} from "./composer-submit-state";
 
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   // codex composer-zFOdryLS.js — where a command maps to a Codex slash command, its
@@ -751,50 +619,6 @@ export function normalizeAttachmentPath(value: string): string {
   return /^file:/i.test(trimmed) ? fileUrlToPath(trimmed) || trimmed : trimmed;
 }
 
-export function findActiveMentionTrigger(input: string): ComposerMentionTrigger | null {
-  const cursor = input.length;
-  const lineStart = input.lastIndexOf("\n", cursor - 1) + 1;
-  const linePrefix = input.slice(lineStart, cursor);
-  return findMarkerMentionTrigger({
-    marker: "@",
-    linePrefix,
-    lineStart,
-    cursor,
-    pattern: /(^|\s)(@[^@]*)$/,
-  }) ?? findMarkerMentionTrigger({
-    marker: "$",
-    linePrefix,
-    lineStart,
-    cursor,
-    pattern: /(^|\s)(\$[^$]*)$/,
-  });
-}
-
-function findMarkerMentionTrigger(input: {
-  marker: ComposerMentionMarker;
-  linePrefix: string;
-  lineStart: number;
-  cursor: number;
-  pattern: RegExp;
-}): ComposerMentionTrigger | null {
-  const match = input.linePrefix.match(input.pattern);
-  if (!match || match.index == null) return null;
-  const matchedText = match[0] ?? "";
-  const markerOffset = matchedText.lastIndexOf(input.marker);
-  if (markerOffset < 0) return null;
-  const from = input.lineStart + match.index + markerOffset;
-  const query = matchedText.slice(markerOffset + input.marker.length);
-  if (query.length > 120) return null;
-  return { marker: input.marker, query, from, to: input.cursor };
-}
-
-export function removeMentionTriggerText(input: string, trigger: ComposerMentionTrigger): string {
-  if (trigger.from < 0 || trigger.to < trigger.from || trigger.to > input.length) return input;
-  const prefix = input.slice(0, trigger.from);
-  const suffix = input.slice(trigger.to);
-  return suffix ? `${prefix}${suffix}` : prefix.trimEnd();
-}
-
 export function filterSlashCommands(
   query: string,
 ): SlashCommand[];
@@ -806,94 +630,7 @@ export function filterSlashCommands<T extends Pick<SlashCommand, "id" | "title">
   query: string,
   commands: T[] = DEFAULT_SLASH_COMMANDS as unknown as T[],
 ) {
-  const normalized = normalizeSlashQuery(query);
-  // NOTE (parity): codex sorts the no-query slash list by [group, title]
-  // (local-remote-selection `sortBy(e,[e=>e.group ?? "", e=>e.title])`). HiCodex
-  // keeps declaration order here — left as-is on purpose: HiCodex's `category` is
-  // not a verified 1:1 of Codex's `group`, the slash command SET itself differs
-  // (CLI-adapted vs Desktop), and the menu renders flat (no group headers), so a
-  // category-clustered or title-flat sort can't be confirmed to match the bundle
-  // without a live A/B. Deferred until the slash SET is aligned.
-  if (!normalized) return commands;
-  /*
-   * codex: slash-command-item-*.js — Codex Desktop ranks slash matches
-   * via a shared `score-query-match` scorer. Plain substring filtering misses
-   * typos / split-token queries and returns results in arbitrary registration
-   * order. We mirror Codex's behaviour with a weighted scorer: exact id >
-   * prefix > substring > subsequence (fuzzy).
-   */
-  const scored: Array<{ command: T; score: number; index: number }> = [];
-  for (let index = 0; index < commands.length; index++) {
-    const command = commands[index]!;
-    const score = scoreSlashCommandMatch(normalized, command);
-    if (score > 0) scored.push({ command, score, index });
-  }
-  scored.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return a.index - b.index;
-  });
-  return scored.map((entry) => entry.command);
-}
-
-/*
- * codex: slash-command-item-*.js — per-field score with weights.
- * Returns 0 when no haystack field has any match. Field weights mirror Codex's
- * priority: id > title > alias > description.
- */
-function scoreSlashCommandMatch(
-  needle: string,
-  command: Pick<SlashCommand, "id" | "title"> & { aliases?: string[]; description?: string },
-): number {
-  const fields: Array<{ value: string; weight: number }> = [
-    { value: command.id, weight: 3 },
-    { value: command.title, weight: 2.5 },
-    ...((command.aliases ?? []).map((alias) => ({ value: alias, weight: 2 }))),
-    { value: command.description ?? "", weight: 1 },
-  ];
-  let best = 0;
-  for (const { value, weight } of fields) {
-    if (!value) continue;
-    const fieldScore = scoreFuzzyField(needle, value) * weight;
-    if (fieldScore > best) best = fieldScore;
-  }
-  return best;
-}
-
-/*
- * codex: `score-query-match` style ranker.
- *
- * Tiers (higher is better):
- *   exact equality          : 1000
- *   prefix match            : 800 - (haystack.length - needle.length)
- *   substring match         : 500 - matchIndex
- *   subsequence (fuzzy) hit : 200 - totalGap, clamped to [50, ...]
- * Returns 0 when the needle is not even a subsequence of haystack.
- */
-function scoreFuzzyField(needle: string, haystack: string): number {
-  const n = needle.toLowerCase();
-  const h = haystack.toLowerCase();
-  if (h === n) return 1000;
-  if (h.startsWith(n)) return 800 - Math.max(0, h.length - n.length);
-  const idx = h.indexOf(n);
-  if (idx >= 0) return 500 - idx;
-  // Subsequence: scan needle chars left-to-right; bail when a char is missing.
-  let hi = 0;
-  let gaps = 0;
-  for (let i = 0; i < n.length; i++) {
-    const c = n.charCodeAt(i);
-    let found = -1;
-    while (hi < h.length) {
-      if (h.charCodeAt(hi) === c) {
-        found = hi;
-        hi++;
-        break;
-      }
-      hi++;
-    }
-    if (found < 0) return 0;
-    gaps += found - (i === 0 ? found : hi - 1);
-  }
-  return Math.max(50, 200 - gaps);
+  return filterSlashCommandList(query, commands);
 }
 
 export function slashCommandsForComposerMode(
@@ -1253,10 +990,6 @@ function command(
   hidden = false,
 ): SlashCommand {
   return { id, title, description, category, supported, aliases, inlineArgs, hidden };
-}
-
-function normalizeSlashQuery(query: string): string {
-  return query.trim().replace(/^\/+/, "").toLowerCase();
 }
 
 function slashArgs(commandId: string, input: string): string {

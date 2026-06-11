@@ -5,7 +5,7 @@ import type { MouseEvent } from "react";
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { useHiCodexIntl } from "./i18n-provider";
-import { Markdownish } from "./message-unit";
+import { Markdownish } from "./message-markdown-renderer";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 

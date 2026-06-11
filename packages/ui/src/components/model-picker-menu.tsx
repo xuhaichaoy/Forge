@@ -45,6 +45,12 @@ export interface ModelPickerProvider {
    */
   modelLabels?: Record<string, string>;
   /**
+   * The provider's preferred model when nothing is explicitly selected —
+   * e.g. the team gateway's member default (`is_default` from /models).
+   * Fallback resolution prefers it over `models[0]`.
+   */
+  defaultModel?: string;
+  /**
    * `"oauth"` = provider uses ChatGPT subscription via `codex login` flow,
    * no API key required (e.g. OpenAI 官方);
    * `"api-key"` = traditional bearer token (e.g. gptbest proxy).
@@ -126,7 +132,7 @@ export interface ResolvedModelSelection {
  */
 export function resolveEffectiveModelSelection(args: {
   intended: ModelSelectionRef | null;
-  providers: readonly { id: string; models: readonly string[] }[];
+  providers: readonly { id: string; models: readonly string[]; defaultModel?: string }[];
   readyProviders: ReadonlySet<string>;
   allowFallback?: boolean;
 }): ResolvedModelSelection {
@@ -146,7 +152,12 @@ export function resolveEffectiveModelSelection(args: {
   if (fallback) {
     // Only a "fall back" when the user actually intended a (now-unusable)
     // provider; with no intention this is just picking the ready default.
-    return { providerId: fallback.id, model: fallback.models[0], intended, fellBack: intended != null, noReadyProvider: false };
+    // Prefer the provider's own default model (e.g. the team member default)
+    // over the first list entry.
+    const fallbackModel = fallback.defaultModel && fallback.models.includes(fallback.defaultModel)
+      ? fallback.defaultModel
+      : fallback.models[0];
+    return { providerId: fallback.id, model: fallbackModel, intended, fellBack: intended != null, noReadyProvider: false };
   }
   return {
     providerId: intended?.providerId ?? "",

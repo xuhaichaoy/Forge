@@ -23,6 +23,7 @@ import {
 export function useThreadActions({
   activeThread,
   ensureConnected,
+  hasLoadedThreadContent,
   setComposerAttachments,
   setInput,
   threadContextDefaults,
@@ -30,6 +31,8 @@ export function useThreadActions({
 }: {
   activeThread: Thread | null;
   ensureConnected: () => Promise<boolean>;
+  /** True when the thread's transcript is already in the runtime store. */
+  hasLoadedThreadContent?: (threadId: string) => boolean;
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setInput: Dispatch<SetStateAction<string>>;
   threadContextDefaults: ThreadContextDefaults | null;
@@ -69,6 +72,15 @@ export function useThreadActions({
     const requestId = threadSelectionRequestId.current + 1;
     threadSelectionRequestId.current = requestId;
     dispatch({ type: "setActiveThread", threadId: thread.id });
+    /*
+     * Fast path: the transcript is already in the runtime store — switching
+     * is purely a view change. Re-reading the full turn payload (two RPCs +
+     * a rollout re-parse on the Rust side) on EVERY click made switching
+     * between loaded chats take seconds on slower machines.
+     */
+    if (hasLoadedThreadContent?.(thread.id)) {
+      return;
+    }
     try {
       const displayThread = await readThreadForDisplay(client, thread, dispatch);
       if (threadSelectionRequestId.current !== requestId) return;
@@ -92,7 +104,7 @@ export function useThreadActions({
         dispatch({ type: "log", text: formatError(error), level: "error" });
       }
     }
-  }, [client, dispatch]);
+  }, [client, dispatch, hasLoadedThreadContent]);
 
   const resumeSelectedThread = useCallback(async (thread: Thread) => {
     try {

@@ -1,12 +1,13 @@
-import type { ModelConfig, ModelServiceTier } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@hicodex/codex-protocol";
 import type { CommandPanelEntry, CommandPanelKind } from "./command-panel";
 import type { SettingsPanelId } from "./composer-workflow";
 import { HICODEX_IMAGE_TOOL_NAME } from "./image-generation-tool";
 import {
-  HICODEX_SUPPORTED_LOCALES,
+  findSettingsActiveModel,
+  projectServiceTierSettingsEntry,
+} from "./settings-service-tier";
+import {
   formatMessage,
-  localeDescription,
-  localeLabel,
   type HiCodexLocale,
   type I18nMessageDescriptor,
   type I18nValues,
@@ -28,25 +29,7 @@ import {
   permissionModeFromThreadContext,
   projectPermissionModeCommandEntries,
 } from "./permissions-mode";
-import {
-  UI_THEME_MODES,
-  themeModeDescription,
-  themeModeLabel,
-  type UiThemeMode,
-  type UiThemeSnapshot,
-} from "./theme";
-import {
-  CODE_FONT_SIZE_MAX,
-  CODE_FONT_SIZE_MIN,
-  CODE_FONT_SIZE_STEP,
-  DEFAULT_UI_APPEARANCE,
-  REDUCED_MOTION_MODES,
-  clampCodeFontSize,
-  reducedMotionDescription,
-  reducedMotionLabel,
-  type ReducedMotionMode,
-  type UiAppearancePreferences,
-} from "./appearance";
+import type { UiThemeSnapshot } from "./theme";
 import {
   COMMAND_DESCRIPTORS,
   commandDescriptorDescription,
@@ -58,6 +41,15 @@ import {
   resolveKeymapOverride,
   type KeymapOverrides,
 } from "./keymap-overrides";
+import { projectLocaleSettingsEntry } from "./settings-local-preferences";
+
+export {
+  appearanceSettingsEntries,
+  projectCodeFontSizeSettingsEntry,
+  projectLocaleSettingsEntry,
+  projectReducedMotionSettingsEntry,
+  projectThemeSettingsEntry,
+} from "./settings-local-preferences";
 
 /*
  * CODEX-REF: Codex Desktop settings webview chunks
@@ -665,101 +657,6 @@ export function keyboardShortcutsSettingsEntries(
   });
 }
 
-export function appearanceSettingsEntries(context: {
-  uiTheme?: UiThemeSnapshot;
-  uiAppearance?: UiAppearancePreferences;
-}): CommandPanelEntry[] {
-  const appearance = context.uiAppearance ?? DEFAULT_UI_APPEARANCE;
-  return [
-    projectThemeSettingsEntry(context.uiTheme ?? { mode: "system", resolved: "light" }),
-    // CODEX-REF: appearance-settings-*.js — "Code font size" row
-    // (id settings.general.appearance.codeFontSize.row, unit "px").
-    projectCodeFontSizeSettingsEntry(appearance.codeFontSize),
-    // CODEX-REF: appearance-settings-*.js — "Reduce motion" 3-way
-    // toggle (id settings.general.appearance.reducedMotion.label).
-    projectReducedMotionSettingsEntry(appearance.reducedMotion),
-  ];
-}
-
-/*
- * CODEX-REF: appearance-settings-*.js. Codex Desktop renders a
- * number input bound to client config `codeFontSize` (range 8-24, unit "px",
- * onBlur commit). HiCodex exposes the value via the status field and uses
- * +/- secondaryActions to step the size by 1px — that maps to the same
- * `setCodeFontSize` action HiCodex dispatches via the command-panel pipeline.
- */
-export function projectCodeFontSizeSettingsEntry(size: number): CommandPanelEntry {
-  const clamped = clampCodeFontSize(size);
-  const decrement = clamped > CODE_FONT_SIZE_MIN ? clamped - CODE_FONT_SIZE_STEP : null;
-  const increment = clamped < CODE_FONT_SIZE_MAX ? clamped + CODE_FONT_SIZE_STEP : null;
-  return {
-    id: "settings:code-font-size",
-    title: "Code font size",
-    kind: "status",
-    // CODEX-REF: settings.general.appearance.codeFontSize.units defaultMessage "px"
-    status: `${clamped} px`,
-    meta: `Range ${CODE_FONT_SIZE_MIN}-${CODE_FONT_SIZE_MAX} px`,
-    details: [
-      "Sets `--codex-chat-code-font-size` on the document root.",
-      "Local shell preference; does not require app-server refresh.",
-    ],
-    secondaryActions: [
-      ...(decrement !== null ? [{
-        id: `code-font-size:${decrement}`,
-        label: "−",
-        title: `Use ${decrement} px code font`,
-        action: {
-          type: "setCodeFontSize" as const,
-          title: `Use ${decrement} px code font`,
-          size: decrement,
-        },
-      }] : []),
-      ...(increment !== null ? [{
-        id: `code-font-size:${increment}`,
-        label: "+",
-        title: `Use ${increment} px code font`,
-        action: {
-          type: "setCodeFontSize" as const,
-          title: `Use ${increment} px code font`,
-          size: increment,
-        },
-      }] : []),
-    ],
-  };
-}
-
-/*
- * CODEX-REF: appearance-settings-*.js. Codex Desktop renders a
- * segmented control with three buttons whose labels resolve from
- *   settings.general.appearance.reducedMotion.{system,on,off}
- * Default option is `system`; mode strings match the message IDs.
- */
-export function projectReducedMotionSettingsEntry(mode: ReducedMotionMode): CommandPanelEntry {
-  return {
-    id: "settings:reduced-motion",
-    title: "Reduce motion",
-    kind: "status",
-    status: reducedMotionLabel(mode),
-    meta: "Saved locally",
-    details: [
-      reducedMotionDescription(mode),
-      "Applies via the `data-hc-reduce-motion` attribute on the document root.",
-    ],
-    secondaryActions: REDUCED_MOTION_MODES
-      .filter((nextMode) => nextMode !== mode)
-      .map((nextMode) => ({
-        id: `reduced-motion:${nextMode}`,
-        label: reducedMotionLabel(nextMode),
-        title: `Use ${reducedMotionLabel(nextMode).toLowerCase()} reduced motion`,
-        action: {
-          type: "setReducedMotion" as const,
-          title: `Use ${reducedMotionLabel(nextMode).toLowerCase()} reduced motion`,
-          mode: nextMode,
-        },
-      })),
-  };
-}
-
 export function localSettingsEntries(
   panel: "permissions" | "approvals",
   context: {
@@ -900,182 +797,6 @@ export function generalSettingsEntries(context: {
   ];
 }
 
-const SERVICE_TIER_STANDARD_VALUE = "default";
-const SERVICE_TIER_FAST_VALUE = "priority";
-const SERVICE_TIER_STANDARD_LABEL = "Standard";
-const SERVICE_TIER_STANDARD_DESCRIPTION = "Default speed";
-const SERVICE_TIER_FAST_DESCRIPTION = "1.5x speed, increased usage";
-const SERVICE_TIER_ULTRAFAST_DESCRIPTION = "The fastest available responses for latency-sensitive work";
-
-interface ProjectServiceTierSettingsContext {
-  model: ModelConfig | null;
-  serviceTier?: unknown;
-}
-
-interface ProjectedServiceTierOption {
-  value: string;
-  label: string;
-  description: string;
-}
-
-export function projectServiceTierSettingsEntry(
-  context: ProjectServiceTierSettingsContext,
-): CommandPanelEntry | null {
-  // CODEX-REF: Desktop General settings renders Speed from model.serviceTiers;
-  // local Codex config_types.rs uses "default" as the explicit Standard sentinel.
-  const options = projectServiceTierOptions(context.model?.serviceTiers ?? []);
-  if (options.length <= 1) return null;
-
-  const currentValue = normalizeServiceTierRequestValue(context.serviceTier);
-  const currentOption = options.find((option) => option.value === currentValue);
-  const currentLabel = currentOption?.label ?? `Custom (${currentValue})`;
-  return {
-    id: "settings:service-tier",
-    title: "Speed",
-    kind: "status",
-    status: currentLabel,
-    meta: context.model?.model || "Current model",
-    details: [
-      "Choose the inference tier used across chats, subagents, and compaction",
-      context.model?.defaultServiceTier
-        ? `Model default service tier: ${context.model.defaultServiceTier}`
-        : "Standard explicitly bypasses model catalog defaults.",
-    ],
-    secondaryActions: options
-      .filter((option) => option.value !== currentValue)
-      .map((option) => serviceTierAction(option)),
-  };
-}
-
-function findSettingsActiveModel(
-  models: ModelConfig[],
-  modelProvider: string | null,
-  modelSlug: string | null,
-): ModelConfig | null {
-  if (modelProvider) {
-    const providerMatch = models.find((model) => model.id === modelProvider);
-    if (providerMatch) return providerMatch;
-  }
-  if (modelSlug) {
-    const slugMatch = models.find((model) => model.model === modelSlug || model.models?.includes(modelSlug));
-    if (slugMatch) return slugMatch;
-  }
-  return models[0] ?? null;
-}
-
-function projectServiceTierOptions(serviceTiers: ModelServiceTier[]): ProjectedServiceTierOption[] {
-  const options: ProjectedServiceTierOption[] = [
-    {
-      value: SERVICE_TIER_STANDARD_VALUE,
-      label: SERVICE_TIER_STANDARD_LABEL,
-      description: SERVICE_TIER_STANDARD_DESCRIPTION,
-    },
-  ];
-  const seen = new Set(options.map((option) => option.value));
-  for (const tier of serviceTiers) {
-    const value = normalizeServiceTierRequestValue(tier.id);
-    if (!value || seen.has(value) || value === SERVICE_TIER_STANDARD_VALUE) continue;
-    seen.add(value);
-    options.push({
-      value,
-      label: serviceTierLabel(tier),
-      description: serviceTierDescription(tier),
-    });
-  }
-  return options;
-}
-
-function serviceTierLabel(tier: ModelServiceTier): string {
-  const kind = serviceTierKind(tier.id, tier.name);
-  if (kind === "fast") return "Fast";
-  if (kind === "ultrafast") return "Ultrafast";
-  return tier.name.trim() || tier.id.trim();
-}
-
-function serviceTierDescription(tier: ModelServiceTier): string {
-  const description = tier.description.trim();
-  if (description) return description;
-  const kind = serviceTierKind(tier.id, tier.name);
-  if (kind === "fast") return SERVICE_TIER_FAST_DESCRIPTION;
-  if (kind === "ultrafast") return SERVICE_TIER_ULTRAFAST_DESCRIPTION;
-  return tier.id.trim();
-}
-
-function serviceTierKind(id: string, name: string): "fast" | "ultrafast" | null {
-  const normalizedId = id.trim().toLowerCase();
-  const normalizedName = name.trim().toLowerCase();
-  if (normalizedId === "priority" || normalizedId === "fast" || normalizedName === "priority" || normalizedName === "fast") {
-    return "fast";
-  }
-  if (normalizedId === "ultrafast" || normalizedName === "ultrafast") {
-    return "ultrafast";
-  }
-  return null;
-}
-
-function normalizeServiceTierRequestValue(value: unknown): string {
-  if (typeof value !== "string") return SERVICE_TIER_STANDARD_VALUE;
-  const trimmed = value.trim();
-  if (!trimmed) return SERVICE_TIER_STANDARD_VALUE;
-  const normalized = trimmed.toLowerCase();
-  if (normalized === "standard" || normalized === SERVICE_TIER_STANDARD_VALUE) return SERVICE_TIER_STANDARD_VALUE;
-  if (normalized === "fast") return SERVICE_TIER_FAST_VALUE;
-  return normalized;
-}
-
-function serviceTierAction(option: ProjectedServiceTierOption) {
-  return {
-    id: `service-tier:${option.value}`,
-    label: option.label,
-    title: `Use ${option.label} speed`,
-    action: {
-      type: "writeConfig" as const,
-      title: `Use ${option.label} speed`,
-      message: `Set speed to ${option.label}.`,
-      edits: [{
-        keyPath: "service_tier",
-        value: option.value,
-        mergeStrategy: "replace" as const,
-      }],
-      reloadUserConfig: true,
-    },
-  };
-}
-
-export function projectThemeSettingsEntry(theme: UiThemeSnapshot): CommandPanelEntry {
-  return {
-    id: "settings:theme",
-    title: "Theme",
-    kind: "theme",
-    status: themeModeLabel(theme.mode),
-    meta: `Resolved ${theme.resolved}`,
-    details: [
-      themeModeDescription(theme.mode, theme.resolved),
-      "Local shell preference; does not require app-server refresh.",
-    ],
-    secondaryActions: UI_THEME_MODES
-      .filter((mode) => mode !== theme.mode)
-      .map((mode) => themeModeAction(mode)),
-  };
-}
-
-export function projectLocaleSettingsEntry(locale: HiCodexLocale): CommandPanelEntry {
-  return {
-    id: "settings:locale",
-    title: "Language",
-    kind: "status",
-    status: localeLabel(locale),
-    meta: "Saved locally",
-    details: [
-      localeDescription(locale),
-      "Local i18n preference for the HiCodex shell.",
-    ],
-    secondaryActions: HICODEX_SUPPORTED_LOCALES
-      .filter((nextLocale) => nextLocale !== locale)
-      .map((nextLocale) => localeAction(nextLocale)),
-  };
-}
-
 export function projectNotificationSettingsEntry(preferences: NotificationPreferences): CommandPanelEntry {
   const policy = preferences.turnCompletionPolicy;
   return {
@@ -1103,34 +824,6 @@ export function projectNotificationSettingsEntry(preferences: NotificationPrefer
         },
       },
     ],
-  };
-}
-
-function themeModeAction(mode: UiThemeMode) {
-  const label = themeModeLabel(mode);
-  return {
-    id: `theme:${mode}`,
-    label,
-    title: `Use ${label} theme`,
-    action: {
-      type: "setUiTheme" as const,
-      title: `Use ${label} theme`,
-      mode,
-    },
-  };
-}
-
-function localeAction(locale: HiCodexLocale) {
-  const label = localeLabel(locale);
-  return {
-    id: `locale:${locale}`,
-    label,
-    title: `Use ${label}`,
-    action: {
-      type: "setUiLocale" as const,
-      title: `Use ${label}`,
-      locale,
-    },
   };
 }
 

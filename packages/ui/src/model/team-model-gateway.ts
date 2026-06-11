@@ -43,6 +43,21 @@ export function teamModelSlugsFromResponse(value: unknown): string[] {
   return normalizeModelSlugs(teamModelItemsFromResponse(value).map(modelSlugFromItem));
 }
 
+/*
+ * The member's default model advertised by the gateway (`is_default` on
+ * /models items — Yuxi `member.default_model_spec`). New chats without an
+ * explicit pick should land on it.
+ */
+export function teamDefaultModelFromResponse(value: unknown): string | null {
+  for (const item of teamModelItemsFromResponse(value)) {
+    if (objectRecord(item)?.is_default === true) {
+      const slug = modelSlugFromItem(item);
+      if (slug) return slug;
+    }
+  }
+  return null;
+}
+
 /** Optional display names advertised by the gateway, keyed by model id. */
 export function teamModelLabelsFromResponse(value: unknown): Record<string, string> {
   const labels: Record<string, string> = {};
@@ -92,15 +107,19 @@ export function buildTeamModelGatewayProviderSnapshot(args: {
   selectedModel?: string | null;
   teamName?: string | null;
   modelLabels?: Record<string, string>;
+  defaultModel?: string | null;
 }): TeamModelGatewayProviderSnapshot | null {
   const models = normalizeModelSlugs(args.models);
   if (models.length === 0) return null;
   const selectedModel = reconcileTeamModelSlug(args.selectedModel, models);
+  const defaultModel = args.defaultModel && models.includes(args.defaultModel)
+    ? args.defaultModel
+    : null;
   const baseUrl = teamModelGatewayBaseUrl(args.connection);
   const label = args.teamName?.trim()
     ? `${args.teamName.trim()} · ${TEAM_MODEL_GATEWAY_PROVIDER_NAME}`
     : TEAM_MODEL_GATEWAY_PROVIDER_NAME;
-  const primaryModel = selectedModel ?? models[0];
+  const primaryModel = selectedModel ?? defaultModel ?? models[0];
   const modelConfig = normalizeModelConfig({
     id: TEAM_MODEL_GATEWAY_PROVIDER_ID,
     name: label,
@@ -121,6 +140,7 @@ export function buildTeamModelGatewayProviderSnapshot(args: {
       baseUrl,
       models,
       modelLabels: args.modelLabels,
+      defaultModel: defaultModel ?? undefined,
       authMode: "api-key",
     },
     modelConfig,
@@ -184,6 +204,7 @@ export async function loadTeamModelGatewayProvider(
   const models = teamModelSlugsFromResponse(modelsResponse);
   if (models.length === 0) return null;
   const modelLabels = teamModelLabelsFromResponse(modelsResponse);
+  const defaultModel = teamDefaultModelFromResponse(modelsResponse);
 
   let teamName: string | null = null;
   try {
@@ -199,6 +220,7 @@ export async function loadTeamModelGatewayProvider(
     selectedModel,
     teamName,
     modelLabels,
+    defaultModel,
   });
 }
 

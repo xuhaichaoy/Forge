@@ -2,7 +2,7 @@ import type { Dispatch } from "react";
 import type { CollaborationMode, Thread, TurnStartParams, UserInput } from "@hicodex/codex-protocol";
 import type { ThreadSource } from "@hicodex/codex-protocol/generated/v2/ThreadSource";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
-import { formatError, formatUnknown, stringField } from "../lib/format";
+import { formatError, stringField } from "../lib/format";
 import { getHostStatus, isTauriRuntime, readFileMetadata, readTextFile, readThreadToolHistory } from "../lib/tauri-host";
 import {
   codexUiReducer,
@@ -16,7 +16,16 @@ import {
   userInputLikelyRequestsImageGeneration,
   type HiCodexImageToolPresence,
 } from "./image-generation-tool";
+import {
+  isThreadStatusNotLoaded,
+  threadStatusLabel,
+} from "./thread-status";
 import { mergeThreadToolHistory } from "./thread-history-tools";
+
+export {
+  isThreadStatusNotLoaded,
+  threadStatusLabel,
+} from "./thread-status";
 
 export type ThreadWorkflowDispatch = Dispatch<Parameters<typeof codexUiReducer>[1]>;
 
@@ -247,11 +256,17 @@ export async function readThreadForDisplay(
   thread: Thread,
   dispatch: ThreadWorkflowDispatch,
 ): Promise<Thread | null> {
-  const metadataResult = await readThread(client, thread.id, false);
-  const metadataThread = metadataResult.thread ?? thread;
+  // Issue both reads concurrently — the metadata read is only the fallback
+  // for not-yet-materialized threads, and serializing it in front of the
+  // (potentially multi-MB) full-turns read doubled the switch latency.
+  const metadataPromise = readThread(client, thread.id, false);
+  // Mark handled up front: when the full read rejects first and we re-throw,
+  // a later metadata rejection must not surface as an unhandled rejection.
+  metadataPromise.catch(() => undefined);
+  const fullReadPromise = readThread(client, thread.id, true);
   try {
-    const result = await readThread(client, thread.id, true);
-    return await hydrateThreadToolHistory(result.thread ?? metadataThread, dispatch);
+    const [metadataResult, result] = await Promise.all([metadataPromise, fullReadPromise]);
+    return await hydrateThreadToolHistory(result.thread ?? metadataResult.thread ?? thread, dispatch);
   } catch (error) {
     if (!isThreadNotMaterialized(error)) throw error;
     dispatch({
@@ -259,7 +274,8 @@ export async function readThreadForDisplay(
       text: "thread is not materialized yet; it will load turns after the first user message",
       level: "info",
     });
-    return metadataThread;
+    const metadataResult = await metadataPromise.catch(() => null);
+    return metadataResult?.thread ?? thread;
   }
 }
 
@@ -1211,26 +1227,6 @@ function titlePreviewFromPromptText(text: string): string {
   );
 }
 
-export function threadStatusLabel(status: unknown): string {
-  if (status === null || status === undefined) return "ready";
-  if (typeof status === "string") return friendlyStatus(status);
-  if (typeof status === "number" || typeof status === "boolean") return String(status);
-  if (typeof status === "object") {
-    const record = status as Record<string, unknown>;
-    const type = trimmedStringField(record, "type");
-    const value = trimmedStringField(record, "status");
-    return type ? friendlyStatus(type) : value ? friendlyStatus(value) : compactUnknown(status);
-  }
-  return String(status);
-}
-
-export function isThreadStatusNotLoaded(status: unknown): boolean {
-  if (typeof status === "string") return status === "notLoaded";
-  if (!status || typeof status !== "object") return false;
-  const record = status as Record<string, unknown>;
-  return trimmedStringField(record, "type") === "notLoaded" || trimmedStringField(record, "status") === "notLoaded";
-}
-
 // `thread/start` accepts the full thread context surface. Resume/fork use
 // narrower protocol shapes and must go through their method-specific builders.
 export function buildThreadContextParams(
@@ -1405,14 +1401,6 @@ function shortId(id: string) {
 
 function trimmedStringField(value: unknown, key: string): string {
   return stringField(value, key).trim();
-}
-
-function compactUnknown(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return formatUnknown(value);
-  }
 }
 
 function normalizedCwd(workspace: string): string | null {
@@ -1711,22 +1699,6 @@ function sandboxPolicyFromMode(value: unknown): Record<string, unknown> | undefi
       return { type: "dangerFullAccess" };
     default:
       return undefined;
-  }
-}
-
-function friendlyStatus(status: string): string {
-  const normalized = status.trim();
-  if (!normalized) return "ready";
-  switch (normalized) {
-    case "notLoaded":
-      return "not loaded";
-    case "inProgress":
-    case "active":
-      return "running";
-    case "completed":
-      return "idle";
-    default:
-      return normalized;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MutableRefObject, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
 import type {
   CollaborationModeMask,
   JsonRpcNotification,
@@ -7,7 +7,7 @@ import type {
 } from "@hicodex/codex-protocol";
 import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
 import { FileText, FolderOpen, Globe, Plus, X } from "lucide-react";
-import { AppNavigationRail, type AppNavigationTab } from "./components/app-navigation-rail";
+import { AppNavigationRail } from "./components/app-navigation-rail";
 import { KbArchiveView } from "./components/kb-archive-view";
 import { KbIngestView } from "./components/kb-ingest-view";
 import { KbLibraryView } from "./components/kb-library-view";
@@ -40,14 +40,7 @@ import { ServicesProvider, useServices } from "./components/services-context";
 import { TeamServiceAuthGate } from "./components/team-service-auth-gate";
 import { focusComposerFromPlainTextKey, requestComposerElementFocus } from "./components/composer-keyboard";
 import { PreConversationLoadingShell } from "./components/pre-conversation-loading-shell";
-import type { McpFollowUpDialogRequest } from "./components/mcp-follow-up-dialog";
-import {
-  DEFAULT_PROVIDERS,
-  isModelSelectionAvailable,
-  isSubscriptionProviderId,
-  normalizeSubscriptionProviderId,
-  resolveEffectiveModelSelection,
-} from "./components/model-picker-menu";
+import { normalizeSubscriptionProviderId } from "./components/model-picker-menu";
 import { normalizeReasoningEffortValue, type ReasoningEffortValue } from "./components/reasoning-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { BackgroundSubagentsStack } from "./components/background-subagents-stack";
@@ -65,7 +58,6 @@ import {
 } from "./components/live-turn-diff-portal";
 import {
 } from "./components/unified-diff-failure-dialog";
-import type { McpFollowUpDialogOption } from "./components/mcp-follow-up-dialog";
 import { McpDialogs } from "./components/mcp-dialogs";
 import { OnboardingEmptyState } from "./components/onboarding-empty-state";
 import { PendingRequestStack } from "./components/pending-request-stack";
@@ -77,15 +69,13 @@ import { Sidebar } from "./components/sidebar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
 import { ThreadDialogs } from "./components/thread-dialogs";
 import { ThreadFindBar } from "./components/thread-find-bar";
-import type { McpAppHostCallRequest, McpResourceReadRequest } from "./components/tool-activity-detail";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
-import { formatError, hostFromBaseUrl, patchFailurePathForOpen } from "./lib/format";
+import { formatError, patchFailurePathForOpen } from "./lib/format";
 import {
   clearTeamServiceAuthSession,
   readTeamServiceAuthSession,
 } from "./lib/team-service-auth";
 import {
-  openExternalUrl,
   revealPath,
   openThreadWindow,
   openNewWindow,
@@ -95,7 +85,6 @@ import {
   pickWorkspaceFolder,
   readCodexAuthSummary,
   type CodexAuthSummary,
-  type WorkspaceDirEntry,
 } from "./lib/tauri-host";
 import { useAppUpdater } from "./hooks/use-app-updater";
 import { useBrowserRuntime } from "./hooks/use-browser-runtime";
@@ -111,6 +100,11 @@ import { useRemoteTaskActions } from "./hooks/use-remote-task-actions";
 import { useHiCodexImageToolResponder } from "./hooks/use-hicodex-image-tool-responder";
 import { usePermissionAutoDeny } from "./hooks/use-permission-auto-deny";
 import { useTeamModelGateway } from "./hooks/use-team-model-gateway";
+import { useModelPreferenceState } from "./hooks/use-model-preference-state";
+import { useModelPickerViewModel } from "./hooks/use-model-picker-view-model";
+import { useAppShellState } from "./hooks/use-app-shell-state";
+import { useAppOverlayState } from "./hooks/use-app-overlay-state";
+import { useMcpAppHostBridge } from "./hooks/use-mcp-app-host-bridge";
 import {
   attachmentsWithDataImagePreviews,
   useTurnSubmission,
@@ -118,12 +112,17 @@ import {
 import { useElementInlineSize } from "./hooks/use-element-inline-size";
 import { useArtifactPreviewActions } from "./hooks/use-artifact-preview-actions";
 import { useFilePreviewPanelLayout } from "./hooks/use-file-preview-panel-layout";
+import { useSidebarPreferences } from "./hooks/use-sidebar-preferences";
+import { useSidebarResizeController } from "./hooks/use-sidebar-resize-controller";
+import { useUiPreferences } from "./hooks/use-ui-preferences";
 import {
   useCommandPanelActions,
   type McpServerFormAction,
   type McpToolFormAction,
 } from "./hooks/use-command-panel-actions";
 import { useBackgroundAgentPanel } from "./hooks/use-background-agent-panel";
+import { useAppBackedPanelRefresh } from "./hooks/use-app-backed-panel-refresh";
+import { useCommandPanelFileSearch } from "./hooks/use-command-panel-file-search";
 import { useSkillsPanelRefresh } from "./hooks/use-skills-panel-refresh";
 import { useThreadActions } from "./hooks/use-thread-actions";
 // codex: app-shell-*.js — back/forward boundary helpers backing the
@@ -133,25 +132,22 @@ import { canNavigateBackInHistory, canNavigateForwardInHistory } from "./state/t
 import { artifactPreviewTabId, projectArtifactPreview, shouldOpenArtifactPreview } from "./state/artifact-preview";
 import { refreshModels, saveModelDraft as saveModelDraftWorkflow } from "./model/model-workflow";
 import {
-  DEFAULT_SUBSCRIPTION_PROVIDER_ID,
-  DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
   DEFAULT_MODEL_REASONING_SUMMARY,
-  decodeSelection,
   encodeSelection,
-  migrateSubscriptionModelSelection,
   EMPTY_MODEL,
   buildModelConfigFromConfig,
-  modelSlugsForConfig,
-  normalizeModelSlugs,
+  isModelProviderConfigured,
   normalizeModelConfig,
-  LEGACY_SELECTED_MODEL_STORAGE_KEY,
-  SELECTED_MODEL_STORAGE_KEY,
 } from "./model/model-settings";
 import {
   CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
   isCrossAccountModelSelectionForThread,
 } from "./model/model-provider-switch";
-import { TEAM_MODEL_GATEWAY_PROVIDER_ID } from "./model/team-model-gateway";
+import {
+  isSettingsModelProviderExcluded,
+  omitThreadModelSelection,
+  SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS,
+} from "./model/model-selection-context";
 import {
   codexUiReducer,
   initialCodexUiState,
@@ -188,7 +184,6 @@ import {
   projectActiveThreadAutomation,
   projectAutomationsSurface,
 } from "./state/automations-viewer";
-import { loadActiveAppTab, saveActiveAppTab } from "./state/app-navigation-preferences";
 import {
   activeBackgroundSubagentThreadIds,
   collectBackgroundSubagentStopThreadIds,
@@ -202,21 +197,11 @@ import {
   projectSidebarWorkspaceRootOptions,
   sidebarThreadRelativeTime,
   workspaceRootOptionsWithCurrent,
-  type SidebarOrganizeMode,
-  type SidebarSortKey,
   threadProjectLabel,
 } from "./state/sidebar-projection";
 import {
-  loadSidebarPreferences,
-  normalizeSidebarPreferences,
-  normalizeSidebarWidthPx,
-  saveSidebarPreferences,
-  sidebarCollapsedGroupKeys as sidebarCollapsedGroupKeysFromPreferences,
-  sidebarCollapsedGroupsFromKeys,
-  sidebarPreferenceStorage,
   SIDEBAR_WIDTH_MAX_PX,
   SIDEBAR_WIDTH_MIN_PX,
-  type SidebarPreferences,
 } from "./state/sidebar-preferences";
 import {
   fileReferenceSidePanelContextMenuItems,
@@ -226,7 +211,6 @@ import {
 } from "./state/file-references";
 import {
   applySlashCommand,
-  buildUserInputFromComposer,
   composerAttachmentsFromPaths,
   composerPlaceholderText,
   mergeComposerAttachments,
@@ -245,13 +229,9 @@ import {
 } from "./state/collaboration-modes";
 import {
   createCommandPanelState,
-  projectCommandPanelEntries,
-  projectFileSearchEntries,
-  projectPluginEntries,
   type CommandPanelOptions,
   type CommandPanelEntry,
   commandPanelThreadGroup,
-  isAppBackedPanelState,
   isCommandMenuPanel,
   orderCommandPanelThreadsByPinned,
   type CommandPanelKind,
@@ -282,10 +262,7 @@ import {
 } from "./state/permissions-mode";
 import {
   basenameFromPath,
-  fuzzyFileResultsToWorkspaceEntries,
   WorkspaceFuzzyFileSearchController,
-  type WorkspaceFuzzyFileSearchSession,
-  type WorkspaceFuzzyFileSearchSessionUpdated,
 } from "./state/fuzzy-file-search-session";
 import {
   dedupeComposerMentionOptions,
@@ -307,27 +284,6 @@ import {
   type RailEntry,
   type RailEntryReference,
 } from "./state/render-groups";
-import {
-  MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR,
-  MCP_APP_BRIDGE_INTERNAL_ERROR,
-  MCP_APP_BRIDGE_INVALID_PARAMS,
-  MCP_APP_BRIDGE_METHOD_NOT_FOUND,
-  downloadMcpAppFile,
-  mcpAppBridgeError,
-  mcpAppBridgeUserCancelledError,
-  mcpAppExternalHref,
-  mcpAppFileDownloadRequest,
-  mcpAppFollowUpMessageRequest,
-  mcpAppFollowUpSource,
-  mcpAppResourceTemplatesListResponse,
-  mcpAppResourcesListResponse,
-  mcpAppMcpProxyRequest,
-  mcpAppToolCallAllowed,
-  mcpAppToolCallRequest,
-  mcpAppToolCallRequestFromBridgeArgs,
-  mcpAppToolsListResponse,
-  mcpServerStatusFromListResult,
-} from "./state/mcp-app-host";
 import {
   invalidateAppList,
   loadAllApps,
@@ -364,20 +320,7 @@ import {
   slashCommandEntries,
   threadGitBranch,
 } from "./state/app-shell-helpers";
-import {
-  createI18nBundle,
-  formatI18nMessage,
-  loadHiCodexLocale,
-  saveHiCodexLocale,
-  type HiCodexLocale,
-} from "./state/i18n";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./state/hicodex-desktop-namespace";
-import {
-  loadNotificationPreferences,
-  mergeNotificationPreferences,
-  saveNotificationPreferences,
-  type NotificationPreferences,
-} from "./state/notification-preferences";
+import { HICODEX_DESKTOP_CONFIG_KEYS } from "./state/hicodex-desktop-namespace";
 import {
   createHostPendingWorktree,
   loadComposerWorkMode,
@@ -395,66 +338,19 @@ import {
   shouldShowOnboardingEmptyState,
 } from "./state/onboarding";
 import {
-  loadMcpManagementEntries,
   loadSettingsPanelContent,
 } from "./state/settings-panel-loader";
 import {
   DESKTOP_RIGHT_RAIL_GAP_PX,
-  loadRightRailPinned,
   projectRightRailSections,
   rightRailDisplayMode,
-  rightRailPreferenceStorage,
   rightRailReservedInlineEndPx,
-  saveRightRailPinned,
 } from "./state/right-rail";
 import { openBrowserRuntime } from "./state/browser-runtime";
 import { TAB_KINDS } from "./state/side-panel-tab-host";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
-import { recordObject } from "./state/thread-item-fields";
 import { appendRpcDebugEvent } from "./state/rpc-debug";
-import {
-  loadUiThemeMode,
-  nextToggleThemeMode,
-  readSystemThemeVariant,
-  subscribeSystemThemeVariant,
-  resolveUiThemeMode,
-  saveUiThemeMode,
-  type ResolvedUiTheme,
-  type UiThemeMode,
-} from "./state/theme";
-/*
- * CODEX-REF: Appearance preferences beyond Theme — Code font size (Codex
- * settings.general.appearance.codeFontSize.row) and Reduce motion (Codex
- * settings.general.appearance.reducedMotion.label). The setters mirror the
- * existing setUiThemeMode pattern: setState → save to desktop.hicodex.*
- * localStorage namespace. See [[appearance]] / packages/ui/src/state/appearance.ts.
- */
-import {
-  clampCodeFontSize,
-  clampUiFontSize,
-  loadUiAppearance,
-  saveUiCodeFontSize,
-  saveUiFontSize,
-  saveUiReducedMotion,
-  uiFontScale,
-  type ReducedMotionMode,
-  type UiAppearancePreferences,
-} from "./state/appearance";
-/*
- * CODEX-REF: keyboard-shortcuts-settings-*.js — user keymap overrides
- * state. Boot-loaded from localStorage, mutated by Edit/Reset/Unbind flows
- * from the Settings panel, and mirrored into the module-level singleton so
- * accelerator resolvers (useHotkey, descriptorAcceleratorLabel) see the
- * latest value without prop drilling.
- */
-import {
-  loadKeymapOverrides,
-  saveKeymapOverrides,
-  setActiveKeymapOverrides,
-  withKeymapOverride,
-  withoutKeymapOverride,
-  type KeymapOverrides,
-} from "./state/keymap-overrides";
+import { nextToggleThemeMode } from "./state/theme";
 import {
   applyThreadFindMarks,
   clampThreadFindIndex,
@@ -466,17 +362,12 @@ import {
   type ThreadFindMatch,
 } from "./state/thread-find";
 import {
-  createAndSelectThreadForTurn,
   refreshThreads,
   refreshThreadMetadata,
   resumeThreadWithMetadataRead,
-  dispatchOptimisticUserMessage,
-  dropOptimisticUserMessage,
   interruptThreadTurn,
   readThread,
   readWorkspaceDeveloperInstructions,
-  sendPanelThreadMessage,
-  startSideConversation,
   cleanBackgroundTerminalsForThread,
   isProjectlessWorkspace,
   readInProgressTurnId,
@@ -498,76 +389,10 @@ function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
   );
 }
 
-/*
- * Shared workspace-file-search session lifecycle: reuse the live session when
- * the roots key matches, otherwise stop the previous one and start a fresh
- * session, writing the session + roots-key refs back. The composer mention and
- * command-menu getters share this exact flow; only the back-store refs, the
- * close-failure warn wording (onCloseError), and the panel projection
- * (onUpdated) differ, so those are injected.
- */
-function createDedupedFileSearchSession(config: {
-  sessionRef: MutableRefObject<WorkspaceFuzzyFileSearchSession | null>;
-  rootsKeyRef: MutableRefObject<string>;
-  controllerRef: MutableRefObject<WorkspaceFuzzyFileSearchController | null>;
-  onCloseError: (error: unknown) => void;
-  onUpdated: (payload: WorkspaceFuzzyFileSearchSessionUpdated) => void;
-}): (roots: string[]) => Promise<WorkspaceFuzzyFileSearchSession> {
-  const { sessionRef, rootsKeyRef, controllerRef, onCloseError, onUpdated } = config;
-  return async (roots: string[]): Promise<WorkspaceFuzzyFileSearchSession> => {
-    const rootsKey = roots.join("\0");
-    if (sessionRef.current && rootsKeyRef.current === rootsKey) {
-      return sessionRef.current;
-    }
-    const previousSession = sessionRef.current;
-    sessionRef.current = null;
-    rootsKeyRef.current = "";
-    if (previousSession) {
-      await previousSession.stop().catch(onCloseError);
-    }
-    const controller = controllerRef.current;
-    if (!controller) throw new Error("Fuzzy file search is unavailable.");
-    const session = await controller.createSession({
-      roots,
-      onUpdated,
-    });
-    sessionRef.current = session;
-    rootsKeyRef.current = rootsKey;
-    return session;
-  };
-}
-
-
-
 const LOCAL_SIDE_PANEL_HOST_ID = "local";
 
-const SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS = [
-  TEAM_MODEL_GATEWAY_PROVIDER_ID,
-  DEFAULT_SUBSCRIPTION_PROVIDER_ID,
-  DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
-] as const;
-
-function isSettingsModelProviderExcluded(providerId: string): boolean {
-  return SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS.includes(providerId as typeof SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS[number]);
-}
-
-function isSubscriptionCatalogModel(model: string | null | undefined): boolean {
-  const trimmed = model?.trim() ?? "";
-  return /^gpt[-_]/iu.test(trimmed);
-}
-
-function omitThreadModelSelection(context: ThreadContextDefaults | null): ThreadContextDefaults | null {
-  if (!context) return null;
-  const {
-    model: _model,
-    modelProvider: _modelProvider,
-    serviceTier: _serviceTier,
-    ...rest
-  } = context;
-  return Object.keys(rest).length > 0 ? rest : null;
-}
-
-
+const NO_READY_MODEL_PROVIDER_MESSAGE =
+  "没有可用的模型服务：请先登录团队服务，或在 设置 → 模型 配置个人模型地址";
 
 interface HiCodexClientCallbacks {
   onNotification: (message: JsonRpcNotification) => void;
@@ -607,224 +432,55 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     value: string | null;
   } | null>(null);
   const [selectedWorkspaceRoots, setSelectedWorkspaceRoots] = useState<string[]>([]);
-  const [uiLocale, setUiLocaleState] = useState<HiCodexLocale>(() => (
-    loadHiCodexLocale(browserStorage(), typeof navigator === "undefined" ? null : navigator.language)
-  ));
-  const [uiThemeMode, setUiThemeModeState] = useState<UiThemeMode>(() => (
-    loadUiThemeMode(browserStorage())
-  ));
-  // CODEX-REF: loadUiAppearance reads desktop.hicodex.appearance.codeFontSize
-  // and desktop.hicodex.appearance.reducedMotion (see hicodex-desktop-namespace).
-  const [uiAppearance, setUiAppearanceState] = useState<UiAppearancePreferences>(() => (
-    loadUiAppearance(browserStorage())
-  ));
-  /*
-   * CODEX-REF: keyboard-shortcuts-settings-*.js. Boot-loaded snapshot
-   * is also pushed into the module-level singleton (see setActiveKeymapOverrides
-   * useEffect below) so accelerator resolvers in command-registry.ts and
-   * commands.ts see overrides immediately, including for commands registered
-   * during this render pass via useHotkey.
-   */
-  const [keymapOverrides, setKeymapOverridesState] = useState<KeymapOverrides>(() => {
-    const initial = loadKeymapOverrides(browserStorage());
-    setActiveKeymapOverrides(initial);
-    return initial;
-  });
-  const [notificationPreferences, setNotificationPreferencesState] = useState<NotificationPreferences>(() => (
-    loadNotificationPreferences(browserStorage())
-  ));
+  const {
+    uiLocale,
+    uiThemeSnapshot,
+    resolvedUiTheme,
+    uiAppearance,
+    keymapOverrides,
+    notificationPreferences,
+    formatUiMessage,
+    setUiLocale,
+    setUiThemeMode,
+    setUiCodeFontSize,
+    setUiFontSize,
+    setUiReducedMotion,
+    setUiKeyboardShortcut,
+    resetUiKeyboardShortcut,
+    setNotificationPreferences,
+  } = useUiPreferences();
   const [teamServiceAuthSession, setTeamServiceAuthSession] = useState(() => readTeamServiceAuthSession());
-  const notificationPreferencesRef = useRef(notificationPreferences);
   const [onboardingSnapshot, setOnboardingSnapshot] = useState(() => (
     loadOnboardingSnapshot(browserStorage())
   ));
-  const [systemTheme, setSystemTheme] = useState<ResolvedUiTheme>(() => readSystemThemeVariant());
-  const resolvedUiTheme = resolveUiThemeMode(uiThemeMode, systemTheme);
-  const uiThemeSnapshot = useMemo(() => ({
-    mode: uiThemeMode,
-    resolved: resolvedUiTheme,
-  }), [resolvedUiTheme, uiThemeMode]);
-  const setUiThemeMode = useCallback((mode: UiThemeMode) => {
-    setUiThemeModeState(mode);
-    saveUiThemeMode(browserStorage(), mode);
-  }, []);
-  /*
-   * CODEX-REF: settings.general.appearance.codeFontSize.row commit. Codex
-   * Desktop persists onBlur; HiCodex commits each +/- click. clamp matches
-   * the documented 8-24 px range from appearance-settings-*.js §4.
-   */
-  const setUiCodeFontSize = useCallback((size: number) => {
-    const clamped = clampCodeFontSize(size);
-    setUiAppearanceState((prev) => prev.codeFontSize === clamped ? prev : { ...prev, codeFontSize: clamped });
-    saveUiCodeFontSize(browserStorage(), clamped);
-  }, []);
-  /*
-   * CODEX-REF: settings.general.appearance.sansFontSize.row ("UI font size").
-   * Codex sets `--vscode-font-size` and relies on its rem cascade; HiCodex's CSS
-   * is hardcoded px, so the commit publishes `--hc-ui-font-scale` (see the apply
-   * effect below) which every `font-size` calc multiplies by. clamp = 10-20.
-   */
-  const setUiFontSize = useCallback((size: number) => {
-    const clamped = clampUiFontSize(size);
-    setUiAppearanceState((prev) => prev.uiFontSize === clamped ? prev : { ...prev, uiFontSize: clamped });
-    saveUiFontSize(browserStorage(), clamped);
-  }, []);
-  /*
-   * CODEX-REF: settings.general.appearance.reducedMotion.label commit. Mode
-   * string matches Codex option IDs system/on/off.
-   */
-  const setUiReducedMotion = useCallback((mode: ReducedMotionMode) => {
-    setUiAppearanceState((prev) => prev.reducedMotion === mode ? prev : { ...prev, reducedMotion: mode });
-    saveUiReducedMotion(browserStorage(), mode);
-  }, []);
-  /*
-   * CODEX-REF: keyboard-shortcuts-settings-*.js set/replace mutation.
-   * Persists override, updates React state for the panel to re-render, and
-   * synchronously pushes the new snapshot into the module singleton so
-   * useHotkey closures rebind without waiting for the next effect tick.
-   */
-  const setUiKeyboardShortcut = useCallback((commandId: string, accelerator: string | null) => {
-    setKeymapOverridesState((prev) => {
-      const next = withKeymapOverride(prev, commandId, accelerator);
-      setActiveKeymapOverrides(next);
-      saveKeymapOverrides(browserStorage(), next);
-      return next;
-    });
-  }, []);
-  /*
-   * CODEX-REF: keyboard-shortcuts-settings-*.js reset mutation. Drops
-   * the override so the descriptor default takes effect again.
-   */
-  const resetUiKeyboardShortcut = useCallback((commandId: string) => {
-    setKeymapOverridesState((prev) => {
-      const next = withoutKeymapOverride(prev, commandId);
-      if (next === prev) return prev;
-      setActiveKeymapOverrides(next);
-      saveKeymapOverrides(browserStorage(), next);
-      return next;
-    });
-  }, []);
-  const setUiLocale = useCallback((locale: HiCodexLocale) => {
-    setUiLocaleState(locale);
-    saveHiCodexLocale(browserStorage(), locale);
-  }, []);
   const signOutTeamServiceAccount = useCallback(() => {
     clearTeamServiceAuthSession();
     setTeamServiceAuthSession(null);
     if (typeof window !== "undefined") window.location.reload();
   }, []);
-  const setNotificationPreferences = useCallback((patch: Partial<NotificationPreferences>) => {
-    const next = mergeNotificationPreferences(notificationPreferencesRef.current, patch);
-    notificationPreferencesRef.current = next;
-    setNotificationPreferencesState(next);
-    saveNotificationPreferences(browserStorage(), next);
-    return next;
-  }, []);
-  useEffect(() => {
-    notificationPreferencesRef.current = notificationPreferences;
-  }, [notificationPreferences]);
-  useEffect(() => subscribeSystemThemeVariant(setSystemTheme), []);
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    root.lang = uiLocale;
-    root.dataset.hcLocale = uiLocale;
-    root.dataset.hcTheme = resolvedUiTheme;
-    root.dataset.hcThemeMode = uiThemeMode;
-    root.classList.toggle("dark", resolvedUiTheme === "dark");
-    root.classList.toggle("electron-dark", resolvedUiTheme === "dark");
-  }, [resolvedUiTheme, uiLocale, uiThemeMode]);
-  /*
-   * Locale-aware formatter for the label projections computed in this component.
-   * HiCodexApp renders (and therefore sits ABOVE) the HiCodexIntlProvider, so it
-   * cannot use useHiCodexIntl; instead it builds the same bundle from uiLocale so
-   * projection labels (composer placeholder, slash/memories copy, settings nav)
-   * localize identically to hook-based components.
-   */
-  const formatUiMessage = useMemo(() => {
-    const bundle = createI18nBundle(uiLocale);
-    return (
-      descriptor: Parameters<typeof formatI18nMessage>[1],
-      values?: Parameters<typeof formatI18nMessage>[2],
-    ) => formatI18nMessage(bundle, descriptor, values);
-  }, [uiLocale]);
-  /*
-   * CODEX-REF: Apply Code font size + Reduce motion to the DOM root.
-   *
-   *   - --codex-chat-code-font-size is the existing token defined in base.css
-   *     :65; overriding it on `documentElement.style` lets every consumer of
-   *     that variable (chat code blocks, inline `code`, diff hunks) update
-   *     live without restart.
-   *   - data-hc-reduce-motion="on" / "off" lets base.css forcibly enable or
-   *     suppress transitions and animations regardless of the OS
-   *     prefers-reduced-motion media query. "system" leaves the value unset so
-   *     the media query alone decides — matching Codex Desktop §8 behaviour.
-   */
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const root = document.documentElement;
-    root.style.setProperty("--codex-chat-code-font-size", `${uiAppearance.codeFontSize}px`);
-    /*
-     * CODEX-REF: settings.general.appearance.sansFontSize.row — whole-UI font
-     * scale. Every stylesheet `font-size` is `calc(Npx * var(--hc-ui-font-scale))`,
-     * so publishing the factor here resizes all UI text live (default 14 → 1.0).
-     * Code blocks are excluded (they read --codex-chat-code-font-size instead).
-     */
-    root.style.setProperty("--hc-ui-font-scale", `${uiFontScale(uiAppearance.uiFontSize)}`);
-    if (uiAppearance.reducedMotion === "system") {
-      delete root.dataset.hcReduceMotion;
-    } else {
-      root.dataset.hcReduceMotion = uiAppearance.reducedMotion;
-    }
-  }, [uiAppearance.codeFontSize, uiAppearance.uiFontSize, uiAppearance.reducedMotion]);
-  const [sidebarPreferences, setSidebarPreferencesState] = useState<SidebarPreferences>(() => (
-    loadSidebarPreferences(sidebarPreferenceStorage())
-  ));
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarResizing, setSidebarResizing] = useState(false);
-  const [activeAppTab, setActiveAppTabState] = useState<AppNavigationTab>(() => loadActiveAppTab(browserStorage()));
-  const [activeRemoteTaskId, setActiveRemoteTaskId] = useState<string | null>(null);
-  const changeActiveAppTab = useCallback((tab: AppNavigationTab) => {
-    setActiveAppTabState(tab);
-    saveActiveAppTab(browserStorage(), tab);
-  }, []);
-  const openWorkbenchTab = useCallback(() => {
-    changeActiveAppTab("workbench");
-  }, [changeActiveAppTab]);
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((current) => !current);
-  }, []);
-  const sidebarCollapsedGroupKeys = useMemo(() => (
-    new Set(sidebarCollapsedGroupKeysFromPreferences(sidebarPreferences.collapsedGroups))
-  ), [sidebarPreferences.collapsedGroups]);
-  const setSidebarPreferences = useCallback((patch: Partial<SidebarPreferences>) => {
-    setSidebarPreferencesState((current) => {
-      const next = normalizeSidebarPreferences({ ...current, ...patch });
-      saveSidebarPreferences(sidebarPreferenceStorage(), next);
-      return next;
-    });
-  }, []);
-  const setSidebarWidthPx = useCallback((widthPx: number) => {
-    setSidebarPreferences({ widthPx: normalizeSidebarWidthPx(widthPx) });
-  }, [setSidebarPreferences]);
-  const setSidebarSortKey = useCallback((sortKey: SidebarSortKey) => {
-    setSidebarPreferences({ sortKey });
-  }, [setSidebarPreferences]);
-  const setSidebarOrganizeMode = useCallback((organizeMode: SidebarOrganizeMode) => {
-    setSidebarPreferences({ organizeMode });
-  }, [setSidebarPreferences]);
-  const setSidebarCollapsedGroupKeys = useCallback((collapsedGroupKeys: string[]) => {
-    setSidebarPreferences({ collapsedGroups: sidebarCollapsedGroupsFromKeys(collapsedGroupKeys) });
-  }, [setSidebarPreferences]);
-  const [rightRailPinned, setRightRailPinnedState] = useState(() => (
-    loadRightRailPinned(rightRailPreferenceStorage())
-  ));
-  const setRightRailPinned = useCallback((isPinned: boolean) => {
-    setRightRailPinnedState(isPinned);
-    saveRightRailPinned(rightRailPreferenceStorage(), isPinned);
-  }, []);
-  const [rightRailPopoverOpen, setRightRailPopoverOpen] = useState(false);
-  const [composerStatusPanelOpen, setComposerStatusPanelOpen] = useState(false);
+  const {
+    sidebarPreferences,
+    sidebarCollapsedGroupKeys,
+    setSidebarWidthPx,
+    setSidebarSortKey,
+    setSidebarOrganizeMode,
+    setSidebarCollapsedGroupKeys,
+  } = useSidebarPreferences();
+  const {
+    activeAppTab,
+    activeRemoteTaskId,
+    sidebarOpen,
+    rightRailPinned,
+    rightRailPopoverOpen,
+    composerStatusPanelOpen,
+    setActiveRemoteTaskId,
+    setRightRailPopoverOpen,
+    setComposerStatusPanelOpen,
+    changeActiveAppTab,
+    openWorkbenchTab,
+    toggleSidebar,
+    setRightRailPinned,
+  } = useAppShellState();
   /*
    * Codex Desktop Summary Rail visibility (in
    * `local-conversation-thread-*.js`) is derived state, not
@@ -846,118 +502,15 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
    * so React doesn't re-render on every plugin internal mutation.
    */
   const { updateBadge, runUpdate } = useAppUpdater();
-  const mcpFollowUpDialogPendingRef = useRef(false);
-  const mcpFollowUpDialogDispatchingRef = useRef(false);
   const openSideConversationPanelRef = useRef<((thread: Thread) => void) | null>(null);
-  /*
-   * User-overridden composer model selection. Persisted under the
-   * `desktop.hicodex.*` app namespace. When non-null, applied to ThreadStart /
-   * ThreadResume / ThreadFork params (codex-protocol v2 start/resume/fork
-   * modelProvider + model overrides — see thread-workflow.ts context builders).
-   *
-   * `null` falls through to the config.toml default (state.threadContextDefaults).
-   * Existing running turns keep the model/provider they started with. The next
-   * idle send stays in the same conversation; when provider differs from the
-   * loaded thread, thread-workflow cold-resumes that thread with the selected
-   * provider before starting the turn because turn/start can override model only.
-   */
-  /* Selected `${providerId}::${modelSlug}`; null = follow config.toml default. */
-  const [selectedModelKey, setSelectedModelKeyState] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const stored = readMigratedStorageValue(window.localStorage, SELECTED_MODEL_STORAGE_KEY, [LEGACY_SELECTED_MODEL_STORAGE_KEY]);
-      const migrated = migrateSubscriptionModelSelection(stored);
-      if (migrated !== stored) {
-        if (migrated) window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, migrated);
-        else window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY);
-      }
-      return migrated;
-    } catch {
-      return null;
-    }
-  });
-  const setSelectedModelKey = useCallback((key: string | null) => {
-    const nextKey = migrateSubscriptionModelSelection(key);
-    setSelectedModelKeyState(nextKey);
-    try {
-      if (nextKey) {
-        window.localStorage.setItem(SELECTED_MODEL_STORAGE_KEY, nextKey);
-      } else {
-        window.localStorage.removeItem(SELECTED_MODEL_STORAGE_KEY);
-        window.localStorage.removeItem(LEGACY_SELECTED_MODEL_STORAGE_KEY);
-      }
-    } catch {
-      // localStorage not available — selection still works in memory
-    }
-  }, []);
-  /*
-   * Per-thread model overrides (`${providerId}::${model}` keyed by thread id).
-   * Threads are bound to the provider/model they were started with; picking a
-   * model while a chat is active overrides ONLY that chat (plus the global
-   * intent above for future chats). Other loaded chats keep their provider —
-   * the selection never leaks across threads. In-memory on purpose: after a
-   * reload the thread's own recorded model/provider is the source of truth.
-   */
-  const [threadModelSelections, setThreadModelSelections] = useState<Record<string, string>>({});
-  const setThreadModelSelection = useCallback((threadId: string, key: string | null) => {
-    setThreadModelSelections((current) => {
-      if (key) return { ...current, [threadId]: key };
-      if (!(threadId in current)) return current;
-      const { [threadId]: _removed, ...rest } = current;
-      return rest;
-    });
-  }, []);
-  /*
-   * CODEX-REF: composer-*.js — Codex setter `f(d.model, t) =
-   * setModelAndReasoningEffort` writes selected effort to modelSettings, which
-   * feeds into composer's `m.reasoningEffort` (= effectiveThreadContextDefaults
-   * 在 HiCodex 这边). HiCodex 用同 selectedModelKey 模式：单独 useState 持久化到
-   * localStorage，effectiveThreadContextDefaults 合并时优先取这里。
-   */
-  const [reasoningEffortOverride, setReasoningEffortOverrideState] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return readMigratedStorageValue(
-      window.localStorage,
-      HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride,
-      [LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY],
-    );
-  });
-  const setReasoningEffortOverride = useCallback((effort: string | null) => {
-    setReasoningEffortOverrideState(effort);
-    try {
-      if (effort) {
-        window.localStorage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride, effort);
-      } else {
-        window.localStorage.removeItem(HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride);
-      }
-      window.localStorage.removeItem(LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY);
-    } catch {
-      // localStorage not available — selection still works in memory
-    }
-  }, []);
-  const [modelPickerAnchor, setModelPickerAnchor] = useState<HTMLElement | null>(null);
-  const toggleModelPickerAnchor = useCallback((anchor: HTMLElement) => {
-    setModelPickerAnchor((current) => (current === anchor ? null : anchor));
-  }, []);
-  /*
-   * CODEX-REF: composer-*.js — Reasoning picker uses `Ia` popover anchored
-   * to footer trigger button. HiCodex 复刻同 anchor 模式：toggleable HTMLElement
-   * state，由 footer chip 的 onClick 通过 setReasoningPickerAnchor 打开 popover。
-   */
-  const [reasoningPickerAnchor, setReasoningPickerAnchor] = useState<HTMLElement | null>(null);
-  const toggleReasoningPickerAnchor = useCallback((anchor: HTMLElement) => {
-    setReasoningPickerAnchor((current) => (current === anchor ? null : anchor));
-  }, []);
-  /*
-   * CODEX-REF: composer-B7sGHJVq.js — permissions chip opens the inline
-   * permissions dropdown (not the Settings > Permissions modal). Same anchor
-   * pattern as the model/reasoning pickers: the chip onClick passes its element.
-   */
-  const [permissionsPickerAnchor, setPermissionsPickerAnchor] = useState<HTMLElement | null>(null);
-  const [permissionsRequirements, setPermissionsRequirements] = useState<unknown | undefined>(undefined);
-  const togglePermissionsPickerAnchor = useCallback((anchor: HTMLElement) => {
-    setPermissionsPickerAnchor((current) => (current === anchor ? null : anchor));
-  }, []);
+  const {
+    selectedModelKey,
+    setSelectedModelKey,
+    threadModelSelections,
+    setThreadModelSelection,
+    reasoningEffortOverride,
+    setReasoningEffortOverride,
+  } = useModelPreferenceState();
   /*
    * Auth status from codex-rs's `getAuthStatus` RPC. The actual `client` is
    * declared further down, so the refresh function + effect live there too.
@@ -973,9 +526,15 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const [commandPanel, setCommandPanel] = useState<CommandPanelState | null>(null);
   const [mcpServerForm, setMcpServerForm] = useState<McpServerFormAction | null>(null);
   const [mcpToolForm, setMcpToolForm] = useState<McpToolFormAction | null>(null);
-  const [mcpFollowUpDialog, setMcpFollowUpDialog] = useState<McpFollowUpDialogRequest | null>(null);
   const [mcpServerStatuses, setMcpServerStatuses] = useState<unknown>(null);
   const [modelDraft, setModelDraft] = useState<ModelConfig>(EMPTY_MODEL);
+  /*
+   * True only when the personal provider has a saved config.toml entry. The
+   * draft above starts as a factory placeholder — that placeholder must never
+   * win default/fallback resolution (a fresh install would silently send to
+   * a dead 127.0.0.1 endpoint).
+   */
+  const [personalProviderConfigured, setPersonalProviderConfigured] = useState(false);
   const [imageGenerationSettings, setImageGenerationSettings] = useState<ImageGenerationSettings>(() =>
     loadImageGenerationSettings(browserStorage())
   );
@@ -1014,25 +573,12 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const [focusedAutomationId, setFocusedAutomationId] = useState<string | null>(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const accountStateRef = useRef<AccountState>(initialAccountState);
-  const mcpStartupStatusPanelHandledRef = useRef(0);
-  const appListChangedHandledRef = useRef(0);
   const openArtifactPreviewTabRef = useRef<((entry: RailEntry) => void) | null>(null);
   // ⌘F jump target: assigned by ConversationView's virtualized turn list.
   const threadFindScrollToUnitRef = useRef<((unitKey: string) => boolean) | null>(null);
   const refreshOpenFileWatchTabsRef = useRef<((watchId: string) => void) | null>(null);
   const authRefreshTokenOnNextRefreshRef = useRef(false);
   const accountRefreshTokenOnNextRefreshRef = useRef(false);
-  const fileSearchRequestSeqRef = useRef(0);
-  const fileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
-  const fileSearchSessionRootsKeyRef = useRef("");
-  const fileSearchActiveQueryRef = useRef("");
-  const commandMenuSearchRequestSeqRef = useRef(0);
-  const commandMenuFileSearchSessionRef = useRef<WorkspaceFuzzyFileSearchSession | null>(null);
-  const commandMenuFileSearchSessionRootsKeyRef = useRef("");
-  const commandMenuFileSearchActiveRef = useRef<{
-    query: string;
-    baseEntries: CommandPanelEntry[];
-  } | null>(null);
   const threadScrollOffsetsRef = useRef(new Map<string, number>());
   const mainRef = useRef<HTMLElement | null>(null);
   const mainWidth = useElementInlineSize(mainRef);
@@ -1195,11 +741,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     })();
     return () => { cancelled = true; };
   }, [state.connected, state.hostStatus?.codexHome, state.invalidation.authRefresh]);
-
-  // Re-check when the picker opens (covers OAuth completing while picker is closed).
-  useEffect(() => {
-    if (modelPickerAnchor) dispatch({ type: "invalidateAuth" });
-  }, [modelPickerAnchor]);
 
   const activeThreadRuntime = selectActiveThreadRuntime(state);
   const activeItems = activeThreadRuntime.items;
@@ -1437,24 +978,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     setArtifactPreview(null);
     setFileReference(null);
   }, [setArtifactPreview, setFileReference]);
-  const composerSubmitState = useMemo(() => projectComposerSubmitState({
-    input,
-    attachmentCount: composerAttachments.length,
-    connecting: state.connecting,
-    threadRunning: activeThreadRunning,
-    activeTurnId,
-    pendingRequestCount: activePendingRequests.length,
-    queueingEnabled: followUpQueueingEnabled,
-  }), [
-    activeThreadRunning,
-    activeTurnId,
-    activePendingRequests.length,
-    composerAttachments.length,
-    followUpQueueingEnabled,
-    input,
-    state.connecting,
-  ]);
-
   const autoConnectStarted = useRef(false);
 
   const connect = useCallback(async (): Promise<boolean> => {
@@ -1565,9 +1088,14 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     void refreshThreadContextDefaults(client, dispatch, workspace)
       .then((config) => {
         if (config) {
-          setModelDraft(buildModelConfigFromConfig(config, {
+          const draft = buildModelConfigFromConfig(config, {
             excludedProviderIds: SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS,
-          }));
+          });
+          setModelDraft(draft);
+          // The draft above may be the factory placeholder; only a provider
+          // with a saved config.toml entry participates in default/fallback
+          // resolution.
+          setPersonalProviderConfigured(isModelProviderConfigured(config, draft.id));
         }
       });
   }, [client, state.connected, workspace]);
@@ -1621,6 +1149,40 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     return connect();
   }, [connect, state.connected]);
 
+  const loadPermissionsRequirements = useCallback(async () => {
+    if (!(await ensureConnected())) return undefined;
+    return client.request<unknown>("configRequirements/read", {}, 120_000);
+  }, [client, ensureConnected]);
+  const handlePermissionsRequirementsError = useCallback((error: unknown) => {
+    dispatch({
+      type: "log",
+      text: `Failed to load permission requirements: ${formatError(error)}`,
+      level: "warn",
+    });
+  }, [dispatch]);
+  const handleModelPickerOpen = useCallback(() => {
+    dispatch({ type: "invalidateAuth" });
+  }, [dispatch]);
+  const {
+    closeKeyboardShortcuts,
+    closeModelPicker,
+    closePermissionsPicker,
+    closeReasoningPicker,
+    keyboardShortcutsOpen,
+    modelPickerAnchor,
+    openKeyboardShortcuts,
+    permissionsPickerAnchor,
+    permissionsRequirements,
+    reasoningPickerAnchor,
+    toggleModelPickerAnchor,
+    togglePermissionsPickerAnchor,
+    toggleReasoningPickerAnchor,
+  } = useAppOverlayState({
+    loadPermissionsRequirements,
+    onModelPickerOpen: handleModelPickerOpen,
+    onPermissionsRequirementsError: handlePermissionsRequirementsError,
+  });
+
   const restartRuntimeForProviderSwitch = useCallback(async (): Promise<boolean> => {
     try {
       await client.disconnect();
@@ -1636,33 +1198,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       return false;
     }
   }, [client, connect, dispatch]);
-
-  useEffect(() => {
-    if (!permissionsPickerAnchor) {
-      setPermissionsRequirements(undefined);
-      return;
-    }
-    let cancelled = false;
-    setPermissionsRequirements(undefined);
-    void (async () => {
-      if (!(await ensureConnected())) return;
-      try {
-        const requirements = await client.request<unknown>("configRequirements/read", {}, 120_000);
-        if (!cancelled) setPermissionsRequirements(requirements);
-      } catch (error) {
-        if (!cancelled) {
-          dispatch({
-            type: "log",
-            text: `Failed to load permission requirements: ${formatError(error)}`,
-            level: "warn",
-          });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, dispatch, ensureConnected, permissionsPickerAnchor]);
 
   const {
     provider: teamModelGatewayProvider,
@@ -1680,220 +1215,89 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     refreshKey: modelPickerAnchor,
   });
 
+  const {
+    modelPickerProviders,
+    readyProviders,
+    decodedSelectedModelSelection,
+    decodedActiveThreadModelSelection,
+    defaultModelSelection,
+    activeThreadDisplayModelSelection,
+    effectiveModelSelection,
+    modelPickerDefaultKey,
+    modelPickerOverlaySelectedKey,
+    modelPickerOverlayDefaultKey,
+  } = useModelPickerViewModel({
+    modelDraft,
+    personalProviderConfigured,
+    threadContextDefaults: state.threadContextDefaults,
+    activeThreadId: state.activeThreadId,
+    activeThreadModelProvider: activeThread?.modelProvider ?? null,
+    activeThreadResolvedModel: state.activeThreadId
+      ? state.threadsRuntime[state.activeThreadId]?.resolvedModel ?? null
+      : null,
+    selectedModelKey,
+    threadModelSelections,
+    codexAuthSummary,
+    oauthAuthMethod,
+    teamModelGatewayProvider,
+  });
+  /*
+   * Provider context for the composer model chip tooltip ("团队模型 ·
+   * 127.0.0.1:5050"). Personal and team gateways can serve identically named
+   * models, so the chip alone cannot disambiguate which service a send hits.
+   */
+  const composerModelProviderHint = useMemo(() => {
+    const providerId = state.activeThreadId
+      ? activeThreadDisplayModelSelection?.providerId
+      : decodedSelectedModelSelection?.providerId
+        ?? (!effectiveModelSelection.noReadyProvider ? effectiveModelSelection.providerId : null);
+    if (!providerId) return null;
+    const provider = modelPickerProviders.find((candidate) => candidate.id === providerId);
+    return provider ? `${provider.label} · ${provider.host}` : null;
+  }, [
+    activeThreadDisplayModelSelection?.providerId,
+    decodedSelectedModelSelection?.providerId,
+    effectiveModelSelection.noReadyProvider,
+    effectiveModelSelection.providerId,
+    modelPickerProviders,
+    state.activeThreadId,
+  ]);
+  const composerSubmitState = useMemo(() => projectComposerSubmitState({
+    input,
+    attachmentCount: composerAttachments.length,
+    connecting: state.connecting,
+    threadRunning: activeThreadRunning,
+    activeTurnId,
+    pendingRequestCount: activePendingRequests.length,
+    queueingEnabled: followUpQueueingEnabled,
+    /*
+     * New chats with no usable provider (team signed out, no personal
+     * provider saved, no subscription) block the send with guidance instead
+     * of silently dispatching to a dead endpoint. Existing chats keep their
+     * birth provider and are not gated here.
+     */
+    modelUnavailableReason: !state.activeThreadId && effectiveModelSelection.noReadyProvider
+      ? NO_READY_MODEL_PROVIDER_MESSAGE
+      : undefined,
+  }), [
+    activeThreadRunning,
+    activeTurnId,
+    activePendingRequests.length,
+    composerAttachments.length,
+    effectiveModelSelection.noReadyProvider,
+    followUpQueueingEnabled,
+    input,
+    state.activeThreadId,
+    state.connecting,
+  ]);
+
   /*
    * Effective ThreadContextDefaults for thread/start + thread/fork calls.
    * If the user picked a (provider, model) pair in the UI picker, override
    * the config.toml default's model + modelProvider. Otherwise pass through
    * unchanged. Workspace AGENTS.md / CLAUDE.md instructions are appended here
    * so thread/start, thread/fork, and side conversations share the same context.
-   *
-   * `selectedModelKey` here stores `${providerId}::${modelSlug}` —
-   * see DEFAULT_PROVIDERS + encodeSelection in model-picker-menu.tsx.
    */
-  const modelPickerProviders = useMemo(() => {
-    const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
-      ?? DEFAULT_PROVIDERS[0];
-    const subscriptionProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
-    const activeProviderId = state.threadContextDefaults?.modelProvider?.trim() || localFallback.id;
-    const draftProviderId = modelDraft.id.trim();
-    const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
-    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSettingsModelProviderExcluded(draftProviderId);
-    const localProviderId = useDraftForLocalProvider
-      ? draftProviderId
-      : (!activeIsSubscription ? activeProviderId : localFallback.id);
-    const localModels = normalizeModelSlugs([
-      ...modelSlugsForConfig(modelDraft),
-    ]);
-    const subscriptionModels = subscriptionProvider
-      ? normalizeModelSlugs([
-          ...subscriptionProvider.models,
-          activeIsSubscription && isSubscriptionCatalogModel(state.threadContextDefaults?.model)
-            ? state.threadContextDefaults?.model
-            : null,
-        ])
-      : [];
-    return [
-      {
-        ...localFallback,
-        id: localProviderId,
-        label: useDraftForLocalProvider && modelDraft.name.trim()
-          ? modelDraft.name.trim()
-          : localFallback.label,
-        host: useDraftForLocalProvider
-          ? hostFromBaseUrl(modelDraft.baseUrl, localFallback.host)
-          : localFallback.host,
-        baseUrl: useDraftForLocalProvider && modelDraft.baseUrl.trim()
-          ? modelDraft.baseUrl.trim()
-          : localFallback.baseUrl,
-        models: localModels.length > 0 ? localModels : localFallback.models,
-      },
-      ...(teamModelGatewayProvider ? [teamModelGatewayProvider] : []),
-      ...(subscriptionProvider
-        ? [{
-            ...subscriptionProvider,
-            models: subscriptionModels.length > 0 ? subscriptionModels : subscriptionProvider.models,
-          }]
-        : []),
-    ];
-  }, [
-    modelDraft.baseUrl,
-    modelDraft.id,
-    modelDraft.model,
-    modelDraft.models,
-    modelDraft.name,
-    state.threadContextDefaults?.model,
-    state.threadContextDefaults?.modelProvider,
-    teamModelGatewayProvider,
-  ]);
-
-  /*
-   * Set of providers whose auth is verified — drives "not signed in" / "no key"
-   * picker warnings and the inline Sign-in button.
-   *
-   * Logic:
-   *   - The active config.toml provider is always considered ready (the user
-   *     is presumably already using it, so its credential layer works).
-   *   - For ChatGPT subscription providers: ready when `getAuthStatus` returns
-   *     any non-null auth method, or when the isolated HiCodex auth.json has a
-   *     ChatGPT/API-key credential. `getAuthStatus` is scoped to the active
-   *     provider, so a local API provider with `requires_openai_auth = false`
-   *     would otherwise make the subscription provider look signed out.
-   */
-  const readyProviders = useMemo(() => {
-    const ready = new Set<string>();
-    const active = state.threadContextDefaults?.modelProvider ?? "";
-    const configuredPersonalProviderId = modelDraft.id.trim();
-    // `getAuthStatus` is provider-scoped: local gateways with
-    // `requires_openai_auth = false` report no OpenAI auth even when ChatGPT
-    // OAuth is complete. Keep the subscription provider ready when either the
-    // live RPC reports an auth method or the isolated Codex auth.json contains
-    // a ChatGPT/API-key credential.
-    if (configuredPersonalProviderId
-      && !isSettingsModelProviderExcluded(configuredPersonalProviderId)
-      && modelDraft.apiKey.trim()) {
-      ready.add(configuredPersonalProviderId);
-    }
-    if (active && !isSubscriptionProviderId(active)
-      && (active !== TEAM_MODEL_GATEWAY_PROVIDER_ID || teamModelGatewayProvider)) {
-      ready.add(active);
-    }
-    if (teamModelGatewayProvider) {
-      ready.add(TEAM_MODEL_GATEWAY_PROVIDER_ID);
-    }
-    if ((oauthAuthMethod && oauthAuthMethod.length > 0) || hasOpenAiCredentialSummary(codexAuthSummary)) {
-      ready.add(DEFAULT_SUBSCRIPTION_PROVIDER_ID);
-      ready.add(DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
-    }
-    return ready;
-  }, [
-    codexAuthSummary,
-    modelDraft.apiKey,
-    modelDraft.id,
-    state.threadContextDefaults?.modelProvider,
-    oauthAuthMethod,
-    teamModelGatewayProvider,
-  ]);
-
-  const decodedSelectedModelSelection = useMemo(() => {
-    const decoded = decodeSelection(selectedModelKey);
-    return isModelSelectionAvailable(decoded, modelPickerProviders) ? decoded : null;
-  }, [modelPickerProviders, selectedModelKey]);
-  /* The active thread's explicit override, if the user re-picked a model for it. */
-  const decodedActiveThreadModelSelection = useMemo(() => {
-    const key = state.activeThreadId ? threadModelSelections[state.activeThreadId] ?? null : null;
-    const decoded = decodeSelection(key);
-    return isModelSelectionAvailable(decoded, modelPickerProviders) ? decoded : null;
-  }, [modelPickerProviders, state.activeThreadId, threadModelSelections]);
-  /*
-   * What the runtime reported this thread is actually using (recorded from
-   * thread/start + thread/resume responses). Display-only: the picker
-   * checkmark and the composer chip read it, so a chat born on another
-   * provider never shows the global default as "current".
-   */
-  const activeThreadResolvedModel = state.activeThreadId
-    ? state.threadsRuntime[state.activeThreadId]?.resolvedModel ?? null
-    : null;
-  const selectedModelKeyForPicker = decodedSelectedModelSelection
-    ? encodeSelection(decodedSelectedModelSelection.providerId, decodedSelectedModelSelection.model)
-    : null;
-  const defaultModelSelection = useMemo(() => (
-    state.threadContextDefaults?.modelProvider && state.threadContextDefaults?.model
-      ? {
-          providerId: normalizeSubscriptionProviderId(state.threadContextDefaults.modelProvider),
-          model: state.threadContextDefaults.model,
-        }
-      : null
-  ), [state.threadContextDefaults?.model, state.threadContextDefaults?.modelProvider]);
-  /*
-   * What the active chat shows as its current model — the SINGLE source for
-   * both the picker checkmark and the composer model chip, so they can never
-   * disagree. Resolution order:
-   *   1. explicit per-thread re-pick;
-   *   2. what the runtime reported on start/resume (exact);
-   *   3. display-only inference until the first resume: the config default
-   *      when the thread lives on the default provider, else the provider's
-   *      only model when unambiguous;
-   *   4. unknown → both surfaces show the neutral placeholder / no checkmark.
-   */
-  const activeThreadDisplayModelSelection = useMemo(() => {
-    if (!state.activeThreadId) return null;
-    if (decodedActiveThreadModelSelection) return decodedActiveThreadModelSelection;
-    const rawProviderId = activeThreadResolvedModel?.modelProvider?.trim()
-      || activeThread?.modelProvider?.trim()
-      || "";
-    const providerId = normalizeSubscriptionProviderId(rawProviderId);
-    if (!providerId) return null;
-    const resolvedModelName = activeThreadResolvedModel?.model?.trim();
-    if (resolvedModelName) {
-      const selection = { providerId, model: resolvedModelName };
-      return isModelSelectionAvailable(selection, modelPickerProviders) ? selection : null;
-    }
-    if (defaultModelSelection && defaultModelSelection.providerId === providerId) {
-      return isModelSelectionAvailable(defaultModelSelection, modelPickerProviders)
-        ? defaultModelSelection
-        : null;
-    }
-    const provider = modelPickerProviders.find((candidate) => candidate.id === providerId);
-    return provider && provider.models.length === 1
-      ? { providerId, model: provider.models[0] }
-      : null;
-  }, [
-    activeThread?.modelProvider,
-    activeThreadResolvedModel,
-    decodedActiveThreadModelSelection,
-    defaultModelSelection,
-    modelPickerProviders,
-    state.activeThreadId,
-  ]);
-  /*
-   * If there is no explicit, valid picker override and the config default is
-   * unavailable, resolve to a ready provider+model so a new chat actually sends
-   * instead of spinning on "Reconnecting…". Explicit user picks are not silently
-   * routed to another provider.
-   */
-  const effectiveModelSelection = useMemo(() => {
-    /*
-     * Active threads resolve from their own override (or stay on their birth
-     * provider — no intent); only chat-less composers consider the global
-     * pick and the config default, with not-signed-in fallback.
-     */
-    const intended = state.activeThreadId
-      ? decodedActiveThreadModelSelection
-      : decodedSelectedModelSelection ?? defaultModelSelection;
-    return resolveEffectiveModelSelection({
-      intended,
-      providers: modelPickerProviders,
-      readyProviders,
-      allowFallback: !state.activeThreadId && decodedSelectedModelSelection == null,
-    });
-  }, [
-    decodedActiveThreadModelSelection,
-    decodedSelectedModelSelection,
-    defaultModelSelection,
-    modelPickerProviders,
-    readyProviders,
-    state.activeThreadId,
-  ]);
 
   const effectiveThreadContextDefaults = useMemo(() => {
     /*
@@ -1945,9 +1349,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       : null;
     return withWorkspaceDeveloperInstructions(modelContext, workspaceInstructions);
   }, [decodedActiveThreadModelSelection, decodedSelectedModelSelection, effectiveModelSelection, reasoningEffortOverride, state.activeThreadId, state.threadContextDefaults, workspace, workspaceDeveloperInstructions]);
-  const modelPickerDefaultKey = defaultModelSelection && isModelSelectionAvailable(defaultModelSelection, modelPickerProviders)
-    ? encodeSelection(defaultModelSelection.providerId, defaultModelSelection.model)
-    : null;
   const handleComposerModelSelect = useCallback((key: string | null) => {
     // Backstop for the picker-level cross-account lock (rows are disabled
     // with an explanation; this guards programmatic callers).
@@ -2034,273 +1435,22 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     effectiveThreadContextDefaults,
   });
 
-  const readMcpResource = useCallback(async ({ server, threadId, uri }: McpResourceReadRequest) => {
-    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
-    return client.request<unknown>("mcpServer/resource/read", {
-      threadId: threadId ?? state.activeThreadId ?? null,
-      server,
-      uri,
-    }, 120_000);
-  }, [client, ensureConnected, state.activeThreadId]);
-
-  const loadMcpServerStatus = useCallback(async (server: string, detail: "full" | "toolsAndAuthOnly" = "full") => {
-    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
-    const result = await client.request<unknown>("mcpServerStatus/list", { limit: 50, detail }, 120_000);
-    const status = mcpServerStatusFromListResult(result, server);
-    if (!status) throw mcpAppBridgeError(`MCP server not found: ${server}`);
-    return status;
-  }, [client, ensureConnected]);
-
-  const callMcpAppTool = useCallback(async (
-    request: McpAppHostCallRequest,
-    toolCall: { name: string; arguments: unknown; meta?: unknown },
-  ) => {
-    const threadId = request.threadId ?? state.activeThreadId;
-    if (!threadId) throw mcpAppBridgeError("Select or start a thread before calling an MCP tool.");
-    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
-    const status = await loadMcpServerStatus(request.server, "toolsAndAuthOnly");
-    if (!mcpAppToolCallAllowed(status, toolCall.name)) {
-      throw mcpAppBridgeError(
-        `MCP app widgets cannot call tools that accept file parameters: ${toolCall.name}`,
-        MCP_APP_BRIDGE_INTERNAL_JSON_RPC_ERROR,
-      );
-    }
-    return client.request<unknown>("mcpServer/tool/call", {
-      threadId,
-      server: request.server,
-      tool: toolCall.name,
-      arguments: toolCall.arguments,
-      ...(Object.prototype.hasOwnProperty.call(toolCall, "meta") ? { _meta: toolCall.meta } : {}),
-    }, 120_000);
-  }, [client, ensureConnected, loadMcpServerStatus, state.activeThreadId]);
-
-  const sendMcpAppFollowUpMessage = useCallback(async (
-    request: McpAppHostCallRequest,
-    prompt: string,
-    option?: McpFollowUpDialogOption,
-  ) => {
-    const content = buildUserInputFromComposer(prompt);
-    if (content.length === 0) throw mcpAppBridgeError("Invalid follow-up message.", MCP_APP_BRIDGE_INVALID_PARAMS);
-    const target = option?.id ?? "current-thread";
-    if (target === "local" || target === "worktree") {
-      throw mcpAppBridgeError(
-        `MCP app follow-up target is disabled: ${option?.label ?? target}.`,
-        MCP_APP_BRIDGE_INVALID_PARAMS,
-      );
-    }
-    if (!(await ensureConnected())) throw mcpAppBridgeError("Runtime is offline.");
-
-    const sourceThreadId = request.threadId ?? state.activeThreadId;
-    const sourceThread = sourceThreadId
-      ? state.threads.find((candidate) => candidate.id === sourceThreadId) ?? null
-      : null;
-    const sourceWorkspace = sourceThread?.cwd || workspace.trim() || state.hostStatus?.defaultCwd || "";
-
-    if (target === "new-thread") {
-      const threadId = await createAndSelectThreadForTurn(
-        client,
-        sourceWorkspace,
-        dispatch,
-        effectiveThreadContextDefaults,
-      );
-      if (!threadId) throw mcpAppBridgeError("Unable to create a follow-up thread.");
-      let optimistic: ReturnType<typeof dispatchOptimisticUserMessage> | null = null;
-      try {
-        optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
-        await sendPanelThreadMessage(client, threadId, content, sourceWorkspace, effectiveThreadContextDefaults, null);
-        await refreshThreadMetadata(client, threadId, dispatch);
-        dispatch({ type: "log", text: "Sent MCP app follow-up message in a new thread.", level: "info" });
-        return {};
-      } catch (error) {
-        if (optimistic) dropOptimisticUserMessage(dispatch, optimistic);
-        throw error;
-      }
-    }
-
-    if (target === "new-side-chat") {
-      if (!sourceThreadId) throw mcpAppBridgeError("Select or start a thread before opening an MCP app side chat.");
-      const result = await startSideConversation(
-        client,
-        sourceThreadId,
-        sourceWorkspace,
-        effectiveThreadContextDefaults,
-        prompt,
-      );
-      const sideThread = result.thread;
-      openSideConversationPanelRef.current?.(sideThread);
-      let optimistic: ReturnType<typeof dispatchOptimisticUserMessage> | null = null;
-      try {
-        optimistic = dispatchOptimisticUserMessage(dispatch, sideThread.id, content, null);
-        await sendPanelThreadMessage(
-          client,
-          sideThread.id,
-          content,
-          sideThread.cwd || sourceWorkspace,
-          effectiveThreadContextDefaults,
-          null,
-        );
-        await refreshThreadMetadata(client, sideThread.id, dispatch);
-        dispatch({ type: "log", text: "Sent MCP app follow-up message in a new side chat.", level: "info" });
-        return {};
-      } catch (error) {
-        if (optimistic) dropOptimisticUserMessage(dispatch, optimistic);
-        throw error;
-      }
-    }
-
-    const threadId = sourceThreadId;
-    if (!threadId) throw mcpAppBridgeError("Select or start a thread before sending an MCP app follow-up.");
-    const thread = state.threads.find((candidate) => candidate.id === threadId) ?? null;
-    const runtime = state.threadsRuntime[threadId] ?? null;
-    const targetActiveTurnId = runtime?.activeTurnId ?? null;
-    const targetRunning = Boolean(targetActiveTurnId) || isThreadStatusInProgress(thread?.status);
-    if (targetRunning && !targetActiveTurnId) {
-      throw mcpAppBridgeError(
-        "Waiting for the active turn before steering this thread.",
-        MCP_APP_BRIDGE_INTERNAL_ERROR,
-      );
-    }
-
-    let optimistic: ReturnType<typeof dispatchOptimisticUserMessage> | null = null;
-    try {
-      optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content, targetActiveTurnId);
-      await sendPanelThreadMessage(
-        client,
-        threadId,
-        content,
-        thread?.cwd || workspace.trim() || state.hostStatus?.defaultCwd || "",
-        effectiveThreadContextDefaults,
-        targetActiveTurnId,
-      );
-      if (!targetActiveTurnId) await refreshThreadMetadata(client, threadId, dispatch);
-      dispatch({ type: "log", text: "Sent MCP app follow-up message.", level: "info" });
-      return {};
-    } catch (error) {
-      if (optimistic) dropOptimisticUserMessage(dispatch, optimistic);
-      throw error;
-    }
-  }, [
-    client,
-    dispatch,
-    effectiveThreadContextDefaults,
+  const {
+    closeMcpFollowUpDialog,
+    confirmMcpFollowUpDialog,
+    handleMcpAppHostCall,
+    mcpFollowUpDialog,
+    readMcpResource,
+  } = useMcpAppHostBridge({
+    activeThreadId: state.activeThreadId,
     ensureConnected,
-    state.activeThreadId,
-    state.hostStatus?.defaultCwd,
-    state.threads,
-    state.threadsRuntime,
+    hostDefaultCwd: state.hostStatus?.defaultCwd,
+    openSideConversationPanelRef,
+    threadContextDefaults: effectiveThreadContextDefaults,
+    threads: state.threads,
+    threadsRuntime: state.threadsRuntime,
     workspace,
-  ]);
-
-  const requestMcpAppFollowUpMessage = useCallback((
-    request: McpAppHostCallRequest,
-    prompt: string,
-  ) => {
-    if (mcpFollowUpDialogPendingRef.current) {
-      throw mcpAppBridgeError(
-        "A follow-up message is already awaiting confirmation.",
-        MCP_APP_BRIDGE_INTERNAL_ERROR,
-      );
-    }
-    mcpFollowUpDialogPendingRef.current = true;
-    return new Promise((resolve, reject) => {
-      setMcpFollowUpDialog({ prompt, request, resolve, reject, source: mcpAppFollowUpSource(request) });
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!mcpFollowUpDialog && !mcpFollowUpDialogDispatchingRef.current) {
-      mcpFollowUpDialogPendingRef.current = false;
-    }
-  }, [mcpFollowUpDialog]);
-
-  const closeMcpFollowUpDialog = useCallback(() => {
-    const pending = mcpFollowUpDialog;
-    setMcpFollowUpDialog(null);
-    mcpFollowUpDialogPendingRef.current = false;
-    pending?.reject(mcpAppBridgeUserCancelledError());
-  }, [mcpFollowUpDialog]);
-
-  const confirmMcpFollowUpDialog = useCallback(async (prompt: string, option: McpFollowUpDialogOption) => {
-    const pending = mcpFollowUpDialog;
-    if (!pending) return;
-    mcpFollowUpDialogDispatchingRef.current = true;
-    setMcpFollowUpDialog(null);
-    try {
-      const result = await sendMcpAppFollowUpMessage(pending.request, prompt, option);
-      pending.resolve(result);
-    } catch (error) {
-      pending.reject(error);
-      dispatch({ type: "log", text: `MCP app follow-up failed: ${formatError(error)}`, level: "error" });
-    } finally {
-      mcpFollowUpDialogDispatchingRef.current = false;
-      mcpFollowUpDialogPendingRef.current = false;
-    }
-  }, [dispatch, mcpFollowUpDialog, sendMcpAppFollowUpMessage]);
-
-  const handleMcpAppHostCall = useCallback(async (request: McpAppHostCallRequest): Promise<unknown> => {
-    if (request.method === "sendFollowUpMessage") {
-      const followUp = mcpAppFollowUpMessageRequest(request.args[0]);
-      if (!followUp) throw mcpAppBridgeError("Invalid follow-up message.", MCP_APP_BRIDGE_INVALID_PARAMS);
-      return requestMcpAppFollowUpMessage(request, followUp.prompt);
-    }
-    if (request.method === "openExternal") {
-      const href = mcpAppExternalHref(request.args[0]);
-      if (!href) return {};
-      await openExternalUrl(href);
-      return {};
-    }
-    if (request.method === "callTool") {
-      const toolCall = mcpAppToolCallRequestFromBridgeArgs(request.args);
-      if (!toolCall) throw mcpAppBridgeError("Invalid MCP tool call params.", MCP_APP_BRIDGE_INVALID_PARAMS);
-      return callMcpAppTool(request, toolCall);
-    }
-    if (request.method !== "callMcp") {
-      throw mcpAppBridgeError(`Unsupported MCP app host method: ${request.method}`, MCP_APP_BRIDGE_METHOD_NOT_FOUND);
-    }
-
-    const proxyRequest = mcpAppMcpProxyRequest(request.args[0]);
-    if (!proxyRequest) throw mcpAppBridgeError("Invalid MCP proxy request.", MCP_APP_BRIDGE_INVALID_PARAMS);
-    switch (proxyRequest.method) {
-      case "ping":
-        return {};
-      case "ui/download-file": {
-        const download = mcpAppFileDownloadRequest(proxyRequest.params);
-        if (!download) throw mcpAppBridgeError("Invalid MCP file download params.", MCP_APP_BRIDGE_INVALID_PARAMS);
-        downloadMcpAppFile(download);
-        return {};
-      }
-      case "tools/call": {
-        const toolCall = mcpAppToolCallRequest(proxyRequest.params);
-        if (!toolCall) throw mcpAppBridgeError("Invalid MCP tool call params.", MCP_APP_BRIDGE_INVALID_PARAMS);
-        return callMcpAppTool(request, toolCall);
-      }
-      case "resources/read": {
-        const params = recordObject(proxyRequest.params);
-        const uri = typeof params.uri === "string" ? params.uri : "";
-        if (!uri.trim()) throw mcpAppBridgeError("Invalid MCP resource read params.", MCP_APP_BRIDGE_INVALID_PARAMS);
-        return readMcpResource({ server: request.server, threadId: request.threadId, uri });
-      }
-      case "tools/list": {
-        const status = await loadMcpServerStatus(request.server, "toolsAndAuthOnly");
-        return mcpAppToolsListResponse(status);
-      }
-      case "resources/list": {
-        const status = await loadMcpServerStatus(request.server, "full");
-        return mcpAppResourcesListResponse(status, request.server);
-      }
-      case "resources/templates/list": {
-        const status = await loadMcpServerStatus(request.server, "full");
-        return mcpAppResourceTemplatesListResponse(status, request.server);
-      }
-      case "prompts/list":
-        return { prompts: [] };
-      default:
-        throw mcpAppBridgeError(
-          `Unsupported MCP proxy method: ${proxyRequest.method}`,
-          MCP_APP_BRIDGE_METHOD_NOT_FOUND,
-        );
-    }
-  }, [callMcpAppTool, loadMcpServerStatus, readMcpResource, requestMcpAppFollowUpMessage]);
+  });
 
   const collaborationModesForComposerMode = useCallback(async (mode: ComposerMode): Promise<CollaborationModeMask[]> => {
     if (mode !== "plan" || hasCollaborationModePreset(collaborationModes, "plan")) return collaborationModes;
@@ -2311,6 +1461,19 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   // above effectiveThreadContextDefaults (hoisted so the not-signed-in fallback
   // can resolve before the thread-context defaults / composer state are built).
 
+  /*
+   * Thread-switch fast path: a thread whose transcript is already in the
+   * runtime store renders instantly on re-select — re-reading the full turn
+   * payload + re-parsing the rollout on every click made switching feel
+   * stuck on slower machines. Subscribed threads stay fresh via
+   * notifications; unloaded threads still take the full read path.
+   */
+  const threadsRuntimeRef = useRef(state.threadsRuntime);
+  threadsRuntimeRef.current = state.threadsRuntime;
+  const hasLoadedThreadContent = useCallback((threadId: string) => {
+    const runtime = threadsRuntimeRef.current[threadId];
+    return Boolean(runtime && runtime.items.length > 0);
+  }, []);
   const {
     archiveSelectedThread,
     closeThreadActionDialog,
@@ -2331,6 +1494,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   } = useThreadActions({
     activeThread,
     ensureConnected,
+    hasLoadedThreadContent,
     setComposerAttachments,
     setInput,
     threadContextDefaults: effectiveThreadContextDefaults,
@@ -2785,224 +1949,23 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     });
   }, [commandMenuEntries, openCommandPanel]);
 
-  const stopFileSearchSession = useCallback(() => {
-    fileSearchRequestSeqRef.current += 1;
-    fileSearchActiveQueryRef.current = "";
-    fileSearchSessionRootsKeyRef.current = "";
-    const session = fileSearchSessionRef.current;
-    fileSearchSessionRef.current = null;
-    if (!session) return;
-    void session.stop().catch((error) => {
-      dispatch({ type: "log", text: `Failed to close fuzzy file search session: ${formatError(error)}`, level: "warn" });
-    });
-  }, []);
-
-  const stopCommandMenuFileSearchSession = useCallback(() => {
-    commandMenuSearchRequestSeqRef.current += 1;
-    commandMenuFileSearchActiveRef.current = null;
-    commandMenuFileSearchSessionRootsKeyRef.current = "";
-    const session = commandMenuFileSearchSessionRef.current;
-    commandMenuFileSearchSessionRef.current = null;
-    if (!session) return;
-    void session.stop().catch((error) => {
-      dispatch({ type: "log", text: `Failed to close command menu file search session: ${formatError(error)}`, level: "warn" });
-    });
-  }, []);
-
-  const getFileSearchSession = useCallback(createDedupedFileSearchSession({
-    sessionRef: fileSearchSessionRef,
-    rootsKeyRef: fileSearchSessionRootsKeyRef,
-    controllerRef: fileSearchControllerRef,
-    onCloseError: (error) => {
-      dispatch({ type: "log", text: `Failed to close fuzzy file search session: ${formatError(error)}`, level: "warn" });
-    },
-    onUpdated: ({ query, files }) => {
-      if (query !== fileSearchActiveQueryRef.current) return;
-      const entries = projectFileSearchEntries({ files });
-      setCommandPanel((current) => current?.panel === "files"
-        ? createCommandPanelState("files", {
-            status: entries.length > 0 ? "ready" : "empty",
-            title: "Search files",
-            message: entries.length > 0
-              ? `${entries.length} matching file(s). Select one to mention it.`
-              : "No matching files found.",
-            entries,
-          })
-        : current);
-    },
-  }), []);
-
-  const getCommandMenuFileSearchSession = useCallback(createDedupedFileSearchSession({
-    sessionRef: commandMenuFileSearchSessionRef,
-    rootsKeyRef: commandMenuFileSearchSessionRootsKeyRef,
-    controllerRef: fileSearchControllerRef,
-    onCloseError: (error) => {
-      dispatch({ type: "log", text: `Failed to close command menu file search session: ${formatError(error)}`, level: "warn" });
-    },
-    onUpdated: ({ query, files }) => {
-      const active = commandMenuFileSearchActiveRef.current;
-      if (!active || query !== active.query) return;
-      const fileEntries = projectFileSearchEntries({ files });
-      setCommandPanel((current) => isCommandMenuPanel(current)
-        ? createCommandPanelState("generic", {
-            status: "ready",
-            title: "Search commands and chats",
-            message: fileEntries.length > 0 ? `${fileEntries.length} workspace file result(s).` : "",
-            entries: [...active.baseEntries, ...fileEntries],
-            searchable: true,
-          })
-        : current);
-    },
-  }), []);
-
-  const openFileSearchPanel = useCallback(() => {
-    fileSearchRequestSeqRef.current += 1;
-    stopCommandMenuFileSearchSession();
-    openCommandPanel("files", {
-      status: "empty",
-      title: "Search files",
-      message: "Type to search workspace files.",
-      entries: [],
-    });
-  }, [openCommandPanel, stopCommandMenuFileSearchSession]);
-
-  const searchFilesFromCommandPanel = useCallback((query: string) => {
-    const trimmedQuery = query.trim();
-    const cwd = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
-    const requestSeq = fileSearchRequestSeqRef.current + 1;
-    fileSearchRequestSeqRef.current = requestSeq;
-    fileSearchActiveQueryRef.current = trimmedQuery;
-    if (!trimmedQuery) {
-      setCommandPanel((current) => current?.panel === "files"
-        ? createCommandPanelState("files", {
-            status: "empty",
-            title: "Search files",
-            message: "Type to search workspace files.",
-            entries: [],
-          })
-        : current);
-      return;
-    }
-    if (!cwd) {
-      setCommandPanel((current) => current?.panel === "files"
-        ? createCommandPanelState("files", {
-            status: "error",
-            title: "Search files",
-            error: "No workspace cwd is available for file search.",
-            entries: [],
-          })
-        : current);
-      return;
-    }
-    setCommandPanel((current) => current?.panel === "files"
-      ? createCommandPanelState("files", {
-          status: "loading",
-          title: "Search files",
-          message: `Searching files for "${trimmedQuery}"...`,
-          entries: [],
-        })
-      : current);
-    void (async () => {
-      try {
-        if (!(await ensureConnected())) {
-          if (fileSearchRequestSeqRef.current !== requestSeq) return;
-          setCommandPanel((current) => current?.panel === "files"
-            ? createCommandPanelState("files", {
-                status: "error",
-                title: "Search files",
-                error: "Runtime is offline.",
-                entries: [],
-              })
-            : current);
-          return;
-        }
-        const session = await getFileSearchSession([cwd]);
-        if (fileSearchRequestSeqRef.current !== requestSeq) return;
-        await session.update(trimmedQuery);
-      } catch (error) {
-        if (fileSearchRequestSeqRef.current !== requestSeq) return;
-        setCommandPanel((current) => current?.panel === "files"
-          ? createCommandPanelState("files", {
-              status: "error",
-              title: "Search files",
-              error: formatError(error),
-              entries: [],
-            })
-          : current);
-      }
-    })();
-  }, [activeThread?.cwd, ensureConnected, getFileSearchSession, state.hostStatus?.defaultCwd, workspace]);
-
-  const searchWorkspaceFilesForFilesTab = useCallback(async (
-    query: string,
-    root: string,
-  ): Promise<WorkspaceDirEntry[]> => {
-    if (!(await ensureConnected())) {
-      throw new Error("Runtime is offline.");
-    }
-    const controller = fileSearchControllerRef.current;
-    if (!controller) throw new Error("Fuzzy file search is unavailable.");
-    const result = await controller.searchOnce({ roots: [root], query });
-    return fuzzyFileResultsToWorkspaceEntries(root, result.files ?? []);
-  }, [ensureConnected]);
-
-  const searchCommandMenuFromPanel = useCallback((query: string) => {
-    const trimmedQuery = query.trim();
-    const baseEntries = commandMenuEntries();
-    const cwd = activeThread?.cwd?.trim() || workspace.trim() || state.hostStatus?.defaultCwd?.trim() || "";
-    const requestSeq = commandMenuSearchRequestSeqRef.current + 1;
-    commandMenuSearchRequestSeqRef.current = requestSeq;
-    commandMenuFileSearchActiveRef.current = trimmedQuery
-      ? { query: trimmedQuery, baseEntries }
-      : null;
-    if (!trimmedQuery || !cwd) {
-      setCommandPanel((current) => isCommandMenuPanel(current)
-        ? createCommandPanelState("generic", {
-            status: "ready",
-            title: "Search commands and chats",
-            message: "",
-            entries: baseEntries,
-            searchable: true,
-          })
-        : current);
-      return;
-    }
-    void (async () => {
-      try {
-        if (!(await ensureConnected())) return;
-        const session = await getCommandMenuFileSearchSession([cwd]);
-        if (commandMenuSearchRequestSeqRef.current !== requestSeq) return;
-        await session.update(trimmedQuery);
-      } catch {
-        if (commandMenuSearchRequestSeqRef.current !== requestSeq) return;
-        setCommandPanel((current) => isCommandMenuPanel(current)
-          ? createCommandPanelState("generic", {
-              status: "ready",
-              title: "Search commands and chats",
-              message: "",
-              entries: baseEntries,
-              searchable: true,
-            })
-          : current);
-      }
-    })();
-  }, [activeThread?.cwd, commandMenuEntries, ensureConnected, getCommandMenuFileSearchSession, state.hostStatus?.defaultCwd, workspace]);
-
-  useEffect(() => {
-    if (!commandPanel) {
-      stopFileSearchSession();
-      stopCommandMenuFileSearchSession();
-      return;
-    }
-    if (commandPanel.panel !== "files") stopFileSearchSession();
-    if (!isCommandMenuPanel(commandPanel)) stopCommandMenuFileSearchSession();
-  }, [commandPanel, stopCommandMenuFileSearchSession, stopFileSearchSession]);
-
-  const closeCommandPanel = useCallback(() => {
-    stopFileSearchSession();
-    stopCommandMenuFileSearchSession();
-    setCommandPanel(null);
-  }, [stopCommandMenuFileSearchSession, stopFileSearchSession]);
+  const {
+    closeCommandPanel,
+    openFileSearchPanel,
+    searchCommandMenuFromPanel,
+    searchFilesFromCommandPanel,
+    searchWorkspaceFilesForFilesTab,
+  } = useCommandPanelFileSearch({
+    activeThreadCwd: activeThread?.cwd,
+    commandMenuEntries,
+    commandPanel,
+    defaultCwd: state.hostStatus?.defaultCwd,
+    dispatch,
+    ensureConnected,
+    fileSearchControllerRef,
+    setCommandPanel,
+    workspace,
+  });
 
   const loadSettingsPanel = useCallback(async (
     panel: SettingsPanelId,
@@ -3205,10 +2168,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     }
     openFilesTabRef.current?.();
   }, [sidePanel]);
-  // codex: electron-menu-shortcuts-*.js#showKeyboardShortcuts (default = ⌘⇧/) +
-  // keyboard-shortcuts-settings-*.js — dialog state.
-  const [keyboardShortcutsOpen, setKeyboardShortcutsOpen] = useState(false);
-
   // codex: use-hotkey-*.js — composer auto-focus on plain-text keypresses
   // stays a non-hotkey listener (it is not modifier-gated).
   useEffect(() => {
@@ -3506,195 +2465,21 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     workspace,
   });
 
-  useEffect(() => {
-    const commandAppsOpen = commandPanel?.panel === "apps";
-    const commandPluginsOpen = commandPanel?.panel === "plugins";
-    const settingsAppsOpen = activeSettingsPanel === "apps";
-    const settingsPluginsOpen = activeSettingsPanel === "plugins";
-    const hasOpenAppBackedPanel = commandAppsOpen || commandPluginsOpen || settingsAppsOpen || settingsPluginsOpen;
-    if (state.invalidation.appList === 0 || !hasOpenAppBackedPanel) return;
-    if (appListChangedHandledRef.current === state.invalidation.appList) return;
-    appListChangedHandledRef.current = state.invalidation.appList;
-    const refreshMessage = state.invalidation.appListMessage;
-    let disposed = false;
-    setCommandPanel((current) => isAppBackedPanelState(current)
-      ? {
-          ...current,
-          status: "loading",
-          message: `${refreshMessage} Refreshing Apps and Plugins...`,
-        }
-      : current);
-    setSettingsPanelState((current) => isAppBackedPanelState(current)
-      ? {
-          ...current,
-          status: "loading",
-          message: `${refreshMessage} Refreshing Apps and Plugins...`,
-        }
-      : current);
-
-    async function refreshAppBackedPanels() {
-      if (!(await ensureConnected())) {
-        if (disposed) return;
-        setCommandPanel((current) => isAppBackedPanelState(current)
-          ? createCommandPanelState(current.panel, {
-              status: "error",
-              title: current.title,
-              error: "Runtime is offline.",
-              entries: current.entries,
-            })
-          : current);
-        setSettingsPanelState((current) => isAppBackedPanelState(current)
-          ? createCommandPanelState(current.panel, {
-              status: "error",
-              title: current.title,
-              error: "Runtime is offline.",
-              entries: current.entries,
-            })
-          : current);
-        return;
-      }
-      try {
-        const apps = await loadAllApps(client, { forceRefetch: true, threadId: state.activeThreadId });
-        setAppRegistry(appRegistryEntriesFromResponse(apps));
-        const pluginsNeeded = commandPluginsOpen || settingsPluginsOpen;
-        const plugins = pluginsNeeded
-          ? await client.request<unknown>("plugin/list", {
-              cwds: workspace.trim() ? [workspace.trim()] : null,
-            }, 120_000)
-          : null;
-        if (disposed) return;
-        setCommandPanel((current) => {
-          if (current?.panel === "apps") {
-            return createCommandPanelState("apps", {
-              status: "ready",
-              title: current.title,
-              message: `${refreshMessage} Refreshed Apps from app-server.`,
-              entries: projectCommandPanelEntries({ apps }),
-            });
-          }
-          if (current?.panel === "plugins" && plugins !== null) {
-            return createCommandPanelState("plugins", {
-              status: "ready",
-              title: current.title,
-              message: `${refreshMessage} Refreshed Plugins from app-server.`,
-              entries: projectPluginEntries(plugins, { apps }),
-            });
-          }
-          return current;
-        });
-        setSettingsPanelState((current) => {
-          if (current?.panel === "apps") {
-            return createCommandPanelState("apps", {
-              status: "ready",
-              title: current.title,
-              message: `${refreshMessage} Refreshed Apps from app-server.`,
-              entries: projectCommandPanelEntries({ apps }),
-            });
-          }
-          if (current?.panel === "plugins" && plugins !== null) {
-            return createCommandPanelState("plugins", {
-              status: "ready",
-              title: current.title,
-              message: `${refreshMessage} Refreshed Plugins from app-server.`,
-              entries: projectPluginEntries(plugins, { apps }),
-            });
-          }
-          return current;
-        });
-      } catch (error) {
-        if (disposed) return;
-        setCommandPanel((current) => isAppBackedPanelState(current)
-          ? createCommandPanelState(current.panel, {
-              status: "error",
-              title: current.title,
-              error: formatError(error),
-              entries: current.entries,
-            })
-          : current);
-        setSettingsPanelState((current) => isAppBackedPanelState(current)
-          ? createCommandPanelState(current.panel, {
-              status: "error",
-              title: current.title,
-              error: formatError(error),
-              entries: current.entries,
-            })
-          : current);
-      }
-    }
-
-    void refreshAppBackedPanels();
-    return () => {
-      disposed = true;
-    };
-  }, [
+  useAppBackedPanelRefresh({
     activeSettingsPanel,
-    state.invalidation.appList,
-    client,
-    commandPanel?.panel,
+    activeThreadId: state.activeThreadId,
+    appListMessage: state.invalidation.appListMessage,
+    appListNonce: state.invalidation.appList,
+    commandPanelPanel: commandPanel?.panel,
     ensureConnected,
-    state.activeThreadId,
+    mcpServerStartupStatuses: state.mcpServerStartupStatuses,
+    mcpStatusMessage: state.invalidation.mcpStatusMessage,
+    mcpStatusNonce: state.invalidation.mcpStatus,
+    setAppRegistry,
+    setCommandPanel,
+    setSettingsPanelState,
     workspace,
-  ]);
-
-  useEffect(() => {
-    if (state.invalidation.mcpStatus === 0 || activeSettingsPanel !== "mcp") return;
-    if (mcpStartupStatusPanelHandledRef.current === state.invalidation.mcpStatus) return;
-    mcpStartupStatusPanelHandledRef.current = state.invalidation.mcpStatus;
-    let disposed = false;
-    const refreshMessage = state.invalidation.mcpStatusMessage;
-    setSettingsPanelState((current) => current?.panel === "mcp"
-      ? { ...current, status: "loading", message: `${refreshMessage} Refreshing...` }
-      : current);
-
-    async function refreshOpenMcpPanel() {
-      if (!(await ensureConnected())) {
-        if (!disposed) {
-          setSettingsPanelState((current) => current?.panel === "mcp"
-            ? { ...current, status: "error", error: "Runtime is offline." }
-            : current);
-        }
-        return;
-      }
-      try {
-        const entries = await loadMcpManagementEntries({
-          client,
-          forceReload: false,
-          startupStatuses: state.mcpServerStartupStatuses,
-          workspace,
-        });
-        if (disposed) return;
-        setSettingsPanelState((current) => current?.panel === "mcp"
-          ? {
-              ...current,
-              status: "ready",
-              message: `${refreshMessage} Refreshed MCP status.`,
-              entries,
-            }
-          : current);
-      } catch (error) {
-        if (!disposed) {
-          setSettingsPanelState((current) => current?.panel === "mcp"
-            ? {
-                ...current,
-                status: "error",
-                error: formatError(error),
-              }
-            : current);
-        }
-      }
-    }
-
-    void refreshOpenMcpPanel();
-    return () => {
-      disposed = true;
-    };
-  }, [
-    activeSettingsPanel,
-    client,
-    ensureConnected,
-    state.invalidation.mcpStatus,
-    state.mcpServerStartupStatuses,
-  ]);
+  });
 
   const setActiveComposerMode = useCallback((mode: ComposerMode) => {
     dispatch({ type: "setActiveComposerMode", mode });
@@ -3892,7 +2677,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     // codex: electron-menu-shortcuts-*.js#showKeyboardShortcuts — ⌘⇧/.
     registerCommand(
       COMMAND_DESCRIPTORS.find((d) => d.id === COMMAND_IDS.showKeyboardShortcuts)!,
-      () => setKeyboardShortcutsOpen(true),
+      () => openKeyboardShortcuts(),
     );
     return () => {
       unregisterCommand(COMMAND_IDS.archiveThread);
@@ -3925,6 +2710,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     copyTextToClipboard,
     copyThreadDeeplink,
     copyWorkingDirectory,
+    openKeyboardShortcuts,
     openRenameThreadDialog,
     pinnedThreadIds,
     toggleThreadPinned,
@@ -4683,7 +3469,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           const chip = document.querySelector<HTMLElement>('[data-chip="reasoning"]')
             ?? document.querySelector<HTMLElement>(".hc-composer-settings-chips");
           if (chip) {
-            setReasoningPickerAnchor((current) => current === chip ? null : chip);
+            toggleReasoningPickerAnchor(chip);
           }
         }
         return;
@@ -4691,7 +3477,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       case "log":
         dispatch({ type: "log", text: action.message, level: action.level });
     }
-  }, [composerMode, createWorkbenchThread, enableComposerPlanMode, loadSettingsPanel, openCommandMenu, runSlashRequest, setActiveComposerMode, setReasoningPickerAnchor]);
+  }, [composerMode, createWorkbenchThread, enableComposerPlanMode, loadSettingsPanel, openCommandMenu, runSlashRequest, setActiveComposerMode, toggleReasoningPickerAnchor]);
 
   const executeSlashCommand = useCallback((command: SlashCommand) => {
     void handleSlashAction(applySlashCommand(command.id, { input, mode: composerMode }));
@@ -4842,10 +3628,10 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       const threadId = state.activeThreadId;
       if (!threadId) {
         dispatch({ type: "log", text: "Select or start a thread before changing permissions.", level: "warn" });
-        setPermissionsPickerAnchor(null);
+        closePermissionsPicker();
         return;
       }
-      setPermissionsPickerAnchor(null);
+      closePermissionsPicker();
       void (async () => {
         if (!(await ensureConnected())) return;
         try {
@@ -4858,7 +3644,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         }
       })();
     },
-    [client, dispatch, ensureConnected, state.activeThreadId],
+    [client, closePermissionsPicker, dispatch, ensureConnected, state.activeThreadId],
   );
 
   const handleMcpToolFormSubmit = useCallback((argumentsValue: Record<string, unknown>) => {
@@ -5126,65 +3912,18 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   const workbenchVisible = activeAppTab === "workbench";
   const remoteTaskVisible = activeAppTab === "remoteTask" && activeRemoteTaskId !== null;
   const sidebarVisible = workbenchVisible && sidebarOpen;
-  const sidebarWidthPx = normalizeSidebarWidthPx(sidebarPreferences.widthPx);
-  const appShellStyle = useMemo(() => ({
-    "--hc-sidebar-preferred-width": `${sidebarWidthPx}px`,
-  }) as CSSProperties, [sidebarWidthPx]);
   const appClassName = workbenchVisible && showRightRail ? "hc-app hc-app--with-right-rail" : "hc-app";
-  const startSidebarResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!sidebarVisible || event.button !== 0) return;
-    event.preventDefault();
-    const appShell = event.currentTarget.closest(".hc-app") as HTMLElement | null;
-    const startX = event.clientX;
-    const startWidth = sidebarWidthPx;
-    let latestWidth = normalizeSidebarWidthPx(startWidth);
-    let pendingFrame = 0;
-    const applyWidth = () => {
-      pendingFrame = 0;
-      appShell?.style.setProperty("--hc-sidebar-preferred-width", `${latestWidth}px`);
-    };
-    const scheduleWidth = () => {
-      if (pendingFrame !== 0) return;
-      pendingFrame = window.requestAnimationFrame(applyWidth);
-    };
-    if (appShell) appShell.dataset.sidebarResizing = "true";
-    setSidebarResizing(true);
-    appShell?.style.setProperty("--hc-sidebar-preferred-width", `${latestWidth}px`);
-
-    const move = (moveEvent: PointerEvent) => {
-      latestWidth = normalizeSidebarWidthPx(startWidth + moveEvent.clientX - startX);
-      scheduleWidth();
-    };
-    const stop = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", stop);
-      window.removeEventListener("pointercancel", stop);
-      if (pendingFrame !== 0) {
-        window.cancelAnimationFrame(pendingFrame);
-        pendingFrame = 0;
-      }
-      appShell?.style.setProperty("--hc-sidebar-preferred-width", `${latestWidth}px`);
-      if (appShell) delete appShell.dataset.sidebarResizing;
-      setSidebarResizing(false);
-      setSidebarWidthPx(latestWidth);
-    };
-
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", stop, { once: true });
-    window.addEventListener("pointercancel", stop, { once: true });
-  }, [setSidebarWidthPx, sidebarVisible, sidebarWidthPx]);
-  const resizeSidebarByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!sidebarVisible) return;
-    const step = event.shiftKey ? 24 : 12;
-    let nextWidth: number | null = null;
-    if (event.key === "ArrowLeft") nextWidth = sidebarPreferences.widthPx - step;
-    else if (event.key === "ArrowRight") nextWidth = sidebarPreferences.widthPx + step;
-    else if (event.key === "Home") nextWidth = SIDEBAR_WIDTH_MIN_PX;
-    else if (event.key === "End") nextWidth = SIDEBAR_WIDTH_MAX_PX;
-    if (nextWidth == null) return;
-    event.preventDefault();
-    setSidebarWidthPx(nextWidth);
-  }, [setSidebarWidthPx, sidebarPreferences.widthPx, sidebarVisible]);
+  const {
+    appShellStyle,
+    resizeSidebarByKeyboard,
+    sidebarResizing,
+    sidebarWidthPx,
+    startSidebarResize,
+  } = useSidebarResizeController({
+    sidebarVisible,
+    widthPx: sidebarPreferences.widthPx,
+    setSidebarWidthPx,
+  });
   // codex: inline file references carry the workspace-file context menu; provide the
   // reveal + copy-contents actions (host + path resolution) to every FileCitationAnchor.
   const fileCitationMenuActions = useMemo(
@@ -5203,7 +3942,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         data-sidebar-open={sidebarVisible ? "true" : "false"}
         data-sidebar-resizing={sidebarResizing ? "true" : undefined}
         data-theme={resolvedUiTheme}
-        data-theme-mode={uiThemeMode}
+        data-theme-mode={uiThemeSnapshot.mode}
         lang={uiLocale}
         style={appShellStyle}
       >
@@ -5539,6 +4278,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
                         : effectiveThreadContextDefaults?.model ?? state.threadContextDefaults?.model)
                         ?? null
                     }
+                    modelProviderHint={composerModelProviderHint}
                     approvalPolicy={effectiveThreadContextDefaults?.approvalPolicy ?? state.threadContextDefaults?.approvalPolicy}
                     approvalsReviewer={effectiveThreadContextDefaults?.approvalsReviewer ?? state.threadContextDefaults?.approvalsReviewer}
                     reasoningEffort={effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort}
@@ -5834,34 +4574,21 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         onPatchFailureOpenPath={handlePatchFailureOpenPath}
         modelPickerAnchor={modelPickerAnchor}
         modelPickerProviders={modelPickerProviders}
-        modelPickerSelectedKey={state.activeThreadId
-          ? (activeThreadDisplayModelSelection
-              ? encodeSelection(activeThreadDisplayModelSelection.providerId, activeThreadDisplayModelSelection.model)
-              : null)
-          : (decodedSelectedModelSelection
-              ? selectedModelKeyForPicker
-              : (!effectiveModelSelection.noReadyProvider
-                  ? encodeSelection(effectiveModelSelection.providerId, effectiveModelSelection.model)
-                  : null))}
-        modelPickerDefaultKey={
-          // Active chats highlight what THEY are using (selectedKey above) —
-          // never the config default row; a default-row checkmark inside a
-          // locked cross-account section reads as "current model unusable".
-          state.activeThreadId ? null : modelPickerDefaultKey
-        }
+        modelPickerSelectedKey={modelPickerOverlaySelectedKey}
+        modelPickerDefaultKey={modelPickerOverlayDefaultKey}
         modelPickerReadyProviders={readyProviders}
         modelPickerActiveThreadProviderId={activeThread?.modelProvider ?? null}
         onModelSelect={handleComposerModelSelect}
         onModelPickerOpenSettings={() => loadSettingsPanel("models")}
         onModelPickerSignIn={() => { void runSlashRequest("loginChatgpt"); }}
-        onModelPickerClose={() => setModelPickerAnchor(null)}
+        onModelPickerClose={closeModelPicker}
         reasoningPickerAnchor={reasoningPickerAnchor}
         reasoningCurrentEffort={normalizeReasoningEffortValue(
           effectiveThreadContextDefaults?.reasoningEffort ?? state.threadContextDefaults?.reasoningEffort,
         )}
         reasoningSupportedEfforts={activeModelSupportedEfforts}
         onReasoningSelect={handleReasoningSelect}
-        onReasoningPickerClose={() => setReasoningPickerAnchor(null)}
+        onReasoningPickerClose={closeReasoningPicker}
         permissionsPickerAnchor={permissionsPickerAnchor}
         permissionsCurrentMode={permissionModeFromThreadContext(
           effectiveThreadContextDefaults ?? state.threadContextDefaults ?? null,
@@ -5869,9 +4596,9 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         permissionsRequirements={permissionsRequirements}
         onPermissionApplyMode={applyComposerPermissionMode}
         onPermissionOpenCustomSettings={() => loadSettingsPanel("permissions")}
-        onPermissionsPickerClose={() => setPermissionsPickerAnchor(null)}
+        onPermissionsPickerClose={closePermissionsPicker}
         keyboardShortcutsOpen={keyboardShortcutsOpen}
-        onKeyboardShortcutsClose={() => setKeyboardShortcutsOpen(false)}
+        onKeyboardShortcutsClose={closeKeyboardShortcuts}
         toastLogs={state.logs}
       />
       </div>
@@ -5880,10 +4607,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     </FileCitationMenuContext.Provider>
   );
 }
-
-// Pre-registry storage key for the reasoning-effort override ("hicodex." is the
-// retired legacy namespace; live keys go through HICODEX_DESKTOP_CONFIG_KEYS).
-const LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY = "hicodex.reasoningEffortOverride";
 
 export function HiCodexApp() {
   const [state, dispatch] = useReducer(codexUiReducer, initialCodexUiState);

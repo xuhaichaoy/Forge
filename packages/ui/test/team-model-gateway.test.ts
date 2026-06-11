@@ -2,6 +2,7 @@ import {
   TEAM_MODEL_GATEWAY_PROVIDER_ID,
   buildTeamModelGatewayProviderSnapshot,
   reconcileTeamModelSlug,
+  teamDefaultModelFromResponse,
   teamModelGatewayBaseUrl,
   teamModelGatewayDefinitionMatchesConfig,
   teamModelGatewayProviderDefinition,
@@ -17,6 +18,7 @@ export default function runTeamModelGatewayTests(): void {
   usesServerModelIdsVerbatim();
   parsesModelDisplayLabels();
   parsesTeamNameFromCurrentTeamResponse();
+  parsesTeamDefaultModelAndPrefersItAsPrimary();
   buildsCodexModelProviderSnapshot();
   reconcilesLegacySelections();
   dropsUnknownSelectedModelInsteadOfInjectingIt();
@@ -91,6 +93,37 @@ function parsesTeamNameFromCurrentTeamResponse(): void {
     teamNameFromResponse({ current_team: { name: "交付中心" } }),
     "交付中心",
     "current_team.name should be used as fallback display name",
+  );
+}
+
+function parsesTeamDefaultModelAndPrefersItAsPrimary(): void {
+  const response = {
+    data: [
+      { id: "123123:Qwen3.6-27B-mxfp4", is_default: false },
+      { id: "123123:DeepSeek-V4", is_default: true },
+    ],
+  };
+  assertEqual(
+    teamDefaultModelFromResponse(response),
+    "123123:DeepSeek-V4",
+    "the member default (is_default) should be extracted from /models",
+  );
+  const snapshot = buildTeamModelGatewayProviderSnapshot({
+    connection: { baseUrl: "http://127.0.0.1:5050", token: "team-token" },
+    models: ["123123:Qwen3.6-27B-mxfp4", "123123:DeepSeek-V4"],
+    defaultModel: "123123:DeepSeek-V4",
+    teamName: null,
+  });
+  assert(snapshot, "snapshot should exist");
+  assertEqual(
+    snapshot.modelConfig.model,
+    "123123:DeepSeek-V4",
+    "with no explicit selection the member default should be primary",
+  );
+  assertEqual(
+    snapshot.provider.defaultModel,
+    "123123:DeepSeek-V4",
+    "the picker provider should advertise the member default for fallback resolution",
   );
 }
 

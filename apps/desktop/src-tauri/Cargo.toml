@@ -17,7 +17,7 @@ cfb = "0.7.3"
 hicodex-host = { path = "../../../crates/host" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tauri = { workspace = true }
+tauri = { workspace = true, features = ["devtools"] }
 tauri-plugin-deep-link = "2.4.9"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-process = "2.3.1"

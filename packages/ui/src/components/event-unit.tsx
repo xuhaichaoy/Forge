@@ -1,32 +1,26 @@
 import {
   ArrowRight,
   Brain,
-  Check,
   ChevronDown,
   ChevronRight,
-  CircleUserRound,
-  Cloud,
   Clock,
   FileSearch,
   FileText,
-  GitFork,
   Globe2,
   ListTodo,
   LoaderCircle,
   Network,
   PencilLine,
-  ShieldAlert,
   Sparkles,
   Terminal,
-  TriangleAlert,
   Wrench,
 } from "lucide-react";
-import { memo, useEffect, useState, type ReactNode } from "react";
-import { stringField } from "../lib/format";
-import { formatMessage as formatMessageModule, type I18nValues } from "../state/i18n";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
-
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+import { memo, useEffect, useState } from "react";
+import { useHiCodexIntl } from "./i18n-provider";
+import {
+  statusDividerContent,
+  userInputResponseDetailRows,
+} from "./event-status-divider";
 import {
   type ConversationRenderUnit,
   type EventFormat,
@@ -46,13 +40,24 @@ import {
 import { isRunningSkillDefinitionRead, joinConjunction } from "../state/tool-activity-grouping";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import type { FileReference } from "./file-reference-types";
-import { CodeSnippet, Markdownish } from "./message-unit";
+import { Markdownish } from "./message-markdown-renderer";
 import {
   ToolActivityDetail,
   type McpAppHostCallHandler,
   type ReadMcpResourceHandler,
 } from "./tool-activity-detail";
+import {
+  formatTurnDiffFileCount,
+  formatTurnDiffFilesChanged,
+  turnDiffHeaderStatsVisible,
+  turnDiffViewModel,
+  type TurnDiffViewModel,
+} from "./turn-diff-view-model";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
+import { TurnDiffFilesSection, TurnDiffStats } from "./turn-diff-files-section";
+import { workedForAggregateRows } from "./tool-activity-worked-for-aggregate";
+export { workedForAggregateRows } from "./tool-activity-worked-for-aggregate";
+export type { WorkedForAggregateRow } from "./tool-activity-worked-for-aggregate";
 
 type ToolActivityViewState = "collapsed" | "expanded" | "preview";
 
@@ -367,6 +372,14 @@ export const ToolActivityView = memo(ToolActivityViewInner, (prev, next) => {
   return true;
 });
 
+export type { TurnDiffFileViewModel, TurnDiffViewModel } from "./turn-diff-view-model";
+export {
+  formatTurnDiffFileCount,
+  formatTurnDiffFilesChanged,
+  turnDiffHeaderStatsVisible,
+  turnDiffViewModel,
+} from "./turn-diff-view-model";
+
 function GenericToolActivityView({
   unit,
   onMcpAppHostCall,
@@ -544,263 +557,6 @@ function GenericToolActivityView({
       )}
     </article>
   );
-}
-
-/*
- * 把 ToolActivitySummary.counts 转换成"聚合行"。每行携带 Codex 的 leading / compact
- * 两套 i18n 描述符（CODEX-REF local-conversation-thread-CEeZyOcp.js
- * `localConversation.toolActivitySummary.*`，由 `a.length===0 ? leading : compact`
- * 按列表位置选择，leading 用大写动词、compact 用小写动词）。渲染处按 index 选
- * leading/compact 并 formatMessage，ICU 复数 + ZH 词典负责本地化。
- */
-interface WorkedForRowDescriptor {
-  id: string;
-  defaultMessage: string;
-  values?: I18nValues;
-}
-
-export interface WorkedForAggregateRow {
-  key: string;
-  leading: WorkedForRowDescriptor;
-  compact: WorkedForRowDescriptor;
-}
-
-// 大写/小写仅靠 .leading 后缀切换 id（defaultMessage 与 bundle 逐字一致）。
-function aggregateRow(
-  key: string,
-  baseId: string,
-  leadingDefault: string,
-  compactDefault: string,
-  values?: I18nValues,
-): WorkedForAggregateRow {
-  return {
-    key,
-    leading: { id: `${baseId}.leading`, defaultMessage: leadingDefault, values },
-    compact: { id: baseId, defaultMessage: compactDefault, values },
-  };
-}
-
-export function workedForAggregateRows(
-  unit: Extract<ConversationRenderUnit, { kind: "toolActivity" }>,
-): WorkedForAggregateRow[] {
-  const { counts, inProgress } = unit.summary;
-  const rows: WorkedForAggregateRow[] = [];
-
-  // 命令执行
-  const runningCommands = counts.runningCommands ?? 0;
-  const webSearchCommands = counts.webSearchCommands ?? 0;
-  const runningWebSearchCommands = counts.runningWebSearchCommands ?? 0;
-  const ordinaryCommands = Math.max(counts.commands - webSearchCommands, 0);
-  const runningOrdinaryCommands = Math.max(runningCommands - runningWebSearchCommands, 0);
-  const completedCommands = Math.max(ordinaryCommands - runningOrdinaryCommands, 0);
-  const completedWebSearchCommands = Math.max(webSearchCommands - runningWebSearchCommands, 0);
-  if (inProgress && runningOrdinaryCommands > 0) {
-    rows.push(aggregateRow(
-      "commands.running",
-      "localConversation.toolActivitySummary.commands.running",
-      "{count, plural, one {Running # command} other {Running # commands}}",
-      "{count, plural, one {running # command} other {running # commands}}",
-      { count: runningOrdinaryCommands },
-    ));
-  }
-  if (completedWebSearchCommands > 0) {
-    rows.push(aggregateRow(
-      "webSearchCommands.completed",
-      "localConversation.toolActivitySummary.webSearchCommands.searched",
-      "{count, plural, one {Searched web} other {Searched web # times}}",
-      "{count, plural, one {searched web} other {searched web # times}}",
-      { count: completedWebSearchCommands },
-    ));
-  }
-  if (completedCommands > 0) {
-    rows.push(aggregateRow(
-      "commands.completed",
-      "localConversation.toolActivitySummary.commands",
-      "{count, plural, one {Ran # command} other {Ran # commands}}",
-      "{count, plural, one {ran # command} other {ran # commands}}",
-      { count: completedCommands },
-    ));
-  }
-  if (inProgress && runningWebSearchCommands > 0) {
-    rows.push(aggregateRow(
-      "webSearchCommands.running",
-      "localConversation.toolActivitySummary.webSearchCommands.searching",
-      "Searching the web",
-      "searching the web",
-    ));
-  }
-
-  // 文件创建
-  const runningCreated = counts.runningCreatedFiles ?? 0;
-  const completedCreated = Math.max(counts.createdFiles - runningCreated, 0);
-  if (inProgress && runningCreated > 0) {
-    rows.push(aggregateRow(
-      "created.running",
-      "localConversation.toolActivitySummary.creating",
-      "{count, plural, one {Creating # file} other {Creating # files}}",
-      "{count, plural, one {creating # file} other {creating # files}}",
-      { count: runningCreated },
-    ));
-  }
-  if (completedCreated > 0) {
-    rows.push(aggregateRow(
-      "created.completed",
-      "localConversation.toolActivitySummary.created",
-      "{count, plural, one {Created # file} other {Created # files}}",
-      "{count, plural, one {created # file} other {created # files}}",
-      { count: completedCreated },
-    ));
-  }
-
-  // 文件编辑
-  const runningEdited = counts.runningEditedFiles ?? 0;
-  const completedEdited = Math.max(counts.editedFiles - runningEdited, 0);
-  if (inProgress && runningEdited > 0) {
-    rows.push(aggregateRow(
-      "edited.running",
-      "localConversation.toolActivitySummary.editing",
-      "{count, plural, one {Editing # file} other {Editing # files}}",
-      "{count, plural, one {editing # file} other {editing # files}}",
-      { count: runningEdited },
-    ));
-  }
-  if (completedEdited > 0) {
-    rows.push(aggregateRow(
-      "edited.completed",
-      "localConversation.toolActivitySummary.edited",
-      "{count, plural, one {Edited # file} other {Edited # files}}",
-      "{count, plural, one {edited # file} other {edited # files}}",
-      { count: completedEdited },
-    ));
-  }
-
-  // 文件删除
-  const runningDeleted = counts.runningDeletedFiles ?? 0;
-  const completedDeleted = Math.max(counts.deletedFiles - runningDeleted, 0);
-  if (inProgress && runningDeleted > 0) {
-    rows.push(aggregateRow(
-      "deleted.running",
-      "localConversation.toolActivitySummary.deleting",
-      "{count, plural, one {Deleting # file} other {Deleting # files}}",
-      "{count, plural, one {deleting # file} other {deleting # files}}",
-      { count: runningDeleted },
-    ));
-  }
-  if (completedDeleted > 0) {
-    rows.push(aggregateRow(
-      "deleted.completed",
-      "localConversation.toolActivitySummary.deleted",
-      "{count, plural, one {Deleted # file} other {Deleted # files}}",
-      "{count, plural, one {deleted # file} other {deleted # files}}",
-      { count: completedDeleted },
-    ));
-  }
-
-  // Exploration 聚合："Explored/Exploring {details}"，details 由子键 ListFormat 拼接
-  if (counts.exploredFiles > 0 || counts.searches > 0 || counts.lists > 0) {
-    const details = explorationDetails(counts.exploredFiles, counts.searches, counts.lists);
-    if (inProgress) {
-      rows.push(aggregateRow(
-        "exploration",
-        "localConversation.toolActivitySummary.exploration.exploring",
-        "Exploring {details}",
-        "exploring {details}",
-        { details },
-      ));
-    } else {
-      rows.push(aggregateRow(
-        "exploration",
-        "localConversation.toolActivitySummary.exploration",
-        "Explored {details}",
-        "explored {details}",
-        { details },
-      ));
-    }
-  }
-
-  // Web 搜索
-  if (counts.webSearches > 0) {
-    if (inProgress) {
-      rows.push(aggregateRow(
-        "webSearch.completed",
-        "localConversation.toolActivitySummary.webSearches.searching",
-        "{count, plural, one {Searching the web # time} other {Searching the web # times}}",
-        "{count, plural, one {searching the web # time} other {searching the web # times}}",
-        { count: counts.webSearches },
-      ));
-    } else {
-      rows.push(aggregateRow(
-        "webSearch.completed",
-        "localConversation.toolActivitySummary.webSearches",
-        "{count, plural, one {Searched web # time} other {Searched web # times}}",
-        "{count, plural, one {searched web # time} other {searched web # times}}",
-        { count: counts.webSearches },
-      ));
-    }
-  }
-
-  // MCP 工具调用
-  if (counts.mcpCalls > 0) {
-    rows.push(aggregateRow(
-      "mcp",
-      "localConversation.toolActivitySummary.mcpToolCalls",
-      "{count, plural, one {Called # tool} other {Called # tools}}",
-      "{count, plural, one {called # tool} other {called # tools}}",
-      { count: counts.mcpCalls },
-    ));
-  }
-
-  // 审批结果聚合（approved/denied requests）
-  if (counts.approvedRequests && counts.approvedRequests > 0) {
-    rows.push(aggregateRow(
-      "approved",
-      "localConversation.toolActivitySummary.approvedRequests",
-      "{count, plural, one {Approved request} other {Approved # requests}}",
-      "{count, plural, one {approved request} other {approved # requests}}",
-      { count: counts.approvedRequests },
-    ));
-  }
-  if (counts.deniedRequests && counts.deniedRequests > 0) {
-    rows.push(aggregateRow(
-      "denied",
-      "localConversation.toolActivitySummary.deniedRequests",
-      "{count, plural, one {Denied request} other {Denied # requests}}",
-      "{count, plural, one {denied request} other {denied # requests}}",
-      { count: counts.deniedRequests },
-    ));
-  }
-
-  return rows;
-}
-
-/*
- * exploration `{details}` 值：CODEX 用 `exploration.files|searches|lists` 三个 ICU
- * 复数子键（"# file" / "# search" / "# list"）再 Intl.ListFormat type:"unit" join。
- * 该子串非 leading/compact 敏感，用模块级 formatMessage 按当前 locale 解析。
- */
-function explorationDetails(exploredFiles: number, searches: number, lists: number): string {
-  const parts: string[] = [];
-  if (exploredFiles > 0) {
-    parts.push(formatMessageModule(
-      { id: "localConversation.toolActivitySummary.exploration.files", defaultMessage: "{count, plural, one {# file} other {# files}}" },
-      { count: exploredFiles },
-    ));
-  }
-  if (searches > 0) {
-    parts.push(formatMessageModule(
-      { id: "localConversation.toolActivitySummary.exploration.searches", defaultMessage: "{count, plural, one {# search} other {# searches}}" },
-      { count: searches },
-    ));
-  }
-  if (lists > 0) {
-    parts.push(formatMessageModule(
-      { id: "localConversation.toolActivitySummary.exploration.lists", defaultMessage: "{count, plural, one {# list} other {# lists}}" },
-      { count: lists },
-    ));
-  }
-  return typeof Intl !== "undefined" && typeof Intl.ListFormat === "function"
-    ? new Intl.ListFormat(undefined, { type: "unit", style: "long" }).format(parts)
-    : parts.join(", ");
 }
 
 /*
@@ -1381,251 +1137,6 @@ export function ToolBlock({
   );
 }
 
-function statusDividerIcon(type: string) {
-  const className = "hc-status-event-kind-icon";
-  if (type === "auto-review-interruption-warning") return <ShieldAlert className={className} size={16} aria-hidden="true" />;
-  if (type === "model-changed") return <Brain className={className} size={16} aria-hidden="true" />;
-  if (type === "personality-changed") return <CircleUserRound className={className} size={16} aria-hidden="true" />;
-  if (type === "remote-task-created") return <Cloud className={className} size={14} aria-hidden="true" />;
-  if (type === "forked-from-conversation") return <GitFork className={className} size={14} aria-hidden="true" />;
-  return null;
-}
-
-function statusDividerContent({
-  contextStatus,
-  formatMessage,
-  inProgress,
-  item,
-  label,
-  onOpenConversationThreadId,
-  onOpenRemoteTask,
-}: {
-  contextStatus: boolean;
-  formatMessage: FormatMessage;
-  inProgress: boolean;
-  item?: Extract<ConversationRenderUnit, { kind: "event" }>["item"];
-  label: string;
-  onOpenConversationThreadId?: OpenThreadHandler;
-  onOpenRemoteTask?: OpenRemoteTaskHandler;
-}) {
-  if (contextStatus) {
-    return (
-      <>
-        {!inProgress && <Check className="hc-status-event-icon" size={12} aria-hidden="true" />}
-        {inProgress ? <span className="hc-thinking-shimmer-text">{label}</span> : label}
-      </>
-    );
-  }
-  const type = item ? itemType(item) : "";
-  if (type === "remote-task-created") {
-    const taskId = item ? stringField(item, "taskId") || stringField(item, "task_id") : "";
-    const canOpen = Boolean(taskId && onOpenRemoteTask);
-    // CODEX-REF local-conversation-thread-CEeZyOcp.js
-    //   id:`localConversation.remoteTaskCreated`, defaultMessage:`Created {taskLink} in Codex Cloud`
-    //   id:`localConversation.remoteTaskCreated.task`, defaultMessage:`task`
-    // {taskLink} is a rich-text node; resolve the surrounding text (leaving
-    // {taskLink} as a split marker) then inject the localized `task` button.
-    const taskLabel = formatMessage({ id: "localConversation.remoteTaskCreated.task", defaultMessage: "task" });
-    const taskLink = (
-      <button
-        className="hc-status-event-inline-link"
-        disabled={!canOpen}
-        type="button"
-        onClick={canOpen ? () => onOpenRemoteTask?.(taskId) : undefined}
-      >
-        {taskLabel}
-      </button>
-    );
-    const [before, after] = splitOnPlaceholder(
-      formatMessage({ id: "localConversation.remoteTaskCreated", defaultMessage: "Created {taskLink} in Codex Cloud" }),
-      "taskLink",
-    );
-    return (
-      <>
-        {statusDividerIcon(type)}
-        <span className="hc-status-event-rich-text" aria-label={label}>
-          {before}
-          {taskLink}
-          {after}
-        </span>
-      </>
-    );
-  }
-  if (type === "forked-from-conversation") {
-    const sourceConversationId = item
-      ? stringField(item, "sourceConversationId") || stringField(item, "source_conversation_id")
-      : "";
-    const canOpen = Boolean(sourceConversationId && onOpenConversationThreadId);
-    return (
-      <>
-        {statusDividerIcon(type)}
-        <button
-          className="hc-status-event-inline-link hc-status-event-fork-link"
-          disabled={!canOpen}
-          type="button"
-          onClick={canOpen ? () => onOpenConversationThreadId?.(sourceConversationId) : undefined}
-        >
-          {/* CODEX-REF localConversation.forkedFromConversation = `Forked from conversation` */}
-          {formatMessage({ id: "localConversation.forkedFromConversation", defaultMessage: "Forked from conversation" })}
-        </button>
-      </>
-    );
-  }
-  const warning = item ? statusDividerWarning(type, item, formatMessage) : null;
-  return (
-    <>
-      {statusDividerIcon(type)}
-      {label}
-      {item && warning && <StatusEventWarning item={item} type={type} warning={warning} />}
-    </>
-  );
-}
-
-interface StatusEventWarningModel {
-  ariaLabel: string;
-  content: ReactNode;
-  title: string;
-}
-
-function StatusEventWarning({
-  item,
-  type,
-  warning,
-}: {
-  item: Extract<ConversationRenderUnit, { kind: "event" }>["item"];
-  type: string;
-  warning: StatusEventWarningModel;
-}) {
-  const tooltipId = statusEventTooltipId(type, item);
-  return (
-    <span className="hc-status-event-warning-wrap">
-      <span
-        aria-describedby={tooltipId}
-        aria-label={warning.ariaLabel}
-        className="hc-status-event-warning"
-        role="img"
-        tabIndex={0}
-        title={warning.title}
-      >
-        <TriangleAlert size={12} aria-hidden="true" />
-      </span>
-      <span className="hc-status-event-tooltip" id={tooltipId} role="tooltip">
-        {warning.content}
-      </span>
-    </span>
-  );
-}
-
-function statusEventTooltipId(type: string, item: Extract<ConversationRenderUnit, { kind: "event" }>["item"]): string {
-  const rawId = stringField(item, "id") || `${type}-warning`;
-  return `hc-status-event-tooltip-${rawId.replace(/[^A-Za-z0-9_-]+/g, "-")}`;
-}
-
-// Split a formatMessage result around an unreplaced ICU placeholder ("{name}")
-// so a rich-text node can be injected where Codex passes a React chunk/value.
-function splitOnPlaceholder(message: string, name: string): [string, string] {
-  const token = `{${name}}`;
-  const index = message.indexOf(token);
-  if (index < 0) return [message, ""];
-  return [message.slice(0, index), message.slice(index + token.length)];
-}
-
-function statusDividerWarning(
-  type: string,
-  item: Extract<ConversationRenderUnit, { kind: "event" }>["item"],
-  formatMessage: FormatMessage,
-): StatusEventWarningModel | null {
-  if (type === "auto-review-interruption-warning") {
-    // CODEX-REF localConversation.autoReviewInterruptionWarning.nextSteps
-    const line = formatMessage({
-      id: "localConversation.autoReviewInterruptionWarning.nextSteps",
-      defaultMessage:
-        "Auto-review stopped this turn after repeated denials. Add more context or choose a different permission mode to continue.",
-    });
-    return {
-      ariaLabel: "Auto-review interruption guidance",
-      content: <span>{line}</span>,
-      title: line,
-    };
-  }
-  if (type === "model-changed") {
-    // CODEX-REF localConversation.modelChanged.warning.line1 / .line2
-    const line1 = formatMessage({
-      id: "localConversation.modelChanged.warning.line1",
-      defaultMessage: "Changing models mid-conversation will degrade performance.",
-    });
-    const line2 = formatMessage({
-      id: "localConversation.modelChanged.warning.line2",
-      defaultMessage: "Context may automatically compact.",
-    });
-    return {
-      ariaLabel: "Model change warning",
-      content: (
-        <>
-          <span>{line1}</span>
-          <span>{line2}</span>
-        </>
-      ),
-      title: `${line1}\n${line2}`,
-    };
-  }
-  if (type === "model-rerouted" && stringField(item, "reason") === "highRiskCyberActivity") {
-    // CODEX-REF localConversation.modelRerouted.warning.line1 / .line2
-    //   line2 = `Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback`
-    const line1 = formatMessage({
-      id: "localConversation.modelRerouted.warning.line1",
-      defaultMessage: "Heads up, your request was re-routed to reduce cyber-abuse risk.",
-    });
-    const line2 = formatMessage({
-      id: "localConversation.modelRerouted.warning.line2",
-      defaultMessage:
-        "Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback",
-    });
-    const link = /^([\s\S]*?)<link>([\s\S]*?)<\/link>([\s\S]*)$/.exec(line2);
-    const line2Prefix = link ? link[1] : line2;
-    const linkText = link ? link[2] : "chatgpt.com/cyber";
-    const line2Suffix = link ? link[3] : "";
-    return {
-      ariaLabel: "Model reroute warning",
-      content: (
-        <>
-          <span>{line1}</span>
-          <span>
-            {line2Prefix}
-            <a href="https://chatgpt.com/cyber" rel="noreferrer" target="_blank">{linkText}</a>
-            {line2Suffix}
-          </span>
-        </>
-      ),
-      title: `${line1}\n${line2Prefix}${linkText}${line2Suffix}`,
-    };
-  }
-  return null;
-}
-
-function userInputResponseDetailRows(details: string): Array<{ question: string; answer: string }> {
-  return details.split(/\n{2,}/).flatMap((block) => {
-    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (lines.length === 0) return [];
-    return [{ question: lines[0] ?? "Question", answer: lines.slice(1).join("\n") || "No answer provided" }];
-  });
-}
-
-export interface TurnDiffFileViewModel {
-  path: string;
-  linesAdded: number;
-  linesRemoved: number;
-  renderedLineEstimate: number;
-}
-
-export interface TurnDiffViewModel {
-  hasChanges: boolean;
-  fileCount: number;
-  linesAdded: number;
-  linesRemoved: number;
-  files: TurnDiffFileViewModel[];
-}
-
 /**
  * Undo / Reapply patch 回调 — 由 `HiCodexApp.handlePatchAction` 接线，调用
  * Tauri `host_apply_patch_action` 执行 git apply / --reverse，并在失败时把
@@ -1638,20 +1149,6 @@ export interface TurnDiffViewModel {
  */
 export type PatchAction = "undo" | "reapply";
 export type PatchActionState = { action: PatchAction; diff: string } | null;
-
-/**
- * codex: local-conversation-thread-*.js — default collapse threshold (3).
- * The header shows `Edited N files`, the body shows the first 3
- * file rows; further rows are revealed by the "Show N more files" footer.
- */
-const TURN_DIFF_COLLAPSE_THRESHOLD = 3;
-
-/**
- * codex: local-conversation-thread-*.js — inline-render cutoff (5000): files whose
- * `max(unifiedLineCount, additions+deletions) > 5000` are rendered as a
- * "Too large to render inline" row instead of inline hunks.
- */
-const TURN_DIFF_INLINE_RENDER_CUTOFF = 5000;
 
 export function TurnDiffBlock({
   contentSearchUnitKey,
@@ -1685,16 +1182,6 @@ export function TurnDiffBlock({
 }) {
   const { formatMessage } = useHiCodexIntl();
   const model = turnDiffViewModel(value);
-  // codex: `Pv` local state `y` — show only the first `Av` files until expanded.
-  const [filesExpanded, setFilesExpanded] = useState(false);
-  // codex: per-file `es` disclosure — inline hunks for any file the user opened.
-  const [openInlineFiles, setOpenInlineFiles] = useState<Set<string>>(() => new Set());
-
-  useEffect(() => {
-    setFilesExpanded(false);
-    setOpenInlineFiles(new Set());
-  }, [value]);
-
   if (!model.hasChanges) return null;
 
   /*
@@ -1762,14 +1249,7 @@ export function TurnDiffBlock({
     );
   }
 
-  const visibleFiles = filesExpanded
-    ? model.files
-    : model.files.slice(0, TURN_DIFF_COLLAPSE_THRESHOLD);
-  const remaining = Math.max(model.files.length - visibleFiles.length, 0);
-  const diffByFile = splitDiffByFile(value);
-
   const handleHeaderReview = () => onOpenDiff?.();
-  const handlePerFileReview = (path: string) => onOpenDiff?.(path);
 
   return (
     <article
@@ -1883,421 +1363,12 @@ export function TurnDiffBlock({
         )}
       </div>
 
-      <div className="hc-turn-diff-files">
-        {visibleFiles.map((file) => {
-          const tooLarge = isTurnDiffFileTooLargeToRender(file);
-          const fileDiff = diffByFile.get(file.path) ?? "";
-          const inlineOpen = openInlineFiles.has(file.path);
-          const rowLabel = singleFileDetailsLabel ?? file.path;
-          const showFileStats = singleFileDetailsLabel == null;
-          const reviewControl = onOpenDiff ? (
-            <span
-              role="button"
-              tabIndex={0}
-              className="hc-turn-diff-file-review"
-              aria-label={formatMessage({ id: "hc.unifiedDiff.showFileInReview", defaultMessage: "Show file in review" })}
-              title={formatMessage({ id: "hc.unifiedDiff.showInReview", defaultMessage: "Show in review" })}
-              onClick={(event) => {
-                event.stopPropagation();
-                handlePerFileReview(file.path);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                event.stopPropagation();
-                handlePerFileReview(file.path);
-              }}
-            >
-              {formatMessage({ id: "codex.unifiedDiff.viewDiffTooltip", defaultMessage: "Review" })}
-            </span>
-          ) : null;
-          if (tooLarge) {
-            return (
-              <div className="hc-turn-diff-file" key={file.path}>
-                <div className="hc-turn-diff-file-row">
-                  <span className="hc-turn-diff-file-path">{rowLabel}</span>
-                  {showFileStats && <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />}
-                  <span className="hc-turn-diff-file-too-large">
-                    {/* codex: `Rv` — large-file row label (codex.unifiedDiff.inlineLargeFile) */}
-                    {formatMessage({
-                      id: "codex.unifiedDiff.inlineLargeFile",
-                      defaultMessage: "Too large to render inline",
-                    })}
-                  </span>
-                  {reviewControl}
-                </div>
-              </div>
-            );
-          }
-          return (
-            <div className="hc-turn-diff-file" key={file.path}>
-              <button
-                type="button"
-                className="hc-turn-diff-file-row"
-                aria-expanded={inlineOpen}
-                onClick={() => {
-                  setOpenInlineFiles((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(file.path)) next.delete(file.path);
-                    else next.add(file.path);
-                    return next;
-                  });
-                }}
-              >
-                {/* codex: `es` disclosure chevron — rotates when row is open */}
-                <ChevronRight
-                  aria-hidden
-                  size={12}
-                  className={inlineOpen ? "is-open" : ""}
-                />
-                <span className="hc-turn-diff-file-path">{rowLabel}</span>
-                {showFileStats && <TurnDiffStats added={file.linesAdded} removed={file.linesRemoved} />}
-                {reviewControl}
-              </button>
-              {!tooLarge && inlineOpen && fileDiff.length > 0 ? (
-                <div className="hc-turn-diff-file-inline">
-                  {/* codex: `es` inline diff body — CodeSnippet `diff` language */}
-                  <CodeSnippet language="diff" text={fileDiff} />
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-
-      {/*
-       * codex: `Lv` — Show N more files / Collapse files toggle.
-       * Threshold is `Av = 3`. Codex i18n keys:
-       *   codex.unifiedDiff.showMoreFiles = "Show {count} more files"
-       *   codex.unifiedDiff.collapseFiles  = "Collapse files"
-       */}
-      {remaining > 0 ? (
-        <button
-          type="button"
-          className="hc-turn-diff-expand-files"
-          aria-expanded={false}
-          onClick={() => setFilesExpanded(true)}
-        >
-          <span>
-            {formatMessage(
-              {
-                id: "codex.unifiedDiff.showMoreFiles",
-                defaultMessage: "{count, plural, one {Show # more file} other {Show # more files}}",
-              },
-              { count: remaining },
-            )}
-          </span>
-          <ChevronRight aria-hidden size={12} className="hc-turn-diff-expand-files-chevron" />
-        </button>
-      ) : filesExpanded && model.files.length > TURN_DIFF_COLLAPSE_THRESHOLD ? (
-        <button
-          type="button"
-          className="hc-turn-diff-expand-files"
-          aria-expanded={true}
-          onClick={() => setFilesExpanded(false)}
-        >
-          <span>{formatMessage({ id: "codex.unifiedDiff.collapseFiles", defaultMessage: "Collapse files" })}</span>
-          <ChevronRight
-            aria-hidden
-            size={12}
-            className="hc-turn-diff-expand-files-chevron is-open"
-          />
-        </button>
-      ) : null}
+      <TurnDiffFilesSection
+        files={model.files}
+        onOpenDiff={onOpenDiff}
+        singleFileDetailsLabel={singleFileDetailsLabel}
+        value={value}
+      />
     </article>
   );
-}
-
-/**
- * codex: `_v`/`vv` — `max(unifiedLineCount, additions+deletions) > gv`.
- */
-function isTurnDiffFileTooLargeToRender(file: TurnDiffFileViewModel): boolean {
-  return Math.max(file.renderedLineEstimate, file.linesAdded + file.linesRemoved) > TURN_DIFF_INLINE_RENDER_CUTOFF;
-}
-
-/**
- * codex: `es` per-file inline diff body — recover the diff fragment for each
- * file out of the merged unified diff. We rely on the same `diff --git a/.. b/..`
- * marker `turnDiffGitPath` recognizes; each fragment runs from one marker line
- * up to (but not including) the next marker.
- */
-function splitDiffByFile(diff: string): Map<string, string> {
-  const result = new Map<string, string>();
-  const lines = diff.split("\n");
-  let currentPath: string | null = null;
-  let buffer: string[] = [];
-  const flush = () => {
-    if (currentPath != null && buffer.length > 0) {
-      result.set(currentPath, buffer.join("\n"));
-    }
-  };
-  for (const line of lines) {
-    const headerPath = turnDiffGitPath(line);
-    if (headerPath != null) {
-      flush();
-      currentPath = headerPath;
-      buffer = [line];
-      continue;
-    }
-    if (currentPath != null) buffer.push(line);
-  }
-  flush();
-  return result;
-}
-
-function TurnDiffStats({ added, removed }: { added: number; removed: number }) {
-  const { formatMessage } = useHiCodexIntl();
-  return (
-    <span
-      className="hc-turn-diff-stats"
-      aria-label={formatMessage(
-        { id: "hc.diffStats.linesAddedRemoved", defaultMessage: "{added} lines added, {removed} lines removed" },
-        { added, removed },
-      )}
-    >
-      <span className="hc-turn-diff-added">+{added}</span>
-      <span className="hc-turn-diff-removed">-{removed}</span>
-    </span>
-  );
-}
-
-/**
- * codex: local-conversation-thread `Pv` header — i18n keys
- *   codex.unifiedDiff.editedFiles plural { one: "Edited 1 file", other: "Edited {count} files" }
- *   codex.unifiedDiff.editedFile = "Edited {filename}"
- *
- * Accepts an optional `singleFileName`; when fileCount === 1 and a filename is
- * supplied, returns the file-specific label. Otherwise falls back to the
- * plural-aware count label.
- */
-export function formatTurnDiffFileCount(
-  fileCount: number,
-  singleFileName?: string | null,
-  formatMessage?: FormatMessage,
-): string {
-  if (fileCount === 1 && typeof singleFileName === "string" && singleFileName.trim().length > 0) {
-    // codex: codex.unifiedDiff.editedFile defaultMessage="Edited {filename}"
-    const filename = turnDiffBasename(singleFileName);
-    return formatMessage
-      ? formatMessage({ id: "codex.unifiedDiff.editedFile", defaultMessage: "Edited {filename}" }, { filename })
-      : `Edited ${filename}`;
-  }
-  // codex: codex.unifiedDiff.editedFiles plural defaultMessage="{fileCount, plural, one {Edited # file} other {Edited # files}}"
-  return formatMessage
-    ? formatMessage(
-        {
-          id: "codex.unifiedDiff.editedFiles",
-          defaultMessage: "{fileCount, plural, one {Edited # file} other {Edited # files}}",
-        },
-        { fileCount },
-      )
-    : fileCount === 1
-      ? "Edited 1 file"
-      : `Edited ${fileCount} files`;
-}
-
-export function formatTurnDiffFilesChanged(fileCount: number, formatMessage?: FormatMessage): string {
-  // codex: codex.unifiedDiff.filesChanged plural defaultMessage="{fileCount, plural, one {# file changed} other {# files changed}}"
-  return formatMessage
-    ? formatMessage(
-        {
-          id: "codex.unifiedDiff.filesChanged",
-          defaultMessage: "{fileCount, plural, one {# file changed} other {# files changed}}",
-        },
-        { fileCount },
-      )
-    : fileCount === 1
-      ? "1 file changed"
-      : `${fileCount} files changed`;
-}
-
-function turnDiffBasename(path: string): string {
-  const idx = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  return idx >= 0 ? path.slice(idx + 1) : path;
-}
-
-export function turnDiffHeaderStatsVisible(fileCount: number, inProgress: boolean): boolean {
-  return inProgress || fileCount > 0;
-}
-
-export function turnDiffViewModel(diff: string): TurnDiffViewModel {
-  const files = turnDiffFiles(diff);
-  const totals = files.length > 0
-    ? files.reduce((acc, file) => ({
-        linesAdded: acc.linesAdded + file.linesAdded,
-        linesRemoved: acc.linesRemoved + file.linesRemoved,
-      }), { linesAdded: 0, linesRemoved: 0 })
-    : countDiffLines(diff);
-  const fallbackFileCount = diff.trim().length > 0 && (totals.linesAdded > 0 || totals.linesRemoved > 0) ? 1 : 0;
-  const fileCount = files.length > 0 ? files.length : fallbackFileCount;
-  return {
-    hasChanges: fileCount > 0 || totals.linesAdded > 0 || totals.linesRemoved > 0,
-    fileCount,
-    linesAdded: totals.linesAdded,
-    linesRemoved: totals.linesRemoved,
-    files,
-  };
-}
-
-function turnDiffFiles(diff: string): TurnDiffFileViewModel[] {
-  const files: TurnDiffFileViewModel[] = [];
-  let current: TurnDiffFileViewModel | null = null;
-  let inHunk = false;
-  for (const line of diff.split("\n")) {
-    const gitPath = turnDiffGitPath(line);
-    if (gitPath) {
-      current = {
-        path: gitPath,
-        linesAdded: 0,
-        linesRemoved: 0,
-        renderedLineEstimate: 0,
-      };
-      files.push(current);
-      inHunk = false;
-      continue;
-    }
-    if (!current) continue;
-    if (line.startsWith("@@")) {
-      current.renderedLineEstimate += 1;
-      inHunk = true;
-      continue;
-    }
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
-    if (line.startsWith("+")) {
-      current.linesAdded += 1;
-      if (inHunk) current.renderedLineEstimate += 1;
-    } else if (line.startsWith("-")) {
-      current.linesRemoved += 1;
-      if (inHunk) current.renderedLineEstimate += 1;
-    } else if (inHunk && (line.startsWith(" ") || line.startsWith("\\"))) {
-      current.renderedLineEstimate += 1;
-    }
-  }
-  return files.length > 0 ? mergeTurnDiffFiles(files) : fallbackUnifiedDiffFiles(diff);
-}
-
-function mergeTurnDiffFiles(files: TurnDiffFileViewModel[]): TurnDiffFileViewModel[] {
-  const byPath = new Map<string, TurnDiffFileViewModel>();
-  for (const file of files) {
-    const existing = byPath.get(file.path);
-    if (!existing) {
-      byPath.set(file.path, { ...file });
-      continue;
-    }
-    existing.linesAdded += file.linesAdded;
-    existing.linesRemoved += file.linesRemoved;
-    existing.renderedLineEstimate += file.renderedLineEstimate;
-  }
-  return Array.from(byPath.values());
-}
-
-function turnDiffGitPath(line: string): string | null {
-  const prefix = "diff --git ";
-  if (!line.startsWith(prefix)) return null;
-  const value = line.slice(prefix.length);
-  if (value.startsWith("\"")) {
-    const oldPath = parseQuotedDiffPath(value, 0);
-    if (!oldPath || value[oldPath.nextIndex] !== " ") return null;
-    const newPath = parseQuotedDiffPath(value, oldPath.nextIndex + 1);
-    return newPath?.path.startsWith("b/") ? newPath.path.slice(2) : null;
-  }
-  const index = value.lastIndexOf(" b/");
-  if (index < 0) return null;
-  const path = value.slice(index + 1);
-  return path.startsWith("b/") ? path.slice(2) : null;
-}
-
-function parseQuotedDiffPath(value: string, startIndex: number): { path: string; nextIndex: number } | null {
-  if (value[startIndex] !== "\"") return null;
-  let path = "";
-  for (let index = startIndex + 1; index < value.length; index += 1) {
-    const char = value[index];
-    if (char === "\"") return { path, nextIndex: index + 1 };
-    if (char !== "\\") {
-      path += char ?? "";
-      continue;
-    }
-    const next = value[index + 1];
-    if (next === undefined) return null;
-    if (/[0-7]/u.test(next)) {
-      let octal = next;
-      let offset = 2;
-      while (offset <= 3 && /[0-7]/u.test(value[index + offset] ?? "")) {
-        octal += value[index + offset];
-        offset += 1;
-      }
-      path += String.fromCharCode(Number.parseInt(octal, 8));
-      index += octal.length;
-      continue;
-    }
-    const escapes: Record<string, string> = {
-      "\"": "\"",
-      "\\": "\\",
-      n: "\n",
-      r: "\r",
-      t: "\t",
-    };
-    path += escapes[next] ?? next;
-    index += 1;
-  }
-  return null;
-}
-
-function fallbackUnifiedDiffFiles(diff: string): TurnDiffFileViewModel[] {
-  const files: TurnDiffFileViewModel[] = [];
-  let current: TurnDiffFileViewModel | null = null;
-  let inHunk = false;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+++ ")) {
-      const path = normalizeDiffHeaderPath(line.slice(4));
-      if (path && path !== "/dev/null") {
-        current = { path, linesAdded: 0, linesRemoved: 0, renderedLineEstimate: 0 };
-        files.push(current);
-        inHunk = false;
-      }
-      continue;
-    }
-    if (!current) continue;
-    if (line.startsWith("@@")) {
-      current.renderedLineEstimate += 1;
-      inHunk = true;
-      continue;
-    }
-    if (line.startsWith("---")) continue;
-    if (line.startsWith("+")) {
-      current.linesAdded += 1;
-      if (inHunk) current.renderedLineEstimate += 1;
-    } else if (line.startsWith("-")) {
-      current.linesRemoved += 1;
-      if (inHunk) current.renderedLineEstimate += 1;
-    } else if (inHunk && (line.startsWith(" ") || line.startsWith("\\"))) {
-      current.renderedLineEstimate += 1;
-    }
-  }
-  return mergeTurnDiffFiles(files);
-}
-
-function normalizeDiffHeaderPath(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("\"")) {
-    const parsed = parseQuotedDiffPath(trimmed, 0);
-    return parsed ? stripDiffPathPrefix(parsed.path) : "";
-  }
-  const [path] = trimmed.split("\t");
-  return stripDiffPathPrefix(path ?? "");
-}
-
-function stripDiffPathPrefix(path: string): string {
-  if (path.startsWith("a/") || path.startsWith("b/")) return path.slice(2);
-  return path;
-}
-
-function countDiffLines(diff: string): { linesAdded: number; linesRemoved: number } {
-  let linesAdded = 0;
-  let linesRemoved = 0;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("+") && !line.startsWith("+++")) linesAdded += 1;
-    else if (line.startsWith("-") && !line.startsWith("---")) linesRemoved += 1;
-  }
-  return { linesAdded, linesRemoved };
 }

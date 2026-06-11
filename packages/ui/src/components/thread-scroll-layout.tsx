@@ -79,7 +79,12 @@ export function ThreadScrollLayout({
   const userScrollIntentUntilRef = useRef(0);
   const scrollListenersRef = useRef(new Set<(distanceFromBottomPx: number) => void>());
   const [footerHeight, setFooterHeight] = useState(0);
-  const [contentOverflows, setContentOverflows] = useState(false);
+  /*
+   * Tri-state on purpose: `null` = not measured yet. The overflow gate is
+   * FAIL-OPEN — only a positive "content fits" measurement may suppress
+   * scrolling; an unmeasured (or unmeasurable) layout stays scrollable.
+   */
+  const [contentOverflows, setContentOverflows] = useState<boolean | null>(null);
   const [isScrolledFromBottom, setIsScrolledFromBottom] = useState(false);
   const { formatMessage } = useHiCodexIntl();
 
@@ -256,7 +261,9 @@ export function ThreadScrollLayout({
   }), [scrollToBottom, scrollToDistanceFromBottom]);
 
   const scrollStyle = {
-    "--thread-scroll-padding-bottom": contentOverflows
+    // Unmeasured (null) is treated as overflowing — only a positive
+    // "content fits" verdict drops the sticky-footer scroll padding.
+    "--thread-scroll-padding-bottom": contentOverflows !== false
       ? `${footerHeight + DESKTOP_FOOTER_SCROLL_PADDING_PX}px`
       : "0px",
   } as CSSProperties;
@@ -273,7 +280,9 @@ export function ThreadScrollLayout({
         <div
           className="hc-thread-scroll-container"
           data-thread-scroll-container="true"
-          data-content-overflows={contentOverflows ? "true" : undefined}
+          // Fail-open: the CSS gate hides the scrollbar only on an explicit
+          // "false"; unmeasured layouts stay scrollable.
+          data-content-overflows={contentOverflows === null ? undefined : String(contentOverflows)}
           ref={scrollRef}
           style={scrollStyle}
         >

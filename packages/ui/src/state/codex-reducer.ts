@@ -15,27 +15,65 @@ import type { TurnEnvironmentParams } from "@hicodex/codex-protocol/generated/v2
 import { stringField } from "../lib/format";
 import type { HostStatus } from "../lib/tauri-host";
 import {
-  accountRefreshScopeForNotification,
   applyAccountNotification,
   initialAccountState,
   type AccountState,
 } from "./account-state";
-import {
-  appListRefreshMessage,
-  invalidateAppListForNotification,
-  mcpOauthLoginRefreshMessage,
-} from "./app-list";
+import { enrichMultiAgentReceiverThreads } from "./collab-receiver-projection";
 import { composerModeFromCollaborationMode } from "./collaboration-modes";
 import type { ComposerMode } from "./composer-workflow";
 import type { McpServerStartupStatus } from "./mcp-skills-management";
+import { applyInvalidation } from "./notification-invalidation";
+import {
+  formatUnknownForLog,
+  fsChangedLogText,
+  hookLogText,
+  hookRunStatus,
+  shortThreadId,
+} from "./notification-log-format";
 import type { AccumulatedThreadItem } from "./render-groups";
+import {
+  mergeAccumulatedItem,
+  mergeItemsInIncomingOrder,
+} from "./thread-item-merge";
 import {
   canNavigateBackInHistory,
   canNavigateForwardInHistory,
   pushThreadHistoryEntry,
 } from "./thread-history";
 import { isThreadStatusInProgress } from "./thread-item-fields";
+import {
+  collaborationModeParam,
+  mergeThreadContextDefaults,
+  threadContextDefaultsFromThreadSettings,
+} from "./thread-settings-projection";
+import {
+  appendTerminalCommandActions,
+  parseTerminalInteractionInput,
+  terminalInputBuffersWithInput,
+} from "./terminal-interaction";
+import {
+  clearThreadGoalProjection,
+  projectRuntimeItemStatus,
+} from "./thread-item-status-projection";
+import {
+  reconnectStreamErrorItem,
+  streamErrorItem,
+  turnErrorMessage,
+} from "./thread-stream-error";
+import {
+  completedTokenSpeedPatch,
+  liveTokenSpeedRuntimePatch,
+  startedTokenSpeedPatch,
+  tokenUsageRuntimePatch,
+  type ThreadTokenSpeedSnapshot,
+  type ThreadTokenSpeedTracker,
+  type ThreadTokenUsageSnapshot,
+} from "./thread-token-usage";
 import { turnPatchBatchesFromItems, unifiedDiffFromPatchBatches } from "./turn-diff-from-patches";
+import { workedForItemFromTurn } from "./worked-for-item-projection";
+
+export type { ThreadTokenSpeedSnapshot, ThreadTokenUsageSnapshot } from "./thread-token-usage";
 
 export interface PendingServerRequest {
   id: RequestId;
@@ -87,37 +125,6 @@ export interface TurnPlanSnapshot {
   explanation: string | null;
   plan: unknown[];
   updatedAt: number;
-}
-
-// codex: composer-*.js `/status` panel reads `usedTokens` / `contextWindow`
-// from the `thread/tokenUsage/updated`
-// notification (ThreadTokenUsage). `usedTokens` mirrors Desktop's "tokens
-// used" counter (last-turn input + output) and `contextWindow` is
-// `modelContextWindow` (null until the server has model metadata).
-export interface ThreadTokenUsageSnapshot {
-  usedTokens: number;
-  contextWindow: number | null;
-}
-
-export interface ThreadTokenSpeedSnapshot {
-  tokensPerSecond: number;
-  turnId: string | null;
-}
-
-interface ThreadTokenSpeedSample {
-  outputTokens: number;
-  timeMs: number;
-}
-
-interface ThreadTokenSpeedTracker {
-  completedDurationMs: number | null;
-  estimatedOutputBytes: number;
-  estimatedOutputTokens: number;
-  lastLiveSpeedPublishedAtMs: number | null;
-  latestTokenUsage: Record<string, unknown> | null;
-  samples: ThreadTokenSpeedSample[];
-  startedAtMs: number;
-  turnId: string;
 }
 
 export interface ThreadRuntimeSlice {
@@ -517,20 +524,12 @@ function normalizeThreadRuntime(
   // is normalized identically to the full path, so the output shape is unchanged.
   const items = options?.reuseProjectedItems
     ? rawItems
-    : projectHookStatsOntoAssistantMessages(
-        threadGoal
-          ? projectCompletedThreadGoalOntoAssistantMessages(
-              projectThreadGoalOntoUserMessages(
-                projectHookBlockedOntoUserMessages(rawItems, hookRunsByTurn),
-                threadGoal,
-                threadGoalTurnId,
-              ),
-              threadGoal,
-              threadGoalTurnId,
-            )
-          : projectHookBlockedOntoUserMessages(rawItems, hookRunsByTurn),
+    : projectRuntimeItemStatus({
+        items: rawItems,
         hookRunsByTurn,
-      );
+        threadGoal,
+        threadGoalTurnId,
+      });
   const terminalTurnIds = dedupeStrings(runtime?.terminalTurnIds ?? []);
   return {
     activeTurnId: runtime?.activeTurnId ?? null,
@@ -866,45 +865,6 @@ function markThreadsNeedResumeAfterReconnectState(state: CodexUiState): CodexUiS
     })),
     threadsRuntime,
   };
-}
-
-function applyInvalidation(
-  invalidation: NotificationInvalidationState,
-  message: JsonRpcNotification,
-): NotificationInvalidationState {
-  // Each block accumulates into `next` independently — mirroring the original
-  // HiCodexApp's independent `if` blocks so a notification method can trigger
-  // more than one counter (e.g. mcpServer/oauthLogin/completed bumps BOTH
-  // appList AND mcpStatus; an early-return would drop the second bump).
-  let next = invalidation;
-  const appListInvalidation = invalidateAppListForNotification(message.method);
-  if (appListInvalidation) {
-    next = {
-      ...next,
-      appList: next.appList + 1,
-      appListMessage: appListRefreshMessage(appListInvalidation.reason),
-    };
-  }
-  if (accountRefreshScopeForNotification(message)) {
-    const bumpsAuth = message.method === "account/login/completed" || message.method === "account/updated";
-    next = {
-      ...next,
-      accountRefresh: next.accountRefresh + 1,
-      authRefresh: bumpsAuth ? next.authRefresh + 1 : next.authRefresh,
-    };
-  }
-  switch (message.method) {
-    case "skills/changed":
-      return { ...next, skills: next.skills + 1 };
-    case "hook/completed":
-      return { ...next, hooks: next.hooks + 1 };
-    case "mcpServer/startupStatus/updated":
-      return { ...next, mcpStatus: next.mcpStatus + 1, mcpStatusMessage: "MCP startup status changed." };
-    case "mcpServer/oauthLogin/completed":
-      return { ...next, mcpStatus: next.mcpStatus + 1, mcpStatusMessage: mcpOauthLoginRefreshMessage(message.params) };
-    default:
-      return next;
-  }
 }
 
 /*
@@ -1369,73 +1329,10 @@ function applyThreadTokenUsageUpdatedNotification(
   if (!threadId) return state;
   const tokenUsage = recordParam(params.tokenUsage);
   if (!tokenUsage) return state;
-  const usedTokens = pickTokenTotal(tokenUsage);
-  if (usedTokens === null) return state;
-  const contextWindowRaw = tokenUsage.modelContextWindow;
-  const contextWindow = typeof contextWindowRaw === "number" && Number.isFinite(contextWindowRaw)
-    ? contextWindowRaw
-    : null;
   const turnId = turnIdParam(params);
   const runtime = selectThreadRuntime(state, threadId);
-  const tokenSpeedTracker = runtime.tokenSpeedTracker?.turnId === turnId
-    ? { ...runtime.tokenSpeedTracker, latestTokenUsage: tokenUsage }
-    : runtime.tokenSpeedTracker ?? null;
-  return threadRuntimePatch(state, threadId, {
-    tokenUsage: { usedTokens, contextWindow },
-    tokenSpeedTracker,
-  });
-}
-
-// codex: the Desktop bundle's token-usage-info selector reads
-// `tokenUsage.last.totalTokens` for context usage. Fall back to the cumulative
-// shape only for older app-server payloads that do not include `last`.
-function pickTokenTotal(tokenUsage: Record<string, unknown>): number | null {
-  const last = recordParam(tokenUsage.last);
-  if (last) {
-    const lastTotal = numberField(last, "totalTokens");
-    if (lastTotal !== null) return lastTotal;
-  }
-  const total = recordParam(tokenUsage.total);
-  if (total) {
-    const totalTokens = numberField(total, "totalTokens");
-    if (totalTokens !== null) return totalTokens;
-    const input = numberField(total, "inputTokens");
-    const output = numberField(total, "outputTokens");
-    if (input !== null || output !== null) {
-      return (input ?? 0) + (output ?? 0);
-    }
-  }
-  return numberField(tokenUsage, "usedTokens");
-}
-
-function numberField(record: Record<string, unknown>, key: string): number | null {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-const TOKEN_SPEED_SAMPLE_WINDOW_MS = 2_000;
-const TOKEN_SPEED_PUBLISH_INTERVAL_MS = 100;
-const TOKEN_SPEED_BYTES_PER_TOKEN = 4;
-
-function startedTokenSpeedPatch(turnId: string): Pick<ThreadRuntimeSlice, "tokenSpeed" | "tokenSpeedTracker"> {
-  const tracker = newTokenSpeedTracker(turnId, Date.now());
-  return {
-    tokenSpeed: { tokensPerSecond: 0, turnId },
-    tokenSpeedTracker: tracker,
-  };
-}
-
-function newTokenSpeedTracker(turnId: string, now: number): ThreadTokenSpeedTracker {
-  return {
-    completedDurationMs: null,
-    estimatedOutputBytes: 0,
-    estimatedOutputTokens: 0,
-    lastLiveSpeedPublishedAtMs: null,
-    latestTokenUsage: null,
-    samples: [{ outputTokens: 0, timeMs: now }],
-    startedAtMs: now,
-    turnId,
-  };
+  const patch = tokenUsageRuntimePatch(tokenUsage, runtime, turnId);
+  return patch ? threadRuntimePatch(state, threadId, patch) : state;
 }
 
 function updateLiveTokenSpeed(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
@@ -1443,105 +1340,9 @@ function updateLiveTokenSpeed(state: CodexUiState, params: Record<string, unknow
   const turnId = turnIdParam(params);
   const delta = stringField(params, "delta");
   if (!threadId || !turnId || !delta) return state;
-  const bytes = tokenSpeedDeltaBytes(delta);
-  if (bytes === 0) return state;
-
   const runtime = selectThreadRuntime(state, threadId);
-  const now = Date.now();
-  const tracker = runtime.tokenSpeedTracker?.turnId === turnId
-    ? { ...runtime.tokenSpeedTracker }
-    : newTokenSpeedTracker(turnId, now);
-
-  tracker.estimatedOutputBytes += bytes;
-  tracker.estimatedOutputTokens = tracker.estimatedOutputBytes / TOKEN_SPEED_BYTES_PER_TOKEN;
-  tracker.samples = [...tracker.samples, { outputTokens: tracker.estimatedOutputTokens, timeMs: now }];
-  while (
-    tracker.samples.length > 1
-    && (tracker.samples[1]?.timeMs ?? 0) < now - TOKEN_SPEED_SAMPLE_WINDOW_MS
-  ) {
-    tracker.samples.shift();
-  }
-
-  const shouldPublish = tracker.lastLiveSpeedPublishedAtMs == null
-    || now - tracker.lastLiveSpeedPublishedAtMs >= TOKEN_SPEED_PUBLISH_INTERVAL_MS;
-  if (!shouldPublish) {
-    return threadRuntimePatch(state, threadId, { tokenSpeedTracker: tracker });
-  }
-
-  tracker.lastLiveSpeedPublishedAtMs = now;
-  const first = tracker.samples[0];
-  const last = tracker.samples[tracker.samples.length - 1];
-  const elapsedMs = first && last ? last.timeMs - first.timeMs : 0;
-  const tokensPerSecond = elapsedMs > 0 && first && last
-    ? (last.outputTokens - first.outputTokens) / (elapsedMs / 1_000)
-    : fallbackTokenSpeed(tracker, now);
-
-  return threadRuntimePatch(state, threadId, {
-    tokenSpeed: { tokensPerSecond: finiteTokenSpeed(tokensPerSecond), turnId },
-    tokenSpeedTracker: tracker,
-  });
-}
-
-function completedTokenSpeedPatch(
-  runtime: ThreadRuntimeSlice,
-  turnId: string,
-  turn: TurnLike | undefined,
-): Partial<Pick<ThreadRuntimeSlice, "tokenSpeed" | "tokenSpeedTracker">> {
-  const tracker = runtime.tokenSpeedTracker;
-  if (!tracker || tracker.turnId !== turnId) return {};
-  const durationMs = turnDurationMs(turn);
-  const nextTracker = { ...tracker, completedDurationMs: durationMs };
-  if (!nextTracker.latestTokenUsage || durationMs == null || durationMs <= 0) {
-    return { tokenSpeedTracker: nextTracker };
-  }
-  const outputTokens = tokenUsageOutputTokens(nextTracker.latestTokenUsage);
-  if (outputTokens == null) return { tokenSpeedTracker: nextTracker };
-  return {
-    tokenSpeed: { tokensPerSecond: finiteTokenSpeed(outputTokens / (durationMs / 1_000)), turnId },
-    tokenSpeedTracker: nextTracker,
-  };
-}
-
-function tokenSpeedDeltaBytes(delta: string): number {
-  try {
-    return new TextEncoder().encode(delta).length;
-  } catch {
-    return delta.length;
-  }
-}
-
-function fallbackTokenSpeed(tracker: ThreadTokenSpeedTracker, now: number): number {
-  const elapsedMs = now - tracker.startedAtMs;
-  return elapsedMs > 0 ? tracker.estimatedOutputTokens / (elapsedMs / 1_000) : 0;
-}
-
-function finiteTokenSpeed(value: number): number {
-  return Number.isFinite(value) && value >= 0 ? value : 0;
-}
-
-function turnDurationMs(turn: TurnLike | undefined): number | null {
-  if (!turn) return null;
-  if (typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs) && turn.durationMs >= 0) {
-    return turn.durationMs;
-  }
-  if (
-    typeof turn.startedAt === "number"
-    && Number.isFinite(turn.startedAt)
-    && typeof turn.completedAt === "number"
-    && Number.isFinite(turn.completedAt)
-    && turn.completedAt >= turn.startedAt
-  ) {
-    return (turn.completedAt - turn.startedAt) * 1_000;
-  }
-  return null;
-}
-
-function tokenUsageOutputTokens(tokenUsage: Record<string, unknown>): number | null {
-  const last = recordParam(tokenUsage.last);
-  if (!last) return null;
-  const output = numberField(last, "outputTokens") ?? 0;
-  const reasoning = numberField(last, "reasoningOutputTokens") ?? 0;
-  return output + reasoning;
+  const patch = liveTokenSpeedRuntimePatch(runtime, turnId, delta);
+  return patch ? threadRuntimePatch(state, threadId, patch) : state;
 }
 
 function applyThreadCompactedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
@@ -1601,6 +1402,29 @@ function applyHookRunNotification(state: CodexUiState, params: Record<string, un
   return threadRuntimePatch(state, threadId, { hookRunsByTurn });
 }
 
+function threadGoalParam(value: unknown): ThreadGoal | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.threadId !== "string" || typeof record.objective !== "string") return null;
+  if (typeof record.status !== "string") return null;
+  return value as ThreadGoal;
+}
+
+function upsertHookRun(existingRuns: unknown[], run: Record<string, unknown>): unknown[] {
+  const runId = stringField(run, "id") || stringField(run, "runId");
+  if (!runId) return [...existingRuns, run];
+  let replaced = false;
+  const next = existingRuns.map((existing) => {
+    const existingRecord = recordParam(existing);
+    if (!existingRecord) return existing;
+    const existingId = stringField(existingRecord, "id") || stringField(existingRecord, "runId");
+    if (existingId !== runId) return existing;
+    replaced = true;
+    return run;
+  });
+  return replaced ? next : [...existingRuns, run];
+}
+
 function applyThreadSettingsUpdatedNotification(
   state: CodexUiState,
   params: Record<string, unknown>,
@@ -1642,95 +1466,6 @@ function applyThreadSettingsUpdatedNotification(
       ? mergeThreadContextDefaults(state.threadContextDefaults, context)
       : state.threadContextDefaults,
   });
-}
-
-function threadContextDefaultsFromThreadSettings(settings: Record<string, unknown>): ThreadContextDefaults {
-  return compactThreadContext({
-    model: stringField(settings, "model"),
-    modelProvider: stringField(settings, "modelProvider"),
-    serviceTier: settings.serviceTier,
-    approvalPolicy: settings.approvalPolicy,
-    approvalsReviewer: stringField(settings, "approvalsReviewer"),
-    sandbox: sandboxModeFromSandboxPolicy(settings.sandboxPolicy),
-    sandboxIsNonDefault: sandboxPolicyIsNonDefault(settings.sandboxPolicy),
-    permissions: permissionsFromActivePermissionProfile(settings.activePermissionProfile),
-    reasoningEffort: settings.effort,
-    reasoningSummary: settings.summary,
-    personality: personalityParam(settings.personality),
-  });
-}
-
-function mergeThreadContextDefaults(
-  current: ThreadContextDefaults | null,
-  settings: ThreadContextDefaults,
-): ThreadContextDefaults | null {
-  const preserved = compactThreadContext({
-    baseInstructions: current?.baseInstructions,
-    developerInstructions: current?.developerInstructions,
-    environments: current?.environments,
-    memories: current?.memories,
-  });
-  const next = compactThreadContext({ ...preserved, ...settings });
-  return Object.keys(next).length > 0 ? next : null;
-}
-
-function compactThreadContext(context: ThreadContextDefaults): ThreadContextDefaults {
-  return Object.fromEntries(
-    Object.entries(context).filter(([, value]) => value !== undefined && value !== null && value !== ""),
-  ) as ThreadContextDefaults;
-}
-
-// codex src-*.js Jd resolver: a sandbox policy resolves to a named permission
-// mode only when its details match the mode defaults. Qd requires read-only to
-// have networkAccess===false; $d requires workspace-write to have networkAccess
-// / excludeSlashTmp / excludeTmpdirEnvVar all ===false. Anything else is `custom`.
-// dangerFullAccess has no detail gate, so it is never flagged here.
-function sandboxPolicyIsNonDefault(value: unknown): boolean {
-  const policy = recordParam(value);
-  if (!policy) return false;
-  const type = stringField(policy, "type");
-  if (type === "readOnly") return policy.networkAccess === true;
-  if (type === "workspaceWrite") {
-    return policy.networkAccess === true
-      || policy.excludeSlashTmp === true
-      || policy.excludeTmpdirEnvVar === true;
-  }
-  return false;
-}
-
-function sandboxModeFromSandboxPolicy(value: unknown): unknown {
-  const policy = recordParam(value);
-  const type = stringField(policy, "type");
-  switch (type) {
-    case "dangerFullAccess":
-      return "danger-full-access";
-    case "readOnly":
-      return "read-only";
-    case "workspaceWrite":
-      return "workspace-write";
-    case "externalSandbox":
-      return policy;
-    default:
-      return undefined;
-  }
-}
-
-function permissionsFromActivePermissionProfile(value: unknown): string | undefined {
-  return stringField(value, "id") || undefined;
-}
-
-function personalityParam(value: unknown): ThreadContextDefaults["personality"] | undefined {
-  return value === "none" || value === "friendly" || value === "pragmatic" ? value : undefined;
-}
-
-function collaborationModeParam(value: unknown): CollaborationMode | null | undefined {
-  if (value === null) return null;
-  const mode = recordParam(value);
-  if (!mode) return undefined;
-  const kind = stringField(mode, "mode");
-  if (kind !== "plan" && kind !== "default") return undefined;
-  if (!recordParam(mode.settings)) return undefined;
-  return mode as unknown as CollaborationMode;
 }
 
 function nextActiveThreadId(activeThreadId: string | null, threads: Thread[]): string | null {
@@ -1807,10 +1542,6 @@ function upsertThreadState(
   });
 }
 
-function shortThreadId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
-}
-
 function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotification): CodexUiState {
   const params = (message.params ?? {}) as Record<string, unknown>;
   switch (message.method) {
@@ -1861,102 +1592,8 @@ function logNotificationIfUseful(state: CodexUiState, message: JsonRpcNotificati
   }
 }
 
-function fsChangedLogText(params: Record<string, unknown>): string {
-  const watchId = stringField(params, "watchId") || "unknown";
-  const paths = Array.isArray(params.changedPaths)
-    ? params.changedPaths.filter((path): path is string => typeof path === "string")
-    : [];
-  const preview = paths.slice(0, 3).join(", ");
-  const extra = paths.length > 3 ? ` (+${paths.length - 3} more)` : "";
-  return `filesystem changed for watch ${watchId}: ${preview || "no paths"}${extra}`;
-}
-
-function hookLogText(phase: "started" | "completed", params: Record<string, unknown>): string {
-  const threadId = stringField(params, "threadId");
-  const turnId = stringField(params, "turnId");
-  const run = recordParam(params.run);
-  const eventName = stringField(run, "eventName") || "hook";
-  const sourcePath = stringField(run, "sourcePath");
-  const status = stringField(run, "status");
-  const statusMessage = stringField(run, "statusMessage");
-  const location = [
-    threadId ? `thread ${shortThreadId(threadId)}` : "",
-    turnId ? `turn ${shortThreadId(turnId)}` : "",
-  ].filter(Boolean).join(", ");
-  const suffix = [
-    location,
-    sourcePath,
-    status && phase === "completed" ? status : "",
-    statusMessage,
-  ].filter(Boolean).join(" - ");
-  return `hook ${phase}: ${eventName}${suffix ? ` - ${suffix}` : ""}`;
-}
-
-function hookRunStatus(params: Record<string, unknown>): string {
-  const run = recordParam(params.run);
-  return stringField(run, "status");
-}
-
-function formatUnknownForLog(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
 function recordParam(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
-}
-
-function turnErrorMessage(error: Record<string, unknown> | null | undefined): string {
-  return stringField(error, "message");
-}
-
-function streamErrorItem(
-  turnId: string,
-  error: Record<string, unknown> | null | undefined,
-  fallbackText: string,
-): AccumulatedThreadItem {
-  const id = turnId ? `stream-error:${turnId}` : `stream-error:${fallbackText}`;
-  return {
-    id,
-    type: "stream-error",
-    content: turnErrorMessage(error) || fallbackText,
-    additionalDetails: stringField(error, "additionalDetails"),
-    completed: true,
-    ...(turnId ? { _turnId: turnId } : {}),
-  };
-}
-
-// codex DS regex (app-server-manager-signals :19904): a reconnect error message
-// of the form "Reconnecting[...] N/M" is split into attempt/maxAttempts so the
-// stream-error row can show a "Reconnecting {progress}" indicator.
-const RECONNECTING_MESSAGE_PATTERN = /^Reconnecting(?:\.\.\.)?\s+(\d+)\/(\d+)$/;
-
-function reconnectStreamErrorItem(
-  turnId: string,
-  error: Record<string, unknown> | null | undefined,
-  fallbackText: string,
-): AccumulatedThreadItem {
-  const message = turnErrorMessage(error) || fallbackText;
-  const match = RECONNECTING_MESSAGE_PATTERN.exec(message.trim());
-  const reconnect = match
-    ? { reconnectAttempt: Number(match[1]), reconnectMaxAttempts: Number(match[2]) }
-    : null;
-  return {
-    id: turnId ? `stream-error:${turnId}` : `stream-error:${fallbackText}`,
-    type: "stream-error",
-    // codex: `content: e == null ? n.message : `Reconnecting ${attempt}/${maxAttempts}``.
-    content: reconnect ? `Reconnecting ${reconnect.reconnectAttempt}/${reconnect.reconnectMaxAttempts}` : message,
-    additionalDetails: stringField(error, "additionalDetails"),
-    completed: true,
-    ...(reconnect ?? {}),
-    ...(turnId ? { _turnId: turnId } : {}),
-  } as AccumulatedThreadItem;
 }
 
 type TurnLike = {
@@ -1990,9 +1627,10 @@ function turnItemsWithWorkedFor(
 ): AccumulatedThreadItem[] {
   if (!turn) return [];
   const items = turn.items ?? [];
-  const workedFor = workedForItemFromTurn(turn, items, options.hasExtraActivity === true);
+  const turnStatus = turnStatusText(turn.status);
+  const workedFor = workedForItemFromTurn(turn, items, options.hasExtraActivity === true, turnStatus);
   const normalized = normalizeWorkedForItems(items, workedFor);
-  return attachTurnMetadataToAll(normalized, turn.id, turnStatusText(turn.status));
+  return attachTurnMetadataToAll(normalized, turn.id, turnStatus);
 }
 
 // Codex keeps the turn-level diff out of the ThreadItem protocol stream — the
@@ -2087,9 +1725,10 @@ function synthesizeWorkedForForTurn(
   const last = findLastIndex(items, (item) => turnIdOf(item) === turnId);
   const segment = items.slice(first, last + 1).filter((item) => turnIdOf(item) === turnId);
   const turnWithId: TurnLike = turn.id ? turn : { ...turn, id: turnId };
-  const workedFor = workedForItemFromTurn(turnWithId, segment, options.hasExtraActivity === true);
+  const turnStatus = turnStatusText(turn.status);
+  const workedFor = workedForItemFromTurn(turnWithId, segment, options.hasExtraActivity === true, turnStatus);
   if (!workedFor) return items;
-  const [stamped] = attachTurnMetadataToAll([workedFor], turnId, turnStatusText(turn.status));
+  const [stamped] = attachTurnMetadataToAll([workedFor], turnId, turnStatus);
   if (!stamped) return items;
   // Codex places the divider between the user message and the first activity
   // row (see insertWorkedForAfterLastUserMessage) — after the segment's last
@@ -2102,177 +1741,6 @@ function synthesizeWorkedForForTurn(
   }
   return [...items.slice(0, insertAt), stamped, ...items.slice(insertAt)];
 }
-
-function workedForItemFromTurn(
-  turn: TurnLike,
-  items: Array<AccumulatedThreadItem | ThreadItem>,
-  hasExtraActivity = false,
-): AccumulatedThreadItem | null {
-  if (!turn.id || items.some((item) => item.type === "worked-for")) return null;
-
-  /*
-   * codex: local-conversation-thread-*.js — Codex Desktop gates the worked-for
-   * divider on whether the turn produced any agent-activity entries: the
-   * agent-body-collapsible — which carries the "Worked for {time}" label —
-   * is mounted only when this turn produced agent activity items. A pure-text
-   * turn (`user → reasoning? → assistant`) produces no activity entries and
-   * Codex shows no divider; the assistant message sits flush against the user
-   * message.
-   *
-   * HiCodex previously synthesized worked-for whenever turn timing was known,
-   * which produced a spurious "Worked for {time}" row for plain Q&A turns
-   * (HiCodex recording 2026-05-21 at 07.57.04 t=12s). Match Codex by
-   * suppressing the synthetic item when no activity-type items are present.
-   *
-   * `hasExtraActivity` lets callers signal that activity items will be merged
-   * in AFTER worked-for synthesis (e.g. the `finishTurn` error path that
-   * appends a `stream-error` item via the outer `mergeItems` call). Those
-   * activity items would satisfy Codex's gate if they were already in the
-   * turn payload; the flag preserves that intent without forcing the
-   * synthesis logic to look at runtime state.
-   */
-  if (!hasExtraActivity && !hasAgentActivityItem(items)) return null;
-
-  /*
-   * Codex measures worked-for as the EXPLORATION/TOOL phase BEFORE the answer:
-   * firstTurnWorkItemStartedAtMs → finalAssistantStartedAtMs
-   * (app-server-manager-signals qx/LS), capping the timer at answer-start so
-   * the long answer-streaming phase is NOT counted. HiCodex keeps the reducer
-   * pure (server item timestamps, never Date.now()), so we reconstruct the
-   * same span post-hoc from the merged segment: the first work item's start to
-   * the assistant answer's start. Answer-start = the first agentMessage's
-   * startedAtMs when stamped (item/started), else the last work item's
-   * completedAtMs (the work phase ends when the last tool finishes). When the
-   * segment carries no item timestamps (e.g. the turn/completed fast-path whose
-   * `turn.items` are not loaded), both anchors are null and we fall back to the
-   * server turn span — behavior unchanged. This drops the answer-streaming time
-   * the old whole-turn (turn.startedAt → turn.completedAt) span wrongly counted.
-   */
-  const serverStartedAtMs = secondsTimestampToMs(turn.startedAt);
-  const serverCompletedAtMs = secondsTimestampToMs(turn.completedAt);
-  const startedAtMs = firstWorkItemStartedAtMs(items) ?? serverStartedAtMs;
-  const answerCapMs = assistantAnswerStartedAtMs(items) ?? lastWorkItemCompletedAtMs(items);
-  const status = turnStatusText(turn.status);
-  const working = status === "inProgress" || status === "running" || status === "active";
-  // While working, cap at answer-start once it begins (null = still exploring).
-  // When done, prefer the answer-start cap, falling back to the server turn end.
-  const completedAtMs = working ? answerCapMs : answerCapMs ?? serverCompletedAtMs;
-  const durationMs =
-    startedAtMs !== null && completedAtMs !== null && completedAtMs >= startedAtMs
-      ? completedAtMs - startedAtMs
-      : typeof turn.durationMs === "number" && Number.isFinite(turn.durationMs) && turn.durationMs > 0
-        ? turn.durationMs
-        : null;
-
-  if (startedAtMs === null && durationMs === null) return null;
-
-  return {
-    id: `worked-for:${turn.id}`,
-    type: "worked-for",
-    status: working ? "working" : "completed",
-    ...(startedAtMs !== null ? { startedAtMs } : {}),
-    ...(working ? { completedAtMs: answerCapMs } : completedAtMs !== null ? { completedAtMs } : {}),
-    ...(durationMs !== null ? { durationMs } : {}),
-  };
-}
-
-/**
- * Worked-for timing anchors reconstructed from a turn's accumulated segment, so
- * the reducer stays pure (no Date.now()) while matching Codex's client-tracked
- * "work before the answer" span. See workedForItemFromTurn.
- */
-function firstWorkItemStartedAtMs(items: Array<AccumulatedThreadItem | ThreadItem>): number | null {
-  for (const item of items) {
-    const type = String((item as Record<string, unknown>).type ?? "");
-    if (type === "userMessage" || type === "hookPrompt" || type === "worked-for") continue;
-    const started = (item as Record<string, unknown>).startedAtMs;
-    if (typeof started === "number" && Number.isFinite(started) && started >= 0) return started;
-  }
-  return null;
-}
-
-function assistantAnswerStartedAtMs(items: Array<AccumulatedThreadItem | ThreadItem>): number | null {
-  for (const item of items) {
-    if (String((item as Record<string, unknown>).type ?? "") !== "agentMessage") continue;
-    const started = (item as Record<string, unknown>).startedAtMs;
-    if (typeof started === "number" && Number.isFinite(started) && started >= 0) return started;
-  }
-  return null;
-}
-
-function lastWorkItemCompletedAtMs(items: Array<AccumulatedThreadItem | ThreadItem>): number | null {
-  let max: number | null = null;
-  for (const item of items) {
-    const type = String((item as Record<string, unknown>).type ?? "");
-    if (type === "userMessage" || type === "hookPrompt" || type === "worked-for" || type === "agentMessage") continue;
-    const completed = (item as Record<string, unknown>).completedAtMs;
-    if (typeof completed === "number" && Number.isFinite(completed) && completed >= 0 && (max === null || completed > max)) {
-      max = completed;
-    }
-  }
-  return max;
-}
-
-/**
- * True when `items` contains any agent-activity-type item — i.e. anything that
- * Codex Desktop's agent-body whitelist (split-items-into-render-groups-*.js)
- * routes into the agent body. Excludes user-message, the final
- * assistant-message, reasoning (folded into exploration), and lifecycle-only
- * items (model-changed, personality-changed, …) that Codex never collapses
- * under the worked-for header.
- */
-function hasAgentActivityItem(items: Array<AccumulatedThreadItem | ThreadItem>): boolean {
-  for (const item of items) {
-    const type = String((item as Record<string, unknown>).type ?? "");
-    if (AGENT_ACTIVITY_ITEM_TYPES.has(type)) return true;
-  }
-  return false;
-}
-
-/*
- * codex: split-items-into-render-groups-*.js — mirror of Codex Desktop's
- * agent-body whitelist: the set of ThreadItem types that flow into Codex's
- * `agentItems` body and therefore count toward the agent-activity gate (which
- * in turn gates the worked-for header).
- *
- * Whitelist TRUE branches: assistant-message, exec, patch, dynamic-tool-call,
- * mcp-tool-call, automatic-approval-review, multi-agent-action, stream-error,
- * system-error, context-compaction, reasoning, steered, user-input-response,
- * worked-for, web-search (with non-empty query). We exclude:
- *   - assistant-message (Codex pulls it out of agentItems as the final
- *     answer; doesn't drive the body header)
- *   - worked-for (the divider itself; would self-trigger)
- *   - reasoning (Codex folds it into the exploration buffer, drops it
- *     when the buffer is empty — so reasoning alone never produces visible
- *     activity)
- *
- * Whitelist FALSE branches (routed to dedicated arrays, never into
- * agentItems): todo-list, turn-diff, user-message, remote-task-created,
- * proposed-plan, plan-implementation, mcp-server-elicitation,
- * permission-request, userInput, personality-changed, forked-from-conversation,
- * model-changed, model-rerouted, auto-review-interruption-warning,
- * generated-image, automation-update — none of these count for the gate.
- *
- * HiCodex protocol uses lowerCamel `commandExecution` / `fileChange` aliases
- * for the same activity classes Codex calls `exec` / `patch`; both forms are
- * accepted so HiCodex-native payloads pass the same gate.
- */
-const AGENT_ACTIVITY_ITEM_TYPES: ReadonlySet<string> = new Set([
-  "exec",
-  "commandExecution",
-  "patch",
-  "fileChange",
-  "web-search",
-  "mcp-tool-call",
-  "dynamic-tool-call",
-  "multi-agent-action",
-  "automatic-approval-review",
-  "stream-error",
-  "system-error",
-  "context-compaction",
-  "steered",
-  "user-input-response",
-]);
 
 function normalizeWorkedForItems(
   items: ThreadItem[],
@@ -2334,10 +1802,6 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
 function isWorkedForThreadItem(item: ThreadItem | AccumulatedThreadItem): boolean {
   const type = String((item as Record<string, unknown>).type ?? "");
   return type === "worked-for" || type === "workedFor";
-}
-
-function secondsTimestampToMs(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value * 1_000) : null;
 }
 
 function mergeLiveThreadSnapshotItems(
@@ -2714,69 +2178,6 @@ function enrichMultiAgentReceiverThreadsInRuntimes(
   return next;
 }
 
-function enrichMultiAgentReceiverThreads<T extends AccumulatedThreadItem | ThreadItem>(
-  item: T,
-  threads: Thread[],
-): T {
-  const record = item as Record<string, unknown>;
-  if (record.type !== "collabAgentToolCall") return item;
-  const receiverIds = collabReceiverThreadIds(record);
-  if (receiverIds.length === 0) return item;
-  const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
-  const existingById = collabReceiverThreadsById(record);
-  const receiverThreads = receiverIds.map((threadId) => {
-    const existing = existingById.get(threadId);
-    const thread = threadsById.get(threadId) ?? receiverThreadObject(existing);
-    return {
-      ...(existing ?? {}),
-      threadId,
-      thread: thread ?? null,
-    };
-  });
-  return { ...(item as object), receiverThreads } as unknown as T;
-}
-
-function collabReceiverThreadIds(record: Record<string, unknown>): string[] {
-  const ids = new Set<string>();
-  if (Array.isArray(record.receiverThreadIds)) {
-    for (const value of record.receiverThreadIds) {
-      if (typeof value === "string" && value.trim()) ids.add(value.trim());
-    }
-  }
-  if (Array.isArray(record.receiverThreads)) {
-    for (const receiver of record.receiverThreads) {
-      if (!receiver || typeof receiver !== "object" || Array.isArray(receiver)) continue;
-      const receiverRecord = receiver as Record<string, unknown>;
-      const id = stringField(receiverRecord, "threadId") || stringField(receiverRecord, "id");
-      if (id.trim()) ids.add(id.trim());
-    }
-  }
-  const states = record.agentsStates;
-  if (states && typeof states === "object" && !Array.isArray(states)) {
-    for (const id of Object.keys(states)) {
-      if (id.trim()) ids.add(id.trim());
-    }
-  }
-  return Array.from(ids);
-}
-
-function collabReceiverThreadsById(record: Record<string, unknown>): Map<string, Record<string, unknown>> {
-  const byId = new Map<string, Record<string, unknown>>();
-  if (!Array.isArray(record.receiverThreads)) return byId;
-  for (const receiver of record.receiverThreads) {
-    if (!receiver || typeof receiver !== "object" || Array.isArray(receiver)) continue;
-    const receiverRecord = receiver as Record<string, unknown>;
-    const id = stringField(receiverRecord, "threadId") || stringField(receiverRecord, "id");
-    if (id.trim()) byId.set(id.trim(), receiverRecord);
-  }
-  return byId;
-}
-
-function receiverThreadObject(receiver: Record<string, unknown> | undefined): Thread | null {
-  const thread = receiver?.thread;
-  return thread && typeof thread === "object" && !Array.isArray(thread) ? thread as Thread : null;
-}
-
 /**
  * Replace the optimistic placeholder for a freshly confirmed user message in
  * the same turn segment. Replicates the asar `Jp(...)` lookup that swaps the
@@ -2838,22 +2239,6 @@ function mergeItems(
   return result;
 }
 
-function mergeItemsInIncomingOrder(
-  current: AccumulatedThreadItem[],
-  incoming: Array<AccumulatedThreadItem | ThreadItem>,
-): AccumulatedThreadItem[] {
-  const currentById = new Map(current.map((item) => [item.id, item]));
-  const used = new Set<string>();
-  const next = incoming.map((item) => {
-    used.add(item.id);
-    return mergeAccumulatedItem(currentById.get(item.id), item);
-  });
-  for (const item of current) {
-    if (!used.has(item.id)) next.push(item);
-  }
-  return next;
-}
-
 /**
  * Place a single item into the existing list, preserving per-turn segment order.
  * Mirrors how the shipped Codex Desktop webview keeps `n.items` partitioned by
@@ -2902,258 +2287,6 @@ function turnIdOf(item: AccumulatedThreadItem | ThreadItem | undefined | null): 
   if (!item) return null;
   const value = (item as Record<string, unknown>)._turnId;
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-/**
- * Shared skeleton for the single-target item markers (thread-goal /
- * completed-thread-goal projections): stamp a pair of marker keys onto the item
- * at `targetIndex` and strip that same pair from every other item, with
- * structural-sharing `changed` tracking so an already-consistent list is
- * returned verbatim. Passing `targetIndex < 0` is the "clear all" form (no item
- * is the target, so the marker is removed everywhere).
- *
- * Note the set-skip guard is keyed on object identity of `setValue` (matching
- * the original `record._threadGoal === goal` reference checks), so callers must
- * pass the same `goal`/`turnId` references the projection compares against.
- */
-function projectSingleTargetItemMarker(
-  items: AccumulatedThreadItem[],
-  targetIndex: number,
-  valueKey: string,
-  turnKey: string,
-  setValue: unknown,
-  setTurn: unknown,
-): AccumulatedThreadItem[] {
-  let changed = false;
-  const next = items.map((item, index) => {
-    const record = item as Record<string, unknown>;
-    if (index === targetIndex) {
-      if (record[valueKey] === setValue && record[turnKey] === setTurn) return item;
-      changed = true;
-      return {
-        ...item,
-        [valueKey]: setValue,
-        [turnKey]: setTurn,
-      };
-    }
-    if (record[valueKey] === undefined && record[turnKey] === undefined) return item;
-    const cleaned = { ...item } as AccumulatedThreadItem;
-    delete (cleaned as Record<string, unknown>)[valueKey];
-    delete (cleaned as Record<string, unknown>)[turnKey];
-    changed = true;
-    return cleaned;
-  });
-  return changed ? next : items;
-}
-
-function projectThreadGoalOntoUserMessages(
-  items: AccumulatedThreadItem[],
-  goal: ThreadGoal,
-  turnId: string | null,
-): AccumulatedThreadItem[] {
-  return projectSingleTargetItemMarker(
-    items,
-    threadGoalTargetUserMessageIndex(items, turnId),
-    "_threadGoal",
-    "_threadGoalTurnId",
-    goal,
-    turnId,
-  );
-}
-
-function clearThreadGoalProjection(items: AccumulatedThreadItem[]): AccumulatedThreadItem[] {
-  return projectSingleTargetItemMarker(items, -1, "_threadGoal", "_threadGoalTurnId", undefined, undefined);
-}
-
-function projectCompletedThreadGoalOntoAssistantMessages(
-  items: AccumulatedThreadItem[],
-  goal: ThreadGoal,
-  turnId: string | null,
-): AccumulatedThreadItem[] {
-  const targetIndex = isCompletedThreadGoal(goal)
-    ? threadGoalTargetAssistantMessageIndex(items, turnId)
-    : -1;
-  return projectSingleTargetItemMarker(
-    items,
-    targetIndex,
-    "_completedThreadGoal",
-    "_completedThreadGoalTurnId",
-    goal,
-    turnId,
-  );
-}
-
-function projectHookStatsOntoAssistantMessages(
-  items: AccumulatedThreadItem[],
-  hookRunsByTurn: Record<string, unknown[]>,
-): AccumulatedThreadItem[] {
-  let changed = false;
-  const next = items.map((item) => {
-    const record = item as Record<string, unknown>;
-    if (!isAssistantMessageThreadItem(item)) {
-      if (record.hookStats === undefined) return item;
-      const cleaned = { ...item } as AccumulatedThreadItem;
-      delete (cleaned as Record<string, unknown>).hookStats;
-      changed = true;
-      return cleaned;
-    }
-    const turnId = turnIdOf(item);
-    const stats = turnId ? hookStatsFromRuns(hookRunsByTurn[turnId]) : null;
-    if (!stats) {
-      if (record.hookStats === undefined) return item;
-      const cleaned = { ...item } as AccumulatedThreadItem;
-      delete (cleaned as Record<string, unknown>).hookStats;
-      changed = true;
-      return cleaned;
-    }
-    if (hookStatsEqual(record.hookStats, stats)) return item;
-    changed = true;
-    return { ...item, hookStats: stats };
-  });
-  return changed ? next : items;
-}
-
-function projectHookBlockedOntoUserMessages(
-  items: AccumulatedThreadItem[],
-  hookRunsByTurn: Record<string, unknown[]>,
-): AccumulatedThreadItem[] {
-  let changed = false;
-  const next = items.map((item) => {
-    const record = item as Record<string, unknown>;
-    const turnId = typeof record._turnId === "string" ? record._turnId : "";
-    const isUser = record.type === "userMessage";
-    const isBlocked = isUser && turnId ? hookRunsBlockUserPrompt(hookRunsByTurn[turnId]) : false;
-    if (isBlocked) {
-      if (record.deliveryStatus === "not-sent" && record.hookBlocked === true && record._hookBlockedProjection === true) return item;
-      changed = true;
-      return {
-        ...item,
-        deliveryStatus: "not-sent",
-        hookBlocked: true,
-        _hookBlockedProjection: true,
-      };
-    }
-    if (record._hookBlockedProjection !== true) return item;
-    const cleaned = { ...item } as AccumulatedThreadItem;
-    delete (cleaned as Record<string, unknown>).deliveryStatus;
-    delete (cleaned as Record<string, unknown>).hookBlocked;
-    delete (cleaned as Record<string, unknown>)._hookBlockedProjection;
-    changed = true;
-    return cleaned;
-  });
-  return changed ? next : items;
-}
-
-function hookRunsBlockUserPrompt(runs: unknown[] | undefined): boolean {
-  if (!runs || runs.length === 0) return false;
-  return runs.some((value) => {
-    const run = recordParam(value);
-    if (!run) return false;
-    return stringField(run, "eventName") === "userPromptSubmit" && stringField(run, "status") === "blocked";
-  });
-}
-
-function upsertHookRun(existingRuns: unknown[], run: Record<string, unknown>): unknown[] {
-  const runId = stringField(run, "id") || stringField(run, "runId");
-  if (!runId) return [...existingRuns, run];
-  let replaced = false;
-  const next = existingRuns.map((existing) => {
-    const existingRecord = recordParam(existing);
-    if (!existingRecord) return existing;
-    const existingId = stringField(existingRecord, "id") || stringField(existingRecord, "runId");
-    if (existingId !== runId) return existing;
-    replaced = true;
-    return run;
-  });
-  return replaced ? next : [...existingRuns, run];
-}
-
-function hookStatsFromRuns(runs: unknown[] | undefined): Record<string, unknown> | null {
-  if (!runs || runs.length === 0) return null;
-  let blockedCount = 0;
-  let errorCount = 0;
-  const entries: Array<{ kind: string; text: string }> = [];
-  for (const value of runs) {
-    const run = recordParam(value);
-    if (!run) continue;
-    const status = stringField(run, "status");
-    if (status === "blocked") blockedCount += 1;
-    if (status === "failed") errorCount += 1;
-    const rawEntries = Array.isArray(run.entries) ? run.entries : [];
-    for (const rawEntry of rawEntries) {
-      const entry = recordParam(rawEntry);
-      if (!entry) continue;
-      const kind = stringField(entry, "kind");
-      if (kind !== "error" && kind !== "feedback" && kind !== "stop") continue;
-      entries.push({ kind, text: stringField(entry, "text") });
-    }
-  }
-  return {
-    count: runs.length,
-    blockedCount,
-    errorCount,
-    entries,
-  };
-}
-
-function hookStatsEqual(left: unknown, right: Record<string, unknown>): boolean {
-  if (!left || typeof left !== "object" || Array.isArray(left)) return false;
-  const leftRecord = left as Record<string, unknown>;
-  if (leftRecord.count !== right.count) return false;
-  if (leftRecord.blockedCount !== right.blockedCount) return false;
-  if (leftRecord.errorCount !== right.errorCount) return false;
-  const leftEntries = Array.isArray(leftRecord.entries) ? leftRecord.entries : [];
-  const rightEntries = Array.isArray(right.entries) ? right.entries : [];
-  if (leftEntries.length !== rightEntries.length) return false;
-  for (let index = 0; index < leftEntries.length; index += 1) {
-    const leftEntry = recordParam(leftEntries[index]);
-    const rightEntry = recordParam(rightEntries[index]);
-    if (!leftEntry || !rightEntry) return false;
-    if (leftEntry.kind !== rightEntry.kind || leftEntry.text !== rightEntry.text) return false;
-  }
-  return true;
-}
-
-function isCompletedThreadGoal(goal: ThreadGoal): boolean {
-  return goal.status === "complete";
-}
-
-function threadGoalTargetUserMessageIndex(items: AccumulatedThreadItem[], turnId: string | null): number {
-  if (turnId) {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
-      if (item && isUserMessageThreadItem(item) && turnIdOf(item) === turnId) return index;
-    }
-    return -1;
-  }
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item && isUserMessageThreadItem(item)) return index;
-  }
-  return -1;
-}
-
-function threadGoalTargetAssistantMessageIndex(items: AccumulatedThreadItem[], turnId: string | null): number {
-  if (turnId) {
-    for (let index = items.length - 1; index >= 0; index -= 1) {
-      const item = items[index];
-      if (item && isAssistantMessageThreadItem(item) && turnIdOf(item) === turnId) return index;
-    }
-    return -1;
-  }
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item && isAssistantMessageThreadItem(item) && !isNonCompletedTurnItem(item)) return index;
-  }
-  return -1;
-}
-
-function threadGoalParam(value: unknown): ThreadGoal | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  if (typeof record.threadId !== "string" || typeof record.objective !== "string") return null;
-  if (typeof record.status !== "string") return null;
-  return value as ThreadGoal;
 }
 
 function localIdOf(item: AccumulatedThreadItem | ThreadItem | undefined | null): string | null {
@@ -3465,35 +2598,6 @@ function applyPreservedConfirmedUserMessages(
   return items.map((item) => preservedConfirmedById.get(item.id) ?? item);
 }
 
-function mergeAccumulatedItem(
-  existing: AccumulatedThreadItem | undefined,
-  incoming: AccumulatedThreadItem | ThreadItem,
-): AccumulatedThreadItem {
-  if (!existing) return incoming as AccumulatedThreadItem;
-  if (existing.type === "userMessage") return existing;
-
-  const merged = { ...existing, ...incoming } as AccumulatedThreadItem;
-  preserveLongerAccumulatedText(merged, existing, incoming as Record<string, unknown>, "text");
-  preserveLongerAccumulatedText(merged, existing, incoming as Record<string, unknown>, "aggregatedOutput");
-  preserveLongerAccumulatedText(merged, existing, incoming as Record<string, unknown>, "progress");
-  return merged;
-}
-
-function preserveLongerAccumulatedText(
-  target: Record<string, unknown>,
-  existing: Record<string, unknown>,
-  incoming: Record<string, unknown>,
-  field: string,
-): void {
-  const existingText = typeof existing[field] === "string" ? existing[field] : null;
-  const incomingText = typeof incoming[field] === "string" ? incoming[field] : null;
-  if (existingText === null || incomingText === null) return;
-  if (existingText.length <= incomingText.length) return;
-  if (incomingText.length === 0 || existingText.startsWith(incomingText)) {
-    target[field] = existingText;
-  }
-}
-
 function appendItemText(
   state: CodexUiState,
   params: Record<string, unknown>,
@@ -3553,28 +2657,6 @@ function appendItemText(
   );
 }
 
-export function parseTerminalInteractionInput(
-  inputBuffer: string,
-  stdin: string,
-): { commands: string[]; inputBuffer: string } {
-  let buffer = inputBuffer;
-  const commands: string[] = [];
-  for (const char of stdin) {
-    if (char === "\r" || char === "\n") {
-      const command = buffer.trim();
-      if (command) commands.push(command);
-      buffer = "";
-    } else if (char === "\u0003") {
-      buffer = "";
-    } else if (char === "\b" || char === "\u007f") {
-      buffer = buffer.slice(0, -1);
-    } else {
-      buffer += char;
-    }
-  }
-  return { commands, inputBuffer: buffer };
-}
-
 function applyCommandExecutionTerminalInteraction(
   state: CodexUiState,
   params: Record<string, unknown>,
@@ -3587,50 +2669,20 @@ function applyCommandExecutionTerminalInteraction(
   const bufferKey = `${threadId}:${itemId}`;
   const previousBuffer = state.terminalInputBuffers?.[bufferKey] ?? "";
   const parsed = parseTerminalInteractionInput(previousBuffer, stdin);
-  const stateWithBuffer = withTerminalInputBuffer(state, bufferKey, parsed.inputBuffer);
+  const nextTerminalInputBuffers = terminalInputBuffersWithInput(
+    state.terminalInputBuffers,
+    bufferKey,
+    parsed.inputBuffer,
+  );
+  const stateWithBuffer = nextTerminalInputBuffers === state.terminalInputBuffers
+    ? state
+    : { ...state, terminalInputBuffers: nextTerminalInputBuffers };
   if (parsed.commands.length === 0) return stateWithBuffer;
 
   const runtime = selectThreadRuntime(stateWithBuffer, threadId);
-  let found = false;
-  const items = runtime.items.map((item) => {
-    if (item.id !== itemId || (item.type !== "commandExecution" && item.type !== "exec")) return item;
-    found = true;
-    const record = item as Record<string, unknown>;
-    const commandActions = Array.isArray(record.commandActions)
-      ? record.commandActions.slice()
-      : [];
-    return {
-      ...item,
-      commandActions: [
-        ...commandActions,
-        ...parsed.commands.map((command) => ({ type: "unknown", command })),
-      ],
-    };
-  });
+  const { found, items } = appendTerminalCommandActions(runtime.items, itemId, parsed.commands);
   if (!found) return stateWithBuffer;
   return threadRuntimePatch(stateWithBuffer, threadId, { items });
-}
-
-function withTerminalInputBuffer(
-  state: CodexUiState,
-  key: string,
-  inputBuffer: string,
-): CodexUiState {
-  const current = state.terminalInputBuffers ?? {};
-  if (inputBuffer) {
-    if (current[key] === inputBuffer) return state;
-    return {
-      ...state,
-      terminalInputBuffers: {
-        ...current,
-        [key]: inputBuffer,
-      },
-    };
-  }
-  if (!(key in current)) return state;
-  const next = { ...current };
-  delete next[key];
-  return { ...state, terminalInputBuffers: next };
 }
 
 function mergeItemFields(

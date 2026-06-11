@@ -288,10 +288,12 @@
 }
 
 .hc-empty-panel {
-  border: 1px solid #d6d2c6;
-  border-radius: 8px;
-  padding: 10px;
-  background: #fffdfa;
+  min-height: 28px;
+  padding: 5px 10px 7px 18px;
+  color: var(--token-description-foreground, #8a8478);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .hc-empty-group {
@@ -352,6 +354,5 @@
 }
 
 .hc-app[data-theme="dark"] .hc-empty-panel {
-  border-color: var(--hc-border-default);
-  background: transparent;
+  color: var(--hc-text-secondary);
 }

@@ -31,9 +31,13 @@
   container-type: inline-size;
 }
 
-/* Short threads should not show a scrollbar; overflow is toggled from JS once
-   content height exceeds the viewport (WebView2 otherwise invents phantom range). */
-.hc-thread-scroll-container:not([data-content-overflows="true"]) {
+/*
+ * Short threads should not show a scrollbar (WebView2 otherwise invents a
+ * phantom scroll range). FAIL-OPEN gate: scrolling is only suppressed when
+ * the JS measurement POSITIVELY determined the content fits — a missing or
+ * broken measurement must never lock a long thread out of scrolling.
+ */
+.hc-thread-scroll-container[data-content-overflows="false"] {
   overflow-y: hidden;
 }
 
@@ -78,8 +82,13 @@
   width: 100%;
   max-width: var(--thread-content-max-width);
   min-width: 0;
-  min-height: 0;
-  flex: 1 1 0;
+  /*
+   * MUST grow with its content and never shrink: `flex: 1 1 0` clamped the
+   * body to the viewport height, which clipped long transcripts AND broke
+   * the JS overflow measurement (content.offsetHeight never exceeded the
+   * viewport), locking the thread into `overflow-y: hidden` — no scrolling.
+   */
+  flex: 1 0 auto;
   flex-direction: column;
   margin-inline: auto;
   padding-inline: var(--thread-body-padding-inline);

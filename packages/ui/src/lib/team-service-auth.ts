@@ -1,4 +1,5 @@
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/hicodex-desktop-namespace";
+import { scheduleAppSettingsPersist } from "./app-settings";
 import {
   DEFAULT_YUXI_BASE_URL,
   normalizeYuxiBaseUrl,
@@ -86,6 +87,9 @@ export function saveTeamServiceAuthSession(
       baseUrl: normalized.baseUrl,
       token: normalized.token,
     }, storage);
+    // Mirror to disk immediately — the login session must survive a webview
+    // storage reset (app rebrand/reinstall).
+    scheduleAppSettingsPersist();
   }
   return normalized;
 }
@@ -103,6 +107,7 @@ export function clearTeamServiceAuthSession(
     baseUrl: currentBaseUrl,
     token: "",
   }, storage);
+  scheduleAppSettingsPersist();
 }
 
 export async function loginTeamService(payload: TeamServiceLoginPayload): Promise<TeamServiceAuthSession> {

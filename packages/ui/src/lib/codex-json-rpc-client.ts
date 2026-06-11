@@ -165,7 +165,18 @@ export class CodexJsonRpcClient {
   }
 
   request<T = unknown>(method: string, params?: unknown, timeoutMs: number | null = 60_000): Promise<T> {
-    this.assertCanSend();
+    /*
+     * Never throw synchronously: callers universally write
+     * `void client.request(...).catch(...)` inside effects, and a sync throw
+     * (e.g. "not connected" during a reconnect race or an HMR remount where
+     * reducer state still says connected) escapes the .catch and crashes the
+     * whole renderer. A rejected promise keeps every caller's error path.
+     */
+    try {
+      this.assertCanSend();
+    } catch (error) {
+      return Promise.reject(error);
+    }
     const id = `${this.idPrefix}-${this.nextId++}`;
     const message = params === undefined ? { id, method } : { id, method, params };
     this.emitDebugEvent({

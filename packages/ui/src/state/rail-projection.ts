@@ -240,7 +240,7 @@ export function artifactsFromText(
   const entries: RailEntry[] = [];
   const targets = [
     ...orderedMatches(text, /!\[[^\]]*]\(([^)]+)\)/g, 1, "markdownImage"),
-    ...orderedMatches(text, /(?<!!)\[[^\]]+]\(([^)]+)\)/g, 1, "markdownLink"),
+    ...markdownLinkMatches(text),
     ...orderedMatches(text, /https?:\/\/[^\s)]+/g, 0, "url"),
     ...orderedMatches(text, /`([^`]+\.[A-Za-z0-9]{1,8})`/g, 1, "codeFile"),
     ...filePathLineMatches(text),
@@ -296,6 +296,19 @@ function orderedMatches(
     kind,
     target: match[group] ?? "",
   }));
+}
+
+function markdownLinkMatches(text: string): ArtifactTextMatch[] {
+  const matches: ArtifactTextMatch[] = [];
+  const pattern = /\[[^\]]+]\(([^)]+)\)/g;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (text[index - 1] === "!") continue;
+    const target = match[1];
+    if (!target) continue;
+    matches.push({ index, kind: "markdownLink", target });
+  }
+  return matches;
 }
 
 export function setArtifact(artifacts: Map<string, RailEntry>, entry: RailEntry): void {

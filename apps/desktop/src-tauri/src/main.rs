@@ -57,6 +57,7 @@ const MENU_OPEN_FOLDER: &str = "hicodex:open-folder";
 const MENU_SEARCH: &str = "hicodex:search";
 const MENU_SETTINGS: &str = "hicodex:settings";
 const MENU_RELOAD: &str = "hicodex:reload";
+const MENU_TOGGLE_DEVTOOLS: &str = "hicodex:toggle-devtools";
 const MENU_CLOSE: &str = "hicodex:close-window";
 const MENU_QUIT: &str = "hicodex:quit";
 
@@ -255,6 +256,29 @@ fn host_send_raw(state: State<'_, AppState>, message: Value) -> Result<(), Strin
     state
         .host
         .send_json(message)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn host_read_app_settings(
+    state: State<'_, AppState>,
+    codex_home: Option<String>,
+) -> Result<String, String> {
+    state
+        .host
+        .read_app_settings(codex_home)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn host_write_app_settings(
+    state: State<'_, AppState>,
+    codex_home: Option<String>,
+    settings_json: String,
+) -> Result<(), String> {
+    state
+        .host
+        .write_app_settings(codex_home, settings_json)
         .map_err(|error| error.to_string())
 }
 
@@ -6222,6 +6246,9 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let reload = MenuItemBuilder::with_id(MENU_RELOAD, "Reload")
         .accelerator("CmdOrCtrl+R")
         .build(handle)?;
+    let toggle_devtools = MenuItemBuilder::with_id(MENU_TOGGLE_DEVTOOLS, "Toggle Developer Tools")
+        .accelerator("CmdOrCtrl+Alt+I")
+        .build(handle)?;
     let undo = PredefinedMenuItem::undo(handle, None)?;
     let redo = PredefinedMenuItem::redo(handle, None)?;
     let edit_separator = PredefinedMenuItem::separator(handle)?;
@@ -6252,7 +6279,10 @@ fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&paste)
         .item(&select_all)
         .build()?;
-    let view_menu = SubmenuBuilder::new(handle, "View").item(&reload).build()?;
+    let view_menu = SubmenuBuilder::new(handle, "View")
+        .item(&reload)
+        .item(&toggle_devtools)
+        .build()?;
     let menu = MenuBuilder::new(handle)
         .item(&app_menu)
         .item(&file_menu)
@@ -6277,6 +6307,7 @@ fn handle_native_menu_event(app: &AppHandle, id: &str) {
             "reload",
             "Reload is unsupported because Forge has no separate browser panel.",
         ),
+        MENU_TOGGLE_DEVTOOLS => toggle_main_window_devtools(app),
         MENU_CLOSE => {
             // codex closeTabOrWindow (⌘W). §M-44/§M-55 added real secondary windows
             // (thread-* / new-window-*); ⌘W closes the focused secondary window. The main
@@ -6298,6 +6329,18 @@ fn handle_native_menu_event(app: &AppHandle, id: &str) {
         }
         MENU_QUIT => app.exit(0),
         _ => {}
+    }
+}
+
+fn toggle_main_window_devtools(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        eprintln!("Forge native shell: main window unavailable for developer tools");
+        return;
+    };
+    if window.is_devtools_open() {
+        window.close_devtools();
+    } else {
+        window.open_devtools();
     }
 }
 
@@ -6592,6 +6635,8 @@ fn main() {
             host_stop_app_server,
             host_status,
             host_send_raw,
+            host_read_app_settings,
+            host_write_app_settings,
             host_write_local_model_catalog,
             host_read_codex_auth_summary,
             host_read_installation_state,

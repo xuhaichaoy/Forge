@@ -13,6 +13,7 @@ import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { formatDuration, isItemInProgress, itemType, normalizePlanStepStatus } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
+import { autoReviewBody, autoReviewTitle } from "./auto-review-view-model";
 import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
 import { PlanSummaryCard } from "./plan-summary-card";
 import {
@@ -686,35 +687,7 @@ export function dynamicToolCallLabel(item: ThreadItemUnit["item"]): string {
   return DYNAMIC_TOOL_COMPLETED_LABELS[tool] ?? humanizeToolLabel(tool);
 }
 
-// codex: localConversation.automaticApprovalReview.title.* — status-keyed title.
-export function autoReviewTitle(record: Record<string, unknown>, formatMessage: HiCodexIntlContextValue["formatMessage"]): string {
-  const status = stringField(record, "status");
-  if (status === "approved") return formatMessage({ id: "localConversation.automaticApprovalReview.title.approved", defaultMessage: "Auto-review approved" });
-  if (status === "denied") return stringField(record, "riskLevel") === "high"
-    ? formatMessage({ id: "localConversation.automaticApprovalReview.title.deniedHighRisk", defaultMessage: "Auto-review denied high risk" })
-    : formatMessage({ id: "localConversation.automaticApprovalReview.title.denied", defaultMessage: "Auto-review denied" });
-  if (status === "timedOut") return formatMessage({ id: "localConversation.automaticApprovalReview.title.timedOut", defaultMessage: "Auto-review timed out" });
-  if (status === "aborted") return formatMessage({ id: "localConversation.automaticApprovalReview.title.aborted", defaultMessage: "Auto-review stopped" });
-  return formatMessage({ id: "localConversation.automaticApprovalReview.title.inProgress", defaultMessage: "Auto-reviewing" });
-}
-
-// codex: localConversation.automaticApprovalReview.summary.* — status-keyed body
-// (a non-empty `rationale` from the reviewer agent is shown verbatim instead).
-export function autoReviewBody(record: Record<string, unknown>, formatMessage: HiCodexIntlContextValue["formatMessage"]): string {
-  const rationale = stringField(record, "rationale").trim();
-  if (rationale) return rationale;
-  const status = stringField(record, "status");
-  if (status === "aborted") {
-    return formatMessage({ id: "localConversation.automaticApprovalReview.summary.aborted", defaultMessage: "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it." });
-  }
-  if (status === "timedOut") {
-    return formatMessage({ id: "localConversation.automaticApprovalReview.summary.timedOut", defaultMessage: "A carefully prompted reviewer agent timed out before Codex ran this request." });
-  }
-  if (status === "inProgress") {
-    return formatMessage({ id: "localConversation.automaticApprovalReview.summary.inProgress", defaultMessage: "A carefully prompted reviewer agent is reviewing this request before Codex runs it." });
-  }
-  return formatMessage({ id: "localConversation.automaticApprovalReview.summary.completed", defaultMessage: "A carefully prompted reviewer agent reviewed this request." });
-}
+export { autoReviewBody, autoReviewTitle } from "./auto-review-view-model";
 
 function objectField(value: unknown, key: string): Record<string, unknown> {
   if (!value || typeof value !== "object") return {};

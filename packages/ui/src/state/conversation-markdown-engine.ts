@@ -1,6 +1,37 @@
 import { marked, type Tokens } from "marked";
 
-import type { FileReference } from "../components/file-reference-types";
+import {
+  markdownPromptLinkFromHref,
+  parseMarkdownPromptLink,
+} from "./conversation-markdown-prompt-links";
+import type { MarkdownPromptLinkSegment } from "./conversation-markdown-prompt-links";
+import {
+  markdownLinkSegment,
+  normalizeMarkdownHref,
+  priorityBadgeLabelFromSrc,
+  safeMarkdownHref,
+  safeMarkdownImageSrc,
+} from "./conversation-markdown-safety";
+import {
+  isTableSeparatorRow,
+  parseMarkdownTable,
+} from "./conversation-markdown-table";
+
+export {
+  memoryCitationEntries,
+  memoryCitationFileReference,
+} from "./conversation-memory-citations";
+export type { MemoryCitationEntryView } from "./conversation-memory-citations";
+export { safeMarkdownHref } from "./conversation-markdown-safety";
+export { normalizeTableRow } from "./conversation-markdown-table";
+export {
+  markdownPromptLinkFromHref,
+  parseMarkdownPromptLink,
+} from "./conversation-markdown-prompt-links";
+export type {
+  MarkdownPromptLinkKind,
+  MarkdownPromptLinkSegment,
+} from "./conversation-markdown-prompt-links";
 
 /*
  * Pure CommonMark/GFM-plus parsing engine for the conversation surface.
@@ -204,23 +235,7 @@ export interface MarkdownDocument {
   references: MarkdownReferenceDefinitions;
 }
 
-export interface MarkdownPromptLinkSegment {
-  href: string;
-  kind: "promptLink";
-  label: string;
-  promptKind: MarkdownPromptLinkKind;
-}
-
-export type MarkdownPromptLinkKind = "app" | "plugin" | "skill";
-
 type MarkdownBasicHtmlTag = "b" | "del" | "em" | "i" | "s" | "strong" | "sub" | "sup" | "u";
-
-export interface MemoryCitationEntryView {
-  path: string;
-  lineStart: number;
-  lineEnd: number;
-  note: string;
-}
 
 let __markedConfigured = false;
 function configureMarkedOnce(): void {
@@ -357,7 +372,7 @@ function parseMarkdownBlockLines(
       continue;
     }
 
-    const table = parseMarkdownTable(lines, index);
+    const table = parseMarkdownTable(lines, index, isMarkdownBlockBoundary);
     if (table) {
       blocks.push(table.block);
       index = table.nextIndex;
@@ -573,60 +588,6 @@ export function parseMarkdownInline(
   return segments;
 }
 
-export function memoryCitationEntries(citation: unknown): MemoryCitationEntryView[] {
-  if (!citation || typeof citation !== "object") return [];
-  const entries = (citation as { entries?: unknown }).entries;
-  if (!Array.isArray(entries)) return [];
-  return entries.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") return [];
-    const record = entry as Record<string, unknown>;
-    const path = typeof record.path === "string" ? record.path.trim() : "";
-    if (!path) return [];
-    const lineStart = positiveInteger(record.lineStart) ?? 1;
-    const lineEnd = positiveInteger(record.lineEnd) ?? lineStart;
-    const note = typeof record.note === "string" ? record.note.trim() : "";
-    return [{ path, lineStart, lineEnd: Math.max(lineStart, lineEnd), note }];
-  });
-}
-
-export function memoryCitationFileReference(
-  entry: MemoryCitationEntryView,
-  memoryCitationRoot?: string | null,
-): FileReference {
-  return {
-    path: resolveMemoryCitationPath(entry.path, memoryCitationRoot),
-    lineStart: entry.lineStart,
-    lineEnd: entry.lineEnd,
-  };
-}
-
-function parseMarkdownTable(lines: string[], index: number): { block: MarkdownBlock; nextIndex: number } | null {
-  const headerLine = lines[index] ?? "";
-  const separatorLine = lines[index + 1] ?? "";
-  if (!headerLine.includes("|") || !isTableSeparatorRow(separatorLine)) return null;
-  const headers = splitTableRow(headerLine);
-  if (headers.length === 0) return null;
-  const aligns = normalizeTableAligns(tableSeparatorAligns(separatorLine), headers.length);
-
-  const rows: string[][] = [];
-  let nextIndex = index + 2;
-  while (nextIndex < lines.length) {
-    const rowLine = lines[nextIndex] ?? "";
-    if (rowLine.trim().length === 0 || !rowLine.includes("|") || isMarkdownBlockBoundary(rowLine, lines[nextIndex + 1] ?? "")) {
-      break;
-    }
-    rows.push(normalizeTableRow(splitTableRow(rowLine), headers.length));
-    nextIndex += 1;
-  }
-
-  return {
-    block: aligns.some((align) => align != null)
-      ? { kind: "table", headers, rows, aligns }
-      : { kind: "table", headers, rows },
-    nextIndex,
-  };
-}
-
 function parseMarkdownMathBlock(lines: string[], index: number): { block: MarkdownBlock; nextIndex: number } | null {
   const line = lines[index]?.trim() ?? "";
   const singleDollar = line.match(/^\$\$\s*(.+?)\s*\$\$$/);
@@ -677,58 +638,6 @@ function parseMarkdownDetailsBlock(lines: string[], index: number): { block: Mar
     block: { kind: "details", open, summary, text },
     nextIndex,
   };
-}
-
-function isTableSeparatorRow(line: string): boolean {
-  if (!line.includes("|")) return false;
-  const cells = splitTableRow(line);
-  return cells.length > 0 && cells.every((cell) => /^:?-+:?$/.test(cell.replace(/\s+/g, "")));
-}
-
-function splitTableRow(line: string): string[] {
-  const trimmed = line.trim();
-  const cells: string[] = [];
-  let cell = "";
-  for (let index = 0; index < trimmed.length; index += 1) {
-    const char = trimmed[index] ?? "";
-    if (char !== "|") {
-      cell += char;
-      continue;
-    }
-    if (isEscapedMarkdownIndex(trimmed, index)) {
-      cell = cell.endsWith("\\") ? cell.slice(0, -1) : cell;
-      cell += "|";
-      continue;
-    }
-    cells.push(cell);
-    cell = "";
-  }
-  cells.push(cell);
-  if (cells[0]?.trim() === "") cells.shift();
-  if (cells.at(-1)?.trim() === "") cells.pop();
-  return cells.map((cell) => cell.trim());
-}
-
-export function normalizeTableRow(cells: string[], width: number): string[] {
-  const normalized = cells.slice(0, width);
-  while (normalized.length < width) normalized.push("");
-  return normalized;
-}
-
-function tableSeparatorAligns(line: string): MarkdownTableAlign[] {
-  return splitTableRow(line).map((cell) => {
-    const compact = cell.replace(/\s+/g, "");
-    if (/^:-+:$/.test(compact)) return "center";
-    if (/^-+:$/.test(compact)) return "right";
-    if (/^:-+$/.test(compact)) return "left";
-    return null;
-  });
-}
-
-function normalizeTableAligns(aligns: MarkdownTableAlign[], width: number): MarkdownTableAlign[] {
-  const normalized = aligns.slice(0, width);
-  while (normalized.length < width) normalized.push(null);
-  return normalized;
 }
 
 function parseMarkdownIndentedCodeBlock(
@@ -1504,10 +1413,6 @@ function isEscapedMarkdownIndex(text: string, index: number): boolean {
   return slashCount % 2 === 1;
 }
 
-function positiveInteger(value: unknown): number | null {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
-}
-
 function parseFileCitationMarker(
   text: string,
   startIndex: number,
@@ -1689,73 +1594,6 @@ function findMarkdownPromptLinkStart(text: string, index: number): number {
   return -1;
 }
 
-export function parseMarkdownPromptLink(text: string, startIndex = 0): (MarkdownPromptLinkSegment & { endIndex: number }) | null {
-  if (text[startIndex] === "$") {
-    const match = text.slice(startIndex).match(/^\$(?:\[([^\]\n]+)\]|([A-Za-z][\w-]*))/u);
-    const name = (match?.[1] ?? match?.[2] ?? "").trim();
-    if (!match || !name) return null;
-    const label = `$${name}`;
-    return {
-      kind: "promptLink",
-      endIndex: startIndex + match[0].length,
-      href: `skill://${encodeURIComponent(name)}`,
-      label,
-      promptKind: "skill",
-    };
-  }
-
-  if (text[startIndex] === "@") {
-    const match = text.slice(startIndex).match(/^@[A-Za-z0-9][\w.-]*[\\/][\w./-]*/u);
-    const label = match?.[0] ?? "";
-    if (!label) return null;
-    return {
-      kind: "promptLink",
-      endIndex: startIndex + label.length,
-      href: `plugin://${label.slice(1).replace("\\", "/")}`,
-      label,
-      promptKind: "plugin",
-    };
-  }
-  return null;
-}
-
-export function markdownPromptLinkFromHref(label: string, href: string): MarkdownPromptLinkSegment | null {
-  const promptKind = markdownPromptLinkKindFromHref(href);
-  if (!promptKind) return null;
-  return {
-    kind: "promptLink",
-    href,
-    label: normalizedMarkdownPromptLinkLabel(label, href, promptKind),
-    promptKind,
-  };
-}
-
-function markdownPromptLinkKindFromHref(href: string): MarkdownPromptLinkKind | null {
-  try {
-    const protocol = new URL(href).protocol;
-    if (protocol === "app:") return "app";
-    if (protocol === "plugin:") return "plugin";
-    if (protocol === "skill:") return "skill";
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function normalizedMarkdownPromptLinkLabel(label: string, href: string, promptKind: MarkdownPromptLinkKind): string {
-  const trimmed = label.trim();
-  if (trimmed) return trimmed;
-  try {
-    const url = new URL(href);
-    const name = decodeURIComponent(url.hostname || url.pathname.replace(/^\/+/u, ""));
-    if (promptKind === "skill") return name ? `$${name}` : "$skill";
-    if (promptKind === "plugin") return name ? `@${name}` : "@plugin";
-    return name || "app";
-  } catch {
-    return promptKind;
-  }
-}
-
 function findBasicInlineHtmlStart(text: string, index: number): number {
   let cursor = findUnescapedIndex(text, "<", index);
   while (cursor >= 0) {
@@ -1786,20 +1624,6 @@ function parseBasicInlineHtml(
     tag,
     text: text.slice(contentStart, contentEnd),
   };
-}
-
-function resolveMemoryCitationPath(path: string, memoryCitationRoot?: string | null): string {
-  const normalizedPath = path.trim();
-  const normalizedRoot = memoryCitationRoot?.trim().replace(/[\\/]+$/, "") ?? "";
-  if (!normalizedRoot || isAbsoluteFilePath(normalizedPath)) return normalizedPath;
-  return `${normalizedRoot}/${normalizedPath.replace(/^[\\/]+/, "")}`;
-}
-
-function isAbsoluteFilePath(path: string): boolean {
-  return path.startsWith("/")
-    || path.startsWith("\\\\")
-    || path.startsWith("file://")
-    || /^[a-zA-Z]:[\\/]/.test(path);
 }
 
 export function markdownInlineContainsPriorityBadgeImage(
@@ -1845,73 +1669,6 @@ function pushTextSegment(segments: MarkdownInlineSegment[], text: string): void 
   segments.push({ kind: "text", text: value });
 }
 
-function markdownLinkSegment(text: string, href: string, title: string | null = null): Extract<MarkdownInlineSegment, { kind: "link" }> {
-  return title === null ? { kind: "link", text, href } : { kind: "link", text, href, title };
-}
-
-function normalizeMarkdownHref(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("<") && trimmed.endsWith(">")) return trimmed.slice(1, -1).trim();
-  return trimmed;
-}
-
 function markdownUnescapeText(text: string): string {
   return text.replace(/\\([\\`*{}\[\]()#+\-.!_>~|])/g, "$1");
-}
-
-export function safeMarkdownHref(value: string): string | null {
-  const href = normalizeMarkdownHref(value);
-  if (!href || /[\u0000-\u001F\u007F]/u.test(href)) return null;
-  if (href.startsWith("//")) return null;
-  const scheme = href.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
-  if (!scheme) return href;
-  // Codex sanitizes link hrefs against /^(https?|ircs?|mailto|xmpp|codex)$/i
-  // (codex: markdown-*.js). ftp is NOT in the allowlist; the codex:// deep-link
-  // scheme IS kept clickable. Re-verified vs Codex Desktop v26.519.81530.
-  if (scheme === "http" || scheme === "https") {
-    try {
-      new URL(href);
-      return href;
-    } catch {
-      return null;
-    }
-  }
-  if (
-    scheme === "irc"
-    || scheme === "ircs"
-    || scheme === "mailto"
-    || scheme === "xmpp"
-    || scheme === "codex"
-  ) {
-    return href;
-  }
-  return null;
-}
-
-// Codex sanitizes image `src` through its `ut()` helper (codex: markdown-*.js):
-// allow data:image/* and data:video/*, file/relative/absolute local paths
-// (Codex's file-path transform; HiCodex resolves these via the local asset
-// bridge), and otherwise require the same scheme allowlist as links. Schemes
-// such as javascript: / vbscript: are dropped. Re-verified vs Codex Desktop
-// v26.519.81530.
-function safeMarkdownImageSrc(value: string): string | null {
-  const src = normalizeMarkdownHref(value);
-  if (!src) return null;
-  if (/^data:(?:image|video)\//iu.test(src)) return src;
-  if (/^file:/iu.test(src)) return src;
-  if (src.startsWith("//")) return null;
-  const scheme = src.match(/^([A-Za-z][A-Za-z0-9+.-]*):/u)?.[1]?.toLowerCase();
-  if (!scheme) return src; // relative or absolute local path (mediaSources key)
-  return safeMarkdownHref(src);
-}
-
-function priorityBadgeLabelFromSrc(src: string): string | null {
-  try {
-    const url = new URL(src);
-    if (url.protocol !== "https:" || url.hostname !== "img.shields.io") return null;
-    if (!url.pathname.startsWith("/badge/")) return null;
-    return url.pathname.match(/^\/badge\/(P[0-9]+)(?:-|$)/)?.[1] ?? null;
-  } catch {
-    return null;
-  }
 }

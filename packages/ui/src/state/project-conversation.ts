@@ -2,7 +2,6 @@ import type {
   ConversationProjection,
   ConversationProjectionOptions,
   ConversationRenderUnit,
-  AssistantEndResource,
   AssistantEndResourcesRenderUnit,
   AssistantAfterRenderUnit,
   GeneratedImageGalleryRenderUnit,
@@ -20,6 +19,11 @@ import { extractAssistantReviewComments } from "./assistant-review-comments";
 import { projectBackgroundAgentRailEntries } from "./background-agents";
 import { projectBackgroundTerminalRailEntries } from "./background-terminals";
 import { eventDetails, eventFormat, eventLabel, eventText, eventTone } from "./event-projection";
+import {
+  generatedImageGalleryTurnId,
+  projectGeneratedImageToolOutputs,
+  visibleGeneratedImagesForEndResources,
+} from "./generated-image-gallery-projection";
 import {
   collectRailEntries,
   progressEntriesFromPlan,
@@ -49,6 +53,10 @@ import {
 } from "./tool-activity-grouping";
 import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import { projectUserMessageContent, userMessageCopyText, userMessageText } from "./user-message-content";
+import {
+  groupConsecutiveDynamicToolCalls,
+  withStreamingAssistantState,
+} from "./conversation-render-postprocessing";
 
 export function projectConversation(rawItems: ThreadItem[], options: ConversationProjectionOptions = {}): ConversationProjection {
   const items = withMcpAppResourceUris(rawItems, options.mcpServerStatuses);
@@ -437,33 +445,21 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
      * `hasPending` triggers a placeholder spinner box and matches Codex's
      * `src == null && status === "in_progress"` predicate.
      */
-    const generatedImages: ThreadItem[] = [];
-    let pendingGeneratedImage = false;
-    const nonImageOutputs: ThreadItem[] = [];
-    for (const item of split.toolOutputItems) {
-      const type = itemType(item);
-      if (type === "generated-image" || type === "imageGeneration") {
-        const src = imageItemSrc(item);
-        if (src) {
-          const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
-          if (nextProgress) {
-            progress = nextProgress;
-          }
-          generatedImages.push(item);
-        } else if (isGeneratedImagePending(item)) {
-          pendingGeneratedImage = true;
-        } else {
-          nonImageOutputs.push(item);
-        }
-        continue;
+    const {
+      generatedImages,
+      pendingGeneratedImage,
+      nonImageOutputs,
+    } = projectGeneratedImageToolOutputs(split.toolOutputItems);
+    for (const item of generatedImages) {
+      const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
+      if (nextProgress) {
+        progress = nextProgress;
       }
-      nonImageOutputs.push(item);
     }
-    const visibleGeneratedImages = endResourcesIncludePptx(endResources)
-      ? []
-      : generatedImages;
+    const visibleGeneratedImages = visibleGeneratedImagesForEndResources(generatedImages, endResources);
     const turnHasArtifacts = endResources.length > 0 || visibleGeneratedImages.length > 0 || pendingGeneratedImage;
-    const turnIdForActions = generatedImageGalleryTurnId(segment, visibleGeneratedImages, split);
+    const galleryTurnId = generatedImageGalleryTurnId(segment, visibleGeneratedImages, split.assistantItem);
+    const turnIdForActions = galleryTurnId;
     const shouldRenderStaticTurnDiff = Boolean(
       split.unifiedDiffItem
         && turnStatus !== "in_progress"
@@ -476,15 +472,14 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     });
     const endResourcesUnit = endResources.length > 0
       ? assistantEndResourcesRenderUnit({
-          key: `end-resources:${split.assistantItem?.id ?? generatedImageGalleryTurnId(segment, visibleGeneratedImages, split) ?? "turn"}`,
+          key: `end-resources:${split.assistantItem?.id ?? galleryTurnId}`,
           resources: endResources,
           cwd: segmentCwd(segment),
-          turnId: generatedImageGalleryTurnId(segment, visibleGeneratedImages, split),
+          turnId: galleryTurnId,
         })
       : null;
     const assistantAfter: AssistantAfterRenderUnit[] = [];
     if (visibleGeneratedImages.length > 0 || pendingGeneratedImage) {
-      const galleryTurnId = generatedImageGalleryTurnId(segment, visibleGeneratedImages, split);
       const galleryUnit: GeneratedImageGalleryRenderUnit = {
         kind: "generatedImageGallery",
         key: `gallery:${galleryTurnId}`,
@@ -873,71 +868,11 @@ function hasBlockingRequest(split: DesktopTurnSplit): boolean {
   );
 }
 
-/**
- * Source URL for a generated-image item — Codex reads `e.src` ON the item
- * proper (see the generated-image hook usage in local-conversation-thread-*.js).
- * HiCodex payloads may carry either a top-level `src` (preferred) or `path` /
- * `imageUrl` aliases — accept the first non-empty string match.
- */
-function imageItemSrc(item: ThreadItem): string {
-  const record = item as Record<string, unknown>;
-  for (const key of ["src", "imageUrl", "path", "url", "savedPath"]) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim().length > 0) return normalizeImageSource(value.trim());
-  }
-  const result = typeof record.result === "string" ? record.result.trim() : "";
-  if (result) return `data:image/png;base64,${result}`;
-  return "";
-}
-
-function normalizeImageSource(value: string): string {
-  if (/^(?:data|blob|https?|file):/i.test(value)) return value;
-  if (value.startsWith("/")) return `file://${encodeURI(value)}`;
-  return value;
-}
-
-function isGeneratedImagePending(item: ThreadItem): boolean {
-  if (imageItemSrc(item)) return false;
-  const status = String((item as Record<string, unknown>).status ?? "").trim();
-  if (itemType(item) !== "imageGeneration") return status === "in_progress" || status === "inProgress" || isItemInProgress(item);
-  return status === "in_progress" || status === "inProgress";
-}
-
-/**
- * Codex PPTX exclusion — when any end-resource path has a `pptx` extension,
- * the generated-image gallery is suppressed because the deck embeds those
- * images.
- */
-function endResourcesIncludePptx(resources: AssistantEndResource[]): boolean {
-  return resources.some((resource) => {
-    const path = resource.type === "file" ? resource.path : resource.type === "website" ? resource.target : "";
-    return /\.pptx(?:[#?].*)?$/i.test(path);
-  });
-}
-
 function orderedSourcesLikeDesktop(sources: Map<string, RailEntry>): RailEntry[] {
   const entries = Array.from(sources.values());
   const toolSources = entries.filter((entry) => entry.id !== "webSearch").reverse();
   const webSearch = entries.find((entry) => entry.id === "webSearch");
   return webSearch ? [...toolSources, webSearch] : toolSources;
-}
-
-/**
- * Best-effort turn id for the gallery render-unit key. Prefers a stamped
- * `_turnId` from any segment item; falls back to the first image's id or a
- * deterministic count so the gallery key is stable per segment.
- */
-function generatedImageGalleryTurnId(
-  segment: ThreadItem[],
-  images: ThreadItem[],
-  split: DesktopTurnSplit,
-): string {
-  const stamped = segment.map((item) => (item as ItemRecord)._turnId).find((id): id is string =>
-    typeof id === "string" && id.length > 0
-  );
-  if (stamped) return stamped;
-  const firstId = images[0]?.id ?? split.assistantItem?.id ?? null;
-  return typeof firstId === "string" && firstId.length > 0 ? firstId : "gallery";
 }
 
 function desktopThinkingPlaceholderItem(segment: ThreadItem[], split: DesktopTurnSplit): ThreadItem {
@@ -1173,95 +1108,6 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
     if (predicate(items[index] as T)) return index;
   }
   return -1;
-}
-
-/*
- * codex split-items-into-render-groups-*.js `Ne` + `K`: batch runs of CONSECUTIVE
- * standalone `dynamic-tool-call` thread items into one `dynamicToolCallGroup`.
- * `K` forms a group when `items.length > 1`, plus the active terminal
- * `keepLatestLiveActivityInGroup` case for dynamic app-control tools whose
- * Desktop metadata marks `continuesLiveActivityBetweenCalls`. A lone completed
- * call still renders standalone. Linear scan, mirroring `Ne`.
- */
-function groupConsecutiveDynamicToolCalls(
-  units: ConversationRenderUnit[],
-  options: { keepLatestLiveActivityInGroup?: boolean } = {},
-): ConversationRenderUnit[] {
-  const result: ConversationRenderUnit[] = [];
-  let index = 0;
-  while (index < units.length) {
-    const unit = units[index];
-    if (unit?.kind === "threadItem" && itemType(unit.item) === "dynamic-tool-call") {
-      const run: ThreadItem[] = [];
-      let end = index;
-      while (end < units.length) {
-        const candidate = units[end];
-        if (candidate?.kind === "threadItem" && itemType(candidate.item) === "dynamic-tool-call") {
-          run.push(candidate.item);
-          end += 1;
-        } else {
-          break;
-        }
-      }
-      const shouldKeepLatestLiveActivityInGroup = options.keepLatestLiveActivityInGroup === true
-        && end === units.length
-        && shouldContinueDynamicLiveActivityBetweenCalls(run[run.length - 1]);
-      if (run.length > 1 || shouldKeepLatestLiveActivityInGroup) {
-        result.push({
-          kind: "dynamicToolCallGroup",
-          key: `dynamic-tool-call-group:${run[0]?.id ?? index}`,
-          items: run,
-        });
-        index = end;
-        continue;
-      }
-    }
-    if (unit) result.push(unit);
-    index += 1;
-  }
-  return result;
-}
-
-function shouldContinueDynamicLiveActivityBetweenCalls(item: ThreadItem | undefined): boolean {
-  if (!item) return false;
-  const record = item as ItemRecord;
-  const namespace = stringValue(record.namespace ?? record.toolNamespace ?? record.tool_namespace);
-  const tool = stringValue(record.tool ?? record.toolName ?? record.tool_name ?? record.functionName ?? record.function_name);
-  return namespace === "codex_app" && (tool === "list_threads" || tool === "read_thread");
-}
-
-function withStreamingAssistantState(
-  units: ConversationRenderUnit[],
-  isThreadRunning: boolean,
-): ConversationRenderUnit[] {
-  if (!isThreadRunning) return units;
-  const lastAssistantIndex = lastStreamingAssistantMessageIndex(units);
-  if (lastAssistantIndex < 0) return units;
-  return units.map((unit, index) =>
-    index === lastAssistantIndex && unit.kind === "message" && unit.role === "assistant"
-      ? { ...unit, isStreaming: true }
-      : unit
-  );
-}
-
-function lastStreamingAssistantMessageIndex(units: ConversationRenderUnit[]): number {
-  for (let index = units.length - 1; index >= 0; index -= 1) {
-    const unit = units[index];
-    if (unit?.kind === "toolActivity" && unit.summary.inProgress) return -1;
-    if (unit?.kind === "threadItem" && isItemInProgress(unit.item)) return -1;
-    if (unit?.kind === "message" && unit.role === "assistant") {
-      return isAssistantMessageStreamingCandidate(unit.item) ? index : -1;
-    }
-  }
-  return -1;
-}
-
-function isAssistantMessageStreamingCandidate(item: ThreadItem): boolean {
-  const record = item as ItemRecord;
-  if (record.renderPlaceholderWhileStreaming === true && record.completed !== true) return true;
-  if (record.completed === false) return true;
-  const status = record.status;
-  return status === "inProgress" || status === "running" || status === "streaming";
 }
 
 function shouldRenderAssistantPlaceholder(item: ThreadItem): boolean {

@@ -18,6 +18,7 @@ export default function runModelPickerMenuTests(): void {
   blocksExplicitProviderSelectionWhenIntendedIsNotSignedIn();
   blocksWhenNoProviderIsReady();
   picksReadyDefaultWithoutFlaggingFallbackWhenNoIntention();
+  prefersProviderDefaultModelInFallback();
   describesCrossAccountProviderLimitInFooter();
 }
 
@@ -104,6 +105,25 @@ function picksReadyDefaultWithoutFlaggingFallbackWhenNoIntention(): void {
   assertEqual(r.providerId, "hicodex_local", "uses the ready provider as default");
   assertEqual(r.fellBack, false, "no intention → not a fallback");
   assertEqual(r.noReadyProvider, false, "a ready provider exists");
+}
+
+// Fallback resolution honors the provider's own default model (e.g. the team
+// member default from /models is_default) instead of blindly taking models[0].
+function prefersProviderDefaultModelInFallback(): void {
+  const r = resolveEffectiveModelSelection({
+    intended: null,
+    providers: [
+      {
+        id: "team_model_gateway",
+        models: ["123123:Qwen3.6-27B-mxfp4", "123123:DeepSeek-V4"],
+        defaultModel: "123123:DeepSeek-V4",
+      },
+      ...RESOLVER_PROVIDERS,
+    ],
+    readyProviders: new Set(["team_model_gateway", "hicodex_local"]),
+  });
+  assertEqual(r.providerId, "team_model_gateway", "first ready provider wins");
+  assertEqual(r.model, "123123:DeepSeek-V4", "the provider default model beats models[0]");
 }
 
 function describesCrossAccountProviderLimitInFooter(): void {
