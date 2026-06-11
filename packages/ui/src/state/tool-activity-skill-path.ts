@@ -122,7 +122,7 @@ function upperFirst(value: string): string {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
 }
 
-function normalizeSearchPathSegments(value: string): string {
+export function normalizeSearchPathSegments(value: string): string {
   const driveMatch = /^[A-Za-z]:\//u.exec(value);
   const prefix = driveMatch ? driveMatch[0] : value.startsWith("/") ? "/" : "";
   const withoutPrefix = prefix ? value.slice(prefix.length) : value;

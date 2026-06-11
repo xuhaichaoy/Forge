@@ -1,4 +1,4 @@
-import { formatUnknown, stringField } from "../lib/format";
+import { formatUnknown, isRecord, stringField } from "../lib/format";
 import { formatMessage } from "./i18n";
 import type {
   PendingRequestMcpToolApproval,
@@ -97,8 +97,11 @@ function mcpToolParamEntries(params: unknown): PendingRequestMcpToolParamEntry[]
 function mcpToolParamDisplayEntries(value: unknown): Array<{ name: string; label: string; value: unknown }> {
   if (Array.isArray(value)) {
     return value.flatMap((item, index) => {
-      const record = recordObject(item);
-      if (!record) return [];
+      // isRecord (not recordObject): the {} sentinel never fails the guard,
+      // so malformed non-object display entries must be filtered explicitly —
+      // HEAD dropped them via a null-returning local helper.
+      if (!isRecord(item)) return [];
+      const record = item;
       const name = stringField(record, "name") || stringField(record, "key") || `param_${index + 1}`;
       const label = stringField(record, "displayName")
         || stringField(record, "display_name")
@@ -111,8 +114,8 @@ function mcpToolParamDisplayEntries(value: unknown): Array<{ name: string; label
 }
 
 function mcpToolParamObjectEntries(value: unknown): Array<{ name: string; label: string; value: unknown }> {
-  const record = recordObject(value);
-  if (!record) return [];
+  if (!isRecord(value)) return [];
+  const record = value;
   return Object.entries(record).map(([name, paramValue]) => ({
     name,
     label: humanizeParamName(name),

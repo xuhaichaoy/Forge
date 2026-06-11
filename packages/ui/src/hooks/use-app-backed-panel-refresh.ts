@@ -242,6 +242,9 @@ export function useAppBackedPanelRefresh({
     mcpStatusMessage,
     mcpStatusNonce,
     setSettingsPanelState,
-    workspace,
+    // `workspace` intentionally omitted (HEAD semantics): the refresh uses the
+    // workspace captured when the nonce fired. Re-running on workspace change
+    // cancels the in-flight load and the nonce guard then refuses to restart
+    // it, pinning the panel on "Refreshing..." until the next nonce.
   ]);
 }

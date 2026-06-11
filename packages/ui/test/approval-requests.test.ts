@@ -7,6 +7,7 @@ import {
   isAutoDeniablePermissionRequest,
   pendingRequestDetail,
 } from "../src/state/approval-requests";
+import { mcpToolApprovalDetail } from "../src/state/approval-request-mcp-tool-approval";
 import type { PendingServerRequest } from "../src/state/codex-reducer";
 
 function request(method: string, params?: unknown): PendingServerRequest {
@@ -38,7 +39,32 @@ function assertIncludes(actual: string, expected: string, message: string): void
   }
 }
 
+/*
+ * Regression pin for the objectRecord→recordObject sentinel swap: malformed
+ * non-object entries in `toolParamsDisplay` must be FILTERED (HEAD semantics),
+ * not rendered as "Param N: undefined" ghost rows.
+ */
+function mcpToolApprovalParamsFilterMalformedDisplayEntries(): void {
+  const detail = mcpToolApprovalDetail({
+    _meta: { codex_approval_kind: "mcp_tool_call" },
+    toolParamsDisplay: [
+      { name: "city", value: "Paris" },
+      "stray-string-item",
+      42,
+      null,
+    ],
+  });
+  assertEqual(detail !== null, true, "mcp tool approval detail should parse");
+  assertDeepEqual(
+    detail?.toolParamEntries.map((entry) => entry.name),
+    ["city"],
+    "non-object display entries must be filtered, not rendered as ghost params",
+  );
+  assertEqual(detail?.toolParamEntries[0]?.previewText, "Paris", "real tool params should survive");
+}
+
 export default function runApprovalRequestTests(): void {
+  mcpToolApprovalParamsFilterMalformedDisplayEntries();
   const commandRequest = request("item/commandExecution/requestApproval", {
     command: ["npm", "run", "typecheck"],
     cwd: "/workspace/project",

@@ -604,10 +604,6 @@ function statusLabel(status: unknown): string {
   return formatUnknown(status);
 }
 
-function arrayStringItems(value: unknown): string[] {
-  return Array.isArray(value) ? value.flatMap((item) => typeof item === "string" ? [item] : []) : [];
-}
-
 function recordObject(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

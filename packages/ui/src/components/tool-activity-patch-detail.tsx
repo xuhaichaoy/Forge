@@ -21,7 +21,7 @@ export function PatchChangePath({
 }) {
   const { formatMessage } = useHiCodexIntl();
   if (!onOpenFileReference) {
-    return <code title={formatMessage({ id: "hc.toolDetail.patch.openInEditorTooltip", defaultMessage: "{path} - Open in editor" }, { path: change.path })}>{change.path}</code>;
+    return <code title={formatMessage({ id: "hc.toolDetail.patch.openInEditorTooltip", defaultMessage: "{path} — Open in editor" }, { path: change.path })}>{change.path}</code>;
   }
   const lineStart = patchChangeFirstChangeLine(change.diff);
   return (

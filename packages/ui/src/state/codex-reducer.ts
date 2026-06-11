@@ -2402,15 +2402,6 @@ function isUserMessageThreadItem(item: AccumulatedThreadItem | ThreadItem): bool
   return String((item as Record<string, unknown>).type ?? "") === "userMessage";
 }
 
-function isAssistantMessageThreadItem(item: AccumulatedThreadItem | ThreadItem): boolean {
-  return String((item as Record<string, unknown>).type ?? "") === "agentMessage";
-}
-
-function isNonCompletedTurnItem(item: AccumulatedThreadItem | ThreadItem): boolean {
-  const status = (item as Record<string, unknown>)._turnStatus;
-  return typeof status === "string" && status.length > 0 && status !== "completed";
-}
-
 function optimisticUserMessageConfirmedBy(
   optimistic: AccumulatedThreadItem | ThreadItem,
   confirmed: AccumulatedThreadItem | ThreadItem,

@@ -35,6 +35,7 @@ import {
   webSearchActionDetail,
 } from "./tool-activity-fields";
 import {
+  normalizeSearchPathSegments,
   parseDesktopSkillPathInfo,
   type DesktopSkillPathInfo,
 } from "./tool-activity-skill-path";
@@ -497,19 +498,6 @@ function normalizeSearchPath(value: string): string {
 
 function isAbsoluteSearchPath(value: string): boolean {
   return value.startsWith("/") || /^[A-Za-z]:\//u.test(value);
-}
-
-function normalizeSearchPathSegments(value: string): string {
-  const driveMatch = /^[A-Za-z]:\//u.exec(value);
-  const prefix = driveMatch ? driveMatch[0] : value.startsWith("/") ? "/" : "";
-  const withoutPrefix = prefix ? value.slice(prefix.length) : value;
-  const parts: string[] = [];
-  for (const part of withoutPrefix.split("/")) {
-    if (!part || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
-  }
-  return `${prefix}${parts.join("/")}`;
 }
 
 function explorationDetail(item: ThreadItem): string {
