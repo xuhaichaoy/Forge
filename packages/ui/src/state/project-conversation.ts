@@ -555,17 +555,62 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     ? progressEntriesFromPlan(options.progressPlan.plan, options.progressPlan.id ?? "turn-plan")
     : null;
 
+  const projectedUnits = withStreamingAssistantState(
+    groupConsecutiveDynamicToolCalls(units, { keepLatestLiveActivityInGroup: options.isThreadRunning === true }),
+    options.isThreadRunning === true,
+  );
+  demoteNonFinalUnknownAssistantPhases(projectedUnits);
   return {
-    units: withStreamingAssistantState(
-      groupConsecutiveDynamicToolCalls(units, { keepLatestLiveActivityInGroup: options.isThreadRunning === true }),
-      options.isThreadRunning === true,
-    ),
+    units: projectedUnits,
     progress: coalesceProgress(explicitProgress ?? progress),
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),
     sources: orderedSourcesLikeDesktop(sources),
   };
+}
+
+/*
+ * Fail-safe for assistant `phase` labels.
+ *
+ * Codex's backend marks every mid-turn progress message `commentary` and only
+ * the final answer `final_answer`, so the copy/fork/timestamp chrome
+ * (`shouldRenderAssistantMessageChrome`) AND the turn-collapse final-answer
+ * detector (`isFinalAssistantUnit`) both gate on `phase !== "commentary"`.
+ * Local / third-party models behind the OpenAI-compatible gateway frequently
+ * OMIT the label (phase = "unknown"), which made mid-turn progress messages
+ * (a) wrongly show the copy button and (b) get treated as a turn boundary,
+ * visually splitting one turn into several.
+ *
+ * Resolution: per turn, keep only the LAST assistant message as the final
+ * answer; demote every earlier `unknown` (or unlabeled) assistant message to
+ * `commentary`. Models that label correctly (GPT-5) are unaffected — their
+ * mid-turn messages are already `commentary` and their final is `final_answer`.
+ */
+function demoteNonFinalUnknownAssistantPhases(units: ConversationRenderUnit[]): void {
+  const seenFinalForTurn = new Set<string>();
+  for (let i = units.length - 1; i >= 0; i -= 1) {
+    const unit = units[i];
+    if (unit.kind !== "message" || unit.role !== "assistant") continue;
+    const turnKey = assistantUnitTurnKey(unit);
+    if (!seenFinalForTurn.has(turnKey)) {
+      // First assistant message seen scanning backwards within this turn =
+      // the turn's final answer; leave its phase untouched.
+      seenFinalForTurn.add(turnKey);
+      continue;
+    }
+    if (unit.assistantPhase === undefined || unit.assistantPhase === "unknown") {
+      unit.assistantPhase = "commentary";
+    }
+  }
+}
+
+function assistantUnitTurnKey(unit: ConversationRenderUnit): string {
+  if (unit.kind === "message") {
+    const raw = (unit.item as Record<string, unknown>)._turnId;
+    if (typeof raw === "string" && raw.length > 0) return raw;
+  }
+  return "(no-turn)";
 }
 
 function withMcpAppResourceUris(items: ThreadItem[], mcpServerStatuses: unknown): ThreadItem[] {

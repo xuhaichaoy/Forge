@@ -44,7 +44,7 @@ export interface MarkdownRichCopyPayload {
 const KATEX_SELECTOR = ".katex";
 const KATEX_MATHML_SELECTOR = ".katex-mathml";
 const KATEX_HTML_SELECTOR = ".katex-mathml + .katex-html";
-const KATEX_DISPLAY_ANNOTATION_SELECTOR = ".katex-display annotation";
+const KATEX_DISPLAY_SELECTOR = ".katex-display";
 const KATEX_TEX_ANNOTATION_SELECTOR = "annotation[encoding=\"application/x-tex\"]";
 
 export function selectedMarkdownRichCopyPayload(
@@ -97,14 +97,15 @@ function normalizeKatexCopyFragment(fragment: DocumentFragment): void {
     element.remove();
   }
   for (const mathMl of Array.from(fragment.querySelectorAll(KATEX_MATHML_SELECTOR))) {
-    const tex = mathMl.querySelector(KATEX_TEX_ANNOTATION_SELECTOR)?.textContent ?? "";
-    if (tex) mathMl.replaceWith(fragment.ownerDocument.createTextNode(`\\(${stripInlineMathDelimiters(tex)}\\)`));
+    const tex = stripInlineMathDelimiters(mathMl.querySelector(KATEX_TEX_ANNOTATION_SELECTOR)?.textContent ?? "");
+    const replacement = mathCopyReplacementText(
+      katexRenderedMathText(mathMl),
+      tex,
+      mathMl.closest(KATEX_DISPLAY_SELECTOR) !== null,
+    );
+    if (replacement) mathMl.replaceWith(fragment.ownerDocument.createTextNode(replacement));
   }
-  for (const annotation of Array.from(fragment.querySelectorAll(KATEX_DISPLAY_ANNOTATION_SELECTOR))) {
-    const tex = stripDisplayMathDelimiters(annotation.textContent ?? "");
-    annotation.textContent = `\\[\n${tex}\n\\]`;
-  }
-  for (const selector of [".katex-display", KATEX_SELECTOR]) {
+  for (const selector of [KATEX_DISPLAY_SELECTOR, KATEX_SELECTOR]) {
     for (const element of Array.from(fragment.querySelectorAll(selector))) {
       if (element.querySelector(KATEX_HTML_SELECTOR)) continue;
       element.replaceWith(fragment.ownerDocument.createTextNode(element.textContent ?? ""));
@@ -112,12 +113,28 @@ function normalizeKatexCopyFragment(fragment: DocumentFragment): void {
   }
 }
 
-function stripInlineMathDelimiters(text: string): string {
-  return text.startsWith("\\(") && text.endsWith("\\)") ? text.slice(2, -2) : text;
+/*
+ * What a copied formula pastes as. Inline math pastes as the rendered Unicode
+ * the user actually saw ("3×3", not "\(3 \times 3\)") — deliberate divergence
+ * from Codex, which emits TeX for both forms. Display math keeps TeX inside
+ * \[ \]: complex layouts (fractions, matrices) flatten into unreadable strings
+ * as plain text, while the source round-trips losslessly into a follow-up turn.
+ */
+export function mathCopyReplacementText(renderedText: string, tex: string, displayMode: boolean): string {
+  if (displayMode) return tex ? `\\[\n${tex}\n\\]` : renderedText;
+  return renderedText || (tex ? `\\(${tex}\\)` : "");
 }
 
-function stripDisplayMathDelimiters(text: string): string {
-  return text.startsWith("\\[\n") && text.endsWith("\n\\]") ? text.slice(3, -3) : text;
+function katexRenderedMathText(mathMl: Element): string {
+  const clone = mathMl.cloneNode(true) as Element;
+  for (const annotation of Array.from(clone.querySelectorAll("annotation"))) {
+    annotation.remove();
+  }
+  return (clone.textContent ?? "").trim();
+}
+
+function stripInlineMathDelimiters(text: string): string {
+  return text.startsWith("\\(") && text.endsWith("\\)") ? text.slice(2, -2) : text;
 }
 
 function markdownCopyHtml(node: ChildNode): string {

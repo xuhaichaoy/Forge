@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import type { CitationDirective } from "../state/automation-citations";
 import {
@@ -170,16 +170,7 @@ function renderMarkdownFadeText(text: string, context: MarkdownFadeContext, keyB
   });
 }
 
-function MarkdownBlockView({
-  block,
-  fadeContext,
-  inlineAutomationCitations,
-  mediaSources,
-  onOpenAutomationCitation,
-  onOpenFileReference,
-  onOpenFileReferenceExternal,
-  references,
-}: {
+interface MarkdownBlockViewProps {
   block: MarkdownBlock;
   fadeContext?: MarkdownFadeContext | null;
   inlineAutomationCitations?: CitationDirective[];
@@ -188,7 +179,52 @@ function MarkdownBlockView({
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
   references?: MarkdownReferenceDefinitions;
-}) {
+}
+
+/*
+ * Streaming flicker / freeze fix.
+ *
+ * Every streamed token re-parses the WHOLE assistant message into a fresh
+ * `blocks` array (new object refs), and `MarkdownBlockView` had no memo — so
+ * every block of every message (KaTeX math included) re-rendered on each
+ * token. With a long transcript that saturated the main thread: the page
+ * flickered and briefly stopped accepting clicks.
+ *
+ * Fade mode drives per-segment indices off a MUTABLE `fadeContext` that
+ * accumulates as each block renders, so skipping a block there would desync
+ * the fade — and `fadeType` is `"indexed"` ONLY on the single in-flight
+ * streaming message (every other message passes `"none"` → `fadeContext` is
+ * null). We therefore memoize exactly that common case: non-fade blocks whose
+ * content is unchanged frame-to-frame are skipped, so during streaming the
+ * entire transcript above the streaming tail stops re-rendering. The
+ * streaming message itself (fadeContext != null) is left untouched.
+ */
+const MarkdownBlockView = memo(MarkdownBlockViewInner, (prev, next) => {
+  if (prev.fadeContext || next.fadeContext) return false;
+  if (prev.mediaSources !== next.mediaSources) return false;
+  if (prev.references !== next.references) return false;
+  if (prev.inlineAutomationCitations !== next.inlineAutomationCitations) return false;
+  if (prev.onOpenAutomationCitation !== next.onOpenAutomationCitation) return false;
+  if (prev.onOpenFileReference !== next.onOpenFileReference) return false;
+  if (prev.onOpenFileReferenceExternal !== next.onOpenFileReferenceExternal) return false;
+  if (prev.block === next.block) return true;
+  // Blocks are small and re-parsed (new refs) every frame but usually
+  // identical; a structural compare is far cheaper than the re-render + (for
+  // math) KaTeX re-layout it avoids.
+  return prev.block.kind === next.block.kind
+    && JSON.stringify(prev.block) === JSON.stringify(next.block);
+});
+
+function MarkdownBlockViewInner({
+  block,
+  fadeContext,
+  inlineAutomationCitations,
+  mediaSources,
+  onOpenAutomationCitation,
+  onOpenFileReference,
+  onOpenFileReferenceExternal,
+  references,
+}: MarkdownBlockViewProps) {
   const { formatMessage } = useHiCodexIntl();
   switch (block.kind) {
     case "heading": {

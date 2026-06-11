@@ -42,7 +42,7 @@ export function useReconnectRecovery({
     dispatch({ type: "markThreadsNeedResumeAfterReconnect" });
     if (!activeThreadId) return;
     const threadId = activeThreadId;
-    void resumeThreadWithMetadataRead(client, threadId, workspace, effectiveThreadContextDefaults)
+    void resumeThreadWithMetadataRead(client, threadId, workspace, effectiveThreadContextDefaults, dispatch)
       .then((result) => dispatch({ type: "upsertThread", thread: result.thread, select: true }))
       .catch((error) => {
         dispatch({

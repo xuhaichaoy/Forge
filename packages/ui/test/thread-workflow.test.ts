@@ -17,6 +17,7 @@ import {
   isThreadNotMaterialized,
   isThreadNeedsResume,
   isThreadStatusNotLoaded,
+  isThreadToolHistoryHydrated,
   mergeThreadListPage,
   projectlessThreadInstructions,
   projectThreadContextDefaults,
@@ -128,6 +129,7 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   buildsThreadLifecycleRequests();
   await readsThreadDisplayMetadataBeforeHydratingTurns();
   await resumesThreadAfterMetadataRead();
+  await marksResumedThreadToolHistoryHydrated();
   await forksThreadFromTurnUsingDesktopSequence();
   await forksThreadIntoWorktreeByCreatingWorktreeThenForkingIntoIt();
   await startsEphemeralSideConversationByInjectingDesktopBoundary();
@@ -888,7 +890,7 @@ async function resumesThreadAfterMetadataRead(): Promise<void> {
   const result = await resumeThreadWithMetadataRead(resume.client, "thread-1", " /workspace ", {
     model: "gpt-5.2",
     environments: [{ environmentId: "remote", cwd: "/workspace/project" }],
-  });
+  }, () => {});
 
   assertEqual(result.thread, resumedThread, "resume with metadata read should return the resumed thread");
   assertRequest(
@@ -1417,6 +1419,38 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     providerSwitchNotLoaded.requests.some((request) => request.method === "thread/start"),
     false,
     "provider switch from a historical thread must not start a new thread",
+  );
+}
+
+async function marksResumedThreadToolHistoryHydrated(): Promise<void> {
+  assertEqual(
+    isThreadToolHistoryHydrated("thread-hydration-untouched"),
+    false,
+    "threads never loaded through a resume/select path should not be marked hydrated",
+  );
+
+  const resumedThread = threadFixture({ id: "thread-hydration-resume", status: { type: "idle" } });
+  const resume = createClientSequenceRecorder([
+    { thread: threadFixture({ id: "thread-hydration-resume", status: { type: "notLoaded" } }) },
+    { thread: resumedThread },
+  ]);
+  const result = await resumeThreadWithMetadataRead(
+    resume.client,
+    "thread-hydration-resume",
+    "/workspace",
+    null,
+    () => {},
+  );
+
+  assertEqual(
+    result.thread,
+    resumedThread,
+    "hydration outside the Tauri runtime should pass the resumed thread through unchanged",
+  );
+  assertEqual(
+    isThreadToolHistoryHydrated("thread-hydration-resume"),
+    true,
+    "resume should mark tool history hydrated so the thread-switch fast path can trust the snapshot",
   );
 }
 

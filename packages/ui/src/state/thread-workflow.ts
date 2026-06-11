@@ -279,14 +279,35 @@ export async function readThreadForDisplay(
   }
 }
 
+/*
+ * Thread ids whose persisted tool history has been successfully replayed into
+ * the runtime snapshot this session (or that have nothing to replay). The
+ * thread-switch fast path keys off this: thread/read and thread/resume
+ * snapshots carry plain text only — worked-for/Explored cards exist solely
+ * after hydration — so an items-bearing runtime that landed unhydrated (or
+ * whose hydration failed because the host wasn't ready yet) must not be
+ * treated as fully loaded, otherwise the missing cards stick for the session.
+ */
+const hydratedToolHistoryThreadIds = new Set<string>();
+
+export function isThreadToolHistoryHydrated(threadId: string): boolean {
+  return hydratedToolHistoryThreadIds.has(threadId);
+}
+
 async function hydrateThreadToolHistory(
   thread: Thread,
   dispatch: ThreadWorkflowDispatch,
 ): Promise<Thread> {
-  if (!isTauriRuntime() || !thread.turns?.length) return thread;
+  if (!isTauriRuntime()) {
+    // No host to replay from — the snapshot is as complete as it gets.
+    hydratedToolHistoryThreadIds.add(thread.id);
+    return thread;
+  }
+  if (!thread.turns?.length) return thread;
   try {
     const status = await getHostStatus();
     const history = await readThreadToolHistory(status.codexHome, thread.id, thread.path);
+    hydratedToolHistoryThreadIds.add(thread.id);
     return mergeThreadToolHistory(thread, history);
   } catch (error) {
     dispatch({
@@ -311,6 +332,9 @@ export async function createAndSelectThreadForTurn(
     : null;
   const threadId = thread?.id ?? null;
   if (thread) {
+    // Freshly created — no persisted tool history exists yet; every item
+    // arrives live, so the switch fast path may treat it as fully loaded.
+    hydratedToolHistoryThreadIds.add(thread.id);
     dispatch({ type: "upsertThread", thread, select: true });
     dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
   }
@@ -405,7 +429,9 @@ export async function ensureThreadReadyForTurn({
     await readThreadResumeMetadata(client, activeThreadId);
     const result = await resumeThread(client, activeThreadId, workspace, context);
     assertThreadProviderSwitchApplied(activeThreadId, result, context);
-    dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    // The resume snapshot is plain text only — replay persisted tool calls
+    // before it lands, or the worked-for/Explored cards vanish from history.
+    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select: true });
     dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     return {
       threadId: result.thread.id,
@@ -417,7 +443,7 @@ export async function ensureThreadReadyForTurn({
     await unsubscribeThread(client, activeThreadId);
     const result = await resumeThread(client, activeThreadId, workspace, context);
     assertThreadProviderSwitchApplied(activeThreadId, result, context);
-    dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select: true });
     dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     return {
       threadId: result.thread.id,
@@ -645,7 +671,7 @@ export async function resumeSelectedThreadAndStartTurn(
   try {
     await readThreadResumeMetadata(client, threadId);
     const result = await resumeThread(client, threadId, workspace, context);
-    dispatch({ type: "upsertThread", thread: result.thread, select: true });
+    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select: true });
     dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     await startTurn(client, result.thread.id, input, workspace, context, options);
     return true;
@@ -708,10 +734,14 @@ export async function resumeThreadWithMetadataRead(
   client: CodexJsonRpcClient,
   threadId: string,
   workspace: string,
-  context?: ThreadContextDefaults | null,
-) {
+  context: ThreadContextDefaults | null | undefined,
+  dispatch: ThreadWorkflowDispatch,
+): Promise<ThreadRuntimeContextResponse> {
   await readThreadResumeMetadata(client, threadId);
-  return resumeThread(client, threadId, workspace, context);
+  const result = await resumeThread(client, threadId, workspace, context);
+  // Resume snapshots carry plain text only; replay persisted tool calls so
+  // callers upsert a transcript with its worked-for/Explored cards intact.
+  return { ...result, thread: await hydrateThreadToolHistory(result.thread, dispatch) };
 }
 
 async function readThreadResumeMetadata(

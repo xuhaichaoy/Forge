@@ -109,7 +109,7 @@ export function useThreadActions({
   const resumeSelectedThread = useCallback(async (thread: Thread) => {
     try {
       if (!(await ensureConnected())) return;
-      const result = await resumeThreadWithMetadataRead(client, thread.id, workspace, threadContextDefaults);
+      const result = await resumeThreadWithMetadataRead(client, thread.id, workspace, threadContextDefaults, dispatch);
       dispatch({ type: "upsertThread", thread: result.thread, select: true });
     } catch (error) {
       if (isThreadNotFound(error)) {

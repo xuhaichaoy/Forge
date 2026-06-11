@@ -365,6 +365,7 @@ import {
   refreshThreads,
   refreshThreadMetadata,
   resumeThreadWithMetadataRead,
+  isThreadToolHistoryHydrated,
   interruptThreadTurn,
   readThread,
   readWorkspaceDeveloperInstructions,
@@ -1469,7 +1470,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
   threadsRuntimeRef.current = state.threadsRuntime;
   const hasLoadedThreadContent = useCallback((threadId: string) => {
     const runtime = threadsRuntimeRef.current[threadId];
-    return Boolean(runtime && runtime.items.length > 0);
+    // Items alone don't prove the transcript is complete: resume snapshots
+    // are plain text until persisted tool calls are replayed. Without the
+    // hydration check, a snapshot that landed before the host was ready
+    // would pin the fast path to a card-less transcript all session.
+    return Boolean(runtime && runtime.items.length > 0) && isThreadToolHistoryHydrated(threadId);
   }, []);
   const {
     archiveSelectedThread,
@@ -1848,7 +1853,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     }
     if (!(await ensureConnected())) return;
     try {
-      const result = await resumeThreadWithMetadataRead(client, threadId, workspace, effectiveThreadContextDefaults);
+      const result = await resumeThreadWithMetadataRead(client, threadId, workspace, effectiveThreadContextDefaults, dispatch);
       openWorkbenchTab();
       dispatch({ type: "upsertThread", thread: result.thread, select: true });
       dispatch({ type: "log", text: `Opened thread from deeplink: ${threadId}`, level: "info" });

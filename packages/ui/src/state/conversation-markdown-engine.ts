@@ -414,6 +414,14 @@ function parseMarkdownBlockLines(
       paragraph.push(lines[index] ?? "");
       index += 1;
     }
+    if (paragraph.length === 0) {
+      // The current line registers as a block boundary, yet every block parser
+      // above declined to consume it — e.g. a `$$` / `\[` / `<details>` opener
+      // whose closing line hasn't streamed in yet. Swallow it as plain text;
+      // without this the outer loop re-enters on the same line forever.
+      paragraph.push(lines[index] ?? "");
+      index += 1;
+    }
     blocks.push({ kind: "paragraph", text: paragraph.join("\n") });
   }
 
