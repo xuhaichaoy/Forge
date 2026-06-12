@@ -2406,21 +2406,6 @@ function isUserMessageThreadItem(item: AccumulatedThreadItem | ThreadItem): bool
   return String((item as Record<string, unknown>).type ?? "") === "userMessage";
 }
 
-function optimisticUserMessageConfirmedBy(
-  optimistic: AccumulatedThreadItem | ThreadItem,
-  confirmed: AccumulatedThreadItem | ThreadItem,
-): boolean {
-  if (userMessagesHaveSameContent(optimistic, confirmed)) return true;
-  const optimisticTurnId = turnIdOf(optimistic);
-  const confirmedTurnId = turnIdOf(confirmed);
-  return Boolean(
-    optimisticTurnId
-      && confirmedTurnId
-      && optimisticTurnId === confirmedTurnId
-      && !isOptimisticTurnPlaceholder(optimisticTurnId),
-  );
-}
-
 function userMessagesHaveSameContent(
   left: AccumulatedThreadItem | ThreadItem,
   right: AccumulatedThreadItem | ThreadItem,

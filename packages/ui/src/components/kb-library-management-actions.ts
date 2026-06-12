@@ -69,7 +69,7 @@ export function useKbLibraryManagementActions({
         name: targetDatabase.name || "知识库",
         description: targetDatabase.description || "",
         share_config: {
-          ...(targetDatabase.share_config ?? {}),
+          ...targetDatabase.share_config,
           hicodex_governance: draft,
         },
       });

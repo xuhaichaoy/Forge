@@ -110,8 +110,29 @@ test("accepts App Store Connect API key notarization credentials", () => {
   env.APPLE_API_KEY = "ABC123DEFG";
   env.APPLE_API_ISSUER = "00000000-0000-0000-0000-000000000000";
   env.APPLE_API_KEY_PATH = "/tmp/AuthKey_ABC123DEFG.p8";
-  const result = buildTauriReleaseConfig(env);
+  const result = buildTauriReleaseConfig(env, {
+    readFile: (path) => {
+      if (path === "/tmp/AuthKey_ABC123DEFG.p8") return "-----BEGIN PRIVATE KEY-----\nkey\n";
+      return readFileSync(path, "utf8");
+    },
+  });
   assert.equal(result.summary.macOSNotarizationAuth, "api-key");
+});
+
+test("requires readable App Store Connect API key file", () => {
+  const env = baseEnv();
+  delete env.APPLE_ID;
+  delete env.APPLE_PASSWORD;
+  delete env.APPLE_TEAM_ID;
+  env.APPLE_API_KEY = "ABC123DEFG";
+  env.APPLE_API_ISSUER = "00000000-0000-0000-0000-000000000000";
+  env.APPLE_API_KEY_PATH = "/no/such/AuthKey_ABC123DEFG.p8";
+  assert.throws(
+    () => buildTauriReleaseConfig(env),
+    (err) =>
+      err instanceof ReleaseConfigError &&
+      err.errors.some((message) => message.startsWith("APPLE_API_KEY_PATH cannot be read:")),
+  );
 });
 
 test("requires complete macOS notarization credentials", () => {

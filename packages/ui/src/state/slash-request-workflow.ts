@@ -747,13 +747,6 @@ function requireActiveThreadId(
   return null;
 }
 
-function activeThreadTitle(thread: Thread | null): string {
-  if (!thread) return "";
-  const name = typeof thread.name === "string" ? thread.name.trim() : "";
-  const preview = typeof thread.preview === "string" ? thread.preview.trim() : "";
-  return name || preview || thread.id;
-}
-
 function shortThreadId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}...${id.slice(-4)}` : id;
 }

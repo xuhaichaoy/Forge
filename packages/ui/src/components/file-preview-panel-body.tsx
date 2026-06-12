@@ -198,9 +198,7 @@ export function FilePreviewPanelBody({
 }
 
 function FilePreviewStateView({
-  cwd,
   state,
-  workspaceRoot,
 }: {
   cwd?: string | null;
   state: FilePreviewLoadState;

@@ -10,7 +10,6 @@ import { Markdownish } from "./message-markdown-renderer";
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
 export function PlanSummaryCard({
-  threadId,
   unit,
 }: {
   threadId?: string | null;

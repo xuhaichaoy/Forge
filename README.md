@@ -108,8 +108,9 @@ npm install
 npm run tauri:build
 ```
 
-Bundles land under `apps/desktop/src-tauri/target/release/bundle/`
-(`dmg/`, `macos/`, `nsis/`, `msi/`).
+Bundles land under the workspace-root `target/release/bundle/` (or
+`target/<triple>/release/bundle/` when building with `--target`) —
+`dmg/`, `macos/`, `nsis/`, `msi/`.
 
 ## Scripts
 
@@ -121,7 +122,11 @@ Bundles land under `apps/desktop/src-tauri/target/release/bundle/`
 | `npm run sidecar:prepare` | Build/copy the Codex `codex` sidecar into `binaries/` |
 | `npm run sync:protocol` | Regenerate `packages/codex-protocol` types from codex-rs |
 | `npm run typecheck` | Typecheck all workspaces |
-| `npm run test` | Run workspace tests + `cargo test --workspace` |
+| `npm run test` | Root script tests + workspace tests + `cargo test --workspace` |
+| `npm run test:scripts` | Node test runner over `scripts/*.test.mjs` |
+| `npm run lint` | clippy `-D warnings` + JS/TS lint + TS runtime-cycle check + release.sh syntax |
+| `npm run format` / `npm run format:check` | `cargo fmt` apply / verify |
+| `npm run sidecar:smoke` | Boot the bundled Codex sidecar and verify the `initialize` handshake |
 
 ## Development guide
 

@@ -14,7 +14,6 @@
 import {
   useCallback,
   useState,
-  type MouseEvent,
 } from "react";
 import { osRevealLabel } from "../state/command-registry";
 import { formatMessage } from "../state/i18n";

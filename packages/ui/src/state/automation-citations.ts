@@ -273,13 +273,13 @@ function trailingParagraphStartOffset(markdown: string): number {
 }
 
 function isStructuralLine(line: string): boolean {
-  return /^```/.test(line.trim())
+  return line.trim().startsWith("```")
     || /^#{1,6}\s+/.test(line)
     || /^\s{0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line)
     || /^\s*(\$\$|\\\[)/.test(line)
     || /^\s*([-*+]|\d+[.)])\s+/.test(line)
     || /^\s*>\s?/.test(line)
-    || /^\|/.test(line.trim());
+    || line.trim().startsWith("|");
 }
 
 // codex: local-conversation-thread-*.js — main entrypoint. The

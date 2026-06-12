@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 const PLACEHOLDER_HOSTS = new Set([
   "example.com",
@@ -36,6 +36,7 @@ export function buildTauriReleaseConfig(env = process.env, options = {}) {
   const macOSNotarizationAuth = validateMacOSNotarizationAuth(env, {
     allowAdhocSigning,
     errors,
+    readFile,
     warnings,
   });
   const macOS = buildMacOSReleaseConfig(env, { allowAdhocSigning, errors, warnings });
@@ -194,7 +195,10 @@ function validateAppleCertificate(env, errors) {
   }
 }
 
-function validateMacOSNotarizationAuth(env, { allowAdhocSigning = false, errors = [], warnings = [] } = {}) {
+function validateMacOSNotarizationAuth(
+  env,
+  { allowAdhocSigning = false, errors = [], readFile = (path) => readFileSync(path, "utf8"), warnings = [] } = {},
+) {
   const appleIdFields = ["APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID"];
   const apiKeyFields = ["APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_PATH"];
 
@@ -211,6 +215,13 @@ function validateMacOSNotarizationAuth(env, { allowAdhocSigning = false, errors 
   }
 
   if (hasAllApiKeyFields) {
+    try {
+      if (!hasValue(readFile(env.APPLE_API_KEY_PATH.trim()))) {
+        errors.push("APPLE_API_KEY_PATH points to an empty App Store Connect API key file.");
+      }
+    } catch (err) {
+      errors.push(`APPLE_API_KEY_PATH cannot be read: ${errorMessage(err)}`);
+    }
     return "api-key";
   }
   if (hasAnyApiKeyField) {

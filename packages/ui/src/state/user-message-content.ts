@@ -268,7 +268,7 @@ function extensionOf(path: string): string {
  *             contain spaces; the `<` / `>` are markdown syntax, not content)
  *   `(...)`  (plain destination — no spaces / parens)
  */
-const FILE_LINK_RE = /\[([^\[\]\n]+)\]\(<([^>\n]+)>\)|\[([^\[\]\n]+)\]\(([^)\s\n]+)\)/g;
+const FILE_LINK_RE = /\[([^[\]\n]+)\]\(<([^>\n]+)>\)|\[([^[\]\n]+)\]\(([^)\s\n]+)\)/g;
 
 function splitTextWithFileLinks(text: string, baseElements: UserMessageTextElement[]): UserMessageContentPart[] {
   // Fast path: nothing that looks like a markdown link.

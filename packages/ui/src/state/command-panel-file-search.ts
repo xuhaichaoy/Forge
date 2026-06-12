@@ -48,5 +48,5 @@ function normalizeSeparators(path: string): string {
 }
 
 export function isAbsolutePath(path: string): boolean {
-  return path.startsWith("/") || /^\\\\/.test(path) || /^[a-zA-Z]:[\\/]/.test(path);
+  return path.startsWith("/") || path.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(path);
 }

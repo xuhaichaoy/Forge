@@ -189,9 +189,7 @@ fn parse_docx_paragraphs(
             }
             tag_offset = tag_end + 1;
         }
-        let cleaned = paragraph
-            .trim_end_matches(|c: char| c == ' ' || c == '\t')
-            .to_string();
+        let cleaned = paragraph.trim_end_matches([' ', '\t']).to_string();
         let cleaned = if cleaned.chars().count() > max_chars_per_paragraph {
             truncated = true;
             let mut taken = String::new();
@@ -290,8 +288,7 @@ fn flush_text_run(runs: &mut Vec<String>, current: &mut String) {
 
 fn normalize_extracted_text_run(value: &str) -> String {
     let normalized = value
-        .replace('\u{000b}', "\n")
-        .replace('\u{000c}', "\n")
+        .replace(['\u{000b}', '\u{000c}'], "\n")
         .replace('\u{00a0}', " ");
     normalized
         .split_whitespace()

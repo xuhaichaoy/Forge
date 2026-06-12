@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 
 export function useComposerSingleLineLayout({
   fieldRef,
-  input,
+  input: _input,
   leftControlsRef,
   measureRef,
   rightControlsRef,

@@ -34,6 +34,103 @@ WITH_INTEL=false
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
+RESTORE_CODEX_SIDECAR=false
+restore_local_sidecar() {
+  if [[ "$RESTORE_CODEX_SIDECAR" != true ]]; then
+    return 0
+  fi
+  echo "▸ Restoring local Codex sidecar..."
+  if npm run sidecar:prepare; then
+    RESTORE_CODEX_SIDECAR=false
+  else
+    echo "⚠ Failed to restore local Codex sidecar; run npm run sidecar:prepare before local development." >&2
+  fi
+  return 0
+}
+trap restore_local_sidecar EXIT
+
+without_release_secrets() {
+  env \
+    -u TAURI_SIGNING_PRIVATE_KEY \
+    -u TAURI_SIGNING_PRIVATE_KEY_PATH \
+    -u TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
+    -u APPLE_CERTIFICATE \
+    -u APPLE_CERTIFICATE_PASSWORD \
+    -u APPLE_ID \
+    -u APPLE_PASSWORD \
+    -u APPLE_API_KEY \
+    -u APPLE_API_KEY_PATH \
+    "$@"
+}
+
+can_smoke_sidecar_target() {
+  local target="$1"
+  local host_arch
+  host_arch="$(uname -m)"
+  [[ "$target" == "aarch64-apple-darwin" && "$host_arch" == "arm64" ]] \
+    || [[ "$target" == "x86_64-apple-darwin" && "$host_arch" == "x86_64" ]]
+}
+
+bundle_dir_for_target() {
+  local target="$1"
+  local workspace_bundle_dir="target/$target/release/bundle"
+  local package_bundle_dir="apps/desktop/src-tauri/target/$target/release/bundle"
+  if [[ -d "$workspace_bundle_dir" ]]; then
+    printf '%s\n' "$workspace_bundle_dir"
+    return 0
+  fi
+  if [[ -d "$package_bundle_dir" ]]; then
+    printf '%s\n' "$package_bundle_dir"
+    return 0
+  fi
+  echo "✗ Tauri bundle directory not found for $target" >&2
+  echo "  Checked:" >&2
+  echo "    $workspace_bundle_dir" >&2
+  echo "    $package_bundle_dir" >&2
+  return 1
+}
+
+single_file_match() {
+  local description="$1"
+  local pattern="$2"
+  local matches=()
+  # shellcheck disable=SC2206
+  matches=($pattern)
+  if [[ "${#matches[@]}" -ne 1 || ! -f "${matches[0]}" ]]; then
+    echo "✗ Expected exactly one $description, found ${#matches[@]} for pattern:" >&2
+    echo "  $pattern" >&2
+    if [[ "${#matches[@]}" -gt 0 ]]; then
+      printf '  - %s\n' "${matches[@]}" >&2
+    fi
+    return 1
+  fi
+  printf '%s\n' "${matches[0]}"
+}
+
+verify_signed_app() {
+  local bundle_dir="$1"
+  local target="$2"
+  local app_path="$bundle_dir/macos/${APP_PRODUCT_NAME}.app"
+  if [[ ! -d "$app_path" ]]; then
+    echo "✗ Expected signed app bundle at $app_path" >&2
+    return 1
+  fi
+  echo "▸ Verifying code signature ($target)..."
+  codesign --verify --deep --strict --verbose=2 "$app_path"
+  if [[ "${HICODEX_RELEASE_ALLOW_ADHOC_SIGNING:-}" == "1" ]]; then
+    echo "▸ Ad-hoc signing allowed; skipping Gatekeeper/notarization verification"
+    return 0
+  fi
+  if [[ -n "${APPLE_API_KEY:-}${APPLE_API_KEY_PATH:-}${APPLE_ID:-}" ]]; then
+    echo "▸ Verifying notarization staple ($target)..."
+    xcrun stapler validate "$app_path"
+    echo "▸ Verifying Gatekeeper assessment ($target)..."
+    spctl --assess --type exec --verbose=2 "$app_path"
+  else
+    echo "▸ No notarization credentials in env; skipping staple/Gatekeeper verification"
+  fi
+}
+
 if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
   KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${HOME}/.tauri/hicodex.key}"
   if [[ ! -f "$KEY_PATH" ]]; then
@@ -64,65 +161,59 @@ OUT_DIR="$REPO_ROOT/dist/release/$VERSION"
 mkdir -p "$OUT_DIR"
 RELEASE_CONFIG="$OUT_DIR/tauri.release.conf.json"
 node apps/desktop/scripts/tauri-release-config.mjs --write "$RELEASE_CONFIG"
+APP_PRODUCT_NAME="$(
+  node -e 'const fs = require("fs"); const base = JSON.parse(fs.readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8")); const release = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(release.productName || base.productName || "HiCodex");' "$RELEASE_CONFIG"
+)"
+PUBLIC_PRODUCT_NAME="${HICODEX_RELEASE_ARTIFACT_NAME:-HiCodex}"
 
 for TARGET in "${TARGETS[@]}"; do
   ARCH="${TARGET%-apple-darwin}"
+  echo "▸ Preparing Codex sidecar for $TARGET..."
+  RESTORE_CODEX_SIDECAR=true
+  HICODEX_CODEX_TARGET="$TARGET" without_release_secrets npm run sidecar:prepare
+  if can_smoke_sidecar_target "$TARGET"; then
+    echo "▸ Smoke-testing Codex sidecar for $TARGET..."
+    without_release_secrets npm run sidecar:smoke
+  else
+    echo "▸ Skipping Codex sidecar smoke for $TARGET on host $(uname -m)"
+  fi
   echo "▸ Building $TARGET..."
   ( cd apps/desktop && npm run tauri:build -- --target "$TARGET" --config "$RELEASE_CONFIG" )
-  BUNDLE_DIR="apps/desktop/src-tauri/target/$TARGET/release/bundle"
-  cp "$BUNDLE_DIR/macos/HiCodex.app.tar.gz"     "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.app.tar.gz"
-  cp "$BUNDLE_DIR/macos/HiCodex.app.tar.gz.sig" "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.app.tar.gz.sig"
-  cp "$BUNDLE_DIR/dmg/"HiCodex_*.dmg            "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.dmg"
+  BUNDLE_DIR="$(bundle_dir_for_target "$TARGET")"
+  verify_signed_app "$BUNDLE_DIR" "$TARGET"
+  cp "$BUNDLE_DIR/macos/${APP_PRODUCT_NAME}.app.tar.gz"     "$OUT_DIR/${PUBLIC_PRODUCT_NAME}_${VERSION}_${ARCH}.app.tar.gz"
+  cp "$BUNDLE_DIR/macos/${APP_PRODUCT_NAME}.app.tar.gz.sig" "$OUT_DIR/${PUBLIC_PRODUCT_NAME}_${VERSION}_${ARCH}.app.tar.gz.sig"
+  DMG_FILE="$(single_file_match "DMG artifact for $TARGET" "$BUNDLE_DIR/dmg/${APP_PRODUCT_NAME}_"'*.dmg')"
+  cp "$DMG_FILE" "$OUT_DIR/${PUBLIC_PRODUCT_NAME}_${VERSION}_${ARCH}.dmg"
 done
 
-# 4) 生成 latest.json（从 release merge config 解析 endpoint base）
-ENDPOINT=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf-8')).plugins.updater.endpoints[0]" "$RELEASE_CONFIG")
-# 把 .json 文件名替换掉，留下 base URL
-URL_BASE=$(echo "$ENDPOINT" | sed -E 's|/latest\.json.*$||; s|/\{\{.*\}\}.*$||')
-URL_BASE="${URL_BASE%/}"
+restore_local_sidecar
 
+# 4) 生成 updater metadata。脚本会保留真实 updater endpoint；如果 endpoint
+# 使用 Tauri 模板变量，不再错误提示上传到 root/latest.json。
 NOTES_RAW="$(git log -1 --pretty=%s)"
-PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-# 拼 platforms 块
-PLATFORMS=""
+METADATA_ARGS=()
 for TARGET in "${TARGETS[@]}"; do
-  ARCH="${TARGET%-apple-darwin}"
-  SIG=$(cat "$OUT_DIR/HiCodex_${VERSION}_${ARCH}.app.tar.gz.sig" | tr -d '\n')
-  URL="${URL_BASE}/HiCodex_${VERSION}_${ARCH}.app.tar.gz"
-  [[ -n "$PLATFORMS" ]] && PLATFORMS="$PLATFORMS,"
-  PLATFORMS="$PLATFORMS
-    \"darwin-$ARCH\": {
-      \"signature\": \"$SIG\",
-      \"url\": \"$URL\"
-    }"
+  METADATA_ARGS+=(--target "$TARGET")
 done
-
-cat > "$OUT_DIR/latest.json" <<EOF
-{
-  "version": "$VERSION",
-  "notes": $(node -p "JSON.stringify('$NOTES_RAW')"),
-  "pub_date": "$PUB_DATE",
-  "platforms": {$PLATFORMS
-  }
-}
-EOF
+HICODEX_RELEASE_NOTES="$NOTES_RAW" node scripts/generate-tauri-update-metadata.mjs \
+  --config "$RELEASE_CONFIG" \
+  --out-dir "$OUT_DIR" \
+  --version "$VERSION" \
+  --product "$APP_PRODUCT_NAME" \
+  --artifact-name "$PUBLIC_PRODUCT_NAME" \
+  --skip-copy \
+  "${METADATA_ARGS[@]}"
 
 echo
 echo "✓ Release $VERSION built. Upload these files:"
 echo
 for FILE in "$OUT_DIR"/*; do
   [[ "$(basename "$FILE")" == "tauri.release.conf.json" ]] && continue
+  [[ "$(basename "$FILE")" == "upload-destinations.txt" ]] && continue
   basename "$FILE"
 done
 echo
-echo "Upload destinations:"
-for TARGET in "${TARGETS[@]}"; do
-  ARCH="${TARGET%-apple-darwin}"
-  echo "  $OUT_DIR/HiCodex_${VERSION}_${ARCH}.app.tar.gz"
-  echo "    → ${URL_BASE}/HiCodex_${VERSION}_${ARCH}.app.tar.gz"
-done
-echo "  $OUT_DIR/latest.json"
-echo "    → ${URL_BASE}/latest.json    (上传顺序：先 .app.tar.gz，最后 latest.json)"
+cat "$OUT_DIR/upload-destinations.txt"
 echo
 echo "⚠ 别忘记 commit + tag：git tag v$VERSION && git push --tags"

@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  script-compat:
+    name: Script compatibility
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test root scripts
+        run: npm run test:scripts
+
+      - name: Check TypeScript runtime cycles
+        run: npm run lint:ts-cycles
+
+  verify:
+    name: Verify
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck workspaces
+        run: npm run typecheck
+
+      - name: Test root scripts
+        run: npm run test:scripts
+
+      - name: Test JavaScript workspaces
+        run: npm run test --workspaces --if-present
+
+      - name: Check Rust formatting
+        run: npm run format:check
+
+      - name: Lint workspace
+        run: npm run lint
+
+      - name: Test Rust workspace
+        run: cargo test --workspace
+
+      - name: Build desktop web assets
+        run: npm run build --workspace @forge/desktop
+
+  supply-chain:
+    name: Supply chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install npm dependency tree
+        run: npm ci --ignore-scripts
+
+      # Gate at critical until the known xlsx advisory is resolved: sheetjs
+      # stopped publishing to the npm registry at 0.18.5, so the prototype-
+      # pollution/ReDoS fix (0.19.3+/0.20.x) is only available from the vendor
+      # CDN tarball — swapping the dependency source is a deliberate
+      # supply-chain decision, not an auto-fix. Tighten to high afterwards.
+      - name: Audit npm production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Audit Rust dependencies (advisories, licenses, sources)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses sources

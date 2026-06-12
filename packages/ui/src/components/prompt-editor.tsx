@@ -4,7 +4,6 @@ import {
   safeFocusEditorView,
   safeFocusElement,
 } from "./prompt-editor-stale-guards";
-import { splitPromptEditorPasteFiles } from "./prompt-editor-paste";
 import { docToPromptText } from "./prompt-editor-serialization";
 import {
   isPromptText,

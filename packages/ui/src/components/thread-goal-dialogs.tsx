@@ -29,7 +29,6 @@ export function portalDialogToBody(dialog: ReactElement) {
 // codex composer.threadGoal.replaceConfirmation.* — shown before replacing an
 // already-saved goal with a new objective typed in goal mode.
 export function ThreadGoalReplaceConfirm({
-  objective,
   pending = false,
   onConfirm,
   onCancel,

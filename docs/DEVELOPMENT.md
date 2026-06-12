@@ -66,6 +66,7 @@ docs/dev/<topic>.md        # one topic, no repeated global rules
 Linked topic docs:
 
 - [docs/dev/presales-mcp-tools.md](dev/presales-mcp-tools.md): MCP tool boundary for the presales knowledge-base prototype and Skill file workflow.
+- [docs/dev/codex-alignment-ab-checklist.md](dev/codex-alignment-ab-checklist.md): Manual A/B parity checklist and resolved visual-contract audit notes.
 - [docs/dev/codex-alignment-dispatcher.md](dev/codex-alignment-dispatcher.md): 5-channel streaming delta dispatcher and item-level notification rules.
 - [docs/dev/codex-alignment-reasoning.md](dev/codex-alignment-reasoning.md): Reasoning ThreadItem (dead code), Thinking placeholder classifier, exploration card, shared animation infra.
 - [docs/dev/codex-alignment-plan.md](dev/codex-alignment-plan.md): Plan summary card behavior, 10 i18n strings, and Open-button stub rule.
@@ -73,7 +74,10 @@ Linked topic docs:
 - [docs/dev/codex-alignment-collab-agent.md](dev/codex-alignment-collab-agent.md): Collab agent rowAction vs header verb tables (Failed-state divergence).
 - [docs/dev/codex-alignment-image-generation.md](dev/codex-alignment-image-generation.md): `case 'generated-image': return null` rule, right-rail Artifacts cap, turn-level gallery, lightbox.
 - [docs/dev/codex-alignment-gap-matrix.md](dev/codex-alignment-gap-matrix.md): Implementation status and remaining gaps across all intermediate-output surfaces.
+- [docs/dev/codex-bundle-host.md](dev/codex-bundle-host.md): Optional dev-only host for the extracted Codex Desktop bundle in a separate Tauri window.
 - [docs/dev/yuxi-knowledge-flow.md](dev/yuxi-knowledge-flow.md): Yuxi knowledge-base upload, indexing, GraphRAG, archive-center, and MCP query flow.
+
+OpenSpec files under `openspec/changes/` are proposal/task ledgers for in-flight or historical changes. Keep durable implementation rules here, and link a topic doc from this section when an OpenSpec change becomes long-lived product or architecture guidance.
 
 Do not add ad hoc handoff docs, scratch notes, copied agent outputs, or extracted `app.asar` content. Temporary investigation output belongs under `/private/tmp`, not in the repo.
 
@@ -312,9 +316,10 @@ Common commands:
 
 ```sh
 npm run typecheck
+npm run test
 npm run build
-cargo fmt --all -- --check
-cargo test --workspace
+npm run format:check
+npm run lint
 ```
 
 Run UI manually when touching:

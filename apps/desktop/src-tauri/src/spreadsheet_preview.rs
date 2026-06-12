@@ -192,7 +192,7 @@ fn xlsx_sheet_path_for_relationship(path: &Path, rel_id: &str) -> Option<String>
     let rels = unzip_member_text(path, "xl/_rels/workbook.xml.rels")
         .ok()
         .flatten()?;
-    let target = relationship_target(&rels, &rel_id)?;
+    let target = relationship_target(&rels, rel_id)?;
     Some(normalize_xlsx_target_path(&target))
 }
 

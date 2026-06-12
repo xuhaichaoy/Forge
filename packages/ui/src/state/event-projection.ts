@@ -6,12 +6,9 @@ import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
 import { automationScheduleSummary } from "./automation-schedule-summary";
 import type { EventFormat, EventTone, ItemRecord, ThreadItem } from "./render-group-types";
 import {
-  formatCount,
   isCompletedRecord,
   itemText,
   itemType,
-  mcpServerName,
-  mcpToolName,
 } from "./thread-item-fields";
 
 export function eventLabel(item: ThreadItem): string {
@@ -416,18 +413,6 @@ function imageEventSource(record: ItemRecord): string {
   if (/^(?:data|blob|https?|file):/i.test(src)) return src;
   if (src.startsWith("/")) return `file://${encodeURI(src)}`;
   return src;
-}
-
-function imageArtifactTitle(value: string): string {
-  if (/^(?:data|blob):/i.test(value)) return "Generated image";
-  try {
-    const url = new URL(value);
-    const filename = url.pathname.split("/").filter(Boolean).pop();
-    return filename ? decodeURIComponent(filename) : url.hostname || "Generated image";
-  } catch {
-    const filename = value.split(/[/?#]/).filter(Boolean).pop();
-    return filename || "Generated image";
-  }
 }
 
 function markdownImageTarget(value: string): string {

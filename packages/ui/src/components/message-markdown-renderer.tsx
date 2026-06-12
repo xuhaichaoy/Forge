@@ -1,6 +1,5 @@
 import { ChevronRight } from "lucide-react";
 import { memo, useEffect, useMemo, useRef } from "react";
-import type { ReactNode } from "react";
 import type { CitationDirective } from "../state/automation-citations";
 import {
   createMarkdownWordSegmenter,
@@ -19,7 +18,6 @@ import type { FileReference } from "./file-reference-types";
 import { useHiCodexIntl } from "./i18n-provider";
 import { LazyMarkdownCodeBlock } from "./message-markdown-code-block";
 import {
-  desktopAssistantCopyText,
   selectedMarkdownRichCopyPayload,
 } from "./message-markdown-copy";
 import {

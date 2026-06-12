@@ -29,7 +29,6 @@ import {
 } from "./sidebar-project-section";
 import {
   SidebarThreadRow,
-  sidebarContextMenuPosition,
 } from "./sidebar-thread-row";
 import { useSidebarInteractions } from "./sidebar-interactions";
 import { SidebarUpdateBadge } from "./sidebar-update-badge";

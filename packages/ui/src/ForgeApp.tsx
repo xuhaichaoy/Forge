@@ -154,7 +154,6 @@ import {
   selectActiveThreadRuntime,
   selectItemsByThread,
   type PendingServerRequest,
-  type ThreadContextDefaults,
 } from "./state/codex-reducer";
 import {
   accountRefreshScopeForNotification,
@@ -231,7 +230,6 @@ import {
   type CommandPanelOptions,
   type CommandPanelEntry,
   commandPanelThreadGroup,
-  isCommandMenuPanel,
   orderCommandPanelThreadsByPinned,
   type CommandPanelKind,
   type CommandPanelState,
@@ -248,11 +246,6 @@ import {
   unregisterCommand,
 } from "./state/command-registry";
 import { COMMAND_DESCRIPTORS, COMMAND_IDS } from "./state/commands";
-import {
-  buildConfigBatchWriteParams,
-  formatConfigWriteError,
-  readConfigWriteTarget,
-} from "./state/config-write-target";
 import { threadIdFromCodexDeepLink } from "./state/deep-links";
 import {
   permissionModeFromThreadContext,
@@ -295,7 +288,6 @@ import {
   heartbeatPendingRequestType,
   pendingRequestOwnerThreadId,
   pendingRequestScope,
-  summarizePendingRequestAwaitingByThread,
 } from "./state/pending-request-scope";
 import {
   nextOpenFileWatchRefreshKey,
@@ -319,7 +311,6 @@ import {
   slashCommandEntries,
   threadGitBranch,
 } from "./state/app-shell-helpers";
-import { HICODEX_DESKTOP_CONFIG_KEYS } from "./state/hicodex-desktop-namespace";
 import {
   createHostPendingWorktree,
   loadComposerWorkMode,
@@ -348,16 +339,6 @@ import { HtmlPreviewTabContent } from "./components/html-preview-tab";
 import { TAB_KINDS } from "./state/side-panel-tab-host";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import { appendRpcDebugEvent } from "./state/rpc-debug";
-import {
-  applyThreadFindMarks,
-  clampThreadFindIndex,
-  clearThreadFindMarks,
-  collectThreadFindUnitsFromDom,
-  findThreadFindMatches,
-  nextThreadFindIndex,
-  scrollThreadFindMatchIntoView,
-  type ThreadFindMatch,
-} from "./state/thread-find";
 import {
   refreshThreads,
   refreshThreadMetadata,
@@ -882,10 +863,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     () => projectActiveThreadAutomation(automationsModel, state.activeThreadId),
     [automationsModel, state.activeThreadId],
   );
-  const pendingRequestAwaitingByThread = useMemo(
-    () => summarizePendingRequestAwaitingByThread(state.pendingRequests, { itemsByThread }),
-    [itemsByThread, state.pendingRequests],
-  );
   const handledImageToolRequestIdsRef = useRef(new Set<string>());
   useHiCodexImageToolResponder({
     handledImageToolRequestIdsRef,
@@ -1298,7 +1275,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       : decodedSelectedModelSelection;
     const shouldApplyDefaultModelSelection = !state.activeThreadId;
     let modelContext = picked ? {
-      ...(state.threadContextDefaults ?? {}),
+      ...state.threadContextDefaults,
       model: picked.model,
       modelProvider: normalizeSubscriptionProviderId(picked.providerId),
     } : shouldApplyDefaultModelSelection
@@ -1314,7 +1291,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       && (effectiveModelSelection.providerId !== (modelContext?.modelProvider ?? "")
         || effectiveModelSelection.model !== (modelContext?.model ?? ""))) {
       modelContext = {
-        ...(modelContext ?? {}),
+        ...modelContext,
         model: effectiveModelSelection.model,
         modelProvider: effectiveModelSelection.providerId,
       };
@@ -1326,7 +1303,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
      */
     if (reasoningEffortOverride) {
       modelContext = {
-        ...(modelContext ?? {}),
+        ...modelContext,
         reasoningEffort: reasoningEffortOverride,
       };
     }
@@ -1476,7 +1453,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     forkConfirmSubmitting,
     forkSelectedThread,
     forkSelectedThreadIntoWorktree,
-    openArchiveThreadDialog,
     openRenameThreadDialog,
     renameSelectedThread,
     selectThread,
@@ -3762,9 +3738,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         }
       }
       const result = buildApprovalResult(request, accepted, answers);
-      result === null
-        ? await client.reject(request.id, accepted ? "Unsupported HiCodex request" : "Rejected by HiCodex user")
-        : await client.respond(request.id, result);
+      if (result === null) {
+        await client.reject(request.id, accepted ? "Unsupported HiCodex request" : "Rejected by HiCodex user");
+      } else {
+        await client.respond(request.id, result);
+      }
       dispatch({ type: "resolveServerRequest", id: request.id });
     } catch (error) {
       dispatch({ type: "log", text: formatError(error), level: "error" });
@@ -3807,9 +3785,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         if (ownerThreadId) requestThreadIds.add(ownerThreadId);
         try {
           const result = buildStopPendingRequestResult(request);
-          result === null
-            ? await client.reject(request.id, "Stopped by HiCodex user")
-            : await client.respond(request.id, result);
+          if (result === null) {
+            await client.reject(request.id, "Stopped by HiCodex user");
+          } else {
+            await client.respond(request.id, result);
+          }
           dispatch({ type: "resolveServerRequest", id: request.id });
           pendingRequestCount += 1;
         } catch {
@@ -3906,7 +3886,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
         dispatch({
           type: "setThreadContextDefaults",
           context: {
-            ...(state.threadContextDefaults ?? {}),
+            ...state.threadContextDefaults,
             model: nextModel.model,
             modelProvider: nextModel.id,
             reasoningSummary: state.threadContextDefaults?.reasoningSummary ?? DEFAULT_MODEL_REASONING_SUMMARY,

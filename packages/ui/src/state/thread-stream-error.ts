@@ -39,7 +39,7 @@ export function reconnectStreamErrorItem(
     content: reconnect ? `Reconnecting ${reconnect.reconnectAttempt}/${reconnect.reconnectMaxAttempts}` : message,
     additionalDetails: stringField(error, "additionalDetails"),
     completed: true,
-    ...(reconnect ?? {}),
+    ...reconnect,
     ...(turnId ? { _turnId: turnId } : {}),
   } as AccumulatedThreadItem;
 }

@@ -217,10 +217,6 @@ function formatLimitName(value: string): string {
   return value.replace(/_/g, "-");
 }
 
-function formatPercent(value: number): string {
-  return `${Math.round(clampPercent(value))}%`;
-}
-
 function clampPercent(value: number): number {
   if (!Number.isFinite(value)) return 100;
   const clamped = Math.max(0, Math.min(100, value));

@@ -637,7 +637,7 @@ export function projectRequiredAppEntries(
   waitingAppIds: ReadonlySet<string> = new Set(),
 ): CommandPanelEntry[] {
   return responseItems(apps).map((app, index) => {
-    const { appId, appName, title } = appIdentity(app, index);
+    const { appId, title } = appIdentity(app, index);
     const installUrl = appInstallUrl(app);
     const needsAuth = booleanField(app, "needsAuth");
     const waiting = waitingAppIds.has(appId);

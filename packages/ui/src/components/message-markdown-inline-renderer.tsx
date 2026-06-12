@@ -9,7 +9,6 @@ import type {
   MarkdownInlineParseOptions,
   MarkdownInlineSegment,
   MarkdownPromptLinkSegment,
-  MarkdownReferenceDefinitions,
   MarkdownWordSegmenter,
 } from "../state/conversation-markdown-engine";
 import type { FileReference } from "./file-reference-types";

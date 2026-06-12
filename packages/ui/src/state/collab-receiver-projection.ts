@@ -16,7 +16,7 @@ export function enrichMultiAgentReceiverThreads<T extends AccumulatedThreadItem 
     const existing = existingById.get(threadId);
     const thread = threadsById.get(threadId) ?? receiverThreadObject(existing);
     return {
-      ...(existing ?? {}),
+      ...existing,
       threadId,
       thread: thread ?? null,
     };

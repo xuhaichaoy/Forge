@@ -35,9 +35,7 @@ const DIRECT_END_RESOURCE_FILE_EXTENSIONS = new Set([
   "md",
   "mdx",
 ]);
-const LINKED_END_RESOURCE_FILE_EXTENSIONS = new Set([
-  ...DIRECT_END_RESOURCE_FILE_EXTENSIONS,
-]);
+const LINKED_END_RESOURCE_FILE_EXTENSIONS = new Set(DIRECT_END_RESOURCE_FILE_EXTENSIONS);
 
 export function assistantEndResourcesForTurn(input: AssistantEndResourcesInput): AssistantEndResource[] {
   const assistantText = input.assistantText ?? "";

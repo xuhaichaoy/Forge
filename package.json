@@ -12,14 +12,24 @@
     "dev": "npm run dev --workspace @forge/desktop",
     "build": "npm run build --workspace @forge/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present && cargo test --workspace",
+    "format": "cargo fmt --all",
+    "format:check": "cargo fmt --all -- --check",
+    "lint": "npm run lint:rust && npm run lint:js && npm run lint:ts-cycles && npm run lint:release-script",
+    "lint:rust": "cargo clippy --workspace --all-targets -- -D warnings",
+    "lint:js": "oxlint --deny-warnings packages/ui/src apps/desktop/scripts scripts",
+    "lint:ts-cycles": "node scripts/check-ts-runtime-cycles.mjs",
+    "lint:release-script": "bash -n scripts/release.sh",
+    "test": "npm run test:scripts && npm run test --workspaces --if-present && cargo test --workspace",
+    "test:scripts": "node --test scripts",
     "sync:protocol": "node scripts/sync-codex-protocol.mjs",
     "sidecar:prepare": "node scripts/prepare-codex-sidecar.mjs",
+    "sidecar:smoke": "node scripts/smoke-codex-sidecar.mjs",
     "extract:asar": "node scripts/extract-codex-asar.mjs",
     "tauri:dev": "npm run tauri:dev --workspace @forge/desktop",
     "tauri:build": "npm run tauri:build --workspace @forge/desktop"
   },
   "devDependencies": {
+    "oxlint": "^1.69.0",
     "typescript": "^5.9.3"
   },
   "engines": {

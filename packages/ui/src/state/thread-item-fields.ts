@@ -59,11 +59,6 @@ function heartbeatStructuredOutput(item: ThreadItem): Record<string, unknown> | 
   return stringField(snakeStructured, "type") === "heartbeat" ? snakeStructured : null;
 }
 
-function shouldRenderAssistantPlaceholder(item: ThreadItem): boolean {
-  const record = item as ItemRecord;
-  return record.renderPlaceholderWhileStreaming === true && record.completed !== true;
-}
-
 export function stripRawThinkingMarkup(value: string): string {
   let text = value.replace(/\r\n?/g, "\n");
   text = text.replaceAll(/[ \t]*\n?[ \t]*<think\b[^>]*>[\s\S]*?<\/think>[ \t]*\n?[ \t]*/gi, "\n");

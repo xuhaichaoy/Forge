@@ -1,5 +1,4 @@
 import { humanizeRrule } from "../lib/rrule-format";
-import type { RailEntry } from "./render-groups";
 // codex: local-conversation-thread-*.js — single-entry per-conversation
 // automation summary input shape lives on `right-rail.ts`; the projection
 // converts the heartbeat schedule view into that shape.

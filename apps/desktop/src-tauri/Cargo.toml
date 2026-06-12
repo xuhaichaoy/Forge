@@ -3,6 +3,9 @@ name = "forge-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# Private app crate — also lets cargo-deny's `private.ignore` skip the
+# UNLICENSED license check for workspace members.
+publish = false
 
 [[bin]]
 name = "Forge"

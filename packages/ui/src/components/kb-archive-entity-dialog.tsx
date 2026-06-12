@@ -265,7 +265,7 @@ function buildAttributes(
   previous: Record<string, unknown> | null | undefined,
   draft: Record<string, string>,
 ): Record<string, unknown> | null {
-  const next: Record<string, unknown> = { ...(previous ?? {}) };
+  const next: Record<string, unknown> = { ...previous };
   for (const field of entityAttributeFields(type)) {
     const value = draft[field.key]?.trim();
     if (value) next[field.key] = value;

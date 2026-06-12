@@ -15,7 +15,7 @@ export function McpResultBlocksView({ blocks }: { blocks: McpResultBlock[] }) {
   );
 }
 
-function McpResultBlockView({ block, index }: { block: McpResultBlock; index: number }) {
+function McpResultBlockView({ block }: { block: McpResultBlock; index: number }) {
   const { formatMessage } = useHiCodexIntl();
   switch (block.kind) {
     case "text":

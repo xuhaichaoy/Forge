@@ -18,7 +18,6 @@ import {
 } from "./image-generation-tool";
 import {
   isThreadStatusNotLoaded,
-  threadStatusLabel,
 } from "./thread-status";
 import { mergeThreadToolHistory } from "./thread-history-tools";
 
@@ -500,7 +499,7 @@ export function threadContextDefaultsFromRuntimeResponse(
     reasoningEffort: result.reasoningEffort,
   }) as ThreadContextDefaults;
   if (Object.keys(patch).length === 0) return null;
-  const next = compactParams({ ...(current ?? {}), ...patch }) as ThreadContextDefaults;
+  const next = compactParams({ ...current, ...patch }) as ThreadContextDefaults;
   return Object.keys(next).length > 0 ? next : null;
 }
 
@@ -897,7 +896,7 @@ export function withWorkspaceDeveloperInstructions(
   if (!trimmedWorkspaceInstructions) return context ?? null;
   const existingDeveloperInstructions = context?.developerInstructions?.trim() ?? "";
   return {
-    ...(context ?? {}),
+    ...context,
     developerInstructions: existingDeveloperInstructions
       ? `${existingDeveloperInstructions}\n\n${trimmedWorkspaceInstructions}`
       : trimmedWorkspaceInstructions,

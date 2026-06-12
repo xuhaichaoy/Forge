@@ -9,7 +9,6 @@ import {
   type SettingsPanelId,
 } from "../state/composer-workflow";
 import {
-  createCommandPanelState,
   projectCommandPanelEntries,
   projectMcpResourceReadResultEntries,
   projectMcpToolCallResultEntries,

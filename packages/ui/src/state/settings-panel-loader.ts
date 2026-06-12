@@ -41,7 +41,6 @@ import {
   type McpServerStartupStatus,
 } from "./mcp-skills-management";
 import {
-  appearanceSettingsEntries,
   desktopBackedLocalSettingsEntries,
   generalSettingsEntries,
   imageGenerationCapabilityEntries,
@@ -165,7 +164,6 @@ export async function loadSettingsPanelContent({
   notificationPreferences = DEFAULT_NOTIFICATION_PREFERENCES,
   uiLocale,
   uiTheme,
-  uiAppearance,
   workMode = "local",
   pendingWorktree = null,
   worktreeHostApi = DEFAULT_WORKTREE_HOST_API,

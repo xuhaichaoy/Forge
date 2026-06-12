@@ -1194,7 +1194,7 @@ function parseMarkdownReferenceDefinition(
   index: number,
 ): { href: string; label: string; nextIndex: number; title: string | null } | null {
   const line = lines[index] ?? "";
-  const match = line.match(/^ {0,3}\[((?:\\[\s\S]|[^\[\]\\])+)\]:(.*)$/u);
+  const match = line.match(/^ {0,3}\[((?:\\[\s\S]|[^[\]\\])+)\]:(.*)$/u);
   if (!match) return null;
   const label = markdownUnescapeText(match[1] ?? "");
   let cursorLine = index + 1;
@@ -1678,5 +1678,5 @@ function pushTextSegment(segments: MarkdownInlineSegment[], text: string): void 
 }
 
 function markdownUnescapeText(text: string): string {
-  return text.replace(/\\([\\`*{}\[\]()#+\-.!_>~|])/g, "$1");
+  return text.replace(/\\([\\`*{}[\]()#+\-.!_>~|])/g, "$1");
 }

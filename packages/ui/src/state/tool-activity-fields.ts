@@ -15,7 +15,7 @@
  */
 import { stringField } from "../lib/format";
 
-import { execExitCode, patchChanges, recordObject } from "./thread-item-fields";
+import { execExitCode, patchChanges } from "./thread-item-fields";
 
 // 60a83dd dedup follow-through: the canonical implementations live in
 // thread-item-fields (this module already depends on it); re-exported so

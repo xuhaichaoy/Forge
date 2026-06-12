@@ -2,9 +2,17 @@ name: macOS release
 
 on:
   workflow_dispatch:
+    inputs:
+      codex_ref:
+        description: "Pinned openai/codex tag or 40-character commit SHA used to build the bundled sidecar"
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  HICODEX_RELEASE_TARGET: aarch64-apple-darwin
 
 concurrency:
   group: macos-release-${{ github.ref }}
@@ -14,11 +22,38 @@ jobs:
   build:
     name: Build signed macOS release
     runs-on: macos-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Check out Codex source
+        uses: actions/checkout@v4
+        with:
+          repository: openai/codex
+          ref: ${{ inputs.codex_ref }}
+          path: codex-upstream
+          fetch-depth: 0
+
+      - name: Validate pinned Codex source
+        env:
+          CODEX_REF: ${{ inputs.codex_ref }}
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git -C codex-upstream rev-parse HEAD)"
+          if [[ "$CODEX_REF" =~ ^[0-9a-f]{40}$ ]]; then
+            if [[ "$HEAD_SHA" != "$CODEX_REF" ]]; then
+              echo "codex_ref resolved to $HEAD_SHA, expected $CODEX_REF"
+              exit 1
+            fi
+            exit 0
+          fi
+          if git -C codex-upstream tag --points-at HEAD --list "$CODEX_REF" | grep -qx "$CODEX_REF"; then
+            exit 0
+          fi
+          echo "codex_ref must be a tag name or a full 40-character commit SHA, not a moving branch: $CODEX_REF"
+          exit 1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -28,6 +63,16 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: ${{ env.HICODEX_RELEASE_TARGET }}
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            codex-upstream/codex-rs -> codex-upstream/codex-rs/target
 
       - name: Install dependencies
         run: npm ci
@@ -35,17 +80,52 @@ jobs:
       - name: Typecheck workspaces
         run: npm run typecheck
 
-      - name: Test desktop release config
-        run: npm run test --workspace @hicodex/desktop
+      - name: Test root scripts
+        run: npm run test:scripts
+
+      - name: Test JavaScript workspaces
+        run: npm run test --workspaces --if-present
+
+      - name: Check Rust formatting
+        run: npm run format:check
+
+      - name: Lint workspace
+        run: npm run lint
 
       - name: Test Rust workspace
         run: cargo test --workspace
 
       - name: Build desktop web assets
-        run: npm run build --workspace @hicodex/desktop
+        run: npm run build --workspace @forge/desktop
+
+      - name: Prepare Codex sidecar
+        run: npm run sidecar:prepare
+        env:
+          HICODEX_CODEX_SOURCE_DIR: ${{ github.workspace }}/codex-upstream/codex-rs
+          HICODEX_CODEX_TARGET: ${{ env.HICODEX_RELEASE_TARGET }}
+
+      - name: Smoke Codex sidecar
+        if: runner.arch == 'ARM64'
+        run: npm run sidecar:smoke
+
+      - name: Materialize App Store Connect API key
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${APPLE_API_KEY_P8:-}" ]]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY:-hicodex}.p8"
+            printf '%s' "$APPLE_API_KEY_P8" > "$key_path"
+            chmod 600 "$key_path"
+            echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+          elif [[ -n "${APPLE_API_KEY_PATH_SECRET:-}" ]]; then
+            echo "APPLE_API_KEY_PATH=$APPLE_API_KEY_PATH_SECRET" >> "$GITHUB_ENV"
+          fi
 
       - name: Check release updater and signing config
-        run: npm run release:config --workspace @hicodex/desktop
+        run: npm run release:config --workspace @forge/desktop
         env:
           HICODEX_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
           HICODEX_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
@@ -65,10 +145,9 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
 
       - name: Build signed Tauri release
-        run: npm run tauri:build:release --workspace @hicodex/desktop
+        run: npm run tauri:build:release --workspace @forge/desktop -- --target ${{ env.HICODEX_RELEASE_TARGET }}
         env:
           HICODEX_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
           HICODEX_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
@@ -88,7 +167,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+
+      - name: Generate updater metadata
+        run: node scripts/generate-tauri-update-metadata.mjs --config .tmp/tauri.release.conf.json --target ${{ env.HICODEX_RELEASE_TARGET }}
+        env:
+          HICODEX_RELEASE_ARTIFACT_BASE_URL: ${{ secrets.HICODEX_RELEASE_ARTIFACT_BASE_URL }}
+          HICODEX_RELEASE_ARTIFACT_NAME: HiCodex
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -96,7 +180,12 @@ jobs:
           name: hicodex-macos-release-${{ github.run_number }}
           if-no-files-found: error
           path: |
-            apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
-            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz
-            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
-            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig.*
+            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/dmg/*.dmg
+            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz
+            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig
+            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig.*
+            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig
+            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig.*
+            dist/release/**

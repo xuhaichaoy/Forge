@@ -147,7 +147,6 @@ export function ConversationUnitView({
 function GeneratedImageGalleryOutput({
   unit,
   onForkTurn,
-  threadId,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>;
   onForkTurn?: (turnId: string) => void;

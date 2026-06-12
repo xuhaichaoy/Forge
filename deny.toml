@@ -1,0 +1,46 @@
+# cargo-deny supply-chain gate (run in CI via EmbarkStudios/cargo-deny-action).
+# Allow-list derived from the actual dependency graph (cargo metadata sweep);
+# additions should be deliberate, not rubber-stamped.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "warn"
+# Only flag unmaintained crates we depend on DIRECTLY. The transitive GTK3
+# binding advisories (RUSTSEC-2024-0411..0420, atk/gdk/gtk/…) arrive via
+# tauri→wry's Linux stack and are tracked upstream by Tauri; they are not
+# actionable from this workspace.
+unmaintained = "workspace"
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# Workspace crates are UNLICENSED on purpose (private app code); they are
+# excluded via publish = false + private.ignore below.
+private = { ignore = true }
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
