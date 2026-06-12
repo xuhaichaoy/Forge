@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pencil, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Search } from "lucide-react";
 import { useHiCodexIntl } from "./i18n-provider";
 import {
   COMMAND_DESCRIPTORS,
-  commandDescriptorDescription,
-  commandDescriptorTitle,
   descriptorAcceleratorLabel,
 } from "../state/commands";
 import {
   commandAccelerators,
-  formatAccelerator,
-  isMacPlatform,
 } from "../state/command-registry";
 import type { CommandDescriptor } from "../state/command-registry";
 import { resolveKeymapOverride, type KeymapOverrides } from "../state/keymap-overrides";
+import { KeyboardShortcutRow } from "./keyboard-shortcuts-settings-row";
 
 /*
  * CODEX-REF: keyboard-shortcuts-settings-*.js — inline (non-modal)
@@ -177,7 +174,7 @@ export function KeyboardShortcutsSettingsPanel({
                 <th scope="colgroup" colSpan={3}>{section.title}</th>
               </tr>,
               ...section.descriptors.map((descriptor) => (
-                <Row
+                <KeyboardShortcutRow
                   key={descriptor.id}
                   descriptor={descriptor}
                   editing={editingId === descriptor.id}
@@ -201,128 +198,6 @@ export function KeyboardShortcutsSettingsPanel({
         </table>
       )}
     </div>
-  );
-}
-
-interface RowProps {
-  descriptor: CommandDescriptor;
-  editing: boolean;
-  captured: string | null;
-  hasOverride: boolean;
-  conflict: { id: string; title: string } | null;
-  inputRef: React.RefObject<HTMLInputElement | null> | undefined;
-  onEdit: () => void;
-  onClear: () => void;
-  onReset: () => void;
-  onCancel: () => void;
-}
-
-function Row({
-  descriptor,
-  editing,
-  captured,
-  hasOverride,
-  conflict,
-  inputRef,
-  onEdit,
-  onClear,
-  onReset,
-  onCancel,
-}: RowProps) {
-  const { formatMessage } = useHiCodexIntl();
-  const accelerator = descriptorAcceleratorLabel(descriptor.id);
-  const isMac = isMacPlatform();
-  return (
-    <tr className="hc-keyboard-settings-row" data-editing={editing}>
-      <td className="hc-keyboard-settings-cell-command">
-        <div className="hc-keyboard-settings-command-title">{commandDescriptorTitle(descriptor)}</div>
-        {commandDescriptorDescription(descriptor) ? (
-          <div className="hc-keyboard-settings-command-desc">{commandDescriptorDescription(descriptor)}</div>
-        ) : null}
-      </td>
-      {editing ? (
-        /*
-         * CODEX-REF: spec — capture state swaps the keybinding column for an
-         * input and HIDES the actions column (colSpan=2 in Codex). HiCodex
-         * uses colSpan=2 on the input cell to match.
-         */
-        <td className="hc-keyboard-settings-cell-capture" colSpan={2}>
-          <input
-            ref={inputRef}
-            readOnly
-            className="hc-keyboard-settings-capture-input"
-            placeholder={formatMessage({ id: "settings.keyboardShortcuts.capturePrompt", defaultMessage: "Press shortcut" })}
-            value={captured ? formatAccelerator(captured, isMac) : ""}
-            onBlur={onCancel}
-            aria-label={`Capture new shortcut for ${descriptor.title}`}
-          />
-          {conflict ? (
-            // CODEX-REF: spec §10 — inline "Used by {commandTitle}" warning.
-            // Codex shows below the input and does NOT block commit.
-            <div className="hc-keyboard-settings-conflict" role="status">
-              Used by {conflict.title}
-            </div>
-          ) : null}
-        </td>
-      ) : (
-        <>
-          <td className="hc-keyboard-settings-cell-keybinding">
-            {accelerator ? (
-              <kbd className="hc-keyboard-settings-kbd">{accelerator}</kbd>
-            ) : (
-              <span className="hc-keyboard-settings-kbd hc-keyboard-settings-kbd--empty">—</span>
-            )}
-          </td>
-          <td className="hc-keyboard-settings-cell-actions">
-            <div className="hc-keyboard-settings-actions">
-              {/*
-                * CODEX-REF: spec — pencil button enters capture mode. Codex
-                * also handles Shift+click as "append" mode; HiCodex doesn't
-                * expose multi-binding lists yet (descriptors carry only a
-                * single defaultKeybinding) so the modifier is currently a
-                * no-op. Tracked as follow-up.
-                */}
-              <button
-                type="button"
-                className="hc-keyboard-settings-icon-button"
-                aria-label={`Edit shortcut for ${descriptor.title}`}
-                onClick={onEdit}
-              >
-                <Pencil size={14} />
-              </button>
-              {accelerator ? (
-                /*
-                 * CODEX-REF: spec — trash button only shown when a binding
-                 * exists; clicking unbinds (override → null).
-                 */
-                <button
-                  type="button"
-                  className="hc-keyboard-settings-icon-button"
-                  aria-label={`Remove shortcut for ${descriptor.title}`}
-                  onClick={onClear}
-                >
-                  <Trash2 size={14} />
-                </button>
-              ) : null}
-              {hasOverride ? (
-                /*
-                 * CODEX-REF: spec — undo (reset) icon only shown when the
-                 * row carries a user override; clicking drops the override.
-                 */
-                <button
-                  type="button"
-                  className="hc-keyboard-settings-icon-button"
-                  aria-label={formatMessage({ id: "settings.keyboardShortcuts.resetAriaLabel", defaultMessage: "Reset shortcut for {commandTitle}" }, { commandTitle: descriptor.title })}
-                  onClick={onReset}
-                >
-                  <RotateCcw size={14} />
-                </button>
-              ) : null}
-            </div>
-          </td>
-        </>
-      )}
-    </tr>
   );
 }
 

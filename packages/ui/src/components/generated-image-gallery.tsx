@@ -1,7 +1,16 @@
-import { ChevronDown, Loader2 } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { renderableLocalImageSrc } from "../lib/local-image-src";
 import type { ThreadItem } from "../state/render-groups";
+import {
+  computeGalleryLayout,
+  GALLERY_GAP_PX,
+  type GalleryLayout,
+} from "./generated-image-gallery-layout";
+import {
+  GalleryOverflowControls,
+  GalleryPendingPlaceholder,
+  GalleryThumbnail,
+} from "./generated-image-gallery-thumbnails";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
 import { useHiCodexIntl } from "./i18n-provider";
 
@@ -17,62 +26,11 @@ import { useHiCodexIntl } from "./i18n-provider";
  * Architectural mapping:
  *   Codex `Ut` ↔ HiCodex `images` prop (passed visible-completed list)
  *   Codex `$e` ↔ HiCodex `hasPending` (pending 24×24 spinner placeholder)
- *   Codex `GC()` ↔ `computeGalleryLayout()` below (heightPx + aspectRatio mode)
+ *   Codex `GC()` ↔ `computeGalleryLayout()` in generated-image-gallery-layout
  *   Codex `YC` ↔ `GalleryThumbnail` sub-component
  *   Codex `XC` ↔ `GalleryOverflowControls` sub-component
  *   Codex `$C` ↔ `<ImagePreviewLightbox>` (now with prev/next nav)
  */
-
-/** Codex `WC = 4` — max images per visible carousel row. */
-const GALLERY_MAX_VISIBLE = 4;
-/** Gap between thumbnails in pixels — matches Codex inner `flex gap-2` (Tailwind). */
-const GALLERY_GAP_PX = 8;
-/** Codex pending placeholder size — `flex h-24 w-24` (Tailwind h-24 = 6rem = 96px). */
-const GALLERY_PENDING_SIZE_PX = 96;
-
-interface GalleryLayout {
-  heightPx: number;
-  aspectRatio: "natural" | "square";
-  visibleCount: number;
-  maxStartIndex: number;
-  overflowCount: number;
-}
-
-/**
- * Codex `GC`. Computes whether the natural-aspect
- * row of images can fit in the measured container width — if so, render
- * each thumbnail at its native aspect ratio. If not, switch to a square
- * 4-up carousel with overflow paging.
- */
-export function computeGalleryLayout(
-  containerWidthPx: number | null,
-  imageAspectRatios: number[],
-): GalleryLayout {
-  const n = imageAspectRatios.length;
-  const perCellWidth = containerWidthPx == null
-    ? 0
-    : Math.max((containerWidthPx - (GALLERY_MAX_VISIBLE - 1) * GALLERY_GAP_PX) / GALLERY_MAX_VISIBLE, 0);
-  const naturalTotalWidth = imageAspectRatios.reduce((sum, ar) => sum + ar * perCellWidth, 0)
-    + Math.max(n - 1, 0) * GALLERY_GAP_PX;
-  if (containerWidthPx == null || naturalTotalWidth <= containerWidthPx) {
-    return {
-      heightPx: perCellWidth,
-      aspectRatio: "natural",
-      visibleCount: n,
-      maxStartIndex: 0,
-      overflowCount: 0,
-    };
-  }
-  const visibleCount = Math.min(n, GALLERY_MAX_VISIBLE);
-  const overflowCount = Math.max(n - visibleCount, 0);
-  return {
-    heightPx: perCellWidth,
-    aspectRatio: "square",
-    visibleCount,
-    maxStartIndex: overflowCount,
-    overflowCount,
-  };
-}
 
 function imageItemSrc(item: ThreadItem): string {
   const record = item as Record<string, unknown>;
@@ -235,17 +193,7 @@ export function GeneratedImageGallery({
         </div>
       )}
       {hasPending && (
-        // Codex pending placeholder (`$e` branch): 24×24 outlined box with a
-        // loading spinner. Sits *below* the carousel of completed images.
-        // Intentionally aria-free: Codex renders this as a bare wrapper with no
-        // role/aria-label (no "Generating image" string exists in the Codex
-        // chunks), so we match that bare markup.
-        <div
-          className="hc-generated-image-gallery-pending"
-          style={{ width: GALLERY_PENDING_SIZE_PX, height: GALLERY_PENDING_SIZE_PX }}
-        >
-          <Loader2 aria-hidden className="hc-spin" size={20} />
-        </div>
+        <GalleryPendingPlaceholder />
       )}
       {selectedImage != null && selectedSrc.length > 0 && (
         <ImagePreviewLightbox
@@ -260,144 +208,6 @@ export function GeneratedImageGallery({
         />
       )}
     </div>
-  );
-}
-
-/*
- * Codex `YC` — single thumbnail button. `naturalWidth/Height`
- * onLoad propagates back via `onAspectRatioChange` so the parent re-runs
- * `GC` with accurate ratios.
- */
-function GalleryThumbnail({
-  src,
-  imageNumber,
-  heightPx,
-  aspectRatio,
-  aspectRatioKnown,
-  square,
-  hiddenInCarousel,
-  onAspectRatioChange,
-  onOpenPreview,
-}: {
-  src: string;
-  imageNumber: number;
-  heightPx: number;
-  aspectRatio: number;
-  aspectRatioKnown: boolean;
-  square: boolean;
-  hiddenInCarousel: boolean;
-  onAspectRatioChange: (ratio: number) => void;
-  onOpenPreview: () => void;
-}) {
-  const { formatMessage } = useHiCodexIntl();
-  const alt = formatMessage({ id: "codex.localConversation.generatedImage", defaultMessage: "Generated image {imageNumber}" }, { imageNumber });
-  const frameHeightPx = heightPx > 0 ? heightPx : undefined;
-  const frameWidthPx = frameHeightPx == null
-    ? undefined
-    : square ? frameHeightPx : Math.max(frameHeightPx * aspectRatio, 1);
-  // While `src` is empty (e.g. waiting for `app://` URL hook resolution in
-  // Codex `ew()`), render a placeholder square — Codex `YC` does the same.
-  if (!src) {
-    return (
-      <div
-        className="hc-generated-image-gallery-thumb hc-generated-image-gallery-thumb--empty"
-        style={{ width: frameHeightPx, height: frameHeightPx }}
-      >
-        <Loader2 aria-hidden className="hc-spin" size={16} />
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      className="hc-generated-image-gallery-thumb"
-      style={{ width: frameWidthPx, height: frameHeightPx }}
-      aria-label={alt}
-      aria-hidden={hiddenInCarousel}
-      tabIndex={hiddenInCarousel ? -1 : undefined}
-      onClick={onOpenPreview}
-    >
-      <img
-        src={src}
-        alt={alt}
-        referrerPolicy="no-referrer"
-        className={[
-          "hc-generated-image-thumb-img",
-          square ? "is-square" : "is-natural",
-          !square && !aspectRatioKnown ? "is-measuring" : "",
-        ].filter(Boolean).join(" ")}
-        onLoad={(event) => {
-          const target = event.currentTarget;
-          if (target.naturalWidth <= 0 || target.naturalHeight <= 0) return;
-          onAspectRatioChange(target.naturalWidth / target.naturalHeight);
-        }}
-        onError={() => {
-          if (!aspectRatioKnown) onAspectRatioChange(1);
-        }}
-      />
-    </button>
-  );
-}
-
-/*
- * Codex `XC` — overflow indicator + prev/next paging.
- * Codex uses absolute right-2 bottom-2 with hover/focus opacity transitions.
- */
-function GalleryOverflowControls({
-  overflowCount,
-  canGoPrev,
-  canGoNext,
-  onPrev,
-  onNext,
-}: {
-  overflowCount: number;
-  canGoPrev: boolean;
-  canGoNext: boolean;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  const { formatMessage } = useHiCodexIntl();
-  // Hide the "+N" indicator entirely once the user has scrolled into the
-  // overflowed range, matching Codex's `group-focus-within:opacity-0
-  // group-hover:opacity-0` rule on the badge container.
-  return (
-    <>
-      {overflowCount > 0 && (
-        <div className="hc-generated-image-gallery-overflow-count" aria-hidden>
-          <ChevronDown aria-hidden className="hc-generated-image-gallery-overflow-count-arrow" size={14} />
-          <span className="hc-generated-image-gallery-overflow-count-value">{overflowCount}</span>
-        </div>
-      )}
-      {/*
-        Intentionally aria-free wrapper: Codex renders the nav as a bare
-        positioned div with no role/aria-label (no "Generated image carousel"
-        string exists in the Codex chunks). Only the two nav buttons carry
-        aria-labels (ICU ids `generatedImageGallery.previousImages` /
-        `generatedImageGallery.nextImages`).
-      */}
-      <div className="hc-generated-image-gallery-nav">
-        <button
-          type="button"
-          className="hc-generated-image-gallery-nav-button"
-          aria-label={formatMessage({ id: "codex.localConversation.generatedImageGallery.previousImages", defaultMessage: "Previous images" })}
-          disabled={!canGoPrev}
-          onClick={onPrev}
-          onPointerUp={(event) => event.currentTarget.blur()}
-        >
-          <ChevronDown aria-hidden className="hc-generated-image-gallery-nav-icon is-prev" size={14} />
-        </button>
-        <button
-          type="button"
-          className="hc-generated-image-gallery-nav-button"
-          aria-label={formatMessage({ id: "codex.localConversation.generatedImageGallery.nextImages", defaultMessage: "Next images" })}
-          disabled={!canGoNext}
-          onClick={onNext}
-          onPointerUp={(event) => event.currentTarget.blur()}
-        >
-          <ChevronDown aria-hidden className="hc-generated-image-gallery-nav-icon is-next" size={14} />
-        </button>
-      </div>
-    </>
   );
 }
 

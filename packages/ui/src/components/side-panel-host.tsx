@@ -2,9 +2,11 @@ import {
   Component,
   useCallback,
   useMemo,
+  useRef,
   type CSSProperties,
   type ErrorInfo,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
@@ -44,10 +46,12 @@ import type {
  * the existing `useFilePreviewPanelLayout` hook (or a future side-panel hook).
  *
  * NOT ported here yet:
- *   • Resize handle (`Le` in Codex `vn` at app-shell:522)
  *   • Width animation (motion-one bridge `app-shell-panel-animation`)
  *   • Full-width toggle (Codex `U` atom + `Q()` helper)
- *   These remain to-do; bare structural shell first.
+ *   These remain to-do.
+ * Resize handle (`Le` in Codex `vn` at app-shell:522) IS ported: the optional
+ * `resize` prop wires the host to `useFilePreviewPanelLayout` (drag from the
+ * left edge, double-click resets to the 600px default, width persists).
  */
 export const SIDE_PANEL_HOST_DEFAULT_WIDTH_PX = 600;
 
@@ -69,6 +73,20 @@ export interface SidePanelHostProps {
   readonly headerSlot?: ReactNode;
   /** Pixel width of the panel. Default 600px (Codex `RightPanelOutlet` default). */
   readonly widthPx?: number;
+  /**
+   * Full-width mode (Codex `widthMode === "full"`): the panel covers the full
+   * main-content width and the resize handle is hidden.
+   */
+  readonly fullWidth?: boolean;
+  /** Left-edge resize handle wiring (Codex `Le`). Omit to render no handle. */
+  readonly resize?: {
+    readonly isResizing: boolean;
+    readonly onResizeStart: (
+      event: { clientX: number; pointerId?: number },
+      asideElement: HTMLElement | null,
+    ) => void;
+    readonly onResetWidth: () => void;
+  };
   /**
    * Internal per-tab state. Pass a Record keyed by tabId; missing entries are
    * treated as undefined (the controller's `defaultState` seed is used). The
@@ -92,9 +110,34 @@ export function SidePanelHost({
   afterTabsStickySlot,
   headerSlot,
   widthPx = SIDE_PANEL_HOST_DEFAULT_WIDTH_PX,
+  fullWidth = false,
+  resize,
   className,
 }: SidePanelHostProps) {
-  const style = useMemo<CSSProperties>(() => ({ width: `${widthPx}px` }), [widthPx]);
+  const style = useMemo<CSSProperties>(
+    () => ({ width: fullWidth ? "100%" : `${widthPx}px` }),
+    [fullWidth, widthPx],
+  );
+  const asideRef = useRef<HTMLElement | null>(null);
+
+  const handleResizePointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (!resize || event.button !== 0) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some browsers reject capture on synthetic events; resizing still works.
+    }
+    resize.onResizeStart(event, asideRef.current);
+  }, [resize]);
+
+  const handleResizeClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
+    if (!resize) return;
+    if (event.detail === 2) {
+      event.preventDefault();
+      resize.onResetWidth();
+    }
+  }, [resize]);
 
   /*
    * codex: `B(...)` per-tab renderPanel factory at app-shell-tab-controller:286-307.
@@ -141,10 +184,24 @@ export function SidePanelHost({
   const activeTabId = activeTab?.tabId ?? null;
   return (
     <aside
+      ref={asideRef}
       className={className ? `hc-side-panel-host ${className}` : "hc-side-panel-host"}
       style={style}
+      data-full-width={fullWidth ? "true" : undefined}
+      data-resizing={resize?.isResizing ? "true" : undefined}
       data-side-panel-id={controller.getSnapshot().panelId}
     >
+      {resize != null && !fullWidth && (
+        <div
+          aria-hidden
+          className="hc-side-panel-host__resize-handle"
+          data-resizing={resize.isResizing ? "true" : undefined}
+          onClick={handleResizeClick}
+          onPointerDown={handleResizePointerDown}
+        >
+          <div className="hc-side-panel-host__resize-handle-line" aria-hidden />
+        </div>
+      )}
       {headerSlot != null && <div className="hc-side-panel-host__header">{headerSlot}</div>}
       <SidePanelTabBar
         controller={controller}

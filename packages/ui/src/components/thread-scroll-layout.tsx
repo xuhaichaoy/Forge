@@ -2,6 +2,7 @@ import { ArrowUp } from "lucide-react";
 import {
   createContext,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -10,10 +11,16 @@ import {
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useHiCodexIntl } from "./i18n-provider";
+import {
+  DESKTOP_FOOTER_SCROLL_PADDING_PX,
+  DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX,
+  nextThreadStickToBottomState,
+  threadScrollContentOverflows,
+  threadScrollDistanceFromBottom,
+  threadScrollKey,
+  threadScrollTopForDistanceFromBottom,
+} from "../state/thread-scroll";
 
-const DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX = 24;
-const DESKTOP_FOOTER_SCROLL_PADDING_PX = 16;
-const DEFAULT_SCROLL_KEY = "__hicodex_default_thread_scroll__";
 const USER_SCROLL_INTENT_WINDOW_MS = 600;
 
 const scrollDistanceByThreadKey = new Map<string, number>();
@@ -110,7 +117,85 @@ export function ThreadScrollLayout({
     for (const listener of scrollListenersRef.current) listener(distance);
   }, [onScroll, setScrolledFromBottom]);
 
-  const scrollToDistanceFromBottom = useCallback((distance: number, behavior: ThreadScrollBehavior = "smooth") => {
+  const settleFrameRef = useRef<number | null>(null);
+  const cancelSettleToBottom = useCallback(() => {
+    if (settleFrameRef.current != null) {
+      window.cancelAnimationFrame(settleFrameRef.current);
+      settleFrameRef.current = null;
+    }
+  }, []);
+
+  /*
+   * A smooth scroll-to-bottom over the virtualized turn list chases a moving
+   * target: rows mount and measure during the glide, growing scrollHeight
+   * past the animation's fixed target, and mid-glide re-renders can cancel
+   * the animation outright (observed on WKWebView). Escort the glide: while
+   * the stick-to-bottom intent holds, re-issue the scroll whenever progress
+   * stalls short of the real bottom. A user scroll drops the intent and ends
+   * the escort.
+   */
+  const settleScrollToBottom = useCallback(() => {
+    cancelSettleToBottom();
+    let lastTop: number | null = null;
+    let stalledFrames = 0;
+    let stuckFrames = 0;
+    const step = () => {
+      settleFrameRef.current = null;
+      const scrollElement = scrollRef.current;
+      if (!scrollElement || !shouldStickToBottomRef.current) return;
+      const distance = threadScrollDistanceFromBottom(scrollElement);
+      if (distance <= 1) {
+        measureScroll({ updateStickiness: false });
+        return;
+      }
+      const top = scrollElement.scrollTop;
+      // scrollTop moving AWAY from the bottom means the user took over via a
+      // path that never marks scroll intent (keyboard paging) — stand down.
+      if (lastTop != null && top < lastTop - 4) return;
+      if (lastTop != null && Math.abs(top - lastTop) < 0.5) {
+        stalledFrames += 1;
+        stuckFrames += 1;
+        if (stuckFrames >= 30) {
+          // Smooth re-issues keep dying (every glide canceled before moving):
+          // land decisively instead of looping forever.
+          stuckFrames = 0;
+          stalledFrames = 0;
+          scrollElement.scrollTop = threadScrollTopForDistanceFromBottom(scrollElement, 0);
+        } else if (stalledFrames >= 3) {
+          stalledFrames = 0;
+          const target = threadScrollTopForDistanceFromBottom(scrollElement, 0);
+          if (typeof scrollElement.scrollTo === "function") {
+            scrollElement.scrollTo({ top: target, behavior: "smooth" });
+          } else {
+            scrollElement.scrollTop = target;
+          }
+        }
+      } else {
+        stalledFrames = 0;
+        stuckFrames = 0;
+      }
+      lastTop = top;
+      settleFrameRef.current = window.requestAnimationFrame(step);
+    };
+    settleFrameRef.current = window.requestAnimationFrame(step);
+  }, [cancelSettleToBottom, measureScroll]);
+
+  useEffect(() => () => {
+    cancelSettleToBottom();
+  }, [cancelSettleToBottom]);
+
+  const scrollToDistanceFromBottom = useCallback((
+    distance: number,
+    behavior: ThreadScrollBehavior = "smooth",
+    options?: {
+      /*
+       * false = positional maintenance (height-delta compensation), which must
+       * not start or cancel a scroll-to-bottom escort; only calls expressing a
+       * NEW scroll intent (button, ⌘F jump, restore) manage the escort.
+       */
+      manageSettle?: boolean;
+    },
+  ) => {
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
     const normalizedDistance = Math.max(0, distance);
@@ -124,11 +209,32 @@ export function ThreadScrollLayout({
     lastDistanceFromBottomRef.current = normalizedDistance;
     scrollDistanceByThreadKey.set(activeScrollKeyRef.current, normalizedDistance);
     const isNearBottom = normalizedDistance <= DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX;
-    shouldStickToBottomRef.current = isNearBottom;
+    if (options?.manageSettle ?? true) {
+      if (normalizedDistance === 0 && behavior === "smooth") {
+        /*
+         * This call expresses an explicit go-to-bottom intent. Drop any
+         * pointer-intent window the trigger's own pointerdown just opened
+         * (the ↓ button lives inside the scroll container), otherwise the
+         * glide's first scroll events re-evaluate stickiness as a user
+         * scroll, unstick at >24px, and kill the escort immediately.
+         */
+        userScrollIntentUntilRef.current = 0;
+        settleScrollToBottom();
+      } else {
+        cancelSettleToBottom();
+      }
+      /*
+       * Stickiness is intent state: positional maintenance (manageSettle:
+       * false, the height-delta compensation) must not rewrite it — a
+       * mid-glide compensation at a large distance would flip it false and
+       * exit the escort.
+       */
+      shouldStickToBottomRef.current = isNearBottom;
+    }
     setScrolledFromBottom(!isNearBottom);
     onScroll?.(normalizedDistance, isNearBottom);
     for (const listener of scrollListenersRef.current) listener(normalizedDistance);
-  }, [onScroll, setScrolledFromBottom]);
+  }, [cancelSettleToBottom, onScroll, setScrolledFromBottom, settleScrollToBottom]);
 
   const scrollToBottom = useCallback((behavior: ThreadScrollBehavior = "smooth") => {
     scrollToDistanceFromBottom(0, behavior);
@@ -246,11 +352,11 @@ export function ThreadScrollLayout({
     }) => {
       if (heightDeltaPx === 0) return;
       if (viewportDistanceFromBottomPx <= DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX) {
-        scrollToDistanceFromBottom(0, "instant");
+        scrollToDistanceFromBottom(0, "instant", { manageSettle: false });
         return;
       }
       if (turnBottomDistanceFromBottomPx <= viewportDistanceFromBottomPx) {
-        scrollToDistanceFromBottom(viewportDistanceFromBottomPx + heightDeltaPx, "instant");
+        scrollToDistanceFromBottom(viewportDistanceFromBottomPx + heightDeltaPx, "instant", { manageSettle: false });
       }
     },
     getLastScrollDistanceFromBottomPx: () => lastDistanceFromBottomRef.current,
@@ -323,48 +429,6 @@ export function ThreadScrollLayout({
 
 export function useThreadScrollController(): ThreadScrollController | null {
   return useContext(ThreadScrollControllerContext);
-}
-
-export function threadScrollDistanceFromBottom(element: HTMLElement): number {
-  if (isReverseThreadScroll(element)) {
-    return Math.max(0, -element.scrollTop);
-  }
-  return Math.max(0, element.scrollHeight - element.scrollTop - element.clientHeight);
-}
-
-export function setThreadScrollDistanceFromBottom(element: HTMLElement, distance: number): void {
-  element.scrollTop = threadScrollTopForDistanceFromBottom(element, distance);
-}
-
-export function threadScrollTopForDistanceFromBottom(element: HTMLElement, distance: number): number {
-  const normalizedDistance = Math.max(0, distance);
-  if (isReverseThreadScroll(element)) {
-    return normalizedDistance === 0 ? 0 : -normalizedDistance;
-  }
-  return Math.max(0, element.scrollHeight - element.clientHeight - normalizedDistance);
-}
-
-export function nextThreadStickToBottomState(
-  current: boolean,
-  distanceFromBottomPx: number,
-  updateStickiness: boolean,
-): boolean {
-  return updateStickiness
-    ? distanceFromBottomPx <= DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX
-    : current;
-}
-
-export function threadScrollKey(resetKey: string | null | undefined): string {
-  const normalized = resetKey?.trim() ?? "";
-  return normalized || DEFAULT_SCROLL_KEY;
-}
-
-export function threadScrollContentOverflows(contentHeightPx: number, viewportHeightPx: number): boolean {
-  return contentHeightPx > viewportHeightPx + 2;
-}
-
-function isReverseThreadScroll(element: HTMLElement): boolean {
-  return globalThis.getComputedStyle?.(element).flexDirection === "column-reverse";
 }
 
 function resizeEntryBlockSize(entry: ResizeObserverEntry | undefined): number {

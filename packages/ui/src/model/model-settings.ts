@@ -77,6 +77,11 @@ export interface BuildModelConfigFromConfigOptions {
   excludedProviderIds?: readonly string[];
 }
 
+export interface ModelSettingsDraftFromConfig {
+  draft: ModelConfig;
+  configured: boolean;
+}
+
 export function providerIdForModel(model: Pick<ModelConfig, "id">): string {
   const normalized = model.id.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
   return normalized || DEFAULT_MODEL_PROVIDER_ID;
@@ -209,6 +214,17 @@ export function buildModelConfigFromConfig(
     maxTokens: null,
     supportsImageInput: true,
   });
+}
+
+export function buildModelSettingsDraftFromConfig(
+  config: Record<string, unknown> | null | undefined,
+  options: BuildModelConfigFromConfigOptions = {},
+): ModelSettingsDraftFromConfig {
+  const draft = buildModelConfigFromConfig(config, options);
+  return {
+    draft,
+    configured: isModelProviderConfigured(config, draft.id),
+  };
 }
 
 /*

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { scheduleAppSettingsPersist } from "../lib/app-settings";
+import { removeDesktopAppSettingValue, setDesktopAppSettingValue } from "../lib/app-settings";
 import {
   LEGACY_SELECTED_MODEL_STORAGE_KEY,
   SELECTED_MODEL_STORAGE_KEY,
@@ -19,8 +19,8 @@ export function useModelPreferenceState() {
     const migrated = migrateSubscriptionModelSelection(stored);
     if (migrated !== stored) {
       try {
-        if (migrated) storage?.setItem(SELECTED_MODEL_STORAGE_KEY, migrated);
-        else storage?.removeItem(SELECTED_MODEL_STORAGE_KEY);
+        if (migrated) setDesktopAppSettingValue(storage, SELECTED_MODEL_STORAGE_KEY, migrated);
+        else removeDesktopAppSettingValue(storage, SELECTED_MODEL_STORAGE_KEY);
       } catch {
         // Selection still works in memory when storage is unavailable.
       }
@@ -33,13 +33,11 @@ export function useModelPreferenceState() {
     try {
       const storage = modelPreferenceStorage();
       if (nextKey) {
-        storage?.setItem(SELECTED_MODEL_STORAGE_KEY, nextKey);
+        setDesktopAppSettingValue(storage, SELECTED_MODEL_STORAGE_KEY, nextKey);
       } else {
-        storage?.removeItem(SELECTED_MODEL_STORAGE_KEY);
+        removeDesktopAppSettingValue(storage, SELECTED_MODEL_STORAGE_KEY);
         storage?.removeItem(LEGACY_SELECTED_MODEL_STORAGE_KEY);
       }
-      // Mirror to disk so the selection survives a webview storage reset.
-      scheduleAppSettingsPersist();
     } catch {
       // Selection still works in memory when storage is unavailable.
     }
@@ -67,9 +65,9 @@ export function useModelPreferenceState() {
     try {
       const storage = modelPreferenceStorage();
       if (effort) {
-        storage?.setItem(HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride, effort);
+        setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride, effort);
       } else {
-        storage?.removeItem(HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride);
+        removeDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride);
       }
       storage?.removeItem(LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY);
     } catch {

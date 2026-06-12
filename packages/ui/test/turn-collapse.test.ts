@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   groupUnitsByTurn,
   isFinalAssistantUnit,
@@ -5,7 +7,8 @@ import {
   shouldAllowTurnCollapse,
   shouldPreventTurnAutoCollapse,
   splitTurnUnits,
-} from "../src/components/turn-collapse";
+} from "../src/state/turn-collapse-projection";
+import { WorkedForDivider } from "../src/components/worked-for-divider";
 import { mcpAppResourceUri } from "../src/state/render-groups";
 import type {
   AccumulatedThreadItem,
@@ -25,6 +28,7 @@ export default function runTurnCollapseTests(): void {
   keepsMidTurnPlainUserMessagesPersistentWhenCollapsed();
   requiresFinalAssistantAndRenderableAgentItemsBeforeCollapse();
   preventsAutoCollapseForMcpAppToolCalls();
+  rendersZeroDurationWorkedForDividerWithoutZeroSeconds();
 }
 
 function makeUserUnit(turnId: string): ConversationRenderUnit {
@@ -383,4 +387,53 @@ function preventsAutoCollapseForMcpAppToolCalls(): void {
     !shouldPreventTurnAutoCollapse([completedNonApp.unit]),
     "a completed non-app MCP tool-call follows Desktop's normal auto-collapse path",
   );
+}
+
+function rendersZeroDurationWorkedForDividerWithoutZeroSeconds(): void {
+  const item: AccumulatedThreadItem = {
+    id: "worked-for:cancelled",
+    type: "worked-for",
+    status: "completed",
+    startedAtMs: 10_000,
+    completedAtMs: 10_000,
+    _turnStatus: "cancelled",
+    _turnId: "turn-1",
+  };
+  const unit: ConversationRenderUnit = {
+    kind: "toolActivity",
+    key: "w-cancelled",
+    summary: {
+      groupType: "worked-for",
+      label: "Worked",
+      icon: "clock",
+      activeDetail: null,
+      details: [],
+      inProgress: false,
+      totalDurationMs: 0,
+      counts: {
+        commands: 0,
+        webSearchCommands: 0,
+        runningWebSearchCommands: 0,
+        runningFolderCreationCommands: 0,
+        exploredFiles: 0,
+        searches: 0,
+        lists: 0,
+        fileChanges: 0,
+        createdFiles: 0,
+        editedFiles: 0,
+        deletedFiles: 0,
+        mcpCalls: 0,
+        dynamicCalls: 0,
+        webSearches: 0,
+        reasoning: 0,
+        plans: 0,
+        other: 0,
+      },
+    },
+    items: [item],
+  };
+
+  const html = renderToStaticMarkup(createElement(WorkedForDivider, { unit }));
+  assert(html.includes("Worked"), "zero-duration completed worked-for divider should still render a label");
+  assert(!html.includes("Worked for 0s"), "zero-duration completed worked-for divider must not render 0s");
 }

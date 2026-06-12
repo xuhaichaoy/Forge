@@ -1,10 +1,11 @@
 import { AppToastViewport } from "./app-toast-viewport";
 import { ComposerPermissionsDropdown } from "./composer-permissions-dropdown";
 import { KeyboardShortcutsDialog } from "./keyboard-shortcuts-dialog";
-import { ModelPickerMenu, type ModelPickerProvider } from "./model-picker-menu";
+import { ModelPickerMenu } from "./model-picker-menu";
 import { ReasoningPickerMenu, type ReasoningPickerMenuProps } from "./reasoning-picker-menu";
 import { UnifiedDiffFailureDialog, type UnifiedDiffFailure } from "./unified-diff-failure-dialog";
 import type { LogLine } from "../state/codex-reducer";
+import type { ModelPickerProvider } from "../model/model-picker-selection";
 import type { PermissionMode, PermissionModeStatus } from "../state/permissions-mode";
 
 /*

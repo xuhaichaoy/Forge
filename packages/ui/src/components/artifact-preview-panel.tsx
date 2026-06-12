@@ -1,7 +1,27 @@
 import { ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import {
+  ArtifactDocumentPreviewView,
+  ArtifactPdfPreviewFrame,
+  ArtifactPreviewStateView,
+  ArtifactSpreadsheetPreviewView,
+  ArtifactTextPreviewView,
+  type DocumentPreviewState,
+  type SpreadsheetPreviewState,
+  type TextPreviewState,
+} from "./artifact-preview-views";
+import {
+  artifactPreviewState,
+  isWordDocumentPath,
+  resolveArtifactLocalPath,
+  type MetadataPreviewState,
+} from "./artifact-preview-panel-model";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
 import { useHiCodexIntl } from "./i18n-provider";
+import {
+  localFileSrc,
+  readFirstAvailableMetadata,
+} from "./file-preview-helpers";
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 import {
   clipArtifactPreviewText,
@@ -9,16 +29,10 @@ import {
   isArtifactPreviewTooLarge,
   projectArtifactPreview,
 } from "../state/artifact-preview";
-import { projectSpreadsheetPreviewView } from "../state/spreadsheet-viewer";
 import {
-  convertLocalFileSrc,
   readDocumentPreview,
-  readFileMetadata,
   readSpreadsheetPreview,
   readTextFile,
-  type DocumentPreview,
-  type LocalFileMetadata,
-  type SpreadsheetPreview,
 } from "../lib/tauri-host";
 import { resolveFileReferencePathCandidates } from "../state/file-references";
 
@@ -33,30 +47,6 @@ export interface ArtifactPreviewPanelProps {
   onOpenFileExternal?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
 }
-
-type TextPreviewState =
-  | { status: "idle"; text: string }
-  | { status: "loading"; text: string }
-  | { status: "ready"; text: string; truncatedLineCount: number; truncatedCharCount: number }
-  | { status: "error"; text: string };
-
-type MetadataPreviewState =
-  | { status: "idle"; metadata: null; message?: undefined }
-  | { status: "loading"; metadata: null; message?: undefined }
-  | { status: "ready"; metadata: LocalFileMetadata; message?: undefined }
-  | { status: "error"; metadata: null; message: string };
-
-type SpreadsheetPreviewState =
-  | { status: "idle"; preview: null }
-  | { status: "loading"; preview: null }
-  | { status: "ready"; preview: SpreadsheetPreview }
-  | { status: "error"; preview: null; message: string };
-
-type DocumentPreviewState =
-  | { status: "idle"; preview: null }
-  | { status: "loading"; preview: null }
-  | { status: "ready"; preview: DocumentPreview }
-  | { status: "error"; preview: null; message: string };
 
 export function ArtifactPreviewPanel({
   entry,
@@ -353,229 +343,8 @@ export function ArtifactPreviewPanel({
   );
 }
 
-function ArtifactPreviewStateView({
-  state,
-}: {
-  state:
-    | { status: "error"; message: string }
-    | { status: "loading"; message: string }
-    | { status: "too-large"; message: string };
-}) {
-  return (
-    <div className="hc-artifact-preview-state" data-status={state.status}>
-      {state.message}
-    </div>
-  );
-}
-
-function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: string }) {
-  const { formatMessage } = useHiCodexIntl();
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-
-  useEffect(() => {
-    setStatus("loading");
-  }, [src]);
-
-  return (
-    <div className="hc-artifact-preview-pdf-frame">
-      {status === "loading" && (
-        <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />
-      )}
-      {status === "error" && (
-        <ArtifactPreviewStateView state={{ status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) }} />
-      )}
-      <iframe
-        className="hc-artifact-preview-pdf"
-        src={src}
-        title={title}
-        onError={() => setStatus("error")}
-        onLoad={() => setStatus("ready")}
-      />
-    </div>
-  );
-}
-
-function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
-  const { formatMessage } = useHiCodexIntl();
-  if (preview.status === "idle") return null;
-  if (preview.status === "loading") {
-    return <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />;
-  }
-  if (preview.status === "error") {
-    return <ArtifactPreviewStateView state={{ status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) }} />;
-  }
-  return (
-    <div className="hc-artifact-preview-text-wrap">
-      <pre className="hc-artifact-preview-text">{preview.text}</pre>
-      {(preview.truncatedLineCount > 0 || preview.truncatedCharCount > 0) && (
-        <div className="hc-artifact-preview-truncation">
-          {formatMessage({ id: "hc.artifact.previewTruncated", defaultMessage: "Preview truncated" })}
-          {preview.truncatedLineCount > 0 ? formatMessage({ id: "hc.artifact.truncatedByLines", defaultMessage: " by {count} line(s)" }, { count: preview.truncatedLineCount }) : ""}
-          {preview.truncatedCharCount > 0 ? formatMessage({ id: "hc.artifact.truncatedAndChars", defaultMessage: " and {count} character(s)" }, { count: preview.truncatedCharCount }) : ""}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPreviewState }) {
-  const { formatMessage } = useHiCodexIntl();
-  if (preview.status === "idle") return null;
-  if (preview.status === "loading") {
-    return <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />;
-  }
-  if (preview.status === "error") {
-    return <ArtifactPreviewStateView state={{ status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) }} />;
-  }
-  const rows = preview.preview.rows;
-  if (rows.length === 0) {
-    return <ArtifactPreviewStateView state={{ status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) }} />;
-  }
-  const columnCount = Math.max(...rows.map((row) => row.length), 1);
-  const view = projectSpreadsheetPreviewView(preview.preview);
-  return (
-    <div className="hc-artifact-preview-sheet-wrap">
-      <div className="hc-artifact-preview-sheet-meta">
-        <strong>{view.sheetLabel}</strong>
-        <span>{view.sampleLabel}</span>
-      </div>
-      <table className="hc-artifact-preview-sheet">
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr key={rowIndex}>
-              {Array.from({ length: columnCount }, (_, colIndex) => (
-                <td key={colIndex}>{row[colIndex] ?? ""}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {preview.preview.truncated && (
-        <div className="hc-artifact-preview-truncation">
-          {formatMessage({ id: "hc.artifact.previewTruncated", defaultMessage: "Preview truncated" })}
-        </div>
-      )}
-      <div className="hc-artifact-preview-boundary">{view.boundary}</div>
-      {view.details.length > 0 && (
-        <ul className="hc-artifact-preview-sheet-details">
-          {view.details.map((detail) => (
-            <li key={detail}>{detail}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function ArtifactDocumentPreviewView({ preview }: { preview: DocumentPreviewState }) {
-  const { formatMessage } = useHiCodexIntl();
-  if (preview.status === "idle") return null;
-  if (preview.status === "loading") {
-    return <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />;
-  }
-  if (preview.status === "error") {
-    return <ArtifactPreviewStateView state={{ status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) }} />;
-  }
-  const paragraphs = preview.preview.paragraphs;
-  if (paragraphs.length === 0) {
-    return <ArtifactPreviewStateView state={{ status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) }} />;
-  }
-  return (
-    <div className="hc-artifact-preview-text-wrap">
-      <div className="hc-artifact-preview-document">
-        {paragraphs.map((paragraph, index) => (
-          <p className="hc-artifact-preview-document-paragraph" key={index}>{paragraph}</p>
-        ))}
-      </div>
-      {preview.preview.truncated && (
-        <div className="hc-artifact-preview-truncation">{formatMessage({ id: "hc.artifact.previewTruncated", defaultMessage: "Preview truncated" })}</div>
-      )}
-    </div>
-  );
-}
-
-function artifactPreviewState(
-  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"],
-  metadataPreview: MetadataPreviewState,
-  tooLarge: boolean,
-  hasReference: boolean,
-): { status: "error" | "loading" | "too-large"; message: string } | null {
-  if (!hasReference) return null;
-  if (metadataPreview.status === "idle" || metadataPreview.status === "loading") {
-    return { status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) };
-  }
-  if (metadataPreview.status === "error") {
-    return { status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) };
-  }
-  if (metadataPreview.status === "ready" && !metadataPreview.metadata.isFile) {
-    return { status: "error", message: formatMessage({ id: "artifactTab.previewError", defaultMessage: "Couldn’t load this preview" }) };
-  }
-  if (tooLarge) {
-    return {
-      status: "too-large",
-      message: formatMessage({ id: "artifactTab.previewTooLarge", defaultMessage: "This file is too large to preview in the side panel" }),
-    };
-  }
-  return null;
-}
-
 function artifactIcon(kind: ReturnType<typeof projectArtifactPreview>["kind"]) {
   if (kind === "image") return <ImageIcon size={15} />;
   if (kind === "url") return <LinkIcon size={15} />;
   return <FileText size={15} />;
-}
-
-function localFileSrc(path: string): string {
-  try {
-    return convertLocalFileSrc(path);
-  } catch {
-    return `file://${encodeURI(path)}`;
-  }
-}
-
-function resolveArtifactLocalPath(
-  path: string | undefined,
-  input: {
-    referencePath: string;
-    resolvedReferencePath: string;
-    workspaceRoot?: string | null;
-    cwd?: string | null;
-  },
-): string {
-  if (!path) return "";
-  if (input.resolvedReferencePath && path === input.referencePath) {
-    return input.resolvedReferencePath;
-  }
-  return resolveFileReferencePathCandidates(path, {
-    workspaceRoot: input.workspaceRoot,
-    cwd: input.cwd,
-  })[0] ?? path;
-}
-
-function isWordDocumentPath(path: string): boolean {
-  return /\.(?:doc|docx)$/i.test(path.split(/[?#]/, 1)[0] ?? "");
-}
-
-async function readFirstAvailableMetadata(
-  candidates: string[],
-): Promise<{ path: string; metadata: LocalFileMetadata }> {
-  let lastError: unknown = new Error("No preview path candidates were available.");
-  let firstReadable: { path: string; metadata: LocalFileMetadata } | null = null;
-  for (const path of candidates) {
-    try {
-      const metadata = await readFileMetadata(path);
-      if (metadata.isFile) {
-        return { path, metadata };
-      }
-      if (!firstReadable) {
-        firstReadable = { path, metadata };
-      }
-    } catch (error: unknown) {
-      lastError = error;
-    }
-  }
-  if (firstReadable) {
-    return firstReadable;
-  }
-  throw lastError;
 }

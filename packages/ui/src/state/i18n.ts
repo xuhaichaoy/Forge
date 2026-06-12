@@ -1,3 +1,4 @@
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 import { HICODEX_MESSAGES } from "./i18n-messages";
@@ -57,7 +58,7 @@ export function loadHiCodexLocale(storage: BrowserStorageLike | null, browserLoc
 export function saveHiCodexLocale(storage: BrowserStorageLike | null, locale: HiCodexLocale): void {
   if (!storage) return;
   try {
-    storage.setItem(HICODEX_LOCALE_STORAGE_KEY, locale);
+    setDesktopAppSettingValue(storage, HICODEX_LOCALE_STORAGE_KEY, locale);
   } catch {
     // Locale still applies for this session when storage is unavailable.
   }

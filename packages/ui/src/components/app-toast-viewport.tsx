@@ -75,6 +75,8 @@ const INTERNAL_LOG_PATTERNS = [
   /^attaching to existing Codex app-server$/i,
   /^attached to initialized Codex app-server$/i,
   /^initialized Codex app-server$/i,
+  /^(?:model\/list|mcpServerStatus\/list) failed: (?:Codex app-server is not connected|Disconnected from Codex app-server)$/i,
+  /^团队模型连接已更新$/,
   /^[a-z][\w-]* (?:starting|ready|stopping|stopped|restarting)$/i,
   /^Falling back from WebSockets to HTTPS transport\./i,
   /^stream disconnected before completion:/i,

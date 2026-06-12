@@ -1,3 +1,4 @@
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
@@ -123,7 +124,7 @@ export function loadUiAppearance(storage: BrowserStorageLike | null): UiAppearan
 export function saveUiFontSize(storage: BrowserStorageLike | null, size: number): void {
   if (!storage) return;
   try {
-    storage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.appearanceUiFontSize, String(clampUiFontSize(size)));
+    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.appearanceUiFontSize, String(clampUiFontSize(size)));
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }
@@ -132,7 +133,7 @@ export function saveUiFontSize(storage: BrowserStorageLike | null, size: number)
 export function saveUiCodeFontSize(storage: BrowserStorageLike | null, size: number): void {
   if (!storage) return;
   try {
-    storage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.appearanceCodeFontSize, String(clampCodeFontSize(size)));
+    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.appearanceCodeFontSize, String(clampCodeFontSize(size)));
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }
@@ -141,7 +142,7 @@ export function saveUiCodeFontSize(storage: BrowserStorageLike | null, size: num
 export function saveUiReducedMotion(storage: BrowserStorageLike | null, mode: ReducedMotionMode): void {
   if (!storage) return;
   try {
-    storage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.appearanceReducedMotion, mode);
+    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.appearanceReducedMotion, mode);
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }

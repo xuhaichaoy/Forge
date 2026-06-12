@@ -1,12 +1,23 @@
-import { createElement } from "react";
+import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { sidebarContextMenuPosition } from "../src/components/sidebar";
 import { Sidebar } from "../src/components/sidebar";
+import { SidebarNavItem } from "../src/components/sidebar-nav-item";
+import {
+  SidebarProjectSection,
+  projectSectionCollapseAction,
+} from "../src/components/sidebar-project-section";
+import { SidebarUpdateBadge } from "../src/components/sidebar-update-badge";
 import type { AccountViewModel } from "../src/state/account-state";
+import type { I18nMessageDescriptor, I18nValues } from "../src/state/i18n";
 
 export default function runSidebarComponentTests(): void {
   clampsThreadContextMenuIntoViewport();
+  rendersSidebarNavItemAccelerator();
+  rendersSidebarUpdateBadgeStates();
   rendersUsageAlertWhenQuotaIsLow();
+  rendersProjectSectionMenus();
+  computesProjectSectionCollapseAction();
 }
 
 function clampsThreadContextMenuIntoViewport(): void {
@@ -25,6 +36,43 @@ function clampsThreadContextMenuIntoViewport(): void {
 
   assertEqual(topLeft.left, 8, "context menu should keep a left margin");
   assertEqual(topLeft.top, 8, "context menu should keep a top margin");
+}
+
+function rendersSidebarNavItemAccelerator(): void {
+  const html = renderToStaticMarkup(createElement(SidebarNavItem, {
+    icon: createElement("span", null, "icon"),
+    label: "Search",
+    accelerator: "Ctrl+K",
+    onClick: () => undefined,
+  }));
+
+  assertIncludes(html, "title=\"Search (Ctrl+K)\"", "nav item should expose accelerator in title");
+  assertIncludes(html, "<kbd", "nav item should render accelerator badge");
+  assertIncludes(html, "Ctrl+K", "nav item should render accelerator text");
+}
+
+function rendersSidebarUpdateBadgeStates(): void {
+  const available = renderToStaticMarkup(createElement(SidebarUpdateBadge, {
+    formatMessage: testFormatMessage,
+    updateAvailable: { version: "0.1.1" },
+    onApplyUpdate: () => undefined,
+  }));
+  assertIncludes(available, "Update v0.1.1", "available update badge should render version");
+  assertIncludes(available, "Install v0.1.1 and restart", "available update badge should render install tooltip");
+
+  const downloading = renderToStaticMarkup(createElement(SidebarUpdateBadge, {
+    formatMessage: testFormatMessage,
+    updateAvailable: { version: "0.1.1", progress: 0.42 },
+  }));
+  assertIncludes(downloading, "Updating 42%", "downloading update badge should render progress");
+  assertIncludes(downloading, "disabled=\"\"", "downloading update badge should be disabled");
+
+  const failed = renderToStaticMarkup(createElement(SidebarUpdateBadge, {
+    formatMessage: testFormatMessage,
+    updateAvailable: { version: "0.1.1", error: "Network failed" },
+  }));
+  assertIncludes(failed, "Update failed", "failed update badge should render failure label");
+  assertIncludes(failed, "Network failed", "failed update badge should expose error tooltip");
 }
 
 function rendersUsageAlertWhenQuotaIsLow(): void {
@@ -48,6 +96,71 @@ function rendersUsageAlertWhenQuotaIsLow(): void {
   assertIncludes(html, "12% usage remaining", "sidebar should render Desktop-style usage alert title");
   assertIncludes(html, "aria-label=\"Dismiss usage alert\"", "sidebar usage alert should be dismissible");
   assertIncludes(html, "aria-label=\"Usage consumed\"", "sidebar usage alert should expose progress semantics");
+}
+
+function rendersProjectSectionMenus(): void {
+  const filterHtml = renderToStaticMarkup(createElement(SidebarProjectSection, {
+    canUseExistingFolder: true,
+    children: createElement("div", { className: "test-project-rows" }, "Project rows"),
+    openSectionMenu: "filter",
+    organizeMode: "project",
+    sectionActionsRef: createRef<HTMLDivElement>(),
+    sectionCollapseAction: "collapse-all",
+    sectionLabel: "Projects",
+    sortKey: "updated_at",
+    onChooseOrganizeMode: () => undefined,
+    onChooseSortKey: () => undefined,
+    onRunSectionCollapseAction: () => undefined,
+    onToggleSectionMenu: () => undefined,
+    onUseExistingFolder: () => undefined,
+  }));
+
+  assertIncludes(filterHtml, "Projects", "project section should render its section label");
+  assertIncludes(filterHtml, "Collapse all projects", "project section should expose collapse-all action");
+  assertIncludes(filterHtml, "Organize sidebar", "project section filter menu should render organize title");
+  assertIncludes(filterHtml, "By project", "project section filter menu should render project grouping option");
+  assertIncludes(filterHtml, "Chronological list", "project section filter menu should render recency grouping option");
+  assertIncludes(filterHtml, "Sort by", "project section filter menu should render sort title");
+  assertIncludes(filterHtml, "Updated", "project section filter menu should render updated sort option");
+  assertIncludes(filterHtml, "Project rows", "project section should preserve child rows");
+
+  const addProjectHtml = renderToStaticMarkup(createElement(SidebarProjectSection, {
+    canUseExistingFolder: true,
+    children: null,
+    openSectionMenu: "add-project",
+    organizeMode: "recent",
+    sectionActionsRef: createRef<HTMLDivElement>(),
+    sectionCollapseAction: "reopen-previous",
+    sectionLabel: "Projects",
+    sortKey: "created_at",
+    onChooseOrganizeMode: () => undefined,
+    onChooseSortKey: () => undefined,
+    onRunSectionCollapseAction: () => undefined,
+    onToggleSectionMenu: () => undefined,
+    onUseExistingFolder: () => undefined,
+  }));
+
+  assertIncludes(addProjectHtml, "Reopen previous projects", "project section should expose reopen-previous action");
+  assertIncludes(addProjectHtml, "Add new project", "project section should render the add-project trigger");
+  assertIncludes(addProjectHtml, "Use an existing folder", "project section add-project menu should render folder import action");
+}
+
+function computesProjectSectionCollapseAction(): void {
+  assertEqual(
+    projectSectionCollapseAction(["alpha", "beta"], new Set(), []),
+    "collapse-all",
+    "more than one expanded project should offer collapse-all",
+  );
+  assertEqual(
+    projectSectionCollapseAction(["alpha", "beta"], new Set(["alpha", "beta"]), ["alpha"]),
+    "reopen-previous",
+    "fully collapsed projects should offer reopening the previous visible groups",
+  );
+  assertEqual(
+    projectSectionCollapseAction(["alpha"], new Set(), []),
+    null,
+    "a single expanded project should not show a bulk collapse action",
+  );
 }
 
 function accountViewWithUsageAlert(): AccountViewModel {
@@ -78,6 +191,10 @@ function accountViewWithUsageAlert(): AccountViewModel {
       disabled: false,
     },
   };
+}
+
+function testFormatMessage(descriptor: I18nMessageDescriptor, values?: I18nValues): string {
+  return descriptor.defaultMessage.replace(/\{(\w+)\}/g, (_match, key: string) => String(values?.[key] ?? ""));
 }
 
 function assertEqual(actual: unknown, expected: unknown, message: string): void {

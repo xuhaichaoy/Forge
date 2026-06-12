@@ -78,5 +78,5 @@ function workedForLabel({
   if (status === "working") {
     return elapsedMs >= 1_000 ? `Working for ${formatDuration(elapsedMs)}` : "Working";
   }
-  return elapsedMs >= 1_000 ? `Worked for ${formatDuration(elapsedMs)}` : "Worked for 0s";
+  return elapsedMs >= 1_000 ? `Worked for ${formatDuration(elapsedMs)}` : "Worked";
 }

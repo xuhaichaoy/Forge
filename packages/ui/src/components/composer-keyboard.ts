@@ -1,11 +1,11 @@
 import { focusPromptEditorElement, insertPromptEditorText } from "./prompt-editor";
 
 /*
- * Global plain-text-key → composer redirect, lifted verbatim out of HiCodexApp.
+ * Global plain-text-key -> composer redirect, lifted verbatim out of HiCodexApp.
  * When the user types a single printable character outside any editable target,
  * an open dialog/menu/listbox overlay, or a terminal, it is inserted into the
- * composer. The data-* selectors, the space / NBSP ( ) exclusions, and the
- * `event.key.length === 1` printable-char gate are contract-exact — changing any
+ * composer. The data-* selectors, the space / NBSP exclusions, and the
+ * `event.key.length === 1` printable-char gate are contract-exact; changing any
  * of them changes which keys get swallowed.
  */
 export function focusComposerFromPlainTextKey(event: KeyboardEvent): boolean {
@@ -42,7 +42,7 @@ function isPlainTextComposerKey(event: KeyboardEvent): boolean {
     && !event.metaKey
     && !event.ctrlKey
     && event.key !== " "
-    && event.key !== " "
+    && event.key !== "\u00A0"
     && event.key.length === 1;
 }
 

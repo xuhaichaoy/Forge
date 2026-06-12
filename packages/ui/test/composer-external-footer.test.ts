@@ -16,6 +16,7 @@ export default function runComposerExternalFooterTests(): void {
   formatsProjectDropdownLabelLikeDesktopFooter();
   formatsContextChipLabels();
   rendersContextChipsWithOverflowHooks();
+  rendersExternalFooterProjectAndWorkModeControls();
 }
 
 function formatsProjectDropdownLabelLikeDesktopFooter(): void {
@@ -125,11 +126,46 @@ function rendersContextChipsWithOverflowHooks(): void {
     "external footer should render the current branch chip",
   );
   assert(
-    !footer.includes('data-chip="work-mode"'),
-    "work-mode should not remain as a persistent footer chip",
+    footer.includes("hc-composer-footer-workmode-chip") && footer.includes(">Local<"),
+    "external footer should render the visible Desktop work-mode chip beside the project picker",
   );
   assert(
     !footer.includes('data-chip="permissions"') && !footer.includes('data-chip="intelligence"'),
     "model/permissions chips should move out of the external footer into the in-bubble cluster",
+  );
+}
+
+function rendersExternalFooterProjectAndWorkModeControls(): void {
+  const projectFooter = renderToStaticMarkup(createElement(ComposerExternalFooter, {
+    branch: null,
+    cwd: "/workspace/HiCodex",
+    workMode: "worktree",
+    workspaceRoots: [{ root: "/workspace/HiCodex", label: "HiCodex" }],
+    onUseExistingFolder: () => undefined,
+    onWorkspaceRootSelected: () => undefined,
+  }));
+
+  assert(
+    projectFooter.includes("hc-composer-footer-project-chip") && projectFooter.includes(">HiCodex<"),
+    "external footer should render the selected project label in the extracted project chip",
+  );
+  assert(
+    projectFooter.includes("hc-composer-footer-workmode-chip") && projectFooter.includes(">Worktree<"),
+    "external footer should render the selected work-mode label as its own chip",
+  );
+  assert(
+    projectFooter.includes('aria-hidden="true"'),
+    "external footer should mark the empty branch slot hidden when no branch label is available",
+  );
+
+  const projectlessFooter = renderToStaticMarkup(createElement(ComposerExternalFooter, {
+    branch: null,
+    cwd: "~",
+    workMode: "local",
+  }));
+
+  assert(
+    projectlessFooter.includes(">Work in a project<"),
+    "projectless external footer should render Desktop's work-in-project CTA",
   );
 }

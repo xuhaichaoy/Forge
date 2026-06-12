@@ -18,6 +18,7 @@ function appliesMasksUsingServerPresetSemantics(): void {
     developerInstructions: "custom developer instructions",
     reasoningEffort: "high",
   });
+  if (!current) throw new Error("base collaboration mode should build when context has a model");
   const updated = applyCollaborationModeMask(current, {
     name: "Plan",
     mode: "plan",
@@ -57,6 +58,23 @@ function projectsComposerPlanModeFromServerPresets(): void {
       },
     },
     "composer plan mode should be built from collaborationMode/list preset",
+  );
+  assertEqual(
+    collaborationModeFromComposerMode("plan", [...presets], { reasoningEffort: "high" }),
+    null,
+    "composer plan mode should not synthesize a model when neither context nor preset provides one",
+  );
+  assertDeepEqual(
+    collaborationModeFromComposerMode("plan", [{ name: "Plan", mode: "plan", model: "server-plan-model", reasoning_effort: "medium" }], null),
+    {
+      mode: "plan",
+      settings: {
+        model: "server-plan-model",
+        reasoning_effort: "medium",
+        developer_instructions: null,
+      },
+    },
+    "composer plan mode may use the app-server preset model when provided",
   );
   assertEqual(
     collaborationModeFromComposerMode("default", [...presets], { model: "gpt-5.4" }),

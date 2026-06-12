@@ -7,12 +7,14 @@ import {
   DEFAULT_MODEL_REASONING_SUMMARY,
   DEFAULT_SUBSCRIPTION_MODELS,
   buildModelConfigFromConfig,
+  buildModelSettingsDraftFromConfig,
   buildLocalModelCatalogConfig,
   buildLocalModelCatalogEntries,
   buildLocalModelCatalogEntry,
   buildModelConfigFromListEntry,
   buildModelConfigEdits,
   formatModelDisplayName,
+  isModelProviderConfigured,
   modelSlugsForConfig,
   normalizeBaseUrl,
   normalizeModelConfig,
@@ -307,5 +309,41 @@ export default function runModelSettingsTests(): void {
       supportsImageInput: true,
     },
     "buildModelConfigFromConfig falls back to HiCodex defaults when config/read omits provider details",
+  );
+  const missingProviderDraft = buildModelSettingsDraftFromConfig({
+    model: "",
+    model_provider: "",
+    model_providers: {},
+  });
+  assertEqual(
+    missingProviderDraft.configured,
+    false,
+    "model settings draft should not treat the factory placeholder as a saved provider",
+  );
+  assertEqual(
+    isModelProviderConfigured({
+      model_providers: {
+        hicodex_local: {
+          name: "Saved personal provider",
+          base_url: "http://127.0.0.1:8890/v1",
+        },
+      },
+    }, DEFAULT_MODEL_PROVIDER_ID),
+    true,
+    "saved provider definitions should count as configured even without an API key",
+  );
+  assertEqual(
+    buildModelSettingsDraftFromConfig({
+      model: " local-model ",
+      model_provider: "hicodex_local",
+      model_providers: {
+        hicodex_local: {
+          name: "Saved personal provider",
+          base_url: "http://127.0.0.1:8890/v1",
+        },
+      },
+    }).configured,
+    true,
+    "model settings draft should expose the configured flag for saved providers",
   );
 }

@@ -4,6 +4,7 @@ import { artifactsFromText } from "../src/state/rail-projection";
 export default function runRenderGroupsRightRailTests(): void {
   usesLatestTodoListPlanForProgress();
   usesReducerPlanFactsForProgress();
+  filtersMalformedProgressPlanEntriesWithoutInventingFacts();
   dedupesArtifactsAcrossFileChangesAndAssistantText();
   extractsMarkdownLinksWithoutLookbehindSyntax();
   ignoresPunctuationOnlyFileArtifacts();
@@ -49,6 +50,30 @@ function usesLatestTodoListPlanForProgress(): void {
     projection.progress.map((entry) => entry.status),
     ["in_progress", "pending"],
     "progress should preserve latest todo-list statuses",
+  );
+}
+
+function filtersMalformedProgressPlanEntriesWithoutInventingFacts(): void {
+  const projection = projectConversation([
+    {
+      type: "todo-list",
+      id: "todo-malformed",
+      plan: [
+        { status: "pending" },
+        { step: "Keep source-backed plan title" },
+        "not-an-object",
+        { text: "Preserve supplied status", status: "completed" },
+      ],
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.progress.map((entry) => [entry.id, entry.title, entry.status ?? null]),
+    [
+      ["todo:todo-malformed:1", "Keep source-backed plan title", null],
+      ["todo:todo-malformed:3", "Preserve supplied status", "completed"],
+    ],
+    "progress should skip untitled plan rows and should not synthesize a fallback status",
   );
 }
 

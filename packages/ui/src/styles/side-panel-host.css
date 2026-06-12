@@ -407,3 +407,121 @@
 .hc-browser-tab-error {
   color: var(--hc-danger);
 }
+
+/* HTML web-preview tab (rendered .html via sandboxed asset-protocol iframe) */
+.hc-html-preview-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.hc-html-preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hc-border);
+}
+
+/*
+ * Tail-truncating path: the RTL container puts the ellipsis at the visual
+ * left (keeps the filename end visible); the inner <bdi> isolates the path
+ * back to LTR so the leading "/" doesn't visually jump to the end.
+ */
+.hc-html-preview-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  color: var(--hc-text-muted);
+}
+
+.hc-html-preview-path bdi {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.hc-html-preview-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--hc-text-muted);
+  cursor: pointer;
+}
+
+.hc-html-preview-icon-button:hover {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
+/*
+ * Fit mode: the iframe is laid out at the desktop design width and
+ * transform-scaled down to the viewport width (inline style from the
+ * component), so desktop-authored pages render as a miniature instead of a
+ * collapsed/overlapping reflow. data-scaled gates the overflow clip.
+ */
+.hc-html-preview-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+}
+
+.hc-html-preview-viewport[data-scaled="true"] {
+  overflow: hidden;
+}
+
+.hc-html-preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* Left-edge resize handle (Codex `Le`): invisible hit area hugging the
+   panel's inner edge (the host clips overflow, so no bleed-out half); the
+   1px line lights up on hover/drag. */
+.hc-side-panel-host__resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 12px;
+  z-index: 50;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  display: flex;
+  justify-content: flex-start;
+  background: transparent;
+}
+
+.hc-side-panel-host__resize-handle-line {
+  width: 2px;
+  height: 100%;
+  background: transparent;
+}
+
+.hc-side-panel-host__resize-handle:hover .hc-side-panel-host__resize-handle-line,
+.hc-side-panel-host__resize-handle[data-resizing="true"] .hc-side-panel-host__resize-handle-line {
+  background: var(--hc-border-strong, var(--hc-border));
+}
+
+.hc-html-preview-state {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  color: var(--hc-text-muted);
+}

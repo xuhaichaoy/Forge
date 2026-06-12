@@ -38,8 +38,12 @@
  *    approved?") and omits Codex's right-aligned "Learn more" docs link, and the
  *    surface is widened past Codex's max-w-[320px] so zh-CN subtexts fit one line.
  */
-import { Check, Hand, Settings, ShieldAlert, ShieldUser, type LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  ComposerPermissionsDropdownItem,
+  PERMISSION_DROPDOWN_ITEMS,
+} from "./composer-permissions-dropdown-items";
+import { FullAccessConfirmDialog } from "./composer-permissions-full-access-dialog";
 import {
   permissionDropdownApplyMode,
   permissionDropdownBlockedReason,
@@ -50,6 +54,7 @@ import {
 } from "../state/permissions-mode";
 import { useHiCodexIntl } from "./i18n-provider";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/hicodex-desktop-namespace";
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 
 // codex `skip-full-access-confirm` (hr) — once the user confirms full access the
 // modal is not shown again. Persisted like reasoningEffortOverride.
@@ -60,51 +65,6 @@ const LEGACY_SKIP_FULL_ACCESS_CONFIRM_KEY = "hicodex.skipFullAccessConfirm";
 // sit on a single line per the product owner's request ("可以长一些").
 const MENU_WIDTH_PX = 380;
 const MENU_VIEWPORT_MARGIN_PX = 12;
-
-interface DropdownItemDescriptor {
-  key: PermissionDropdownKey;
-  icon: LucideIcon;
-  labelId: string;
-  labelDefault: string;
-  subtextId: string;
-  subtextDefault: string;
-}
-
-// codex oo.Item order: default, guardian, full-access, custom.
-const DROPDOWN_ITEMS: readonly DropdownItemDescriptor[] = [
-  {
-    key: "default",
-    icon: Hand, // codex Nm (raised hand) — exact glyph
-    labelId: "composer.permissionsDropdown.default.approvalOptionLabel",
-    labelDefault: "Ask for approval",
-    subtextId: "composer.permissionsDropdown.default.description",
-    subtextDefault: "Always ask to edit external files and use the internet",
-  },
-  {
-    key: "guardian-approvals",
-    icon: ShieldUser, // codex _l (shield-code) — closest available lucide; see file header
-    labelId: "composer.permissionsDropdown.guardianApproval.optionLabel",
-    labelDefault: "Approve for me",
-    subtextId: "composer.permissionsDropdown.guardianApproval.description",
-    subtextDefault: "Only ask for actions detected as potentially unsafe",
-  },
-  {
-    key: "full-access",
-    icon: ShieldAlert, // codex vl (shield-exclamation) — exact glyph
-    labelId: "composer.permissionsDropdown.fullAccess.optionLabel",
-    labelDefault: "Full access",
-    subtextId: "composer.permissionsDropdown.fullAccess.description",
-    subtextDefault: "Unrestricted access to the internet and any file on your computer",
-  },
-  {
-    key: "custom",
-    icon: Settings, // codex Ri (settings.cog) — gear
-    labelId: "composer.permissionsDropdown.custom.optionLabel",
-    labelDefault: "Custom (config.toml)",
-    subtextId: "composer.permissionsDropdown.custom.description",
-    subtextDefault: "Uses permissions defined in config.toml",
-  },
-];
 
 export interface ComposerPermissionsDropdownProps {
   anchor: HTMLElement;
@@ -214,7 +174,7 @@ export function ComposerPermissionsDropdown({
   const confirmFullAccess = useCallback(() => {
     // codex `k(!0)`: remember the confirmation so we don't ask again.
     try {
-      window.localStorage.setItem(SKIP_FULL_ACCESS_CONFIRM_KEY, "true");
+      setDesktopAppSettingValue(window.localStorage, SKIP_FULL_ACCESS_CONFIRM_KEY, "true");
     } catch {
       // localStorage unavailable — confirm still applies this time.
     }
@@ -269,37 +229,17 @@ export function ComposerPermissionsDropdown({
             defaultMessage: "How should actions be approved?",
           })}
         </div>
-        {DROPDOWN_ITEMS.map((item) => {
-          const Icon = item.icon;
+        {PERMISSION_DROPDOWN_ITEMS.map((item) => {
           const isSelected = item.key === selectedKey;
           const blockedReason = permissionDropdownBlockedReason(item.key, requirements);
-          const disabled = blockedReason !== "";
           return (
-            <button
+            <ComposerPermissionsDropdownItem
               key={item.key}
-              type="button"
-              role="menuitemradio"
-              aria-checked={isSelected}
-              aria-disabled={disabled || undefined}
-              disabled={disabled}
-              className="hc-thread-menu-item hc-composer-permissions-item"
-              data-permission-key={item.key}
-              data-selected={isSelected ? "true" : undefined}
+              item={item}
+              isSelected={isSelected}
+              blockedReason={blockedReason}
               onClick={() => handleItemClick(item.key)}
-            >
-              <Icon size={18} className="hc-composer-permissions-item-icon" aria-hidden />
-              <span className="hc-composer-permissions-item-body">
-                <span className="hc-composer-permissions-item-label">
-                  {formatMessage({ id: item.labelId, defaultMessage: item.labelDefault })}
-                </span>
-                <span className="hc-composer-permissions-item-subtext">
-                  {blockedReason || formatMessage({ id: item.subtextId, defaultMessage: item.subtextDefault })}
-                </span>
-              </span>
-              {isSelected && (
-                <Check size={16} className="hc-composer-permissions-item-check" aria-hidden />
-              )}
-            </button>
+            />
           );
         })}
       </div>
@@ -310,83 +250,5 @@ export function ComposerPermissionsDropdown({
         />
       )}
     </>
-  );
-}
-
-/*
- * codex `zm` — the full-access confirmation modal. Reuses HiCodex's shared dialog
- * surface (hc-settings-backdrop / hc-thread-dialog-panel, cf. confirm-dialog.tsx)
- * with the Codex strings + a danger confirm button.
- */
-function FullAccessConfirmDialog({
-  onConfirm,
-  onCancel,
-}: {
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const { formatMessage } = useHiCodexIntl();
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCancel();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel]);
-
-  return (
-    <div
-      className="hc-settings-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
-      }}
-    >
-      <div
-        className="hc-thread-dialog-panel hc-full-access-confirm"
-        role="alertdialog"
-        aria-modal="true"
-        aria-label={formatMessage({
-          id: "composer.mode.agentMode.fullAccessConfirm.warningTitle",
-          defaultMessage: "Are you sure?",
-        })}
-      >
-        <header>
-          <div>
-            {formatMessage({
-              id: "composer.mode.agentMode.fullAccessConfirm.warningTitle",
-              defaultMessage: "Are you sure?",
-            })}
-          </div>
-        </header>
-        <div className="hc-thread-dialog-body">
-          <p>
-            {formatMessage({
-              id: "composer.mode.agentMode.fullAccessConfirm.warningDescription",
-              defaultMessage:
-                "Full access lets Codex access the internet and edit any file on your computer without asking for your approval. This comes with risks like data loss and prompt injection.",
-            })}
-          </p>
-        </div>
-        <footer>
-          <button type="button" className="hc-kb-topbar-btn" onClick={onCancel} autoFocus>
-            {formatMessage({
-              id: "composer.mode.agentMode.fullAccessConfirm.goBack",
-              defaultMessage: "Cancel",
-            })}
-          </button>
-          <button type="button" className="hc-kb-topbar-btn hc-kb-topbar-btn--danger" onClick={onConfirm}>
-            {formatMessage({
-              id: "composer.mode.agentMode.fullAccessConfirm.turnOnButton",
-              defaultMessage: "Turn on full access",
-            })}
-          </button>
-        </footer>
-      </div>
-    </div>
   );
 }

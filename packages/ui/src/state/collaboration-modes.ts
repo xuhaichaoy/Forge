@@ -5,7 +5,6 @@ import type {
   ModeKind,
   ReasoningEffort,
 } from "@hicodex/codex-protocol";
-import { DEFAULT_MODEL_NAME } from "../model/model-settings";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import type { ThreadContextDefaults } from "./codex-reducer";
 import type { ComposerMode } from "./composer-workflow";
@@ -24,7 +23,9 @@ export function collaborationModeFromComposerMode(
 ): CollaborationMode | null {
   if (mode === "default") return null;
   const preset = findCollaborationModePreset(presets, "plan");
-  return preset ? applyCollaborationModeMask(baseCollaborationMode(context), preset) : null;
+  if (!preset) return null;
+  const current = baseCollaborationMode(context, preset.model);
+  return current ? applyCollaborationModeMask(current, preset) : null;
 }
 
 export function composerModeFromCollaborationMode(mode: CollaborationMode | null | undefined): ComposerMode {
@@ -53,11 +54,16 @@ export function applyCollaborationModeMask(
   };
 }
 
-export function baseCollaborationMode(context?: ThreadContextDefaults | null): CollaborationMode {
+export function baseCollaborationMode(
+  context?: ThreadContextDefaults | null,
+  fallbackModel?: string | null,
+): CollaborationMode | null {
+  const model = normalizedModel(context?.model) ?? normalizedModel(fallbackModel);
+  if (!model) return null;
   return {
     mode: "default",
     settings: {
-      model: normalizedModel(context?.model) ?? DEFAULT_MODEL_NAME,
+      model,
       reasoning_effort: normalizeReasoningEffort(context?.reasoningEffort),
       developer_instructions: typeof context?.developerInstructions === "string"
         ? context.developerInstructions

@@ -176,8 +176,13 @@ export default async function runImageGenerationToolTests(): Promise<void> {
   );
   assertEqual(
     shouldRegisterHiCodexImageDynamicTool({ baseUrl: "", apiKey: "", model: "gpt-image", size: "1024x1024" }),
+    false,
+    "model-only image settings should not register a runtime tool without an explicit image endpoint",
+  );
+  assertEqual(
+    shouldRegisterHiCodexImageDynamicTool({ baseUrl: "https://images.example.test/v1", apiKey: "", model: "", size: "1024x1024" }),
     true,
-    "explicit image settings should register the HiCodex dynamic image tool",
+    "explicit image endpoint should register the HiCodex dynamic image tool",
   );
   assertEqual(
     imageGenerationsEndpoint(" https://gateway.example.test/v1/// "),
@@ -562,6 +567,40 @@ export default async function runImageGenerationToolTests(): Promise<void> {
   assertEqual(unconfigured.success, false, "unconfigured image tool should fail before calling the backend");
   const unconfiguredText = unconfigured.contentItems[0]?.type === "inputText" ? unconfigured.contentItems[0].text : "";
   assertIncludes(unconfiguredText, "No HiCodex image endpoint is configured", "unconfigured image tool failure should explain the missing endpoint");
+
+  const modelOnlySettings = await executeHiCodexImageToolCall(
+    {
+      id: "img-model-only",
+      method: "item/tool/call",
+      params: {
+        tool: HICODEX_IMAGE_TOOL_NAME,
+        arguments: { prompt: "blue sky" },
+      },
+    },
+    {
+      id: "local",
+      name: "Local",
+      protocol: "openai",
+      baseUrl: "https://chat-model.example.test/v1/",
+      apiKey: "chat-secret",
+      model: "gpt-5.4-mini",
+      temperature: 0,
+      maxTokens: null,
+    },
+    {
+      fetchImpl: (async () => {
+        throw new Error("model-only image settings should not fall back to the chat model endpoint");
+      }) as typeof fetch,
+      preferHost: false,
+      imageSettings: { baseUrl: "", apiKey: "image-secret", model: "gpt-image", size: "1024x1024" },
+    },
+  );
+  assertEqual(modelOnlySettings.success, false, "model-only image settings should fail before calling a backend");
+  assertIncludes(
+    imageToolFailureText(modelOnlySettings),
+    "No HiCodex image endpoint is configured",
+    "model-only image settings should explain that an image endpoint is required",
+  );
 
   const failed = await executeHiCodexImageToolCall(
     {

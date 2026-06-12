@@ -22,6 +22,8 @@ export const HICODEX_DESKTOP_CONFIG_KEYS = {
   appearanceReducedMotion: desktopHiCodexKey("appearance", "reducedMotion"),
   activeAppTab: desktopHiCodexKey("app", "activeTab"),
   composerWorkMode: desktopHiCodexKey("composer", "workMode"),
+  filePreviewPanelFullWidth: desktopHiCodexKey("filePreviewPanel", "fullWidth"),
+  filePreviewPanelWidth: desktopHiCodexKey("filePreviewPanel", "widthPx"),
   imageGeneration: desktopHiCodexKey("imageGeneration"),
   locale: desktopHiCodexKey("locale"),
   notificationPreferences: desktopHiCodexKey("notificationPreferences"),

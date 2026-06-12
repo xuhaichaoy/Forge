@@ -1,3 +1,4 @@
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 import { formatMessage } from "./i18n";
@@ -65,7 +66,8 @@ export function saveNotificationPreferences(
 ): void {
   if (!storage) return;
   try {
-    storage.setItem(
+    setDesktopAppSettingValue(
+      storage,
       HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY,
       JSON.stringify(normalizeNotificationPreferences(preferences)),
     );

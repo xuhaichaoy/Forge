@@ -56,6 +56,14 @@ export interface CodexRpcClientHandlers {
   onServerRequest?: (message: JsonRpcRequest) => void;
   onLog?: (line: string, level?: "info" | "warn" | "error") => void;
   onDebugEvent?: (event: RpcDebugEvent) => void;
+  /*
+   * Fired on UNEXPECTED transport closure only (fatal lifecycle event, host
+   * error, send failure) — deliberate teardown via disconnect()/dispose()
+   * bypasses it. Without this signal the app's reducer keeps `connected:
+   * true`, its backoff reconnect loop never arms, and every RPC fails with
+   * "not connected" until a full page reload.
+   */
+  onConnectionClosed?: (reason: string) => void;
 }
 
 export class CodexJsonRpcClient {
@@ -432,7 +440,13 @@ export class CodexJsonRpcClient {
   private markTransportClosed(message: string): void {
     this.connected = false;
     this.connectPromise = null;
+    // Drop the host event subscription too: after a dev HMR swap the old
+    // listener can be a dead callback while its handle survives, and
+    // startEvents() short-circuits on a surviving handle — the next connect()
+    // must subscribe fresh or initialize responses never arrive.
+    this.stopEvents();
     this.rejectPending(message);
+    this.handlers.onConnectionClosed?.(message);
   }
 
   private assertActive(): void {

@@ -27,7 +27,9 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
       const title = "Web preview";
       return {
         entry,
-        hoverLabel: "Open in Codex Browser",
+        // codex says "Open in Codex Browser" (browser-sidebar form); HiCodex
+        // renders local html in a side-panel preview tab, so stay honest.
+        hoverLabel: "Open preview",
         icon: Globe2,
         key: `website:${resource.target}`,
         meta: resource.target,

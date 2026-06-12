@@ -1,4 +1,6 @@
 import {
+  fileUrlForPath,
+  isHtmlPath,
   projectBrowserRailInput,
   projectBrowserRuntimeSettingsEntries,
   type BrowserRuntimeSnapshot,
@@ -7,10 +9,45 @@ import {
 export default function runBrowserRuntimeTests(): void {
   projectsActiveHttpBrowserTabIntoRightRail();
   omitsUnavailableAndBlankBrowserTabs();
+  detectsHtmlPathsForBrowserRoute();
+  buildsFileUrlsForBrowserNavigation();
   projectsBrowserRuntimeSettingsReadiness();
   projectsRegisteredIabProbeReadiness();
   projectsRegisteredExtensionBackendReadiness();
   projectsValidatedExtensionBackendReadiness();
+}
+
+// codex: src-X9SEQR78.js `xc = /\.html?$/i` — the html-path predicate behind
+// the openWorkspaceFile browser gate.
+function detectsHtmlPathsForBrowserRoute(): void {
+  assertEqual(isHtmlPath("outputs/index.html"), true, "html path routes to the Browser");
+  assertEqual(isHtmlPath("/abs/Page.HTM"), true, "htm path matches case-insensitively");
+  assertEqual(isHtmlPath("notes/readme.md"), false, "non-html path stays in the source tab");
+  assertEqual(isHtmlPath("site/index.html.bak"), false, "html must be the final extension");
+  assertEqual(isHtmlPath(""), false, "empty path is not html");
+}
+
+function buildsFileUrlsForBrowserNavigation(): void {
+  assertEqual(
+    fileUrlForPath("/tmp/site/index.html"),
+    "file:///tmp/site/index.html",
+    "absolute path becomes a file URL",
+  );
+  assertEqual(
+    fileUrlForPath("/tmp/my page/index.html"),
+    "file:///tmp/my%20page/index.html",
+    "spaces are percent-encoded",
+  );
+  assertEqual(
+    fileUrlForPath("C:\\site\\index.html"),
+    "file:///C:/site/index.html",
+    "Windows drive paths gain an empty authority",
+  );
+  assertEqual(
+    fileUrlForPath("/tmp/a#b?c.html"),
+    "file:///tmp/a%23b%3Fc.html",
+    "reserved # and ? in filenames must not become fragment/query separators",
+  );
 }
 
 function projectsActiveHttpBrowserTabIntoRightRail(): void {
@@ -54,10 +91,17 @@ function omitsUnavailableAndBlankBrowserTabs(): void {
     undefined,
     "blank Browser tab should not render the right rail Browser row",
   );
+  // file:// tabs are first-class targets (local web previews of generated
+  // .html); they must surface in the rail like http(s) tabs do.
   assertEqual(
-    projectBrowserRailInput(browserSnapshotForUrl("file:///tmp/index.html")),
+    projectBrowserRailInput(browserSnapshotForUrl("file:///tmp/index.html"))?.tabId,
+    "tab-1",
+    "file:// Browser tab should render the right rail Browser row",
+  );
+  assertEqual(
+    projectBrowserRailInput(browserSnapshotForUrl("chrome-extension://abc/page.html")),
     undefined,
-    "non-http Browser tab should not render the right rail Browser row",
+    "non-web Browser tab should not render the right rail Browser row",
   );
 }
 

@@ -1,11 +1,11 @@
 import type { ModelConfig } from "@hicodex/codex-protocol";
-import type { ModelPickerProvider } from "../components/model-picker-menu";
 import { hostFromBaseUrl } from "../lib/format";
 import {
   normalizeTeamServiceBaseUrl,
   readTeamServiceConnectionConfig,
   type TeamServiceConnectionConfig,
 } from "../lib/team-service-connection";
+import type { ModelPickerProvider } from "./model-picker-selection";
 import { normalizeModelConfig, normalizeModelSlugs } from "./model-settings";
 
 export const TEAM_MODEL_GATEWAY_PROVIDER_ID = "team_model_gateway";

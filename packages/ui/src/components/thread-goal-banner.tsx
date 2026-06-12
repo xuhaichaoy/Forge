@@ -1,11 +1,26 @@
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactElement } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Pause, Pencil, Play, Target, X } from "lucide-react";
 import type { ThreadGoal } from "@hicodex/codex-protocol";
 import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
 import { useHiCodexIntl } from "./i18n-provider";
-import { HICODEX_DEFAULT_LOCALE, type HiCodexLocale } from "../state/i18n";
+import { portalDialogToBody } from "./thread-goal-dialogs";
+import { threadGoalBannerSummary } from "../state/thread-goal-summary";
+
+export {
+  ThreadGoalReplaceConfirm,
+  ThreadGoalResumeConfirm,
+} from "./thread-goal-dialogs";
+
+export {
+  formatThreadGoalDuration,
+  formatThreadGoalTokenCount,
+  nextThreadGoalStatus,
+  shouldShowGoalTokenProgress,
+  threadGoalBannerSummary,
+  threadGoalElapsedMs,
+  type ThreadGoalBannerSummary,
+} from "../state/thread-goal-summary";
 
 export type ThreadGoalBannerAction = "edit" | "status" | "clear";
 
@@ -16,22 +31,6 @@ export interface ThreadGoalBannerProps {
   onSetGoalStatus?: (status: ThreadGoalStatus) => void | Promise<void>;
   onClearGoal?: () => void | Promise<void>;
 }
-
-export interface ThreadGoalBannerSummary {
-  statusLabel: string;
-  objective: string;
-  detail: string;
-  nextStatus: ThreadGoalStatus | null;
-}
-
-const STATUS_LABELS: Record<ThreadGoalStatus, string> = {
-  active: "Pursuing goal",
-  paused: "Paused goal",
-  blocked: "Goal blocked",
-  usageLimited: "Goal usage limited",
-  budgetLimited: "Goal limited",
-  complete: "Goal achieved",
-};
 
 // codex: composer.threadGoal.summary.<status> — the summary stays locale-free
 // (English statusLabel, keeps the pure projection + tests stable); the renderer
@@ -52,205 +51,10 @@ function localizeGoalStatusLabel(
   return key ? formatMessage({ id: `composer.threadGoal.summary.${key}`, defaultMessage: statusLabel }) : statusLabel;
 }
 
-export function threadGoalBannerSummary(goal: ThreadGoal, nowMs = Date.now(), locale: HiCodexLocale = HICODEX_DEFAULT_LOCALE): ThreadGoalBannerSummary {
-  const objective = goal.objective.trim() || "Untitled goal";
-  const nextStatus = nextThreadGoalStatus(goal.status);
-  const detail = shouldShowGoalTokenProgress(goal)
-    ? `${formatThreadGoalTokenCount(goal.tokensUsed, locale)} / ${formatThreadGoalTokenCount(goal.tokenBudget ?? 0, locale)}`
-    : formatThreadGoalDuration(threadGoalElapsedMs(goal, nowMs));
-  return {
-    statusLabel: STATUS_LABELS[goal.status] ?? "Goal",
-    objective,
-    detail,
-    nextStatus,
-  };
-}
-
-export function formatThreadGoalDuration(durationMs: number): string {
-  if (!Number.isFinite(durationMs) || durationMs <= 0) return "0s";
-  const totalSeconds = Math.floor(durationMs / 1000);
-  if (totalSeconds <= 0) return "0s";
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const parts: string[] = [];
-  if (hours > 0) parts.push(`${hours}h`);
-  if (minutes > 0) parts.push(`${minutes}m`);
-  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-  return parts.join(" ");
-}
-
-// codex composer-*.js renders goal token progress via
-// formatNumber(n, {notation:"compact", maximumFractionDigits:1}) — locale-aware
-// (en-US "12.3K", zh-CN "1.2万"), NOT a custom K/M tuple that rounds to integers.
-export function formatThreadGoalTokenCount(value: number, locale: HiCodexLocale = HICODEX_DEFAULT_LOCALE): string {
-  if (!Number.isFinite(value) || value <= 0) return "0";
-  return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(Math.floor(value));
-}
-
-function shouldShowGoalTokenProgress(goal: ThreadGoal): boolean {
-  return (goal.status === "active" || goal.status === "budgetLimited")
-    && goal.tokenBudget != null
-    && Number.isFinite(goal.tokenBudget)
-    && goal.tokenBudget >= 0;
-}
-
-function threadGoalElapsedMs(goal: ThreadGoal, nowMs: number): number {
-  const baseMs = Math.max(0, goal.timeUsedSeconds) * 1000;
-  if (goal.status !== "active") return baseMs;
-  const updatedAt = Number.isFinite(goal.updatedAt) ? goal.updatedAt : nowMs;
-  return baseMs + Math.max(0, nowMs - updatedAt);
-}
-
-function nextThreadGoalStatus(status: ThreadGoalStatus): ThreadGoalStatus | null {
-  if (status === "complete") return null;
-  if (status === "active") return "paused";
-  return "active";
-}
-
 // codex composer-B7sGHJVq.js: `if(a.length>4e3) <danger toast
 // composer.threadGoal.objectiveTooLong>` — a goal objective must be 4000
 // characters or fewer.
 const THREAD_GOAL_OBJECTIVE_MAX_CHARS = 4000;
-
-// Window-level Escape: these dialogs are hand-rolled (not Radix), so without
-// this the only dismiss affordances are pointer-based.
-function useEscapeToClose(onClose: () => void): void {
-  useEffect(() => {
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
-}
-
-/*
- * The goal dialogs mount in the composer footer subtree, which lives inside
- * `.hc-thread-scroll-content` — that wrapper always carries a `transform`, so
- * a `position: fixed` backdrop rendered inline re-anchors to the scroll
- * content box and gets clipped by the scroll container's overflow. Portal to
- * <body>, same fix as user-message-content-render.tsx / image-preview-lightbox.tsx.
- */
-function portalDialogToBody(dialog: ReactElement) {
-  return typeof document !== "undefined" ? createPortal(dialog, document.body) : dialog;
-}
-
-// codex composer.threadGoal.replaceConfirmation.* — shown before replacing an
-// already-saved goal with a new objective typed in goal mode.
-export function ThreadGoalReplaceConfirm({
-  objective,
-  pending = false,
-  onConfirm,
-  onCancel,
-}: {
-  objective: string;
-  pending?: boolean;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const { formatMessage } = useHiCodexIntl();
-  useEscapeToClose(onCancel);
-  return portalDialogToBody(
-    <div
-      className="hc-settings-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onCancel();
-      }}
-    >
-      <section
-        className="hc-thread-dialog-panel hc-thread-goal-edit-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="hc-thread-goal-replace-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header>
-          <div id="hc-thread-goal-replace-title">{formatMessage({ id: "composer.threadGoal.replaceConfirmation.title", defaultMessage: "Replace current goal?" })}</div>
-          <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={onCancel}>
-            <X size={16} />
-          </button>
-        </header>
-        <div className="hc-thread-dialog-body">
-          <p>{formatMessage({ id: "composer.threadGoal.replaceConfirmation.subtitle", defaultMessage: "This will keep the thread but replace the saved goal with your current composer text" })}</p>
-        </div>
-        <footer>
-          <button type="button" className="hc-mini-button ghost" onClick={onCancel}>
-            {formatMessage({ id: "composer.threadGoal.replaceConfirmation.cancel", defaultMessage: "Cancel" })}
-          </button>
-          <button type="button" className="hc-mini-button accept" disabled={pending} onClick={onConfirm}>
-            {formatMessage({ id: "composer.threadGoal.replaceConfirmation.confirm", defaultMessage: "Replace goal" })}
-          </button>
-        </footer>
-      </section>
-    </div>,
-  );
-}
-
-// codex composer.threadGoal.resumeConfirmation.* — shown when a thread is resumed
-// with a paused/blocked/usage-limited goal (codex tui
-// maybe_prompt_resume_paused_goal_after_resume → show_resume_paused_goal_prompt).
-// Resume sets the goal active; keep-paused / not-now just dismiss (the protocol
-// has no dismiss RPC, so dismissal is client-side).
-export function ThreadGoalResumeConfirm({
-  objective,
-  status,
-  pending = false,
-  onResume,
-  onDismiss,
-}: {
-  objective: string;
-  status: ThreadGoalStatus;
-  pending?: boolean;
-  onResume: () => void;
-  onDismiss: () => void;
-}) {
-  const { formatMessage } = useHiCodexIntl();
-  const title = status === "paused"
-    ? formatMessage({ id: "composer.threadGoal.resumeConfirmation.title", defaultMessage: "Resume paused goal?" })
-    : formatMessage({ id: "composer.threadGoal.resumeConfirmation.resumableTitle", defaultMessage: "Resume goal?" });
-  useEscapeToClose(onDismiss);
-  return portalDialogToBody(
-    <div
-      className="hc-settings-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onDismiss();
-      }}
-    >
-      <section
-        className="hc-thread-dialog-panel hc-thread-goal-edit-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="hc-thread-goal-resume-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <header>
-          <div id="hc-thread-goal-resume-title">{title}</div>
-          <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={onDismiss}>
-            <X size={16} />
-          </button>
-        </header>
-        <div className="hc-thread-dialog-body">
-          <p>{formatMessage({ id: "composer.threadGoal.resumeConfirmation.subtitle", defaultMessage: "Codex will keep working toward this goal when the thread is idle" })}</p>
-          <p className="hc-thread-goal-resume-objective">{objective}</p>
-        </div>
-        <footer>
-          <button type="button" className="hc-mini-button ghost" onClick={onDismiss}>
-            {formatMessage({ id: "composer.threadGoal.resumeConfirmation.notNow", defaultMessage: "Not now" })}
-          </button>
-          <button type="button" className="hc-mini-button ghost" onClick={onDismiss}>
-            {formatMessage({ id: "composer.threadGoal.resumeConfirmation.keepPaused", defaultMessage: "Keep paused" })}
-          </button>
-          <button type="button" className="hc-mini-button accept" disabled={pending} onClick={onResume}>
-            {formatMessage({ id: "composer.threadGoal.resumeConfirmation.resume", defaultMessage: "Resume goal" })}
-          </button>
-        </footer>
-      </section>
-    </div>,
-  );
-}
 
 export function ThreadGoalBanner({
   goal,

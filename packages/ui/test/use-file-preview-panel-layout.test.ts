@@ -1,9 +1,15 @@
 import {
+  FILE_PREVIEW_PANEL_FULL_WIDTH_STORAGE_KEY,
   FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX,
   FILE_PREVIEW_PANEL_MAX_WIDTH_RATIO,
   FILE_PREVIEW_PANEL_MIN_WIDTH_PX,
+  FILE_PREVIEW_PANEL_WIDTH_STORAGE_KEY,
   clampFilePreviewPanelWidth,
-} from "../src/hooks/use-file-preview-panel-layout";
+  loadFilePreviewPanelFullWidth,
+  loadFilePreviewPanelWidth,
+  saveFilePreviewPanelFullWidth,
+  saveFilePreviewPanelWidth,
+} from "../src/state/file-preview-panel-preferences";
 
 /*
  * Codex Desktop AppShell RightPanel (`app-shell.formatted.js`):
@@ -17,6 +23,7 @@ export default function runFilePreviewPanelLayoutTests(): void {
   passesThroughInRangeValues();
   fallsBackToDefaultOnNonFiniteInput();
   exposesCodexParityConstants();
+  migratesLegacyPreferenceKeysIntoSharedNamespace();
 }
 
 function clampsBelowMinimumToTheCodexFloor(): void {
@@ -77,6 +84,59 @@ function exposesCodexParityConstants(): void {
     true,
     "max-width ratio must be a fraction of container width (Codex `rightPanelWidthRatio`)",
   );
+}
+
+function migratesLegacyPreferenceKeysIntoSharedNamespace(): void {
+  const storage = memoryStorage();
+  storage.setItem("hicodex.filePreviewPanel.widthPx", "720");
+  storage.setItem("hicodex.filePreviewPanel.fullWidth", "1");
+  assertEqual(
+    loadFilePreviewPanelWidth(storage),
+    720,
+    "file preview width should read the legacy key during migration",
+  );
+  assertEqual(
+    loadFilePreviewPanelFullWidth(storage),
+    true,
+    "file preview full-width preference should read the legacy key during migration",
+  );
+
+  saveFilePreviewPanelWidth(storage, 640);
+  saveFilePreviewPanelFullWidth(storage, false);
+  assertEqual(
+    storage.values.get(FILE_PREVIEW_PANEL_WIDTH_STORAGE_KEY),
+    "640",
+    "new width writes should use the shared desktop.hicodex namespace",
+  );
+  assertEqual(
+    storage.values.get(FILE_PREVIEW_PANEL_FULL_WIDTH_STORAGE_KEY),
+    "0",
+    "false full-width writes must persist an explicit off value in the shared namespace",
+  );
+  assertEqual(
+    storage.values.has("hicodex.filePreviewPanel.fullWidth"),
+    false,
+    "saving full-width must drop the legacy key so it cannot shadow later writes",
+  );
+  assertEqual(
+    loadFilePreviewPanelFullWidth(storage),
+    false,
+    "full-width must read back false after saving false — a leftover legacy \"1\" used to resurrect it on relaunch",
+  );
+}
+
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    values,
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      values.set(key, value);
+    },
+    removeItem: (key: string) => {
+      values.delete(key);
+    },
+  };
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

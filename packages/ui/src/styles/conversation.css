@@ -861,12 +861,12 @@
   flex-direction: column;
   gap: 0;
   margin-bottom: var(--conversation-block-gap);
-  content-visibility: auto;
-  contain-intrinsic-size: auto 240px;
-}
-
-.hc-turn-row:has([data-mcp-app-frame="true"]) {
-  content-visibility: visible;
+  /*
+   * No content-visibility here: VirtualizedTurnList already unmounts
+   * off-screen turns, and content-visibility:auto on top of it made
+   * programmatic jumps land on skip-rendered (blank) rows and fed the
+   * 240px placeholder height into the row-height model.
+   */
 }
 
 .hc-turn-row > * + * {

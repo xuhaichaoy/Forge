@@ -172,6 +172,11 @@ function projectsTurnStartOptionsFromComposerMode(): void {
     },
     "plan composer mode should attach the app-server plan collaboration mode",
   );
+  assertDeepEqual(
+    turnStartOptionsFromComposerMode("plan", [planMode], null),
+    null,
+    "plan composer mode should not attach a collaboration mode when no model source is available",
+  );
 }
 
 function detectsUnavailablePlanMode(): void {

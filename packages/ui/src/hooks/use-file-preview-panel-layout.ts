@@ -1,4 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX,
+  FILE_PREVIEW_PANEL_MAX_WIDTH_RATIO,
+  FILE_PREVIEW_PANEL_MIN_WIDTH_PX,
+  clampFilePreviewPanelWidth,
+  filePreviewPanelPreferenceStorage,
+  loadFilePreviewPanelFullWidth,
+  loadFilePreviewPanelWidth,
+  saveFilePreviewPanelFullWidth,
+  saveFilePreviewPanelWidth,
+} from "../state/file-preview-panel-preferences";
+
+export {
+  FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX,
+  FILE_PREVIEW_PANEL_MAX_WIDTH_RATIO,
+  FILE_PREVIEW_PANEL_MIN_WIDTH_PX,
+  clampFilePreviewPanelWidth,
+} from "../state/file-preview-panel-preferences";
 
 /*
  * codex: app-shell-*.js — mirrors Codex Desktop's AppShell **RightPanel**, the
@@ -28,16 +46,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
  *   • Expand/Restore button — `aria-label` ICU ids
  *     `codex.rightPanel.expandFullWidth` / `codex.rightPanel.restoreWidth`.
  *
- * Persistence keys live under `hicodex.filePreviewPanel.` so a curious user
- * can wipe them without touching unrelated UI state.
+ * Persistence keys live in the shared `desktop.hicodex.filePreviewPanel.*`
+ * namespace so the app-settings mirror preserves them across webview storage
+ * resets. Legacy `hicodex.filePreviewPanel.*` keys are still read during
+ * migration, but new writes go through the shared namespace.
  */
-export const FILE_PREVIEW_PANEL_MIN_WIDTH_PX = 320;
-export const FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX = 600;
-export const FILE_PREVIEW_PANEL_MAX_WIDTH_RATIO = 0.85;
-
-const STORAGE_KEY_WIDTH = "hicodex.filePreviewPanel.widthPx";
-const STORAGE_KEY_FULL_WIDTH = "hicodex.filePreviewPanel.fullWidth";
-
 export interface FilePreviewPanelLayoutState {
   widthPx: number;
   fullWidth: boolean;
@@ -50,6 +63,15 @@ export interface FilePreviewPanelLayoutControls extends FilePreviewPanelLayoutSt
   startResize: (
     event: { clientX: number; pointerId?: number },
     asideElement: HTMLElement | null,
+    options?: {
+      /**
+       * Per-drag override for the below-minimum close action. The hook
+       * instance is shared by several right-side surfaces (file preview,
+       * SidePanelHost); dragging a surface's handle below 320 px must close
+       * THAT surface, not the hook-level default.
+       */
+      onShouldClose?: () => void;
+    },
   ) => void;
   /**
    * Reset to `FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX`. Wired to the handle's
@@ -71,61 +93,16 @@ export interface UseFilePreviewPanelLayoutInput {
   onShouldClose?: () => void;
 }
 
-function readPersistedWidth(): number {
-  if (typeof window === "undefined") return FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY_WIDTH);
-    if (!raw) return FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX;
-    const value = Number.parseFloat(raw);
-    if (!Number.isFinite(value) || value < FILE_PREVIEW_PANEL_MIN_WIDTH_PX) return FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX;
-    return value;
-  } catch {
-    return FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX;
-  }
-}
-
-function readPersistedFullWidth(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(STORAGE_KEY_FULL_WIDTH) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function persistWidth(value: number): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY_WIDTH, String(Math.round(value)));
-  } catch {
-    // best effort
-  }
-}
-
-function persistFullWidth(value: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (value) window.localStorage.setItem(STORAGE_KEY_FULL_WIDTH, "1");
-    else window.localStorage.removeItem(STORAGE_KEY_FULL_WIDTH);
-  } catch {
-    // best effort
-  }
-}
-
-export function clampFilePreviewPanelWidth(value: number, maxPx: number): number {
-  if (!Number.isFinite(value)) return FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX;
-  const upper = Math.max(FILE_PREVIEW_PANEL_MIN_WIDTH_PX, maxPx);
-  if (value < FILE_PREVIEW_PANEL_MIN_WIDTH_PX) return FILE_PREVIEW_PANEL_MIN_WIDTH_PX;
-  if (value > upper) return upper;
-  return value;
-}
-
 export function useFilePreviewPanelLayout({
   containerWidthPx,
   onShouldClose,
 }: UseFilePreviewPanelLayoutInput): FilePreviewPanelLayoutControls {
-  const [widthPx, setWidthInternal] = useState<number>(readPersistedWidth);
-  const [fullWidth, setFullWidth] = useState<boolean>(readPersistedFullWidth);
+  const [widthPx, setWidthInternal] = useState<number>(() => (
+    loadFilePreviewPanelWidth(filePreviewPanelPreferenceStorage())
+  ));
+  const [fullWidth, setFullWidth] = useState<boolean>(() => (
+    loadFilePreviewPanelFullWidth(filePreviewPanelPreferenceStorage())
+  ));
   const [isResizing, setIsResizing] = useState(false);
   const resolvedMaxWidthPx = useMemo(() => {
     if (containerWidthPx <= 0) return Number.POSITIVE_INFINITY;
@@ -141,14 +118,16 @@ export function useFilePreviewPanelLayout({
     });
   }, [resolvedMaxWidthPx]);
 
+  const dragShouldCloseRef = useRef<(() => void) | null>(null);
+
   const setWidthPx = useCallback((next: number) => {
     if (next < FILE_PREVIEW_PANEL_MIN_WIDTH_PX) {
-      onShouldClose?.();
+      (dragShouldCloseRef.current ?? onShouldClose)?.();
       return;
     }
     const clamped = clampFilePreviewPanelWidth(next, resolvedMaxWidthPx);
     setWidthInternal((current) => (current === clamped ? current : clamped));
-    persistWidth(clamped);
+    saveFilePreviewPanelWidth(filePreviewPanelPreferenceStorage(), clamped);
   }, [onShouldClose, resolvedMaxWidthPx]);
 
   /*
@@ -173,8 +152,10 @@ export function useFilePreviewPanelLayout({
   const startResize = useCallback((
     event: { clientX: number; pointerId?: number },
     asideElement: HTMLElement | null,
+    options?: { onShouldClose?: () => void },
   ) => {
     if (typeof window === "undefined") return;
+    dragShouldCloseRef.current = options?.onShouldClose ?? null;
     setIsResizing(true);
     // Capture the aside's right edge at drag-start. Codex re-reads it each
     // move; we cache it because the panel doesn't move horizontally during a
@@ -194,6 +175,7 @@ export function useFilePreviewPanelLayout({
       upEvent.preventDefault();
       pendingWidthRef.current = computeWidth(upEvent.clientX);
       flush();
+      dragShouldCloseRef.current = null;
       setIsResizing(false);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
@@ -213,13 +195,13 @@ export function useFilePreviewPanelLayout({
 
   const resetWidth = useCallback(() => {
     setWidthInternal(FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX);
-    persistWidth(FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX);
+    saveFilePreviewPanelWidth(filePreviewPanelPreferenceStorage(), FILE_PREVIEW_PANEL_DEFAULT_WIDTH_PX);
   }, []);
 
   const toggleFullWidth = useCallback(() => {
     setFullWidth((current) => {
       const next = !current;
-      persistFullWidth(next);
+      saveFilePreviewPanelFullWidth(filePreviewPanelPreferenceStorage(), next);
       return next;
     });
   }, []);

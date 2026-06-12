@@ -6,7 +6,7 @@ import type {
   Thread,
 } from "@hicodex/codex-protocol";
 import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
-import { FileText, FolderOpen, Globe, Plus, X } from "lucide-react";
+import { FileText, FolderOpen, Globe, Maximize2, Minimize2, Plus, X } from "lucide-react";
 import { AppNavigationRail } from "./components/app-navigation-rail";
 import { KbArchiveView } from "./components/kb-archive-view";
 import { KbIngestView } from "./components/kb-ingest-view";
@@ -40,7 +40,7 @@ import { ServicesProvider, useServices } from "./components/services-context";
 import { TeamServiceAuthGate } from "./components/team-service-auth-gate";
 import { focusComposerFromPlainTextKey, requestComposerElementFocus } from "./components/composer-keyboard";
 import { PreConversationLoadingShell } from "./components/pre-conversation-loading-shell";
-import { normalizeSubscriptionProviderId } from "./components/model-picker-menu";
+import { normalizeSubscriptionProviderId } from "./model/model-picker-selection";
 import { normalizeReasoningEffortValue, type ReasoningEffortValue } from "./components/reasoning-picker-menu";
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { BackgroundSubagentsStack } from "./components/background-subagents-stack";
@@ -135,8 +135,7 @@ import {
   DEFAULT_MODEL_REASONING_SUMMARY,
   encodeSelection,
   EMPTY_MODEL,
-  buildModelConfigFromConfig,
-  isModelProviderConfigured,
+  buildModelSettingsDraftFromConfig,
   normalizeModelConfig,
 } from "./model/model-settings";
 import {
@@ -341,16 +340,14 @@ import {
   loadSettingsPanelContent,
 } from "./state/settings-panel-loader";
 import {
-  DESKTOP_RIGHT_RAIL_GAP_PX,
   projectRightRailSections,
-  rightRailDisplayMode,
-  rightRailReservedInlineEndPx,
 } from "./state/right-rail";
-import { openBrowserRuntime } from "./state/browser-runtime";
+import { projectAppShellRightRailLayout } from "./state/right-rail-layout";
+import { isHtmlPath, openBrowserRuntime } from "./state/browser-runtime";
+import { HtmlPreviewTabContent } from "./components/html-preview-tab";
 import { TAB_KINDS } from "./state/side-panel-tab-host";
 import { runSlashRequestWorkflow } from "./state/slash-request-workflow";
 import { appendRpcDebugEvent } from "./state/rpc-debug";
-import { nextToggleThemeMode } from "./state/theme";
 import {
   applyThreadFindMarks,
   clampThreadFindIndex,
@@ -377,18 +374,6 @@ import {
   type TurnStartOptions,
   withWorkspaceDeveloperInstructions,
 } from "./state/thread-workflow";
-
-const BACKGROUND_AGENT_PANEL_WIDTH_PX = 520;
-const BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX = 320;
-const BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX = 48;
-
-function backgroundAgentPanelWidthPx(containerWidthPx: number): number {
-  if (containerWidthPx <= 0) return BACKGROUND_AGENT_PANEL_WIDTH_PX;
-  return Math.max(
-    BACKGROUND_AGENT_PANEL_MIN_WIDTH_PX,
-    Math.min(BACKGROUND_AGENT_PANEL_WIDTH_PX, containerWidthPx - BACKGROUND_AGENT_PANEL_EDGE_MARGIN_PX),
-  );
-}
 
 const LOCAL_SIDE_PANEL_HOST_ID = "local";
 
@@ -1089,14 +1074,14 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     void refreshThreadContextDefaults(client, dispatch, workspace)
       .then((config) => {
         if (config) {
-          const draft = buildModelConfigFromConfig(config, {
+          const { draft, configured } = buildModelSettingsDraftFromConfig(config, {
             excludedProviderIds: SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS,
           });
           setModelDraft(draft);
           // The draft above may be the factory placeholder; only a provider
           // with a saved config.toml entry participates in default/fallback
           // resolution.
-          setPersonalProviderConfigured(isModelProviderConfigured(config, draft.id));
+          setPersonalProviderConfigured(configured);
         }
       });
   }, [client, state.connected, workspace]);
@@ -1107,9 +1092,11 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     void refreshThreadContextDefaults(client, dispatch, workspace)
       .then((config) => {
         if (config) {
-          setModelDraft(buildModelConfigFromConfig(config, {
+          const { draft, configured } = buildModelSettingsDraftFromConfig(config, {
             excludedProviderIds: SETTINGS_MODEL_PROVIDER_EXCLUDED_IDS,
-          }));
+          });
+          setModelDraft(draft);
+          setPersonalProviderConfigured(configured);
         }
       });
   }, [activeSettingsPanel, client, dispatch, modelDraft.id, state.connected, workspace]);
@@ -1208,6 +1195,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     codexHome: state.hostStatus?.codexHome,
     threadContextDefaults: state.threadContextDefaults,
     personalModelDraft: modelDraft,
+    personalProviderConfigured,
     selectedModelKey,
     setSelectedModelKey,
     refreshKey: modelPickerAnchor,
@@ -1729,22 +1717,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     containerWidthPx: mainWidth,
     onShouldClose: closeFilePreviewPanel,
   });
-  const filePreviewPanelEffectiveWidthPx = hasFilePreviewSelection && !filePreviewPanelLayout.fullWidth
-    ? filePreviewPanelLayout.widthPx
-    : 0;
-  const backgroundAgentPanelEffectiveWidthPx = backgroundAgentPanel
-    ? backgroundAgentPanelWidthPx(mainWidth)
-    : 0;
-  const automationsPanelEffectiveWidthPx = automationsPanelOpen
-    ? backgroundAgentPanelWidthPx(mainWidth)
-    : 0;
-  const activeSidePanelEffectiveWidthPx = hasFilePreviewSelection
-    ? filePreviewPanelEffectiveWidthPx
-    : (backgroundAgentPanelEffectiveWidthPx || automationsPanelEffectiveWidthPx);
-  const sidePanelRailOffsetPx = hasFilePreviewSelection
-    ? (filePreviewPanelLayout.fullWidth ? mainWidth : filePreviewPanelEffectiveWidthPx)
-    : activeSidePanelEffectiveWidthPx;
-  const rightRailLayoutWidthPx = Math.max(0, mainWidth - sidePanelRailOffsetPx);
   /*
    * Codex Desktop Summary Rail predicate: `shouldShow = !isHiddenByRightPanel && (isPinned && displayMode !== "overlay")`.
    * `isHiddenByRightPanel` is true when a non-overlay rail is forced down by
@@ -1763,38 +1735,32 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
    * otherwise paint the rail with branchDetails the moment a user opens
    * the app in a git workspace).
    */
-  const rightRailMode = rightRailDisplayMode(rightRailLayoutWidthPx);
-  const showRightRail = rightRailPinned
-    && Boolean(activeThread)
-    && rightRailSections.length > 0
-    && rightRailMode !== "overlay"
-    && !hasFilePreviewSelection;
-  const showRightRailPopover = rightRailPopoverOpen
-    && Boolean(activeThread)
-    && rightRailSections.length > 0
-    && rightRailMode === "overlay"
-    && !hasFilePreviewSelection;
+  const rightRailLayout = projectAppShellRightRailLayout({
+    mainWidthPx: mainWidth,
+    hasActiveThread: Boolean(activeThread),
+    hasRailSections: rightRailSections.length > 0,
+    rightRailPinned,
+    rightRailPopoverOpen,
+    hasFilePreviewSelection,
+    filePreviewPanelFullWidth: filePreviewPanelLayout.fullWidth,
+    filePreviewPanelWidthPx: filePreviewPanelLayout.widthPx,
+    hasBackgroundAgentPanel: backgroundAgentPanel != null,
+    automationsPanelOpen,
+  });
+  const rightRailMode = rightRailLayout.rightRailMode;
+  const showRightRail = rightRailLayout.showRightRail;
+  const showRightRailPopover = rightRailLayout.showRightRailPopover;
   useEffect(() => {
-    if (
-      rightRailMode !== "overlay"
-      || !activeThread
-      || rightRailSections.length === 0
-      || hasFilePreviewSelection
-    ) {
+    if (rightRailLayout.shouldCloseRightRailPopover) {
       setRightRailPopoverOpen(false);
     }
-  }, [activeThread, hasFilePreviewSelection, rightRailMode, rightRailSections.length]);
+  }, [rightRailLayout.shouldCloseRightRailPopover, setRightRailPopoverOpen]);
   const mainLayoutStyle = {
-    "--hc-right-panel-offset": `${Math.round(sidePanelRailOffsetPx)}px`,
+    "--hc-right-panel-offset": `${rightRailLayout.rightPanelOffsetPx}px`,
   } as CSSProperties;
   // Reserve the conversation's right edge for side panels plus the summary rail.
   // Full-width file preview covers the thread instead of pushing it.
-  const threadInlineEndInset = (hasFilePreviewSelection && filePreviewPanelLayout.fullWidth)
-    ? 0
-    : Math.round(
-      activeSidePanelEffectiveWidthPx
-        + rightRailReservedInlineEndPx(rightRailLayoutWidthPx, showRightRail, rightRailPinned),
-    );
+  const threadInlineEndInset = rightRailLayout.threadInlineEndInset;
 
   const selectThreadById = useCallback((threadId: string) => {
     const thread = state.threads.find((candidate) => candidate.id === threadId);
@@ -2913,7 +2879,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     if (!target) return;
     openFileReferenceExternal({ path: target, lineStart: 1, lineEnd: 1 });
   }, [openFileReferenceExternal, worktreeStatusCwd]);
-  const openFileReferenceSidePanelTab = useCallback((
+  const openFileReferenceSidePanelTab = useCallback(function openFileReferenceTab(
     reference: { path: string; lineStart: number; lineEnd?: number; hostId?: string | null },
     options: {
       isPreview: boolean;
@@ -2922,11 +2888,52 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       title?: string;
       workspaceRoot?: string | null;
       cwd?: string | null;
+      viewSource?: boolean;
     },
-  ) => {
+  ) {
     const resolvedReference = resolveFileSelection(reference);
     if (!resolvedReference) return;
     const hostId = resolvedReference.hostId ?? options.hostId ?? LOCAL_SIDE_PANEL_HOST_ID;
+    /*
+     * codex: open-workspace-file-*.js `Y` gate — browserSidebarEnabled && local
+     * host && isHtmlPath(path) routes the open to the rendered web preview
+     * (Codex shows it in the Browser sidebar; HiCodex renders it in a side-panel
+     * tab via a sandboxed asset-protocol iframe) instead of the source tab.
+     * View source opts out (Codex's modifiedClick equivalent); remote-host
+     * files have no local asset URL.
+     */
+    if (
+      options.viewSource !== true
+      && hostId === LOCAL_SIDE_PANEL_HOST_ID
+      && isHtmlPath(resolvedReference.path)
+      && isTauriRuntime()
+    ) {
+      sidePanel.controller.openTab({
+        id: `html-preview:${resolvedReference.path}`,
+        Component: HtmlPreviewTabContent,
+        title: options.title ?? basenameFromPath(resolvedReference.path),
+        tooltip: resolvedReference.path,
+        icon: <Globe size={14} aria-hidden="true" />,
+        isPreview: options.isPreview,
+        contextMenuItems: fileReferenceSidePanelContextMenuItems({
+          onOpenFile: () => openFileReferenceExternal(resolvedReference),
+          onCopyPath: () => {
+            void globalThis.navigator?.clipboard?.writeText(resolvedReference.path);
+          },
+          onCopyContents: () => copyFileReferenceContents(resolvedReference),
+          onRevealPath: () => revealFileReference(resolvedReference),
+          revealLabel: osRevealLabel(),
+        }, formatUiMessage),
+        props: {
+          path: resolvedReference.path,
+          onViewSource: (sourceReference: { path: string; lineStart: number; lineEnd?: number }) => {
+            openFileReferenceTab(sourceReference, { isPreview: false, viewSource: true });
+          },
+          onOpenExternal: openFileReferenceExternal,
+        },
+      });
+      return;
+    }
     const tabReference = { ...resolvedReference, hostId };
     const tabId = options.tabId ?? fileReferenceSidePanelTabId(resolvedReference.path, hostId);
     sidePanel.controller.openTab({
@@ -3074,6 +3081,27 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
     openFileReferenceSidePanelTab(reference, { isPreview: true });
   }, [openFileReferenceSidePanelTab]);
   const openAssistantArtifactInSidePanel = useCallback((entry: RailEntry) => {
+    /*
+     * codex: local-conversation-thread-*.js `LD` card click — a website
+     * end-resource opens in the Codex Browser: URL targets via the
+     * open-in-browser host message, local .html paths via the bare open-file
+     * request (the browser-sidebar file:// route). The local-path leg reuses
+     * the file-reference opener so the html→Browser gate (and its non-Tauri
+     * source-view fallback) stays in one place.
+     */
+    if (entry.status === "website" && entry.action?.kind === "url") {
+      const target = entry.action.url;
+      if (/^https?:\/\//i.test(target)) {
+        if (isTauriRuntime()) {
+          void openBrowserRuntime(target);
+        } else {
+          openRailUrl(target);
+        }
+        return;
+      }
+      previewRailFileReferenceAndOpenRail({ path: target, lineStart: 1 });
+      return;
+    }
     if (shouldOpenArtifactPreview(entry)) {
       previewRailArtifact(entry);
       return;
@@ -3114,6 +3142,9 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           title: preview.title,
           workspaceRoot: previewPathContext.workspaceRoot,
           cwd: previewPathContext.cwd,
+          // View source must show the source even for .html (bypass the
+          // html→Browser gate, like Codex's modifiedClick path).
+          viewSource: true,
         });
       };
       sidePanel.controller.openTab({
@@ -3859,19 +3890,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
 
   const applyModelDraft = useCallback(() => {
     const nextModel = normalizeModelConfig(modelDraft);
-    if (nextModel.model) {
-      setSelectedModelKey(encodeSelection(nextModel.id, nextModel.model));
-      dispatch({
-        type: "setThreadContextDefaults",
-        context: {
-          ...(state.threadContextDefaults ?? {}),
-          model: nextModel.model,
-          modelProvider: nextModel.id,
-          reasoningSummary: state.threadContextDefaults?.reasoningSummary ?? DEFAULT_MODEL_REASONING_SUMMARY,
-          personality: state.threadContextDefaults?.personality ?? "friendly",
-        },
-      });
-    }
     void saveModelDraftWorkflow({
       client,
       dispatch,
@@ -3883,7 +3901,20 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       // models.json is a full overwrite — keep the team gateway entries alive.
       additionalCatalogModels: teamModelGatewayProvider?.models ?? [],
     }).then((result) => {
-      if (!result.restartedRuntime) {
+      if (result.wroteConfig && nextModel.model) {
+        setSelectedModelKey(encodeSelection(nextModel.id, nextModel.model));
+        dispatch({
+          type: "setThreadContextDefaults",
+          context: {
+            ...(state.threadContextDefaults ?? {}),
+            model: nextModel.model,
+            modelProvider: nextModel.id,
+            reasoningSummary: state.threadContextDefaults?.reasoningSummary ?? DEFAULT_MODEL_REASONING_SUMMARY,
+            personality: state.threadContextDefaults?.personality ?? "friendly",
+          },
+        });
+      }
+      if (result.wroteConfig && !result.restartedRuntime) {
         void refreshThreadContextDefaults(client, dispatch, workspace);
       }
     });
@@ -3907,7 +3938,7 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
       type: "log",
       text: nextSettings.baseUrl
         ? `set image generation endpoint to ${nextSettings.baseUrl}`
-        : "image generation will reuse the active model endpoint",
+        : "image generation endpoint cleared; HiCodex image_gen will stay disabled until an image endpoint is configured",
     });
   }, [imageGenerationDraft]);
 
@@ -3994,7 +4025,6 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
           onCopyDeeplink={copyThreadDeeplink}
           onOpenSettings={() => void loadSettingsPanel("general")}
           resolvedUiTheme={resolvedUiTheme}
-          onToggleTheme={() => setUiThemeMode(nextToggleThemeMode(resolvedUiTheme))}
           accountView={accountViewModel}
           onSignOut={signOutAccount}
           sortKey={sidebarPreferences.sortKey}
@@ -4422,9 +4452,44 @@ function HiCodexAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: 
             tabs={sidePanel.tabs}
             activeTab={sidePanel.activeTab}
             activeTabReactKey={sidePanel.activeTabReactKey}
+            widthPx={filePreviewPanelLayout.widthPx}
+            fullWidth={filePreviewPanelLayout.fullWidth}
+            resize={{
+              isResizing: filePreviewPanelLayout.isResizing,
+              // Below-minimum drags must close THIS host (Codex right-panel
+              // semantics), not the file-preview selection the shared hook
+              // defaults to — that closed a different panel behind the host.
+              onResizeStart: (event, asideElement) => filePreviewPanelLayout.startResize(
+                event,
+                asideElement,
+                { onShouldClose: () => sidePanel.setPanelOpen(false) },
+              ),
+              onResetWidth: filePreviewPanelLayout.resetWidth,
+            }}
             emptyState={<SidePanelNewTabPage actions={sidePanelNewTabActions} />}
             afterTabsStickySlot={
               <>
+                {/*
+                  * codex: rightPanel expand/restore (`U` atom + `Q()` helper)
+                  * — full-width toggle. Same Maximize2/Minimize2 pair and ICU
+                  * ids as the Codex right-panel header action.
+                  */}
+                <button
+                  type="button"
+                  className="hc-side-panel-tab-bar-button"
+                  aria-pressed={filePreviewPanelLayout.fullWidth}
+                  aria-label={filePreviewPanelLayout.fullWidth
+                    ? formatUiMessage({ id: "codex.rightPanel.restoreWidth", defaultMessage: "Restore panel width" })
+                    : formatUiMessage({ id: "codex.rightPanel.expandFullWidth", defaultMessage: "Expand panel" })}
+                  title={filePreviewPanelLayout.fullWidth
+                    ? formatUiMessage({ id: "codex.rightPanel.restoreWidth", defaultMessage: "Restore panel width" })
+                    : formatUiMessage({ id: "codex.rightPanel.expandFullWidth", defaultMessage: "Expand panel" })}
+                  onClick={filePreviewPanelLayout.toggleFullWidth}
+                >
+                  {filePreviewPanelLayout.fullWidth
+                    ? <Minimize2 size={16} aria-hidden="true" />
+                    : <Maximize2 size={16} aria-hidden="true" />}
+                </button>
                 {/*
                   * codex: thread-app-shell-chrome-*.js sticky "+"
                   * button. onClick is `() => { activateTab(null); openPanel(true); }`
@@ -4633,6 +4698,7 @@ export function HiCodexApp() {
       onNotification: (message) => clientCallbacksRef.current.onNotification(message),
       onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
       onLog: (text, level) => dispatch({ type: "log", text, level }),
+      onConnectionClosed: () => dispatch({ type: "connected", value: false }),
       onDebugEvent: (event) => clientCallbacksRef.current.onDebugEvent(event),
     });
     clientRef.current = rpc;

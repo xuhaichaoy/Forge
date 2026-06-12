@@ -1,3 +1,5 @@
+import { buildTeamModelGatewayCatalogConfig } from "../src/hooks/use-team-model-gateway";
+import { EMPTY_MODEL, type ModelConfig } from "../src/model/model-settings";
 import {
   TEAM_MODEL_GATEWAY_PROVIDER_ID,
   buildTeamModelGatewayProviderSnapshot,
@@ -24,6 +26,8 @@ export default function runTeamModelGatewayTests(): void {
   dropsUnknownSelectedModelInsteadOfInjectingIt();
   buildsProviderDefinitionAndMatchesConfig();
   provisionSignatureTracksDefinitionAndCatalog();
+  buildsTeamCatalogWithoutUnsavedPersonalPlaceholder();
+  buildsTeamCatalogWithSavedPersonalModels();
 }
 
 function parsesOpenAiStyleModelList(): void {
@@ -274,6 +278,53 @@ function provisionSignatureTracksDefinitionAndCatalog(): void {
     teamModelGatewayProvisionSignature(rotated, ["local-model", "123123:Qwen3.6-27B-mxfp4"]) !== base,
     "token rotation should change the signature",
   );
+}
+
+function buildsTeamCatalogWithoutUnsavedPersonalPlaceholder(): void {
+  const snapshot = buildTeamModelGatewayProviderSnapshot({
+    connection: { baseUrl: "http://127.0.0.1:5050", token: "team-token" },
+    models: ["123123:Qwen3.6-27B-mxfp4"],
+    teamName: null,
+  });
+  assert(snapshot, "snapshot should exist");
+  const catalog = buildTeamModelGatewayCatalogConfig({
+    personalModelDraft: EMPTY_MODEL,
+    personalProviderConfigured: false,
+    teamModelConfig: snapshot.modelConfig,
+    teamModels: snapshot.provider.models,
+  });
+  assertDeepEqual(
+    catalog.models,
+    ["123123:Qwen3.6-27B-mxfp4"],
+    "unsaved personal placeholder should not be merged into the team catalog",
+  );
+}
+
+function buildsTeamCatalogWithSavedPersonalModels(): void {
+  const snapshot = buildTeamModelGatewayProviderSnapshot({
+    connection: { baseUrl: "http://127.0.0.1:5050", token: "team-token" },
+    models: ["123123:Qwen3.6-27B-mxfp4"],
+    teamName: null,
+  });
+  assert(snapshot, "snapshot should exist");
+  const catalog = buildTeamModelGatewayCatalogConfig({
+    personalModelDraft: modelDraft({ model: "local-a", models: ["local-a", "local-b"] }),
+    personalProviderConfigured: true,
+    teamModelConfig: snapshot.modelConfig,
+    teamModels: snapshot.provider.models,
+  });
+  assertDeepEqual(
+    catalog.models,
+    ["local-a", "local-b", "123123:Qwen3.6-27B-mxfp4"],
+    "saved personal models should be merged with team models for the full catalog overwrite",
+  );
+}
+
+function modelDraft(overrides: Partial<ModelConfig> = {}): ModelConfig {
+  return {
+    ...EMPTY_MODEL,
+    ...overrides,
+  };
 }
 
 function assert(condition: unknown, message: string): asserts condition {

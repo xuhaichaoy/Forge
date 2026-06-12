@@ -349,7 +349,11 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
     case "connected":
       return { ...state, connected: action.value, connecting: false };
     case "hostStatus":
-      return { ...state, hostStatus: action.status, connected: action.status.running };
+      // status.running means the sidecar PROCESS exists, not that this client
+      // is attached to it. The 5s status poll must never resurrect `connected`
+      // after a transport closure (that starved the backoff reconnect loop
+      // forever); it may only downgrade when the process is gone.
+      return { ...state, hostStatus: action.status, connected: state.connected && action.status.running };
     case "setThreads":
       return withActiveComposerMode({
         ...state,

@@ -1,10 +1,12 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  type ModelPickerProvider,
   ModelPickerMenu,
-  resolveEffectiveModelSelection,
 } from "../src/components/model-picker-menu";
+import {
+  resolveEffectiveModelSelection,
+  type ModelPickerProvider,
+} from "../src/model/model-picker-selection";
 
 export default function runModelPickerMenuTests(): void {
   locksModelsForUnverifiedProviders();

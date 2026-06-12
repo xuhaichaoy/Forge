@@ -1,63 +1,29 @@
 import { useState } from "react";
-import { formatUnknown, stringField } from "../lib/format";
-import {
-  assistantMessageText,
-  commandOutputText,
-  commandText,
-  formatItemDetail,
-  humanReadableToolLabel,
-  isItemInProgress,
-  itemText,
-  itemType,
-  mcpAppResourceUri,
-  mcpServerName,
-  mcpSourceTitle,
-  mcpToolName,
-  type AccumulatedThreadItem,
-} from "../state/render-groups";
-import {
-  patchChanges,
-  patchKind,
-  patchPath,
-} from "../state/tool-activity-fields";
+import type { AccumulatedThreadItem } from "../state/render-groups";
 import { AutoReviewDetail } from "./auto-review-detail";
-import { autoReviewBody, autoReviewTitle } from "./auto-review-view-model";
 import { ExecShellDetail } from "./exec-shell-detail";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import type { FileReference } from "./file-reference-types";
+import { useHiCodexIntl } from "./i18n-provider";
 import {
-  mcpDisplayResultBlocks,
-  mcpResultBlocks,
-  mcpStructuredResultText,
-  mcpToolErrorText,
-  toolResultText,
-  type McpResultBlock,
-} from "./tool-activity-mcp-result";
+  type McpAppHostCallHandler,
+  type ReadMcpResourceHandler,
+} from "./mcp-app-sandbox";
+import { McpAppToolDetail } from "./tool-activity-mcp-app";
+import { McpResultBlocksView } from "./tool-activity-mcp-blocks";
 import {
   CodeBlock,
   LabeledCode,
   RawToolOutputButton,
   rawMcpToolOutputForItem,
 } from "./tool-activity-code";
-import { McpAppToolDetail } from "./tool-activity-mcp-app";
-import { McpResultBlocksView } from "./tool-activity-mcp-blocks";
 import {
-  execFooter,
-  execSummaryLabel,
-  normalizeDesktopShellCommand,
-} from "./tool-activity-exec-summary";
+  toolActivityDetailViewModel,
+} from "./tool-activity-detail-view-model";
 import {
   localizePatchChangeAction,
-  patchAction,
   PatchChangePath,
-  patchChangeForm,
-  type PatchChangeViewModel,
 } from "./tool-activity-patch-detail";
-import {
-  multiAgentRows,
-  type MultiAgentRowPart,
-  type MultiAgentRowViewModel,
-} from "./tool-activity-multi-agent";
-import { webSearchDetail, webSearchFaviconUrl } from "./tool-activity-web-search";
+import type { OpenThreadHandler } from "./open-thread";
 
 export { execShellCopyText, initialExecShellExpanded } from "./exec-shell-detail";
 export type { ExecShellCopyTarget } from "./exec-shell-detail";
@@ -67,20 +33,12 @@ export { multiAgentAgentColor, multiAgentRowText } from "./tool-activity-multi-a
 export type { MultiAgentRowPart, MultiAgentRowViewModel } from "./tool-activity-multi-agent";
 export { patchChangeFirstChangeLine } from "./tool-activity-patch-detail";
 export { webSearchFaviconUrl } from "./tool-activity-web-search";
-
-type ToolDetailFormatMessage = HiCodexIntlContextValue["formatMessage"];
-import {
-  mcpAppFrameFromResourceReadResult,
-  mcpAppToolOutputFromResult,
-  type McpAppDetailViewModel,
-  type McpAppHostCallHandler,
-  type ReadMcpResourceHandler,
-} from "./mcp-app-sandbox";
-import type { FileReference } from "./file-reference-types";
-import type { OpenThreadHandler } from "./open-thread";
-
-type ThreadItem = AccumulatedThreadItem;
-type ItemRecord = ThreadItem & Record<string, unknown>;
+export {
+  toolActivityDetailViewModel,
+} from "./tool-activity-detail-view-model";
+export type {
+  ToolActivityDetailViewModel,
+} from "./tool-activity-detail-view-model";
 
 /*
  * The MCP-App iframe protocol machinery now lives in ./mcp-app-sandbox. Re-export
@@ -119,92 +77,7 @@ export type {
   ReadMcpResourceHandler,
 } from "./mcp-app-sandbox";
 
-export type ToolActivityDetailViewModel =
-  | {
-      kind: "execSummary";
-      id: string;
-      running: boolean;
-      label: string;
-    }
-  | {
-      kind: "exec";
-      id: string;
-      running: boolean;
-      command: string;
-      cwd: string;
-      output: string;
-      status: string;
-      footer: string;
-      /* per-command lifecycle start (ItemStartedNotification.startedAtMs, stamped
-         by the reducer) — drives the live "for {elapsed}" running timer.
-         Optional: older items / test fixtures may omit it. */
-      startedAtMs?: number | null;
-    }
-  | {
-      kind: "patch";
-      id: string;
-      running: boolean;
-      changes: PatchChangeViewModel[];
-      status: string;
-    }
-  | {
-      kind: "tool";
-      id: string;
-      running: boolean;
-      name: string;
-      toolKind: "MCP" | "Tool";
-      argumentsText: string;
-      resultText: string;
-      structuredResultText?: string;
-      errorText: string;
-      status: string;
-      /** Typed view of MCP result.content[] blocks. */
-      resultBlocks?: McpResultBlock[];
-    }
-  | McpAppDetailViewModel
-  | {
-      kind: "pendingTool";
-      id: string;
-      running: boolean;
-      name: string;
-      source: string;
-      label: string;
-      status: string;
-    }
-  | {
-      kind: "autoReview";
-      id: string;
-      running: boolean;
-      title: string;
-      body: string;
-      highRiskDenied: boolean;
-    }
-  | {
-      kind: "webSearch";
-      id: string;
-      running: boolean;
-      detail: string;
-      faviconUrl: string | null;
-    }
-  | {
-      kind: "multiAgent";
-      id: string;
-      running: boolean;
-      rows: MultiAgentRowViewModel[];
-    }
-  | {
-      kind: "assistant";
-      id: string;
-      running: boolean;
-      text: string;
-    }
-  | {
-      kind: "text";
-      id: string;
-      running: boolean;
-      title: string;
-      text: string;
-    };
+type ThreadItem = AccumulatedThreadItem;
 
 export function ToolActivityDetail({
   forceExecExpanded = false,
@@ -325,7 +198,7 @@ export function ToolActivityDetail({
                   ? <CodeBlock diff text={change.diff} />
                   : (
                     // codex patch-item-content: a change with no unified diff shows a
-                    // per-change body — "Contents deleted" for a delete, else "No changes".
+                    // per-change body: "Contents deleted" for a delete, else "No changes".
                     <div className="hc-tool-detail-row">
                       {change.kind === "delete"
                         ? formatMessage({ id: "hc.toolDetail.patch.contentsDeleted", defaultMessage: "Contents deleted" })
@@ -345,13 +218,9 @@ export function ToolActivityDetail({
     );
   }
   if (detail.kind === "tool") {
-    // codex: local-conversation-thread-*.js — Codex
-    // Desktop renders the tool item summary as just an icon + tool name +
-    // chevron. "Completed / in-progress" is conveyed by a shimmer on the
-    // label wrapper, not by a `MCP · completed` text badge.
-    // For MCP results, Codex renders text blocks
-    // directly with `max-h-48 overflow-auto whitespace-pre-wrap` — there is
-    // no "Result" or "plaintext" label and no Show-N-more-lines toggle.
+    // codex: local-conversation-thread-*.js - Codex Desktop renders the tool
+    // item summary as just an icon, tool name, and chevron. Status is conveyed
+    // by row shimmer rather than an explicit "MCP completed" text badge.
     return (
       <section className={`hc-tool-detail-stack tool ${detail.running ? "is-running" : ""}`}>
         {!hideToolTitle && (
@@ -362,7 +231,6 @@ export function ToolActivityDetail({
         {detail.toolKind !== "MCP" && detail.argumentsText && (
           <LabeledCode label={formatMessage({ id: "hc.toolDetail.tool.parametersLabel", defaultMessage: "Parameters" })} text={detail.argumentsText} />
         )}
-        {/* content blocks 多类型渲染（MCP spec 6 种 block）。 */}
         {detail.resultBlocks && detail.resultBlocks.length > 0 ? (
           <McpResultBlocksView blocks={detail.resultBlocks} />
         ) : (
@@ -375,10 +243,8 @@ export function ToolActivityDetail({
         {detail.structuredResultText && <CodeBlock text={detail.structuredResultText} />}
         {detail.errorText && (
           /*
-           * codex: an MCP tool error renders inside the shared alert/callout
-           * (alert-CoBPbdcu `yc`) at level="danger" fullWidth — NOT a "Error"-
-           * labeled code block. The message sits in `text-size-chat max-h-48
-           * overflow-auto whitespace-pre-wrap` inside a danger-tinted box.
+           * codex: an MCP tool error renders inside the shared alert/callout at
+           * level="danger" fullWidth, not as an "Error"-labeled code block.
            */
           <div className="hc-tool-error-callout" role="alert">
             <div className="hc-tool-error-callout-body">{detail.errorText}</div>
@@ -420,10 +286,6 @@ export function ToolActivityDetail({
   );
 }
 
-/*
- * MCP result.content[] 多 block 渲染器（MCP spec 6 种 block 类型分别渲染）。
- * 每个 block 末尾可有 annotations 行（"Annotations: …"）。
- */
 function MultiAgentPrompt({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -435,175 +297,4 @@ function MultiAgentPrompt({ text }: { text: string }) {
       {text}
     </button>
   );
-}
-
-export function toolActivityDetailViewModel(item: ThreadItem, formatMessage?: ToolDetailFormatMessage): ToolActivityDetailViewModel {
-  const type = itemType(item);
-  const record = item as ItemRecord;
-  const running = isItemInProgress(item);
-  const status = statusLabel(record.status);
-  if (type === "exec") {
-    const summary = execSummaryLabel(record, running, formatMessage);
-    if (summary) {
-      return {
-        kind: "execSummary",
-        id: item.id,
-        running,
-        label: summary,
-      };
-    }
-    return {
-      kind: "exec",
-      id: item.id,
-      running,
-      command: normalizeDesktopShellCommand(commandText(item)) || "command",
-      cwd: stringField(record, "cwd"),
-      output: commandOutputText(item),
-      status,
-      footer: execFooter(record, running),
-      startedAtMs: typeof record.startedAtMs === "number" && Number.isFinite(record.startedAtMs) ? record.startedAtMs : null,
-    };
-  }
-  if (type === "patch") {
-    const form = patchChangeForm(stringField(record, "status"), running);
-    return {
-      kind: "patch",
-      id: item.id,
-      running,
-      changes: patchChanges(record).map((change) => {
-        const changeKind = patchKind(change);
-        return {
-          action: patchAction(changeKind, form),
-          kind: changeKind,
-          path: patchPath(change),
-          diff: stringField(change, "diff"),
-        };
-      }),
-      status,
-    };
-  }
-  if (type === "mcp-tool-call") {
-    const server = mcpServerName(item) || "mcp";
-    const tool = mcpToolName(item) || "tool";
-    const name = `${server}:${tool}`;
-    const invocation = recordObject(record.invocation);
-    const resourceUri = mcpAppResourceUri(item);
-    const result = record.result;
-    if (resourceUri) {
-      const resultRecord = recordObject(result);
-      return {
-        kind: "mcpApp",
-        id: item.id,
-        running,
-        name,
-        server,
-        tool,
-        resourceUri,
-        inlineFrame: mcpAppFrameFromResourceReadResult(result),
-        toolArguments: record.arguments ?? invocation.arguments ?? null,
-        toolOutput: mcpAppToolOutputFromResult(result),
-        toolResult: result ?? null,
-        toolResponseMetadata: resultRecord._meta ?? null,
-        argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
-        resultText: toolResultText(result),
-        errorText: mcpToolErrorText(record, server, tool),
-        status,
-      };
-    }
-    if (running && result == null) {
-      return {
-        kind: "pendingTool",
-        id: item.id,
-        running,
-        name,
-        source: mcpSourceTitle(server),
-        // Codex's in-progress tool row (NS with completed:false) shows the
-        // human-readable, sentence-cased tool name — no "Calling" verb prefix.
-        label: humanReadableToolLabel(tool),
-        status: status || "pending",
-      };
-    }
-    const rawResultBlocks = mcpResultBlocks(record.result);
-    const structuredResultText = mcpStructuredResultText(record.result);
-    const resultBlocks = mcpDisplayResultBlocks(rawResultBlocks, structuredResultText);
-    return {
-      kind: "tool",
-      id: item.id,
-      running,
-      name,
-      toolKind: "MCP",
-      argumentsText: formatUnknown(record.arguments ?? invocation.arguments),
-      resultText: toolResultText(record.result),
-      ...(structuredResultText ? { structuredResultText } : {}),
-      errorText: mcpToolErrorText(record, server, tool),
-      status,
-      ...(resultBlocks.length > 0 ? { resultBlocks } : {}),
-    };
-  }
-  if (type === "dynamic-tool-call") {
-    const name = [stringField(record, "namespace"), stringField(record, "tool") || "tool"].filter(Boolean).join(".");
-    return {
-      kind: "tool",
-      id: item.id,
-      running,
-      name,
-      toolKind: "Tool",
-      argumentsText: formatUnknown(record.arguments),
-      resultText: formatUnknown(record.result ?? record.contentItems),
-      errorText: formatUnknown(record.error),
-      status,
-    };
-  }
-  if (type === "automatic-approval-review") {
-    return {
-      kind: "autoReview",
-      id: item.id,
-      running,
-      title: autoReviewTitle(record, formatMessage),
-      body: autoReviewBody(record, formatMessage),
-      highRiskDenied: stringField(record, "status") === "denied" && stringField(record, "riskLevel") === "high",
-    };
-  }
-  if (type === "web-search") {
-    return {
-      kind: "webSearch",
-      id: item.id,
-      running,
-      detail: webSearchDetail(record),
-      faviconUrl: webSearchFaviconUrl(record),
-    };
-  }
-  if (type === "multi-agent-action") {
-    return {
-      kind: "multiAgent",
-      id: item.id,
-      running,
-      rows: multiAgentRows(record, formatMessage),
-    };
-  }
-  if (type === "assistant-message") {
-    return {
-      kind: "assistant",
-      id: item.id,
-      running,
-      text: assistantMessageText(item),
-    };
-  }
-  return {
-    kind: "text",
-    id: item.id,
-    running,
-    title: itemType(item),
-    text: formatItemDetail(item) || itemText(item) || formatUnknown(item),
-  };
-}
-
-function statusLabel(status: unknown): string {
-  if (typeof status === "string") return status;
-  if (status === null || status === undefined) return "";
-  return formatUnknown(status);
-}
-
-function recordObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }

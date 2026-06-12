@@ -1,4 +1,5 @@
 import type { AppNavigationTab } from "../components/app-navigation-rail";
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
@@ -19,7 +20,7 @@ export function saveActiveAppTab(
   const normalized = normalizePersistableAppTab(tab);
   if (!normalized) return;
   try {
-    storage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.activeAppTab, normalized);
+    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.activeAppTab, normalized);
   } catch {
     // The in-memory tab change still applies when storage is unavailable.
   }

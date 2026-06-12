@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelConfig } from "@hicodex/codex-protocol";
-import type { ModelPickerProvider } from "../components/model-picker-menu";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
+import type { ModelPickerProvider } from "../model/model-picker-selection";
 import {
   buildLocalModelCatalogConfig,
   decodeSelection,
   encodeSelection,
   migrateSubscriptionModelSelection,
+  type LocalModelCatalogConfigPayload,
 } from "../model/model-settings";
 import {
   catalogConfigWithExtraModels,
@@ -37,6 +38,7 @@ export interface UseTeamModelGatewayOptions {
    * union of both.
    */
   personalModelDraft: ModelConfig;
+  personalProviderConfigured: boolean;
   selectedModelKey: string | null;
   setSelectedModelKey: (key: string | null) => void;
   refreshKey?: unknown;
@@ -67,6 +69,7 @@ export function useTeamModelGateway({
   codexHome,
   threadContextDefaults,
   personalModelDraft,
+  personalProviderConfigured,
   selectedModelKey,
   setSelectedModelKey,
   refreshKey,
@@ -130,15 +133,21 @@ export function useTeamModelGateway({
    * Provision the provider definition when it changes. Guarded by an
    * in-session signature so window-focus snapshot refreshes stay idle.
    */
-  const catalogConfig = catalogConfigWithExtraModels(
-    buildLocalModelCatalogConfig(personalModelDraft),
-    snapshot?.provider.models ?? [],
-  );
+  const catalogConfig = useMemo(() => (
+    snapshot
+      ? buildTeamModelGatewayCatalogConfig({
+          personalModelDraft,
+          personalProviderConfigured,
+          teamModelConfig: snapshot.modelConfig,
+          teamModels: snapshot.provider.models,
+        })
+      : null
+  ), [personalModelDraft, personalProviderConfigured, snapshot]);
   const provisionSignature = snapshot
-    ? teamModelGatewayProvisionSignature(snapshot, catalogConfig.models)
+    ? teamModelGatewayProvisionSignature(snapshot, catalogConfig?.models ?? [])
     : null;
   useEffect(() => {
-    if (!snapshot || !provisionSignature) return;
+    if (!snapshot || !catalogConfig || !provisionSignature) return;
     if (provisionedSignatureRef.current === provisionSignature) return;
     provisionedSignatureRef.current = provisionSignature;
     void provisionTeamModelGatewayProvider({
@@ -158,10 +167,7 @@ export function useTeamModelGateway({
         provisionedSignatureRef.current = null;
       }
     });
-    // catalogConfig is derived from snapshot + personalModelDraft and covered
-    // by provisionSignature.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, codexHome, connect, connected, dispatch, provisionSignature, snapshot]);
+  }, [catalogConfig, client, codexHome, connect, connected, dispatch, provisionSignature, snapshot]);
 
   const handleModelSelect = useCallback((key: string | null) => {
     setSelectedModelKey(migrateSubscriptionModelSelection(key));
@@ -171,4 +177,23 @@ export function useTeamModelGateway({
     provider: snapshot?.provider ?? null,
     handleModelSelect,
   };
+}
+
+export interface BuildTeamModelGatewayCatalogConfigOptions {
+  personalModelDraft: ModelConfig;
+  personalProviderConfigured: boolean;
+  teamModelConfig: ModelConfig;
+  teamModels: readonly string[];
+}
+
+export function buildTeamModelGatewayCatalogConfig({
+  personalModelDraft,
+  personalProviderConfigured,
+  teamModelConfig,
+  teamModels,
+}: BuildTeamModelGatewayCatalogConfigOptions): LocalModelCatalogConfigPayload {
+  const baseCatalogConfig = personalProviderConfigured
+    ? buildLocalModelCatalogConfig(personalModelDraft)
+    : buildLocalModelCatalogConfig(teamModelConfig);
+  return catalogConfigWithExtraModels(baseCatalogConfig, teamModels);
 }

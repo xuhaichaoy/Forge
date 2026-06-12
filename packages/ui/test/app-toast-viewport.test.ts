@@ -6,6 +6,7 @@ import type { LogLine } from "../src/state/codex-reducer";
 export default function runAppToastViewportTests(): void {
   projectsRecentUserFacingLogsOnly();
   filtersInternalHostLifecycleAndTransportLogsLikeDesktop();
+  filtersDisconnectedStartupEndpointFailures();
   suppressesBenignModelMetadataFallbackWarning();
   rendersToastViewportForProjectedLogs();
 }
@@ -55,6 +56,21 @@ function filtersInternalHostLifecycleAndTransportLogsLikeDesktop(): void {
     projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
     ["visible-error"],
     "toast projection should hide internal host lifecycle and transport diagnostics like Codex Desktop",
+  );
+}
+
+function filtersDisconnectedStartupEndpointFailures(): void {
+  const logs: LogLine[] = [
+    logFixture("model-list", "model/list failed: Codex app-server is not connected", "warn", 10_000),
+    logFixture("mcp-status", "mcpServerStatus/list failed: Disconnected from Codex app-server", "warn", 9_900),
+    logFixture("team-model", "团队模型连接已更新", "info", 9_800),
+    logFixture("visible-error", "model/list failed: HTTP 500", "warn", 9_700),
+  ];
+
+  assertDeepEqual(
+    projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
+    ["visible-error"],
+    "startup disconnected endpoint failures should stay out of the toast viewport",
   );
 }
 

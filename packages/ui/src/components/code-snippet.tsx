@@ -14,10 +14,10 @@ import type { CodeSnippetWrapMode } from "./code-snippet-helpers";
 import {
   codeHighlightKey,
   highlightCodeSegments,
-  highlightCodeSegmentsWithShiki,
   isPlainTextLanguage,
 } from "./code-snippet-highlighting";
 import type { CodeHighlightSegment } from "./code-snippet-highlighting";
+import { highlightCodeSegmentsWithShiki } from "./code-snippet-shiki-highlighting";
 import {
   MermaidDiagram,
   MermaidFlowchartPreview,
@@ -33,10 +33,10 @@ export {
   svgCodePreviewDataUrl,
 } from "./code-snippet-helpers";
 export {
-  highlightCodeSegments,
   highlightCodeSegmentsWithShiki,
   setShikiImporterForTests,
-} from "./code-snippet-highlighting";
+} from "./code-snippet-shiki-highlighting";
+export { highlightCodeSegments } from "./code-snippet-highlighting";
 export type { CodeHighlightSegment } from "./code-snippet-highlighting";
 export {
   mermaidDiagramKind,

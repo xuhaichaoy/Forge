@@ -1,4 +1,5 @@
 import type { Thread } from "@hicodex/codex-protocol";
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import * as tauriHost from "../lib/tauri-host";
 import type { CommandPanelEntry } from "./command-panel";
 import {
@@ -113,7 +114,7 @@ export function saveComposerWorkMode(
 ): ComposerWorkMode {
   const normalized = normalizeComposerWorkMode(mode);
   try {
-    storage?.setItem(COMPOSER_WORK_MODE_STORAGE_KEY, normalized);
+    setDesktopAppSettingValue(storage, COMPOSER_WORK_MODE_STORAGE_KEY, normalized);
   } catch {
     // Local storage is optional; the caller still keeps the in-memory mode.
   }

@@ -1,7 +1,8 @@
 import type { JsonRpcRequest, JsonValue, ModelConfig, UserInput } from "@hicodex/codex-protocol";
 import { formatError, formatUnknown, stringField } from "../lib/format";
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import { generateImageWithHost, isTauriRuntime } from "../lib/tauri-host";
-import { DEFAULT_MODEL_BASE_URL, normalizeBaseUrl } from "../model/model-settings";
+import { normalizeBaseUrl } from "../model/model-settings";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
 export const HICODEX_IMAGE_TOOL_NAME = "image_gen";
@@ -175,7 +176,8 @@ export function hiCodexImageToolOutputUrl(value: unknown): string {
 }
 
 export function imageGenerationsEndpoint(baseUrl: string | null | undefined): string {
-  return `${normalizeBaseUrl(baseUrl?.trim() || DEFAULT_MODEL_BASE_URL)}/images/generations`;
+  const trimmed = baseUrl?.trim() ?? "";
+  return trimmed ? `${normalizeBaseUrl(trimmed)}/images/generations` : "";
 }
 
 export function parseImageToolArguments(value: unknown): { prompt: string; model: string; size: string } {
@@ -204,7 +206,7 @@ export async function executeHiCodexImageToolCall(
   if (!shouldRegisterHiCodexImageDynamicTool(imageSettings)) {
     return imageToolFailure("No HiCodex image endpoint is configured. Configure Images settings, or use Codex native image_generation with a supported Codex account and model.");
   }
-  const backendBaseUrl = imageSettings.baseUrl || model.baseUrl;
+  const backendBaseUrl = imageSettings.baseUrl;
   const backendApiKey = imageSettings.apiKey || model.apiKey;
   const imageModel = parsed.model || imageSettings.model;
   const payload: JsonValue = {
@@ -315,14 +317,14 @@ export function saveImageGenerationSettings(
 ): ImageGenerationSettings {
   const normalized = normalizeImageGenerationSettings(settings);
   if (storage) {
-    storage.setItem(HICODEX_IMAGE_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+    setDesktopAppSettingValue(storage, HICODEX_IMAGE_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
   }
   return normalized;
 }
 
 export function shouldRegisterHiCodexImageDynamicTool(settings: ImageGenerationSettings): boolean {
   const normalized = normalizeImageGenerationSettings(settings);
-  return Boolean(normalized.baseUrl || normalized.apiKey.trim() || normalized.model);
+  return Boolean(normalized.baseUrl);
 }
 
 export function imageUrlFromResponsePayload(payload: unknown): string {

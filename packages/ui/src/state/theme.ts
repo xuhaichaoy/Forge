@@ -1,3 +1,4 @@
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 
@@ -34,7 +35,7 @@ export function loadUiThemeMode(storage: BrowserStorageLike | null): UiThemeMode
 export function saveUiThemeMode(storage: BrowserStorageLike | null, mode: UiThemeMode): void {
   if (!storage) return;
   try {
-    storage.setItem(HICODEX_THEME_STORAGE_KEY, mode);
+    setDesktopAppSettingValue(storage, HICODEX_THEME_STORAGE_KEY, mode);
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }

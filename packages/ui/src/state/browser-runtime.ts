@@ -14,6 +14,28 @@ import type { RightRailBrowserInput } from "./right-rail";
 
 export const DEFAULT_BROWSER_RUNTIME_URL = "https://example.com";
 
+// codex: src-X9SEQR78.js `xc = /\.html?$/i` (exported as `Qn`) — the html-path
+// predicate behind openWorkspaceFile's browser-sidebar gate and the website
+// end-resource synthesis. Trailing #fragment / ?query are not part of workspace
+// file paths, so the bare-suffix test mirrors Codex.
+export function isHtmlPath(path: string): boolean {
+  return /\.html?$/i.test(path.trim());
+}
+
+// Browser windows navigate by URL (host_open_browser_tab accepts http/https/
+// file), so a resolved local path must become a file:// URL. encodeURI keeps
+// "/" but escapes spaces etc.; non-"/"-rooted paths (Windows drive paths) get
+// a leading slash so the URL has an empty authority (file:///C:/...).
+// encodeURI leaves the reserved "#" / "?" untouched, where a URL parser would
+// split fragment/query out of the filename — escape them explicitly.
+export function fileUrlForPath(path: string): string {
+  const normalized = path.replaceAll("\\", "/");
+  const encoded = encodeURI(normalized.startsWith("/") ? normalized : `/${normalized}`)
+    .replace(/#/g, "%23")
+    .replace(/\?/g, "%3F");
+  return `file://${encoded}`;
+}
+
 export interface BrowserRuntimeSnapshot extends BrowserRuntimeStatus {
   bridgeAvailable: boolean;
 }
@@ -220,7 +242,9 @@ export function browserTabHasDisplayableUrl(tab: BrowserRuntimeTab): boolean {
   if (!raw || raw.toLowerCase() === "about:blank") return false;
   try {
     const parsed = new URL(raw);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
+    // file: tabs are first-class Browser targets (local web previews); hiding
+    // them made an open file:// window read as "No active Browser tab".
+    return parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "file:";
   } catch {
     return false;
   }

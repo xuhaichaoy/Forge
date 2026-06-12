@@ -2,41 +2,25 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Search, X } from "lucide-react";
 import { KbPageShell } from "./kb-page-shell";
 import {
-  applyYuxiEntityAttributes,
-  changeYuxiEntityAuthority,
-  createYuxiEntity,
-  deleteYuxiEntity,
-  diffYuxiEntityAttributes,
-  getYuxiEntity,
-  getYuxiEntityHistory,
-  getYuxiEntityRelated,
   listYuxiEntities,
-  mergeYuxiEntity,
-  refreshYuxiEntityMetrics,
-  updateYuxiEntity,
   type YuxiEntity,
-  type YuxiEntityAttributeDiff,
-  type YuxiEntityDetail,
-  type YuxiEntityHistoryEntry,
-  type YuxiEntityMutationPayload,
-  type YuxiEntityRelatedResponse,
   type YuxiEntityType,
 } from "../lib/yuxi-client";
 import { EntityEditDialog, EntityMergeDialog } from "./kb-archive-entity-dialog";
+import { useKbArchiveEntityActions } from "./kb-archive-entity-actions";
 import { useConfirmDialog } from "./confirm-dialog";
-import { EntityDetailPanel } from "./kb-archive-detail";
+import { KbArchiveDetailDrawer } from "./kb-archive-detail-drawer";
+import { useKbArchiveDetailState } from "./kb-archive-detail-state";
 import {
   resolveTabConfig,
   type EntityTab,
 } from "./kb-archive-model";
 import { EntityTable } from "./kb-archive-table";
-
-/** 左侧动态档案分类：从真实实体聚合出的 distinct entity_type + 每类计数 + 中文标签。 */
-interface ArchiveCategory {
-  type: string;
-  label: string;
-  count: number;
-}
+import {
+  aggregateArchiveCategories,
+  applyEntityFilters,
+  type ArchiveCategory,
+} from "./kb-archive-view-model";
 
 interface ArchiveViewSnapshot {
   activeTab: EntityTab;
@@ -45,19 +29,6 @@ interface ArchiveViewSnapshot {
 }
 
 let archiveViewSnapshot: ArchiveViewSnapshot | null = null;
-
-/** 聚合一批实体里真实存在的 entity_type（去重 + 计数），按计数降序、同数按标签排序。 */
-function aggregateArchiveCategories(entities: YuxiEntity[]): ArchiveCategory[] {
-  const counts = new Map<string, number>();
-  for (const item of entities) {
-    const type = (item.entity_type ?? "").trim();
-    if (!type) continue;
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .map(([type, count]) => ({ type, label: resolveTabConfig(type).label, count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "zh-CN"));
-}
 
 export function KbArchiveView() {
   // 应用内确认对话框（Tauri WebView 的 window.confirm 是 no-op，不能用）
@@ -68,23 +39,28 @@ export function KbArchiveView() {
   const [authorityFilter, setAuthorityFilter] = useState("all");
   const [entityFilters, setEntityFilters] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState<ArchiveCategory[]>(() => archiveViewSnapshot?.categories ?? []);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [detail, setDetail] = useState<YuxiEntityDetail | null>(null);
-  const [related, setRelated] = useState<YuxiEntityRelatedResponse | null>(null);
-  const [history, setHistory] = useState<YuxiEntityHistoryEntry[]>([]);
-  const [attributeDraft, setAttributeDraft] = useState("");
-  const [attributeDiffs, setAttributeDiffs] = useState<YuxiEntityAttributeDiff[]>([]);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [relatedLoading, setRelatedLoading] = useState(false);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [attributeBusy, setAttributeBusy] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
-  const [attributeError, setAttributeError] = useState<string | null>(null);
-  const [authorityBusy, setAuthorityBusy] = useState(false);
-  const [mutationBusy, setMutationBusy] = useState(false);
-  const [entityDialogMode, setEntityDialogMode] = useState<"create" | "edit" | null>(null);
-  const [mergeOpen, setMergeOpen] = useState(false);
-  const [mutationError, setMutationError] = useState<string | null>(null);
+  const {
+    selectedId,
+    setSelectedId,
+    detail,
+    related,
+    history,
+    attributeDraft,
+    setAttributeDraft,
+    attributeDiffs,
+    setAttributeDiffs,
+    detailLoading,
+    relatedLoading,
+    historyLoading,
+    attributeBusy,
+    setAttributeBusy,
+    detailError,
+    setDetailError,
+    attributeError,
+    setAttributeError,
+    loadDetail,
+    resetSelection,
+  } = useKbArchiveDetailState();
   const [loading, setLoading] = useState(() => archiveViewSnapshot == null);
   const [hasLoadedEntities, setHasLoadedEntities] = useState(() => archiveViewSnapshot != null);
   const [error, setError] = useState<string | null>(null);
@@ -95,45 +71,6 @@ export function KbArchiveView() {
   }, [activeTab, categories]);
   const query = queries[activeTab] ?? "";
   const setQuery = (value: string) => setQueries((prev) => ({ ...prev, [activeTab]: value }));
-
-  const loadDetail = useCallback(async (entityId: number | null) => {
-    if (entityId == null) {
-      setDetail(null);
-      setRelated(null);
-      setHistory([]);
-      setAttributeDraft("");
-      setAttributeDiffs([]);
-      setDetailError(null);
-      setAttributeError(null);
-      return;
-    }
-    setDetailLoading(true);
-    setRelatedLoading(true);
-    setHistoryLoading(true);
-    setDetailError(null);
-    setAttributeError(null);
-    setAttributeDraft("");
-    setAttributeDiffs([]);
-    try {
-      const [nextDetail, nextRelated, nextHistory] = await Promise.all([
-        getYuxiEntity(entityId),
-        getYuxiEntityRelated(entityId).catch(() => null),
-        getYuxiEntityHistory(entityId).catch(() => ({ history: [] })),
-      ]);
-      setDetail(nextDetail);
-      setRelated(nextRelated);
-      setHistory(nextHistory.history ?? []);
-    } catch (err) {
-      setDetail(null);
-      setRelated(null);
-      setHistory([]);
-      setDetailError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setDetailLoading(false);
-      setRelatedLoading(false);
-      setHistoryLoading(false);
-    }
-  }, []);
 
   const loadEntities = useCallback(async () => {
     setLoading(true);
@@ -159,12 +96,7 @@ export function KbArchiveView() {
         items: nextItems,
       };
       if (selectedId != null && !nextItems.some((item) => item.id === selectedId)) {
-        setSelectedId(null);
-        setDetail(null);
-        setRelated(null);
-        setHistory([]);
-        setAttributeDraft("");
-        setAttributeDiffs([]);
+        resetSelection();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -173,7 +105,7 @@ export function KbArchiveView() {
       setHasLoadedEntities(true);
       setLoading(false);
     }
-  }, [activeTab, query, selectedId]);
+  }, [activeTab, query, resetSelection, selectedId]);
 
   useEffect(() => {
     void loadEntities();
@@ -183,10 +115,6 @@ export function KbArchiveView() {
     if (!hasLoadedEntities) return;
     archiveViewSnapshot = { activeTab, categories, items };
   }, [activeTab, categories, hasLoadedEntities, items]);
-
-  useEffect(() => {
-    void loadDetail(selectedId);
-  }, [loadDetail, selectedId]);
 
   // 选中的分类若在真实分类里已不存在（例如该类型被清空），回退到第一个真实分类。
   useEffect(() => {
@@ -215,15 +143,6 @@ export function KbArchiveView() {
     setSelectedId(item.id);
   }, []);
 
-  const resetSelection = useCallback(() => {
-    setSelectedId(null);
-    setDetail(null);
-    setRelated(null);
-    setHistory([]);
-    setAttributeDraft("");
-    setAttributeDiffs([]);
-  }, []);
-
   const selectArchiveCategory = useCallback((type: string) => {
     if (type === activeTab) return;
     setActiveTab(type as EntityTab);
@@ -235,141 +154,41 @@ export function KbArchiveView() {
     resetSelection();
   }, [activeTab, resetSelection]);
 
-  const changeAuthority = useCallback(async (status: string) => {
-    if (selectedId == null) return;
-    setAuthorityBusy(true);
-    setDetailError(null);
-    try {
-      await changeYuxiEntityAuthority(selectedId, status, "HiCodex 档案中心手动调整");
-      await Promise.all([loadDetail(selectedId), loadEntities()]);
-    } catch (err) {
-      setDetailError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAuthorityBusy(false);
-    }
-  }, [loadDetail, loadEntities, selectedId]);
-
-  const openCreateEntity = useCallback(() => {
-    setMutationError(null);
-    setEntityDialogMode("create");
-  }, []);
-
-  const openEditEntity = useCallback(() => {
-    if (!detail) return;
-    setMutationError(null);
-    setEntityDialogMode("edit");
-  }, [detail]);
-
-  const saveEntity = useCallback(async (payload: YuxiEntityMutationPayload) => {
-    setMutationBusy(true);
-    setMutationError(null);
-    try {
-      let nextSelectedId = selectedId;
-      if (entityDialogMode === "create") {
-        const created = await createYuxiEntity({ ...payload, entity_type: activeTab });
-        nextSelectedId = typeof created.entity_id === "number" ? created.entity_id : null;
-        setSelectedId(nextSelectedId);
-      } else if (entityDialogMode === "edit") {
-        if (selectedId == null) throw new Error("缺少档案 ID");
-        await updateYuxiEntity(selectedId, payload);
-      }
-      setEntityDialogMode(null);
-      await loadEntities();
-      if (nextSelectedId != null) await loadDetail(nextSelectedId);
-    } catch (err) {
-      setMutationError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setMutationBusy(false);
-    }
-  }, [activeTab, entityDialogMode, loadDetail, loadEntities, selectedId]);
-
-  const deleteEntity = useCallback(async () => {
-    if (selectedId == null || !detail) return;
-    const name = detail.canonical_name || `未命名档案 #${selectedId}`;
-    if (!(await confirmDialog(`确定删除档案「${name}」吗？来源引用也会解除关联。`))) return;
-    setMutationBusy(true);
-    setDetailError(null);
-    try {
-      await deleteYuxiEntity(selectedId);
-      setSelectedId(null);
-      setDetail(null);
-      setRelated(null);
-      setHistory([]);
-      setAttributeDraft("");
-      setAttributeDiffs([]);
-      await loadEntities();
-    } catch (err) {
-      setDetailError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setMutationBusy(false);
-    }
-  }, [confirmDialog, detail, loadEntities, selectedId]);
-
-  const mergeEntity = useCallback(async (targetId: number, mergeAttributes: boolean) => {
-    if (selectedId == null) return;
-    setMutationBusy(true);
-    setMutationError(null);
-    try {
-      await mergeYuxiEntity(selectedId, targetId, mergeAttributes);
-      setMergeOpen(false);
-      setSelectedId(targetId);
-      await loadEntities();
-      await loadDetail(targetId);
-    } catch (err) {
-      setMutationError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setMutationBusy(false);
-    }
-  }, [loadDetail, loadEntities, selectedId]);
-
-  const refreshMetrics = useCallback(async () => {
-    setMutationBusy(true);
-    setDetailError(null);
-    try {
-      await refreshYuxiEntityMetrics(selectedId);
-      await loadEntities();
-      if (selectedId != null) await loadDetail(selectedId);
-    } catch (err) {
-      setDetailError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setMutationBusy(false);
-    }
-  }, [loadDetail, loadEntities, selectedId]);
-
-  const previewAttributeDiff = useCallback(async () => {
-    if (selectedId == null) return;
-    setAttributeBusy(true);
-    setAttributeError(null);
-    try {
-      const incoming = parseAttributeDraft(attributeDraft);
-      const result = await diffYuxiEntityAttributes(selectedId, incoming);
-      setAttributeDiffs(result.diffs ?? []);
-    } catch (err) {
-      setAttributeDiffs([]);
-      setAttributeError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAttributeBusy(false);
-    }
-  }, [attributeDraft, selectedId]);
-
-  const applyAttributeDiff = useCallback(async () => {
-    if (selectedId == null || attributeDiffs.length === 0) return;
-    setAttributeBusy(true);
-    setAttributeError(null);
-    try {
-      const fields = Object.fromEntries(attributeDiffs
-        .filter((diff) => diff.field)
-        .map((diff) => [diff.field as string, diff.new]));
-      await applyYuxiEntityAttributes(selectedId, fields, "HiCodex 档案中心采纳字段更新");
-      setAttributeDraft("");
-      setAttributeDiffs([]);
-      await Promise.all([loadEntities(), loadDetail(selectedId)]);
-    } catch (err) {
-      setAttributeError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAttributeBusy(false);
-    }
-  }, [attributeDiffs, loadDetail, loadEntities, selectedId]);
+  const {
+    authorityBusy,
+    mutationBusy,
+    entityDialogMode,
+    mergeOpen,
+    mutationError,
+    changeAuthority,
+    openCreateEntity,
+    openEditEntity,
+    closeEntityDialog,
+    saveEntity,
+    deleteEntity,
+    openMerge,
+    closeMerge,
+    mergeEntity,
+    refreshMetrics,
+    previewAttributeDiff,
+    applyAttributeDiff,
+  } = useKbArchiveEntityActions({
+    activeTab,
+    attributeDiffs,
+    attributeDraft,
+    confirmDialog,
+    detail,
+    loadDetail,
+    loadEntities,
+    resetSelection,
+    selectedId,
+    setAttributeBusy,
+    setAttributeDiffs,
+    setAttributeDraft,
+    setAttributeError,
+    setDetailError,
+    setSelectedId,
+  });
 
   return (
     <KbPageShell
@@ -464,46 +283,30 @@ export function KbArchiveView() {
           </div>
         </div>
         {selectedId != null && (
-          <div className="hc-kb-archive-drawer" role="presentation">
-            <button
-              type="button"
-              className="hc-kb-archive-drawer-scrim"
-              aria-label="关闭档案详情"
-              onClick={resetSelection}
-            />
-            <aside className="hc-kb-archive-drawer-panel" role="dialog" aria-modal="true" aria-label="档案详情">
-              <button type="button" className="hc-kb-archive-drawer-close" onClick={resetSelection}>
-                <X size={14} strokeWidth={2.2} aria-hidden="true" />
-                关闭
-              </button>
-              <EntityDetailPanel
-                detail={detail}
-                loading={detailLoading}
-                error={detailError}
-                authorityBusy={authorityBusy}
-                mutationBusy={mutationBusy}
-                related={related}
-                relatedLoading={relatedLoading}
-                history={history}
-                historyLoading={historyLoading}
-                attributeDraft={attributeDraft}
-                attributeDiffs={attributeDiffs}
-                attributeBusy={attributeBusy}
-                attributeError={attributeError}
-                onAttributeDraftChange={setAttributeDraft}
-                onPreviewAttributeDiff={() => void previewAttributeDiff()}
-                onApplyAttributeDiff={() => void applyAttributeDiff()}
-                onChangeAuthority={changeAuthority}
-                onEdit={openEditEntity}
-                onDelete={() => void deleteEntity()}
-                onMerge={() => {
-                  setMutationError(null);
-                  setMergeOpen(true);
-                }}
-                onRefreshMetrics={() => void refreshMetrics()}
-              />
-            </aside>
-          </div>
+          <KbArchiveDetailDrawer
+            detail={detail}
+            detailLoading={detailLoading}
+            detailError={detailError}
+            authorityBusy={authorityBusy}
+            mutationBusy={mutationBusy}
+            related={related}
+            relatedLoading={relatedLoading}
+            history={history}
+            historyLoading={historyLoading}
+            attributeDraft={attributeDraft}
+            attributeDiffs={attributeDiffs}
+            attributeBusy={attributeBusy}
+            attributeError={attributeError}
+            onAttributeDraftChange={setAttributeDraft}
+            onPreviewAttributeDiff={() => void previewAttributeDiff()}
+            onApplyAttributeDiff={() => void applyAttributeDiff()}
+            onChangeAuthority={changeAuthority}
+            onClose={resetSelection}
+            onEdit={openEditEntity}
+            onDelete={() => void deleteEntity()}
+            onMerge={openMerge}
+            onRefreshMetrics={() => void refreshMetrics()}
+          />
         )}
           </div>
         </div>
@@ -515,9 +318,7 @@ export function KbArchiveView() {
           detail={entityDialogMode === "edit" ? detail : null}
           saving={mutationBusy}
           error={mutationError}
-          onClose={() => {
-            if (!mutationBusy) setEntityDialogMode(null);
-          }}
+          onClose={closeEntityDialog}
           onSubmit={(payload) => void saveEntity(payload)}
         />
       )}
@@ -527,73 +328,11 @@ export function KbArchiveView() {
           candidates={items}
           saving={mutationBusy}
           error={mutationError}
-          onClose={() => {
-            if (!mutationBusy) setMergeOpen(false);
-          }}
+          onClose={closeMerge}
           onSubmit={(targetId, mergeAttributes) => void mergeEntity(targetId, mergeAttributes)}
         />
       )}
       {confirmDialogNode}
     </KbPageShell>
   );
-}
-
-function applyEntityFilters(
-  items: YuxiEntity[],
-  authorityFilter: string,
-  filters: Record<string, string>,
-  config: Array<{ label: string; options: readonly string[] }>,
-): YuxiEntity[] {
-  let next = authorityFilter === "all"
-    ? items
-    : items.filter((item) => (item.authority_status || "unconfirmed") === authorityFilter);
-  for (const filter of config) {
-    const value = filters[filter.label];
-    if (!value || filter.label === "排序") continue;
-    next = next.filter((item) => entityFilterText(item).includes(value.toLowerCase()));
-  }
-  const sortValue = filters["排序"];
-  return sortValue ? [...next].sort((a, b) => compareEntities(a, b, sortValue)) : next;
-}
-
-function entityFilterText(item: YuxiEntity): string {
-  const parts = [
-    item.canonical_name,
-    item.description,
-    ...(item.aliases ?? []),
-    JSON.stringify(item.attributes ?? {}),
-    JSON.stringify(item.metrics ?? {}),
-  ].filter(Boolean);
-  return parts.join(" ").toLowerCase();
-}
-
-function compareEntities(a: YuxiEntity, b: YuxiEntity, sortValue: string): number {
-  if (sortValue.includes("提及") || sortValue.includes("复用") || sortValue.includes("项目数") || sortValue.includes("采购次数") || sortValue.includes("中标次数") || sortValue.includes("发生次数")) {
-    return (b.reference_count ?? 0) - (a.reference_count ?? 0);
-  }
-  if (sortValue.includes("时间") || sortValue.includes("活跃") || sortValue.includes("触达") || sortValue.includes("更新")) {
-    return dateValue(b.updated_at) - dateValue(a.updated_at);
-  }
-  return String(a.canonical_name ?? "").localeCompare(String(b.canonical_name ?? ""), "zh-CN");
-}
-
-function dateValue(value: string | null | undefined): number {
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function parseAttributeDraft(value: string): Record<string, unknown> {
-  const trimmed = value.trim();
-  if (!trimmed) throw new Error("请先填写要补充的信息。");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed) as unknown;
-  } catch {
-    throw new Error("补充信息格式不正确，请按结构化模板填写。");
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("补充信息需要是一组字段和值。");
-  }
-  return parsed as Record<string, unknown>;
 }

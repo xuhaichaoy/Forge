@@ -19,6 +19,11 @@ const APP_SETTINGS_VERSION = 1;
 const NAMESPACE_PREFIX = `${HICODEX_DESKTOP_CONFIG_ROOT}.`;
 const PERSIST_DEBOUNCE_MS = 400;
 
+export interface AppSettingsStorageWriteLike {
+  setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
+}
+
 interface AppSettingsFilePayload {
   version: number;
   values: Record<string, string>;
@@ -110,6 +115,34 @@ export function scheduleAppSettingsPersist(
     persistTimer = null;
     persistAppSettingsNow(storage);
   }, PERSIST_DEBOUNCE_MS);
+}
+
+export function setDesktopAppSettingValue(
+  storage: AppSettingsStorageWriteLike | null | undefined,
+  key: string,
+  value: string,
+): void {
+  if (!storage) return;
+  storage.setItem(key, value);
+  if (key.startsWith(NAMESPACE_PREFIX)) {
+    scheduleAppSettingsPersist();
+  }
+}
+
+export function removeDesktopAppSettingValue(
+  storage: AppSettingsStorageWriteLike | null | undefined,
+  key: string,
+  fallbackValue?: string,
+): void {
+  if (!storage) return;
+  if (storage.removeItem) {
+    storage.removeItem(key);
+  } else if (fallbackValue !== undefined) {
+    storage.setItem(key, fallbackValue);
+  }
+  if (key.startsWith(NAMESPACE_PREFIX)) {
+    scheduleAppSettingsPersist();
+  }
 }
 
 /*

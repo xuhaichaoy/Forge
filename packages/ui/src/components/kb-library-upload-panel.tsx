@@ -6,8 +6,8 @@ import {
   readFileBytesBase64,
   readFileMetadata,
 } from "../lib/tauri-host";
-import { KbLibraryIngestPipeline, uploadRunPipelineSteps } from "./kb-library-ingest-pipeline";
 import { type LibraryUploadRun } from "./kb-library-model";
+import { KbLibraryUploadProgress } from "./kb-library-upload-progress";
 
 // 与 host_read_file_bytes_base64 的 clamp 上限对齐（src-tauri/src/main.rs:692）。
 // 超过此大小该命令直接报错（不是截断），这里显式传上限以放宽默认 16MiB 限制，
@@ -161,9 +161,6 @@ export function KbLibraryUploadPanel({
   };
 
   const hasRuns = uploadRuns.length > 0;
-  const summary = summarizeRuns(uploadRuns);
-  const allPendingIds = uploadRuns.flatMap((run) => run.pendingIds ?? []);
-  const settled = summary.processing === 0;
 
   return (
     <div
@@ -238,64 +235,13 @@ export function KbLibraryUploadPanel({
           )}
 
           {hasRuns && (
-            <section className="hc-kb-upload-dialog-progress" aria-label="上传进度">
-              <div className="hc-kb-upload-dialog-progress-head">
-                <strong>上传进度</strong>
-                <span>
-                  {uploadRuns.length} 条 · 已入库 {summary.done} · 需处理 {summary.queued} · 失败 {summary.failed}
-                </span>
-              </div>
-              <ul className="hc-kb-upload-dialog-progress-list">
-                {uploadRuns.map((run) => (
-                  <li key={run.id} className="hc-kb-upload-dialog-progress-row" data-status={run.status}>
-                    <div className="hc-kb-upload-dialog-progress-row-head">
-                      <span className={`hc-kb-status hc-kb-status--${runStatusTone(run.status)}`}>
-                        {runStatusLabel(run.status)}
-                      </span>
-                      <span className="hc-kb-file-name" title={run.filename}>{run.filename}</span>
-                      <span className="hc-kb-tag">{run.targetName}</span>
-                    </div>
-                    <div className="hc-kb-upload-dialog-progress-row-body">
-                      <div className="hc-kb-upload-batch-message">
-                        {typeof run.progress === "number" && <span>{Math.round(run.progress)}%</span>}
-                        <strong>{run.message}</strong>
-                      </div>
-                      <KbLibraryIngestPipeline steps={uploadRunPipelineSteps(run)} compact />
-                    </div>
-                    {run.status === "queued" && (run.pendingIds?.length ?? 0) > 0 && (
-                      <div className="hc-kb-row-actions hc-kb-row-actions--always">
-                        <button type="button" className="hc-kb-topbar-btn" onClick={() => onOpenPending(run.pendingIds ?? [])}>
-                          去处理
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <div className="hc-kb-upload-dialog-progress-foot">
-                {summary.queued > 0 && (
-                  <button type="button" className="hc-kb-topbar-btn" onClick={() => onOpenPending(allPendingIds)}>
-                    去处理入库问题
-                  </button>
-                )}
-                {summary.processing > 0 && (
-                  <button type="button" className="hc-kb-topbar-btn" onClick={onOpenTasks}>
-                    查看处理记录
-                  </button>
-                )}
-                <button type="button" className="hc-kb-topbar-btn" onClick={onClearRuns} disabled={!settled}>
-                  清空进度
-                </button>
-                <button
-                  type="button"
-                  className="hc-kb-topbar-btn hc-kb-topbar-btn--primary"
-                  onClick={onClose}
-                  disabled={!settled}
-                >
-                  {settled ? "完成" : "处理中…"}
-                </button>
-              </div>
-            </section>
+            <KbLibraryUploadProgress
+              uploadRuns={uploadRuns}
+              onClearRuns={onClearRuns}
+              onOpenPending={onOpenPending}
+              onOpenTasks={onOpenTasks}
+              onClose={onClose}
+            />
           )}
 
           <div className="hc-kb-upload-secondary">
@@ -382,29 +328,6 @@ function basename(path: string): string {
   const cleaned = path.replace(/[\\/]+$/, "");
   const parts = cleaned.split(/[\\/]/);
   return parts[parts.length - 1] || cleaned || "未命名文件";
-}
-
-function summarizeRuns(runs: LibraryUploadRun[]): { done: number; failed: number; queued: number; processing: number } {
-  return runs.reduce((acc, run) => {
-    if (run.status === "done") acc.done += 1;
-    else if (run.status === "failed") acc.failed += 1;
-    else if (run.status === "queued") acc.queued += 1;
-    else acc.processing += 1;
-    return acc;
-  }, { done: 0, failed: 0, queued: 0, processing: 0 });
-}
-
-function runStatusLabel(status: LibraryUploadRun["status"]): string {
-  if (status === "done") return "完成";
-  if (status === "failed") return "失败";
-  if (status === "queued") return "需处理";
-  return "处理中";
-}
-
-function runStatusTone(status: LibraryUploadRun["status"]): "ok" | "fail" | "pending" {
-  if (status === "done") return "ok";
-  if (status === "failed") return "fail";
-  return "pending";
 }
 
 /*

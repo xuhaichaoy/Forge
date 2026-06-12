@@ -1,40 +1,9 @@
-import { Loader2 } from "lucide-react";
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
-import { useHiCodexIntl } from "./i18n-provider";
-import { AssistantMessageActions } from "./assistant-message-actions";
-import {
-  assistantArtifactMediaSources,
-  assistantResourceCardEntriesForMessage,
-  shouldRenderAssistantMessageChrome,
-} from "./assistant-message-artifacts";
-import {
-  AssistantAfterEndResources,
-  AssistantAfterEvents,
-  AssistantAfterGalleries,
-} from "./assistant-after-blocks";
-import { AssistantAfterReviewComments } from "./assistant-review-comments-view";
-import { AssistantResourceCards } from "./assistant-resource-cards";
-// codex: local-conversation-thread-*.js — automation citation
-// extraction + chip row. Codex's assistant body interleaves `:citation{...}`
-// leaf directives into the markdown and hoists them into either the trailing
-// paragraph or the fallback chip row. HiCodex mirrors that with the helpers in
-// `state/automation-citations` plus the chip components below.
-import { AutomationCitationChipRow } from "./automation-citation";
-import {
-  automationCitationsFromItems,
-  extractAutomationCitations,
-  type CitationDirective,
-} from "../state/automation-citations";
-import { extractAssistantReviewComments } from "../state/assistant-review-comments";
+import { AssistantMessageUnit } from "./assistant-message-unit";
 import type { FileReference } from "./file-reference-types";
-import { MemoryCitationView } from "./message-file-citations";
 import type { PatchAction, PatchActionState } from "./event-unit";
-import {
-  Markdownish,
-  markdownAllowsTrailingAutomationInline,
-} from "./message-markdown-renderer";
-import { desktopAssistantCopyText } from "./message-markdown-copy";
+import { Markdownish } from "./message-markdown-renderer";
 import { UserMessageUnit } from "./message-user-message";
 import {
   messageTurnId,
@@ -156,44 +125,11 @@ function MessageUnitViewInner({
   patchActionInFlight?: boolean;
   memoryCitationRoot?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
   const assistantPhase = unit.role === "assistant" ? unit.assistantPhase ?? "unknown" : undefined;
   const streaming = unit.role === "assistant" && unit.isStreaming === true;
-  const renderPlaceholder = unit.role === "assistant" && unit.renderPlaceholder === true;
-  const showAssistantChrome = unit.role === "assistant" && shouldRenderAssistantMessageChrome(assistantPhase);
   const turnId = messageTurnId(unit.item);
   const turnStatus = messageTurnStatus(unit.item);
   const turnInProgress = turnStatus === "inProgress" || turnStatus === "running" || turnStatus === "active";
-  const canFork = showAssistantChrome && !turnInProgress && !streaming && !renderPlaceholder;
-  const onFork = unit.role === "assistant" && canFork && turnId && onForkTurn
-    ? () => onForkTurn(turnId)
-    : undefined;
-  const assistantArtifacts = unit.role === "assistant" ? unit.artifacts ?? [] : [];
-  /*
-   * Memoize the `Map` and the resource-card array. Each Markdownish/AssistantResourceCards
-   * render received fresh references every parent render, which (a) cascaded through
-   * Markdownish's downstream `MarkdownBlockView` reconciliation as a prop-changed
-   * signal even when nothing visible changed, and (b) defeated any future
-   * `React.memo` we might add. By keying these on the actual artifact list and
-   * relevant text/phase, the references stay stable across streaming token frames
-   * for the same artifact set.
-   */
-  const assistantMediaSources = useMemo(
-    () => (unit.role === "assistant" ? assistantArtifactMediaSources(assistantArtifacts) : new Map<string, string>()),
-    [unit.role, assistantArtifacts],
-  );
-  const assistantResourceCards = useMemo(
-    () => (unit.role === "assistant"
-      ? assistantResourceCardEntriesForMessage({
-          phase: assistantPhase,
-          text: unit.text,
-          artifacts: assistantArtifacts,
-        })
-      : []),
-    [assistantArtifacts, assistantPhase, unit.role, unit.text],
-  );
-  const hasAssistantEndResources = unit.role === "assistant"
-    && (unit.assistantAfter ?? []).some((after) => after.kind === "assistantEndResources");
   // codex: local-conversation-thread-*.js — the edit affordance is gated to the
   // MOST RECENT user turn only (`isMostRecentTurn: S === v.length-1`; onEditMessage
   // is passed solely when true). Older turns expose Fork, not Edit — the
@@ -206,71 +142,6 @@ function MessageUnitViewInner({
     && !unit.text.startsWith("PLEASE IMPLEMENT THIS PLAN:")
       ? (message: string) => onEditLastUserMessage(turnId, message)
       : undefined;
-  const citation = unit.role === "assistant"
-    ? (
-        <MemoryCitationView
-          citation={(unit.item as { memoryCitation?: unknown }).memoryCitation}
-          memoryCitationRoot={memoryCitationRoot}
-          onOpenFileReference={onOpenFileReference}
-        />
-      )
-    : null;
-  // codex: local-conversation-thread-*.js — merge the two Desktop
-  // citation sources before handing text to Markdownish: raw `:citation{}`
-  // leaf directives already embedded in markdown, plus the `automationCitations`
-  // array that split-items attaches to completed assistant messages. Item-level
-  // citations behave like Desktop's generated trailing directives.
-  const assistantCitations = useMemo(
-    () => {
-      if (unit.role !== "assistant") return null;
-      const extracted = extractAutomationCitations(unit.text);
-      const itemCitations = automationCitationsFromItems(
-        (unit.item as { automationCitations?: unknown }).automationCitations,
-      );
-      if (itemCitations.length === 0) return extracted;
-      return {
-        ...extracted,
-        trailingCitations: [...extracted.trailingCitations, ...itemCitations],
-      };
-    },
-    [unit.item, unit.role, unit.text],
-  );
-  const onAutomationCitationOpen = onOpenAutomation
-    ? (citationDirective: CitationDirective) => {
-        const automationId = citationDirective.openAutomationId?.trim();
-        if (automationId) onOpenAutomation(automationId);
-      }
-    : undefined;
-  // codex: local-conversation-thread-*.js — assistant body uses the
-  // sanitized markdown (`cleanedContent`) so the raw directive token never
-  // shows up in the rendered prose; falls back to the original text when no
-  // citation extraction ran (non-assistant message or no `:citation` token).
-  const assistantReviewExtraction = useMemo(
-    () => unit.role === "assistant"
-      ? extractAssistantReviewComments(assistantCitations?.cleanedContent ?? unit.text)
-      : null,
-    [assistantCitations, unit.role, unit.text],
-  );
-  const assistantMarkdownText = assistantReviewExtraction?.cleanedContent ?? assistantCitations?.cleanedContent ?? unit.text;
-  const assistantCopyText = useMemo(
-    () => unit.role === "assistant" && !streaming ? desktopAssistantCopyText(unit.text) : "",
-    [streaming, unit.role, unit.text],
-  );
-  const canInlineAutomationCitations = assistantCitations
-    ? assistantCitations.trailingCitations.length > 0
-      && markdownAllowsTrailingAutomationInline(assistantMarkdownText)
-    : false;
-  // codex: local-conversation-thread-*.js — Codex picks the citation list and
-  // combines the "trailing-paragraph fits" flag into the chip-row decision.
-  // HiCodex mirrors that by withholding trailing citations from the row only
-  // when Markdownish can append them to the final paragraph. Loose citations
-  // always stay in the fallback row.
-  const automationCitationChips = assistantCitations
-    ? [
-        ...assistantCitations.loose,
-        ...(canInlineAutomationCitations ? [] : assistantCitations.trailingCitations),
-      ]
-    : [];
   return (
     <article
       className={`hc-message ${unit.role}${assistantPhase ? ` phase-${assistantPhase}` : ""}${streaming ? " is-streaming" : ""}`}
@@ -292,68 +163,21 @@ function MessageUnitViewInner({
             />
           )
         : (
-            renderPlaceholder
-              ? (
-                  <div className="hc-assistant-placeholder" aria-label={formatMessage({ id: "hc.assistantMessage.responseLoading", defaultMessage: "Assistant response is loading" })}>
-                    {/* codex pre-stream placeholder spinner = `.icon-sm` (18px), not 16px. */}
-                    <Loader2 className="hc-spin" size={18} />
-                  </div>
-                )
-              : (
-                  <>
-                    <Markdownish
-                      text={assistantMarkdownText}
-                      fadeType={streaming ? "indexed" : "none"}
-                      mediaSources={assistantMediaSources}
-                      onOpenAutomationCitation={onAutomationCitationOpen}
-                      onOpenFileReference={onOpenFileReference}
-                      onOpenFileReferenceExternal={onOpenFileReferenceExternal}
-                      trailingAutomationCitations={canInlineAutomationCitations
-                        ? assistantCitations?.trailingCitations
-                        : undefined}
-                    />
-                    {/* codex: local-conversation-thread-*.js — citation chip row in
-                      * the Codex render sequence (markdown body, citation chip row,
-                      * memory citations, artifacts/extras, action row). HiCodex emits
-                      * the row immediately after the markdown so reading order matches
-                      * Codex's `mt-3` block. */}
-                    <AutomationCitationChipRow
-                      citations={automationCitationChips}
-                      onOpen={onAutomationCitationOpen}
-                    />
-                    {citation}
-                    <AssistantAfterGalleries units={unit.assistantAfter ?? []} />
-                    <AssistantAfterEndResources
-                      units={unit.assistantAfter ?? []}
-                      onOpenArtifact={onOpenAssistantArtifact}
-                      onRevealResource={onRevealAssistantEndResource}
-                    />
-                    {!hasAssistantEndResources && (
-                      <AssistantResourceCards entries={assistantResourceCards} onOpenArtifact={onOpenAssistantArtifact} />
-                    )}
-                    <AssistantAfterReviewComments
-                      units={unit.assistantAfter ?? []}
-                      onOpenFileReference={onOpenFileReference}
-                    />
-                    <AssistantAfterEvents
-                      units={unit.assistantAfter ?? []}
-                      onOpenDiff={onOpenDiff}
-                      onPatchAction={onPatchAction}
-                      patchActionState={patchActionState}
-                      patchActionInFlight={patchActionInFlight}
-                    />
-                    {showAssistantChrome && (
-                      <AssistantMessageActions
-                        copyText={assistantCopyText}
-                        hasArtifacts={unit.hasArtifacts === true}
-                        item={unit.item}
-                        onFork={onFork}
-                                  threadId={threadId}
-                        turnId={turnId}
-                      />
-                    )}
-                  </>
-                )
+            <AssistantMessageUnit
+              unit={unit}
+              threadId={threadId}
+              onOpenAssistantArtifact={onOpenAssistantArtifact}
+              onRevealAssistantEndResource={onRevealAssistantEndResource}
+              onForkTurn={onForkTurn}
+              onOpenFileReference={onOpenFileReference}
+              onOpenFileReferenceExternal={onOpenFileReferenceExternal}
+              onOpenAutomation={onOpenAutomation}
+              onOpenDiff={onOpenDiff}
+              onPatchAction={onPatchAction}
+              patchActionState={patchActionState}
+              patchActionInFlight={patchActionInFlight}
+              memoryCitationRoot={memoryCitationRoot}
+            />
           )}
     </article>
   );

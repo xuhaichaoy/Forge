@@ -2,6 +2,7 @@ import type { BranchDetailsViewModel } from "./branch-details";
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
 import { formatMessage } from "./i18n";
 import type { RailEntry } from "./render-groups";
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 
 export const RAIL_LIST_PREVIEW_LIMIT = 6;
 export const DESKTOP_RIGHT_RAIL_WIDTH_PX = 300;
@@ -152,7 +153,7 @@ export function saveRightRailPinned(
 ): void {
   if (!storage) return;
   try {
-    storage.setItem(RIGHT_RAIL_PINNED_STORAGE_KEY, isPinned ? "1" : "0");
+    setDesktopAppSettingValue(storage, RIGHT_RAIL_PINNED_STORAGE_KEY, isPinned ? "1" : "0");
   } catch {
     // Storage failures should not break the conversation shell.
   }

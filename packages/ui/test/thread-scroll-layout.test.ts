@@ -5,7 +5,7 @@ import {
   threadScrollDistanceFromBottom,
   threadScrollKey,
   threadScrollTopForDistanceFromBottom,
-} from "../src/components/thread-scroll-layout";
+} from "../src/state/thread-scroll";
 
 export default function runThreadScrollLayoutTests(): void {
   computesBottomDistanceLikeDesktopScrollController();

@@ -9,7 +9,7 @@ import {
   type ModelPickerProvider,
   type ModelSelectionRef,
   type ResolvedModelSelection,
-} from "../components/model-picker-menu";
+} from "../model/model-picker-selection";
 import { hostFromBaseUrl } from "../lib/format";
 import type { CodexAuthSummary } from "../lib/tauri-host";
 import { hasOpenAiCredentialSummary } from "../state/account-state";
@@ -33,15 +33,19 @@ interface ActiveThreadResolvedModel {
   modelProvider: string | null;
 }
 
-interface UseModelPickerViewModelArgs {
+export interface BuildModelPickerProvidersArgs {
   modelDraft: ModelConfig;
   /*
    * Whether the personal provider has a REAL config.toml entry. The draft
    * always materializes a factory placeholder; only a saved provider may be
-   * "ready" and win default/fallback resolution.
+   * exposed as selectable or win default/fallback resolution.
    */
   personalProviderConfigured: boolean;
   threadContextDefaults: ThreadContextDefaults | null | undefined;
+  teamModelGatewayProvider: ModelPickerProvider | null;
+}
+
+interface UseModelPickerViewModelArgs extends BuildModelPickerProvidersArgs {
   activeThreadId: string | null;
   activeThreadModelProvider: string | null | undefined;
   activeThreadResolvedModel: ActiveThreadResolvedModel | null | undefined;
@@ -49,7 +53,6 @@ interface UseModelPickerViewModelArgs {
   threadModelSelections: Record<string, string>;
   codexAuthSummary: CodexAuthSummary | null;
   oauthAuthMethod: string | null;
-  teamModelGatewayProvider: ModelPickerProvider | null;
 }
 
 interface ModelPickerViewModel {
@@ -78,63 +81,18 @@ export function useModelPickerViewModel({
   oauthAuthMethod,
   teamModelGatewayProvider,
 }: UseModelPickerViewModelArgs): ModelPickerViewModel {
-  const modelPickerProviders = useMemo(() => {
-    const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
-      ?? DEFAULT_PROVIDERS[0];
-    const subscriptionProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
-    const activeProviderId = threadContextDefaults?.modelProvider?.trim() || localFallback.id;
-    const draftProviderId = modelDraft.id.trim();
-    const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
-    const useDraftForLocalProvider = draftProviderId.length > 0 && !isSettingsModelProviderExcluded(draftProviderId);
-    const localProviderId = useDraftForLocalProvider
-      ? draftProviderId
-      : (!activeIsSubscription ? activeProviderId : localFallback.id);
-    const localModels = normalizeModelSlugs([
-      ...modelSlugsForConfig(modelDraft),
-    ]);
-    const subscriptionModels = subscriptionProvider
-      ? normalizeModelSlugs([
-          ...subscriptionProvider.models,
-          activeIsSubscription && isSubscriptionCatalogModel(threadContextDefaults?.model)
-            ? threadContextDefaults?.model
-            : null,
-        ])
-      : [];
-    /*
-     * Team first: the primary product scenario is team-configured models, so
-     * the team section leads the picker AND wins ready-provider fallback for
-     * new chats. Personal follows; the (rare) subscription block stays last
-     * and collapsed by default.
-     */
-    return [
-      ...(teamModelGatewayProvider ? [teamModelGatewayProvider] : []),
-      {
-        ...localFallback,
-        id: localProviderId,
-        label: useDraftForLocalProvider && modelDraft.name.trim()
-          ? modelDraft.name.trim()
-          : localFallback.label,
-        host: useDraftForLocalProvider
-          ? hostFromBaseUrl(modelDraft.baseUrl, localFallback.host)
-          : localFallback.host,
-        baseUrl: useDraftForLocalProvider && modelDraft.baseUrl.trim()
-          ? modelDraft.baseUrl.trim()
-          : localFallback.baseUrl,
-        models: localModels.length > 0 ? localModels : localFallback.models,
-      },
-      ...(subscriptionProvider
-        ? [{
-            ...subscriptionProvider,
-            models: subscriptionModels.length > 0 ? subscriptionModels : subscriptionProvider.models,
-          }]
-        : []),
-    ];
-  }, [
+  const modelPickerProviders = useMemo(() => buildModelPickerProviders({
+    modelDraft,
+    personalProviderConfigured,
+    threadContextDefaults,
+    teamModelGatewayProvider,
+  }), [
     modelDraft.baseUrl,
     modelDraft.id,
     modelDraft.model,
     modelDraft.models,
     modelDraft.name,
+    personalProviderConfigured,
     teamModelGatewayProvider,
     threadContextDefaults?.model,
     threadContextDefaults?.modelProvider,
@@ -270,4 +228,66 @@ export function useModelPickerViewModel({
     modelPickerOverlaySelectedKey,
     modelPickerOverlayDefaultKey,
   };
+}
+
+export function buildModelPickerProviders({
+  modelDraft,
+  personalProviderConfigured,
+  threadContextDefaults,
+  teamModelGatewayProvider,
+}: BuildModelPickerProvidersArgs): ModelPickerProvider[] {
+  const localFallback = DEFAULT_PROVIDERS.find((provider) => provider.id === "hicodex_local")
+    ?? DEFAULT_PROVIDERS[0];
+  const subscriptionProvider = DEFAULT_PROVIDERS.find((provider) => provider.id === DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID);
+  const activeProviderId = threadContextDefaults?.modelProvider?.trim() || localFallback.id;
+  const draftProviderId = modelDraft.id.trim();
+  const activeIsSubscription = isSubscriptionProviderId(activeProviderId);
+  const useDraftForLocalProvider = draftProviderId.length > 0 && !isSettingsModelProviderExcluded(draftProviderId);
+  const localProviderId = useDraftForLocalProvider
+    ? draftProviderId
+    : (!activeIsSubscription ? activeProviderId : localFallback.id);
+  const localModels = personalProviderConfigured
+    ? normalizeModelSlugs([
+        ...modelSlugsForConfig(modelDraft),
+      ])
+    : [];
+  const subscriptionModels = subscriptionProvider
+    ? normalizeModelSlugs([
+        ...subscriptionProvider.models,
+        activeIsSubscription && isSubscriptionCatalogModel(threadContextDefaults?.model)
+          ? threadContextDefaults?.model
+          : null,
+      ])
+    : [];
+  /*
+   * Team first: the primary product scenario is team-configured models, so
+   * the team section leads the picker AND wins ready-provider fallback for
+   * new chats. Personal follows; the (rare) subscription block stays last
+   * and collapsed by default.
+   */
+  return [
+    ...(teamModelGatewayProvider ? [teamModelGatewayProvider] : []),
+    {
+      ...localFallback,
+      id: localProviderId,
+      label: useDraftForLocalProvider && modelDraft.name.trim()
+        ? modelDraft.name.trim()
+        : localFallback.label,
+      host: useDraftForLocalProvider
+        ? hostFromBaseUrl(modelDraft.baseUrl, localFallback.host)
+        : localFallback.host,
+      baseUrl: useDraftForLocalProvider && modelDraft.baseUrl.trim()
+        ? modelDraft.baseUrl.trim()
+        : localFallback.baseUrl,
+      models: personalProviderConfigured
+        ? (localModels.length > 0 ? localModels : localFallback.models)
+        : [],
+    },
+    ...(subscriptionProvider
+      ? [{
+          ...subscriptionProvider,
+          models: subscriptionModels.length > 0 ? subscriptionModels : subscriptionProvider.models,
+        }]
+      : []),
+  ];
 }

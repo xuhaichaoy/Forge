@@ -176,14 +176,16 @@ export function resolveFileArtifactCandidate(
 }
 
 export function progressEntriesFromPlan(plan: unknown[], idPrefix: string): RailEntry[] {
-  return plan.map((raw, index) => {
+  return plan.flatMap((raw, index) => {
     const entry = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-    const title = stringField(entry, "step") || stringField(entry, "title") || stringField(entry, "text") || `Task ${index + 1}`;
-    return {
+    const title = stringField(entry, "step") || stringField(entry, "title") || stringField(entry, "text");
+    if (!title) return [];
+    const status = stringField(entry, "status");
+    return [{
       id: `${idPrefix}:${index}`,
       title,
-      status: stringField(entry, "status") || "planned",
-    };
+      ...(status ? { status } : {}),
+    }];
   });
 }
 function imageArtifactEntryFromSource(source: string, status: string): RailEntry {

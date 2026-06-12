@@ -54,6 +54,10 @@ export interface SaveModelDraftOptions {
   connected: boolean;
   codexHome?: string | null;
   restartRuntime?: boolean;
+  writeModelCatalog?: (
+    codexHome: string | null | undefined,
+    config: LocalModelCatalogConfigPayload,
+  ) => Promise<string>;
   /*
    * Model slugs that must stay in the (full-overwrite) models.json catalog
    * even though they belong to another provider — e.g. team gateway models
@@ -89,10 +93,10 @@ export async function saveModelDraft({
   connected,
   codexHome,
   restartRuntime = false,
+  writeModelCatalog = writeLocalModelCatalog,
   additionalCatalogModels = [],
 }: SaveModelDraftOptions): Promise<SaveModelDraftResult> {
   const nextModel = normalizeModelConfig(modelDraft);
-  dispatch({ type: "upsertModel", model: nextModel });
   let wroteConfig = false;
   let restartedRuntime = false;
   try {
@@ -107,7 +111,7 @@ export async function saveModelDraft({
         ],
         scope: "Model config write",
       });
-      const catalogPath = await writeLocalModelCatalog(
+      const catalogPath = await writeModelCatalog(
         codexHome,
         catalogConfigWithExtraModels(buildLocalModelCatalogConfig(nextModel), additionalCatalogModels),
       );
@@ -150,7 +154,7 @@ export async function saveModelDraft({
   } catch (error) {
     dispatch({
       type: "log",
-      text: `saved locally; Codex config write failed: ${formatConfigWriteError(error, "Model config write")}`,
+      text: `Codex config write failed: ${formatConfigWriteError(error, "Model config write")}`,
       level: "warn",
     });
   }

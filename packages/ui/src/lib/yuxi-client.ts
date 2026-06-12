@@ -1,4 +1,5 @@
 import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/hicodex-desktop-namespace";
+import { setDesktopAppSettingValue } from "./app-settings";
 
 export const DEFAULT_YUXI_BASE_URL = "http://127.0.0.1:5050";
 export const YUXI_CONNECTION_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.yuxiConnection;
@@ -819,7 +820,7 @@ export function writeYuxiConnectionConfig(
   storage: Pick<Storage, "setItem"> | null | undefined = browserStorage(),
 ): void {
   if (!storage) return;
-  storage.setItem(YUXI_CONNECTION_STORAGE_KEY, JSON.stringify({
+  setDesktopAppSettingValue(storage, YUXI_CONNECTION_STORAGE_KEY, JSON.stringify({
     baseUrl: normalizeYuxiBaseUrl(config.baseUrl),
     token: config.token.trim(),
   }));

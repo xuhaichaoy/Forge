@@ -20,6 +20,11 @@ export default function runHiCodexDesktopNamespaceTests(): void {
     "desktop.hicodex.composer.workMode",
     "composer work mode should use the HiCodex desktop namespace",
   );
+  assertEqual(
+    HICODEX_DESKTOP_CONFIG_KEYS.filePreviewPanelWidth,
+    "desktop.hicodex.filePreviewPanel.widthPx",
+    "file preview panel width should use the mirrored desktop namespace",
+  );
 
   const storage = new MemoryStorage();
   storage.setItem("hicodex:legacy", "legacy-value");

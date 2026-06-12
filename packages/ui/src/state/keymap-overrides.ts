@@ -1,3 +1,4 @@
+import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import { HICODEX_DESKTOP_CONFIG_KEYS } from "./hicodex-desktop-namespace";
 
@@ -137,7 +138,7 @@ export function saveKeymapOverrides(
 ): void {
   if (!storage) return;
   try {
-    storage.setItem(HICODEX_DESKTOP_CONFIG_KEYS.keymapOverrides, JSON.stringify(overrides));
+    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.keymapOverrides, JSON.stringify(overrides));
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }
