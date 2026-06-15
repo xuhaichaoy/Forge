@@ -203,7 +203,7 @@ jobs:
           FORGE_RELEASE_ARTIFACT_NAME: Forge
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: forge-macos-release-${{ github.run_number }}
           if-no-files-found: error
