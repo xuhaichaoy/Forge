@@ -16,7 +16,7 @@ tauri-build = { workspace = true }
 
 [dependencies]
 base64 = { workspace = true }
-cfb = "0.7.3"
+cfb = "0.14.0"
 forge-host = { path = "../../../crates/host" }
 log = "0.4.32"
 serde = { workspace = true }
