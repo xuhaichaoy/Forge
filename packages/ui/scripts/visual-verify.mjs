@@ -1,5 +1,5 @@
 /*
- * Headless rendering verification for the HiCodex theme/CSS.
+ * Headless rendering verification for the Forge theme/CSS.
  *
  * WHY: container-background dark-mode gaps (a card hardcodes a light bg with no
  * `[data-theme="dark"]` override → white card + invisible text on dark) are
@@ -14,7 +14,7 @@
  *   → writes /tmp/hc-light.png + /tmp/hc-dark.png ; open / Read them.
  *
  * NOTE: this renders representative markup with the real `hc-` classes + the
- * BUILT css to verify HiCodex's own rendering (readability, no white cards,
+ * BUILT css to verify Forge's own rendering (readability, no white cards,
  * token colors). It is NOT a pixel diff against Codex.app (no access to that).
  */
 import { createRequire } from "node:module";

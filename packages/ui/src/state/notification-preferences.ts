@@ -1,10 +1,12 @@
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
 import { formatMessage } from "./i18n";
 
-export const LEGACY_HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = "hicodex:notification-preferences";
-export const HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.notificationPreferences;
+// Deliberate legacy value: the old-brand "hicodex:" localStorage key stays so
+// stored notification settings survive the Forge rebrand (identifier-only rename).
+export const LEGACY_FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY = "hicodex:notification-preferences";
+export const FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.notificationPreferences;
 
 export const TURN_COMPLETION_NOTIFICATION_POLICIES = ["backgroundOnly", "always", "off"] as const;
 export type TurnCompletionNotificationPolicy = (typeof TURN_COMPLETION_NOTIFICATION_POLICIES)[number];
@@ -52,8 +54,8 @@ export function loadNotificationPreferences(storage: BrowserStorageLike | null):
   try {
     return normalizeNotificationPreferences(readMigratedStorageValue(
       storage,
-      HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY,
-      [LEGACY_HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY],
+      FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY,
+      [LEGACY_FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY],
     ));
   } catch {
     return { ...DEFAULT_NOTIFICATION_PREFERENCES };
@@ -68,7 +70,7 @@ export function saveNotificationPreferences(
   try {
     setDesktopAppSettingValue(
       storage,
-      HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY,
+      FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY,
       JSON.stringify(normalizeNotificationPreferences(preferences)),
     );
   } catch {
@@ -89,7 +91,7 @@ export function shouldNotifyTurnCompletion(input: {
 export function notificationPolicyLabel(policy: TurnCompletionNotificationPolicy): string {
   switch (policy) {
     // codex notifications.turnMode.* — always="Always", off="Never",
-    // unfocused(=HiCodex backgroundOnly: notify only when app not focused)="Only when unfocused".
+    // unfocused(=Forge backgroundOnly: notify only when app not focused)="Only when unfocused".
     case "always":
       return formatMessage({ id: "notifications.turnMode.always", defaultMessage: "Always" });
     case "off":
@@ -104,7 +106,7 @@ export function notificationPolicyDescription(policy: TurnCompletionNotification
     case "always":
       return formatMessage({
         id: "hc.notifications.turnMode.always.description",
-        defaultMessage: "Notify when a turn finishes, even while the HiCodex window is focused.",
+        defaultMessage: "Notify when a turn finishes, even while the Forge window is focused.",
       });
     case "off":
       return formatMessage({
@@ -114,7 +116,7 @@ export function notificationPolicyDescription(policy: TurnCompletionNotification
     default:
       return formatMessage({
         id: "hc.notifications.turnMode.unfocused.description",
-        defaultMessage: "Notify when a turn finishes outside the focused HiCodex window.",
+        defaultMessage: "Notify when a turn finishes outside the focused Forge window.",
       });
   }
 }

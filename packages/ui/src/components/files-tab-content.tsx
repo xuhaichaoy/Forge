@@ -21,8 +21,8 @@ import type { WorkspaceDirEntry } from "../lib/tauri-host";
  * Where `U` is the resolved workspace root and `de` ultimately calls
  * `controller.openTab(_e, { props: { root: U, ... } })`.
  *
- * HiCodex doesn't have a Codex-equivalent `_e`; we wrap our existing
- * `WorkspaceFilesPanel` (which is HiCodex's port of `_e`) so the tab system
+ * Forge doesn't have a Codex-equivalent `_e`; we wrap our existing
+ * `WorkspaceFilesPanel` (which is Forge's port of `_e`) so the tab system
  * can address it via the same SidePanelTabComponent contract.
  *
  * Props passed from the controller's renderer (Codex `B()` factory at

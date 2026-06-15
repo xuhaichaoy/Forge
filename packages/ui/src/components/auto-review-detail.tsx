@@ -1,7 +1,7 @@
 import { ChevronRight, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import type { ToolActivityDetailViewModel } from "./tool-activity-detail";
+import type { ToolActivityDetailViewModel } from "./tool-activity-detail-view-model";
 
 export function AutoReviewDetail({ detail }: { detail: Extract<ToolActivityDetailViewModel, { kind: "autoReview" }> }) {
   const [expanded, setExpanded] = useState(false);

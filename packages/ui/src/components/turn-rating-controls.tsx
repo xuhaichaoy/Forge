@@ -2,7 +2,7 @@ import { ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   TurnFeedbackDialog,
   type TurnFeedbackOption,
@@ -97,7 +97,7 @@ export function TurnRatingControls({
   threadId?: string | null;
   turnId?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [selectedRating, setSelectedRating] = useState<TurnRating | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
@@ -225,7 +225,7 @@ function TurnRatingButton({
         the icon by selection state, rendered at `icon-xs` = 16px with
         `rotate-180` for thumbs_down). We mirror that via lucide's `fill` prop,
         keeping the `is-down` rotation class for thumbs_down.
-        HiCodex divergence: rendered at 12px (smaller than Codex's icon-xs 16px)
+        Forge divergence: rendered at 12px (smaller than Codex's icon-xs 16px)
         per product preference, matching the other message action-row icons.
       */}
       <ThumbsUp

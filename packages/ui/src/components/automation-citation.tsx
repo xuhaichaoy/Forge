@@ -1,6 +1,6 @@
 // codex: local-conversation-thread-*.js — Codex renders each automation
 // citation as a small interactive card driven by mode/status (the automation
-// citation card). HiCodex collapses the card into a chip — same content
+// citation card). Forge collapses the card into a chip — same content
 // shape, simpler styling — but keeps the icon + title + optional metadata
 // layout so the visual scan reads the same as Codex's `mt-3 flex flex-wrap
 // gap-1.5` row of citation cards (the bundle spreads `e.arguments` onto each
@@ -8,7 +8,7 @@
 
 import { Clock } from "lucide-react";
 import type { CitationDirective } from "../state/automation-citations";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface AutomationCitationChipProps {
   citation: CitationDirective;
@@ -36,7 +36,7 @@ const AUTOMATION_ACTION_I18N: Record<string, { id: string; defaultMessage: strin
 // (title || id) and the optional url subtitle; the rest of the bag goes into
 // the `title` attribute for hover discoverability.
 export function AutomationCitationChip({ citation, onOpen }: AutomationCitationChipProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const rawLabel = (citation.title?.trim() || citation.id).trim();
   const label = rawLabel === "Untitled automation"
     ? formatMessage({ id: "automation.updateDirective.untitled", defaultMessage: "Untitled automation" })
@@ -112,13 +112,13 @@ export interface AutomationCitationChipRowProps {
   citations: CitationDirective[];
   // codex: local-conversation-thread-*.js — Codex passes the same
   // `onAutomationCitationOpen` callback to every chip in the row (the spread
-  // `{...e.arguments}` includes it on each citation card); HiCodex follows suit.
+  // `{...e.arguments}` includes it on each citation card); Forge follows suit.
   onOpen?: (citation: CitationDirective) => void;
 }
 
 // codex: local-conversation-thread-*.js — the citation row is
 // `citations.length > 0 ? <div className="mt-3 flex flex-wrap gap-1.5">{…}</div>
-// : null`. The outer div is the fallback chip row HiCodex uses when citations
+// : null`. The outer div is the fallback chip row Forge uses when citations
 // don't fit the trailing-paragraph inline path.
 export function AutomationCitationChipRow({ citations, onOpen }: AutomationCitationChipRowProps) {
   if (citations.length === 0) return null;

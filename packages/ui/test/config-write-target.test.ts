@@ -112,7 +112,7 @@ function failsClosedWhenNoUserConfigTargetExists(): void {
 function explainsMissingVersionedTargets(): void {
   assertEqual(
     configWriteTargetMissingMessage("Permissions config write"),
-    "Permissions config write needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so HiCodex can read the latest config layers, then try again.",
+    "Permissions config write needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so Forge can read the latest config layers, then try again.",
     "missing write-target message should name filePath and expectedVersion",
   );
   assertThrows(
@@ -120,7 +120,7 @@ function explainsMissingVersionedTargets(): void {
       edits: [],
       target: { filePath: " ", expectedVersion: "2" },
     }),
-    "Config write needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so HiCodex can read the latest config layers, then try again.",
+    "Config write needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so Forge can read the latest config layers, then try again.",
     "blank filePath should fail before config/batchWrite",
   );
 }
@@ -133,7 +133,7 @@ function explainsVersionConflicts(): void {
   );
   assertEqual(
     formatConfigWriteError(new Error("missing expectedVersion"), "Plugin config write"),
-    "Plugin config write needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so HiCodex can read the latest config layers, then try again. (missing expectedVersion)",
+    "Plugin config write needs app-server’s versioned user config target (filePath and expectedVersion). Refresh Settings so Forge can read the latest config layers, then try again. (missing expectedVersion)",
     "missing expectedVersion message should explain the versioned config target",
   );
 }

@@ -1,8 +1,9 @@
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
 import { writeLocalModelCatalog } from "../lib/tauri-host";
 import type { CodexUiAction } from "../state/codex-reducer";
+import { formatMessage, type I18nMessageDescriptor } from "../state/i18n";
 import {
   buildCodexModelProvider,
   buildLocalModelCatalogConfig,
@@ -33,7 +34,7 @@ export type CodexUiDispatch = (action: CodexUiAction) => void;
  * config writer tears the connection down, marks all threads for resume, and
  * reconnects. Keep the lockstep in ONE place — this existed as three drifting
  * inline copies (saveModelDraft, provisionTeamModelGatewayProvider, and
- * HiCodexApp's provider-switch retry) before being unified.
+ * ForgeApp's provider-switch retry) before being unified.
  */
 export async function restartRuntimeForUpdatedProviderConfig(
   client: CodexJsonRpcClient,
@@ -161,6 +162,44 @@ export async function saveModelDraft({
   return { wroteConfig, restartedRuntime };
 }
 
+/*
+ * Structured log-source tags (LogLine.source) for the team-gateway
+ * provisioning pipeline. The toast viewport keys its mute table on these
+ * stable ids — NOT on the user-facing copy below — so the copy lives in the
+ * i18n dictionary and can change/translate freely. app-toast-viewport.tsx
+ * imports `providerUpdated` into INTERNAL_LOG_SOURCES (the success
+ * confirmation is internal noise there); the degraded variants stay visible.
+ */
+export const TEAM_MODEL_GATEWAY_LOG_SOURCES = {
+  providerUpdated: "team-model-gateway/provider-updated",
+  reconnectPending: "team-model-gateway/provider-updated-reconnect-pending",
+  restartFailed: "team-model-gateway/provider-updated-restart-failed",
+  provisionFailed: "team-model-gateway/provision-failed",
+} as const;
+
+/*
+ * Localizable provisioning copy — descriptor table like team-service-auth's
+ * TEAM_SERVICE_AUTH_COPY. This is a state-layer module with no hook access,
+ * and the log pipeline (LogLine.text → toast/log surfaces) carries plain
+ * strings, so each dispatch point formats via the module-level formatMessage
+ * singleton (state/i18n documents it for exactly this case). Muting is keyed
+ * on the `source` tag, so formatting locale never affects toast filtering.
+ */
+const TEAM_MODEL_GATEWAY_COPY = {
+  providerUpdated: {
+    id: "hc.teamModelGateway.providerUpdated",
+    defaultMessage: "Team model connection updated",
+  },
+  providerUpdatedReconnectPending: {
+    id: "hc.teamModelGateway.providerUpdatedReconnectPending",
+    defaultMessage: "Team model connection updated, but the model service has not reconnected yet; it will retry automatically",
+  },
+  providerUpdatedRestartFailed: {
+    id: "hc.teamModelGateway.providerUpdatedRestartFailed",
+    defaultMessage: "Team model connection updated, but the service restart failed: {error}",
+  },
+} satisfies Record<string, I18nMessageDescriptor>;
+
 export interface ProvisionTeamModelGatewayOptions {
   client: CodexJsonRpcClient;
   dispatch: CodexUiDispatch;
@@ -173,6 +212,11 @@ export interface ProvisionTeamModelGatewayOptions {
    * overwrite, so the caller passes the union of personal + team models.
    */
   catalogConfig: LocalModelCatalogConfigPayload;
+  /** Injectable for tests, mirroring SaveModelDraftOptions.writeModelCatalog. */
+  writeModelCatalog?: (
+    codexHome: string | null | undefined,
+    config: LocalModelCatalogConfigPayload,
+  ) => Promise<string>;
 }
 
 export interface ProvisionTeamModelGatewayResult {
@@ -205,6 +249,7 @@ export async function provisionTeamModelGatewayProvider({
   codexHome,
   snapshot,
   catalogConfig,
+  writeModelCatalog = writeLocalModelCatalog,
 }: ProvisionTeamModelGatewayOptions): Promise<ProvisionTeamModelGatewayResult> {
   let restartedRuntime = false;
   try {
@@ -219,7 +264,7 @@ export async function provisionTeamModelGatewayProvider({
     const definition = teamModelGatewayProviderDefinition(snapshot);
     const definitionUpToDate = teamModelGatewayDefinitionMatchesConfig(definition, existingProvider);
 
-    const catalogPath = await writeLocalModelCatalog(codexHome, catalogConfig);
+    const catalogPath = await writeModelCatalog(codexHome, catalogConfig);
 
     if (!definitionUpToDate) {
       const configWriteTarget = await readConfigWriteTarget(client, {
@@ -248,18 +293,29 @@ export async function provisionTeamModelGatewayProvider({
         // success toast total — startup must not stack notifications.
         try {
           restartedRuntime = await restartRuntimeForUpdatedProviderConfig(client, dispatch, connect);
-          dispatch({
-            type: "log",
-            text: restartedRuntime
-              ? "团队模型连接已更新"
-              : "团队模型连接已更新，但模型服务暂未重连，将自动重试",
-            level: restartedRuntime ? "info" : "warn",
-          });
+          // Toast muting keys on the `source` tag (see TEAM_MODEL_GATEWAY_LOG_SOURCES);
+          // the copy comes from the i18n dictionary and is free to change.
+          dispatch(restartedRuntime
+            ? {
+                type: "log",
+                text: formatMessage(TEAM_MODEL_GATEWAY_COPY.providerUpdated),
+                level: "info",
+                source: TEAM_MODEL_GATEWAY_LOG_SOURCES.providerUpdated,
+              }
+            : {
+                type: "log",
+                text: formatMessage(TEAM_MODEL_GATEWAY_COPY.providerUpdatedReconnectPending),
+                level: "warn",
+                source: TEAM_MODEL_GATEWAY_LOG_SOURCES.reconnectPending,
+              });
         } catch (restartError) {
           dispatch({
             type: "log",
-            text: `团队模型连接已更新，但服务重启失败: ${formatError(restartError)}`,
+            text: formatMessage(TEAM_MODEL_GATEWAY_COPY.providerUpdatedRestartFailed, {
+              error: formatError(restartError),
+            }),
             level: "warn",
+            source: TEAM_MODEL_GATEWAY_LOG_SOURCES.restartFailed,
           });
         }
       }
@@ -267,13 +323,28 @@ export async function provisionTeamModelGatewayProvider({
     }
     return { status: "upToDate", restartedRuntime };
   } catch (error) {
+    if (isRuntimeDisconnectedError(error)) {
+      return { status: "skipped", restartedRuntime };
+    }
     dispatch({
       type: "log",
+      // Tagged for provenance only — NOT in the viewport's source mute table.
+      // Whether this entry toasts is content-dependent (disconnected-runtime
+      // noise is muted, real write errors surface), which the viewport still
+      // decides via its text patterns.
       text: `team model provider provisioning failed: ${formatConfigWriteError(error, "Team model provider write")}`,
       level: "warn",
+      source: TEAM_MODEL_GATEWAY_LOG_SOURCES.provisionFailed,
     });
     return { status: "failed", restartedRuntime };
   }
+}
+
+function isRuntimeDisconnectedError(error: unknown): boolean {
+  const message = formatError(error);
+  return /\bCodex app-server is not connected\b/i.test(message)
+    || /\bDisconnected from Codex app-server\b/i.test(message)
+    || /\bCodex app-server connection closed\b/i.test(message);
 }
 
 export function catalogConfigWithExtraModels(

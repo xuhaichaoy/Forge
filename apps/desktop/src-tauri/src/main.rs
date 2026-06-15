@@ -2,7 +2,7 @@
 // binary keeps a console and every launch drags a black console window along.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use hicodex_host::AppServerHost;
+use forge_host::AppServerHost;
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
@@ -11,6 +11,7 @@ use tauri::{Emitter, Manager};
 mod app_server;
 mod browser_runtime;
 mod codex_bundle;
+mod command_error;
 mod document_preview;
 mod git_host;
 mod image_generation;
@@ -23,7 +24,7 @@ mod workspace_files;
 
 use browser_runtime::BrowserRuntimeStore;
 
-const APP_SERVER_EVENT_NAME: &str = "hicodex://app-server-event";
+const APP_SERVER_EVENT_NAME: &str = "forge://app-server-event";
 
 struct AppState {
     host: AppServerHost,
@@ -73,6 +74,25 @@ pub(crate) fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
 
 fn main() {
     tauri::Builder::default()
+        /*
+         * Persistent on-disk logs (macOS: ~/Library/Logs/<identifier>/forge.log).
+         * A distributed desktop app previously had ZERO log files — every
+         * eprintln! vanished once the app ran outside a terminal, so field
+         * issues (sidecar deaths, panics) left no trace to collect.
+         */
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("forge".into()),
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                ])
+                .max_file_size(2_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepOne)
+                .build(),
+        )
         .register_uri_scheme_protocol("codexbundle", |_ctx, request| {
             codex_bundle::handle_bundle_request(&request)
         })
@@ -89,39 +109,67 @@ fn main() {
         })
         .manage(AppState::default())
         .setup(|app| {
+            // Panics must reach the log file: the default hook only writes to
+            // stderr, which is invisible in a bundled app. Chain (not replace)
+            // the previous hook so abort/backtrace behavior stays intact.
+            let previous_panic_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                log::error!(target: "panic", "{info}");
+                previous_panic_hook(info);
+            }));
             native_shell::install_native_menu(app)?;
             native_shell::install_deep_link_handlers(app);
             native_shell::log_unsupported_native_shell_boundaries();
             let handle = app.handle().clone();
             match browser_runtime::start_browser_iab_probe_server(handle.clone()) {
-                Ok(path) => eprintln!(
-                    "[browser-iab] probe backend listening at {}",
+                Ok(path) => log::info!(
+                    target: "browser-iab",
+                    "probe backend listening at {}",
                     path.to_string_lossy()
                 ),
-                Err(error) => eprintln!("[browser-iab] failed to start probe backend: {error}"),
+                Err(error) => {
+                    log::warn!(target: "browser-iab", "failed to start probe backend: {error}")
+                }
             }
             if browser_runtime::browser_extension_backend_enabled() {
                 match browser_runtime::start_browser_extension_backend_spike_server(handle.clone())
                 {
-                    Ok(path) => eprintln!(
-                        "[browser-extension] host-compatible spike listening at {}",
+                    Ok(path) => log::info!(
+                        target: "browser-extension",
+                        "host-compatible spike listening at {}",
                         path.to_string_lossy()
                     ),
-                    Err(error) => eprintln!(
-                        "[browser-extension] failed to start host-compatible spike: {error}"
+                    Err(error) => log::warn!(
+                        target: "browser-extension",
+                        "failed to start host-compatible spike: {error}"
                     ),
                 }
             }
             let state = app.state::<AppState>();
             state.host.forward_events(move |event| {
+                // Sidecar lifecycle/errors are the field-debugging signal; the
+                // JSON stream itself stays out of the log (volume + privacy).
+                match &event {
+                    forge_host::AppServerEvent::Lifecycle { message, .. } => {
+                        log::info!(target: "app-server", "{message}");
+                    }
+                    forge_host::AppServerEvent::Error { message } => {
+                        log::warn!(target: "app-server", "{message}");
+                    }
+                    _ => {}
+                }
                 let _ = handle.emit(APP_SERVER_EVENT_NAME, event);
             });
             // Experimental: host the real Codex Desktop bundle in a separate
-            // window when HICODEX_CODEX_BUNDLE is set. The clean-room `main`
-            // window is the untouched default and is unaffected.
-            if std::env::var("HICODEX_CODEX_BUNDLE").is_ok() {
+            // window when FORGE_CODEX_BUNDLE (or the legacy HICODEX_CODEX_BUNDLE
+            // spelling) is set. The clean-room `main` window is the untouched
+            // default and is unaffected.
+            if std::env::var("FORGE_CODEX_BUNDLE")
+                .or_else(|_| std::env::var("HICODEX_CODEX_BUNDLE"))
+                .is_ok()
+            {
                 if let Err(error) = codex_bundle::open_codex_bundle_window(app.handle().clone()) {
-                    eprintln!("[codex-bundle] failed to open window: {error}");
+                    log::warn!(target: "codex-bundle", "failed to open window: {error}");
                 }
             }
             Ok(())

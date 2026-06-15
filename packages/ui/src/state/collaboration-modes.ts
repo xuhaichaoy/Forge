@@ -4,9 +4,9 @@ import type {
   CollaborationModeMask,
   ModeKind,
   ReasoningEffort,
-} from "@hicodex/codex-protocol";
+} from "@forge/codex-protocol";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
-import type { ThreadContextDefaults } from "./codex-reducer";
+import type { ThreadContextDefaults } from "./codex-ui-types";
 import type { ComposerMode } from "./composer-workflow";
 
 const REASONING_EFFORTS = new Set<ReasoningEffort>(["none", "minimal", "low", "medium", "high", "xhigh"]);

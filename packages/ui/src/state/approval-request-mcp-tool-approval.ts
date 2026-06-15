@@ -3,7 +3,7 @@ import { formatMessage } from "./i18n";
 import type {
   PendingRequestMcpToolApproval,
   PendingRequestMcpToolParamEntry,
-} from "./approval-requests";
+} from "./approval-requests-types";
 import { recordObject } from "./thread-item-fields";
 
 export function mcpToolApprovalTitle(params: unknown): string {
@@ -23,7 +23,7 @@ export function mcpToolApprovalTitle(params: unknown): string {
   // CODEX-REF: composer.mcpToolCallApproval.formattedToolTitlePrefix
   //   ("Allow {connectorName} to run") + emphasized {toolName} + suffix
   //   composer.mcpToolCallApproval.formattedToolTitleSuffix ("tool ?").
-  // HiCodex flattens the emphasized tool name into a plain string title.
+  // Forge flattens the emphasized tool name into a plain string title.
   const prefix = formatMessage(
     { id: "composer.mcpToolCallApproval.formattedToolTitlePrefix", defaultMessage: "Allow {connectorName} to run" },
     { connectorName },

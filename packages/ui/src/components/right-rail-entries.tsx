@@ -8,7 +8,7 @@ import {
   clipRailEntries,
   type RightRailSection as RightRailSectionViewModel,
 } from "../state/right-rail";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   isBackgroundTerminalEntry,
   isGeneratedImageArtifact,
@@ -37,7 +37,7 @@ export function RailList({
   onCleanBackgroundTerminals,
   onOpenEntry,
 }: RailListProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [expanded, setExpanded] = useState(false);
   const clipped = shouldClipRailList(sectionId)
     ? clipRailEntries(entries, expanded)

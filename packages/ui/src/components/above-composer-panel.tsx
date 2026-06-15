@@ -4,7 +4,7 @@
  *   - `m` (line ~29)  → AboveComposerPanel (first:rounded-t-2xl when context is false)
  *   - `C` (line ~131) → PanelRow (icon + title + meta + trailing + actions)
  *
- * Codex Tailwind classes (no longer used here because HiCodex has no Tailwind):
+ * Codex Tailwind classes (no longer used here because Forge has no Tailwind):
  *   container: `order-2 flex min-w-0 flex-col`
  *   panel:     `bg-token-input-background/70 text-token-foreground border-token-border/80
  *              relative min-w-0 overflow-clip border-x border-t backdrop-blur-sm`

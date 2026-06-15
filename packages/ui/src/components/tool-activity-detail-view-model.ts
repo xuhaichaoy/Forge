@@ -20,7 +20,7 @@ import {
   patchPath,
 } from "../state/tool-activity-fields";
 import { autoReviewBody, autoReviewTitle } from "./auto-review-view-model";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 import {
   mcpAppFrameFromResourceReadResult,
   mcpAppToolOutputFromResult,
@@ -50,7 +50,7 @@ import {
 } from "./tool-activity-multi-agent";
 import { webSearchDetail, webSearchFaviconUrl } from "./tool-activity-web-search";
 
-type ToolDetailFormatMessage = HiCodexIntlContextValue["formatMessage"];
+type ToolDetailFormatMessage = ForgeIntlContextValue["formatMessage"];
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
 

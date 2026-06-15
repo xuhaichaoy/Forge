@@ -1,7 +1,7 @@
 import { stringField } from "../lib/format";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 
-type AutoReviewFormatMessage = HiCodexIntlContextValue["formatMessage"];
+type AutoReviewFormatMessage = ForgeIntlContextValue["formatMessage"];
 
 function localizeAutoReview(formatMessage: AutoReviewFormatMessage | undefined, id: string, defaultMessage: string): string {
   return formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;

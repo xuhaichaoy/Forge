@@ -1,10 +1,10 @@
-import type { JsonRpcNotification } from "@hicodex/codex-protocol";
-import type { Account } from "@hicodex/codex-protocol/generated/v2/Account";
-import type { GetAccountResponse } from "@hicodex/codex-protocol/generated/v2/GetAccountResponse";
-import type { GetAccountRateLimitsResponse } from "@hicodex/codex-protocol/generated/v2/GetAccountRateLimitsResponse";
-import type { PlanType } from "@hicodex/codex-protocol/generated/PlanType";
-import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
-import type { RateLimitWindow } from "@hicodex/codex-protocol/generated/v2/RateLimitWindow";
+import type { JsonRpcNotification } from "@forge/codex-protocol";
+import type { Account } from "@forge/codex-protocol/generated/v2/Account";
+import type { GetAccountResponse } from "@forge/codex-protocol/generated/v2/GetAccountResponse";
+import type { GetAccountRateLimitsResponse } from "@forge/codex-protocol/generated/v2/GetAccountRateLimitsResponse";
+import type { PlanType } from "@forge/codex-protocol/generated/PlanType";
+import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateLimitSnapshot";
+import type { RateLimitWindow } from "@forge/codex-protocol/generated/v2/RateLimitWindow";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 import { formatMessage } from "./i18n";
 import { projectRateLimitCompactSummary, type RateLimitCompactSummary } from "./rate-limit-summary";
@@ -305,9 +305,9 @@ export function projectAccountViewModel(
   // codex gates the sidebar usage-alert behind a default-OFF Statsig experiment
   // (app-main `_S={enabled:!1,…}`, gates personal `3605558075`/workspace_owner
   // `1385051397`) plus an audience restriction (personal free/go/plus/prolite/pro,
-  // or self-serve-business owner). HiCodex has no Statsig, so it matches the
+  // or self-serve-business owner). Forge has no Statsig, so it matches the
   // shipped DEFAULT — the card is not surfaced. This mirrors the round-1 principle
-  // that HiCodex should match a Statsig-default-off feature's off state.
+  // that Forge should match a Statsig-default-off feature's off state.
   // `projectAccountUsageAlert` is retained (and still unit-tested) so this is a
   // one-line re-enable if the experiment ever ships on.
   const usageAlert = null;
@@ -659,7 +659,7 @@ function composerQuotaBannerForSnapshot(
 
 // codex: upsell banner generic out-of-messages state — ICU id
 // `codex.upsellBanner.general.title` defaultMessage:`You’re out of Codex messages`
-// (zh `你的 Codex 消息限额已用尽`). The model-specific variant above is a HiCodex
+// (zh `你的 Codex 消息限额已用尽`). The model-specific variant above is a Forge
 // extension (Codex's upsellBanner has no per-model title).
 function coreUsageLimitTitle(): string {
   return formatMessage({ id: "codex.upsellBanner.general.title", defaultMessage: "You’re out of Codex messages" });

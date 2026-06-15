@@ -17,7 +17,7 @@ jobs:
   script-compat:
     name: Script compatibility
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
 
     steps:
       - name: Check out repository
@@ -29,6 +29,15 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust builds
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
       - name: Install dependencies
         run: npm ci
 
@@ -37,6 +46,12 @@ jobs:
 
       - name: Check TypeScript runtime cycles
         run: npm run lint:ts-cycles
+
+      # Windows is a declared packaging target (nsis/msi) but cargo test/clippy
+      # run on macOS only — `cargo check` here locks the #[cfg(windows)]
+      # branches (CREATE_NO_WINDOW, codex.exe resolution, …) at compile level.
+      - name: Check Rust workspace (Windows cfg branches)
+        run: cargo check --workspace --all-targets
 
   verify:
     name: Verify
@@ -87,6 +102,14 @@ jobs:
 
       - name: Build desktop web assets
         run: npm run build --workspace @forge/desktop
+
+      # Browser-level smoke in system Chrome (ships on the macOS runner). The
+      # script boots/reuses the Vite DEV server — NOT the production bundle
+      # built above, so packaging-only regressions (base path, asset
+      # resolution, prod CSP, code-split lazy loads) are still only covered by
+      # `vite build` succeeding. TODO: add a `vite preview` smoke over dist/.
+      - name: Browser smoke (e2e)
+        run: npm run test:e2e
 
   supply-chain:
     name: Supply chain

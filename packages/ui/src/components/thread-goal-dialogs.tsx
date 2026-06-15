@@ -1,8 +1,8 @@
 import { useEffect, type ReactElement } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
-import { useHiCodexIntl } from "./i18n-provider";
+import type { ThreadGoalStatus } from "@forge/codex-protocol/generated/v2/ThreadGoalStatus";
+import { useForgeIntl } from "./i18n-provider";
 
 // Window-level Escape: these dialogs are hand-rolled (not Radix), so without
 // this the only dismiss affordances are pointer-based.
@@ -38,7 +38,7 @@ export function ThreadGoalReplaceConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   useEscapeToClose(onCancel);
   return portalDialogToBody(
     <div
@@ -92,7 +92,7 @@ export function ThreadGoalResumeConfirm({
   onResume: () => void;
   onDismiss: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const title = status === "paused"
     ? formatMessage({ id: "composer.threadGoal.resumeConfirmation.title", defaultMessage: "Resume paused goal?" })
     : formatMessage({ id: "composer.threadGoal.resumeConfirmation.resumableTitle", defaultMessage: "Resume goal?" });

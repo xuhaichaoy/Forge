@@ -12,7 +12,7 @@
  *   composer.latestTurn         = "Latest turn"
  *   Header label override (Pf): "Working for {duration}" / "Worked for {duration}"
  *
- * HiCodex has no framer-motion → animation is plain CSS transitions on
+ * Forge has no framer-motion → animation is plain CSS transitions on
  * `[data-expanded="true"]` (see .hc-working-turn-drawer-body in composer.css).
  *
  * STATUS: faithful clone of Desktop's latest-turn drawer but NOT WIRED yet —

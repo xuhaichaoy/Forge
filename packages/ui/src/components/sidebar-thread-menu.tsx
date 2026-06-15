@@ -1,8 +1,8 @@
 import { createPortal } from "react-dom";
 import type { RefObject } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { osRevealLabel } from "../state/command-registry";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 const threadMenuWidthPx = 220;
 const threadMenuEstimatedHeightPx = 360;
@@ -68,7 +68,7 @@ export function SidebarThreadMenu({
   thread,
   threadCwd,
 }: SidebarThreadMenuProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
 
   return createPortal(
     <div
@@ -76,8 +76,8 @@ export function SidebarThreadMenu({
       ref={menuRef}
       role="menu"
       /*
-       * `data-state="open"` so HiCodex's global type-to-focus selector
-       * (`HiCodexApp.tsx::focusComposerFromPlainTextKey`,
+       * `data-state="open"` so Forge's global type-to-focus selector
+       * (`ForgeApp.tsx::focusComposerFromPlainTextKey`,
        * `[role="menu"][data-state="open"]`) treats this popover as
        * active. Mirrors the Radix-style marker Codex Desktop uses on
        * every interactive popover. Mount equals open here.

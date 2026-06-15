@@ -1,5 +1,5 @@
 import {
-  HICODEX_THEME_STORAGE_KEY,
+  FORGE_THEME_STORAGE_KEY,
   loadUiThemeMode,
   nextToggleThemeMode,
   normalizeUiThemeMode,
@@ -25,7 +25,7 @@ function persistsThemePreference(): void {
   const storage = memoryStorage();
   assertEqual(loadUiThemeMode(storage), "system", "missing preference should default to system");
   saveUiThemeMode(storage, "dark");
-  assertEqual(storage.values.get(HICODEX_THEME_STORAGE_KEY), "dark", "theme mode should be persisted");
+  assertEqual(storage.values.get(FORGE_THEME_STORAGE_KEY), "dark", "theme mode should be persisted");
   assertEqual(loadUiThemeMode(storage), "dark", "theme mode should load from storage");
 }
 

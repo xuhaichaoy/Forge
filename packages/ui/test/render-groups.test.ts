@@ -765,7 +765,7 @@ function groupsReasoningSummaryAndContentIntoToolActivity(): void {
   // (local-conversation-thread.pretty.js:7881) maps `entry.item.type === "reasoning"`
   // to `F2 = null` — reasoning items never produce a standalone row. They are folded
   // into the surrounding exploration buffer via `Ge` :7782, or silently dropped when
-  // no mergeable bucket is active. HiCodex matches by skipping reasoning in
+  // no mergeable bucket is active. Forge matches by skipping reasoning in
   // `pushActivityItem` unless the item is the synthetic `thinking-placeholder`.
   const reasoning: ThreadItem = {
     type: "reasoning",
@@ -795,7 +795,7 @@ function showsThinkingPlaceholderWhileReasoningStreams(): void {
    * into the active exploration buffer or drops it, and explicitly clears
    * `isAnyNonExploringAgentItemInProgress` when the last surviving agent item
    * is in-progress reasoning, so `oT` (:8000) still resolves to
-   * `{ type: 'thinking', isVisible: true }`. HiCodex must inject the synthetic
+   * `{ type: 'thinking', isVisible: true }`. Forge must inject the synthetic
    * `desktopThinkingPlaceholderItem` in this scenario — earlier code skipped it
    * because `agentItems.some(isItemInProgress)` would return true for the
    * streaming reasoning item.
@@ -1544,13 +1544,13 @@ function projectsDiffAndGeneratedImageEventsWithRenderableFormats(): void {
     "official image generation should render base64 result when no saved path is available",
   );
 
-  const hiCodexImage = eventByKey(projection, "hicodex-image-1");
-  assertEqual(hiCodexImage.label, "Generated image", "HiCodex image tool output should use generated image label");
-  assertEqual(hiCodexImage.format, "markdown", "HiCodex image tool output should render as markdown image content");
+  const forgeImage = eventByKey(projection, "hicodex-image-1");
+  assertEqual(forgeImage.label, "Generated image", "Forge image tool output should use generated image label");
+  assertEqual(forgeImage.format, "markdown", "Forge image tool output should render as markdown image content");
   assertTextIncludes(
-    hiCodexImage.text,
+    forgeImage.text,
     "![Generated image](data:image/png;base64,PNGDATA)",
-    "HiCodex image tool output should render the returned inputImage",
+    "Forge image tool output should render the returned inputImage",
   );
 
   const automation = eventByKey(projection, "automation-update-1");
@@ -1870,7 +1870,7 @@ function projectsTurnBucketsInCodexDesktopOrder(): void {
   /*
    * Codex Desktop `JC` gallery aggregates all `generated-image` items in a
    * turn into a single `generatedImageGallery` render unit (per zC/Ut
-   * pipeline at local-conversation-thread byte ~540170). HiCodex mirrors
+   * pipeline at local-conversation-thread byte ~540170). Forge mirrors
    * this — the lone generated-image item previously emitted as
    * `event:generated-image-1` now appears as
    * `generatedImageGallery:gallery:<turnId>` regardless of count.
@@ -2744,7 +2744,7 @@ function keepsTodoListOutOfMainConversationAndProjectsProgress(): void {
       _turnId: "turn-1",
       plan: [
         { step: "Inspect Codex Desktop output", status: "completed" },
-        { step: "Patch HiCodex projection", status: "in_progress" },
+        { step: "Patch Forge projection", status: "in_progress" },
       ],
     } as ThreadItem,
     {
@@ -2762,7 +2762,7 @@ function keepsTodoListOutOfMainConversationAndProjectsProgress(): void {
   assertEqual(projection.units[1]?.kind, "message", "assistant message should remain in the main conversation");
   assertDeepEqual(
     projection.progress.map((entry) => entry.title),
-    ["Inspect Codex Desktop output", "Patch HiCodex projection"],
+    ["Inspect Codex Desktop output", "Patch Forge projection"],
     "todo-list should still drive Progress",
   );
 }
@@ -3588,7 +3588,7 @@ function groupsWebSearchIntoActivityAndSources(): void {
     {
       type: "webSearch",
       id: "web-search-multi-2",
-      query: "HiCodex web search",
+      query: "Forge web search",
       status: "completed",
     } as ThreadItem,
   ]);
@@ -3678,7 +3678,7 @@ function rendersActiveWebSearchLikeCodexDesktop(): void {
       type: "webSearch",
       id: "web-search-active",
       query: "fallback",
-      action: { type: "search", queries: ["Codex Desktop", "HiCodex"] },
+      action: { type: "search", queries: ["Codex Desktop", "Forge"] },
       completed: false,
     } as unknown as ThreadItem,
   ]);
@@ -3703,7 +3703,7 @@ function cleansWebSearchSiteFiltersLikeCodexDesktop(): void {
       type: "webSearch",
       id: "web-search-site",
       query: "fallback",
-      action: { type: "search", query: "Codex OR HiCodex site:openai.com site:www.github.com" },
+      action: { type: "search", query: "Codex OR Forge site:openai.com site:www.github.com" },
       completed: false,
     } as unknown as ThreadItem,
   ]);
@@ -3713,7 +3713,7 @@ function cleansWebSearchSiteFiltersLikeCodexDesktop(): void {
   }
   assertEqual(
     unit.summary.label,
-    "Searching the web for Codex HiCodex | openai.com · github.com",
+    "Searching the web for Codex Forge | openai.com · github.com",
     "web search label should strip site filters into Desktop-style domain suffix",
   );
 }

@@ -4,7 +4,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   RefCallback,
 } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   formatZoomPercent,
   handleImageDownloadClick,
@@ -38,7 +38,7 @@ export function renderImagePreviewModalLayer({
   onPreviousImage,
   onNextImage,
 }: {
-  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"];
+  formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"];
   src: string;
   downloadSrc: string;
   alt: string;

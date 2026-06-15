@@ -12,8 +12,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function parseArgs(argv) {
+  // FORGE_* is the canonical env namespace; HICODEX_* stays accepted as a legacy alias.
   const args = {
-    artifactName: process.env.HICODEX_RELEASE_ARTIFACT_NAME || "HiCodex",
+    artifactName:
+      process.env.FORGE_RELEASE_ARTIFACT_NAME || process.env.HICODEX_RELEASE_ARTIFACT_NAME || "Forge",
     config: resolve(root, ".tmp/tauri.release.conf.json"),
     outDir: "",
     product: "",
@@ -42,7 +44,12 @@ function parseArgs(argv) {
     }
   }
   if (args.targets.length === 0) {
-    const rawTargets = process.env.HICODEX_RELEASE_TARGETS || process.env.HICODEX_RELEASE_TARGET || "";
+    const rawTargets =
+      process.env.FORGE_RELEASE_TARGETS ||
+      process.env.FORGE_RELEASE_TARGET ||
+      process.env.HICODEX_RELEASE_TARGETS ||
+      process.env.HICODEX_RELEASE_TARGET ||
+      "";
     args.targets = rawTargets.split(/[,\s]+/).map((value) => value.trim()).filter(Boolean);
   }
   if (args.targets.length === 0) args.targets = ["aarch64-apple-darwin"];
@@ -55,7 +62,7 @@ function parseArgs(argv) {
   if (!args.product) {
     const baseConfig = JSON.parse(readFileSync(resolve(root, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"));
     const releaseConfig = readJson(args.config);
-    args.product = releaseConfig.productName || baseConfig.productName || "HiCodex";
+    args.product = releaseConfig.productName || baseConfig.productName || "Forge";
   }
   return args;
 }
@@ -128,7 +135,9 @@ function artifactUrl(baseUrl, fileName) {
 }
 
 function deriveArtifactBaseUrl(endpoints) {
-  const explicit = process.env.HICODEX_RELEASE_ARTIFACT_BASE_URL?.trim();
+  const explicit =
+    process.env.FORGE_RELEASE_ARTIFACT_BASE_URL?.trim() ||
+    process.env.HICODEX_RELEASE_ARTIFACT_BASE_URL?.trim();
   if (explicit) return explicit;
   const first = endpoints[0];
   if (!first) throw new Error("Release config does not contain updater endpoints.");
@@ -192,7 +201,8 @@ export function buildUpdateMetadata({ artifactName, configPath, outDir, product,
     uploads.push(`${resolve(outDir, tarName)} -> ${artifactUrl(artifactBaseUrl, tarName)}`);
   }
 
-  const notes = process.env.HICODEX_RELEASE_NOTES || process.env.NOTES_RAW || "";
+  const notes =
+    process.env.FORGE_RELEASE_NOTES || process.env.HICODEX_RELEASE_NOTES || process.env.NOTES_RAW || "";
   const metadata = {
     version,
     notes,

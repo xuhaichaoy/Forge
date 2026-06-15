@@ -1,8 +1,8 @@
 import { useEffect } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
- * codex `zm` — the full-access confirmation modal. Reuses HiCodex's shared dialog
+ * codex `zm` — the full-access confirmation modal. Reuses Forge's shared dialog
  * surface (hc-settings-backdrop / hc-thread-dialog-panel, cf. confirm-dialog.tsx)
  * with the Codex strings + a danger confirm button.
  */
@@ -13,7 +13,7 @@ export function FullAccessConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

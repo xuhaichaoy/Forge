@@ -47,7 +47,7 @@ export const DEFAULT_PROVIDERS: ModelPickerProvider[] = [
   },
   {
     /*
-     * HiCodex routes ChatGPT subscription traffic through a configured HTTP
+     * Forge routes ChatGPT subscription traffic through a configured HTTP
      * provider instead of codex-rs's built-in `openai` provider. The built-in
      * provider enables Responses-over-WebSocket; on networks that block or
      * throttle the websocket path, every new thread burns its first turn on

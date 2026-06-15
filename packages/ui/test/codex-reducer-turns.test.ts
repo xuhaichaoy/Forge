@@ -1,4 +1,4 @@
-import type { JsonRpcNotification, Thread, ThreadItem, UserInput } from "@hicodex/codex-protocol";
+import type { JsonRpcNotification, Thread, ThreadItem, UserInput } from "@forge/codex-protocol";
 import {
   codexUiReducer,
   initialCodexUiState,
@@ -566,7 +566,7 @@ function upsertingRunningThreadSnapshotPreservesStreamingItems(): void {
     "reading a running thread snapshot should preserve local user message content",
   );
   // Codex Desktop `Yw` renders worked-for as the agent-body HEADER (above
-  // activity rows + assistant message). HiCodex `insertWorkedForAfterLastUserMessage`
+  // activity rows + assistant message). Forge `insertWorkedForAfterLastUserMessage`
   // inserts it immediately after the last user message so the snapshot replay
   // preserves the same divider-on-top layout.
   assertDeepEqual(
@@ -759,7 +759,7 @@ function suppressesWorkedForForPureTextTurns(): void {
    * Codex Desktop `xt = vt.length > 0` gating (`local-conversation-thread-BX7YNcUw.js`
    * byte ~539133): pure-text turns (user → assistant, no exec/patch/web-search/…)
    * mount no `Yw` agent-body-collapsible and therefore no worked-for divider.
-   * Recording 2026-05-21 at 07.57.04 t=12s showed HiCodex spuriously emitting
+   * Recording 2026-05-21 at 07.57.04 t=12s showed Forge spuriously emitting
    * "Worked for 5s" for plain Q&A turns; this test pins the post-fix behavior.
    */
   const thread = threadWithTurns("thread-1", [
@@ -1154,7 +1154,7 @@ function formatsDurationWithDaysTierAndHoursModulo(): void {
 function synthesizesAutoApprovalReviewItemFromLiveNotifications(): void {
   // Codex Desktop synthesizes a client-side automatic-approval-review timeline
   // item from item/autoApprovalReview/started|completed (the payload IS the
-  // review — there is no params.item). HiCodex used to route these through the
+  // review — there is no params.item). Forge used to route these through the
   // generic item-lifecycle handler, whose params.item?.id guard dropped every
   // one, so the Auto-review entry never appeared mid-turn.
   const started = reduceNotification(initialCodexUiState, {
@@ -1233,7 +1233,7 @@ function completingTurnProjectsTurnTimingAsWorkedForItem(): void {
 function worksForCapsAtAnswerStartWhenSegmentCarriesItemTimestamps(): void {
   // Codex caps "Worked for {time}" at the answer's start (the exploration/tool
   // phase), not the whole turn (app-server-manager-signals qx/LS). When the
-  // segment carries item timestamps, HiCodex reconstructs that span: first work
+  // segment carries item timestamps, Forge reconstructs that span: first work
   // item start → answer start, dropping the answer-streaming time the old
   // whole-turn span wrongly counted.
   const withAnswerStamp = threadWithTurns("thread-1", [
@@ -1409,7 +1409,7 @@ function surfacesTerminalErrorNotificationsInTheTranscript(): void {
 function projectsReconnectErrorsAsStreamErrorRows(): void {
   // codex projects a retrying (willRetry:true) error to a low-key `stream-error`
   // row with a "Reconnecting N/M" progress, and does NOT terminalize the turn.
-  // HiCodex previously dropped these entirely (log-only), so reconnect attempts
+  // Forge previously dropped these entirely (log-only), so reconnect attempts
   // were invisible in the transcript.
   const state = {
     ...initialCodexUiState,
@@ -3079,7 +3079,7 @@ function upsertingMetadataOnlyThreadPreservesOptimisticPrompt(): void {
     gitInfo: {
       branch: "main",
       sha: "abcdef1234567890",
-      originUrl: "git@example.com:hicodex/HiCodex.git",
+      originUrl: "git@example.com:forge/Forge.git",
     },
   };
   const refreshed = codexUiReducer(optimistic, {

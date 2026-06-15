@@ -1,9 +1,11 @@
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
 
-export const LEGACY_HICODEX_THEME_STORAGE_KEY = "hicodex:appearance-theme";
-export const HICODEX_THEME_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.appearanceTheme;
+// Deliberate legacy value: the old-brand "hicodex:" localStorage key stays so
+// stored theme settings survive the Forge rebrand (identifier-only rename).
+export const LEGACY_FORGE_THEME_STORAGE_KEY = "hicodex:appearance-theme";
+export const FORGE_THEME_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.appearanceTheme;
 
 export const UI_THEME_MODES = ["system", "light", "dark"] as const;
 export type UiThemeMode = (typeof UI_THEME_MODES)[number];
@@ -26,7 +28,7 @@ export function normalizeUiThemeMode(value: unknown, fallback: UiThemeMode = "sy
 export function loadUiThemeMode(storage: BrowserStorageLike | null): UiThemeMode {
   if (!storage) return "system";
   try {
-    return normalizeUiThemeMode(readMigratedStorageValue(storage, HICODEX_THEME_STORAGE_KEY, [LEGACY_HICODEX_THEME_STORAGE_KEY]));
+    return normalizeUiThemeMode(readMigratedStorageValue(storage, FORGE_THEME_STORAGE_KEY, [LEGACY_FORGE_THEME_STORAGE_KEY]));
   } catch {
     return "system";
   }
@@ -35,7 +37,7 @@ export function loadUiThemeMode(storage: BrowserStorageLike | null): UiThemeMode
 export function saveUiThemeMode(storage: BrowserStorageLike | null, mode: UiThemeMode): void {
   if (!storage) return;
   try {
-    setDesktopAppSettingValue(storage, HICODEX_THEME_STORAGE_KEY, mode);
+    setDesktopAppSettingValue(storage, FORGE_THEME_STORAGE_KEY, mode);
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }

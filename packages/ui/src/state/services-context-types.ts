@@ -2,7 +2,7 @@ import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import type { ThreadWorkflowDispatch } from "./thread-workflow";
 
 /**
- * Shared service singletons that the root HiCodexApp owns — the JSON-RPC
+ * Shared service singletons that the root ForgeApp owns — the JSON-RPC
  * `client`, the reducer `dispatch`, and the `connected` flag — and that nearly
  * every feature subtree needs. Today these are drilled through the
  * tree as props (client ~94 refs, dispatch ~80, ensureConnected ~40); the

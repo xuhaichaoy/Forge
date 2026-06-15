@@ -7,7 +7,7 @@
 import { TriangleAlert } from "lucide-react";
 import type { ReactElement } from "react";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface HooksReviewBannerProps {
   // codex: composer-*.js — count of hooks needing review.
@@ -19,7 +19,7 @@ export interface HooksReviewBannerProps {
 }
 
 export function HooksReviewBanner(props: HooksReviewBannerProps): ReactElement | null {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (!props || props.count <= 0) return null;
 
   const { count, onTrustAll, onReview } = props;

@@ -5,7 +5,7 @@ import type { MouseEvent } from "react";
 import { convertLocalFileSrc, isTauriRuntime } from "../lib/tauri-host";
 import type { MarkdownImageBlock } from "../state/conversation-markdown-engine";
 import { resolveAssistantMarkdownMediaSource } from "./assistant-message-artifacts";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
   markdownImagePreviewAdjacentIndexes,
@@ -14,7 +14,7 @@ import {
 } from "./markdown-image-preview";
 
 export function MarkdownImageView({ allowWide = false, image }: { allowWide?: boolean; image: MarkdownImageBlock }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [previewState, setPreviewState] = useState<MarkdownImagePreviewState | null>(null);
   const src = resolveMarkdownMediaSrc(image.src);
   const mediaKind = markdownMediaKind(src);

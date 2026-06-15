@@ -56,7 +56,7 @@ export function McpToolCallForm({ action, onClose, onSubmit }: McpToolCallFormPr
         aria-modal="true"
         aria-label={action.title}
         onKeyDown={(event) => {
-          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          // codex: Radix dialog closes on Escape; match it (the other Forge dialogs do).
           if (event.key === "Escape") {
             event.stopPropagation();
             onClose();

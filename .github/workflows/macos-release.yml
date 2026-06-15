@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  HICODEX_RELEASE_TARGET: aarch64-apple-darwin
+  FORGE_RELEASE_TARGET: aarch64-apple-darwin
 
 concurrency:
   group: macos-release-${{ github.ref }}
@@ -65,7 +65,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-          targets: ${{ env.HICODEX_RELEASE_TARGET }}
+          targets: ${{ env.FORGE_RELEASE_TARGET }}
 
       - name: Cache Rust builds
         uses: Swatinem/rust-cache@v2
@@ -101,8 +101,8 @@ jobs:
       - name: Prepare Codex sidecar
         run: npm run sidecar:prepare
         env:
-          HICODEX_CODEX_SOURCE_DIR: ${{ github.workspace }}/codex-upstream/codex-rs
-          HICODEX_CODEX_TARGET: ${{ env.HICODEX_RELEASE_TARGET }}
+          FORGE_CODEX_SOURCE_DIR: ${{ github.workspace }}/codex-upstream/codex-rs
+          FORGE_CODEX_TARGET: ${{ env.FORGE_RELEASE_TARGET }}
 
       - name: Smoke Codex sidecar
         if: runner.arch == 'ARM64'
@@ -116,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${APPLE_API_KEY_P8:-}" ]]; then
-            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY:-hicodex}.p8"
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY:-forge}.p8"
             printf '%s' "$APPLE_API_KEY_P8" > "$key_path"
             chmod 600 "$key_path"
             echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
@@ -124,18 +124,21 @@ jobs:
             echo "APPLE_API_KEY_PATH=$APPLE_API_KEY_PATH_SECRET" >> "$GITHUB_ENV"
           fi
 
+      # GitHub secret/var NAMES deliberately keep the legacy HICODEX_* identifiers
+      # (user-managed repository assets); they are mapped into the FORGE_* env
+      # namespace that the build scripts read (HICODEX_* env stays a legacy alias).
       - name: Check release updater and signing config
         run: npm run release:config --workspace @forge/desktop
         env:
-          HICODEX_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
-          HICODEX_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
-          HICODEX_UPDATER_PUBKEY_PATH: ${{ secrets.HICODEX_UPDATER_PUBKEY_PATH }}
+          FORGE_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
+          FORGE_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
+          FORGE_UPDATER_PUBKEY_PATH: ${{ secrets.HICODEX_UPDATER_PUBKEY_PATH }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PATH }}
-          HICODEX_MACOS_SIGNING_IDENTITY: ${{ secrets.HICODEX_MACOS_SIGNING_IDENTITY }}
-          HICODEX_MACOS_ENTITLEMENTS: ${{ vars.HICODEX_MACOS_ENTITLEMENTS }}
-          HICODEX_MACOS_PROVIDER_SHORT_NAME: ${{ vars.HICODEX_MACOS_PROVIDER_SHORT_NAME }}
+          FORGE_MACOS_SIGNING_IDENTITY: ${{ secrets.HICODEX_MACOS_SIGNING_IDENTITY }}
+          FORGE_MACOS_ENTITLEMENTS: ${{ vars.HICODEX_MACOS_ENTITLEMENTS }}
+          FORGE_MACOS_PROVIDER_SHORT_NAME: ${{ vars.HICODEX_MACOS_PROVIDER_SHORT_NAME }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -147,17 +150,17 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
       - name: Build signed Tauri release
-        run: npm run tauri:build:release --workspace @forge/desktop -- --target ${{ env.HICODEX_RELEASE_TARGET }}
+        run: npm run tauri:build:release --workspace @forge/desktop -- --target ${{ env.FORGE_RELEASE_TARGET }}
         env:
-          HICODEX_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
-          HICODEX_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
-          HICODEX_UPDATER_PUBKEY_PATH: ${{ secrets.HICODEX_UPDATER_PUBKEY_PATH }}
+          FORGE_UPDATER_ENDPOINTS: ${{ secrets.HICODEX_UPDATER_ENDPOINTS }}
+          FORGE_UPDATER_PUBKEY: ${{ secrets.HICODEX_UPDATER_PUBKEY }}
+          FORGE_UPDATER_PUBKEY_PATH: ${{ secrets.HICODEX_UPDATER_PUBKEY_PATH }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PATH }}
-          HICODEX_MACOS_SIGNING_IDENTITY: ${{ secrets.HICODEX_MACOS_SIGNING_IDENTITY }}
-          HICODEX_MACOS_ENTITLEMENTS: ${{ vars.HICODEX_MACOS_ENTITLEMENTS }}
-          HICODEX_MACOS_PROVIDER_SHORT_NAME: ${{ vars.HICODEX_MACOS_PROVIDER_SHORT_NAME }}
+          FORGE_MACOS_SIGNING_IDENTITY: ${{ secrets.HICODEX_MACOS_SIGNING_IDENTITY }}
+          FORGE_MACOS_ENTITLEMENTS: ${{ vars.HICODEX_MACOS_ENTITLEMENTS }}
+          FORGE_MACOS_PROVIDER_SHORT_NAME: ${{ vars.HICODEX_MACOS_PROVIDER_SHORT_NAME }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -168,24 +171,49 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
+      # Local releases (release.sh) verify codesign/staple/Gatekeeper after the
+      # build; CI must be at least as strict — a release artifact that fails
+      # Gatekeeper should fail the run, not reach users.
+      - name: Verify signed artifacts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          APPS=(
+            target/${FORGE_RELEASE_TARGET}/release/bundle/macos/*.app
+            apps/desktop/src-tauri/target/${FORGE_RELEASE_TARGET}/release/bundle/macos/*.app
+          )
+          if [[ ${#APPS[@]} -eq 0 ]]; then
+            echo "No signed .app bundle found for ${FORGE_RELEASE_TARGET}" >&2
+            echo "Checked:" >&2
+            echo "  target/${FORGE_RELEASE_TARGET}/release/bundle/macos/*.app" >&2
+            echo "  apps/desktop/src-tauri/target/${FORGE_RELEASE_TARGET}/release/bundle/macos/*.app" >&2
+            exit 1
+          fi
+          APP="${APPS[0]}"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type exec --verbose=2 "$APP"
+
       - name: Generate updater metadata
-        run: node scripts/generate-tauri-update-metadata.mjs --config .tmp/tauri.release.conf.json --target ${{ env.HICODEX_RELEASE_TARGET }}
+        # tauri:build:release runs with CWD=apps/desktop, so the release config
+        # it writes lands under apps/desktop/.tmp — read it from there.
+        run: node scripts/generate-tauri-update-metadata.mjs --config apps/desktop/.tmp/tauri.release.conf.json --target ${{ env.FORGE_RELEASE_TARGET }}
         env:
-          HICODEX_RELEASE_ARTIFACT_BASE_URL: ${{ secrets.HICODEX_RELEASE_ARTIFACT_BASE_URL }}
-          HICODEX_RELEASE_ARTIFACT_NAME: HiCodex
+          FORGE_RELEASE_ARTIFACT_BASE_URL: ${{ secrets.HICODEX_RELEASE_ARTIFACT_BASE_URL }}
+          FORGE_RELEASE_ARTIFACT_NAME: Forge
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: hicodex-macos-release-${{ github.run_number }}
+          name: forge-macos-release-${{ github.run_number }}
           if-no-files-found: error
           path: |
-            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/dmg/*.dmg
-            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz
-            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig
-            target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig.*
-            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/dmg/*.dmg
-            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz
-            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig
-            apps/desktop/src-tauri/target/${{ env.HICODEX_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig.*
+            target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/dmg/*.dmg
+            target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz
+            target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig
+            target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig.*
+            apps/desktop/src-tauri/target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz
+            apps/desktop/src-tauri/target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig
+            apps/desktop/src-tauri/target/${{ env.FORGE_RELEASE_TARGET }}/release/bundle/macos/*.app.tar.gz.sig.*
             dist/release/**

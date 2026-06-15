@@ -241,7 +241,7 @@ function keepsSteeringUserMessagesPersistentWhenCollapsed(): void {
 function keepsMidTurnPlainUserMessagesPersistentWhenCollapsed(): void {
   // Regression (Image #12 bug): a mid-turn follow-up user message the backend
   // folded into the running turn — WITHOUT stamping steeringStatus — must stay
-  // visible when the "Worked for" toggle collapses the turn. HiCodex never
+  // visible when the "Worked for" toggle collapses the turn. Forge never
   // populates steeringStatus today, so every mid-turn user message hits this
   // path; Codex keeps all user messages out of the collapsible body
   // (split-items `Lb`/`zb`: a user-message entry is never collapsible).

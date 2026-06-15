@@ -9,7 +9,7 @@ export interface AppUpdateBadge {
 }
 
 /*
- * Tauri auto-update check + apply, lifted verbatim out of HiCodexApp so the
+ * Tauri auto-update check + apply, lifted verbatim out of ForgeApp so the
  * root component no longer owns the badge state/ref/timers. Behaviour is
  * unchanged: a check runs once 5s after mount (so it doesn't compete with the
  * initial connect/listThreads burst) and then every 6 hours; failures are

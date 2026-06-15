@@ -32,7 +32,7 @@ import {
 } from "./api-client.js";
 
 /* ============================================================================
- *  HiCodex / Codex Desktop MCP demo: 教育培训方案编排工具集
+ *  Forge / Codex Desktop MCP demo: 教育培训方案编排工具集
  *
  *  Domain (from ~/Downloads/docs):
  *    - 培训需求 (TrainingDemand)  ← rows in the demand spreadsheet
@@ -56,7 +56,7 @@ import {
 
 const server = new Server(
   {
-    name: "hicodex-training-api-demo",
+    name: "forge-training-api-demo",
     version: "0.1.0",
   },
   {
@@ -663,6 +663,6 @@ function errorContent(message: string) {
 
 const transport = new StdioServerTransport();
 server.connect(transport).catch((error) => {
-  console.error("[hicodex-training-api-mcp] fatal:", error);
+  console.error("[forge-training-api-mcp] fatal:", error);
   process.exit(1);
 });

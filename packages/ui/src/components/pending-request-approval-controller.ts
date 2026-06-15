@@ -16,6 +16,7 @@ import {
   pendingRequestOptionShortcut,
   pendingRequestShouldSubmitOnEnter,
 } from "./pending-request-keyboard";
+import { useForgeIntl } from "./i18n-provider";
 
 type PendingRequestResponder = (
   request: PendingServerRequest,
@@ -31,7 +32,7 @@ interface PendingRequestApprovalControllerArgs {
 
 interface PendingRequestApprovalController {
   answers: Record<string, string[]>;
-  canSubmit: boolean;
+  canUsePrimaryAction: boolean;
   currentQuestion: PendingRequestQuestion | null;
   detail: PendingRequestDetail;
   externalUrlOpened: boolean;
@@ -57,7 +58,20 @@ export function usePendingRequestApprovalController({
   onRespond,
   onLog,
 }: PendingRequestApprovalControllerArgs): PendingRequestApprovalController {
-  const detail = useMemo(() => pendingRequestDetail(request), [request]);
+  // pendingRequestDetail formats title/labels via the module-level
+  // formatMessage singleton (bound to the active locale at call time), so the
+  // memo must recompute on a live language switch — otherwise the card's
+  // Accept/Decline/title stay in the old language while the inline-formatted
+  // bits (Continue, stepper) switch, mixing two languages on one card.
+  const { locale } = useForgeIntl();
+  const detail = useMemo(() => {
+    // `locale` is an implicit dependency: pendingRequestDetail reads the
+    // module-level formatMessage singleton (bound to the active locale), so
+    // detail must recompute on a language switch. Referencing it here makes
+    // that dependency explicit to both the linter and the reader.
+    void locale;
+    return pendingRequestDetail(request);
+  }, [request, locale]);
   const [externalUrlOpened, setExternalUrlOpened] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string[]>>(() =>
     Object.fromEntries(detail.questions.map((question) => [question.id, defaultAnswers(question)])),
@@ -78,13 +92,24 @@ export function usePendingRequestApprovalController({
     setQuestionIndex(clamped);
   };
 
+  const questionHasRequiredAnswer = (
+    question: PendingRequestQuestion,
+    candidateAnswers: Record<string, string[]>,
+  ) =>
+    !question.required
+    || (candidateAnswers[question.id] ?? question.defaultAnswers).some((answer) => answer.trim());
   const canSubmitWithAnswers = (candidateAnswers: Record<string, string[]>) =>
-    detail.canAccept && detail.questions.every((question) =>
-      !question.required || (candidateAnswers[question.id] ?? question.defaultAnswers).some((answer) => answer.trim()),
-    );
+    detail.canAccept && detail.questions.every((question) => questionHasRequiredAnswer(question, candidateAnswers));
   const canRespondWithAnswers = (accepted: boolean, candidateAnswers: Record<string, string[]>) =>
     !accepted || canSubmitWithAnswers(candidateAnswers) || isNonSubmitOptionPickerAction(detail, candidateAnswers);
   const canSubmit = !responding && canSubmitWithAnswers(answers);
+  const canAdvanceCurrentQuestion = !responding
+    && detail.canAccept
+    && currentQuestion != null
+    && questionHasRequiredAnswer(currentQuestion, answers);
+  const canUsePrimaryAction = hasMultipleQuestions && !isLastQuestion
+    ? canAdvanceCurrentQuestion
+    : canSubmit;
 
   const respond = (accepted: boolean, nextAnswers: Record<string, string[]> = answers) => {
     if (respondingRef.current) return;
@@ -207,7 +232,7 @@ export function usePendingRequestApprovalController({
       return;
     }
     if (pendingRequestShouldSubmitOnEnter({
-      canSubmit,
+      canSubmit: canUsePrimaryAction,
       isEditableTarget: isEditableEventTarget(event.target),
       key: event.key,
       responding,
@@ -228,7 +253,7 @@ export function usePendingRequestApprovalController({
 
   return {
     answers,
-    canSubmit,
+    canUsePrimaryAction,
     currentQuestion,
     detail,
     externalUrlOpened,

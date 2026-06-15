@@ -15,3 +15,9 @@ apps/desktop/src-tauri/gen/
 .claude/skills-archived/
 .claude/worktrees/
 .gitnexus
+# Packaged installers are release assets, never source — a 159MB pair of
+# Windows installers once landed in git history (.git ballooned to 278MB).
+*.msi
+*-setup.exe
+*.dmg
+*.app.tar.gz

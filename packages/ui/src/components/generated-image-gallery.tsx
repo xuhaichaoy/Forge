@@ -12,11 +12,11 @@ import {
   GalleryThumbnail,
 } from "./generated-image-gallery-thumbnails";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
  * Codex Desktop `JC` gallery (local-conversation-thread-*.js) — horizontal
- * carousel of generated-image thumbnails. HiCodex's
+ * carousel of generated-image thumbnails. Forge's
  * single-card-per-image markdown rendering produced a stack of full-width
  * blue-sky cards (screenshot 2026-05-21 #6) that diverged sharply from
  * Codex's compact 4-up thumbnail row (screenshot #7). This component
@@ -24,8 +24,8 @@ import { useHiCodexIntl } from "./i18n-provider";
  * collapse into a single carousel.
  *
  * Architectural mapping:
- *   Codex `Ut` ↔ HiCodex `images` prop (passed visible-completed list)
- *   Codex `$e` ↔ HiCodex `hasPending` (pending 24×24 spinner placeholder)
+ *   Codex `Ut` ↔ Forge `images` prop (passed visible-completed list)
+ *   Codex `$e` ↔ Forge `hasPending` (pending 24×24 spinner placeholder)
  *   Codex `GC()` ↔ `computeGalleryLayout()` in generated-image-gallery-layout
  *   Codex `YC` ↔ `GalleryThumbnail` sub-component
  *   Codex `XC` ↔ `GalleryOverflowControls` sub-component
@@ -64,7 +64,7 @@ export function GeneratedImageGallery({
   const [containerWidthPx, setContainerWidthPx] = useState<number | null>(null);
   const [aspectRatios, setAspectRatios] = useState<Record<string, number>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
 
   /*
    * Codex `T = cc(callback)` uses ResizeObserver on the

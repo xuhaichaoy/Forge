@@ -1,4 +1,4 @@
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { DocumentPreview } from "../lib/tauri-host";
 
 export function DocumentPreviewContent({
@@ -28,7 +28,7 @@ export function DocumentPreviewContent({
   emptyClassName?: string;
   emptyMessageId?: string;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (preview.paragraphs.length === 0) {
     return (
       <div className={emptyClassName ?? className}>

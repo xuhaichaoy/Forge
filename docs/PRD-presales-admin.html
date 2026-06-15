@@ -312,7 +312,7 @@
 
 <h1 class="doc-title">售前 AI 工作台 — 管理后台 PRD</h1>
 <div class="meta">
-  <dl><dt>项目代号</dt><dd>HiCodex Sales</dd></dl>
+  <dl><dt>项目代号</dt><dd>Forge Sales</dd></dl>
   <dl><dt>版本</dt><dd>v0.1（草案）</dd></dl>
   <dl><dt>状态</dt><dd><span class="badge badge-p1">待评审</span></dd></dl>
   <dl><dt>负责人</dt><dd>技术 Lead（兼 PM）</dd></dl>
@@ -324,14 +324,14 @@
 
 <p>
 本文档定义 <strong>售前 AI 工作台</strong> 的<strong>管理后台</strong>需求。
-工作台前端是 <em>HiCodex 桌面端</em>（已开发，对话式 AI + Skill 编排），
+工作台前端是 <em>Forge 桌面端</em>（已开发，对话式 AI + Skill 编排），
 本管理后台负责对支撑前端的<strong>数据 / 配置 / 监控</strong>进行运营管理，
 是后台运营 / 产品 / 业务管理员使用的 Web 系统。
 </p>
 
 <p>
 管理后台覆盖：<strong>6 个知识库 · 6 个 SKILL · 5 个外部系统集成 · 用户权限 · 数据看板</strong>。
-不包括前端售前用户的 chat 界面（那是 HiCodex 桌面端的职责）。
+不包括前端售前用户的 chat 界面（那是 Forge 桌面端的职责）。
 </p>
 
 <div class="card card-accent">
@@ -346,7 +346,7 @@
 <h3>边界与不包含</h3>
 <ul>
   <li>✅ 包含：知识库 CRUD、SKILL 编辑、文档解析流水线、系统集成配置、用户权限、运营看板</li>
-  <li>❌ 不包含：售前用户的 chat 界面（HiCodex 桌面端已交付）</li>
+  <li>❌ 不包含：售前用户的 chat 界面（Forge 桌面端已交付）</li>
   <li>❌ 不包含：客户面向的方案展示门户（独立项目）</li>
   <li>❌ 不包含：投标流程（场景 5/6，第二阶段）</li>
 </ul>
@@ -378,7 +378,7 @@
   <td>产品健康</td>
   <td>用户活跃</td>
   <td>售前周活跃 ≥ 80%</td>
-  <td>HiCodex 使用埋点</td>
+  <td>Forge 使用埋点</td>
 </tr>
 <tr>
   <td>产品健康</td>
@@ -438,7 +438,7 @@
 </tr>
 <tr>
   <td><strong>售前用户</strong></td>
-  <td>用 HiCodex 桌面端干活</td>
+  <td>用 Forge 桌面端干活</td>
   <td>不访问管理后台</td>
   <td>10-30</td>
 </tr>
@@ -458,7 +458,7 @@
   <div class="arch-layer">
     <div class="arch-layer-title">用户层</div>
     <div class="arch-modules">
-      <div class="arch-mod">售前用户<br/><small>HiCodex 桌面端</small></div>
+      <div class="arch-mod">售前用户<br/><small>Forge 桌面端</small></div>
       <div class="arch-mod">运营管理员<br/><small>本管理后台 (Web)</small></div>
       <div class="arch-mod">业务专家<br/><small>审核 / 标注</small></div>
     </div>
@@ -468,7 +468,7 @@
     <div class="arch-layer-title">应用层</div>
     <div class="arch-modules">
       <div class="arch-mod">管理后台 Web<br/><small>React + 本 PRD</small></div>
-      <div class="arch-mod">HiCodex Sidecar<br/><small>Codex-rs + MCP</small></div>
+      <div class="arch-mod">Forge Sidecar<br/><small>Codex-rs + MCP</small></div>
     </div>
   </div>
   <div class="arch-arrow">▼ REST / GraphQL · MCP stdio</div>

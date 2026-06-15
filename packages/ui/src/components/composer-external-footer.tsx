@@ -2,11 +2,11 @@
 // element in this footer against `COMMAND_DESCRIPTORS` in `state/commands.ts`:
 //   * `+` add-menu / project switcher (`title="Project and work mode"`):
 //     Codex Desktop opens the same picker via the footer chip only; no
-//     keybinding exists in `electron-menu-shortcuts-*.js` and HiCodex
+//     keybinding exists in `electron-menu-shortcuts-*.js` and Forge
 //     does not expose `openProjectMenu` in COMMAND_IDS — skipped.
 //   * Permissions chip (`title="Change permissions"`): Codex Desktop renders
 //     this as `composer.permissions.changePermissions` with no accelerator,
-//     and HiCodex has no `openPermissions` command — skipped.
+//     and Forge has no `openPermissions` command — skipped.
 //   * Branch chip: now interactive via `ComposerFooterBranchSwitcher` (host
 //     `host_git_list_branches` + `host_git_checkout_branch`); Codex Desktop
 //     does not assign a global accelerator to the branch picker either
@@ -14,7 +14,7 @@
 //     hint applies — skipped.
 //   * Model / intelligence chip (`title="Select model"`): Codex Desktop
 //     wires this to the model picker without an accelerator (cf.
-//     `composer-*.js` defaultMessage `Select model`); HiCodex has no
+//     `composer-*.js` defaultMessage `Select model`); Forge has no
 //     `openModelPicker` entry yet — skipped.
 // Conclusion: there is no footer button with a 1:1 mapping to an existing
 // keybinding. Re-run this audit when `openModelPicker`, `openPermissions`,
@@ -30,7 +30,7 @@ import type { ComposerWorkspaceRootOption } from "./composer-external-footer-pro
 // codex tooltip-CDzchJxN.js — the composer settings chips are wrapped in a styled Tooltip
 // (Codex's intelligence trigger uses `Cn`/`tooltipContent`), replacing the native `title`.
 import { Tooltip } from "./tooltip";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export { formatWorkspaceProjectLabel } from "./composer-external-footer-project";
 export type { ComposerWorkspaceRootOption } from "./composer-external-footer-project";
@@ -97,7 +97,7 @@ export function ComposerExternalFooter({
     //       <div className="flex shrink-0 items-center gap-2"> mic + send </div>
     //     </div>
     //   </div>
-    // The send button + mic live in composer.tsx for HiCodex, so the actions
+    // The send button + mic live in composer.tsx for Forge, so the actions
     // cluster slot in this strip is intentionally empty here.
     <div className="hc-composer-external-footer" data-variant={variant} aria-label="Composer context">
       {/*
@@ -144,7 +144,7 @@ export function ComposerExternalFooter({
  * CODEX-REF: composer-*.js — the model-intelligence trigger
  * (`data-codex-intelligence-trigger`), reasoning-effort chip and permissions
  * chip render INSIDE the composer bubble footer (`composer-footer` grid), not
- * in the below-bubble strip. HiCodex groups them here so the Composer can mount
+ * in the below-bubble strip. Forge groups them here so the Composer can mount
  * the cluster in its in-bubble footer-middle slot; branch + work-mode stay in
  * the external below-bubble footer.
  */
@@ -211,7 +211,7 @@ export function ComposerSettingsChips({
   onOpenModelPicker,
   onOpenReasoningPicker,
 }: ComposerSettingsChipsProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const intelligenceLabel = formatIntelligenceFooterLabel({ model });
   const reasoningEffortNormalized: ReasoningKey = typeof reasoningEffort === "string"
     && REASONING_KEYS.includes(reasoningEffort.trim().toLowerCase() as ReasoningKey)
@@ -260,9 +260,9 @@ export function ComposerSettingsChips({
             data-interactive={onOpenModelPicker ? "true" : undefined}
             onClick={onOpenModelPicker ? (event) => onOpenModelPicker(event.currentTarget) : undefined}
           >
-            {/* Desktop uses one intelligence trigger. HiCodex has a separate reasoning chip, so this label stays model-only. */}
+            {/* Desktop uses one intelligence trigger. Forge has a separate reasoning chip, so this label stays model-only. */}
             <span className="hc-composer-footer-chip-label">
-              {intelligenceLabel || formatMessage({ id: "composer.intelligenceDropdown.fallbackLabel", defaultMessage: "模型" })}
+              {intelligenceLabel || formatMessage({ id: "composer.intelligenceDropdown.fallbackLabel", defaultMessage: "Model" })}
             </span>
             <ChevronDown size={14} />
           </button>

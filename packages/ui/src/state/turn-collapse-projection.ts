@@ -150,7 +150,7 @@ export function shouldPreventTurnAutoCollapse(units: ConversationRenderUnit[]): 
    * hasFinalAssistantStarted, so while the turn is running shouldAllowCollapse
    * is false and isCollapsed is forced false regardless of preventAutoCollapse.
    *
-   * HiCodex does not thread the renderMcpApps/shouldAutoExpandMcpApps settings
+   * Forge does not thread the renderMcpApps/shouldAutoExpandMcpApps settings
    * into this pure helper (Codex defaults: renderMcpApps=true,
    * shouldAutoExpandMcpApps=false), so we faithfully reproduce the inner `dc`
    * predicate - MCP-app presence - using the same item-level detection that

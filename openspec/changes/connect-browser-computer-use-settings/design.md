@@ -1,6 +1,6 @@
 ## Context
 
-HiCodex Settings currently treats `browser-use` and `computer-use` as `DesktopBackedLocalSettingsPanel` placeholders. The placeholder is useful for parity evidence, but it does not expose the plugin lifecycle that already exists elsewhere in HiCodex.
+Forge Settings currently treats `browser-use` and `computer-use` as `DesktopBackedLocalSettingsPanel` placeholders. The placeholder is useful for parity evidence, but it does not expose the plugin lifecycle that already exists elsewhere in Forge.
 
 The app-server plugin management path already exists:
 - `loadPluginManagementEntries` reads marketplace, installed, shared, and app state through app-server.
@@ -42,5 +42,5 @@ The current bundled plugin identities differ from the Desktop route names:
 ## Risks / Trade-offs
 
 - Plugin installed/enabled state may not mean a usable Browser backend exists. -> Show explicit details that backend/session availability is separate from plugin lifecycle.
-- Computer Use install may require OS permission flows outside HiCodex. -> Show explicit setup limitation and keep native control out of scope.
+- Computer Use install may require OS permission flows outside Forge. -> Show explicit setup limitation and keep native control out of scope.
 - Browser identity may drift again. -> Keep matching alias-based and local to the Browser/Computer Use settings helper.

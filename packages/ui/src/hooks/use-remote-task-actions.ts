@@ -8,8 +8,8 @@ import { openExternalUrl } from "../lib/tauri-host";
 
 /*
  * Remote-task open actions. `dispatch` comes from ServicesContext (provided by
- * the shell above HiCodexAppBody); the remote-task / app-tab navigation setters
- * are passed in as params because they are owned by HiCodexAppBody's body.
+ * the shell above ForgeAppBody); the remote-task / app-tab navigation setters
+ * are passed in as params because they are owned by ForgeAppBody's body.
  * openRemoteTask switches to the remote-task app tab; openRemoteTaskExternal
  * opens the task on chatgpt.com. The chatgpt.com URL shape and warn/error toast
  * wording are contract-exact; deps stay `[dispatch]` exactly as in the original

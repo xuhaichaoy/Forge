@@ -2,7 +2,7 @@
 //   Codex Desktop maps xlsx/xlsm/csv/tsv via
 //     var _=new Map([["xlsm","xlsx"],["xlsx","xlsx"],["csv","csv"],["tsv","tsv"]]);
 //   to artifactType:"spreadsheet" and renders them through its closed-source
-//   .NET WASM Popcorn Workbook viewer (~12MB). HiCodex deliberately ships a
+//   .NET WASM Popcorn Workbook viewer (~12MB). Forge deliberately ships a
 //   simplified replacement: SheetJS parses the workbook on the renderer side
 //   and we emit a plain HTML <table>. No formula recalculation, no charts,
 //   no style fidelity -- this is a reduced preview, not a feature-parity port.
@@ -36,7 +36,7 @@ export function SpreadsheetPreview({
   style,
 }: SpreadsheetPreviewProps) {
   // CODEX-REF: open-workspace-file-*.js — Codex's xlsx path runs through
-  // its WASM XlsxReader; HiCodex calls SheetJS XLSX.read once and caches the
+  // its WASM XlsxReader; Forge calls SheetJS XLSX.read once and caches the
   // workbook so sheet switching is instantaneous and avoids re-parsing.
   const parsed = useMemo<ParsedWorkbook | null>(() => {
     try {
@@ -64,7 +64,7 @@ export function SpreadsheetPreview({
   }, [parsed]);
 
   // CODEX-REF: open-workspace-file-*.js — Codex's Popcorn renderer
-  // builds its own grid; HiCodex calls SheetJS sheet_to_html, which produces
+  // builds its own grid; Forge calls SheetJS sheet_to_html, which produces
   // a sanitized, non-editable <table> string. We intentionally skip styles,
   // images, comments, merged-region painting beyond what sheet_to_html emits.
   // FIX: SheetJS sheet_to_html 默认会返回完整 HTML 文档（含 <html>/<head>/

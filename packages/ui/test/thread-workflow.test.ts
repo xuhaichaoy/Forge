@@ -1,4 +1,4 @@
-import type { Thread, UserInput } from "@hicodex/codex-protocol";
+import type { Thread, UserInput } from "@forge/codex-protocol";
 import {
   buildTurnStartParams,
   archiveThread,
@@ -44,7 +44,7 @@ import {
   unarchiveThread,
   withWorkspaceDeveloperInstructions,
 } from "../src/state/thread-workflow";
-import { HICODEX_IMAGE_DYNAMIC_TOOL_SPEC } from "../src/state/image-generation-tool";
+import { FORGE_IMAGE_DYNAMIC_TOOL_SPEC } from "../src/state/image-generation-tool";
 
 interface RecordedRequest {
   method: string;
@@ -433,7 +433,7 @@ function projectsThreadContextFromCodexConfig(): void {
     buildThreadContextParams(" /workspace ", null, { includeDynamicTools: true }),
     {
       cwd: "/workspace",
-      dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC],
+      dynamicTools: [FORGE_IMAGE_DYNAMIC_TOOL_SPEC],
     },
     "thread start context params should opt into dynamic tools",
   );
@@ -546,8 +546,8 @@ function buildsStartThreadRequestsWithoutHardcodedWorkspace(): void {
     withDynamicTool.requests,
     0,
     "thread/start",
-    { cwd: "/workspace/project", threadSource: "user", dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] },
-    "startThread should opt into the HiCodex image dynamic tool",
+    { cwd: "/workspace/project", threadSource: "user", dynamicTools: [FORGE_IMAGE_DYNAMIC_TOOL_SPEC] },
+    "startThread should opt into the Forge image dynamic tool",
   );
 
   const second = createClientRecorder();
@@ -997,7 +997,7 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     gitInfo: {
       branch: "main",
       sha: "abcdef1234567890",
-      originUrl: "git@example.com:hicodex/HiCodex.git",
+      originUrl: "git@example.com:forge/Forge.git",
     },
   });
   const created = createClientSequenceRecorder([{ thread: createdThread }, { thread: createdHydratedThread }]);
@@ -1111,7 +1111,7 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     imageFallback.requests,
     0,
     "thread/start",
-    { cwd: "/workspace/project", threadSource: "user", dynamicTools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC] },
+    { cwd: "/workspace/project", threadSource: "user", dynamicTools: [FORGE_IMAGE_DYNAMIC_TOOL_SPEC] },
     "old image request fallback should create a thread with dynamic tools",
   );
   assertRequest(
@@ -1154,7 +1154,7 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
       timestamp: "2026-05-18T00:00:00Z",
       type: "session_meta",
       payload: {
-        dynamic_tools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC],
+        dynamic_tools: [FORGE_IMAGE_DYNAMIC_TOOL_SPEC],
       },
     }),
   });
@@ -1559,7 +1559,7 @@ async function refreshesThreadMetadataWithoutChangingSelection(): Promise<void> 
     gitInfo: {
       branch: "main",
       sha: "abcdef1234567890",
-      originUrl: "git@example.com:hicodex/HiCodex.git",
+      originUrl: "git@example.com:forge/Forge.git",
     },
   });
   const refreshed = createClientRecorder({ thread });

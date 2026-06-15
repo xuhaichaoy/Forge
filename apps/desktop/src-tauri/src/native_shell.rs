@@ -1,25 +1,27 @@
 use serde::Deserialize;
 use serde_json::json;
+
+use crate::command_error::HostCommandError;
 #[cfg(not(target_os = "windows"))]
 use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_notification::NotificationExt;
 
-const NATIVE_SHELL_EVENT_NAME: &str = "hicodex://native-shell-event";
+const NATIVE_SHELL_EVENT_NAME: &str = "forge://native-shell-event";
 const CODEX_DEEP_LINK_SCHEME: &str = "codex://";
 const APP_CONNECT_OAUTH_CALLBACK_PATH: &str = "/aip/connectors/links/oauth/callback";
 const APP_CONNECT_OAUTH_BROWSER_REDIRECT_PATH: &str = "/connector_platform_oauth_redirect";
 
-const MENU_NEW_CHAT: &str = "hicodex:new-chat";
-const MENU_NEW_WINDOW: &str = "hicodex:new-window";
-const MENU_OPEN_FOLDER: &str = "hicodex:open-folder";
-const MENU_SEARCH: &str = "hicodex:search";
-const MENU_SETTINGS: &str = "hicodex:settings";
-const MENU_RELOAD: &str = "hicodex:reload";
-const MENU_TOGGLE_DEVTOOLS: &str = "hicodex:toggle-devtools";
-const MENU_CLOSE: &str = "hicodex:close-window";
-const MENU_QUIT: &str = "hicodex:quit";
+const MENU_NEW_CHAT: &str = "forge:new-chat";
+const MENU_NEW_WINDOW: &str = "forge:new-window";
+const MENU_OPEN_FOLDER: &str = "forge:open-folder";
+const MENU_SEARCH: &str = "forge:search";
+const MENU_SETTINGS: &str = "forge:settings";
+const MENU_RELOAD: &str = "forge:reload";
+const MENU_TOGGLE_DEVTOOLS: &str = "forge:toggle-devtools";
+const MENU_CLOSE: &str = "forge:close-window";
+const MENU_QUIT: &str = "forge:quit";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,35 +35,47 @@ pub(crate) struct TurnCompletionNotificationRequest {
 }
 
 // Mirrors Codex Desktop's `threadHeader.openInNewWindow` ("Open in new window").
-// Codex (Electron) opens a BrowserWindow; HiCodex opens a second Tauri webview
+// Codex (Electron) opens a BrowserWindow; Forge opens a second Tauri webview
 // loading the same app, injecting the target thread id via an initialization
 // script so the frontend can route to it on startup (reusing the existing
 // deep-link routing) without a load-timing race. An already-open window for the
 // thread is focused instead of duplicated.
+//
+// Deliberately sync (main thread): WebviewWindowBuilder window creation and
+// window focus must run on the macOS main thread.
 #[tauri::command]
-pub(crate) fn host_open_thread_window(app: AppHandle, thread_id: String) -> Result<(), String> {
+pub(crate) fn host_open_thread_window(
+    app: AppHandle,
+    thread_id: String,
+) -> Result<(), HostCommandError> {
     let thread_id = thread_id.trim();
     if thread_id.is_empty() {
-        return Err("thread id is empty".to_string());
+        return Err(HostCommandError::invalid_input("thread id is empty"));
     }
     let label = format!("thread-{thread_id}");
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.set_focus();
         return Ok(());
     }
-    let encoded = serde_json::to_string(thread_id).map_err(|error| error.to_string())?;
+    let encoded = serde_json::to_string(thread_id)
+        .map_err(|error| HostCommandError::parse_failed(error.to_string()))?;
+    // `__HICODEX_INITIAL_THREAD__` is a webview contract read by the frontend
+    // (packages/ui ForgeApp); renaming it requires a coordinated frontend
+    // change, so the legacy global name stays for now.
     let init_script = format!("window.__HICODEX_INITIAL_THREAD__ = {encoded};");
     WebviewWindowBuilder::new(&app, &label, WebviewUrl::default())
         .title("Forge")
         .inner_size(1280.0, 820.0)
         .initialization_script(&init_script)
         .build()
-        .map_err(|error| format!("failed to open thread window: {error}"))?;
+        .map_err(|error| {
+            HostCommandError::process_failed(format!("failed to open thread window: {error}"))
+        })?;
     Ok(())
 }
 
 // codex newWindow (⌘⇧N) — open a fresh app window. Codex (Electron) opens a new
-// BrowserWindow; HiCodex opens a new Tauri webview that injects a new-chat signal so the
+// BrowserWindow; Forge opens a new Tauri webview that injects a new-chat signal so the
 // frontend starts a fresh conversation on startup. Each window needs a unique label.
 static NEW_WINDOW_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -71,22 +85,29 @@ fn open_new_window_impl(app: &AppHandle) -> Result<(), String> {
     WebviewWindowBuilder::new(app, &label, WebviewUrl::default())
         .title("Forge")
         .inner_size(1280.0, 820.0)
+        // `__HICODEX_INITIAL_NEW_CHAT__` is a webview contract read by the
+        // frontend (packages/ui ForgeApp); renaming it requires a coordinated
+        // frontend change, so the legacy global name stays for now.
         .initialization_script("window.__HICODEX_INITIAL_NEW_CHAT__ = true;")
         .build()
         .map_err(|error| format!("failed to open new window: {error}"))?;
     Ok(())
 }
 
+// Deliberately sync (main thread): WebviewWindowBuilder window creation must
+// run on the macOS main thread.
 #[tauri::command]
-pub(crate) fn host_open_new_window(app: AppHandle) -> Result<(), String> {
-    open_new_window_impl(&app)
+pub(crate) fn host_open_new_window(app: AppHandle) -> Result<(), HostCommandError> {
+    open_new_window_impl(&app).map_err(HostCommandError::process_failed)
 }
 
+// Deliberately sync (main thread): posts a native notification (UI-facing
+// AppKit surface) and emits an event; both are quick, non-blocking calls.
 #[tauri::command]
 pub(crate) fn host_notify_turn_completed(
     app: AppHandle,
     request: TurnCompletionNotificationRequest,
-) -> Result<(), String> {
+) -> Result<(), HostCommandError> {
     let title = notification_text(request.title, "Forge turn completed", 96);
     let body = notification_text(request.body, "The background turn has finished.", 240);
     let builder = app.notification().builder().title(title).body(body);
@@ -95,9 +116,9 @@ pub(crate) fn host_notify_turn_completed(
     } else {
         builder
     };
-    builder
-        .show()
-        .map_err(|error| format!("failed to show turn notification: {error}"))?;
+    builder.show().map_err(|error| {
+        HostCommandError::process_failed(format!("failed to show turn notification: {error}"))
+    })?;
     let _ = app.emit(
         NATIVE_SHELL_EVENT_NAME,
         json!({
@@ -111,9 +132,14 @@ pub(crate) fn host_notify_turn_completed(
     Ok(())
 }
 
+// Deliberately sync (main thread): activates/focuses the main window
+// (unminimize/show/set_focus are main-thread window operations) then emits.
 #[tauri::command]
-pub(crate) fn host_handle_deep_link_url(app: AppHandle, url: String) -> Result<(), String> {
-    handle_deep_link_url(&app, &url)
+pub(crate) fn host_handle_deep_link_url(
+    app: AppHandle,
+    url: String,
+) -> Result<(), HostCommandError> {
+    handle_deep_link_url(&app, &url).map_err(HostCommandError::invalid_input)
 }
 
 fn notification_text(value: Option<String>, fallback: &str, max_chars: usize) -> String {
@@ -254,7 +280,7 @@ pub(crate) fn handle_native_menu_event(app: &AppHandle, id: &str) {
 
 fn toggle_main_window_devtools(app: &AppHandle) {
     let Some(window) = app.get_webview_window("main") else {
-        eprintln!("Forge native shell: main window unavailable for developer tools");
+        log::warn!(target: "native-shell", "main window unavailable for developer tools");
         return;
     };
     if window.is_devtools_open() {
@@ -294,7 +320,7 @@ fn activate_main_window(app: &AppHandle) -> tauri::Result<()> {
 
 fn emit_unsupported_native_menu_action(app: &AppHandle, action: &str, message: &str) {
     emit_native_shell_action(app, action, false, Some(message), None);
-    eprintln!("Forge native shell: {message}");
+    log::warn!(target: "native-shell", "{message}");
 }
 
 fn handle_deep_link_url(app: &AppHandle, url: &str) -> Result<(), String> {
@@ -305,8 +331,20 @@ fn handle_deep_link_url(app: &AppHandle, url: &str) -> Result<(), String> {
         );
     }
     emit_native_shell_action(app, "openDeepLink", true, None, Some(trimmed));
-    eprintln!("Forge native shell: received deep link {trimmed}");
+    log::info!(target: "native-shell", "received deep link {}", redact_deep_link(trimmed));
     Ok(())
+}
+
+/// Drop the query/fragment before logging: connector OAuth callbacks carry a
+/// live `code`/`state` and the log file is persistent, so only the
+/// scheme+path is safe to record.
+fn redact_deep_link(url: &str) -> String {
+    let stripped = url.split(['?', '#']).next().unwrap_or(url);
+    if stripped.len() == url.len() {
+        stripped.to_string()
+    } else {
+        format!("{stripped}?<redacted>")
+    }
 }
 
 fn handle_deep_link_urls<'a, I>(app: &AppHandle, urls: I)
@@ -315,7 +353,7 @@ where
 {
     for url in urls {
         if let Err(error) = handle_deep_link_url(app, url) {
-            eprintln!("Forge native shell: ignored deep link {url}: {error}");
+            log::warn!(target: "native-shell", "ignored deep link {}: {error}", redact_deep_link(url));
         }
     }
 }
@@ -327,7 +365,7 @@ pub(crate) fn handle_single_instance_activation(app: &AppHandle, args: Vec<Strin
         .map(String::as_str)
         .filter(|arg| is_supported_native_shell_url(arg.trim()));
     handle_deep_link_urls(app, deep_link_args);
-    eprintln!("Forge native shell: focused existing instance from cwd {cwd}");
+    log::info!(target: "native-shell", "focused existing instance from cwd {cwd}");
 }
 
 fn is_supported_native_shell_url(url: &str) -> bool {
@@ -411,7 +449,7 @@ pub(crate) fn install_deep_link_handlers(app: &tauri::App) {
         }
         Ok(None) => {}
         Err(error) => {
-            eprintln!("Forge native shell: failed to read startup deep links: {error}");
+            log::warn!(target: "native-shell", "failed to read startup deep links: {error}");
         }
     }
 
@@ -427,8 +465,9 @@ pub(crate) fn install_deep_link_handlers(app: &tauri::App) {
 }
 
 pub(crate) fn log_unsupported_native_shell_boundaries() {
-    eprintln!(
-        "Forge native shell: release update endpoints/signing and product notification entitlement/distribution policy still need production configuration"
+    log::warn!(
+        target: "native-shell",
+        "release update endpoints/signing and product notification entitlement/distribution policy still need production configuration"
     );
 }
 

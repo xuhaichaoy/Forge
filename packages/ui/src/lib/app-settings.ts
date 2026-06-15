@@ -1,4 +1,4 @@
-import { HICODEX_DESKTOP_CONFIG_ROOT } from "../state/hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_ROOT } from "../state/forge-desktop-namespace";
 import { isTauriRuntime, readAppSettingsFile, writeAppSettingsFile } from "./tauri-host";
 
 /*
@@ -16,7 +16,7 @@ import { isTauriRuntime, readAppSettingsFile, writeAppSettingsFile } from "./tau
  */
 
 const APP_SETTINGS_VERSION = 1;
-const NAMESPACE_PREFIX = `${HICODEX_DESKTOP_CONFIG_ROOT}.`;
+const NAMESPACE_PREFIX = `${FORGE_DESKTOP_CONFIG_ROOT}.`;
 const PERSIST_DEBOUNCE_MS = 400;
 
 export interface AppSettingsStorageWriteLike {

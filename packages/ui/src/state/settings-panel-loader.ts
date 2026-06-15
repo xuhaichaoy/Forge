@@ -24,14 +24,14 @@ import {
 } from "./computer-use-readiness";
 import type { SettingsPanelId } from "./composer-workflow";
 import {
-  HICODEX_IMAGE_TOOL_NAME,
+  FORGE_IMAGE_TOOL_NAME,
 } from "./image-generation-tool";
 import {
   filterHooksListResponseForFocus,
   hooksSettingsFocusMessage,
   type HooksSettingsFocus,
 } from "./hooks-review";
-import type { HiCodexLocale } from "./i18n";
+import type { ForgeLocale } from "./i18n";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type NotificationPreferences,
@@ -81,7 +81,7 @@ export interface LoadSettingsPanelContentOptions {
   state: CodexUiState;
   workspace: string;
   notificationPreferences?: NotificationPreferences;
-  uiLocale?: HiCodexLocale;
+  uiLocale?: ForgeLocale;
   uiTheme?: UiThemeSnapshot;
   /*
    * CODEX-REF: appearance-settings-*.js §4 + §8. Adding Code font size
@@ -189,7 +189,7 @@ export async function loadSettingsPanelContent({
       entries: imageGenerationCapabilityEntries({
         connected: state.connected,
         dynamicToolRegistered: includeImageDynamicTool,
-        dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+        dynamicToolName: FORGE_IMAGE_TOOL_NAME,
       }),
     }));
     if (!(await ensureConnected())) {
@@ -200,7 +200,7 @@ export async function loadSettingsPanelContent({
         entries: imageGenerationCapabilityEntries({
           connected: false,
           dynamicToolRegistered: includeImageDynamicTool,
-          dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+          dynamicToolName: FORGE_IMAGE_TOOL_NAME,
         }),
       }));
       return;
@@ -215,7 +215,7 @@ export async function loadSettingsPanelContent({
           capabilities,
           connected: true,
           dynamicToolRegistered: includeImageDynamicTool,
-          dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+          dynamicToolName: FORGE_IMAGE_TOOL_NAME,
         }),
       }));
     } catch (error) {
@@ -227,7 +227,7 @@ export async function loadSettingsPanelContent({
         entries: imageGenerationCapabilityEntries({
           connected: true,
           dynamicToolRegistered: includeImageDynamicTool,
-          dynamicToolName: HICODEX_IMAGE_TOOL_NAME,
+          dynamicToolName: FORGE_IMAGE_TOOL_NAME,
           error: message,
         }),
       }));

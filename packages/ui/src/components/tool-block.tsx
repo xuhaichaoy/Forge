@@ -8,7 +8,7 @@ import {
   userInputResponseDetailRows,
 } from "./event-status-divider";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { Markdownish } from "./message-markdown-renderer";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import { TurnDiffBlock, type PatchAction, type PatchActionState } from "./turn-diff-block";
@@ -48,7 +48,7 @@ export function ToolBlock({
   tone?: "terminal" | EventTone;
   value: string;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [streamErrorExpanded, setStreamErrorExpanded] = useState(false);
   const [userInputExpanded, setUserInputExpanded] = useState(false);
   if (format === "diff") {

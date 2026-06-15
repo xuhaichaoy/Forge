@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Browser rail uses runtime-backed state
-HiCodex SHALL render the Browser right-rail section only from a real Browser runtime state source.
+Forge SHALL render the Browser right-rail section only from a real Browser runtime state source.
 
 #### Scenario: Browser runtime has active page
 - **WHEN** Browser runtime state reports an active tab with a non-empty URL that is not `about:blank`
@@ -17,19 +17,19 @@ HiCodex SHALL render the Browser right-rail section only from a real Browser run
 - **THEN** the right rail does not show a Browser row.
 
 ### Requirement: Browser opener targets the real Browser surface
-HiCodex SHALL open Browser UI through an explicit Browser runtime opener when a Browser rail row is selected.
+Forge SHALL open Browser UI through an explicit Browser runtime opener when a Browser rail row is selected.
 
 #### Scenario: Runtime opener is available
 - **WHEN** the user selects the Browser rail row
 - **AND** a Browser runtime opener is available
-- **THEN** HiCodex opens or focuses the Browser side-panel/runtime surface for the reported tab.
+- **THEN** Forge opens or focuses the Browser side-panel/runtime surface for the reported tab.
 
 #### Scenario: Runtime opener is unavailable
 - **WHEN** Browser runtime state is missing or not openable
-- **THEN** HiCodex does not expose a fake Browser open action.
+- **THEN** Forge does not expose a fake Browser open action.
 
 ### Requirement: Browser settings expose local runtime readiness
-HiCodex SHALL expose local Browser runtime readiness in Browser settings without claiming bundled Browser agent control.
+Forge SHALL expose local Browser runtime readiness in Browser settings without claiming bundled Browser agent control.
 
 #### Scenario: Local Browser runtime bridge is available
 - **WHEN** the Tauri host Browser runtime bridge is available
@@ -48,12 +48,12 @@ HiCodex SHALL expose local Browser runtime readiness in Browser settings without
 - **AND** the socket is registered under the Browser client scan directory `/tmp/codex-browser-use` on Unix platforms.
 
 #### Scenario: Stale iab probe sockets are cleaned on startup
-- **WHEN** HiCodex starts the nativePipe `iab` probe backend on Unix
+- **WHEN** Forge starts the nativePipe `iab` probe backend on Unix
 - **THEN** it removes old `hicodex-*-iab.sock` files from the Browser client scan directory before binding the current process socket.
-- **AND** it does not remove the current process socket, non-HiCodex sockets, or non-socket files.
+- **AND** it does not remove the current process socket, non-Forge sockets, or non-socket files.
 
 ### Requirement: Browser iab probe supports discovery, basic navigation, and limited page control
-HiCodex SHALL expose a minimal Browser `iab` probe backend for discovery, tab inventory, basic navigation, page JS evaluation, layout metrics, lightweight accessibility snapshots, lightweight DOM lookup/geometry reads, coordinate hit testing, limited frame owner lookup, point scrolling, visible-window screenshot capture, JavaScript dialog no-op handling, and basic event input without claiming full Browser automation.
+Forge SHALL expose a minimal Browser `iab` probe backend for discovery, tab inventory, basic navigation, page JS evaluation, layout metrics, lightweight accessibility snapshots, lightweight DOM lookup/geometry reads, coordinate hit testing, limited frame owner lookup, point scrolling, visible-window screenshot capture, JavaScript dialog no-op handling, and basic event input without claiming full Browser automation.
 
 #### Scenario: Browser client requests backend info
 - **WHEN** a Browser client sends `getInfo` to the nativePipe `iab` probe
@@ -74,7 +74,7 @@ HiCodex SHALL expose a minimal Browser `iab` probe backend for discovery, tab in
 
 #### Scenario: Browser client opens local development targets
 - **WHEN** a Browser client opens `localhost`, `127.0.0.1`, `[::1]`, or `file://` targets
-- **THEN** HiCodex preserves explicit `file://` URLs and defaults loopback targets without a scheme to `http://`.
+- **THEN** Forge preserves explicit `file://` URLs and defaults loopback targets without a scheme to `http://`.
 - **AND** non-local targets without a scheme continue to default to `https://`.
 
 #### Scenario: Browser client evaluates page state
@@ -116,15 +116,15 @@ HiCodex SHALL expose a minimal Browser `iab` probe backend for discovery, tab in
 - **THEN** the probe returns an explicit JSON-RPC unsupported-capability error instead of hanging, except for the explicitly supported limited CDP subset.
 
 ### Requirement: Browser parity depends on extension backend feasibility
-HiCodex SHALL treat Browser `extension` backend feasibility as the critical path for full Codex Desktop Browser parity.
+Forge SHALL treat Browser `extension` backend feasibility as the critical path for full Codex Desktop Browser parity.
 
 #### Scenario: Extension backend spike is not complete
 - **WHEN** the local Browser `iab` probe supports navigation, screenshots, DOM reads, or page evaluation
-- **AND** no `type: "extension"` backend has been validated under HiCodex
-- **THEN** HiCodex does not claim full Browser parity.
+- **AND** no `type: "extension"` backend has been validated under Forge
+- **THEN** Forge does not claim full Browser parity.
 - **AND** OpenSpec tasks keep the extension-backend feasibility spike open.
 
 #### Scenario: Browser client discovers an extension backend
 - **WHEN** the bundled Browser client scans the native pipe directory and receives backend info with `type: "extension"`
-- **THEN** HiCodex records whether the backend came from a real Chrome extension or a clean host-compatible extension backend.
+- **THEN** Forge records whether the backend came from a real Chrome extension or a clean host-compatible extension backend.
 - **AND** the spike validates required metadata, session behavior, capabilities, tab ownership, and command routing before marking Browser parity complete.

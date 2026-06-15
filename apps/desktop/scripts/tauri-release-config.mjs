@@ -24,9 +24,15 @@ export function buildTauriReleaseConfig(env = process.env, options = {}) {
   const warnings = [];
   const readFile = options.readFile ?? ((path) => readFileSync(path, "utf8"));
 
-  const allowInsecure = parseBool(env.HICODEX_UPDATER_ALLOW_INSECURE);
-  const allowAdhocSigning = parseBool(env.HICODEX_RELEASE_ALLOW_ADHOC_SIGNING);
-  const endpoints = parseUpdaterEndpoints(env.HICODEX_UPDATER_ENDPOINTS, errors);
+  // FORGE_* is the canonical env namespace; HICODEX_* stays accepted as a legacy alias.
+  const allowInsecure = parseBool(firstValue(env.FORGE_UPDATER_ALLOW_INSECURE, env.HICODEX_UPDATER_ALLOW_INSECURE));
+  const allowAdhocSigning = parseBool(
+    firstValue(env.FORGE_RELEASE_ALLOW_ADHOC_SIGNING, env.HICODEX_RELEASE_ALLOW_ADHOC_SIGNING),
+  );
+  const endpoints = parseUpdaterEndpoints(
+    firstValue(env.FORGE_UPDATER_ENDPOINTS, env.HICODEX_UPDATER_ENDPOINTS),
+    errors,
+  );
   validateUpdaterEndpoints(endpoints, { allowInsecure, errors });
 
   const pubkey = readUpdaterPubkey(env, readFile, errors);
@@ -51,7 +57,7 @@ export function buildTauriReleaseConfig(env = process.env, options = {}) {
   };
   if (allowInsecure) {
     updater.dangerousInsecureTransportProtocol = true;
-    warnings.push("HICODEX_UPDATER_ALLOW_INSECURE is enabled; do not use it for public production updates.");
+    warnings.push("FORGE_UPDATER_ALLOW_INSECURE is enabled; do not use it for public production updates.");
   }
 
   return {
@@ -78,7 +84,7 @@ export function buildTauriReleaseConfig(env = process.env, options = {}) {
 
 export function parseUpdaterEndpoints(raw, errors = []) {
   if (!hasValue(raw)) {
-    errors.push("Set HICODEX_UPDATER_ENDPOINTS to one or more real updater metadata URLs.");
+    errors.push("Set FORGE_UPDATER_ENDPOINTS (or legacy HICODEX_UPDATER_ENDPOINTS) to one or more real updater metadata URLs.");
     return [];
   }
 
@@ -87,12 +93,12 @@ export function parseUpdaterEndpoints(raw, errors = []) {
     try {
       const parsed = JSON.parse(value);
       if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
-        errors.push("HICODEX_UPDATER_ENDPOINTS JSON must be an array of strings.");
+        errors.push("FORGE_UPDATER_ENDPOINTS JSON must be an array of strings.");
         return [];
       }
       return parsed.map((entry) => entry.trim()).filter(Boolean);
     } catch (err) {
-      errors.push(`HICODEX_UPDATER_ENDPOINTS is not valid JSON: ${errorMessage(err)}`);
+      errors.push(`FORGE_UPDATER_ENDPOINTS is not valid JSON: ${errorMessage(err)}`);
       return [];
     }
   }
@@ -144,10 +150,10 @@ export function normalizeUpdaterPubkey(raw) {
 }
 
 function readUpdaterPubkey(env, readFile, errors) {
-  const inline = env.HICODEX_UPDATER_PUBKEY;
-  const path = env.HICODEX_UPDATER_PUBKEY_PATH;
+  const inline = firstValue(env.FORGE_UPDATER_PUBKEY, env.HICODEX_UPDATER_PUBKEY);
+  const path = firstValue(env.FORGE_UPDATER_PUBKEY_PATH, env.HICODEX_UPDATER_PUBKEY_PATH);
   if (hasValue(inline) && hasValue(path)) {
-    errors.push("Set only one of HICODEX_UPDATER_PUBKEY or HICODEX_UPDATER_PUBKEY_PATH.");
+    errors.push("Set only one of FORGE_UPDATER_PUBKEY or FORGE_UPDATER_PUBKEY_PATH.");
     return "";
   }
 
@@ -163,7 +169,7 @@ function readUpdaterPubkey(env, readFile, errors) {
     return "";
   }
 
-  errors.push("Set HICODEX_UPDATER_PUBKEY or HICODEX_UPDATER_PUBKEY_PATH for release builds.");
+  errors.push("Set FORGE_UPDATER_PUBKEY or FORGE_UPDATER_PUBKEY_PATH for release builds.");
   return "";
 }
 
@@ -230,7 +236,7 @@ function validateMacOSNotarizationAuth(
 
   if (!hasAnyAppleIdField && !hasAnyApiKeyField) {
     if (allowAdhocSigning) {
-      warnings.push("Skipping macOS notarization auth validation because HICODEX_RELEASE_ALLOW_ADHOC_SIGNING=1.");
+      warnings.push("Skipping macOS notarization auth validation because FORGE_RELEASE_ALLOW_ADHOC_SIGNING=1.");
       return "skipped-ad-hoc";
     }
     errors.push("Set APPLE_ID, APPLE_PASSWORD, and APPLE_TEAM_ID, or APPLE_API_KEY, APPLE_API_ISSUER, and APPLE_API_KEY_PATH for macOS notarization.");
@@ -240,9 +246,17 @@ function validateMacOSNotarizationAuth(
 }
 
 function buildMacOSReleaseConfig(env, { allowAdhocSigning = false, errors, warnings }) {
-  const signingIdentity = firstValue(env.HICODEX_MACOS_SIGNING_IDENTITY, env.APPLE_SIGNING_IDENTITY);
-  const entitlements = firstValue(env.HICODEX_MACOS_ENTITLEMENTS);
-  const providerShortName = firstValue(env.HICODEX_MACOS_PROVIDER_SHORT_NAME, env.APPLE_PROVIDER_SHORT_NAME);
+  const signingIdentity = firstValue(
+    env.FORGE_MACOS_SIGNING_IDENTITY,
+    env.HICODEX_MACOS_SIGNING_IDENTITY,
+    env.APPLE_SIGNING_IDENTITY,
+  );
+  const entitlements = firstValue(env.FORGE_MACOS_ENTITLEMENTS, env.HICODEX_MACOS_ENTITLEMENTS);
+  const providerShortName = firstValue(
+    env.FORGE_MACOS_PROVIDER_SHORT_NAME,
+    env.HICODEX_MACOS_PROVIDER_SHORT_NAME,
+    env.APPLE_PROVIDER_SHORT_NAME,
+  );
   const hasAppleCertificate = hasValue(env.APPLE_CERTIFICATE);
 
   const macOS = {};
@@ -253,9 +267,9 @@ function buildMacOSReleaseConfig(env, { allowAdhocSigning = false, errors, warni
     warnings.push("APPLE_CERTIFICATE is set; release config removes the local ad-hoc identity so Tauri can infer the imported certificate.");
   } else if (allowAdhocSigning) {
     macOS.signingIdentity = "-";
-    warnings.push("Using ad-hoc macOS signing for a release build because HICODEX_RELEASE_ALLOW_ADHOC_SIGNING=1.");
+    warnings.push("Using ad-hoc macOS signing for a release build because FORGE_RELEASE_ALLOW_ADHOC_SIGNING=1.");
   } else {
-    errors.push("Set APPLE_SIGNING_IDENTITY, HICODEX_MACOS_SIGNING_IDENTITY, or APPLE_CERTIFICATE for macOS release signing.");
+    errors.push("Set APPLE_SIGNING_IDENTITY, FORGE_MACOS_SIGNING_IDENTITY, or APPLE_CERTIFICATE for macOS release signing.");
   }
 
   if (entitlements) {
@@ -353,10 +367,14 @@ function main() {
       console.warn(`Warning: ${warning}`);
     }
     if (args.build) {
-      const tauriBin = process.platform === "win32" ? "tauri.cmd" : "tauri";
+      const isWindows = process.platform === "win32";
+      const tauriBin = isWindows ? "tauri.cmd" : "tauri";
       const build = spawnSync(tauriBin, ["build", "--config", args.write, ...args.buildArgs], {
         env: childBuildEnv(process.env),
         stdio: "inherit",
+        // Node >=20.12 (CVE-2024-27980) throws EINVAL when spawning a .cmd/.bat
+        // without a shell; the engines floor is 20.19, so Windows needs shell.
+        shell: isWindows,
       });
       process.exit(build.status ?? 1);
     }

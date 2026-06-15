@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import type { OpenThreadOptions } from "../components/open-thread";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";

@@ -1,6 +1,6 @@
 # Codex Bundle Host (dev affordance)
 
-Host the **real Codex Desktop bundle** (its extracted Electron renderer assets) inside a SEPARATE Tauri window, wired to the same app-server transport as HiCodex's clean-room UI. Useful for side-by-side comparison and behavior reference while building the clean-room app.
+Host the **real Codex Desktop bundle** (its extracted Electron renderer assets) inside a SEPARATE Tauri window, wired to the same app-server transport as Forge's clean-room UI. Useful for side-by-side comparison and behavior reference while building the clean-room app.
 
 **The clean-room `main` window is the untouched default.** Nothing in this feature runs unless the `open_codex_bundle_window` command is explicitly invoked. It opens a second window labeled `codex-bundle`; `main` is never modified.
 
@@ -8,9 +8,9 @@ Host the **real Codex Desktop bundle** (its extracted Electron renderer assets) 
 
 - A custom URI scheme `codexbundle://` (registered on the Tauri `Builder`) serves the extracted Codex Desktop web assets from disk.
 - A dedicated webview window (`codex-bundle`, "Codex (bundle)", 1280x820) loads `codexbundle://localhost/index.html`.
-- A bridge script (`apps/desktop/src-tauri/codex-bundle-bridge.js`, injected via `.initialization_script(...)`) adapts the bundle onto HiCodex's **existing** transport — no new app-server plumbing is added:
+- A bridge script (`apps/desktop/src-tauri/codex-bundle-bridge.js`, injected via `.initialization_script(...)`) adapts the bundle onto Forge's **existing** transport — no new app-server plumbing is added:
   - Outbound app-server messages -> the existing `host_send_raw` command (and `host_start_app_server` to boot the server).
-  - Inbound app-server events <- the existing `hicodex://app-server-event` Tauri event.
+  - Inbound app-server events <- the existing `forge://app-server-event` Tauri event.
 
 ```
 Codex bundle window (codex-bundle)
@@ -19,7 +19,7 @@ Codex bundle window (codex-bundle)
         v
    crates/host  AppServerHost  <—> codex app-server
         |
-        |  emits "hicodex://app-server-event"
+        |  emits "forge://app-server-event"
         v
    bridge listener -> bundle's expected inbound channel
 ```
@@ -28,7 +28,7 @@ Codex bundle window (codex-bundle)
 
 The custom scheme serves files from the **`webview/` subdir** of an extraction root:
 
-- Root: `HICODEX_CODEX_ASAR_OUT` if set, else `/private/tmp/codex-asar`.
+- Root: `FORGE_CODEX_ASAR_OUT` if set (the legacy `HICODEX_CODEX_ASAR_OUT` name is still accepted), else `/private/tmp/codex-asar`.
 - Web root: `<root>/webview/` (must contain `index.html` plus the hashed js/css/wasm/font assets).
 
 Extract Codex Desktop's `app.asar` to that location (e.g. with `npx @electron/asar extract <app.asar> /private/tmp/codex-asar`) so that `/private/tmp/codex-asar/webview/index.html` exists. If it's missing, `open_codex_bundle_window` returns a descriptive error instead of opening a blank window.

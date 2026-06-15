@@ -530,7 +530,7 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
       gitInfo: {
         branch: "main",
         sha: "abcdef1234567890",
-        originUrl: "git@example.com:hicodex/HiCodex.git",
+        originUrl: "git@example.com:forge/Forge.git",
       },
       name: null,
       turns: [],

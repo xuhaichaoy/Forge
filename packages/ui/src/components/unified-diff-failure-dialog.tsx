@@ -1,5 +1,5 @@
 import { AlertTriangle, ExternalLink, X } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
  * Codex Desktop unifiedDiff Failure Dialog.
@@ -7,7 +7,7 @@ import { useHiCodexIntl } from "./i18n-provider";
  * Opens only when a patch revert/reapply action returns partial / conflicted
  * results (failure.result.{appliedPaths|skippedPaths|conflictedPaths} non-empty)
  * or the cwd is not a Git repository (errorCode === "not-git-repo"). A clean
- * full-success apply surfaces a toast instead (see HiCodexApp.handlePatchAction).
+ * full-success apply surfaces a toast instead (see ForgeApp.handlePatchAction).
  *
  * Durable contract, re-verified vs Codex Desktop v26.519.81530:
  *   - The dialog TITLE is a 4-way selector on the result (codex.unifiedDiff.*):
@@ -67,7 +67,7 @@ export function UnifiedDiffFailureDialog({
   onClose,
   onOpenPath,
 }: UnifiedDiffFailureDialogProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const isNotGitRepo = failure.errorCode === "not-git-repo";
   const isRevert = failure.action === "revert";
   const { appliedPaths, skippedPaths, conflictedPaths, execOutput } = failure.result;
@@ -112,7 +112,7 @@ export function UnifiedDiffFailureDialog({
         aria-label={titleText}
         onKeyDown={(event) => {
           // codex: Radix dialogs close on Escape; mirror the dismiss behavior the
-          // other HiCodex dialogs (mcp-follow-up, keyboard-shortcuts, rating) all have.
+          // other Forge dialogs (mcp-follow-up, keyboard-shortcuts, rating) all have.
           if (event.key === "Escape") {
             event.stopPropagation();
             onClose();

@@ -17,24 +17,24 @@
  * Selected-mode derivation mirrors Codex `Jd`/`G`: the default row ("Ask for
  * approval") is checked for ANY of read-only/auto/granular
  * (`G = !guardian && !full && !custom`); guardian/full/custom check on the exact
- * mode string. We reuse HiCodex's existing `permissionModeFromThreadContext`
+ * mode string. We reuse Forge's existing `permissionModeFromThreadContext`
  * (state/permissions-mode.ts), which returns the same six mode strings as `Jd`.
  *
- * Deliberate HiCodex divergences (all grounded in available wiring, see /goal audit):
+ * Deliberate Forge divergences (all grounded in available wiring, see /goal audit):
  *  - Guardian icon: Codex's dropdown glyph is shield-code (a shield wrapping a `>`
  *    terminal prompt); lucide has no shield-code, so we reuse the footer chip's
  *    existing ShieldUser approximation (composer-external-footer.tsx
  *    PERMISSIONS_FOOTER_ICON) to keep chip↔dropdown icons consistent. Hand /
  *    ShieldAlert / Settings / Check are exact-equivalent glyphs.
  *  - Apply path: Desktop sends a thread-scoped `update-thread-settings-for-next-turn`.
- *    HiCodex uses the protocol-backed equivalent `thread/settings/update`.
+ *    Forge uses the protocol-backed equivalent `thread/settings/update`.
  *  - Custom: there is no named-mode config edit for "custom" (it IS the resolved
  *    config.toml), so the Custom row opens the detailed Settings > Permissions
- *    panel — the HiCodex surface where config.toml permissions are edited.
+ *    panel — the Forge surface where config.toml permissions are edited.
  *  - Full-access confirm: replicated as a modal (warningTitle/body/"Turn on full
  *    access"/"Cancel"); like Codex's persisted `skip-full-access-confirm` flag it
  *    stops asking after the first confirm (localStorage).
- *  - Title: HiCodex drops the "Codex" brand word ("How should actions be
+ *  - Title: Forge drops the "Codex" brand word ("How should actions be
  *    approved?") and omits Codex's right-aligned "Learn more" docs link, and the
  *    surface is widened past Codex's max-w-[320px] so zh-CN subtexts fit one line.
  */
@@ -52,13 +52,13 @@ import {
   type PermissionMode,
   type PermissionModeStatus,
 } from "../state/permissions-mode";
-import { useHiCodexIntl } from "./i18n-provider";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/hicodex-desktop-namespace";
+import { useForgeIntl } from "./i18n-provider";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/forge-desktop-namespace";
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 
 // codex `skip-full-access-confirm` (hr) — once the user confirms full access the
 // modal is not shown again. Persisted like reasoningEffortOverride.
-const SKIP_FULL_ACCESS_CONFIRM_KEY = HICODEX_DESKTOP_CONFIG_KEYS.skipFullAccessConfirm;
+const SKIP_FULL_ACCESS_CONFIRM_KEY = FORGE_DESKTOP_CONFIG_KEYS.skipFullAccessConfirm;
 const LEGACY_SKIP_FULL_ACCESS_CONFIRM_KEY = "hicodex.skipFullAccessConfirm";
 
 // Wider than Codex's menuBounded (max-w-[320px]) so the two-line zh-CN subtexts
@@ -86,7 +86,7 @@ export function ComposerPermissionsDropdown({
   onOpenCustomSettings,
   onClose,
 }: ComposerPermissionsDropdownProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const [confirmingFullAccess, setConfirmingFullAccess] = useState(false);
@@ -186,7 +186,7 @@ export function ComposerPermissionsDropdown({
     (key: PermissionDropdownKey) => {
       if (permissionDropdownBlockedReason(key, requirements)) return;
       if (key === "custom") {
-        // codex custom → resolved config.toml; HiCodex routes to the detailed editor.
+        // codex custom → resolved config.toml; Forge routes to the detailed editor.
         onOpenCustomSettings();
         onClose();
         return;
@@ -221,7 +221,7 @@ export function ComposerPermissionsDropdown({
           transform: "translateY(-100%)",
         }}
       >
-        {/* codex oo.Title — heading only (HiCodex drops the "Codex" brand word
+        {/* codex oo.Title — heading only (Forge drops the "Codex" brand word
             and the "Learn more" link per the product owner's request). */}
         <div className="hc-composer-permissions-title">
           {formatMessage({

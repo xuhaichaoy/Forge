@@ -5,7 +5,7 @@ import { isCommandMenuPanel } from "../state/command-panel";
 import type { SettingsPanelId } from "../state/composer-workflow";
 
 /*
- * SettingsPanel + CommandPanel overlays extracted from HiCodexApp's return.
+ * SettingsPanel + CommandPanel overlays extracted from ForgeApp's return.
  * SettingsPanel is rendered when `activeSettingsPanel` is non-null (its
  * `activePanel` prop). CommandPanel renders on `commandPanel`. The search-
  * handler selection (files vs command-menu vs none) is computed here to keep

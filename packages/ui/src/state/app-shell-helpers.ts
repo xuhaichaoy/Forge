@@ -1,4 +1,4 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import type { CommandPanelEntry } from "./command-panel";
 import {
   DEFAULT_SLASH_COMMANDS,

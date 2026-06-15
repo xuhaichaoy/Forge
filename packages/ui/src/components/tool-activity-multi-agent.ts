@@ -6,9 +6,9 @@ import {
   threadSpawnSourceField,
 } from "../state/tool-activity-fields";
 import type { AccumulatedThreadItem } from "../state/render-groups";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 
-type MultiAgentFormatMessage = HiCodexIntlContextValue["formatMessage"];
+type MultiAgentFormatMessage = ForgeIntlContextValue["formatMessage"];
 type MultiAgentRecord = AccumulatedThreadItem & Record<string, unknown>;
 
 export interface MultiAgentRowViewModel {

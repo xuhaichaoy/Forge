@@ -10,7 +10,7 @@ import type { FileReference } from "./file-reference-types";
 import { GeneratedImageGallery } from "./generated-image-gallery";
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { IconActionButton, MessageActionRow } from "./message-action-row";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { MessageUnitView } from "./message-unit";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 import type { McpAppHostCallHandler, ReadMcpResourceHandler } from "./tool-activity-detail";
@@ -152,7 +152,7 @@ function GeneratedImageGalleryOutput({
   onForkTurn?: (turnId: string) => void;
   threadId?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);
   return (
     <div className="hc-message assistant hc-generated-image-output" data-role="assistant">

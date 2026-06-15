@@ -234,6 +234,7 @@ export function useAppBackedPanelRefresh({
     return () => {
       disposed = true;
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意省略 workspace：effect 由 mcpStatusNonce 的 claim-once 门驱动，workspace 取触发时刻值
   }, [
     activeSettingsPanel,
     client,

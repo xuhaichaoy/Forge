@@ -1,4 +1,4 @@
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   CodeBlock,
   LabeledCode,
@@ -16,7 +16,7 @@ export function McpResultBlocksView({ blocks }: { blocks: McpResultBlock[] }) {
 }
 
 function McpResultBlockView({ block }: { block: McpResultBlock; index: number }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   switch (block.kind) {
     case "text":
       return <McpPlaintextCard text={mcpTextBlockDisplayText(block)} />;
@@ -80,7 +80,7 @@ function mcpTextBlockDisplayText(block: Extract<McpResultBlock, { kind: "text" }
 }
 
 function McpPlaintextCard({ text }: { text: string }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-mcp-result-text">
       <div className="hc-mcp-result-text-header">

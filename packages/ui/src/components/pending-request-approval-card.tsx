@@ -15,7 +15,7 @@ import {
   QuestionField,
   SetupContextPickerBody,
 } from "./pending-request-question-fields";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface ApprovalCardProps {
   actorLabel?: string;
@@ -30,10 +30,10 @@ export function ApprovalCard({
   onRespond,
   onLog,
 }: ApprovalCardProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const {
     answers,
-    canSubmit,
+    canUsePrimaryAction,
     currentQuestion,
     detail,
     externalUrlOpened,
@@ -60,7 +60,7 @@ export function ApprovalCard({
    * length > 1), isLastQuestion, and a "1 of 3" progress label; and destructures
    * only the current question (question / options / isOther).
    * Codex 一次只渲染一道 question + 顶部 stepper（多 question 时）+ 数字键
-   * 选 option 后自动 next-or-submit、左右箭头切换 question。HiCodex
+   * 选 option 后自动 next-or-submit、左右箭头切换 question。Forge
    * 严格对齐 — 不再 map 全部 question 铺开。
    */
   const kind = requestKind(request.method);
@@ -78,7 +78,7 @@ export function ApprovalCard({
    *     children = [title container, stepper] (stepper only when multi-question)
    * The Codex header does **not** render threadId / turnId / itemId / details /
    * body preview — only the current question title + stepper（多 question 时）。
-   * HiCodex 之前对 user-input request 也塞了这些技术 ID，是 approval/command/mcp 等
+   * Forge 之前对 user-input request 也塞了这些技术 ID，是 approval/command/mcp 等
    * 其他 request kind 的通用渲染冗余落到了 user-input。
    * (注释里避免嵌套 / star star /，TS/CSS 都不支持嵌套块注释。)
    *
@@ -90,7 +90,7 @@ export function ApprovalCard({
   const isSetupContextPicker = detail.setupContextPicker != null;
   /*
    * CODEX-REF: pending-request-item-panel-*.js — single title source: outer
-   * header prop falling back to the current question text. HiCodex 之前
+   * header prop falling back to the current question text. Forge 之前
    * panel-title 和 QuestionField heading 同时渲染同一份 question 文本造成重复。
    * 对齐方案：panel-title 显示 header 或 question（header 优先），
    * QuestionField 隐藏自己的 heading（通过 hideHeading prop）。
@@ -134,7 +134,7 @@ export function ApprovalCard({
            * CODEX-REF: pending-request-item-panel-*.js — 顶部 header 容器
            *   `flex items-start justify-between border-token-border/70 pt-4 pr-3 pb-2 pl-4`
            * 左侧是 question title `text-base font-medium`，右侧（仅多 question 时）
-           * 是 "← {step} of {total} →" 步进器。HiCodex 当前 QuestionField 内
+           * 是 "← {step} of {total} →" 步进器。Forge 当前 QuestionField 内
            * 自带 heading（question.header + question.question），所以这里只在
            * multi-question 时补一个 stepper 显示进度。
            */}
@@ -222,10 +222,16 @@ export function ApprovalCard({
           type="button"
           className="hc-request-action primary"
           autoFocus
-          disabled={!canSubmit}
-          title={!canSubmit ? detail.acceptDisabledReason : undefined}
+          disabled={!canUsePrimaryAction}
+          title={!canUsePrimaryAction ? detail.acceptDisabledReason : undefined}
           onClick={() => {
-            if (isOptionPicker) {
+            // Mirror the Enter-key path (controller): on a multi-question form
+            // the primary button reads "Continue" and must advance to the next
+            // question, NOT submit the whole form — otherwise clicking it
+            // silently answers every later question with its default.
+            if (!isLastQuestion && totalQuestions > 1) {
+              goToQuestion(questionIndex + 1);
+            } else if (isOptionPicker) {
               respondOptionPicker("submit");
             } else if (isSetupContextPicker) {
               respondSetupContextPicker("continue");

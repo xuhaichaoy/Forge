@@ -1,12 +1,12 @@
 import { Archive } from "lucide-react";
 import type { MouseEvent, RefObject } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import {
   sidebarThreadHasVisibleStatus,
   sidebarThreadRelativeTime,
   sidebarThreadStatusState,
 } from "../state/sidebar-projection";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { ThreadPinIndicator, ThreadStatusIndicator } from "./sidebar-thread-indicators";
 import {
   SidebarThreadMenu,
@@ -88,7 +88,7 @@ export function SidebarThreadRow({
   thread,
   title,
 }: SidebarThreadRowProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const relativeTime = sidebarThreadRelativeTime(thread);
   const statusState = sidebarThreadStatusState(thread);
   const isUnread = statusState.unread;

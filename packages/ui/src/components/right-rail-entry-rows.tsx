@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { RailEntry } from "../state/render-groups";
 import type { RightRailSection as RightRailSectionViewModel } from "../state/right-rail";
 import { normalizePlanStepStatus } from "../state/thread-item-fields";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   isBackgroundAgentEntry,
   railEntryIcon,
@@ -29,7 +29,7 @@ export function RailSummaryRow({
   canOpen?: (entry: RailEntry) => boolean;
   onOpen?: (entry: RailEntry) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const title = displayTitle ?? entry.title;
   const interactive = Boolean(canOpen?.(entry) && onOpen);
   const onClick = interactive && onOpen ? () => onOpen(entry) : undefined;
@@ -210,7 +210,7 @@ function RailEntryContent({
 }
 
 function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <span
       className="hc-rail-diff-stats"

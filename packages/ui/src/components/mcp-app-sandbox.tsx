@@ -18,8 +18,8 @@
 import {
   mcpAppToolInputFromArguments,
   mcpAppToolResultForWidget,
-  type McpAppFrameViewModel,
 } from "./mcp-app-frame";
+import type { McpAppDetailViewModel, McpAppDisplayMode } from "./mcp-app-sandbox-types";
 import { mcpAppWidgetStateFromValue } from "./mcp-app-bridge";
 import {
   MCP_APP_BRIDGE_HOST_SOURCE,
@@ -59,33 +59,14 @@ export {
 } from "./mcp-app-sandbox-srcdoc";
 
 /*
- * The `mcpApp` variant of `ToolActivityDetailViewModel`. It lives here (rather
- * than inline in the detail-file union) so the protocol helpers below can
- * reference it without importing back from tool-activity-detail.tsx. The detail
- * file's `ToolActivityDetailViewModel` union references this exported shape.
+ * The `mcpApp` detail view-model shapes were extracted to
+ * ./mcp-app-sandbox-types (pure type leaf) so mcp-app-bridge.ts and
+ * mcp-app-sandbox-srcdoc.ts can reference them without importing back into
+ * this module. Re-exported in place to keep historical import paths working.
  */
-export interface McpAppDetailViewModel {
-  kind: "mcpApp";
-  id: string;
-  running: boolean;
-  name: string;
-  server: string;
-  tool: string;
-  resourceUri: string;
-  inlineFrame: McpAppFrameViewModel | null;
-  toolArguments: unknown;
-  toolOutput: unknown;
-  toolResult: unknown;
-  toolResponseMetadata: unknown;
-  argumentsText: string;
-  resultText: string;
-  errorText: string;
-  status: string;
-}
+export type { McpAppDetailViewModel, McpAppDisplayMode } from "./mcp-app-sandbox-types";
 
 export const MCP_APP_IFRAME_SANDBOX_POLICY = "allow-forms allow-scripts";
-
-export type McpAppDisplayMode = "inline" | "fullscreen";
 
 export interface McpResourceReadRequest {
   threadId?: string | null;

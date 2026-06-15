@@ -1,16 +1,20 @@
-import type { JsonRpcRequest, JsonValue, ModelConfig, UserInput } from "@hicodex/codex-protocol";
+import type { JsonRpcRequest, JsonValue, ModelConfig, UserInput } from "@forge/codex-protocol";
 import { formatError, formatUnknown, stringField } from "../lib/format";
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import { generateImageWithHost, isTauriRuntime } from "../lib/tauri-host";
 import { normalizeBaseUrl } from "../model/model-settings";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
+import type { BrowserStorageLike } from "./image-generation-tool-types";
 
-export const HICODEX_IMAGE_TOOL_NAME = "image_gen";
-export const HICODEX_LEGACY_IMAGE_TOOL_PLAIN_NAME = "hicodex_generate_image";
-export const HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE = "hicodex_image";
-export const HICODEX_LEGACY_IMAGE_TOOL_NAME = "generate";
-export const LEGACY_HICODEX_IMAGE_SETTINGS_STORAGE_KEY = "hicodex:image-generation-settings";
-export const HICODEX_IMAGE_SETTINGS_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.imageGeneration;
+export const FORGE_IMAGE_TOOL_NAME = "image_gen";
+// Deliberate legacy values: the old-brand "hicodex…" dynamic-tool names are
+// wire-visible (rollouts/dynamic tool registry) and the "hicodex:" storage key
+// is persisted user data — both stay as-is; only identifiers were rebranded.
+export const FORGE_LEGACY_IMAGE_TOOL_PLAIN_NAME = "hicodex_generate_image";
+export const FORGE_LEGACY_IMAGE_TOOL_NAMESPACE = "hicodex_image";
+export const FORGE_LEGACY_IMAGE_TOOL_NAME = "generate";
+export const LEGACY_FORGE_IMAGE_SETTINGS_STORAGE_KEY = "hicodex:image-generation-settings";
+export const FORGE_IMAGE_SETTINGS_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.imageGeneration;
 export const IMAGE_GENERATION_FETCH_TIMEOUT_MS = 120_000;
 export const IMAGE_GENERATION_SIZE_OPTIONS = ["1024x1024", "1024x1536", "1536x1024", "auto"] as const;
 export type ImageGenerationSize = (typeof IMAGE_GENERATION_SIZE_OPTIONS)[number];
@@ -22,10 +26,7 @@ export interface ImageGenerationSettings {
   size: ImageGenerationSize;
 }
 
-export interface BrowserStorageLike {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-}
+export type { BrowserStorageLike } from "./image-generation-tool-types";
 
 export const EMPTY_IMAGE_GENERATION_SETTINGS: ImageGenerationSettings = {
   baseUrl: "",
@@ -50,7 +51,7 @@ export interface DynamicToolCallResponseLike {
   success: boolean;
 }
 
-export type HiCodexImageToolPresence = "present" | "absent" | "unknown";
+export type ForgeImageToolPresence = "present" | "absent" | "unknown";
 
 export interface ImageGenerationHostRequest {
   baseUrl: string;
@@ -69,10 +70,10 @@ export interface ImageGenerationExecuteOptions {
   preferHost?: boolean;
 }
 
-export const HICODEX_IMAGE_DYNAMIC_TOOL_SPEC: DynamicToolSpecLike = {
-  name: HICODEX_IMAGE_TOOL_NAME,
+export const FORGE_IMAGE_DYNAMIC_TOOL_SPEC: DynamicToolSpecLike = {
+  name: FORGE_IMAGE_TOOL_NAME,
   description:
-    "Generate a raster image from a prompt using the HiCodex-configured image generation backend. Use this immediately when the user asks to create an image, picture, illustration, wallpaper, or bitmap asset. Return the generated image content to the user instead of describing possible styles.",
+    "Generate a raster image from a prompt using the Forge-configured image generation backend. Use this immediately when the user asks to create an image, picture, illustration, wallpaper, or bitmap asset. Return the generated image content to the user instead of describing possible styles.",
   inputSchema: {
     type: "object",
     additionalProperties: false,
@@ -95,21 +96,21 @@ export const HICODEX_IMAGE_DYNAMIC_TOOL_SPEC: DynamicToolSpecLike = {
   },
 };
 
-export function isHiCodexImageToolCall(request: JsonRpcRequest): boolean {
+export function isForgeImageToolCall(request: JsonRpcRequest): boolean {
   if (request.method !== "item/tool/call") return false;
   const params = request.params as Record<string, unknown> | undefined;
-  return isCurrentHiCodexImageTool(stringField(params, "namespace"), stringField(params, "tool"))
-    || isLegacyHiCodexImageTool(stringField(params, "namespace"), stringField(params, "tool"));
+  return isCurrentForgeImageTool(stringField(params, "namespace"), stringField(params, "tool"))
+    || isLegacyForgeImageTool(stringField(params, "namespace"), stringField(params, "tool"));
 }
 
-export function isHiCodexImageDynamicToolSpec(value: unknown): boolean {
+export function isForgeImageDynamicToolSpec(value: unknown): boolean {
   const record = objectRecord(value);
   if (!record) return false;
-  return isCurrentHiCodexImageTool(stringField(record, "namespace"), stringField(record, "name"))
-    || isLegacyHiCodexImageTool(stringField(record, "namespace"), stringField(record, "name"));
+  return isCurrentForgeImageTool(stringField(record, "namespace"), stringField(record, "name"))
+    || isLegacyForgeImageTool(stringField(record, "namespace"), stringField(record, "name"));
 }
 
-export function hiCodexImageToolPresenceFromRolloutText(text: string): HiCodexImageToolPresence {
+export function forgeImageToolPresenceFromRolloutText(text: string): ForgeImageToolPresence {
   for (const line of text.split(/\r?\n/).slice(0, 20)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
@@ -119,7 +120,7 @@ export function hiCodexImageToolPresenceFromRolloutText(text: string): HiCodexIm
     if (!payload) return "unknown";
     const dynamicTools = arrayField(payload, "dynamic_tools") ?? arrayField(payload, "dynamicTools");
     if (!dynamicTools) return "absent";
-    return dynamicTools.some(isHiCodexImageDynamicToolSpec) ? "present" : "absent";
+    return dynamicTools.some(isForgeImageDynamicToolSpec) ? "present" : "absent";
   }
   return "unknown";
 }
@@ -141,7 +142,7 @@ export function userInputLikelyRequestsImageGeneration(input: ReadonlyArray<User
     || /(图|图片|照片|插图|壁纸|头像|海报|图标|logo|表情包).{0,18}(生成|画|绘制|创建|设计)/i.test(text);
 }
 
-export function claimHiCodexImageToolRequest(
+export function claimForgeImageToolRequest(
   seenRequestIds: Set<string>,
   request: Pick<JsonRpcRequest, "id">,
 ): boolean {
@@ -156,13 +157,13 @@ export function imageToolThreadIdFromRequest(request: JsonRpcRequest): string | 
   return threadIdFromValue(request.params) ?? threadIdFromValue(requestRecord.payload);
 }
 
-export function hiCodexImageToolOutputUrl(value: unknown): string {
+export function forgeImageToolOutputUrl(value: unknown): string {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "";
   const record = value as Record<string, unknown>;
   if (record.type !== "dynamicToolCall") return "";
   if (
-    !isCurrentHiCodexImageTool(stringField(record, "namespace"), stringField(record, "tool"))
-    && !isLegacyHiCodexImageTool(stringField(record, "namespace"), stringField(record, "tool"))
+    !isCurrentForgeImageTool(stringField(record, "namespace"), stringField(record, "tool"))
+    && !isLegacyForgeImageTool(stringField(record, "namespace"), stringField(record, "tool"))
   ) return "";
   const contentItems = Array.isArray(record.contentItems) ? record.contentItems : [];
   for (const item of contentItems) {
@@ -191,7 +192,7 @@ export function parseImageToolArguments(value: unknown): { prompt: string; model
   return { prompt, model, size };
 }
 
-export async function executeHiCodexImageToolCall(
+export async function executeForgeImageToolCall(
   request: JsonRpcRequest,
   model: ModelConfig,
   optionsOrFetch: typeof fetch | ImageGenerationExecuteOptions = fetch,
@@ -203,8 +204,8 @@ export async function executeHiCodexImageToolCall(
   }
   const options = normalizeExecuteOptions(optionsOrFetch);
   const imageSettings = normalizeImageGenerationSettings(options.imageSettings);
-  if (!shouldRegisterHiCodexImageDynamicTool(imageSettings)) {
-    return imageToolFailure("No HiCodex image endpoint is configured. Configure Images settings, or use Codex native image_generation with a supported Codex account and model.");
+  if (!shouldRegisterForgeImageDynamicTool(imageSettings)) {
+    return imageToolFailure("No Forge image endpoint is configured. Configure Images settings, or use Codex native image_generation with a supported Codex account and model.");
   }
   const backendBaseUrl = imageSettings.baseUrl;
   const backendApiKey = imageSettings.apiKey || model.apiKey;
@@ -303,7 +304,7 @@ export function loadImageGenerationSettings(storage: BrowserStorageLike | null |
   if (!storage) return EMPTY_IMAGE_GENERATION_SETTINGS;
   try {
     return normalizeImageGenerationSettings(JSON.parse(
-      readMigratedStorageValue(storage, HICODEX_IMAGE_SETTINGS_STORAGE_KEY, [LEGACY_HICODEX_IMAGE_SETTINGS_STORAGE_KEY])
+      readMigratedStorageValue(storage, FORGE_IMAGE_SETTINGS_STORAGE_KEY, [LEGACY_FORGE_IMAGE_SETTINGS_STORAGE_KEY])
         || "null",
     ));
   } catch {
@@ -317,12 +318,12 @@ export function saveImageGenerationSettings(
 ): ImageGenerationSettings {
   const normalized = normalizeImageGenerationSettings(settings);
   if (storage) {
-    setDesktopAppSettingValue(storage, HICODEX_IMAGE_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+    setDesktopAppSettingValue(storage, FORGE_IMAGE_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
   }
   return normalized;
 }
 
-export function shouldRegisterHiCodexImageDynamicTool(settings: ImageGenerationSettings): boolean {
+export function shouldRegisterForgeImageDynamicTool(settings: ImageGenerationSettings): boolean {
   const normalized = normalizeImageGenerationSettings(settings);
   return Boolean(normalized.baseUrl);
 }
@@ -407,13 +408,13 @@ function normalizedImageSize(value: string): ImageGenerationSize {
     : "1024x1024";
 }
 
-function isCurrentHiCodexImageTool(namespace: string, tool: string): boolean {
-  return namespace.trim() === "" && tool === HICODEX_IMAGE_TOOL_NAME;
+function isCurrentForgeImageTool(namespace: string, tool: string): boolean {
+  return namespace.trim() === "" && tool === FORGE_IMAGE_TOOL_NAME;
 }
 
-function isLegacyHiCodexImageTool(namespace: string, tool: string): boolean {
-  if (namespace.trim() === "" && tool === HICODEX_LEGACY_IMAGE_TOOL_PLAIN_NAME) return true;
-  return namespace === HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE && tool === HICODEX_LEGACY_IMAGE_TOOL_NAME;
+function isLegacyForgeImageTool(namespace: string, tool: string): boolean {
+  if (namespace.trim() === "" && tool === FORGE_LEGACY_IMAGE_TOOL_PLAIN_NAME) return true;
+  return namespace === FORGE_LEGACY_IMAGE_TOOL_NAMESPACE && tool === FORGE_LEGACY_IMAGE_TOOL_NAME;
 }
 
 function imageMimeTypeFromResponseRecord(record: Record<string, unknown>): string {

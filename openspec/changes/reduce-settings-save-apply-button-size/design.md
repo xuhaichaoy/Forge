@@ -1,6 +1,6 @@
 ## Context
 
-The Models settings panel renders its footer inside `ModelSettingsForm` with a summary label on the left and a primary `Save and apply` button on the right. In the current screenshot, the primary action visually expands too far across the footer, which conflicts with HiCodex's dense desktop settings guidance.
+The Models settings panel renders its footer inside `ModelSettingsForm` with a summary label on the left and a primary `Save and apply` button on the right. In the current screenshot, the primary action visually expands too far across the footer, which conflicts with Forge's dense desktop settings guidance.
 
 The existing save behavior is owned by the `onSaveModel` callback passed from `SettingsPanel` into `ModelSettingsForm`; styling is shared through `.hc-settings-footer`, `.hc-button`, and `.hc-button-primary`.
 

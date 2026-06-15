@@ -1,5 +1,5 @@
 import { composerStatusRows } from "../src/components/composer-status-panel";
-import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
+import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateLimitSnapshot";
 
 export default function runComposerStatusPanelTests(): void {
   formatsDesktopStatusRows();

@@ -1,5 +1,5 @@
 [package]
-name = "hicodex-host"
+name = "forge-host"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -32,7 +32,7 @@ async function streamsSessionNotificationsBySessionId(): Promise<void> {
     params: {
       sessionId: session.id,
       query: "hic",
-      files: [{ root: "/workspace", path: "src/HiCodexApp.tsx", match_type: "file", file_name: "HiCodexApp.tsx", score: 91, indices: null }],
+      files: [{ root: "/workspace", path: "src/ForgeApp.tsx", match_type: "file", file_name: "ForgeApp.tsx", score: 91, indices: null }],
     },
   });
   controller.handleNotification({
@@ -71,7 +71,7 @@ async function searchOnceUsesSessionLifecycle(): Promise<void> {
     params: {
       sessionId,
       query: "hic",
-      files: [{ root: "/workspace", path: "src/HiCodexApp.tsx", match_type: "file", file_name: "HiCodexApp.tsx", score: 91, indices: null }],
+      files: [{ root: "/workspace", path: "src/ForgeApp.tsx", match_type: "file", file_name: "ForgeApp.tsx", score: 91, indices: null }],
     },
   });
   controller.handleNotification({
@@ -92,7 +92,7 @@ async function fallsBackToLegacyFuzzyFileSearchWhenSessionMethodsAreMissing(): P
   const client = new RecordingRequestClient({
     "fuzzyFileSearch/sessionStart": new Error("Method not found"),
     fuzzyFileSearch: {
-      files: [{ root: "/workspace", path: "src/HiCodexApp.tsx", match_type: "file", file_name: "HiCodexApp.tsx", score: 91, indices: null }],
+      files: [{ root: "/workspace", path: "src/ForgeApp.tsx", match_type: "file", file_name: "ForgeApp.tsx", score: 91, indices: null }],
     },
   });
   const controller = new WorkspaceFuzzyFileSearchController(client);
@@ -125,7 +125,7 @@ async function searchOnceFallsBackToLegacyFuzzyFileSearchWhenSessionMethodsAreMi
   const client = new RecordingRequestClient({
     "fuzzyFileSearch/sessionStart": new Error("Method not found"),
     fuzzyFileSearch: {
-      files: [{ root: "/workspace", path: "src/HiCodexApp.tsx", match_type: "file", file_name: "HiCodexApp.tsx", score: 91, indices: null }],
+      files: [{ root: "/workspace", path: "src/ForgeApp.tsx", match_type: "file", file_name: "ForgeApp.tsx", score: 91, indices: null }],
     },
   });
   const controller = new WorkspaceFuzzyFileSearchController(client);

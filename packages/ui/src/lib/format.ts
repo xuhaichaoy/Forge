@@ -46,7 +46,7 @@ export function objectRecord(value: unknown, key: string): Record<string, unknow
  * ANSI CSI / SGR escape sequences emitted by Rust `tracing-subscriber` when
  * the codex app-server writes to a TTY-like pipe (`\x1b[31m` red, `\x1b[2m`
  * dim, `\x1b[3m` italic, `\x1b[0m` reset, `\x1b[2J` clear screen, …).
- * HiCodex's stderr reader was forwarding raw codes into the toast viewport
+ * Forge's stderr reader was forwarding raw codes into the toast viewport
  * (Screen Recording 2026-05-21 at 07.57.04 right-bottom toast). Codex Desktop
  * never surfaces stderr to the renderer — `remote-conversation-page-*.js`
  * only consumes structured `error` notifications via `params.error.message`.

@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type { AccountUsageAlert } from "../state/account-state";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export function SidebarUsageAlert({
   alert,
@@ -9,7 +9,7 @@ export function SidebarUsageAlert({
   alert: AccountUsageAlert;
   onDismiss: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const reset = usageAlertResetLabel(alert, formatMessage);
   return (
     <div className="hc-sidebar-usage-alert">
@@ -63,7 +63,7 @@ type UsageAlertFormatMessage = (
  *   - with cadence: `sidebarElectron.usageAlert.resetAtWithCadence`
  *        = "Resets {cadence} · Next reset is {time}"
  * where {cadence} is a pluralized `cadence.{minute|hour|day|week|month|year}`
- * label derived from the window duration. The old HiCodex code wrote a raw
+ * label derived from the window duration. The old Forge code wrote a raw
  * "Resets …"/"Window 2h" English string that never localized — replaced here.
  */
 function usageAlertResetLabel(alert: AccountUsageAlert, formatMessage: UsageAlertFormatMessage): string | null {
@@ -96,7 +96,7 @@ function usageAlertResetTime(resetAt: number | null): string | null {
  * Maps a window duration (minutes) to the largest natural cadence unit, mirroring
  * Codex's threshold ladder (year ≥ ~525600, month ≥ ~43800, week ≥ 10080,
  * day ≥ 1440, hour ≥ 60, else minute) with its ±5% rounding tolerance for the
- * coarse units. Cadence strings use HiCodex's simple-plural form (`#`) because
+ * coarse units. Cadence strings use Forge's simple-plural form (`#`) because
  * the bundled ICU formatter does not support nested-brace plural arguments.
  */
 function usageAlertCadenceLabel(

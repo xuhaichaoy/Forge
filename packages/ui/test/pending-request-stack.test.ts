@@ -74,7 +74,7 @@ function keepsPlainLanguageDetailsAsText(): void {
 }
 
 function preservesCommandPreviewText(): void {
-  const heredoc = "/bin/zsh -lc 'cat > ~/Downloads/hicodex_demo.html <<\\'HTML\\'\n<div>preview</div>\nHTML'";
+  const heredoc = "/bin/zsh -lc 'cat > ~/Downloads/forge_demo.html <<\\'HTML\\'\n<div>preview</div>\nHTML'";
   assertEqual(commandPreviewText({ command: heredoc }), heredoc, "multiline command preview should stay as one preview block");
   assertEqual(commandPreviewText({ command: ["npm", "run", "typecheck"] }), "npm run typecheck", "argv commands should join for preview");
 }

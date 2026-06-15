@@ -1,5 +1,5 @@
-import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
-import type { RateLimitWindow } from "@hicodex/codex-protocol/generated/v2/RateLimitWindow";
+import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateLimitSnapshot";
+import type { RateLimitWindow } from "@forge/codex-protocol/generated/v2/RateLimitWindow";
 import { formatMessage } from "./i18n";
 
 export interface RateLimitDisplayWindow {

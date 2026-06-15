@@ -73,6 +73,7 @@ export function useCommandPanelFileSearch({
     });
   }, [dispatch]);
 
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- createDedupedFileSearchSession 工厂直产会话闭包，其全部外部依赖（refs/dispatch/setCommandPanel）已显式列入数组
   const getFileSearchSession = useCallback(createDedupedFileSearchSession({
     sessionRef: fileSearchSessionRef,
     rootsKeyRef: fileSearchSessionRootsKeyRef,
@@ -96,6 +97,7 @@ export function useCommandPanelFileSearch({
     },
   }), [dispatch, fileSearchControllerRef, setCommandPanel]);
 
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- createDedupedFileSearchSession 工厂直产会话闭包，其全部外部依赖（refs/dispatch/setCommandPanel）已显式列入数组
   const getCommandMenuFileSearchSession = useCallback(createDedupedFileSearchSession({
     sessionRef: commandMenuFileSearchSessionRef,
     rootsKeyRef: commandMenuFileSearchSessionRootsKeyRef,

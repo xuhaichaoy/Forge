@@ -98,7 +98,7 @@ export function mentionOptionsFromAgentThreads(
 
 /*
  * Desktop fetches local custom agents via `local-custom-agents` and projects
- * `roles` into `subagent://{roleName}` mention items. HiCodex does not have
+ * `roles` into `subagent://{roleName}` mention items. Forge does not have
  * that host bridge yet; local app-server `config/read` serializes ConfigToml,
  * whose `agents` table is a flattened `[agents.<role>]` map.
  */

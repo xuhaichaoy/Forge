@@ -1,12 +1,17 @@
 import { ChevronRight, FolderOpen } from "lucide-react";
-import { useMemo, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useMemo, type KeyboardEvent, type ReactNode } from "react";
 import { fileIconComponent } from "../lib/file-icon";
 import { resolveFileIcon, type FileIconFamily } from "../lib/file-icon-resolver";
 import type { WorkspaceDirEntry } from "../lib/tauri-host";
-import { useHiCodexIntl } from "./i18n-provider";
-import type { FileTreeProps } from "./file-tree";
+import { useForgeIntl } from "./i18n-provider";
+import type { FileTreeContextMenuOpener, FileTreeProps } from "./file-tree-types";
 
-export type FileTreeContextMenuOpener = (event: MouseEvent, entry: WorkspaceDirEntry) => void;
+/*
+ * FileTreeContextMenuOpener moved to ./file-tree-types (pure type leaf) so it
+ * can be shared with file-tree.tsx without an import cycle. Re-exported in
+ * place to keep historical import paths working.
+ */
+export type { FileTreeContextMenuOpener } from "./file-tree-types";
 
 interface FileTreeNodeProps extends FileTreeProps {
   entry: WorkspaceDirEntry;
@@ -79,7 +84,7 @@ export function SearchResultsList({
   onSelect,
   onOpenContextMenu,
 }: { entries: WorkspaceDirEntry[]; onOpenContextMenu?: FileTreeContextMenuOpener } & FileTreeProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex: workspace-directory-tree - search results are rendered flat with parent paths dimmed.
   if (entries.length === 0) {
     // codex workspace-directory-tree empty state uses the workspace-browser id

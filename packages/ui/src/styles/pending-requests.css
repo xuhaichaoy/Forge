@@ -12,7 +12,7 @@
 
 /* CODEX-REF: composer-*.js — 请求卡片
    Codex 卡片用 flex column + body 滚动 / footer 独立的结构，让 Cancel/Allow
-   按钮永远贴在卡片底部可见。HiCodex 这里加 max-height 视口约束 + body 滚动， */
+   按钮永远贴在卡片底部可见。Forge 这里加 max-height 视口约束 + body 滚动， */
 .hc-request-input-panel {
   display: flex;
   flex-direction: column;
@@ -117,7 +117,7 @@
 /* CODEX-REF: composer-*.js — 命令预览
    Codex 命令预览：外层 flex column；内层 min-h-0 overflow-y-auto font-mono；
    <span block break-words whitespace-pre-wrap> + 独立 footer button。
-   HiCodex 用相同结构：外壳不再设 max-height（避免撑高卡片），改由 content
+   Forge 用相同结构：外壳不再设 max-height（避免撑高卡片），改由 content
    12rem 内部滚动 + line-clamp 3 折叠态实现 Codex 一致行为。 */
 .hc-request-command-preview {
   display: flex;
@@ -332,7 +332,7 @@
  *     span(text = te = "1 of 3"),
  *     Button(color=ghost, disabled=!V, size=icon, onClick=we(y+1), Chevron -rotate-90),
  *   ]
- * HiCodex 用相同 layout：左右 ghost icon button + 中间 "1 of N"。
+ * Forge 用相同 layout：左右 ghost icon button + 中间 "1 of N"。
  * (注释里避免嵌套 / star star /，CSS 不支持嵌套块注释。)
  */
 .hc-request-question-stepper {
@@ -452,7 +452,7 @@
  * CODEX-REF: pending-request-item-panel-*.js —
  * runAlwaysWithAmendment 短模式 JSX 的外层是 `<span className="flex w-full min-w-0
  * items-center gap-1">`，label 由 `<FormattedMessage>` 直接产出纯文本，**没有任何
- * overflow-wrap / min-w-0 / break-anywhere 类**。HiCodex 之前在 `.strong` 上叠
+ * overflow-wrap / min-w-0 / break-anywhere 类**。Forge 之前在 `.strong` 上叠
  * `overflow-wrap: anywhere` 会被继承到 label inner span，在窄宽下逐字断行—— Codex
  * 不做这件事，所以删除。
  */
@@ -588,7 +588,7 @@
 /*
  * CODEX-REF: pending-request-item-panel-*.js — isOther freeform input (options 后追加的 textarea)。
  * Codex 渲染的 textarea 容器没有 number-prefix（"N."），就是裸 textarea
- * 撑满宽度。HiCodex 给 `.hc-request-other-freeform` 单独 modifier 移除
+ * 撑满宽度。Forge 给 `.hc-request-other-freeform` 单独 modifier 移除
  * grid 中 24px 的 number-prefix 列。
  */
 .hc-request-inline-freeform.hc-request-other-freeform {

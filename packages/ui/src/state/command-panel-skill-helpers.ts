@@ -1,4 +1,4 @@
-import type { CommandPanelSecondaryAction } from "./command-panel";
+import type { CommandPanelSecondaryAction } from "./command-panel-types";
 
 export function starterSkillContents(skillName: string): string {
   return `---

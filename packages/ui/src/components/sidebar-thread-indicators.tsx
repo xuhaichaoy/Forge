@@ -1,7 +1,7 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { Loader2, Pin } from "lucide-react";
 import type { SidebarThreadStatusState } from "../state/sidebar-projection";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 const threadPinIndicatorClass = "h-5 w-5 shrink-0";
 const threadPinIndicatorButtonClass =
@@ -12,11 +12,11 @@ const threadPinIndicatorButtonVisibleClass = "is-pinned";
  * codex local-task-row-*.js inline status slot. Priority order is
  * unreadCount badge -> loading spinner -> unread dot -> nothing. There is NO
  * inline `error` branch in Codex (the system-error state is conveyed by the
- * row's text color, not an icon), so HiCodex no longer paints the red
+ * row's text color, not an icon), so Forge no longer paints the red
  * AlertCircle that used to live here.
  */
 export function ThreadStatusIndicator({ state }: { state: SidebarThreadStatusState }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex `Ee`: numeric unread badge, count>99 -> "99+", textLink-tinted fill
   // with a 72% inset ring. Takes priority over the spinner and the plain dot.
   if (state.unreadCount > 0) {
@@ -86,7 +86,7 @@ export function ThreadPinIndicator({
   onToggleThreadPinned: (thread: Thread, pinned: boolean) => void | Promise<void>;
   thread: Thread;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (isUnread) {
     return <span className={threadPinIndicatorClass} aria-hidden="true" />;
   }

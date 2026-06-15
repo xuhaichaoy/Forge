@@ -32,8 +32,8 @@ import {
   workedForAggregateRows,
 } from "../src/components/conversation-view";
 import { GeneratedImageGallery } from "../src/components/generated-image-gallery";
-import { HiCodexIntlProvider } from "../src/components/i18n-provider";
-import { formatMessage, setActiveI18nLocale, HICODEX_DEFAULT_LOCALE } from "../src/state/i18n";
+import { ForgeIntlProvider } from "../src/components/i18n-provider";
+import { formatMessage, setActiveI18nLocale, FORGE_DEFAULT_LOCALE } from "../src/state/i18n";
 
 // Mirror event-unit's worked-for aggregate render: leading descriptor for the
 // first row (capitalized verb), compact for the rest, resolved via formatMessage.
@@ -43,7 +43,7 @@ function renderWorkedForAggregate(
   // worked-for aggregate asserts Codex EN copy, but this file also renders zh-CN provider
   // subtests that flip the process-level i18n locale via setActiveI18nLocale. Pin the default
   // (en-US) here so the module-level formatMessage resolves English regardless of subtest order.
-  setActiveI18nLocale(HICODEX_DEFAULT_LOCALE);
+  setActiveI18nLocale(FORGE_DEFAULT_LOCALE);
   return rows.map((row, index) => {
     const descriptor = index === 0 ? row.leading : row.compact;
     return formatMessage({ id: descriptor.id, defaultMessage: descriptor.defaultMessage }, descriptor.values);
@@ -1093,7 +1093,7 @@ function localizesMemoryCitationLabelsLikeDesktop(): void {
     },
   });
   const html = renderToStaticMarkup(createElement(
-    HiCodexIntlProvider,
+    ForgeIntlProvider,
     { locale: "zh-CN", children: unit },
   ));
 
@@ -1210,7 +1210,7 @@ function localizesReviewCommentLabelsLikeDesktop(): void {
     { title: "Cleanup", body: "Remove stale branch.", path: "src/cleanup.ts", line: 16 },
   ];
   const html = renderToStaticMarkup(createElement(
-    HiCodexIntlProvider,
+    ForgeIntlProvider,
     {
       locale: "zh-CN",
       children: createElement(ConversationUnitView, {
@@ -1300,7 +1300,7 @@ function rendersItemAutomationCitationsInlineLikeDesktop(): void {
   // automationScheduleSummary now localizes via formatMessage; this assertion
   // checks the English schedule copy, so pin the default locale (a prior subtest
   // may have flipped it to zh-CN).
-  setActiveI18nLocale(HICODEX_DEFAULT_LOCALE);
+  setActiveI18nLocale(FORGE_DEFAULT_LOCALE);
   const html = renderToStaticMarkup(createElement(ConversationUnitView, {
     unit: {
       kind: "message",

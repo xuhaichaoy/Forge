@@ -1,9 +1,9 @@
 import { Loader2 } from "lucide-react";
 
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
- * Pre-conversation loading shell, lifted verbatim out of HiCodexApp. Shows a
+ * Pre-conversation loading shell, lifted verbatim out of ForgeApp. Shows a
  * status row ("Starting chat..." / "Connecting runtime..." / "Runtime offline")
  * with a spinner while the runtime connects or a chat starts; renders null once
  * connected and idle. Props are explicit booleans with no closure capture.
@@ -17,8 +17,8 @@ export function PreConversationLoadingShell({
   connecting: boolean;
   startingConversation: boolean;
 }) {
-  const { formatMessage } = useHiCodexIntl();
-  const appName = formatMessage({ id: "hc.app.name", defaultMessage: "HiCodex" });
+  const { formatMessage } = useForgeIntl();
+  const appName = formatMessage({ id: "hc.app.name", defaultMessage: "Forge" });
   const label = startingConversation
     ? "Starting chat..."
     : connecting

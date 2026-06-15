@@ -1,11 +1,11 @@
 import { ArrowLeft, ArrowRight, GitBranch, Laptop, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 // codex: electron-menu-shortcuts-*.js — Codex header buttons surface
-// the accelerator in their tooltip. HiCodex mirrors that on sidebar toggle.
+// the accelerator in their tooltip. Forge mirrors that on sidebar toggle.
 import { COMMAND_IDS, descriptorAcceleratorLabel } from "../state/commands";
 // codex thread-env-icon-*.js wraps the env indicator in <Tooltip/> (tooltip-*.js).
 import { Tooltip } from "./tooltip";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { startTopbarWindowDrag } from "../lib/window-drag";
 
 export interface ConversationChromeProps {
@@ -13,7 +13,7 @@ export interface ConversationChromeProps {
   activeThread?: Thread | null;
   /*
    * codex thread-env-icon-*.js — the conversation header shows an environment
-   * indicator (Codex: macbook=local / worktree / cloud / remote-globe). HiCodex is
+   * indicator (Codex: macbook=local / worktree / cloud / remote-globe). Forge is
    * a local client, so the meaningful states are "local" vs a linked git
    * "worktree" (derived from the active thread's `host_git_status.isWorktree`).
    */
@@ -24,7 +24,7 @@ export interface ConversationChromeProps {
    * Codex Desktop local-conversation-page-*.js:
    * header carries a `Toggle pinned summary` button at `order: 250`
    * (actionId `local-thread-summary-panel-toggle`), which flips
-   * `isPinned`. Without this button HiCodex users have no way to re-show the
+   * `isPinned`. Without this button Forge users have no way to re-show the
    * Summary Rail after pinning it off — Codex hides the rail entirely
    * when `isPinned` is false, so the pin toggle must live OUTSIDE the rail.
    *
@@ -43,7 +43,7 @@ export interface ConversationChromeProps {
    * codex: app-shell-*.js — sidebar trigger group renders
    * navigateBack / navigateForward arrow buttons next to the sidebar toggle.
    * Codex reads the `canGoBack` / `canGoForward` history atoms to
-   * compute disabled state. HiCodex passes through the same booleans from
+   * compute disabled state. Forge passes through the same booleans from
    * `state.threadHistoryStack` + `state.threadHistoryIndex`.
    */
   canNavigateBack?: boolean;
@@ -69,7 +69,7 @@ export function ConversationChrome({
   onNavigateBack,
   onNavigateForward,
 }: ConversationChromeProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const displayTitle =
     title.replace(/\s+/g, " ").trim() ||
     (activeThread
@@ -148,7 +148,7 @@ export function ConversationChrome({
           * codex thread-env-icon-*.js — local/worktree indicator before the title.
           * Codex wraps the env icon's tooltip text in <FormattedMessage> with the
           * `threadEnvIcon.{local,worktree}Tooltip` ids, so the string is localized.
-          * HiCodex routes both the tooltip content and the icon's accessible name
+          * Forge routes both the tooltip content and the icon's accessible name
           * through the same ids via formatMessage (defaultMessage matches the bundle
           * verbatim) so ZH renders Codex's translation instead of the EN literal.
           */}

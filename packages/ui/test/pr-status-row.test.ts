@@ -38,7 +38,7 @@ function hidesRowOutsideTauriRuntimeEvenWhenCwdProvided(): void {
   // SSR / Node has no Tauri globals, so `isTauriRuntime()` returns false. The
   // effect short-circuits, `pr` stays null, and the component hides.
   const html = renderToStaticMarkup(
-    createElement(PrStatusRow, { cwd: "/workspace/HiCodex" }),
+    createElement(PrStatusRow, { cwd: "/workspace/Forge" }),
   );
   assertEqual(
     html,

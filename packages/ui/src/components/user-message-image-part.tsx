@@ -2,7 +2,7 @@ import { FileImage, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { UserMessageContentPart } from "../state/render-groups";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { userImageSrc } from "./user-message-image-source";
 
 export function UserMessageImagePartView({
@@ -10,7 +10,7 @@ export function UserMessageImagePartView({
 }: {
   part: Extract<UserMessageContentPart, { kind: "image" }>;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [previewOpen, setPreviewOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const src = userImageSrc(part);

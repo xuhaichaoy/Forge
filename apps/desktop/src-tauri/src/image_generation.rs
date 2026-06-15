@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::command_error::HostCommandError;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ImageGenerationRequest {
@@ -18,12 +20,17 @@ pub(crate) struct ImageGenerationRequest {
     thread_id: Option<String>,
 }
 
-#[tauri::command]
-pub(crate) fn host_generate_image(request: ImageGenerationRequest) -> Result<Value, String> {
-    let endpoint = image_generations_endpoint(&request.base_url)?;
-    let body = serde_json::to_vec(&request.payload)
-        .map_err(|error| format!("failed to serialize image request: {error}"))?;
-    let header_path = write_image_request_headers(request.api_key.as_deref())?;
+#[tauri::command(async)]
+pub(crate) fn host_generate_image(
+    request: ImageGenerationRequest,
+) -> Result<Value, HostCommandError> {
+    let endpoint =
+        image_generations_endpoint(&request.base_url).map_err(HostCommandError::invalid_input)?;
+    let body = serde_json::to_vec(&request.payload).map_err(|error| {
+        HostCommandError::parse_failed(format!("failed to serialize image request: {error}"))
+    })?;
+    let header_path = write_image_request_headers(request.api_key.as_deref())
+        .map_err(HostCommandError::io_failed)?;
     let header_arg = format!("@{}", header_path.to_string_lossy());
     let mut command = crate::new_command("curl");
     command
@@ -51,16 +58,20 @@ pub(crate) fn host_generate_image(request: ImageGenerationRequest) -> Result<Val
         Ok(child) => child,
         Err(error) => {
             let _ = fs::remove_file(&header_path);
-            return Err(format!("failed to start image request: {error}"));
+            return Err(HostCommandError::process_failed(format!(
+                "failed to start image request: {error}"
+            )));
         }
     };
     let mut stdin = child.stdin.take().ok_or_else(|| {
         let _ = fs::remove_file(&header_path);
-        "failed to open image request stdin".to_string()
+        HostCommandError::process_failed("failed to open image request stdin")
     })?;
     if let Err(error) = stdin.write_all(&body) {
         let _ = fs::remove_file(&header_path);
-        return Err(format!("failed to write image request body: {error}"));
+        return Err(HostCommandError::process_failed(format!(
+            "failed to write image request body: {error}"
+        )));
     }
     drop(stdin);
 
@@ -68,7 +79,9 @@ pub(crate) fn host_generate_image(request: ImageGenerationRequest) -> Result<Val
         Ok(output) => output,
         Err(error) => {
             let _ = fs::remove_file(&header_path);
-            return Err(format!("failed to wait for image request: {error}"));
+            return Err(HostCommandError::process_failed(format!(
+                "failed to wait for image request: {error}"
+            )));
         }
     };
     let _ = fs::remove_file(&header_path);
@@ -80,20 +93,24 @@ pub(crate) fn host_generate_image(request: ImageGenerationRequest) -> Result<Val
             .filter(|value| !value.is_empty())
             .collect::<Vec<_>>()
             .join(": ");
-        return Err(if detail.is_empty() {
+        return Err(HostCommandError::process_failed(if detail.is_empty() {
             format!("image generation backend returned {}", output.status)
         } else {
             detail
-        });
+        }));
     }
 
-    let response = serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("image generation backend returned invalid JSON: {error}"))?;
+    let response = serde_json::from_slice(&output.stdout).map_err(|error| {
+        HostCommandError::parse_failed(format!(
+            "image generation backend returned invalid JSON: {error}"
+        ))
+    })?;
     persist_image_generation_response(
         response,
         request.codex_home.as_deref(),
         request.thread_id.as_deref(),
     )
+    .map_err(HostCommandError::io_failed)
 }
 
 fn write_image_request_headers(api_key: Option<&str>) -> Result<std::path::PathBuf, String> {
@@ -106,7 +123,7 @@ fn write_image_request_headers(api_key: Option<&str>) -> Result<std::path::PathB
         content.push_str(token);
         content.push('\n');
     }
-    let path = temp_file_path("hicodex-image-headers", "txt");
+    let path = temp_file_path("forge-image-headers", "txt");
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -313,12 +330,19 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir() -> PathBuf {
+        // pid+nanos alone can collide across parallel test threads; the
+        // counter keeps the destructive remove_dir_all from hitting another
+        // test's fixture.
+        static TEMP_DIR_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = TEMP_DIR_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|value| value.as_nanos())
             .unwrap_or_default();
-        let base =
-            std::env::temp_dir().join(format!("hicodex-image-test-{}-{nanos}", std::process::id()));
+        let base = std::env::temp_dir().join(format!(
+            "forge-image-test-{}-{nanos}-{seq}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base
@@ -341,6 +365,25 @@ mod tests {
         assert!(image_generations_endpoint("file:///tmp/socket").is_err());
         assert!(image_generations_endpoint("http://api.example.test/v1").is_err());
         assert!(image_generations_endpoint("http://user@localhost:8890/v1").is_err());
+    }
+
+    /// Structured-error contract: base-URL validation rejections carry the
+    /// stable "invalid_input" code with the unchanged message text.
+    #[test]
+    fn host_generate_image_rejects_invalid_base_url_with_invalid_input_code() {
+        let error = host_generate_image(ImageGenerationRequest {
+            base_url: "file:///tmp/socket".to_string(),
+            api_key: None,
+            payload: json!({}),
+            codex_home: None,
+            thread_id: None,
+        })
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_input");
+        assert_eq!(
+            error.message,
+            "image generation base URL must start with http:// or https://"
+        );
     }
 
     #[test]

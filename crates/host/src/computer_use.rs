@@ -205,7 +205,7 @@ pub(crate) fn repair_computer_use_bundle_at(
     let cache_root = computer_use_installed_cache_root(codex_home);
     if !destination.starts_with(&cache_root) {
         return Err(HostError::Profile(format!(
-            "Refusing to repair Computer Use outside HiCodex plugin cache: {}",
+            "Refusing to repair Computer Use outside Forge plugin cache: {}",
             destination.to_string_lossy()
         )));
     }
@@ -242,7 +242,7 @@ pub(crate) fn repair_computer_use_bundle_at(
         repaired: true,
         source_path: Some(verified_source.plugin_root_path),
         installed_path: Some(destination.to_string_lossy().to_string()),
-        message: "Computer Use signed-valid bundle was installed into the HiCodex plugin cache."
+        message: "Computer Use signed-valid bundle was installed into the Forge plugin cache."
             .to_string(),
         readiness: repaired_readiness,
     })
@@ -741,7 +741,7 @@ mod tests {
     }
 
     fn mark_fake_computer_use_bundle_signed(plugin_root: &Path) {
-        fs::write(plugin_root.join(".hicodex-test-signed"), "signed").unwrap();
+        fs::write(plugin_root.join(".forge-test-signed"), "signed").unwrap();
         set_test_code_signature_status(&plugin_root.join(COMPUTER_USE_APP_NAME), true);
         set_test_code_signature_status(
             &path_with_segments(plugin_root, COMPUTER_USE_MCP_CLIENT_RELATIVE),
@@ -755,8 +755,8 @@ mod tests {
 
     #[test]
     fn discovers_installed_computer_use_bundle_from_codex_home_cache() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-cache-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-cache-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-cache-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-cache-test");
         let plugin_root = codex_home
             .join("plugins")
             .join("cache")
@@ -825,8 +825,8 @@ mod tests {
 
     #[test]
     fn discovers_computer_use_bundle_from_bundled_marketplace_when_not_installed() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-marketplace-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-marketplace-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-marketplace-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-marketplace-test");
         let marketplace = create_fake_openai_bundled_marketplace(&cli_home);
         let plugin_root = marketplace
             .join("plugins")
@@ -855,8 +855,8 @@ mod tests {
 
     #[test]
     fn reports_all_computer_use_bundle_candidates() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-candidates-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-candidates-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-candidates-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-candidates-test");
         let installed_root = codex_home
             .join("plugins")
             .join("cache")
@@ -891,8 +891,8 @@ mod tests {
 
     #[test]
     fn repairs_invalid_computer_use_cache_from_signed_candidate() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-repair-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-repair-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-repair-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-repair-test");
         let installed_root = codex_home
             .join("plugins")
             .join("cache")
@@ -929,7 +929,7 @@ mod tests {
         );
         assert_eq!(result.readiness.helper_signature_valid, Some(true));
         assert_eq!(result.readiness.mcp_client_signature_valid, Some(true));
-        assert!(installed_root.join(".hicodex-test-signed").exists());
+        assert!(installed_root.join(".forge-test-signed").exists());
 
         let _ = fs::remove_dir_all(&codex_home);
         let _ = fs::remove_dir_all(&cli_home);
@@ -937,8 +937,8 @@ mod tests {
 
     #[test]
     fn refuses_computer_use_repair_without_signed_candidate() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-repair-refuse-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-repair-refuse-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-repair-refuse-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-repair-refuse-test");
         let installed_root = codex_home
             .join("plugins")
             .join("cache")
@@ -959,8 +959,8 @@ mod tests {
 
     #[test]
     fn refuses_computer_use_repair_when_installer_signature_is_not_valid() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-repair-installer-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-repair-installer-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-repair-installer-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-repair-installer-test");
         let marketplace = create_fake_openai_bundled_marketplace(&cli_home);
         let marketplace_root = marketplace
             .join("plugins")
@@ -986,8 +986,8 @@ mod tests {
 
     #[test]
     fn refuses_computer_use_repair_when_mcp_config_is_not_trusted() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-repair-mcp-config-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-mcp-config-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-repair-mcp-config-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-mcp-config-test");
         let marketplace = create_fake_openai_bundled_marketplace(&cli_home);
         let marketplace_root = marketplace
             .join("plugins")
@@ -1028,8 +1028,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn refuses_computer_use_repair_when_source_contains_symlink() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-repair-symlink-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-repair-symlink-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-repair-symlink-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-repair-symlink-test");
         let installed_root = codex_home
             .join("plugins")
             .join("cache")
@@ -1054,7 +1054,7 @@ mod tests {
             .to_string();
 
         assert!(error.contains("refuses symlink entry"));
-        assert!(!installed_root.join(".hicodex-test-signed").exists());
+        assert!(!installed_root.join(".forge-test-signed").exists());
 
         let _ = fs::remove_dir_all(&codex_home);
         let _ = fs::remove_dir_all(&cli_home);
@@ -1062,8 +1062,8 @@ mod tests {
 
     #[test]
     fn reports_unknown_computer_use_readiness_when_bundle_is_missing() {
-        let codex_home = unique_test_dir("hicodex-host-computer-use-missing-test");
-        let cli_home = unique_test_dir("hicodex-host-computer-use-cli-missing-test");
+        let codex_home = unique_test_dir("forge-host-computer-use-missing-test");
+        let cli_home = unique_test_dir("forge-host-computer-use-cli-missing-test");
         fs::create_dir_all(&codex_home).unwrap();
         fs::create_dir_all(&cli_home).unwrap();
 

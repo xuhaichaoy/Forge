@@ -45,7 +45,7 @@ export function buildConversationMarkdown(input: ConversationMarkdownInput): str
     }
 
     /*
-     * `generatedImageGallery` is HiCodex's per-turn collected image carousel
+     * `generatedImageGallery` is Forge's per-turn collected image carousel
      * (Codex `JC`). Markdown export renders each image as a separate
      * `![Generated image](src)` link rather than the carousel container.
      */

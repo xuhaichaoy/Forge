@@ -3,7 +3,7 @@ import type { AccumulatedThreadItem } from "../state/render-groups";
 import { AutoReviewDetail } from "./auto-review-detail";
 import { ExecShellDetail } from "./exec-shell-detail";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   type McpAppHostCallHandler,
   type ReadMcpResourceHandler,
@@ -103,7 +103,7 @@ export function ToolActivityDetail({
   onOpenThreadId?: OpenThreadHandler;
   threadId?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const detail = toolActivityDetailViewModel(item, formatMessage);
   const rawMcpOutput = rawMcpToolOutputForItem(item, detail.running, formatMessage);
   if (detail.kind === "webSearch") {

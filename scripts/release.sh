@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# HiCodex 发版脚本
+# Forge 发版脚本
 #
 # 用法：
 #   ./scripts/release.sh 0.1.1
@@ -10,17 +10,18 @@
 #       同时打 Intel Mac 版本（aarch64 + x86_64 两份）。默认只打 aarch64。
 #
 # 前置：
-#   1. HICODEX_UPDATER_ENDPOINTS 指向真实 HTTPS 更新元数据 URL。
-#   2. HICODEX_UPDATER_PUBKEY 或 HICODEX_UPDATER_PUBKEY_PATH 指向匹配的 Tauri 公钥。
+#   1. FORGE_UPDATER_ENDPOINTS 指向真实 HTTPS 更新元数据 URL。
+#   2. FORGE_UPDATER_PUBKEY 或 FORGE_UPDATER_PUBKEY_PATH 指向匹配的 Tauri 公钥。
 #   3. TAURI_SIGNING_PRIVATE_KEY 或 TAURI_SIGNING_PRIVATE_KEY_PATH 提供 updater 私钥。
-#   4. APPLE_SIGNING_IDENTITY / HICODEX_MACOS_SIGNING_IDENTITY / APPLE_CERTIFICATE
-#      提供 macOS 正式签名；本地候选包可显式设置 HICODEX_RELEASE_ALLOW_ADHOC_SIGNING=1。
+#   4. APPLE_SIGNING_IDENTITY / FORGE_MACOS_SIGNING_IDENTITY / APPLE_CERTIFICATE
+#      提供 macOS 正式签名；本地候选包可显式设置 FORGE_RELEASE_ALLOW_ADHOC_SIGNING=1。
+#   （旧的 HICODEX_* 环境变量名仍作为兼容别名被接受，FORGE_* 优先。）
 #
 # 输出：
 #   dist/release/<version>/
-#     ├── HiCodex_<ver>_aarch64.app.tar.gz
-#     ├── HiCodex_<ver>_aarch64.app.tar.gz.sig
-#     ├── HiCodex_<ver>_aarch64.dmg
+#     ├── Forge_<ver>_aarch64.app.tar.gz
+#     ├── Forge_<ver>_aarch64.app.tar.gz.sig
+#     ├── Forge_<ver>_aarch64.dmg
 #     └── latest.json                          ← 这个文件覆盖到托管 root
 #
 #   把这 4 个文件上传到你的托管（具体路径见 latest.json 里的 url）。
@@ -28,6 +29,13 @@
 set -euo pipefail
 
 VERSION="${1:?usage: $0 <version> [--intel]}"
+# Validate before touching anything: VERSION is sed-substituted into
+# tauri.conf.json / Cargo.toml and `npm pkg set`, so a malformed value would
+# corrupt 4 files (or inject via sed) before failing minutes into the build.
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+  echo "✗ VERSION must be semver (e.g. 0.1.1), got: $VERSION" >&2
+  exit 1
+fi
 WITH_INTEL=false
 [[ "${2:-}" == "--intel" ]] && WITH_INTEL=true
 
@@ -117,7 +125,7 @@ verify_signed_app() {
   fi
   echo "▸ Verifying code signature ($target)..."
   codesign --verify --deep --strict --verbose=2 "$app_path"
-  if [[ "${HICODEX_RELEASE_ALLOW_ADHOC_SIGNING:-}" == "1" ]]; then
+  if [[ "${FORGE_RELEASE_ALLOW_ADHOC_SIGNING:-${HICODEX_RELEASE_ALLOW_ADHOC_SIGNING:-}}" == "1" ]]; then
     echo "▸ Ad-hoc signing allowed; skipping Gatekeeper/notarization verification"
     return 0
   fi
@@ -132,11 +140,16 @@ verify_signed_app() {
 }
 
 if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${HOME}/.tauri/hicodex.key}"
+  KEY_PATH="${TAURI_SIGNING_PRIVATE_KEY_PATH:-${HOME}/.tauri/forge.key}"
+  # 故意保留的 legacy 兜底：老安装机器上的 updater 私钥仍叫 hicodex.key，
+  # forge.key 优先、hicodex.key 兜底，勿在品牌迁移中删除。
+  if [[ ! -f "$KEY_PATH" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" && -f "${HOME}/.tauri/hicodex.key" ]]; then
+    KEY_PATH="${HOME}/.tauri/hicodex.key"
+  fi
   if [[ ! -f "$KEY_PATH" ]]; then
     echo "✗ updater 私钥未配置"
     echo "  设置 TAURI_SIGNING_PRIVATE_KEY，或设置 TAURI_SIGNING_PRIVATE_KEY_PATH 指向私钥文件。"
-    echo "  本机默认也会尝试读取：${HOME}/.tauri/hicodex.key"
+    echo "  本机默认也会尝试读取：${HOME}/.tauri/forge.key"
     exit 1
   fi
   export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY_PATH")"
@@ -162,15 +175,15 @@ mkdir -p "$OUT_DIR"
 RELEASE_CONFIG="$OUT_DIR/tauri.release.conf.json"
 node apps/desktop/scripts/tauri-release-config.mjs --write "$RELEASE_CONFIG"
 APP_PRODUCT_NAME="$(
-  node -e 'const fs = require("fs"); const base = JSON.parse(fs.readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8")); const release = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(release.productName || base.productName || "HiCodex");' "$RELEASE_CONFIG"
+  node -e 'const fs = require("fs"); const base = JSON.parse(fs.readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8")); const release = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(release.productName || base.productName || "Forge");' "$RELEASE_CONFIG"
 )"
-PUBLIC_PRODUCT_NAME="${HICODEX_RELEASE_ARTIFACT_NAME:-HiCodex}"
+PUBLIC_PRODUCT_NAME="${FORGE_RELEASE_ARTIFACT_NAME:-${HICODEX_RELEASE_ARTIFACT_NAME:-Forge}}"
 
 for TARGET in "${TARGETS[@]}"; do
   ARCH="${TARGET%-apple-darwin}"
   echo "▸ Preparing Codex sidecar for $TARGET..."
   RESTORE_CODEX_SIDECAR=true
-  HICODEX_CODEX_TARGET="$TARGET" without_release_secrets npm run sidecar:prepare
+  FORGE_CODEX_TARGET="$TARGET" without_release_secrets npm run sidecar:prepare
   if can_smoke_sidecar_target "$TARGET"; then
     echo "▸ Smoke-testing Codex sidecar for $TARGET..."
     without_release_secrets npm run sidecar:smoke
@@ -196,7 +209,7 @@ METADATA_ARGS=()
 for TARGET in "${TARGETS[@]}"; do
   METADATA_ARGS+=(--target "$TARGET")
 done
-HICODEX_RELEASE_NOTES="$NOTES_RAW" node scripts/generate-tauri-update-metadata.mjs \
+FORGE_RELEASE_NOTES="$NOTES_RAW" node scripts/generate-tauri-update-metadata.mjs \
   --config "$RELEASE_CONFIG" \
   --out-dir "$OUT_DIR" \
   --version "$VERSION" \

@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // Extracts the locally installed Codex Desktop app.asar to /private/tmp/codex-asar
-// so HiCodex contributors can read it as the UI source-of-truth without copying it
+// so Forge contributors can read it as the UI source-of-truth without copying it
 // into the repo. See docs/DEVELOPMENT.md "Codex Desktop evidence workflow".
 
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 
-const ASAR_PATH = process.env.HICODEX_CODEX_ASAR
+// FORGE_* is the canonical env namespace; HICODEX_* stays accepted as a legacy alias.
+const ASAR_PATH = process.env.FORGE_CODEX_ASAR
+  ?? process.env.HICODEX_CODEX_ASAR
   ?? "/Applications/Codex.app/Contents/Resources/app.asar";
-const OUT_DIR = process.env.HICODEX_CODEX_ASAR_OUT
+const OUT_DIR = process.env.FORGE_CODEX_ASAR_OUT
+  ?? process.env.HICODEX_CODEX_ASAR_OUT
   ?? "/private/tmp/codex-asar";
 
 const FORCE = process.argv.includes("--force");
@@ -16,7 +19,7 @@ const PRETTY = process.argv.includes("--pretty");
 
 if (!existsSync(ASAR_PATH)) {
   console.error(`[codex-asar] not found: ${ASAR_PATH}`);
-  console.error("[codex-asar] install Codex Desktop or set HICODEX_CODEX_ASAR=/path/to/app.asar");
+  console.error("[codex-asar] install Codex Desktop or set FORGE_CODEX_ASAR=/path/to/app.asar");
   process.exit(1);
 }
 

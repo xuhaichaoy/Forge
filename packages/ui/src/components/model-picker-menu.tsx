@@ -10,6 +10,8 @@ import {
   isSubscriptionProviderId,
   type ModelPickerProvider,
 } from "../model/model-picker-selection";
+import type { I18nMessageDescriptor } from "../state/i18n";
+import { useForgeIntl } from "./i18n-provider";
 
 export {
   DEFAULT_PROVIDERS,
@@ -61,7 +63,10 @@ export interface ModelPickerMenuProps {
   onClose: () => void;
 }
 
-export const CROSS_ACCOUNT_PICKER_LOCK_REASON = "订阅模型和个人/团队模型不能在同一个聊天中互切，请新建聊天后选择";
+export const CROSS_ACCOUNT_PICKER_LOCK_REASON: I18nMessageDescriptor = {
+  id: "hc.modelPicker.crossAccountLockReason",
+  defaultMessage: "Subscription models and personal/team models can't be switched within the same chat — start a new chat to choose one.",
+};
 
 export function isProviderLockedForActiveThread(
   providerId: string,
@@ -85,6 +90,7 @@ export function ModelPickerMenu({
   onSignIn,
   onClose,
 }: ModelPickerMenuProps) {
+  const { formatMessage } = useForgeIntl();
   const menuRef = useRef<HTMLDivElement | null>(null);
   /*
    * Subscription sections start collapsed: mixing ChatGPT subscription with
@@ -197,9 +203,9 @@ export function ModelPickerMenu({
                 <span className="hc-model-picker-provider-host">
                   {provider.host}
                   {isCrossAccountLocked && (
-                    <span className="hc-model-picker-provider-warning" title={CROSS_ACCOUNT_PICKER_LOCK_REASON}>
+                    <span className="hc-model-picker-provider-warning" title={formatMessage(CROSS_ACCOUNT_PICKER_LOCK_REASON)}>
                       {" · "}
-                      需新建聊天
+                      {formatMessage({ id: "hc.modelPicker.newChatRequired", defaultMessage: "New chat required" })}
                     </span>
                   )}
                   {!isReady && (
@@ -243,7 +249,7 @@ export function ModelPickerMenu({
                      * "not signed in" / "no key" header warning) cannot serve a
                      * turn, so its models are not selectable — picking one only
                      * produced a connect/reconnect error ("Reconnecting… N/5").
-                     * HiCodex extension: Codex Desktop has no per-provider model
+                     * Forge extension: Codex Desktop has no per-provider model
                      * picker (it gates the whole app behind a single ChatGPT
                      * login), so there is no upstream idiom to mirror — we lock
                      * the rows and steer the user to the inline Sign-in row
@@ -266,7 +272,7 @@ export function ModelPickerMenu({
                           title={
                             isLocked
                               ? isCrossAccountLocked
-                                ? CROSS_ACCOUNT_PICKER_LOCK_REASON
+                                ? formatMessage(CROSS_ACCOUNT_PICKER_LOCK_REASON)
                                 : provider.authMode === "oauth"
                                 ? "Sign in with ChatGPT to use this model"
                                 : "Set an API key in Settings → Models to use this model"
@@ -311,7 +317,10 @@ export function ModelPickerMenu({
         <span>Configure providers · API keys · sign-in</span>
       </button>
       <div className="hc-model-picker-menu-footer">
-        切换在下一轮生效，只影响当前聊天和新聊天。订阅模型与个人/团队模型互切需新建聊天。
+        {formatMessage({
+          id: "hc.modelPicker.footerHint",
+          defaultMessage: "Switches take effect on the next turn and only affect this chat and new chats. Switching between subscription and personal/team models requires a new chat.",
+        })}
       </div>
     </div>
   );

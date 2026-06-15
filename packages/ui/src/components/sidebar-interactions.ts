@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type MouseEvent } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import {
   CHATS_GROUP_KEY,

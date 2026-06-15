@@ -11,15 +11,15 @@
  *     `group/tab relative flex h-7 max-w-39 shrink-0 items-center
  *      overflow-hidden rounded-lg bg-token-main-surface-primary px-2 py-1`
  *
- * `hc-*` naming + var-driven theming matches the rest of the HiCodex stylesheet.
+ * `hc-*` naming + var-driven theming matches the rest of the Forge stylesheet.
  */
 
 .hc-side-panel-host {
   /*
-   * Positioning mirrors HiCodex's existing FilePreviewPanel (`hc-file-preview-panel`
+   * Positioning mirrors Forge's existing FilePreviewPanel (`hc-file-preview-panel`
    * in styles/base.css:510-524) — absolute right-aligned within the relatively-
    * positioned `<main className="hc-main">`. Codex's `RightPanelOutlet`
-   * (app-shell-Bh-lgoQk:2777-2809) is laid out by the AppShell grid; HiCodex's
+   * (app-shell-Bh-lgoQk:2777-2809) is laid out by the AppShell grid; Forge's
    * `hc-main` is a flex column so we overlay rather than reserve a column.
    */
   position: absolute;
@@ -148,7 +148,7 @@
 /*
  * Tab-bar utility buttons ("+", close). Codex `I` (Button) with
  *   `color: 'ghost', size: 'toolbar', uniform: true`
- * (thread-app-shell-chrome-BVkAxLhy:1746). HiCodex matches the ghost-toolbar
+ * (thread-app-shell-chrome-BVkAxLhy:1746). Forge matches the ghost-toolbar
  * size with a compact rounded hit target.
  */
 .hc-side-panel-tab-bar-button {

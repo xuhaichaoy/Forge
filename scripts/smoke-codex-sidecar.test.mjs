@@ -53,16 +53,16 @@ function runSmoke(fake, extraEnv = {}) {
     encoding: "utf8",
     env: {
       ...process.env,
-      HICODEX_CODEX_BIN: fake,
-      HICODEX_SIDECAR_SMOKE_TIMEOUT_MS: "100",
-      HICODEX_SIDECAR_VERSION_TIMEOUT_MS: "5000",
+      FORGE_CODEX_BIN: fake,
+      FORGE_SIDECAR_SMOKE_TIMEOUT_MS: "100",
+      FORGE_SIDECAR_VERSION_TIMEOUT_MS: "5000",
       ...extraEnv,
     },
   });
 }
 
 test("sidecar smoke passes when app-server stays alive past the timeout", { skip: smokeFakeSkip }, () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-sidecar-smoke-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-sidecar-smoke-test-"));
   try {
     const fake = writeFakeCodex(tempDir, "alive");
     const result = runSmoke(fake);
@@ -70,7 +70,7 @@ test("sidecar smoke passes when app-server stays alive past the timeout", { skip
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
     assert.equal(payload.version, "fake-codex 1.0.0");
-    assert.match(payload.codexHome, /hicodex-sidecar-smoke-/);
+    assert.match(payload.codexHome, /forge-sidecar-smoke-/);
     assert.match(payload.codexHome, /codex-home$/);
     assert.equal(payload.platformFamily, "unix");
     assert.equal(payload.platformOs, "macos");
@@ -81,7 +81,7 @@ test("sidecar smoke passes when app-server stays alive past the timeout", { skip
 });
 
 test("sidecar smoke fails when app-server exits before the timeout", { skip: smokeFakeSkip }, () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-sidecar-smoke-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-sidecar-smoke-test-"));
   try {
     const fake = writeFakeCodex(tempDir, "exit");
     const result = runSmoke(fake);
@@ -94,12 +94,12 @@ test("sidecar smoke fails when app-server exits before the timeout", { skip: smo
 });
 
 test("sidecar smoke stops app-server when initialize response times out", { skip: smokeFakeSkip }, () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-sidecar-smoke-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-sidecar-smoke-test-"));
   try {
     const stopFile = join(tempDir, "stopped");
     const fake = writeFakeCodex(tempDir, "hang", { stopFile });
     const result = runSmoke(fake, {
-      HICODEX_SIDECAR_PROTOCOL_TIMEOUT_MS: "100",
+      FORGE_SIDECAR_PROTOCOL_TIMEOUT_MS: "100",
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Timed out waiting for initialize response/);

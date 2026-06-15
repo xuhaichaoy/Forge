@@ -6,9 +6,10 @@ import type {
   JsonRpcRequest,
   JsonRpcResponse,
   RequestId,
-} from "@hicodex/codex-protocol";
+} from "@forge/codex-protocol";
 import {
   getHostStatus,
+  hostCommandErrorCode,
   listenEvents,
   sendRaw,
   startAppServer,
@@ -106,7 +107,16 @@ export class CodexJsonRpcClient {
     try {
       status = await startAppServer({});
     } catch (error) {
-      if (!formatError(error).includes("already running")) throw error;
+      /*
+       * Startup-conflict classification, structured-first: hosts with the
+       * { code, message } error contract are matched on the stable code. The
+       * text probe stays as a fallback for old hosts whose rejection is the
+       * bare message string (兼容旧 host).
+       */
+      const alreadyRunning =
+        hostCommandErrorCode(error) === "already_running" ||
+        formatError(error).includes("already running");
+      if (!alreadyRunning) throw error;
       this.handlers.onLog?.("attaching to existing Codex app-server", "warn");
       status = await getHostStatus();
       attachedToExisting = true;
@@ -326,7 +336,7 @@ export class CodexJsonRpcClient {
           message: event.message,
           payload: event,
         });
-        if (isFatalLifecycleMessage(event.message)) {
+        if (isFatalLifecycleEvent(event)) {
           this.markTransportClosed(`Codex app-server connection closed: ${event.message}`);
         }
         void this.refreshStatus().catch((error) => {
@@ -476,6 +486,30 @@ function clearPendingTimeout(pending: PendingRequest): void {
   if (pending.timeout !== null) window.clearTimeout(pending.timeout);
 }
 
+/*
+ * Fatal-lifecycle classification, dual-track. Fatal means the stdio transport
+ * is gone and the client must mark itself closed so the reconnect loop arms.
+ *
+ * 1. Structured path — the Rust host stamps every lifecycle event with a
+ *    machine-readable `kind` (serde snake_case of forge_host::LifecycleKind).
+ *    Known kinds classify without touching the message text, so message
+ *    rewording can never silently break connection-state truthfulness.
+ * 2. Text fallback — events without a `kind` (兼容旧 host) keep the original
+ *    message regex. Unknown future kinds also fall through here so they
+ *    degrade to the legacy behavior instead of being dropped on the floor.
+ */
+const FATAL_LIFECYCLE_KINDS: ReadonlySet<string> = new Set(["stopped", "exited", "stdout_closed"]);
+const BENIGN_LIFECYCLE_KINDS: ReadonlySet<string> = new Set(["started", "config_missing"]);
+
+export function isFatalLifecycleEvent(event: { kind?: string; message: string }): boolean {
+  if (event.kind !== undefined) {
+    if (FATAL_LIFECYCLE_KINDS.has(event.kind)) return true;
+    if (BENIGN_LIFECYCLE_KINDS.has(event.kind)) return false;
+  }
+  return isFatalLifecycleMessage(event.message);
+}
+
+// 兼容旧 host：kind 出现之前的纯文本分类，仅作 isFatalLifecycleEvent 的兜底。
 function isFatalLifecycleMessage(message: string): boolean {
   return /\b(?:stopped|exited|stdout closed|not running)\b/i.test(message);
 }

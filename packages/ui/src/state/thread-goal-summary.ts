@@ -1,6 +1,6 @@
-import type { ThreadGoal } from "@hicodex/codex-protocol";
-import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
-import { HICODEX_DEFAULT_LOCALE, type HiCodexLocale } from "./i18n";
+import type { ThreadGoal } from "@forge/codex-protocol";
+import type { ThreadGoalStatus } from "@forge/codex-protocol/generated/v2/ThreadGoalStatus";
+import { FORGE_DEFAULT_LOCALE, type ForgeLocale } from "./i18n";
 
 export interface ThreadGoalBannerSummary {
   statusLabel: string;
@@ -21,7 +21,7 @@ export const STATUS_LABELS: Record<ThreadGoalStatus, string> = {
 export function threadGoalBannerSummary(
   goal: ThreadGoal,
   nowMs = Date.now(),
-  locale: HiCodexLocale = HICODEX_DEFAULT_LOCALE,
+  locale: ForgeLocale = FORGE_DEFAULT_LOCALE,
 ): ThreadGoalBannerSummary {
   const objective = goal.objective.trim() || "Untitled goal";
   const nextStatus = nextThreadGoalStatus(goal.status);
@@ -55,7 +55,7 @@ export function formatThreadGoalDuration(durationMs: number): string {
 // (en-US "12.3K", zh-CN "1.2万"), NOT a custom K/M tuple that rounds to integers.
 export function formatThreadGoalTokenCount(
   value: number,
-  locale: HiCodexLocale = HICODEX_DEFAULT_LOCALE,
+  locale: ForgeLocale = FORGE_DEFAULT_LOCALE,
 ): string {
   if (!Number.isFinite(value) || value <= 0) return "0";
   return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(Math.floor(value));

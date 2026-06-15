@@ -146,7 +146,7 @@ function TurnCollapseToggle({
    *   className="icon-2xs text-token-foreground/40 transition-transform duration-200"
    * `icon-2xs` ≈ 10px; `text-token-foreground/40` is 40% of foreground.
    *
-   * We don't have the token system in HiCodex, so map to equivalent literal
+   * We don't have the token system in Forge, so map to equivalent literal
    * values: foreground/40 ≈ rgba(0, 0, 0, 0.4); bg-token-bg-subtle ≈ near-black
    * 6% (similar to original bg-black/5 within 1% delta).
    */

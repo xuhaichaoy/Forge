@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn read_or_init_installation_id_generates_and_reuses_uuid() {
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-installation-id-test-{}-{}",
+            "forge-host-installation-id-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn read_or_init_installation_id_canonicalizes_or_rewrites() {
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-installation-id-rewrite-test-{}-{}",
+            "forge-host-installation-id-rewrite-test-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

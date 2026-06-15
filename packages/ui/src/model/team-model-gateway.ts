@@ -1,4 +1,4 @@
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import { hostFromBaseUrl } from "../lib/format";
 import {
   normalizeTeamServiceBaseUrl,

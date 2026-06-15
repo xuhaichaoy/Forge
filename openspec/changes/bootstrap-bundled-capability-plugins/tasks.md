@@ -2,7 +2,7 @@
 
 - [x] 1.1 Read `docs/DEVELOPMENT.md`.
 - [x] 1.2 Run GitNexus impact analysis for host bootstrap symbols.
-- [x] 1.3 Compare global Codex config and isolated HiCodex config for marketplace/plugin entries.
+- [x] 1.3 Compare global Codex config and isolated Forge config for marketplace/plugin entries.
 
 ## 2. Host Bootstrap
 

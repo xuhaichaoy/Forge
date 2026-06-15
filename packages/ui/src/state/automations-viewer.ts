@@ -28,7 +28,7 @@ export interface AutomationsSurfaceModel {
   // resolves a specific automation id and either opens `Km({automationId,…})`
   // (a tab scoped to that one automation via `jm` → `items.find(i=>i.id===n)`)
   // or `navigate-to-route /automations?automationId=${e}`. Both deep-link the
-  // *specific* automation. HiCodex carries that focus target on the surface
+  // *specific* automation. Forge carries that focus target on the surface
   // model so the panel can scope/scroll to the matching schedule row instead of
   // opening the generic full list.
   focusedAutomationId: string | null;
@@ -117,7 +117,11 @@ export function projectAutomationsSurface(
   }
 
   if (input.error) {
-    const unsupported = /method not found|not implemented|unsupported|unknown method/i.test(input.error);
+    // app-server rejects an unimplemented method as a serde enum miss:
+    // "Invalid request: unknown variant `automation/list`, expected one of …".
+    // Treat that wording as unsupported (calm empty state) rather than a red
+    // ERROR — automation/* are future hooks not yet in the app-server.
+    const unsupported = /method not found|not implemented|unsupported|unknown method|unknown variant/i.test(input.error);
     return {
       status: unsupported ? "unsupported" : "error",
       title: "Automations",
@@ -167,7 +171,7 @@ export function projectAutomationsSurface(
 
 // codex: local-conversation-thread-*.js — `jm({automationId:n})` resolves the
 // focused automation as `r.data?.items.find(e => e.id === n) ?? null` before
-// rendering `Pm` (the per-automation editor). HiCodex mirrors that find-by-id
+// rendering `Pm` (the per-automation editor). Forge mirrors that find-by-id
 // so the panel can scope/scroll to the focused schedule row. Returns null when
 // nothing is focused, or when the focused id isn't (yet) present in the loaded
 // schedule list (the payload may still be loading or the automation was
@@ -254,7 +258,7 @@ function parseIsoTimestampMs(raw: string | null | undefined): number | null {
 /*
  * CODEX-REF: Codex 仅渲染 single automation（per-conversation 单条 rail row），
  * 无 multi-list automation section。legacy `projectAutomationRailEntries` 已删除
- * （dead export 无 consumer，并对应于 HiCodex 之前的 multi-list 设计偏差）。
+ * （dead export 无 consumer，并对应于 Forge 之前的 multi-list 设计偏差）。
  * `projectActiveThreadAutomation` 是 single automation 的唯一 projection。
  */
 

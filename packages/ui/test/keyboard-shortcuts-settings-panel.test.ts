@@ -6,7 +6,7 @@ export default function runKeyboardShortcutsSettingsPanelTests(): void {
   rendersOneFlatTableWithColumnHeadersAndSectionRows();
 }
 
-// §M-56: HiCodex previously rendered a separate <table> per command group with no column
+// §M-56: Forge previously rendered a separate <table> per command group with no column
 // headers; Codex (audit-6) renders ONE flat table with a single column header
 // (settings.keyboardShortcuts.table.command/keybinding/actions) and per-section group-header
 // rows in the <tbody>. This locks in that structure (the rendered pixels still need an A/B

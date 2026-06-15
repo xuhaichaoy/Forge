@@ -16,11 +16,11 @@ export interface UseTurnPatchActionResult {
 
 /*
  * Codex Desktop turn-diff Undo / Reapply state + handler, lifted verbatim out of
- * HiCodexApp. `patchActionState` tracks the toolbar button direction (undo ↔
+ * ForgeApp. `patchActionState` tracks the toolbar button direction (undo ↔
  * reapply); `patchFailure` drives the <UnifiedDiffFailureDialog/> overlay. The
  * handler is handed to ConversationView and bubbles down to TurnDiffBlock's
- * onPatchAction. `dispatch` is the (stable) useReducer dispatch, so — exactly as
- * in the original — it is intentionally omitted from the handler's dep array.
+ * onPatchAction. `dispatch` is the stable useReducer dispatch, so listing it in
+ * the handler's dep array never retriggers anything.
  */
 export function useTurnPatchAction({
   worktreeStatusCwd,
@@ -112,7 +112,7 @@ export function useTurnPatchAction({
           setPatchActionInFlight(false);
         });
     },
-    [worktreeStatusCwd],
+    [dispatch, worktreeStatusCwd],
   );
 
   return { handlePatchAction, patchActionState, patchActionInFlight, patchFailure, setPatchFailure };

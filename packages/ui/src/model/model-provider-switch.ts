@@ -1,14 +1,26 @@
+import type { I18nMessageDescriptor } from "../state/i18n";
 import {
   DEFAULT_SUBSCRIPTION_HTTP_PROVIDER_ID,
   DEFAULT_SUBSCRIPTION_PROVIDER_ID,
   decodeSelection,
 } from "./model-settings";
 
-export const CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE =
-  "订阅模型和个人/团队模型不能在同一个聊天中互切。请新建聊天后选择目标模型。";
+/*
+ * Same lock as hc.modelPicker.crossAccountLockReason (model-picker-menu.tsx),
+ * but a separate id on purpose: the picker tooltip is the short form while
+ * this error/toast copy is the full sentence ("…请新建聊天后选择目标模型。"),
+ * so merging the ids would silently rewrite one of the visible strings.
+ */
+export const CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE: I18nMessageDescriptor = {
+  id: "hc.modelProviderSwitch.crossAccountBlocked",
+  defaultMessage:
+    "Subscription models and personal/team models can't be switched within the same chat. Start a new chat and choose the target model.",
+};
 
-export const PROVIDER_SWITCH_FAILED_MESSAGE =
-  "当前聊天没有切到所选模型提供方。请重新选择模型后再发送。";
+export const PROVIDER_SWITCH_FAILED_MESSAGE: I18nMessageDescriptor = {
+  id: "hc.modelProviderSwitch.switchFailed",
+  defaultMessage: "This chat didn't switch to the selected model provider. Pick the model again before sending.",
+};
 
 export function isSubscriptionModelProvider(providerId: string | null | undefined): boolean {
   const normalized = providerId?.trim();

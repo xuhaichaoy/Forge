@@ -1,7 +1,7 @@
 import { Check, Copy as CopyIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
-import type { ToolActivityDetailViewModel } from "./tool-activity-detail";
+import { useForgeIntl } from "./i18n-provider";
+import type { ToolActivityDetailViewModel } from "./tool-activity-detail-view-model";
 
 /*
  * codex: the embedded exec header (`Nv` `he`) labels the block by SHELL TYPE,
@@ -71,7 +71,7 @@ export function ExecShellDetail({
   detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>;
   forceExpanded?: boolean;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [expanded, setExpanded] = useState(() => initialExecShellExpanded(detail));
   const [copiedTarget, setCopiedTarget] = useState<ExecShellCopyTarget | null>(null);
   /*
@@ -110,6 +110,7 @@ export function ExecShellDetail({
   useEffect(() => {
     setExpanded(initialExecShellExpanded(detail));
     setCommandExpanded(forceExpanded);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意以 detail.id 为重置键：仅切换到另一条 exec 时重置展开态，流式输出更新（detail 引用变化）不得回弹
   }, [detail.id, forceExpanded]);
 
   const copyTarget = (target: ExecShellCopyTarget) => {
@@ -189,7 +190,7 @@ export function ExecShellDetail({
        * Codex embedded Nv: the output block `ue` is a sibling of the command row
        * inside `pe = <div className="relative">...</div>` and renders
        * UNCONDITIONALLY (only gated on whether there IS output text - `W = w ? a :
-       * l ? "" : E`). It is NOT hidden behind a body toggle, so HiCodex shows it
+       * l ? "" : E`). It is NOT hidden behind a body toggle, so Forge shows it
        * whenever `output` is present rather than gating on `bodyOpen`.
        */}
       {output && (
@@ -216,7 +217,7 @@ export function ExecShellDetail({
 // stays the locale-free English source (the status discriminant below keys off
 // it); only the displayed label is localized so non-English UI does not leak
 // the English source footer. defaultMessage keeps en-US unchanged.
-function localizeExecFooter(footer: string, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): string {
+function localizeExecFooter(footer: string, formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"]): string {
   if (footer === "Success") return formatMessage({ id: "execFooter.success", defaultMessage: "Success" });
   if (footer === "Stopped") return formatMessage({ id: "execFooter.stopped", defaultMessage: "Stopped" });
   if (footer === "Exit code unknown") {
@@ -238,7 +239,7 @@ function localizeExecFooter(footer: string, formatMessage: ReturnType<typeof use
  * Derive a compact footer state from the existing exec view model. Newer data
  * can set a structured status; older fixtures still arrive as footer strings.
  */
-function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): ReactNode {
+function renderExecFooter(detail: Extract<ToolActivityDetailViewModel, { kind: "exec" }>, formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"]): ReactNode {
   if (detail.running) {
     return <div aria-hidden="true" className="hc-exec-shell-footer" data-exec-status="in-progress" />;
   }

@@ -1,9 +1,9 @@
 import { GitFork } from "lucide-react";
 import { useState } from "react";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 import { IconActionButton, MessageActionRow } from "./message-action-row";
 
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export interface AssistantHookStatsSummary {
   label: string;
@@ -37,7 +37,7 @@ export function AssistantMessageActions({
   threadId?: string | null;
   turnId?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const autoReviewSummary = assistantAutoReviewSummary(item);
   const hookStatsSummary = assistantHookStatsSummary(item, formatMessage);
   const goalSummary = assistantCompletedThreadGoal(item);
@@ -49,7 +49,7 @@ export function AssistantMessageActions({
     <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren} sentAtMs={messageSentAtMs(item)}>
       {onFork && (
         <IconActionButton ariaLabel={formatMessage({ id: "assistantMessageContent.forkAriaLabel", defaultMessage: "Fork from this point" })} title={formatMessage({ id: "assistantMessageContent.forkTooltip", defaultMessage: "Fork" })} onClick={onFork}>
-          {/* HiCodex divergence: 12px (Codex action icon-xs = 16px), per product preference */}
+          {/* Forge divergence: 12px (Codex action icon-xs = 16px), per product preference */}
           <GitFork size={12} />
         </IconActionButton>
       )}
@@ -100,7 +100,7 @@ function AssistantHookStatsAction({ summary }: { summary: AssistantHookStatsSumm
 }
 
 function AssistantCompletedGoalAction({ summary }: { summary: AssistantCompletedGoalSummary }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const visibleLabel = summary.durationLabel
     ? formatMessage(
         { id: "assistantMessageContent.goalAchieved", defaultMessage: "Goal achieved in {totalTime}" },

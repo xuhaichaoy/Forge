@@ -9,9 +9,9 @@ import type { MemoryCitationEntryView } from "../state/conversation-markdown-eng
 import { ContextMenu } from "./context-menu";
 import { DelinkFileCitationsContext, FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export function MemoryCitationView({
   citation,
@@ -22,7 +22,7 @@ export function MemoryCitationView({
   memoryCitationRoot?: string | null;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const entries = memoryCitationEntries(citation);
   if (entries.length === 0) return null;
   return (
@@ -108,7 +108,7 @@ function citationHref(entry: Pick<FileReference, "path" | "lineStart">): string 
 // `(e,n)=>{...if(F&&!R&&!e){I({isPreview}); return} ...modifiedClick:e...}`.
 // A plain click (`!e`) opens the in-app preview; a modified click
 // (`metaKey||ctrlKey`) routes to the external / open-in path instead.
-// HiCodex mirrors that: plain click -> `onOpenFileReference` (in-app
+// Forge mirrors that: plain click -> `onOpenFileReference` (in-app
 // preview), Cmd/Ctrl-click -> `onOpenFileReferenceExternal` when an
 // external opener is wired. With no external opener available the click
 // falls through to the in-app preview (never the no-op it was before).
@@ -133,7 +133,7 @@ function handleFileReferenceClick(
 }
 
 // codex inline-mentions-*.js wraps each inline file-reference anchor with the shared
-// workspace-file context menu; HiCodex's anchor mirrors that via the shared
+// workspace-file context menu; Forge's anchor mirrors that via the shared
 // FileCitationMenuContext + items builder (see ./file-citation-menu). onClick (open)
 // keeps using the existing handlers unchanged.
 export function FileCitationAnchor({
@@ -152,7 +152,7 @@ export function FileCitationAnchor({
   const menuActions = useContext(FileCitationMenuContext);
   const delink = useContext(DelinkFileCitationsContext);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions, formatMessage });
 
   // Projectless conversation: the citation is a knowledge-base / tool source, not

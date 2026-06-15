@@ -12,10 +12,10 @@ import {
   type UiAppearancePreferences,
 } from "./appearance";
 import {
-  HICODEX_SUPPORTED_LOCALES,
+  FORGE_SUPPORTED_LOCALES,
   localeDescription,
   localeLabel,
-  type HiCodexLocale,
+  type ForgeLocale,
 } from "./i18n";
 import {
   UI_THEME_MODES,
@@ -44,9 +44,9 @@ export function appearanceSettingsEntries(context: {
 /*
  * CODEX-REF: appearance-settings-*.js. Codex Desktop renders a
  * number input bound to client config `codeFontSize` (range 8-24, unit "px",
- * onBlur commit). HiCodex exposes the value via the status field and uses
+ * onBlur commit). Forge exposes the value via the status field and uses
  * +/- secondaryActions to step the size by 1px. That maps to the same
- * `setCodeFontSize` action HiCodex dispatches via the command-panel pipeline.
+ * `setCodeFontSize` action Forge dispatches via the command-panel pipeline.
  */
 export function projectCodeFontSizeSettingsEntry(size: number): CommandPanelEntry {
   const clamped = clampCodeFontSize(size);
@@ -137,7 +137,7 @@ export function projectThemeSettingsEntry(theme: UiThemeSnapshot): CommandPanelE
   };
 }
 
-export function projectLocaleSettingsEntry(locale: HiCodexLocale): CommandPanelEntry {
+export function projectLocaleSettingsEntry(locale: ForgeLocale): CommandPanelEntry {
   return {
     id: "settings:locale",
     title: "Language",
@@ -146,9 +146,9 @@ export function projectLocaleSettingsEntry(locale: HiCodexLocale): CommandPanelE
     meta: "Saved locally",
     details: [
       localeDescription(locale),
-      "Local i18n preference for the HiCodex shell.",
+      "Local i18n preference for the Forge shell.",
     ],
-    secondaryActions: HICODEX_SUPPORTED_LOCALES
+    secondaryActions: FORGE_SUPPORTED_LOCALES
       .filter((nextLocale) => nextLocale !== locale)
       .map((nextLocale) => localeAction(nextLocale)),
   };
@@ -168,7 +168,7 @@ function themeModeAction(mode: UiThemeMode) {
   };
 }
 
-function localeAction(locale: HiCodexLocale) {
+function localeAction(locale: ForgeLocale) {
   const label = localeLabel(locale);
   return {
     id: `locale:${locale}`,

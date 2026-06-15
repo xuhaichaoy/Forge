@@ -25,7 +25,7 @@ import {
 } from "./side-panel-tab-host";
 
 /*
- * HiCodex port of Codex Desktop's tab controller, command-side wrapper.
+ * Forge port of Codex Desktop's tab controller, command-side wrapper.
  *
  * The pure state functions live in `side-panel-tab-host.ts`. This class wires
  * them up into the imperative API exposed by Codex's `x({...})` factory
@@ -36,7 +36,7 @@ import {
  *
  * `panelOpen` is owned externally — Codex stores it in atoms `l`/`u` that the
  * controller mutates via the injected `setPanelOpen` callback (lines 141, 222,
- * 236). HiCodex matches that split via the `observer.setPanelOpen` hook so
+ * 236). Forge matches that split via the `observer.setPanelOpen` hook so
  * the React shell can render the panel chrome.
  */
 export interface SidePanelTabHostControllerOptions {
@@ -235,7 +235,7 @@ export class SidePanelTabHostController {
    * Requires panel open, active tab present, and `isClosable: true`. Returns
    * whether the close went through.
    *
-   * HiCodex caller passes `panelOpen` because the controller doesn't own that
+   * Forge caller passes `panelOpen` because the controller doesn't own that
    * atom (matches Codex's `t` = `panelOpen$` parameter from `x(...)`).
    */
   closeActiveTab(panelOpen: boolean): boolean {

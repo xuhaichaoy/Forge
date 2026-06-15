@@ -64,14 +64,20 @@ export function renderUserMessageInlineMarkdown(text: string): ReactNode[] {
       return <code key={index}>{segment.text}</code>;
     }
     if (segment.kind === "link") {
+      const external = isExternalUserMessageHref(segment.href);
       return (
         <a
-          className={isExternalUserMessageHref(segment.href) ? "hc-markdown-link is-external" : "hc-markdown-link"}
+          className={external ? "hc-markdown-link is-external" : "hc-markdown-link"}
           href={segment.href}
           key={index}
-          rel={isExternalUserMessageHref(segment.href) ? "noreferrer" : undefined}
-          target={isExternalUserMessageHref(segment.href) ? "_blank" : undefined}
+          rel={external ? "noreferrer" : undefined}
+          target={external ? "_blank" : undefined}
           title={segment.href}
+          // A bare local/relative href resolves against the SPA origin, so a
+          // plain click navigates the whole webview away. External links open
+          // in a new tab; local ones stay inert (the assistant renderer routes
+          // these through the file-reference opener — user messages don't).
+          onClick={external ? undefined : (event) => event.preventDefault()}
         >
           <span className="hc-markdown-link-label">{segment.label}</span>
         </a>

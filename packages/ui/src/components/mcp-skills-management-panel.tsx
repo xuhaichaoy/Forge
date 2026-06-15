@@ -28,7 +28,7 @@ import {
   managementPanelSummary,
   type ManagementPanelKind,
 } from "../state/mcp-skills-management";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface McpSkillsManagementPanelProps {
   kind: ManagementPanelKind;
@@ -45,9 +45,9 @@ export function McpSkillsManagementPanel({
   onSelectEntry,
   onSelectAction,
 }: McpSkillsManagementPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (!panelState) {
-    // HiCodex-only fallback (no Codex equivalent): no settings section is selected yet.
+    // Forge-only fallback (no Codex equivalent): no settings section is selected yet.
     return (
       <div className="hc-settings-empty">
         {formatMessage({ id: "hc.management.selectSection", defaultMessage: "Select a settings section." })}

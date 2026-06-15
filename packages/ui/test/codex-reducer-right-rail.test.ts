@@ -1,4 +1,4 @@
-import type { JsonRpcNotification, Thread, ThreadItem } from "@hicodex/codex-protocol";
+import type { JsonRpcNotification, Thread, ThreadItem } from "@forge/codex-protocol";
 import {
   codexUiReducer,
   initialCodexUiState,
@@ -141,7 +141,7 @@ function projectsBranchDetailsAfterFirstTurnMetadataRefresh(): void {
       gitInfo: {
         branch: "main",
         sha: "abcdef1234567890",
-        originUrl: "git@example.com:hicodex/HiCodex.git",
+        originUrl: "git@example.com:forge/Forge.git",
       },
       turns: [],
     }),

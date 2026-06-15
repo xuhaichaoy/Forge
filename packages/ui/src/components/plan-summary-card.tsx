@@ -4,7 +4,7 @@ import type { MouseEvent } from "react";
 
 import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { Markdownish } from "./message-markdown-renderer";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
@@ -20,7 +20,7 @@ export function PlanSummaryCard({
   const canUseContentActions = completed && content.trim().length > 0;
   const [collapsed, setCollapsed] = useState(() => !completed);
   const [copied, setCopied] = useState(false);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const title = completed
     ? formatMessage({ id: "localConversation.planSummary.title", defaultMessage: "Plan" })
     : formatMessage({ id: "localConversation.planSummary.titleWriting", defaultMessage: "Writing plan" });

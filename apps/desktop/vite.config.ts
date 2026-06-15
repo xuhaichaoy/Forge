@@ -17,8 +17,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "@hicodex/ui": fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
-      "@hicodex/codex-protocol": fileURLToPath(
+      "@forge/ui": fileURLToPath(new URL("../../packages/ui/src", import.meta.url)),
+      "@forge/codex-protocol": fileURLToPath(
         new URL("../../packages/codex-protocol/src", import.meta.url),
       ),
     },

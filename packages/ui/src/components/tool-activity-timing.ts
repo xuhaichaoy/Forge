@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { isItemInProgress, itemType } from "../state/thread-item-fields";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 type ToolActivityUnit = Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
 
 export function useToolActivitySummaryLabel(unit: ToolActivityUnit): string {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [now, setNow] = useState(() => Date.now());
   const workedForItem = unit.summary.groupType === "worked-for" ? workedForActivityItem(unit.items) : undefined;
   const status = typeof workedForItem?.status === "string" ? workedForItem.status : "";
@@ -60,7 +60,7 @@ function formatWorkedDuration(ms: number): string {
 /**
  * Codex's single-command / exec summary row appends a live `toolSummaryForCmd
  * .runningTimer` (" for {elapsed}", tabular-nums) span after the status text while
- * the command runs (e.g. "Running command for 4s", ticking each second). HiCodex
+ * the command runs (e.g. "Running command for 4s", ticking each second). Forge
  * only timed the worked-for group, so this hook supplies the per-command elapsed
  * for an in-progress single exec row in a collapsed-tool-activity unit.
  *

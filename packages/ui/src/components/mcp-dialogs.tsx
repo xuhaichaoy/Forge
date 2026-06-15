@@ -8,7 +8,7 @@ import { McpToolCallForm } from "./mcp-tool-call-form";
 /*
  * The three MCP overlays (tool-call form, server-config form, follow-up
  * dialog) grouped into one presentational component, extracted from
- * HiCodexApp's overlay layer. All callbacks are built by the body and passed
+ * ForgeApp's overlay layer. All callbacks are built by the body and passed
  * in — the component itself has no side effects.
  */
 export function McpDialogs({

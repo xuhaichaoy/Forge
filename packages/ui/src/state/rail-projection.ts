@@ -1,6 +1,6 @@
 import { stringField } from "../lib/format";
 
-import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
+import { forgeImageToolOutputUrl } from "./image-generation-tool";
 import type {
   AppRegistryEntry,
   ItemRecord,
@@ -106,9 +106,9 @@ export function collectRailEntries(
     }
   }
 
-  const hiCodexImageUrl = hiCodexImageToolOutputUrl(item);
-  if (hiCodexImageUrl) {
-    setArtifact(artifacts, imageArtifactEntryFromSource(hiCodexImageUrl, statusText(item)));
+  const forgeImageUrl = forgeImageToolOutputUrl(item);
+  if (forgeImageUrl) {
+    setArtifact(artifacts, imageArtifactEntryFromSource(forgeImageUrl, statusText(item)));
   }
 
   if (item.type === "mcpToolCall") {
@@ -369,7 +369,7 @@ function shouldKeepArtifactTextMatch(
   // CODEX-REF: local-conversation-thread-*.js —
   // Codex Desktop's assistant artifact extraction parses markdown links and inline-code
   // file references without a "positive context" keyword gate; any resolved path it
-  // surfaces becomes an artifact. HiCodex still keeps a heuristic for bare/relative
+  // surfaces becomes an artifact. Forge still keeps a heuristic for bare/relative
   // filenames (to avoid false positives in prose), but treats absolute filesystem
   // paths (`/Users/...`, `file://...`, `C:\...`) and `linePath` matches (lines that
   // start with a path) as strong-enough signals on their own, so AI messages like

@@ -410,7 +410,7 @@ function keepsCompletedExecShellCollapsedLikeDesktop(): void {
 function buildsStatusAwarePatchLabels(): void {
   // codex patch-item-content: the change verb tracks the patch status — present
   // participle while running, "Rejected"/"Stopped …" for declined/aborted, past
-  // tense once completed. HiCodex previously always showed the past tense.
+  // tense once completed. Forge previously always showed the past tense.
   const labelFor = (status: string, kind: string): string => {
     const vm = toolActivityDetailViewModel({
       type: "fileChange",
@@ -594,7 +594,7 @@ function buildsMcpDetails(): void {
   assertEqual(
     textBlockHtml.includes("Result"),
     false,
-    "MCP text result blocks should not use HiCodex's old Result label",
+    "MCP text result blocks should not use Forge's old Result label",
   );
   assertEqual(
     textBlockHtml.includes("Annotations: audience=assistant; priority=0.4"),
@@ -654,7 +654,7 @@ function buildsMcpDetails(): void {
   assertEqual(
     unknownHtml.includes("Raw block"),
     false,
-    "unknown MCP result blocks should not show HiCodex's old Raw block title",
+    "unknown MCP result blocks should not show Forge's old Raw block title",
   );
   const desktopUnknownHtml = renderToStaticMarkup(createElement(ToolActivityDetail, {
     item: {
@@ -718,7 +718,7 @@ function buildsMcpDetails(): void {
   assertEqual(
     structuredOnlyHtml.includes("Result"),
     false,
-    "MCP structuredContent JSON should not use HiCodex's old Result label",
+    "MCP structuredContent JSON should not use Forge's old Result label",
   );
   assertEqual(
     structuredOnlyHtml.includes("&quot;count&quot;: 2"),
@@ -1146,7 +1146,7 @@ function buildsMcpAppWidgetDataUpdatesLikeDesktop(): void {
       toolResponseMetadata: { trace: "abc" },
       toolResult,
       viewParams: { pageTitle: "Example" },
-      widgetId: "hicodex-inline-widget",
+      widgetId: "forge-inline-widget",
       widgetState: { selectedId: "node-1" },
     },
     "MCP app setWidgetData should preserve widget state while pushing Desktop-style tool data",
@@ -1186,7 +1186,7 @@ function buildsMcpAppWidgetViewUpdatesLikeDesktop(): void {
       displayMode: "fullscreen",
       isTombstone: false,
       viewParams: { panel: "browser" },
-      widgetId: "hicodex-inline-widget",
+      widgetId: "forge-inline-widget",
     },
     "MCP app setWidgetView should push Desktop-style display mode and view params",
   );
@@ -1572,7 +1572,7 @@ function buildsAutoReviewDetails(): void {
   assertEqual(
     html.includes("Status: denied"),
     false,
-    "auto-review detail should not render HiCodex's old status/risk code body",
+    "auto-review detail should not render Forge's old status/risk code body",
   );
   assertEqual(
     html.includes('aria-expanded="false"'),

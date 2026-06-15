@@ -1,8 +1,8 @@
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { useMeasuredTextCollapse } from "../hooks/use-measured-text-collapse";
 
 export function CommandPreview({ text }: { text: string }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const { ref, state, toggle } = useMeasuredTextCollapse<HTMLSpanElement>(3);
   const isExpanded = state === "expanded";
   const isCollapsed = state === "collapsed";

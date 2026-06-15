@@ -8,7 +8,7 @@ import {
   DESKTOP_ONBOARDING_LAST_COMPLETED_KEY,
   DESKTOP_PROJECTLESS_ONBOARDING_COMPLETED_KEY,
   DESKTOP_WELCOME_PENDING_KEY,
-  HICODEX_ONBOARDING_INSTALLATION_ID_KEY,
+  FORGE_ONBOARDING_INSTALLATION_ID_KEY,
   completeProjectlessOnboarding,
   dismissFirstNewThreadPromos,
   loadOnboardingSnapshot,
@@ -42,7 +42,7 @@ function projectsDesktopOnboardingStorageKeys(): void {
       projectlessCompleted: false,
       welcomePending: true,
     }),
-    "Desktop onboarding keys should load into a stable HiCodex snapshot",
+    "Desktop onboarding keys should load into a stable Forge snapshot",
   );
 }
 
@@ -61,7 +61,7 @@ function appliesHostInstallationFirstLaunchSignal(): void {
   }, storage);
 
   assertEqual(
-    storage.values.get(HICODEX_ONBOARDING_INSTALLATION_ID_KEY),
+    storage.values.get(FORGE_ONBOARDING_INSTALLATION_ID_KEY),
     "11111111-1111-4111-8111-111111111111",
     "host installation id should be remembered separately from Desktop onboarding keys",
   );

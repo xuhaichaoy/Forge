@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
  * Desktop backs each RailSection's collapse boolean with a Jotai atomFamily
  * keyed by sectionId, so collapsing/expanding a
  * section persists across unmount/remount within the running session (and is
- * not written to localStorage). HiCodex reproduces the same semantics with a
+ * not written to localStorage). Forge reproduces the same semantics with a
  * module-level Map plus a tiny pub/sub so multiple instances of the same
  * section key stay in sync without pulling in a state library. */
 const COLLAPSE_STATE = new Map<string, boolean>();

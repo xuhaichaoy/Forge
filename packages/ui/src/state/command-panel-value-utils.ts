@@ -1,4 +1,4 @@
-import type { CommandPanelSecondaryAction } from "./command-panel";
+import type { CommandPanelSecondaryAction } from "./command-panel-types";
 
 export function stringArrayField(value: unknown, key: string): string[] {
   if (!isRecordValue(value)) return [];

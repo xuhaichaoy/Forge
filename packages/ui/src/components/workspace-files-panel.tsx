@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileTree } from "./file-tree";
 import type { FileTreeSelectOptions } from "./file-tree";
 import { FileTreeSearchInput } from "./file-tree-search-input";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   isTauriRuntime,
   readTextFile,
@@ -55,7 +55,7 @@ export function WorkspaceFilesPanel({
   searchWorkspaceFiles,
   includeHidden = false,
 }: WorkspaceFilesPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex: _e — atom `me` { expandedPaths, scrollTop, searchQuery, selectedPath }.
   // MVP: hold equivalent state in component-local React state.
   const [entriesByDir, setEntriesByDir] = useState<Map<string, WorkspaceDirEntry[]>>(

@@ -1,6 +1,6 @@
 ## Why
 
-Browser and Computer Use currently appear in HiCodex Settings as Codex Desktop route placeholders. The project already exposes app-server plugin management surfaces, and the local Codex marketplace contains Browser and Computer Use plugins, so these settings pages should show real plugin status and setup actions instead of only source-evidence placeholders.
+Browser and Computer Use currently appear in Forge Settings as Codex Desktop route placeholders. The project already exposes app-server plugin management surfaces, and the local Codex marketplace contains Browser and Computer Use plugins, so these settings pages should show real plugin status and setup actions instead of only source-evidence placeholders.
 
 ## What Changes
 

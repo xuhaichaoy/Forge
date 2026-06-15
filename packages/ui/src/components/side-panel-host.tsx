@@ -41,7 +41,7 @@ import type {
  * `data-tab-preview-pin-exempt`.
  *
  * Width — Codex `RightPanelOutlet` (app-shell-Bh-lgoQk:2777-2809) hard-codes
- * a `defaultWidth: 600` and supports user resize. HiCodex starts with the
+ * a `defaultWidth: 600` and supports user resize. Forge starts with the
  * 600 default and exposes a `widthPx` prop so the parent controls resize via
  * the existing `useFilePreviewPanelLayout` hook (or a future side-panel hook).
  *
@@ -69,7 +69,7 @@ export interface SidePanelHostProps {
   readonly afterTabsSlot?: ReactNode;
   /** Sticky tail slot — Codex `afterListSticky`, typically the "+" button. */
   readonly afterTabsStickySlot?: ReactNode;
-  /** Slot rendered above the tab strip (HiCodex extension for app header). */
+  /** Slot rendered above the tab strip (Forge extension for app header). */
   readonly headerSlot?: ReactNode;
   /** Pixel width of the panel. Default 600px (Codex `RightPanelOutlet` default). */
   readonly widthPx?: number;
@@ -241,6 +241,7 @@ class SidePanelTabErrorBoundary extends Component<
 
   componentDidUpdate(prevProps: { resetKey: string }): void {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error != null) {
+      // oxlint-disable-next-line react/no-did-update-set-state -- ErrorBoundary 标准 reset-on-key 模式：prevProps 比较守卫保证仅在 resetKey 变化且有错误时清一次，不会循环
       this.setState({ error: null });
     }
   }

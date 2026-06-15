@@ -1,6 +1,6 @@
-import type { HookMetadata } from "@hicodex/codex-protocol/generated/v2/HookMetadata";
-import type { HookSource } from "@hicodex/codex-protocol/generated/v2/HookSource";
-import type { HooksListResponse } from "@hicodex/codex-protocol/generated/v2/HooksListResponse";
+import type { HookMetadata } from "@forge/codex-protocol/generated/v2/HookMetadata";
+import type { HookSource } from "@forge/codex-protocol/generated/v2/HookSource";
+import type { HooksListResponse } from "@forge/codex-protocol/generated/v2/HooksListResponse";
 import type { ConfigWriteActionEdit } from "./command-panel";
 
 export interface HookTrustUpdate {

@@ -1,6 +1,6 @@
 import { ListChecks, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   PLAN_KEYWORD_SUGGESTION_ID,
   shouldShowPlanKeywordSuggestion,
@@ -24,7 +24,7 @@ export function AboveComposerPlanSuggestion({
   onPlanSelected,
   showPlanKeywordSuggestion = true,
 }: AboveComposerPlanSuggestionProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const suggestionScope = conversationId ?? "__new-thread__";
   const [dismissedByScope, setDismissedByScope] = useState<Record<string, string[]>>({});
   const dismissed = dismissedByScope[suggestionScope] ?? [];

@@ -1,4 +1,5 @@
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/forge-desktop-namespace";
+import { formatMessage, type I18nMessageDescriptor, type I18nValues } from "../state/i18n";
 import { scheduleAppSettingsPersist } from "./app-settings";
 import {
   DEFAULT_YUXI_BASE_URL,
@@ -8,7 +9,7 @@ import {
 } from "./yuxi-client";
 
 export const DEFAULT_TEAM_SERVICE_BASE_URL = DEFAULT_YUXI_BASE_URL;
-export const TEAM_SERVICE_AUTH_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.teamServiceAuth;
+export const TEAM_SERVICE_AUTH_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.teamServiceAuth;
 
 export interface TeamServiceUser {
   id: number | string | null;
@@ -44,15 +45,71 @@ export interface TeamServiceRegisterPayload {
 
 type TeamServiceAuthStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+/*
+ * Localizable auth copy. Descriptors live here; rendering happens in the
+ * consumer — team-service-auth-gate.tsx formats via its useForgeIntl hook —
+ * with the module-level formatMessage singleton as the non-React fallback.
+ */
+const TEAM_SERVICE_AUTH_COPY = {
+  invalidSession: {
+    id: "hc.teamAuth.error.invalidSession",
+    defaultMessage: "Your sign-in credentials are invalid. Please sign in again.",
+  },
+  loginMissingCredentials: {
+    id: "hc.teamAuth.error.loginMissingCredentials",
+    defaultMessage: "Enter your username and password.",
+  },
+  registerMissingCredentials: {
+    id: "hc.teamAuth.error.registerMissingCredentials",
+    defaultMessage: "Enter a username and password.",
+  },
+  invalidCredentials: {
+    id: "hc.teamAuth.error.invalidCredentials",
+    defaultMessage: "Incorrect username or password.",
+  },
+  forbidden: {
+    id: "hc.teamAuth.error.forbidden",
+    defaultMessage: "This account doesn't have permission to use this service.",
+  },
+  accountExists: {
+    id: "hc.teamAuth.error.accountExists",
+    defaultMessage: "This account already exists.",
+  },
+  requestFailed: {
+    id: "hc.teamAuth.error.requestFailed",
+    defaultMessage: "Authentication request failed ({status})",
+  },
+  missingAccessToken: {
+    id: "hc.teamAuth.error.missingAccessToken",
+    defaultMessage: "Signed in, but the server didn't return an access token. Check the server's auth endpoint.",
+  },
+  signInFailed: {
+    id: "hc.teamAuth.error.signInFailed",
+    defaultMessage: "Sign-in failed. Please try again later.",
+  },
+} satisfies Record<string, I18nMessageDescriptor>;
+
 export class TeamServiceAuthError extends Error {
   readonly status: number | null;
   readonly detail: unknown;
+  /** Localizable UI copy; null when `message` carries server-provided text. */
+  readonly descriptor: I18nMessageDescriptor | null;
+  readonly values: I18nValues | undefined;
 
-  constructor(message: string, status: number | null = null, detail: unknown = null) {
-    super(message);
+  constructor(
+    copy: I18nMessageDescriptor | string,
+    status: number | null = null,
+    detail: unknown = null,
+    values?: I18nValues,
+  ) {
+    // `message` stays a plain localized string (Error contract, logging); UI
+    // consumers re-format from `descriptor` with their own formatter instance.
+    super(typeof copy === "string" ? copy : formatMessage(copy, values));
     this.name = "TeamServiceAuthError";
     this.status = status;
     this.detail = detail;
+    this.descriptor = typeof copy === "string" ? null : copy;
+    this.values = values;
   }
 }
 
@@ -79,7 +136,7 @@ export function saveTeamServiceAuthSession(
 ): TeamServiceAuthSession {
   const normalized = normalizeTeamServiceAuthSession(session);
   if (!normalized) {
-    throw new TeamServiceAuthError("登录凭证无效，请重新登录");
+    throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.invalidSession);
   }
   if (storage) {
     storage.setItem(TEAM_SERVICE_AUTH_STORAGE_KEY, JSON.stringify(normalized));
@@ -114,7 +171,7 @@ export async function loginTeamService(payload: TeamServiceLoginPayload): Promis
   const baseUrl = normalizeTeamServiceBaseUrl(payload.baseUrl);
   const username = payload.loginId.trim();
   if (!username || !payload.password) {
-    throw new TeamServiceAuthError("请输入账号和密码");
+    throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.loginMissingCredentials);
   }
 
   const body = new FormData();
@@ -127,7 +184,8 @@ export async function loginTeamService(payload: TeamServiceLoginPayload): Promis
   });
   const detail = await readResponseBody(response);
   if (!response.ok) {
-    throw new TeamServiceAuthError(authErrorMessage(response.status, detail), response.status, detail);
+    const { copy, values } = authErrorCopy(response.status, detail);
+    throw new TeamServiceAuthError(copy, response.status, detail, values);
   }
   return saveTeamServiceAuthSession(sessionFromAuthResponse(baseUrl, detail));
 }
@@ -136,7 +194,7 @@ export async function registerTeamService(payload: TeamServiceRegisterPayload): 
   const baseUrl = normalizeTeamServiceBaseUrl(payload.baseUrl);
   const username = payload.username.trim();
   if (!username || !payload.password) {
-    throw new TeamServiceAuthError("请输入用户名和密码");
+    throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.registerMissingCredentials);
   }
 
   const response = await fetch(`${baseUrl}/api/auth/register`, {
@@ -153,7 +211,8 @@ export async function registerTeamService(payload: TeamServiceRegisterPayload): 
   });
   const detail = await readResponseBody(response);
   if (!response.ok) {
-    throw new TeamServiceAuthError(authErrorMessage(response.status, detail), response.status, detail);
+    const { copy, values } = authErrorCopy(response.status, detail);
+    throw new TeamServiceAuthError(copy, response.status, detail, values);
   }
   return saveTeamServiceAuthSession(sessionFromAuthResponse(baseUrl, detail));
 }
@@ -161,7 +220,7 @@ export async function registerTeamService(payload: TeamServiceRegisterPayload): 
 export async function refreshTeamServiceUser(session: TeamServiceAuthSession): Promise<TeamServiceAuthSession> {
   const normalized = normalizeTeamServiceAuthSession(session);
   if (!normalized) {
-    throw new TeamServiceAuthError("登录凭证无效，请重新登录");
+    throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.invalidSession);
   }
   const response = await fetch(`${normalized.baseUrl}/api/auth/me`, {
     headers: {
@@ -170,7 +229,8 @@ export async function refreshTeamServiceUser(session: TeamServiceAuthSession): P
   });
   const detail = await readResponseBody(response);
   if (!response.ok) {
-    throw new TeamServiceAuthError(authErrorMessage(response.status, detail), response.status, detail);
+    const { copy, values } = authErrorCopy(response.status, detail);
+    throw new TeamServiceAuthError(copy, response.status, detail, values);
   }
   return saveTeamServiceAuthSession({
     ...normalized,
@@ -216,10 +276,24 @@ export function normalizeTeamServiceUser(value: unknown): TeamServiceUser | null
   };
 }
 
-export function teamServiceAuthErrorMessage(error: unknown): string {
-  if (error instanceof TeamServiceAuthError) return error.message;
+type FormatTeamServiceAuthMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
+
+/*
+ * Resolve user-facing copy for an auth failure. Components pass their
+ * useForgeIntl formatMessage so descriptors render through the hook; the
+ * default falls back to the module-level i18n singleton (non-React callers,
+ * and the gate's mount-only session check that deliberately avoids capturing
+ * the hook formatter — see team-service-auth-gate.tsx).
+ */
+export function teamServiceAuthErrorMessage(
+  error: unknown,
+  format: FormatTeamServiceAuthMessage = formatMessage,
+): string {
+  if (error instanceof TeamServiceAuthError && error.descriptor) {
+    return format(error.descriptor, error.values);
+  }
   if (error instanceof Error) return error.message;
-  return "登录失败，请稍后重试";
+  return format(TEAM_SERVICE_AUTH_COPY.signInFailed);
 }
 
 function normalizeTeamServiceAuthSessionFromJson(raw: string | null): TeamServiceAuthSession | null {
@@ -235,7 +309,7 @@ function sessionFromAuthResponse(baseUrl: string, value: unknown): TeamServiceAu
   const record = objectRecord(value);
   const token = stringValue(record?.access_token) ?? stringValue(record?.token);
   if (!token?.trim()) {
-    throw new TeamServiceAuthError("登录成功但没有返回访问凭证，请检查服务端认证接口");
+    throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.missingAccessToken);
   }
   return {
     baseUrl,
@@ -266,12 +340,19 @@ async function readResponseBody(response: Response): Promise<unknown> {
   }
 }
 
-function authErrorMessage(status: number, detail: unknown): string {
+interface TeamServiceAuthErrorCopy {
+  /** Descriptor for static copy, or the raw server-provided detail string. */
+  copy: I18nMessageDescriptor | string;
+  values?: I18nValues;
+}
+
+function authErrorCopy(status: number, detail: unknown): TeamServiceAuthErrorCopy {
   const detailText = detailMessage(detail);
-  if (status === 401) return detailText || "账号或密码不正确";
-  if (status === 403) return detailText || "当前账号没有权限使用此服务";
-  if (status === 409) return detailText || "账号已存在";
-  return detailText || `认证请求失败 (${status})`;
+  if (detailText) return { copy: detailText };
+  if (status === 401) return { copy: TEAM_SERVICE_AUTH_COPY.invalidCredentials };
+  if (status === 403) return { copy: TEAM_SERVICE_AUTH_COPY.forbidden };
+  if (status === 409) return { copy: TEAM_SERVICE_AUTH_COPY.accountExists };
+  return { copy: TEAM_SERVICE_AUTH_COPY.requestFailed, values: { status } };
 }
 
 function detailMessage(detail: unknown): string {

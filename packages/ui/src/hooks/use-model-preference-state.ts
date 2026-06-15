@@ -6,9 +6,9 @@ import {
   migrateSubscriptionModelSelection,
 } from "../model/model-settings";
 import {
-  HICODEX_DESKTOP_CONFIG_KEYS,
+  FORGE_DESKTOP_CONFIG_KEYS,
   readMigratedStorageValue,
-} from "../state/hicodex-desktop-namespace";
+} from "../state/forge-desktop-namespace";
 
 const LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY = "hicodex.reasoningEffortOverride";
 
@@ -56,7 +56,7 @@ export function useModelPreferenceState() {
   const [reasoningEffortOverride, setReasoningEffortOverrideState] = useState<string | null>(() =>
     readMigratedStorageValue(
       modelPreferenceStorage(),
-      HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride,
+      FORGE_DESKTOP_CONFIG_KEYS.reasoningEffortOverride,
       [LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY],
     )
   );
@@ -65,9 +65,9 @@ export function useModelPreferenceState() {
     try {
       const storage = modelPreferenceStorage();
       if (effort) {
-        setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride, effort);
+        setDesktopAppSettingValue(storage, FORGE_DESKTOP_CONFIG_KEYS.reasoningEffortOverride, effort);
       } else {
-        removeDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.reasoningEffortOverride);
+        removeDesktopAppSettingValue(storage, FORGE_DESKTOP_CONFIG_KEYS.reasoningEffortOverride);
       }
       storage?.removeItem(LEGACY_REASONING_EFFORT_OVERRIDE_STORAGE_KEY);
     } catch {

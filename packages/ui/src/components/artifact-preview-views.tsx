@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { DocumentPreviewContent } from "./document-preview-content";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { projectSpreadsheetPreviewView } from "../state/spreadsheet-viewer";
 import type {
   DocumentPreview,
@@ -43,7 +43,7 @@ export function ArtifactPreviewStateView({
 }
 
 export function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: string }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export function ArtifactPdfPreviewFrame({ src, title }: { src: string; title: st
 }
 
 export function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (preview.status === "idle") return null;
   if (preview.status === "loading") {
     return <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />;
@@ -93,7 +93,7 @@ export function ArtifactTextPreviewView({ preview }: { preview: TextPreviewState
 }
 
 export function ArtifactSpreadsheetPreviewView({ preview }: { preview: SpreadsheetPreviewState }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (preview.status === "idle") return null;
   if (preview.status === "loading") {
     return <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />;
@@ -142,7 +142,7 @@ export function ArtifactSpreadsheetPreviewView({ preview }: { preview: Spreadshe
 }
 
 export function ArtifactDocumentPreviewView({ preview }: { preview: DocumentPreviewState }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (preview.status === "idle") return null;
   if (preview.status === "loading") {
     return <ArtifactPreviewStateView state={{ status: "loading", message: formatMessage({ id: "artifactTab.previewLoading", defaultMessage: "Preparing preview…" }) }} />;

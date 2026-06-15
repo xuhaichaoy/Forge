@@ -7,7 +7,7 @@ import { readCurrentHostGitStatus, type HostGitStatus } from "../state/worktrees
 
 /*
  * Host git status + PR status for the active worktree cwd, lifted verbatim out of
- * HiCodexApp. Two best-effort effects gated on `worktreeStatusCwd`: the git
+ * ForgeApp. Two best-effort effects gated on `worktreeStatusCwd`: the git
  * status one logs a warn on failure, the PR one fails silently (the row simply
  * doesn't render). `dispatch` stays in the git effect's dep array exactly as in
  * the original.

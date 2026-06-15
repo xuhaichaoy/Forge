@@ -9,11 +9,11 @@ Computer Use settings SHALL show native/MCP readiness separately from plugin ins
 - **THEN** Computer Use settings show plugin lifecycle as available but native readiness as unknown or setup-required.
 
 #### Scenario: Helper is discoverable
-- **WHEN** HiCodex can locate the bundled Computer Use helper app or MCP client
+- **WHEN** Forge can locate the bundled Computer Use helper app or MCP client
 - **THEN** Computer Use settings show the helper as available and expose setup/open actions.
 
 #### Scenario: MCP command is discoverable
-- **WHEN** HiCodex can read the bundled Computer Use `.mcp.json`
+- **WHEN** Forge can read the bundled Computer Use `.mcp.json`
 - **THEN** Computer Use settings show the configured MCP command, configured cwd, resolved command path, and executable status.
 - **AND** settings show whether the `.mcp.json` is trusted for the bundled Computer Use command, cwd, and args.
 
@@ -22,23 +22,23 @@ Computer Use settings SHALL show native/MCP readiness separately from plugin ins
 - **OR** the configured cwd does not resolve to the Computer Use plugin root
 - **OR** the configured args are not exactly `["mcp"]`
 - **THEN** Computer Use settings mark the MCP config as untrusted.
-- **AND** HiCodex does not mark native readiness as helper-available solely because the helper and command file exist.
+- **AND** Forge does not mark native readiness as helper-available solely because the helper and command file exist.
 
 #### Scenario: Native readiness diagnostics are not hidden by row truncation
 - **WHEN** Computer Use native readiness is projected into settings
-- **THEN** HiCodex shows separate helper/signature, MCP command, and permissions/app-approval checklist rows.
+- **THEN** Forge shows separate helper/signature, MCP command, and permissions/app-approval checklist rows.
 - **AND** each checklist row exposes its critical readiness details without depending on the native readiness row's full detail list.
 
 #### Scenario: Native permission status is probed on macOS
-- **WHEN** HiCodex reads Computer Use native readiness on macOS
+- **WHEN** Forge reads Computer Use native readiness on macOS
 - **THEN** the host reports Screen Recording and Accessibility as `granted` or `not granted` from native permission preflight APIs.
-- **AND** settings explain that the preflight applies to the current HiCodex host process, not proof that every Computer Use helper/app approval is ready.
+- **AND** settings explain that the preflight applies to the current Forge host process, not proof that every Computer Use helper/app approval is ready.
 - **AND** settings explain that missing permissions or app approvals can make `list_apps` and GUI-control tool calls time out.
 - **AND** app approval status remains `unknown` until a product-owned helper/app-approval bridge can prove it.
 
 #### Scenario: Safe MCP probe is available
 - **WHEN** app-server reports a Computer Use MCP server with a `list_apps` tool
-- **AND** a HiCodex thread is active
+- **AND** a Forge thread is active
 - **AND** native readiness has not proven helper or MCP command setup is invalid
 - **THEN** Computer Use settings expose a probe action that calls `mcpServer/tool/call` for `list_apps` on that active thread.
 
@@ -60,7 +60,7 @@ Computer Use settings SHALL show native/MCP readiness separately from plugin ins
 - **AND** those diagnostics remain visible even when the settings row truncates long detail lists.
 
 #### Scenario: Bundle candidates and repair sources are visible
-- **WHEN** HiCodex reads Computer Use native readiness
+- **WHEN** Forge reads Computer Use native readiness
 - **THEN** the host reports every local Computer Use bundle candidate it can inspect from the installed cache and bundled marketplace.
 - **AND** Computer Use settings show each candidate's source, plugin root, helper signature, MCP client signature, installer signature, MCP executable state, and repair usability.
 - **AND** settings show whether a signed-valid local repair source is available before exposing follow-up repair or probe guidance.
@@ -76,7 +76,7 @@ Computer Use settings SHALL show native/MCP readiness separately from plugin ins
 - **WHEN** the active Computer Use helper or MCP client signature is invalid
 - **AND** a local candidate has a signed-valid helper, signed-valid MCP client, trusted MCP config, and executable MCP command
 - **THEN** Computer Use settings expose a repair action for the local Computer Use bundle.
-- **AND** the repair action installs that signed-valid bundle into the HiCodex `codex-home` plugin cache before MCP probing.
+- **AND** the repair action installs that signed-valid bundle into the Forge `codex-home` plugin cache before MCP probing.
 - **AND** the repair action re-reads native readiness and shows the resulting installed-cache signature and MCP executable status.
 
 #### Scenario: Safe MCP probe timeout is diagnosed
@@ -91,7 +91,7 @@ Computer Use settings SHALL show native/MCP readiness separately from plugin ins
 
 #### Scenario: Safe MCP probe cannot run without a thread
 - **WHEN** app-server reports a Computer Use MCP server with a `list_apps` tool
-- **AND** no HiCodex thread is active
+- **AND** no Forge thread is active
 - **THEN** Computer Use settings explain that the probe requires an active thread instead of exposing a non-functional action.
 
 ### Requirement: Computer Use setup actions use native bridges
@@ -109,11 +109,11 @@ Computer Use settings SHALL use native/host actions for setup instead of inventi
 - **WHEN** the user runs the Computer Use repair action
 - **THEN** the host revalidates the selected local repair source from the discovered candidate list.
 - **AND** the host refuses repair if the source is missing, signature-invalid, signature-unknown, has no helper, has no MCP client, has no signed-valid installer, has an untrusted MCP config, or has a non-executable MCP command.
-- **AND** the host refuses to write outside HiCodex's own Computer Use plugin cache.
+- **AND** the host refuses to write outside Forge's own Computer Use plugin cache.
 - **AND** the host refuses to copy symlinks, non-file entries, or overlapping source/destination directories.
 
 ### Requirement: Computer Use control is not claimed without proof
-HiCodex MUST NOT claim Computer Use can control Mac GUI unless helper, MCP, and required permission readiness are proven.
+Forge MUST NOT claim Computer Use can control Mac GUI unless helper, MCP, and required permission readiness are proven.
 
 #### Scenario: Missing readiness proof
 - **WHEN** plugin install state is available but helper/MCP/permission readiness is missing, failed, or unknown

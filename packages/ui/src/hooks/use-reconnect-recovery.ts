@@ -6,12 +6,12 @@ import type { ThreadContextDefaults } from "../state/codex-reducer";
 import { resumeThreadWithMetadataRead } from "../state/thread-workflow";
 
 /*
- * Resume-after-reconnect recovery, lifted verbatim out of HiCodexApp. Two local
+ * Resume-after-reconnect recovery, lifted verbatim out of ForgeApp. Two local
  * refs gate the behaviour: `hasConnectedOnceRef` distinguishes the first connect
  * from a reconnect, `needsReconnectRecoveryRef` records that a drop happened
  * while connected. On the reconnect edge it marks threads needing resume and
- * re-reads the active thread's resume metadata. `dispatch` (stable) is kept out
- * of the dep array exactly as in the original.
+ * re-reads the active thread's resume metadata. `dispatch` is the stable
+ * useReducer dispatch; listing it in the dep array never retriggers anything.
  */
 export function useReconnectRecovery({
   connected,
@@ -51,5 +51,5 @@ export function useReconnectRecovery({
           level: "warn",
         });
       });
-  }, [client, effectiveThreadContextDefaults, activeThreadId, connected, workspace]);
+  }, [client, dispatch, effectiveThreadContextDefaults, activeThreadId, connected, workspace]);
 }

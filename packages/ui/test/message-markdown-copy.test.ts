@@ -39,6 +39,13 @@ function citationCopyKeepsExistingBehavior(): void {
     "see /Users/me/app.ts:10-20",
     "file citations should still rewrite to path:line ranges",
   );
+  // The range end's `L` is optional in the rendered form; the copy rewrite
+  // must accept it too (it used to leave the raw 【…】 marker).
+  assertEqual(
+    desktopAssistantCopyText("see 【/Users/me/app.ts†L12-15】"),
+    "see /Users/me/app.ts:12-15",
+    "file citations with an L-less range end should rewrite, not stay raw",
+  );
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

@@ -16,7 +16,7 @@ use crate::computer_use::{
     ComputerUseRepairResult,
 };
 use crate::installation::{read_or_init_installation_state_at, HostInstallationState};
-use crate::profile::{ensure_default_hicodex_profile, model_catalog_json, LocalModelCatalogConfig};
+use crate::profile::{ensure_default_forge_profile, model_catalog_json, LocalModelCatalogConfig};
 use crate::thread_history::{read_thread_tool_history, ThreadToolHistory};
 use crate::{default_codex_cli_home, has_codex_profile, resolve_codex_home, HostError};
 
@@ -25,6 +25,9 @@ const INSTALLED_CODEX_BIN: &str = "/Applications/Codex.app/Contents/Resources/co
 // localStorage is keyed by the app bundle identifier, so a rebrand or webview
 // data-container change wipes it. codex-home survives those, making it the
 // durable home for connection/auth/model-selection settings.
+// The "hicodex-" filename (like the desktop.hicodex.* key prefix) is a
+// deliberate legacy value kept across the Forge rebrand — renaming it would
+// orphan existing users' settings.
 const APP_SETTINGS_FILENAME: &str = "hicodex-app-settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -48,14 +51,44 @@ pub struct HostStatus {
     pub last_error: Option<String>,
 }
 
+/// Machine-readable classification for [`AppServerEvent::Lifecycle`]. The
+/// renderer keys connection-state decisions (fatal vs. benign) off this field
+/// instead of parsing the human-readable `message`, which stays byte-for-byte
+/// unchanged for logs and for older clients that still match on text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleKind {
+    /// app-server child process spawned and its stdio is wired up.
+    Started,
+    /// An explicit `stop()` tore the process down.
+    Stopped,
+    /// The child process exited on its own (crash or external kill).
+    Exited,
+    /// The stdout reader hit EOF — the transport is gone even if a pid lingers.
+    StdoutClosed,
+    /// codex-home has no config.toml/auth.json yet; informational only.
+    ConfigMissing,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AppServerEvent {
-    Json { value: Value },
-    Stdout { line: String },
-    Stderr { line: String },
-    Lifecycle { message: String },
-    Error { message: String },
+    Json {
+        value: Value,
+    },
+    Stdout {
+        line: String,
+    },
+    Stderr {
+        line: String,
+    },
+    Lifecycle {
+        kind: LifecycleKind,
+        message: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 struct AppServerProcess {
@@ -117,12 +150,13 @@ impl AppServerHost {
                 return Err(HostError::Start(error.to_string()));
             }
         };
-        if let Err(error) = ensure_default_hicodex_profile(&codex_home) {
+        if let Err(error) = ensure_default_forge_profile(&codex_home) {
             inner.last_error = Some(error.to_string());
             return Err(HostError::Start(error.to_string()));
         }
         if !has_codex_profile(&codex_home) {
             let _ = self.events_tx.send(AppServerEvent::Lifecycle {
+                kind: LifecycleKind::ConfigMissing,
                 message: format!(
                     "no Codex config found in {}; add config.toml/auth.json before sending turns",
                     codex_home.to_string_lossy()
@@ -180,6 +214,7 @@ impl AppServerHost {
         inner.last_error = None;
         inner.process = Some(AppServerProcess { child, stdin });
         let _ = self.events_tx.send(AppServerEvent::Lifecycle {
+            kind: LifecycleKind::Started,
             message: format!("codex app-server started with pid {pid}"),
         });
 
@@ -194,6 +229,7 @@ impl AppServerHost {
         let _ = process.child.kill();
         let _ = process.child.wait();
         let _ = self.events_tx.send(AppServerEvent::Lifecycle {
+            kind: LifecycleKind::Stopped,
             message: "codex app-server stopped".to_string(),
         });
         Ok(status_from_inner(&inner))
@@ -394,7 +430,7 @@ fn status_from_inner(inner: &HostInner) -> HostStatus {
 
 /// Codex Desktop 桌面版的 `defaultCwd` 是用户的工作目录（通常 home），用于
 /// 在没有 thread-bound workspace 时给前端 path resolution 一个有意义的 base。
-/// HiCodex 之前用 `env::current_dir()`——Tauri dev 模式下进程 CWD 是
+/// Forge 之前用 `env::current_dir()`——Tauri dev 模式下进程 CWD 是
 /// `apps/desktop/src-tauri/`（cargo run 从这里启动），完全不是用户工作目录，
 /// 导致前端拼相对路径（model 输出的 file ref）变成 `apps/desktop/src-tauri/xxx`，
 /// 实际不存在。修复策略：
@@ -476,7 +512,10 @@ fn refresh_running_state(inner: &mut HostInner, events_tx: &Sender<AppServerEven
             inner.process = None;
             let message = format!("codex app-server exited with {status}");
             inner.last_error = Some(message.clone());
-            let _ = events_tx.send(AppServerEvent::Lifecycle { message });
+            let _ = events_tx.send(AppServerEvent::Lifecycle {
+                kind: LifecycleKind::Exited,
+                message,
+            });
         }
         Ok(None) => {}
         Err(error) => {
@@ -506,6 +545,7 @@ fn spawn_stdout_reader(
             }
         }
         let _ = events_tx.send(AppServerEvent::Lifecycle {
+            kind: LifecycleKind::StdoutClosed,
             message: "codex app-server stdout closed".to_string(),
         });
     });
@@ -531,7 +571,9 @@ fn resolve_codex_bin(config: &AppServerStartConfig) -> PathBuf {
     {
         return PathBuf::from(path);
     }
-    if let Ok(path) = env::var("HICODEX_CODEX_BIN") {
+    // FORGE_CODEX_BIN wins; the legacy HICODEX_CODEX_BIN spelling stays as a
+    // fallback so pre-rebrand setups keep working.
+    if let Ok(path) = env::var("FORGE_CODEX_BIN").or_else(|_| env::var("HICODEX_CODEX_BIN")) {
         if !path.trim().is_empty() {
             return PathBuf::from(path);
         }
@@ -590,5 +632,42 @@ mod tests {
         let line = serde_json::to_string(&value).unwrap();
         let parsed: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(parsed["id"], 1);
+    }
+
+    /// Cross-language contract: the renderer consumes `kind` as a plain
+    /// snake_case string next to the untouched human-readable `message`.
+    #[test]
+    fn lifecycle_event_serializes_machine_readable_kind() {
+        let event = AppServerEvent::Lifecycle {
+            kind: LifecycleKind::StdoutClosed,
+            message: "codex app-server stdout closed".to_string(),
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "type": "lifecycle",
+                "kind": "stdout_closed",
+                "message": "codex app-server stdout closed",
+            })
+        );
+    }
+
+    /// The wire spellings are load-bearing for the renderer's classifier —
+    /// renaming a variant must fail here, not in the field.
+    #[test]
+    fn lifecycle_kind_wire_spellings_are_stable() {
+        for (kind, expected) in [
+            (LifecycleKind::Started, "started"),
+            (LifecycleKind::Stopped, "stopped"),
+            (LifecycleKind::Exited, "exited"),
+            (LifecycleKind::StdoutClosed, "stdout_closed"),
+            (LifecycleKind::ConfigMissing, "config_missing"),
+        ] {
+            assert_eq!(
+                serde_json::to_value(kind).unwrap(),
+                serde_json::json!(expected)
+            );
+        }
     }
 }

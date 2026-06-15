@@ -73,7 +73,7 @@ export function updateQueuedFollowUpStatus(
 /**
  * Codex Desktop's `steeringUserMessage` queue de-dups follow-ups by canonical
  * prompt text before pushing them onto the steering ring (see Desktop's `Jp`
- * helper in `composer-D82P7v-B.js`). HiCodex mirrors that here so users can't
+ * helper in `composer-D82P7v-B.js`). Forge mirrors that here so users can't
  * accidentally enqueue the same follow-up twice while a turn is still
  * streaming.
  */

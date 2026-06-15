@@ -1073,7 +1073,7 @@ mod tests {
     fn reads_exec_command_end_history_from_rollout() {
         let thread_id = "019e-test-thread";
         let turn_id = "019e-test-turn";
-        let dir = env::temp_dir().join(format!("hicodex-host-history-test-{}", std::process::id()));
+        let dir = env::temp_dir().join(format!("forge-host-history-test-{}", std::process::id()));
         let sessions = dir.join("sessions").join("2026").join("05").join("08");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&sessions).unwrap();
@@ -1143,7 +1143,7 @@ mod tests {
 
         let thread_id = "019e-symlink-thread";
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-history-symlink-test-{}",
+            "forge-host-history-symlink-test-{}",
             std::process::id()
         ));
         let sessions = dir.join("sessions");
@@ -1170,7 +1170,7 @@ mod tests {
     fn rollout_scan_respects_depth_limit() {
         let thread_id = "019e-deep-thread";
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-history-depth-test-{}",
+            "forge-host-history-depth-test-{}",
             std::process::id()
         ));
         let sessions = dir.join("sessions");
@@ -1200,7 +1200,7 @@ mod tests {
         let thread_id = "019e-collab-thread";
         let turn_id = "019e-collab-turn";
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-collab-spawn-test-{}",
+            "forge-host-collab-spawn-test-{}",
             std::process::id()
         ));
         let sessions = dir.join("sessions").join("2026").join("05").join("08");
@@ -1268,14 +1268,14 @@ mod tests {
 
     #[test]
     fn replays_agent_function_calls_into_collab_tool_calls() {
-        // Real HiCodex Desktop rollouts can persist multiple-agent work as
+        // Real Forge Desktop rollouts can persist multiple-agent work as
         // response_item function calls (`spawn_agent` / `wait_agent`) rather
         // than the newer collab_agent_* event messages. Those rows still need
         // to become collabAgentToolCall items so they survive thread reload.
         let thread_id = "019e-collab-function-thread";
         let turn_id = "019e-collab-function-turn";
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-collab-function-test-{}",
+            "forge-host-collab-function-test-{}",
             std::process::id()
         ));
         let sessions = dir.join("sessions").join("2026").join("05").join("16");

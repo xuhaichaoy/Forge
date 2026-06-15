@@ -22,9 +22,9 @@
  */
 import { Check } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export const REASONING_EFFORT_VALUES = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 export type ReasoningEffortValue = typeof REASONING_EFFORT_VALUES[number];
@@ -80,13 +80,13 @@ export function ReasoningPickerMenu({
   onSelect,
   onClose,
 }: ReasoningPickerMenuProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
 
   /*
    * Position popover above the anchor button, like Codex's dropdown with
-   * `side: "top"`. Footer chip is bottom-aligned in HiCodex, so we anchor the
+   * `side: "top"`. Footer chip is bottom-aligned in Forge, so we anchor the
    * menu's bottom to the anchor's top with a small gap and use
    * `transform: translateY(-100%)`.
    */

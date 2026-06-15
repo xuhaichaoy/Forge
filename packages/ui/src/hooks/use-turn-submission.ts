@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { CollaborationModeMask, Thread, ThreadGoalSetResponse, UserInput } from "@hicodex/codex-protocol";
+import type { CollaborationModeMask, Thread, ThreadGoalSetResponse, UserInput } from "@forge/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
-import { useHiCodexIntl } from "../components/i18n-provider";
+import { useForgeIntl } from "../components/i18n-provider";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { createProjectlessThreadCwd, isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
@@ -12,6 +12,10 @@ import {
   isCrossAccountProviderSwitch,
 } from "../model/model-provider-switch";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
+// Module-level i18n singleton — these provider-switch errors are built in
+// module-scope helpers that cannot reach the useForgeIntl() hook formatter
+// (aliased: the hook body destructures its own `formatMessage`).
+import { formatMessage as formatGlobalMessage } from "../state/i18n";
 import {
   buildUserInputFromComposer,
   composerHasImageAttachments,
@@ -105,7 +109,7 @@ export interface UseTurnSubmissionResult {
 
 class CrossAccountProviderSwitchError extends Error {
   constructor() {
-    super(CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE);
+    super(formatGlobalMessage(CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE));
     this.name = "CrossAccountProviderSwitchError";
   }
 }
@@ -127,7 +131,7 @@ function userFacingProviderSwitchError(error: ThreadProviderSwitchMismatchError)
   if (isCrossAccountProviderSwitch(error.actualProvider, error.expectedProvider)) {
     return new CrossAccountProviderSwitchError();
   }
-  return new Error(PROVIDER_SWITCH_FAILED_MESSAGE);
+  return new Error(formatGlobalMessage(PROVIDER_SWITCH_FAILED_MESSAGE));
 }
 
 async function assertActualThreadProviderForSubmission(
@@ -172,7 +176,7 @@ export function useTurnSubmission({
   workspace,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
   const { client, dispatch } = useServices();
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
   const [startingConversation, setStartingConversation] = useState(false);
   const sendingQueuedFollowUpId = useRef<string | null>(null);
@@ -206,7 +210,7 @@ export function useTurnSubmission({
         throw error;
       }
       if (!(await restartRuntimeForProviderSwitch())) {
-        throw new Error(PROVIDER_SWITCH_FAILED_MESSAGE);
+        throw new Error(formatGlobalMessage(PROVIDER_SWITCH_FAILED_MESSAGE));
       }
       try {
         const result = await resumeThread(input.client, error.threadId, input.workspace, input.context);
@@ -227,7 +231,7 @@ export function useTurnSubmission({
         throw retryError;
       }
     }
-  }, [dispatch, restartRuntimeForProviderSwitch]);
+  }, [restartRuntimeForProviderSwitch]);
 
   const updateQueuedFollowUps = useCallback((
     threadId: string,
@@ -403,7 +407,7 @@ export function useTurnSubmission({
       // the typed objective so the user can retry without re-typing — only the
       // success path clears the draft and turns the goal toggle off.
       if (!(await ensureConnected())) return;
-      // codex composer goal mode sets the goal on the ACTIVE thread. HiCodex does
+      // codex composer goal mode sets the goal on the ACTIVE thread. Forge does
       // NOT spin up a brand-new thread (and its generated projectless `new-chat`
       // working directory) just to set a goal: the app-server's thread/goal/set is
       // gated on the backend `Goals` feature, so creating a thread first would
@@ -628,6 +632,7 @@ export function useTurnSubmission({
     } finally {
       if (!activeThreadId) setStartingConversation(false);
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意省略 composerGoalMode：保持既有提交闸门的重建时机不变（stale 风险已在审计中单列待裁决）
   }, [
     activeModelSupportsImageInput,
     activeThread,
@@ -653,8 +658,8 @@ export function useTurnSubmission({
     queuedFollowUpsByThread,
     rememberLatestCollaborationMode,
     resetComposerSelectionAfterCreatedThread,
-    setActiveComposerMode,
     setComposerAttachments,
+    setComposerGoalMode,
     setInput,
     threadContextDefaults,
     updateQueuedFollowUps,
@@ -723,7 +728,7 @@ export function useTurnSubmission({
 export async function attachmentsWithDataImagePreviews(
   attachments: ComposerAttachment[],
 ): Promise<ComposerAttachment[]> {
-  // codex `vl`: on a local host (HiCodex is always local) an image that has a real disk
+  // codex `vl`: on a local host (Forge is always local) an image that has a real disk
   // path is sent as {type:"localImage", path} — NOT inlined as base64 — so the codex
   // sidecar reads the file to both show the model the image AND expose the path to the
   // agent's tools (python/shell can then edit the real file). Mirrors Codex's

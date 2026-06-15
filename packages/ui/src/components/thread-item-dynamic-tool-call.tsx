@@ -4,14 +4,14 @@ import { stringField } from "../lib/format";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { isItemInProgress } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
 type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 
 // codex localConversation.appControlToolCall.* — the manage_codex_threads action
-// labels Codex localizes. Only the six actions whose HiCodex English exactly
+// labels Codex localizes. Only the six actions whose Forge English exactly
 // matches the bundle are mapped here (list/read/sendMessage/setArchived/
-// setPinned/setTitle); create/create_in_worktree keep HiCodex's "thread"
+// setPinned/setTitle); create/create_in_worktree keep Forge's "thread"
 // wording (Codex rebranded those to "chat") so they stay locale-free. Reverse-
 // mapped at render so the locale-free dynamicToolCallLabel + its tests are stable.
 const APP_CONTROL_LABEL_I18N: Record<string, { id: string; defaultMessage: string }> = {
@@ -34,7 +34,7 @@ export function DynamicToolCallThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const running = isItemInProgress(unit.item);
   const rawLabel = dynamicToolCallLabel(unit.item);
   const appControl = isManageCodexThreadsItem(unit.item);
@@ -65,7 +65,7 @@ export function DynamicToolCallGroupView({
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "dynamicToolCallGroup" }>;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [expanded, setExpanded] = useState(false);
   const running = unit.items.some((item) => isItemInProgress(item));
   const summary = dynamicToolCallGroupSummary(unit.items, formatMessage);
@@ -104,7 +104,7 @@ export function DynamicToolCallGroupView({
  */
 function dynamicToolCallGroupSummary(
   items: Extract<ConversationRenderUnit, { kind: "dynamicToolCallGroup" }>["items"],
-  formatMessage?: HiCodexIntlContextValue["formatMessage"],
+  formatMessage?: ForgeIntlContextValue["formatMessage"],
 ): string {
   const groups: { label: string; count: number }[] = [];
   for (const item of items) {

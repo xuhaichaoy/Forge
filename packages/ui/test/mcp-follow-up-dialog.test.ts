@@ -44,7 +44,7 @@ function rendersDesktopConfirmationPrompt(): void {
 }
 
 // codex: Codex's confirmFollowUp dialog does not render a thread/server/tool source-summary row;
-// HiCodex now matches that (the row was removed during alignment).
+// Forge now matches that (the row was removed during alignment).
 function omitsSourceThreadServerAndTool(): void {
   const html = renderToStaticMarkup(createElement(McpFollowUpDialog, {
     request: {

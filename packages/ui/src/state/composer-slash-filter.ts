@@ -11,7 +11,7 @@ export function filterSlashCommandList<T extends SlashCommandFilterItem>(
 ): T[] {
   const normalized = normalizeSlashQuery(query);
   // NOTE (parity): codex sorts the no-query slash list by [group, title]
-  // (local-remote-selection `sortBy(e,[e=>e.group ?? "", e=>e.title])`). HiCodex
+  // (local-remote-selection `sortBy(e,[e=>e.group ?? "", e=>e.title])`). Forge
   // keeps declaration order here; the slash command set itself still differs.
   if (!normalized) return commands;
   /*

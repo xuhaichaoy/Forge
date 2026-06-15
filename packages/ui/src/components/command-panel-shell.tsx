@@ -7,10 +7,10 @@ import {
   TerminalSquare,
 } from "lucide-react";
 import type { CommandPanelEntry, CommandPanelState } from "../state/command-panel";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export function CommandPanelChatCreateEmptyState({ onCreate }: { onCreate?: () => void }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-command-panel-chat-empty" data-command-menu-empty-state="true">
       <span>{formatMessage({ id: "codex.commandMenu.noChatsEmptyState", defaultMessage: "Create a chat to get started!" })}</span>

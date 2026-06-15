@@ -1,7 +1,7 @@
 import { focusPromptEditorElement, insertPromptEditorText } from "./prompt-editor";
 
 /*
- * Global plain-text-key -> composer redirect, lifted verbatim out of HiCodexApp.
+ * Global plain-text-key -> composer redirect, lifted verbatim out of ForgeApp.
  * When the user types a single printable character outside any editable target,
  * an open dialog/menu/listbox overlay, or a terminal, it is inserted into the
  * composer. The data-* selectors, the space / NBSP exclusions, and the

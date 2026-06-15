@@ -15,7 +15,7 @@ import type {
 } from "../state/conversation-markdown-engine";
 import { InlineAutomationCitations } from "./automation-citation-inline";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { LazyMarkdownCodeBlock } from "./message-markdown-code-block";
 import {
   selectedMarkdownRichCopyPayload,
@@ -194,7 +194,7 @@ function MarkdownBlockViewInner({
   onOpenFileReferenceExternal,
   references,
 }: MarkdownBlockViewProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   switch (block.kind) {
     case "heading": {
       return <Heading level={block.level}>{renderInline(block.text, onOpenFileReference, mediaSources, fadeContext, { references }, onOpenFileReferenceExternal)}</Heading>;
@@ -332,7 +332,7 @@ function MarkdownListItemView({
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
   references?: MarkdownReferenceDefinitions;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const text = typeof item === "string" ? item : item.text;
   const children = typeof item === "string" ? [] : item.children ?? [];
   const task = typeof item !== "string" && item.task === true;

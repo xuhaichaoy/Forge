@@ -8,7 +8,7 @@
  * announced to screen readers without stealing focus.
  *
  * Gating in Codex: the panel renders only when its resolved text flag is
- * truthy. HiCodex mirrors that: returns `null` when the resolved text is empty.
+ * truthy. Forge mirrors that: returns `null` when the resolved text is empty.
  */
 import { AboveComposerPanel } from "./above-composer-panel";
 

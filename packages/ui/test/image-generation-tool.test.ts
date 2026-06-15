@@ -1,26 +1,26 @@
 import {
   IMAGE_GENERATION_FETCH_TIMEOUT_MS,
-  HICODEX_IMAGE_DYNAMIC_TOOL_SPEC,
-  HICODEX_IMAGE_SETTINGS_STORAGE_KEY,
-  HICODEX_LEGACY_IMAGE_TOOL_PLAIN_NAME,
-  HICODEX_LEGACY_IMAGE_TOOL_NAME,
-  HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE,
-  HICODEX_IMAGE_TOOL_NAME,
-  claimHiCodexImageToolRequest,
-  executeHiCodexImageToolCall,
-  hiCodexImageToolOutputUrl,
-  hiCodexImageToolPresenceFromRolloutText,
+  FORGE_IMAGE_DYNAMIC_TOOL_SPEC,
+  FORGE_IMAGE_SETTINGS_STORAGE_KEY,
+  FORGE_LEGACY_IMAGE_TOOL_PLAIN_NAME,
+  FORGE_LEGACY_IMAGE_TOOL_NAME,
+  FORGE_LEGACY_IMAGE_TOOL_NAMESPACE,
+  FORGE_IMAGE_TOOL_NAME,
+  claimForgeImageToolRequest,
+  executeForgeImageToolCall,
+  forgeImageToolOutputUrl,
+  forgeImageToolPresenceFromRolloutText,
   imageGenerationsEndpoint,
   imageToolFailureText,
   imageToolThreadIdFromRequest,
   imageUrlFromResponsePayload,
-  isHiCodexImageDynamicToolSpec,
-  isHiCodexImageToolCall,
+  isForgeImageDynamicToolSpec,
+  isForgeImageToolCall,
   loadImageGenerationSettings,
   normalizeImageGenerationSettings,
   parseImageToolArguments,
   saveImageGenerationSettings,
-  shouldRegisterHiCodexImageDynamicTool,
+  shouldRegisterForgeImageDynamicTool,
   userInputLikelyRequestsImageGeneration,
 } from "../src/state/image-generation-tool";
 
@@ -59,16 +59,16 @@ function assertIncludes(value: string, expected: string, message: string): void 
 }
 
 export default async function runImageGenerationToolTests(): Promise<void> {
-  assertEqual(HICODEX_IMAGE_DYNAMIC_TOOL_SPEC.namespace, undefined, "image tool should be a plain dynamic tool");
-  assertEqual(HICODEX_IMAGE_DYNAMIC_TOOL_SPEC.name, HICODEX_IMAGE_TOOL_NAME, "image tool name");
-  assertEqual(HICODEX_IMAGE_TOOL_NAME, "image_gen", "image tool name should match the system imagegen skill's built-in tool reference");
+  assertEqual(FORGE_IMAGE_DYNAMIC_TOOL_SPEC.namespace, undefined, "image tool should be a plain dynamic tool");
+  assertEqual(FORGE_IMAGE_DYNAMIC_TOOL_SPEC.name, FORGE_IMAGE_TOOL_NAME, "image tool name");
+  assertEqual(FORGE_IMAGE_TOOL_NAME, "image_gen", "image tool name should match the system imagegen skill's built-in tool reference");
   assertEqual(
-    isHiCodexImageDynamicToolSpec(HICODEX_IMAGE_DYNAMIC_TOOL_SPEC),
+    isForgeImageDynamicToolSpec(FORGE_IMAGE_DYNAMIC_TOOL_SPEC),
     true,
     "current image dynamic tool spec should be recognized",
   );
   assertEqual(
-    isHiCodexImageDynamicToolSpec({ namespace: HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE, name: HICODEX_LEGACY_IMAGE_TOOL_NAME }),
+    isForgeImageDynamicToolSpec({ namespace: FORGE_LEGACY_IMAGE_TOOL_NAMESPACE, name: FORGE_LEGACY_IMAGE_TOOL_NAME }),
     true,
     "legacy namespaced image dynamic tool spec should be recognized for restored threads",
   );
@@ -88,18 +88,18 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "plain technical discussion about image support should not be treated as generation",
   );
   assertEqual(
-    hiCodexImageToolPresenceFromRolloutText(JSON.stringify({
+    forgeImageToolPresenceFromRolloutText(JSON.stringify({
       timestamp: "2026-05-18T00:00:00Z",
       type: "session_meta",
       payload: {
-        dynamic_tools: [HICODEX_IMAGE_DYNAMIC_TOOL_SPEC],
+        dynamic_tools: [FORGE_IMAGE_DYNAMIC_TOOL_SPEC],
       },
     })),
     "present",
     "rollout session_meta should expose restorable image_gen tools",
   );
   assertEqual(
-    hiCodexImageToolPresenceFromRolloutText(JSON.stringify({
+    forgeImageToolPresenceFromRolloutText(JSON.stringify({
       timestamp: "2026-05-18T00:00:00Z",
       type: "session_meta",
       payload: {},
@@ -108,7 +108,7 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "rollout session_meta without dynamic tools should be treated as an old thread",
   );
   assertEqual(
-    hiCodexImageToolPresenceFromRolloutText("{not json"),
+    forgeImageToolPresenceFromRolloutText("{not json"),
     "unknown",
     "unreadable rollout text should not be treated as a confirmed dynamic-tool thread",
   );
@@ -155,7 +155,7 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     size: "auto",
   });
   assertIncludes(
-    storage.getItem(HICODEX_IMAGE_SETTINGS_STORAGE_KEY) ?? "",
+    storage.getItem(FORGE_IMAGE_SETTINGS_STORAGE_KEY) ?? "",
     "\"model\":\"gpt-image\"",
     "image settings should persist normalized model",
   );
@@ -170,19 +170,19 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "saved image generation settings should reload from local storage",
   );
   assertEqual(
-    shouldRegisterHiCodexImageDynamicTool({ baseUrl: "", apiKey: "", model: "", size: "1024x1024" }),
+    shouldRegisterForgeImageDynamicTool({ baseUrl: "", apiKey: "", model: "", size: "1024x1024" }),
     false,
     "blank image settings should leave Codex native image_generation as the default path",
   );
   assertEqual(
-    shouldRegisterHiCodexImageDynamicTool({ baseUrl: "", apiKey: "", model: "gpt-image", size: "1024x1024" }),
+    shouldRegisterForgeImageDynamicTool({ baseUrl: "", apiKey: "", model: "gpt-image", size: "1024x1024" }),
     false,
     "model-only image settings should not register a runtime tool without an explicit image endpoint",
   );
   assertEqual(
-    shouldRegisterHiCodexImageDynamicTool({ baseUrl: "https://images.example.test/v1", apiKey: "", model: "", size: "1024x1024" }),
+    shouldRegisterForgeImageDynamicTool({ baseUrl: "https://images.example.test/v1", apiKey: "", model: "", size: "1024x1024" }),
     true,
-    "explicit image endpoint should register the HiCodex dynamic image tool",
+    "explicit image endpoint should register the Forge dynamic image tool",
   );
   assertEqual(
     imageGenerationsEndpoint(" https://gateway.example.test/v1/// "),
@@ -210,49 +210,49 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "image response supports URL payloads",
   );
   assertEqual(
-    isHiCodexImageToolCall({
+    isForgeImageToolCall({
       id: "1",
       method: "item/tool/call",
-      params: { tool: HICODEX_IMAGE_TOOL_NAME },
+      params: { tool: FORGE_IMAGE_TOOL_NAME },
     }),
     true,
     "image tool request is recognized",
   );
   assertEqual(
-    isHiCodexImageToolCall({
+    isForgeImageToolCall({
       id: "1",
       method: "item/tool/call",
-      params: { tool: HICODEX_LEGACY_IMAGE_TOOL_PLAIN_NAME },
+      params: { tool: FORGE_LEGACY_IMAGE_TOOL_PLAIN_NAME },
     }),
     true,
-    "previous plain HiCodex image tool requests are still recognized",
+    "previous plain legacy-named (hicodex_generate_image) image tool requests are still recognized",
   );
   assertEqual(
-    isHiCodexImageToolCall({
+    isForgeImageToolCall({
       id: "1",
       method: "item/tool/call",
-      params: { namespace: HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE, tool: HICODEX_LEGACY_IMAGE_TOOL_NAME },
+      params: { namespace: FORGE_LEGACY_IMAGE_TOOL_NAMESPACE, tool: FORGE_LEGACY_IMAGE_TOOL_NAME },
     }),
     true,
     "legacy namespaced image tool request is still recognized",
   );
   assertEqual(
-    isHiCodexImageToolCall({
+    isForgeImageToolCall({
       id: "1",
       method: "item/tool/call",
       params: { namespace: "image_gen", tool: "generate" },
     }),
     false,
-    "reserved image_gen namespace is not treated as the HiCodex dynamic tool",
+    "reserved image_gen namespace is not treated as the Forge dynamic tool",
   );
   const seenImageToolRequests = new Set<string>();
   assertEqual(
-    claimHiCodexImageToolRequest(seenImageToolRequests, { id: "image-request-1" }),
+    claimForgeImageToolRequest(seenImageToolRequests, { id: "image-request-1" }),
     true,
     "first image tool request claim should win",
   );
   assertEqual(
-    claimHiCodexImageToolRequest(seenImageToolRequests, { id: "image-request-1" }),
+    claimForgeImageToolRequest(seenImageToolRequests, { id: "image-request-1" }),
     false,
     "repeated image tool request claims should be deduped across automatic and manual responders",
   );
@@ -260,7 +260,7 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     imageToolThreadIdFromRequest({
       id: "thread-direct",
       method: "item/tool/call",
-      params: { tool: HICODEX_IMAGE_TOOL_NAME, threadId: " thread-direct " },
+      params: { tool: FORGE_IMAGE_TOOL_NAME, threadId: " thread-direct " },
     }),
     "thread-direct",
     "request threadId should be read directly from tool-call params",
@@ -269,7 +269,7 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     imageToolThreadIdFromRequest({
       id: "thread-nested",
       method: "item/tool/call",
-      params: { tool: HICODEX_IMAGE_TOOL_NAME, context: { thread_id: "thread-nested" } },
+      params: { tool: FORGE_IMAGE_TOOL_NAME, context: { thread_id: "thread-nested" } },
     }),
     "thread-nested",
     "request threadId should be recovered from nested params when the top-level field is absent",
@@ -278,15 +278,15 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     imageToolThreadIdFromRequest({
       id: "thread-missing",
       method: "item/tool/call",
-      params: { tool: HICODEX_IMAGE_TOOL_NAME },
+      params: { tool: FORGE_IMAGE_TOOL_NAME },
     }),
     null,
     "missing request threadId should remain unscoped instead of falling back to a switched active thread",
   );
   assertEqual(
-    hiCodexImageToolOutputUrl({
+    forgeImageToolOutputUrl({
       type: "dynamicToolCall",
-      tool: HICODEX_IMAGE_TOOL_NAME,
+      tool: FORGE_IMAGE_TOOL_NAME,
       contentItems: [
         { type: "inputText", text: "Generated image for: blue sky" },
         { type: "inputImage", imageUrl: "data:image/png;base64,PNGDATA" },
@@ -296,10 +296,10 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "image dynamic tool thread item should expose the generated image URL",
   );
   assertEqual(
-    hiCodexImageToolOutputUrl({
+    forgeImageToolOutputUrl({
       type: "dynamicToolCall",
-      namespace: HICODEX_LEGACY_IMAGE_TOOL_NAMESPACE,
-      tool: HICODEX_LEGACY_IMAGE_TOOL_NAME,
+      namespace: FORGE_LEGACY_IMAGE_TOOL_NAMESPACE,
+      tool: FORGE_LEGACY_IMAGE_TOOL_NAME,
       contentItems: [
         { type: "inputText", text: "Generated image for: blue sky" },
         { type: "inputImage", imageUrl: "https://example.test/legacy.png" },
@@ -319,12 +319,12 @@ export default async function runImageGenerationToolTests(): Promise<void> {
       text: async () => "",
     } as Response;
   }) as typeof fetch;
-  const result = await executeHiCodexImageToolCall(
+  const result = await executeForgeImageToolCall(
     {
       id: "img-1",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         arguments: { prompt: "blue sky", size: "auto" },
       },
     },
@@ -374,12 +374,12 @@ export default async function runImageGenerationToolTests(): Promise<void> {
   assertEqual(fetchCalls[0]?.init.signal instanceof AbortSignal, true, "browser image fetch should include an abort signal");
 
   let timeoutSignalSeen = false;
-  const timedOut = await executeHiCodexImageToolCall(
+  const timedOut = await executeForgeImageToolCall(
     {
       id: "img-timeout",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         arguments: { prompt: "blue sky" },
       },
     },
@@ -429,12 +429,12 @@ export default async function runImageGenerationToolTests(): Promise<void> {
   assertEqual(IMAGE_GENERATION_FETCH_TIMEOUT_MS, 120_000, "default image fetch timeout should remain long enough for image backends");
 
   const hostCalls: unknown[] = [];
-  const hostResult = await executeHiCodexImageToolCall(
+  const hostResult = await executeForgeImageToolCall(
     {
       id: "img-host",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         threadId: "thread-from-request",
         arguments: { prompt: "blue sky", model: "image-model", size: "1024x1536" },
       },
@@ -493,12 +493,12 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "image tool host transport should receive base URL, token, request thread id, and OpenAI-compatible body",
   );
   hostCalls.length = 0;
-  const unscopedHostResult = await executeHiCodexImageToolCall(
+  const unscopedHostResult = await executeForgeImageToolCall(
     {
       id: "img-host-unscoped",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         arguments: { prompt: "blue sky" },
       },
     },
@@ -537,12 +537,12 @@ export default async function runImageGenerationToolTests(): Promise<void> {
     "host image request without request threadId should not inherit a switched active thread",
   );
 
-  const unconfigured = await executeHiCodexImageToolCall(
+  const unconfigured = await executeForgeImageToolCall(
     {
       id: "img-unconfigured",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         arguments: { prompt: "blue sky" },
       },
     },
@@ -566,14 +566,14 @@ export default async function runImageGenerationToolTests(): Promise<void> {
   );
   assertEqual(unconfigured.success, false, "unconfigured image tool should fail before calling the backend");
   const unconfiguredText = unconfigured.contentItems[0]?.type === "inputText" ? unconfigured.contentItems[0].text : "";
-  assertIncludes(unconfiguredText, "No HiCodex image endpoint is configured", "unconfigured image tool failure should explain the missing endpoint");
+  assertIncludes(unconfiguredText, "No Forge image endpoint is configured", "unconfigured image tool failure should explain the missing endpoint");
 
-  const modelOnlySettings = await executeHiCodexImageToolCall(
+  const modelOnlySettings = await executeForgeImageToolCall(
     {
       id: "img-model-only",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         arguments: { prompt: "blue sky" },
       },
     },
@@ -598,16 +598,16 @@ export default async function runImageGenerationToolTests(): Promise<void> {
   assertEqual(modelOnlySettings.success, false, "model-only image settings should fail before calling a backend");
   assertIncludes(
     imageToolFailureText(modelOnlySettings),
-    "No HiCodex image endpoint is configured",
+    "No Forge image endpoint is configured",
     "model-only image settings should explain that an image endpoint is required",
   );
 
-  const failed = await executeHiCodexImageToolCall(
+  const failed = await executeForgeImageToolCall(
     {
       id: "img-2",
       method: "item/tool/call",
       params: {
-        tool: HICODEX_IMAGE_TOOL_NAME,
+        tool: FORGE_IMAGE_TOOL_NAME,
         arguments: { prompt: "blue sky" },
       },
     },

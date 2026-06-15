@@ -4,7 +4,7 @@
  *
  * Codex Desktop uses a hand-rolled virtual scroller keyed on a packed
  * `depthAndFlags` integer plus chunked visible-row sums so that ~10k-node
- * workspaces stay smooth. HiCodex MVP renders the tree recursively and lets
+ * workspaces stay smooth. Forge MVP renders the tree recursively and lets
  * the browser paint the lot; we keep the same prop surface so the renderer
  * can be swapped in later.
  *
@@ -21,33 +21,20 @@ import { ContextMenu, type ContextMenuItem } from "./context-menu";
 import {
   FileTreeNode,
   SearchResultsList,
-  type FileTreeContextMenuOpener,
 } from "./file-tree-rows";
+import type {
+  FileTreeContextMenuOpener,
+  FileTreeProps,
+  FileTreeSelectOptions,
+} from "./file-tree-types";
 import type { WorkspaceDirEntry } from "../lib/tauri-host";
 
-export interface FileTreeProps {
-  /** Direct children of the workspace root, in render order. */
-  rootEntries: WorkspaceDirEntry[];
-  /** Cached child listings keyed by relative directory path ('' for the root). */
-  entriesByDir: Map<string, WorkspaceDirEntry[]>;
-  expandedPaths: Set<string>;
-  selectedPath: string | null;
-  onToggle: (path: string) => void;
-  onSelect: (entry: WorkspaceDirEntry, options: FileTreeSelectOptions) => void;
-  /** codex threadSidePanel.workspaceBrowser.addToChat — add a file row to composer context. */
-  onAddEntryToChat?: (entry: WorkspaceDirEntry) => void;
-  /** codex workspace-file-context-menu `workspace-file-reveal-path` — reveal in OS file manager. Omitted in non-Tauri/test. */
-  onRevealEntry?: (entry: WorkspaceDirEntry) => void;
-  /** codex workspace-file-context-menu `workspace-file-copy-contents` — copy file contents (files only). */
-  onCopyEntryContents?: (entry: WorkspaceDirEntry) => void;
-  loadingPaths?: Set<string>;
-  /** When set, render the matching subset only (search results mode). */
-  searchMatches?: WorkspaceDirEntry[] | null;
-}
-
-export interface FileTreeSelectOptions {
-  isPreview: boolean;
-}
+/*
+ * The prop shapes were extracted to ./file-tree-types (pure type leaf) so
+ * file-tree-rows.tsx can reference them without importing back into this
+ * module. Re-exported in place to keep historical import paths working.
+ */
+export type { FileTreeProps, FileTreeSelectOptions } from "./file-tree-types";
 
 export function FileTree(props: FileTreeProps) {
   // codex context-menu-*.js — file rows open a right-click context menu (the file-tree TODO).
@@ -96,10 +83,10 @@ export function FileTree(props: FileTreeProps) {
  * Two fidelity points extracted from the file-reference menu chunk:
  *   1. Only the "Open with" app-target rows carry an icon (`icon:e.icon`); the
  *      copy-path / copy-contents / reveal-path rows have NO leading icon — so
- *      HiCodex renders them icon-less to match (it previously added icons).
+ *      Forge renders them icon-less to match (it previously added icons).
  *   2. The reveal row's label is platform-switched by `C(platform)`:
  *      darwin→"Reveal in Finder", win32→"Open in Explorer", else→"Open in File Manager".
- * Codex's "Open in {app}" targets need OS app-discovery HiCodex lacks; HiCodex
+ * Codex's "Open in {app}" targets need OS app-discovery Forge lacks; Forge
  * substitutes its in-app file viewer under Codex's own `viewFile` label ("Open file").
  */
 export function fileTreeContextMenuItems(

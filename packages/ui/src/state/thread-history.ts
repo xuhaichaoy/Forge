@@ -1,6 +1,6 @@
 // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
 // Codex Desktop relies on browser history (`history.back/forward`) when its
-// renderer is mounted as a webview. HiCodex is a Tauri/Electron shell where
+// renderer is mounted as a webview. Forge is a Tauri/Electron shell where
 // the UI is not a router, so we instead model an in-app thread navigation
 // stack and mutate it on `setActiveThread`. Behavior matches a browser back
 // stack: switching to a new thread while there are entries ahead of the

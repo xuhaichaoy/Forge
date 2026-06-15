@@ -134,7 +134,7 @@ export function artifactPreviewTabId(entry: RailEntry, hostId = "local"): string
   if (preview.url && !preview.reference) return `artifact:url:${encodeURIComponent(path)}`;
   const resolvedHostId = preview.reference?.hostId?.trim() || hostId || "local";
   // codex: open-artifact-side-panel-tab-*.js uses `artifact:${hostId}:${path}`
-  // for workspace-file artifacts; URL-only artifacts keep HiCodex's URL scope.
+  // for workspace-file artifacts; URL-only artifacts keep Forge's URL scope.
   return `artifact:${resolvedHostId}:${path}`;
 }
 

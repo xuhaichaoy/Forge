@@ -590,7 +590,7 @@ function projectsGeneratedImageSourcesIntoArtifacts(): void {
         },
       },
     ],
-    "generated images should surface native and HiCodex image tool outputs as Artifacts",
+    "generated images should surface native and Forge image tool outputs as Artifacts",
   );
 }
 

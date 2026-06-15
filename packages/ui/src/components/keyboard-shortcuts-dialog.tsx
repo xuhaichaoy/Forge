@@ -3,8 +3,8 @@
  *
  * Codex Desktop ships a Settings → Keyboard Shortcuts page that lists every
  * command from `electron-menu-shortcuts-*.js` together with its
- * platform-specific accelerator. HiCodex mirrors the same surface but as a
- * standalone modal because HiCodex's settings panel is a smaller dialog.
+ * platform-specific accelerator. Forge mirrors the same surface but as a
+ * standalone modal because Forge's settings panel is a smaller dialog.
  *
  * The list is grouped by `commandMenuGroupKey` (thread / panels / navigation /
  * workspace / configure / app) and supports a substring filter on
@@ -19,7 +19,7 @@ import {
   descriptorAcceleratorLabel,
 } from "../state/commands";
 import type { CommandDescriptor } from "../state/command-registry";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface KeyboardShortcutsDialogProps {
   open: boolean;
@@ -28,7 +28,7 @@ export interface KeyboardShortcutsDialogProps {
 
 /*
  * codex: keyboard-shortcuts-settings-*.js — Codex groups commands under
- * the same taxonomy as the command menu. HiCodex reuses the descriptor's
+ * the same taxonomy as the command menu. Forge reuses the descriptor's
  * `commandMenuGroupKey` so the list mirrors the command palette taxonomy.
  */
 const GROUP_TITLE: ReadonlyArray<{ key: string; titleId: string; title: string }> = [
@@ -53,7 +53,7 @@ interface Section {
 }
 
 export function KeyboardShortcutsDialog({ open, onClose }: KeyboardShortcutsDialogProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [query, setQuery] = useState("");
 
   // codex: keyboard-shortcuts-search-input-*.js — substring filter on

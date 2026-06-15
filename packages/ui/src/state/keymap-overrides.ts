@@ -1,6 +1,6 @@
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
-import { HICODEX_DESKTOP_CONFIG_KEYS } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS } from "./forge-desktop-namespace";
 
 /*
  * CODEX-REF: keyboard-shortcuts-settings-*.js. Codex Desktop persists
@@ -9,7 +9,7 @@ import { HICODEX_DESKTOP_CONFIG_KEYS } from "./hicodex-desktop-namespace";
  *   - mutation `set-codex-command-keybinding` with one of 5 types
  *     (set / replace / append / remove / reset)
  *
- * HiCodex re-implements just the webview-visible subset:
+ * Forge re-implements just the webview-visible subset:
  *
  *   { [commandId: string]: string | null }
  *
@@ -28,7 +28,7 @@ import { HICODEX_DESKTOP_CONFIG_KEYS } from "./hicodex-desktop-namespace";
  * Multi-key sequences (e.g. "K S" with 500ms timeout) and modifier-only
  * accelerators are NOT supported in this iteration — Codex's spec gates them
  * behind per-command `allowsSequences` / `allowsBareModifiers` flags, which
- * HiCodex descriptors don't yet expose. See [[keymap-overrides]] in the
+ * Forge descriptors don't yet expose. See [[keymap-overrides]] in the
  * settings-panel-workflow `keyboardShortcutsSettingsEntries` comment.
  */
 
@@ -37,11 +37,11 @@ export type KeymapOverrides = Readonly<Record<string, string | null>>;
 export const EMPTY_KEYMAP_OVERRIDES: KeymapOverrides = Object.freeze({});
 
 /*
- * Module-level singleton mirrors the React useState in HiCodexApp. Read-paths
+ * Module-level singleton mirrors the React useState in ForgeApp. Read-paths
  * that don't live inside React (useHotkey, descriptorAcceleratorLabel) consult
  * this snapshot directly so the resolved accelerator stays consistent with
  * what the user sees in the Settings panel. The React state is the source of
- * truth; HiCodexApp keeps both sides in sync via setUiKeymapOverrides.
+ * truth; ForgeApp keeps both sides in sync via setUiKeymapOverrides.
  */
 let activeOverrides: KeymapOverrides = EMPTY_KEYMAP_OVERRIDES;
 const subscribers = new Set<(overrides: KeymapOverrides) => void>();
@@ -108,7 +108,7 @@ export function loadKeymapOverrides(storage: BrowserStorageLike | null): KeymapO
   if (!storage) return EMPTY_KEYMAP_OVERRIDES;
   let raw: string | null = null;
   try {
-    raw = storage.getItem(HICODEX_DESKTOP_CONFIG_KEYS.keymapOverrides);
+    raw = storage.getItem(FORGE_DESKTOP_CONFIG_KEYS.keymapOverrides);
   } catch {
     return EMPTY_KEYMAP_OVERRIDES;
   }
@@ -138,7 +138,7 @@ export function saveKeymapOverrides(
 ): void {
   if (!storage) return;
   try {
-    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.keymapOverrides, JSON.stringify(overrides));
+    setDesktopAppSettingValue(storage, FORGE_DESKTOP_CONFIG_KEYS.keymapOverrides, JSON.stringify(overrides));
   } catch {
     // Preference still applies for this session when storage is unavailable.
   }

@@ -12,7 +12,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ToolActivityIcon } from "../state/render-groups";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export const DESKTOP_COLLAPSED_TOOL_ACTIVITY_SUMMARY_CLASS =
   "hc-tool-summary group/collapsed-tool-activity group/summary inline-flex w-fit max-w-full min-w-0 cursor-interaction items-center self-start gap-1 border-0 bg-transparent px-0 py-0 text-left shadow-none hover:bg-transparent";
@@ -86,7 +86,7 @@ function ToolActivityIconMark({ icon }: { icon: ToolActivityIcon }) {
 }
 
 export function ToolActivityDiffStats({ added, removed }: { added: number; removed: number }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <span
       className="hc-tool-summary-diff-stats"

@@ -1,7 +1,7 @@
 export const DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX = 24;
 export const DESKTOP_FOOTER_SCROLL_PADDING_PX = 16;
 
-const DEFAULT_SCROLL_KEY = "__hicodex_default_thread_scroll__";
+const DEFAULT_SCROLL_KEY = "__forge_default_thread_scroll__";
 
 export function threadScrollDistanceFromBottom(element: HTMLElement): number {
   if (isReverseThreadScroll(element)) {

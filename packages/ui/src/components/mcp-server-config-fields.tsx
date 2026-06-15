@@ -1,4 +1,4 @@
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { McpServerConfigFormValues } from "./mcp-server-config-values";
 
 type McpServerConfigErrors = Record<string, string>;
@@ -19,7 +19,7 @@ export function McpServerNameField({
   setValue,
   values,
 }: McpServerConfigFieldGroupProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <label className="hc-mcp-tool-field" data-error={errors.name ? "true" : "false"}>
       <span className="hc-mcp-tool-field-header">
@@ -42,7 +42,7 @@ export function McpServerTransportField({
   setValue,
   values,
 }: Pick<McpServerConfigFieldGroupProps, "setValue" | "values">) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <label className="hc-mcp-tool-field">
       <span className="hc-mcp-tool-field-header"><span>{formatMessage({ id: "hc.mcpForm.transport", defaultMessage: "Transport" })}</span></span>
@@ -71,7 +71,7 @@ export function McpServerStdioFields({
   setValue,
   values,
 }: McpServerConfigFieldGroupProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <>
       {/*
@@ -83,7 +83,7 @@ export function McpServerStdioFields({
        *   envVarPassthrough  = "Environment variable passthrough" -> bound to stdio.envVars (inputType Array, config.env_vars)
        * The Record field (KEY=value -> config.env) is the one Codex labels
        * "Environment variables"; the Array field (bare names -> config.env_vars)
-       * is "Environment variable passthrough". HiCodex previously had these two
+       * is "Environment variable passthrough". Forge previously had these two
        * labels swapped relative to their data bindings.
        */}
       <TextField
@@ -128,7 +128,7 @@ export function McpServerHttpFields({
   setValue,
   values,
 }: McpServerConfigFieldGroupProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <>
       <TextField
@@ -173,7 +173,7 @@ export function McpServerAdvancedFields({
   setValue,
   values,
 }: McpServerConfigFieldGroupProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <>
       <label className="hc-mcp-tool-field">
@@ -249,7 +249,7 @@ function TextField({
   required?: boolean;
   value: string;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <label className="hc-mcp-tool-field" data-error={error ? "true" : "false"}>
       <span className="hc-mcp-tool-field-header">

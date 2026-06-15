@@ -1,5 +1,5 @@
 import { ExternalLink, Maximize2, Minimize2, X } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   useCallback,
   useMemo,
@@ -27,7 +27,7 @@ import {
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 
 /*
- * HiCodex's equivalent of Codex Desktop's AppShell RightPanel
+ * Forge's equivalent of Codex Desktop's AppShell RightPanel
  * (`app-shell-*.js`) while hosting FilePreviewPage. The summary
  * rail stays fixed-size; this panel is the large resizable file preview.
  */
@@ -80,7 +80,7 @@ export function FilePreviewPanel({
   onOpenFileReferenceExternal,
   onOpenUrl,
 }: FilePreviewPanelProps): ReactNode {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const asideRef = useRef<HTMLElement | null>(null);
   const previewSource = usePreviewSource({
     artifactPreview,

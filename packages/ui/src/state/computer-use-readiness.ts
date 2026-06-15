@@ -190,7 +190,7 @@ function computerUseReadinessNextSteps(
       ];
     }
     return [
-      "Next step: install or update Codex.app with a signed-valid Computer Use bundle, then restart HiCodex and refresh readiness.",
+      "Next step: install or update Codex.app with a signed-valid Computer Use bundle, then restart Forge and refresh readiness.",
       "No signed-valid local repair source was found for the current Computer Use cache.",
       "Do not rely on macOS permission grants until the helper and MCP client signatures verify as valid.",
     ];
@@ -328,7 +328,7 @@ function computerUseNativeChecklistEntries(
         `Screen Recording: ${readiness.screenRecordingStatus || "unknown"}`,
         `Accessibility: ${readiness.accessibilityStatus || "unknown"}`,
         `App approvals: ${readiness.appApprovalsStatus || "unknown"}`,
-        "Permission preflight checks the current HiCodex host process; the Computer Use helper and app approvals still need their own proof.",
+        "Permission preflight checks the current Forge host process; the Computer Use helper and app approvals still need their own proof.",
         permissionStatus === "granted"
           ? "Native permission readiness is proven granted."
           : "Missing native permissions or app approvals can make Computer Use list_apps and GUI-control tool calls time out.",

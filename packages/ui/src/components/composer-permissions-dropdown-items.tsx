@@ -1,6 +1,6 @@
 import { Check, Hand, Settings, ShieldAlert, ShieldUser, type LucideIcon } from "lucide-react";
 import type { PermissionDropdownKey } from "../state/permissions-mode";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 interface PermissionDropdownItemDescriptor {
   key: PermissionDropdownKey;
@@ -60,7 +60,7 @@ export function ComposerPermissionsDropdownItem({
   blockedReason,
   onClick,
 }: ComposerPermissionsDropdownItemProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const Icon = item.icon;
   const disabled = blockedReason !== "";
 

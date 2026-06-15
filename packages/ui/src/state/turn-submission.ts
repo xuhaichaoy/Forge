@@ -1,4 +1,4 @@
-import type { CollaborationModeMask } from "@hicodex/codex-protocol";
+import type { CollaborationModeMask } from "@forge/codex-protocol";
 import type { ThreadContextDefaults } from "./codex-reducer";
 import { collaborationModeFromComposerMode } from "./collaboration-modes";
 import type { ComposerMode, ComposerSubmitState } from "./composer-workflow";

@@ -1,14 +1,14 @@
 import type { AppNavigationTab } from "../components/app-navigation-rail";
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
 
 const PERSISTABLE_APP_TABS = ["workbench", "knowledge", "ingest", "archive", "todo"] as const;
 
 type PersistableAppNavigationTab = (typeof PERSISTABLE_APP_TABS)[number];
 
 export function loadActiveAppTab(storage: BrowserStorageLike | null): AppNavigationTab {
-  return normalizePersistableAppTab(readMigratedStorageValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.activeAppTab))
+  return normalizePersistableAppTab(readMigratedStorageValue(storage, FORGE_DESKTOP_CONFIG_KEYS.activeAppTab))
     ?? "workbench";
 }
 
@@ -20,7 +20,7 @@ export function saveActiveAppTab(
   const normalized = normalizePersistableAppTab(tab);
   if (!normalized) return;
   try {
-    setDesktopAppSettingValue(storage, HICODEX_DESKTOP_CONFIG_KEYS.activeAppTab, normalized);
+    setDesktopAppSettingValue(storage, FORGE_DESKTOP_CONFIG_KEYS.activeAppTab, normalized);
   } catch {
     // The in-memory tab change still applies when storage is unavailable.
   }

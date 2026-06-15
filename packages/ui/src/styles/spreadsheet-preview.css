@@ -1,7 +1,7 @@
 /* CODEX-REF: open-workspace-file-*.js
  * Codex Desktop renders xlsx through its Popcorn Workbook component
  * (heavyweight .NET WASM viewer with grid virtualization, styles, and charts).
- * HiCodex's reduced preview uses a plain <table> emitted by SheetJS
+ * Forge's reduced preview uses a plain <table> emitted by SheetJS
  * sheet_to_html, so these styles only cover the basics: a tab strip for
  * multi-sheet workbooks, a scrollable table area, and a sticky-feeling header
  * row via :first-child styling.

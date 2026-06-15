@@ -1,4 +1,4 @@
-import type { CommandPanelEntry, FileSearchResult } from "./command-panel";
+import type { CommandPanelEntry, FileSearchResult } from "./command-panel-types";
 
 export function projectFileSearchEntries(result: { files?: FileSearchResult[] }): CommandPanelEntry[] {
   return (result.files ?? []).slice(0, 25).map((file, index) => {

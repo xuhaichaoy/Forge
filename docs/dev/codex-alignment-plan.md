@@ -47,7 +47,7 @@ There is no structured todo state. The plan is one markdown blob; the model writ
 
 The `dispatchMessage("show-plan-summary", ...)` handler in Codex's Electron main process is a noop `case "show-plan-summary": break;`. The button exists but does not open a window in the shipped build.
 
-HiCodex implementation rule: render the Open button with the matching aria-label/tooltip (`Open` / `Open in new window`) and wire `onClick` to a noop, matching Codex behavior. A real multi-window implementation would require a new Tauri `WebviewWindowBuilder` entry; treat that as future work, not parity.
+Forge implementation rule: render the Open button with the matching aria-label/tooltip (`Open` / `Open in new window`) and wire `onClick` to a noop, matching Codex behavior. A real multi-window implementation would require a new Tauri `WebviewWindowBuilder` entry; treat that as future work, not parity.
 
 ## 5. Todo summary i18n
 
@@ -56,7 +56,7 @@ The Progress section in the right rail surfaces task completion. Codex uses:
 - `{completed} out of {total} tasks completed`
 - Step indices rendered as `{index}.` (1-based).
 
-HiCodex right-rail Progress projection follows the same shape.
+Forge right-rail Progress projection follows the same shape.
 
 ## 6. Related Codex bundle areas
 

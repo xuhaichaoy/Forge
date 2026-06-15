@@ -14,7 +14,7 @@ import {
   type AttachActionId,
   type ComposerMode,
 } from "../state/composer-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 function attachIcon(actionId: AttachActionId) {
   switch (actionId) {
@@ -54,7 +54,7 @@ export function ComposerAttachMenu({
   goalMode,
   onSelect,
 }: ComposerAttachMenuProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-composer-menu attach" role="menu" aria-label={formatMessage({ id: "hc.composer.attach.menuLabel", defaultMessage: "Attach context" })} data-state="open">
       {actions.map((action) => {
@@ -115,7 +115,7 @@ export function ComposerAttachInputPanel({
   onCancel,
   onShowTypes,
 }: ComposerAttachInputPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-attachment-input-panel" role="dialog" aria-label={action.title} data-state="open">
       <div className="hc-attachment-input-heading">

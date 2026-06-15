@@ -3,9 +3,9 @@
  * Container: `z-50 m-px flex min-w-[180px] flex-col rounded-xl bg-token-dropdown-background/90
  * p-1 text-token-foreground` + shadow; each item is a `flex items-center gap-1.5 rounded-lg
  * p-1.5 text-sm` row with an `icon-sm` leading icon + a `truncate` label, and disabled items
- * render at `opacity-50 cursor-default`. HiCodex mirrors that structure while reusing the
+ * render at `opacity-50 cursor-default`. Forge mirrors that structure while reusing the
  * existing `.hc-thread-menu` popover surface (bg/shadow/border) for visual consistency with
- * the other HiCodex menus; positioning follows the same portal + viewport-clamp pattern as
+ * the other Forge menus; positioning follows the same portal + viewport-clamp pattern as
  * `reasoning-picker-menu` / the composer project menu.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";

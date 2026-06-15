@@ -1,12 +1,12 @@
 import { useMemo, useState, type ReactElement } from "react";
-import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
+import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateLimitSnapshot";
 import {
   formatRateLimitProgress,
   projectRateLimitSections,
 } from "../state/rate-limit-summary";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export interface ComposerStatusPanelProps {
   threadId: string | null;
@@ -29,7 +29,7 @@ export function ComposerStatusPanel({
   rateLimitsByLimitId,
   onClose,
 }: ComposerStatusPanelProps): ReactElement {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [copied, setCopied] = useState(false);
   const rows = useMemo(() => composerStatusRows({
     threadId,

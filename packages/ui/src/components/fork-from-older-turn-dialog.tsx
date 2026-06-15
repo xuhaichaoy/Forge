@@ -4,7 +4,7 @@
  * Codex Desktop 在用户编辑非最后一条 user 消息时，会先弹出此确认对话框，让用户
  * 选择 "Fork into local"（在新 thread 里从该消息继续）或 "Cancel"。worktree 选项
  * (`Wd` 的 onForkIntoWorktree → `/worktree-init-v2/`) 只在 Codex Desktop 环境
- * （Tauri/electron + 本地 git repo）才显示；HiCodex 当前作为纯 web 客户端不支持
+ * （Tauri/electron + 本地 git repo）才显示；Forge 当前作为纯 web 客户端不支持
  * worktree 流，所以只暴露 local fork 这一个选项。
  *
  * 文案直接取自 Codex i18n `defaultMessage`：
@@ -15,7 +15,7 @@
  *   threadHeader.forkIntoLocal (Ki.forkIntoLocal → "Fork into local")
  */
 import { GitFork, X } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface ForkFromOlderTurnDialogProps {
   open: boolean;
@@ -30,7 +30,7 @@ export function ForkFromOlderTurnDialog({
   onClose,
   onForkIntoLocal,
 }: ForkFromOlderTurnDialogProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
 
   if (!open) return null;
 
@@ -53,7 +53,7 @@ export function ForkFromOlderTurnDialog({
         aria-labelledby="hc-fork-older-turn-title"
         aria-describedby="hc-fork-older-turn-subtitle"
         onKeyDown={(event) => {
-          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          // codex: Radix dialog closes on Escape; match it (the other Forge dialogs do).
           if (event.key === "Escape") {
             event.stopPropagation();
             onClose();

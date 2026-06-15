@@ -1,6 +1,6 @@
-import type { CollaborationMode } from "@hicodex/codex-protocol";
+import type { CollaborationMode } from "@forge/codex-protocol";
 import { stringField } from "../lib/format";
-import type { ThreadContextDefaults } from "./codex-reducer";
+import type { ThreadContextDefaults } from "./codex-ui-types";
 
 export function threadContextDefaultsFromThreadSettings(settings: Record<string, unknown>): ThreadContextDefaults {
   return compactThreadContext({

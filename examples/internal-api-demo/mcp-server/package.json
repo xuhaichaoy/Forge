@@ -1,12 +1,12 @@
 {
-  "name": "@hicodex/internal-api-mcp-demo",
+  "name": "@forge/internal-api-mcp-demo",
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Demo MCP server exposing an internal API to HiCodex / Codex Desktop.",
+  "description": "Demo MCP server exposing an internal API to Forge / Codex Desktop.",
   "main": "dist/server.js",
   "bin": {
-    "hicodex-internal-api-mcp": "dist/server.js"
+    "forge-internal-api-mcp": "dist/server.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

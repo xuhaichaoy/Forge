@@ -5,7 +5,7 @@ import type { BrowserStorageLike } from "./image-generation-tool";
  * and /private/tmp/codex-asar/pretty/src-DAzAmbVS.pretty.js:2988 -
  * Codex Desktop reads `list-pinned-threads`, writes `set-thread-pinned` /
  * `set-pinned-threads-order`, and persists the `pinned-thread-ids` key.
- * HiCodex keeps this as a local app-layer overlay until the Tauri host owns
+ * Forge keeps this as a local app-layer overlay until the Tauri host owns
  * the equivalent Desktop host store.
  */
 export const DESKTOP_PINNED_THREAD_IDS_STORAGE_KEY = "pinned-thread-ids";

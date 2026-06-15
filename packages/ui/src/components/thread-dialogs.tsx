@@ -1,11 +1,11 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 
 import { ForkFromOlderTurnDialog } from "./fork-from-older-turn-dialog";
 import { ThreadActionDialog, type ThreadActionDialogState } from "./thread-action-dialog";
 
 /*
  * Thread-level overlays: the rename/archive action dialog and the
- * fork-from-older-turn confirmation dialog, extracted from HiCodexApp's
+ * fork-from-older-turn confirmation dialog, extracted from ForgeApp's
  * overlay layer. All callbacks are stable useCallbacks built in the body.
  */
 export function ThreadDialogs({

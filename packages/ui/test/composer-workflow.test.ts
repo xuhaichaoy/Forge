@@ -1,4 +1,4 @@
-import type { UserInput } from "@hicodex/codex-protocol";
+import type { UserInput } from "@forge/codex-protocol";
 import {
   DEFAULT_ATTACH_ACTIONS,
   CLOSED_ATTACHMENT_PICKER_STATE,
@@ -969,12 +969,12 @@ function buildsUserInputFromComposerTextAndAttachments(): void {
   assertDeepEqual(
     buildUserInputFromComposer("", [
       { type: "plainText", text: "Use this pasted context." },
-      { type: "filePath", path: "packages/ui/src/HiCodexApp.tsx" },
+      { type: "filePath", path: "packages/ui/src/ForgeApp.tsx" },
     ]),
     [
       {
         type: "text",
-        text: "Use this pasted context.\n[HiCodexApp.tsx](packages/ui/src/HiCodexApp.tsx)",
+        text: "Use this pasted context.\n[ForgeApp.tsx](packages/ui/src/ForgeApp.tsx)",
         text_elements: [],
       },
     ] satisfies UserInput[],

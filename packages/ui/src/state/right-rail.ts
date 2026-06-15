@@ -1,5 +1,5 @@
 import type { BranchDetailsViewModel } from "./branch-details";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
 import { formatMessage } from "./i18n";
 import type { RailEntry } from "./render-groups";
 import { setDesktopAppSettingValue } from "../lib/app-settings";
@@ -9,7 +9,7 @@ export const DESKTOP_RIGHT_RAIL_WIDTH_PX = 300;
 export const DESKTOP_RIGHT_RAIL_GAP_PX = 16;
 export const DESKTOP_LEFT_PANEL_WIDTH_PX = 300;
 export const LEGACY_RIGHT_RAIL_PINNED_STORAGE_KEY = "hicodex.rightRail.isPinned";
-export const RIGHT_RAIL_PINNED_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.rightRailPinned;
+export const RIGHT_RAIL_PINNED_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.rightRailPinned;
 
 const DESKTOP_THREAD_LAYOUT_WIDTH_PX = 736;
 const DESKTOP_RIGHT_RAIL_OVERLAY_THRESHOLD_PX = 180;
@@ -20,7 +20,7 @@ export type RightRailSectionId =
    * CODEX-REF: local-conversation-thread-*.js — automation section (sectionKey=
    * "automation") 渲染**单条 automation**（输入是 `{automations,
    * conversationId}` 返回的 single object）。Codex bundle 内无 multi-list
-   * automation 渲染分支。HiCodex 之前的 legacy `"automations"` (multi list) 没有
+   * automation 渲染分支。Forge 之前的 legacy `"automations"` (multi list) 没有
    * Codex 出处，删除以严格对齐。
    */
   | "progress"
@@ -59,7 +59,7 @@ export interface RightRailSection {
 
 // codex: local-conversation-thread-*.js automation — single automation summary
 // payload `{automations, conversationId}` with rrule humanized
-// and "Next run: …" tooltip in the automation row body. HiCodex mirrors the
+// and "Next run: …" tooltip in the automation row body. Forge mirrors the
 // structured fields without inheriting Desktop's full rrule library;
 // rruleSummary is pre-humanized by the caller.
 export interface RightRailAutomationInput {
@@ -76,7 +76,7 @@ export interface RightRailAutomationInput {
 
 // codex: local-conversation-thread-*.js browser-tabs — single browser tab
 // summary (browser-use summary) with a body rendering title + displayUrl
-// two-line row plus shimmer-on-active. HiCodex collapses the multi-tab list
+// two-line row plus shimmer-on-active. Forge collapses the multi-tab list
 // into the one-active-tab summary used by Desktop.
 export interface RightRailBrowserInput {
   title: string;
@@ -92,7 +92,7 @@ export interface RightRailProjectionInput {
   automation?: RightRailAutomationInput;
   /*
    * CODEX-REF: Codex 渲染 single automation 经 `{automations, conversationId}`
-   * 返回 single object，不渲染 multi-list。HiCodex 严格对齐后删除 multi-list
+   * 返回 single object，不渲染 multi-list。Forge 严格对齐后删除 multi-list
    * 数据流入；保留 `automation` 单条字段。
    */
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
@@ -160,8 +160,8 @@ export function saveRightRailPinned(
 }
 
 /*
- * Earlier HiCodex versions defined `loadRightRailOpen`/`saveRightRailOpen`
- * around a `rightRailOpen` atom (HiCodex's misread of Codex Desktop's
+ * Earlier Forge versions defined `loadRightRailOpen`/`saveRightRailOpen`
+ * around a `rightRailOpen` atom (Forge's misread of Codex Desktop's
  * `ea = A(P, !1)` RightPanel atom) and gated `showRightRail` on that boolean.
  * That model inverted the Summary Rail semantics — Progress/Git/Outputs/Sources
  * disappeared by default and only showed after the user clicked into a file
@@ -202,7 +202,7 @@ export function rightRailReservedInlineEndPx(
 }
 
 // codex local-conversation-thread-*.js rail section titles are intl messages with
-// stable ids; HiCodex previously hardcoded the English titles. Route them through
+// stable ids; Forge previously hardcoded the English titles. Route them through
 // formatMessage so non-English locales localize (en-US is unchanged via defaultMessage).
 function railSectionTitle(
   id: "progress" | "automations" | "environment" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
@@ -226,7 +226,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   // codex local-conversation-thread-*.js (26.602.40724) assembles the rail
   // children as [automation, environment, progress, outputs, side-chats, …];
   // environment is git-gated and outputs is non-git-gated (mutually exclusive).
-  // HiCodex previously placed Progress FIRST (an older-build order); match the
+  // Forge previously placed Progress FIRST (an older-build order); match the
   // live order automation → environment → progress → outputs.
   //
   // codex automation — single-entry section with a Clock icon, label=name,
@@ -259,7 +259,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     // the title default falls back to "Environment" while still honoring an
     // explicit override coming in via `branchDetails.title`/entry-input title.
     // TODO: codex: local-conversation-thread-*.js — PR row +
-    // gh-status row require GitHub CLI integration; HiCodex no data source yet.
+    // gh-status row require GitHub CLI integration; Forge no data source yet.
     sections.push({
       id: "branchDetails",
       title: branchDetails?.title ?? (branchInput as BranchDetailsEntryInput).title ?? railSectionTitle("environment"),
@@ -304,7 +304,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   //   He = de>0     && <Wd after=<button …"View all processes"/>
   //        sectionKey="background-tasks" title=tasks titleSuffix=count{de} …
   //        backgroundTerminals:u />
-  // The two source arrays are separable in HiCodex's projection input:
+  // The two source arrays are separable in Forge's projection input:
   // `backgroundAgents` (subagents) and `backgroundTerminals` (tasks). Desktop
   // no longer merges them into a single "Subagents and tasks" list.
   const backgroundSubagents = input.backgroundAgents ?? [];
@@ -328,7 +328,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   }
 
   // codex: local-conversation-thread-*.js browser-tabs — single-entry section
-  // with an active-spinner / Globe icon and shimmer-on-active title. HiCodex
+  // with an active-spinner / Globe icon and shimmer-on-active title. Forge
   // captures the active/idle bit in `entry.status` so the renderer can route
   // it through the existing browser-row icon logic and add the shimmer class.
   if (input.browser) {
@@ -347,7 +347,7 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
   // CODEX-REF: local-conversation-thread-*.js Sources slot —
   // 在 Codex 桌面版 panel sequence 中,Sources
   // (`tool-sources`, sectionKey:"tool-sources") **总是渲染**(无渲染条件),空态由
-  // section 内部 "No sources yet" empty row 承载。HiCodex 原条件 `sources.length>0 ||
+  // section 内部 "No sources yet" empty row 承载。Forge 原条件 `sources.length>0 ||
   // sections.length>0` 没源码依据,已对齐 always。
   sections.push(projectEntrySection("sources", railSectionTitle("sources"), input.sources, true));
 
@@ -451,7 +451,7 @@ function rightRailSideSpace(contentWidthPx: number): number {
 // codex: local-conversation-thread-*.js automationRow — single automation row:
 // row shell with a Clock icon, label = automation.name, sublabel = humanized
 // rrule, title="Next run: …" tooltip computed off
-// nextRunAtMs. HiCodex packs the same fields into the RailEntry slots that
+// nextRunAtMs. Forge packs the same fields into the RailEntry slots that
 // `right-rail.tsx::railEntryIcon` / `RailEntryContent` already understand.
 function automationRailEntry(input: RightRailAutomationInput): RailEntry {
   const nextRun = formatNextRunAt(input.nextRunAtMs, input.status);

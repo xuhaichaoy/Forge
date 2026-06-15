@@ -2,7 +2,7 @@ import { CheckCircle2, ChevronRight, Circle, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { normalizePlanStepStatus } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 import type { ThreadItemUnit } from "./thread-item-types";
 
 export function TodoListThreadItemView({
@@ -10,7 +10,7 @@ export function TodoListThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const plan = todoPlanItems(unit.item);
   const [expanded, setExpanded] = useState(true);
   const activePlanItemRef = useRef<HTMLLIElement | null>(null);
@@ -44,7 +44,7 @@ export function TodoListThreadItemView({
         >
           {/* codex nT: the to-do card header is summary text + chevron ONLY — no
               leading status icon (completion is conveyed by the "N out of M tasks
-              completed" summary). HiCodex previously rendered an extra Circle/
+              completed" summary). Forge previously rendered an extra Circle/
               CheckCircle2 glyph here; dropped to match. */}
           <span className="hc-inline-plan-summary">{summary}</span>
           {/* codex: local-conversation-thread-*.js — chevron uses
@@ -110,7 +110,7 @@ export function TodoListThreadItemView({
 // collapsed activity component and should not be used for this standalone row.
 export function todoListSummaryLabel(
   item: ThreadItemUnit["item"],
-  formatMessage: HiCodexIntlContextValue["formatMessage"] = fallbackTodoListFormatMessage,
+  formatMessage: ForgeIntlContextValue["formatMessage"] = fallbackTodoListFormatMessage,
 ): string {
   const plan = todoPlanItems(item);
   const total = plan.length;
@@ -124,8 +124,8 @@ export function todoListSummaryLabel(
 }
 
 function fallbackTodoListFormatMessage(
-  descriptor: Parameters<HiCodexIntlContextValue["formatMessage"]>[0],
-  values: Parameters<HiCodexIntlContextValue["formatMessage"]>[1] = {},
+  descriptor: Parameters<ForgeIntlContextValue["formatMessage"]>[0],
+  values: Parameters<ForgeIntlContextValue["formatMessage"]>[1] = {},
 ): string {
   return descriptor.defaultMessage
     .replace(/\{totalItems,\s*plural,\s*one\s*\{# task completed\}\s*other\s*\{# tasks completed\}\s*\}/g, () => {
@@ -153,7 +153,7 @@ function todoStatusIcon(status: string) {
   // (completed → check, else → empty circle; Codex's in-progress glyph `or` is a hair
   // smaller at 9px). This previously cited the unreachable compact `nT` (`icon-xxs` =
   // 12px) by mistake — `nT` never renders in the aligned flow (the last todo-list is
-  // hoisted out of grouping). HiCodex keeps a subtle spinner as its in-progress
+  // hoisted out of grouping). Forge keeps a subtle spinner as its in-progress
   // affordance, sized to the 10px step-icon row.
   const normalized = normalizePlanStepStatus(status);
   if (normalized === "completed") return <CheckCircle2 size={10} />;

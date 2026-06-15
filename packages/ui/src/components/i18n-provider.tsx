@@ -3,31 +3,31 @@ import {
   createI18nBundle,
   formatI18nMessage,
   setActiveI18nLocale,
-  type HiCodexLocale,
+  type ForgeLocale,
   type I18nMessageDescriptor,
   type I18nValues,
 } from "../state/i18n";
 
-export interface HiCodexIntlContextValue {
-  locale: HiCodexLocale;
+export interface ForgeIntlContextValue {
+  locale: ForgeLocale;
   formatMessage: (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 }
 
 const DEFAULT_I18N_BUNDLE = createI18nBundle("en-US");
 
-const HiCodexIntlContext = createContext<HiCodexIntlContextValue>({
+const ForgeIntlContext = createContext<ForgeIntlContextValue>({
   locale: "en-US",
   formatMessage: (descriptor, values) => formatI18nMessage(DEFAULT_I18N_BUNDLE, descriptor, values),
 });
 
-export function HiCodexIntlProvider({
+export function ForgeIntlProvider({
   children,
   locale,
 }: {
   children: ReactNode;
-  locale: HiCodexLocale;
+  locale: ForgeLocale;
 }) {
-  const value = useMemo<HiCodexIntlContextValue>(() => {
+  const value = useMemo<ForgeIntlContextValue>(() => {
     // Keep the module-level singleton (used by state/helpers via formatMessage
     // import) in sync, and reuse the same bundle for the React context value.
     const bundle = setActiveI18nLocale(locale);
@@ -38,12 +38,12 @@ export function HiCodexIntlProvider({
   }, [locale]);
 
   return (
-    <HiCodexIntlContext.Provider value={value}>
+    <ForgeIntlContext.Provider value={value}>
       {children}
-    </HiCodexIntlContext.Provider>
+    </ForgeIntlContext.Provider>
   );
 }
 
-export function useHiCodexIntl(): HiCodexIntlContextValue {
-  return useContext(HiCodexIntlContext);
+export function useForgeIntl(): ForgeIntlContextValue {
+  return useContext(ForgeIntlContext);
 }

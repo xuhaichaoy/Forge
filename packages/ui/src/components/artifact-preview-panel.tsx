@@ -17,7 +17,7 @@ import {
   type MetadataPreviewState,
 } from "./artifact-preview-panel-model";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   localFileSrc,
   readFirstAvailableMetadata,
@@ -59,7 +59,7 @@ export function ArtifactPreviewPanel({
   onOpenFileExternal,
   onOpenUrl,
 }: ArtifactPreviewPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const preview = useMemo(() => projectArtifactPreview(entry), [entry]);
   const [textPreview, setTextPreview] = useState<TextPreviewState>({ status: "idle", text: "" });
   const [spreadsheetPreview, setSpreadsheetPreview] = useState<SpreadsheetPreviewState>({ status: "idle", preview: null });
@@ -105,7 +105,7 @@ export function ArtifactPreviewPanel({
     : "";
   /*
    * Codex Desktop renders docx artifacts in its `docx-preview-panel-*.js`
-   * panel (full layout/runs/comments). HiCodex renders a plain-text
+   * panel (full layout/runs/comments). Forge renders a plain-text
    * paragraph preview via the new `host_read_document_preview` Tauri command
    * (apps/desktop/src-tauri/src/document_preview.rs) — same approach we use
    * for xlsx, just over `word/document.xml` instead of `xl/worksheets/*`.

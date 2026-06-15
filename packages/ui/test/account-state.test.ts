@@ -13,7 +13,7 @@ import {
   shouldRefreshAccountStateForNotification,
   type AccountRpcClient,
 } from "../src/state/account-state";
-import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
+import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateLimitSnapshot";
 
 export default async function runAccountStateTests(): Promise<void> {
   await refreshesAccountAndRateLimitProjection();

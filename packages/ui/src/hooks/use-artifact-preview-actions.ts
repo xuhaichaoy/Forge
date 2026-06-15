@@ -100,7 +100,7 @@ export function useArtifactPreviewActions({
   }, [dispatch]);
 
   // NOTE: the artifact-open ROUTING (preview vs file-ref vs url) lives in
-  // HiCodexApp's side-panel variant (openAssistantArtifactInSidePanel) — this
+  // ForgeApp's side-panel variant (openAssistantArtifactInSidePanel) — this
   // hook only exposes the leaf actions. A routing copy used to live here too
   // and drifted; don't re-add one without a single shared implementation.
   return {

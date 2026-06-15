@@ -62,7 +62,7 @@ for (const file of testFiles) {
 
   for (const [name, run] of runners) {
     await run();
-    i18nRuntime.setActiveI18nLocale(i18nRuntime.HICODEX_DEFAULT_LOCALE);
+    i18nRuntime.setActiveI18nLocale(i18nRuntime.FORGE_DEFAULT_LOCALE);
     count += 1;
     console.log(`ok ${file} ${name}`);
   }

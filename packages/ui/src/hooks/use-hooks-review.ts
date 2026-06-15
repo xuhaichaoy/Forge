@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
@@ -18,12 +18,12 @@ import {
 } from "../state/hooks-review";
 
 /*
- * Hooks-needing-review banner data + actions, lifted verbatim out of HiCodexApp.
+ * Hooks-needing-review banner data + actions, lifted verbatim out of ForgeApp.
  * The fetch effect re-runs on connect / hooksChangedNonce / cwd; a monotonic
  * requestSeq ref discards out-of-order responses. trustAllHooks writes hooks.state
  * through config/batchWrite then re-fetches; reviewHooks opens the hooks settings
- * panel focused on the flagged hook. `dispatch` (stable useReducer dispatch) is
- * intentionally kept out of the dep arrays, exactly as in the original.
+ * panel focused on the flagged hook. `dispatch` is the stable useReducer
+ * dispatch, so listing it in the dep arrays never retriggers anything.
  */
 export function useHooksReview({
   hooksChangedNonce,
@@ -74,7 +74,7 @@ export function useHooksReview({
     return () => {
       disposed = true;
     };
-  }, [client, hooksChangedNonce, hooksReviewCwd, connected]);
+  }, [client, dispatch, hooksChangedNonce, hooksReviewCwd, connected]);
 
   const trustAllHooks = useCallback(async () => {
     const snapshot = hooksReviewSnapshot;
@@ -100,7 +100,7 @@ export function useHooksReview({
     } catch (error) {
       dispatch({ type: "log", text: `hooks trust failed: ${formatConfigWriteError(error, "Hooks trust")}`, level: "warn" });
     }
-  }, [client, ensureConnected, hooksReviewSnapshot]);
+  }, [client, dispatch, ensureConnected, hooksReviewSnapshot]);
 
   const reviewHooks = useCallback(() => {
     void loadSettingsPanel("hooks", {

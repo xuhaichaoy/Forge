@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
 import type { ModelPickerProvider } from "../model/model-picker-selection";
@@ -148,6 +148,7 @@ export function useTeamModelGateway({
     : null;
   useEffect(() => {
     if (!snapshot || !catalogConfig || !provisionSignature) return;
+    if (!connected) return;
     if (provisionedSignatureRef.current === provisionSignature) return;
     provisionedSignatureRef.current = provisionSignature;
     void provisionTeamModelGatewayProvider({

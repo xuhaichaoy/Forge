@@ -7,7 +7,7 @@ import {
   looksLikeCommandOrPath,
 } from "./pending-request-command-preview";
 import { McpToolApprovalParams } from "./mcp-tool-approval-preview";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 interface RequestDetailItem {
   label: string;
@@ -51,7 +51,7 @@ export function RequestDetailList({ details }: { details: RequestDetailItem[] })
 }
 
 function RequestDetailRow({ label, children }: { label: string; children: ReactNode }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const displayLabel =
     label === "Network" ? formatMessage({ id: "permissionRequest.network", defaultMessage: "Network" })
     : label === "Read" ? formatMessage({ id: "permissionRequest.fileRead", defaultMessage: "Read" })
@@ -133,7 +133,7 @@ export function RequestBodyPreview({
   request: PendingServerRequest;
   requestKind: RequestKind;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (detail.mcpToolApproval) {
     return <McpToolApprovalParams approval={detail.mcpToolApproval} />;
   }

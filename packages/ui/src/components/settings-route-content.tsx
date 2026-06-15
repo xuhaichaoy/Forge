@@ -5,7 +5,7 @@ import {
   settingsSectionTitle,
   type PluginBackedDesktopSettingsPanel,
 } from "../state/settings-panel-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { SettingsCommandContent } from "./model-settings-forms";
 import { settingsSectionIcon } from "./settings-section-icon";
 
@@ -24,7 +24,7 @@ export function PluginBackedDesktopSettingsContent({
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const info = pluginBackedDesktopSettingsInfo(panel);
   return (
     <div className="hc-settings-route-placeholder">
@@ -75,7 +75,7 @@ export function DesktopBackedSettingsContent({
   panelState: CommandPanelState | null;
   section: SettingsSection;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const entry = panelState?.entries[0] ?? null;
   const evidence = entry?.details ?? [];
   return (
@@ -90,7 +90,7 @@ export function DesktopBackedSettingsContent({
             <span>{entry?.status ?? "Desktop route"}</span>
           </div>
           <p>
-            This Codex Desktop settings page is tracked for parity, but its host bridge is not wired in HiCodex yet.
+            This Codex Desktop settings page is tracked for parity, but its host bridge is not wired in Forge yet.
           </p>
         </div>
       </div>

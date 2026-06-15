@@ -1,6 +1,6 @@
-# HiCodex
+# Forge
 
-HiCodex is a Codex-core desktop shell. The app is intentionally small: the
+Forge is a Codex-core desktop shell. The app is intentionally small: the
 Codex app-server is the execution kernel, Rust owns the desktop/sidecar host,
 and React renders the conversation surface.
 
@@ -45,7 +45,7 @@ npm run tauri:dev
 
 ## Codex sidecar
 
-HiCodex runs the Codex CLI as a sidecar. Stage the bundled binary with:
+Forge runs the Codex CLI as a sidecar. Stage the bundled binary with:
 
 ```sh
 npm run sidecar:prepare
@@ -53,15 +53,20 @@ npm run sidecar:prepare
 
 By default this builds `codex` from `../codex/codex-rs`. Override the source:
 
-- `HICODEX_CODEX_SOURCE_DIR=/path/to/codex/codex-rs` — build from a custom checkout
-- `HICODEX_CODEX_BIN=/path/to/codex` — skip building and copy an existing binary
+- `FORGE_CODEX_SOURCE_DIR=/path/to/codex/codex-rs` — build from a custom checkout
+- `FORGE_CODEX_BIN=/path/to/codex` — skip building and copy an existing binary
   (e.g. `codex.exe` on Windows)
+
+The legacy `HICODEX_*` environment variable names are still accepted as
+compatibility aliases everywhere the build/release scripts and the runtime
+host read `FORGE_*`; `FORGE_*` takes precedence when both are set.
 
 At runtime the host resolves the binary in this order (the bundled name is
 `codex` on Unix, `codex.exe` on Windows):
 
 1. `codex_bin` from the start config
-2. `HICODEX_CODEX_BIN`
+2. `FORGE_CODEX_BIN` (the legacy `HICODEX_CODEX_BIN` name is still honored as
+   a fallback)
 3. bundled `binaries/codex[.exe]` next to the app binary (or under macOS
    `Contents/Resources/binaries`)
 4. `binaries/codex[.exe]` / `apps/desktop/src-tauri/binaries/codex[.exe]` during
@@ -70,17 +75,19 @@ At runtime the host resolves the binary in this order (the bundled name is
 6. `codex` on `PATH`
 
 Run against a local Codex debug binary with
-`HICODEX_CODEX_BIN=/path/to/codex npm run tauri:dev`.
+`FORGE_CODEX_BIN=/path/to/codex npm run tauri:dev`.
 
 ### Codex home
 
-HiCodex keeps an isolated Codex home. Defaults:
+Forge keeps an isolated Codex home. For compatibility with existing local
+installs, the current default storage paths still use the legacy app namespace:
 
 - macOS — `~/Library/Application Support/HiCodex/codex-home`
 - Windows / Linux — `<home>/.hicodex/codex-home` (`home` is `%USERPROFILE%` on
   Windows, `$HOME` elsewhere)
 
-Override with `HICODEX_CODEX_HOME`.
+Override with `FORGE_CODEX_HOME` (the legacy `HICODEX_CODEX_HOME` name is
+still accepted).
 
 ## Building / packaging
 
@@ -102,7 +109,7 @@ For a signed, auto-updating release see `scripts/release.sh` and
 **Windows** → NSIS `.exe` + `.msi`:
 
 ```bat
-set HICODEX_CODEX_SOURCE_DIR=C:\path\to\codex\codex-rs
+set FORGE_CODEX_SOURCE_DIR=C:\path\to\codex\codex-rs
 npm run sidecar:prepare
 npm install
 npm run tauri:build
@@ -124,6 +131,7 @@ Bundles land under the workspace-root `target/release/bundle/` (or
 | `npm run typecheck` | Typecheck all workspaces |
 | `npm run test` | Root script tests + workspace tests + `cargo test --workspace` |
 | `npm run test:scripts` | Node test runner over `scripts/*.test.mjs` |
+| `npm run test:e2e` | Browser-level smoke (system Chrome via Playwright) against the Vite preview |
 | `npm run lint` | clippy `-D warnings` + JS/TS lint + TS runtime-cycle check + release.sh syntax |
 | `npm run format` / `npm run format:check` | `cargo fmt` apply / verify |
 | `npm run sidecar:smoke` | Boot the bundled Codex sidecar and verify the `initialize` handshake |

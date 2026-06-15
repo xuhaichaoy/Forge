@@ -308,7 +308,7 @@ export default function runModelSettingsTests(): void {
       maxTokens: null,
       supportsImageInput: true,
     },
-    "buildModelConfigFromConfig falls back to HiCodex defaults when config/read omits provider details",
+    "buildModelConfigFromConfig falls back to Forge defaults when config/read omits provider details",
   );
   const missingProviderDraft = buildModelSettingsDraftFromConfig({
     model: "",

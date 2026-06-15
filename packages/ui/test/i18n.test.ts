@@ -1,13 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { HiCodexIntlProvider, useHiCodexIntl } from "../src/components/i18n-provider";
+import { ForgeIntlProvider, useForgeIntl } from "../src/components/i18n-provider";
 import {
-  HICODEX_LOCALE_STORAGE_KEY,
+  FORGE_LOCALE_STORAGE_KEY,
   createI18nBundle,
   formatI18nMessage,
-  loadHiCodexLocale,
-  resolveHiCodexLocale,
-  saveHiCodexLocale,
+  loadForgeLocale,
+  resolveForgeLocale,
+  saveForgeLocale,
 } from "../src/state/i18n";
 import { settingsGroupHeadingTitle, settingsSectionTitle, settingsSectionDescription } from "../src/state/settings-panel-workflow";
 import { composerPlaceholderText } from "../src/state/composer-workflow";
@@ -142,7 +142,7 @@ function formatsDeepSweep3Localizations(): void {
 }
 
 // Locks the zh-CN values for the strings the multi-agent deep-sweep found leaking
-// English in HiCodex (verbatim-aligned to Codex Desktop bundle 26.602). en-US keeps
+// English in Forge (verbatim-aligned to Codex Desktop bundle 26.602). en-US keeps
 // the bundle defaultMessage so English output is unchanged.
 function formatsDeepSweepLocalizations(): void {
   const en = createI18nBundle("en-US");
@@ -284,9 +284,9 @@ function formatsMigratedSurfaceMessages(): void {
 }
 
 function resolvesDesktopStyleLocaleFallbacks(): void {
-  assertEqual(resolveHiCodexLocale("zh-Hans-CN"), "zh-CN", "Simplified Chinese should resolve to zh-CN");
-  assertEqual(resolveHiCodexLocale("fr-FR"), "en-US", "unsupported locales should fall back to en-US");
-  assertEqual(resolveHiCodexLocale(null), "en-US", "missing locale should fall back to en-US");
+  assertEqual(resolveForgeLocale("zh-Hans-CN"), "zh-CN", "Simplified Chinese should resolve to zh-CN");
+  assertEqual(resolveForgeLocale("fr-FR"), "en-US", "unsupported locales should fall back to en-US");
+  assertEqual(resolveForgeLocale(null), "en-US", "missing locale should fall back to en-US");
 }
 
 function formatsMessagesWithLocalFallbacks(): void {
@@ -353,7 +353,7 @@ function formatsDesktopPluralMessages(): void {
 }
 
 // Settings-nav titles localize via the SETTINGS_SECTION_I18N_IDS map + helper;
-// HiCodex-only sections (models/images/…) are now localized via hc.settings.* keys,
+// Forge-only sections (models/images/…) are now localized via hc.settings.* keys,
 // and subtitles localize the same way; only the no-formatMessage path stays English.
 function formatsSettingsNavLabels(): void {
   const zh = createI18nBundle("zh-CN");
@@ -363,7 +363,7 @@ function formatsSettingsNavLabels(): void {
   assertEqual(settingsSectionTitle({ id: "appearance", title: "Appearance" }, zhFormat), "外观", "settings nav appearance zh");
   assertEqual(settingsSectionTitle({ id: "mcp", title: "MCP servers" }, zhFormat), "MCP 服务器", "settings nav mcp zh (mcp-settings id)");
   assertEqual(settingsSectionTitle({ id: "data-controls", title: "Archived chats" }, zhFormat), "已归档对话", "settings nav data-controls zh");
-  assertEqual(settingsSectionTitle({ id: "models", title: "Models" }, zhFormat), "模型", "HiCodex-only section (models) now localized in zh");
+  assertEqual(settingsSectionTitle({ id: "models", title: "Models" }, zhFormat), "模型", "Forge-only section (models) now localized in zh");
   assertEqual(settingsSectionTitle({ id: "appearance", title: "Appearance" }), "Appearance", "no formatMessage → English");
   assertEqual(settingsGroupHeadingTitle("personal", "Personal", zhFormat), "个人", "settings nav group heading personal zh");
   assertEqual(settingsGroupHeadingTitle("integrations", "Integrations", zhFormat), "集成", "settings nav group heading integrations zh");
@@ -398,15 +398,15 @@ function formatsSettingsNavLabels(): void {
 
 function persistsLocalePreference(): void {
   const storage = memoryStorage();
-  assertEqual(loadHiCodexLocale(storage, "zh-CN"), "zh-CN", "browser locale should be used without storage");
-  saveHiCodexLocale(storage, "en-US");
-  assertEqual(storage.values.get(HICODEX_LOCALE_STORAGE_KEY), "en-US", "locale should be persisted");
-  assertEqual(loadHiCodexLocale(storage, "zh-CN"), "en-US", "stored locale should win");
+  assertEqual(loadForgeLocale(storage, "zh-CN"), "zh-CN", "browser locale should be used without storage");
+  saveForgeLocale(storage, "en-US");
+  assertEqual(storage.values.get(FORGE_LOCALE_STORAGE_KEY), "en-US", "locale should be persisted");
+  assertEqual(loadForgeLocale(storage, "zh-CN"), "en-US", "stored locale should win");
 }
 
 function rendersProviderConsumerWithLocalizedMessages(): void {
   function Consumer() {
-    const { locale, formatMessage } = useHiCodexIntl();
+    const { locale, formatMessage } = useForgeIntl();
     return createElement(
       "span",
       { "data-locale": locale },
@@ -415,7 +415,7 @@ function rendersProviderConsumerWithLocalizedMessages(): void {
   }
 
   const html = renderToStaticMarkup(createElement(
-    HiCodexIntlProvider,
+    ForgeIntlProvider,
     { locale: "zh-CN", children: createElement(Consumer) },
   ));
   assertIncludes(html, "data-locale=\"zh-CN\"", "provider consumer should receive the resolved locale");

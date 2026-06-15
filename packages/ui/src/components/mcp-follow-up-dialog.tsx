@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import type { McpAppFollowUpSource } from "../state/mcp-app-host";
 import type { McpAppHostCallRequest } from "./tool-activity-detail";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export type McpFollowUpDialogOptionId =
   | "current-thread"
@@ -52,7 +52,7 @@ export const MCP_FOLLOW_UP_WORKTREE_DISABLED_REASON =
 // normalize fn + tests); the renderer maps the reason back to the Codex key.
 function localizeMcpFollowUpDisabledReason(
   reason: string,
-  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"],
+  formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"],
 ): string {
   if (reason === MCP_FOLLOW_UP_LOCAL_DISABLED_REASON) {
     return formatMessage({ id: "codex.mcpTool.confirmFollowUp.localProjectsOnlyTooltip", defaultMessage: reason });
@@ -102,7 +102,7 @@ export function McpFollowUpDialog({
   onClose,
   onSend,
 }: McpFollowUpDialogProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const options = useMemo(
     () => normalizeMcpFollowUpOptions(request.options),
     [request.options],
@@ -136,6 +136,7 @@ export function McpFollowUpDialog({
       if (!defaultChanged && currentOption && !currentOption.disabled) return current;
       return initialMcpFollowUpOptionId(options, defaultOptionId);
     });
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意省略 options：optionStateKey（useMemo 序列化）是其内容代理键，options 数组引用逐渲染可变
   }, [defaultOptionId, optionStateKey]);
 
   function submit(event: FormEvent) {

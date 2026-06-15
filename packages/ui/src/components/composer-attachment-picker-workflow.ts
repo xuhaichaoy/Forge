@@ -12,7 +12,7 @@ import {
   type ComposerAttachmentPickerState,
   type ComposerMode,
 } from "../state/composer-workflow";
-import type { ComposerBrowseKind } from "./composer";
+import type { ComposerBrowseKind } from "./composer-types";
 import { attachmentBrowseError, requestAttachmentInputFocus } from "./composer-focus-helpers";
 import { isImageAttachment } from "./composer-attachments";
 

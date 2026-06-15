@@ -1,4 +1,7 @@
-const DESKTOP_FILE_LINE_CITATION_PATTERN = /【([^†】\n]+)†L(\d+)(?:-L(\d+))?】/g;
+// The range end's `L` is optional (`L12-15` and `L12-L15` both occur) to match
+// the renderer's parseFileCitationMarker — otherwise a pill that renders fine
+// is left as a raw 【…】 marker when the message is copied.
+const DESKTOP_FILE_LINE_CITATION_PATTERN = /【([^†】\n]+)†L(\d+)(?:-L?(\d+))?】/g;
 
 export function desktopAssistantCopyText(content: string): string {
   return content.trim().replace(

@@ -1,9 +1,9 @@
 import { Archive, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { threadTitle } from "../state/thread-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export type ThreadActionDialogState =
   | { kind: "rename"; thread: Thread }
@@ -22,7 +22,7 @@ export function ThreadActionDialog({
   onRename,
   onArchive,
 }: ThreadActionDialogProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const title = threadTitle(action.thread);
   const [draft, setDraft] = useState(title);
 

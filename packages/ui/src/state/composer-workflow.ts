@@ -1,4 +1,4 @@
-import type { ImageDetail, UserInput } from "@hicodex/codex-protocol";
+import type { ImageDetail, UserInput } from "@forge/codex-protocol";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 import { filterSlashCommandList } from "./composer-slash-filter";
 
@@ -114,7 +114,7 @@ export type SlashCommandAction =
   | { action: "showCommands"; clearInput: true }
   /*
    * CODEX-REF: composer-*.js — `/reasoning` slash command opens the
-   * intelligenceDropdown (Reasoning popover). HiCodex uses the composer
+   * intelligenceDropdown (Reasoning popover). Forge uses the composer
    * footer reasoning chip as anchor — caller finds it via
    * `[data-chip="reasoning"]` selector. clearInput so the "/reasoning" text
    * doesn't linger after popover opens.
@@ -284,14 +284,14 @@ export {
 export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   // codex composer-zFOdryLS.js — where a command maps to a Codex slash command, its
   // DESCRIPTION uses Codex's exact wording (source-backed alignment), even where
-  // HiCodex's mechanics differ slightly (e.g. /status surfaces session info rather
+  // Forge's mechanics differ slightly (e.g. /status surfaces session info rather
   // than only toggling; /mcp reloads while listing; /goal also inspects/clears;
   // /fork's worktree option lives in the sidebar menu). Wording follows Codex for
   // UI consistency; the divergences are mechanics, not the user-facing description.
   command("model", "Model", "Choose the model and reasoning effort.", "model", "panel", ["provider", "engine"]),
   /*
    * CODEX-REF: composer-*.js — slash command id `reasoning`，title 来自
-   * `composer.reasoningSlashCommand.title` = "Reasoning"。HiCodex 复刻同 id +
+   * `composer.reasoningSlashCommand.title` = "Reasoning"。Forge 复刻同 id +
    * title，handler 走 showReasoningPicker action。
    */
   command("reasoning", "Reasoning", "Choose reasoning effort (None/Minimal/Low/Medium/High/Extra High).", "model", "panel", ["effort"]),
@@ -339,8 +339,8 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
   command("worktrees", "Worktrees", "Inspect local, worktree, and cloud work modes.", "workspace", "panel", ["git", "branch", "cloud"]),
   command("login", "Login", "Sign in to ChatGPT (OpenAI subscription).", "settings", "direct", ["account", "oauth", "signin"]),
   command("logout", "Logout", "Sign out from the current Codex account.", "settings", "direct", ["account"]),
-  command("quit", "Quit", "Quit HiCodex.", "settings", "desktop", ["exit"], undefined, true),
-  command("exit", "Exit", "Quit HiCodex.", "settings", "desktop", ["quit"]),
+  command("quit", "Quit", "Quit Forge.", "settings", "desktop", ["exit"], undefined, true),
+  command("exit", "Exit", "Quit Forge.", "settings", "desktop", ["quit"]),
   command("feedback", "Feedback", "Prepare a feedback report with diagnostics.", "tools", "direct", ["logs", "bug"]),
   command("rollout", "Rollout path", "Show the current rollout path when available.", "debug", "pending", ["debug"], undefined, true),
   command("ps", "Background terminals", "List background terminal processes.", "tools", "direct", ["processes"]),
@@ -359,7 +359,7 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
 /*
  * Composer "+" add menu. A workflow agent once cut this to 2 items based on an
  * unconfirmed read of the Codex 26.x "+" menu; that dropped real entry points
- * (mention / plain text / image URL / plugins), so it is restored to HiCodex's
+ * (mention / plain text / image URL / plugins), so it is restored to Forge's
  * original 6-item set. Re-align the composition only against a ground-truth
  * screenshot of the Codex desktop "+" menu.
  */
@@ -760,7 +760,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "goal":
       // codex composer-*.js: the /goal slash opens goal mode (onOpenGoalEditor),
       // so the next composer submit sets the goal through the replace-confirm gate
-      // — it does NOT set directly. HiCodex enters goal mode here, pre-filling the
+      // — it does NOT set directly. Forge enters goal mode here, pre-filling the
       // optional objective arg; `/goal clear` keeps the direct clear path.
       if (args.trim().toLowerCase() === "clear") {
         return { action: "request", request: "showGoal", clearInput: true, payload: { objective: "clear" } };
@@ -776,7 +776,7 @@ export function applySlashCommand(commandId: string, context: SlashCommandContex
     case "copy":
       return { action: "request", request: "copyLastAnswer", clearInput: true };
     case "raw":
-      return { action: "log", level: "info", message: "Raw transcript mode is a TUI-only command; HiCodex keeps rendered ThreadItems visible." };
+      return { action: "log", level: "info", message: "Raw transcript mode is a TUI-only command; Forge keeps rendered ThreadItems visible." };
     case "mention":
       return { action: "request", request: "showMentionPicker", clearInput: true, payload: optionalPayload("query", args) };
     case "debug-config":

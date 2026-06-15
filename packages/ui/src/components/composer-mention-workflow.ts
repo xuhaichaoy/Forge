@@ -10,7 +10,7 @@ import {
   replaceMentionTriggerText,
 } from "./composer-text-utils";
 import { mentionSearchError } from "./composer-focus-helpers";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 import {
   CLOSED_MENTION_PICKER_STATE,
   type MentionPickerState,
@@ -29,7 +29,7 @@ export interface ComposerMentionWorkflowOptions {
   attachmentsRef: { current: ComposerAttachment[] };
   changeAttachments: (attachments: ComposerAttachment[]) => void;
   closePeerPopovers: () => void;
-  formatMessage: HiCodexIntlContextValue["formatMessage"];
+  formatMessage: ForgeIntlContextValue["formatMessage"];
   input: string;
   onInputChange: (value: string) => void;
   onMentionSearch?: (query: string, marker: ComposerMentionMarker) => Promise<ComposerMentionOption[]>;
@@ -55,7 +55,7 @@ export function useComposerMentionWorkflow({
    * codex: at-mention-list-with-sources-*.js — Codex Desktop renders
    * mention results grouped into sections (Live agents / Custom agents / Skills /
    * Apps / Plugins / Files) via `use-at-mention-sections#r({sections})`.
-   * HiCodex preserves the underlying score-based ranking but lays the rows out
+   * Forge preserves the underlying score-based ranking but lays the rows out
    * in a stable per-kind order so users can scan by category. Flat keyboard
    * navigation is preserved by reading from `mentionOptions` (already in the
    * grouped order).
@@ -138,6 +138,7 @@ export function useComposerMentionWorkflow({
       cancelled = true;
       window.clearTimeout(timer);
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意以 trigger 的 from/marker/to 字段为失效键：mentionPicker.trigger 对象引用随无关 picker state 更新而变，整对象入依赖会反复重置搜索去抖
   }, [
     formatMessage,
     mentionPicker.query,

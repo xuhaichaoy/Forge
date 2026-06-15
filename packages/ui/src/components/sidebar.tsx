@@ -10,8 +10,8 @@ import {
   Search,
   Settings,
 } from "lucide-react";
-import type { Thread } from "@hicodex/codex-protocol";
-import { useHiCodexIntl } from "./i18n-provider";
+import type { Thread } from "@forge/codex-protocol";
+import { useForgeIntl } from "./i18n-provider";
 import type { AccountViewModel } from "../state/account-state";
 import {
   type SidebarOrganizeMode,
@@ -138,7 +138,7 @@ export function Sidebar({
   updateAvailable,
   onApplyUpdate,
 }: SidebarProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex renders TWO peer sidebar sections in the order ND = ['threads','chats']
   // (app-main bundle): the per-project "Projects" section FIRST, then the
   // projectless "Chats" section BELOW. Projectless threads are excluded from the

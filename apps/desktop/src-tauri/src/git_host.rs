@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::command_error::HostCommandError;
 use crate::{civil_from_days, new_command};
 
 #[derive(Debug, Serialize)]
@@ -49,9 +50,9 @@ pub(crate) struct CreatePendingWorktreeResponse {
     base_sha: String,
 }
 
-#[tauri::command]
-pub(crate) fn host_git_status(cwd: String) -> Result<HostGitStatus, String> {
-    read_host_git_status(&cwd)
+#[tauri::command(async)]
+pub(crate) fn host_git_status(cwd: String) -> Result<HostGitStatus, HostCommandError> {
+    read_host_git_status(&cwd).map_err(HostCommandError::process_failed)
 }
 
 // codex: composer-footer-branch-switcher-CamXBKfA.js — branch picker host APIs.
@@ -98,17 +99,17 @@ pub(crate) struct GitDefaultBranchResponse {
 // codex: branch-picker-extension — `include_remote` opts into a second
 // `git branch -r --list` pass; the response merges local + remote into a
 // single `branches[]` so the renderer can group via `isRemote`.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_git_list_branches(
     cwd: String,
     include_remote: Option<bool>,
-) -> Result<GitBranchesResponse, String> {
+) -> Result<GitBranchesResponse, HostCommandError> {
     let cwd = cwd.trim();
     if cwd.is_empty() {
-        return Err("cwd is empty".to_string());
+        return Err(HostCommandError::invalid_input("cwd is empty"));
     }
     let cwd_path = Path::new(cwd);
-    let Some(repo_root) = git_repo_root(cwd_path)? else {
+    let Some(repo_root) = git_repo_root(cwd_path).map_err(HostCommandError::process_failed)? else {
         // codex: not-a-git-repo → renderer hides the chip via `current=None`
         return Ok(GitBranchesResponse {
             current: None,
@@ -128,12 +129,17 @@ pub(crate) fn host_git_list_branches(
             "--sort=-committerdate",
             "--format=%(refname:short)%09%(committerdate:unix)",
         ],
-    )?;
+    )
+    .map_err(HostCommandError::process_failed)?;
     if !output.status.success() {
-        return Err(format_git_failure("failed to list git branches", &output));
+        return Err(HostCommandError::process_failed(format_git_failure(
+            "failed to list git branches",
+            &output,
+        )));
     }
 
-    let current = git_stdout_optional(repo_path, &["branch", "--show-current"])?;
+    let current = git_stdout_optional(repo_path, &["branch", "--show-current"])
+        .map_err(HostCommandError::process_failed)?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut branches: Vec<GitBranchInfo> = Vec::new();
     for raw_line in stdout.lines() {
@@ -182,12 +188,13 @@ pub(crate) fn host_git_list_branches(
                 "--sort=-committerdate",
                 "--format=%(refname:short)%09%(committerdate:unix)",
             ],
-        )?;
+        )
+        .map_err(HostCommandError::process_failed)?;
         if !remote_output.status.success() {
-            return Err(format_git_failure(
+            return Err(HostCommandError::process_failed(format_git_failure(
                 "failed to list git remote branches",
                 &remote_output,
-            ));
+            )));
         }
         let remote_stdout = String::from_utf8_lossy(&remote_output.stdout);
         for raw_line in remote_stdout.lines() {
@@ -233,14 +240,16 @@ pub(crate) fn host_git_list_branches(
 // Resolves to whatever `origin/HEAD` points at (the common case for a cloned
 // repo) and falls back to the user's `init.defaultBranch` git config if the
 // remote symbolic ref isn't set (e.g. local-only repos).
-#[tauri::command]
-pub(crate) fn host_git_default_branch(cwd: String) -> Result<GitDefaultBranchResponse, String> {
+#[tauri::command(async)]
+pub(crate) fn host_git_default_branch(
+    cwd: String,
+) -> Result<GitDefaultBranchResponse, HostCommandError> {
     let cwd = cwd.trim();
     if cwd.is_empty() {
-        return Err("cwd is empty".to_string());
+        return Err(HostCommandError::invalid_input("cwd is empty"));
     }
     let cwd_path = Path::new(cwd);
-    let Some(repo_root) = git_repo_root(cwd_path)? else {
+    let Some(repo_root) = git_repo_root(cwd_path).map_err(HostCommandError::process_failed)? else {
         return Ok(GitDefaultBranchResponse {
             default_branch: None,
         });
@@ -284,28 +293,35 @@ pub(crate) struct CreateGitBranchRequest {
     based_on: Option<String>,
 }
 
-#[tauri::command]
-pub(crate) fn host_git_create_branch(request: CreateGitBranchRequest) -> Result<(), String> {
+#[tauri::command(async)]
+pub(crate) fn host_git_create_branch(
+    request: CreateGitBranchRequest,
+) -> Result<(), HostCommandError> {
     let cwd = request.cwd.trim();
     if cwd.is_empty() {
-        return Err("cwd is empty".to_string());
+        return Err(HostCommandError::invalid_input("cwd is empty"));
     }
     let branch_name = request.branch_name.trim();
     if branch_name.is_empty() {
-        return Err("branch name is empty".to_string());
+        return Err(HostCommandError::invalid_input("branch name is empty"));
     }
     if branch_name.starts_with('-') {
-        return Err("branch name must not start with '-'".to_string());
+        return Err(HostCommandError::invalid_input(
+            "branch name must not start with '-'",
+        ));
     }
     if branch_name
         .chars()
         .any(|ch| ch.is_control() || ch.is_whitespace())
     {
-        return Err("branch name contains unsupported whitespace".to_string());
+        return Err(HostCommandError::invalid_input(
+            "branch name contains unsupported whitespace",
+        ));
     }
     let cwd_path = Path::new(cwd);
-    let repo_root =
-        git_repo_root(cwd_path)?.ok_or_else(|| format!("not a git repository: {cwd}"))?;
+    let repo_root = git_repo_root(cwd_path)
+        .map_err(HostCommandError::process_failed)?
+        .ok_or_else(|| HostCommandError::not_found(format!("not a git repository: {cwd}")))?;
     let repo_path = Path::new(&repo_root);
     // codex: build args dynamically — keeping `&str` borrows tied to owned
     // trimmed strings so the slice still references valid memory.
@@ -316,16 +332,21 @@ pub(crate) fn host_git_create_branch(request: CreateGitBranchRequest) -> Result<
         .filter(|value| !value.is_empty());
     if let Some(value) = based_on {
         if value.starts_with('-') {
-            return Err("base branch must not start with '-'".to_string());
+            return Err(HostCommandError::invalid_input(
+                "base branch must not start with '-'",
+            ));
         }
     }
     let mut args: Vec<&str> = vec!["checkout", "-b", branch_name];
     if let Some(value) = based_on {
         args.push(value);
     }
-    let output = run_git(repo_path, &args)?;
+    let output = run_git(repo_path, &args).map_err(HostCommandError::process_failed)?;
     if !output.status.success() {
-        return Err(format_git_failure("failed to create branch", &output));
+        return Err(HostCommandError::process_failed(format_git_failure(
+            "failed to create branch",
+            &output,
+        )));
     }
     Ok(())
 }
@@ -333,7 +354,7 @@ pub(crate) fn host_git_create_branch(request: CreateGitBranchRequest) -> Result<
 // codex: local-conversation-thread-CecHj6JI.js#J#ga — PR status host API.
 // Mirrors Codex Desktop's `pullRequestStatus` widget (Environment section row
 // 4) which surfaces the current branch's GitHub PR. Codex Desktop uses a
-// dedicated `gh-cli-status-*` chunk under the hood; HiCodex shells out to the
+// dedicated `gh-cli-status-*` chunk under the hood; Forge shells out to the
 // `gh` CLI in the renderer's cwd to keep the host bridge minimal.
 //
 // IPC shape (after serde rename_all = "camelCase"):
@@ -396,22 +417,24 @@ struct GhPrEntry {
 //   - cwd not a git repo → Err("not a git repository")
 //   - any other gh failure → Err with gh's stderr
 //   - "no pull requests for current branch" → Ok({ ..., pr: None })
-#[tauri::command]
-pub(crate) fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, String> {
+#[tauri::command(async)]
+pub(crate) fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, HostCommandError> {
     let cwd = cwd.trim();
     if cwd.is_empty() {
-        return Err("cwd is empty".to_string());
+        return Err(HostCommandError::invalid_input("cwd is empty"));
     }
     let cwd_path = Path::new(cwd);
     if !cwd_path.is_dir() {
-        return Err(format!("cwd is not a directory: {cwd}"));
+        return Err(HostCommandError::not_found(format!(
+            "cwd is not a directory: {cwd}"
+        )));
     }
     // codex: ga — Codex Desktop short-circuits when the workspace isn't a git
     // repo (its widget pulls a `currentBranch` first); we mirror that so the
     // renderer can keep a single error path.
-    let repo_root = git_repo_root(cwd_path)?;
+    let repo_root = git_repo_root(cwd_path).map_err(HostCommandError::process_failed)?;
     if repo_root.is_none() {
-        return Err("not a git repository".to_string());
+        return Err(HostCommandError::not_found("not a git repository"));
     }
     // Resolve the current branch so the renderer can decide whether to show
     // the row even when `pr` is None (e.g. "no PR for <branch>" copy).
@@ -431,9 +454,11 @@ pub(crate) fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, Strin
             // ErrorKind::NotFound is the canonical "binary missing" signal on
             // every OS we ship; surface that as the dedicated Codex copy.
             if error.kind() == std::io::ErrorKind::NotFound {
-                return Err("gh CLI not installed".to_string());
+                return Err(HostCommandError::not_found("gh CLI not installed"));
             }
-            return Err(format!("failed to run gh: {error}"));
+            return Err(HostCommandError::process_failed(format!(
+                "failed to run gh: {error}"
+            )));
         }
     };
 
@@ -452,14 +477,14 @@ pub(crate) fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, Strin
             });
         }
         if stderr_lower.contains("not a git repository") {
-            return Err("not a git repository".to_string());
+            return Err(HostCommandError::not_found("not a git repository"));
         }
         let detail = stderr.trim();
-        return Err(if detail.is_empty() {
+        return Err(HostCommandError::process_failed(if detail.is_empty() {
             format!("gh pr status exited with status {}", output.status)
         } else {
             format!("gh pr status failed: {detail}")
-        });
+        }));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -470,8 +495,9 @@ pub(crate) fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, Strin
             pr: None,
         });
     }
-    let payload: GhPrStatusPayload = serde_json::from_str(trimmed)
-        .map_err(|error| format!("gh pr status returned invalid JSON: {error}"))?;
+    let payload: GhPrStatusPayload = serde_json::from_str(trimmed).map_err(|error| {
+        HostCommandError::parse_failed(format!("gh pr status returned invalid JSON: {error}"))
+    })?;
     let pr = payload.current_branch.map(|entry| GhPrInfo {
         number: entry.number,
         title: entry.title,
@@ -489,32 +515,44 @@ pub(crate) fn host_gh_pr_status(cwd: String) -> Result<GhPrStatusResponse, Strin
 // uncommitted changes that would be overwritten, git's stderr propagates up
 // to the renderer so it can show the failure inline (matches Codex's "Switch
 // failed: please commit or stash" toast).
-#[tauri::command]
-pub(crate) fn host_git_checkout_branch(cwd: String, branch_name: String) -> Result<(), String> {
+#[tauri::command(async)]
+pub(crate) fn host_git_checkout_branch(
+    cwd: String,
+    branch_name: String,
+) -> Result<(), HostCommandError> {
     let cwd = cwd.trim();
     if cwd.is_empty() {
-        return Err("cwd is empty".to_string());
+        return Err(HostCommandError::invalid_input("cwd is empty"));
     }
     let branch_name = branch_name.trim();
     if branch_name.is_empty() {
-        return Err("branch name is empty".to_string());
+        return Err(HostCommandError::invalid_input("branch name is empty"));
     }
     if branch_name.starts_with('-') {
-        return Err("branch name must not start with '-'".to_string());
+        return Err(HostCommandError::invalid_input(
+            "branch name must not start with '-'",
+        ));
     }
     if branch_name
         .chars()
         .any(|ch| ch.is_control() || ch.is_whitespace())
     {
-        return Err("branch name contains unsupported whitespace".to_string());
+        return Err(HostCommandError::invalid_input(
+            "branch name contains unsupported whitespace",
+        ));
     }
     let cwd_path = Path::new(cwd);
-    let repo_root =
-        git_repo_root(cwd_path)?.ok_or_else(|| format!("not a git repository: {cwd}"))?;
+    let repo_root = git_repo_root(cwd_path)
+        .map_err(HostCommandError::process_failed)?
+        .ok_or_else(|| HostCommandError::not_found(format!("not a git repository: {cwd}")))?;
     let repo_path = Path::new(&repo_root);
-    let output = run_git(repo_path, &["checkout", branch_name])?;
+    let output =
+        run_git(repo_path, &["checkout", branch_name]).map_err(HostCommandError::process_failed)?;
     if !output.status.success() {
-        return Err(format_git_failure("failed to checkout branch", &output));
+        return Err(HostCommandError::process_failed(format_git_failure(
+            "failed to checkout branch",
+            &output,
+        )));
     }
     Ok(())
 }
@@ -527,7 +565,7 @@ pub(crate) struct PatchActionRequest {
     /// byte ~422600).
     action: String,
     /// Unified-diff text exactly as it was streamed to the user (the same value
-    /// HiCodex stores on `turn/diff/updated` notifications).
+    /// Forge stores on `turn/diff/updated` notifications).
     diff: String,
     /// Working directory the patch should be applied in (passed to `git -C`).
     cwd: String,
@@ -563,7 +601,7 @@ struct PatchActionExecOutput {
 
 /// Apply or reverse a unified-diff against the current working tree.
 ///
-/// HiCodex equivalent of the host-side patch action Codex Desktop relies on
+/// Forge equivalent of the host-side patch action Codex Desktop relies on
 /// for its `revertChanges` / `reapplyChanges` toolbar (the Undo/Reapply
 /// buttons rendered inside the turn-diff card). The transactional model
 /// matches Codex's `hS` Failure Dialog (`local-conversation-thread-BX7YNcUw.js`
@@ -573,25 +611,31 @@ struct PatchActionExecOutput {
 /// We intentionally avoid `git apply --reject` partial mode (which would leave
 /// `.rej` files lying around) — the resulting UX matches Codex's stricter
 /// "all-or-nothing" behavior.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_apply_patch_action(
     request: PatchActionRequest,
-) -> Result<PatchActionResult, String> {
+) -> Result<PatchActionResult, HostCommandError> {
     let reverse = match request.action.as_str() {
         "revert" => true,
         "reapply" => false,
-        other => return Err(format!("invalid patch action: {other}")),
+        other => {
+            return Err(HostCommandError::invalid_input(format!(
+                "invalid patch action: {other}"
+            )))
+        }
     };
     let cwd = request.cwd.trim();
     if cwd.is_empty() {
-        return Err("cwd is empty".to_string());
+        return Err(HostCommandError::invalid_input("cwd is empty"));
     }
     let cwd_path = Path::new(cwd);
     if !cwd_path.is_dir() {
-        return Err(format!("cwd is not a directory: {cwd}"));
+        return Err(HostCommandError::not_found(format!(
+            "cwd is not a directory: {cwd}"
+        )));
     }
 
-    let repo_root = match git_repo_root(cwd_path)? {
+    let repo_root = match git_repo_root(cwd_path).map_err(HostCommandError::process_failed)? {
         Some(root) => root,
         None => {
             return Ok(PatchActionResult {
@@ -612,7 +656,8 @@ pub(crate) fn host_apply_patch_action(
     if reverse {
         args.push("--reverse");
     }
-    let output = git_apply_with_stdin(repo_path, &args, &request.diff)?;
+    let output = git_apply_with_stdin(repo_path, &args, &request.diff)
+        .map_err(HostCommandError::process_failed)?;
 
     if output.status.success() {
         return Ok(PatchActionResult {
@@ -723,11 +768,11 @@ fn unquote_diff_path(value: &str) -> String {
     trimmed.to_string()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_create_pending_worktree(
     request: CreatePendingWorktreeRequest,
-) -> Result<CreatePendingWorktreeResponse, String> {
-    create_pending_worktree(request)
+) -> Result<CreatePendingWorktreeResponse, HostCommandError> {
+    create_pending_worktree(request).map_err(HostCommandError::process_failed)
 }
 
 fn read_host_git_status(cwd: &str) -> Result<HostGitStatus, String> {
@@ -1109,10 +1154,25 @@ fn format_worktree_timestamp(time: SystemTime) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_pending_worktree_name, parse_ahead_behind_counts, parse_git_status_porcelain_z,
-        sanitize_pending_worktree_name, HostGitChangedFile,
+        default_pending_worktree_name, host_apply_patch_action, parse_ahead_behind_counts,
+        parse_git_status_porcelain_z, sanitize_pending_worktree_name, HostGitChangedFile,
+        PatchActionRequest,
     };
     use std::time::UNIX_EPOCH;
+
+    /// Structured-error contract: command-layer validation failures carry the
+    /// stable "invalid_input" code with the unchanged message text.
+    #[test]
+    fn invalid_patch_action_rejects_with_invalid_input_code() {
+        let error = host_apply_patch_action(PatchActionRequest {
+            action: "bogus".to_string(),
+            diff: String::new(),
+            cwd: ".".to_string(),
+        })
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_input");
+        assert_eq!(error.message, "invalid patch action: bogus");
+    }
 
     #[test]
     fn sanitizes_pending_worktree_branch_and_path_names() {

@@ -9,7 +9,7 @@ import {
   mcpToolName,
 } from "../state/thread-item-fields";
 import { isRunningSkillDefinitionRead, joinConjunction } from "../state/tool-activity-grouping";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { OpenThreadHandler } from "./open-thread";
 import {
   ToolActivityDetail,
@@ -32,7 +32,7 @@ export function PendingMcpToolCallsActivityView({
   onOpenThreadId?: OpenThreadHandler;
   threadId: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [viewState, setViewState] = useState<PendingMcpViewState>("collapsed");
   const detailItems = pendingMcpDetailItems(unit);
   const expanded = viewState !== "collapsed";

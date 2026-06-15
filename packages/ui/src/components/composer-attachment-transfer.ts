@@ -143,7 +143,7 @@ export function useComposerAttachmentTransfer({
        * Codex Desktop scopes file drag/drop to the composer drop target:
        * `composer-*.js` registers drag/drop listeners on the composer element
        * and inner surface, not the whole conversation window. Tauri native
-       * file-drop events arrive at the webview level, so HiCodex keeps this
+       * file-drop events arrive at the webview level, so Forge keeps this
        * listener but applies the same composer hit-test before showing active
        * state or accepting paths.
        */

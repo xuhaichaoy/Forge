@@ -9,12 +9,12 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { stringField } from "../lib/format";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { itemType } from "../state/thread-item-fields";
 import type { OpenRemoteTaskHandler, OpenThreadHandler } from "./open-thread";
 
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 function statusDividerIcon(type: string) {
   const className = "hc-status-event-kind-icon";

@@ -11,7 +11,7 @@ type WorkedForUnit = Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
  * (`kh` :3305-3313) followed by a full-width 1px rule. Invoked from the
  * thread-item render loop at :7434 for `case 'worked-for'`. Codex uses
  * framer-motion (`initial: { opacity: 0, height: 0 }`,
- * `animate: { opacity: 1, height: 'auto' }`, `transition: yo`); HiCodex has no
+ * `animate: { opacity: 1, height: 'auto' }`, `transition: yo`); Forge has no
  * framer-motion dep, so we fade in via plain CSS.
  */
 export function WorkedForDivider({ unit }: { unit: WorkedForUnit }) {

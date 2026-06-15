@@ -1,4 +1,4 @@
-import type { ThreadGoal } from "@hicodex/codex-protocol";
+import type { ThreadGoal } from "@forge/codex-protocol";
 import { isRecord, stringField } from "../lib/format";
 import type { AccumulatedThreadItem } from "./render-groups";
 

@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import type { QueuedFollowUp } from "../state/queued-followups";
 import { queuedFollowUpSummary } from "../state/queued-followups";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface QueuedFollowUpStackProps {
   messages: QueuedFollowUp[];
@@ -24,7 +24,7 @@ export function QueuedFollowUpStack({
   onQueueingChange,
   onReorder,
 }: QueuedFollowUpStackProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const openMenuWrapRef = useRef<HTMLDivElement | null>(null);

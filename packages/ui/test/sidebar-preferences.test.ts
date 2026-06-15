@@ -30,10 +30,10 @@ export default function runSidebarPreferencesTests(): void {
   loadsExactDesktopPreferenceKeys();
   savesExactDesktopPreferenceKeys();
   migratesLegacyPreferencesWhileDesktopKeysWin();
-  migratesHiCodexLegacyCollapsedGroupsKey();
-  desktopCollapsedSectionsKeyWinsOverHiCodexLegacy();
+  migratesForgeLegacyCollapsedGroupsKey();
+  desktopCollapsedSectionsKeyWinsOverForgeLegacy();
   clampsStoredSidebarWidth();
-  savingDropsHiCodexLegacyCollapsedGroupsKey();
+  savingDropsForgeLegacyCollapsedGroupsKey();
   toleratesUnavailableStorage();
 }
 
@@ -142,7 +142,7 @@ function migratesLegacyPreferencesWhileDesktopKeysWin(): void {
   assertEqual(preferences.widthPx, SIDEBAR_WIDTH_DEFAULT_PX, "legacy aggregate should not override default sidebar width");
 }
 
-function migratesHiCodexLegacyCollapsedGroupsKey(): void {
+function migratesForgeLegacyCollapsedGroupsKey(): void {
   // Older HiCodex builds wrote project-group collapse under the bundle's FIXED-
   // section key `sidebar-collapsed-sections-v1`. When that legacy slot is the only
   // source, load should still surface the state under the Desktop group key.
@@ -170,7 +170,7 @@ function clampsStoredSidebarWidth(): void {
   assertEqual(loadSidebarPreferences(tooLarge).widthPx, SIDEBAR_WIDTH_MAX_PX, "stored width should clamp to max");
 }
 
-function desktopCollapsedSectionsKeyWinsOverHiCodexLegacy(): void {
+function desktopCollapsedSectionsKeyWinsOverForgeLegacy(): void {
   // When both keys exist, the Desktop-aligned `sidebar-collapsed-groups` must win
   // and the HiCodex legacy `sidebar-collapsed-sections-v1` slot is ignored. This
   // protects users who already adopted the Desktop key from stale legacy data.
@@ -192,7 +192,7 @@ function desktopCollapsedSectionsKeyWinsOverHiCodexLegacy(): void {
   );
 }
 
-function savingDropsHiCodexLegacyCollapsedGroupsKey(): void {
+function savingDropsForgeLegacyCollapsedGroupsKey(): void {
   // After save, the migrated state lives under the Desktop key and the legacy
   // slot is removed so the same value is not read back twice on next load.
   const storage = new MemoryStorage();

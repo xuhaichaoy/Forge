@@ -1,4 +1,4 @@
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type {
   PendingRequestOptionPicker,
   PendingRequestQuestion,
@@ -27,7 +27,7 @@ export function QuestionField({
    */
   hideHeading?: boolean;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const currentValue = value[0] ?? "";
   /*
    * CODEX-REF: pending-request-item-panel-*.js - question field modes:
@@ -156,7 +156,7 @@ export function OptionPickerField({
   onChange: (value: string[]) => void;
   onSubmit: (value: string[]) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const optionValues = new Set(question.options.map((option) => option.value));
   const freeformValue = value.find((item) => !optionValues.has(item)) ?? "";
   const selectedValues = value.filter((item) => optionValues.has(item));

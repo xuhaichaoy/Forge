@@ -11,7 +11,7 @@ import {
 import type {
   McpAppDetailViewModel,
   McpAppDisplayMode,
-} from "./mcp-app-sandbox";
+} from "./mcp-app-sandbox-types";
 
 const MCP_APP_FRAME_MIN_HEIGHT_PX = 200;
 const MCP_APP_FRAME_MAX_HEIGHT_PX = 720;

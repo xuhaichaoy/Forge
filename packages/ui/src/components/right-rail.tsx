@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { OpenThreadHandler } from "./open-thread";
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 import {
@@ -72,12 +72,12 @@ export function RightRail({
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
   // codex: local-conversation-thread-*.js —
-  // P0 right-rail data + callbacks. HiCodexApp wires these once the
+  // P0 right-rail data + callbacks. ForgeApp wires these once the
   // corresponding feature lights up.
   onAutomationOpen,
   onBrowserOpen,
 }: RightRailProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const canOpenEntry = (entry: RailEntry) =>
     isRailEntryActionAvailable(entry, {
       onOpenFileReference,
@@ -159,14 +159,14 @@ export function RightRail({
            * Environment section 的 header `after` slot 总是渲染
            * Choose environment 按钮(path B disabled state:settings-cog icon
            * 7x7 px,tooltip "Choose environment",disabled when canChangeEnvironment
-           * 为假)。HiCodex 没有 environments 数据流,此处仅纯 UI 占位符严格对齐
+           * 为假)。Forge 没有 environments 数据流,此处仅纯 UI 占位符严格对齐
            * Codex 容器 className(7x7、rounded-sm、bg-transparent、tertiary)。
            * WorktreeMenuTrigger 已 deprecate(onOpenWorktreeMenu 无调用方,dead prop)。
            */
           /*
            * CODEX-REF: local-conversation-thread-CEeZyOcp.js — the Tasks (background
            * -tasks) section header carries an `after` action button "View all processes"
-           * (opens the process manager). HiCodex has no process-manager view yet, so the
+           * (opens the process manager). Forge has no process-manager view yet, so the
            * button renders in its Codex form (size-6 rounded-sm tertiary, icon-xs glyph,
            * aria-label/title via the Codex id) but disabled until the route is wired.
            */
@@ -232,7 +232,7 @@ export function RightRail({
  * Codex Desktop's rail sections are *text-only* — every section call site in
  * local-conversation-thread-*.js passes a bare `<X i18n .../>` to the `title`
  * prop. Section
- * header icons were a HiCodex-original embellishment; removed for parity.
+ * header icons were a Forge-original embellishment; removed for parity.
  */
 
 /*
@@ -242,11 +242,11 @@ export function RightRail({
  *    rounded-sm border-0 bg-transparent p-0 text-token-text-tertiary
  *    hover:bg-token-list-hover-background data-[state=open]:bg-token-list-hover-background`
  * path B(无 environment selected,canChangeEnvironment 假)只渲染 settings-cog
- * icon (`icon-sm`) + tooltip + disabled。HiCodex 没 environments 数据流,
+ * icon (`icon-sm`) + tooltip + disabled。Forge 没 environments 数据流,
  * 此处 disabled 占位严格对齐 Codex path B 视觉。
  */
 function EnvironmentSelectorPlaceholder(): ReactNode {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // CODEX-REF: local-conversation-thread-CEeZyOcp.js — the Choose environment
   // trigger uses i18n id `threadPage.runAction.environmentSelector.label`
   // (defaultMessage "Choose environment") and renders its cog at `icon-xs` (16px),
@@ -274,13 +274,13 @@ function EnvironmentSelectorPlaceholder(): ReactNode {
  * Codex container className: `ms-auto inline-flex size-6 cursor-interaction items-center
  * justify-center rounded-sm text-token-text-tertiary hover:text-token-foreground …` with
  * an `icon-xs` (16px) glyph and aria-label/title from
- * `codex.localConversation.backgroundTasks.viewAllProcessesLabel`. HiCodex has no
+ * `codex.localConversation.backgroundTasks.viewAllProcessesLabel`. Forge has no
  * process-manager route yet, so the button renders in Codex's form (reusing the
  * environment-selector placeholder shape) but is disabled until the route is wired.
  * lucide `List` is the clean-room match for the process-list glyph.
  */
 function ViewAllProcessesPlaceholder(): ReactNode {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const viewAllProcessesLabel = formatMessage({
     id: "codex.localConversation.backgroundTasks.viewAllProcessesLabel",
     defaultMessage: "View all processes",

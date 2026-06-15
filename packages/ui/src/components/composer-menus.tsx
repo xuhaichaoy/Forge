@@ -14,7 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { RefObject } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   type ComposerMentionMarker,
   type ComposerMentionOption,
@@ -32,7 +32,7 @@ export {
  * render the rows and forward `onSelect` / keyboard-visible refs. The aria
  * markers (`role="listbox"`/`"menu"`/`"dialog"`, `data-state="open"`) and the
  * `hc-composer-menu*` classes are preserved exactly so the focus-routing
- * selectors in `HiCodexApp.tsx::focusComposerFromPlainTextKey` keep matching.
+ * selectors in `ForgeApp.tsx::focusComposerFromPlainTextKey` keep matching.
  */
 
 // ---------------------------------------------------------------------------
@@ -45,9 +45,9 @@ type MentionPickerStatus = "closed" | "idle" | "loading" | "ready" | "error";
  * codex: at-mention-list-CX3nvds1.js (26.602) — the @ list is assembled by a
  * pure concatenation `Pe([{sections:[agents]},{sections:S},skills,files])` where
  * S = [mcp-servers?, plugins]. So the section order is Agents → [MCP servers] →
- * Plugins → Skills → Files (Plugins BEFORE Skills). HiCodex collapses Live/Custom
+ * Plugins → Skills → Files (Plugins BEFORE Skills). Forge collapses Live/Custom
  * agents into one "Agents" section and has no standalone "Apps" section (the `app`
- * kind folds into Plugins, keeping the Codex `atMentionList.*` ids). HiCodex lacks
+ * kind folds into Plugins, keeping the Codex `atMentionList.*` ids). Forge lacks
  * the MCP-servers @ section (no `mcpServer` mention kind); for the sections it does
  * render, the order matches the bundle: Agents → Plugins → Skills → Files. Each
  * section can match several kinds.
@@ -144,7 +144,7 @@ function mentionOptionPrefix(option: ComposerMentionOption): string {
 /*
  * codex slash-command-item-Cubjf4gi.js — every slash row renders a real
  * LeftIcon (icon-xs), not a text glyph built from the command's first letter.
- * HiCodex has no per-command icon registry, so we map by category and fall
+ * Forge has no per-command icon registry, so we map by category and fall
  * back to a generic slash icon — replacing the old "/m" / "/r" pseudo-glyph.
  */
 function slashCommandIcon(command: Pick<SlashCommand, "category">) {
@@ -189,12 +189,12 @@ export function ComposerSlashMenu({
   menuRef,
   activeRowRef,
 }: ComposerSlashMenuProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     /*
      * `data-state="open"` mirrors the Radix-style marker the
-     * focus-routing selector expects. HiCodex's
-     * `HiCodexApp.tsx::focusComposerFromPlainTextKey` (and the
+     * focus-routing selector expects. Forge's
+     * `ForgeApp.tsx::focusComposerFromPlainTextKey` (and the
      * upstream Codex Desktop equivalent in `composer-*.js`)
      * queries `[role="listbox"][data-state="open"]` — and the
      * `dialog`/`menu` variants below — to suppress type-to-focus
@@ -261,7 +261,7 @@ export function ComposerMentionMenu({
   menuLabel,
   onSelect,
 }: ComposerMentionMenuProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const selectedKey = selectedOption ? mentionOptionKey(selectedOption) : "";
   return (
     <div className="hc-composer-menu mention" role="listbox" aria-label={menuLabel} data-state="open">

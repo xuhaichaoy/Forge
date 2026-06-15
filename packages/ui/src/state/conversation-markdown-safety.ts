@@ -1,4 +1,4 @@
-import type { MarkdownInlineSegment } from "./conversation-markdown-engine";
+import type { MarkdownInlineSegment } from "./conversation-markdown-types";
 
 export function markdownLinkSegment(
   text: string,

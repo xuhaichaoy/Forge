@@ -34,9 +34,9 @@ export function McpToolCallThreadItemView({
    * stays FOLDED while running and after completion, and only MCP apps expand
    * themselves; nothing auto-collapses.
    *
-   * (HiCodex keeps its own "server:tool" identity as the label instead of
+   * (Forge keeps its own "server:tool" identity as the label instead of
    * Codex's per-connector `MS` formatting, which needs connector/app metadata
-   * HiCodex does not carry; the icon falls back to the MCP `Network` glyph,
+   * Forge does not carry; the icon falls back to the MCP `Network` glyph,
    * matching Codex's no-logo fallback.)
    */
   const isMcpApp = detail.kind === "mcpApp";
@@ -108,13 +108,13 @@ function mcpToolCallSummaryLabel(detail: ReturnType<typeof toolActivityDetailVie
 /*
  * codex: Codex's MCP summary label `MS(...)` uses per-connector generators ONLY
  * when a `matchingApp` is resolved from the user's connected-connector registry
- * (`resolvedApps`). HiCodex carries no connector registry → `matchingApp` is
+ * (`resolvedApps`). Forge carries no connector registry → `matchingApp` is
  * always null → Codex itself falls back to `HS = WS(US(toolName))`: split the
  * tool name into alphanumeric words (`GS`: lowercase, split on /[^a-z0-9]+/),
  * join with spaces (`US`, no prefix to strip when there's no app), and
  * sentence-case (`WS`). So `create_issue` → "Create issue". This is the faithful
  * no-connector rendering; the server identity rides on the (logo) icon in Codex,
- * which HiCodex shows as the generic `Network` fallback either way.
+ * which Forge shows as the generic `Network` fallback either way.
  */
 function humanizeMcpToolName(toolName: string): string {
   const words = toolName.trim().toLowerCase().split(/[^a-z0-9]+/g).filter((word) => word.length > 0);

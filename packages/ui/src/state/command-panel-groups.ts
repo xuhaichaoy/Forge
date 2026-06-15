@@ -3,7 +3,7 @@ import type {
   CommandPanelEntry,
   CommandPanelEntryKind,
   CommandPanelRenderedItem,
-} from "./command-panel";
+} from "./command-panel-types";
 
 type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;
 

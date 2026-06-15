@@ -1,6 +1,6 @@
 import { ChevronDown, Loader2 } from "lucide-react";
 import { GALLERY_PENDING_SIZE_PX } from "./generated-image-gallery-layout";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
  * Codex `YC` — single thumbnail button. `naturalWidth/Height`
@@ -28,7 +28,7 @@ export function GalleryThumbnail({
   onAspectRatioChange: (ratio: number) => void;
   onOpenPreview: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const alt = formatMessage({ id: "codex.localConversation.generatedImage", defaultMessage: "Generated image {imageNumber}" }, { imageNumber });
   const frameHeightPx = heightPx > 0 ? heightPx : undefined;
   const frameWidthPx = frameHeightPx == null
@@ -107,7 +107,7 @@ export function GalleryOverflowControls({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // Hide the "+N" indicator entirely once the user has scrolled into the
   // overflowed range, matching Codex's `group-focus-within:opacity-0
   // group-hover:opacity-0` rule on the badge container.

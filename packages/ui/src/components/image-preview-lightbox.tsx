@@ -9,7 +9,7 @@ import {
 } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { renderImagePreviewModalLayer } from "./image-preview-lightbox-modal";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   clampImagePreviewUnit,
   handleViewportPointerDown,
@@ -47,7 +47,7 @@ export type { ImagePreviewZoomCommand } from "./image-preview-lightbox-helpers";
  *   1) **Self-triggered**: render an `<img>` thumbnail inside `frameClassName`
  *      and pop the modal when the user clicks the thumbnail. Used by inline
  *      previews (artifact / file panels) where the lightbox is the same DOM
- *      node that hosts the thumbnail. This is HiCodex's legacy entry point.
+ *      node that hosts the thumbnail. This is Forge's legacy entry point.
  *
  *   2) **Externally controlled**: the parent already shows its own thumbnail
  *      grid (Codex generated-image gallery, see `generated-image-gallery.tsx`)
@@ -93,7 +93,7 @@ export function ImagePreviewLightbox({
   onPreviousImage,
   onNextImage,
 }: ImagePreviewLightboxProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const isControlled = onClose != null;
   const [openInternal, setOpenInternal] = useState(false);
   const [naturalSize, setNaturalSize] = useState<ImagePreviewSize | null>(null);

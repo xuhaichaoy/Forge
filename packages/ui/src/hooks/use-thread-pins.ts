@@ -1,11 +1,11 @@
 import { useCallback, useState } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 
 import { browserStorage } from "../state/app-shell-helpers";
 import { loadPinnedThreadIds, savePinnedThreadIds, updatePinnedThreadIds } from "../state/thread-pins";
 
 /*
- * Pinned-thread set + persistence, lifted verbatim out of HiCodexApp. The set is
+ * Pinned-thread set + persistence, lifted verbatim out of ForgeApp. The set is
  * seeded from browserStorage on mount; setThreadPinnedById writes through to
  * storage on every change. Self-contained — only depends on the thread-pins
  * helpers, so it needs no params.

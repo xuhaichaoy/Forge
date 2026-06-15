@@ -23,8 +23,8 @@ function projectsFileMentionOptionsFromFuzzySearch(): void {
   const options = mentionOptionsFromFuzzyFiles([
     {
       root: "/workspace",
-      path: "packages/ui/src/HiCodexApp.tsx",
-      file_name: "HiCodexApp.tsx",
+      path: "packages/ui/src/ForgeApp.tsx",
+      file_name: "ForgeApp.tsx",
       score: 91,
     },
   ]);
@@ -33,8 +33,8 @@ function projectsFileMentionOptionsFromFuzzySearch(): void {
     options,
     [{
       kind: "file",
-      name: "HiCodexApp.tsx",
-      path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+      name: "ForgeApp.tsx",
+      path: "/workspace/packages/ui/src/ForgeApp.tsx",
       detail: "packages/ui/src",
       score: 91,
     }],

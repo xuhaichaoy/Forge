@@ -1,5 +1,5 @@
 import {
-  HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY,
+  FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY,
   loadNotificationPreferences,
   mergeNotificationPreferences,
   normalizeNotificationPreferences,
@@ -37,7 +37,7 @@ function normalizesAndPersistsNotificationPreferences(): void {
   );
   saveNotificationPreferences(storage, { turnCompletionPolicy: "off", sound: false });
   assertEqual(
-    storage.values.get(HICODEX_NOTIFICATION_PREFERENCES_STORAGE_KEY),
+    storage.values.get(FORGE_NOTIFICATION_PREFERENCES_STORAGE_KEY),
     JSON.stringify({ turnCompletionPolicy: "off", sound: false }),
     "notification preferences should be persisted as JSON",
   );

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Pause, Pencil, Play, Target, X } from "lucide-react";
-import type { ThreadGoal } from "@hicodex/codex-protocol";
-import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
+import type { ThreadGoal } from "@forge/codex-protocol";
+import type { ThreadGoalStatus } from "@forge/codex-protocol/generated/v2/ThreadGoalStatus";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { portalDialogToBody } from "./thread-goal-dialogs";
 import { threadGoalBannerSummary } from "../state/thread-goal-summary";
 
@@ -45,7 +45,7 @@ const STATUS_LABEL_INTL_KEY: Record<string, string> = {
 };
 function localizeGoalStatusLabel(
   statusLabel: string,
-  formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"],
+  formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"],
 ): string {
   const key = STATUS_LABEL_INTL_KEY[statusLabel];
   return key ? formatMessage({ id: `composer.threadGoal.summary.${key}`, defaultMessage: statusLabel }) : statusLabel;
@@ -63,7 +63,7 @@ export function ThreadGoalBanner({
   onSetGoalStatus,
   onClearGoal,
 }: ThreadGoalBannerProps) {
-  const { formatMessage, locale } = useHiCodexIntl();
+  const { formatMessage, locale } = useForgeIntl();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);

@@ -1,10 +1,10 @@
-import type { InputModality, JsonValue, ModelConfig, ModelServiceTier } from "@hicodex/codex-protocol";
-import { HICODEX_DESKTOP_CONFIG_KEYS } from "../state/hicodex-desktop-namespace";
+import type { InputModality, JsonValue, ModelConfig, ModelServiceTier } from "@forge/codex-protocol";
+import { FORGE_DESKTOP_CONFIG_KEYS } from "../state/forge-desktop-namespace";
 
 export type { ModelConfig };
 
 export const DEFAULT_MODEL_PROVIDER_ID = "hicodex_local";
-export const DEFAULT_MODEL_PROVIDER_NAME = "HiCodex local gateway";
+export const DEFAULT_MODEL_PROVIDER_NAME = "Forge local gateway";
 export const DEFAULT_MODEL_BASE_URL = "http://127.0.0.1:8890/v1";
 export const DEFAULT_MODEL_NAME = "Qwen3.6-27B-mxfp4";
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 262144;
@@ -355,4 +355,4 @@ export function migrateSubscriptionModelSelection(value: string | null): string 
 }
 
 export const LEGACY_SELECTED_MODEL_STORAGE_KEY = "hicodex.selectedModelKey";
-export const SELECTED_MODEL_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.selectedModelKey;
+export const SELECTED_MODEL_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.selectedModelKey;

@@ -2,7 +2,7 @@ import { ChevronRight, Terminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatDuration } from "../state/thread-item-fields";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 import type { ThreadItemUnit } from "./thread-item-types";
 import {
   initialExecShellExpanded,
@@ -16,13 +16,14 @@ export function ExecThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const detail = toolActivityDetailViewModel(unit.item);
   const canExpand = detail.kind === "exec";
   const [expanded, setExpanded] = useState(() => detail.kind === "exec" && initialExecShellExpanded(detail));
 
   useEffect(() => {
     setExpanded(detail.kind === "exec" && initialExecShellExpanded(detail));
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意以 detail.id/kind 为重置键：仅切换条目时重置展开态，detail 投影逐渲染新引用不得触发回弹
   }, [detail.id, detail.kind]);
 
   /*
@@ -102,14 +103,14 @@ export function ExecThreadItemView({
 }
 
 // codex toolSummaryForCmd.* — Codex wraps the verb in a <status> tag and appends
-// {timer}; HiCodex renders the status tag-free (its own span styling) and appends
+// {timer}; Forge renders the status tag-free (its own span styling) and appends
 // the live timer separately (runningTimer), so the i18n values here are the
 // tag/timer-stripped base. formatMessage is optional so the locale-free callers
 // (and tests) keep the English output unchanged.
 export function execThreadItemSummaryLabel(
   detail: Extract<ReturnType<typeof toolActivityDetailViewModel>, { kind: "exec" }>,
   expanded: boolean,
-  formatMessage?: HiCodexIntlContextValue["formatMessage"],
+  formatMessage?: ForgeIntlContextValue["formatMessage"],
 ): string {
   if (detail.running) {
     return formatMessage

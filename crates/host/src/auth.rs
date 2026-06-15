@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn reads_missing_codex_auth_as_unsigned() {
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-auth-summary-test-{}",
+            "forge-host-auth-summary-test-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dir);

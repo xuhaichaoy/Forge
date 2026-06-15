@@ -17,10 +17,10 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@hicodex/ui": ["packages/ui/src"],
-      "@hicodex/ui/*": ["packages/ui/src/*"],
-      "@hicodex/codex-protocol": ["packages/codex-protocol/src"],
-      "@hicodex/codex-protocol/*": ["packages/codex-protocol/src/*"]
+      "@forge/ui": ["packages/ui/src"],
+      "@forge/ui/*": ["packages/ui/src/*"],
+      "@forge/codex-protocol": ["packages/codex-protocol/src"],
+      "@forge/codex-protocol/*": ["packages/codex-protocol/src/*"]
     }
   }
 }

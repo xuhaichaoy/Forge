@@ -29,7 +29,7 @@
  * CODEX-REF: local-conversation-thread-CEeZyOcp.js (Nf) — Sources renders a clickable
  * `<button>` variant (with `hover:bg-token-list-hover-background hover:text-token-foreground`)
  * ONLY when the source has `mcpAppId` + an `onOpen` handler; otherwise it is a static
- * `role="img"` span with NO hover affordance. HiCodex has no source-open data flow, so all
+ * `role="img"` span with NO hover affordance. Forge has no source-open data flow, so all
  * sources render the static span variant — which must therefore carry no hover background
  * (the prior `:hover` rule implied a non-existent click target). When source-open lands,
  * add a `.hc-rail-source-icon` button variant that restores the hover bg/fg.
@@ -165,7 +165,7 @@
 
 /* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Browser row) — title span is
  * `max-w-[60%] min-w-0 shrink truncate` with NO weight class, so it inherits body
- * text-base (14px) at the default body weight (430). HiCodex previously rendered it
+ * text-base (14px) at the default body weight (430). Forge previously rendered it
  * 13px/650 (too small + too bold). Aligned to 14px/430. */
 .hc-rail-card-browser-title {
   display: block;
@@ -182,7 +182,7 @@
 
 /* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Browser row) — displayUrl span is
  * `max-w-[40%] min-w-0 shrink truncate text-sm` (= 13px); inactive adds
- * `text-token-text-secondary`. HiCodex previously rendered it 11px. Aligned to 13px. */
+ * `text-token-text-secondary`. Forge previously rendered it 11px. Aligned to 13px. */
 .hc-rail-card-browser-url {
   display: block;
   flex: 1 1 auto;
@@ -203,7 +203,7 @@
  * `[primary, secondary]` Fragment (browser title+url, automation name+rrule, subagent
  * name+"is working"), Codex passes a baseline `labelClassName` to the wc label wrapper:
  * `flex min-w-0 flex-1 items-baseline gap-2`. This REPLACES the default `truncate`
- * wrapper (each child truncates individually). HiCodex mirrors that here.
+ * wrapper (each child truncates individually). Forge mirrors that here.
  */
 .hc-rail-row-label-baseline {
   display: flex;
@@ -494,7 +494,7 @@
  * 通过 `before:absolute before:inset-y-0 before:-inset-x-2 before:-z-10
  * before:rounded-sm before:content-[''] hover:before:bg-token-list-hover-background`
  * 实现:hover 时背景比 row 本身向左右各凸出 8 px(超出 row padding,落在 section
- * px-4 内侧)。HiCodex 旧实现是行内 bg,无凸出。
+ * px-4 内侧)。Forge 旧实现是行内 bg,无凸出。
  *
  * 用 ::before 伪元素严格对齐:`inset: 0 -8px`(等于 inset-y-0 + -inset-x-2),
  * `z-index: -1`(背景在内容下方),`border-radius: 2px`(rounded-sm)。

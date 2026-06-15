@@ -13,13 +13,13 @@ There are two unrelated places generated images can appear in Codex Desktop:
 
 The earlier claim "Codex does not render inline generated images, only the right rail" was incorrect. The accurate statement: **no independent ThreadItem card, but YES a turn-level gallery in addition to the right-rail Artifacts list**.
 
-HiCodex exposes generated images via:
+Forge exposes generated images via:
 
 - `project-conversation.ts` aggregating turn-scoped `generated-image` / `imageGeneration` items into one `generatedImageGallery` render unit.
 - `right-rail.tsx` rendering them as right-rail artifacts.
 - `event-projection.ts` emitting a markdown image only for legacy/orphan items outside normal turn grouping.
 
-HiCodex now has the turn-level inline gallery equivalent.
+Forge now has the turn-level inline gallery equivalent.
 
 ## 2. Filename pattern
 
@@ -31,7 +31,7 @@ Both the right-rail Artifacts list and the inline gallery identify generated ima
 
 Matching artifacts render with the label `Generated image {imageNumber}` (1-based, ordered by appearance).
 
-HiCodex `right-rail.tsx` uses the same regex.
+Forge `right-rail.tsx` uses the same regex.
 
 ## 3. Protocol state
 
@@ -44,7 +44,7 @@ HiCodex `right-rail.tsx` uses the same regex.
 - Thumbnails load via the `app://` protocol for local files.
 - Click opens the full-screen lightbox (see §6).
 
-HiCodex right-rail behaves equivalently. The 6-item cap is shared with the Sources section.
+Forge right-rail behaves equivalently. The 6-item cap is shared with the Sources section.
 
 ## 5. Turn-level inline gallery (`TurnGeneratedImageGallery`)
 
@@ -65,7 +65,7 @@ Render rules:
 - Pending images: `flex h-24 w-24 ...` loading placeholder tile.
 - Preview source: `previewSrc`; local file data is fetched through the `app://` bridge.
 
-HiCodex implementation status: implemented by `project-conversation.ts` + `generated-image-gallery.tsx`; see [gap matrix](./codex-alignment-gap-matrix.md) G1.
+Forge implementation status: implemented by `project-conversation.ts` + `generated-image-gallery.tsx`; see [gap matrix](./codex-alignment-gap-matrix.md) G1.
 
 ## 6. Full-screen lightbox
 
@@ -77,7 +77,7 @@ A separate component handles full-screen preview with prev/next/close affordance
 - Lightbox prev/next: `Previous image` / `Next image` (`imagePreviewDialog.previousImage` / `imagePreviewDialog.nextImage`).
 - `imageNumber` counter is 1-based (`displayIndex + 1`).
 
-HiCodex implementation status: `GeneratedImageGallery` uses `ImagePreviewLightbox` controlled mode with no visible card header, `Close image preview`, generic image-preview prev/next labels, `Download image`, zoom controls, `no-referrer`, and the thread-content max-width cap.
+Forge implementation status: `GeneratedImageGallery` uses `ImagePreviewLightbox` controlled mode with no visible card header, `Close image preview`, generic image-preview prev/next labels, `Download image`, zoom controls, `no-referrer`, and the thread-content max-width cap.
 
 ## 7. ThreadItem types that DO NOT render as transcript cards
 
@@ -101,7 +101,7 @@ personality-changed
 plan-implementation
 ```
 
-(Protocol type is `plan-implementation`, not `plan-implemented`; verified against Codex Desktop v26.519.81530 and HiCodex `render-group-types` / `event-projection`.)
+(Protocol type is `plan-implementation`, not `plan-implemented`; verified against Codex Desktop v26.519.81530 and Forge `render-group-types` / `event-projection`.)
 
 This list is the durable rule for which types must not be rendered through the default `ThreadItemView` branch. Each entry has either a dedicated surface (gallery / markdown / tool-activity) or is explicitly suppressed.
 

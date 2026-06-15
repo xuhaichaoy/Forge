@@ -73,7 +73,7 @@ fn test_code_signature_status_for_path(path: &Path) -> Option<(Option<bool>, Opt
 #[cfg(test)]
 fn test_signed_computer_use_marker_status(path: &Path) -> Option<(Option<bool>, Option<String>)> {
     for ancestor in path.ancestors() {
-        if ancestor.join(".hicodex-test-signed").exists() {
+        if ancestor.join(".forge-test-signed").exists() {
             return Some((Some(true), Some("valid".to_string())));
         }
     }

@@ -2,7 +2,7 @@ import { ChevronDown, FileText, FolderOpen, Globe2, ImageIcon, Presentation, Scr
 import { useCallback, useRef, useState, type RefObject } from "react";
 
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { projectArtifactPreview } from "../state/artifact-preview";
 import type { AssistantEndResource, RailEntry } from "../state/render-group-types";
 
@@ -27,7 +27,7 @@ export function assistantEndResourceCardViewModels(resources: AssistantEndResour
       const title = "Web preview";
       return {
         entry,
-        // codex says "Open in Codex Browser" (browser-sidebar form); HiCodex
+        // codex says "Open in Codex Browser" (browser-sidebar form); Forge
         // renders local html in a side-panel preview tab, so stay honest.
         hoverLabel: "Open preview",
         icon: Globe2,
@@ -86,12 +86,12 @@ const END_RESOURCE_GOOGLE_SUBTITLE_KEY: Record<string, string> = {
   Slides: "googleSlidesSubtitle",
   Drive: "googleDriveSubtitle",
 };
-function localizeEndResourceTitle(title: string, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): string {
+function localizeEndResourceTitle(title: string, formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"]): string {
   return title === "Web preview"
     ? formatMessage({ id: "localConversation.endResource.websiteTitle", defaultMessage: "Web preview" })
     : title;
 }
-function localizeEndResourceTypeLabel(typeLabel: string, formatMessage: ReturnType<typeof useHiCodexIntl>["formatMessage"]): string {
+function localizeEndResourceTypeLabel(typeLabel: string, formatMessage: ReturnType<typeof useForgeIntl>["formatMessage"]): string {
   const fileMatch = /^(Document|Spreadsheet|Slides|Image) · (.+)$/.exec(typeLabel);
   if (fileMatch) {
     const kind = fileMatch[1]!;
@@ -115,7 +115,7 @@ export function AssistantEndResourceCards({
   onOpenArtifact?: (entry: RailEntry) => void;
   onRevealResource?: (entry: RailEntry) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const cards = assistantEndResourceCardViewModels(resources);
   const [expanded, setExpanded] = useState(false);
   const [openMenuKey, setOpenMenuKey] = useState<string | null>(null);
@@ -214,7 +214,7 @@ function EndResourceOpenInControl({
   onRevealResource?: (entry: RailEntry) => void;
   refForOpenMenu: RefObject<HTMLSpanElement | null>;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const canRevealInFolder = card.entry.action?.kind === "file" && Boolean(onRevealResource);
   if (!canRevealInFolder) {
     return <span className="hc-assistant-resource-card-open-label">{card.trailingLabel}</span>;

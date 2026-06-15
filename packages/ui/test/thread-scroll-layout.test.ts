@@ -100,7 +100,7 @@ function normalizesThreadScrollPersistenceKeys(): void {
   assertEqual(threadScrollKey("thread-1"), "thread-1", "thread id should be the scroll persistence key");
   assertEqual(
     threadScrollKey("   "),
-    "__hicodex_default_thread_scroll__",
+    "__forge_default_thread_scroll__",
     "blank reset keys should use the default scroll persistence key",
   );
 }

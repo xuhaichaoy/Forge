@@ -1,7 +1,7 @@
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 import type { FileReference } from "./file-reference-types";
 
-type PatchFormatMessage = HiCodexIntlContextValue["formatMessage"];
+type PatchFormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export interface PatchChangeViewModel {
   action: string;
@@ -19,7 +19,7 @@ export function PatchChangePath({
   change: PatchChangeViewModel;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (!onOpenFileReference) {
     return <code title={formatMessage({ id: "hc.toolDetail.patch.openInEditorTooltip", defaultMessage: "{path} — Open in editor" }, { path: change.path })}>{change.path}</code>;
   }

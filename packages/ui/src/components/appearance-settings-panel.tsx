@@ -20,17 +20,17 @@ import {
   type UiThemeMode,
   type UiThemeSnapshot,
 } from "../state/theme";
-import { HICODEX_SUPPORTED_LOCALES, type HiCodexLocale } from "../state/i18n";
-import { useHiCodexIntl } from "./i18n-provider";
+import { FORGE_SUPPORTED_LOCALES, type ForgeLocale } from "../state/i18n";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
  * CODEX-REF: appearance-settings-*.js inline editor. Codex Desktop
  * renders the Appearance panel as a column of labelled control rows (not as
- * a CommandPanelEntry list), so HiCodex follows suit. The three controls
- * that currently have HiCodex-side backing are Theme (§1), Code font size
+ * a CommandPanelEntry list), so Forge follows suit. The three controls
+ * that currently have Forge-side backing are Theme (§1), Code font size
  * (§4), and Reduce motion (§8); the other Codex sections (light/dark color
  * pickers, code theme, diff markers, pointer cursors) are not implemented
- * because HiCodex's base.css is hardcoded hex and there's no token-override
+ * because Forge's base.css is hardcoded hex and there's no token-override
  * pipeline yet.
  *
  * Each row mirrors the Codex layout:
@@ -43,12 +43,12 @@ import { useHiCodexIntl } from "./i18n-provider";
 export interface AppearanceSettingsPanelProps {
   uiTheme: UiThemeSnapshot;
   uiAppearance: UiAppearancePreferences;
-  uiLocale: HiCodexLocale;
+  uiLocale: ForgeLocale;
   onSetUiTheme: (mode: UiThemeMode) => void;
   onSetUiFontSize: (size: number) => void;
   onSetCodeFontSize: (size: number) => void;
   onSetReducedMotion: (mode: ReducedMotionMode) => void;
-  onSetUiLocale: (locale: HiCodexLocale) => void;
+  onSetUiLocale: (locale: ForgeLocale) => void;
 }
 
 export function AppearanceSettingsPanel({
@@ -61,7 +61,7 @@ export function AppearanceSettingsPanel({
   onSetReducedMotion,
   onSetUiLocale,
 }: AppearanceSettingsPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-appearance-settings">
       {/*
@@ -93,7 +93,7 @@ export function AppearanceSettingsPanel({
       {/*
         * codex: general-settings-*.js `Er` — language picker (id
         * settings.ide.language.label "Language" / .description "Language for the
-        * app UI"). Codex hosts it in General settings; HiCodex surfaces the EN/ZH
+        * app UI"). Codex hosts it in General settings; Forge surfaces the EN/ZH
         * switch here next to Theme via the same SegmentedToggle. The locale
         * backend (setUiLocale + persistence + IntlProvider) already exists — this
         * is just the missing in-panel control. Native labels (English / 简体中文).
@@ -106,23 +106,23 @@ export function AppearanceSettingsPanel({
         })}
       >
         <SegmentedToggle
-          options={HICODEX_SUPPORTED_LOCALES.map((locale) => ({
+          options={FORGE_SUPPORTED_LOCALES.map((locale) => ({
             value: locale,
             label: localeNativeLabel(locale),
             ariaLabel: localeNativeLabel(locale),
           }))}
           value={uiLocale}
-          onChange={(value) => onSetUiLocale(value as HiCodexLocale)}
+          onChange={(value) => onSetUiLocale(value as ForgeLocale)}
           ariaLabel={formatMessage({ id: "settings.ide.language.label", defaultMessage: "Language" })}
         />
       </AppearanceRow>
       {/*
         * CODEX-REF: general-settings-*.js — "UI font size" row (id
         * settings.general.appearance.sansFontSize.row, "Sans font size" base
-        * key). Codex sets `--vscode-font-size`; HiCodex publishes
-        * `--hc-ui-font-scale` (see HiCodexApp apply effect) which every
+        * key). Codex sets `--vscode-font-size`; Forge publishes
+        * `--hc-ui-font-scale` (see ForgeApp apply effect) which every
         * stylesheet `font-size` calc multiplies by. Brand word dropped per the
-        * HiCodex convention ("…used for the UI", not "…the Codex UI").
+        * Forge convention ("…used for the UI", not "…the Codex UI").
         */}
       <AppearanceRow
         title={formatMessage({
@@ -148,7 +148,7 @@ export function AppearanceSettingsPanel({
       {/*
         * CODEX-REF: appearance-settings-*.js §4 — Code font size.
         * Codex spec: <input type="number" min={8} max={24} step={1}>, commit
-        * onBlur, Enter triggers blur, NaN reverts. HiCodex mirrors verbatim.
+        * onBlur, Enter triggers blur, NaN reverts. Forge mirrors verbatim.
         */}
       <AppearanceRow
         title={formatMessage({
@@ -206,7 +206,7 @@ export function AppearanceSettingsPanel({
 // Native language labels for the segmented toggle (English / 简体中文), the way
 // Codex's picker shows native names. localeLabel() in state/i18n gives English
 // names ("Chinese (Simplified)") which read oddly inside the toggle.
-function localeNativeLabel(locale: HiCodexLocale): string {
+function localeNativeLabel(locale: ForgeLocale): string {
   return locale === "zh-CN" ? "简体中文" : "English";
 }
 
@@ -278,7 +278,7 @@ function SegmentedToggle({
  *   onBlur  → parse → NaN ? revert : commit
  *   onKeyDown Enter → blur
  *
- * HiCodex re-implements verbatim. The input is *controlled* with a local
+ * Forge re-implements verbatim. The input is *controlled* with a local
  * draft string so transient invalid intermediates (e.g. user is mid-typing
  * "1" before "12") don't trigger an onCommit. The commit happens on blur or
  * Enter; cancel via Escape reverts the draft to the current persisted value.

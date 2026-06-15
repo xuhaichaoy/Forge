@@ -4,7 +4,7 @@ import type {
   CommandPanelState,
   CommandPanelStatus,
   CommandPanelSubMode,
-} from "./command-panel";
+} from "./command-panel-types";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 
 type FormatMessage = (descriptor: I18nMessageDescriptor, values?: I18nValues) => string;

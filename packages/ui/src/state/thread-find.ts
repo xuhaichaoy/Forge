@@ -393,7 +393,7 @@ function ownerDocumentForParentNode(root: ParentNode): Document | null {
  * Honour the `data-thread-find-skip` opt-out marker. codex:
  * local-conversation-thread-*.js sets `data-thread-find-skip` on subtrees the
  * find bar should never traverse (e.g. composer drafts, pending request
- * scaffolding); HiCodex's DEVELOPMENT.md §13 lists the attribute as part of the
+ * scaffolding); Forge's DEVELOPMENT.md §13 lists the attribute as part of the
  * find plumbing, but the previous walker only filtered tag names and live form
  * controls so the opt-out was effectively a no-op. Mirror Desktop by rejecting
  * any text node whose ancestor opts out.

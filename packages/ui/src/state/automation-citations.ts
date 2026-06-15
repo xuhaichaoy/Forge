@@ -5,7 +5,7 @@
 // inlines them into the trailing paragraph or, when the trailing block is
 // not a content paragraph, falls back to a flex chip row
 // (`<div className="mt-3 flex flex-wrap gap-1.5">...</div>`).
-// This module is the HiCodex equivalent: it extracts directives off
+// This module is the Forge equivalent: it extracts directives off
 // the raw markdown so message-unit.tsx can drive the same two-state render.
 
 import { automationScheduleSummary } from "./automation-schedule-summary";
@@ -35,7 +35,7 @@ export interface CitationExtractionResult {
 // completed assistant messages receive an `automationCitations` array made of
 // `automation-update` items. Desktop then creates temporary `:citation{}`
 // directives from their indexes and resolves each directive back to the
-// original update item before rendering the citation chip. HiCodex normalizes those
+// original update item before rendering the citation chip. Forge normalizes those
 // update items into the same chip data shape used for text-authored citation
 // directives, while preserving the original string attrs for future routing.
 export function automationCitationsFromItems(value: unknown): CitationDirective[] {
@@ -66,7 +66,7 @@ const ATTR_PATTERN = /([A-Za-z_][\w-]*)=(?:"([^"]*)"|'([^']*)'|([^\s"'=]+))/g;
 
 // codex: local-conversation-thread-*.js — Codex's citation chip component
 // reads `index`, `id`, `automationId` (camel + snake), `title`, `name`, `url`,
-// and `source` off the directive payload. HiCodex normalizes the spelling
+// and `source` off the directive payload. Forge normalizes the spelling
 // variants here so consumers only have to look at one canonical shape.
 function parseDirectiveAttrs(body: string): Record<string, string> {
   const attrs: Record<string, string> = {};

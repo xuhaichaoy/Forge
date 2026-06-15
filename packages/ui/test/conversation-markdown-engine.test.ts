@@ -1,4 +1,4 @@
-import { parseMarkdownBlocks } from "../src/state/conversation-markdown-engine";
+import { parseMarkdownBlocks, parseMarkdownInline } from "../src/state/conversation-markdown-engine";
 
 /*
  * Termination regression tests for parseMarkdownBlockLines.
@@ -15,6 +15,7 @@ export default function runConversationMarkdownEngineTests(): void {
   terminatesOnUnclosedBlockOpeners();
   terminatesOnEveryStreamingPrefix();
   keepsClosedMathBlocksAsMath();
+  inlineDisplayMathDoesNotLeakDollars();
 }
 
 function terminatesOnUnclosedBlockOpeners(): void {
@@ -72,6 +73,38 @@ function terminatesOnEveryStreamingPrefix(): void {
   const math = blocks.find((block) => block.kind === "math");
   if (!math || math.kind !== "math" || math.text !== "\\text{score} = QK^\\top") {
     throw new Error(`full lecture should still parse the closed $$ block as math, got ${JSON.stringify(math)}`);
+  }
+}
+
+function inlineDisplayMathDoesNotLeakDollars(): void {
+  // Regression: `$$…$$` sharing a line with prose used to leak a stray `$`
+  // into the text and swallow the closing `$` into the formula (KaTeX got a
+  // malformed `E=mc^2$`). The math text must be clean and no text segment may
+  // contain a bare `$`.
+  const cases: Array<{ text: string; math: string }> = [
+    { text: "能量公式 $$E=mc^2$$ 很有名。", math: "E=mc^2" },
+    { text: "see $$E=mc^2$$ end", math: "E=mc^2" },
+    { text: "$$\\frac{a}{b}$$ is a fraction", math: "\\frac{a}{b}" },
+  ];
+  for (const testCase of cases) {
+    const segments = parseMarkdownInline(testCase.text);
+    const math = segments.find((segment) => segment.kind === "math");
+    if (!math || (math as { text: string }).text !== testCase.math) {
+      throw new Error(
+        `inline display math ${JSON.stringify(testCase.text)} should yield math ${JSON.stringify(testCase.math)}, got ${JSON.stringify(segments)}`,
+      );
+    }
+    const leaked = segments.some(
+      (segment) => segment.kind === "text" && (segment as { text: string }).text.includes("$"),
+    );
+    if (leaked) {
+      throw new Error(`inline display math ${JSON.stringify(testCase.text)} leaked a bare $ into text: ${JSON.stringify(segments)}`);
+    }
+  }
+  // The single-`$` inline form must still work (no regression).
+  const single = parseMarkdownInline("单 $E=mc^2$ 也行");
+  if (!single.some((segment) => segment.kind === "math" && (segment as { text: string }).text === "E=mc^2")) {
+    throw new Error(`single-$ inline math regressed: ${JSON.stringify(single)}`);
   }
 }
 

@@ -149,6 +149,7 @@ export function VirtualizedTurnList({
    * Re-measure whenever the committed DOM disagrees with the windowing input;
    * converges as soon as they agree.
    */
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意不带依赖数组：每次 commit 后校验真实 DOM 滚动距离与窗口输入是否一致，±1px 早退守卫保证收敛（见上方 Verify-after-commit 注释）
   useLayoutEffect(() => {
     const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
     if (!scrollElement) return;
@@ -163,6 +164,7 @@ export function VirtualizedTurnList({
     heights: rowHeightsRef.current,
     distanceFromBottom: scrollState.distanceFromBottom,
     viewportHeight: scrollState.viewportHeight,
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- heightVersion 是 rowHeightsRef 高度表的代理失效键（ref 变更不触发渲染，由该计数器驱动窗口重算），并非多余
   }), [heightVersion, scrollState.distanceFromBottom, scrollState.viewportHeight, turnKeys]);
 
   // Cmd/Ctrl+F jump support: map every render-unit key (including assistantAfter

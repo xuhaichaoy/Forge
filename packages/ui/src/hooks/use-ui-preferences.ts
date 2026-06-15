@@ -14,9 +14,9 @@ import {
 import {
   createI18nBundle,
   formatI18nMessage,
-  loadHiCodexLocale,
-  saveHiCodexLocale,
-  type HiCodexLocale,
+  loadForgeLocale,
+  saveForgeLocale,
+  type ForgeLocale,
 } from "../state/i18n";
 import {
   loadKeymapOverrides,
@@ -49,14 +49,14 @@ export type UiMessageFormatter = (
 ) => string;
 
 export interface UiPreferencesState {
-  uiLocale: HiCodexLocale;
+  uiLocale: ForgeLocale;
   uiThemeSnapshot: UiThemeSnapshot;
   resolvedUiTheme: ResolvedUiTheme;
   uiAppearance: UiAppearancePreferences;
   keymapOverrides: KeymapOverrides;
   notificationPreferences: NotificationPreferences;
   formatUiMessage: UiMessageFormatter;
-  setUiLocale: (locale: HiCodexLocale) => void;
+  setUiLocale: (locale: ForgeLocale) => void;
   setUiThemeMode: (mode: UiThemeMode) => void;
   setUiCodeFontSize: (size: number) => void;
   setUiFontSize: (size: number) => void;
@@ -67,14 +67,14 @@ export interface UiPreferencesState {
 }
 
 export function useUiPreferences(): UiPreferencesState {
-  const [uiLocale, setUiLocaleState] = useState<HiCodexLocale>(() => (
-    loadHiCodexLocale(browserStorage(), typeof navigator === "undefined" ? null : navigator.language)
+  const [uiLocale, setUiLocaleState] = useState<ForgeLocale>(() => (
+    loadForgeLocale(browserStorage(), typeof navigator === "undefined" ? null : navigator.language)
   ));
   const [uiThemeMode, setUiThemeModeState] = useState<UiThemeMode>(() => (
     loadUiThemeMode(browserStorage())
   ));
   // CODEX-REF: loadUiAppearance reads desktop.hicodex.appearance.codeFontSize
-  // and desktop.hicodex.appearance.reducedMotion (see hicodex-desktop-namespace).
+  // and desktop.hicodex.appearance.reducedMotion (see forge-desktop-namespace).
   const [uiAppearance, setUiAppearanceState] = useState<UiAppearancePreferences>(() => (
     loadUiAppearance(browserStorage())
   ));
@@ -107,7 +107,7 @@ export function useUiPreferences(): UiPreferencesState {
 
   /*
    * CODEX-REF: settings.general.appearance.codeFontSize.row commit. Codex
-   * Desktop persists onBlur; HiCodex commits each +/- click. clamp matches
+   * Desktop persists onBlur; Forge commits each +/- click. clamp matches
    * the documented 8-24 px range from appearance-settings-*.js §4.
    */
   const setUiCodeFontSize = useCallback((size: number) => {
@@ -118,7 +118,7 @@ export function useUiPreferences(): UiPreferencesState {
 
   /*
    * CODEX-REF: settings.general.appearance.sansFontSize.row ("UI font size").
-   * Codex sets `--vscode-font-size` and relies on its rem cascade; HiCodex's CSS
+   * Codex sets `--vscode-font-size` and relies on its rem cascade; Forge's CSS
    * is hardcoded px, so the commit publishes `--hc-ui-font-scale` (see the apply
    * effect below) which every `font-size` calc multiplies by. clamp = 10-20.
    */
@@ -166,9 +166,9 @@ export function useUiPreferences(): UiPreferencesState {
     });
   }, []);
 
-  const setUiLocale = useCallback((locale: HiCodexLocale) => {
+  const setUiLocale = useCallback((locale: ForgeLocale) => {
     setUiLocaleState(locale);
-    saveHiCodexLocale(browserStorage(), locale);
+    saveForgeLocale(browserStorage(), locale);
   }, []);
 
   const setNotificationPreferences = useCallback((patch: Partial<NotificationPreferences>) => {
@@ -198,7 +198,7 @@ export function useUiPreferences(): UiPreferencesState {
 
   /*
    * Locale-aware formatter for label projections computed above the
-   * HiCodexIntlProvider. Callers can localize projection labels without using
+   * ForgeIntlProvider. Callers can localize projection labels without using
    * hook-based intl context from the same render tree level.
    */
   const formatUiMessage = useMemo(() => {

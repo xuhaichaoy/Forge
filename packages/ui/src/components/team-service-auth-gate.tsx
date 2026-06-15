@@ -20,6 +20,8 @@ import {
   subscribeSystemThemeVariant,
   type ResolvedUiTheme,
 } from "../state/theme";
+import { loadForgeLocale } from "../state/i18n";
+import { ForgeIntlProvider, useForgeIntl } from "./i18n-provider";
 import { startTopbarWindowDrag } from "../lib/window-drag";
 
 interface TeamServiceAuthGateProps {
@@ -27,6 +29,23 @@ interface TeamServiceAuthGateProps {
 }
 
 export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
+  // The gate renders *outside* ForgeAppBody's ForgeIntlProvider (it gates the
+  // body itself), so it mounts its own provider from the stored locale — the
+  // same boot-read as useUiPreferences. Once the gate unlocks, the nested app
+  // provider takes over for children; the gate itself mirrors how it already
+  // self-manages the theme for the pre-auth screen.
+  const [locale] = useState(() => (
+    loadForgeLocale(browserStorage(), typeof navigator === "undefined" ? null : navigator.language)
+  ));
+  return (
+    <ForgeIntlProvider locale={locale}>
+      <TeamServiceAuthGateBody>{children}</TeamServiceAuthGateBody>
+    </ForgeIntlProvider>
+  );
+}
+
+function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
+  const { formatMessage } = useForgeIntl();
   const [session, setSession] = useState<TeamServiceAuthSession | null>(() => readTeamServiceAuthSession());
   const [checking, setChecking] = useState(() => Boolean(readTeamServiceAuthSession()?.token));
   const [baseUrl, setBaseUrl] = useState(() => readTeamServiceAuthSession()?.baseUrl ?? DEFAULT_TEAM_SERVICE_BASE_URL);
@@ -68,7 +87,11 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
         if (cancelled) return;
         clearTeamServiceAuthSession();
         setSession(null);
-        setError(teamServiceAuthErrorMessage(requestError) || "登录已过期，请重新登录");
+        // Empty string = "session check failed without lib-provided copy"; the
+        // render path resolves it to the localized session-expired fallback.
+        // (This mount-only effect cannot capture formatMessage without widening
+        // its dependency list and re-running the session check on locale swap.)
+        setError(teamServiceAuthErrorMessage(requestError) || "");
       })
       .finally(() => {
         if (!cancelled) setChecking(false);
@@ -92,7 +115,9 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
       setSession(next);
       setBaseUrl(next.baseUrl);
     } catch (requestError) {
-      setError(teamServiceAuthErrorMessage(requestError));
+      // `|| null` keeps the original "empty copy renders nothing" semantics now
+      // that the error row checks `error != null` (see session-expired fallback).
+      setError(teamServiceAuthErrorMessage(requestError, formatMessage) || null);
     } finally {
       setSubmitting(false);
     }
@@ -114,7 +139,10 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
       setServiceConfigOpen(false);
     }
   };
-  const themeToggleLabel = resolvedTheme === "dark" ? "切换到浅色主题" : "切换到深色主题";
+  const themeToggleLabel = resolvedTheme === "dark"
+    ? formatMessage({ id: "hc.command.theme.toggleLight", defaultMessage: "Switch to light theme" })
+    : formatMessage({ id: "hc.command.theme.toggleDark", defaultMessage: "Switch to dark theme" });
+  const serviceSettingsLabel = formatMessage({ id: "hc.teamAuth.serviceSettings", defaultMessage: "Service URL settings" });
   const themeToggle = (
     <button
       type="button"
@@ -147,9 +175,13 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
           onMouseDown={startTopbarWindowDrag}
         />
         {themeToggle}
-        <section className="hc-team-auth-loading" aria-label="正在进入 Forge" role="status">
+        <section
+          className="hc-team-auth-loading"
+          aria-label={formatMessage({ id: "hc.teamAuth.openingAriaLabel", defaultMessage: "Opening Forge" })}
+          role="status"
+        >
           <strong>Forge</strong>
-          <span>正在进入 Forge...</span>
+          <span>{formatMessage({ id: "hc.teamAuth.opening", defaultMessage: "Opening Forge..." })}</span>
         </section>
       </main>
     );
@@ -174,10 +206,10 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
         <button
           type="button"
           className="hc-team-auth-service-settings"
-          aria-label="服务地址设置"
+          aria-label={serviceSettingsLabel}
           aria-expanded={serviceConfigOpen}
           aria-controls="hc-team-auth-service-config"
-          title="服务地址设置"
+          title={serviceSettingsLabel}
           onClick={() => setServiceConfigOpen((current) => !current)}
         >
           <Settings size={17} aria-hidden="true" />
@@ -188,12 +220,12 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
             className="hc-team-auth-service-popover"
             id="hc-team-auth-service-config"
             role="dialog"
-            aria-label="服务地址设置"
+            aria-label={serviceSettingsLabel}
           >
             <label className="hc-team-auth-service">
               <span>
                 <Server size={13} aria-hidden="true" />
-                服务地址
+                {formatMessage({ id: "hc.teamAuth.serviceUrl", defaultMessage: "Service URL" })}
               </span>
               <input
                 id="hc-team-auth-base-url"
@@ -214,7 +246,7 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
 
         <form className="hc-team-auth-form" onSubmit={handleSubmit}>
           <label className="hc-team-auth-field">
-            <span>账号</span>
+            <span>{formatMessage({ id: "hc.teamAuth.username", defaultMessage: "Username" })}</span>
             <input
               value={loginId}
               autoComplete="username"
@@ -223,7 +255,7 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
           </label>
 
           <label className="hc-team-auth-field">
-            <span>密码</span>
+            <span>{formatMessage({ id: "hc.teamAuth.password", defaultMessage: "Password" })}</span>
             <input
               type="password"
               value={password}
@@ -232,20 +264,31 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
             />
           </label>
 
-          {error ? <div className="hc-team-auth-error" role="alert">{error}</div> : null}
+          {error != null ? (
+            <div className="hc-team-auth-error" role="alert">
+              {error || formatMessage({ id: "hc.teamAuth.sessionExpired", defaultMessage: "Your session has expired. Please sign in again." })}
+            </div>
+          ) : null}
 
           <button className="hc-team-auth-submit" type="submit" disabled={submitDisabled}>
             <LogIn size={18} aria-hidden="true" />
-            <span>{submitting ? "处理中..." : "登录并进入"}</span>
+            <span>
+              {submitting
+                ? formatMessage({ id: "hc.teamAuth.signingIn", defaultMessage: "Signing in..." })
+                : formatMessage({ id: "hc.teamAuth.signIn", defaultMessage: "Sign in" })}
+            </span>
           </button>
 
-          <div className="hc-team-auth-alt-login" aria-label="快捷登录">
+          <div
+            className="hc-team-auth-alt-login"
+            aria-label={formatMessage({ id: "hc.teamAuth.quickSignIn", defaultMessage: "Quick sign-in" })}
+          >
             <button
               type="button"
               className="hc-team-auth-dingtalk"
               disabled
-              aria-label="钉钉登录"
-              title="钉钉登录后续接入"
+              aria-label={formatMessage({ id: "hc.teamAuth.dingTalkSignIn", defaultMessage: "Sign in with DingTalk" })}
+              title={formatMessage({ id: "hc.teamAuth.dingTalkComingSoon", defaultMessage: "DingTalk sign-in coming soon" })}
             >
               <DingTalkIcon />
             </button>
@@ -254,7 +297,7 @@ export function TeamServiceAuthGate({ children }: TeamServiceAuthGateProps) {
 
         {checking ? (
           <div className="hc-team-auth-checking" role="status">
-            正在校验登录态...
+            {formatMessage({ id: "hc.teamAuth.verifyingSession", defaultMessage: "Verifying your session..." })}
           </div>
         ) : null}
       </section>

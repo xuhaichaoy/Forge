@@ -8,17 +8,19 @@ const url = `http://${host}:${port}/`;
 
 const existing = await fetchText(url).catch(() => null);
 if (existing !== null) {
-  if (existing.includes("HiCodex") || existing.includes("/src/main.tsx")) {
-    console.log(`Reusing existing HiCodex Vite dev server at ${url}`);
+  if (existing.includes("Forge") || existing.includes("/src/main.tsx")) {
+    console.log(`Reusing existing Forge Vite dev server at ${url}`);
     process.exit(0);
   }
-  console.error(`Port ${port} is already serving a different app. Stop that process or change HiCodex devUrl.`);
+  console.error(`Port ${port} is already serving a different app. Stop that process or change Forge devUrl.`);
   process.exit(1);
 }
 
 const child = spawn("npm", ["run", "dev:server"], {
   cwd: fileURLToPath(new URL("..", import.meta.url)),
   stdio: "inherit",
+  // `npm` is npm.cmd on Windows; Node >=20.12 needs a shell to spawn it.
+  shell: process.platform === "win32",
 });
 
 const forward = (signal) => {

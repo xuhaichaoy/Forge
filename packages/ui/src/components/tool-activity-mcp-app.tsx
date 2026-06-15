@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatUnknown } from "../lib/format";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   createMcpAppBridgeNonce,
   handleMcpAppBridgeRequest,
@@ -41,7 +41,7 @@ export function McpAppToolDetail({
   rawOutput: { heading: string; text: string } | null;
   threadId: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const inlineFrame = detail.inlineFrame;
   const inlineFrameKey = inlineFrame
     ? `${inlineFrame.mimeType}:${inlineFrame.heightPx}:${inlineFrame.prefersBorder ? "1" : "0"}:${inlineFrame.html}`
@@ -112,6 +112,7 @@ export function McpAppToolDetail({
     return () => {
       cancelled = true;
     };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意省略 inlineFrame：inlineFrameKey 是其内容代理键（detail 投影逐渲染新引用），整对象入依赖会令 effect 每渲染重跑
   }, [detail.id, detail.resourceUri, detail.server, inlineFrameKey, onReadMcpResource, threadId]);
 
   const frame = resourceState.frame;
@@ -165,7 +166,7 @@ function McpAppSandboxFrame({
   onMcpAppHostCall?: McpAppHostCallHandler;
   threadId: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const displayModeRef = useRef<McpAppDisplayMode>("inline");
   const hostPortRef = useRef<MessagePort | null>(null);
@@ -177,6 +178,7 @@ function McpAppSandboxFrame({
   const [frameLoadNonce, setFrameLoadNonce] = useState(0);
   const [heightPx, setHeightPx] = useState(frame.heightPx);
   const [sandboxErrorText, setSandboxErrorText] = useState<string | null>(null);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- detail.id/frame.html 是 nonce 的有意重生成键：内容更换时强制产生新 bridge nonce（连带 srcDoc 重建）
   const bridgeNonce = useMemo(() => createMcpAppBridgeNonce(), [detail.id, frame.html]);
   const srcDoc = useMemo(() => mcpAppSandboxSrcDoc(frame, detail, bridgeNonce), [bridgeNonce, detail, frame]);
   const widgetDataKey = useMemo(() => mcpAppWidgetDataKey(detail), [detail]);

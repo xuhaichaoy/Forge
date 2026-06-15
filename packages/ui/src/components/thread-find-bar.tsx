@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface ThreadFindBarProps {
   currentIndex: number;
@@ -26,11 +26,11 @@ export function ThreadFindBar({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const canNavigate = matchCount > 0;
   const hasQuery = query.trim().length > 0;
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex review-runtime-bridge ResultLabel `Re`: `{active} / {matches} results`,
   // active = matches > 0 ? currentIndex + 1 : 0; zero matches renders `0 results`.
   // The label row only appears once a query is present (Codex hides it otherwise),
-  // so HiCodex no longer shows the bare "0/0" placeholder.
+  // so Forge no longer shows the bare "0/0" placeholder.
   const activeIndex = canNavigate ? currentIndex + 1 : 0;
   const countLabel = !hasQuery
     ? null

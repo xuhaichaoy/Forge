@@ -1,5 +1,5 @@
 // codex: electron-menu-shortcuts-*.js (command catalog + accelerator
-// formatting). HiCodex's lightweight registry: descriptors are registered
+// formatting). Forge's lightweight registry: descriptors are registered
 // imperatively by consumers (no preloaded catalog) — keeping the registry
 // free of UI policy decisions.
 
@@ -73,7 +73,7 @@ export function registerCommand(
   handler?: CommandHandler,
 ): void {
   // codex: electron-menu-shortcuts-*.js — duplicate IDs would shadow
-  // existing commands. We replace silently (HiCodex consumers may re-register
+  // existing commands. We replace silently (Forge consumers may re-register
   // on hot-reload), but the descriptor is normalized for downstream defaults.
   const normalized = normalize(descriptor);
   const entry: RegisteredCommand = handler != null ? { ...normalized, handler } : normalized;

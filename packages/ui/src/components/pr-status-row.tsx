@@ -30,7 +30,7 @@ export interface PrStatusRowProps {
 }
 
 // codex: PR-status widget status badge — Codex Desktop encodes badge tone in the
-// class name; HiCodex mirrors with `data-tone` for CSS targetability and a stable test hook.
+// class name; Forge mirrors with `data-tone` for CSS targetability and a stable test hook.
 type BadgeTone = "draft" | "merged" | "closed" | "open";
 
 interface BadgeProjection {
@@ -51,7 +51,7 @@ export function PrStatusRow({ cwd, onClick }: PrStatusRowProps) {
   const [pr, setPr] = useState<GhPrInfo | null>(null);
 
   // codex: PR-status widget `pullRequestStatus` query — Codex Desktop drives this
-  // via react-query; HiCodex uses a plain effect with a cancellation flag so we
+  // via react-query; Forge uses a plain effect with a cancellation flag so we
   // don't have to pull a new dependency into the host bridge.
   useEffect(() => {
     if (!trimmedCwd) {

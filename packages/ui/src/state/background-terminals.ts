@@ -1,5 +1,5 @@
 import type { CommandPanelEntry } from "./command-panel";
-import type { RailEntry, ThreadItem } from "./render-groups";
+import type { RailEntry, ThreadItem } from "./render-group-types";
 import {
   commandOutputText,
   commandText,

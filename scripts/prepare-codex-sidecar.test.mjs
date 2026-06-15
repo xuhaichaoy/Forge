@@ -58,7 +58,7 @@ function writeMinimalMachO(path, arch) {
 }
 
 test("sidecar preparation rejects npm launcher scripts before copying", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-sidecar-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-sidecar-test-"));
   const launcher = join(tempDir, process.platform === "win32" ? "codex.cmd" : "codex");
   const before = targetSnapshot();
   try {
@@ -70,8 +70,8 @@ test("sidecar preparation rejects npm launcher scripts before copying", () => {
       encoding: "utf8",
       env: {
         ...process.env,
-        HICODEX_CODEX_BIN: launcher,
-        HICODEX_CODEX_SOURCE_DIR: resolve(tempDir, "unused-codex-rs"),
+        FORGE_CODEX_BIN: launcher,
+        FORGE_CODEX_SOURCE_DIR: resolve(tempDir, "unused-codex-rs"),
       },
     });
 
@@ -87,7 +87,7 @@ test("sidecar preparation rejects npm launcher scripts before copying", () => {
 });
 
 test("sidecar preparation rejects wrong macOS architecture before copying", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-sidecar-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-sidecar-test-"));
   const wrongArchBin = join(tempDir, "codex");
   const before = targetSnapshot();
   try {
@@ -98,9 +98,9 @@ test("sidecar preparation rejects wrong macOS architecture before copying", () =
       encoding: "utf8",
       env: {
         ...process.env,
-        HICODEX_CODEX_BIN: wrongArchBin,
-        HICODEX_CODEX_SOURCE_DIR: resolve(tempDir, "unused-codex-rs"),
-        HICODEX_CODEX_TARGET: "aarch64-apple-darwin",
+        FORGE_CODEX_BIN: wrongArchBin,
+        FORGE_CODEX_SOURCE_DIR: resolve(tempDir, "unused-codex-rs"),
+        FORGE_CODEX_TARGET: "aarch64-apple-darwin",
       },
     });
 
@@ -116,7 +116,7 @@ test("sidecar preparation rejects wrong macOS architecture before copying", () =
 });
 
 test("sidecar preparation builds Codex sidecar with locked dependencies", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-sidecar-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-sidecar-test-"));
   const fakeBinDir = join(tempDir, "bin");
   const codexSourceDir = join(tempDir, "codex-rs");
     const argsPath = join(tempDir, "cargo-args.json");
@@ -149,8 +149,8 @@ test("sidecar preparation builds Codex sidecar with locked dependencies", () => 
       env: {
         ...process.env,
         FAKE_CARGO_ARGS_PATH: argsPath,
-        HICODEX_CODEX_SOURCE_DIR: codexSourceDir,
-        HICODEX_CODEX_TARGET: "aarch64-apple-darwin",
+        FORGE_CODEX_SOURCE_DIR: codexSourceDir,
+        FORGE_CODEX_TARGET: "aarch64-apple-darwin",
         PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
       },
     });

@@ -3,19 +3,20 @@ import type {
   JsonRpcNotification,
   ThreadGoalClearResponse,
   ThreadGoalSetResponse,
-} from "@hicodex/codex-protocol";
-import type { ThreadGoalStatus } from "@hicodex/codex-protocol/generated/v2/ThreadGoalStatus";
+} from "@forge/codex-protocol";
+import type { ThreadGoalStatus } from "@forge/codex-protocol/generated/v2/ThreadGoalStatus";
 
 import type { ThreadGoalBannerAction } from "../components/thread-goal-banner";
-import { useHiCodexIntl } from "../components/i18n-provider";
+import { useForgeIntl } from "../components/i18n-provider";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 
 /*
  * Thread-goal edit / status / clear actions + the pending-action spinner state,
- * lifted verbatim out of HiCodexApp. Each action sets the pending flag, calls the
+ * lifted verbatim out of ForgeApp. Each action sets the pending flag, calls the
  * thread/goal/* RPC, dispatches the resulting notification, and clears the flag.
- * `dispatch` (stable) stays out of the dep arrays exactly as in the original.
+ * `dispatch` is the stable useReducer dispatch; listing it in the dep arrays
+ * never retriggers anything.
  */
 export function useThreadGoalActions({
   ensureConnected,
@@ -30,7 +31,7 @@ export function useThreadGoalActions({
   clearActiveThreadGoal: () => Promise<void>;
 } {
   const { client, dispatch } = useServices();
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [threadGoalPendingAction, setThreadGoalPendingAction] = useState<ThreadGoalBannerAction | null>(null);
 
   const updateActiveThreadGoal = useCallback(async (
@@ -56,7 +57,7 @@ export function useThreadGoalActions({
       dispatch({ type: "notification", message });
     } catch (error) {
       // codex composer.threadGoal.{statusUpdateError|setError} — status change vs
-      // objective set. HiCodex keeps the RPC detail appended for debugging.
+      // objective set. Forge keeps the RPC detail appended for debugging.
       const descriptor = pendingAction === "status"
         ? { id: "composer.threadGoal.statusUpdateError", defaultMessage: "Failed to update goal" }
         : { id: "composer.threadGoal.setError", defaultMessage: "Failed to set goal" };
@@ -64,7 +65,7 @@ export function useThreadGoalActions({
     } finally {
       setThreadGoalPendingAction(null);
     }
-  }, [client, ensureConnected, activeThreadId, formatMessage]);
+  }, [client, dispatch, ensureConnected, activeThreadId, formatMessage]);
 
   const editActiveThreadGoal = useCallback((objective: string) => (
     updateActiveThreadGoal({ objective }, "edit")
@@ -96,7 +97,7 @@ export function useThreadGoalActions({
     } finally {
       setThreadGoalPendingAction(null);
     }
-  }, [client, ensureConnected, activeThreadId, formatMessage]);
+  }, [client, dispatch, ensureConnected, activeThreadId, formatMessage]);
 
   return { threadGoalPendingAction, editActiveThreadGoal, setActiveThreadGoalStatus, clearActiveThreadGoal };
 }

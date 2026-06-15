@@ -2,7 +2,7 @@ import type {
   CommandPanelEntry,
   CommandPanelKind,
   CommandPanelState,
-} from "./command-panel";
+} from "./command-panel-types";
 
 export function isAppBackedPanel(panel: CommandPanelKind | null | undefined): panel is "apps" | "plugins" {
   return panel === "apps" || panel === "plugins";

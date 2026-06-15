@@ -1,4 +1,4 @@
-import type { BrowserStorageLike } from "./image-generation-tool";
+import type { BrowserStorageLike } from "./image-generation-tool-types";
 
 export const DESKTOP_ONBOARDING_LAST_COMPLETED_KEY = "last_completed_onboarding";
 export const DESKTOP_PROJECTLESS_ONBOARDING_COMPLETED_KEY = "electron:onboarding-projectless-completed";
@@ -7,7 +7,9 @@ export const DESKTOP_HIDE_FIRST_NEW_THREAD_PROMOS_KEY = "electron:onboarding-hid
 export const DESKTOP_AMBIENT_SUGGESTIONS_ENABLED_KEY = "ambient-suggestions-enabled";
 export const DESKTOP_AMBIENT_SUGGESTIONS_CONSENT_SEEN_KEY = "has-seen-ambient-suggestions-connected-apps-consent";
 export const DESKTOP_AMBIENT_SUGGESTIONS_CONNECT_APPS_ROW_DISMISSED_KEY = "has-dismissed-ambient-suggestions-connect-apps-row";
-export const HICODEX_ONBOARDING_INSTALLATION_ID_KEY = "hicodex:onboarding-installation-id";
+// Deliberate legacy value: the old-brand "hicodex:" localStorage key stays so
+// existing installation ids survive the Forge rebrand (identifier-only rename).
+export const FORGE_ONBOARDING_INSTALLATION_ID_KEY = "hicodex:onboarding-installation-id";
 
 export interface OnboardingSnapshot {
   installationId: string | null;
@@ -60,7 +62,7 @@ export function recordHostOnboardingSignal(
   const installationId = normalizedInstallationId(signal?.installationId);
   let firstLaunch = normalizeFirstLaunch(signal?.firstLaunch);
   if (installationId && storage) {
-    const previousInstallationId = readStoredString(storage, HICODEX_ONBOARDING_INSTALLATION_ID_KEY);
+    const previousInstallationId = readStoredString(storage, FORGE_ONBOARDING_INSTALLATION_ID_KEY);
     const newInstallationMarker = previousInstallationId !== installationId;
     if (previousInstallationId && previousInstallationId !== installationId) {
       firstLaunch = true;
@@ -68,7 +70,7 @@ export function recordHostOnboardingSignal(
     if (firstLaunch === true && !newInstallationMarker && currentInstallationFirstLaunchHandled(storage)) {
       firstLaunch = false;
     }
-    writeStoredString(storage, HICODEX_ONBOARDING_INSTALLATION_ID_KEY, installationId);
+    writeStoredString(storage, FORGE_ONBOARDING_INSTALLATION_ID_KEY, installationId);
     if (firstLaunch === true && newInstallationMarker) {
       writeStoredBoolean(storage, DESKTOP_PROJECTLESS_ONBOARDING_COMPLETED_KEY, false);
       writeStoredBoolean(storage, DESKTOP_WELCOME_PENDING_KEY, true);

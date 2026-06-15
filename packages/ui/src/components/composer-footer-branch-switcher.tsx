@@ -3,13 +3,13 @@
 // `host_git_checkout_branch` from the composer footer. Codex Desktop splits
 // this into `useGitDefaultBranch` + `useGitRecentBranches` + a search query;
 // we collapse them into a single host call (`listGitBranches`) plus
-// client-side filtering so HiCodex doesn't need react-query yet.
+// client-side filtering so Forge doesn't need react-query yet.
 // codex: branch-picker-extension — picker grew three Codex Desktop parity
 // features: a "Default" chip on the default branch, a "Remote branches"
 // section sourced from `git branch -r`, and a "Create new branch" form that
 // shells out to `git checkout -b`.
 import { ChevronDown, GitBranch, Plus, Search } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { useCallback, useRef, useState } from "react";
 import { __testing, isDefaultBranchMarker } from "./composer-branch-helpers";
 import type { PartitionedBranches } from "./composer-branch-helpers";
@@ -32,7 +32,7 @@ export function ComposerFooterBranchSwitcher({
   onBranchSwitched,
   onError,
 }: ComposerFooterBranchSwitcherProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);

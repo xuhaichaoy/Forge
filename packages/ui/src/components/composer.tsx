@@ -4,6 +4,7 @@ import { useComposerSingleLineLayout } from "../hooks/use-composer-single-line-l
 import { AboveComposerPlanSuggestion } from "./above-composer-plan-suggestion";
 import { useComposerAttachmentPickerWorkflow } from "./composer-attachment-picker-workflow";
 import { useComposerAttachmentTransfer } from "./composer-attachment-transfer";
+import type { ComposerBrowseKind } from "./composer-types";
 import {
   ComposerAttachmentStrip,
   ComposerDropOverlay,
@@ -25,7 +26,7 @@ import {
   useComposerMentionWorkflow,
 } from "./composer-mention-workflow";
 import { useComposerSlashWorkflow } from "./composer-slash-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   CLOSED_ATTACHMENT_PICKER_STATE,
   closeAttachmentPicker,
@@ -41,7 +42,7 @@ import {
   type SlashCommand,
 } from "../state/composer-workflow";
 
-export type ComposerBrowseKind = "file" | "image";
+export type { ComposerBrowseKind } from "./composer-types";
 export type ComposerLayoutMode = "multiline" | "auto-single-line";
 
 export interface ComposerProps {
@@ -69,7 +70,7 @@ export interface ComposerProps {
    * codex: composer-*.js — Codex Desktop keeps the model-intelligence /
    * reasoning-effort / permissions chips INSIDE the composer bubble's footer
    * (`composer-footer` grid middle column), not in the below-bubble strip.
-   * HiCodex injects that chip cluster here as a slot; the branch + work-mode
+   * Forge injects that chip cluster here as a slot; the branch + work-mode
    * controls stay in the external below-bubble footer.
    */
   footerSettings?: ReactNode;
@@ -104,7 +105,7 @@ export function Composer({
   onInterrupt,
   onSlashCommand,
 }: ComposerProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const composerRef = useRef<HTMLFormElement | null>(null);
   const composerFieldRef = useRef<HTMLDivElement | null>(null);
   const footerLeftMeasureRef = useRef<HTMLDivElement | null>(null);
@@ -147,7 +148,7 @@ export function Composer({
   const closeMentionPeerPopovers = useCallback(() => {
     setSlashOpen(false);
     setAttachmentPicker(closeAttachmentPicker());
-  }, []);
+  }, [setSlashOpen]);
 
   const {
     closeMentionPicker,
@@ -178,7 +179,7 @@ export function Composer({
    * mounted into a composer-local floating target only when `!Jr`; Desktop's
    * `Jr = Pt || Ye || Xe || rn != null || Gr` suppresses the suggestion for
    * pending-request replacement surfaces and for the active composer overlay
-   * state (`Gr`). HiCodex maps `Gr` to slash/mention/attachment popovers.
+   * state (`Gr`). Forge maps `Gr` to slash/mention/attachment popovers.
    */
   const shouldRenderPlanSuggestion = showPlanKeywordSuggestion && pendingRequestContent == null && !hasComposerPopover;
 
@@ -283,7 +284,7 @@ export function Composer({
         className="hc-composer"
         /*
          * Do NOT mark the form with `data-codex-composer`. Codex Desktop and
-         * HiCodex both expect `document.querySelector("[data-codex-composer]")`
+         * Forge both expect `document.querySelector("[data-codex-composer]")`
          * to return the ProseMirror editor view's DOM node so
          * `insertPromptEditorText` can resolve a `pmViewDesc` and dispatch the
          * keystroke through the editor (`prompt-editor.tsx::insertPromptEditorText`).

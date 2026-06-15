@@ -4,17 +4,19 @@ import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  HiCodexApp,
+  ForgeApp,
   hydrateAppSettingsFromDisk,
   installAppSettingsAutoPersist,
   loadNotificationPreferences,
   shouldNotifyTurnCompletion,
-} from "@hicodex/ui";
-import "@hicodex/ui/styles.css";
+} from "@forge/ui";
+import "@forge/ui/styles.css";
 import "./styles.css";
 
-const APP_SERVER_EVENT_NAME = "hicodex://app-server-event";
-const NATIVE_SHELL_EVENT_NAME = "hicodex://native-shell-event";
+const APP_SERVER_EVENT_NAME = "forge://app-server-event";
+const NATIVE_SHELL_EVENT_NAME = "forge://native-shell-event";
+// Deliberate legacy value: the old-brand "hicodex." localStorage key stays so
+// previously stored crash flags survive the Forge rebrand (identifier-only rename).
 const RENDERER_FATAL_ERROR_STORAGE_KEY = "hicodex.rendererFatalError.v1";
 
 type NativeShellEvent = {
@@ -81,7 +83,7 @@ async function bootstrapRenderer(): Promise<void> {
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <RendererErrorBoundary>
-        <HiCodexApp />
+        <ForgeApp />
       </RendererErrorBoundary>
     </React.StrictMode>,
   );
@@ -100,7 +102,7 @@ function RendererFatalErrorView({ title, detail }: { title: string; detail: stri
       <section style={{ maxWidth: 920 }}>
         <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 650 }}>{title}</h1>
         <p style={{ margin: "0 0 16px", color: "#d4d4d8", lineHeight: 1.5 }}>
-          HiCodex caught a renderer error instead of leaving the window blank.
+          Forge caught a renderer error instead of leaving the window blank.
         </p>
         <pre style={{
           margin: 0,
@@ -166,9 +168,9 @@ function reportRendererFatalError(
     // Best effort only; the visible fatal screen is the primary diagnostic.
   }
   if (severity === "fatal") {
-    console.error("[HiCodex renderer fatal]", detail);
+    console.error("[Forge renderer fatal]", detail);
   } else {
-    console.warn("[HiCodex renderer nonfatal]", detail);
+    console.warn("[Forge renderer nonfatal]", detail);
   }
 }
 
@@ -267,12 +269,12 @@ function handleNativeShellEvent(event: NativeShellEvent): void {
     case "search":
     case "settings":
       window.dispatchEvent(
-        new CustomEvent("hicodex:native-shell-action", { detail: event }),
+        new CustomEvent("forge:native-shell-action", { detail: event }),
       );
       return;
     case "openDeepLink":
       window.dispatchEvent(
-        new CustomEvent("hicodex:native-deep-link", { detail: event }),
+        new CustomEvent("forge:native-deep-link", { detail: event }),
       );
       if (event.supported === false) {
         console.warn(
@@ -283,7 +285,7 @@ function handleNativeShellEvent(event: NativeShellEvent): void {
       return;
     default:
       window.dispatchEvent(
-        new CustomEvent("hicodex:native-shell-action", { detail: event }),
+        new CustomEvent("forge:native-shell-action", { detail: event }),
       );
   }
 }
@@ -333,13 +335,20 @@ function handleTurnCompletionNotification(event: HostEvent): void {
       turnId,
       status,
     },
-  }).catch((error) => {
+  }).catch((error: unknown) => {
+    // host commands reject with structured {code, message} payloads now —
+    // surface a stable string shape regardless of payload form.
+    const message = error instanceof Error
+      ? error.message
+      : typeof error === "object" && error !== null && "message" in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
     window.dispatchEvent(
-      new CustomEvent("hicodex:native-turn-completed", {
-        detail: { title, body, threadId, turnId, status, error },
+      new CustomEvent("forge:native-turn-completed", {
+        detail: { title, body, threadId, turnId, status, error: message },
       }),
     );
-    console.warn("failed to show native turn completion notification", error);
+    console.warn("failed to show native turn completion notification", message);
   });
 }
 

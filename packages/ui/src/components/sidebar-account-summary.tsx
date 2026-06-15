@@ -1,17 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Gauge, LogOut, Settings, X } from "lucide-react";
+import { LogOut, Settings, X } from "lucide-react";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import {
   projectAccountMenuItems,
   type AccountMenuItem,
   type AccountViewModel,
 } from "../state/account-state";
-import {
-  compactWindowLabel,
-  type RateLimitCompactSummary,
-} from "../state/rate-limit-summary";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export function SidebarAccountSummary({
   accountView,
@@ -29,18 +25,22 @@ export function SidebarAccountSummary({
   const layerRef = useRef<HTMLDivElement | null>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismissibleLayer(open, layerRef, close);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
+  // Subscription plan/usage is surfaced via the composer model picker, not here;
+  // the account tooltip stays identity + auth + any error.
   const title = [
     accountView.email,
     accountView.authLabel,
-    accountView.planLabel,
-    accountView.quotaLabel,
-    accountView.quotaDetail,
     accountView.error,
   ].filter(Boolean).join("\n");
   const items = projectAccountMenuItems(accountView);
   const actionItems = items.filter((item) => item.action);
-  const infoItems = items.filter((item) => !item.action);
+  // The ChatGPT subscription plan/usage rows are redundant with the composer's
+  // model picker (where the subscription is actually selected), so the account
+  // dropdown keeps only identity + any account error, not plan/quota.
+  const infoItems = items.filter(
+    (item) => !item.action && item.id !== "plan" && item.id !== "quota" && item.id !== "quotaDetail",
+  );
   const runMenuItem = (item: AccountMenuItem) => {
     if (item.action === "account/signOut") {
       if (item.disabled) return;
@@ -100,9 +100,6 @@ export function SidebarAccountSummary({
               {item.value && <strong>{item.value}</strong>}
             </div>
           ))}
-          {accountView.rateLimitSummary && (
-            <SidebarRateLimitSummary summary={accountView.rateLimitSummary} />
-          )}
           {actionItems.map((item) => (
             <button
               key={item.id}
@@ -135,7 +132,7 @@ export function SidebarAccountSummary({
 /*
  * codex profile-dropdown logOutConfirmation dialog. Clean-room confirmation
  * gate shown before signing out (Codex pops the same Log out? / "You'll need to
- * sign in again…" / Log out · Cancel dialog). Reuses HiCodex's existing
+ * sign in again…" / Log out · Cancel dialog). Reuses Forge's existing
  * settings-backdrop + thread-dialog-panel chrome and i18n ids that mirror
  * codex.profileDropdown.logOutConfirmation.*.
  */
@@ -148,7 +145,7 @@ function LogOutConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const title = formatMessage({ id: "codex.profileDropdown.logOutConfirmation.title", defaultMessage: "Log out?" });
   return (
     <div className="hc-settings-backdrop hc-log-out-confirm-backdrop" data-theme={resolvedUiTheme} role="presentation" onMouseDown={onCancel}>
@@ -177,32 +174,6 @@ function LogOutConfirmDialog({
           </button>
         </footer>
       </section>
-    </div>
-  );
-}
-
-function SidebarRateLimitSummary({ summary }: { summary: RateLimitCompactSummary }) {
-  return (
-    <div className="hc-sidebar-rate-limit-summary" role="group" aria-label={summary.heading}>
-      <div className="hc-sidebar-rate-limit-summary-heading">
-        <Gauge size={14} aria-hidden="true" />
-        <span>{summary.heading}</span>
-        {summary.remainingText && <small>{summary.remainingText}</small>}
-      </div>
-      <div className="hc-sidebar-rate-limit-summary-rows">
-        {summary.sections.map((section) => (
-          <div className="hc-sidebar-rate-limit-section" key={section.id}>
-            {section.label && <div className="hc-sidebar-rate-limit-section-label">{section.label}</div>}
-            {section.windows.map((window) => (
-              <div className="hc-sidebar-rate-limit-row" key={`${section.id}:${window.id}`}>
-                <span className="hc-sidebar-rate-limit-window">{compactWindowLabel(window.label)}</span>
-                <span className="hc-sidebar-rate-limit-remaining">{window.remainingText}</span>
-                {window.resetText && <small>{window.resetText}</small>}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

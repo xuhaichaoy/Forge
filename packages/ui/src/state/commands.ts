@@ -1,7 +1,7 @@
 /* codex: electron-menu-shortcuts-*.js — command catalog subset. */
-// HiCodex migrates the keyboard shortcut entries that already have a
-// handler (or a sensible fallback) inside HiCodexApp. Descriptors are
-// declared without handlers; HiCodexApp registers handlers at mount.
+// Forge migrates the keyboard shortcut entries that already have a
+// handler (or a sensible fallback) inside ForgeApp. Descriptors are
+// declared without handlers; ForgeApp registers handlers at mount.
 //
 // `title` and `description` strings on each descriptor mirror the upstream
 // `codex.commandMenuTitle.<id>` (native `menuTitle`) / `codex.commandDescription.<id>`
@@ -12,7 +12,7 @@
 // `rg "codex\\.commandMenuTitle\\.<id>|codex\\.commandDescription\\.<id>"`.
 // The exceptions are `copyConversationMarkdown` (no native `menuTitle`/
 // `menuTitleIntlId` upstream, only a description id, so its title keeps a
-// HiCodex-original id) and `thread1`..`thread9`, which HiCodex renders through
+// Forge-original id) and `thread1`..`thread9`, which Forge renders through
 // a single parameterized "Switch to thread N" / "Activate thread N in the
 // sidebar." original (the upstream `codex.commandMenuTitle.thread{1..9}` titles
 // are "Go to Chat N" with one shared `codex.commandDescription.threadSlot`).
@@ -288,7 +288,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
   // Codex's base `defaultKeybindings:[{key:`CmdOrCtrl+[`},{key:`MouseBack`}]`
   // binds the mouse "back" side button (button 3) alongside the keyboard
   // accelerator. The `MouseBack` pseudo-key is consumed by the global mouse
-  // navigation handler in HiCodexApp (mirrors app-main `Ij`/`Fj`); the keyboard
+  // navigation handler in ForgeApp (mirrors app-main `Ij`/`Fj`); the keyboard
   // matcher treats it as an inert entry (no DOM key is ever named "MouseBack").
   {
     id: COMMAND_IDS.navigateBack,
@@ -370,7 +370,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
   // codex: electron-menu-shortcuts-*.js#copyConversationMarkdown — no
   // upstream default keybinding (chunk only carries titleIntlId/descriptionIntlId).
   // Codex ICU `threadHeader.copyConversationMarkdown` defaultMessage `Copy as Markdown`.
-  // HiCodex offers it as a command-menu entry; menu items beyond the active
+  // Forge offers it as a command-menu entry; menu items beyond the active
   // thread chrome can opt into it as the surface lands.
   {
     id: COMMAND_IDS.copyConversationMarkdown,
@@ -523,7 +523,7 @@ export const COMMAND_DESCRIPTORS: CommandDescriptor[] = [
  * that would freeze the active locale at module-load time). The id maps mirror
  * Codex Desktop's `codex.commandMenuTitle.<id>` (native menu title) /
  * `codex.commandDescription.<id>` ICU keys (verified against the bundle);
- * `copyConversationMarkdown` has no upstream menu title (HiCodex-original title
+ * `copyConversationMarkdown` has no upstream menu title (Forge-original title
  * id) and `thread1`..`thread9` render through a parameterized original id.
  */
 const COMMAND_TITLE_INTL_ID: Readonly<Record<string, string>> = {
@@ -554,8 +554,8 @@ const COMMAND_TITLE_INTL_ID: Readonly<Record<string, string>> = {
   [COMMAND_IDS.copyDeeplink]: "codex.commandMenuTitle.copyDeeplink",
   // codex: electron-menu-shortcuts-*.js#copyConversationMarkdown has no native
   // `menuTitle`/`menuTitleIntlId` (only descriptionIntlId), so there is no
-  // upstream `codex.commandMenuTitle.copyConversationMarkdown`. HiCodex surfaces
-  // it as a command-menu entry, so its title keeps a HiCodex-original id.
+  // upstream `codex.commandMenuTitle.copyConversationMarkdown`. Forge surfaces
+  // it as a command-menu entry, so its title keeps a Forge-original id.
   [COMMAND_IDS.copyConversationMarkdown]: "hc.command.copyConversationMarkdown.title",
   [COMMAND_IDS.showKeyboardShortcuts]: "codex.command.showKeyboardShortcuts",
 };
@@ -586,7 +586,7 @@ const COMMAND_DESCRIPTION_INTL_ID: Readonly<Record<string, string>> = {
   [COMMAND_IDS.showKeyboardShortcuts]: "codex.commandDescription.showKeyboardShortcuts",
 };
 
-// codex: electron-menu-shortcuts-*.js — `thread1`..`thread9` are HiCodex
+// codex: electron-menu-shortcuts-*.js — `thread1`..`thread9` are Forge
 // originals (no upstream ICU). The localized title/description are built from a
 // single parameterized id + the slot ordinal so the dictionary stays compact.
 const THREAD_SLOT_IDS = new Set<string>([
@@ -655,7 +655,7 @@ export function commandDescriptorDescription(descriptor: CommandDescriptor): str
  * codex: electron-menu-shortcuts-*.js — static descriptor → label.
  *
  * `commandAcceleratorLabel` from command-registry reads the *registered*
- * registry which is populated by HiCodexApp's mount effect. UI components
+ * registry which is populated by ForgeApp's mount effect. UI components
  * that render on first paint (sidebar, conversation chrome) need the
  * keybinding label before that effect commits, so we expose a pure static
  * lookup that reads `COMMAND_DESCRIPTORS` directly. Same formatter as
@@ -683,7 +683,7 @@ export function descriptorAcceleratorLabel(commandId: string): string | undefine
 // Maps a CommandPanelEntry.id to the matching COMMAND_IDS descriptor so the
 // command palette can render an accelerator hint (kbd) on the right side of
 // each row. The Codex command dialog drives this via its descriptor catalog;
-// HiCodex entries use string IDs (e.g. `command:new`, `command:search-files`,
+// Forge entries use string IDs (e.g. `command:new`, `command:search-files`,
 // `command:settings`) which need to be normalized before the descriptor
 // lookup. Anything that doesn't correspond to a registered shortcut returns
 // undefined and the renderer simply omits the trailing kbd.
@@ -693,7 +693,7 @@ const COMMAND_PANEL_ENTRY_ID_TO_COMMAND_ID: Readonly<Record<string, string>> = {
   // registered keyboard shortcut are listed here — the rest are accelerator-less.
   "command:new": COMMAND_IDS.newThread,
   "command:settings": COMMAND_IDS.settings,
-  // Bespoke menu entries surfaced by commandMenuEntries (HiCodexApp.tsx).
+  // Bespoke menu entries surfaced by commandMenuEntries (ForgeApp.tsx).
   "command:search-files": COMMAND_IDS.searchFiles,
   "command:toggle-thread-pin": COMMAND_IDS.toggleThreadPin,
 };

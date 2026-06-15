@@ -11,7 +11,7 @@ import type { UserMessageContentPart } from "../state/render-groups";
 import { ContextMenu } from "./context-menu";
 import { FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export function UserMessageChipView({
   part,
@@ -23,7 +23,7 @@ export function UserMessageChipView({
   variant?: "inline" | "attachment";
 }) {
   const menuActions = useContext(FileCitationMenuContext);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { icon, label, prefix } = chipVisual(part);
   const displayLabel = `${prefix}${label}`;

@@ -1,18 +1,18 @@
-import type { JsonRpcNotification } from "@hicodex/codex-protocol";
+import type { JsonRpcNotification } from "@forge/codex-protocol";
 import { accountRefreshScopeForNotification } from "./account-state";
 import {
   appListRefreshMessage,
   invalidateAppListForNotification,
   mcpOauthLoginRefreshMessage,
 } from "./app-list";
-import type { NotificationInvalidationState } from "./codex-reducer";
+import type { NotificationInvalidationState } from "./codex-ui-types";
 
 export function applyInvalidation(
   invalidation: NotificationInvalidationState,
   message: JsonRpcNotification,
 ): NotificationInvalidationState {
   // Each block accumulates into `next` independently, mirroring the original
-  // HiCodexApp's independent `if` blocks so a notification method can trigger
+  // ForgeApp's independent `if` blocks so a notification method can trigger
   // more than one counter (e.g. mcpServer/oauthLogin/completed bumps BOTH
   // appList AND mcpStatus; an early-return would drop the second bump).
   let next = invalidation;

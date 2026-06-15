@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   COMMAND_DESCRIPTORS,
   descriptorAcceleratorLabel,
@@ -14,7 +14,7 @@ import { KeyboardShortcutRow } from "./keyboard-shortcuts-settings-row";
 
 /*
  * CODEX-REF: keyboard-shortcuts-settings-*.js — inline (non-modal)
- * keyboard shortcuts editor. Replaces the prior HiCodex modal-style
+ * keyboard shortcuts editor. Replaces the prior Forge modal-style
  * KeyCaptureDialog with the same UX Codex Desktop ships:
  *
  *   3-column table — Command | Keybinding | Actions
@@ -25,7 +25,7 @@ import { KeyboardShortcutRow } from "./keyboard-shortcuts-settings-row";
  *     colSpan = 2 in Codex). Conflict warning renders inline beneath the
  *     input ("Used by {commandTitle}"). Codex does NOT block commit on
  *     conflict — the user can still finalize the new binding.
- *   - Shift+click on pencil = append-mode (Codex spec). HiCodex's descriptor
+ *   - Shift+click on pencil = append-mode (Codex spec). Forge's descriptor
  *     schema doesn't expose multi-binding lists yet, so Shift+click currently
  *     behaves the same as regular click (replace). Tracked as future work.
  *   - Esc / blur cancels capture without mutation.
@@ -60,7 +60,7 @@ export function KeyboardShortcutsSettingsPanel({
   onSetShortcut,
   onResetShortcut,
 }: KeyboardShortcutsSettingsPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [captured, setCaptured] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -93,7 +93,7 @@ export function KeyboardShortcutsSettingsPanel({
       const accelerator = normalizeKeyEvent(event);
       if (accelerator) {
         // CODEX-REF: spec §11 — commit immediately on final key release.
-        // HiCodex commits on the keydown that completes the combo (no keyup
+        // Forge commits on the keydown that completes the combo (no keyup
         // wait); simpler and matches user expectations in practice.
         onSetShortcut(editingId, accelerator);
         setEditingId(null);
@@ -152,7 +152,7 @@ export function KeyboardShortcutsSettingsPanel({
          * header `Command`/`Keybinding`/`Actions[sr-only]` =
          * settings.keyboardShortcuts.table.command/keybinding/actions) with per-section
          * group-header rows in the tbody — matching Codex's single-table layout (audit-6),
-         * not HiCodex's prior per-section tables. NOTE (visual): needs an A/B check against
+         * not Forge's prior per-section tables. NOTE (visual): needs an A/B check against
          * Codex.app per the visual-alignment rule; verified to compile + pass tests headless.
          */
         <table className="hc-keyboard-settings-table">

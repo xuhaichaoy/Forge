@@ -1,4 +1,4 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { isProjectlessThreadCwd } from "./thread-workflow";
 
 /**
@@ -148,7 +148,7 @@ export function threadSortAt(thread: Thread, sortKey: SidebarSortKey): number {
 }
 
 /**
- * Desktop groups sidebar entries by connection/project. HiCodex only has local
+ * Desktop groups sidebar entries by connection/project. Forge only has local
  * app-server threads today, so we mirror the local project half by cwd while
  * preserving the already sorted thread order inside each group.
  */
@@ -159,7 +159,7 @@ export function projectSidebarThreadGroups(
   const organizeMode = context.organizeMode ?? DEFAULT_SIDEBAR_ORGANIZE_MODE;
   if (organizeMode === "recent") {
     // codex app-main `sidebarElectron.recentThreads` = "Recent chats" (description
-    // "List label for threads in recent section"). Matches HiCodex's own command-panel
+    // "List label for threads in recent section"). Matches Forge's own command-panel
     // "Recent chats" group label; the bare "Recent" was an internal inconsistency.
     return threads.length === 0
       ? []
@@ -283,7 +283,7 @@ export function workspaceRootLabel(root: string): string {
 /**
  * Desktop's composer project dropdown (`composer-*.js::Db/Mb`) is fed by the
  * same project groups as the sidebar and selects local projects by root path.
- * HiCodex only has local app-server threads for now, so expose the cwd-backed
+ * Forge only has local app-server threads for now, so expose the cwd-backed
  * roots that already exist in the thread list.
  */
 export function projectSidebarWorkspaceRootOptions(threads: Thread[]): SidebarWorkspaceRootOption[] {
@@ -408,7 +408,7 @@ function numericField(thread: Thread, key: "createdAt" | "updatedAt"): number {
  * 已经把 thread.status 切到 `{ type: "idle" }` 当 turn/completed 通知到达，
  * 所以只要信任 thread.status.type，spinner 就会随 thread 结束立即停。
  *
- * HiCodex 之前 4 个 fallback 检查（isInProgress / resumeState / turns[-1].status）
+ * Forge 之前 4 个 fallback 检查（isInProgress / resumeState / turns[-1].status）
  * 让 idle thread 仍可能被判为 active——因为 `thread.turns` 数组里 latest turn
  * 的 status 字段从未被 turn/completed 通知更新（finishTurn 只改 thread.status，
  * 不动 turns）。结果 sidebar 圆圈动画在 thread 完成后不停。
@@ -480,7 +480,7 @@ export function normalizeWorkspaceRoot(value: string): string {
   return trimmed.replace(/[\\/]+$/, "") || trimmed;
 }
 
-// HiCodex divergence from this module's `workspaceRootLabel` (which maps ~ / / to
+// Forge divergence from this module's `workspaceRootLabel` (which maps ~ / / to
 // "Local"): the workspace-root *option* label is just the trailing path segment.
 function workspaceRootOptionLabel(root: string): string {
   return root.split(/[\\/]+/).filter(Boolean).pop() || root;

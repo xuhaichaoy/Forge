@@ -1,4 +1,4 @@
-import type { ThreadItem } from "@hicodex/codex-protocol";
+import type { ThreadItem } from "@forge/codex-protocol";
 import type { AccumulatedThreadItem } from "./render-groups";
 
 interface WorkedForTurnLike {

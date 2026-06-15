@@ -2,13 +2,14 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { JsonRpcMessage } from "@hicodex/codex-protocol";
+import type { JsonRpcMessage } from "@forge/codex-protocol";
 import { recordHostOnboardingSignal } from "../state/onboarding";
-import type { BrowserStorageLike } from "../state/image-generation-tool";
+import type { BrowserStorageLike } from "../state/image-generation-tool-types";
+import { formatError } from "./format";
 
-const APP_SERVER_EVENT_NAME = "hicodex://app-server-event";
-const NATIVE_SHELL_EVENT_NAME = "hicodex://native-shell-event";
-const BROWSER_RUNTIME_EVENT_NAME = "hicodex://browser-runtime-event";
+const APP_SERVER_EVENT_NAME = "forge://app-server-event";
+const NATIVE_SHELL_EVENT_NAME = "forge://native-shell-event";
+const BROWSER_RUNTIME_EVENT_NAME = "forge://browser-runtime-event";
 
 export interface HostStatus {
   running: boolean;
@@ -187,7 +188,14 @@ export type HostEvent =
   | { type: "json"; value: JsonRpcMessage }
   | { type: "stdout"; line: string }
   | { type: "stderr"; line: string }
-  | { type: "lifecycle"; message: string }
+  /*
+   * `kind` is the machine-readable lifecycle classification (serde snake_case
+   * of forge_host::LifecycleKind: "started" | "stopped" | "exited" |
+   * "stdout_closed" | "config_missing"). Optional because payloads from hosts
+   * predating the structured contract carry only the human-readable message.
+   * Typed as plain string so unknown future kinds stay representable.
+   */
+  | { type: "lifecycle"; kind?: string; message: string }
   | { type: "error"; message: string };
 
 export interface NativeShellAction {
@@ -197,14 +205,87 @@ export interface NativeShellAction {
   url?: string | null;
 }
 
+/*
+ * Structured error contract for every fallible host command. The Rust side
+ * rejects with `{ code, message }`, where `code` is a stable spelling from
+ * one of two vocabularies — `HostError::code()` for forge-host errors (e.g.
+ * "already_running", "not_running") and the failure-class constructors of
+ * `command_error::HostCommandError` for command-layer errors ("invalid_input",
+ * "not_found", "io_failed", "process_failed", "parse_failed", "unsupported")
+ * — and `message` is the unchanged human-readable text. Hosts predating the
+ * contract rejected with the bare message string — `toHostCommandError`
+ * accepts both shapes so callers can match on `code` with a text fallback.
+ */
+export class HostCommandError extends Error {
+  readonly code: string | null;
+
+  constructor(message: string, code: string | null = null) {
+    super(message);
+    this.name = "HostCommandError";
+    this.code = code;
+  }
+}
+
+/** The stable machine-readable code carried by a host command rejection, if any. */
+export function hostCommandErrorCode(error: unknown): string | null {
+  if (error instanceof HostCommandError) return error.code;
+  if (error && typeof error === "object") {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+  }
+  return null;
+}
+
+/**
+ * Normalizes a raw invoke rejection from a host command. Object payloads
+ * contribute `code` + `message`; legacy plain-string payloads become the
+ * message verbatim (no code). The message text is preserved byte-for-byte in
+ * both shapes — existing text-matching consumers keep working.
+ */
+export function toHostCommandError(error: unknown): HostCommandError {
+  if (error instanceof HostCommandError) return error;
+  if (typeof error === "string") return new HostCommandError(error);
+  if (error && typeof error === "object") {
+    const { code, message } = error as { code?: unknown; message?: unknown };
+    if (typeof message === "string") {
+      return new HostCommandError(message, typeof code === "string" ? code : null);
+    }
+  }
+  return new HostCommandError(formatError(error));
+}
+
+/**
+ * `invoke` with the rejection normalized through `toHostCommandError`. Every
+ * fallible host command now rejects with the structured `{ code, message }`
+ * payload (legacy plain-string payloads are still accepted), so callers get a
+ * `HostCommandError` (an `Error` subclass) whose `message` is byte-identical
+ * to the old string rejection — `formatError` and text-matching consumers
+ * keep working unchanged while `code` becomes matchable.
+ */
+function invokeHost<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invoke<T>(command, args).catch((error: unknown) => {
+    throw toHostCommandError(error);
+  });
+}
+
 export async function startAppServer(config: AppServerStartConfig): Promise<HostStatus> {
-  const status = await invoke<HostStatus>("host_start_app_server", { config });
+  let status: HostStatus;
+  try {
+    status = await invoke<HostStatus>("host_start_app_server", { config });
+  } catch (error) {
+    throw toHostCommandError(error);
+  }
   recordHostStatusOnboardingSignal(status);
   return status;
 }
 
 export async function stopAppServer(): Promise<HostStatus> {
-  const status = await invoke<HostStatus>("host_stop_app_server");
+  let status: HostStatus;
+  try {
+    status = await invoke<HostStatus>("host_stop_app_server");
+  } catch (error) {
+    throw toHostCommandError(error);
+  }
   recordHostStatusOnboardingSignal(status);
   return status;
 }
@@ -215,18 +296,22 @@ export async function getHostStatus(): Promise<HostStatus> {
   return status;
 }
 
-export function sendRaw(message: unknown): Promise<void> {
-  return invoke("host_send_raw", { message });
+export async function sendRaw(message: unknown): Promise<void> {
+  try {
+    await invoke("host_send_raw", { message });
+  } catch (error) {
+    throw toHostCommandError(error);
+  }
 }
 
 export function readHostGitStatus(cwd: string): Promise<HostGitStatus> {
-  return invoke("host_git_status", { cwd });
+  return invokeHost("host_git_status", { cwd });
 }
 
 export function createPendingWorktree(
   request: CreatePendingWorktreeRequest,
 ): Promise<PendingWorktree> {
-  return invoke("host_create_pending_worktree", { request });
+  return invokeHost("host_create_pending_worktree", { request });
 }
 
 export interface ProjectlessThreadCwd {
@@ -243,7 +328,7 @@ export interface ProjectlessThreadCwd {
 export function createProjectlessThreadCwd(
   request: { directoryName?: string | null; prompt?: string | null },
 ): Promise<ProjectlessThreadCwd> {
-  return invoke("host_create_projectless_thread_cwd", { request });
+  return invokeHost("host_create_projectless_thread_cwd", { request });
 }
 
 // codex: composer-footer-branch-switcher-*.js — branch picker host API.
@@ -285,7 +370,7 @@ export function listGitBranches(
   cwd: string,
   options?: ListGitBranchesOptions,
 ): Promise<GitBranchesResponse> {
-  return invoke<GitBranchesResponse>("host_git_list_branches", {
+  return invokeHost<GitBranchesResponse>("host_git_list_branches", {
     cwd,
     includeRemote: options?.includeRemote === true,
   });
@@ -297,7 +382,7 @@ export function listGitBranches(
  * etc.) so callers can surface the inline error.
  */
 export function checkoutGitBranch(cwd: string, branchName: string): Promise<void> {
-  return invoke("host_git_checkout_branch", { cwd, branchName });
+  return invokeHost("host_git_checkout_branch", { cwd, branchName });
 }
 
 // codex: branch-picker-extension — Codex Desktop `useGitDefaultBranch` hook.
@@ -309,7 +394,7 @@ export interface GitDefaultBranchResponse {
 }
 
 export function getGitDefaultBranch(cwd: string): Promise<GitDefaultBranchResponse> {
-  return invoke<GitDefaultBranchResponse>("host_git_default_branch", { cwd });
+  return invokeHost<GitDefaultBranchResponse>("host_git_default_branch", { cwd });
 }
 
 // codex: branch-picker-extension — Codex Desktop "Create new branch" action.
@@ -321,7 +406,7 @@ export function createGitBranch(
   branchName: string,
   basedOn?: string,
 ): Promise<void> {
-  return invoke("host_git_create_branch", {
+  return invokeHost("host_git_create_branch", {
     request: { cwd, branchName, basedOn: basedOn ?? null },
   });
 }
@@ -360,7 +445,7 @@ export interface GhPrStatusResponse {
  * silent-hide and surfaced-error UX.
  */
 export function ghPrStatus(cwd: string): Promise<GhPrStatusResponse> {
-  return invoke<GhPrStatusResponse>("host_gh_pr_status", { cwd });
+  return invokeHost<GhPrStatusResponse>("host_gh_pr_status", { cwd });
 }
 
 /*
@@ -392,7 +477,7 @@ export interface PatchActionResult {
 }
 
 export function applyPatchAction(request: PatchActionRequest): Promise<PatchActionResult> {
-  return invoke<PatchActionResult>("host_apply_patch_action", { request });
+  return invokeHost<PatchActionResult>("host_apply_patch_action", { request });
 }
 
 export function listenEvents(handler: (event: HostEvent) => void): Promise<UnlistenFn> {
@@ -429,19 +514,19 @@ export function writeLocalModelCatalog(
   codexHome: string | null | undefined,
   config: LocalModelCatalogConfig,
 ): Promise<string> {
-  return invoke("host_write_local_model_catalog", { codexHome, config });
+  return invokeHost("host_write_local_model_catalog", { codexHome, config });
 }
 
 export function readCodexAuthSummary(
   codexHome: string | null | undefined,
 ): Promise<CodexAuthSummary> {
-  return invoke("host_read_codex_auth_summary", { codexHome });
+  return invokeHost("host_read_codex_auth_summary", { codexHome });
 }
 
 export async function readInstallationState(
   codexHome: string | null | undefined,
 ): Promise<HostInstallationState> {
-  const state = await invoke<HostInstallationState>("host_read_installation_state", { codexHome });
+  const state = await invokeHost<HostInstallationState>("host_read_installation_state", { codexHome });
   recordHostOnboardingSignal(state, browserStorage());
   return state;
 }
@@ -449,20 +534,20 @@ export async function readInstallationState(
 export function readComputerUseReadiness(
   codexHome: string | null | undefined,
 ): Promise<ComputerUseReadiness> {
-  return invoke<ComputerUseReadiness>("host_read_computer_use_readiness", { codexHome });
+  return invokeHost<ComputerUseReadiness>("host_read_computer_use_readiness", { codexHome });
 }
 
 export function repairComputerUseBundle(
   codexHome: string | null | undefined,
 ): Promise<ComputerUseRepairResult> {
-  return invoke<ComputerUseRepairResult>("host_repair_computer_use_bundle", { codexHome });
+  return invokeHost<ComputerUseRepairResult>("host_repair_computer_use_bundle", { codexHome });
 }
 
 export function openComputerUseSetup(
   codexHome: string | null | undefined,
   target: ComputerUseSetupTarget,
 ): Promise<void> {
-  return invoke("host_open_computer_use_setup", { codexHome, target });
+  return invokeHost("host_open_computer_use_setup", { codexHome, target });
 }
 
 export function readBrowserRuntimeStatus(): Promise<BrowserRuntimeStatus> {
@@ -473,37 +558,37 @@ export function openBrowserRuntimeTab(
   url?: string | null,
   tabId?: string | null,
 ): Promise<BrowserRuntimeStatus> {
-  return invoke<BrowserRuntimeStatus>("host_open_browser_tab", {
+  return invokeHost<BrowserRuntimeStatus>("host_open_browser_tab", {
     url: url ?? null,
     tabId: tabId ?? null,
   });
 }
 
 export function openFileReference(path: string, line?: number | null): Promise<void> {
-  return invoke("host_open_file_reference", { path, line });
+  return invokeHost("host_open_file_reference", { path, line });
 }
 
 // codex workspace-file-context-menu-*.js `workspace-file-reveal-path` — reveal a
 // file/folder in the OS file manager (Finder / Explorer / file manager).
 export function revealPath(path: string): Promise<void> {
-  return invoke("host_reveal_path", { path });
+  return invokeHost("host_reveal_path", { path });
 }
 
 // codex threadHeader.openInNewWindow — open the thread in a second app window.
 export function openThreadWindow(threadId: string): Promise<void> {
-  return invoke("host_open_thread_window", { threadId });
+  return invokeHost("host_open_thread_window", { threadId });
 }
 
 // codex newWindow (⌘⇧N) — open a fresh app window; the new window starts a new chat on startup.
 export function openNewWindow(): Promise<void> {
-  return invoke("host_open_new_window");
+  return invokeHost("host_open_new_window");
 }
 
 export async function openExternalUrl(url: string): Promise<void> {
   const href = normalizedExternalUrl(url);
   if (!href) throw new Error("external URL must use http or https");
   if (isTauriRuntime()) {
-    await invoke("host_open_external_url", { url: href });
+    await invokeHost("host_open_external_url", { url: href });
     return;
   }
   const opened = window.open(href, "_blank", "noopener,noreferrer");
@@ -537,23 +622,23 @@ export interface ImageGenerationRequest {
 }
 
 export function pickFileReferences(kind: HostFileReferenceKind, multiple = true): Promise<string[]> {
-  return invoke("host_pick_file_references", { kind, multiple });
+  return invokeHost("host_pick_file_references", { kind, multiple });
 }
 
 export function pickWorkspaceFolder(): Promise<string | null> {
-  return invoke("host_pick_workspace_folder");
+  return invokeHost("host_pick_workspace_folder");
 }
 
 export function readImageDataUrl(path: string): Promise<string> {
-  return invoke("host_read_image_data_url", { path });
+  return invokeHost("host_read_image_data_url", { path });
 }
 
 export function readFileMetadata(path: string): Promise<LocalFileMetadata> {
-  return invoke("host_read_file_metadata", { path });
+  return invokeHost("host_read_file_metadata", { path });
 }
 
 export function readTextFile(path: string, maxBytes?: number): Promise<string> {
-  return invoke("host_read_text_file", { path, maxBytes });
+  return invokeHost("host_read_text_file", { path, maxBytes });
 }
 
 /*
@@ -562,23 +647,23 @@ export function readTextFile(path: string, maxBytes?: number): Promise<string> {
  * so rebrands/reinstalls can wipe it; codex-home survives them.
  */
 export function readAppSettingsFile(codexHome?: string | null): Promise<string> {
-  return invoke("host_read_app_settings", { codexHome });
+  return invokeHost("host_read_app_settings", { codexHome });
 }
 
 export function writeAppSettingsFile(settingsJson: string, codexHome?: string | null): Promise<void> {
-  return invoke("host_write_app_settings", { codexHome, settingsJson });
+  return invokeHost("host_write_app_settings", { codexHome, settingsJson });
 }
 
 // CODEX-REF: open-workspace-file-*.js — Codex loads xlsx
-// bytes into its WASM viewer; HiCodex's simplified preview needs the same
+// bytes into its WASM viewer; Forge's simplified preview needs the same
 // bytes for SheetJS in the renderer. Returns base64 so the IPC bridge stays
 // JSON-safe.
 export function readFileBytesBase64(path: string, maxBytes?: number): Promise<string> {
-  return invoke("host_read_file_bytes_base64", { path, maxBytes });
+  return invokeHost("host_read_file_bytes_base64", { path, maxBytes });
 }
 
 export function readSpreadsheetPreview(path: string, maxRows?: number, maxCols?: number): Promise<SpreadsheetPreview> {
-  return invoke("host_read_spreadsheet_preview", { path, maxRows, maxCols });
+  return invokeHost("host_read_spreadsheet_preview", { path, maxRows, maxCols });
 }
 
 export function readDocumentPreview(
@@ -586,14 +671,14 @@ export function readDocumentPreview(
   maxParagraphs?: number,
   maxCharsPerParagraph?: number,
 ): Promise<DocumentPreview> {
-  return invoke("host_read_document_preview", { path, maxParagraphs, maxCharsPerParagraph });
+  return invokeHost("host_read_document_preview", { path, maxParagraphs, maxCharsPerParagraph });
 }
 
 export function findRolloutForThread(
   threadId: string,
   codexHome?: string | null,
 ): Promise<string | null> {
-  return invoke("host_find_rollout_for_thread", { codexHome, threadId });
+  return invokeHost("host_find_rollout_for_thread", { codexHome, threadId });
 }
 
 export function readThreadToolHistory(
@@ -601,11 +686,11 @@ export function readThreadToolHistory(
   threadId: string,
   threadPath?: string | null,
 ): Promise<ThreadToolHistory> {
-  return invoke("host_read_thread_tool_history", { codexHome, threadId, threadPath });
+  return invokeHost("host_read_thread_tool_history", { codexHome, threadId, threadPath });
 }
 
 export function generateImageWithHost(request: ImageGenerationRequest): Promise<unknown> {
-  return invoke("host_generate_image", { request });
+  return invokeHost("host_generate_image", { request });
 }
 
 export function isTauriRuntime(): boolean {
@@ -665,7 +750,7 @@ export async function workspaceListDir(params: {
   dirPath: string;
   includeHidden: boolean;
 }): Promise<WorkspaceDirEntry[]> {
-  const response = await invoke<{ entries: WorkspaceDirEntry[] }>("host_workspace_list_dir", {
+  const response = await invokeHost<{ entries: WorkspaceDirEntry[] }>("host_workspace_list_dir", {
     root: params.root,
     dirPath: params.dirPath,
     includeHidden: params.includeHidden,

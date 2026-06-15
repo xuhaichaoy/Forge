@@ -1,7 +1,7 @@
 import { runSlashRequestWorkflow } from "../src/state/slash-request-workflow";
 import { initialAccountState, type AccountState } from "../src/state/account-state";
 import type { CommandPanelKind, CommandPanelOptions } from "../src/state/command-panel";
-import type { RateLimitSnapshot } from "@hicodex/codex-protocol/generated/v2/RateLimitSnapshot";
+import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateLimitSnapshot";
 
 export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await resumesAndForksThreadsWithContextDefaults();
@@ -738,8 +738,8 @@ async function searchesMentionsThroughAppServer(): Promise<void> {
     {
       files: [
         {
-          path: "/workspace/packages/ui/src/HiCodexApp.tsx",
-          file_name: "HiCodexApp.tsx",
+          path: "/workspace/packages/ui/src/ForgeApp.tsx",
+          file_name: "ForgeApp.tsx",
           score: 91,
           match_type: "fuzzy",
         },
@@ -766,16 +766,16 @@ async function searchesMentionsThroughAppServer(): Promise<void> {
         status: "ready",
         title: "Files",
         entries: [{
-          id: "file:/workspace/packages/ui/src/HiCodexApp.tsx",
-          title: "HiCodexApp.tsx",
+          id: "file:/workspace/packages/ui/src/ForgeApp.tsx",
+          title: "ForgeApp.tsx",
           kind: "file",
           status: "fuzzy",
-          meta: "/workspace/packages/ui/src/HiCodexApp.tsx",
+          meta: "/workspace/packages/ui/src/ForgeApp.tsx",
           details: ["score: 91"],
           action: {
             type: "attachMention",
-            name: "HiCodexApp.tsx",
-            path: "/workspace/packages/ui/src/HiCodexApp.tsx",
+            name: "ForgeApp.tsx",
+            path: "/workspace/packages/ui/src/ForgeApp.tsx",
           },
         }],
         message: "1 matching file(s). Select one to attach it.",

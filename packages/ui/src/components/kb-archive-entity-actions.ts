@@ -64,7 +64,7 @@ export function useKbArchiveEntityActions({
     setAuthorityBusy(true);
     setDetailError(null);
     try {
-      await changeYuxiEntityAuthority(selectedId, status, "HiCodex 档案中心手动调整");
+      await changeYuxiEntityAuthority(selectedId, status, "Forge 档案中心手动调整");
       await Promise.all([loadDetail(selectedId), loadEntities()]);
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : String(err));
@@ -198,7 +198,7 @@ export function useKbArchiveEntityActions({
       const fields = Object.fromEntries(attributeDiffs
         .filter((diff) => diff.field)
         .map((diff) => [diff.field as string, diff.new]));
-      await applyYuxiEntityAttributes(selectedId, fields, "HiCodex 档案中心采纳字段更新");
+      await applyYuxiEntityAttributes(selectedId, fields, "Forge 档案中心采纳字段更新");
       setAttributeDraft("");
       setAttributeDiffs([]);
       await Promise.all([loadEntities(), loadDetail(selectedId)]);

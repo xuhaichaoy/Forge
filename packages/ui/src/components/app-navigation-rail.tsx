@@ -2,6 +2,8 @@ import { Archive, BookOpen, ClipboardList, LayoutDashboard, LogOut, Settings } f
 import { useCallback, useRef, useState } from "react";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
 import type { TeamServiceAuthSession } from "../lib/team-service-auth";
+import type { I18nMessageDescriptor } from "../state/i18n";
+import { useForgeIntl } from "./i18n-provider";
 
 export type AppNavigationTab = "workbench" | "knowledge" | "ingest" | "archive" | "todo" | "remoteTask";
 
@@ -12,13 +14,13 @@ export type AppNavigationTab = "workbench" | "knowledge" | "ingest" | "archive" 
  */
 const appNavigationItems: Array<{
   id: Exclude<AppNavigationTab, "ingest" | "remoteTask">;
-  label: string;
+  label: I18nMessageDescriptor;
   Icon: typeof LayoutDashboard;
 }> = [
-  { id: "workbench", label: "对话",  Icon: LayoutDashboard },
-  { id: "knowledge", label: "知识库",  Icon: BookOpen },
-  { id: "archive",   label: "档案中心", Icon: Archive },
-  { id: "todo",      label: "待办",    Icon: ClipboardList },
+  { id: "workbench", label: { id: "sidebarElectron.recentChats", defaultMessage: "Chats" }, Icon: LayoutDashboard },
+  { id: "knowledge", label: { id: "hc.nav.knowledge", defaultMessage: "Knowledge Base" }, Icon: BookOpen },
+  { id: "archive",   label: { id: "hc.nav.archive", defaultMessage: "Archive Center" }, Icon: Archive },
+  { id: "todo",      label: { id: "hc.nav.todo", defaultMessage: "To-dos" }, Icon: ClipboardList },
 ];
 
 export function AppNavigationRail({
@@ -34,24 +36,29 @@ export function AppNavigationRail({
   productAccount?: TeamServiceAuthSession | null;
   onTabChange: (tab: AppNavigationTab) => void;
 }) {
+  const { formatMessage } = useForgeIntl();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement | null>(null);
   const closeAccount = useCallback(() => setAccountOpen(false), []);
   useDismissibleLayer(accountOpen, accountRef, closeAccount);
-  const username = productAccount?.user?.username ?? "Forge 账号";
+  const accountLabel = formatMessage({ id: "hc.nav.forgeAccount", defaultMessage: "Forge account" });
+  const allProjectsLabel = formatMessage({ id: "hc.nav.allProjects", defaultMessage: "All projects" });
+  const settingsLabel = formatMessage({ id: "settings.nav.ariaLabel", defaultMessage: "Settings" });
+  const rawUsername = productAccount?.user?.username ?? null;
+  const username = rawUsername ?? accountLabel;
   const role = productAccount?.user?.role ?? null;
-  const accountInitial = accountInitialFromUsername(username);
+  const accountInitial = accountInitialFromUsername(rawUsername);
 
   return (
-    <aside className="hc-app-rail" aria-label="全部项目">
+    <aside className="hc-app-rail" aria-label={allProjectsLabel}>
       <div className="hc-app-rail-account" ref={accountRef}>
         <button
           type="button"
           className="hc-app-rail-brand"
-          aria-label="Forge 账号"
+          aria-label={accountLabel}
           aria-expanded={accountOpen}
           aria-haspopup="menu"
-          title="Forge 账号"
+          title={accountLabel}
           onClick={() => setAccountOpen((current) => !current)}
         >
           {accountInitial}
@@ -59,7 +66,7 @@ export function AppNavigationRail({
         {accountOpen && (
           <div className="hc-app-rail-account-menu" role="menu">
             <div className="hc-app-rail-account-card" role="menuitem">
-              <span>Forge 账号</span>
+              <span>{accountLabel}</span>
               <strong>{username}</strong>
               {role ? <small>{role}</small> : null}
             </div>
@@ -73,12 +80,12 @@ export function AppNavigationRail({
               }}
             >
               <LogOut size={14} aria-hidden="true" />
-              <span>退出 Forge 账号</span>
+              <span>{formatMessage({ id: "hc.nav.signOutForgeAccount", defaultMessage: "Sign out of Forge account" })}</span>
             </button>
           </div>
         )}
       </div>
-      <nav className="hc-app-rail-tabs" aria-label="全部项目">
+      <nav className="hc-app-rail-tabs" aria-label={allProjectsLabel}>
         {appNavigationItems.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -89,7 +96,7 @@ export function AppNavigationRail({
             onClick={() => onTabChange(id)}
           >
             <Icon size={18} aria-hidden="true" strokeWidth={2.2} />
-            <span>{label}</span>
+            <span>{formatMessage(label)}</span>
           </button>
         ))}
       </nav>
@@ -97,8 +104,8 @@ export function AppNavigationRail({
         <button
           type="button"
           className="hc-app-rail-settings"
-          aria-label="设置"
-          title="设置"
+          aria-label={settingsLabel}
+          title={settingsLabel}
           onClick={onOpenSettings}
         >
           <Settings size={18} aria-hidden="true" strokeWidth={2.1} />
@@ -108,8 +115,13 @@ export function AppNavigationRail({
   );
 }
 
-function accountInitialFromUsername(username: string): string {
-  const trimmed = username.trim();
-  if (!trimmed || trimmed === "Forge 账号") return "H";
+/**
+ * 账号头像字母：有真实用户名取首字母，否则（未登录 fallback 文案）固定 "H"。
+ * 原实现用 `username === "Forge 账号"` 字符串哨兵判定 fallback；i18n 后文案随
+ * locale 变化，哨兵失效，改为直接以"是否有原始用户名"判定。
+ */
+function accountInitialFromUsername(username: string | null): string {
+  const trimmed = username?.trim() ?? "";
+  if (!trimmed) return "H";
   return trimmed.slice(0, 1).toUpperCase();
 }

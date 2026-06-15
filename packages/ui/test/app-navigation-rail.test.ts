@@ -15,9 +15,11 @@ function rendersProjectTabs(): void {
     onTabChange: () => undefined,
   }));
 
-  assertIncludes(html, "全部项目", "global app rail should expose the project-level navigation label");
-  assertIncludes(html, "对话", "global app rail should include the Workbench tab (labelled 对话)");
-  assertIncludes(html, "知识库", "global app rail should include the Knowledge Base tab");
+  // Rail renders via i18n; with no ForgeIntlProvider the default en-US bundle
+  // resolves dictionary entries / defaultMessage, so expectations are English.
+  assertIncludes(html, "All projects", "global app rail should expose the project-level navigation label");
+  assertIncludes(html, "Chats", "global app rail should include the Workbench tab (labelled Chats)");
+  assertIncludes(html, "Knowledge Base", "global app rail should include the Knowledge Base tab");
 }
 
 function marksActiveTab(): void {
@@ -47,7 +49,7 @@ function rendersSettingsActionWhenProvided(): void {
     onTabChange: () => undefined,
   }));
 
-  assertIncludes(html, "aria-label=\"设置\"", "rail settings action should render when wired by the app shell");
+  assertIncludes(html, "aria-label=\"Settings\"", "rail settings action should render when wired by the app shell");
 }
 
 function assertIncludes(actual: string, expected: string, message: string): void {

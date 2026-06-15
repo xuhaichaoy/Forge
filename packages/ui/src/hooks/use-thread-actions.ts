@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import type { ThreadActionDialogState } from "../components/thread-action-dialog";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
@@ -248,7 +248,7 @@ export function useThreadActions({
       dispatch({ type: "log", text: formatError(error), level: "error" });
       if (isThreadNotFound(error) && tauriCommandMissing) {
         throw new Error(
-          `${formatError(error)}. The recovery helper for this app build is not yet loaded — please restart HiCodex (close the desktop window and run \`npm run tauri:dev\` again) and try Send once more.`,
+          `${formatError(error)}. The recovery helper for this app build is not yet loaded — please restart Forge (close the desktop window and run \`npm run tauri:dev\` again) and try Send once more.`,
         );
       }
       if (isThreadNotFound(error) && !rolloutPath) {

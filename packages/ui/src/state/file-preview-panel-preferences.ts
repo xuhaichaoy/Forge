@@ -1,4 +1,4 @@
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 
 /*
@@ -12,8 +12,8 @@ export const FILE_PREVIEW_PANEL_MAX_WIDTH_RATIO = 0.85;
 
 export const LEGACY_FILE_PREVIEW_PANEL_WIDTH_STORAGE_KEY = "hicodex.filePreviewPanel.widthPx";
 export const LEGACY_FILE_PREVIEW_PANEL_FULL_WIDTH_STORAGE_KEY = "hicodex.filePreviewPanel.fullWidth";
-export const FILE_PREVIEW_PANEL_WIDTH_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.filePreviewPanelWidth;
-export const FILE_PREVIEW_PANEL_FULL_WIDTH_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.filePreviewPanelFullWidth;
+export const FILE_PREVIEW_PANEL_WIDTH_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.filePreviewPanelWidth;
+export const FILE_PREVIEW_PANEL_FULL_WIDTH_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.filePreviewPanelFullWidth;
 
 export interface FilePreviewPanelPreferenceStorageLike {
   getItem(key: string): string | null;

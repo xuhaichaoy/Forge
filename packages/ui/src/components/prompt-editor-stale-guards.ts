@@ -144,8 +144,8 @@ function isStaleEditorViewError(error: unknown): boolean {
   return /docView|matchesNode/i.test(message);
 }
 
-const promptEditorStaleGuardSymbol = Symbol("hicodex.promptEditor.staleGuard");
-const promptEditorDetachedSymbol = Symbol("hicodex.promptEditor.detached");
+const promptEditorStaleGuardSymbol = Symbol("forge.promptEditor.staleGuard");
+const promptEditorDetachedSymbol = Symbol("forge.promptEditor.detached");
 
 type GuardedEditorView = {
   [promptEditorStaleGuardSymbol]?: true;

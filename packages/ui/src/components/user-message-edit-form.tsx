@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { FormEvent } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { focusPromptEditorElement, PromptEditor } from "./prompt-editor";
 
 export function UserEditForm({
@@ -18,7 +18,7 @@ export function UserEditForm({
   onDraftChange: (draft: string) => void;
   onSubmit: (message: string) => void | Promise<void>;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const editorRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     window.requestAnimationFrame(() => {

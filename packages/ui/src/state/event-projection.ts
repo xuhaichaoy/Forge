@@ -2,7 +2,7 @@ import { formatUnknown, stringField } from "../lib/format";
 import { formatModelDisplayName } from "../model/model-settings";
 
 import { formatMessage } from "./i18n";
-import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
+import { forgeImageToolOutputUrl } from "./image-generation-tool";
 import { automationScheduleSummary } from "./automation-schedule-summary";
 import type { EventFormat, EventTone, ItemRecord, ThreadItem } from "./render-group-types";
 import {
@@ -12,7 +12,7 @@ import {
 } from "./thread-item-fields";
 
 export function eventLabel(item: ThreadItem): string {
-  if (hiCodexImageToolOutputUrl(item)) return generatedImageLabel();
+  if (forgeImageToolOutputUrl(item)) return generatedImageLabel();
   const type = itemType(item);
   const record = item as ItemRecord;
   if (type === "userInput" || type === "user-input") {
@@ -64,8 +64,8 @@ function steeredLabel(): string {
 }
 
 export function eventText(item: ThreadItem): string {
-  const hiCodexImageUrl = hiCodexImageToolOutputUrl(item);
-  if (hiCodexImageUrl) return `![Generated image](${markdownImageTarget(hiCodexImageUrl)})`;
+  const forgeImageUrl = forgeImageToolOutputUrl(item);
+  if (forgeImageUrl) return `![Generated image](${markdownImageTarget(forgeImageUrl)})`;
   const type = itemType(item);
   const record = item as ItemRecord;
   if (type === "userInput" || type === "user-input") {
@@ -181,7 +181,7 @@ function errorSummaryText(item: ThreadItem): string {
 }
 
 export function eventFormat(item: ThreadItem): EventFormat | undefined {
-  if (hiCodexImageToolOutputUrl(item)) return "markdown";
+  if (forgeImageToolOutputUrl(item)) return "markdown";
   const type = itemType(item);
   if (type === "turn-diff") return "diff";
   if (type === "stream-error") return "stream-error";

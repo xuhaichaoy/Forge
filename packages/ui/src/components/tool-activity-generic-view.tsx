@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { type ConversationRenderUnit } from "../state/render-groups";
 import { AnimatedDisclosure } from "./animated-disclosure";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { OpenThreadHandler } from "./open-thread";
 import {
   ToolActivityDetail,
@@ -73,7 +73,7 @@ export function GenericToolActivityView({
   const canExpand = hasDetails && isToolActivityExpandable(unit);
   const summaryLabel = useToolActivitySummaryLabel(unit);
   const runningCommandElapsed = useRunningCommandElapsed(unit);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const detail = unit.summary.details.find((value) => value !== unit.summary.label);
   const expanded = viewState !== "collapsed";
   const showInlineDetail = shouldShowToolActivityInlineDetail(unit, detail);
@@ -182,7 +182,7 @@ export function GenericToolActivityView({
              * pushes segments 到数组 `a`，最后 `return t.formatList(a,
              * {type:'unit'})` 用 react-intl 的 Intl.ListFormat 把数组 join 成
              * **单行字符串**。leading segment 大写动词（"Created N files"），后续
-             * segment 小写动词（"edited M files"）。HiCodex 严格对齐：从原来的
+             * segment 小写动词（"edited M files"）。Forge 严格对齐：从原来的
              * `<ul><li>per row</li></ul>` 多行列表改为单行 `<div>` 含 formatList
              * join 后的文本。Intl.ListFormat type:"unit" 在 en/long style 用 ", "
              * 分隔，等价于 Codex 行为。

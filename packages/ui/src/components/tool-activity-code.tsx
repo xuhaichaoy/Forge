@@ -8,11 +8,11 @@ import {
   mcpToolName,
   type AccumulatedThreadItem,
 } from "../state/render-groups";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
-type ToolDetailFormatMessage = HiCodexIntlContextValue["formatMessage"];
+type ToolDetailFormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export function rawMcpToolOutputForItem(item: ThreadItem, running: boolean, formatMessage: ToolDetailFormatMessage): { heading: string; text: string } | null {
   if (itemType(item) !== "mcp-tool-call") return null;
@@ -47,7 +47,7 @@ export function formatJsonForRawMcpOutput(value: unknown): string {
 }
 
 export function RawToolOutputButton({ heading, inlineApp = false, text }: { heading: string; inlineApp?: boolean; text: string }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [open, setOpen] = useState(false);
   if (!text.trim()) return null;
   const dialog = open ? (
@@ -62,7 +62,7 @@ export function RawToolOutputButton({ heading, inlineApp = false, text }: { head
         role="dialog"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          // codex: Radix dialog closes on Escape; match it (the other Forge dialogs do).
           if (event.key === "Escape") {
             event.stopPropagation();
             setOpen(false);

@@ -61,8 +61,8 @@ function dropsHostDefaultCwdSoBareRefsDoNotAnchorToHome(): void {
 
 function normalizesClickedReferenceForPreview(): void {
   assertDeepEqual(
-    normalizeFileReference({ path: " packages/ui/src/HiCodexApp.tsx ", lineStart: 12, lineEnd: 18 }),
-    { path: "packages/ui/src/HiCodexApp.tsx", lineStart: 12, lineEnd: 18 },
+    normalizeFileReference({ path: " packages/ui/src/ForgeApp.tsx ", lineStart: 12, lineEnd: 18 }),
+    { path: "packages/ui/src/ForgeApp.tsx", lineStart: 12, lineEnd: 18 },
     "file reference should trim path and keep range",
   );
 }
@@ -134,14 +134,14 @@ function shortensLongPathsFromTheLeft(): void {
 function prefersWorkspaceRootForRepoRelativePaths(): void {
   assertDeepEqual(
     resolveFileReferencePathCandidates("docs/DEVELOPMENT.md", {
-      workspaceRoot: "/workspace/HiCodex",
-      cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+      workspaceRoot: "/workspace/Forge",
+      cwd: "/workspace/Forge/apps/desktop/src-tauri",
     }).slice(0, 4),
     [
-      "/workspace/HiCodex/docs/DEVELOPMENT.md",
+      "/workspace/Forge/docs/DEVELOPMENT.md",
       "/workspace/docs/DEVELOPMENT.md",
       "/docs/DEVELOPMENT.md",
-      "/workspace/HiCodex/apps/desktop/src-tauri/docs/DEVELOPMENT.md",
+      "/workspace/Forge/apps/desktop/src-tauri/docs/DEVELOPMENT.md",
     ],
     "repo-relative paths should try the workspace root before the thread cwd",
   );
@@ -150,28 +150,28 @@ function prefersWorkspaceRootForRepoRelativePaths(): void {
 function prefersCwdForBareAndDotRelativePaths(): void {
   assertDeepEqual(
     resolveFileReferencePathCandidates("beijing_weather_next_7_days.csv", {
-      workspaceRoot: "/workspace/HiCodex",
-      cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+      workspaceRoot: "/workspace/Forge",
+      cwd: "/workspace/Forge/apps/desktop/src-tauri",
     }).slice(0, 4),
     [
-      "/workspace/HiCodex/apps/desktop/src-tauri/beijing_weather_next_7_days.csv",
-      "/workspace/HiCodex/apps/desktop/beijing_weather_next_7_days.csv",
-      "/workspace/HiCodex/apps/beijing_weather_next_7_days.csv",
-      "/workspace/HiCodex/beijing_weather_next_7_days.csv",
+      "/workspace/Forge/apps/desktop/src-tauri/beijing_weather_next_7_days.csv",
+      "/workspace/Forge/apps/desktop/beijing_weather_next_7_days.csv",
+      "/workspace/Forge/apps/beijing_weather_next_7_days.csv",
+      "/workspace/Forge/beijing_weather_next_7_days.csv",
     ],
     "bare filenames should stay anchored to the thread cwd first",
   );
 
   assertDeepEqual(
     resolveFileReferencePathCandidates("../docs/DEVELOPMENT.md", {
-      workspaceRoot: "/workspace/HiCodex",
-      cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+      workspaceRoot: "/workspace/Forge",
+      cwd: "/workspace/Forge/apps/desktop/src-tauri",
     }).slice(0, 4),
     [
-      "/workspace/HiCodex/apps/desktop/src-tauri/../docs/DEVELOPMENT.md",
-      "/workspace/HiCodex/apps/desktop/../docs/DEVELOPMENT.md",
-      "/workspace/HiCodex/apps/../docs/DEVELOPMENT.md",
-      "/workspace/HiCodex/../docs/DEVELOPMENT.md",
+      "/workspace/Forge/apps/desktop/src-tauri/../docs/DEVELOPMENT.md",
+      "/workspace/Forge/apps/desktop/../docs/DEVELOPMENT.md",
+      "/workspace/Forge/apps/../docs/DEVELOPMENT.md",
+      "/workspace/Forge/../docs/DEVELOPMENT.md",
     ],
     "explicit dot-relative paths should also prefer the thread cwd",
   );
@@ -179,17 +179,17 @@ function prefersCwdForBareAndDotRelativePaths(): void {
 
 function walksUpFromNestedThreadCwdForRepoRelativePaths(): void {
   const candidates = resolveFileReferencePathCandidates("docs/DEVELOPMENT.md", {
-    workspaceRoot: "/workspace/HiCodex/apps/desktop/src-tauri",
-    cwd: "/workspace/HiCodex/apps/desktop/src-tauri",
+    workspaceRoot: "/workspace/Forge/apps/desktop/src-tauri",
+    cwd: "/workspace/Forge/apps/desktop/src-tauri",
   });
 
   assertEqual(
-    candidates.includes("/workspace/HiCodex/docs/DEVELOPMENT.md"),
+    candidates.includes("/workspace/Forge/docs/DEVELOPMENT.md"),
     true,
     "nested thread cwd should still find repo-root relative artifacts",
   );
   assertEqual(
-    candidates.indexOf("/workspace/HiCodex/docs/DEVELOPMENT.md") < candidates.indexOf("docs/DEVELOPMENT.md"),
+    candidates.indexOf("/workspace/Forge/docs/DEVELOPMENT.md") < candidates.indexOf("docs/DEVELOPMENT.md"),
     true,
     "ancestor candidates should be tried before the raw relative path",
   );

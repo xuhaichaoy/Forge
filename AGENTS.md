@@ -3,13 +3,13 @@
 ## Required First Read
 
 - Before code changes, read `docs/DEVELOPMENT.md`.
-- Treat `docs/DEVELOPMENT.md` as the single source of truth for HiCodex development rules.
+- Treat `docs/DEVELOPMENT.md` as the single source of truth for Forge development rules.
 - Do not add new local docs unless the guide explicitly allows a split.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **HiCodex** (16380 symbols, 34840 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **HiCodex** (18052 symbols, 38320 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

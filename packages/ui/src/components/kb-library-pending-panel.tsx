@@ -159,15 +159,15 @@ export function KbLibraryPendingPanel({
       } else if (action === "conflict_apply") {
         await resolveYuxiConflict(item.numericId, "apply", {
           acceptedFields: item.conflict?.incoming_attrs ?? null,
-          reason: "HiCodex 入库问题采纳字段冲突",
+          reason: "Forge 入库问题采纳字段冲突",
         });
       } else if (action === "conflict_reject") {
         await resolveYuxiConflict(item.numericId, "reject", {
-          reason: "HiCodex 入库问题拒绝字段冲突",
+          reason: "Forge 入库问题拒绝字段冲突",
         });
       } else if (action === "conflict_skip") {
         await resolveYuxiConflict(item.numericId, "skip", {
-          reason: "HiCodex 入库问题跳过字段冲突",
+          reason: "Forge 入库问题跳过字段冲突",
         });
       }
       await loadPending();
@@ -177,6 +177,7 @@ export function KbLibraryPendingPanel({
     } finally {
       setProcessingId(null);
     }
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- currentDatabases 是派生数组（逐渲染新引用）；回调执行时读触发时刻的列表，引用身份不影响语义
   }, [currentDatabases, loadPending, onResolved, targetByTodo]);
 
   if (!selectedCategory) {

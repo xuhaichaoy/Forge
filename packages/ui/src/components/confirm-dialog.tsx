@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type ReactNode } from "react";
+import { useForgeIntl } from "./i18n-provider";
 
 /**
  * 应用内确认对话框（Promise 风格）。
@@ -18,6 +19,7 @@ export function useConfirmDialog(): {
   confirmDialog: (message: string) => Promise<boolean>;
   confirmDialogNode: ReactNode;
 } {
+  const { formatMessage } = useForgeIntl();
   const [message, setMessage] = useState<string | null>(null);
   const resolverRef = useRef<((ok: boolean) => void) | null>(null);
 
@@ -47,19 +49,19 @@ export function useConfirmDialog(): {
           if (event.target === event.currentTarget) close(false);
         }}
       >
-        <div className="hc-thread-dialog-panel hc-kb-dialog" role="alertdialog" aria-modal="true" aria-label="确认操作">
+        <div className="hc-thread-dialog-panel hc-kb-dialog" role="alertdialog" aria-modal="true" aria-label={formatMessage({ id: "hc.confirmDialog.title", defaultMessage: "Confirm action" })}>
           <header>
-            <div>确认操作</div>
+            <div>{formatMessage({ id: "hc.confirmDialog.title", defaultMessage: "Confirm action" })}</div>
           </header>
           <div className="hc-thread-dialog-body">
             <p>{message}</p>
           </div>
           <footer>
             <button type="button" className="hc-kb-topbar-btn" onClick={() => close(false)} autoFocus>
-              取消
+              {formatMessage({ id: "common.cancel", defaultMessage: "Cancel" })}
             </button>
             <button type="button" className="hc-kb-topbar-btn hc-kb-topbar-btn--danger" onClick={() => close(true)}>
-              确认
+              {formatMessage({ id: "codex.cloudTaskRow.confirmArchiveTask", defaultMessage: "Confirm" })}
             </button>
           </footer>
         </div>

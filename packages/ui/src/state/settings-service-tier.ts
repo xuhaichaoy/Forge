@@ -1,4 +1,4 @@
-import type { ModelConfig, ModelServiceTier } from "@hicodex/codex-protocol";
+import type { ModelConfig, ModelServiceTier } from "@forge/codex-protocol";
 import type { CommandPanelEntry } from "./command-panel";
 
 const SERVICE_TIER_STANDARD_VALUE = "default";

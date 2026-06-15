@@ -1052,7 +1052,7 @@ button.hc-user-attachment-pill:hover {
  * Codex markdown <details> renderer uses
  * `className="group my-3 rounded-xl border border-token-border/30 bg-token-bg-secondary/15 px-4 py-3"`
  * — margin 12px, border-radius 12px (rounded-xl), padding 16px horizontal + 12px vertical.
- * Color tokens stay on HiCodex's light-theme equivalents.
+ * Color tokens stay on Forge's light-theme equivalents.
  */
 .hc-markdown-details {
   margin: 12px 0;

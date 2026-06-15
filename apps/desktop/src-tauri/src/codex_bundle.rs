@@ -1,13 +1,13 @@
 //! Optional dev affordance: host the *real* Codex Desktop web bundle in a
 //! SEPARATE Tauri window, wired to the same app-server transport as the
 //! clean-room main window (via `host_send_raw` + the
-//! `hicodex://app-server-event` event). The clean-room main window is the
+//! `forge://app-server-event` event). The clean-room main window is the
 //! untouched default; nothing here runs unless the
 //! `open_codex_bundle_window` command is explicitly invoked.
 //!
 //! Design:
 //! - We extract Codex Desktop's `app.asar` somewhere on disk (see
-//!   `HICODEX_CODEX_ASAR_OUT`) and serve its `webview/` subdir over a custom
+//!   `FORGE_CODEX_ASAR_OUT`) and serve its `webview/` subdir over a custom
 //!   URI scheme `codexbundle://` registered on the Tauri `Builder`.
 //! - A dedicated webview window labeled `codex-bundle` loads
 //!   `codexbundle://localhost/index.html` and gets a small bridge script
@@ -21,18 +21,22 @@ use std::path::{Path, PathBuf};
 use tauri::http::{header, Request, Response, StatusCode};
 use tauri::{AppHandle, Manager, Runtime, UriSchemeContext, WebviewUrl, WebviewWindowBuilder};
 
+use crate::command_error::HostCommandError;
+
 /// Custom URI scheme used to serve the extracted Codex Desktop web bundle.
 const BUNDLE_SCHEME: &str = "codexbundle";
 /// Window label for the bundle host window.
 const BUNDLE_WINDOW_LABEL: &str = "codex-bundle";
-/// Default extraction root when `HICODEX_CODEX_ASAR_OUT` is unset.
+/// Default extraction root when `FORGE_CODEX_ASAR_OUT` is unset.
 const DEFAULT_ASAR_OUT: &str = "/private/tmp/codex-asar";
 
 /// Resolve the directory that holds the extracted Codex Desktop bundle.
 ///
-/// Honors `HICODEX_CODEX_ASAR_OUT`, falling back to `/private/tmp/codex-asar`.
+/// Honors `FORGE_CODEX_ASAR_OUT` (legacy spelling `HICODEX_CODEX_ASAR_OUT`
+/// still works as a fallback), falling back to `/private/tmp/codex-asar`.
 fn asar_out_dir() -> PathBuf {
-    std::env::var_os("HICODEX_CODEX_ASAR_OUT")
+    std::env::var_os("FORGE_CODEX_ASAR_OUT")
+        .or_else(|| std::env::var_os("HICODEX_CODEX_ASAR_OUT"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_ASAR_OUT))
 }
@@ -178,15 +182,23 @@ pub fn handle_bundle_request(request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
 /// Loads `codexbundle://localhost/index.html` and injects the bridge script
 /// that adapts the bundle onto our existing app-server transport. The
 /// clean-room `main` window is never touched by this command.
+///
+/// Deliberately sync (main thread): WebviewWindowBuilder window creation and
+/// window focus must run on the macOS main thread (dev-only command; the
+/// single `is_file` probe is trivial).
 #[tauri::command]
-pub fn open_codex_bundle_window(app: AppHandle) -> Result<(), String> {
+pub fn open_codex_bundle_window(app: AppHandle) -> Result<(), HostCommandError> {
     // Focus an existing instance instead of erroring on duplicate label.
     if let Some(window) = app.get_webview_window(BUNDLE_WINDOW_LABEL) {
         window
             .unminimize()
             .and_then(|_| window.show())
             .and_then(|_| window.set_focus())
-            .map_err(|error| format!("failed to focus codex bundle window: {error}"))?;
+            .map_err(|error| {
+                HostCommandError::process_failed(format!(
+                    "failed to focus codex bundle window: {error}"
+                ))
+            })?;
         return Ok(());
     }
 
@@ -194,22 +206,26 @@ pub fn open_codex_bundle_window(app: AppHandle) -> Result<(), String> {
     // rather than opening a blank window.
     let root = web_root();
     if !root.join("index.html").is_file() {
-        return Err(format!(
-            "codex bundle not found: expected {} (set HICODEX_CODEX_ASAR_OUT or extract app.asar to /private/tmp/codex-asar)",
+        return Err(HostCommandError::not_found(format!(
+            "codex bundle not found: expected {} (set FORGE_CODEX_ASAR_OUT or extract app.asar to /private/tmp/codex-asar)",
             root.join("index.html").display()
-        ));
+        )));
     }
 
     let url: tauri::Url = format!("{BUNDLE_SCHEME}://localhost/index.html")
         .parse()
-        .map_err(|error| format!("invalid codex bundle url: {error}"))?;
+        .map_err(|error| {
+            HostCommandError::parse_failed(format!("invalid codex bundle url: {error}"))
+        })?;
 
     WebviewWindowBuilder::new(&app, BUNDLE_WINDOW_LABEL, WebviewUrl::CustomProtocol(url))
         .title("Codex (bundle)")
         .inner_size(1280.0, 820.0)
         .initialization_script(include_str!("../codex-bundle-bridge.js"))
         .build()
-        .map_err(|error| format!("failed to open codex bundle window: {error}"))?;
+        .map_err(|error| {
+            HostCommandError::process_failed(format!("failed to open codex bundle window: {error}"))
+        })?;
 
     Ok(())
 }

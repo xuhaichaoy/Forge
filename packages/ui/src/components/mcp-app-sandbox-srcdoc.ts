@@ -4,11 +4,11 @@ import {
   type McpAppCspViewModel,
   type McpAppFrameViewModel,
 } from "./mcp-app-frame";
-import type { McpAppDetailViewModel } from "./mcp-app-sandbox";
+import type { McpAppDetailViewModel } from "./mcp-app-sandbox-types";
 
-export const MCP_APP_BRIDGE_WIDGET_ID = "hicodex-inline-widget";
-export const MCP_APP_BRIDGE_SOURCE = "hicodex:mcp-app";
-export const MCP_APP_BRIDGE_HOST_SOURCE = "hicodex:mcp-app-host";
+export const MCP_APP_BRIDGE_WIDGET_ID = "forge-inline-widget";
+export const MCP_APP_BRIDGE_SOURCE = "forge:mcp-app";
+export const MCP_APP_BRIDGE_HOST_SOURCE = "forge:mcp-app-host";
 
 export function createMcpAppBridgeNonce(): string {
   const bytes = new Uint8Array(16);

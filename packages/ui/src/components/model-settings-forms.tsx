@@ -1,6 +1,6 @@
 import { Eye, EyeOff, ImageIcon, KeyRound, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import {
   modelSlugsForConfig,
   modelSlugsWithPrimary,
@@ -9,6 +9,7 @@ import {
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 import { IMAGE_GENERATION_SIZE_OPTIONS, type ImageGenerationSettings } from "../state/image-generation-tool";
 import { CommandPanelEntryList } from "./command-panel";
+import { useForgeIntl } from "./i18n-provider";
 
 export function SettingsCommandContent({
   panelState,
@@ -54,6 +55,7 @@ export function ModelSettingsForm({
   models: ModelConfig[];
   onSave: () => void;
 }) {
+  const { formatMessage } = useForgeIntl();
   const [apiKeyVisible, setApiKeyVisible] = useState(false);
   const configuredModels = modelSlugsForConfig(modelDraft);
   const configuredModelsText = configuredModels.join("\n");
@@ -88,37 +90,37 @@ export function ModelSettingsForm({
     <>
       <div className="hc-model-form">
         <fieldset className="hc-model-fieldset">
-          <legend className="hc-model-fieldset-legend">连接</legend>
-          <p className="hc-model-fieldset-help">配置接入方式和访问凭证。</p>
+          <legend className="hc-model-fieldset-legend">{formatMessage({ id: "hc.settings.modelForm.connectionLegend", defaultMessage: "Connection" })}</legend>
+          <p className="hc-model-fieldset-help">{formatMessage({ id: "hc.settings.modelForm.connectionHelp", defaultMessage: "Configure how to connect and which credentials to use." })}</p>
           <div className="hc-model-fieldset-grid">
             <label className="hc-model-field">
-              <span className="hc-model-field-label">名称</span>
+              <span className="hc-model-field-label">{formatMessage({ id: "settings.mcp.detail.name", defaultMessage: "Name" })}</span>
               <input
                 value={modelDraft.name}
                 onChange={(event) => setModelDraft({ ...modelDraft, name: event.target.value })}
-                placeholder="例如 OpenAI 网关"
+                placeholder={formatMessage({ id: "hc.settings.modelForm.namePlaceholder", defaultMessage: "e.g. OpenAI gateway" })}
               />
-              <span className="hc-model-field-hint">仅在本地展示,方便区分多个网关。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.nameHint", defaultMessage: "Shown only on this device, to tell multiple gateways apart." })}</span>
             </label>
             <label className="hc-model-field">
-              <span className="hc-model-field-label">接口协议</span>
+              <span className="hc-model-field-label">{formatMessage({ id: "hc.settings.modelForm.protocolLabel", defaultMessage: "API protocol" })}</span>
               <select
                 value={modelDraft.protocol}
                 onChange={(event) => setModelDraft({ ...modelDraft, protocol: event.target.value as ModelConfig["protocol"] })}
               >
-                <option value="openai">OpenAI 兼容</option>
+                <option value="openai">{formatMessage({ id: "hc.settings.modelForm.protocolOptionOpenAi", defaultMessage: "OpenAI-compatible" })}</option>
                 <option value="anthropic">Anthropic</option>
               </select>
-              <span className="hc-model-field-hint">按你的服务端协议选择。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.protocolHint", defaultMessage: "Pick the protocol your server speaks." })}</span>
             </label>
             <label className="hc-model-field hc-model-field-wide">
-              <span className="hc-model-field-label">服务地址</span>
+              <span className="hc-model-field-label">{formatMessage({ id: "hc.settings.modelForm.baseUrlLabel", defaultMessage: "Base URL" })}</span>
               <input
                 value={modelDraft.baseUrl}
                 onChange={(event) => setModelDraft({ ...modelDraft, baseUrl: event.target.value })}
                 placeholder="https://api.example.com/v1"
               />
-              <span className="hc-model-field-hint">API 根地址,通常以 /v1 结尾。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.baseUrlHint", defaultMessage: "API root URL, usually ending in /v1." })}</span>
             </label>
             <label className="hc-model-field hc-model-field-wide">
               <span className="hc-model-field-label">API Key</span>
@@ -135,23 +137,27 @@ export function ModelSettingsForm({
                   type="button"
                   className="hc-model-field-input-action"
                   onClick={() => setApiKeyVisible((value) => !value)}
-                  aria-label={apiKeyVisible ? "隐藏 API Key" : "显示 API Key"}
-                  title={apiKeyVisible ? "隐藏" : "显示"}
+                  aria-label={apiKeyVisible
+                    ? formatMessage({ id: "hc.settings.modelForm.hideApiKey", defaultMessage: "Hide API key" })
+                    : formatMessage({ id: "hc.settings.modelForm.showApiKey", defaultMessage: "Show API key" })}
+                  title={apiKeyVisible
+                    ? formatMessage({ id: "hc.settings.modelForm.hide", defaultMessage: "Hide" })
+                    : formatMessage({ id: "hc.settings.modelForm.show", defaultMessage: "Show" })}
                 >
                   {apiKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </span>
-              <span className="hc-model-field-hint">仅保存在本机,不会上传到任何外部服务。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.apiKeyHint", defaultMessage: "Stored only on this device — never uploaded to any external service." })}</span>
             </label>
           </div>
         </fieldset>
 
         <fieldset className="hc-model-fieldset">
-          <legend className="hc-model-fieldset-legend">模型</legend>
-          <p className="hc-model-fieldset-help">指定可用的模型,以及默认使用哪一个。</p>
+          <legend className="hc-model-fieldset-legend">{formatMessage({ id: "hc.settings.nav.models", defaultMessage: "Models" })}</legend>
+          <p className="hc-model-fieldset-help">{formatMessage({ id: "hc.settings.modelForm.modelsHelp", defaultMessage: "List the models you can use, and choose which one is the default." })}</p>
           <div className="hc-model-fieldset-grid">
             <label className="hc-model-field hc-model-field-wide">
-              <span className="hc-model-field-label">可用模型</span>
+              <span className="hc-model-field-label">{formatMessage({ id: "hc.settings.modelForm.availableModelsLabel", defaultMessage: "Available models" })}</span>
               <textarea
                 rows={3}
                 value={availableModelsText}
@@ -160,29 +166,29 @@ export function ModelSettingsForm({
                   setAvailableModelsText(nextValue);
                   setAvailableModels(nextValue);
                 }}
-                placeholder={"每行一个模型名,例如\ngpt-4o\ngpt-4o-mini"}
+                placeholder={formatMessage({ id: "hc.settings.modelForm.availableModelsPlaceholder", defaultMessage: "One model name per line, e.g.\ngpt-4o\ngpt-4o-mini" })}
               />
-              <span className="hc-model-field-hint">每行一个,模型名按你接入的服务命名,例如 gpt-4o。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.availableModelsHint", defaultMessage: "One per line, named exactly as your service expects, e.g. gpt-4o." })}</span>
             </label>
             <label className="hc-model-field">
-              <span className="hc-model-field-label">默认模型</span>
+              <span className="hc-model-field-label">{formatMessage({ id: "hc.settings.modelForm.defaultModelLabel", defaultMessage: "Default model" })}</span>
               {defaultModelSelectable ? (
                 <select
                   value={defaultModelInList ? modelDraft.model : ""}
                   onChange={(event) => setPrimaryModel(event.target.value)}
                 >
-                  {!defaultModelInList && <option value="" disabled>选择默认模型</option>}
+                  {!defaultModelInList && <option value="" disabled>{formatMessage({ id: "hc.settings.modelForm.defaultModelPlaceholder", defaultMessage: "Choose a default model" })}</option>}
                   {configuredModels.map((slug) => (
                     <option key={slug} value={slug}>{slug}</option>
                   ))}
                 </select>
               ) : (
-                <input value={modelDraft.model} onChange={(event) => setPrimaryModel(event.target.value)} disabled placeholder="先在上方添加可用模型" />
+                <input value={modelDraft.model} onChange={(event) => setPrimaryModel(event.target.value)} disabled placeholder={formatMessage({ id: "hc.settings.modelForm.defaultModelEmptyPlaceholder", defaultMessage: "Add available models above first" })} />
               )}
-              <span className="hc-model-field-hint">保存后会重启模型运行时，当前对话下一轮会使用新连接。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.saveRestartHint", defaultMessage: "Saving restarts the model runtime; the current chat switches to the new connection on its next turn." })}</span>
             </label>
             <label className="hc-model-field">
-              <span className="hc-model-field-label">采样温度</span>
+              <span className="hc-model-field-label">{formatMessage({ id: "hc.settings.modelForm.temperatureLabel", defaultMessage: "Temperature" })}</span>
               <input
                 type="number"
                 step="0.1"
@@ -191,7 +197,7 @@ export function ModelSettingsForm({
                 value={modelDraft.temperature}
                 onChange={(event) => setModelDraft({ ...modelDraft, temperature: Number(event.target.value) })}
               />
-              <span className="hc-model-field-hint">0 最稳定,2 最发散,日常用 0.2 ~ 0.7。</span>
+              <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.temperatureHint", defaultMessage: "0 is the most predictable, 2 the most varied; 0.2 – 0.7 suits everyday use." })}</span>
             </label>
             <div className="hc-model-field hc-model-field-wide hc-model-field-toggle">
               <label className="hc-model-toggle">
@@ -209,8 +215,8 @@ export function ModelSettingsForm({
                   <span className="hc-model-toggle-thumb" />
                 </span>
                 <span className="hc-model-toggle-text">
-                  <span className="hc-model-field-label">支持图片输入</span>
-                  <span className="hc-model-field-hint">开启后可在对话中粘贴 / 拖入图片;请确认你选的模型本身支持图片。</span>
+                  <span className="hc-model-field-label">{formatMessage({ id: "hc.settings.modelForm.imageInputLabel", defaultMessage: "Supports image input" })}</span>
+                  <span className="hc-model-field-hint">{formatMessage({ id: "hc.settings.modelForm.imageInputHint", defaultMessage: "When enabled, you can paste or drop images into chats; make sure the selected model itself supports images." })}</span>
                 </span>
               </label>
             </div>
@@ -219,10 +225,16 @@ export function ModelSettingsForm({
       </div>
       <div className="hc-settings-footer">
         <div className="hc-muted">
-          已配置 {configuredModels.length} 个模型 · 当前共 {models.length} 套模型档案 · 保存会重启运行时以加载 API 地址和 Key
+          {formatMessage(
+            {
+              id: "hc.settings.modelForm.footerSummary",
+              defaultMessage: "{configuredCount} models configured · {profileCount} model profiles · saving restarts the runtime to load the API URL and key",
+            },
+            { configuredCount: configuredModels.length, profileCount: models.length },
+          )}
         </div>
         <button className="hc-button hc-button-primary hc-settings-footer-action" onClick={onSave} type="button">
-          <KeyRound size={15} /> 保存并重启运行时
+          <KeyRound size={15} /> {formatMessage({ id: "hc.settings.modelForm.saveAndRestart", defaultMessage: "Save and restart runtime" })}
         </button>
       </div>
     </>

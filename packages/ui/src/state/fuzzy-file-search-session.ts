@@ -1,6 +1,6 @@
-import type { JsonRpcNotification } from "@hicodex/codex-protocol";
-import type { FuzzyFileSearchResponse } from "@hicodex/codex-protocol/generated/FuzzyFileSearchResponse";
-import type { FuzzyFileSearchResult } from "@hicodex/codex-protocol/generated/FuzzyFileSearchResult";
+import type { JsonRpcNotification } from "@forge/codex-protocol";
+import type { FuzzyFileSearchResponse } from "@forge/codex-protocol/generated/FuzzyFileSearchResponse";
+import type { FuzzyFileSearchResult } from "@forge/codex-protocol/generated/FuzzyFileSearchResult";
 import type { WorkspaceDirEntry } from "../lib/tauri-host";
 
 export interface FuzzyFileSearchRequestClient {

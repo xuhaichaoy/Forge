@@ -27,7 +27,7 @@ import type { SETTINGS_SECTIONS } from "../state/settings-panel-workflow";
 /*
  * CODEX-REF: Codex Desktop's per-slug icon map lives in settings-page-*.js
  * as a slug -> icon component table. Each Lucide pick below targets the
- * closest visual/semantic match; HiCodex does not bundle Codex's bespoke
+ * closest visual/semantic match; Forge does not bundle Codex's bespoke
  * icon set.
  */
 export function settingsSectionIcon(icon: (typeof SETTINGS_SECTIONS)[number]["icon"]) {

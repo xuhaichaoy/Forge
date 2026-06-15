@@ -90,7 +90,7 @@ export interface ConversationViewProps {
   /**
    * Patch action handler — see `event-unit.tsx` `TurnDiffBlock` props for the
    * Codex Desktop revertChanges / reapplyChanges semantics. Wired by the app
-   * shell so HiCodexApp can call the Tauri host and surface the
+   * shell so ForgeApp can call the Tauri host and surface the
    * `UnifiedDiffFailureDialog` on partial / failed apply.
    */
   onPatchAction?: PatchActionHandler;

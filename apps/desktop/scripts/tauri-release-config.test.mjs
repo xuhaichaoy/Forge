@@ -18,8 +18,8 @@ const ENCODED_PUBLIC_KEY = Buffer.from(RAW_PUBLIC_KEY, "utf8").toString("base64"
 
 function baseEnv() {
   return {
-    HICODEX_UPDATER_ENDPOINTS: "https://releases.hicodex.test/{{target}}/{{arch}}/{{current_version}}",
-    HICODEX_UPDATER_PUBKEY: ENCODED_PUBLIC_KEY,
+    FORGE_UPDATER_ENDPOINTS: "https://releases.forge.test/{{target}}/{{arch}}/{{current_version}}",
+    FORGE_UPDATER_PUBKEY: ENCODED_PUBLIC_KEY,
     TAURI_SIGNING_PRIVATE_KEY: "secret key material",
     APPLE_SIGNING_IDENTITY: "Developer ID Application: Example Inc (ABCDE12345)",
     APPLE_ID: "ci@example.com",
@@ -62,8 +62,8 @@ test("normalizes raw minisign public key content to Tauri updater pubkey", () =>
 test("builds a release merge config from environment variables", () => {
   const result = buildTauriReleaseConfig({
     ...baseEnv(),
-    HICODEX_MACOS_ENTITLEMENTS: "src-tauri/entitlements.plist",
-    HICODEX_MACOS_PROVIDER_SHORT_NAME: "ProviderShortName",
+    FORGE_MACOS_ENTITLEMENTS: "src-tauri/entitlements.plist",
+    FORGE_MACOS_PROVIDER_SHORT_NAME: "ProviderShortName",
   });
   assert.deepEqual(result.config.bundle, {
     createUpdaterArtifacts: true,
@@ -74,10 +74,39 @@ test("builds a release merge config from environment variables", () => {
     },
   });
   assert.deepEqual(result.config.plugins.updater, {
-    endpoints: ["https://releases.hicodex.test/{{target}}/{{arch}}/{{current_version}}"],
+    endpoints: ["https://releases.forge.test/{{target}}/{{arch}}/{{current_version}}"],
     pubkey: ENCODED_PUBLIC_KEY,
   });
   assert.equal(result.summary.macOSNotarizationAuth, "apple-id");
+});
+
+test("accepts legacy HICODEX_* environment aliases with FORGE_* taking precedence", () => {
+  const legacyOnly = buildTauriReleaseConfig({
+    HICODEX_UPDATER_ENDPOINTS: "https://releases.forge.test/{{target}}/{{arch}}/{{current_version}}",
+    HICODEX_UPDATER_PUBKEY: ENCODED_PUBLIC_KEY,
+    HICODEX_MACOS_SIGNING_IDENTITY: "Developer ID Application: Legacy Inc (LEGACY1234)",
+    HICODEX_MACOS_ENTITLEMENTS: "src-tauri/entitlements.plist",
+    TAURI_SIGNING_PRIVATE_KEY: "secret key material",
+    APPLE_ID: "ci@example.com",
+    APPLE_PASSWORD: "app-specific-password",
+    APPLE_TEAM_ID: "ABCDE12345",
+  });
+  assert.deepEqual(legacyOnly.config.plugins.updater.endpoints, [
+    "https://releases.forge.test/{{target}}/{{arch}}/{{current_version}}",
+  ]);
+  assert.equal(legacyOnly.config.plugins.updater.pubkey, ENCODED_PUBLIC_KEY);
+  assert.equal(
+    legacyOnly.config.bundle.macOS.signingIdentity,
+    "Developer ID Application: Legacy Inc (LEGACY1234)",
+  );
+  assert.equal(legacyOnly.config.bundle.macOS.entitlements, "src-tauri/entitlements.plist");
+
+  const mixed = buildTauriReleaseConfig({
+    ...baseEnv(),
+    FORGE_UPDATER_ENDPOINTS: "https://releases.forge.test/new/latest.json",
+    HICODEX_UPDATER_ENDPOINTS: "https://releases.forge.test/legacy/latest.json",
+  });
+  assert.deepEqual(mixed.config.plugins.updater.endpoints, ["https://releases.forge.test/new/latest.json"]);
 });
 
 test("removes local ad-hoc signing when CI provides an Apple certificate", () => {
@@ -152,7 +181,7 @@ test("allows explicit ad-hoc candidate builds without notarization credentials",
   delete env.APPLE_ID;
   delete env.APPLE_PASSWORD;
   delete env.APPLE_TEAM_ID;
-  env.HICODEX_RELEASE_ALLOW_ADHOC_SIGNING = "1";
+  env.FORGE_RELEASE_ALLOW_ADHOC_SIGNING = "1";
   const result = buildTauriReleaseConfig(env);
   assert.equal(result.config.bundle.macOS.signingIdentity, "-");
   assert.equal(result.summary.macOSNotarizationAuth, "skipped-ad-hoc");

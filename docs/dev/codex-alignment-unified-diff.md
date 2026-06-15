@@ -28,7 +28,7 @@ The inline card layout:
 - "Too large to render inline" placeholder for oversize diffs.
 - `inlineLargeFile` substitution when the file body exceeds the inline-render threshold.
 
-HiCodex `hc-turn-diff` inline card (in `event-unit.tsx::ToolBlock`) implements the Desktop card, including the edited-file detail list, first-three-row preview, show-more/collapse behavior, large-file placeholder, and single-file `Details` row without duplicate per-row stats.
+Forge `hc-turn-diff` inline card (in `event-unit.tsx::ToolBlock`) implements the Desktop card, including the edited-file detail list, first-three-row preview, show-more/collapse behavior, large-file placeholder, and single-file `Details` row without duplicate per-row stats.
 
 ## 3. Failure Dialog structure
 
@@ -74,7 +74,7 @@ Special error code surfaces a dedicated string set instead of the normal dialog 
 - `reapplyPatchNotGitRepo = Reapply requires a Git repository`
 - `patchNotGitRepoDescription = This action only works when running in a Git repository.`
 
-HiCodex `host_apply_patch_action` (Rust) returns `{ errorCode: 'not-git-repo' }` to drive this branch.
+Forge `host_apply_patch_action` (Rust) returns `{ errorCode: 'not-git-repo' }` to drive this branch.
 
 ## 5. Toast / status feedback after Undo / Reapply
 
@@ -152,11 +152,11 @@ codex.unifiedDiff.details                        = Details
 
 (The full set above is 22 lines; the table grouping is approximate — total across all four buckets is 41 strings.)
 
-## 7. HiCodex implementation status
+## 7. Forge implementation status
 
 - Backend `host_apply_patch_action` (Tauri command) runs `git apply` / `git apply --reverse`, detects non-git repos, and returns `{ appliedPaths, skippedPaths, conflictedPaths, errorOutput, errorCode? }`.
 - UI bridge: `tauri-host.ts::applyPatchAction` + `PatchActionRequest` / `PatchActionResult` types.
-- State: `HiCodexApp.tsx` owns `patchActionState` / `patchFailure` / `patchActionInFlight` and renders `<UnifiedDiffFailureDialog/>`.
+- State: `ForgeApp.tsx` owns `patchActionState` / `patchFailure` / `patchActionInFlight` and renders `<UnifiedDiffFailureDialog/>`.
 - Inline card: `event-unit.tsx::ToolBlock` consumes the prop chain through `conversation-view.tsx`.
 - CSS: `settings-command.css` extension for dialog styling.
 

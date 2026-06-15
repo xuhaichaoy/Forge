@@ -13,7 +13,7 @@ import type {
   SidebarOrganizeMode,
   SidebarSortKey,
 } from "../state/sidebar-projection";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 type SidebarProjectSectionMenu = "filter" | "add-project";
 type SidebarProjectSectionCollapseAction = "collapse-all" | "reopen-previous";
@@ -49,7 +49,7 @@ export function SidebarProjectSection({
   onToggleSectionMenu: (menu: SidebarProjectSectionMenu | null) => void;
   onUseExistingFolder: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const toggleMenu = (menu: SidebarProjectSectionMenu) => {
     onToggleSectionMenu(openSectionMenu === menu ? null : menu);
   };
@@ -95,7 +95,7 @@ export function SidebarProjectSection({
             <div className="hc-thread-menu hc-sidebar-section-menu hc-app-popover-menu" role="menu" data-state="open">
               {/* codex app-main groupByMenu: submenuTitle "Organize sidebar",
                   options "By project" (workspace) and "Chronological list" (recency).
-                  HiCodex surfaces only the two organize modes it actually implements;
+                  Forge surfaces only the two organize modes it actually implements;
                   the self-invented "Current workspace first" item had no Codex basis. */}
               <div className="hc-thread-menu-title">{formatMessage({ id: "sidebarElectron.groupByMenu.submenuTitle", defaultMessage: "Organize sidebar" })}</div>
               <button

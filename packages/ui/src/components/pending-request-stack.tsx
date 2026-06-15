@@ -1,5 +1,5 @@
 import type { PendingServerRequest } from "../state/codex-reducer";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { ApprovalCard } from "./pending-request-approval-card";
 
 export type { PendingRequestDetail } from "../state/approval-requests";
@@ -25,7 +25,7 @@ export function PendingRequestStack({
   onRespond,
   onLog,
 }: PendingRequestStackProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <section
       className="hc-pending-stack"

@@ -355,7 +355,7 @@ function defaultHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "Accept": "application/json",
     "Content-Type": "application/json",
-    "User-Agent": "hicodex-training-api-mcp/0.1",
+    "User-Agent": "forge-training-api-mcp/0.1",
   };
   if (token.trim().length > 0) {
     headers.Authorization = `Bearer ${token.trim()}`;
@@ -368,7 +368,7 @@ function defaultHeaders(): Record<string, string> {
  *
  *  设计原则：
  *    1. MCP 工具不读用户本地文件 — 数据从两条渠道进入模型：
- *       (a) 用户在对话里粘贴 / @ 上传（HiCodex 自动 OCR/提取）→ 模型直接看到
+ *       (a) 用户在对话里粘贴 / @ 上传（Forge 自动 OCR/提取）→ 模型直接看到
  *       (b) 51CTO 真实企培后台 API（讲师 + 课程）— 模型按需调用
  *    2. 算法工具（match/rank/compose）是纯函数：模型把数据作为参数传进去。
  *       工具不假设数据来源，只做服务端可以更稳定做的计算。
@@ -492,7 +492,7 @@ export async function search51ctoLecturers(args: {
         Authorization: `bearer ${CTO51_TOKEN}`,
         Referer: "https://saas-admin.51cto.com/",
         "X-Ops-Version": "v1.0.0",
-        "User-Agent": "hicodex-training-api-mcp/0.2",
+        "User-Agent": "forge-training-api-mcp/0.2",
       },
       signal: controller.signal,
     });
@@ -581,7 +581,7 @@ export async function search51ctoCourses(args: {
         Authorization: `bearer ${CTO51_TOKEN}`,
         Referer: "https://saas-admin.51cto.com/",
         "X-Ops-Version": "v1.0.0",
-        "User-Agent": "hicodex-training-api-mcp/0.2",
+        "User-Agent": "forge-training-api-mcp/0.2",
       },
       signal: controller.signal,
     });

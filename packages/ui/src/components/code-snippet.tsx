@@ -23,7 +23,7 @@ import {
   MermaidFlowchartPreview,
   mermaidFlowchartPreviewModel,
 } from "./mermaid-code-preview";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export type { CodeSnippetWrapMode } from "./code-snippet-helpers";
 export {
@@ -74,7 +74,7 @@ export function CodeSnippet({
 }) {
   const [userWrapped, setUserWrapped] = useState(false);
   const [copied, setCopied] = useState(false);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const normalizedLanguage = language.trim().toLowerCase();
   const wrapped = wrapMode === "always" || (wrapMode === "user-controlled" && userWrapped);
   const showWrapToggle = wrapMode === "user-controlled";

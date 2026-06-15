@@ -1,4 +1,4 @@
-import type { Thread, ThreadItem, UserInput } from "@hicodex/codex-protocol";
+import type { Thread, ThreadItem, UserInput } from "@forge/codex-protocol";
 import type { ThreadToolHistory } from "../lib/tauri-host";
 
 type ThreadTurn = Thread["turns"][number];

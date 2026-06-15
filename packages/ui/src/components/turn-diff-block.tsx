@@ -1,5 +1,5 @@
 import { ArrowRight, FileText } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { TurnDiffFilesSection, TurnDiffStats } from "./turn-diff-files-section";
 import {
   formatTurnDiffFileCount,
@@ -8,13 +8,13 @@ import {
 } from "./turn-diff-view-model";
 
 /**
- * Undo / Reapply patch 回调 — 由 `HiCodexApp.handlePatchAction` 接线，调用
+ * Undo / Reapply patch 回调 — 由 `ForgeApp.handlePatchAction` 接线，调用
  * Tauri `host_apply_patch_action` 执行 git apply / --reverse，并在失败时把
  * `PatchActionResult` 投给 `<UnifiedDiffFailureDialog/>`。
  *
  * Prop 仍声明为可选，方便 Storybook / 单测以静态 fixture 渲染 TurnDiffBlock
- * 而不必拽起整个 Tauri stack；运行时 HiCodexApp 必传，按钮可见且可点击。
- * 双击/重复点击保护：HiCodexApp 用 `useRef` 同步锁 + 全局 `patchActionInFlight`
+ * 而不必拽起整个 Tauri stack；运行时 ForgeApp 必传，按钮可见且可点击。
+ * 双击/重复点击保护：ForgeApp 用 `useRef` 同步锁 + 全局 `patchActionInFlight`
  * disable 所有 Undo/Reapply 按钮（避免并发 git apply）。
  */
 export type PatchAction = "undo" | "reapply";
@@ -43,20 +43,20 @@ export function TurnDiffBlock({
   patchActionState?: PatchActionState;
   /**
    * Global in-flight flag — disables ALL Undo/Reapply buttons while any patch
-   * action is running. Backstops the synchronous `useRef` lock in HiCodexApp;
+   * action is running. Backstops the synchronous `useRef` lock in ForgeApp;
    * the button-level `disabled` is the user-visible guarantee that prevents
    * double-click before any git apply runs.
    */
   patchActionInFlight?: boolean;
   value: string;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const model = turnDiffViewModel(value);
   if (!model.hasChanges) return null;
 
   /*
    * Undo / Reapply toggles against the last patch action for this diff. The
-   * callback is optional for fixture-only renderers; HiCodexApp wires it to
+   * callback is optional for fixture-only renderers; ForgeApp wires it to
    * the Tauri `host_apply_patch_action` command at runtime.
    */
   const patchActionForThisDiff =
@@ -103,7 +103,7 @@ export function TurnDiffBlock({
                *   codex.unifiedDiff.viewDiffTooltip     = "Review" (narrow-width label + title)
                *   codex.unifiedDiff.reviewChangedFiles  = "Review changed files" (aria-label)
                *   codex.unifiedDiff.reviewChangesHover  = "Review changes" (hover/header subtitle)
-               * The bundle renders a single "Review" label; HiCodex keeps a responsive
+               * The bundle renders a single "Review" label; Forge keeps a responsive
                * full/short split that resolves to the same "Review" text at any width.
                */}
               <span className="hc-turn-diff-review-full">
@@ -167,7 +167,7 @@ export function TurnDiffBlock({
         </div>
         <div className="hc-turn-diff-spacer" />
         {/*
-         * `onPatchAction` is always provided by `HiCodexApp.tsx` at runtime
+         * `onPatchAction` is always provided by `ForgeApp.tsx` at runtime
          * (wired to the Tauri `host_apply_patch_action` command); the prop
          * stays optional so fixture-only renderers (tests / Storybook) can
          * skip the toolbar.
@@ -177,7 +177,7 @@ export function TurnDiffBlock({
             className="hc-turn-diff-patch-action"
             /*
              * Codex Desktop i18n: revertChangesTooltip = "Undo", reapplyChangesTooltip = "Reapply"
-             * (local-conversation-thread-*.js). HiCodex tooltips align to single-word
+             * (local-conversation-thread-*.js). Forge tooltips align to single-word
              * Codex values; aria-label adds verb context for screen readers.
              */
             title={

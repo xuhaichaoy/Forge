@@ -11,7 +11,7 @@
 /*
  * CODEX-REF: local-conversation-thread-*.js (Browser row) —
  * Codex 桌面版用 `loading-shimmer-pure-text` class 在 active browser tab title 上
- * 跑 gradient 渐变扫光。HiCodex 以 CSS 连续扫光对齐(避免与 tool-activity
+ * 跑 gradient 渐变扫光。Forge 以 CSS 连续扫光对齐(避免与 tool-activity
  * `hc-thinking-shimmer` 节奏冲突),class 名严格对齐 Codex。
  */
 .hc-rail-card-title.loading-shimmer-pure-text {
@@ -100,7 +100,7 @@
 /* codex: local-conversation-thread-*.js — sticky section header.
  * Desktop's section-header element is `sticky top-0 z-10` over
  * `bg-token-dropdown-background` so the title remains visible while the rail
- * body scrolls beneath it. HiCodex already pins the header in
+ * body scrolls beneath it. Forge already pins the header in
  * `rail-sections.css` with `z-index: 1`; this override raises the stacking
  * context above rail-card hover overlays and swaps the hardcoded panel color
  * for the themed surface token so
@@ -121,10 +121,10 @@
  * cubic-bezier(0.19,1,0.22,1) ease-out used for disclosure
  * transitions across the conversation thread.
  *
- * HiCodex's summary right-rail is `position: absolute` and the React tree
- * mounts/unmounts the `<RightRail>` aside from `HiCodexApp` based on
+ * Forge's summary right-rail is `position: absolute` and the React tree
+ * mounts/unmounts the `<RightRail>` aside from `ForgeApp` based on
  * `showRightRail`. We can't drive an exit animation while the node is being
- * destroyed (that would require an exit-phase wrapper in HiCodexApp), so on
+ * destroyed (that would require an exit-phase wrapper in ForgeApp), so on
  * mount we play an enter animation that slides the rail in from its right
  * offset and fades it up — mirroring the codex spring open. The transition
  * variables match `.hc-codex-transition` (500ms / cubic-bezier(0.19,1,0.22,1)).
@@ -171,7 +171,7 @@
 /* codex: local-conversation-thread-*.js pinned-state gating — when the rail is
  * rendered but not pinned (overlay/auto-hide states), fade content and disable pointer
  * events. The mount path today always passes `isPinned=true` because
- * HiCodexApp gates on `rightRailPinned`; this rule keeps the visual contract
+ * ForgeApp gates on `rightRailPinned`; this rule keeps the visual contract
  * for future code paths that may render the rail in an unpinned/closing
  * state during a transition. */
 .hc-right-rail[data-pinned="false"] {
@@ -192,12 +192,12 @@
 }
 
 /*
- * TODO codex: HiCodexApp.tsx#showRightRail gates `<RightRail>` mount/unmount.
+ * TODO codex: ForgeApp.tsx#showRightRail gates `<RightRail>` mount/unmount.
  * To play a close animation matching Codex Desktop's setRightPanel(false)
  * spring, the rail needs an exit-phase wrapper that delays unmount until
  * the transition completes (e.g. tracking a `closing` state with
  * `transitionend` cleanup, similar to framer-motion AnimatePresence). That
- * change is intentionally deferred — it lives in HiCodexApp which is
+ * change is intentionally deferred — it lives in ForgeApp which is
  * out-of-scope for this pass.
  *
  * TODO codex: overlay mode (`data-display-mode="overlay"`) may want a

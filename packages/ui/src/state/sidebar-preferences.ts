@@ -16,8 +16,8 @@ export const SIDEBAR_ORGANIZE_MODE_STORAGE_KEY = "sidebar-organize-mode-v1";
 export const SIDEBAR_SORT_KEY_STORAGE_KEY = "thread-sort-key";
 // codex sidebar-signals-*.js: per-PROJECT-GROUP collapse persists to
 // `sidebar-collapsed-groups`; the FIXED top-level sections (chats/cloud/pinned/
-// threads) use `sidebar-collapsed-sections-v1`. HiCodex tracks only project-group
-// collapse, so it uses the group key. (Earlier HiCodex builds wrongly wrote group
+// threads) use `sidebar-collapsed-sections-v1`. Forge tracks only project-group
+// collapse, so it uses the group key. (Earlier Forge builds wrongly wrote group
 // collapse to the sections key — migrated below.)
 export const SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-groups";
 export const SIDEBAR_SECTION_ORDER_STORAGE_KEY = "sidebar-section-order-v1";
@@ -28,12 +28,12 @@ export const SIDEBAR_WIDTH_DEFAULT_PX = SIDEBAR_WIDTH_MIN_PX;
 
 const LEGACY_SIDEBAR_PREFERENCES_STORAGE_KEY = "hicodex:sidebar-preferences";
 /*
- * Earlier HiCodex builds wrote project-group collapse to
+ * Earlier Forge builds wrote project-group collapse to
  * `sidebar-collapsed-sections-v1` — that is the bundle's FIXED-section key, not
  * the group key. Migrate that old state into the Desktop-aligned
  * `sidebar-collapsed-groups` slot on the next load/save cycle.
  */
-const LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-sections-v1";
+const LEGACY_FORGE_COLLAPSED_GROUPS_STORAGE_KEY = "sidebar-collapsed-sections-v1";
 const DEFAULT_SIDEBAR_SECTION_ORDER = ["projects"];
 
 export interface SidebarPreferenceStorageLike {
@@ -85,7 +85,7 @@ export function loadSidebarPreferences(
   if (collapsedGroups !== undefined) {
     next.collapsedGroups = normalizeSidebarCollapsedGroups(collapsedGroups);
   } else {
-    const legacyCollapsedGroups = readStoredJson(storage, LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY);
+    const legacyCollapsedGroups = readStoredJson(storage, LEGACY_FORGE_COLLAPSED_GROUPS_STORAGE_KEY);
     if (legacyCollapsedGroups !== undefined) {
       next.collapsedGroups = normalizeSidebarCollapsedGroups(legacyCollapsedGroups);
     }
@@ -111,7 +111,7 @@ export function saveSidebarPreferences(
   safeSetItem(storage, SIDEBAR_COLLAPSED_GROUPS_STORAGE_KEY, JSON.stringify(normalized.collapsedGroups));
   safeSetItem(storage, SIDEBAR_SECTION_ORDER_STORAGE_KEY, JSON.stringify(normalized.sectionOrder));
   safeSetItem(storage, SIDEBAR_WIDTH_STORAGE_KEY, String(normalized.widthPx));
-  safeRemoveItem(storage, LEGACY_HICODEX_COLLAPSED_GROUPS_STORAGE_KEY);
+  safeRemoveItem(storage, LEGACY_FORGE_COLLAPSED_GROUPS_STORAGE_KEY);
 }
 
 export function normalizeSidebarPreferences(

@@ -1,7 +1,7 @@
 import { ArrowUp, ListChecks, Loader2, Plus, Square, Target } from "lucide-react";
 import { forwardRef } from "react";
 import type { ComposerMode, ComposerSubmitState } from "../state/composer-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { Tooltip } from "./tooltip";
 
 export interface ComposerFooterLeftProps {
@@ -21,7 +21,7 @@ export const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftP
   onPursueGoal,
   onShowAttachmentMenu,
 }, ref) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const addContextLabel = formatMessage({ id: "composer.addContextDropdown.ariaLabel", defaultMessage: "Add files and more" });
   return (
     <div className="hc-composer-footer-left" ref={ref}>
@@ -44,7 +44,7 @@ export const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftP
          *   composer.planModeIndicator.tooltipShortcut = "{shortcut}" (kbd)
          *   composer.planModeIndicator.tooltipToggle   = "to toggle"
          * rendered `flex flex-col items-center text-center` with the shortcut in
-         * a keycap. HiCodex injects "Shift + Tab" as the shortcut (matching the
+         * a keycap. Forge injects "Shift + Tab" as the shortcut (matching the
          * Codex bundle's literal value) and renders it inside <kbd>.
          */
         <Tooltip content={<PlanModeTooltipContent />}>
@@ -86,7 +86,7 @@ export const ComposerFooterLeft = forwardRef<HTMLDivElement, ComposerFooterLeftP
  * shortcut keycap followed by tooltipToggle ("to toggle").
  */
 function PlanModeTooltipContent() {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <span className="hc-plan-tooltip">
       <span>{formatMessage({ id: "composer.planModeIndicator.tooltipText", defaultMessage: "Create a plan" })}</span>

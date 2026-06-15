@@ -2,7 +2,7 @@ import { Check, Plus } from "lucide-react";
 import { useEffect } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface TurnFeedbackOption {
   id: string;
@@ -15,7 +15,7 @@ export interface TurnFeedbackOption {
  * a CENTERED GLOBAL MODAL (Radix `DialogPortal` + modal `DialogOverlay` +
  * `DialogContent`, opened through the app's modal controller `ee(...)` in
  * plan-summary-item-content-n25PWfVz.js), NOT an inline anchored popover.
- * HiCodex has no global modal-stack controller, so we mirror the centered
+ * Forge has no global modal-stack controller, so we mirror the centered
  * overlay with the codebase's established `hc-settings-backdrop` +
  * `hc-thread-dialog-panel` dialog pattern (see thread-action-dialog.tsx /
  * fork-from-older-turn-dialog.tsx), portaled to `document.body` like the other
@@ -52,7 +52,7 @@ export function TurnFeedbackDialog({
   selectedOptionId: string | null;
   submitDisabled: boolean;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // Escape dismisses the dialog, matching the Radix modal's default close-on-Escape.
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -150,7 +150,7 @@ export function TurnFeedbackDialog({
 /*
  * Codex renders `turnRatingControls.feedbackLegalNotice` as react-intl rich text
  * with a `<link>` chunk wrapping "Learn more" as an anchor
- * (plan-summary-item-content-tuRA3zV6.js). HiCodex's formatMessage returns a
+ * (plan-summary-item-content-tuRA3zV6.js). Forge's formatMessage returns a
  * plain string, so we resolve the single Codex id (which keeps the i18n key
  * aligned and localized) and split on the `<link>...</link>` chunk at render time
  * to inject the same anchor - producing identical visible output without a

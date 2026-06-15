@@ -10,7 +10,7 @@ import {
   filterCommandEntries,
   panelIcon,
 } from "./command-panel-shell";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   commandPanelChatCreateEntry,
   commandPanelHandleEscape,
@@ -34,7 +34,7 @@ export interface CommandPanelProps {
 }
 
 export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, onSearchQueryChange }: CommandPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [query, setQuery] = useState("");
   const visibleEntries = useMemo(
     () => panel.panel === "files" ? panel.entries : filterCommandEntries(panel.entries, query),
@@ -82,6 +82,7 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
         className="hc-command-panel"
         role="dialog"
         data-state="open"
+        data-sub-mode={subMode}
         aria-modal="true"
         aria-label={panel.title}
         onMouseDown={(event) => event.stopPropagation()}

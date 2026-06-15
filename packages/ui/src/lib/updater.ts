@@ -7,7 +7,7 @@
  *   3. 如果服务端返回新版（且签名合法），返回的 Update 对象给 UI 用
  *   4. UI 弹一个小按钮；用户点击调 applyUpdate(update)
  *   5. Tauri 下载 .app.tar.gz + 用 release config 编进 app 的公钥校验 .sig
- *   6. 校验通过 → 替换 /Applications/HiCodex.app → relaunch
+ *   6. 校验通过 → 替换 /Applications/Forge.app → relaunch
  *
  * 在非 Tauri 环境（浏览器开发模式）下静默 no-op，避免引入运行时错误。
  */

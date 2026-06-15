@@ -21,7 +21,7 @@ export interface RailSectionProps {
  * side-chats, background-subagents (Subagents), background-tasks (Tasks), tool-sources
  * (Sources) AND browser-tabs all DO (browser-tabs builds `titleSuffix:(0,Q.jsx)(vp,{count:
  * p.length})` at :5890, vp returns null only when count===0); automation, environment
- * (branchDetails) and progress do NOT. (An earlier HiCodex note wrongly excluded browser.)
+ * (branchDetails) and progress do NOT. (An earlier Forge note wrongly excluded browser.)
  */
 function sectionHasCountBadge(sectionId: RightRailSectionViewModel["id"]): boolean {
   return (
@@ -59,7 +59,7 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
           {/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Xf) — the count is a
               `titleSuffix` rendered alongside the title via `(0,Q.jsx)(Xf,{count:…length})`;
               `Xf` returns null ONLY when `count===0` — it does NOT gate on expanded state, so
-              the badge stays visible whenever count>0 (expanded AND collapsed). HiCodex
+              the badge stays visible whenever count>0 (expanded AND collapsed). Forge
               previously hid it on expand. Per-section: only artifacts / side-chats /
               background-subagents / background-tasks / tool-sources pass a `titleSuffix`;
               automation, browser-tabs, environment (branchDetails) and progress pass NONE, so
@@ -77,7 +77,7 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
        *   animate:        { height: "auto", opacity: 1, marginTop: 2 }
        *   transition:     { duration: 0.5, ease: [.19, 1, .22, 1] }
        *   className:      "relative z-0 overflow-hidden"
-       * HiCodex 用 CSS grid-rows trick + opacity + margin-top 等价实现 height-auto
+       * Forge 用 CSS grid-rows trick + opacity + margin-top 等价实现 height-auto
        * 动画(无 framer-motion 依赖),transition spec 严格对齐 Codex 的 disclosure 缓动。
        */}
       <div

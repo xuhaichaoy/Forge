@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { splitDiffByFile, type TurnDiffFileViewModel } from "./turn-diff-view-model";
 import { CodeSnippet } from "./code-snippet";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 const TURN_DIFF_COLLAPSE_THRESHOLD = 3;
 const TURN_DIFF_INLINE_RENDER_CUTOFF = 5000;
@@ -18,7 +18,7 @@ export function TurnDiffFilesSection({
   singleFileDetailsLabel: string | null;
   value: string;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [filesExpanded, setFilesExpanded] = useState(false);
   const [openInlineFiles, setOpenInlineFiles] = useState<Set<string>>(() => new Set());
 
@@ -157,7 +157,7 @@ function isTurnDiffFileTooLargeToRender(file: TurnDiffFileViewModel): boolean {
 }
 
 export function TurnDiffStats({ added, removed }: { added: number; removed: number }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <span
       className="hc-turn-diff-stats"

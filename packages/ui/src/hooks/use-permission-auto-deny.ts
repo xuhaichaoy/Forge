@@ -11,12 +11,13 @@ import type { PendingServerRequest } from "../state/codex-reducer";
  * `network` and no `fileSystem`). Codex's pending-request-item-panel renders no
  * panel for these and fires a useEffect that replies
  * `{ permissions: {}, scope: "turn" }` (emitting `codex_permission_request_auto_denied`)
- * to immediately unblock the turn. HiCodex previously left a stuck,
+ * to immediately unblock the turn. Forge previously left a stuck,
  * non-acceptable panel that the user had to Cancel by hand.
  *
  * Mirrors the image-tool auto-responder: claim each request once via the shared
  * ref (so it is replied to exactly once), send the decline, then resolve the
- * server request. `dispatch` is stable and intentionally kept out of the deps.
+ * server request. `dispatch` is the stable useReducer dispatch; listing it in
+ * the deps never retriggers the effect.
  */
 export function usePermissionAutoDeny({
   handledRequestIdsRef,
@@ -44,5 +45,5 @@ export function usePermissionAutoDeny({
           dispatch({ type: "resolveServerRequest", id: request.id });
         });
     }
-  }, [client, pendingRequests]);
+  }, [client, dispatch, handledRequestIdsRef, pendingRequests]);
 }

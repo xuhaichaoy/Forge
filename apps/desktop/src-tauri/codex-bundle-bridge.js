@@ -9,7 +9,7 @@
  *
  * Job: emulate the Electron preload (`window.electronBridge`, `codexWindowType`,
  * telemetry short-circuits) so the bundle boots, and bridge every IPC/MCP/fetch
- * request the bundle makes onto HiCodex's Tauri host, which owns the single real
+ * request the bundle makes onto Forge's Tauri host, which owns the single real
  * `codex app-server` process.
  *
  * Ported 1:1 from the proven puppeteer spike
@@ -18,8 +18,8 @@
  *
  *   - request out:  window.__TAURI__.core.invoke("host_send_raw", { message })
  *                   message = {id, method, params} | {method, params} | {id, result}
- *   - events in:    window.__TAURI__.event.listen("hicodex://app-server-event", cb)
- *                   cb(e) -> e.payload is HiCodex's tagged HostEvent enum:
+ *   - events in:    window.__TAURI__.event.listen("forge://app-server-event", cb)
+ *                   cb(e) -> e.payload is Forge's tagged HostEvent enum:
  *                     { type: "json", value: <JSON-RPC message> }  // the interesting one
  *                     { type: "stdout" | "stderr" | "lifecycle" | "error", ... }
  *                   (We also accept a bare JSON-RPC message at e.payload for
@@ -34,7 +34,7 @@
   "use strict";
 
   var VERSION = "26.519.81530";
-  var APP_SERVER_EVENT = "hicodex://app-server-event";
+  var APP_SERVER_EVENT = "forge://app-server-event";
 
   // ==========================================================================
   // 0) Telemetry short-circuits — install FIRST, before anything else can run.
@@ -106,18 +106,18 @@
       proto.open = function (method, url) {
         try {
           var u = String(url || "");
-          this.__hicodexTelemetryUrl =
+          this.__forgeTelemetryUrl =
             /sentry/i.test(u) ||
             /ab\.chatgpt\.com|statsig|featuregates|featureassets/i.test(u)
               ? u
               : null;
         } catch (e) {
-          this.__hicodexTelemetryUrl = null;
+          this.__forgeTelemetryUrl = null;
         }
         return originalOpen.apply(this, arguments);
       };
       proto.send = function () {
-        var url = this.__hicodexTelemetryUrl;
+        var url = this.__forgeTelemetryUrl;
         if (!url) return originalSend.apply(this, arguments);
         var xhr = this;
         var body = /sentry/i.test(url) ? "{}" : telemetryBody(url);
@@ -169,13 +169,13 @@
       triggerSentryTestError: function () { return Promise.resolve(); },
       getSentryInitOptions: function () {
         return {
-          codexAppSessionId: "hicodex",
+          codexAppSessionId: "forge",
           appVersion: VERSION,
           release: VERSION,
           dsn: null,
         };
       },
-      getAppSessionId: function () { return "hicodex"; },
+      getAppSessionId: function () { return "forge"; },
       getBuildFlavor: function () { return "production"; },
       sendMessageFromView: function () { return Promise.resolve(); },
     };
@@ -213,7 +213,7 @@
   var rpcSeq = 0;
   function nextId(prefix) {
     rpcSeq += 1;
-    return (prefix || "hicodex-bundle") + "-" + Date.now() + "-" + rpcSeq;
+    return (prefix || "forge-bundle") + "-" + Date.now() + "-" + rpcSeq;
   }
 
   // Send a JSON-RPC request and resolve with the matching {id,result|error}.
@@ -242,7 +242,7 @@
   // the bundle multiplexes streams on its side by requestId).
   var streams = [];
 
-  // Unwrap HiCodex's tagged HostEvent enum into a bare JSON-RPC message.
+  // Unwrap Forge's tagged HostEvent enum into a bare JSON-RPC message.
   //   { type: "json", value: <msg> }  -> <msg>
   //   bare { id, ... } / { method, ... } -> itself (robustness fallback)
   //   anything else (stdout/stderr/lifecycle/error) -> null (ignored here)
@@ -311,7 +311,7 @@
   }
 
   function runInitHandshake() {
-    rpcRaw("hicodex-bundle-init", "initialize", {
+    rpcRaw("forge-bundle-init", "initialize", {
       clientInfo: {
         name: "forge_desktop",
         title: "Forge Desktop",
@@ -338,7 +338,7 @@
   }
 
   // Best-effort: make sure the host's app-server is actually running, THEN do
-  // the handshake. NOTE: HiCodex's `host_start_app_server` takes a `config`
+  // the handshake. NOTE: Forge's `host_start_app_server` takes a `config`
   // argument (see crates/host AppServerStartConfig + tauri-host.ts), not
   // `request`; we use the real param name so the server truly starts. Errors
   // (e.g. "already running") are ignored.
@@ -396,13 +396,13 @@
     triggerSentryTestError: function () { return Promise.resolve(); },
     getSentryInitOptions: function () {
       return {
-        codexAppSessionId: "hicodex",
+        codexAppSessionId: "forge",
         appVersion: VERSION,
         release: VERSION,
         dsn: null,
       };
     },
-    getAppSessionId: function () { return "hicodex"; },
+    getAppSessionId: function () { return "forge"; },
     getBuildFlavor: function () { return "production"; },
 
     // The single multiplexed channel the bundle uses for IPC / MCP / fetch.

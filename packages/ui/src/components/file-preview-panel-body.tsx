@@ -15,7 +15,7 @@ import {
   readFirstAvailableMetadata,
 } from "./file-preview-helpers";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { SpreadsheetPreview, type SpreadsheetPreviewKind } from "./spreadsheet-preview";
 import {
   clipArtifactPreviewText,
@@ -66,7 +66,7 @@ export function FilePreviewPanelBody({
   source: FilePreviewSource;
   workspaceRoot?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [state, setState] = useState<FilePreviewLoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export function FilePreviewPanelBody({
         }
         // CODEX-REF: open-workspace-file-*.js - xlsx/xlsm/csv/tsv route.
         // Codex Desktop renders these in the Popcorn Workbook component; the
-        // HiCodex simplified version pulls bytes via host_read_file_bytes_base64
+        // Forge simplified version pulls bytes via host_read_file_bytes_base64
         // and lets SheetJS in the renderer do the parsing. This branch sits
         // before the generic binary fallback so xlsx no longer shows the
         // "Binary file not shown" placeholder.
@@ -204,7 +204,7 @@ function FilePreviewStateView({
   state: FilePreviewLoadState;
   workspaceRoot?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (state.status === "loading") {
     return (
       <div className="hc-file-preview-empty">

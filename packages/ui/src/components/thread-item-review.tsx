@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { stringField } from "../lib/format";
 import { autoReviewBody, autoReviewTitle } from "./auto-review-view-model";
 import { AnimatedDisclosure } from "./animated-disclosure";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { ThreadItemUnit } from "./thread-item-types";
 
 export function McpServerElicitationThreadItemView({
@@ -11,7 +11,7 @@ export function McpServerElicitationThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div
       className="hc-thread-item-row group"
@@ -31,7 +31,7 @@ export function AutoReviewThreadItemView({
 }: {
   unit: ThreadItemUnit;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const record = unit.item as Record<string, unknown>;
   const title = autoReviewTitle(record, formatMessage);
   const body = autoReviewBody(record, formatMessage);

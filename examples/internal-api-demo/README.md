@@ -1,10 +1,10 @@
-# HiCodex × 内部培训平台 API — MCP + Skill 演示
+# Forge × 内部培训平台 API — MCP + Skill 演示
 
 把 `~/Downloads/docs/` 里的真实业务（培训需求 / 课程 / 讲师 / 项目方案）抽象
 成两层扩展点：
 
 ```
-[你们的培训平台 API] ──HTTP──> [MCP server: 11 tools] ──MCP stdio──> [Codex app-server] ──> [HiCodex UI]
+[你们的培训平台 API] ──HTTP──> [MCP server: 11 tools] ──MCP stdio──> [Codex app-server] ──> [Forge UI]
                                                                                               │
                                               [skill: annual-training-plan]                   │
                                                        └── 把 11 个工具串成"出年度方案"工作流
@@ -89,7 +89,7 @@ npm install
 npm run build
 ```
 
-### 2. 注册到 HiCodex
+### 2. 注册到 Forge
 
 编辑 `~/Library/Application Support/HiCodex/codex-home/config.toml`：
 
@@ -112,7 +112,7 @@ cp examples/internal-api-demo/skill/annual-training-plan/SKILL.md \
    "$HOME/Library/Application Support/HiCodex/codex-home/skills/annual-training-plan/SKILL.md"
 ```
 
-### 4. 重启 HiCodex
+### 4. 重启 Forge
 
 桌面 app 重启后会自动 spawn 新的 app-server，把 MCP server 拉起来。
 你在右栏 Sources 里会看到 `training_api`。
@@ -162,7 +162,7 @@ cp examples/internal-api-demo/skill/annual-training-plan/SKILL.md \
   修订对比；`export_plan_to_excel({ planId })` 导出 .xlsx 给法务/采购。
 - **审批流**：让 `compose_training_plan` 第一次调用时返回 `proposed-plan`
   ThreadItem（Codex 协议原生支持），UI 上用户点 Approve 才落库。
-- **打包发布**：把 MCP server + SKILL 打成一个 HiCodex plugin，团队成员
+- **打包发布**：把 MCP server + SKILL 打成一个 Forge plugin，团队成员
   一键安装。
 
 ## 排障
@@ -171,7 +171,7 @@ cp examples/internal-api-demo/skill/annual-training-plan/SKILL.md \
   `npx @modelcontextprotocol/inspector node dist/server.js` 验证 `tools/list`
   返回 12 个工具。
 - **鉴权失败**：`[mcp_servers.training_api.env]` 块的环境变量会传给子进程，
-  但如果 HiCodex 是从 Finder 启动的（不是 shell），不会继承你 `~/.zshrc` 里
+  但如果 Forge 是从 Finder 启动的（不是 shell），不会继承你 `~/.zshrc` 里
   的 export。统一在 `config.toml` 的 env 块里显式写。
 - **模型不触发 SKILL**：SKILL `description` 是触发依据。如果你们的真实
   词汇不同（"赋能人群" → "员工分类"），编辑 SKILL.md `description` 加进

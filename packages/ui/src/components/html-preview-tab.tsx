@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Code2, ExternalLink, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 import { localFileSrc } from "./file-preview-helpers";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { readFileMetadata } from "../lib/tauri-host";
 import type { FileReference } from "./file-reference-types";
 
@@ -31,7 +31,7 @@ export function htmlPreviewFitScale(containerWidthPx: number | null): number {
 
 /*
  * codex: the browser-sidebar file:// route renders a workspace .html inside the
- * right-hand panel. HiCodex has no embedded second webview (Electron
+ * right-hand panel. Forge has no embedded second webview (Electron
  * WebContentsView equivalent), so the rendered page lives in a sandboxed
  * iframe over the Tauri asset protocol: relative css/js/img resolve against
  * the document's asset URL, each sub-resource re-checked against the asset
@@ -40,7 +40,7 @@ export function htmlPreviewFitScale(containerWidthPx: number | null): number {
  * the asset scope (and reach window.__TAURI__ in the srcdoc case).
  */
 export function HtmlPreviewTabContent({ path, onViewSource, onOpenExternal }: HtmlPreviewTabProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [reloadKey, setReloadKey] = useState(0);
   const [status, setStatus] = useState<HtmlPreviewStatus>("loading");
   const [fitWidth, setFitWidth] = useState(true);

@@ -18,7 +18,9 @@ pub use crate::auth::CodexAuthSummary;
 pub use crate::computer_use::{
     ComputerUseBundleCandidate, ComputerUseReadiness, ComputerUseRepairResult,
 };
-pub use crate::host::{AppServerEvent, AppServerHost, AppServerStartConfig, HostStatus};
+pub use crate::host::{
+    AppServerEvent, AppServerHost, AppServerStartConfig, HostStatus, LifecycleKind,
+};
 pub use crate::installation::HostInstallationState;
 pub use crate::profile::LocalModelCatalogConfig;
 pub use crate::thread_history::{ThreadToolHistory, ThreadToolHistoryTurn};
@@ -43,17 +45,35 @@ pub enum HostError {
     Installation(String),
 }
 
+impl HostError {
+    /// Stable machine-readable code for the renderer-facing error contract
+    /// (the desktop lifecycle commands serialize errors as `{ code, message }`).
+    /// The Display text stays the human-readable channel — renderers should
+    /// match on this code instead of parsing the message.
+    pub fn code(&self) -> &'static str {
+        match self {
+            HostError::AlreadyRunning => "already_running",
+            HostError::NotRunning => "not_running",
+            HostError::Start(_) => "start_failed",
+            HostError::Write(_) => "write_failed",
+            HostError::Serialize(_) => "serialize_failed",
+            HostError::Profile(_) => "profile_failed",
+            HostError::Installation(_) => "installation_failed",
+        }
+    }
+}
+
 pub(crate) fn resolve_codex_home(configured: Option<&str>) -> PathBuf {
     if let Some(path) = configured.filter(|value| !value.trim().is_empty()) {
         return PathBuf::from(path);
     }
-    if let Ok(path) = env::var("HICODEX_CODEX_HOME") {
+    if let Ok(path) = env_var_with_legacy(FORGE_CODEX_HOME_ENV, LEGACY_CODEX_HOME_ENV) {
         if !path.trim().is_empty() {
             return PathBuf::from(path);
         }
     }
 
-    if env_flag("HICODEX_USE_CODEX_CLI_HOME") {
+    if env_flag_with_legacy(FORGE_USE_CODEX_CLI_HOME_ENV, LEGACY_USE_CODEX_CLI_HOME_ENV) {
         let codex_cli_home = default_codex_cli_home();
         if has_codex_profile(&codex_cli_home) {
             return codex_cli_home;
@@ -61,6 +81,19 @@ pub(crate) fn resolve_codex_home(configured: Option<&str>) -> PathBuf {
     }
 
     default_codex_home()
+}
+
+const FORGE_CODEX_HOME_ENV: &str = "FORGE_CODEX_HOME";
+/// Legacy env name from before the Forge rebrand; still honored as a fallback.
+const LEGACY_CODEX_HOME_ENV: &str = "HICODEX_CODEX_HOME";
+const FORGE_USE_CODEX_CLI_HOME_ENV: &str = "FORGE_USE_CODEX_CLI_HOME";
+/// Legacy env name from before the Forge rebrand; still honored as a fallback.
+const LEGACY_USE_CODEX_CLI_HOME_ENV: &str = "HICODEX_USE_CODEX_CLI_HOME";
+
+/// Read `primary`, falling back to the legacy `HICODEX_*` spelling so setups
+/// from before the Forge rebrand keep working.
+fn env_var_with_legacy(primary: &str, legacy: &str) -> Result<String, env::VarError> {
+    env::var(primary).or_else(|_| env::var(legacy))
 }
 
 /// 用户 home 目录：Unix 取 `$HOME`，Windows 取 `$USERPROFILE`。
@@ -78,6 +111,9 @@ fn user_home_dir() -> Option<PathBuf> {
 
 fn default_codex_home() -> PathBuf {
     let home = user_home_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
+    // The "HiCodex" / ".hicodex" directory segments are deliberate legacy
+    // values: existing installs keep their codex-home (auth, config, sessions)
+    // across the Forge rebrand. Do not rename these path segments.
     if cfg!(target_os = "macos") {
         return home
             .join("Library")
@@ -118,8 +154,8 @@ pub(crate) fn openai_bundled_marketplace_path(codex_cli_home: &Path) -> Option<P
     }
 }
 
-fn env_flag(name: &str) -> bool {
-    env::var(name)
+fn env_flag_with_legacy(primary: &str, legacy: &str) -> bool {
+    env_var_with_legacy(primary, legacy)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)
 }
@@ -131,7 +167,42 @@ mod tests {
     #[test]
     fn default_home_is_namespaced() {
         let home = default_codex_home().to_string_lossy().to_string();
+        // Deliberate legacy directory segments (pre-rebrand); see default_codex_home.
         assert!(home.contains("HiCodex") || home.contains(".hicodex"));
         assert!(home.ends_with("codex-home"));
+    }
+
+    /// The codes are the renderer's structured contract; renaming one breaks
+    /// `code === "..."` matches in the webview without a compile error there.
+    #[test]
+    fn host_error_codes_are_stable() {
+        assert_eq!(HostError::AlreadyRunning.code(), "already_running");
+        assert_eq!(HostError::NotRunning.code(), "not_running");
+        assert_eq!(HostError::Start("x".to_string()).code(), "start_failed");
+        assert_eq!(HostError::Write("x".to_string()).code(), "write_failed");
+        assert_eq!(
+            HostError::Serialize("x".to_string()).code(),
+            "serialize_failed"
+        );
+        assert_eq!(HostError::Profile("x".to_string()).code(), "profile_failed");
+        assert_eq!(
+            HostError::Installation("x".to_string()).code(),
+            "installation_failed"
+        );
+    }
+
+    /// The renderer's legacy fallback still matches on these Display texts
+    /// (`includes("already running")`); they are part of the compat contract
+    /// and must stay byte-for-byte stable.
+    #[test]
+    fn host_error_messages_remain_text_compatible() {
+        assert_eq!(
+            HostError::AlreadyRunning.to_string(),
+            "codex app-server is already running"
+        );
+        assert_eq!(
+            HostError::NotRunning.to_string(),
+            "codex app-server is not running"
+        );
     }
 }

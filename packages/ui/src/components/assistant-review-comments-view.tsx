@@ -2,10 +2,10 @@ import { ChevronRight, FileText } from "lucide-react";
 import { useState } from "react";
 import type { AssistantReviewComment, ConversationRenderUnit } from "../state/render-groups";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl, type HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
 type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
-type FormatMessage = HiCodexIntlContextValue["formatMessage"];
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 export function AssistantAfterReviewComments({
   units,
@@ -14,7 +14,7 @@ export function AssistantAfterReviewComments({
   units: NonNullable<MessageRenderUnit["assistantAfter"]>;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const reviewUnits = units.filter((unit) => unit.kind === "assistantReviewComments");
   const comments = reviewUnits.flatMap((unit) => unit.comments).sort(compareReviewCommentsByPriority);
   const [expanded, setExpanded] = useState(false);

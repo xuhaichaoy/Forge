@@ -6,7 +6,7 @@
 
 ## 2. Browser Runtime
 
-- [x] 2.0 Run the Browser extension-backend feasibility spike before calling Browser parity complete: the bundled Browser client discovers and selects the env-gated HiCodex `type: "extension"` host-compatible spike; this validates discovery/handshake only, while real Chrome extension parity remains incomplete.
+- [x] 2.0 Run the Browser extension-backend feasibility spike before calling Browser parity complete: the bundled Browser client discovers and selects the env-gated Forge `type: "extension"` host-compatible spike; this validates discovery/handshake only, while real Chrome extension parity remains incomplete.
 - [x] 2.1 Add a Browser runtime summary state/projection module.
 - [x] 2.2 Wire runtime-backed Browser summary into right-rail projection without synthetic fallback rows.
 - [x] 2.3 Add Browser open/focus action plumbing through the available runtime bridge.
@@ -17,7 +17,7 @@
 - [x] 2.8 Add macOS visible-window `Page.captureScreenshot` fallback while keeping full-page/native capture limits explicit.
 - [x] 2.9 Add lightweight Browser `iab` DOM lookup/geometry and point-scroll CDP support for common Browser client paths.
 - [x] 2.10 Add coordinate DOM hit testing, limited frame owner lookup, same-document navigation events, and JS dialog no-op compatibility while keeping unsupported Browser surfaces explicit.
-- [x] 2.11 Clean stale HiCodex Browser `iab` probe sockets on startup so historical probe files do not slow or confuse backend discovery.
+- [x] 2.11 Clean stale Forge Browser `iab` probe sockets on startup so historical probe files do not slow or confuse backend discovery.
 - [x] 2.12 Report Browser `iab` `codexAppBuildFlavor` metadata with a Desktop-compatible `prod` default so session-owned discovery can match Browser client policy.
 - [x] 2.13 Add a lightweight accessibility snapshot path for Browser client's `playwright_dom_snapshot` without claiming full Playwright DOM refs/cursors.
 - [x] 2.14 Preserve `file://` Browser targets and default loopback URLs without a scheme to `http://` instead of `https://`.
@@ -35,7 +35,7 @@
 - [x] 3.8 Reorder MCP readiness details so startup, probe, and timeout-risk diagnostics stay visible before tool inventory.
 - [x] 3.9 Surface Computer Use-specific diagnostics when the `list_apps` MCP probe times out.
 - [x] 3.10 Report all local Computer Use bundle candidates and show signed-valid repair-source readiness before MCP probing.
-- [x] 3.11 Add a guarded Computer Use repair action that installs only revalidated signed-valid local candidates into the HiCodex plugin cache.
+- [x] 3.11 Add a guarded Computer Use repair action that installs only revalidated signed-valid local candidates into the Forge plugin cache.
 - [x] 3.12 Trust-check Computer Use `.mcp.json` command, cwd, and args before marking candidates repair-usable or allowing MCP probing.
 - [x] 3.13 Block the safe `list_apps` MCP probe when native permission preflight proves Screen Recording or Accessibility is not granted.
 

@@ -1,8 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default HiCodex desktop capability",
-  "windows": ["main"],
+  "description": "Default Forge desktop capability",
+  "comment": "Secondary windows reuse the same shell: thread-<id> (Open in new window) and new-window-<n> (File > New Window / Cmd+Shift+N). Without these globs the Tauri ACL denies plugin:event|listen in them, so startEvents() fails and the new window stays disconnected.",
+  "windows": ["main", "thread-*", "new-window-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

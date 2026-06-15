@@ -197,6 +197,14 @@
   overflow: hidden;
 }
 
+/* Search sub-modes (chats/files): hold a stable height so the dialog does not
+   grow/shrink on every keystroke as the result count changes — the list
+   scrolls inside instead. The root command menu still sizes to its content. */
+.hc-command-panel[data-sub-mode="chats"],
+.hc-command-panel[data-sub-mode="files"] {
+  height: min(560px, calc(100dvh - 84px));
+}
+
 .hc-thread-dialog-panel {
   display: flex;
   max-height: min(520px, calc(100dvh - 32px));
@@ -1620,7 +1628,7 @@ textarea.hc-mcp-tool-control {
 
 /*
  * codex: keyboard-shortcuts-settings-*.js — full keyboard shortcuts
- * panel. HiCodex renders it as a stand-alone modal (vs Codex's Settings tab).
+ * panel. Forge renders it as a stand-alone modal (vs Codex's Settings tab).
  */
 .hc-keyboard-shortcuts-dialog {
   display: flex;
@@ -1774,7 +1782,7 @@ textarea.hc-mcp-tool-control {
 
 /*
  * CODEX-REF: keyboard-shortcuts-settings-*.js capture mode visuals.
- * Codex captures inline inside the row; HiCodex uses a modal so the styles
+ * Codex captures inline inside the row; Forge uses a modal so the styles
  * are bespoke. Color tokens reuse the existing settings palette.
  */
 .hc-key-capture-dialog {
@@ -2066,7 +2074,7 @@ textarea.hc-mcp-tool-control {
 /*
  * CODEX-REF: appearance-settings-*.js inline editor layout. Codex
  * renders each setting as a row of `<label> + control`, separated by a thin
- * divider. HiCodex tokens reuse the existing hc-* palette.
+ * divider. Forge tokens reuse the existing hc-* palette.
  */
 .hc-appearance-settings {
   display: flex;
@@ -2440,7 +2448,7 @@ textarea.hc-mcp-tool-control {
  *
  * WHY this block exists
  * ---------------------
- * HiCodex theming flips the `--hc-*` design tokens under
+ * Forge theming flips the `--hc-*` design tokens under
  * `.hc-app[data-theme="dark"]` (base.css:110+). Components that read
  * `var(--hc-*)` get dark for free. The selectors ABOVE in this file were
  * authored with a bespoke *warm-grey* light palette (e.g. #faf9f5, #fffdfa,
@@ -2464,7 +2472,7 @@ textarea.hc-mcp-tool-control {
  *     #2a2a2a — Codex's elevated-on-editor surface one step above editor-opaque
  *     (#212121); a solid (not translucent) value avoids alpha stacking on the
  *     already-translucent panel.
- *   • Semantic tone TEXT reuses HiCodex's existing dark semantic literals so
+ *   • Semantic tone TEXT reuses Forge's existing dark semantic literals so
  *     this dialog matches the rest of the app in dark mode: danger #f0a195,
  *     success #9bd4b8, accent #7aa9b8 (see conversation.css / message.css dark
  *     blocks). Tone FILLS (which are near-white in light and would glow on
@@ -2742,7 +2750,7 @@ textarea.hc-mcp-tool-control {
   color: rgba(255, 255, 255, 0.86);
 }
 
-/* ---- Semantic TONE text — reuse HiCodex dark literals so dialog matches app -- */
+/* ---- Semantic TONE text — reuse Forge dark literals so dialog matches app -- */
 /* danger (#963d2f) -> #f0a195 (same as conversation.css dark error) */
 .hc-app[data-theme="dark"] .hc-command-panel-message[data-status="error"],
 .hc-app[data-theme="dark"] .hc-command-secondary-action[data-tone="danger"],

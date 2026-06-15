@@ -1,7 +1,7 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { projectBranchDetails } from "../src/state/branch-details";
 
-const TEST_WORKSPACE = "/workspace/HiCodex";
+const TEST_WORKSPACE = "/workspace/Forge";
 
 export default function runBranchDetailsTests() {
   projectsDesktopGitRowsFromThreadCwdGitInfoAndStatus();
@@ -23,7 +23,7 @@ function projectsDesktopGitRowsFromThreadCwdGitInfoAndStatus() {
       gitInfo: {
         branch: "codex/branch-details-tests",
         sha: "1234567890abcdef",
-        originUrl: "git@example.com:hicodex/HiCodex.git",
+        originUrl: "git@example.com:forge/Forge.git",
       },
       status: { type: "active", activeFlags: [] },
     }),
@@ -66,7 +66,7 @@ function keepsExplicitGitStatusFactsWithoutRenderingExtraRows() {
       gitInfo: {
         branch: "main",
         sha: "abcdef1234567890",
-        originUrl: "git@example.com:hicodex/HiCodex.git",
+        originUrl: "git@example.com:forge/Forge.git",
       },
     }),
     gitStatus: {
@@ -114,7 +114,7 @@ function readsStatusFieldsFromThreadGitInfoExtension() {
       gitInfo: gitInfoFixture({
         branch: "feature/right-rail",
         sha: "abcdef1234567890",
-        originUrl: "git@example.com:hicodex/HiCodex.git",
+        originUrl: "git@example.com:forge/Forge.git",
         upstream: "origin/feature/right-rail",
         ahead: 2,
         behind: 1,
@@ -166,7 +166,7 @@ function countsChangedFilesFromDiffText() {
         "index 1111111..2222222 100644",
         "--- a/packages/ui/src/state/branch-details.ts",
         "+++ b/packages/ui/src/state/branch-details.ts",
-        "diff --git a/packages/ui/src/HiCodexApp.tsx b/packages/ui/src/HiCodexApp.tsx",
+        "diff --git a/packages/ui/src/ForgeApp.tsx b/packages/ui/src/ForgeApp.tsx",
         "index 3333333..4444444 100644",
       ].join("\n"),
     },
@@ -218,7 +218,7 @@ function projectsGithubCliStatusRows() {
       gitInfo: {
         branch: "feature/gh-status",
         sha: "abcdef1234567890",
-        originUrl: "git@example.com:hicodex/HiCodex.git",
+        originUrl: "git@example.com:forge/Forge.git",
       },
     }),
     gitStatus: {

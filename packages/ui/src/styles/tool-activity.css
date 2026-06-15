@@ -670,8 +670,8 @@ button.hc-error-event-summary:hover {
 /*
  * CODEX-REF: local-conversation-thread-*.js — 聚合 join helper 返回经
  * `t.formatList(a, {type:'unit'})` join 后的**单行字符串**渲染在
- * collapsed-tool-activity summary 区。HiCodex 对齐：单行展示，类似 Codex 的
- * `block min-w-0 max-w-full truncate`（HiCodex 这里不 truncate，因为 worked-for
+ * collapsed-tool-activity summary 区。Forge 对齐：单行展示，类似 Codex 的
+ * `block min-w-0 max-w-full truncate`（Forge 这里不 truncate，因为 worked-for
  * 内不强行裁剪，让长聚合自动换行更友好）。
  */
 .hc-worked-for-aggregate {
@@ -1013,7 +1013,7 @@ button.hc-error-event-summary:hover {
   background: rgba(34, 38, 43, 0.04);
 }
 
-/* codex: hover is bg-token-list-hover-background/60 (theme-aware). HiCodex's light
+/* codex: hover is bg-token-list-hover-background/60 (theme-aware). Forge's light
    0.04 ≈ that in light mode, but the hardcoded dark rgba is invisible on a dark
    surface — add the light-overlay dark override, matching the rail/trigger pattern. */
 .hc-app[data-theme="dark"] .hc-turn-diff-file-row:hover:not(:disabled) {
@@ -1188,7 +1188,7 @@ button.hc-error-event-summary:hover {
 /*
  * For collapsed-tool-activity rows (single-item exec summaries) Codex Desktop's
  * summary wrapper uses only `mask-image:linear-gradient(...)` to fade text — no
- * `text-overflow:ellipsis`. HiCodex was layering `…` on top of the gradient via the
+ * `text-overflow:ellipsis`. Forge was layering `…` on top of the gradient via the
  * inherited rules on .hc-tool-summary-label / -text / -detail. Override to `clip`
  * inside this group-type so mask-image dominates and the visible `…` disappears.
  */
@@ -1260,7 +1260,7 @@ button.hc-tool-summary:not(:disabled):hover .hc-tool-summary-icon,
  * local-conversation-thread-*.js) carries `group/collapsed-tool-activity`
  * + `group/summary` classes; its label span uses
  * `group-hover/collapsed-tool-activity:text-token-foreground` to shift
- * from muted to foreground on hover. HiCodex's `button.hc-tool-summary:hover` pseudo
+ * from muted to foreground on hover. Forge's `button.hc-tool-summary:hover` pseudo
  * selector is functionally equivalent — same trigger condition, same color target.
  */
 button.hc-tool-summary:hover .hc-tool-summary-label,
@@ -1558,7 +1558,7 @@ button.hc-tool-summary:hover svg:last-child,
  * codex Nv embedded header `he`: a muted shell-TYPE label row above the command
  * (`flex items-center justify-between gap-2 px-2 py-1 font-sans text-sm 12px
  * text-token-description-foreground select-none`). Horizontal inset matches
- * HiCodex's 10px command padding (Codex uses 8px); font-sans = inherit (the
+ * Forge's 10px command padding (Codex uses 8px); font-sans = inherit (the
  * command run is the mono one, not this header).
  */
 .hc-exec-shell-header {
@@ -1616,7 +1616,7 @@ button.hc-tool-summary:hover svg:last-child,
  * 展开 handler，把 collapsed 设为 false，line-clamp 类被移除，永久展开
  * （无反向折叠路径）。**Codex 的命令文本完全不设 max-height、不设 overflow-y**。
  *
- * HiCodex 把 clamp 状态外移到 `[data-command-expanded]` 属性，由 `ExecShellDetail`
+ * Forge 把 clamp 状态外移到 `[data-command-expanded]` 属性，由 `ExecShellDetail`
  * 的 `commandExpanded` useState 控制；attribute 在父 `.hc-exec-shell-command` 上，
  * `code` 元素始终保留 flex item 行为不变。
  */
@@ -2074,7 +2074,7 @@ button.hc-tool-summary:hover svg:last-child,
  * MCP result block layout — surfaced by `tool-activity-detail.tsx::McpResultBlock`
  * renderer. Codex Desktop uses muted description-foreground tone and tight
  * spacing for resource_link and embedded_resource blocks
- * (`local-conversation-thread-*.js`). HiCodex now renders
+ * (`local-conversation-thread-*.js`). Forge now renders
  * resource_link as non-clickable text ("Read {title|name|uri}") so we drop the
  * link affordance and lean on description-tone color for both forms.
  */
@@ -2249,7 +2249,7 @@ button.hc-tool-summary:hover svg:last-child,
 }
 
 /*
- * Generated image gallery (Codex `JC` parity). HiCodex collects all
+ * Generated image gallery (Codex `JC` parity). Forge collects all
  * `generated-image` items in a turn into a single horizontal carousel —
  * see `generated-image-gallery.tsx`. Matches Codex `flex gap-2
  * transition-transform` inner row + `rounded-[16px]` thumbnails + black/45

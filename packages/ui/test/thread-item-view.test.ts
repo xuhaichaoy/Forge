@@ -186,7 +186,7 @@ function rendersInlineTodoListPlanCard(): void {
     id: "todo-1",
     plan: [
       { step: "Inspect Desktop plan card", status: "completed" },
-      { step: "Patch HiCodex inline card", status: "in_progress" },
+      { step: "Patch Forge inline card", status: "in_progress" },
     ],
   };
   assertEqual(

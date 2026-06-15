@@ -1,6 +1,6 @@
 ## Context
 
-The previous plugin-backed settings change made Browser and Computer Use installable and visible in HiCodex's isolated Codex home. Desktop evidence shows that Browser runtime state is a separate browser-sidebar snapshot source, and Computer Use relies on a bundled macOS helper with MCP and OS permissions.
+The previous plugin-backed settings change made Browser and Computer Use installable and visible in Forge's isolated Codex home. Desktop evidence shows that Browser runtime state is a separate browser-sidebar snapshot source, and Computer Use relies on a bundled macOS helper with MCP and OS permissions.
 
 ## Design Principles
 
@@ -27,18 +27,18 @@ If no host/browser bridge exists, Browser settings may show plugin installed/ena
 
 The Desktop Browser client discovers Browser backends by scanning the native pipe directory and calling `getInfo()` on each candidate. The returned backend `type` separates `extension`, `iab`, and `cdp`; `iab` candidates are additionally filtered by session metadata, while `extension` candidates are retained as browser backends and may carry Chrome extension metadata such as `extensionId` and `extensionInstanceId`.
 
-For full Desktop parity, HiCodex must first prove one of these paths:
+For full Desktop parity, Forge must first prove one of these paths:
 
-- A real Chrome Browser extension can connect to HiCodex and expose a Browser backend that the bundled Browser client reports as `type: "extension"`.
-- Or HiCodex can host a clean extension-compatible backend with the same stable JSON-RPC contract, metadata, and capability behavior expected by the bundled Browser client.
+- A real Chrome Browser extension can connect to Forge and expose a Browser backend that the bundled Browser client reports as `type: "extension"`.
+- Or Forge can host a clean extension-compatible backend with the same stable JSON-RPC contract, metadata, and capability behavior expected by the bundled Browser client.
 
 This spike is the critical path for "same as Codex Desktop". The existing `iab` probe remains useful for the in-app Browser surface, smoke testing, and local dev workflows, but it is not the parity backend. Work on IAB must not delay or be confused with the extension-backend feasibility decision.
 
 The spike should be read-only or probe-only until the contract is clear:
 
 - Inspect Desktop/plugin evidence for `getInfo()` backend fields, native pipe location, backend selection, and capability gating.
-- Start from the bundled Browser client's discovery flow and verify whether a controlled `type: "extension"` backend is discovered under HiCodex.
-- If a real Chrome extension is required, verify installation/setup URL, extension id, local profile metadata, and whether it recognizes HiCodex's app identity/session.
+- Start from the bundled Browser client's discovery flow and verify whether a controlled `type: "extension"` backend is discovered under Forge.
+- If a real Chrome extension is required, verify installation/setup URL, extension id, local profile metadata, and whether it recognizes Forge's app identity/session.
 - Record blockers separately from IAB feature gaps.
 
 ## Computer Use Readiness

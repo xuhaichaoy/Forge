@@ -1,14 +1,14 @@
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import type { CommandPanelEntry, CommandPanelKind } from "./command-panel";
 import type { SettingsPanelId } from "./composer-workflow";
-import { HICODEX_IMAGE_TOOL_NAME } from "./image-generation-tool";
+import { FORGE_IMAGE_TOOL_NAME } from "./image-generation-tool";
 import {
   findSettingsActiveModel,
   projectServiceTierSettingsEntry,
 } from "./settings-service-tier";
 import {
   formatMessage,
-  type HiCodexLocale,
+  type ForgeLocale,
   type I18nMessageDescriptor,
   type I18nValues,
 } from "./i18n";
@@ -63,18 +63,18 @@ export {
  * the `mcp-settings` case (defaultMessage: "Connect external tools and data
  * sources."). All other sections have no description text.
  *
- * HiCodex keeps its own slug names (`mcp`, `hooks`, `plugins`, `skills`, `general`)
+ * Forge keeps its own slug names (`mcp`, `hooks`, `plugins`, `skills`, `general`)
  * instead of Codex's `mcp-settings` / `general-settings` style because the
  * SettingsPanelId union in composer-workflow.ts and the panel-ID branches in
  * settings-panel-loader.ts are wired to these short slugs. The user-visible label
  * still mirrors Codex Desktop.
  *
- * HiCodex-only sections (`models`, `images`, `permissions`, `approvals`, `apps`,
- * `experimental`) have no Codex Desktop counterpart — they are kept where HiCodex
- * had them and use HiCodex-original descriptions.
+ * Forge-only sections (`models`, `images`, `permissions`, `approvals`, `apps`,
+ * `experimental`) have no Codex Desktop counterpart — they are kept where Forge
+ * had them and use Forge-original descriptions.
  */
 type SettingsSectionIcon =
-  // HiCodex-original tokens
+  // Forge-original tokens
   | "general"
   | "models"
   | "images"
@@ -97,13 +97,13 @@ type SettingsSectionIcon =
   | "mcp"               // Codex mcp icon (slug mcp-settings)
   | "skills"            // Codex skills icon (slug skills-settings)
   | "hooks"             // Codex hooks icon (slug hooks-settings)
-  | "plugins"           // Codex apps icon (slug plugins-settings); HiCodex token "plugins"
+  | "plugins"           // Codex apps icon (slug plugins-settings); Forge token "plugins"
   | "archive";          // Codex archive icon (slug data-controls)
 
 /*
  * CODEX-REF: Section grouping mirrors Codex Desktop 26.602.40724's group
  * descriptor `$e` in settings-page-*.js — FOUR groups (an earlier build used a
- * 2-group app/host split, which HiCodex had cloned; the live build regrouped):
+ * 2-group app/host split, which Forge had cloned; the live build regrouped):
  *   [
  *     {key:`personal`,    heading:`Personal`,     slugs:[general-settings, profile,
  *           appearance, agent, personalization, keyboard-shortcuts, usage]},
@@ -114,7 +114,7 @@ type SettingsSectionIcon =
  *     {key:`archived`,    heading:`Archived`,     slugs:[data-controls]}
  *   ]
  * Heading i18n: settings.nav.heading.{personal,integrations,coding,archived}.
- * profile / codex-micro are Codex-only (absent here). HiCodex-only sections with
+ * profile / codex-micro are Codex-only (absent here). Forge-only sections with
  * no Codex counterpart are folded into the group whose semantic they most match:
  *   - models, images, apps → integrations (endpoints / connected apps, by MCP/plugins)
  *   - permissions, approvals, experimental → coding (agent runtime + dev config)
@@ -147,29 +147,29 @@ export const SETTINGS_SECTIONS: Array<{
 
   // === Integrations (codex $e integrations.slugs: appshots, codex-micro,
   // mcp-settings, plugins-settings, skills-settings, browser-use, computer-use;
-  // `codex-micro` is Codex-only. HiCodex-only models/images/apps folded in here.) ===
+  // `codex-micro` is Codex-only. Forge-only models/images/apps folded in here.) ===
   { id: "appshots", title: "Appshots", description: "", icon: "appshots", group: "integrations" },
   { id: "mcp", title: "MCP servers", description: "Connect external tools and data sources.", icon: "mcp", group: "integrations" },
-  // Codex gates plugins/skills out of the nav; HiCodex keeps them (it manages its own).
+  // Codex gates plugins/skills out of the nav; Forge keeps them (it manages its own).
   { id: "plugins", title: "Plugins", description: "", icon: "plugins", group: "integrations" },
   { id: "skills", title: "Skills", description: "Give Codex superpowers.", icon: "skills", group: "integrations" },
-  // HiCodex-only: connected apps — semantic neighbor to plugins/skills/mcp.
+  // Forge-only: connected apps — semantic neighbor to plugins/skills/mcp.
   { id: "apps", title: "Apps", description: "Connected apps", icon: "apps", group: "integrations" },
   { id: "browser-use", title: "Browser", description: "Manage Codex’s browser.", icon: "browser", group: "integrations" },
   { id: "computer-use", title: "Computer use", description: "Manage how Codex uses other applications on your computer", icon: "computer", group: "integrations" },
-  // HiCodex-only: local model + image-gen endpoint config — provider integrations.
+  // Forge-only: local model + image-gen endpoint config — provider integrations.
   { id: "models", title: "Models", description: "Provider and model profile", icon: "models", group: "integrations" },
   { id: "images", title: "Images", description: "Image generation endpoint", icon: "images", group: "integrations" },
 
   // === Coding (codex $e coding.slugs: hooks-settings, connections, git-settings,
-  // local-environments, environments, worktrees. HiCodex-only permissions/
+  // local-environments, environments, worktrees. Forge-only permissions/
   // approvals/experimental folded in — agent runtime + dev config.) ===
   { id: "hooks", title: "Hooks", description: "Manage lifecycle hooks from config and enabled plugins.", icon: "hooks", group: "coding" },
   { id: "connections", title: "Connections", description: "", icon: "connections", group: "coding" },
   { id: "git-settings", title: "Git", description: "", icon: "git", group: "coding" },
   { id: "local-environments", title: "Environments", description: "", icon: "environments", group: "coding" },
   { id: "worktrees", title: "Worktrees", description: "Local, worktree, cloud modes", icon: "worktrees", group: "coding" },
-  // HiCodex-only: agent runtime policy + approval policy + feature gates.
+  // Forge-only: agent runtime policy + approval policy + feature gates.
   { id: "permissions", title: "Permissions", description: "Sandbox and access mode", icon: "permissions", group: "coding" },
   { id: "approvals", title: "Approvals", description: "Current request policy", icon: "permissions", group: "coding" },
   { id: "experimental", title: "Experimental", description: "Feature gates", icon: "experimental", group: "coding" },
@@ -180,7 +180,7 @@ export const SETTINGS_SECTIONS: Array<{
 
 /*
  * Codex i18n ids for the settings-nav slugs that exist in Codex's zh-CN catalog
- * (`settings.nav.*`). Sections with NO Codex id (HiCodex-only: models, images,
+ * (`settings.nav.*`). Sections with NO Codex id (Forge-only: models, images,
  * permissions, approvals, apps, experimental) are omitted → their English title
  * is used as-is. defaultMessage is always the section's existing English title,
  * so en-US rendering is unchanged.
@@ -204,7 +204,7 @@ const SETTINGS_SECTION_I18N_IDS: Partial<Record<SettingsPanelId, string>> = {
   "local-environments": "settings.nav.local-environments",
   worktrees: "settings.nav.worktrees",
   "data-controls": "settings.nav.data-controls",
-  // HiCodex-only sections (no Codex nav id) — localized via hc.settings.nav.* keys.
+  // Forge-only sections (no Codex nav id) — localized via hc.settings.nav.* keys.
   models: "hc.settings.nav.models",
   images: "hc.settings.nav.images",
   permissions: "hc.settings.nav.permissions",
@@ -230,7 +230,7 @@ export function settingsSectionTitle(
   return id && formatMessage ? formatMessage({ id, defaultMessage: section.title }) : section.title;
 }
 
-// HiCodex shows a one-line subtitle under each settings-nav title (Codex Desktop
+// Forge shows a one-line subtitle under each settings-nav title (Codex Desktop
 // shows none). Localize it the same way as the title; defaultMessage keeps the
 // existing English subtitle so en-US rendering is unchanged.
 const SETTINGS_SECTION_DESC_I18N_IDS: Partial<Record<SettingsPanelId, string>> = {
@@ -370,7 +370,7 @@ function settingsPanelTitleEn(panel: SettingsPanelId): string {
  * below (CODEX-REF: keyboard-shortcuts-settings-*.js — read-only port of the
  * Codex Desktop 3-column command list). Rebind / key-capture / conflict detection
  * are NOT implemented here — Codex's panel allows in-place rebind via two host
- * bridges (codex-command-keymap-state, set-codex-command-keybinding) that HiCodex
+ * bridges (codex-command-keymap-state, set-codex-command-keybinding) that Forge
  * does not yet have; until those land the panel stays read-only.
  */
 export type DesktopBackedLocalSettingsPanel =
@@ -417,7 +417,7 @@ export function pluginBackedDesktopSettingsInfo(
       limitationDetails: [
         "Plugin lifecycle: loaded from plugin/list, plugin/installed, plugin/share/list, and app/list.",
         "Runtime readiness: the separate Browser runtime row opens a local Tauri Browser surface; it does not prove bundled iab agent control.",
-        "Settings bridge: origin allowlist and approval-mode host queries are still Desktop evidence only in HiCodex.",
+        "Settings bridge: origin allowlist and approval-mode host queries are still Desktop evidence only in Forge.",
       ],
       sourceDetails: desktopBackedLocalSettingsSourceDetails(panel),
     };
@@ -430,7 +430,7 @@ export function pluginBackedDesktopSettingsInfo(
     message: "Computer Use setup is loaded from app-server plugin data. OS permissions and app approvals remain native setup requirements.",
     limitationDetails: [
       "Plugin lifecycle: loaded from plugin/list, plugin/installed, plugin/share/list, and app/list.",
-      "OS permissions: HiCodex preflights Screen Recording and Accessibility for the current host process; helper-specific proof and app approvals remain native setup requirements.",
+      "OS permissions: Forge preflights Screen Recording and Accessibility for the current host process; helper-specific proof and app approvals remain native setup requirements.",
       "Execution bridge: this settings page does not add native mouse, keyboard, window, or screenshot control.",
     ],
     sourceDetails: desktopBackedLocalSettingsSourceDetails(panel),
@@ -586,7 +586,7 @@ const DESKTOP_BACKED_LOCAL_SETTINGS_SOURCE: Record<DesktopBackedLocalSettingsPan
 /*
  * CODEX-REF: keyboard-shortcuts-settings-*.js section grouping. Codex
  * Desktop groups its 3-column command list by `commandMenuGroupKey`,
- * rendering one section heading per group. HiCodex mirrors the same taxonomy
+ * rendering one section heading per group. Forge mirrors the same taxonomy
  * already used in components/keyboard-shortcuts-dialog.tsx so the Settings
  * panel and the ⌘⇧/ dialog stay visually consistent. Order of GROUP_TITLE
  * dictates section order; anything not in the list falls under "Other".
@@ -605,7 +605,7 @@ const KEYBOARD_SHORTCUTS_GROUP_TITLE: ReadonlyArray<{ key: string; title: string
  * CODEX-REF: keyboard-shortcuts-settings-*.js renders an editable 3-column
  * grid (Command / Keybinding / Actions) backed by two host bridges
  * (`codex-command-keymap-state` query, `set-codex-command-keybinding` mutation).
- * HiCodex ships a READ-ONLY port: one CommandPanelEntry per registered
+ * Forge ships a READ-ONLY port: one CommandPanelEntry per registered
  * COMMAND_DESCRIPTORS entry, with the platform-resolved accelerator surfaced
  * via the `status` field. Rebinding, key-capture, conflict detection, and
  * "reset to default" are intentionally NOT implemented yet — they need a new
@@ -752,7 +752,7 @@ export function generalSettingsEntries(context: {
   pendingRequestCount: number;
   pid: number | null;
   serviceTier?: unknown;
-  uiLocale?: HiCodexLocale;
+  uiLocale?: ForgeLocale;
   uiTheme?: UiThemeSnapshot;
   workspace: string;
   notificationPreferences: NotificationPreferences;
@@ -865,7 +865,7 @@ export function imageGenerationCapabilityEntries(context: {
   dynamicToolName?: string;
 }): CommandPanelEntry[] {
   const capabilities = parseModelProviderCapabilities(context.capabilities);
-  const dynamicToolName = context.dynamicToolName || HICODEX_IMAGE_TOOL_NAME;
+  const dynamicToolName = context.dynamicToolName || FORGE_IMAGE_TOOL_NAME;
   const dynamicToolRegistered = context.dynamicToolRegistered === true;
   const nativeStatus = context.error
     ? "error"

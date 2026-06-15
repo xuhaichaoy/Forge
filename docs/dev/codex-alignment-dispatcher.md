@@ -32,7 +32,7 @@ Lifecycle channels handled in the same switch (turn/item level, not item delta):
 
 - `turn/started` / `turn/completed` / `turn/diff/updated` / `turn/plan/updated`
 - `item/started` / `item/completed`
-- `model/rerouted` — synthesizes a `modelRerouted` timeline item (`{ fromModel, toModel, reason }`) into the active turn rather than only logging it. The renderer only surfaces reroutes whose `reason === "highRiskCyberActivity"`. HiCodex `itemType` normalizes the camelCase protocol type to `model-rerouted` (added 2026-05-29; verified vs Codex Desktop v26.519.81530).
+- `model/rerouted` — synthesizes a `modelRerouted` timeline item (`{ fromModel, toModel, reason }`) into the active turn rather than only logging it. The renderer only surfaces reroutes whose `reason === "highRiskCyberActivity"`. Forge `itemType` normalizes the camelCase protocol type to `model-rerouted` (added 2026-05-29; verified vs Codex Desktop v26.519.81530).
 
 ## Helpers (semantic, not minified)
 
@@ -43,11 +43,11 @@ The Codex dispatcher uses two private helpers worth naming in clean-room form:
 
 A small `transformOnStarted(item)` step special-cases `imageGeneration` / `collabAgentToolCall` initialization at `item/started`.
 
-## HiCodex alignment rule
+## Forge alignment rule
 
-HiCodex `packages/ui/src/state/codex-reducer.ts` must keep its `applyNotification` switch strictly to the 5-channel set above, plus `fileChange/patchUpdated` as a deliberate HiCodex extension (documented inline).
+Forge `packages/ui/src/state/codex-reducer.ts` must keep its `applyNotification` switch strictly to the 5-channel set above, plus `fileChange/patchUpdated` as a deliberate Forge extension (documented inline).
 
-Channels Codex Desktop does NOT consume in its UI state machine — and which HiCodex must not re-introduce as durable reducer state:
+Channels Codex Desktop does NOT consume in its UI state machine — and which Forge must not re-introduce as durable reducer state:
 
 - `summaryPartAdded` — already covered by `appendReasoningText`.
 - `commandExecution/terminalInteraction` — no UI consumer.
@@ -66,7 +66,7 @@ The 5 text/output channels are the minimum needed for streaming parity:
 4. `reasoning.textDelta` — full reasoning content (stored in protocol item; not rendered by Desktop in the agent timeline — see §27.1 in the reasoning doc).
 5. `commandExecution.outputDelta` — terminal aggregated output.
 
-Anything beyond these is either a non-streaming lifecycle event (`item/started`, `item/completed`), an item-replacement event (`patchUpdated`), or a Codex Desktop no-op. HiCodex's reducer should match this shape.
+Anything beyond these is either a non-streaming lifecycle event (`item/started`, `item/completed`), an item-replacement event (`patchUpdated`), or a Codex Desktop no-op. Forge's reducer should match this shape.
 
 ## Turn-level fan-out
 

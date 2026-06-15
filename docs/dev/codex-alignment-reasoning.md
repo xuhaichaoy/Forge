@@ -44,9 +44,9 @@ reasoningRenderItem = {                         // synthesized by the local-conv
 
 The renderer reads from `summary`, not `content`. `content` is stored only for protocol fidelity / future use.
 
-### HiCodex implementation rule
+### Forge implementation rule
 
-HiCodex injects a synthetic live placeholder via `desktopThinkingPlaceholderItem` (`project-conversation.ts`) and renders it through `ReasoningActivityView` (`event-unit.tsx`) only while the turn is in progress. This mirrors Codex's real placeholder path rather than the dead-code `Ux`/`qx` ReasoningItem path.
+Forge injects a synthetic live placeholder via `desktopThinkingPlaceholderItem` (`project-conversation.ts`) and renders it through `ReasoningActivityView` (`event-unit.tsx`) only while the turn is in progress. This mirrors Codex's real placeholder path rather than the dead-code `Ux`/`qx` ReasoningItem path.
 
 The label projection in `tool-activity-grouping.ts` still carries the Codex i18n string defaults (`Thinking` / `Thought for {time}` / `Thought`) for helper and defensive paths, but completed reasoning items are dropped by the turn projection and do not leave a visible `Thought` row.
 
@@ -87,11 +87,11 @@ The "Working for {time}" timer that appears once tools start is a separate "work
 
 ### Shimmer detail
 
-The thinking placeholder uses a `cadencedShimmer` mask animation: 4000ms cycle, 1000ms shimmer window, 600ms initial delay. HiCodex implements an equivalent CSS animation (`hc-thinking-shimmer`).
+The thinking placeholder uses a `cadencedShimmer` mask animation: 4000ms cycle, 1000ms shimmer window, 600ms initial delay. Forge implements an equivalent CSS animation (`hc-thinking-shimmer`).
 
-### HiCodex alignment
+### Forge alignment
 
-HiCodex's `desktopThinkingPlaceholderItem` is guarded by `turnStatus === "in_progress"`, so it vanishes when the turn completes just like Codex's `Iy` classifier returning `{ type: 'none' }`. Completed real reasoning ThreadItems are dropped by `pushActivityItem`; they remain in reducer state for protocol fidelity but do not render as transcript rows.
+Forge's `desktopThinkingPlaceholderItem` is guarded by `turnStatus === "in_progress"`, so it vanishes when the turn completes just like Codex's `Iy` classifier returning `{ type: 'none' }`. Completed real reasoning ThreadItems are dropped by `pushActivityItem`; they remain in reducer state for protocol fidelity but do not render as transcript rows.
 
 ## 3. Exploration card (`_v` / `Cv`)
 
@@ -118,9 +118,9 @@ The three plural count fragments are joined with the plain separator string
 - `{n, plural, one {# search} other {# searches}}`
 - `{n, plural, one {# list} other {# lists}}`
 
-HiCodex `tool-activity-grouping.ts::explorationSummaryLabel` joins these with `", "`.
+Forge `tool-activity-grouping.ts::explorationSummaryLabel` joins these with `", "`.
 The `Intl.formatList({ type: 'conjunction' })` form ("X, Y, and Z") is used **only** for the
-separate cross-type web-search/MCP activity summary, where HiCodex keeps `joinConjunction`.
+separate cross-type web-search/MCP activity summary, where Forge keeps `joinConjunction`.
 Re-verified against Codex Desktop v26.519.81530 (corrects the earlier conjunction claim).
 
 ### Body
@@ -140,7 +140,7 @@ collapsed:  0 max-height
 - Click toggles between `expanded` and `collapsed`.
 - Body animation uses framer-motion `height + opacity` with the shared transition (`duration: 0.5s`, `cubic-bezier(0.19, 1, 0.22, 1)`).
 
-HiCodex uses CSS-driven equivalents in `tool-activity.css`; behavior is aligned, the implementation primitive differs.
+Forge uses CSS-driven equivalents in `tool-activity.css`; behavior is aligned, the implementation primitive differs.
 
 ## 4. i18n strings (durable defaults)
 
@@ -192,9 +192,9 @@ Codex bundles one global transition constant used across multiple disclosure sur
 { duration: 0.5, ease: [0.19, 1, 0.22, 1] }  // easeOutExpo-ish
 ```
 
-HiCodex constraint: the `AnimatedDisclosure` exit-animation duration (`DISCLOSURE_EXIT_MS` in `animated-disclosure.tsx`) must equal `--hc-codex-transition-duration` (500ms). See DEVELOPMENT.md §13.
+Forge constraint: the `AnimatedDisclosure` exit-animation duration (`DISCLOSURE_EXIT_MS` in `animated-disclosure.tsx`) must equal `--hc-codex-transition-duration` (500ms). See DEVELOPMENT.md §13.
 
-A shared `useScrollHeight()` hook in the Codex bundle wraps a height ResizeObserver and returns `{ elementHeightPx, elementRef }`. HiCodex uses the same pattern in components that need "measure body, animate to that height".
+A shared `useScrollHeight()` hook in the Codex bundle wraps a height ResizeObserver and returns `{ elementHeightPx, elementRef }`. Forge uses the same pattern in components that need "measure body, animate to that height".
 
 ### `vertical-scroll-fade-mask` CSS (Codex `app-main-*.css`)
 
@@ -215,4 +215,4 @@ Codex uses `animation-timeline: scroll(self y)` (Chrome 115+ scroll-driven anima
 }
 ```
 
-HiCodex does not currently implement this mask. It is a visual-polish gap, not a behavior gap.
+Forge does not currently implement this mask. It is a visual-polish gap, not a behavior gap.

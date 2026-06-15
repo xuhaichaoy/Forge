@@ -2,7 +2,7 @@
  * codex: local-conversation-thread-*.js — rail section header:
  *   <header className="sticky top-0 z-10 flex h-7 w-full min-w-0 items-center justify-start
  *                       gap-2 bg-inherit ps-4 pe-2.5 pb-0.5 text-base text-token-text-tertiary">
- * HiCodex preserves its 13px/650 typography (smaller, lighter aesthetic), but pulls in
+ * Forge preserves its 13px/650 typography (smaller, lighter aesthetic), but pulls in
  * sticky/z-index, 28px min-height, 8px header gap. Background is an opaque approximation
  * of the rail container so the sticky header masks scrolled-under content cleanly.
  */
@@ -18,7 +18,7 @@
  *
  * `justify-content: space-between` 偏离 Codex 的 `justify-start`。Codex 通过
  * 把 after slot 包一层 `flex min-w-0 flex-1` 让它占满剩余空间，配合
- * `justify-start` 实现 toggle 紧贴左、after 紧贴右。HiCodex 当前 JSX 直接平铺
+ * `justify-start` 实现 toggle 紧贴左、after 紧贴右。Forge 当前 JSX 直接平铺
  * headerAction，未引入 flex-1 包装，所以保留 space-between 等价方案。如果以后
  * 想完全对齐 JSX 层（headerAction 包 flex-1），再把这里改为 flex-start。
  */
@@ -46,8 +46,8 @@
  *    focus-visible:outline-2 focus-visible:outline-offset-2`
  * 严格对齐：gap-1.5 (6px) ✅、py-0.5 (padding-y: 2px)、pr-1 (padding-right: 4px)、
  * rounded-md (border-radius: 6px)、text-left ✅、items-center ✅。
- * shrink-0 vs HiCodex `flex: 1 1 auto` 保留偏差（与 header `justify-content:
- * space-between` 配套——HiCodex 用 toggle 撑开把 headerAction 推到右边；Codex 用
+ * shrink-0 vs Forge `flex: 1 1 auto` 保留偏差（与 header `justify-content:
+ * space-between` 配套——Forge 用 toggle 撑开把 headerAction 推到右边；Codex 用
  * after slot 包 `flex min-w-0 flex-1` 实现等价 layout）。
  */
 .hc-rail-section-toggle {
@@ -71,7 +71,7 @@
 /*
  * codex: local-conversation-thread-*.js — the section-header toggle button uses
  * `focus-visible:outline-2 focus-visible:outline-offset-2`.
- * HiCodex previously had no focus-visible style on this control.
+ * Forge previously had no focus-visible style on this control.
  */
 .hc-rail-section-toggle:focus-visible {
   outline: 2px solid rgba(34, 38, 43, 0.45);
@@ -100,7 +100,7 @@
 /*
  * CODEX-REF: local-conversation-thread-*.js —
  * "Choose environment" 按钮容器:`h-7 w-7`(28×28 px)、`rounded-sm`、
- * `bg-transparent`、`text-token-text-tertiary`、hover-bg-list-hover。HiCodex 占位
+ * `bg-transparent`、`text-token-text-tertiary`、hover-bg-list-hover。Forge 占位
  * 仅 disabled 视觉状态,无 dropdown / no-op 点击。
  * rounded-sm = --radius-sm-base .375rem * --corner-radius-scale => 6px(scale 1)
  * / 7.5px(superellipse),对齐 --hc-corner-radius-scale。
@@ -171,7 +171,7 @@
  *    {expanded ? 'rotate-0' : '-rotate-90'}`
  *
  * 严格对齐:
- * - 折叠态(data-expanded 缺):opacity 1,chevron 指向 right(HiCodex ChevronRight 默认方向)
+ * - 折叠态(data-expanded 缺):opacity 1,chevron 指向 right(Forge ChevronRight 默认方向)
  * - 展开态(data-expanded="true"):opacity 0(隐藏)+ rotate 90deg(指向 down)
  * - hover / focus-visible toggle 时:opacity 1(恢复显示)
  */
@@ -233,7 +233,7 @@
  * `animate {height:"auto", opacity:1, marginTop:2}`, transition `{duration:
  * 0.5, ease: [.19, 1, .22, 1]}`,wrapper className `relative z-0 overflow-hidden`。
  *
- * 因 HiCodex 不依赖 framer-motion,这里用 CSS grid-rows 1fr trick 等价实现
+ * 因 Forge 不依赖 framer-motion,这里用 CSS grid-rows 1fr trick 等价实现
  * height-auto 动画:外层 grid `grid-template-rows: 0fr → 1fr`,内层 overflow-hidden
  * + min-height: 0。配合 opacity 和 margin-top transition 完成对齐。
  */

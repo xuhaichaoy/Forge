@@ -15,7 +15,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   groupCommandPanelEntries,
   groupCommandPanelEntriesForRendering,
@@ -25,7 +25,7 @@ import {
 } from "../state/command-panel";
 // codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut.
 // Used by CommandPanelRow to resolve the trailing <kbd> hint when the entry
-// does not carry a pre-baked acceleratorLabel (callers in HiCodexApp emit
+// does not carry a pre-baked acceleratorLabel (callers in ForgeApp emit
 // raw entry IDs and let the panel derive the label).
 import { commandPanelEntryAcceleratorLabel } from "../state/commands";
 
@@ -42,7 +42,7 @@ export function CommandPanelEntryList({
   showSections?: boolean;
   subMode?: CommandPanelSubMode;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (entries.length === 0) return null;
   // codex: app-main-DG-Mf4Wj.js — chats / files sub-modes only render their
   // flat result list; section headings (Thread / Panels / ...) are gated on

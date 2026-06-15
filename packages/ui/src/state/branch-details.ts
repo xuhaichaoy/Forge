@@ -1,4 +1,4 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { formatMessage } from "./i18n";
 
 export interface BranchDetailsViewModel {
@@ -72,7 +72,7 @@ export interface BranchDetailsDiffFileInput {
 // CODEX-REF: diff-unified-*.js — Codex Desktop's Changes summary row pulls
 // `additions`/`deletions` from the active diff projection and threads them through
 // its line-count summary component (`linesAdded` / `linesRemoved` props).
-// HiCodex now mirrors that data on `BranchDetailsGitStatus` so the right rail can
+// Forge now mirrors that data on `BranchDetailsGitStatus` so the right rail can
 // render the same `+N -N` decoration instead of "N changed files".
 export interface BranchDetailsGitStatus {
   upstream?: string;
@@ -142,9 +142,9 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
     // execution-mode name `composer.mode.local.short` ("Local") and a chevron —
     // there is NO "Work locally" subtitle here ("Work locally" lives only on the
     // composer's full `composer.mode.workLocally` description line, not this rail
-    // row). HiCodex previously invented `value: "Work locally"`; the row now
+    // row). Forge previously invented `value: "Work locally"`; the row now
     // carries only the short mode label so the rendered trigger matches Codex's
-    // "Local + chevron" trigger. (HiCodex has no worktree-handoff data flow, so
+    // "Local + chevron" trigger. (Forge has no worktree-handoff data flow, so
     // the mode cannot switch to Cloud/Worktree yet; the static `local` label is
     // the correct floor.)
     rows.push({
@@ -214,7 +214,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
      *    defaultMessage: "Environment",
      *    description: "Title for the thread summary side panel environment
      *                  and branch details section"`
-     * (Codex.app 26.519.41501). HiCodex keeps the internal section id as
+     * (Codex.app 26.519.41501). Forge keeps the internal section id as
      * `branchDetails` for historical reasons; the user-visible title is the
      * Desktop-aligned "Environment".
      */
@@ -329,7 +329,7 @@ function projectGitStatus(
   );
   // CODEX-REF: diff-unified-*.js — Codex Desktop reads `additions` / `deletions`
   // from the active diff projection and forwards them to its line-count summary
-  // component (`linesAdded` / `linesRemoved` props). HiCodex receives either explicit
+  // component (`linesAdded` / `linesRemoved` props). Forge receives either explicit
   // counts in `gitStatus` or a raw unified-diff string; we coalesce both into the
   // viewmodel so the Changes row can render `+N -N` without inventing data.
   const linesAdded = firstDefined(
@@ -568,9 +568,9 @@ function countDiffFiles(diff: string): number {
 }
 
 function changedFilesSummary(count: number): string {
-  // HiCodex's "N changed file(s)" diff summary phrasing has no exact Codex i18n
+  // Forge's "N changed file(s)" diff summary phrasing has no exact Codex i18n
   // entry (Codex's `codex.unifiedDiff.filesChanged` reads "# files changed"); keep
-  // the HiCodex wording as a self-hosted ICU plural so the en-US summary is byte
+  // the Forge wording as a self-hosted ICU plural so the en-US summary is byte
   // identical and zh gets a localized form.
   return formatMessage(
     {

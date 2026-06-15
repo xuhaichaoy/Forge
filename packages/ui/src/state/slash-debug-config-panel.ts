@@ -1,11 +1,11 @@
 import { formatUnknown } from "../lib/format";
-import { buildInfoDetails, type HiCodexBuildInfo } from "./build-info";
+import { buildInfoDetails, type ForgeBuildInfo } from "./build-info";
 import type { CommandPanelEntry } from "./command-panel";
 
 export function projectDebugConfigEntries(
   value: unknown,
   cwd: string,
-  buildInfo?: HiCodexBuildInfo,
+  buildInfo?: ForgeBuildInfo,
 ): CommandPanelEntry[] {
   const buildEntry = buildInfo ? [projectBuildInfoEntry(buildInfo)] : [];
   const root = recordValue(value);
@@ -60,10 +60,10 @@ export function projectDebugConfigEntries(
   return entries;
 }
 
-function projectBuildInfoEntry(buildInfo: HiCodexBuildInfo): CommandPanelEntry {
+function projectBuildInfoEntry(buildInfo: ForgeBuildInfo): CommandPanelEntry {
   return {
     id: "debug-config:build",
-    title: "HiCodex build",
+    title: "Forge build",
     kind: "status",
     status: `${buildInfo.flavor} / ${buildInfo.channel}`,
     meta: buildInfo.version,

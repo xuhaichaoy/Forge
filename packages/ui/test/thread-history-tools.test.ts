@@ -1,4 +1,4 @@
-import type { Thread, ThreadItem } from "@hicodex/codex-protocol";
+import type { Thread, ThreadItem } from "@forge/codex-protocol";
 import { mergeThreadToolHistory } from "../src/state/thread-history-tools";
 
 export default function runThreadHistoryToolTests(): void {

@@ -3,8 +3,8 @@ import { useState } from "react";
 import type { RailDiffStats, RailEntry } from "../state/render-groups";
 import { AboveComposerPanel, PanelRow } from "./above-composer-panel";
 import { DiffStatsDisplay } from "./diff-stats-display";
-import { useHiCodexIntl } from "./i18n-provider";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 import type { OpenThreadHandler } from "./open-thread";
 
 export interface BackgroundSubagentsStackProps {
@@ -24,7 +24,7 @@ export function BackgroundSubagentsStack({
   onStopAll,
   stopAllPending = false,
 }: BackgroundSubagentsStackProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [expanded, setExpanded] = useState(defaultExpanded);
   if (entries.length === 0) return null;
 
@@ -103,7 +103,7 @@ function BackgroundSubagentRow({
   entry: RailEntry;
   onOpenThread?: OpenThreadHandler;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const threadAction = entry.action?.kind === "thread" ? entry.action : null;
   const displayName = threadAction?.displayName || entry.title;
   const metadata = [
@@ -155,7 +155,7 @@ function BackgroundSubagentRow({
   );
 }
 
-function backgroundSubagentStatusLabel(status: string | undefined, formatMessage: HiCodexIntlContextValue["formatMessage"]): string {
+function backgroundSubagentStatusLabel(status: string | undefined, formatMessage: ForgeIntlContextValue["formatMessage"]): string {
   switch (status) {
     case "active":
       return formatMessage({ id: "composer.backgroundSubagents.row.activeLabel", defaultMessage: "is working" });

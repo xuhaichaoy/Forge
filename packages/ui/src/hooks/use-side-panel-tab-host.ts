@@ -20,7 +20,7 @@ import {
  * Codex pulls `tabs$`, `activeTab$`, `activeTabReactKey$` and the
  * `panelOpen$` atom (Jotai) inside `Vt(...)` at
  * `/private/tmp/codex-asar/pretty/app-shell-Bh-lgoQk.pretty.js:652-701`.
- * HiCodex doesn't run Jotai — we lift the same surface into a single hook so
+ * Forge doesn't run Jotai — we lift the same surface into a single hook so
  * call sites get an identical API shape (a `controller`, plus pre-derived
  * `tabs / activeTab / activeTabReactKey` + a `panelOpen` flag).
  *

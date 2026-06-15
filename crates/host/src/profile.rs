@@ -20,20 +20,20 @@ pub struct LocalModelCatalogConfig {
     pub input_modalities: Option<Vec<String>>,
 }
 
-const HICODEX_PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
-const HICODEX_MODEL_INSTRUCTIONS_HEADER: &str = include_str!("../assets/instructions/header.md");
-const HICODEX_BASE_INSTRUCTIONS: &str = include_str!("../assets/instructions/base.md");
-const HICODEX_PERSONALITY_DEFAULT: &str = "";
-const HICODEX_PERSONALITY_FRIENDLY: &str =
+const FORGE_PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
+const FORGE_MODEL_INSTRUCTIONS_HEADER: &str = include_str!("../assets/instructions/header.md");
+const FORGE_BASE_INSTRUCTIONS: &str = include_str!("../assets/instructions/base.md");
+const FORGE_PERSONALITY_DEFAULT: &str = "";
+const FORGE_PERSONALITY_FRIENDLY: &str =
     include_str!("../assets/instructions/personality-friendly.md");
-const HICODEX_PERSONALITY_PRAGMATIC: &str =
+const FORGE_PERSONALITY_PRAGMATIC: &str =
     include_str!("../assets/instructions/personality-pragmatic.md");
 
-pub(crate) fn ensure_default_hicodex_profile(codex_home: &Path) -> Result<(), std::io::Error> {
-    ensure_default_hicodex_profile_with_codex_cli_home(codex_home, &default_codex_cli_home())
+pub(crate) fn ensure_default_forge_profile(codex_home: &Path) -> Result<(), std::io::Error> {
+    ensure_default_forge_profile_with_codex_cli_home(codex_home, &default_codex_cli_home())
 }
 
-fn ensure_default_hicodex_profile_with_codex_cli_home(
+fn ensure_default_forge_profile_with_codex_cli_home(
     codex_home: &Path,
     codex_cli_home: &Path,
 ) -> Result<(), std::io::Error> {
@@ -122,14 +122,14 @@ fn ensure_local_model_catalog_messages(models_path: &Path) -> Result<(), std::io
         if model.get("model_messages").is_none()
             || model.get("model_messages") == Some(&Value::Null)
         {
-            model["model_messages"] = hicodex_model_messages_json();
+            model["model_messages"] = forge_model_messages_json();
             changed = true;
         }
         if matches!(
             model.get("base_instructions"),
             Some(Value::String(value)) if value == "You are Codex, a coding agent. Help the user work in the local workspace."
         ) {
-            model["base_instructions"] = Value::String(HICODEX_BASE_INSTRUCTIONS.to_string());
+            model["base_instructions"] = Value::String(FORGE_BASE_INSTRUCTIONS.to_string());
             changed = true;
         }
         if is_legacy_default_text_only_model(model) {
@@ -153,7 +153,7 @@ fn missing_top_level_model_config(config: &str, models_path: &Path) -> String {
     if !has_top_level_toml_key(config, "instructions") {
         lines.push(format!(
             "instructions = {}",
-            toml_multiline_literal(HICODEX_BASE_INSTRUCTIONS)
+            toml_multiline_literal(FORGE_BASE_INSTRUCTIONS)
         ));
     }
     if !has_top_level_toml_key(config, "personality") {
@@ -265,13 +265,21 @@ supports_websockets = false
 }
 
 fn default_config_toml(models_path: &Path) -> String {
-    let api_key = env::var("HICODEX_LOCAL_API_KEY")
+    // FORGE_LOCAL_API_KEY wins; the legacy HICODEX_LOCAL_API_KEY spelling
+    // stays as a fallback so pre-rebrand setups keep working.
+    let api_key = env::var("FORGE_LOCAL_API_KEY")
+        .or_else(|_| env::var("HICODEX_LOCAL_API_KEY"))
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     default_config_toml_with_api_key(models_path, api_key.as_deref())
 }
 
+// The `hicodex_local` provider id below is a deliberate legacy value: it is
+// persisted in existing users' codex-home config.toml (both as the
+// `model_provider` selection and the `[model_providers.hicodex_local]` table)
+// and referenced across the app. Rebranding the id would orphan those
+// configs — keep the value, only display names carry the Forge brand.
 fn default_config_toml_with_api_key(models_path: &Path, api_key: Option<&str>) -> String {
     let bearer_token_line = api_key
         .map(|value| format!("experimental_bearer_token = {}\n", toml_string(value)))
@@ -287,7 +295,7 @@ model_auto_compact_token_limit = 235929
 model_reasoning_summary = "none"
 
 [model_providers.hicodex_local]
-name = "HiCodex local gateway"
+name = "Forge local gateway"
 base_url = "http://127.0.0.1:8890/v1"
 wire_api = "responses"
 requires_openai_auth = false
@@ -295,7 +303,7 @@ supports_websockets = false
 {bearer_token_line}
 {openai_http_provider}"#,
         models_path = toml_string(&models_path.to_string_lossy()),
-        instructions = toml_multiline_literal(HICODEX_BASE_INSTRUCTIONS),
+        instructions = toml_multiline_literal(FORGE_BASE_INSTRUCTIONS),
         bearer_token_line = bearer_token_line,
         openai_http_provider = default_openai_http_provider_toml(),
     )
@@ -306,7 +314,7 @@ fn default_model_catalog_json() -> String {
         model: "Qwen3.6-27B-mxfp4".to_string(),
         models: None,
         display_name: Some("Qwen3.6 27B MXFP4".to_string()),
-        description: Some("Local OpenAI-compatible coding model via HiCodex gateway.".to_string()),
+        description: Some("Local OpenAI-compatible coding model via Forge gateway.".to_string()),
         context_window: Some(262144),
         auto_compact_token_limit: Some(235929),
         input_modalities: Some(default_input_modalities_json()),
@@ -323,7 +331,7 @@ pub(crate) fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
         .description
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or("Local OpenAI-compatible coding model via HiCodex gateway.");
+        .unwrap_or("Local OpenAI-compatible coding model via Forge gateway.");
     let input_modalities = normalize_input_modalities(config.input_modalities.as_deref());
     let models = model_slugs
         .iter()
@@ -353,8 +361,8 @@ pub(crate) fn model_catalog_json(config: &LocalModelCatalogConfig) -> String {
                 "service_tiers": [],
                 "availability_nux": null,
                 "upgrade": null,
-                "base_instructions": HICODEX_BASE_INSTRUCTIONS,
-                "model_messages": hicodex_model_messages_json(),
+                "base_instructions": FORGE_BASE_INSTRUCTIONS,
+                "model_messages": forge_model_messages_json(),
                 "supports_reasoning_summaries": false,
                 "default_reasoning_summary": "none",
                 "support_verbosity": false,
@@ -448,10 +456,15 @@ fn is_legacy_default_text_only_model(model: &Value) -> bool {
     if model.get("slug").and_then(Value::as_str) != Some("Qwen3.6-27B-mxfp4") {
         return false;
     }
-    if model.get("description").and_then(Value::as_str)
-        != Some("Local OpenAI-compatible coding model via HiCodex gateway.")
-    {
-        return false;
+    // The description discriminates the app-generated default ("…via <brand>
+    // gateway.") from a user-customized entry (the UI writes "…via <baseUrl>.").
+    // Without this guard, a user who deliberately turns image input OFF has it
+    // forced back on at every launch. Accept both the legacy on-disk (HiCodex)
+    // and current (Forge) spellings.
+    match model.get("description").and_then(Value::as_str) {
+        Some("Local OpenAI-compatible coding model via Forge gateway.")
+        | Some("Local OpenAI-compatible coding model via HiCodex gateway.") => {}
+        _ => return false,
     }
     let Some(input_modalities) = model.get("input_modalities").and_then(Value::as_array) else {
         return false;
@@ -463,18 +476,18 @@ fn is_legacy_default_text_only_model(model: &Value) -> bool {
             .is_some_and(|value| value == "text")
 }
 
-fn hicodex_model_messages_json() -> Value {
+fn forge_model_messages_json() -> Value {
     json!({
         "instructions_template": format!(
             "{}\n\n{}\n\n{}",
-            HICODEX_MODEL_INSTRUCTIONS_HEADER,
-            HICODEX_PERSONALITY_PLACEHOLDER,
-            HICODEX_BASE_INSTRUCTIONS,
+            FORGE_MODEL_INSTRUCTIONS_HEADER,
+            FORGE_PERSONALITY_PLACEHOLDER,
+            FORGE_BASE_INSTRUCTIONS,
         ),
         "instructions_variables": {
-            "personality_default": HICODEX_PERSONALITY_DEFAULT,
-            "personality_friendly": HICODEX_PERSONALITY_FRIENDLY,
-            "personality_pragmatic": HICODEX_PERSONALITY_PRAGMATIC,
+            "personality_default": FORGE_PERSONALITY_DEFAULT,
+            "personality_friendly": FORGE_PERSONALITY_FRIENDLY,
+            "personality_pragmatic": FORGE_PERSONALITY_PRAGMATIC,
         }
     })
 }
@@ -520,11 +533,11 @@ mod tests {
 
     #[test]
     fn bootstraps_model_catalog_config() {
-        let dir = env::temp_dir().join(format!("hicodex-host-test-{}", std::process::id()));
+        let dir = env::temp_dir().join(format!("forge-host-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 
-        ensure_default_hicodex_profile(&dir).unwrap();
+        ensure_default_forge_profile(&dir).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert!(config.contains("model_catalog_json"));
@@ -541,10 +554,10 @@ mod tests {
             .next()
             .unwrap();
         assert!(!openai_http_block.contains("base_url"));
-        assert!(config.contains(HICODEX_BASE_INSTRUCTIONS));
+        assert!(config.contains(FORGE_BASE_INSTRUCTIONS));
         let catalog = fs::read_to_string(dir.join("models.json")).unwrap();
         assert!(catalog.contains("\"model_messages\""));
-        assert!(catalog.contains(HICODEX_PERSONALITY_PLACEHOLDER));
+        assert!(catalog.contains(FORGE_PERSONALITY_PLACEHOLDER));
         assert!(catalog.contains("\"image\""));
 
         let _ = fs::remove_dir_all(&dir);
@@ -552,13 +565,13 @@ mod tests {
 
     #[test]
     fn bootstraps_bundled_browser_marketplace_when_available() {
-        let dir = unique_test_dir("hicodex-host-bundled-marketplace-test");
-        let cli_home = unique_test_dir("hicodex-host-cli-home-test");
+        let dir = unique_test_dir("forge-host-bundled-marketplace-test");
+        let cli_home = unique_test_dir("forge-host-cli-home-test");
         let marketplace = create_fake_openai_bundled_marketplace(&cli_home);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 
-        ensure_default_hicodex_profile_with_codex_cli_home(&dir, &cli_home).unwrap();
+        ensure_default_forge_profile_with_codex_cli_home(&dir, &cli_home).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert!(config.contains("[marketplaces.openai-bundled]"));
@@ -576,8 +589,8 @@ mod tests {
 
     #[test]
     fn refreshes_existing_config_with_bundled_marketplace_without_overwriting_browser_plugin() {
-        let dir = unique_test_dir("hicodex-host-bundled-marketplace-refresh-test");
-        let cli_home = unique_test_dir("hicodex-host-cli-home-refresh-test");
+        let dir = unique_test_dir("forge-host-bundled-marketplace-refresh-test");
+        let cli_home = unique_test_dir("forge-host-cli-home-refresh-test");
         let marketplace = create_fake_openai_bundled_marketplace(&cli_home);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -592,7 +605,7 @@ enabled = false
         )
         .unwrap();
 
-        ensure_default_hicodex_profile_with_codex_cli_home(&dir, &cli_home).unwrap();
+        ensure_default_forge_profile_with_codex_cli_home(&dir, &cli_home).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert!(config.contains("[marketplaces.openai-bundled]"));
@@ -622,14 +635,14 @@ enabled = false
 
     #[test]
     fn skips_bundled_marketplace_config_when_manifest_is_absent() {
-        let dir = unique_test_dir("hicodex-host-bundled-marketplace-absent-test");
-        let cli_home = unique_test_dir("hicodex-host-cli-home-absent-test");
+        let dir = unique_test_dir("forge-host-bundled-marketplace-absent-test");
+        let cli_home = unique_test_dir("forge-host-cli-home-absent-test");
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::remove_dir_all(&cli_home);
         fs::create_dir_all(&dir).unwrap();
         fs::create_dir_all(&cli_home).unwrap();
 
-        ensure_default_hicodex_profile_with_codex_cli_home(&dir, &cli_home).unwrap();
+        ensure_default_forge_profile_with_codex_cli_home(&dir, &cli_home).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert!(!config.contains("[marketplaces.openai-bundled]"));
@@ -642,7 +655,7 @@ enabled = false
 
     #[test]
     fn default_config_does_not_bake_personal_bearer_token() {
-        let models_path = Path::new("/tmp/hicodex-models.json");
+        let models_path = Path::new("/tmp/forge-models.json");
         let config = default_config_toml_with_api_key(models_path, None);
 
         assert!(!config.contains("haichao"));
@@ -651,7 +664,7 @@ enabled = false
 
     #[test]
     fn default_config_uses_explicit_local_api_key_when_configured() {
-        let models_path = Path::new("/tmp/hicodex-models.json");
+        let models_path = Path::new("/tmp/forge-models.json");
         let config = default_config_toml_with_api_key(models_path, Some("local-dev-token"));
 
         assert!(config.contains("experimental_bearer_token = \"local-dev-token\""));
@@ -660,7 +673,7 @@ enabled = false
     #[test]
     fn refreshes_existing_config_with_openai_http_provider() {
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-openai-http-test-{}",
+            "forge-host-openai-http-test-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
@@ -671,7 +684,7 @@ enabled = false
 model_provider = "hicodex_local"
 
 [model_providers.hicodex_local]
-name = "HiCodex local gateway"
+name = "Forge local gateway"
 base_url = "http://127.0.0.1:8890/v1"
 wire_api = "responses"
 requires_openai_auth = false
@@ -680,7 +693,7 @@ supports_websockets = false
         )
         .unwrap();
 
-        ensure_default_hicodex_profile(&dir).unwrap();
+        ensure_default_forge_profile(&dir).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert_eq!(config.matches("[model_providers.openai_http]").count(), 1);
@@ -701,7 +714,7 @@ supports_websockets = false
     #[test]
     fn refreshes_existing_openai_http_provider_to_chatgpt_backend_default() {
         let dir = env::temp_dir().join(format!(
-            "hicodex-host-openai-http-repair-test-{}",
+            "forge-host-openai-http-repair-test-{}",
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
@@ -719,7 +732,7 @@ requires_openai_auth = true
 supports_websockets = false
 
 [model_providers.hicodex_local]
-name = "HiCodex local gateway"
+name = "Forge local gateway"
 base_url = "http://127.0.0.1:8890/v1"
 wire_api = "responses"
 requires_openai_auth = false
@@ -728,7 +741,7 @@ supports_websockets = false
         )
         .unwrap();
 
-        ensure_default_hicodex_profile(&dir).unwrap();
+        ensure_default_forge_profile(&dir).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         let openai_http_block = config
@@ -746,18 +759,18 @@ supports_websockets = false
 
     #[test]
     fn refreshes_legacy_model_catalog_messages() {
-        let dir = env::temp_dir().join(format!("hicodex-host-refresh-test-{}", std::process::id()));
+        let dir = env::temp_dir().join(format!("forge-host-refresh-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let models_path = dir.join("models.json");
         fs::write(
             &models_path,
-            r#"{"models":[{"slug":"Qwen3.6-27B-mxfp4","display_name":"Qwen","description":"Local OpenAI-compatible coding model via HiCodex gateway.","base_instructions":"You are Codex, a coding agent. Help the user work in the local workspace.","input_modalities":["text"]}]}"#,
+            r#"{"models":[{"slug":"Qwen3.6-27B-mxfp4","display_name":"Qwen","description":"Local OpenAI-compatible coding model via Forge gateway.","base_instructions":"You are Codex, a coding agent. Help the user work in the local workspace.","input_modalities":["text"]}]}"#,
         )
         .unwrap();
         fs::write(dir.join("config.toml"), default_config_toml(&models_path)).unwrap();
 
-        ensure_default_hicodex_profile(&dir).unwrap();
+        ensure_default_forge_profile(&dir).unwrap();
 
         let config = fs::read_to_string(dir.join("config.toml")).unwrap();
         assert_eq!(config.matches("instructions =").count(), 1);
@@ -767,10 +780,37 @@ supports_websockets = false
         assert!(model.get("model_messages").is_some());
         assert_eq!(
             model["base_instructions"].as_str(),
-            Some(HICODEX_BASE_INSTRUCTIONS)
+            Some(FORGE_BASE_INSTRUCTIONS)
         );
         assert_eq!(model["input_modalities"][0].as_str(), Some("text"));
         assert_eq!(model["input_modalities"][1].as_str(), Some("image"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keeps_user_customized_text_only_model_text_only() {
+        // A user who turns off image input writes a catalog entry whose
+        // description is "…via <baseUrl>." (not the "…via Forge/HiCodex
+        // gateway." app default). It must NOT be force-refreshed back to
+        // text+image.
+        let dir = env::temp_dir().join(format!("forge-host-user-textonly-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let models_path = dir.join("models.json");
+        fs::write(
+            &models_path,
+            r#"{"models":[{"slug":"Qwen3.6-27B-mxfp4","display_name":"Qwen","description":"Local OpenAI-compatible coding model via http://127.0.0.1:8890/v1.","base_instructions":"You are Codex, a coding agent. Help the user work in the local workspace.","input_modalities":["text"]}]}"#,
+        )
+        .unwrap();
+        fs::write(dir.join("config.toml"), default_config_toml(&models_path)).unwrap();
+
+        ensure_default_forge_profile(&dir).unwrap();
+
+        let value: Value = serde_json::from_str(&fs::read_to_string(models_path).unwrap()).unwrap();
+        let modalities = value["models"][0]["input_modalities"].as_array().unwrap();
+        assert_eq!(modalities.len(), 1, "user's text-only choice must survive");
+        assert_eq!(modalities[0].as_str(), Some("text"));
 
         let _ = fs::remove_dir_all(&dir);
     }

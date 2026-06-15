@@ -7,11 +7,11 @@
  *   - `aria-label` mirrors the placeholder for screen readers
  *
  * Codex also wraps the input in a `<search>` element and uses a leading magnifier
- * icon. HiCodex MVP keeps the minimal layout; we can add the icon once the rest
+ * icon. Forge MVP keeps the minimal layout; we can add the icon once the rest
  * of the panel chrome is in place.
  */
 import { Search, X } from "lucide-react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface FileTreeSearchInputProps {
   searchQuery: string;
@@ -26,7 +26,7 @@ export function FileTreeSearchInput({
   autoFocus,
   inputId,
 }: FileTreeSearchInputProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex: qc — placeholder/label/clear go through i18n (`codex.fileTreeSearch.*`)
   // so the ZH locale renders 筛选文件… / 筛选文件 / 清除文件筛选.
   const placeholderText = formatMessage({ id: "codex.fileTreeSearch.placeholder", defaultMessage: "Filter files…" });

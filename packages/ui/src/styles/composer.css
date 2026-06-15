@@ -235,7 +235,7 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05);
   /*
    * Codex Desktop composer container (`composer-*.css`) uses
-   * `backdrop-blur-lg` = --blur-lg 16px. The 8px value HiCodex previously had
+   * `backdrop-blur-lg` = --blur-lg 16px. The 8px value Forge previously had
    * does not belong to the composer at all — it's from a different surface
    * (the cmdk/referral popover). Match the composer container's 16px.
    */

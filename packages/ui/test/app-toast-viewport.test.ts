@@ -1,14 +1,42 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppToastViewport, projectToastLogs } from "../src/components/app-toast-viewport";
+import { TEAM_MODEL_GATEWAY_LOG_SOURCES } from "../src/model/model-workflow";
 import type { LogLine } from "../src/state/codex-reducer";
 
 export default function runAppToastViewportTests(): void {
   projectsRecentUserFacingLogsOnly();
   filtersInternalHostLifecycleAndTransportLogsLikeDesktop();
   filtersDisconnectedStartupEndpointFailures();
+  mutesBySourceTagFirstWithTextPatternFallback();
   suppressesBenignModelMetadataFallbackWarning();
   rendersToastViewportForProjectedLogs();
+}
+
+/*
+ * Muting is keyed on the structured LogLine.source tag first; the text
+ * patterns only act as fallback for untagged entries. Three sub-claims:
+ *   1. the tagged team-gateway success confirmation is muted by its tag even
+ *      though its (now localized) text no longer matches the deprecated
+ *      /^团队模型连接已更新$/ anchor;
+ *   2. a tagged entry whose source is NOT in the mute table falls through to
+ *      the text patterns and stays visible (degraded warn variant);
+ *   3. an untagged legacy entry with the old Chinese copy is still muted via
+ *      the deprecated text-pattern fallback.
+ */
+function mutesBySourceTagFirstWithTextPatternFallback(): void {
+  const logs: LogLine[] = [
+    logFixture("tagged-success", "Team model connection updated", "info", 10_000, TEAM_MODEL_GATEWAY_LOG_SOURCES.providerUpdated),
+    logFixture("tagged-degraded", "团队模型连接已更新，但模型服务暂未重连，将自动重试", "warn", 9_950, TEAM_MODEL_GATEWAY_LOG_SOURCES.reconnectPending),
+    logFixture("untagged-legacy", "团队模型连接已更新", "info", 9_900),
+    logFixture("visible-error", "Save failed", "error", 9_850),
+  ];
+
+  assertDeepEqual(
+    projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
+    ["tagged-degraded", "visible-error"],
+    "source-tagged success should be muted by tag, non-muted sources should fall back to text patterns, and untagged legacy copy should stay muted",
+  );
 }
 
 // codex-rs warns when a model slug (e.g. a subscription model via openai_http)
@@ -61,8 +89,12 @@ function filtersInternalHostLifecycleAndTransportLogsLikeDesktop(): void {
 
 function filtersDisconnectedStartupEndpointFailures(): void {
   const logs: LogLine[] = [
+    logFixture("raw-not-connected", "Codex app-server is not connected", "error", 10_000),
+    logFixture("raw-disconnected", "Disconnected from Codex app-server", "error", 9_950),
+    logFixture("closed", "Codex app-server connection closed: app-server stdout closed", "error", 9_925),
     logFixture("model-list", "model/list failed: Codex app-server is not connected", "warn", 10_000),
     logFixture("mcp-status", "mcpServerStatus/list failed: Disconnected from Codex app-server", "warn", 9_900),
+    logFixture("team-provider", "team model provider provisioning failed: Codex app-server is not connected", "warn", 9_850),
     logFixture("team-model", "团队模型连接已更新", "info", 9_800),
     logFixture("visible-error", "model/list failed: HTTP 500", "warn", 9_700),
   ];
@@ -92,8 +124,9 @@ function logFixture(
   text: string,
   level: LogLine["level"],
   at: number,
+  source?: string,
 ): LogLine {
-  return { id, text, level, at };
+  return source !== undefined ? { id, text, level, at, source } : { id, text, level, at };
 }
 
 function assert(value: unknown, message: string): void {

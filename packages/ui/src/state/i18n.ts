@@ -1,13 +1,16 @@
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import type { BrowserStorageLike } from "./image-generation-tool";
-import { HICODEX_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./hicodex-desktop-namespace";
-import { HICODEX_MESSAGES } from "./i18n-messages";
+import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
+import type { ForgeLocale } from "./i18n-types";
+import { FORGE_MESSAGES } from "../i18n/messages";
 
-export const LEGACY_HICODEX_LOCALE_STORAGE_KEY = "hicodex:locale";
-export const HICODEX_LOCALE_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.locale;
-export const HICODEX_DEFAULT_LOCALE = "en-US";
+// Deliberate legacy value: the old-brand "hicodex:" localStorage key stays so
+// stored locale settings survive the Forge rebrand (identifier-only rename).
+export const LEGACY_FORGE_LOCALE_STORAGE_KEY = "hicodex:locale";
+export const FORGE_LOCALE_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.locale;
+export const FORGE_DEFAULT_LOCALE = "en-US";
 
-export type HiCodexLocale = "en-US" | "zh-CN";
+export type { ForgeLocale } from "./i18n-types";
 
 export interface I18nMessageDescriptor {
   id: string;
@@ -18,11 +21,11 @@ export interface I18nMessageDescriptor {
 export type I18nValues = Record<string, string | number | boolean | null | undefined>;
 
 export interface I18nBundle {
-  locale: HiCodexLocale;
+  locale: ForgeLocale;
   messages: Record<string, string>;
 }
 
-export const HICODEX_SUPPORTED_LOCALES: HiCodexLocale[] = ["en-US", "zh-CN"];
+export const FORGE_SUPPORTED_LOCALES: ForgeLocale[] = ["en-US", "zh-CN"];
 
 export function normalizeLocale(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -35,7 +38,7 @@ export function normalizeLocale(value: unknown): string | null {
   }
 }
 
-export function resolveHiCodexLocale(preferred: unknown, fallback: HiCodexLocale = HICODEX_DEFAULT_LOCALE): HiCodexLocale {
+export function resolveForgeLocale(preferred: unknown, fallback: ForgeLocale = FORGE_DEFAULT_LOCALE): ForgeLocale {
   const normalized = normalizeLocale(preferred);
   if (!normalized) return fallback;
   if (normalized.toLowerCase() === "zh-cn" || normalized.toLowerCase().startsWith("zh-hans")) return "zh-CN";
@@ -43,28 +46,28 @@ export function resolveHiCodexLocale(preferred: unknown, fallback: HiCodexLocale
   return "en-US";
 }
 
-export function loadHiCodexLocale(storage: BrowserStorageLike | null, browserLocale?: string | null): HiCodexLocale {
+export function loadForgeLocale(storage: BrowserStorageLike | null, browserLocale?: string | null): ForgeLocale {
   if (storage) {
     try {
-      const stored = readMigratedStorageValue(storage, HICODEX_LOCALE_STORAGE_KEY, [LEGACY_HICODEX_LOCALE_STORAGE_KEY]);
-      if (stored) return resolveHiCodexLocale(stored);
+      const stored = readMigratedStorageValue(storage, FORGE_LOCALE_STORAGE_KEY, [LEGACY_FORGE_LOCALE_STORAGE_KEY]);
+      if (stored) return resolveForgeLocale(stored);
     } catch {
       // Fall through to browser locale.
     }
   }
-  return resolveHiCodexLocale(browserLocale);
+  return resolveForgeLocale(browserLocale);
 }
 
-export function saveHiCodexLocale(storage: BrowserStorageLike | null, locale: HiCodexLocale): void {
+export function saveForgeLocale(storage: BrowserStorageLike | null, locale: ForgeLocale): void {
   if (!storage) return;
   try {
-    setDesktopAppSettingValue(storage, HICODEX_LOCALE_STORAGE_KEY, locale);
+    setDesktopAppSettingValue(storage, FORGE_LOCALE_STORAGE_KEY, locale);
   } catch {
     // Locale still applies for this session when storage is unavailable.
   }
 }
 
-export function localeLabel(locale: HiCodexLocale): string {
+export function localeLabel(locale: ForgeLocale): string {
   switch (locale) {
     case "zh-CN":
       return "Chinese (Simplified)";
@@ -73,19 +76,19 @@ export function localeLabel(locale: HiCodexLocale): string {
   }
 }
 
-export function localeDescription(locale: HiCodexLocale): string {
+export function localeDescription(locale: ForgeLocale): string {
   switch (locale) {
     case "zh-CN":
-      return "Use Simplified Chinese for HiCodex shell labels.";
+      return "Use Simplified Chinese for Forge shell labels.";
     default:
-      return "Use English for HiCodex shell labels.";
+      return "Use English for Forge shell labels.";
   }
 }
 
-export function createI18nBundle(locale: HiCodexLocale): I18nBundle {
+export function createI18nBundle(locale: ForgeLocale): I18nBundle {
   return {
     locale,
-    messages: HICODEX_MESSAGES[locale] ?? HICODEX_MESSAGES[HICODEX_DEFAULT_LOCALE],
+    messages: FORGE_MESSAGES[locale] ?? FORGE_MESSAGES[FORGE_DEFAULT_LOCALE],
   };
 }
 
@@ -95,7 +98,7 @@ export function formatI18nMessage(
   values: I18nValues = {},
 ): string {
   const template = bundle.messages[descriptor.id]
-    ?? HICODEX_MESSAGES[HICODEX_DEFAULT_LOCALE][descriptor.id]
+    ?? FORGE_MESSAGES[FORGE_DEFAULT_LOCALE][descriptor.id]
     ?? descriptor.defaultMessage;
   const withPlurals = formatIcuPluralFragments(template, values);
   const withNumbers = formatIcuNumberArguments(withPlurals, values, bundle.locale);
@@ -107,14 +110,14 @@ export function formatI18nMessage(
 
 /**
  * Module-level i18n singleton for non-React callers — state modules and
- * module-level helper functions that cannot call the useHiCodexIntl() hook.
- * HiCodexIntlProvider syncs `activeI18nBundle` with the active locale on every
+ * module-level helper functions that cannot call the useForgeIntl() hook.
+ * ForgeIntlProvider syncs `activeI18nBundle` with the active locale on every
  * render (see i18n-provider.tsx), so any `formatMessage(...)` imported from here
  * resolves against the current locale. Components should still prefer the hook.
  */
-let activeI18nBundle: I18nBundle = createI18nBundle(HICODEX_DEFAULT_LOCALE);
+let activeI18nBundle: I18nBundle = createI18nBundle(FORGE_DEFAULT_LOCALE);
 
-export function setActiveI18nLocale(locale: HiCodexLocale): I18nBundle {
+export function setActiveI18nLocale(locale: ForgeLocale): I18nBundle {
   activeI18nBundle = createI18nBundle(locale);
   return activeI18nBundle;
 }
@@ -143,7 +146,7 @@ function formatIcuPluralFragments(template: string, values: I18nValues): string 
  * simple `{key}` interpolation in formatI18nMessage cannot match the comma
  * form, so without this the raw `{count, number}` placeholder renders verbatim.
  */
-function formatIcuNumberArguments(template: string, values: I18nValues, locale: HiCodexLocale): string {
+function formatIcuNumberArguments(template: string, values: I18nValues, locale: ForgeLocale): string {
   return template.replace(/\{([A-Za-z0-9_]+),\s*number\s*\}/g, (match, key: string) => {
     const rawValue = values[key];
     const numericValue = typeof rawValue === "number" ? rawValue : Number(rawValue);

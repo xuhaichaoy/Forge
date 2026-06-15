@@ -25,7 +25,7 @@ function formatsProjectDropdownLabelLikeDesktopFooter(): void {
     "empty cwd should use Desktop's project selector fallback",
   );
   assert(
-    formatWorkspaceProjectLabel("/workspace/HiCodex/", [{ root: "/workspace/HiCodex", label: "HiCodex" }]) === "HiCodex",
+    formatWorkspaceProjectLabel("/workspace/Forge/", [{ root: "/workspace/Forge", label: "Forge" }]) === "Forge",
     "known cwd should use the workspace root label",
   );
   assert(
@@ -114,7 +114,7 @@ function rendersContextChipsWithOverflowHooks(): void {
 
   const footer = renderToStaticMarkup(createElement(ComposerExternalFooter, {
     branch: "main",
-    cwd: "/workspace/HiCodex",
+    cwd: "/workspace/Forge",
   }));
 
   assert(
@@ -138,15 +138,15 @@ function rendersContextChipsWithOverflowHooks(): void {
 function rendersExternalFooterProjectAndWorkModeControls(): void {
   const projectFooter = renderToStaticMarkup(createElement(ComposerExternalFooter, {
     branch: null,
-    cwd: "/workspace/HiCodex",
+    cwd: "/workspace/Forge",
     workMode: "worktree",
-    workspaceRoots: [{ root: "/workspace/HiCodex", label: "HiCodex" }],
+    workspaceRoots: [{ root: "/workspace/Forge", label: "Forge" }],
     onUseExistingFolder: () => undefined,
     onWorkspaceRootSelected: () => undefined,
   }));
 
   assert(
-    projectFooter.includes("hc-composer-footer-project-chip") && projectFooter.includes(">HiCodex<"),
+    projectFooter.includes("hc-composer-footer-project-chip") && projectFooter.includes(">Forge<"),
     "external footer should render the selected project label in the extracted project chip",
   );
   assert(

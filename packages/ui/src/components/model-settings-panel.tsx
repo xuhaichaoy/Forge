@@ -4,7 +4,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import type { SettingsPanelId } from "../state/composer-workflow";
 import type { CommandPanelEntry, CommandPanelEntryAction, CommandPanelState } from "../state/command-panel";
 import type { ImageGenerationSettings } from "../state/image-generation-tool";
@@ -20,7 +20,7 @@ import {
   type SettingsSectionGroup,
 } from "../state/settings-panel-workflow";
 import { AppearanceSettingsPanel } from "./appearance-settings-panel";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { KeyboardShortcutsSettingsPanel } from "./keyboard-shortcuts-settings-panel";
 import { McpSkillsManagementPanel } from "./mcp-skills-management-panel";
 import {
@@ -36,7 +36,7 @@ import { settingsSectionIcon } from "./settings-section-icon";
 import type { KeymapOverrides } from "../state/keymap-overrides";
 import type { ReducedMotionMode, UiAppearancePreferences } from "../state/appearance";
 import type { UiThemeMode, UiThemeSnapshot } from "../state/theme";
-import type { HiCodexLocale } from "../state/i18n";
+import type { ForgeLocale } from "../state/i18n";
 import { useEffect, useRef } from "react";
 
 export interface SettingsPanelProps {
@@ -70,12 +70,12 @@ export interface SettingsPanelProps {
    */
   uiTheme?: UiThemeSnapshot;
   uiAppearance?: UiAppearancePreferences;
-  uiLocale?: HiCodexLocale;
+  uiLocale?: ForgeLocale;
   onSetUiTheme?: (mode: UiThemeMode) => void;
   onSetUiFontSize?: (size: number) => void;
   onSetCodeFontSize?: (size: number) => void;
   onSetReducedMotion?: (mode: ReducedMotionMode) => void;
-  onSetUiLocale?: (locale: HiCodexLocale) => void;
+  onSetUiLocale?: (locale: ForgeLocale) => void;
 }
 
 export function SettingsPanel({
@@ -105,7 +105,7 @@ export function SettingsPanel({
   onSetReducedMotion,
   onSetUiLocale,
 }: SettingsPanelProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const activeSection = SETTINGS_SECTIONS.find((section) => section.id === activePanel) ?? SETTINGS_SECTIONS[0];
   const refreshable = isRefreshableSettingsPanel(activePanel);
   // Focus the dialog on open (Radix focuses dialog content on mount) so Escape
@@ -148,8 +148,8 @@ export function SettingsPanel({
            * group renderer (settings-page-*.js):
            * `_e.map(e => <Group heading={e.heading}>{e.slugs.map(...)}</Group>)`.
            * Codex emits one `<L>` wrapper per group with the heading rendered
-           * by `<a {...e.heading}/>` only when present (HiCodex-only group
-           * skips its heading per SETTINGS_SECTION_GROUP_HEADINGS.hicodex = null).
+           * by `<a {...e.heading}/>` only when present — groups whose
+           * SETTINGS_SECTION_GROUP_HEADINGS entry is empty render no heading.
            */}
           <nav className="hc-settings-nav" aria-label={formatMessage({ id: "settings.nav.ariaLabel", defaultMessage: "Settings" })}>
             {(["personal", "integrations", "coding", "archived"] as const).map((group: SettingsSectionGroup) => {

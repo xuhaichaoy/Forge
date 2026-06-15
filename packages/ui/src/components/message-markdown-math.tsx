@@ -1,8 +1,8 @@
 import { renderToString as renderKatexToString } from "katex";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export function MathDisplay({ text }: { text: string }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const html = renderKatexHtml(text, true);
   return (
     <div className="hc-math-display" role="img" aria-label={formatMessage({ id: "hc.markdown.math.label", defaultMessage: "Math: {text}" }, { text })}>
@@ -14,7 +14,7 @@ export function MathDisplay({ text }: { text: string }) {
 }
 
 export function MathInline({ text }: { text: string }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const html = renderKatexHtml(text, false);
   const label = formatMessage({ id: "hc.markdown.math.label", defaultMessage: "Math: {text}" }, { text });
   return html

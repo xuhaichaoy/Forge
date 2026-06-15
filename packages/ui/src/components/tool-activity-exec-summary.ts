@@ -6,11 +6,11 @@ import {
   execExitCode,
 } from "../state/tool-activity-fields";
 import { desktopSkillPathInfoForCommandPath } from "../state/tool-activity-grouping";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 
 type ThreadItem = AccumulatedThreadItem;
 type ItemRecord = ThreadItem & Record<string, unknown>;
-type ToolDetailFormatMessage = HiCodexIntlContextValue["formatMessage"];
+type ToolDetailFormatMessage = ForgeIntlContextValue["formatMessage"];
 
 // codex toolSummaryForCmd.* / hc.toolActivity.* - localize an exec-detail summary
 // label. formatMessage is optional so the locale-free view-model + its tests keep

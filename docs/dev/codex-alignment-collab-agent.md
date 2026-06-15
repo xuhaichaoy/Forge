@@ -48,13 +48,13 @@ Only the `Failed` state diverges across the three tables:
 
 InProgress and Completed share the same word across all three tables.
 
-## 3. HiCodex implementation rule
+## 3. Forge implementation rule
 
 - `multiAgentRowVerb` (in `tool-activity-detail.tsx`) must return the `rowAction.*` form (`Failed spawning` etc.) for plain rows.
 - `multiAgentSendInputPromptVerb` must return the `rowAction.sendInput.messaged.*` form (`Failed to message`) when a prompt is attached.
 - Any group-level summary header must use the `header.*` form (`Failed to spawn` etc.) — do NOT reuse the row verb for headers.
 
-The 2026-05-20 pass confirmed HiCodex already implements both row and prompted-row forms correctly. Earlier gap-matrix entries flagging these as "Failed spawning" mismatches were retracted.
+The 2026-05-20 pass confirmed Forge already implements both row and prompted-row forms correctly. Earlier gap-matrix entries flagging these as "Failed spawning" mismatches were retracted.
 
 ## 4. Data flow
 

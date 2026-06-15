@@ -5,16 +5,27 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// FORGE_* is the canonical env namespace; HICODEX_* stays accepted as a legacy alias.
 const sidecarBin =
+  process.env.FORGE_CODEX_BIN ||
   process.env.HICODEX_CODEX_BIN ||
   resolve(
     root,
     "apps/desktop/src-tauri/binaries",
     process.platform === "win32" ? "codex.exe" : "codex",
   );
-const smokeTimeoutMs = positiveInt(process.env.HICODEX_SIDECAR_SMOKE_TIMEOUT_MS, 1500);
-const versionTimeoutMs = positiveInt(process.env.HICODEX_SIDECAR_VERSION_TIMEOUT_MS, 5000);
-const protocolTimeoutMs = positiveInt(process.env.HICODEX_SIDECAR_PROTOCOL_TIMEOUT_MS, 5000);
+const smokeTimeoutMs = positiveInt(
+  process.env.FORGE_SIDECAR_SMOKE_TIMEOUT_MS ?? process.env.HICODEX_SIDECAR_SMOKE_TIMEOUT_MS,
+  1500,
+);
+const versionTimeoutMs = positiveInt(
+  process.env.FORGE_SIDECAR_VERSION_TIMEOUT_MS ?? process.env.HICODEX_SIDECAR_VERSION_TIMEOUT_MS,
+  5000,
+);
+const protocolTimeoutMs = positiveInt(
+  process.env.FORGE_SIDECAR_PROTOCOL_TIMEOUT_MS ?? process.env.HICODEX_SIDECAR_PROTOCOL_TIMEOUT_MS,
+  5000,
+);
 
 function positiveInt(raw, fallback) {
   const parsed = Number.parseInt(String(raw ?? ""), 10);
@@ -68,13 +79,16 @@ function checkVersion(env) {
 }
 
 function initializeRequest() {
+  // Protocol-visible values (JSON-RPC id, clientInfo.name) deliberately keep the
+  // legacy "hicodex" strings: they cross the app-server process boundary and are
+  // not a branding surface. If ever changed, update the matching id check below.
   return {
     id: "hicodex-smoke-initialize",
     method: "initialize",
     params: {
       clientInfo: {
         name: "hicodex_smoke",
-        title: "HiCodex Smoke",
+        title: "Forge Smoke",
         version: "0.1.0",
       },
       capabilities: {
@@ -252,7 +266,7 @@ async function smokeAppServer(env) {
 
 async function main() {
   requireSidecar();
-  const tempRoot = mkdtempSync(join(tmpdir(), "hicodex-sidecar-smoke-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "forge-sidecar-smoke-"));
   try {
     const env = smokeEnv(tempRoot);
     const version = checkVersion(env);

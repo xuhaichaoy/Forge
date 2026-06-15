@@ -130,9 +130,11 @@ function prefersProviderDefaultModelInFallback(): void {
 
 function describesCrossAccountProviderLimitInFooter(): void {
   const markup = render(new Set(["ready_provider", "locked_provider"]));
+  // Footer renders via i18n; with no ForgeIntlProvider the default en-US
+  // bundle resolves the defaultMessage, so the expectation is English.
   assertIncludes(
     markup,
-    "订阅模型与个人/团队模型互切需新建聊天",
+    "Switching between subscription and personal/team models requires a new chat",
     "footer should not claim every provider change keeps the current chat",
   );
 }
@@ -177,7 +179,7 @@ function locksCrossAccountProvidersWhileAChatIsActive(): void {
   );
   assertIncludes(
     apiChatMarkup,
-    "需新建聊天",
+    "New chat required",
     "cross-account lock should explain that a new chat is required",
   );
   // Subscription chat: the section is expanded (it holds the selection) and

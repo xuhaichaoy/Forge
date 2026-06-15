@@ -733,7 +733,7 @@
 /* codex ResultLabel: `col-[1/4] row-[2] min-w-0 px-4 text-right leading-6
    pointer-events-none` + open `max-h-9 py-2 opacity-100` / closed
    `max-h-0 -translate-y-2 py-0 opacity-0`, 200ms ease-out. Font kept on the
-   HiCodex 12px scale token (Codex text-base = 16px; A/B-pending). */
+   Forge 12px scale token (Codex text-base = 16px; A/B-pending). */
 .hc-thread-find-count {
   grid-column: 1 / 4;
   grid-row: 2;

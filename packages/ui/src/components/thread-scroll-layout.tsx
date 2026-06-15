@@ -10,7 +10,7 @@ import {
   useContext,
 } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   DESKTOP_FOOTER_SCROLL_PADDING_PX,
   DESKTOP_SCROLLED_FROM_BOTTOM_THRESHOLD_PX,
@@ -93,7 +93,7 @@ export function ThreadScrollLayout({
    */
   const [contentOverflows, setContentOverflows] = useState<boolean | null>(null);
   const [isScrolledFromBottom, setIsScrolledFromBottom] = useState(false);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
 
   const setScrolledFromBottom = useCallback((next: boolean) => {
     isScrolledFromBottomRef.current = next;

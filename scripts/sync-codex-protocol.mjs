@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codexRoot = resolve(root, "../codex/codex-rs");
+// FORGE_* is the canonical env namespace; HICODEX_* stays accepted as a legacy alias.
 const source =
+  process.env.FORGE_CODEX_PROTOCOL_DIR ||
   process.env.HICODEX_CODEX_PROTOCOL_DIR ||
   generateExperimentalProtocolTypes();
 const target = resolve(root, "packages/codex-protocol/src/generated");
@@ -47,7 +49,7 @@ writeFileSync(
 console.log(`Synced Codex protocol types from ${source}`);
 
 function generateExperimentalProtocolTypes() {
-  const outRoot = mkdtempSync(resolve(tmpdir(), "hicodex-codex-protocol-"));
+  const outRoot = mkdtempSync(resolve(tmpdir(), "forge-codex-protocol-"));
   const outDir = resolve(outRoot, "typescript");
   const command = "cargo";
   const commandArgs = [
@@ -65,7 +67,7 @@ function generateExperimentalProtocolTypes() {
   ];
   const env = {
     ...process.env,
-    CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR || resolve(tmpdir(), "hicodex-codex-rs-target"),
+    CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR || resolve(tmpdir(), "forge-codex-rs-target"),
   };
   const result = spawnSync(command, commandArgs, {
     cwd: codexRoot,

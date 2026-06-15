@@ -2,7 +2,7 @@
  * codex: inline-mentions-*.js / user-message-attachments-*.js both wrap their
  * file-reference elements with the shared workspace-file context menu
  * (context-menu-*.js wrapper + workspace-file-context-menu-*.js builder, i18n
- * `markdown.fileReference.*`). This leaf module centralizes HiCodex's mirror so
+ * `markdown.fileReference.*`). This leaf module centralizes Forge's mirror so
  * the transcript file-citation anchors (message-unit.tsx) and the user-message
  * attachment pills (user-message-content-render.tsx) share one menu definition
  * without importing each other (those two files already form a parent→child
@@ -10,7 +10,7 @@
  *
  * The reveal + copy-contents actions need host access + path resolution, so they
  * are supplied via `FileCitationMenuContext` (provided once above the conversation
- * in HiCodexApp, where `useArtifactPreviewActions` lives). When the context is
+ * in ForgeApp, where `useArtifactPreviewActions` lives). When the context is
  * absent (non-Tauri / test), those rows simply drop out — only the always-safe
  * "Open file" / "Copy path" rows remain.
  */
@@ -18,7 +18,7 @@ import { createContext } from "react";
 import { osRevealLabel } from "../state/command-registry";
 import type { ContextMenuItem } from "./context-menu";
 import type { FileReference } from "./file-reference-types";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 
 export interface FileCitationMenuActions {
   /** codex `workspace-file-reveal-path` — reveal in the OS file manager. */
@@ -36,14 +36,14 @@ export const FileCitationMenuContext = createContext<FileCitationMenuActions | n
  * KB, not on disk. Opening it resolves to a non-existent `cwd/<name>` ("无法加载
  * 此预览 / file does not exist"), so the anchors render the citation as plain,
  * non-clickable provenance text instead. Provided once above the conversation in
- * HiCodexApp; defaults false (real workspaces keep clickable file citations).
+ * ForgeApp; defaults false (real workspaces keep clickable file citations).
  */
 export const DelinkFileCitationsContext = createContext<boolean>(false);
 
 /*
  * Build the workspace-file context-menu items for a single file reference,
- * matching the subset HiCodex can support (the "Open in {target}" / "Open with"
- * / "View in browser" rows need OS app-discovery / an in-app browser HiCodex
+ * matching the subset Forge can support (the "Open in {target}" / "Open with"
+ * / "View in browser" rows need OS app-discovery / an in-app browser Forge
  * lacks, so they are omitted — same rationale as the file-tree menu). Order
  * mirrors Codex: open / separator / copy-path / copy-contents / reveal, and the
  * copy/reveal rows carry no leading icon (only Codex's open-with app rows do).
@@ -57,7 +57,7 @@ export function fileReferenceContextMenuItems({
   reference: FileReference;
   onOpenFileReference?: (reference: FileReference) => void;
   menuActions: FileCitationMenuActions | null;
-  formatMessage: HiCodexIntlContextValue["formatMessage"];
+  formatMessage: ForgeIntlContextValue["formatMessage"];
 }): ContextMenuItem[] {
   const items: ContextMenuItem[] = [];
   if (onOpenFileReference) {

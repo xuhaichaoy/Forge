@@ -152,7 +152,7 @@
  *
  * Codex's animation interpolates layout via framer-motion's JS measurement of
  * the natural content height. The CSS-only `grid-template-rows: 0fr → 1fr`
- * trick I previously used here had an unwanted side-effect inside HiCodex's
+ * trick I previously used here had an unwanted side-effect inside Forge's
  * flex-column `.hc-turn-row` parent: after the animation settled with
  * `forwards`, the `1fr` row resolved to a *flex-distributed* track height
  * rather than content height in some layouts, leaving ~80px of empty space
@@ -550,7 +550,7 @@
 
 .hc-plan-summary-fade button {
   /* Codex renders the planSummary.viewPlan ("Expand plan") control as a FILLED
-   * PRIMARY button (color:"primary") — no surface border. Match HiCodex's
+   * PRIMARY button (color:"primary") — no surface border. Match Forge's
    * primary-button convention (.hc-send-button): foreground fill + on-accent
    * text, hover via opacity. */
   border: 0;

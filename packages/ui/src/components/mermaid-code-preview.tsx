@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   MERMAID_NODE_HEIGHT,
   MERMAID_NODE_WIDTH,
@@ -43,7 +43,7 @@ export function MermaidDiagram({ code, fallback }: { code: string; fallback: Rea
       setResult({ html: null, status: "error" });
       return;
     }
-    const renderId = `hicodex-mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+    const renderId = `forge-mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
     import("mermaid")
       .then(({ default: mermaid }) => {
         mermaid.initialize({
@@ -183,7 +183,7 @@ export function mermaidThemeVariables(theme: MermaidThemeVariant = "light"): Rec
 }
 
 export function MermaidFlowchartPreview({ model }: { model: MermaidPreviewModel }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const nodeById = new Map(model.nodes.map((node) => [node.id, node]));
   return (
     <div className="hc-mermaid-preview" data-mermaid-kind="flowchart">

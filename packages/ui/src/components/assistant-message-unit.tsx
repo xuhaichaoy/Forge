@@ -19,7 +19,7 @@ import { AssistantAfterReviewComments } from "./assistant-review-comments-view";
 import { AutomationCitationChipRow } from "./automation-citation";
 import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { MemoryCitationView } from "./message-file-citations";
 import { desktopAssistantCopyText } from "./message-markdown-copy";
 import {
@@ -27,6 +27,9 @@ import {
   markdownAllowsTrailingAutomationInline,
 } from "./message-markdown-renderer";
 import { messageTurnId, messageTurnStatus } from "./user-message-meta";
+
+/* 稳定的空数组回退：unit.artifacts 缺省时避免逐渲染新建 []，让下游 useMemo 失效键有效。 */
+const EMPTY_ASSISTANT_ARTIFACTS: RailEntry[] = [];
 
 type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
 
@@ -59,7 +62,7 @@ export function AssistantMessageUnit({
   patchActionInFlight?: boolean;
   memoryCitationRoot?: string | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const assistantPhase = unit.assistantPhase ?? "unknown";
   const streaming = unit.isStreaming === true;
   const renderPlaceholder = unit.renderPlaceholder === true;
@@ -71,7 +74,7 @@ export function AssistantMessageUnit({
   const onFork = canFork && turnId && onForkTurn
     ? () => onForkTurn(turnId)
     : undefined;
-  const assistantArtifacts = unit.artifacts ?? [];
+  const assistantArtifacts = unit.artifacts ?? EMPTY_ASSISTANT_ARTIFACTS;
 
   const assistantMediaSources = useMemo(
     () => assistantArtifactMediaSources(assistantArtifacts),

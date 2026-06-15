@@ -141,7 +141,7 @@ export function KbArchiveView() {
   const selectEntity = useCallback((item: YuxiEntity) => {
     if (typeof item.id !== "number") return;
     setSelectedId(item.id);
-  }, []);
+  }, [setSelectedId]);
 
   const selectArchiveCategory = useCallback((type: string) => {
     if (type === activeTab) return;

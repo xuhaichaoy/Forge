@@ -13,11 +13,13 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const defaultCodexSourceDir = resolve(root, "../codex/codex-rs");
+// FORGE_* is the canonical env namespace; HICODEX_* stays accepted as a legacy alias.
 const codexSourceDir =
+  process.env.FORGE_CODEX_SOURCE_DIR ||
   process.env.HICODEX_CODEX_SOURCE_DIR ||
   defaultCodexSourceDir;
-const providedBin = process.env.HICODEX_CODEX_BIN;
-const targetTriple = process.env.HICODEX_CODEX_TARGET?.trim() || "";
+const providedBin = process.env.FORGE_CODEX_BIN || process.env.HICODEX_CODEX_BIN;
+const targetTriple = (process.env.FORGE_CODEX_TARGET || process.env.HICODEX_CODEX_TARGET)?.trim() || "";
 const targetDir = resolve(root, "apps/desktop/src-tauri/binaries");
 const targetInfo = targetInfoFor(targetTriple);
 // Windows 上产物与 sidecar 都是 codex.exe，其它平台是 codex。
@@ -161,7 +163,7 @@ function assertNativeExecutable(path, expected) {
   if (detected.format === "script" || !expectedFormat || detected.format !== expectedFormat) {
     throw new Error(
       `Codex sidecar must be a native executable, not a launcher script: ${path}. ` +
-        "If using an npm Codex install, set HICODEX_CODEX_BIN to the platform vendor binary under @openai/codex-*/vendor/.../bin/codex.",
+        "If using an npm Codex install, set FORGE_CODEX_BIN to the platform vendor binary under @openai/codex-*/vendor/.../bin/codex.",
     );
   }
   if (expected.arch && !detected.archs.includes(expected.arch)) {

@@ -21,6 +21,7 @@
     "lint:release-script": "bash -n scripts/release.sh",
     "test": "npm run test:scripts && npm run test --workspaces --if-present && cargo test --workspace",
     "test:scripts": "node --test scripts",
+    "test:e2e": "node scripts/e2e-smoke.mjs",
     "sync:protocol": "node scripts/sync-codex-protocol.mjs",
     "sidecar:prepare": "node scripts/prepare-codex-sidecar.mjs",
     "sidecar:smoke": "node scripts/smoke-codex-sidecar.mjs",
@@ -29,7 +30,10 @@
     "tauri:build": "npm run tauri:build --workspace @forge/desktop"
   },
   "devDependencies": {
+    "@types/jsdom": "^28.0.3",
+    "jsdom": "^29.1.1",
     "oxlint": "^1.69.0",
+    "playwright": "^1.60.0",
     "typescript": "^5.9.3"
   },
   "engines": {

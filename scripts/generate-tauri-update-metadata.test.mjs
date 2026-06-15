@@ -7,7 +7,7 @@ import test from "node:test";
 import { buildUpdateMetadata } from "./generate-tauri-update-metadata.mjs";
 
 test("writes latest metadata without rewriting templated updater endpoint destination", () => {
-  const tempDir = mkdtempSync(join(tmpdir(), "hicodex-update-metadata-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "forge-update-metadata-test-"));
   try {
     const configPath = join(tempDir, "tauri.release.conf.json");
     const outDir = join(tempDir, "out");
@@ -16,16 +16,16 @@ test("writes latest metadata without rewriting templated updater endpoint destin
       JSON.stringify({
         plugins: {
           updater: {
-            endpoints: ["https://releases.hicodex.test/update/{{target}}/{{arch}}/{{current_version}}"],
+            endpoints: ["https://releases.forge.test/update/{{target}}/{{arch}}/{{current_version}}"],
           },
         },
       }),
     );
     mkdirSync(outDir);
-    writeFileSync(join(outDir, "HiCodex_1.2.3_aarch64.app.tar.gz.sig"), "signature\n");
+    writeFileSync(join(outDir, "Forge_1.2.3_aarch64.app.tar.gz.sig"), "signature\n");
 
     const result = buildUpdateMetadata({
-      artifactName: "HiCodex",
+      artifactName: "Forge",
       configPath,
       outDir,
       product: "Forge",
@@ -37,7 +37,7 @@ test("writes latest metadata without rewriting templated updater endpoint destin
     assert.ok(existsSync(result.latestPath));
     assert.equal(
       result.metadata.platforms["darwin-aarch64"].url,
-      "https://releases.hicodex.test/update/HiCodex_1.2.3_aarch64.app.tar.gz",
+      "https://releases.forge.test/update/Forge_1.2.3_aarch64.app.tar.gz",
     );
     const destinations = readFileSync(join(outDir, "upload-destinations.txt"), "utf8");
     assert.match(destinations, /serve latest\.json at this templated updater route/);

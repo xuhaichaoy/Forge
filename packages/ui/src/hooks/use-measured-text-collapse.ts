@@ -1,7 +1,7 @@
 // CODEX-REF: use-measured-text-collapse-*.js
 // Codex 默认导出用 ResizeObserver 测真实文本是否超过 N 行，
 // 返回三态 uncollapsible / collapsed / expanded。
-// HiCodex 之前用启发式 (lines.length > 3 || text.length > 220) 判断，
+// Forge 之前用启发式 (lines.length > 3 || text.length > 220) 判断，
 // 对 bash -lc 单行长命令会误判成 "需要折叠"，且展开后把整张卡片撑高。
 // 这里复刻 Codex 的真实测量策略：临时去掉 line-clamp，读 scrollHeight，
 // 跟 lineHeight * maxLines 比较，再恢复样式。

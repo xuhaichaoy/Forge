@@ -328,7 +328,7 @@ function projectsHeartbeatAutomationEligibility(): void {
 
 // codex: local-conversation-thread-*.js — the citation chip `ke` handler
 // resolves a specific automation id and deep-links it (Km({automationId,…}) /
-// navigate-to-route ?automationId=…). HiCodex threads that id onto the surface
+// navigate-to-route ?automationId=…). Forge threads that id onto the surface
 // model as `focusedAutomationId` so the panel can scope to it. The focus target
 // must survive on EVERY status (loading/offline/error/empty/ready), and empty /
 // whitespace ids must normalize to null.

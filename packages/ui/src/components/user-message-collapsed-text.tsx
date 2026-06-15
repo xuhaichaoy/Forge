@@ -1,7 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { FileReference } from "./file-reference-types";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { UserMessageTextContentView } from "./user-message-content-render";
 import type {
   MessageRenderUnit,
@@ -17,7 +17,7 @@ export function CollapsedUserText({
   onOpenFileReference?: (reference: FileReference) => void;
   renderMarkdown: UserMarkdownRenderer;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [collapsible, setCollapsible] = useState(false);

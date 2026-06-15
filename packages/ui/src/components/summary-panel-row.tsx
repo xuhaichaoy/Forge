@@ -16,7 +16,7 @@ export interface SummaryPanelRowProps {
   // CODEX-REF: summary-panel-row-DMF5uaBF.js (wc) — `labelClassName` overrides the
   // default `truncate` label wrapper class (`m ?? "truncate"`). Codex passes a baseline
   // `flex items-baseline gap-2` here for the browser/automation rows whose label is a
-  // `[name, secondary]` Fragment. When omitted, HiCodex keeps the truncating single-line
+  // `[name, secondary]` Fragment. When omitted, Forge keeps the truncating single-line
   // label wrapper.
   labelClassName?: string;
   // CODEX-REF: summary-panel-row-DMF5uaBF.js (wc) — `label` may suppress its own wrapper
@@ -84,7 +84,7 @@ function SummaryPanelRowInner({
       ) : null}
       {/* CODEX-REF: summary-panel-row-DMF5uaBF.js — label wrapper class is `m ?? "truncate"`,
           i.e. `labelClassName` REPLACES the default truncating wrapper (it does not stack on
-          top of it). HiCodex's default `hc-summary-panel-row-label` carries the flex/min-w-0
+          top of it). Forge's default `hc-summary-panel-row-label` carries the flex/min-w-0
           /truncate geometry; a baseline label variant supplies its own class instead. */}
       <span className={labelClassName ?? "hc-summary-panel-row-label"}>{label}</span>
       {trailing ? (

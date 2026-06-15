@@ -9,8 +9,8 @@ Neo4j    = 关系地图，存实体和实体之间的关系
 ```
 
 **完整流程**
-**第 0 步：你从 HiCodex 目录选文件**
-你选择的是 `/Users/haichao/Desktop/data/HiCodex` 里的文件。
+**第 0 步：你从 Forge 目录选文件**
+你选择的是 `/Users/haichao/Desktop/data/Forge` 里的文件。
 但注意：Yuxi 后端**不是直接读取这个路径**。浏览器会把文件内容读出来，当成 `File` 对象上传。
 
 这么做的好处：后端不依赖你本机路径，部署到服务器也能用。
@@ -609,7 +609,7 @@ use_graph_retrieval = true
 完整主线是：
 
 ```text
-HiCodex 本地文件
+Forge 本地文件
   -> 浏览器上传字节
   -> MinIO 存原文件
   -> Postgres 记文件记录
@@ -645,7 +645,7 @@ HiCodex 本地文件
 ## 当前实现里还要分清的三套数据
 
 上面的流程主要讲的是“知识库文档检索”和“知识库图谱”。
-但在 HiCodex / Yuxi 当前实现里，容易被混在一起的其实有三套数据：
+但在 Forge / Yuxi 当前实现里，容易被混在一起的其实有三套数据：
 
 ```text
 1. 知识库文件与 chunk
@@ -689,11 +689,11 @@ analyze_file
 graph_subgraph
 ```
 
-## HiCodex 里有三种常见查询入口
+## Forge 里有三种常见查询入口
 
 ### 入口一：知识库页面搜索
 
-HiCodex 知识库页面的搜索不是直接调单库：
+Forge 知识库页面的搜索不是直接调单库：
 
 ```text
 POST /api/knowledge/databases/{kb_id}/query
@@ -748,7 +748,7 @@ GET /api/presales/entities/{id}/related
 
 ### 入口三：对话里的 Yuxi MCP 工具
 
-在 HiCodex 对话里，模型能不能查 Yuxi，取决于 MCP 配置和工具调用。
+在 Forge 对话里，模型能不能查 Yuxi，取决于 MCP 配置和工具调用。
 判断它到底查了哪里，不看回答文字，直接看工具名。
 
 ```text
@@ -776,7 +776,7 @@ kb_list -> kb_search -> file_chunks -> analyze_file -> graph_subgraph
 ## 上传入库后还有业务治理分支
 
 前面的主线是底层知识库链路。
-但 HiCodex 的知识库管理还额外做了一层售前 / 投标业务治理。
+但 Forge 的知识库管理还额外做了一层售前 / 投标业务治理。
 
 实际上传后大致是：
 

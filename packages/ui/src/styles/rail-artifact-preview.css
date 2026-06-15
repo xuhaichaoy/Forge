@@ -46,7 +46,7 @@
  *   listClassName: `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
  * `max-h-[28rem]` = 448px cap so a long artifact list scrolls independently inside
  * the section rather than pushing all other sections out of view.
- * HiCodex uses `data-section-id` on `.hc-rail-list` to scope this rule without
+ * Forge uses `data-section-id` on `.hc-rail-list` to scope this rule without
  * changing the shared list component API.
  */
 .hc-rail-list[data-section-id="artifacts"] {
@@ -419,7 +419,7 @@
  * ============================================================================
  * DARK THEME OVERRIDES — right-rail artifact / file-reference preview surface
  * ============================================================================
- * HiCodex theming pipeline: `.hc-app[data-theme="dark"]` (base.css:110+) flips
+ * Forge theming pipeline: `.hc-app[data-theme="dark"]` (base.css:110+) flips
  * the `--hc-*` design tokens to their dark values. Most files just reference
  * `var(--hc-*)` and inherit dark for free, but this file predates tokenization
  * and hardcodes a *warm-paper* light palette (#fffdfa / #fbfaf6 / #f8f6ef

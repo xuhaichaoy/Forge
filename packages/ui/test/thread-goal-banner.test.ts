@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ThreadGoal } from "@hicodex/codex-protocol";
+import type { ThreadGoal } from "@forge/codex-protocol";
 
 import {
   ThreadGoalBanner,

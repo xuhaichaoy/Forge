@@ -1,11 +1,11 @@
 # Codex-alignment A/B verification checklist
 
-This session applied **~165 CSS-value alignments** (gap-matrix §M-58–64) by resolving HiCodex's
+This session applied **~165 CSS-value alignments** (gap-matrix §M-58–64) by resolving Forge's
 CSS against the real Codex Desktop bundle. Every change is correct **by resolved value**, but the
 headless contract method **cannot confirm rendered pixels** — so each is flagged `A/B-pending`
 in-comment. This checklist organizes them by surface for a side-by-side pass.
 
-**How to use:** open HiCodex and Codex Desktop side-by-side on the same content; for each surface
+**How to use:** open Forge and Codex Desktop side-by-side on the same content; for each surface
 below, eyeball the listed properties. If a row looks wrong, the gap-matrix section in brackets has
 the exact change + the Codex evidence to re-check or revert.
 
@@ -55,7 +55,7 @@ the exact change + the Codex evidence to re-check or revert.
 
 ## Deliberately NOT changed (no Codex baseline / needs your call)
 
-- **HiCodex-only features** (no Codex counterpart — left as-is): the file-preview **side-by-side diff**
+- **Forge-only features** (no Codex counterpart — left as-is): the file-preview **side-by-side diff**
   + its `+N/-N` line-count colors, the KB / model-gateway business shell, the left nav-rail.
 - **Composer min-height** (`composer.css` 112px): Codex's composer is content-driven (~84px). Removing
   the floor is genuinely rendering-dependent (footer/editor heights), so it needs your eyeball, not a

@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 
 /*
- * HiCodex port of Codex Desktop's side-panel tab controller.
+ * Forge port of Codex Desktop's side-panel tab controller.
  *
  * Source of truth — `/private/tmp/codex-asar/pretty/app-shell-tab-controller-B2eCi4Le.pretty.js`
  * (a formatted dump of `app.asar`'s `app-shell-tab-controller-*.js` chunk).
@@ -12,7 +12,7 @@ import type { ComponentType, ReactNode } from "react";
  * exposes `openTab/closeTab/activateTab/updateTab/pinTab/reorderTab/
  * resetTabState/closeActiveTab/moveTabTo/receiveMovedTab` (lines 267-284).
  *
- * HiCodex does not run on Jotai. This module reimplements the controller as
+ * Forge does not run on Jotai. This module reimplements the controller as
  * a self-contained class with an immutable state snapshot + listener fan-out,
  * suitable for `useSyncExternalStore`. Each method that has Codex evidence is
  * annotated with the line range of its source counterpart so future ports can
@@ -30,7 +30,7 @@ import type { ComponentType, ReactNode } from "react";
  *     142-144, 258-260, 318-328) — DOM mutation belongs in the React layer,
  *     not the state controller
  *   • Cross-controller `moveTabTo` / `receiveMovedTab` (lines 173-226) —
- *     HiCodex starts with a single right-panel host; bottom-panel host can
+ *     Forge starts with a single right-panel host; bottom-panel host can
  *     be added later, at which point we'll port the inter-controller bridge
  *   • `onMove` callback during cross-controller transfer (same reason)
  */
@@ -210,7 +210,7 @@ export function createInitialSidePanelTabHostState(panelId: SidePanelId): SidePa
  * codex: `p = activeTab$` derived atom (line 71-75):
  *   `n == null ? null : (tabById[n] ?? (panelOpen && tabIds[0] ? tabById[tabIds[0]] : null))`
  *
- * HiCodex split this: the controller does NOT know if the panel is open
+ * Forge split this: the controller does NOT know if the panel is open
  * (that's an external signal). Callers pass `panelOpen` when they want the
  * Codex-equivalent fallback to the first tab; otherwise this returns the
  * literal active tab or null.
@@ -263,7 +263,7 @@ export function selectTabs(state: SidePanelTabHostState): readonly SidePanelTab[
  *   `return id ?? (cache.get(component) ?? cache.set(component, 'component:${uuid}'))`
  * The WeakMap keyed by Component reference means the same Component opened
  * twice without an explicit `id` collapses into the same tab (re-open replaces).
- * HiCodex keeps that exact semantics.
+ * Forge keeps that exact semantics.
  */
 export function resolveTabId(
   cache: WeakMap<object, TabId>,

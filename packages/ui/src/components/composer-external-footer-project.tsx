@@ -18,7 +18,7 @@ import {
   type ComposerWorkMode,
   type WorktreeModeOption,
 } from "../state/worktrees";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import { WorktreeModeMenuItems } from "./worktree-mode-menu";
 
 export interface ComposerWorkspaceRootOption {
@@ -47,7 +47,7 @@ export function ComposerFooterProjectControls({
   onSelectProjectless,
   onWorkModeChange,
 }: ComposerFooterProjectControlsProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const projectTriggerRef = useRef<HTMLButtonElement | null>(null);

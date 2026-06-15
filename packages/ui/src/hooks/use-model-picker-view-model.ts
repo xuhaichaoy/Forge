@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import {
   DEFAULT_PROVIDERS,
   isModelSelectionAvailable,
@@ -86,6 +86,7 @@ export function useModelPickerViewModel({
     personalProviderConfigured,
     threadContextDefaults,
     teamModelGatewayProvider,
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意以 modelDraft/threadContextDefaults 的业务字段为失效键：对象引用逐渲染可变，buildModelPickerProviders 是纯投影
   }), [
     modelDraft.baseUrl,
     modelDraft.id,

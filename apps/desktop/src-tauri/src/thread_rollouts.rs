@@ -1,13 +1,14 @@
-use hicodex_host::ThreadToolHistory;
+use forge_host::ThreadToolHistory;
 use std::env;
 use std::fs;
 use std::path::Path;
 use tauri::State;
 
+use crate::command_error::HostCommandError;
 use crate::AppState;
 
 /// Recover the rollout JSONL path for a given thread by scanning the
-/// HiCodex sessions directory. Used as a fallback when `Thread.path` is
+/// app's sessions directory. Used as a fallback when `Thread.path` is
 /// missing in client state (e.g. the thread was loaded from a stale local
 /// snapshot) but the rollout file still exists on disk. The app-server's
 /// `thread/resume {path}` (codex-rs:thread_processor.rs:2810
@@ -16,11 +17,11 @@ use crate::AppState;
 ///
 /// Returns `Ok(None)` (rather than `Err`) when the file is not found so the
 /// caller can decide whether to fall through to a friendlier error.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_find_rollout_for_thread(
     codex_home: Option<String>,
     thread_id: String,
-) -> Result<Option<String>, String> {
+) -> Result<Option<String>, HostCommandError> {
     let id = thread_id.trim();
     if id.is_empty() {
         return Ok(None);
@@ -33,6 +34,9 @@ pub(crate) fn host_find_rollout_for_thread(
         Some(home) => Path::new(home).join("sessions"),
         None => match env::var_os("HOME") {
             Some(home) => {
+                // The "HiCodex" directory segment is a deliberate legacy value
+                // (matches forge-host's default_codex_home) so existing
+                // installs keep their sessions across the Forge rebrand.
                 Path::new(&home).join("Library/Application Support/HiCodex/codex-home/sessions")
             }
             None => return Ok(None),
@@ -41,7 +45,8 @@ pub(crate) fn host_find_rollout_for_thread(
     if !sessions_root.is_dir() {
         return Ok(None);
     }
-    find_rollout_recursive(&sessions_root, id, 4).map_err(|err| err.to_string())
+    find_rollout_recursive(&sessions_root, id, 4)
+        .map_err(|err| HostCommandError::io_failed(err.to_string()))
 }
 
 fn find_rollout_recursive(
@@ -80,17 +85,17 @@ fn find_rollout_recursive(
     Ok(None)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_read_thread_tool_history(
     state: State<'_, AppState>,
     codex_home: Option<String>,
     thread_id: String,
     thread_path: Option<String>,
-) -> Result<ThreadToolHistory, String> {
+) -> Result<ThreadToolHistory, HostCommandError> {
     state
         .host
         .read_thread_tool_history(codex_home, thread_id, thread_path)
-        .map_err(|error| error.to_string())
+        .map_err(HostCommandError::from)
 }
 
 #[cfg(test)]
@@ -106,10 +111,8 @@ mod find_rollout_tests {
             .duration_since(UNIX_EPOCH)
             .map(|value| value.as_nanos())
             .unwrap_or_default();
-        let base = std::env::temp_dir().join(format!(
-            "hicodex-find-rollout-{}-{nanos}",
-            std::process::id()
-        ));
+        let base =
+            std::env::temp_dir().join(format!("forge-find-rollout-{}-{nanos}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         fs::create_dir_all(&base).unwrap();
         base

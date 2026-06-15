@@ -114,7 +114,7 @@ export type ConversationRenderUnit =
    * CONSECUTIVE `dynamic-tool-call` items into one `dynamic-tool-call-group` —
    * grouping when `items.length > 1`, and also for the active terminal
    * `continuesLiveActivityBetweenCalls` app-control call. A single completed
-   * call still renders standalone. HiCodex mirrors that with this unit; the
+   * call still renders standalone. Forge mirrors that with this unit; the
    * renderer shows the batched calls inside one collapsible group rather than N
    * standalone rows.
    */
@@ -127,7 +127,7 @@ export type ConversationRenderUnit =
    * Codex Desktop's generated-image gallery (local-conversation-thread-*.js)
    * groups ALL generated-image items in a turn into a single
    * horizontal carousel of thumbnails — rather than one giant card per
-   * image. HiCodex previously routed each `generated-image` to a separate
+   * image. Forge previously routed each `generated-image` to a separate
    * markdown ToolBlock, producing a stack of full-width image cards. This
    * unit captures the per-turn collected set so the renderer can emit
    * Codex's `<JC images={Ut} conversationId={n}/>` layout.
@@ -346,7 +346,7 @@ export interface ConversationProjectionOptions {
  * App 注册表条目（用于 MCP source logo 查询）。
  * 字段对应协议层 `app/list` 响应（packages/codex-protocol/src/generated/v2/AppInfo.ts）。
  *
- * AppInfo supplies `pluginDisplayNames`, so HiCodex can reproduce Desktop's
+ * AppInfo supplies `pluginDisplayNames`, so Forge can reproduce Desktop's
  * name/id/plugin alias matching without inventing a protocol-only tool table.
  */
 export interface AppRegistryEntry {

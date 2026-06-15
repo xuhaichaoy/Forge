@@ -99,17 +99,17 @@ function resolveInternalSpecifier(fromFile, specifier) {
   if (specifier.startsWith(".")) {
     return sourceCandidate(resolve(dirname(fromFile), specifier));
   }
-  if (specifier === "@hicodex/ui") {
+  if (specifier === "@forge/ui") {
     return sourceCandidate(resolve(root, "packages/ui/src/index"));
   }
-  if (specifier.startsWith("@hicodex/ui/")) {
-    return sourceCandidate(resolve(root, "packages/ui/src", specifier.slice("@hicodex/ui/".length)));
+  if (specifier.startsWith("@forge/ui/")) {
+    return sourceCandidate(resolve(root, "packages/ui/src", specifier.slice("@forge/ui/".length)));
   }
-  if (specifier === "@hicodex/codex-protocol") {
+  if (specifier === "@forge/codex-protocol") {
     return sourceCandidate(resolve(root, "packages/codex-protocol/src/index"));
   }
-  if (specifier.startsWith("@hicodex/codex-protocol/")) {
-    return sourceCandidate(resolve(root, "packages/codex-protocol/src", specifier.slice("@hicodex/codex-protocol/".length)));
+  if (specifier.startsWith("@forge/codex-protocol/")) {
+    return sourceCandidate(resolve(root, "packages/codex-protocol/src", specifier.slice("@forge/codex-protocol/".length)));
   }
   return undefined;
 }

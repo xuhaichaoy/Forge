@@ -1,4 +1,4 @@
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 import { SETTINGS_SECTIONS, isRefreshableSettingsPanel } from "../src/components/model-settings-panel";
 import {
   appearanceSettingsEntries,
@@ -87,9 +87,9 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
   // settings-page-TI1bCoqP.js (byte ~8414):
   //   _e[0] (key:"app",  heading:"App")  slugs: general-settings, profile, appearance, appshots, connections, git-settings, usage
   //   _e[1] (key:"connection", heading:"Host") slugs: agent, personalization, keyboard-shortcuts, mcp-settings, hooks-settings, browser-use, computer-use, local-environments, worktrees, data-controls
-  // HiCodex omits Codex-only `profile`, inserts mcp/hooks/plugins/skills near their Codex counterparts
-  // (Codex hides plugins-settings/skills-settings via the `l` flag in xe(); HiCodex keeps both visible),
-  // and appends a HiCodex-only group of sections that have no Codex Desktop counterpart.
+  // Forge omits Codex-only `profile`, inserts mcp/hooks/plugins/skills near their Codex counterparts
+  // (Codex hides plugins-settings/skills-settings via the `l` flag in xe(); Forge keeps both visible),
+  // and appends a Forge-only group of sections that have no Codex Desktop counterpart.
   assertDeepEqual(
     SETTINGS_SECTIONS.map((section) => section.id),
     [
@@ -100,7 +100,7 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
       "personalization",
       "keyboard-shortcuts",
       "usage",
-      // Integrations (codex $e integrations.slugs + HiCodex-only apps/models/images)
+      // Integrations (codex $e integrations.slugs + Forge-only apps/models/images)
       "appshots",
       "mcp",
       "plugins",
@@ -110,7 +110,7 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
       "computer-use",
       "models",
       "images",
-      // Coding (codex $e coding.slugs + HiCodex-only permissions/approvals/experimental)
+      // Coding (codex $e coding.slugs + Forge-only permissions/approvals/experimental)
       "hooks",
       "connections",
       "git-settings",
@@ -122,7 +122,7 @@ function exposesUnifiedSettingsSectionsWithoutLogin(): void {
       // Archived (codex $e archived.slugs)
       "data-controls",
     ],
-    "settings center should expose Codex Desktop route slugs alongside existing HiCodex sections",
+    "settings center should expose Codex Desktop route slugs alongside existing Forge sections",
   );
 }
 
@@ -328,7 +328,7 @@ function projectsComputerUseReadinessActions(): void {
         status: permissionEntry.status,
         actions: secondaryActionSummaries(permissionEntry),
         appApprovals: permissionEntry.details?.some((detail) => detail === "App approvals: unknown"),
-        currentProcessPreflight: permissionEntry.details?.some((detail) => detail.includes("current HiCodex host process")),
+        currentProcessPreflight: permissionEntry.details?.some((detail) => detail.includes("current Forge host process")),
         timeoutRisk: permissionEntry.details?.some((detail) => detail.includes("list_apps and GUI-control tool calls time out")),
       },
     },
@@ -818,7 +818,7 @@ function projectsComputerUseMcpProbeTimeoutDiagnostics(): void {
 
 function exposesKeyboardShortcutsCommandList(): void {
   // CODEX-REF: keyboard-shortcuts-settings-CPv8uZNY.js — Codex Desktop builds
-  // the panel directly from the registered command catalog. HiCodex mirrors
+  // the panel directly from the registered command catalog. Forge mirrors
   // the same data via COMMAND_DESCRIPTORS; the entry list must be non-empty,
   // group-tagged, and use the prefixed id pattern so renderer lookups stay
   // unambiguous.
@@ -1052,7 +1052,7 @@ function projectsHostAvailableWorktreeSelectable(): void {
     [
       ["local", "selected", null],
       ["worktree", "ready", null],
-      ["cloud", "disabled", "No cloud workspace handoff is connected in HiCodex."],
+      ["cloud", "disabled", "No cloud workspace handoff is connected in Forge."],
     ],
     "worktree mode should be selectable when Tauri host status reports a repo root",
   );

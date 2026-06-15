@@ -10,7 +10,7 @@ import {
   isMacPlatform,
 } from "../state/command-registry";
 import type { CommandDescriptor } from "../state/command-registry";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface KeyboardShortcutRowProps {
   descriptor: CommandDescriptor;
@@ -37,7 +37,7 @@ export function KeyboardShortcutRow({
   onReset,
   onCancel,
 }: KeyboardShortcutRowProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const accelerator = descriptorAcceleratorLabel(descriptor.id);
   const isMac = isMacPlatform();
   return (

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
@@ -19,9 +19,9 @@ export interface UseClipboardCopyActionsResult {
 
 /*
  * Clipboard copy actions (working directory / session id / deeplink /
- * conversation-as-Markdown) lifted verbatim out of HiCodexApp. `dispatch` is the
- * stable useReducer dispatch — exactly as in the original, the base helper keeps
- * an empty dep array and relies on that stability. Toast wording ("Copied {noun}"
+ * conversation-as-Markdown) lifted verbatim out of ForgeApp. `dispatch` is the
+ * stable useReducer dispatch, so listing it in the dep arrays never retriggers
+ * anything. Toast wording ("Copied {noun}"
  * / "{Noun} is unavailable") and the `codex://threads/${id}` deeplink shape are
  * user/back-end visible and kept byte-for-byte.
  */
@@ -52,7 +52,7 @@ export function useClipboardCopyActions({
     } catch (error) {
       dispatch({ type: "log", text: `copy failed: ${formatError(error)}`, level: "error" });
     }
-  }, []);
+  }, [dispatch]);
 
   const copyWorkingDirectory = useCallback(() => {
     void copyTextToClipboard("working directory", activeThread?.cwd || workspace || "");
@@ -83,7 +83,7 @@ export function useClipboardCopyActions({
       title: threadTitle(activeThread),
       units: conversationUnits,
     }));
-  }, [activeThread, conversationUnits, copyTextToClipboard]);
+  }, [activeThread, conversationUnits, copyTextToClipboard, dispatch]);
 
   return {
     copyTextToClipboard,

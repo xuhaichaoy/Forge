@@ -29,7 +29,7 @@ import type { ReactNode } from "react";
  *
  * `data-thread-side-panel-new-tab-action-label` is harvested by the parent
  * `nt()` (Codex line 879-887) when measuring intrinsic label widths for the
- * responsive grid (`tt(...)`). HiCodex keeps the exact same attribute so the
+ * responsive grid (`tt(...)`). Forge keeps the exact same attribute so the
  * measurement path can drop straight in.
  */
 export interface SidePanelTabActionCardProps {

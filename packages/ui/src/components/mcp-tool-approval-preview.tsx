@@ -4,12 +4,12 @@ import type {
   PendingRequestMcpToolApproval,
   PendingRequestMcpToolParamEntry,
 } from "../state/approval-requests";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 const MCP_TOOL_PARAM_PREVIEW_LIMIT = 4;
 
 export function McpToolApprovalHeader({ approval }: { approval: PendingRequestMcpToolApproval }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const isHighRisk = approval.riskLevel === "high";
   if (isHighRisk) {
     return (
@@ -28,7 +28,7 @@ export function McpToolApprovalHeader({ approval }: { approval: PendingRequestMc
 }
 
 export function McpToolApprovalParams({ approval }: { approval: PendingRequestMcpToolApproval }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const entries = approval.toolParamEntries;
@@ -89,7 +89,7 @@ function McpToolParamRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const value = expanded ? entry.expandedText : entry.previewText;
   const toggleAction = expanded
     ? formatMessage({ id: "composer.mcpToolCallApproval.toolParam.collapse", defaultMessage: "Collapse" })

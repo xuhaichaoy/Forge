@@ -13,7 +13,7 @@ import {
   composerAttachmentPreviewSrc,
   type ComposerAttachment,
 } from "../state/composer-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 export interface ComposerImagePreview {
   src: string;
@@ -27,14 +27,14 @@ export interface ComposerImagePreview {
  *     keycap) - while an image is dragged WITHOUT Shift held.
  *   - composer.dropOverlay.dropToAttach = "Drop to attach" - when the drag can
  *     be dropped to attach.
- * HiCodex only tracks a single `dropActive` boolean (droppable) and has no
+ * Forge only tracks a single `dropActive` boolean (droppable) and has no
  * drag-modifier state to drive the Shift-held variant, so it renders just the
  * "Drop to attach" state. The self-made "Hold"/"to drop" fragment strings are
  * removed; the holdShift {key} ICU is registered for parity but not shown until
  * the drag-modifier data flow exists.
  */
 export function ComposerDropOverlay() {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-composer-drop-overlay" aria-hidden="true">
       <div className="hc-composer-drop-card">
@@ -55,7 +55,7 @@ export function ComposerAttachmentStrip({
   onPreviewImage: (preview: ComposerImagePreview) => void;
   onRemoveAttachment: (index: number) => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (attachments.length === 0) return null;
   return (
     <div className="hc-attachment-strip">
@@ -123,7 +123,7 @@ export function ComposerImagePreviewPortal({
   onClose: () => void;
   preview: ComposerImagePreview | null;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (!preview) return null;
 
   /*

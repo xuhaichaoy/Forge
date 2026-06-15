@@ -9,10 +9,10 @@ import type { ModelPickerProvider } from "../model/model-picker-selection";
 import type { PermissionMode, PermissionModeStatus } from "../state/permissions-mode";
 
 /*
- * Global overlay group extracted from HiCodexApp's return: patch-failure
+ * Global overlay group extracted from ForgeApp's return: patch-failure
  * dialog, model + reasoning pickers, keyboard-shortcuts dialog, and the toast
  * viewport. Each is rendered conditionally on its anchor/open prop; all
- * callbacks are stable useCallback references built in HiCodexAppBody.
+ * callbacks are stable useCallback references built in ForgeAppBody.
  */
 export function AppOverlays({
   patchFailure,

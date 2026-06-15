@@ -12,7 +12,7 @@ import {
   threadProjectLabel,
   threadSortAt,
 } from "../src/state/sidebar-projection";
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 
 const assert = (condition: unknown, message: string): void => {
   if (!condition) throw new Error(message);

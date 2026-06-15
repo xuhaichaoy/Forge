@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::civil_from_days;
+use crate::command_error::HostCommandError;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,11 +21,11 @@ pub(crate) struct CreateProjectlessThreadCwdResponse {
     workspace_root: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_create_projectless_thread_cwd(
     request: CreateProjectlessThreadCwdRequest,
-) -> Result<CreateProjectlessThreadCwdResponse, String> {
-    create_projectless_thread_cwd(request, SystemTime::now())
+) -> Result<CreateProjectlessThreadCwdResponse, HostCommandError> {
+    create_projectless_thread_cwd(request, SystemTime::now()).map_err(HostCommandError::io_failed)
 }
 
 /// Mirror Codex Desktop's projectless working-directory generator (bundle `Iy`):

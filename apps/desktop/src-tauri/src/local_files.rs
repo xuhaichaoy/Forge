@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+use crate::command_error::HostCommandError;
 use crate::document_preview::{read_document_preview, DocumentPreview};
 use crate::new_command;
 use crate::spreadsheet_preview::{read_spreadsheet_preview, SpreadsheetPreview};
@@ -16,87 +17,106 @@ pub(crate) struct LocalFileMetadata {
     mime_type: Option<String>,
 }
 
-#[tauri::command]
-pub(crate) fn host_open_file_reference(path: String, line: Option<u32>) -> Result<(), String> {
+#[tauri::command(async)]
+pub(crate) fn host_open_file_reference(
+    path: String,
+    line: Option<u32>,
+) -> Result<(), HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("file path is empty".to_string());
+        return Err(HostCommandError::invalid_input("file path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.exists() {
-        return Err(format!("file does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "file does not exist: {trimmed}"
+        )));
     }
     let line_suffix = line
         .filter(|value| *value > 0)
         .map(|value| format!(":{value}"))
         .unwrap_or_default();
     let display_target = format!("{trimmed}{line_suffix}");
-    open_path(target).map_err(|error| format!("failed to open {display_target}: {error}"))
+    open_path(target).map_err(|error| {
+        HostCommandError::process_failed(format!("failed to open {display_target}: {error}"))
+    })
 }
 
 // Mirrors Codex Desktop's `workspace-file-reveal-path` context-menu action
 // (workspace-file-context-menu-*.js): reveal a file/folder in the OS file
 // manager, selecting the item where the platform supports it.
-#[tauri::command]
-pub(crate) fn host_reveal_path(path: String) -> Result<(), String> {
+#[tauri::command(async)]
+pub(crate) fn host_reveal_path(path: String) -> Result<(), HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("file path is empty".to_string());
+        return Err(HostCommandError::invalid_input("file path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.exists() {
-        return Err(format!("path does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "path does not exist: {trimmed}"
+        )));
     }
-    reveal_path(target).map_err(|error| format!("failed to reveal {trimmed}: {error}"))
+    reveal_path(target).map_err(|error| {
+        HostCommandError::process_failed(format!("failed to reveal {trimmed}: {error}"))
+    })
 }
 
-#[tauri::command]
-pub(crate) fn host_open_external_url(url: String) -> Result<(), String> {
-    let target = normalized_external_url(&url)?;
-    open_external_url(&target).map_err(|error| format!("failed to open external URL: {error}"))
+#[tauri::command(async)]
+pub(crate) fn host_open_external_url(url: String) -> Result<(), HostCommandError> {
+    let target = normalized_external_url(&url).map_err(HostCommandError::invalid_input)?;
+    open_external_url(&target).map_err(|error| {
+        HostCommandError::process_failed(format!("failed to open external URL: {error}"))
+    })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_pick_file_references(
     kind: Option<String>,
     multiple: Option<bool>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, HostCommandError> {
     pick_file_references(kind.as_deref(), multiple.unwrap_or(true))
+        .map_err(HostCommandError::process_failed)
 }
 
-#[tauri::command]
-pub(crate) fn host_pick_workspace_folder() -> Result<Option<String>, String> {
-    pick_workspace_folder()
+#[tauri::command(async)]
+pub(crate) fn host_pick_workspace_folder() -> Result<Option<String>, HostCommandError> {
+    pick_workspace_folder().map_err(HostCommandError::process_failed)
 }
 
-#[tauri::command]
-pub(crate) fn host_read_image_data_url(path: String) -> Result<String, String> {
+#[tauri::command(async)]
+pub(crate) fn host_read_image_data_url(path: String) -> Result<String, HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("image path is empty".to_string());
+        return Err(HostCommandError::invalid_input("image path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.is_file() {
-        return Err(format!("image file does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "image file does not exist: {trimmed}"
+        )));
     }
-    let mime =
-        image_mime_type(target).ok_or_else(|| format!("unsupported image type: {trimmed}"))?;
-    let bytes = fs::read(target).map_err(|error| format!("failed to read image: {error}"))?;
+    let mime = image_mime_type(target).ok_or_else(|| {
+        HostCommandError::unsupported(format!("unsupported image type: {trimmed}"))
+    })?;
+    let bytes = fs::read(target)
+        .map_err(|error| HostCommandError::io_failed(format!("failed to read image: {error}")))?;
     Ok(format!(
         "data:{mime};base64,{}",
         general_purpose::STANDARD.encode(bytes)
     ))
 }
 
-#[tauri::command]
-pub(crate) fn host_read_file_metadata(path: String) -> Result<LocalFileMetadata, String> {
+#[tauri::command(async)]
+pub(crate) fn host_read_file_metadata(path: String) -> Result<LocalFileMetadata, HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("file path is empty".to_string());
+        return Err(HostCommandError::invalid_input("file path is empty"));
     }
     let target = Path::new(trimmed);
-    let metadata =
-        fs::metadata(target).map_err(|error| format!("failed to read file metadata: {error}"))?;
+    let metadata = fs::metadata(target).map_err(|error| {
+        HostCommandError::io_failed(format!("failed to read file metadata: {error}"))
+    })?;
     let is_file = metadata.is_file();
     Ok(LocalFileMetadata {
         is_file,
@@ -105,29 +125,39 @@ pub(crate) fn host_read_file_metadata(path: String) -> Result<LocalFileMetadata,
     })
 }
 
-#[tauri::command]
-pub(crate) fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Result<String, String> {
+#[tauri::command(async)]
+pub(crate) fn host_read_text_file(
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<String, HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("text file path is empty".to_string());
+        return Err(HostCommandError::invalid_input("text file path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.is_file() {
-        return Err(format!("text file does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "text file does not exist: {trimmed}"
+        )));
     }
 
     if is_word_document_path(target) {
-        return read_document_preview(target, 200, 1_000).map(DocumentPreview::into_plain_text);
+        return read_document_preview(target, 200, 1_000)
+            .map(DocumentPreview::into_plain_text)
+            .map_err(HostCommandError::process_failed);
     }
 
     let max_bytes = max_bytes.unwrap_or(120_000).clamp(1, 240_000);
-    let mut file =
-        fs::File::open(target).map_err(|error| format!("failed to open text file: {error}"))?;
+    let mut file = fs::File::open(target).map_err(|error| {
+        HostCommandError::io_failed(format!("failed to open text file: {error}"))
+    })?;
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
         .take(max_bytes + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("failed to read text file: {error}"))?;
+        .map_err(|error| {
+            HostCommandError::io_failed(format!("failed to read text file: {error}"))
+        })?;
 
     let truncated = bytes.len() as u64 > max_bytes;
     if truncated {
@@ -140,80 +170,90 @@ pub(crate) fn host_read_text_file(path: String, max_bytes: Option<u64>) -> Resul
     Ok(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_read_spreadsheet_preview(
     path: String,
     max_rows: Option<usize>,
     max_cols: Option<usize>,
-) -> Result<SpreadsheetPreview, String> {
+) -> Result<SpreadsheetPreview, HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("spreadsheet path is empty".to_string());
+        return Err(HostCommandError::invalid_input("spreadsheet path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.is_file() {
-        return Err(format!("spreadsheet file does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "spreadsheet file does not exist: {trimmed}"
+        )));
     }
 
     let max_rows = max_rows.unwrap_or(80).clamp(1, 400);
     let max_cols = max_cols.unwrap_or(24).clamp(1, 120);
-    read_spreadsheet_preview(target, max_rows, max_cols)
+    read_spreadsheet_preview(target, max_rows, max_cols).map_err(HostCommandError::process_failed)
 }
 
 // CODEX-REF: webview/assets/open-workspace-file-DOOUD1lA.js — Codex Desktop streams
-// xlsx bytes to its WASM Popcorn workbook viewer. HiCodex's reduced preview parses
+// xlsx bytes to its WASM Popcorn workbook viewer. Forge's reduced preview parses
 // the workbook in the renderer with SheetJS, so we need raw bytes back. The CSP
 // blocks `fetch()` against the asset protocol, so we expose a small base64
 // fetcher that mirrors the existing `host_read_image_data_url` pattern and is
 // capped so we never load a multi-hundred-MB workbook into JS.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_read_file_bytes_base64(
     path: String,
     max_bytes: Option<u64>,
-) -> Result<String, String> {
+) -> Result<String, HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("file path is empty".to_string());
+        return Err(HostCommandError::invalid_input("file path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.is_file() {
-        return Err(format!("file does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "file does not exist: {trimmed}"
+        )));
     }
     // Cap to ~16 MiB so an accidentally giant workbook can't pin the renderer.
     let max_bytes = max_bytes
         .unwrap_or(16 * 1024 * 1024)
         .clamp(1, 64 * 1024 * 1024);
-    let mut file =
-        fs::File::open(target).map_err(|error| format!("failed to open file: {error}"))?;
+    let mut file = fs::File::open(target)
+        .map_err(|error| HostCommandError::io_failed(format!("failed to open file: {error}")))?;
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
         .take(max_bytes + 1)
         .read_to_end(&mut bytes)
-        .map_err(|error| format!("failed to read file: {error}"))?;
+        .map_err(|error| HostCommandError::io_failed(format!("failed to read file: {error}")))?;
     if bytes.len() as u64 > max_bytes {
-        return Err(format!("file exceeds preview limit ({} bytes)", max_bytes));
+        return Err(HostCommandError::unsupported(format!(
+            "file exceeds preview limit ({} bytes)",
+            max_bytes
+        )));
     }
     Ok(general_purpose::STANDARD.encode(bytes))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn host_read_document_preview(
     path: String,
     max_paragraphs: Option<usize>,
     max_chars_per_paragraph: Option<usize>,
-) -> Result<DocumentPreview, String> {
+) -> Result<DocumentPreview, HostCommandError> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return Err("document path is empty".to_string());
+        return Err(HostCommandError::invalid_input("document path is empty"));
     }
     let target = Path::new(trimmed);
     if !target.is_file() {
-        return Err(format!("document file does not exist: {trimmed}"));
+        return Err(HostCommandError::not_found(format!(
+            "document file does not exist: {trimmed}"
+        )));
     }
 
     let max_paragraphs = max_paragraphs.unwrap_or(80).clamp(1, 400);
     let max_chars_per_paragraph = max_chars_per_paragraph.unwrap_or(400).clamp(20, 4_000);
     read_document_preview(target, max_paragraphs, max_chars_per_paragraph)
+        .map_err(HostCommandError::process_failed)
 }
 
 #[cfg(target_os = "macos")]
@@ -381,12 +421,16 @@ fn open_path(path: &Path) -> std::io::Result<()> {
     }
 }
 
-pub(crate) fn open_existing_path(path: &str) -> Result<(), String> {
+pub(crate) fn open_existing_path(path: &str) -> Result<(), HostCommandError> {
     let target = Path::new(path);
     if !target.exists() {
-        return Err(format!("path does not exist: {path}"));
+        return Err(HostCommandError::not_found(format!(
+            "path does not exist: {path}"
+        )));
     }
-    open_path(target).map_err(|error| format!("failed to open {path}: {error}"))
+    open_path(target).map_err(|error| {
+        HostCommandError::process_failed(format!("failed to open {path}: {error}"))
+    })
 }
 
 /// Reveal `path` in the OS file manager. Mirrors Codex Desktop's platform
@@ -450,15 +494,19 @@ fn open_external_url(url: &str) -> std::io::Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn open_macos_system_settings_url(url: &str) -> Result<(), String> {
+pub(crate) fn open_macos_system_settings_url(url: &str) -> Result<(), HostCommandError> {
     new_command("open")
         .arg(url)
         .spawn()
         .map(|_| ())
-        .map_err(|error| format!("failed to open System Settings: {error}"))
+        .map_err(|error| {
+            HostCommandError::process_failed(format!("failed to open System Settings: {error}"))
+        })
 }
 
 #[cfg(not(target_os = "macos"))]
-pub(crate) fn open_macos_system_settings_url(_url: &str) -> Result<(), String> {
-    Err("Computer Use permission setup is only available on macOS.".to_string())
+pub(crate) fn open_macos_system_settings_url(_url: &str) -> Result<(), HostCommandError> {
+    Err(HostCommandError::unsupported(
+        "Computer Use permission setup is only available on macOS.",
+    ))
 }

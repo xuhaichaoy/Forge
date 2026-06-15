@@ -1,27 +1,27 @@
 import {
-  HICODEX_DESKTOP_CONFIG_KEYS,
-  desktopHiCodexKey,
+  FORGE_DESKTOP_CONFIG_KEYS,
+  desktopForgeKey,
   readMigratedStorageValue,
-} from "../src/state/hicodex-desktop-namespace";
+} from "../src/state/forge-desktop-namespace";
 
-export default function runHiCodexDesktopNamespaceTests(): void {
+export default function runForgeDesktopNamespaceTests(): void {
   assertEqual(
-    desktopHiCodexKey("rightRail", "isPinned"),
+    desktopForgeKey("rightRail", "isPinned"),
     "desktop.hicodex.rightRail.isPinned",
-    "HiCodex desktop config keys should live under desktop.hicodex",
+    "Forge desktop config keys should live under the legacy desktop.hicodex namespace",
   );
   assertEqual(
-    HICODEX_DESKTOP_CONFIG_KEYS.imageGeneration,
+    FORGE_DESKTOP_CONFIG_KEYS.imageGeneration,
     "desktop.hicodex.imageGeneration",
-    "image settings should use the HiCodex desktop namespace",
+    "image settings should use the legacy desktop.hicodex namespace",
   );
   assertEqual(
-    HICODEX_DESKTOP_CONFIG_KEYS.composerWorkMode,
+    FORGE_DESKTOP_CONFIG_KEYS.composerWorkMode,
     "desktop.hicodex.composer.workMode",
-    "composer work mode should use the HiCodex desktop namespace",
+    "composer work mode should use the legacy desktop.hicodex namespace",
   );
   assertEqual(
-    HICODEX_DESKTOP_CONFIG_KEYS.filePreviewPanelWidth,
+    FORGE_DESKTOP_CONFIG_KEYS.filePreviewPanelWidth,
     "desktop.hicodex.filePreviewPanel.widthPx",
     "file preview panel width should use the mirrored desktop namespace",
   );

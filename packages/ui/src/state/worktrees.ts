@@ -1,11 +1,11 @@
-import type { Thread } from "@hicodex/codex-protocol";
+import type { Thread } from "@forge/codex-protocol";
 import { setDesktopAppSettingValue } from "../lib/app-settings";
 import * as tauriHost from "../lib/tauri-host";
 import type { CommandPanelEntry } from "./command-panel";
 import {
-  HICODEX_DESKTOP_CONFIG_KEYS,
+  FORGE_DESKTOP_CONFIG_KEYS,
   readMigratedStorageValue,
-} from "./hicodex-desktop-namespace";
+} from "./forge-desktop-namespace";
 import type { BrowserStorageLike } from "./image-generation-tool";
 import type { I18nMessageDescriptor, I18nValues } from "./i18n";
 
@@ -81,10 +81,10 @@ export interface WorktreeSettingsProjectionInput {
 }
 
 export const LEGACY_COMPOSER_WORK_MODE_STORAGE_KEY = "hicodex.composerWorkMode";
-export const COMPOSER_WORK_MODE_STORAGE_KEY = HICODEX_DESKTOP_CONFIG_KEYS.composerWorkMode;
+export const COMPOSER_WORK_MODE_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.composerWorkMode;
 
 const HOST_WORKTREE_DISABLED_REASON = "Tauri host Git status is unavailable for this workspace.";
-const CLOUD_DISABLED_REASON = "No cloud workspace handoff is connected in HiCodex.";
+const CLOUD_DISABLED_REASON = "No cloud workspace handoff is connected in Forge.";
 const tauriHostExports = tauriHost as unknown as {
   createPendingWorktree?: (request: CreatePendingWorktreeRequest) => Promise<PendingWorktree>;
   readHostGitStatus?: (cwd: string) => Promise<HostGitStatus>;
@@ -254,7 +254,7 @@ export function projectWorktreesSettingsEntries(
       details: [
         option.description,
         option.status === "disabled"
-          ? "HiCodex can only create a pending worktree after the native host confirms this cwd is inside a Git repository."
+          ? "Forge can only create a pending worktree after the native host confirms this cwd is inside a Git repository."
           : "Selecting this mode creates a real pending worktree path through the native host; thread facts still come from app-server.",
       ],
     })),
@@ -319,7 +319,7 @@ function pendingWorktreeDetails(
       worktreeReady
         ? "No pending worktree has been created yet."
         : "No pending worktree path is available until the host confirms a Git repository.",
-      "New thread creation must use the returned path as cwd; HiCodex does not synthesize thread Git facts.",
+      "New thread creation must use the returned path as cwd; Forge does not synthesize thread Git facts.",
     ];
   }
   return [

@@ -1,6 +1,6 @@
 import { Save, Server, X } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import {
   McpServerAdvancedFields,
   McpServerHttpFields,
@@ -31,7 +31,7 @@ export interface McpServerConfigFormProps {
 }
 
 export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConfigFormProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const initialValues = useMemo(() => initialMcpServerConfigFormValues(action), [action]);
   const [values, setValues] = useState<McpServerConfigFormValues>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -64,7 +64,7 @@ export function McpServerConfigForm({ action, onClose, onSubmit }: McpServerConf
         aria-modal="true"
         aria-label={action.title}
         onKeyDown={(event) => {
-          // codex: Radix dialog closes on Escape; match it (the other HiCodex dialogs do).
+          // codex: Radix dialog closes on Escape; match it (the other Forge dialogs do).
           if (event.key === "Escape") {
             event.stopPropagation();
             onClose();

@@ -5,7 +5,7 @@
  * break-words shadow-xl-spread ring-[0.5px] backdrop-blur-sm`; content padding `!px-1.5 !py-0.5`;
  * `maxWidth: min(20rem, …)`; `sideOffset: 2`. The optional keyboard-shortcut chip is
  * `inline-flex h-4 min-w-4 !px-1.5 !py-0 !rounded-md !border-0 !bg-current/10 !font-sans !text-xs
- * !text-current !shadow-none`. HiCodex maps those to its panel-surface tokens; positioning uses
+ * !text-current !shadow-none`. Forge maps those to its panel-surface tokens; positioning uses
  * the same portal + viewport-clamp pattern as `context-menu` / `reasoning-picker-menu` (no
  * floating-ui dependency). Replaces native `title` where Codex shows a styled tooltip.
  */

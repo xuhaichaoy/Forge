@@ -70,7 +70,7 @@ export function useThreadFind({
     setActiveSettingsPanel(null);
     setThreadFindOpen(true);
     setThreadFindFocusToken((current) => current + 1);
-  }, []);
+  }, [setActiveSettingsPanel, setCommandPanel]);
   const closeThreadFindBar = useCallback(() => {
     setThreadFindOpen(false);
   }, []);

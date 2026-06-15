@@ -1,4 +1,4 @@
-import type { MarkdownBlock, MarkdownTableAlign } from "./conversation-markdown-engine";
+import type { MarkdownBlock, MarkdownTableAlign } from "./conversation-markdown-types";
 
 type MarkdownBlockBoundaryPredicate = (line: string, nextLine?: string) => boolean;
 

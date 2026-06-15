@@ -51,7 +51,7 @@ import {
   toolActivityGroupKey,
   toolActivityRenderKey,
 } from "./tool-activity-grouping";
-import { hiCodexImageToolOutputUrl } from "./image-generation-tool";
+import { forgeImageToolOutputUrl } from "./image-generation-tool";
 import { projectUserMessageContent, userMessageCopyText, userMessageText } from "./user-message-content";
 import {
   groupConsecutiveDynamicToolCalls,
@@ -104,7 +104,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
    * codex split-items-into-render-groups-*.js: the collapse predicate `z()`
    * INCLUDES web-search, so the `R` pass DOES fold web-search + exec/exploration/
    * patch/mcp into one cross-type `collapsed-tool-activity` (within a slice / the
-   * no-assistant-message case). HiCodex mirrors that by keeping web-search-group
+   * no-assistant-message case). Forge mirrors that by keeping web-search-group
    * mergeable. (The ONLY place Codex separates them is the LEADING region that
    * `oe` excludes from collapse slices — see §M-19 #5; that needs the slice-based
    * pass split, NOT a blanket de-merge here, which would wrongly separate the
@@ -255,7 +255,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
      * user-message 上的 hookStats/hookRuns 字段表达；reasoning 也是同样规则。
      * 因此这里只把 `plan` 走 threadItemRenderUnit（plan 是有独立卡的 ThreadItem
      * variant），其余 hookPrompt/contextCompaction/enteredReviewMode/exitedReviewMode/
-     * imageView/imageGeneration 保留 HiCodex 既有路径（event-projection 处理）。
+     * imageView/imageGeneration 保留 Forge 既有路径（event-projection 处理）。
      */
     if (itemType(item) === "plan") {
       const standaloneProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
@@ -324,7 +324,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       assistantRenderedInSegment = true;
       return;
     }
-    if (hiCodexImageToolOutputUrl(item)) {
+    if (forgeImageToolOutputUrl(item)) {
       flushActivity();
       units.push({
         kind: "event",
@@ -435,7 +435,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
      * codex: local-conversation-thread-*.js — gallery aggregation: all
      * `generated-image` items in `toolOutputItems` collapse into one
      * `<images conversationId={…}/>` carousel — never one-card-per-image.
-     * HiCodex previously routed each through the generic `pushConversationItem`
+     * Forge previously routed each through the generic `pushConversationItem`
      * path, which produced a stack of full-width markdown image cards
      * (screenshot 2026-05-21 image #6).
      *
@@ -759,7 +759,7 @@ export function splitTurnItems(items: ThreadItem[], turnStatus: string = "comple
       toolOutputItems.push(item);
       continue;
     }
-    if (hiCodexImageToolOutputUrl(item)) {
+    if (forgeImageToolOutputUrl(item)) {
       toolOutputItems.push(item);
       continue;
     }
@@ -891,7 +891,7 @@ function shouldRenderDesktopThinkingPlaceholder(
    * item is an in-progress reasoning event. Reasoning items are folded into the
    * exploration buffer or dropped — they never count as "an agent item in
    * progress" that should suppress the thinking row. Without this carve-out,
-   * HiCodex's
+   * Forge's
    * `event-unit.tsx` (real reasoning units return `null`) would
    * leave the entire process area visually empty while the model is reasoning.
    */

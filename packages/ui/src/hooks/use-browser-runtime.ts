@@ -12,10 +12,10 @@ import {
 
 /*
  * Tauri Browser-runtime snapshot ownership, lifted verbatim out of
- * HiCodexAppBody. This cluster is self-contained: the snapshot state, its two
+ * ForgeAppBody. This cluster is self-contained: the snapshot state, its two
  * Tauri boot/listen effects, the on-demand `refreshBrowserRuntime` fetcher, and
  * the `browserRailInput` projection only ever touch each other here — no other
- * HiCodexApp logic reads or writes the snapshot. `dispatch` (used by the
+ * ForgeApp logic reads or writes the snapshot. `dispatch` (used by the
  * listen-failure toast) comes from ServicesContext, matching every other body
  * hook; nothing else is injected.
  *

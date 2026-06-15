@@ -147,10 +147,10 @@ function ignoresBlankQueries(): void {
 
 /*
  * The walker filter in `collectSearchableTextNodes` is the only enforcement
- * point for HiCodex's `data-thread-find-skip` contract (DEVELOPMENT.md §13).
+ * point for Forge's `data-thread-find-skip` contract (DEVELOPMENT.md §13).
  * Codex Desktop's `local-conversation-thread-CecHj6JI.js` sets the attribute
  * on subtrees the find bar must never traverse (composer drafts, pending
- * request scaffolding). HiCodex previously declared the attribute but didn't
+ * request scaffolding). Forge previously declared the attribute but didn't
  * enforce it, so these tests pin the contract with mock parents.
  */
 type MockSelectorMatcher = (selector: string) => boolean;

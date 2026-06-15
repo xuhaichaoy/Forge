@@ -1,29 +1,29 @@
 import { useEffect } from "react";
 import type { MutableRefObject } from "react";
-import type { ModelConfig } from "@hicodex/codex-protocol";
+import type { ModelConfig } from "@forge/codex-protocol";
 
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
 import { normalizeModelConfig } from "../model/model-settings";
 import type { PendingServerRequest } from "../state/codex-reducer";
 import {
-  claimHiCodexImageToolRequest,
-  executeHiCodexImageToolCall,
+  claimForgeImageToolRequest,
+  executeForgeImageToolCall,
   imageToolFailureText,
-  isHiCodexImageToolCall,
+  isForgeImageToolCall,
   type DynamicToolCallResponseLike,
   type ImageGenerationExecuteOptions,
 } from "../state/image-generation-tool";
 
 /*
- * Auto-responder for HiCodex image-generation tool calls, lifted verbatim out of
- * HiCodexApp. Scans pending requests, claims each unhandled image tool call via
+ * Auto-responder for Forge image-generation tool calls, lifted verbatim out of
+ * ForgeApp. Scans pending requests, claims each unhandled image tool call via
  * the shared `handledImageToolRequestIdsRef` (still owned by the component so
  * respondToRequest can also claim against it), runs the generation, responds, and
  * resolves the server request. Toast wording, the failure contentItems shape, and
  * the dep array are contract-exact; `dispatch` (stable) is kept out of the deps.
  */
-export function useHiCodexImageToolResponder({
+export function useForgeImageToolResponder({
   handledImageToolRequestIdsRef,
   pendingRequests,
   modelDraft,
@@ -39,12 +39,12 @@ export function useHiCodexImageToolResponder({
   const { client, dispatch } = useServices();
   useEffect(() => {
     for (const request of pendingRequests) {
-      if (!isHiCodexImageToolCall(request)) continue;
-      if (!claimHiCodexImageToolRequest(handledImageToolRequestIdsRef.current, request)) continue;
+      if (!isForgeImageToolCall(request)) continue;
+      if (!claimForgeImageToolRequest(handledImageToolRequestIdsRef.current, request)) continue;
       void (async () => {
         let result: DynamicToolCallResponseLike;
         try {
-          result = await executeHiCodexImageToolCall(request, normalizeModelConfig(modelDraft), {
+          result = await executeForgeImageToolCall(request, normalizeModelConfig(modelDraft), {
             codexHome,
             imageSettings: imageGenerationSettings,
           });
@@ -66,5 +66,5 @@ export function useHiCodexImageToolResponder({
           dispatch({ type: "resolveServerRequest", id: request.id });
         });
     }
-  }, [client, imageGenerationSettings, modelDraft, codexHome, pendingRequests]);
+  }, [client, dispatch, handledImageToolRequestIdsRef, imageGenerationSettings, modelDraft, codexHome, pendingRequests]);
 }

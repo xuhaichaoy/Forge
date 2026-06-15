@@ -116,7 +116,7 @@ export function fileReferenceSidePanelContextMenuItems(
 ): readonly SidePanelTabContextMenuItem[] {
   /*
    * codex workspace-file-context-menu-*.js emits open target(s), a separator,
-   * copy path, copy contents, and reveal. HiCodex does not yet have Desktop's
+   * copy path, copy contents, and reveal. Forge does not yet have Desktop's
    * OS app-target query, so the first row is Codex's own `viewFile` label.
    */
   return [

@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import { ContextMenu, type ContextMenuItem } from "./context-menu";
-import { useHiCodexIntl } from "./i18n-provider";
-import type { HiCodexIntlContextValue } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
+import type { ForgeIntlContextValue } from "./i18n-provider";
 import type {
   SidePanelTab,
   SidePanelTabHostController,
@@ -33,7 +33,7 @@ import type { SidePanelTabContextMenuItem } from "../state/side-panel-tab-host";
  * What we deliberately do NOT port (per "如果拿不到依据就不要做"):
  *   • DnD via dnd-kit (`useDraggable`, `transform`, `isDragging` — lines 449-456)
  *     — Codex's tab strip supports drag-to-reorder & cross-controller move.
- *     HiCodex skips until we port the dnd-kit-equivalent wiring.
+ *     Forge skips until we port the dnd-kit-equivalent wiring.
  *   • Edge scrim sentinels (`Gt(...)` lines 791, 879 + IntersectionObserver
  *     scrim fade) — purely visual, defer.
  *
@@ -92,7 +92,7 @@ interface SidePanelTabPillProps {
 }
 
 function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   // codex: title sits in a `relative min-w-0 flex-1 overflow-hidden` wrapper with a
   // sibling right-edge gradient fade (NOT a CSS ellipsis) so long titles dissolve.
@@ -174,7 +174,7 @@ function SidePanelTabPill({ controller, tab, isActive }: SidePanelTabPillProps) 
 export function sidePanelTabContextMenuItems(
   tab: SidePanelTab,
   controller: SidePanelTabHostController,
-  formatMessage: HiCodexIntlContextValue["formatMessage"],
+  formatMessage: ForgeIntlContextValue["formatMessage"],
 ): ContextMenuItem[] {
   const customItems = (tab.contextMenuItems ?? []).map(sidePanelTabContextMenuItem);
   if (!tab.isClosable) return customItems;

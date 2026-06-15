@@ -274,7 +274,7 @@ function doesNotInventAssistantArtifactActionForEndResources(): void {
   assertEqual(
     html.includes("hc-message-actions"),
     false,
-    "artifact presence alone should not create a HiCodex-only action row",
+    "artifact presence alone should not create a Forge-only action row",
   );
   assertEqual(
     html.includes("Copy message"),
@@ -1052,7 +1052,7 @@ function rendersThreadGoalUserStatusLikeCodexDesktop(): void {
   }));
 
   assertEqual(html.includes("Sent as goal"), true, "Desktop user goal rows should render the Sent as goal status");
-  assertEqual(html.includes("Goal:"), false, "the user goal status should not expose HiCodex-only objective text");
+  assertEqual(html.includes("Goal:"), false, "the user goal status should not expose Forge-only objective text");
 }
 
 function rendersHookUserStatusLikeCodexDesktop(): void {

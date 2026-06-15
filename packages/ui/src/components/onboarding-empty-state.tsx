@@ -10,7 +10,7 @@
  */
 import { useMemo } from "react";
 import { isProjectlessWorkspace } from "../state/thread-workflow";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 interface OnboardingEmptyStateProps {
   onDismissPromo?: () => void;
@@ -52,7 +52,7 @@ export function OnboardingEmptyState({
   workspace,
 }: OnboardingEmptyStateProps) {
   const project = useMemo(() => projectBasename(workspace), [workspace]);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // The project name's position differs by locale ("…work on in {project}?" vs
   // "我们应该在{project}中做些什么？"), so split the localized template on {project}
   // and render the clickable selector between the two halves.
@@ -119,7 +119,7 @@ function OnboardingFirstThreadPromo({
   onStartChat,
   onUseExistingFolder,
 }: OnboardingFirstThreadPromoProps) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex sidebarElectron.newThread (= "New chat") drives the primary new-thread
   // action; codex projectSetup.addProjectMenu.useExistingFolder (= "Use an
   // existing folder") drives the secondary open-folder action. Both reuse Codex's
@@ -131,7 +131,7 @@ function OnboardingFirstThreadPromo({
       className="hc-onboarding-empty-promo"
       data-onboarding-promo="first-new-thread"
       role="region"
-      aria-label="Welcome to HiCodex"
+      aria-label="Welcome to Forge"
     >
       <button
         type="button"
@@ -142,7 +142,7 @@ function OnboardingFirstThreadPromo({
         <span aria-hidden="true">×</span>
       </button>
       <div className="hc-onboarding-empty-promo-body">
-        <h3 className="hc-onboarding-empty-promo-title">Welcome to HiCodex</h3>
+        <h3 className="hc-onboarding-empty-promo-title">Welcome to Forge</h3>
         {/* codex first-run codex.legal.mistakes.* — AI fallibility / review-output disclaimer.
             Keeps the "Codex" brand verbatim (bundle defaultMessage). */}
         <p className="hc-onboarding-empty-promo-disclaimer">

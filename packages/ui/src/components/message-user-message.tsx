@@ -1,7 +1,7 @@
 import { GitFork, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 import type { FileReference } from "./file-reference-types";
 import { UserEditForm } from "./user-message-edit-form";
 import { CollapsedUserText } from "./user-message-collapsed-text";
@@ -130,7 +130,7 @@ function ParentThreadAttachmentChip({
   sourceConversationId: string;
   onOpenThreadId?: OpenThreadHandler;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const content = (
     <>
       <GitFork aria-hidden size={14} />
@@ -162,7 +162,7 @@ function UserMessageBubble({
   children: ReactNode;
   onBeginEdit?: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   if (!onBeginEdit) {
     return <div className="hc-user-message-bubble">{children}</div>;
   }
@@ -196,7 +196,7 @@ function UserMessageBubble({
 // attachments/images and no visible body, the bubble slot shows a faded
 // "(No content)" line (text-size-chat text-token-description-foreground).
 function UserMessageNoContent() {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   return (
     <div className="hc-user-message-no-content">
       {formatMessage({
@@ -226,7 +226,7 @@ function UserMessageActions({
   meta: UserMessageMetaChip[];
   onEdit?: () => void;
 }) {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   const hasActionChildren = Boolean(onEdit);
   const shouldRenderActionRow = shouldRenderMessageActionRow({ copyText, hasActionChildren });
   const actionRow = shouldRenderActionRow
@@ -234,7 +234,7 @@ function UserMessageActions({
         <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
           {onEdit && (
             <IconActionButton ariaLabel={formatMessage({ id: "codex.userMessage.editAriaLabel", defaultMessage: "Edit message" })} title={formatMessage({ id: "codex.userMessage.editTooltip", defaultMessage: "Edit" })} onClick={onEdit}>
-              {/* HiCodex divergence: 12px (Codex action icon-xs = 16px), per product preference */}
+              {/* Forge divergence: 12px (Codex action icon-xs = 16px), per product preference */}
               <Pencil size={12} />
             </IconActionButton>
           )}

@@ -6,7 +6,7 @@ import type {
   ThreadGoalClearResponse,
   ThreadGoalGetResponse,
   ThreadGoalSetResponse,
-} from "@hicodex/codex-protocol";
+} from "@forge/codex-protocol";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
@@ -17,7 +17,7 @@ import {
 } from "./account-state";
 import { loadAllApps } from "./app-list";
 import { projectBackgroundTerminalEntries } from "./background-terminals";
-import type { HiCodexBuildInfo } from "./build-info";
+import type { ForgeBuildInfo } from "./build-info";
 import type { SlashCommandRequest } from "./composer-workflow";
 import {
   projectCommandPanelEntries,
@@ -75,7 +75,7 @@ export interface SlashRequestWorkflowContext {
   uiTheme?: UiThemeSnapshot;
   logs?: LogLine[];
   rpcDebugEvents?: RpcDebugEvent[];
-  buildInfo?: HiCodexBuildInfo;
+  buildInfo?: ForgeBuildInfo;
   onShowStatusPanel?: () => void;
 }
 
@@ -323,7 +323,7 @@ export async function runSlashRequestWorkflow(
           await openExternalUrl(result.authUrl);
           dispatch({
             type: "log",
-            text: "Opened ChatGPT sign-in in your browser. Complete login there — HiCodex will pick up the token automatically.",
+            text: "Opened ChatGPT sign-in in your browser. Complete login there — Forge will pick up the token automatically.",
             level: "info",
           });
         } catch (error) {
@@ -342,7 +342,7 @@ export async function runSlashRequestWorkflow(
         return;
       }
       case "exitApp":
-        dispatch({ type: "log", text: "Use the macOS window close button to quit HiCodex during development.", level: "info" });
+        dispatch({ type: "log", text: "Use the macOS window close button to quit Forge during development.", level: "info" });
         return;
       case "copyLastAnswer":
         dispatch({ type: "log", text: "Copy last answer is queued for the transcript action toolbar.", level: "info" });
@@ -366,7 +366,7 @@ export async function runSlashRequestWorkflow(
       case "approveGuardianDeniedAction":
         dispatch({
           type: "log",
-          text: "/approve is registered, but HiCodex still needs to persist the guardian denial event before it can call thread/approveGuardianDeniedAction.",
+          text: "/approve is registered, but Forge still needs to persist the guardian denial event before it can call thread/approveGuardianDeniedAction.",
           level: "warn",
         });
         return;
@@ -649,7 +649,7 @@ function projectFeedbackCommandEntries(input: {
       meta: threadSuffix,
       details: [
         "Copies thread id, workspace, runtime status, and recent UI logs.",
-        "Matches Codex Desktop’s include-session-logs intent without uploading logs from HiCodex.",
+        "Matches Codex Desktop’s include-session-logs intent without uploading logs from Forge.",
       ],
       action: {
         type: "copyText",
@@ -688,7 +688,7 @@ function feedbackDiagnosticsText(input: {
     `- [${log.level}] ${new Date(log.at).toISOString()} ${log.text}`
   ));
   return [
-    "HiCodex feedback diagnostics",
+    "Forge feedback diagnostics",
     `Thread: ${input.activeThreadId ?? "none"}`,
     `Turn: ${input.activeTurnId ?? "none"}`,
     `Workspace: ${input.workspace || "none"}`,

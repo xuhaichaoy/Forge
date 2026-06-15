@@ -26,7 +26,7 @@
   /* Opaque tab-strip surface = the OPAQUE base of --hc-surface-panel (which is
      0.94-alpha). Codex's tab pill sits on an opaque `bg-token-main-surface-primary`,
      so its title gradient-fade + hover close-overlay (which reference the per-tab
-     `--app-shell-tab-background`) dissolve cleanly into a solid color. HiCodex's pill
+     `--app-shell-tab-background`) dissolve cleanly into a solid color. Forge's pill
      is transparent over the translucent panel, so we expose this opaque equivalent as
      `--hc-tab-bg` (set per pill state) for the fade/overlay to fade INTO. */
   --hc-tab-surface: #fffdfa;
@@ -53,13 +53,13 @@
   --hc-editor-warning-foreground: #e25507;
   --hc-editor-warning-background: #ffe7d9;
   /* Codex has TWO muted text levels: token-text-secondary (= foreground 65%)
-     and description-foreground / text-tertiary (= 70%). HiCodex mirrors both;
+     and description-foreground / text-tertiary (= 70%). Forge mirrors both;
      tertiary was previously only an inline fallback `var(--hc-text-tertiary,#8a8c87)`
      so it never adapted to dark. Light = Codex description/text-tertiary (70% of
      #1a1c1f over white = #5f6062), dark = 70% white. */
   --hc-text-tertiary: #5f6062;
   /* Codex border tokens (app-main): token-border 8% / border-light 5% /
-     border-heavy 12% of foreground. HiCodex's defaults were heavier (14%/8%);
+     border-heavy 12% of foreground. Forge's defaults were heavier (14%/8%);
      aligned to Codex's percentages. (strong kept as the warm solid pending a
      visual check — it maps to border-heavy but is a deliberate solid hue.) */
   --hc-border-default: rgba(34, 38, 43, 0.08);
@@ -102,7 +102,7 @@
    *   --codex-chat-font-size: var(--vscode-chat-font-size, var(--vscode-font-size, 13px))
    * where --vscode-chat-font-size -> --vscode-font-size -> --text-base = 14px,
    * and BOTH intermediate vars are defined in Codex's root block — so the chain
-   * resolves to 14px. The trailing `13px` is a DEAD inner fallback that HiCodex
+   * resolves to 14px. The trailing `13px` is a DEAD inner fallback that Forge
    * had mistakenly hard-coded; the real Desktop chat body is 14px. (A/B-pending.)
    * (`--codex-chat-code-font-size` likewise chains via --vscode-(chat-)editor-font-size
    * -> --text-sm = 12px, which equals its 12px fallback — so 12px is correct.)
@@ -124,9 +124,9 @@
    *   --font-sans-default: -apple-system, BlinkMacSystemFont, "Segoe UI",
    *                        sans-serif
    * Upstream wraps them in `var(--vscode-editor-font-family, ...)` /
-   * `var(--vscode-font-family, ...)` to defer to the VS Code embed; HiCodex
+   * `var(--vscode-font-family, ...)` to defer to the VS Code embed; Forge
    * runs in Tauri (no VS Code host), so we use the default stack directly.
-   * Two HiCodex sites already reference `var(--hc-font-mono)` /
+   * Two Forge sites already reference `var(--hc-font-mono)` /
    * `var(--hc-font-sans)` (`composer.css::hc-code-snippet-code`,
    * `base.css::hc-app`) but without a definition the inline fallback there
    * was a partial subset of the Desktop stack; defining the token here gives
@@ -171,7 +171,7 @@
  * codex applies --corner-radius-scale:1.25 + corner-shape: superellipse(1.5) to its
  * rounded-* utilities ONLY inside this feature query (Chromium 139+; WebKit once it
  * ships). On a host WITHOUT corner-shape support (e.g. an older WKWebView) it stays
- * at scale 1 with plain arcs — exactly Codex's own fallback — so HiCodex matches
+ * at scale 1 with plain arcs — exactly Codex's own fallback — so Forge matches
  * Codex on either host instead of guessing one fixed radius. Each consuming surface
  * pairs `border-radius: var(--hc-radius-lg|xl)` with `corner-shape: superellipse(1.5)`
  * (the property is simply ignored where unsupported).
@@ -216,7 +216,7 @@
   --hc-text-primary: #ffffff;
   --hc-text-strong: #ffffff;
   /* Codex .electron-dark: foreground-secondary = 70% (#ffffffb3), foreground-tertiary = 50% (#ffffff80),
-     border-heavy = 16% (#ffffff29). (Round-7 dark audit: HiCodex had secondary/tertiary alphas swapped
+     border-heavy = 16% (#ffffff29). (Round-7 dark audit: Forge had secondary/tertiary alphas swapped
      and border-heavy mis-stated as 12%.) */
   --hc-text-secondary: rgba(255, 255, 255, 0.70); /* codex --color-text-foreground-secondary (was 0.65; A/B-pending) */
   --hc-text-tertiary: rgba(255, 255, 255, 0.50); /* codex --color-text-foreground-tertiary (was 0.70, swapped; A/B-pending) */
@@ -748,7 +748,13 @@ button {
 }
 
 .hc-app-rail-tab span {
-  white-space: nowrap;
+  /* The 56px rail fits CJK labels on one line but clips wide English ones
+     ("Knowledge Base" / "Archive Center"). Let multi-word labels wrap and
+     center instead of being cut off. */
+  width: 100%;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .hc-app-rail-tab:hover,
@@ -1029,9 +1035,9 @@ button {
  *
  * Aligned properties:
  *   - shadow-md → Tailwind's `0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)`
- *     (HiCodex previously used `0 16px 34px rgba(36,38,35,0.13)` — much heavier).
- *   - backdrop-blur-sm → 4px (HiCodex previously 12px).
- *   - background non-overlay → ~50% opaque (HiCodex previously 76%).
+ *     (Forge previously used `0 16px 34px rgba(36,38,35,0.13)` — much heavier).
+ *   - backdrop-blur-sm → 4px (Forge previously 12px).
+ *   - background non-overlay → ~50% opaque (Forge previously 76%).
  *
  * D4 — horizontal padding model: Codex uses `py-3` only (no horizontal padding on the
  * container itself) and pushes horizontal padding into each child:
@@ -1055,7 +1061,7 @@ button {
   flex-direction: column;
   /*
    * CODEX-REF: local-conversation-thread-*.js — 外壳两层
-   * 结构：外壳 `overflow-hidden`，内层 sections wrapper `overflow-y-auto`。HiCodex
+   * 结构：外壳 `overflow-hidden`，内层 sections wrapper `overflow-y-auto`。Forge
    * 严格对齐：外壳 overflow-hidden + 内层 `.hc-right-rail-sections` 承担滚动 +
    * 内层提供 `gap-3` (12px between sections) + 内层 `pb-3` (12px bottom padding)。
    * 外壳 className: `relative flex max-h-full min-h-0 flex-col overflow-hidden
@@ -1102,7 +1108,7 @@ button {
 }
 
 /*
- * File preview panel (HiCodex equivalent of Codex Desktop's AppShell
+ * File preview panel (Forge equivalent of Codex Desktop's AppShell
  * RightPanel in `app-shell.formatted.js` when hosting
  * `FilePreviewPage`). This is the resizable big panel that opens on
  * artifact / file clicks — distinct from `.hc-right-rail` (the summary
@@ -2775,9 +2781,10 @@ button.hc-sidebar-account-menu-item small {
 /*
  * Model picker popover — opened by clicking the footer model chip.
  * API-provider rows come from the configured model draft (`model` + `models[]`);
- * subscription rows use HiCodex's default subscription catalog.
+ * subscription rows use Forge's default subscription catalog.
  *
- * Selecting a model writes to localStorage (`hicodex.selectedModelKey`),
+ * Selecting a model writes to localStorage (`desktop.hicodex.selectedModelKey`;
+ * the legacy `hicodex.selectedModelKey` entry is migrated on read),
  * overrides `threadContextDefaults.model + .modelProvider` for new/resumed
  * threads, and for the active thread asks app-server to update next-turn
  * settings without selecting a new conversation.
@@ -2799,8 +2806,8 @@ button.hc-sidebar-account-menu-item small {
 /*
  * CODEX-REF: composer-*.js — popover for Reasoning effort picker
  *   (header className via the dropdown title; items carry data-reasoning-selected).
- * HiCodex 复用 popover 视觉风格（与 model-picker-menu 一致 — Codex 用 dropdown
- * 库，HiCodex 没引入 lib，纯 CSS 复刻）。
+ * Forge 复用 popover 视觉风格（与 model-picker-menu 一致 — Codex 用 dropdown
+ * 库，Forge 没引入 lib，纯 CSS 复刻）。
  */
 .hc-reasoning-picker-menu {
   z-index: var(--hc-z-popover, 70);
@@ -3320,7 +3327,7 @@ button.hc-sidebar-account-menu-item small {
  * "On" option. `data-hc-reduce-motion` unset (i.e. mode "system") leaves the
  * @media (prefers-reduced-motion: reduce) rules to govern. "off" cannot
  * forcibly enable animations against the OS preference without rewriting
- * every existing @media block, so HiCodex treats "off" identically to
+ * every existing @media block, so Forge treats "off" identically to
  * "system" for now — Codex behaviour is matched only for the "system" and
  * "on" arms; "off" is a no-op compared to system on machines that already
  * have OS reduced motion enabled.

@@ -1,3 +1,4 @@
+import { FORGE_MESSAGES } from "../src/i18n/messages";
 import {
   CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
   isCrossAccountProviderSwitch,
@@ -84,10 +85,17 @@ function allowsApiToTeamProviderSwitches(): void {
 }
 
 function exposesUserFacingRestrictionMessage(): void {
+  // The const is an I18nMessageDescriptor now; the user-visible copy lives in
+  // the dictionary (zh) and in defaultMessage (en).
   assertIncludes(
-    CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
+    FORGE_MESSAGES["zh-CN"][CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE.id],
     "请新建聊天",
-    "restriction message should tell users how to proceed",
+    "zh restriction copy should tell users how to proceed",
+  );
+  assertIncludes(
+    CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE.defaultMessage,
+    "new chat",
+    "default (en) restriction copy should tell users how to proceed",
   );
 }
 

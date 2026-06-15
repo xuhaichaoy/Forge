@@ -5,7 +5,7 @@ import {
   computeSidePanelTabGrid,
 } from "../state/side-panel-tab-grid";
 import { SidePanelTabActionCard, type SidePanelTabActionCardProps } from "./side-panel-tab-action-card";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
  * Side-panel new-tab landing page.
@@ -32,8 +32,8 @@ import { useHiCodexIntl } from "./i18n-provider";
  *   "No tabs are available for this thread" inside a bordered card.
  *
  * `Suggested` artifacts section (Codex line 924-967) is NOT ported here yet —
- * the data source on the HiCodex side is `Ue` (`conversation.artifacts`?) and
- * the artifact row component is `ut` / `dt`, neither of which has a HiCodex
+ * the data source on the Forge side is `Ue` (`conversation.artifacts`?) and
+ * the artifact row component is `ut` / `dt`, neither of which has a Forge
  * equivalent. Leaving a `suggestedSlot` prop hook so a future PR can drop in
  * artifact rows without rewriting this file.
  *
@@ -84,7 +84,7 @@ export function SidePanelNewTabPage({
 }: SidePanelNewTabPageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [gridTemplateColumns, setGridTemplateColumns] = useState<string | undefined>(undefined);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex thread.sidePanel.newTab.* — localized empty-state + suggested heading defaults.
   const resolvedEmptyStateLabel = emptyStateLabel
     ?? formatMessage({ id: "thread.sidePanel.newTab.empty", defaultMessage: "No tabs are available for this thread" });

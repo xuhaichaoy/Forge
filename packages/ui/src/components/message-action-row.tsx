@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 // codex copy-button-*.js wraps the action button in <Tooltip tooltipContent={...}/>.
 import { Tooltip } from "./tooltip";
-import { useHiCodexIntl } from "./i18n-provider";
+import { useForgeIntl } from "./i18n-provider";
 
 /*
  * CODEX-REF: copy-button-*.js — Codex Desktop's copy affordance.
@@ -23,13 +23,13 @@ import { useHiCodexIntl } from "./i18n-provider";
  *   - icon swap (Copy → Check) mirrors Codex's dual-state render
  *
  * Diverged from Codex (intentional, no Codex source to override):
- *   - HiCodex keeps the createPortal escape for the "Copied" feedback because
+ *   - Forge keeps the createPortal escape for the "Copied" feedback because
  *     `.hc-thread-scroll-body` has `transform: translateX(...)` which re-roots
  *     a `position: fixed` descendant to the transformed ancestor, trapping
- *     the toast behind the message bubble (regression captured in HiCodex
+ *     the toast behind the message bubble (regression captured in Forge
  *     screenshot 2026-05-21 "复制提示被盖住"). Codex Desktop's scroll body
  *     isn't transformed so an inline-only swap suffices there.
- *   - HiCodex renders an inline timestamp span; Codex's copy-button + thread-
+ *   - Forge renders an inline timestamp span; Codex's copy-button + thread-
  *     actions chunks contain no per-message timestamp affordance.
  */
 
@@ -59,7 +59,7 @@ export function MessageActionRow({
 }) {
   const trimmedCopyText = copyText.trim();
   const [copied, setCopied] = useState(false);
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   // codex copy-button-*.js — aria-label/tooltip swap localized via copyButton.*.
   const copyLabel = copied
     ? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
@@ -79,12 +79,12 @@ export function MessageActionRow({
           /*
            * CODEX-REF: copy-button-*.js — aria-label swaps between "Copy"
            * (copyButton.copyAriaLabel) and "Copied" (copyButton.copiedAriaLabel); Codex's
-           * CopyButton wraps the button in <Tooltip tooltipContent={...}/>, so HiCodex now
+           * CopyButton wraps the button in <Tooltip tooltipContent={...}/>, so Forge now
            * does the same via the shared Tooltip (the aria-label stays for a11y).
            */
           <Tooltip content={copyLabel}>
             <button aria-label={copyLabel} type="button" onClick={handleCopy}>
-              {/* HiCodex divergence: action-row icons at 12px (Codex icon-xs = 16px); shrunk per product preference */}
+              {/* Forge divergence: action-row icons at 12px (Codex icon-xs = 16px); shrunk per product preference */}
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </button>
           </Tooltip>
@@ -137,14 +137,14 @@ export function IconActionButton({
 }
 
 function CopyFeedbackToast() {
-  const { formatMessage } = useHiCodexIntl();
+  const { formatMessage } = useForgeIntl();
   /*
    * `.hc-copy-toast` uses `position: fixed`, but the conversation scroll
    * container (`hc-thread-scroll-body` in conversation.css:46) has
    * `transform: translateX(...)` for inline-side-panel offsets. When a fixed
    * descendant lives under a transformed ancestor, the CSS spec re-roots its
    * coordinate system to that ancestor instead of the viewport — so the
-   * toast ended up trapped behind the user message bubble (HiCodex screenshot
+   * toast ended up trapped behind the user message bubble (Forge screenshot
    * 2026-05-21 "复制提示被盖住"). Render into `document.body` via a portal so
    * the toast escapes any transformed scroll container and stays anchored at
    * the top of the actual viewport.
@@ -153,7 +153,7 @@ function CopyFeedbackToast() {
    * render to string without portal infrastructure.
    */
   // CODEX-REF: copy-button-*.js — the inline-swap label is just
-  // "Copied" (defaultMessage of `copyButton.copied`); HiCodex's toast uses
+  // "Copied" (defaultMessage of `copyButton.copied`); Forge's toast uses
   // the same single word so terminology stays consistent with the button
   // aria-label swap above.
   const toast = (
