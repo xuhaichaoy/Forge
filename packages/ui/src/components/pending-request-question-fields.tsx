@@ -106,7 +106,7 @@ export function QuestionField({
               <textarea
                 data-request-other-freeform="true"
                 value={freeformValue}
-                placeholder={formatMessage({ id: "requestInputPanel.otherPlaceholder", defaultMessage: "No, and tell Codex what to do differently" })}
+                placeholder={question.otherPlaceholder ?? formatMessage({ id: "requestInputPanel.otherPlaceholder", defaultMessage: "No, and tell Codex what to do differently" })}
                 rows={1}
                 disabled={disabled}
                 onChange={(event) => onChange(event.target.value.length > 0 ? [event.target.value] : [])}
@@ -222,15 +222,79 @@ export function OptionPickerField({
   );
 }
 
-export function SetupContextPickerBody({ picker }: { picker: PendingRequestSetupContextPicker }) {
+export function SetupContextPickerBody({
+  picker,
+  disabled,
+  value,
+  onChange,
+}: {
+  picker: PendingRequestSetupContextPicker;
+  disabled: boolean;
+  value: string[];
+  onChange: (value: string[]) => void;
+}) {
+  const { formatMessage } = useForgeIntl();
   /*
-   * CODEX-REF: pending-request-item-panel-DZ77s3cA.pretty.js `Pn` - setup
-   * context picker can always Dismiss, Skip, or Continue with selectedSources.
-   * Source selection stays empty until the app/plugin/OAuth/folder host flows
-   * exist.
+   * CODEX-REF: pending-request-item-panel-CtiartJr.pretty.js `hr` / `yr` -
+   * setup context picker shows source rows and returns selectedSources only
+   * for Continue. Forge keeps host-owned install/OAuth flows out of this
+   * component; it only consumes source data when app-server provides it.
    */
-  void picker;
-  return null;
+  if (!picker.canSelectSources || picker.sources.length === 0) return null;
+  const selected = new Set([
+    ...picker.sources.filter((source) => source.connected).map((source) => source.id),
+    ...value,
+  ]);
+  const selectedValue = picker.sources.filter((source) => selected.has(source.id)).map((source) => source.id);
+  const toggleSource = (sourceId: string, sourceConnected: boolean) => {
+    if (sourceConnected) return;
+    if (selected.has(sourceId)) {
+      onChange(selectedValue.filter((item) => item !== sourceId));
+    } else {
+      onChange([...selectedValue, sourceId]);
+    }
+  };
+  return (
+    <div
+      className="hc-setup-context-picker"
+      role="group"
+      aria-label={formatMessage({
+        id: "setupCodexContextPicker.title",
+        defaultMessage: "Where can we pull context from?",
+      })}
+    >
+      {picker.sources.map((source) => {
+        const checked = selected.has(source.id);
+        const connected = source.connected === true;
+        return (
+          <label
+            key={source.id}
+            className="hc-setup-context-source"
+            data-selected={checked || undefined}
+            data-connected={connected || undefined}
+          >
+            <input
+              type="checkbox"
+              disabled={disabled || connected}
+              checked={checked}
+              onChange={() => toggleSource(source.id, connected)}
+            />
+            <span className="hc-setup-context-source-copy">
+              <span className="hc-setup-context-source-title">{source.label}</span>
+              {source.description ? (
+                <span className="hc-setup-context-source-description">{source.description}</span>
+              ) : null}
+            </span>
+            <span className="hc-setup-context-source-state">
+              {connected
+                ? formatMessage({ id: "setupCodexContextPicker.connected", defaultMessage: "Connected" })
+                : formatMessage({ id: "setupCodexContextPicker.connect", defaultMessage: "Connect" })}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
 }
 
 function OptionCopy({ option }: { option: PendingRequestQuestion["options"][number] }) {

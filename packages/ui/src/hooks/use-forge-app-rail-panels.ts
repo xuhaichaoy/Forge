@@ -172,7 +172,7 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
   // setBrowserRuntimeSnapshot is returned because openBrowserSurface (side-panel
   // tab host wiring, below) pushes live runtime snapshots back through the
   // Browser tab's onRuntimeChange prop into the same state the rail reads.
-  const { browserRailInput, refreshBrowserRuntime, setBrowserRuntimeSnapshot } = useBrowserRuntime();
+  const { browserRailInputs, refreshBrowserRuntime, setBrowserRuntimeSnapshot } = useBrowserRuntime();
   const rightRailSections = useMemo(
     () => projectRightRailSections({
       progress: conversation.progress,
@@ -189,13 +189,13 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
       sideChats: sideChatRailEntries,
       backgroundAgents: conversation.backgroundAgents,
       backgroundTerminals: conversation.backgroundTerminals,
-      ...(browserRailInput ? { browser: browserRailInput } : {}),
+      ...(browserRailInputs.length > 0 ? { browserTabs: browserRailInputs } : {}),
       sources: conversation.sources,
     }),
     [
       activeThreadAutomation,
       branchDetails,
-      browserRailInput,
+      browserRailInputs,
       conversation,
       sideChatRailEntries,
     ],

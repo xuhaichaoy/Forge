@@ -11,6 +11,12 @@ const EXTERNAL_LINK_SOURCE_HOSTS: Array<{ appId: string; hostnames: string[] }> 
 
 const URL_LIKE_PROMPT_PATH = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/|www\.|mailto:|tel:)/;
 
+export interface PromptRichLinkAttributes {
+  displayText: string;
+  href: string;
+  sourceAppId: string;
+}
+
 export function externalLinkSourceAppId(href: string): string | null {
   let url: URL;
   try {
@@ -26,6 +32,19 @@ export function externalLinkSourceAppId(href: string): string | null {
     }
   }
   return null;
+}
+
+export function promptRichLinkAttributesFromUrl(value: string): PromptRichLinkAttributes | null {
+  const href = normalizedPastedHttpUrl(value);
+  if (!href) return null;
+  const sourceAppId = externalLinkSourceAppId(href);
+  if (!sourceAppId) return null;
+  const url = new URL(href);
+  return {
+    displayText: richLinkDisplayText(href, url, sourceAppId),
+    href,
+    sourceAppId,
+  };
 }
 
 export function isUrlLikePromptPath(path: string): boolean {
@@ -74,4 +93,78 @@ export function escapePromptPath(value: string): string {
     return `<${value.replace(/\\/g, "\\\\").replace(/>/g, "\\>")}>`;
   }
   return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+}
+
+function normalizedPastedHttpUrl(value: string): string | null {
+  const href = value.trim();
+  if (href.length === 0 || /\s/u.test(href)) return null;
+  try {
+    const url = new URL(href);
+    return url.protocol === "http:" || url.protocol === "https:" ? href : null;
+  } catch {
+    return null;
+  }
+}
+
+function richLinkDisplayText(href: string, url: URL, sourceAppId: string): string {
+  switch (sourceAppId) {
+    case "figma":
+      return decodedLastPathName(url) ?? href;
+    case "github":
+      return githubRichLinkDisplayText(url) ?? href;
+    case "notion":
+      return notionRichLinkDisplayText(url) ?? href;
+    case "gmail":
+    case "google-calendar":
+    case "google-drive":
+    case "linear":
+    case "slack":
+      return href;
+    default:
+      return href;
+  }
+}
+
+function githubRichLinkDisplayText(url: URL): string | null {
+  const parts = pathParts(url);
+  const [owner, repo, kind, id] = parts;
+  if (!owner || !repo) return null;
+  if (kind === "blob" && parts.length >= 5) return decodePathPart(parts.at(-1));
+  if (kind === "pull" && id && parts.length === 4 && url.search.length === 0 && url.hash.length === 0) {
+    return `${owner}/${repo}#${id}`;
+  }
+  if (parts.length === 2 && url.search.length === 0 && url.hash.length === 0) return `${owner}/${repo}`;
+  return null;
+}
+
+function notionRichLinkDisplayText(url: URL): string | null {
+  const last = pathParts(url).at(-1);
+  if (!last) return null;
+  return decodedTitle(last.replace(/-[a-f0-9]{32}$/iu, ""));
+}
+
+function decodedLastPathName(url: URL): string | null {
+  const last = pathParts(url).at(-1);
+  return last ? decodedTitle(last) : null;
+}
+
+function decodedTitle(value: string): string | null {
+  const decoded = decodePathPart(value);
+  if (!decoded) return null;
+  const title = decoded.replace(/[-_]+/gu, " ").trim();
+  return title.length > 0 ? title : null;
+}
+
+function decodePathPart(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded.length > 0 ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function pathParts(url: URL): string[] {
+  return url.pathname.split("/").filter((part) => part.length > 0);
 }

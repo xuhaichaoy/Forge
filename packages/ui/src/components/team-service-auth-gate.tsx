@@ -11,6 +11,7 @@ import {
   teamServiceAuthErrorMessage,
   type TeamServiceAuthSession,
 } from "../lib/team-service-auth";
+import { subscribeTeamServiceUnauthorized } from "../lib/team-service-session";
 import {
   loadUiThemeMode,
   nextToggleThemeMode,
@@ -23,6 +24,11 @@ import {
 import { loadForgeLocale } from "../state/i18n";
 import { ForgeIntlProvider, useForgeIntl } from "./i18n-provider";
 import { startTopbarWindowDrag } from "../lib/window-drag";
+
+const TEAM_SERVICE_TEST_LOGIN = {
+  loginId: "haichao",
+  password: "123",
+};
 
 interface TeamServiceAuthGateProps {
   children: ReactNode;
@@ -101,6 +107,25 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
     };
   }, []);
 
+  // Mid-session 401 from any team-service surface (KB calls, model gateway):
+  // the shared login token is dead, so drop the session and fall back to the
+  // sign-in screen instead of leaving the app half-alive until a restart. The
+  // gate body stays mounted while children render, so this subscription lives
+  // for the whole authenticated session. Empty-string error = "show the
+  // localized session-expired fallback" (same idiom as the mount check above).
+  useEffect(() => {
+    return subscribeTeamServiceUnauthorized(() => {
+      // Already signed out (or an earlier 401 in the same burst handled it) —
+      // reading storage avoids redundant writes/re-renders without needing the
+      // latest `session` in this mount-only effect's closure.
+      if (!readTeamServiceAuthSession()?.token) return;
+      clearTeamServiceAuthSession();
+      setSession(null);
+      setChecking(false);
+      setError("");
+    });
+  }, []);
+
   const submitDisabled = useMemo(() => {
     return submitting || !baseUrl.trim() || !loginId.trim() || !password;
   }, [baseUrl, loginId, password, submitting]);
@@ -108,10 +133,18 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitDisabled) return;
+    await submitTeamServiceLogin(loginId, password);
+  };
+
+  const submitTeamServiceLogin = async (nextLoginId: string, nextPassword: string) => {
     setSubmitting(true);
     setError(null);
     try {
-      const next = await loginOrRegisterTeamService({ baseUrl, loginId, password });
+      const next = await loginOrRegisterTeamService({
+        baseUrl,
+        loginId: nextLoginId,
+        password: nextPassword,
+      });
       setSession(next);
       setBaseUrl(next.baseUrl);
     } catch (requestError) {
@@ -121,6 +154,12 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleDingTalkTestLogin = () => {
+    setLoginId(TEAM_SERVICE_TEST_LOGIN.loginId);
+    setPassword(TEAM_SERVICE_TEST_LOGIN.password);
+    void submitTeamServiceLogin(TEAM_SERVICE_TEST_LOGIN.loginId, TEAM_SERVICE_TEST_LOGIN.password);
   };
 
   const handleThemeToggle = () => {
@@ -286,9 +325,10 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
             <button
               type="button"
               className="hc-team-auth-dingtalk"
-              disabled
+              disabled={submitting}
+              onClick={handleDingTalkTestLogin}
               aria-label={formatMessage({ id: "hc.teamAuth.dingTalkSignIn", defaultMessage: "Sign in with DingTalk" })}
-              title={formatMessage({ id: "hc.teamAuth.dingTalkComingSoon", defaultMessage: "DingTalk sign-in coming soon" })}
+              title={formatMessage({ id: "hc.teamAuth.dingTalkSignIn", defaultMessage: "Sign in with DingTalk" })}
             >
               <DingTalkIcon />
             </button>

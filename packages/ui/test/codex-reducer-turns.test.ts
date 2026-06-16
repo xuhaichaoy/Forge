@@ -3248,6 +3248,7 @@ function threadWithTurns(
     id,
     sessionId: id,
     forkedFromId: null,
+    parentThreadId: null,
     preview: "",
     ephemeral: false,
     modelProvider: "openai",
@@ -3758,6 +3759,7 @@ function userMessage(id: string, text: string): ThreadItem {
   return {
     type: "userMessage",
     id,
+    clientId: null,
     content: [textInput(text)],
   };
 }

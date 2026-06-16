@@ -9,6 +9,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::auth::{read_codex_auth_summary, CodexAuthSummary};
 use crate::computer_use::{
@@ -298,7 +299,7 @@ impl AppServerHost {
         let codex_home = resolve_codex_home(codex_home.as_deref());
         fs::create_dir_all(&codex_home).map_err(|error| HostError::Profile(error.to_string()))?;
         let models_path = codex_home.join("models.json");
-        fs::write(&models_path, model_catalog_json(&config))
+        write_file_atomically(&models_path, model_catalog_json(&config).as_bytes())
             .map_err(|error| HostError::Profile(error.to_string()))?;
         Ok(models_path.to_string_lossy().to_string())
     }
@@ -622,6 +623,26 @@ fn bundled_codex_candidates() -> Vec<PathBuf> {
     candidates
 }
 
+fn write_file_atomically(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .map(|value| value.to_string_lossy())
+        .unwrap_or_else(|| "file".into());
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let tmp_path = parent.join(format!(".{file_name}.tmp-{}-{nonce}", std::process::id()));
+
+    fs::write(&tmp_path, contents)?;
+    if let Err(error) = fs::rename(&tmp_path, path) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,5 +690,43 @@ mod tests {
                 serde_json::json!(expected)
             );
         }
+    }
+
+    #[test]
+    fn write_local_model_catalog_replaces_catalog_via_valid_json_file() {
+        let dir = env::temp_dir().join(format!("forge-host-model-catalog-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("models.json"), b"{").unwrap();
+
+        let host = AppServerHost::new();
+        let path = host
+            .write_local_model_catalog(
+                Some(dir.to_string_lossy().to_string()),
+                LocalModelCatalogConfig {
+                    model: "team-a".to_string(),
+                    models: Some(vec!["team-a".to_string(), "team-b".to_string()]),
+                    display_name: Some("Team A".to_string()),
+                    description: None,
+                    context_window: None,
+                    auto_compact_token_limit: None,
+                    input_modalities: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(Path::new(&path), dir.join("models.json"));
+        let catalog: Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("models.json")).unwrap()).unwrap();
+        assert_eq!(catalog["models"][0]["slug"].as_str(), Some("team-a"));
+        assert_eq!(catalog["models"][1]["slug"].as_str(), Some("team-b"));
+        let temp_entries = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp-"))
+            .count();
+        assert_eq!(temp_entries, 0);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

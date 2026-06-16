@@ -79,9 +79,14 @@ function isToastWorthyLog(log: LogLine): boolean {
  */
 const INTERNAL_LOG_SOURCES: ReadonlySet<string> = new Set([
   // provisionTeamModelGatewayProvider's success confirmation — startup must
-  // not stack notifications (ONE success toast total); the degraded warn
-  // variants (reconnect pending / restart failed) are deliberately NOT here.
+  // not stack notifications (ONE success toast total).
   TEAM_MODEL_GATEWAY_LOG_SOURCES.providerUpdated,
+  // Reconnect-pending is a transient, self-healing state on first login (the
+  // config was rewritten with the fresh token and the runtime reconnects on
+  // its own — "will retry automatically"). It needs no user action, so mute
+  // the toast but keep the log entry for diagnostics. The restart-FAILED
+  // variant is deliberately NOT here — that one is actionable and still toasts.
+  TEAM_MODEL_GATEWAY_LOG_SOURCES.reconnectPending,
 ]);
 
 const INTERNAL_INFO_PREFIXES = [
@@ -98,7 +103,14 @@ const INTERNAL_LOG_PATTERNS = [
   /^Disconnected from Codex app-server$/i,
   /^Codex app-server connection closed:/i,
   /^initialized Codex app-server$/i,
-  /^(?:model\/list|mcpServerStatus\/list) failed: (?:Codex app-server is not connected|Disconnected from Codex app-server)$/i,
+  // ANY "<rpc method> failed: <disconnect reason>" is transient startup/reconnect
+  // noise: every subsystem (config/read, hooks review refresh, collaborationMode/list,
+  // model/list, mcpServerStatus/list, …) independently logs one on each drop, stacking
+  // a screenful. The app auto-reconnects, and a SUSTAINED outage is already surfaced by
+  // dedicated always-on UI (pre-conversation "Runtime offline", composer "connecting",
+  // disabled sidebar), so these per-call toasts add nothing. A non-disconnect failure
+  // ("… failed: HTTP 500") has a different suffix and still toasts.
+  / failed: (?:Codex app-server is not connected|Disconnected from Codex app-server|Codex app-server connection closed)/i,
   /^team model provider provisioning failed: (?:Team model provider write: )?(?:Codex app-server is not connected|Disconnected from Codex app-server|Codex app-server connection closed:.*)$/i,
   // DEPRECATED text anchor — superseded by the structured source tag
   // (TEAM_MODEL_GATEWAY_LOG_SOURCES.providerUpdated in INTERNAL_LOG_SOURCES

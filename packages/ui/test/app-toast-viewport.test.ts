@@ -15,27 +15,30 @@ export default function runAppToastViewportTests(): void {
 
 /*
  * Muting is keyed on the structured LogLine.source tag first; the text
- * patterns only act as fallback for untagged entries. Three sub-claims:
+ * patterns only act as fallback for untagged entries. Sub-claims:
  *   1. the tagged team-gateway success confirmation is muted by its tag even
  *      though its (now localized) text no longer matches the deprecated
  *      /^团队模型连接已更新$/ anchor;
- *   2. a tagged entry whose source is NOT in the mute table falls through to
- *      the text patterns and stays visible (degraded warn variant);
- *   3. an untagged legacy entry with the old Chinese copy is still muted via
+ *   2. the transient reconnect-pending variant is ALSO muted by tag — it
+ *      self-heals ("will retry automatically"), so it's first-login noise;
+ *   3. a genuinely-actionable variant whose source is NOT in the mute table
+ *      (restart-failed) falls through and stays visible;
+ *   4. an untagged legacy entry with the old Chinese copy is still muted via
  *      the deprecated text-pattern fallback.
  */
 function mutesBySourceTagFirstWithTextPatternFallback(): void {
   const logs: LogLine[] = [
     logFixture("tagged-success", "Team model connection updated", "info", 10_000, TEAM_MODEL_GATEWAY_LOG_SOURCES.providerUpdated),
-    logFixture("tagged-degraded", "团队模型连接已更新，但模型服务暂未重连，将自动重试", "warn", 9_950, TEAM_MODEL_GATEWAY_LOG_SOURCES.reconnectPending),
+    logFixture("tagged-reconnect-pending", "团队模型连接已更新，但模型服务暂未重连，将自动重试", "warn", 9_960, TEAM_MODEL_GATEWAY_LOG_SOURCES.reconnectPending),
+    logFixture("tagged-restart-failed", "团队模型连接已更新，但服务重启失败: boom", "warn", 9_950, TEAM_MODEL_GATEWAY_LOG_SOURCES.restartFailed),
     logFixture("untagged-legacy", "团队模型连接已更新", "info", 9_900),
     logFixture("visible-error", "Save failed", "error", 9_850),
   ];
 
   assertDeepEqual(
     projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
-    ["tagged-degraded", "visible-error"],
-    "source-tagged success should be muted by tag, non-muted sources should fall back to text patterns, and untagged legacy copy should stay muted",
+    ["tagged-restart-failed", "visible-error"],
+    "tagged success and transient reconnect-pending should be muted by tag, the actionable restart-failed source should stay visible, and untagged legacy copy should stay muted",
   );
 }
 
@@ -94,6 +97,12 @@ function filtersDisconnectedStartupEndpointFailures(): void {
     logFixture("closed", "Codex app-server connection closed: app-server stdout closed", "error", 9_925),
     logFixture("model-list", "model/list failed: Codex app-server is not connected", "warn", 10_000),
     logFixture("mcp-status", "mcpServerStatus/list failed: Disconnected from Codex app-server", "warn", 9_900),
+    // Disconnect failures from arbitrary RPC methods (not just the two
+    // historically whitelisted) must also be muted — they stack a screenful on
+    // every reconnect; a sustained outage is shown by dedicated always-on UI.
+    logFixture("config-read", "config/read failed: Codex app-server is not connected", "warn", 9_890),
+    logFixture("hooks-refresh", "hooks review refresh failed: Codex app-server is not connected", "warn", 9_880),
+    logFixture("collab-list", "collaborationMode/list failed: Disconnected from Codex app-server", "warn", 9_870),
     logFixture("team-provider", "team model provider provisioning failed: Codex app-server is not connected", "warn", 9_850),
     logFixture("team-model", "团队模型连接已更新", "info", 9_800),
     logFixture("visible-error", "model/list failed: HTTP 500", "warn", 9_700),
@@ -102,7 +111,7 @@ function filtersDisconnectedStartupEndpointFailures(): void {
   assertDeepEqual(
     projectToastLogs(logs, 10_000, 5_000).map((log) => log.id),
     ["visible-error"],
-    "startup disconnected endpoint failures should stay out of the toast viewport",
+    "transient '<rpc> failed: not connected' from ANY method (not just model/list) should stay out of the toast viewport; real errors (HTTP 500) still surface",
   );
 }
 

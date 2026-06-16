@@ -16,7 +16,9 @@ const APP_CONNECT_OAUTH_BROWSER_REDIRECT_PATH: &str = "/connector_platform_oauth
 const MENU_NEW_CHAT: &str = "forge:new-chat";
 const MENU_NEW_WINDOW: &str = "forge:new-window";
 const MENU_OPEN_FOLDER: &str = "forge:open-folder";
-const MENU_SEARCH: &str = "forge:search";
+const MENU_OPEN_COMMAND_MENU: &str = "forge:open-command-menu";
+const MENU_SEARCH_CHATS: &str = "forge:search-chats";
+const MENU_SEARCH_FILES: &str = "forge:search-files";
 const MENU_SETTINGS: &str = "forge:settings";
 const MENU_RELOAD: &str = "forge:reload";
 const MENU_TOGGLE_DEVTOOLS: &str = "forge:toggle-devtools";
@@ -183,8 +185,16 @@ pub(crate) fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
     let open_folder = MenuItemBuilder::with_id(MENU_OPEN_FOLDER, "Open Folder…")
         .accelerator("CmdOrCtrl+O")
         .build(handle)?;
-    let search = MenuItemBuilder::with_id(MENU_SEARCH, "Search")
+    // codex: electron-menu-shortcuts openCommandMenu/searchChats/searchFiles
+    // are distinct native commands, not one generic Search item.
+    let open_command_menu = MenuItemBuilder::with_id(MENU_OPEN_COMMAND_MENU, "Open Command Menu")
         .accelerator("CmdOrCtrl+K")
+        .build(handle)?;
+    let search_chats = MenuItemBuilder::with_id(MENU_SEARCH_CHATS, "Search Chats…")
+        .accelerator("CmdOrCtrl+G")
+        .build(handle)?;
+    let search_files = MenuItemBuilder::with_id(MENU_SEARCH_FILES, "Search Files…")
+        .accelerator("CmdOrCtrl+P")
         .build(handle)?;
     let close = MenuItemBuilder::with_id(MENU_CLOSE, "Close Window")
         .accelerator("CmdOrCtrl+W")
@@ -212,7 +222,9 @@ pub(crate) fn install_native_menu(app: &mut tauri::App) -> tauri::Result<()> {
         .item(&new_chat)
         .item(&new_window)
         .item(&open_folder)
-        .item(&search)
+        .item(&open_command_menu)
+        .item(&search_chats)
+        .item(&search_files)
         .separator()
         .item(&close)
         .build()?;
@@ -246,7 +258,11 @@ pub(crate) fn handle_native_menu_event(app: &AppHandle, id: &str) {
             let _ = open_new_window_impl(app);
         }
         MENU_OPEN_FOLDER => emit_native_shell_action(app, "openFolder", true, None, None),
-        MENU_SEARCH => emit_native_shell_action(app, "search", true, None, None),
+        MENU_OPEN_COMMAND_MENU => {
+            emit_native_shell_action(app, "openCommandMenu", true, None, None)
+        }
+        MENU_SEARCH_CHATS => emit_native_shell_action(app, "searchChats", true, None, None),
+        MENU_SEARCH_FILES => emit_native_shell_action(app, "searchFiles", true, None, None),
         MENU_SETTINGS => emit_native_shell_action(app, "settings", true, None, None),
         MENU_RELOAD => emit_unsupported_native_menu_action(
             app,

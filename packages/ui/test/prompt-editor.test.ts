@@ -5,9 +5,11 @@ import {
   promptEditorInlineNodesForTest,
   promptEditorPasteInlineNodesForTest,
   promptEditorPromptTextRoundTripForTest,
+  promptRichLinkAttributesFromUrl,
   setPromptEditorViewDetachedForTest,
   splitPromptEditorPasteFiles,
 } from "../src/components/prompt-editor";
+import { PromptEditorEmitter } from "../src/components/prompt-editor-events";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -23,6 +25,8 @@ export default function runPromptEditorTests(): void {
   splitsPastedImagesFromOtherFiles();
   parsesPromptMarkdownMentionsLikeCodexDesktop();
   parsesPastedPromptLinksLikeCodexDesktop();
+  parsesBareKnownUrlPasteAsRichLinkAttrs();
+  emitsPastedTextPayloadsOnlyWhenHandled();
   preservesPromptRichLinkSerialization();
   deletesLineBreaksWithBackspace();
 }
@@ -203,6 +207,40 @@ function parsesPastedPromptLinksLikeCodexDesktop(): void {
   assert(nodes[0].attrs.displayName === "拆标", "pasted skillMention should keep the display name");
   assert(nodes[0].attrs.path === path, "pasted skillMention should unwrap the angle-bracket path");
   assert(nodes[1]?.type === "text" && nodes[1].text === " 拆一下标", "pasted skill link should keep trailing prose");
+}
+
+function parsesBareKnownUrlPasteAsRichLinkAttrs(): void {
+  const githubRepo = promptRichLinkAttributesFromUrl("https://github.com/openai/codex");
+  if (!githubRepo) throw new Error("bare GitHub URL paste should create richLink attrs");
+  assert(githubRepo.sourceAppId === "github", "bare GitHub URL paste should map to the GitHub richLink source");
+  assert(githubRepo.displayText === "openai/codex", "GitHub repo richLink should use owner/repo display text");
+
+  const githubPull = promptRichLinkAttributesFromUrl("https://github.com/openai/codex/pull/123");
+  if (!githubPull) throw new Error("bare GitHub PR URL paste should create richLink attrs");
+  assert(githubPull.displayText === "openai/codex#123", "GitHub PR richLink should use owner/repo#id display text");
+
+  const unsupportedUrl = promptRichLinkAttributesFromUrl("https://example.com/docs");
+  assert(unsupportedUrl === null, "unsupported bare URL paste should stay plain text");
+
+  const spacedUrl = promptRichLinkAttributesFromUrl("https://github.com/openai/codex pasted");
+  assert(spacedUrl === null, "bare URL paste should reject whitespace like Codex Desktop");
+}
+
+function emitsPastedTextPayloadsOnlyWhenHandled(): void {
+  const emitter = new PromptEditorEmitter();
+  assert(!emitter.emit("pasted-text", "long text"), "pasted-text emit should report unhandled without listeners");
+
+  let pastedText = "";
+  const listener = (text: string) => {
+    pastedText = text;
+  };
+  emitter.addListener("pasted-text", listener);
+
+  assert(emitter.emit("pasted-text", "long text"), "pasted-text emit should report handled when a listener exists");
+  assert(pastedText === "long text", "pasted-text listener should receive the string payload");
+
+  emitter.removeListener("pasted-text", listener);
+  assert(!emitter.emit("pasted-text", "next text"), "removed pasted-text listeners should no longer handle emits");
 }
 
 function preservesPromptRichLinkSerialization(): void {

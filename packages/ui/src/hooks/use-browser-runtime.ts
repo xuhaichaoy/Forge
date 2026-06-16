@@ -7,6 +7,7 @@ import {
   loadBrowserRuntimeSnapshot,
   listenBrowserRuntimeSnapshots,
   projectBrowserRailInput,
+  projectBrowserRailInputs,
   type BrowserRuntimeSnapshot,
 } from "../state/browser-runtime";
 
@@ -14,7 +15,7 @@ import {
  * Tauri Browser-runtime snapshot ownership, lifted verbatim out of
  * ForgeAppBody. This cluster is self-contained: the snapshot state, its two
  * Tauri boot/listen effects, the on-demand `refreshBrowserRuntime` fetcher, and
- * the `browserRailInput` projection only ever touch each other here — no other
+ * the Browser rail projections only ever touch each other here — no other
  * ForgeApp logic reads or writes the snapshot. `dispatch` (used by the
  * listen-failure toast) comes from ServicesContext, matching every other body
  * hook; nothing else is injected.
@@ -30,6 +31,7 @@ import {
  */
 export function useBrowserRuntime(): {
   browserRailInput: ReturnType<typeof projectBrowserRailInput>;
+  browserRailInputs: ReturnType<typeof projectBrowserRailInputs>;
   refreshBrowserRuntime: () => Promise<BrowserRuntimeSnapshot>;
   setBrowserRuntimeSnapshot: Dispatch<SetStateAction<BrowserRuntimeSnapshot | null>>;
 } {
@@ -68,5 +70,9 @@ export function useBrowserRuntime(): {
     () => projectBrowserRailInput(browserRuntimeSnapshot),
     [browserRuntimeSnapshot],
   );
-  return { browserRailInput, refreshBrowserRuntime, setBrowserRuntimeSnapshot };
+  const browserRailInputs = useMemo(
+    () => projectBrowserRailInputs(browserRuntimeSnapshot),
+    [browserRuntimeSnapshot],
+  );
+  return { browserRailInput, browserRailInputs, refreshBrowserRuntime, setBrowserRuntimeSnapshot };
 }

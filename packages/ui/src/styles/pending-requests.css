@@ -585,6 +585,83 @@
   border-color: rgba(34, 38, 43, 0.30);
 }
 
+/* CODEX-REF: pending-request-item-panel-CtiartJr.pretty.js `yr` —
+   setup-context rows are compact source cards with title, description, and a
+   right-side connection state. Forge uses checkboxes because install/OAuth is
+   host-owned here and app-server-provided sources are selectable inputs. */
+.hc-setup-context-picker {
+  display: grid;
+  gap: 8px;
+  padding: 0 2px 2px;
+}
+
+.hc-setup-context-source {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  min-height: 42px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #d7d3c8;
+  border-radius: 8px;
+  background: rgba(255, 253, 250, 0.72);
+  padding: 8px 10px;
+  color: #2a2d2b;
+  cursor: pointer;
+}
+
+.hc-setup-context-source:hover,
+.hc-setup-context-source[data-selected="true"] {
+  background: rgba(34, 38, 43, 0.05);
+}
+
+.hc-setup-context-source[data-connected="true"] {
+  cursor: default;
+}
+
+.hc-setup-context-source input {
+  width: 14px;
+  min-height: 14px;
+  margin: 0;
+}
+
+.hc-setup-context-source-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.hc-setup-context-source-title {
+  min-width: 0;
+  overflow: hidden;
+  color: #2a2d2b;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-setup-context-source-description {
+  min-width: 0;
+  overflow: hidden;
+  color: #6f716b;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-setup-context-source-state {
+  color: #6f716b;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.hc-setup-context-source[data-selected="true"] .hc-setup-context-source-state {
+  color: #323633;
+}
+
 /*
  * CODEX-REF: pending-request-item-panel-*.js — isOther freeform input (options 后追加的 textarea)。
  * Codex 渲染的 textarea 容器没有 number-prefix（"N."），就是裸 textarea

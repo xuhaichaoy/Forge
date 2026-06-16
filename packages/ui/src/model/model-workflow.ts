@@ -167,8 +167,9 @@ export async function saveModelDraft({
  * provisioning pipeline. The toast viewport keys its mute table on these
  * stable ids — NOT on the user-facing copy below — so the copy lives in the
  * i18n dictionary and can change/translate freely. app-toast-viewport.tsx
- * imports `providerUpdated` into INTERNAL_LOG_SOURCES (the success
- * confirmation is internal noise there); the degraded variants stay visible.
+ * mutes `providerUpdated` (clean success) and `reconnectPending` (transient,
+ * self-healing on first login) as internal noise; only `restartFailed`
+ * (actionable) and `provisionFailed` (content-dependent) can still toast.
  */
 export const TEAM_MODEL_GATEWAY_LOG_SOURCES = {
   providerUpdated: "team-model-gateway/provider-updated",

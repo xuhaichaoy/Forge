@@ -1,3 +1,6 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ArtifactPreviewPanel } from "../src/components/artifact-preview-panel";
 import {
   artifactPreviewTabId,
   clipArtifactPreviewText,
@@ -20,6 +23,7 @@ export default function runArtifactPreviewTests(): void {
   buildsStableNonCollidingPreviewTabIds();
   clipsLongPreviewText();
   detectsDesktopPreviewSizeLimit();
+  rendersArtifactPreviewOpenOptions();
 }
 
 function projectsRemoteImagesForInlinePreview(): void {
@@ -300,6 +304,24 @@ function detectsDesktopPreviewSizeLimit(): void {
   );
 }
 
+function rendersArtifactPreviewOpenOptions(): void {
+  const html = renderToStaticMarkup(createElement(ArtifactPreviewPanel, {
+    entry: {
+      id: "artifact:report",
+      title: "report.md",
+      meta: "report.md",
+      reference: { path: "report.md", lineStart: 1 },
+    },
+    onClose: () => undefined,
+    onOpenFileReference: () => undefined,
+    onOpenFileExternal: () => undefined,
+    onRevealFileReference: () => undefined,
+  }));
+
+  assertIncludes(html, "Open options", "artifact preview should expose Desktop's open-options menu");
+  assertIncludes(html, "Open in folder", "artifact preview open-options menu should reveal the file in the OS folder");
+}
+
 function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {
   const actualJson = JSON.stringify(actual);
   const expectedJson = JSON.stringify(expected);
@@ -311,5 +333,11 @@ function assertDeepEqual(actual: unknown, expected: unknown, message: string): v
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
+function assertIncludes(actual: string, expected: string, message: string): void {
+  if (!actual.includes(expected)) {
+    throw new Error(`${message}: expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
   }
 }

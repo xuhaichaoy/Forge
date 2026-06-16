@@ -36,6 +36,9 @@ export {
   movePromptEditorCursorToEnd,
 } from "./prompt-editor-insertion";
 export {
+  promptRichLinkAttributesFromUrl,
+} from "./prompt-editor-link-utils";
+export {
   promptEditorBackspaceAtEndForTest,
   promptEditorInlineNodesForTest,
   promptEditorPasteInlineNodesForTest,
@@ -55,6 +58,7 @@ export interface PromptEditorProps {
   onSubmit?: () => void;
   onPastedFiles?: (files: File[]) => void;
   onPastedImages?: (files: File[]) => void;
+  onPastedText?: (text: string) => void;
 }
 
 export const PromptEditor = forwardRef<HTMLDivElement, PromptEditorProps>(function PromptEditor({
@@ -70,6 +74,7 @@ export const PromptEditor = forwardRef<HTMLDivElement, PromptEditorProps>(functi
   onSubmit,
   onPastedFiles,
   onPastedImages,
+  onPastedText,
 }, forwardedRef) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const syncingRef = useRef(false);
@@ -78,11 +83,13 @@ export const PromptEditor = forwardRef<HTMLDivElement, PromptEditorProps>(functi
   const latestOnSubmitRef = useRef(onSubmit);
   const latestOnPastedFilesRef = useRef(onPastedFiles);
   const latestOnPastedImagesRef = useRef(onPastedImages);
+  const latestOnPastedTextRef = useRef(onPastedText);
   latestOnChangeRef.current = onChange;
   latestOnKeyDownRef.current = onKeyDown;
   latestOnSubmitRef.current = onSubmit;
   latestOnPastedFilesRef.current = onPastedFiles;
   latestOnPastedImagesRef.current = onPastedImages;
+  latestOnPastedTextRef.current = onPastedText;
 
   const controllerRef = useRef<PromptEditorController | null>(null);
   const destroyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,11 +151,14 @@ export const PromptEditor = forwardRef<HTMLDivElement, PromptEditorProps>(functi
     if (!controller) return;
     const pastedFiles = (files: File[]) => latestOnPastedFilesRef.current?.(files);
     const pastedImages = (files: File[]) => latestOnPastedImagesRef.current?.(files);
+    const pastedText = (text: string) => latestOnPastedTextRef.current?.(text);
     controller.addPastedFilesHandler(pastedFiles);
     controller.addPastedImagesHandler(pastedImages);
+    controller.addPastedTextHandler(pastedText);
     return () => {
       controller.removePastedFilesHandler(pastedFiles);
       controller.removePastedImagesHandler(pastedImages);
+      controller.removePastedTextHandler(pastedText);
     };
   }, [controller]);
 

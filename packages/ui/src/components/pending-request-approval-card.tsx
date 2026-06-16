@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react";
 import type { PendingServerRequest } from "../state/codex-reducer";
 import { McpToolApprovalHeader } from "./mcp-tool-approval-preview";
 import { usePendingRequestApprovalController } from "./pending-request-approval-controller";
+import { SETUP_CONTEXT_SOURCES_QUESTION_ID } from "../state/approval-requests";
 import {
   RequestBodyPreview,
   RequestDetailList,
@@ -45,6 +46,7 @@ export function ApprovalCard({
     responding,
     respond,
     respondOptionPicker,
+    respondSetupTaskPicker,
     respondSetupContextPicker,
     setAnswers,
     goToQuestion,
@@ -64,7 +66,9 @@ export function ApprovalCard({
    * 严格对齐 — 不再 map 全部 question 铺开。
    */
   const kind = requestKind(request.method);
-  const requestKindForRender: RequestKind = detail.optionPicker
+  const requestKindForRender: RequestKind = detail.userInput
+    ? "user-input"
+    : detail.optionPicker
     ? "option-picker"
     : detail.setupContextPicker
       ? "setup-context-picker"
@@ -85,8 +89,9 @@ export function ApprovalCard({
    * 对 user-input：跳过 details 行和 RequestBodyPreview；panel-title 用当前
    * question.question 而非 questions[0]?.question（multi-question 时随 step 切换）。
    */
-  const isUserInput = kind === "user-input";
+  const isUserInput = kind === "user-input" || detail.userInput === true;
   const isOptionPicker = detail.optionPicker != null;
+  const isSetupTaskPicker = detail.setupTaskPicker != null;
   const isSetupContextPicker = detail.setupContextPicker != null;
   /*
    * CODEX-REF: pending-request-item-panel-*.js — single title source: outer
@@ -103,6 +108,9 @@ export function ApprovalCard({
   const primaryLabel = detail.externalUrl && externalUrlOpened || hasMultipleQuestions && !isLastQuestion
     ? formatMessage({ id: "requestInputPanel.continue", defaultMessage: "Continue" })
     : detail.acceptLabel;
+  const setupContextSourceValue = detail.setupContextPicker
+    ? answers[SETUP_CONTEXT_SOURCES_QUESTION_ID] ?? detail.setupContextPicker.defaultSelectedSourceIds
+    : [];
   const declineTitle = request.method.includes("requestUserInput")
     ? formatMessage({
         id: "hc.pendingRequest.declineUserInputTitle",
@@ -124,7 +132,14 @@ export function ApprovalCard({
         ) : null}
         {detail.mcpToolApproval ? <McpToolApprovalHeader approval={detail.mcpToolApproval} /> : null}
         <div className="hc-request-panel-title">{panelTitle}</div>
-        {detail.setupContextPicker ? <SetupContextPickerBody picker={detail.setupContextPicker} /> : null}
+        {detail.setupContextPicker ? (
+          <SetupContextPickerBody
+            picker={detail.setupContextPicker}
+            disabled={responding}
+            value={setupContextSourceValue}
+            onChange={(value) => setAnswers((current) => ({ ...current, [SETUP_CONTEXT_SOURCES_QUESTION_ID]: value }))}
+          />
+        ) : null}
         <RequestDetailList details={details} />
         {showBodyPreview && <RequestBodyPreview detail={detail} request={request} requestKind={kind} />}
       </div>
@@ -207,6 +222,8 @@ export function ApprovalCard({
           onClick={() => {
             if (isOptionPicker) {
               respondOptionPicker("skip");
+            } else if (isSetupTaskPicker) {
+              respondSetupTaskPicker("skip");
             } else if (isSetupContextPicker) {
               respondSetupContextPicker("skip");
             } else {
@@ -216,7 +233,7 @@ export function ApprovalCard({
         >
           <span>{detail.declineLabel}</span>
           {/* codex: requestInputPanel uses 'ESC' (uppercase); the general approval/browser path uses 'Esc'. */}
-          {!isOptionPicker && !isSetupContextPicker && <kbd>{isUserInput ? "ESC" : "Esc"}</kbd>}
+          {!isOptionPicker && !isSetupTaskPicker && !isSetupContextPicker && <kbd>{isUserInput ? "ESC" : "Esc"}</kbd>}
         </button>
         <button
           type="button"
@@ -233,6 +250,8 @@ export function ApprovalCard({
               goToQuestion(questionIndex + 1);
             } else if (isOptionPicker) {
               respondOptionPicker("submit");
+            } else if (isSetupTaskPicker) {
+              respondSetupTaskPicker("submit");
             } else if (isSetupContextPicker) {
               respondSetupContextPicker("continue");
             } else {

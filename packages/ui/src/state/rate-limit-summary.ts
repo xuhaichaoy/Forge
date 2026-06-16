@@ -5,6 +5,7 @@ import { formatMessage } from "./i18n";
 export interface RateLimitDisplayWindow {
   id: "primary" | "secondary";
   label: string;
+  windowDurationMins: number | null;
   remainingPercent: number;
   remainingText: string;
   resetMetadata: string;
@@ -29,7 +30,6 @@ interface RateLimitEntry {
 }
 
 const DAY_MINUTES = 24 * 60;
-const WEEK_MINUTES = 7 * DAY_MINUTES;
 const MONTH_MINUTES = 30 * DAY_MINUTES;
 const YEAR_MINUTES = 365 * DAY_MINUTES;
 
@@ -142,6 +142,7 @@ function rateLimitWindow(window: RateLimitWindow | null, id: "primary" | "second
   return {
     id,
     label: `${statusWindowLabel(window.windowDurationMins)}:`,
+    windowDurationMins: window.windowDurationMins,
     remainingPercent,
     remainingText: formatMessage(
       { id: "composer.statusPlain.rateLimitPercent", defaultMessage: "{remaining}% left" },
@@ -156,17 +157,7 @@ function rateLimitWindow(window: RateLimitWindow | null, id: "primary" | "second
 }
 
 function rateLimitWindowSortValue(window: RateLimitDisplayWindow): number {
-  const match = window.label.match(/^(\d+)(m|h|d|mo|y|w)?/);
-  if (!match) return Number.MAX_SAFE_INTEGER;
-  const value = Number(match[1]);
-  const unit = match[2] ?? "";
-  const factor = unit === "y" ? YEAR_MINUTES
-    : unit === "mo" ? MONTH_MINUTES
-    : unit === "w" ? WEEK_MINUTES
-    : unit === "d" ? DAY_MINUTES
-    : unit === "h" ? 60
-    : 1;
-  return value * factor;
+  return window.windowDurationMins ?? 0;
 }
 
 function statusWindowLabel(minutes: number | null): string {

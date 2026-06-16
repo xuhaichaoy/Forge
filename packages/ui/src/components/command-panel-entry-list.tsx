@@ -30,13 +30,19 @@ import {
 import { commandPanelEntryAcceleratorLabel } from "../state/commands";
 
 export function CommandPanelEntryList({
+  activeEntryId = null,
   entries,
+  listId,
+  onActiveEntryChange,
   onSelectEntry,
   onSelectAction,
   showSections = true,
   subMode = "root",
 }: {
+  activeEntryId?: string | null;
   entries: CommandPanelEntry[];
+  listId?: string;
+  onActiveEntryChange?: (entryId: string) => void;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
   showSections?: boolean;
@@ -49,9 +55,16 @@ export function CommandPanelEntryList({
   // the root command menu, matching Codex's cmdk Hd atom behavior.
   if (subMode !== "root") {
     return (
-      <div className="hc-command-panel-list">
+      <div
+        aria-activedescendant={activeEntryId ? commandPanelEntryOptionId(activeEntryId) : undefined}
+        className="hc-command-panel-list"
+        id={listId}
+        role="listbox"
+      >
         <CommandPanelGroupedEntries
+          activeEntryId={activeEntryId}
           entries={entries}
+          onActiveEntryChange={onActiveEntryChange}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
         />
@@ -60,9 +73,16 @@ export function CommandPanelEntryList({
   }
   if (!showSections) {
     return (
-      <div className="hc-command-panel-list">
+      <div
+        aria-activedescendant={activeEntryId ? commandPanelEntryOptionId(activeEntryId) : undefined}
+        className="hc-command-panel-list"
+        id={listId}
+        role="listbox"
+      >
         <CommandPanelGroupedEntries
+          activeEntryId={activeEntryId}
           entries={entries}
+          onActiveEntryChange={onActiveEntryChange}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
         />
@@ -75,7 +95,12 @@ export function CommandPanelEntryList({
   // emitted inside each section by groupCommandPanelEntriesForRendering.
   const sections = groupCommandPanelEntries(entries, formatMessage);
   return (
-    <div className="hc-command-panel-list">
+    <div
+      aria-activedescendant={activeEntryId ? commandPanelEntryOptionId(activeEntryId) : undefined}
+      className="hc-command-panel-list"
+      id={listId}
+      role="listbox"
+    >
       {sections.map((section) => (
         <div className="hc-command-panel-section" key={`section:${section.groupKey}`}>
           {section.groupKey !== "other" && (
@@ -84,7 +109,9 @@ export function CommandPanelEntryList({
             </div>
           )}
           <CommandPanelGroupedEntries
+            activeEntryId={activeEntryId}
             entries={section.entries}
+            onActiveEntryChange={onActiveEntryChange}
             onSelectAction={onSelectAction}
             onSelectEntry={onSelectEntry}
           />
@@ -95,11 +122,15 @@ export function CommandPanelEntryList({
 }
 
 function CommandPanelGroupedEntries({
+  activeEntryId,
   entries,
+  onActiveEntryChange,
   onSelectEntry,
   onSelectAction,
 }: {
+  activeEntryId: string | null;
   entries: CommandPanelEntry[];
+  onActiveEntryChange?: (entryId: string) => void;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
@@ -112,8 +143,10 @@ function CommandPanelGroupedEntries({
         </div>
       ) : (
         <CommandPanelRow
+          active={activeEntryId === item.entry.id}
           entry={item.entry}
           key={item.key}
+          onActiveEntryChange={onActiveEntryChange}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
         />
@@ -123,15 +156,20 @@ function CommandPanelGroupedEntries({
 }
 
 function CommandPanelRow({
+  active,
   entry,
+  onActiveEntryChange,
   onSelectEntry,
   onSelectAction,
 }: {
+  active: boolean;
   entry: CommandPanelEntry;
+  onActiveEntryChange?: (entryId: string) => void;
   onSelectEntry?: (entry: CommandPanelEntry) => void;
   onSelectAction?: (action: CommandPanelEntryAction, entry: CommandPanelEntry) => void;
 }) {
   const actionable = Boolean(entry.action && !entry.disabled && onSelectEntry);
+  const rowId = commandPanelEntryOptionId(entry.id);
   // codex: app-main-DG-Mf4Wj.js — cmdk Ym.Item right-side shortcut. Prefer a
   // caller-supplied label; otherwise derive it from the entry id so existing
   // call sites (slashCommandEntries / commandMenuEntries) automatically
@@ -193,27 +231,47 @@ function CommandPanelRow({
   if (actionable) {
     return (
       <article
+        aria-selected={active}
         className="hc-command-panel-row"
         data-actionable="true"
+        data-active={active ? "true" : "false"}
         data-disabled="false"
-        role="button"
+        data-selected={active ? "true" : "false"}
+        id={rowId}
+        role="option"
         tabIndex={0}
         onClick={() => onSelectEntry?.(entry)}
+        onFocus={() => onActiveEntryChange?.(entry.id)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           onSelectEntry?.(entry);
         }}
+        onPointerMove={() => onActiveEntryChange?.(entry.id)}
       >
         {content}
       </article>
     );
   }
   return (
-    <article className="hc-command-panel-row" data-actionable="false" data-disabled={entry.disabled ? "true" : "false"}>
+    <article
+      aria-disabled={entry.disabled ? true : undefined}
+      aria-selected={active}
+      className="hc-command-panel-row"
+      data-actionable="false"
+      data-active={active ? "true" : "false"}
+      data-disabled={entry.disabled ? "true" : "false"}
+      data-selected={active ? "true" : "false"}
+      id={rowId}
+      role="option"
+    >
       {content}
     </article>
   );
+}
+
+export function commandPanelEntryOptionId(entryId: string): string {
+  return `hc-command-option-${encodeURIComponent(entryId)}`;
 }
 
 function secondaryActionIcon(action: CommandPanelEntryAction) {

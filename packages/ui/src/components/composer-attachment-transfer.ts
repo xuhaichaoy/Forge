@@ -27,6 +27,7 @@ export interface ComposerAttachmentTransferHandlers {
 export interface UseComposerAttachmentTransferResult {
   addAttachments: (incoming: ComposerAttachment[]) => void;
   addAttachmentPaths: (paths: string[]) => void;
+  addPastedText: (text: string) => void;
   addTransferFiles: (
     files: FileList | File[],
     options?: { warnUnavailablePaths?: boolean },
@@ -72,6 +73,11 @@ export function useComposerAttachmentTransfer({
 
   const addAttachmentPaths = useCallback((paths: string[]) => {
     addAttachments(composerAttachmentsFromPaths(paths));
+  }, [addAttachments]);
+
+  const addPastedText = useCallback((text: string) => {
+    if (text.length === 0) return;
+    addAttachments([{ type: "plainText", text }]);
   }, [addAttachments]);
 
   const addImageFilesAsDataUrls = useCallback((files: File[]) => {
@@ -241,6 +247,7 @@ export function useComposerAttachmentTransfer({
   return {
     addAttachments,
     addAttachmentPaths,
+    addPastedText,
     addTransferFiles,
     dropActive,
     transferHandlers: {

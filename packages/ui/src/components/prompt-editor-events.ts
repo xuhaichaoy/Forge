@@ -1,14 +1,18 @@
-export type PromptEditorEventName = "submit" | "change" | "pasted-files" | "pasted-images";
-export type PromptEditorEventListener = (() => void) | ((files: File[]) => void);
+export type PromptEditorEventName = "submit" | "change" | "pasted-files" | "pasted-images" | "pasted-text";
+export type PromptEditorEventPayload = File[] | string;
+export type PromptEditorEventListener = (() => void) | ((files: File[]) => void) | ((text: string) => void);
 
 export class PromptEditorEmitter {
   private readonly listeners = new Map<PromptEditorEventName, Set<PromptEditorEventListener>>();
 
-  emit(name: PromptEditorEventName, payload?: File[]): void {
-    this.listeners.get(name)?.forEach((listener) => {
-      if (payload) (listener as (files: File[]) => void)(payload);
+  emit(name: PromptEditorEventName, payload?: PromptEditorEventPayload): boolean {
+    const listeners = this.listeners.get(name);
+    if (!listeners || listeners.size === 0) return false;
+    listeners.forEach((listener) => {
+      if (payload !== undefined) (listener as (payload: PromptEditorEventPayload) => void)(payload);
       else (listener as () => void)();
     });
+    return true;
   }
 
   addListener(name: PromptEditorEventName, listener: PromptEditorEventListener): void {

@@ -218,6 +218,7 @@ function userMessage(id: string, text: string): ThreadItem {
   return {
     type: "userMessage",
     id,
+    clientId: null,
     content: [{ type: "text", text, text_elements: [] }],
   };
 }

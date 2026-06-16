@@ -1,7 +1,7 @@
 import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "../state/forge-desktop-namespace";
 import { setDesktopAppSettingValue } from "./app-settings";
 
-export const DEFAULT_YUXI_BASE_URL = "http://127.0.0.1:5050";
+export const DEFAULT_YUXI_BASE_URL = "http://192.168.61.214:5050";
 export const YUXI_CONNECTION_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.yuxiConnection;
 
 export interface YuxiConnectionConfig {

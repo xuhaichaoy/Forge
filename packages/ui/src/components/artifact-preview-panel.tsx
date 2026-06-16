@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, X } from "lucide-react";
+import { ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, MoreHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArtifactDocumentPreviewView,
@@ -45,6 +45,7 @@ export interface ArtifactPreviewPanelProps {
   onClose: () => void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenFileExternal?: (reference: RailEntryReference) => void;
+  onRevealFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
 }
 
@@ -57,6 +58,7 @@ export function ArtifactPreviewPanel({
   onClose,
   onOpenFileReference,
   onOpenFileExternal,
+  onRevealFileReference,
   onOpenUrl,
 }: ArtifactPreviewPanelProps) {
   const { formatMessage } = useForgeIntl();
@@ -275,6 +277,31 @@ export function ArtifactPreviewPanel({
               <FolderOpen size={14} />
               <span>{formatMessage({ id: "artifactTab.preview.open", defaultMessage: "Open" })}</span>
             </button>
+          )}
+          {resolvedReference && onRevealFileReference && (
+            <details className="hc-artifact-preview-open-menu">
+              <summary
+                aria-label={formatMessage({ id: "artifactTab.preview.openOptions", defaultMessage: "Open options" })}
+                className="hc-artifact-preview-icon-button"
+                title={formatMessage({ id: "artifactTab.preview.openOptions", defaultMessage: "Open options" })}
+              >
+                <MoreHorizontal size={14} />
+              </summary>
+              <div className="hc-artifact-preview-open-menu-popover" role="menu">
+                <button
+                  type="button"
+                  className="hc-artifact-preview-open-menu-item"
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.currentTarget.closest("details")?.removeAttribute("open");
+                    onRevealFileReference(resolvedReference);
+                  }}
+                >
+                  <FolderOpen size={14} />
+                  <span>{formatMessage({ id: "artifactTab.preview.openInFolder", defaultMessage: "Open in folder" })}</span>
+                </button>
+              </div>
+            </details>
           )}
           {preview.url && /^https?:\/\//i.test(preview.url) && onOpenUrl && (
             <button

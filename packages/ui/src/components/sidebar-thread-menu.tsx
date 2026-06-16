@@ -131,17 +131,6 @@ export function SidebarThreadMenu({
         {formatMessage({ id: "sidebarElectron.markThreadUnread", defaultMessage: "Mark as unread" })}
       </button>
       <SidebarThreadMenuSeparator />
-      {onOpenThreadWindow && (
-        // codex threadHeader.openInNewWindow — open this thread in a second app window.
-        <button
-          type="button"
-          className={threadMenuItemClass}
-          role="menuitem"
-          onClick={() => onRunOptionalThreadAction(onOpenThreadWindow)}
-        >
-          {formatMessage({ id: "threadHeader.openInNewWindow", defaultMessage: "Open in new window" })}
-        </button>
-      )}
       <button
         type="button"
         className={threadMenuItemClass}
@@ -200,6 +189,20 @@ export function SidebarThreadMenu({
         >
           {formatMessage({ id: "threadHeader.forkIntoWorktree", defaultMessage: "Fork into new worktree" })}
         </button>
+      )}
+      {onOpenThreadWindow && (
+        <>
+          <SidebarThreadMenuSeparator />
+          {/* codex threadHeader.openInNewWindow — separate section after fork actions. */}
+          <button
+            type="button"
+            className={threadMenuItemClass}
+            role="menuitem"
+            onClick={() => onRunOptionalThreadAction(onOpenThreadWindow)}
+          >
+            {formatMessage({ id: "threadHeader.openInNewWindow", defaultMessage: "Open in new window" })}
+          </button>
+        </>
       )}
     </div>,
     document.body,

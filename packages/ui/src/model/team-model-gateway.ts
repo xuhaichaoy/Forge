@@ -5,6 +5,7 @@ import {
   readTeamServiceConnectionConfig,
   type TeamServiceConnectionConfig,
 } from "../lib/team-service-connection";
+import { notifyTeamServiceUnauthorized } from "../lib/team-service-session";
 import type { ModelPickerProvider } from "./model-picker-selection";
 import { normalizeModelConfig, normalizeModelSlugs } from "./model-settings";
 
@@ -242,6 +243,11 @@ async function teamModelGatewayRequest<T>(
     headers,
   });
   if (!response.ok) {
+    // 401 = the shared login token is dead; surface it to the auth gate so the
+    // session is cleared app-wide. 403/404 mean the gateway is merely disabled
+    // for this member (isTeamModelGatewayUnavailable) and stay a silent
+    // "unavailable" — not a logout.
+    if (response.status === 401) notifyTeamServiceUnauthorized();
     throw new TeamModelGatewayRequestError(await responseErrorMessage(response), response.status);
   }
   if (response.status === 204) return undefined as T;

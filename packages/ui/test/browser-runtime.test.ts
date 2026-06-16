@@ -2,12 +2,14 @@ import {
   fileUrlForPath,
   isHtmlPath,
   projectBrowserRailInput,
+  projectBrowserRailInputs,
   projectBrowserRuntimeSettingsEntries,
   type BrowserRuntimeSnapshot,
 } from "../src/state/browser-runtime";
 
 export default function runBrowserRuntimeTests(): void {
   projectsActiveHttpBrowserTabIntoRightRail();
+  projectsAllDisplayableBrowserTabsIntoRightRail();
   omitsUnavailableAndBlankBrowserTabs();
   detectsHtmlPathsForBrowserRoute();
   buildsFileUrlsForBrowserNavigation();
@@ -54,15 +56,25 @@ function projectsActiveHttpBrowserTabIntoRightRail(): void {
   const projected = projectBrowserRailInput({
     bridgeAvailable: true,
     available: true,
-    activeTabId: "tab-1",
-    tabs: [{
-      tabId: "tab-1",
-      title: "OpenAI Docs",
-      url: "https://platform.openai.com/docs",
-      displayUrl: "platform.openai.com/docs",
-      open: true,
-      isAgentWorking: true,
-    }],
+    activeTabId: "tab-2",
+    tabs: [
+      {
+        tabId: "tab-1",
+        title: "Earlier tab",
+        url: "https://example.com",
+        displayUrl: "example.com",
+        open: true,
+        isAgentWorking: false,
+      },
+      {
+        tabId: "tab-2",
+        title: "OpenAI Docs",
+        url: "https://platform.openai.com/docs",
+        displayUrl: "platform.openai.com/docs",
+        open: true,
+        isAgentWorking: true,
+      },
+    ],
   });
 
   assertEqual(projected?.title, "OpenAI Docs", "active Browser tab title should project into the right rail");
@@ -72,7 +84,66 @@ function projectsActiveHttpBrowserTabIntoRightRail(): void {
     "active Browser tab display URL should project into the right rail",
   );
   assertEqual(projected?.isActive, true, "active Browser tab working state should project into the right rail");
-  assertEqual(projected?.tabId, "tab-1", "active Browser tab id should project into the right rail");
+  assertEqual(projected?.tabId, "tab-2", "single Browser tab projection should prefer the active tab");
+}
+
+function projectsAllDisplayableBrowserTabsIntoRightRail(): void {
+  const projected = projectBrowserRailInputs({
+    bridgeAvailable: true,
+    available: true,
+    activeTabId: "tab-2",
+    tabs: [
+      {
+        tabId: "tab-1",
+        title: "Closed",
+        url: "https://closed.example",
+        displayUrl: "closed.example",
+        open: false,
+        isAgentWorking: false,
+      },
+      {
+        tabId: "tab-2",
+        title: "Docs",
+        url: "https://platform.openai.com/docs",
+        displayUrl: "platform.openai.com/docs",
+        open: true,
+        isAgentWorking: true,
+      },
+      {
+        tabId: "tab-3",
+        title: "Blank",
+        url: "about:blank",
+        displayUrl: "about:blank",
+        open: true,
+        isAgentWorking: false,
+      },
+      {
+        tabId: "tab-4",
+        title: "Local preview",
+        url: "file:///tmp/index.html",
+        displayUrl: "file:///tmp/index.html",
+        open: true,
+        isAgentWorking: false,
+      },
+      {
+        tabId: "tab-5",
+        title: "Extension",
+        url: "chrome-extension://abc/page.html",
+        displayUrl: "chrome-extension://abc/page.html",
+        open: true,
+        isAgentWorking: false,
+      },
+    ],
+  });
+
+  assertDeepEqual(
+    projected.map((tab) => [tab.tabId, tab.title, tab.isActive]),
+    [
+      ["tab-2", "Docs", true],
+      ["tab-4", "Local preview", false],
+    ],
+    "right rail Browser projection should include every open displayable Browser tab",
+  );
 }
 
 function omitsUnavailableAndBlankBrowserTabs(): void {
@@ -288,5 +359,13 @@ function projectsValidatedExtensionBackendReadiness(): void {
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   if (actual !== expected) {
     throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
+function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {
+  const actualJson = JSON.stringify(actual);
+  const expectedJson = JSON.stringify(expected);
+  if (actualJson !== expectedJson) {
+    throw new Error(`${message}: expected ${expectedJson}, got ${actualJson}`);
   }
 }

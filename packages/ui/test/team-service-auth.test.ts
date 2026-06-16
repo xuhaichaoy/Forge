@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TEAM_SERVICE_BASE_URL,
   TEAM_SERVICE_AUTH_STORAGE_KEY,
   clearTeamServiceAuthSession,
   normalizeTeamServiceUser,
@@ -12,10 +13,17 @@ import {
 } from "../src/lib/yuxi-client";
 
 export default function runTeamServiceAuthTests(): void {
+  usesLanTeamServiceAddressByDefault();
   normalizesBackendAuthUserShape();
   persistsTeamServiceSessionAndSyncsLegacyConnection();
   teamConnectionPrefersProductAuthSession();
   clearSessionRemovesProductToken();
+}
+
+function usesLanTeamServiceAddressByDefault(): void {
+  const storage = new MemoryStorage();
+  assertEqual(DEFAULT_TEAM_SERVICE_BASE_URL, "http://192.168.61.214:5050", "team auth should default to the shared Yuxi service");
+  assertEqual(readYuxiConnectionConfig(storage).baseUrl, DEFAULT_TEAM_SERVICE_BASE_URL, "empty legacy connection should use the same default service");
 }
 
 function normalizesBackendAuthUserShape(): void {

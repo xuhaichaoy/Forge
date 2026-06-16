@@ -689,14 +689,11 @@ function appliesSlashCommandsAsDeclarativeActions(): void {
 function exposesAttachActions(): void {
   assertDeepEqual(
     DEFAULT_ATTACH_ACTIONS.map((action) => action.title),
-    // codex: composer-D0cvMZjq.js — Codex's "+" menu surfaces the file picker /
-    // mention / plain text / image URL, then the Plan mode + Pursue goal toggles,
-    // then Plugins. localImage stays implicit via paste/drag-drop in the field.
+    // codex: composer "+" menu surfaces the file picker, then Plan mode +
+    // Pursue goal toggles, then plugin/context entries. Mentions stay in @,
+    // plain text stays in paste/input, and image URLs stay in prompt text.
     [
       "Add photos & files",
-      "Mention a file or app",
-      "Add plain text",
-      "Add image from URL",
       "Plan mode",
       "Pursue goal",
       "Plugins",

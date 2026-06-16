@@ -45,6 +45,7 @@ function makeThread(overrides: Partial<Thread> & Record<string, unknown>): Threa
     id: overrides.id ?? "thread-x",
     sessionId: String(overrides.sessionId ?? overrides.id ?? "thread-x"),
     forkedFromId: null,
+    parentThreadId: null,
     preview: "",
     ephemeral: false,
     modelProvider: "openai",

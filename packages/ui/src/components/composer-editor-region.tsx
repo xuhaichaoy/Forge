@@ -23,6 +23,7 @@ interface ComposerEditorRegionProps {
   submitTitle: string;
   onInputChange: (value: string) => void;
   onTransferFiles: (files: File[]) => void;
+  onPastedText: (text: string) => void;
   onSubmit: () => void;
   onPromptKeyDown: (event: KeyboardEvent) => boolean | void;
   onPlanSelected?: () => void;
@@ -48,6 +49,7 @@ export function ComposerEditorRegion({
   submitTitle,
   onInputChange,
   onTransferFiles,
+  onPastedText,
   onSubmit,
   onPromptKeyDown,
   onPlanSelected,
@@ -85,6 +87,7 @@ export function ComposerEditorRegion({
               onChange={onInputChange}
               onPastedFiles={onTransferFiles}
               onPastedImages={onTransferFiles}
+              onPastedText={onPastedText}
               onSubmit={onSubmit}
               onKeyDown={onPromptKeyDown}
             />

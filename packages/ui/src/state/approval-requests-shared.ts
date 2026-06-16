@@ -22,7 +22,9 @@ export interface PendingRequestDetail {
   externalUrl?: string;
   mcpToolApproval?: PendingRequestMcpToolApproval;
   optionPicker?: PendingRequestOptionPicker;
+  setupTaskPicker?: PendingRequestSetupTaskPicker;
   setupContextPicker?: PendingRequestSetupContextPicker;
+  userInput?: boolean;
 }
 
 export interface PendingRequestMetadata {
@@ -37,8 +39,21 @@ export interface PendingRequestOptionPicker {
   skipLabel: string;
 }
 
+export interface PendingRequestSetupTaskPicker {
+  questionId: string;
+}
+
 export interface PendingRequestSetupContextPicker {
   canSelectSources: boolean;
+  sources: PendingRequestSetupContextSource[];
+  defaultSelectedSourceIds: string[];
+}
+
+export interface PendingRequestSetupContextSource {
+  id: string;
+  label: string;
+  description?: string;
+  connected?: boolean;
 }
 
 export interface PendingRequestQuestion {
@@ -50,6 +65,7 @@ export interface PendingRequestQuestion {
   required: boolean;
   defaultAnswers: string[];
   options: PendingRequestOption[];
+  otherPlaceholder?: string;
   /*
    * CODEX-REF: packages/codex-protocol/src/generated/v2/ToolRequestUserInputQuestion.ts
    * 协议层 `ToolRequestUserInputQuestion.isOther: boolean`。Codex bundle

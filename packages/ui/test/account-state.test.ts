@@ -204,7 +204,15 @@ function projectsComposerQuotaBannerOnlyForBlockingLimits(): void {
 }
 
 function updatesRateLimitSnapshotFromNotification(): void {
-  const previousRateLimits = rateLimitFixture({ usedPercent: 20 });
+  const previousRateLimits = {
+    ...rateLimitFixture({ usedPercent: 20 }),
+    individualLimit: {
+      limit: "$100",
+      used: "$25",
+      remainingPercent: 75,
+      resetsAt: 1_760_000_000,
+    },
+  };
   const nextRateLimits = rateLimitFixture({ usedPercent: 95 });
   const previous = {
     ...initialAccountState,
@@ -225,6 +233,11 @@ function updatesRateLimitSnapshotFromNotification(): void {
   assertEqual(shouldRefreshAccountStateForNotification(notification), true, "rate-limit notification should invalidate account projection");
   assertEqual(next.invalidated, true, "rate-limit notification should mark state invalidated");
   assertEqual(next.rateLimits?.primary?.usedPercent, 95, "rate-limit notification should apply the snapshot immediately");
+  assertDeepEqual(
+    next.rateLimits?.individualLimit,
+    previousRateLimits.individualLimit,
+    "sparse rate-limit updates should not clear the last monthly individual limit",
+  );
   assertEqual(next.rateLimitsUpdatedAt, 999, "rate-limit notification should update the rate-limit timestamp");
 
   const accountInvalidated = applyAccountNotification(next, {
@@ -333,6 +346,7 @@ function rateLimitFixture({ usedPercent }: { usedPercent: number }): RateLimitSn
       unlimited: false,
       balance: "12.50",
     },
+    individualLimit: null,
     planType: "pro",
     rateLimitReachedType: null,
   };

@@ -115,6 +115,12 @@ export function SidebarThreadRow({
       data-confirming-archive={isConfirmingArchive ? "true" : undefined}
       onContextMenu={(event) => onContextMenu(event, thread)}
       onPointerLeave={() => onClearArchiveConfirmation(thread)}
+      onDoubleClick={(event) => {
+        if (isConfirmingArchive || event.defaultPrevented || !isActive) return;
+        const target = event.target as Element | null;
+        if (!target?.closest?.("[data-thread-title]")) return;
+        runThreadAction(onRenameThread);
+      }}
       onClick={(event) => {
         if (isConfirmingArchive) {
           event.preventDefault();

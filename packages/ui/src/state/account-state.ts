@@ -175,10 +175,11 @@ export function applyAccountNotification(
       error: null,
     };
   }
+  const mergedRateLimits = mergeSparseRateLimitSnapshot(state.rateLimits, rateLimits);
   return {
     ...state,
-    rateLimits,
-    rateLimitsByLimitId: mergeRateLimitSnapshot(state.rateLimitsByLimitId, rateLimits),
+    rateLimits: mergedRateLimits,
+    rateLimitsByLimitId: mergeRateLimitSnapshot(state.rateLimitsByLimitId, mergedRateLimits),
     invalidated: true,
     error: null,
     rateLimitsUpdatedAt: now,
@@ -446,6 +447,17 @@ function mergeRateLimitSnapshot(
   };
 }
 
+function mergeSparseRateLimitSnapshot(
+  previous: RateLimitSnapshot | null,
+  next: RateLimitSnapshot,
+): RateLimitSnapshot {
+  if (!previous || next.individualLimit) return next;
+  return {
+    ...next,
+    individualLimit: previous.individualLimit,
+  };
+}
+
 function rateLimitSnapshotFromUnknown(value: unknown): RateLimitSnapshot | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -459,19 +471,31 @@ function rateLimitSnapshotFromUnknown(value: unknown): RateLimitSnapshot | null 
           hasCredits: Boolean((record.credits as Record<string, unknown>).hasCredits),
           unlimited: Boolean((record.credits as Record<string, unknown>).unlimited),
           balance: stringOrNull((record.credits as Record<string, unknown>).balance),
-        }
+      }
       : null,
+    individualLimit: spendControlLimitSnapshotFromUnknown(record.individualLimit),
     planType: planTypeOrNull(record.planType),
     rateLimitReachedType: stringOrNull(record.rateLimitReachedType) as RateLimitSnapshot["rateLimitReachedType"],
+  };
+}
+
+function spendControlLimitSnapshotFromUnknown(value: unknown): RateLimitSnapshot["individualLimit"] {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  return {
+    limit: stringField(record.limit),
+    used: stringField(record.used),
+    remainingPercent: numberField(record.remainingPercent),
+    resetsAt: numberField(record.resetsAt),
   };
 }
 
 function rateLimitWindowFromUnknown(value: unknown): RateLimitWindow | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const usedPercent = typeof record.usedPercent === "number" ? record.usedPercent : 0;
-  const windowDurationMins = typeof record.windowDurationMins === "number" ? record.windowDurationMins : null;
-  const resetsAt = typeof record.resetsAt === "number" ? record.resetsAt : null;
+  const usedPercent = numberField(record.usedPercent);
+  const windowDurationMins = numberOrNull(record.windowDurationMins);
+  const resetsAt = numberOrNull(record.resetsAt);
   return { usedPercent, windowDurationMins, resetsAt };
 }
 
@@ -482,6 +506,7 @@ function emptyRateLimitSnapshot(): RateLimitSnapshot {
     primary: null,
     secondary: null,
     credits: null,
+    individualLimit: null,
     planType: null,
     rateLimitReachedType: null,
   };
@@ -784,6 +809,18 @@ const knownPlanTypes = new Set<string>([
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function stringField(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function numberField(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function errorMessage(error: unknown): string {

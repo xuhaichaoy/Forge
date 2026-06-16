@@ -396,6 +396,7 @@ export function useForgeAppPreviewWiring(args: ForgeAppPreviewWiringArgs) {
           cwd: previewPathContext.cwd,
           onOpenFileReference: openArtifactSourceInPlace,
           onOpenFileExternal: openRailArtifactFileExternal,
+          onRevealFileReference: revealFileReference,
           onOpenUrl: openRailUrl,
         },
       });
@@ -410,6 +411,7 @@ export function useForgeAppPreviewWiring(args: ForgeAppPreviewWiringArgs) {
     previewPathContext.cwd,
     previewPathContext.workspaceRoot,
     openFileReferenceSidePanelTab,
+    revealFileReference,
     sidePanel.controller,
   ]);
 

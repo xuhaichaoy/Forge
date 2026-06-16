@@ -219,7 +219,8 @@ function isDynamicInputToolRequest(request: PendingServerRequest): boolean {
   const tool = normalizedString(params?.tool);
   return tool === "request_onboarding_input"
     || tool === "request_option_picker"
-    || tool === "setup_codex_context_picker";
+    || tool === "setup_codex_context_picker"
+    || tool === "setup_codex_step";
 }
 
 function scopeFromValue(value: unknown): Omit<PendingRequestScope, "hasScope"> {

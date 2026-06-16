@@ -182,8 +182,8 @@ export function handleThreadNameUpdatedNotification(state: CodexUiState, params:
   };
 }
 
-// Shared by `thread/archived` and `thread/closed`: drop the thread + its runtime
-// slice and re-home the active selection.
+// Shared by `thread/archived`, `thread/deleted`, and `thread/closed`: drop the
+// thread + its runtime slice and re-home the active selection.
 export function handleThreadRemovedNotification(state: CodexUiState, params: Record<string, unknown>): CodexUiState {
   const threadId = String(params.threadId ?? "");
   if (!threadId) return state;

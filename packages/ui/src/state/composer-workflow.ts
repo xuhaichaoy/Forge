@@ -357,11 +357,9 @@ export const DEFAULT_SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 /*
- * Composer "+" add menu. A workflow agent once cut this to 2 items based on an
- * unconfirmed read of the Codex 26.x "+" menu; that dropped real entry points
- * (mention / plain text / image URL / plugins), so it is restored to Forge's
- * original 6-item set. Re-align the composition only against a ground-truth
- * screenshot of the Codex desktop "+" menu.
+ * Composer "+" add menu. Codex Desktop keeps mentions in the inline @ picker,
+ * plain text in paste/input handling, and image URLs as normal prompt text or
+ * links; the plus menu exposes file/context rows plus mode toggles.
  */
 export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
   {
@@ -369,24 +367,6 @@ export const DEFAULT_ATTACH_ACTIONS: AttachAction[] = [
     title: "Add photos & files",
     description: "Attach local images or files.",
     placeholder: "",
-  },
-  {
-    id: "mention",
-    title: "Mention a file or app",
-    description: "Insert an @-mention reference.",
-    placeholder: "Type to search for files, agents, skills, apps, or plugins",
-  },
-  {
-    id: "plainText",
-    title: "Add plain text",
-    description: "Paste plain text as a separate attachment.",
-    placeholder: "Paste or type text…",
-  },
-  {
-    id: "imageUrl",
-    title: "Add image from URL",
-    description: "Reference an image hosted online.",
-    placeholder: "https://…",
   },
   {
     id: "plan",

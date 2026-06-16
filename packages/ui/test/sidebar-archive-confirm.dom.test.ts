@@ -30,6 +30,7 @@ function makeThread(id: string, name: string): Thread {
     id,
     sessionId: id,
     forkedFromId: null,
+    parentThreadId: null,
     preview: "",
     ephemeral: false,
     modelProvider: "openai",

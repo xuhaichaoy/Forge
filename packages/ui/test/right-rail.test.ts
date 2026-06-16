@@ -63,9 +63,11 @@ function keepsCodexDesktopSectionOrder(): void {
     sideChats: [railEntry("side-chat:side-1", "Side chat", "idle", "Uses gpt-5.2")],
     backgroundAgents: [railEntry("agent-1", "Explorer (explorer)", "active", "Uses gpt-5.4")],
     backgroundTerminals: [railEntry("terminal-1", "npm run dev", "running", "/workspace/project")],
-    // codex: _e:browser-tabs — new structured browser-tab summary replaces the
-    // legacy RailEntry[] form.
-    browser: { title: "Codex docs", displayUrl: "platform.openai.com", isActive: true, tabId: "tab-1" },
+    // codex: browserUseSummaries — Browser section maps every displayable tab.
+    browserTabs: [
+      { title: "Codex docs", displayUrl: "platform.openai.com", isActive: true, tabId: "tab-1" },
+      { title: "Local preview", displayUrl: "file:///tmp/index.html", isActive: false, tabId: "tab-2" },
+    ],
     sources: [railEntry("source-1", "github:list_prs", "completed", "MCP tool")],
   });
 
@@ -108,11 +110,11 @@ function keepsCodexDesktopSectionOrder(): void {
     "npm run dev",
     "background-tasks entry should come from backgroundTerminals",
   );
-  // codex: pe:automation/_e:browser-tabs — assert the new sections actually
-  // emit a single-entry payload from the structured projection inputs.
+  // codex: pe:automation/browserUseSummaries — automation stays a single
+  // payload; Browser maps every structured summary into a row.
   assertEqual(sectionById(sections, "automation").count, 1, "automation section should be single-entry");
   assertEqual(sectionById(sections, "automation").entries[0]?.title, "Weekly digest", "automation entry uses provided name");
-  assertEqual(sectionById(sections, "browser").count, 1, "browser section should be single-entry");
+  assertEqual(sectionById(sections, "browser").count, 2, "browser section count should match tab summaries");
   assertEqual(sectionById(sections, "browser").entries[0]?.title, "Codex docs", "browser entry uses tab title");
   assertEqual(
     sectionById(sections, "browser").entries[0]?.meta,
@@ -123,6 +125,11 @@ function keepsCodexDesktopSectionOrder(): void {
     sectionById(sections, "browser").entries[0]?.status,
     "active",
     "browser entry status mirrors isActive",
+  );
+  assertDeepEqual(
+    sectionById(sections, "browser").allEntries.map((entry) => entry.id),
+    ["browser:tab-1", "browser:tab-2"],
+    "browser section should keep one row per Browser tab",
   );
 }
 
@@ -514,6 +521,7 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
       id: "thread-git-status",
       sessionId: "thread-git-status",
       forkedFromId: null,
+      parentThreadId: null,
       preview: "",
       ephemeral: false,
       modelProvider: "openai",

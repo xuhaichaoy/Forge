@@ -37,9 +37,13 @@ import {
   planImplementationQuestion,
 } from "./approval-request-plan-implementation";
 import {
+  buildOnboardingInputResult,
   buildOptionPickerResult,
+  buildSetupCodexStepResult,
   buildSetupContextPickerResult,
+  onboardingInputRequestDetail,
   optionPickerRequestDetail,
+  setupCodexStepRequestDetail,
   setupContextPickerRequestDetail,
   unsupportedToolCallDetail,
 } from "./approval-request-tool-call";
@@ -90,7 +94,11 @@ export type {
 export {
   OPTION_PICKER_ACTION_QUESTION_ID,
   OPTION_PICKER_QUESTION_ID,
+  SETUP_CODEX_STEP_ROLE_QUESTION_ID,
+  SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID,
+  SETUP_CODEX_STEP_TASK_QUESTION_ID,
   SETUP_CONTEXT_ACTION_QUESTION_ID,
+  SETUP_CONTEXT_SOURCES_QUESTION_ID,
 } from "./approval-request-tool-call";
 export {
   PLAN_IMPLEMENTATION_ACCEPT_VALUE,
@@ -227,8 +235,12 @@ export function pendingRequestDetail(request: PendingServerRequest): PendingRequ
     case "item/tool/requestSetupCodexContextPicker":
       return setupContextPickerRequestDetail(params, false) ?? unsupportedToolCallDetail(params);
     case "item/tool/call": {
+      const onboardingInput = onboardingInputRequestDetail(params);
+      if (onboardingInput) return onboardingInput;
       const optionPicker = optionPickerRequestDetail(params, true);
       if (optionPicker) return optionPicker;
+      const setupCodexStep = setupCodexStepRequestDetail(params);
+      if (setupCodexStep) return setupCodexStep;
       const setupContextPicker = setupContextPickerRequestDetail(params, true);
       if (setupContextPicker) return setupContextPicker;
       return unsupportedToolCallDetail(params);
@@ -324,8 +336,12 @@ export function buildApprovalResult(
       return setupContextPickerResult ?? null;
     }
     case "item/tool/call": {
+      const onboardingInputResult = buildOnboardingInputResult(request, accepted, answers);
+      if (onboardingInputResult) return onboardingInputResult;
       const optionPickerResult = buildOptionPickerResult(request, accepted, answers, true);
       if (optionPickerResult) return optionPickerResult;
+      const setupCodexStepResult = buildSetupCodexStepResult(request, accepted, answers);
+      if (setupCodexStepResult) return setupCodexStepResult;
       const setupContextPickerResult = buildSetupContextPickerResult(request, accepted, answers, true);
       return setupContextPickerResult ?? null;
     }

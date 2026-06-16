@@ -1,4 +1,5 @@
 import { normalizeYuxiBaseUrl, readYuxiConnectionConfig } from "./yuxi-connection";
+import { notifyTeamServiceUnauthorized } from "./team-service-session";
 
 export class YuxiApiError extends Error {
   readonly status: number;
@@ -31,6 +32,11 @@ export async function yuxiRequest<T>(
   });
   if (!response.ok) {
     const detail = await readErrorDetail(response);
+    // 401 = the shared login token is dead. Tell the auth gate to drop the
+    // session app-wide instead of leaving the user staring at "未认证" errors
+    // until they restart. (403 = a valid session hitting a forbidden resource,
+    // not an expiry — must NOT log out.)
+    if (response.status === 401) notifyTeamServiceUnauthorized();
     throw new YuxiApiError(yuxiErrorMessage(response.status, detail), response.status, detail);
   }
   if (responseType === "blob") return await response.blob() as T;

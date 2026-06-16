@@ -282,6 +282,7 @@ function applyNotification(state: CodexUiState, message: JsonRpcNotification): C
     case "thread/settings/updated":
       return applyThreadSettingsUpdatedNotification(state, params);
     case "thread/archived":
+    case "thread/deleted":
     case "thread/closed":
       return handleThreadRemovedNotification(state, params);
     case "thread/unarchived":

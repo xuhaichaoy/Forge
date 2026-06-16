@@ -24,7 +24,10 @@ export default function runPendingRequestStackTests(): void {
   focusesOtherTextareaWithArrowDownLikeCodexDesktop();
   rendersMcpUrlAndToolRequestsAsComposerCards();
   rendersDynamicOptionPickerAsDesktopPills();
+  rendersDynamicOnboardingInputAsUserInputPanel();
+  rendersDynamicSetupTaskPickerAsUserInputWithoutEscHint();
   rendersDynamicSetupContextPickerActions();
+  rendersDynamicSetupContextPickerSources();
   rendersMcpToolApprovalWithDesktopParamPreview();
   rendersMultiQuestionUserInputWithContinueAction();
   rendersPlanImplementationAsDismissableUserInput();
@@ -331,6 +334,61 @@ function rendersDynamicOptionPickerAsDesktopPills(): void {
   assertEqual(html.includes("Unsupported dynamic tool call"), false, "request_option_picker should not use the unsupported tool fallback");
 }
 
+function rendersDynamicOnboardingInputAsUserInputPanel(): void {
+  const html = renderToStaticMarkup(createElement(PendingRequestStack, {
+    pendingRequests: [
+      request("onboarding-input", "item/tool/call", {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "call-onboarding",
+        tool: "request_onboarding_input",
+        arguments: {
+          questions: [{
+            id: "first_task",
+            header: "First task",
+            question: "What should Codex help with first?",
+            options: [
+              { label: "Build UI", description: "Start with interface work" },
+              { label: "Fix a bug", description: "" },
+            ],
+          }],
+        },
+      }),
+    ],
+    onRespond: () => undefined,
+  }));
+
+  assertIncludes(html, 'data-request-kind="user-input"', "dynamic onboarding input should render as a user-input card");
+  assertIncludes(html, "What should Codex help with first?", "dynamic onboarding input should render the question title");
+  assertIncludes(html, "Build UI", "dynamic onboarding input should render option labels");
+  assertIncludes(html, "Something else", "dynamic onboarding input should use Desktop's onboarding freeform placeholder");
+  assertEqual(html.includes("Unsupported dynamic tool call"), false, "request_onboarding_input should not use the unsupported tool fallback");
+}
+
+function rendersDynamicSetupTaskPickerAsUserInputWithoutEscHint(): void {
+  const html = renderToStaticMarkup(createElement(PendingRequestStack, {
+    pendingRequests: [
+      request("setup-task", "item/tool/call", {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "call-setup-task",
+        tool: "setup_codex_step",
+        arguments: { step: "task" },
+      }),
+    ],
+    onRespond: () => undefined,
+  }));
+
+  assertIncludes(html, 'data-request-kind="user-input"', "setup_codex_step task should render through the user-input panel");
+  assertIncludes(html, "First task", "setup_codex_step task should render the Desktop task title");
+  assertIncludes(html, "Summarize updates", "setup_codex_step task should render suggestion options");
+  assertIncludes(html, "Something else", "setup_codex_step task should expose the freeform other input");
+  assertIncludes(html, "<span>Skip</span>", "setup_codex_step task secondary action should be Skip");
+  assertIncludes(html, "<span>Submit</span>", "setup_codex_step task primary action should be Submit");
+  assertEqual(html.includes("<kbd>ESC</kbd>"), false, "setup_codex_step task Skip action should not show the Esc dismiss hint");
+  assertEqual(html.includes("Unsupported dynamic tool call"), false, "setup_codex_step task should not use the unsupported tool fallback");
+}
+
 function rendersDynamicSetupContextPickerActions(): void {
   const html = renderToStaticMarkup(createElement(PendingRequestStack, {
     pendingRequests: [
@@ -351,6 +409,38 @@ function rendersDynamicSetupContextPickerActions(): void {
   assertIncludes(html, "<span>Continue</span>", "setup context picker should expose Desktop's continue action");
   assertEqual(html.includes("Unsupported dynamic tool call"), false, "setup_codex_context_picker should not use the unsupported tool fallback");
   assertEqual(html.includes("Context source selection requires"), false, "setup context picker should not show local implementation caveat copy");
+}
+
+function rendersDynamicSetupContextPickerSources(): void {
+  const html = renderToStaticMarkup(createElement(PendingRequestStack, {
+    pendingRequests: [
+      request("setup-context", "item/tool/call", {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "call-context",
+        tool: "setup_codex_context_picker",
+        arguments: {
+          canSelectSources: true,
+          sources: [
+            { id: "google-drive", label: "Google Drive", description: "Find launch docs", connected: true },
+            { id: "slack", label: "Slack", description: "Read decisions" },
+          ],
+          defaultSelectedSourceIds: ["slack"],
+        },
+      }),
+    ],
+    onRespond: () => undefined,
+  }));
+
+  assertIncludes(html, "hc-setup-context-source", "setup context picker should render source rows when provided");
+  assertIncludes(html, "Google Drive", "setup context picker should render source labels");
+  assertIncludes(html, "Find launch docs", "setup context picker should render source descriptions");
+  assertIncludes(html, "Slack", "setup context picker should render default selected source labels");
+  assertIncludes(html, "Read decisions", "setup context picker should render unconnected source descriptions");
+  assertIncludes(html, 'type="checkbox"', "setup context sources should be selectable with checkboxes");
+  assertIncludes(html, 'data-connected="true"', "connected setup context sources should be marked");
+  assertIncludes(html, "Connected", "connected setup context sources should show Desktop connected label");
+  assertIncludes(html, "Connect", "unconnected setup context sources should show Desktop connect label");
 }
 
 function rendersMcpToolApprovalWithDesktopParamPreview(): void {

@@ -234,6 +234,7 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
     id,
     sessionId: id,
     forkedFromId: null,
+    parentThreadId: null,
     preview: "",
     ephemeral: false,
     modelProvider: "openai",
@@ -1736,6 +1737,7 @@ async function editsLastUserTurnUsingDesktopRollbackThenStartSequence(): Promise
       {
         type: "userMessage",
         id: "user-2",
+        clientId: null,
         content: [
           { type: "skill", name: "review", path: "skills/review" },
           { type: "text", text: "old prompt", text_elements: [{ byteRange: { start: 0, end: 3 }, placeholder: "old" }] },
@@ -1814,6 +1816,7 @@ async function recoversThreadNotFoundOnEditByResumingFirst(): Promise<void> {
       {
         type: "userMessage",
         id: "user-2",
+        clientId: null,
         content: [{ type: "text", text: "old prompt", text_elements: [] }],
       },
       { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
@@ -1895,6 +1898,7 @@ async function recoversThreadNotFoundOnEditRollbackByResumingFirst(): Promise<vo
       {
         type: "userMessage",
         id: "user-2",
+        clientId: null,
         content: [{ type: "text", text: "old prompt", text_elements: [] }],
       },
       { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
@@ -1977,6 +1981,7 @@ async function restoresOriginalEditInputWhenEditedTurnStartFails(): Promise<void
       {
         type: "userMessage",
         id: "user-2",
+        clientId: null,
         content: originalInput,
       },
       { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },
@@ -2054,6 +2059,7 @@ async function reportsEditFailureWhenOriginalInputRestoreAlsoFails(): Promise<vo
       {
         type: "userMessage",
         id: "user-2",
+        clientId: null,
         content: originalInput,
       },
       { type: "agentMessage", id: "agent-2", text: "Done", phase: "final_answer", memoryCitation: null },

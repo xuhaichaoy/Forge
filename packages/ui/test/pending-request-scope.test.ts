@@ -221,6 +221,15 @@ function classifiesMcpAndDynamicToolRequestsForAwaitingState(): void {
     "Desktop dynamic setup_codex_context_picker should use the user-input awaiting lane",
   );
   assertDeepEqual(
+    pendingRequestAwaitingKind(request("setup-codex-step", "item/tool/call", {
+      threadId: "thread-1",
+      tool: "setup_codex_step",
+      arguments: { step: "role" },
+    })),
+    "userInput",
+    "Desktop dynamic setup_codex_step should use the user-input awaiting lane",
+  );
+  assertDeepEqual(
     pendingRequestAwaitingKind(request("implement-plan", "item/plan/requestImplementation", {
       threadId: "thread-1",
       turnId: "turn-1",

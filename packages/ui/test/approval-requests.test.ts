@@ -2,6 +2,11 @@ import {
   PLAN_IMPLEMENTATION_ACCEPT_VALUE,
   PLAN_IMPLEMENTATION_QUESTION_ID,
   PLAN_IMPLEMENTATION_REQUEST_METHOD,
+  SETUP_CODEX_STEP_ROLE_QUESTION_ID,
+  SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID,
+  SETUP_CODEX_STEP_TASK_QUESTION_ID,
+  SETUP_CONTEXT_ACTION_QUESTION_ID,
+  SETUP_CONTEXT_SOURCES_QUESTION_ID,
   buildApprovalResult,
   buildStopPendingRequestResult,
   isAutoDeniablePermissionRequest,
@@ -580,6 +585,69 @@ export default function runApprovalRequestTests(): void {
   assertEqual(toolCallDetail.canAccept, false, "dynamic tool call cannot accept");
   assertEqual(buildApprovalResult(toolCallRequest, true), null, "dynamic tool call accept result is null");
 
+  const onboardingInputRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-onboarding",
+    namespace: "local",
+    tool: "request_onboarding_input",
+    arguments: {
+      questions: [{
+        id: "first_task",
+        header: "First task",
+        question: "What should Codex help with first?",
+        options: [
+          { label: "Build UI", description: "Start with interface work" },
+          { label: "Fix a bug" },
+        ],
+      }],
+    },
+  });
+  const onboardingInputDetail = pendingRequestDetail(onboardingInputRequest);
+  assertEqual(onboardingInputDetail.title, "", "dynamic onboarding input uses the user-input title fallback");
+  assertEqual(onboardingInputDetail.userInput, true, "dynamic onboarding input should render as user-input");
+  assertEqual(onboardingInputDetail.acceptLabel, "Submit", "dynamic onboarding input submit label");
+  assertEqual(onboardingInputDetail.declineLabel, "Dismiss", "dynamic onboarding input dismiss label");
+  assertEqual(onboardingInputDetail.canAccept, true, "dynamic onboarding input can accept");
+  assertEqual(onboardingInputDetail.questions[0]?.id, "first_task", "dynamic onboarding input question id");
+  assertEqual(onboardingInputDetail.questions[0]?.isOther, true, "dynamic onboarding input forces freeform other");
+  assertEqual(onboardingInputDetail.questions[0]?.otherPlaceholder, "Something else", "dynamic onboarding input custom placeholder");
+  assertDeepEqual(
+    onboardingInputDetail.questions[0]?.options.map((option) => [option.value, option.description]),
+    [["Build UI", "Start with interface work"], ["Fix a bug", ""]],
+    "dynamic onboarding input options",
+  );
+  assertEqual(
+    pendingRequestDetail({
+      ...onboardingInputRequest,
+      params: { ...onboardingInputRequest.params as Record<string, unknown>, tool: "request_onboarding_input", arguments: { questions: [] } },
+    }).canAccept,
+    false,
+    "malformed onboarding input should remain unsupported instead of inventing answers",
+  );
+  assertDeepEqual(
+    buildApprovalResult(onboardingInputRequest, true, { first_task: ["  Write tests  "] }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"answers\":{\"first_task\":{\"answers\":[\"Write tests\"]}}}",
+      }],
+    },
+    "dynamic onboarding input submit result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(onboardingInputRequest, false),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"answers\":{}}",
+      }],
+    },
+    "dynamic onboarding input dismiss result",
+  );
+
   const optionPickerRequest = request("item/tool/call", {
     threadId: "thread-1",
     turnId: "turn-1",
@@ -652,7 +720,8 @@ export default function runApprovalRequestTests(): void {
   assertEqual(setupContextDetail.acceptLabel, "Continue", "dynamic setup context picker continue label");
   assertEqual(setupContextDetail.declineLabel, "Skip", "dynamic setup context picker skip label");
   assertEqual(setupContextDetail.canAccept, true, "dynamic setup context picker can accept");
-  assertEqual(setupContextDetail.setupContextPicker?.canSelectSources, false, "setup context source selection stays host-gated");
+  assertEqual(setupContextDetail.setupContextPicker?.canSelectSources, false, "setup context without sources disables selection");
+  assertDeepEqual(setupContextDetail.setupContextPicker?.sources, [], "setup context without sources has an empty source list");
   assertDeepEqual(
     buildApprovalResult(setupContextRequest, true),
     {
@@ -689,6 +758,78 @@ export default function runApprovalRequestTests(): void {
     "dynamic setup context picker dismiss result",
   );
 
+  const sourceBackedSetupContextRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-4",
+    tool: "setup_codex_context_picker",
+    arguments: {
+      canSelectSources: true,
+      sources: [
+        { id: "google-drive", label: "Google Drive", description: "Find launch docs", connected: true },
+        { id: "slack", label: "Slack", description: "Read decisions" },
+        { id: "gmail", displayName: "Gmail", description: "Search email", is_connected: false },
+        { id: "slack", label: "Duplicate Slack" },
+        { id: "", label: "No id" },
+      ],
+      defaultSelectedSourceIds: ["slack", "missing-source"],
+    },
+  });
+  const sourceBackedSetupContextDetail = pendingRequestDetail(sourceBackedSetupContextRequest);
+  assertEqual(sourceBackedSetupContextDetail.setupContextPicker?.canSelectSources, true, "setup context with sources enables selection");
+  assertDeepEqual(
+    sourceBackedSetupContextDetail.setupContextPicker?.sources,
+    [
+      { id: "google-drive", label: "Google Drive", description: "Find launch docs", connected: true },
+      { id: "slack", label: "Slack", description: "Read decisions", connected: false },
+      { id: "gmail", label: "Gmail", description: "Search email", connected: false },
+    ],
+    "setup context source parser should normalize and de-duplicate source rows",
+  );
+  assertDeepEqual(
+    sourceBackedSetupContextDetail.setupContextPicker?.defaultSelectedSourceIds,
+    ["google-drive", "slack"],
+    "setup context should default connected and explicitly selected valid sources",
+  );
+  assertDeepEqual(
+    buildApprovalResult(sourceBackedSetupContextRequest, true),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"continue\",\"selectedSources\":[\"google-drive\",\"slack\"]}",
+      }],
+    },
+    "dynamic setup context picker should return default selected sources",
+  );
+  assertDeepEqual(
+    buildApprovalResult(sourceBackedSetupContextRequest, true, {
+      [SETUP_CONTEXT_SOURCES_QUESTION_ID]: ["gmail", "missing-source", "gmail"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"continue\",\"selectedSources\":[\"google-drive\",\"gmail\"]}",
+      }],
+    },
+    "dynamic setup context picker should return connected and sanitized selected sources",
+  );
+  assertDeepEqual(
+    buildApprovalResult(sourceBackedSetupContextRequest, true, {
+      "__setupCodexContextPicker.action": ["skip"],
+      [SETUP_CONTEXT_SOURCES_QUESTION_ID]: ["gmail"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"skip\",\"selectedSources\":[]}",
+      }],
+    },
+    "dynamic setup context picker should omit selected sources when skipped",
+  );
+
   const nativeSetupContextRequest = request("item/tool/requestSetupCodexContextPicker", {
     threadId: "thread-1",
     turnId: "turn-1",
@@ -698,6 +839,175 @@ export default function runApprovalRequestTests(): void {
     { action: "continue", selectedSources: [] },
     "native setup context picker should return the direct Desktop response shape",
   );
+
+  const setupCodexRoleStepRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-setup-role",
+    tool: "setup_codex_step",
+    arguments: { step: "role" },
+  });
+  const setupCodexRoleDetail = pendingRequestDetail(setupCodexRoleStepRequest);
+  assertEqual(setupCodexRoleDetail.title, "What type of work do you do?", "setup_codex_step role title");
+  assertEqual(setupCodexRoleDetail.acceptLabel, "Continue", "setup_codex_step role continue label");
+  assertEqual(setupCodexRoleDetail.questions[0]?.id, SETUP_CODEX_STEP_ROLE_QUESTION_ID, "setup_codex_step role question id");
+  assertEqual(setupCodexRoleDetail.questions[0]?.kind, "multiSelect", "setup_codex_step role allows multiple roles");
+  assertDeepEqual(
+    setupCodexRoleDetail.questions[0]?.options.map((option) => option.value),
+    [
+      "engineering",
+      "data_science",
+      "product_management",
+      "design",
+      "marketing",
+      "sales",
+      "finance",
+      "operations",
+      "people_hr",
+      "legal",
+      "student",
+      "something_else",
+    ],
+    "setup_codex_step role options follow Desktop role order",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupCodexRoleStepRequest, true, {
+      [SETUP_CODEX_STEP_ROLE_QUESTION_ID]: ["engineering", "missing", "student", "engineering"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"submit\",\"selectedRoles\":[\"engineering\",\"student\"]}",
+      }],
+    },
+    "setup_codex_step role submit result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupCodexRoleStepRequest, false),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"dismiss\",\"selectedRoles\":[]}",
+      }],
+    },
+    "setup_codex_step role dismiss result",
+  );
+
+  const setupCodexTaskStepRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-setup-task",
+    tool: "setup_codex_step",
+    arguments: "{\"step\":\"task\"}",
+  });
+  const setupCodexTaskDetail = pendingRequestDetail(setupCodexTaskStepRequest);
+  assertEqual(setupCodexTaskDetail.userInput, true, "setup_codex_step task renders as user-input");
+  assertEqual(setupCodexTaskDetail.questions[0]?.id, SETUP_CODEX_STEP_TASK_QUESTION_ID, "setup_codex_step task question id");
+  assertEqual(setupCodexTaskDetail.questions[0]?.header, "First task", "setup_codex_step task header");
+  assertEqual(setupCodexTaskDetail.questions[0]?.kind, "singleSelect", "setup_codex_step task uses Desktop task suggestions");
+  assertEqual(setupCodexTaskDetail.questions[0]?.isOther, true, "setup_codex_step task keeps the freeform other input");
+  assertDeepEqual(setupCodexTaskDetail.questions[0]?.defaultAnswers, [], "setup_codex_step task should not default-select a suggestion");
+  assertEqual(setupCodexTaskDetail.questions[0]?.otherPlaceholder, "Something else", "setup_codex_step task uses Desktop freeform placeholder");
+  assertDeepEqual(
+    setupCodexTaskDetail.questions[0]?.options.map((option) => option.value),
+    ["Summarize updates", "Draft follow-ups", "Prep for meetings"],
+    "setup_codex_step task suggestions fall back to the Desktop other-role prompts",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupCodexTaskStepRequest, true, {
+      [SETUP_CODEX_STEP_TASK_QUESTION_ID]: ["  Debug the failing test  "],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"submit\",\"answers\":{\"first_task\":{\"answers\":[\"Debug the failing test\"]}}}",
+      }],
+    },
+    "setup_codex_step task submit result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupCodexTaskStepRequest, true, {
+      [SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID]: ["skip"],
+      [SETUP_CODEX_STEP_TASK_QUESTION_ID]: ["Summarize updates"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"skip\",\"answers\":{}}",
+      }],
+    },
+    "setup_codex_step task skip result should not submit selected suggestions",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupCodexTaskStepRequest, false),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"dismiss\",\"answers\":{}}",
+      }],
+    },
+    "setup_codex_step task dismiss result",
+  );
+
+  const setupCodexContextStepRequest = request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-setup-context",
+    tool: "setup_codex_step",
+    arguments: { step: "context" },
+  });
+  const setupCodexContextDetail = pendingRequestDetail(setupCodexContextStepRequest);
+  assertEqual(setupCodexContextDetail.title, "Where can we pull context from?", "setup_codex_step context title");
+  assertEqual(setupCodexContextDetail.setupContextPicker?.canSelectSources, false, "setup_codex_step context has no Forge-owned sources");
+  assertDeepEqual(
+    buildApprovalResult(setupCodexContextStepRequest, true),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"continue\",\"selectedSources\":[]}",
+      }],
+    },
+    "setup_codex_step context continue result",
+  );
+  assertDeepEqual(
+    buildApprovalResult(setupCodexContextStepRequest, true, {
+      [SETUP_CONTEXT_ACTION_QUESTION_ID]: ["skip"],
+    }),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"skip\",\"selectedSources\":[]}",
+      }],
+    },
+    "setup_codex_step context skip result",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(setupCodexContextStepRequest),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"action\":\"dismiss\",\"selectedSources\":[]}",
+      }],
+    },
+    "Stop all should dismiss setup_codex_step context requests",
+  );
+
+  const setupCodexCompleteStepDetail = pendingRequestDetail(request("item/tool/call", {
+    threadId: "thread-1",
+    turnId: "turn-1",
+    callId: "call-setup-complete",
+    tool: "setup_codex_step",
+    arguments: { step: "complete" },
+  }));
+  assertEqual(setupCodexCompleteStepDetail.canAccept, false, "setup_codex_step complete should remain unsupported");
 
   const tokenRefreshRequest = request("account/chatgptAuthTokens/refresh", { accountId: "acct-1" });
   const tokenRefreshDetail = pendingRequestDetail(tokenRefreshRequest);
@@ -742,6 +1052,17 @@ export default function runApprovalRequestTests(): void {
       }],
     },
     "Stop all should dismiss dynamic setup context pickers",
+  );
+  assertDeepEqual(
+    buildStopPendingRequestResult(onboardingInputRequest),
+    {
+      success: true,
+      contentItems: [{
+        type: "inputText",
+        text: "{\"answers\":{}}",
+      }],
+    },
+    "Stop all should dismiss dynamic onboarding input with an empty answer wrapper",
   );
   assertEqual(buildStopPendingRequestResult(unknownRequest), null, "Stop all unsupported request result is null");
 

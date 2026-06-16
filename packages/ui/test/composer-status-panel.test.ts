@@ -6,6 +6,7 @@ export default function runComposerStatusPanelTests(): void {
   fallsBackWhenStatusDataIsUnavailable();
   formatsDesktopModelSections();
   formatsMultipleDesktopRateLimitBuckets();
+  sortsRateLimitWindowsByProtocolDuration();
 }
 
 function formatsDesktopStatusRows(): void {
@@ -109,6 +110,37 @@ function formatsMultipleDesktopRateLimitBuckets(): void {
   );
 }
 
+function sortsRateLimitWindowsByProtocolDuration(): void {
+  const rows = composerStatusRows({
+    threadId: null,
+    tokensUsed: null,
+    contextWindow: null,
+    rateLimits: {
+      ...rateLimitFixture(),
+      primary: {
+        usedPercent: 10,
+        windowDurationMins: 30 * 24 * 60,
+        resetsAt: null,
+      },
+      secondary: {
+        usedPercent: 20,
+        windowDurationMins: 29 * 24 * 60,
+        resetsAt: null,
+      },
+    },
+  });
+
+  assertDeepEqual(
+    rows,
+    [
+      { id: "rate-limit-section:codex", label: "Codex limit:", value: null, section: true },
+      { id: "rate-limit:codex:secondary", label: "1mo limit:", value: "80% left (reset time unavailable)", rateLimitPercent: 80 },
+      { id: "rate-limit:codex:primary", label: "1mo limit:", value: "90% left (reset time unavailable)", rateLimitPercent: 90 },
+    ],
+    "composer status rows should sort same-label rate-limit windows by protocol window duration",
+  );
+}
+
 function rateLimitFixture(): RateLimitSnapshot {
   return {
     limitId: "codex",
@@ -128,6 +160,7 @@ function rateLimitFixture(): RateLimitSnapshot {
       unlimited: false,
       balance: "12.50",
     },
+    individualLimit: null,
     planType: "pro",
     rateLimitReachedType: null,
   };

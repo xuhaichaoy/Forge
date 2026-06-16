@@ -4,7 +4,9 @@ import { formatError } from "../lib/format";
 import { openExternalUrl } from "../lib/tauri-host";
 import {
   OPTION_PICKER_ACTION_QUESTION_ID,
+  SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID,
   SETUP_CONTEXT_ACTION_QUESTION_ID,
+  SETUP_CONTEXT_SOURCES_QUESTION_ID,
   pendingRequestDetail,
   type PendingRequestDetail,
   type PendingRequestQuestion,
@@ -50,6 +52,10 @@ interface PendingRequestApprovalController {
     action: "submit" | "skip" | "dismiss",
     nextAnswers?: Record<string, string[]>,
   ) => void;
+  respondSetupTaskPicker: (
+    action: "submit" | "skip" | "dismiss",
+    nextAnswers?: Record<string, string[]>,
+  ) => void;
   respondSetupContextPicker: (action: "continue" | "skip" | "dismiss") => void;
 }
 
@@ -73,9 +79,7 @@ export function usePendingRequestApprovalController({
     return pendingRequestDetail(request);
   }, [request, locale]);
   const [externalUrlOpened, setExternalUrlOpened] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(detail.questions.map((question) => [question.id, defaultAnswers(question)])),
-  );
+  const [answers, setAnswers] = useState<Record<string, string[]>>(() => initialAnswers(detail));
   const [responding, setResponding] = useState(false);
   const respondingRef = useRef(false);
   const [questionIndex, setQuestionIndex] = useState(0);
@@ -84,6 +88,7 @@ export function usePendingRequestApprovalController({
   const isLastQuestion = questionIndex >= totalQuestions - 1;
   const currentQuestion = detail.questions[questionIndex] ?? null;
   const isOptionPicker = detail.optionPicker != null;
+  const isSetupTaskPicker = detail.setupTaskPicker != null;
   const isSetupContextPicker = detail.setupContextPicker != null;
 
   const goToQuestion = (next: number) => {
@@ -157,6 +162,13 @@ export function usePendingRequestApprovalController({
     respond(true, { ...nextAnswers, [OPTION_PICKER_ACTION_QUESTION_ID]: [action] });
   };
 
+  const respondSetupTaskPicker = (
+    action: "submit" | "skip" | "dismiss",
+    nextAnswers: Record<string, string[]> = answers,
+  ) => {
+    respond(action !== "dismiss", { ...nextAnswers, [SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID]: [action] });
+  };
+
   const respondSetupContextPicker = (action: "continue" | "skip" | "dismiss") => {
     respond(true, { ...answers, [SETUP_CONTEXT_ACTION_QUESTION_ID]: [action] });
   };
@@ -169,6 +181,8 @@ export function usePendingRequestApprovalController({
       goToQuestion(questionIndex + 1);
     } else if (action === "submit" && isOptionPicker && canSubmitWithAnswers(nextAnswers)) {
       respondOptionPicker("submit", nextAnswers);
+    } else if (action === "submit" && isSetupTaskPicker && canSubmitWithAnswers(nextAnswers)) {
+      respondSetupTaskPicker("submit", nextAnswers);
     } else if (action === "submit" && canSubmitWithAnswers(nextAnswers)) {
       respond(true, nextAnswers);
     }
@@ -181,6 +195,8 @@ export function usePendingRequestApprovalController({
       event.preventDefault();
       if (isOptionPicker) {
         respondOptionPicker("dismiss");
+      } else if (isSetupTaskPicker) {
+        respondSetupTaskPicker("dismiss");
       } else if (isSetupContextPicker) {
         respondSetupContextPicker("dismiss");
       } else {
@@ -226,6 +242,8 @@ export function usePendingRequestApprovalController({
         goToQuestion(questionIndex + 1);
       } else if (action === "submit" && isOptionPicker && canSubmitWithAnswers(nextAnswers)) {
         respondOptionPicker("submit", nextAnswers);
+      } else if (action === "submit" && isSetupTaskPicker && canSubmitWithAnswers(nextAnswers)) {
+        respondSetupTaskPicker("submit", nextAnswers);
       } else if (action === "submit" && canSubmitWithAnswers(nextAnswers)) {
         respond(true, nextAnswers);
       }
@@ -243,6 +261,8 @@ export function usePendingRequestApprovalController({
         goToQuestion(questionIndex + 1);
       } else if (isOptionPicker) {
         respondOptionPicker("submit");
+      } else if (isSetupTaskPicker) {
+        respondSetupTaskPicker("submit");
       } else if (isSetupContextPicker) {
         respondSetupContextPicker("continue");
       } else {
@@ -268,14 +288,27 @@ export function usePendingRequestApprovalController({
     handleSingleSelectOption,
     respond,
     respondOptionPicker,
+    respondSetupTaskPicker,
     respondSetupContextPicker,
   };
 }
 
 function defaultAnswers(question: PendingRequestQuestion): string[] {
   if (question.defaultAnswers.length > 0) return question.defaultAnswers;
-  if (question.kind === "singleSelect" && question.options.length > 0) return [question.options[0].value];
+  if (question.kind === "singleSelect" && question.options.length > 0 && !question.isOther) {
+    return [question.options[0].value];
+  }
   return [];
+}
+
+function initialAnswers(detail: PendingRequestDetail): Record<string, string[]> {
+  const answers = Object.fromEntries(
+    detail.questions.map((question) => [question.id, defaultAnswers(question)]),
+  );
+  if (detail.setupContextPicker) {
+    answers[SETUP_CONTEXT_SOURCES_QUESTION_ID] = detail.setupContextPicker.defaultSelectedSourceIds;
+  }
+  return answers;
 }
 
 function answerPayload(
@@ -288,8 +321,14 @@ function answerPayload(
   if (detail.optionPicker && answers[OPTION_PICKER_ACTION_QUESTION_ID]) {
     payload[OPTION_PICKER_ACTION_QUESTION_ID] = answers[OPTION_PICKER_ACTION_QUESTION_ID];
   }
+  if (detail.setupTaskPicker && answers[SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID]) {
+    payload[SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID] = answers[SETUP_CODEX_STEP_TASK_ACTION_QUESTION_ID];
+  }
   if (detail.setupContextPicker && answers[SETUP_CONTEXT_ACTION_QUESTION_ID]) {
     payload[SETUP_CONTEXT_ACTION_QUESTION_ID] = answers[SETUP_CONTEXT_ACTION_QUESTION_ID];
+  }
+  if (detail.setupContextPicker && answers[SETUP_CONTEXT_SOURCES_QUESTION_ID]) {
+    payload[SETUP_CONTEXT_SOURCES_QUESTION_ID] = answers[SETUP_CONTEXT_SOURCES_QUESTION_ID];
   }
   return payload;
 }

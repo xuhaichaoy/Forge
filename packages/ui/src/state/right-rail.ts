@@ -74,10 +74,8 @@ export interface RightRailAutomationInput {
   status?: string | null;
 }
 
-// codex: local-conversation-thread-*.js browser-tabs — single browser tab
-// summary (browser-use summary) with a body rendering title + displayUrl
-// two-line row plus shimmer-on-active. Forge collapses the multi-tab list
-// into the one-active-tab summary used by Desktop.
+// codex: local-conversation-thread-*.js browser-tabs — browser-use summaries
+// with a body rendering title + displayUrl two-line row plus shimmer-on-active.
 export interface RightRailBrowserInput {
   title: string;
   displayUrl: string;
@@ -101,10 +99,11 @@ export interface RightRailProjectionInput {
   sideChats?: RailEntry[];
   backgroundAgents?: RailEntry[];
   backgroundTerminals?: RailEntry[];
-  // codex: local-conversation-thread-*.js browser-tabs — replaces the legacy
-  // pre-built RailEntry[] with the structured single-tab summary that mirrors
-  // Desktop's browser-tab row body.
+  // codex: local-conversation-thread-*.js browser-tabs — structured summaries
+  // that mirror Desktop's browser-tab row body. `browser` is retained as the
+  // single-summary compatibility path; `browserTabs` is the Desktop multi-list.
   browser?: RightRailBrowserInput;
+  browserTabs?: RightRailBrowserInput[];
   sources: RailEntry[];
 }
 
@@ -327,18 +326,20 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
     ));
   }
 
-  // codex: local-conversation-thread-*.js browser-tabs — single-entry section
-  // with an active-spinner / Globe icon and shimmer-on-active title. Forge
-  // captures the active/idle bit in `entry.status` so the renderer can route
-  // it through the existing browser-row icon logic and add the shimmer class.
-  if (input.browser) {
-    const entry = browserRailEntry(input.browser);
+  // codex: local-conversation-thread-*.js browser-tabs — maps every
+  // browserUseSummaries item into a Browser section row and uses list length
+  // for the title suffix/count. Forge captures the active/idle bit in
+  // `entry.status` so the renderer can route it through the existing
+  // browser-row icon logic and add the shimmer class.
+  const browserInputs = input.browserTabs ?? (input.browser ? [input.browser] : []);
+  if (browserInputs.length > 0) {
+    const entries = browserInputs.map(browserRailEntry);
     sections.push({
       id: "browser",
       title: railSectionTitle("browser"),
-      count: 1,
-      entries: [entry],
-      allEntries: [entry],
+      count: entries.length,
+      entries,
+      allEntries: entries,
       remainingCount: 0,
       canToggle: false,
     });

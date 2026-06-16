@@ -4,7 +4,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { CommandPanelEntryList } from "./command-panel-entry-list";
+import { CommandPanelEntryList, commandPanelEntryOptionId } from "./command-panel-entry-list";
 import {
   CommandPanelChatCreateEmptyState,
   filterCommandEntries,
@@ -36,10 +36,17 @@ export interface CommandPanelProps {
 export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, onSearchQueryChange }: CommandPanelProps) {
   const { formatMessage } = useForgeIntl();
   const [query, setQuery] = useState("");
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
   const visibleEntries = useMemo(
     () => panel.panel === "files" ? panel.entries : filterCommandEntries(panel.entries, query),
     [panel.entries, panel.panel, query],
   );
+  const keyboardEntries = useMemo(
+    () => onSelectEntry ? visibleEntries.filter((entry) => entry.action && !entry.disabled) : [],
+    [onSelectEntry, visibleEntries],
+  );
+  const commandListId = "hc-command-panel-listbox";
+  const activeOptionId = activeEntryId ? commandPanelEntryOptionId(activeEntryId) : undefined;
   const showSearchInput = commandPanelHasSearchInput(panel);
   const showChatCreateEmptyState = commandPanelShouldShowChatCreateEmptyState(panel, query);
   // codex: app-main-DG-Mf4Wj.js — cmdk Hd atom (root/chats/files). The
@@ -49,7 +56,14 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
   const subMode = commandPanelSubModeFromPanel(panel);
   useEffect(() => {
     setQuery("");
+    setActiveEntryId(null);
   }, [panel.panel, panel.title]);
+  useEffect(() => {
+    setActiveEntryId((current) => {
+      if (current && keyboardEntries.some((entry) => entry.id === current)) return current;
+      return keyboardEntries[0]?.id ?? null;
+    });
+  }, [keyboardEntries]);
   // codex: app-main-DG-Mf4Wj.js — Esc XD(t),t.set(eu,!1) 两段式。First Esc
   // clears the active query / drops out of a sub-mode (Codex closes any
   // active list filter and returns to root). Second Esc closes the dialog.
@@ -75,6 +89,37 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
     // intent via onSelectAction({ type: "runSlashCommand" }) callers if
     // needed; the immediate clear above is enough to match the visible
     // first-Esc behavior.
+  };
+  const selectActiveEntry = (entryId: string | null) => {
+    const entry = entryId ? keyboardEntries.find((candidate) => candidate.id === entryId) : keyboardEntries[0];
+    if (!entry) return false;
+    onSelectEntry?.(entry);
+    return true;
+  };
+  const moveActiveEntry = (direction: 1 | -1) => {
+    if (keyboardEntries.length === 0) return false;
+    setActiveEntryId((current) => {
+      const currentIndex = current ? keyboardEntries.findIndex((entry) => entry.id === current) : -1;
+      const fallbackIndex = direction > 0 ? -1 : 0;
+      const nextIndex = (currentIndex >= 0 ? currentIndex : fallbackIndex) + direction;
+      const wrappedIndex = (nextIndex + keyboardEntries.length) % keyboardEntries.length;
+      return keyboardEntries[wrappedIndex]?.id ?? null;
+    });
+    return true;
+  };
+  const handleSearchInputKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!moveActiveEntry(event.key === "ArrowDown" ? 1 : -1)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.key === "Enter") {
+      if (!selectActiveEntry(activeEntryId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
   };
   return (
     <div className="hc-settings-backdrop" role="presentation" onMouseDown={onClose}>
@@ -126,14 +171,19 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
           <label className="hc-command-panel-search">
             <span>{formatMessage({ id: "hc.sidebar.search", defaultMessage: "Search" })}</span>
             <input
+              aria-activedescendant={activeOptionId}
+              aria-controls={commandListId}
+              aria-expanded="true"
               autoFocus
               placeholder={commandPanelSubModePlaceholder(subMode, formatMessage)}
+              role="combobox"
               value={query}
               onChange={(event) => {
                 const nextQuery = event.target.value;
                 setQuery(nextQuery);
                 onSearchQueryChange?.(nextQuery);
               }}
+              onKeyDown={handleSearchInputKeyDown}
             />
           </label>
         )}
@@ -151,7 +201,10 @@ export function CommandPanel({ panel, onClose, onSelectEntry, onSelectAction, on
         )}
 
         <CommandPanelEntryList
+          activeEntryId={activeEntryId}
           entries={visibleEntries}
+          listId={commandListId}
+          onActiveEntryChange={setActiveEntryId}
           onSelectAction={onSelectAction}
           onSelectEntry={onSelectEntry}
           subMode={subMode}

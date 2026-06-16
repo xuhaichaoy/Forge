@@ -30,6 +30,7 @@ import {
   docToPromptText,
 } from "./prompt-editor-serialization";
 import { PromptEditorEmitter } from "./prompt-editor-events";
+import { promptRichLinkAttributesFromUrl } from "./prompt-editor-link-utils";
 import {
   insertPlainTextAtSelection,
   insertPromptTextAtSelection,
@@ -37,6 +38,8 @@ import {
 } from "./prompt-editor-insertion";
 
 export type PromptEditorEnterBehavior = "enter" | "newline" | "cmdIfMultiline";
+
+const LARGE_PASTED_TEXT_LENGTH = 5000;
 
 export class PromptEditorController {
   readonly eventEmitter: PromptEditorEmitter;
@@ -127,6 +130,15 @@ export class PromptEditorController {
         if (pastedFiles.imageFiles.length > 0 || pastedFiles.otherFiles.length > 0) return true;
         const text = event.clipboardData?.getData("text/plain");
         if (text == null || text.length === 0) return false;
+        if (text.length >= LARGE_PASTED_TEXT_LENGTH && this.eventEmitter.emit("pasted-text", text)) {
+          return true;
+        }
+        const richLinkAttrs = promptRichLinkAttributesFromUrl(text);
+        if (richLinkAttrs) {
+          const node = editorView.state.schema.nodes.richLink.create(richLinkAttrs);
+          safeDispatchEditorTransaction(editorView, editorView.state.tr.replaceSelectionWith(node).scrollIntoView());
+          return true;
+        }
         if (isPromptText(text)) {
           insertPromptTextAtSelection(editorView, text);
           return true;
@@ -225,6 +237,14 @@ export class PromptEditorController {
 
   removePastedImagesHandler(listener: (files: File[]) => void): void {
     this.eventEmitter.removeListener("pasted-images", listener);
+  }
+
+  addPastedTextHandler(listener: (text: string) => void): void {
+    this.eventEmitter.addListener("pasted-text", listener);
+  }
+
+  removePastedTextHandler(listener: (text: string) => void): void {
+    this.eventEmitter.removeListener("pasted-text", listener);
   }
 
   focus(): void {

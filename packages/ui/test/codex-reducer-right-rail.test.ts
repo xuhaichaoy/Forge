@@ -229,6 +229,25 @@ function storesTurnDiffsAndClearsThemWhenThreadsAreRemoved(): void {
     undefined,
     "thread/archived should clear turn plan cache for that thread",
   );
+
+  state = stateWithThread("thread-delete", "thread-keep");
+  state = reduceNotification(state, {
+    method: "turn/diff/updated",
+    params: {
+      threadId: "thread-delete",
+      turnId: "turn-1",
+      diff: "diff --git a/deleted b/deleted",
+    },
+  });
+  state = reduceNotification(state, {
+    method: "thread/deleted",
+    params: { threadId: "thread-delete" },
+  });
+  assertEqual(
+    state.threadsRuntime["thread-delete"],
+    undefined,
+    "thread/deleted should clear runtime cache for that thread",
+  );
 }
 
 function ignoresUnknownNotifications(): void {
@@ -420,6 +439,7 @@ function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
     id,
     sessionId: id,
     forkedFromId: null,
+    parentThreadId: null,
     preview: "",
     ephemeral: false,
     modelProvider: "openai",

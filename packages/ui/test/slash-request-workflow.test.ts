@@ -211,6 +211,7 @@ async function logsOutThroughAccountStateRefresh(): Promise<void> {
     primary: { usedPercent: 11, windowDurationMins: 300, resetsAt: null },
     secondary: null,
     credits: { hasCredits: true, unlimited: false, balance: "12.50" },
+    individualLimit: null,
     planType: "pro",
     rateLimitReachedType: null,
   };

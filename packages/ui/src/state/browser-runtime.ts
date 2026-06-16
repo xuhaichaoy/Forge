@@ -216,9 +216,22 @@ export function projectBrowserRailInput(
   snapshot: BrowserRuntimeSnapshot | BrowserRuntimeStatus | null | undefined,
 ): RightRailBrowserInput | undefined {
   if (!snapshot?.available) return undefined;
-  const tab = activeBrowserRuntimeTab(snapshot);
-  if (!tab || !tab.open) return undefined;
-  if (!browserTabHasDisplayableUrl(tab)) return undefined;
+  const activeTab = activeBrowserRuntimeTab(snapshot);
+  if (activeTab?.open && browserTabHasDisplayableUrl(activeTab)) {
+    return browserRailInputFromTab(activeTab);
+  }
+  return projectBrowserRailInputs(snapshot)[0];
+}
+
+export function projectBrowserRailInputs(
+  snapshot: BrowserRuntimeSnapshot | BrowserRuntimeStatus | null | undefined,
+): RightRailBrowserInput[] {
+  if (!snapshot?.available) return [];
+  const tabs = Array.isArray(snapshot.tabs) ? snapshot.tabs : [];
+  return tabs.filter((tab) => tab.open && browserTabHasDisplayableUrl(tab)).map(browserRailInputFromTab);
+}
+
+function browserRailInputFromTab(tab: BrowserRuntimeTab): RightRailBrowserInput {
   return {
     tabId: tab.tabId,
     title: browserTabTitle(tab),

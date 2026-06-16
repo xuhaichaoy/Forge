@@ -309,8 +309,15 @@ export function useForgeAppShellCommands(args: ForgeAppShellCommandsArgs) {
         case "openFolder":
           void openExistingWorkspaceFolder();
           return;
+        case "openCommandMenu":
         case "search":
           openCommandMenu();
+          return;
+        case "searchChats":
+          openChatSearchPanel();
+          return;
+        case "searchFiles":
+          openFileSearchPanel();
           return;
         case "settings":
           void loadSettingsPanel("general");
@@ -336,7 +343,16 @@ export function useForgeAppShellCommands(args: ForgeAppShellCommandsArgs) {
       cancelled = true;
       unlisten?.();
     };
-  }, [createWorkbenchThread, dispatch, loadSettingsPanel, openCommandMenu, openDeepLinkUrl, openExistingWorkspaceFolder]);
+  }, [
+    createWorkbenchThread,
+    dispatch,
+    loadSettingsPanel,
+    openChatSearchPanel,
+    openCommandMenu,
+    openDeepLinkUrl,
+    openExistingWorkspaceFolder,
+    openFileSearchPanel,
+  ]);
 
   // codex threadHeader.openInNewWindow — a window opened via host_open_thread_window
   // injects `window.__HICODEX_INITIAL_THREAD__`; once connected, route to that thread

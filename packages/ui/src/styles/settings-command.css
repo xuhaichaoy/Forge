@@ -998,7 +998,8 @@
 }
 
 .hc-command-panel-row[data-actionable="true"]:hover,
-.hc-command-panel-row[data-actionable="true"]:focus-visible {
+.hc-command-panel-row[data-actionable="true"]:focus-visible,
+.hc-command-panel-row[data-actionable="true"][data-active="true"] {
   background: color-mix(in oklab, #1a1c1f 5%, transparent); /* codex [cmdk-item] hover = list-hover 5% fill (was #f8f5ed + a now-dead border-color; A/B-pending) */
   outline: none;
 }

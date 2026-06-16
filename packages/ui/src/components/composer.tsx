@@ -201,6 +201,7 @@ export function Composer({
 
   const {
     addAttachments,
+    addPastedText,
     addTransferFiles,
     dropActive,
     transferHandlers,
@@ -395,6 +396,7 @@ export function Composer({
               submitTitle={submitTitle}
               onInputChange={updateInput}
               onTransferFiles={addTransferFiles}
+              onPastedText={addPastedText}
               onSubmit={() => {
                 if (!submitState.disabled && submitState.submitButtonMode !== "stop") sendComposer();
               }}
