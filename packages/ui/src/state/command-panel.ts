@@ -32,6 +32,7 @@ export type {
 } from "./command-panel-state";
 export {
   commandPanelThreadGroup,
+  isChatSearchPanel,
   isAppBackedPanel,
   isAppBackedPanelState,
   isCommandMenuPanel,

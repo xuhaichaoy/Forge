@@ -1,6 +1,7 @@
 import type { CSSProperties, Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Thread } from "@forge/codex-protocol";
+import type { ThreadSearchResult } from "@forge/codex-protocol/generated/v2/ThreadSearchResult";
 import type { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { formatError } from "../lib/format";
 import { claimAppConnectOAuthCallback } from "../state/app-connect-oauth";
@@ -18,6 +19,7 @@ import {
   type CommandPanelOptions,
   type CommandPanelState,
 } from "../state/command-panel";
+import { COMMAND_PANEL_CHAT_SEARCH_LIMIT as CHAT_SEARCH_LIMIT } from "../state/command-panel-chat-search";
 import {
   composerPlaceholderText,
   type ComposerAttachment,
@@ -44,6 +46,7 @@ import {
 import type { PendingWorktree } from "../state/worktrees";
 import type { ComposerWorkMode } from "../state/worktrees";
 import { useBrowserRuntime } from "./use-browser-runtime";
+import { useCommandPanelChatSearch } from "./use-command-panel-chat-search";
 import { useCommandPanelFileSearch } from "./use-command-panel-file-search";
 import { useFilePreviewPanelLayout } from "./use-file-preview-panel-layout";
 import { useHooksReview } from "./use-hooks-review";
@@ -329,25 +332,43 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
     setSettingsPanelState(createCommandPanelState(panel, options));
   }, [setSettingsPanelState]);
 
-  const openChatSearchPanel = useCallback(() => {
+  const chatSearchEntries = useCallback((limit = CHAT_SEARCH_LIMIT): CommandPanelEntry[] => {
     const visibleThreads = projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey });
     const orderedThreads = orderCommandPanelThreadsByPinned(visibleThreads, pinnedThreadIds);
+    return orderedThreads.slice(0, limit).map((thread): CommandPanelEntry => ({
+      id: `thread:${thread.id}`,
+      title: threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null),
+      kind: "thread",
+      ...commandPanelThreadGroup(thread.id, pinnedThreadIds),
+      meta: threadProjectLabel(thread),
+      status: sidebarThreadRelativeTime(thread),
+      action: { type: "selectThread", threadId: thread.id },
+    }));
+  }, [pinnedThreadIds, sidebarPreferences.sortKey, state.threads, state.threadsRuntime]);
+
+  const projectThreadSearchResultEntries = useCallback((results: ThreadSearchResult[]): CommandPanelEntry[] => (
+    results.map(({ thread, snippet }): CommandPanelEntry => ({
+      id: `thread-search:${thread.id}`,
+      title: threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null),
+      kind: "thread",
+      ...commandPanelThreadGroup(thread.id, pinnedThreadIds),
+      meta: threadProjectLabel(thread),
+      status: sidebarThreadRelativeTime(thread),
+      details: snippet ? [snippet] : undefined,
+      action: { type: "selectThread", threadId: thread.id },
+    }))
+  ), [pinnedThreadIds, state.threadsRuntime]);
+
+  const openChatSearchPanel = useCallback(() => {
+    const entries = chatSearchEntries();
     openCommandPanel("generic", {
-      status: "ready",
+      status: entries.length > 0 ? "ready" : "empty",
       title: "Search chats",
       message: "",
-      entries: orderedThreads.map((thread): CommandPanelEntry => ({
-        id: `thread:${thread.id}`,
-        title: threadTitle(thread, state.threadsRuntime[thread.id]?.items ?? null),
-        kind: "thread",
-        ...commandPanelThreadGroup(thread.id, pinnedThreadIds),
-        meta: threadProjectLabel(thread),
-        status: sidebarThreadRelativeTime(thread),
-        action: { type: "selectThread", threadId: thread.id },
-      })),
+      entries,
       searchable: true,
     });
-  }, [openCommandPanel, pinnedThreadIds, sidebarPreferences.sortKey, state.threads, state.threadsRuntime]);
+  }, [chatSearchEntries, openCommandPanel]);
 
   const commandMenuEntries = useCallback((): CommandPanelEntry[] => {
     const visibleThreads = projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey });
@@ -420,6 +441,16 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
     fileSearchControllerRef,
     setCommandPanel,
     workspace,
+  });
+  const { searchChatsFromCommandPanel } = useCommandPanelChatSearch({
+    client,
+    commandPanel,
+    dispatch,
+    ensureConnected,
+    loadedChatEntries: chatSearchEntries,
+    projectSearchResults: projectThreadSearchResultEntries,
+    setCommandPanel,
+    sortKey: sidebarPreferences.sortKey,
   });
 
   const loadSettingsPanel = useCallback(async (
@@ -503,6 +534,7 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
     reviewHooks,
     rightRailMode,
     rightRailSections,
+    searchChatsFromCommandPanel,
     searchCommandMenuFromPanel,
     searchFilesFromCommandPanel,
     searchWorkspaceFilesForFilesTab,

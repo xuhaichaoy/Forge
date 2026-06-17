@@ -12,6 +12,7 @@ import {
   isCrossAccountProviderSwitch,
 } from "../model/model-provider-switch";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
+import type { TerminalTurnSnapshot } from "../state/codex-ui-types";
 // Module-level i18n singleton — these provider-switch errors are built in
 // module-scope helpers that cannot reach the useForgeIntl() hook formatter
 // (aliased: the hook body destructures its own `formatMessage`).
@@ -25,18 +26,24 @@ import {
   type ComposerSubmitState,
 } from "../state/composer-workflow";
 import {
+  INTERRUPTED_STEER_PAUSED_REASON,
   createQueuedFollowUp,
   isQueuedFollowUpDuplicate,
+  pauseQueuedFollowUpsWithReason,
   reorderQueuedFollowUps,
   removeQueuedFollowUp,
+  resumeQueuedFollowUpsWithReason,
   updateQueuedFollowUpStatus,
   type QueuedFollowUp,
 } from "../state/queued-followups";
 import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
   composerModeRequiresUnavailablePlanMode,
+  interruptedTerminalTurnKey,
   selectNextQueuedFollowUp,
   shouldResetCreatedThreadComposerMode,
+  shouldPauseQueuedFollowUpsForInterruptedTerminalTurn,
+  shouldPromptPausedQueueSubmit,
   shouldQueueComposerFollowUp,
   shouldSteerQueuedFollowUp,
   turnStartOptionsFromComposerMode,
@@ -67,12 +74,15 @@ import {
   type TurnStartOptions,
 } from "../state/thread-workflow";
 
+export type PausedQueueSubmitDecision = "clearQueue" | "sendMessage" | "cancel";
+
 export interface UseTurnSubmissionInput {
   activeModelSupportsImageInput: boolean;
   activePendingRequestCount: number;
   activeThread: Thread | null;
   activeThreadGoal: boolean;
   activeThreadId: string | null;
+  activeLatestTerminalTurn: TerminalTurnSnapshot | null;
   activeThreadRunning: boolean;
   activeTurnId: string | null;
   composerGoalMode: boolean;
@@ -86,6 +96,7 @@ export interface UseTurnSubmissionInput {
   includeImageDynamicTool: boolean;
   input: string;
   onRequestGoalReplace?: (objective: string) => void;
+  onRequestPausedQueueSubmit?: (queuedMessageCount: number) => Promise<PausedQueueSubmitDecision>;
   rememberLatestCollaborationMode: (threadId: string, options: TurnStartOptions | null | undefined) => void;
   restartRuntimeForProviderSwitch?: () => Promise<boolean>;
   resetComposerSelectionAfterCreatedThread: (threadId: string) => void;
@@ -99,9 +110,12 @@ export interface UseTurnSubmissionInput {
 
 export interface UseTurnSubmissionResult {
   activeQueuedFollowUps: QueuedFollowUp[];
+  activeQueuedFollowUpsInterrupted: boolean;
   deleteQueuedFollowUp: (message: QueuedFollowUp) => void;
   editQueuedFollowUp: (message: QueuedFollowUp) => void;
+  pauseActiveQueuedFollowUps: () => void;
   reorderQueuedFollowUp: (activeId: string, overId: string) => void;
+  resumeInterruptedQueuedFollowUps: () => void;
   sendQueuedFollowUpNow: (message: QueuedFollowUp) => void;
   sendTurn: (options?: ComposerSendOptions) => Promise<void>;
   startingConversation: boolean;
@@ -152,6 +166,7 @@ export function useTurnSubmission({
   activeThread,
   activeThreadGoal,
   activeThreadId,
+  activeLatestTerminalTurn,
   activeThreadRunning,
   activeTurnId,
   composerGoalMode,
@@ -165,6 +180,7 @@ export function useTurnSubmission({
   includeImageDynamicTool,
   input,
   onRequestGoalReplace,
+  onRequestPausedQueueSubmit,
   rememberLatestCollaborationMode,
   restartRuntimeForProviderSwitch,
   resetComposerSelectionAfterCreatedThread,
@@ -178,11 +194,24 @@ export function useTurnSubmission({
   const { client, dispatch } = useServices();
   const { formatMessage } = useForgeIntl();
   const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
+  const [interruptedQueueThreadIds, setInterruptedQueueThreadIds] = useState<Set<string>>(() => new Set());
   const [startingConversation, setStartingConversation] = useState(false);
   const sendingQueuedFollowUpId = useRef<string | null>(null);
+  const handledInterruptedTerminalTurnKeysRef = useRef<Set<string>>(new Set());
   const latestInputRef = useRef(input);
   const latestComposerAttachmentsRef = useRef(composerAttachments);
   const activeQueuedFollowUps = activeThreadId ? queuedFollowUpsByThread[activeThreadId] ?? [] : [];
+  const activeQueuePausedByTerminalTurn = shouldPauseQueuedFollowUpsForInterruptedTerminalTurn({
+    activeThreadId,
+    handledInterruptedTerminalTurnKeys: handledInterruptedTerminalTurnKeysRef.current,
+    latestTerminalTurn: activeLatestTerminalTurn,
+    queuedFollowUpCount: activeQueuedFollowUps.length,
+  });
+  const activeQueuedFollowUpsInterrupted = Boolean(
+    activeThreadId
+      && activeQueuedFollowUps.length > 0
+      && (interruptedQueueThreadIds.has(activeThreadId) || activeQueuePausedByTerminalTurn),
+  );
   const activeThreadNeedsResume = isThreadStatusNotLoaded(activeThread?.status);
 
   useEffect(() => {
@@ -262,6 +291,63 @@ export function useTurnSubmission({
       return changed ? next : current;
     });
   }, [threadIds]);
+
+  useEffect(() => {
+    setInterruptedQueueThreadIds((current) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const threadId of current) {
+        if ((queuedFollowUpsByThread[threadId]?.length ?? 0) > 0) {
+          next.add(threadId);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [queuedFollowUpsByThread]);
+
+  useEffect(() => {
+    const key = interruptedTerminalTurnKey(activeThreadId, activeLatestTerminalTurn);
+    if (!key || handledInterruptedTerminalTurnKeysRef.current.has(key)) return;
+    handledInterruptedTerminalTurnKeysRef.current.add(key);
+    if (!activeThreadId || activeQueuedFollowUps.length === 0) return;
+    updateQueuedFollowUps(activeThreadId, (queue) =>
+      pauseQueuedFollowUpsWithReason(queue, INTERRUPTED_STEER_PAUSED_REASON),
+    );
+    setInterruptedQueueThreadIds((current) => {
+      if (current.has(activeThreadId)) return current;
+      const next = new Set(current);
+      next.add(activeThreadId);
+      return next;
+    });
+  }, [activeLatestTerminalTurn, activeQueuedFollowUps.length, activeThreadId, updateQueuedFollowUps]);
+
+  const pauseActiveQueuedFollowUps = useCallback(() => {
+    if (!activeThreadId || activeQueuedFollowUps.length === 0) return;
+    updateQueuedFollowUps(activeThreadId, (queue) =>
+      pauseQueuedFollowUpsWithReason(queue, INTERRUPTED_STEER_PAUSED_REASON),
+    );
+    setInterruptedQueueThreadIds((current) => {
+      if (current.has(activeThreadId)) return current;
+      const next = new Set(current);
+      next.add(activeThreadId);
+      return next;
+    });
+  }, [activeQueuedFollowUps.length, activeThreadId, updateQueuedFollowUps]);
+
+  const resumeInterruptedQueuedFollowUps = useCallback(() => {
+    if (!activeThreadId) return;
+    updateQueuedFollowUps(activeThreadId, (queue) =>
+      resumeQueuedFollowUpsWithReason(queue, INTERRUPTED_STEER_PAUSED_REASON),
+    );
+    setInterruptedQueueThreadIds((current) => {
+      if (!current.has(activeThreadId)) return current;
+      const next = new Set(current);
+      next.delete(activeThreadId);
+      return next;
+    });
+  }, [activeThreadId, updateQueuedFollowUps]);
 
   const sendQueuedFollowUp = useCallback(async (threadId: string, message: QueuedFollowUp) => {
     // Single-flight across the whole queue (not just per-id): the drain effect
@@ -460,6 +546,35 @@ export function useTurnSubmission({
           : composerSubmitState.isQueueingEnabled,
         submitButtonMode: composerSubmitState.submitButtonMode,
       });
+      const selectedThreadId = activeThreadId;
+      if (
+        shouldPromptPausedQueueSubmit({
+          activeThreadId: selectedThreadId,
+          queueInterrupted: activeQueuedFollowUpsInterrupted,
+          queuedFollowUpCount: selectedThreadId ? queuedFollowUpsByThread[selectedThreadId]?.length ?? 0 : 0,
+          shouldQueueFollowUp,
+        })
+      ) {
+        if (!selectedThreadId) return;
+        const queuedMessageCount = queuedFollowUpsByThread[selectedThreadId]?.length ?? 0;
+        const decision = onRequestPausedQueueSubmit
+          ? await onRequestPausedQueueSubmit(queuedMessageCount)
+          : "sendMessage";
+        if (decision === "cancel") return;
+        if (decision === "clearQueue") {
+          updateQueuedFollowUps(selectedThreadId, () => []);
+        } else {
+          updateQueuedFollowUps(selectedThreadId, (queue) =>
+            resumeQueuedFollowUpsWithReason(queue, INTERRUPTED_STEER_PAUSED_REASON),
+          );
+        }
+        setInterruptedQueueThreadIds((current) => {
+          if (!current.has(selectedThreadId)) return current;
+          const next = new Set(current);
+          next.delete(selectedThreadId);
+          return next;
+        });
+      }
       const modes = shouldQueueFollowUp
         ? collaborationModes
         : await collaborationModesForComposerMode(draftMode);
@@ -470,7 +585,6 @@ export function useTurnSubmission({
         dispatch({ type: "log", text: PLAN_MODE_UNAVAILABLE_MESSAGE, level: "warn" });
         return;
       }
-      const selectedThreadId = activeThreadId;
       const creatingInitialThread = !selectedThreadId;
       // codex: a projectless thread (no real workspace) gets a generated working
       // directory under ~/Documents/Codex/<date>/<slug>/ plus a system prompt that
@@ -635,6 +749,7 @@ export function useTurnSubmission({
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- 故意省略 composerGoalMode：保持既有提交闸门的重建时机不变（stale 风险已在审计中单列待裁决）
   }, [
     activeModelSupportsImageInput,
+    activeQueuedFollowUpsInterrupted,
     activeThread,
     activeThreadGoal,
     activeThreadId,
@@ -655,6 +770,7 @@ export function useTurnSubmission({
     formatMessage,
     includeImageDynamicTool,
     onRequestGoalReplace,
+    onRequestPausedQueueSubmit,
     queuedFollowUpsByThread,
     rememberLatestCollaborationMode,
     resetComposerSelectionAfterCreatedThread,
@@ -672,6 +788,7 @@ export function useTurnSubmission({
       activeThreadNeedsResume,
       activeThreadRunning,
       pendingRequestCount: activePendingRequestCount,
+      queueInterrupted: activeQueuedFollowUpsInterrupted,
       queue: queuedFollowUpsByThread[activeThreadId] ?? [],
     });
     if (!nextQueuedFollowUp) return;
@@ -681,6 +798,7 @@ export function useTurnSubmission({
     activeThreadId,
     activeThreadNeedsResume,
     activeThreadRunning,
+    activeQueuedFollowUpsInterrupted,
     queuedFollowUpsByThread,
     sendQueuedFollowUp,
   ]);
@@ -716,9 +834,12 @@ export function useTurnSubmission({
 
   return {
     activeQueuedFollowUps,
+    activeQueuedFollowUpsInterrupted,
     deleteQueuedFollowUp,
     editQueuedFollowUp,
+    pauseActiveQueuedFollowUps,
     reorderQueuedFollowUp,
+    resumeInterruptedQueuedFollowUps,
     sendQueuedFollowUpNow,
     sendTurn,
     startingConversation,

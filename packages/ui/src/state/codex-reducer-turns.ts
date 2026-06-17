@@ -21,7 +21,7 @@ import {
   userInputContentKey,
   userMessagesHaveSameContent,
 } from "./codex-reducer-item-helpers";
-import { bindNextOptimisticTurn } from "./codex-reducer-items";
+import { bindNextOptimisticTurn, upsertItem } from "./codex-reducer-items";
 import {
   dedupeStrings,
   normalizeThreadRuntime,
@@ -310,15 +310,40 @@ export function upsertTurnPlan(state: CodexUiState, params: Record<string, unkno
   const turnId = typeof params.turnId === "string" && params.turnId.length > 0 ? params.turnId : null;
   const plan = Array.isArray(params.plan) ? params.plan : [];
   if (!threadId) return state;
-  return threadRuntimePatch(state, threadId, {
+  const explanation = typeof params.explanation === "string" ? params.explanation : null;
+  const stateWithProjectionCache = threadRuntimePatch(state, threadId, {
     turnPlan: {
       threadId,
       turnId,
-      explanation: typeof params.explanation === "string" ? params.explanation : null,
+      explanation,
       plan,
       updatedAt: Date.now(),
     },
   });
+  const runtime = selectThreadRuntime(stateWithProjectionCache, threadId);
+  const item = {
+    id: nextTurnPlanTodoListItemId(runtime.items, threadId, turnId),
+    type: "todo-list",
+    explanation,
+    plan,
+  } as unknown as ThreadItem;
+  return upsertItem(stateWithProjectionCache, threadId, item, turnId);
+}
+
+function nextTurnPlanTodoListItemId(
+  items: AccumulatedThreadItem[],
+  threadId: string,
+  turnId: string | null,
+): string {
+  const prefix = `turn-plan:${threadId}:${turnId ?? "unknown"}:`;
+  let max = 0;
+  for (const item of items) {
+    const id = typeof item.id === "string" ? item.id : "";
+    if (!id.startsWith(prefix)) continue;
+    const index = Number(id.slice(prefix.length));
+    if (Number.isFinite(index) && index > max) max = index;
+  }
+  return `${prefix}${max + 1}`;
 }
 
 // Codex never sends a `planImplementation` thread item over the wire — its
@@ -418,6 +443,10 @@ export function finishTurn(
   const liveTurnDiff = turnId && runtime.turnDiffTurnId === turnId ? runtime.turnDiff : undefined;
   const nextItems = synthesizeTurnDiffForTurn(withWorkedFor, turnId, liveTurnDiff);
   const tokenSpeedPatch = turnId ? completedTokenSpeedPatch(runtime, turnId, turn) : {};
+  const latestTerminalTurn = {
+    turnId: turnId || null,
+    status: terminalTurnSnapshotStatus(turnStatus, fallbackStatus),
+  };
   return {
     ...state,
     threads: state.threads.map((thread) =>
@@ -433,10 +462,20 @@ export function finishTurn(
         terminalTurnIds: turnId
           ? dedupeStrings([...runtime.terminalTurnIds, turnId])
           : runtime.terminalTurnIds,
+        latestTerminalTurn,
         items: nextItems,
       }),
     },
   };
+}
+
+function terminalTurnSnapshotStatus(
+  turnStatus: string,
+  fallbackStatus: "completed" | "failed" | "interrupted",
+): "completed" | "failed" | "interrupted" {
+  if (turnStatus === "failed" || turnStatus === "systemError") return "failed";
+  if (turnStatus === "interrupted" || turnStatus === "cancelled" || turnStatus === "canceled") return "interrupted";
+  return fallbackStatus;
 }
 
 /**

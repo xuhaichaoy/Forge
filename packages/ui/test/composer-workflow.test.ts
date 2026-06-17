@@ -187,11 +187,11 @@ function projectsCodexDesktopSubmitTooltips(): void {
     [
       "Send",
       "Stop",
-      "Queue",
-      "Steer",
+      "Queue Enter\nSteer Cmd/Ctrl+Enter",
+      "Steer Enter\nQueue Cmd/Ctrl+Enter",
       "Resolve the pending request before sending more input",
     ],
-    "submit tooltip should distinguish send, stop, queue, and blocked states",
+    "submit tooltip should distinguish send, stop, running queue/steer, and blocked states",
   );
 }
 

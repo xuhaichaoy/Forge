@@ -65,7 +65,7 @@ export default function runRenderGroupsTests(): void {
   usesWorkedForAsTurnCollapseDividerBeforeAssistant();
   keepsWorkedForExpandedUntilFinalAssistantStarts();
   keepsRunningWorkedForAfterRehydratedAssistantCommentary();
-  keepsTodoListOutOfMainConversationAndProjectsProgress();
+  hoistsTodoListOutOfLocalTurnTranscriptWithoutRightRailProgress();
   rendersProposedPlanAsInlineCardOnly();
   keepsBlockingRequestsOutOfTranscriptButSuppressesThinking();
   hidesPendingApprovalItemsFromOrdinaryActivity();
@@ -293,7 +293,7 @@ function keepsLiveTurnDiffOutOfTranscriptProjection(): void {
   assertEqual(
     projection.units.some((unit) => unit.key.includes("in-progress-diff")),
     false,
-    "live diff belongs to the above-composer portal, not the transcript projection",
+    "live diff belongs to fixed in-progress content, not the transcript projection",
   );
   assertEqual(
     projection.units.some((unit) => unit.kind === "message" && unit.key === "agent-live-diff"),
@@ -2494,7 +2494,7 @@ function hidesStaticTurnDiffWhileTurnIsRunningLikeCodexDesktop(): void {
   assertEqual(
     projection.units.some((unit) => unit.key.includes("in-progress-diff")),
     false,
-    "running live diff is owned by the above-composer portal, not render groups",
+    "running live diff is owned by fixed in-progress content, not render groups",
   );
 }
 
@@ -2731,7 +2731,7 @@ function keepsRunningWorkedForAfterRehydratedAssistantCommentary(): void {
   );
 }
 
-function keepsTodoListOutOfMainConversationAndProjectsProgress(): void {
+function hoistsTodoListOutOfLocalTurnTranscriptWithoutRightRailProgress(): void {
   const projection = projectConversation([
     {
       type: "userMessage",
@@ -2757,14 +2757,10 @@ function keepsTodoListOutOfMainConversationAndProjectsProgress(): void {
     } as ThreadItem,
   ]);
 
-  assertEqual(projection.units.length, 2, "todo-list should not add a main conversation row");
+  assertEqual(projection.units.length, 2, "local-turn todo-list should not add a normal transcript row");
   assertEqual(projection.units[0]?.kind, "message", "user message should remain in the main conversation");
-  assertEqual(projection.units[1]?.kind, "message", "assistant message should remain in the main conversation");
-  assertDeepEqual(
-    projection.progress.map((entry) => entry.title),
-    ["Inspect Codex Desktop output", "Patch Forge projection"],
-    "todo-list should still drive Progress",
-  );
+  assertEqual(projection.units[1]?.kind, "message", "assistant message should remain after the hoisted todo-list");
+  assertDeepEqual(projection.progress, [], "todo-list should not drive a right-rail Progress section");
 }
 
 function rendersProposedPlanAsInlineCardOnly(): void {

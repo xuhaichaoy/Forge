@@ -92,9 +92,8 @@ export function useBackgroundAgentPanel({
     () => projectConversation(backgroundAgentItems, {
       isThreadRunning: backgroundAgentRunning,
       parentThreadAttachmentSourceConversationId: backgroundAgentThread?.forkedFromId ?? null,
-      progressPlan: backgroundAgentRuntime?.turnPlan ?? null,
     }),
-    [backgroundAgentItems, backgroundAgentRuntime?.turnPlan, backgroundAgentRunning, backgroundAgentThread?.forkedFromId],
+    [backgroundAgentItems, backgroundAgentRunning, backgroundAgentThread?.forkedFromId],
   );
   const backgroundAgentTitle = backgroundAgentThread
     ? backgroundAgentPanel?.displayName

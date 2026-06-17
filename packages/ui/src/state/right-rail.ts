@@ -84,6 +84,9 @@ export interface RightRailBrowserInput {
 }
 
 export interface RightRailProjectionInput {
+  // Compatibility field retained for older callers. Current Codex Desktop no
+  // longer mounts a Summary Rail Progress section; local-turn todo-list items are
+  // hoisted into fixed in-progress content instead of a normal rail row.
   progress: RailEntry[];
   // codex: local-conversation-thread-*.js automation — new per-conversation
   // automation summary (distinct from the legacy `automations` RailEntry list).
@@ -222,11 +225,11 @@ function railSectionTitle(
 export function projectRightRailSections(input: RightRailProjectionInput): RightRailSection[] {
   const sections: RightRailSection[] = [];
 
-  // codex local-conversation-thread-*.js (26.602.40724) assembles the rail
-  // children as [automation, environment, progress, outputs, side-chats, …];
-  // environment is git-gated and outputs is non-git-gated (mutually exclusive).
-  // Forge previously placed Progress FIRST (an older-build order); match the
-  // live order automation → environment → progress → outputs.
+  // codex local-conversation-thread-CRsAC226.pretty.js (26.611.61049) assembles
+  // the rail children as [automation, environment, outputs, side-chats,
+  // background-subagents, background-tasks, browser-tabs, tool-sources].
+  // The older Progress rail section is gone; real todo-list items render inline
+  // in the transcript.
   //
   // codex automation — single-entry section with a Clock icon, label=name,
   // meta=rrule summary, status carries the humanized "Next run: …" title.
@@ -269,18 +272,6 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
       canToggle: false,
       ...(branchDetails ? { branchDetails } : {}),
     });
-  }
-
-  // codex rail order: progress follows automation + environment, before outputs.
-  if (input.progress.length > 0) {
-    sections.push(projectEntrySection(
-      "progress",
-      railSectionTitle("progress"),
-      input.progress,
-      true,
-      undefined,
-      allProgressEntriesCompleted(input.progress),
-    ));
   }
 
   // CODEX-REF: local-conversation-thread-*.js —
@@ -399,14 +390,6 @@ function projectEntrySection(
     canToggle: clipped.canToggle,
     ...(defaultCollapsed ? { defaultCollapsed } : {}),
   };
-}
-
-function isCompletedProgressStatus(status: string | undefined): boolean {
-  return status === "completed";
-}
-
-function allProgressEntriesCompleted(entries: RailEntry[]): boolean {
-  return entries.length > 0 && entries.every((entry) => isCompletedProgressStatus(entry.status));
 }
 
 function isBranchDetailsViewModel(value: RightRailProjectionInput["branchDetails"]): value is BranchDetailsViewModel {

@@ -77,6 +77,61 @@ export function ThreadGoalReplaceConfirm({
   );
 }
 
+// codex composer.pausedQueueSubmit.* — shown before sending a new message while
+// an interrupted queued-follow-up stack is paused.
+export function PausedQueueSubmitConfirm({
+  queuedMessageCount,
+  onClearQueue,
+  onSendMessage,
+  onCancel,
+}: {
+  queuedMessageCount: number;
+  onClearQueue: () => void;
+  onSendMessage: () => void;
+  onCancel: () => void;
+}) {
+  const { formatMessage } = useForgeIntl();
+  useEscapeToClose(onCancel);
+  return portalDialogToBody(
+    <div
+      className="hc-settings-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section
+        className="hc-thread-dialog-panel hc-thread-goal-edit-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="hc-paused-queue-submit-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div id="hc-paused-queue-submit-title">{formatMessage({ id: "composer.pausedQueueSubmit.title", defaultMessage: "Send message?" })}</div>
+          <button type="button" aria-label={formatMessage({ id: "common.close", defaultMessage: "Close" })} onClick={onCancel}>
+            <X size={16} />
+          </button>
+        </header>
+        <div className="hc-thread-dialog-body">
+          <p>{formatMessage({
+            id: "composer.pausedQueueSubmit.description",
+            defaultMessage: "You are about to send a message. Do you want to clear the {count, plural, one {# message} other {# messages}} previously queued?",
+          }, { count: queuedMessageCount })}</p>
+        </div>
+        <footer>
+          <button type="button" className="hc-mini-button decline" onClick={onClearQueue}>
+            {formatMessage({ id: "composer.pausedQueueSubmit.clear", defaultMessage: "Clear queue" })}
+          </button>
+          <button type="button" className="hc-mini-button accept" autoFocus onClick={onSendMessage}>
+            {formatMessage({ id: "composer.pausedQueueSubmit.send", defaultMessage: "Send message" })}
+          </button>
+        </footer>
+      </section>
+    </div>,
+  );
+}
+
 // codex composer.threadGoal.resumeConfirmation.* — shown when a thread is resumed
 // with a paused/blocked/usage-limited goal.
 export function ThreadGoalResumeConfirm({

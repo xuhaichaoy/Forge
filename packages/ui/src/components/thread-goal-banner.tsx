@@ -8,6 +8,7 @@ import { portalDialogToBody } from "./thread-goal-dialogs";
 import { threadGoalBannerSummary } from "../state/thread-goal-summary";
 
 export {
+  PausedQueueSubmitConfirm,
   ThreadGoalReplaceConfirm,
   ThreadGoalResumeConfirm,
 } from "./thread-goal-dialogs";

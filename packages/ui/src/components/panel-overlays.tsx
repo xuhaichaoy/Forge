@@ -1,7 +1,7 @@
 import { CommandPanel, type CommandPanelProps } from "./command-panel";
 import { SettingsPanel, type SettingsPanelProps } from "./model-settings-panel";
 import type { CommandPanelState } from "../state/command-panel";
-import { isCommandMenuPanel } from "../state/command-panel";
+import { isChatSearchPanel, isCommandMenuPanel } from "../state/command-panel";
 import type { SettingsPanelId } from "../state/composer-workflow";
 
 /*
@@ -18,6 +18,7 @@ type PanelOverlaysProps = {
   onCommandPanelClose: () => void;
   onCommandPanelSelectAction?: CommandPanelProps["onSelectAction"];
   onCommandPanelSelectEntry?: CommandPanelProps["onSelectEntry"];
+  onSearchChats: (query: string) => void;
   onSearchFiles: (query: string) => void;
   onSearchCommandMenu: (query: string) => void;
 } & Omit<SettingsPanelProps, "activePanel">;
@@ -28,6 +29,7 @@ export function PanelOverlays({
   onCommandPanelClose,
   onCommandPanelSelectAction,
   onCommandPanelSelectEntry,
+  onSearchChats,
   onSearchFiles,
   onSearchCommandMenu,
   ...settingsProps
@@ -35,6 +37,8 @@ export function PanelOverlays({
   const searchQueryChange: CommandPanelProps["onSearchQueryChange"] = commandPanel
     ? commandPanel.panel === "files"
       ? onSearchFiles
+      : isChatSearchPanel(commandPanel)
+        ? onSearchChats
       : isCommandMenuPanel(commandPanel)
         ? onSearchCommandMenu
         : undefined

@@ -207,6 +207,7 @@ export interface ForgeAppPanelOverlaysArgs {
   modelDraft: ModelConfig;
   refreshActiveSettingsPanel: ComponentProps<typeof PanelOverlays>["onRefreshPanel"];
   resetUiKeyboardShortcut: ComponentProps<typeof PanelOverlays>["onResetKeyboardShortcut"];
+  searchChatsFromCommandPanel: ComponentProps<typeof PanelOverlays>["onSearchChats"];
   searchCommandMenuFromPanel: ComponentProps<typeof PanelOverlays>["onSearchCommandMenu"];
   searchFilesFromCommandPanel: ComponentProps<typeof PanelOverlays>["onSearchFiles"];
   selectCommandPanelAction: ReturnType<typeof useCommandPanelActions>["selectCommandPanelAction"];
@@ -242,6 +243,7 @@ export function renderForgeAppPanelOverlays(args: ForgeAppPanelOverlaysArgs): Re
     modelDraft,
     refreshActiveSettingsPanel,
     resetUiKeyboardShortcut,
+    searchChatsFromCommandPanel,
     searchCommandMenuFromPanel,
     searchFilesFromCommandPanel,
     selectCommandPanelAction,
@@ -292,6 +294,7 @@ export function renderForgeAppPanelOverlays(args: ForgeAppPanelOverlaysArgs): Re
         onCommandPanelClose={closeCommandPanel}
         onCommandPanelSelectAction={(action) => selectCommandPanelAction(action)}
         onCommandPanelSelectEntry={selectCommandPanelEntry}
+        onSearchChats={searchChatsFromCommandPanel}
         onSearchFiles={searchFilesFromCommandPanel}
         onSearchCommandMenu={searchCommandMenuFromPanel}
       />

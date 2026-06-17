@@ -26,13 +26,11 @@ import {
 } from "./generated-image-gallery-projection";
 import {
   collectRailEntries,
-  progressEntriesFromPlan,
   type ArtifactFileCandidateIndex,
 } from "./rail-projection";
 import {
   assistantMessagePhase,
   assistantMessageText,
-  coalesceProgress,
   isCompletedRecord,
   isItemInProgress,
   itemType,
@@ -61,7 +59,6 @@ import {
 export function projectConversation(rawItems: ThreadItem[], options: ConversationProjectionOptions = {}): ConversationProjection {
   const items = withMcpAppResourceUris(rawItems, options.mcpServerStatuses);
   const units: ConversationRenderUnit[] = [];
-  let progress: RailEntry[] = [];
   const artifacts = new Map<string, RailEntry>();
   const sources = new Map<string, RailEntry>();
   const fileCandidates: ArtifactFileCandidateIndex = new Map();
@@ -237,10 +234,8 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       return;
     }
     if (itemType(item) === "todo-list") {
-      const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
-      if (nextProgress) {
-        progress = nextProgress;
-      }
+      flushActivity();
+      units.push(threadItemRenderUnit(item));
       return;
     }
     if (itemType(item) === "proposed-plan") {
@@ -258,10 +253,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
      * imageView/imageGeneration 保留 Forge 既有路径（event-projection 处理）。
      */
     if (itemType(item) === "plan") {
-      const standaloneProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
-      if (standaloneProgress) {
-        progress = standaloneProgress;
-      }
+      collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
       flushActivity();
       units.push(threadItemRenderUnit(item));
       return;
@@ -275,10 +267,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     if (isBlockingOutOfBandItem(item, blockedMcpServers)) {
       return;
     }
-    const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
-    if (nextProgress) {
-      progress = nextProgress;
-    }
+    collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
     if (isUserMessage(item)) {
       flushActivity();
       units.push({
@@ -413,9 +402,6 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
         isAssistantMessage(item) ? { assistantArtifacts: assistantArtifactsForItem(item) } : {},
       );
     }
-    if (split.todoListItem) {
-      pushConversationItem(split.todoListItem);
-    }
     for (const item of split.automationUpdateItems) pushConversationItem(item);
     if (split.systemEventItem) pushConversationItem(split.systemEventItem);
     const assistantText = split.assistantItem ? assistantMessageText(split.assistantItem) : null;
@@ -451,10 +437,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       nonImageOutputs,
     } = projectGeneratedImageToolOutputs(split.toolOutputItems);
     for (const item of generatedImages) {
-      const nextProgress = collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
-      if (nextProgress) {
-        progress = nextProgress;
-      }
+      collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
     }
     const visibleGeneratedImages = visibleGeneratedImagesForEndResources(generatedImages, endResources);
     const turnHasArtifacts = endResources.length > 0 || visibleGeneratedImages.length > 0 || pendingGeneratedImage;
@@ -551,10 +534,6 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
 
   flushActivity({ isCurrentToolActivity: options.isThreadRunning === true });
 
-  const explicitProgress = options.progressPlan
-    ? progressEntriesFromPlan(options.progressPlan.plan, options.progressPlan.id ?? "turn-plan")
-    : null;
-
   const projectedUnits = withStreamingAssistantState(
     groupConsecutiveDynamicToolCalls(units, { keepLatestLiveActivityInGroup: options.isThreadRunning === true }),
     options.isThreadRunning === true,
@@ -562,7 +541,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   demoteNonFinalUnknownAssistantPhases(projectedUnits);
   return {
     units: projectedUnits,
-    progress: coalesceProgress(explicitProgress ?? progress),
+    progress: [],
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),

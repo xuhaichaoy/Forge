@@ -139,6 +139,9 @@ function formatsDeepSweep3Localizations(): void {
   assertEqual(z("composer.threadGoal.resumeConfirmation.title", "Resume paused goal?"), "恢复已暂停的目标吗？", "goal resumeConfirmation title zh");
   assertEqual(z("composer.threadGoal.resumeConfirmation.keepPaused", "Keep paused"), "保持暂停", "goal resumeConfirmation keepPaused zh");
   assertEqual(z("composer.threadGoal.resumeConfirmation.notNow", "Not now"), "暂不", "goal resumeConfirmation notNow zh");
+  assertEqual(z("composer.pausedQueueSubmit.title", "Send message?"), "发送消息？", "pausedQueueSubmit title zh");
+  assertEqual(z("composer.pausedQueueSubmit.clear", "Clear queue"), "清空队列", "pausedQueueSubmit clear zh");
+  assertEqual(z("composer.pausedQueueSubmit.description", "You are about to send a message. Do you want to clear the {count, plural, one {# message} other {# messages}} previously queued?", { count: 2 }), "你即将发送一条消息。要清除之前已排队的2 条消息吗？", "pausedQueueSubmit description zh");
 }
 
 // Locks the zh-CN values for the strings the multi-agent deep-sweep found leaking

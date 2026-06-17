@@ -53,17 +53,129 @@
   display: none;
 }
 
+.hc-live-turn-fixed-content {
+  position: relative;
+  min-width: 0;
+}
+
+.hc-live-turn-fixed-spacer {
+  height: 32px;
+}
+
+.hc-live-turn-fixed-overlay {
+  position: absolute;
+  inset-inline: 20px;
+  bottom: 4px;
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 4px;
+}
+
+.hc-live-turn-fixed-gradient {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 24px;
+  background: linear-gradient(to top, var(--hc-surface-main), transparent);
+}
+
+.hc-live-turn-fixed-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.hc-live-turn-plan-portal,
 .hc-live-turn-diff-portal {
   display: flex;
   min-width: 0;
-  flex-direction: column;
+  align-items: center;
 }
 
-.hc-live-turn-diff-portal .hc-turn-diff,
-.hc-live-turn-diff-portal .hc-turn-diff-progress {
-  margin-bottom: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+.hc-live-turn-plan-pill {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hc-surface-composer) 86%, transparent);
+  color: #6f716b;
+  cursor: default;
+  padding: 4px 8px;
+  box-shadow: 0 1px 0 rgba(34, 38, 43, 0.06);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 1.35;
+}
+
+.hc-live-turn-plan-donut {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.hc-live-turn-plan-donut::after {
+  position: absolute;
+  inset: 3px;
+  border-radius: inherit;
+  background: var(--hc-surface-composer);
+  content: "";
+}
+
+.hc-live-turn-plan-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-live-turn-separator {
+  color: var(--hc-text-muted);
+}
+
+.hc-live-turn-diff-chip {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--hc-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  line-height: 1.35;
+  padding: 1px 2px;
+}
+
+.hc-live-turn-diff-chip:hover,
+.hc-live-turn-diff-chip:focus-visible {
+  color: var(--hc-text-primary);
+  outline: none;
+}
+
+.hc-live-turn-diff-chip:focus-visible {
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, var(--hc-border-strong));
+}
+
+.hc-live-turn-diff-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hc-above-composer-suggestion-wrap {

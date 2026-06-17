@@ -24,6 +24,11 @@ import {
 } from "../src/state/command-panel";
 import type { CommandPanelEntry } from "../src/state/command-panel";
 import {
+  COMMAND_PANEL_CHAT_SEARCH_DEBOUNCE_MS,
+  buildCommandPanelThreadSearchParams,
+  mergeCommandPanelThreadSearchEntries,
+} from "../src/state/command-panel-chat-search";
+import {
   buildMcpToolArguments,
   emptyMcpToolArgumentValues,
   projectMcpToolArgumentFields,
@@ -45,6 +50,8 @@ export default function runCommandPanelTests(): void {
   projectsFileSearchEntriesAsMentions();
   groupsDesktopChatSearchEntriesForRendering();
   keepsSearchInputVisibleForDesktopSearchModes();
+  buildsDesktopThreadSearchParamsForChatSearch();
+  mergesBackendThreadSearchSnippetsIntoLoadedChatEntries();
   projectsAndBuildsMcpToolArguments();
   projectsCollaborationModesAsCommandEntries();
   createsEmptyLoadingAndErrorPanelStates();
@@ -296,6 +303,93 @@ function keepsSearchInputVisibleForDesktopSearchModes(): void {
     commandPanelShouldShowChatCreateEmptyState(panel, "missing chat"),
     false,
     "Desktop chat search should not show the create-chat empty state while the user is searching",
+  );
+}
+
+function buildsDesktopThreadSearchParamsForChatSearch(): void {
+  assertEqual(
+    COMMAND_PANEL_CHAT_SEARCH_DEBOUNCE_MS,
+    200,
+    "Desktop chat search should use the 200ms debounced query value before thread/search",
+  );
+  assertDeepEqual(
+    buildCommandPanelThreadSearchParams("  \n ", "updated_at"),
+    null,
+    "empty Desktop chat search queries should not call thread/search",
+  );
+  assertDeepEqual(
+    buildCommandPanelThreadSearchParams("  needle  ", "updated_at"),
+    {
+      archived: false,
+      limit: 9,
+      sortKey: "updated_at",
+      sortDirection: "desc",
+      sourceKinds: [],
+      searchTerm: "needle",
+    },
+    "Desktop chat search should request thread/search with trimmed searchTerm, archived=false, sourceKinds=[], and the sidebar sort key",
+  );
+}
+
+function mergesBackendThreadSearchSnippetsIntoLoadedChatEntries(): void {
+  const loadedEntries: CommandPanelEntry[] = [
+    {
+      id: "thread:a",
+      title: "Loaded A",
+      kind: "thread",
+      groupKey: "recent-chats",
+      action: { type: "selectThread", threadId: "a" },
+    },
+    {
+      id: "thread:b",
+      title: "Loaded B",
+      kind: "thread",
+      groupKey: "recent-chats",
+      details: ["Existing preview"],
+      action: { type: "selectThread", threadId: "b" },
+    },
+  ];
+  const searchEntries: CommandPanelEntry[] = [
+    {
+      id: "thread-search:a",
+      title: "Search A",
+      kind: "thread",
+      details: ["needle snippet"],
+      action: { type: "selectThread", threadId: "a" },
+    },
+    {
+      id: "thread-search:b",
+      title: "Search B",
+      kind: "thread",
+      details: ["backend snippet"],
+      action: { type: "selectThread", threadId: "b" },
+    },
+    {
+      id: "thread-search:c",
+      title: "Search C",
+      kind: "thread",
+      details: ["new snippet"],
+      action: { type: "selectThread", threadId: "c" },
+    },
+  ];
+
+  assertDeepEqual(
+    mergeCommandPanelThreadSearchEntries({ loadedEntries, searchEntries }).map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      details: entry.details,
+    })),
+    [
+      { id: "thread:a", title: "Loaded A", details: ["needle snippet"] },
+      { id: "thread:b", title: "Loaded B", details: ["Existing preview"] },
+      { id: "thread-search:c", title: "Search C", details: ["new snippet"] },
+    ],
+    "Desktop chat search should preserve loaded chat order, overlay backend snippets only when missing, and append backend-only matches",
+  );
+  assertDeepEqual(
+    mergeCommandPanelThreadSearchEntries({ loadedEntries, searchEntries, limit: 2 }).map((entry) => entry.id),
+    ["thread:a", "thread:b"],
+    "Desktop chat search should cap merged rows to the command-menu chat limit",
   );
 }
 

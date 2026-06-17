@@ -12,6 +12,10 @@ export function isCommandMenuPanel(panel: CommandPanelState | null | undefined):
   return panel?.panel === "generic" && panel.title === "Search commands and chats";
 }
 
+export function isChatSearchPanel(panel: CommandPanelState | null | undefined): panel is CommandPanelState & { panel: "generic" } {
+  return panel?.panel === "generic" && panel.title === "Search chats";
+}
+
 export function isAppBackedPanelState(
   state: CommandPanelState | null | undefined,
 ): state is CommandPanelState & { panel: "apps" | "plugins" } {

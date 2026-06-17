@@ -2254,6 +2254,18 @@ function assertTerminalTurnStatus(method: string, turnStatusValue: string, expec
     `terminal ${turnStatusValue}`,
     `${method} should merge terminal turn items`,
   );
+  assertDeepEqual(
+    runtime(next, "thread-1").latestTerminalTurn,
+    {
+      turnId: "turn-1",
+      status: turnStatusValue === "failed"
+        ? "failed"
+        : turnStatusValue === "interrupted" || turnStatusValue === "cancelled" || turnStatusValue === "canceled"
+          ? "interrupted"
+          : "completed",
+    },
+    `${method} should expose the latest terminal turn for composer queue gating`,
+  );
 }
 
 function upsertingThreadSnapshotDropsDuplicateOptimisticUserMessage(): void {
@@ -3254,6 +3266,7 @@ function threadWithTurns(
     modelProvider: "openai",
     createdAt: 0,
     updatedAt: 0,
+    recencyAt: null,
     status: turns.some((turn) => isActiveTurnFixtureStatus(turn.status))
       ? { type: "active", activeFlags: [] }
       : { type: "idle" },

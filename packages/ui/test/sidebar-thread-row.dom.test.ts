@@ -168,6 +168,7 @@ function threadFixture(): Thread {
     modelProvider: "openai",
     createdAt: 0,
     updatedAt: 0,
+    recencyAt: null,
     status: ({ type: "completed" } as unknown) as Thread["status"],
     path: null,
     cwd: ("/tmp/project" as unknown) as Thread["cwd"],

@@ -28,6 +28,7 @@ const scrollDistanceByThreadKey = new Map<string, number>();
 export interface ThreadScrollLayoutProps {
   children: ReactNode;
   footer: ReactNode;
+  fixedContent?: ReactNode;
   contentX?: number;
   inlineEndInset?: number;
   initialOffset?: number | null;
@@ -67,6 +68,7 @@ const ThreadScrollControllerContext = createContext<ThreadScrollController | nul
 export function ThreadScrollLayout({
   children,
   contentX = 0,
+  fixedContent = null,
   footer,
   inlineEndInset = 0,
   initialOffset = null,
@@ -396,6 +398,11 @@ export function ThreadScrollLayout({
             <div className="hc-thread-scroll-body" data-mcp-app-portal-target="true">
               {children}
             </div>
+            {fixedContent && (
+              <div className="hc-thread-scroll-fixed-content">
+                {fixedContent}
+              </div>
+            )}
             <div
               className="hc-thread-scroll-footer"
               data-thread-scroll-footer="true"

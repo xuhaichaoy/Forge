@@ -24,7 +24,7 @@ import type {
   ThreadWorkflowDispatch,
   TurnStartOptions,
 } from "../state/thread-workflow";
-import { useTurnSubmission } from "./use-turn-submission";
+import { useTurnSubmission, type PausedQueueSubmitDecision } from "./use-turn-submission";
 
 /*
  * Mechanical extraction of a CONTIGUOUS hook cluster from ForgeAppBody
@@ -140,6 +140,19 @@ export function useForgeAppSubmission(args: ForgeAppSubmissionArgs) {
   const onRequestGoalReplace = useCallback((objective: string) => {
     setPendingGoalReplace(objective);
   }, []);
+  const pausedQueueSubmitResolverRef = useRef<((decision: PausedQueueSubmitDecision) => void) | null>(null);
+  const [pausedQueueSubmitPrompt, setPausedQueueSubmitPrompt] = useState<{ queuedMessageCount: number } | null>(null);
+  const onRequestPausedQueueSubmit = useCallback((queuedMessageCount: number) =>
+    new Promise<PausedQueueSubmitDecision>((resolve) => {
+      pausedQueueSubmitResolverRef.current?.("cancel");
+      pausedQueueSubmitResolverRef.current = resolve;
+      setPausedQueueSubmitPrompt({ queuedMessageCount });
+    }), []);
+  const resolvePausedQueueSubmitPrompt = useCallback((decision: PausedQueueSubmitDecision) => {
+    pausedQueueSubmitResolverRef.current?.(decision);
+    pausedQueueSubmitResolverRef.current = null;
+    setPausedQueueSubmitPrompt(null);
+  }, []);
 
   // codex composer.threadGoal.resumeConfirmation — when a thread is resumed with a
   // paused/blocked/usage-limited goal, prompt once to resume it (codex tui
@@ -168,9 +181,12 @@ export function useForgeAppSubmission(args: ForgeAppSubmissionArgs) {
 
   const {
     activeQueuedFollowUps,
+    activeQueuedFollowUpsInterrupted,
     deleteQueuedFollowUp,
     editQueuedFollowUp,
+    pauseActiveQueuedFollowUps,
     reorderQueuedFollowUp,
+    resumeInterruptedQueuedFollowUps,
     sendQueuedFollowUpNow,
     sendTurn,
     startingConversation,
@@ -180,11 +196,13 @@ export function useForgeAppSubmission(args: ForgeAppSubmissionArgs) {
     activeThread,
     activeThreadGoal: activeThreadRuntime.threadGoal != null,
     activeThreadId: state.activeThreadId,
+    activeLatestTerminalTurn: activeThreadRuntime.latestTerminalTurn ?? null,
     activeThreadRunning,
     activeTurnId,
     composerGoalMode,
     setComposerGoalMode,
     onRequestGoalReplace,
+    onRequestPausedQueueSubmit,
     collaborationModes,
     collaborationModesForComposerMode,
     composerAttachments,
@@ -248,17 +266,22 @@ export function useForgeAppSubmission(args: ForgeAppSubmissionArgs) {
   ) : null;
   return {
     activeQueuedFollowUps,
+    activeQueuedFollowUpsInterrupted,
     cleanBackgroundTerminals,
     conversationEmptyState,
     deleteQueuedFollowUp,
     editQueuedFollowUp,
     onboardingEmptyStateVisible,
+    pauseActiveQueuedFollowUps,
+    pausedQueueSubmitPrompt,
     pendingGoalReplace,
     reorderQueuedFollowUp,
+    resumeInterruptedQueuedFollowUps,
     resumeGoalPrompt,
     sendQueuedFollowUpNow,
     sendTurn,
     setPendingGoalReplace,
+    resolvePausedQueueSubmitPrompt,
     setResumeGoalPrompt,
   };
 }

@@ -20,6 +20,7 @@ const assert = (condition: unknown, message: string): void => {
 
 export default function runSidebarProjectionTests(): void {
   sortsThreadsByUpdatedAtDescending();
+  sortsThreadsByRecencyAtWhenUpdatedSortRequested();
   sortsThreadsByCreatedAtDescendingWhenRequested();
   hidesSpawnedSubagentThreadsByDefault();
   treatsAgentNicknameAsSubagentSignal();
@@ -51,6 +52,7 @@ function makeThread(overrides: Partial<Thread> & Record<string, unknown>): Threa
     modelProvider: "openai",
     createdAt: overrides.createdAt ?? 0,
     updatedAt: overrides.updatedAt ?? 0,
+    recencyAt: overrides.recencyAt ?? null,
     status: ({ type: "completed" } as unknown) as Thread["status"],
     path: null,
     cwd: ("/tmp/project" as unknown) as Thread["cwd"],
@@ -76,6 +78,23 @@ function sortsThreadsByUpdatedAtDescending(): void {
   assert(
     projected.map((thread) => thread.id).join(",") === "newest,mid,old",
     `expected updated_at desc, got ${projected.map((thread) => thread.id).join(",")}`,
+  );
+}
+
+function sortsThreadsByRecencyAtWhenUpdatedSortRequested(): void {
+  const threads = [
+    makeThread({ id: "updated-newer", updatedAt: 300, recencyAt: 100 }),
+    makeThread({ id: "recent", updatedAt: 100, recencyAt: 400 }),
+    makeThread({ id: "fallback", createdAt: 50, updatedAt: 200, recencyAt: null }),
+  ];
+  const projected = projectSidebarThreads(threads);
+  assert(
+    projected.map((thread) => thread.id).join(",") === "recent,fallback,updated-newer",
+    `expected recencyAt to drive Desktop's Updated sidebar order, got ${projected.map((thread) => thread.id).join(",")}`,
+  );
+  assert(
+    threadSortAt(threads[0]!, "updated_at") === 100_000,
+    "updated_at sort path should prefer recencyAt when app-server provides it",
   );
 }
 

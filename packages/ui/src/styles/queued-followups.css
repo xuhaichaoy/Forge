@@ -14,6 +14,43 @@
   display: none;
 }
 
+.hc-queued-followup-interrupted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(820px, 100%);
+  margin: 0 auto;
+  padding: 4px 6px;
+  color: #7c4a2a;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 1.35;
+}
+
+.hc-queued-followup-interrupted svg {
+  flex: 0 0 auto;
+  color: #b25530;
+}
+
+.hc-queued-followup-interrupted span {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hc-queued-followup-interrupted button {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  background: #ece9df;
+  color: #20262d;
+  cursor: pointer;
+  padding: 3px 8px;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+}
+
+.hc-queued-followup-interrupted button:hover {
+  background: #dfdbd0;
+}
+
 .hc-queued-followup-row {
   position: relative;
   display: grid;

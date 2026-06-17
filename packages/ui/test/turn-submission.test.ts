@@ -2,6 +2,8 @@ import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
   composerModeRequiresUnavailablePlanMode,
   selectNextQueuedFollowUp,
+  shouldPauseQueuedFollowUpsForInterruptedTerminalTurn,
+  shouldPromptPausedQueueSubmit,
   shouldResetCreatedThreadComposerMode,
   shouldQueueComposerFollowUp,
   shouldSteerQueuedFollowUp,
@@ -12,6 +14,8 @@ export default function runTurnSubmissionTests(): void {
   detectsQueuedFollowUpSubmissions();
   detectsQueuedFollowUpSteering();
   selectsNextQueuedFollowUp();
+  detectsInterruptedTerminalQueuePause();
+  detectsPausedQueueSubmitPromptGate();
   projectsTurnStartOptionsFromComposerMode();
   detectsUnavailablePlanMode();
   detectsCreatedThreadComposerModeResetGate();
@@ -142,6 +146,105 @@ function selectsNextQueuedFollowUp(): void {
     }),
     null,
     "auto drain should wait while a pending request needs user input",
+  );
+  assertDeepEqual(
+    selectNextQueuedFollowUp({
+      activeThreadRunning: false,
+      pendingRequestCount: 0,
+      queueInterrupted: true,
+      queue: [queued],
+    }),
+    null,
+    "auto drain should wait while the queue is paused after an interruption",
+  );
+}
+
+function detectsInterruptedTerminalQueuePause(): void {
+  const interrupted = { turnId: "turn-1", status: "interrupted" as const };
+  const handled = new Set(["thread-1:turn-1"]);
+
+  assertEqual(
+    shouldPauseQueuedFollowUpsForInterruptedTerminalTurn({
+      activeThreadId: "thread-1",
+      handledInterruptedTerminalTurnKeys: new Set(),
+      latestTerminalTurn: interrupted,
+      queuedFollowUpCount: 1,
+    }),
+    true,
+    "interrupted terminal turn should pause a non-empty queue before auto drain",
+  );
+  assertEqual(
+    shouldPauseQueuedFollowUpsForInterruptedTerminalTurn({
+      activeThreadId: "thread-1",
+      handledInterruptedTerminalTurnKeys: handled,
+      latestTerminalTurn: interrupted,
+      queuedFollowUpCount: 1,
+    }),
+    false,
+    "handled interrupted terminal turn should not re-pause after Resume",
+  );
+  assertEqual(
+    shouldPauseQueuedFollowUpsForInterruptedTerminalTurn({
+      activeThreadId: "thread-1",
+      handledInterruptedTerminalTurnKeys: new Set(),
+      latestTerminalTurn: { turnId: "turn-1", status: "completed" },
+      queuedFollowUpCount: 1,
+    }),
+    false,
+    "completed terminal turn should not pause the queue",
+  );
+  assertEqual(
+    shouldPauseQueuedFollowUpsForInterruptedTerminalTurn({
+      activeThreadId: "thread-1",
+      handledInterruptedTerminalTurnKeys: new Set(),
+      latestTerminalTurn: interrupted,
+      queuedFollowUpCount: 0,
+    }),
+    false,
+    "empty queue should not surface an interrupted queue pause",
+  );
+}
+
+function detectsPausedQueueSubmitPromptGate(): void {
+  assertEqual(
+    shouldPromptPausedQueueSubmit({
+      activeThreadId: "thread-1",
+      queueInterrupted: true,
+      queuedFollowUpCount: 2,
+      shouldQueueFollowUp: false,
+    }),
+    true,
+    "sending a new non-queue message while an interrupted queue is paused should prompt",
+  );
+  assertEqual(
+    shouldPromptPausedQueueSubmit({
+      activeThreadId: "thread-1",
+      queueInterrupted: true,
+      queuedFollowUpCount: 2,
+      shouldQueueFollowUp: true,
+    }),
+    false,
+    "queueing another follow-up should not show the paused-queue send confirmation",
+  );
+  assertEqual(
+    shouldPromptPausedQueueSubmit({
+      activeThreadId: "thread-1",
+      queueInterrupted: false,
+      queuedFollowUpCount: 2,
+      shouldQueueFollowUp: false,
+    }),
+    false,
+    "unpaused queues should not show the paused-queue send confirmation",
+  );
+  assertEqual(
+    shouldPromptPausedQueueSubmit({
+      activeThreadId: null,
+      queueInterrupted: true,
+      queuedFollowUpCount: 2,
+      shouldQueueFollowUp: false,
+    }),
+    false,
+    "new-thread submissions have no paused active-thread queue to confirm",
   );
 }
 

@@ -155,6 +155,7 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
     name: null,
     turns: [],
     ...rest,
+    recencyAt: rest.recencyAt ?? null,
   };
 }
 

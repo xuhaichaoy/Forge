@@ -143,8 +143,8 @@ export function composerSubmitTooltip(
 ): string {
   if (state.disabledReason) return state.disabledReason;
 
-  // codex composer-CwxGJF3C.js: the submit-button tooltip label is a single
-  // verb. The keyboard shortcut is rendered separately.
+  // codex composer-DWFAaSck.pretty.js: while a turn is running, the submit
+  // tooltip lists both Queue and Steer; the alternate action uses Cmd/Ctrl+Enter.
   const fm = (id: string, defaultMessage: string): string =>
     formatMessage ? formatMessage({ id, defaultMessage }) : defaultMessage;
 
@@ -153,10 +153,11 @@ export function composerSubmitTooltip(
   }
 
   if (state.submitButtonMode === "queue") {
-    // Primary action: queue when queueing is enabled (Enter), otherwise steer.
+    const queue = fm("composer.submitButtonTooltip.queue", "Queue");
+    const steer = fm("composer.submitButtonTooltip.steer", "Steer");
     return state.isQueueingEnabled
-      ? fm("composer.submitButtonTooltip.queue", "Queue")
-      : fm("composer.submitButtonTooltip.steer", "Steer");
+      ? `${queue} Enter\n${steer} Cmd/Ctrl+Enter`
+      : `${steer} Enter\n${queue} Cmd/Ctrl+Enter`;
   }
 
   return fm("composer.submitButtonTooltip.send", "Send");

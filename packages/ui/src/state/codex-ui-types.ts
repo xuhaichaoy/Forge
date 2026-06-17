@@ -87,6 +87,11 @@ export interface TurnPlanSnapshot {
   updatedAt: number;
 }
 
+export interface TerminalTurnSnapshot {
+  turnId: string | null;
+  status: "completed" | "failed" | "interrupted";
+}
+
 export interface ThreadRuntimeSlice {
   activeTurnId: string | null;
   items: AccumulatedThreadItem[];
@@ -114,6 +119,7 @@ export interface ThreadRuntimeSlice {
   threadGoalTurnId: string | null;
   hookRunsByTurn?: Record<string, unknown[]>;
   terminalTurnIds: string[];
+  latestTerminalTurn?: TerminalTurnSnapshot | null;
   // codex: local-conversation-thread-*.js — populated by the
   // `thread/tokenUsage/updated` notification; absent until the server emits
   // the first counter for this thread. Optional so older fixtures that do

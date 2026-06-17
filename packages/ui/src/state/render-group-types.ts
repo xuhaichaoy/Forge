@@ -329,10 +329,6 @@ export interface ConversationProjectionOptions {
   isThreadRunning?: boolean;
   conversationDetailLevel?: ConversationDetailLevel;
   mcpServerStatuses?: unknown;
-  progressPlan?: {
-    id?: string | null;
-    plan: unknown[];
-  } | null;
   parentThreadAttachmentSourceConversationId?: string | null;
   /**
    * App registry data (from `app/list` RPC). Used to look up logoUrl/logoUrlDark

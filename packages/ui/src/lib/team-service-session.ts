@@ -19,7 +19,7 @@ const listeners = new Set<TeamServiceUnauthorizedListener>();
 
 export function notifyTeamServiceUnauthorized(): void {
   // Snapshot before iterating: a listener may unsubscribe itself on fire.
-  for (const listener of [...listeners]) {
+  for (const listener of Array.from(listeners)) {
     try {
       listener();
     } catch {

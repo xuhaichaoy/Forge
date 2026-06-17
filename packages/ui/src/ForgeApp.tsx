@@ -26,7 +26,8 @@ import { TeamServiceAuthGate } from "./components/team-service-auth-gate";
 // provided once above the conversation.
 import { DelinkFileCitationsContext, FileCitationMenuContext } from "./components/file-citation-menu";
 import {
-  shouldRenderLiveTurnDiffPortal,
+  LiveTurnFixedContent,
+  shouldRenderLiveTurnFixedContent,
 } from "./components/live-turn-diff-portal";
 import { RemoteTaskView } from "./components/remote-task-view";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
@@ -126,10 +127,13 @@ import {
 import {
   appRegistryEntriesFromResponse,
   isThreadStatusInProgress,
+  itemType,
   projectConversation,
+  type AccumulatedThreadItem,
   type AppRegistryEntry,
   type RailEntry,
 } from "./state/render-groups";
+import type { TurnPlanSnapshot } from "./state/codex-ui-types";
 import {
   loadAllApps,
 } from "./state/app-list";
@@ -185,6 +189,28 @@ interface ForgeAppBodyProps {
   state: CodexUiState;
   clientCallbacksRef: MutableRefObject<ForgeClientCallbacks>;
   fileSearchControllerRef: MutableRefObject<WorkspaceFuzzyFileSearchController | null>;
+}
+
+function activeTurnPlanFromTodoListItems(
+  items: AccumulatedThreadItem[],
+  threadId: string | null,
+  activeTurnId: string | null,
+): TurnPlanSnapshot | null {
+  if (!threadId || !activeTurnId) return null;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index] as AccumulatedThreadItem | undefined;
+    if (!item || itemType(item) !== "todo-list") continue;
+    const record = item as Record<string, unknown>;
+    if (record._turnId !== activeTurnId || !Array.isArray(record.plan)) continue;
+    return {
+      threadId,
+      turnId: activeTurnId,
+      explanation: typeof record.explanation === "string" ? record.explanation : null,
+      plan: record.plan,
+      updatedAt: typeof record.updatedAt === "number" ? record.updatedAt : 0,
+    };
+  }
+  return null;
 }
 
 /*
@@ -549,15 +575,18 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     useTurnPatchAction({ worktreeStatusCwd });
   const { worktreeHostGitStatus, pullRequestStatus } = useWorktreeGitAndPrStatus({ worktreeStatusCwd });
   const activeProgressPlan = activeThreadRuntime.turnPlan;
+  const activeFixedPlan = useMemo(
+    () => activeTurnPlanFromTodoListItems(activeItems, state.activeThreadId, activeTurnId) ?? activeProgressPlan,
+    [activeItems, activeProgressPlan, activeTurnId, state.activeThreadId],
+  );
   const conversation = useMemo(
     () => projectConversation(activeItems, {
       appRegistry,
       isThreadRunning: activeThreadRunning,
       mcpServerStatuses,
       parentThreadAttachmentSourceConversationId: activeThread?.forkedFromId ?? null,
-      progressPlan: activeProgressPlan,
     }),
-    [activeItems, activeProgressPlan, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
+    [activeItems, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
   );
   const backgroundPendingThreadIds = useMemo(
     () => conversation.backgroundAgents
@@ -697,10 +726,13 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     [imageGenerationSettings],
   );
   const activeDiff = activeThreadRuntime.turnDiff;
-  const showLiveTurnDiffPortal = shouldRenderLiveTurnDiffPortal({
+  const showLiveTurnFixedContent = shouldRenderLiveTurnFixedContent({
+    activeTurnId,
     diff: activeDiff,
     isThreadRunning: activeThreadRunning,
     hasBlockingRequest: activePendingRequests.length > 0,
+    plan: activeFixedPlan,
+    turnId: activeThreadRuntime.turnDiffTurnId,
   });
   const branchDetails = useMemo(
     () => projectBranchDetails({
@@ -886,6 +918,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     reviewHooks,
     rightRailMode,
     rightRailSections,
+    searchChatsFromCommandPanel,
     searchCommandMenuFromPanel,
     searchFilesFromCommandPanel,
     searchWorkspaceFilesForFilesTab,
@@ -965,13 +998,18 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
 
   const {
     activeQueuedFollowUps,
+    activeQueuedFollowUpsInterrupted,
     cleanBackgroundTerminals,
     conversationEmptyState,
     deleteQueuedFollowUp,
     editQueuedFollowUp,
     onboardingEmptyStateVisible,
+    pauseActiveQueuedFollowUps,
+    pausedQueueSubmitPrompt,
     pendingGoalReplace,
     reorderQueuedFollowUp,
+    resolvePausedQueueSubmitPrompt,
+    resumeInterruptedQueuedFollowUps,
     resumeGoalPrompt,
     sendQueuedFollowUpNow,
     sendTurn,
@@ -1119,26 +1157,40 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
         rememberThreadScrollOffset, revealAssistantEndResource, rightRailMode, rightRailPinned,
         rightRailSections, selectThreadById, sendBackgroundAgentPanelMessage, setArtifactPreview,
         setAutomationsPanelOpen, setBackgroundAgentMessageDraft, setFileReference, setFocusedAutomationId,
-        setRightRailPinned, setRightRailPopoverOpen, setThreadFindQuery, showLiveTurnDiffPortal,
+        setRightRailPinned, setRightRailPopoverOpen, setThreadFindQuery, showLiveTurnFixedContent,
         showRightRail, showRightRailPopover, sidebarOpen, sidePanel, sidePanelNewTabActions, state,
         threadFindFocusToken, threadFindOpen, threadFindQuery, threadFindScrollToUnitRef,
         threadInlineEndInset, toggleSidebar, visibleThreadFindIndex, worktreeHostGitStatus,
+        fixedContent: (
+          <LiveTurnFixedContent
+            activeTurnId={activeTurnId}
+            diff={activeDiff}
+            isThreadRunning={activeThreadRunning}
+            hasBlockingRequest={activePendingRequests.length > 0}
+            plan={activeFixedPlan}
+            turnId={activeThreadRuntime.turnDiffTurnId}
+            onOpenDiff={openActiveDiffPanel}
+          />
+        ),
         footer: renderForgeAppComposerRegion({
-          activeDiff, activeModelSupportsImageInput, activePendingRequestActors, activePendingRequests,
-          activeQueuedFollowUps, activeThread, activeThreadDisplayModelSelection, activeThreadRunning,
-          activeThreadRuntime, backgroundSubagentsStopAllPending, backgroundSubagentStopThreadIds,
+          activeModelSupportsImageInput, activePendingRequestActors, activePendingRequests,
+          activeQueuedFollowUps, activeQueuedFollowUpsInterrupted, activeThread,
+          activeThreadDisplayModelSelection, activeThreadRuntime,
+          backgroundSubagentsStopAllPending, backgroundSubagentStopThreadIds,
           browseComposerFiles, clearActiveThreadGoal, composerAttachments, composerGoalMode, composerMode,
           composerModelProviderHint, composerPlaceholder, composerQuotaBanner, composerStatusPanelOpen,
           composerSubmitState, composerWorkMode, composerWorkModeOptions, conversation, deleteQueuedFollowUp,
           dispatch, editActiveThreadGoal, editQueuedFollowUp, effectiveThreadContextDefaults,
           executeSlashCommand, followUpQueueingEnabled, hasPlanComposerMode, hooksReviewSnapshot, input,
-          interruptActiveTurn, loadSettingsPanel, onboardingEmptyStateVisible, openActiveDiffPanel,
-          openBackgroundAgentThread, openExistingWorkspaceFolder, pendingGoalReplace, pursueComposerGoal,
-          reorderQueuedFollowUp, respondToRequest, resumeGoalPrompt, reviewHooks, selectComposerPlan,
+          interruptActiveTurn, loadSettingsPanel, onboardingEmptyStateVisible,
+          openBackgroundAgentThread, openExistingWorkspaceFolder, pauseActiveQueuedFollowUps,
+          pausedQueueSubmitPrompt, pendingGoalReplace, pursueComposerGoal, reorderQueuedFollowUp,
+          resolvePausedQueueSubmitPrompt, respondToRequest,
+          resumeInterruptedQueuedFollowUps, resumeGoalPrompt, reviewHooks, selectComposerPlan,
           selectProjectlessWorkspace, selectWorkspaceRoot, sendQueuedFollowUpNow, sendTurn,
           setActiveThreadGoalStatus, setComposerAttachments, setComposerStatusPanelOpen, setComposerWorkMode,
           setFollowUpQueueingEnabled, setInput, setPendingGoalReplace, setResumeGoalPrompt,
-          showHooksReviewBanner, showLiveTurnDiffPortal, state, stopBackgroundSubagents,
+          showHooksReviewBanner, state, stopBackgroundSubagents,
           searchComposerMentions, threadGoalPendingAction, toggleModelPickerAnchor,
           togglePermissionsPickerAnchor, toggleReasoningPickerAnchor, tokenUsageSnapshot, trustAllHooks,
           workspace, workspaceRootOptions,
@@ -1163,7 +1215,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
         activeSettingsPanel, applyImageGenerationDraft, applyModelDraft, closeCommandPanel, commandPanel,
         handleSettingsPanelSelectAction, handleSettingsPanelSelectEntry, imageGenerationDraft,
         keymapOverrides, loadSettingsPanel, modelDraft, refreshActiveSettingsPanel, resetUiKeyboardShortcut,
-        searchCommandMenuFromPanel, searchFilesFromCommandPanel, selectCommandPanelAction,
+        searchChatsFromCommandPanel, searchCommandMenuFromPanel, searchFilesFromCommandPanel, selectCommandPanelAction,
         selectCommandPanelEntry, setActiveSettingsPanel, setImageGenerationDraft, setModelDraft,
         settingsPanelState, setUiCodeFontSize, setUiFontSize, setUiKeyboardShortcut, setUiLocale,
         setUiReducedMotion, setUiThemeMode, state, uiAppearance, uiLocale, uiThemeSnapshot,

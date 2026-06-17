@@ -153,7 +153,7 @@ function buildsPaginatedThreadListParams(): void {
       archived: false,
       limit: 100,
       modelProviders: [],
-      sortKey: "updated_at",
+      sortKey: "recency_at",
       sortDirection: "desc",
     },
     "first thread list page should request recent non-archived history across provider overrides",
@@ -165,7 +165,7 @@ function buildsPaginatedThreadListParams(): void {
       cursor: "cursor-2",
       limit: 100,
       modelProviders: [],
-      sortKey: "updated_at",
+      sortKey: "recency_at",
       sortDirection: "desc",
     },
     "subsequent thread list pages should pass the opaque cursor",
@@ -252,6 +252,7 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
     name: null,
     turns: [],
     ...rest,
+    recencyAt: rest.recencyAt ?? null,
   };
 }
 

@@ -51,6 +51,7 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   tokenUsage: null,
   tokenSpeed: { tokensPerSecond: 0, turnId: null },
   tokenSpeedTracker: null,
+  latestTerminalTurn: null,
 });
 
 export function selectThreadRuntime(
@@ -139,6 +140,7 @@ export function normalizeThreadRuntime(
     threadGoalTurnId,
     hookRunsByTurn,
     terminalTurnIds,
+    latestTerminalTurn: runtime?.latestTerminalTurn ?? null,
     // codex: local-conversation-thread-*.js — preserve the latest
     // token-usage snapshot across patch cycles; the reducer rewrites it only
     // when `thread/tokenUsage/updated` arrives.

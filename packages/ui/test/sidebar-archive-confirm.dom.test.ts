@@ -36,6 +36,7 @@ function makeThread(id: string, name: string): Thread {
     modelProvider: "openai",
     createdAt: 0,
     updatedAt: 0,
+    recencyAt: null,
     status: ({ type: "completed" } as unknown) as Thread["status"],
     path: null,
     // A shared real cwd puts all three rows into one expanded project group.

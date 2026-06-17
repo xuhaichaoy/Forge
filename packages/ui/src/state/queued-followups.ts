@@ -11,7 +11,10 @@ export interface QueuedFollowUp {
   createdAt: number;
   status: QueuedFollowUpStatus;
   error?: string;
+  pausedReason?: string;
 }
+
+export const INTERRUPTED_STEER_PAUSED_REASON = "Interrupted before the steer was accepted.";
 
 export function createQueuedFollowUp(input: {
   text: string;
@@ -58,6 +61,7 @@ export function updateQueuedFollowUpStatus(
   id: string,
   status: QueuedFollowUpStatus,
   error?: string,
+  pausedReason?: string,
 ): QueuedFollowUp[] {
   return queue.map((message) =>
     message.id === id
@@ -65,17 +69,18 @@ export function updateQueuedFollowUpStatus(
           ...message,
           status,
           ...(error ? { error } : { error: undefined }),
+          ...(pausedReason ? { pausedReason } : { pausedReason: undefined }),
         }
       : message,
   );
 }
 
 /**
- * Codex Desktop's `steeringUserMessage` queue de-dups follow-ups by canonical
- * prompt text before pushing them onto the steering ring (see Desktop's `Jp`
- * helper in `composer-D82P7v-B.js`). Forge mirrors that here so users can't
- * accidentally enqueue the same follow-up twice while a turn is still
- * streaming.
+ * Forge-only guard: current Codex Desktop owns pending steers through the
+ * product/app-server `steeringUserMessage` model and does not expose an
+ * app-layer duplicate helper for Forge's local queue. This keeps local queued
+ * follow-ups from accumulating identical prompt/context pairs while a turn is
+ * still streaming.
  */
 export function isQueuedFollowUpDuplicate(
   queue: QueuedFollowUp[],
@@ -84,6 +89,28 @@ export function isQueuedFollowUpDuplicate(
   const key = canonicalFollowUpKey(candidate);
   if (!key) return false;
   return queue.some((message) => canonicalFollowUpKey(message) === key);
+}
+
+export function pauseQueuedFollowUpsWithReason(
+  queue: QueuedFollowUp[],
+  pausedReason: string,
+): QueuedFollowUp[] {
+  return queue.map((message) => (
+    message.status === "queued"
+      ? { ...message, pausedReason }
+      : message
+  ));
+}
+
+export function resumeQueuedFollowUpsWithReason(
+  queue: QueuedFollowUp[],
+  pausedReason: string,
+): QueuedFollowUp[] {
+  return queue.map((message) => (
+    message.pausedReason === pausedReason
+      ? { ...message, pausedReason: undefined }
+      : message
+  ));
 }
 
 function canonicalFollowUpKey(
@@ -116,9 +143,21 @@ function describeAttachmentTarget(attachment: ComposerAttachment): string {
 }
 
 export function queuedFollowUpSummary(message: Pick<QueuedFollowUp, "text" | "attachments">): string {
-  const text = message.text.trim().replaceAll(/\s+/g, " ");
-  if (text) return text.length > 96 ? `${text.slice(0, 93)}...` : text;
+  const text = summarizeQueuedFollowUpText(message.text);
+  if (text) return text;
+  const pastedTextAttachments = message.attachments.filter((attachment) => attachment.type === "plainText");
+  if (pastedTextAttachments.length > 0) {
+    const preview = summarizeQueuedFollowUpText(pastedTextAttachments[0]?.text ?? "") || "Pasted text";
+    const remaining = pastedTextAttachments.length - 1;
+    if (remaining === 0) return preview;
+    return `${preview} (+${remaining} more pasted text attachment${remaining === 1 ? "" : "s"})`;
+  }
   return message.attachments.length === 1
     ? "1 attachment"
     : `${message.attachments.length} attachments`;
+}
+
+function summarizeQueuedFollowUpText(value: string): string {
+  const text = value.trim().replaceAll(/\s+/g, " ");
+  return text.length > 96 ? `${text.slice(0, 93)}...` : text;
 }

@@ -66,6 +66,7 @@ export interface ForgeAppMainArgs {
   editLastUserTurn: ComponentProps<typeof ConversationView>["onEditLastUserMessage"];
   filePreviewPanelLayout: ReturnType<typeof useFilePreviewPanelLayout>;
   fileReference: FileReferenceSelection | null;
+  fixedContent?: ReactNode;
   footer: ReactNode;
   forkActiveThreadFromTurn: ComponentProps<typeof ConversationView>["onForkTurn"];
   formatUiMessage: ReturnType<typeof useUiPreferences>["formatUiMessage"];
@@ -111,7 +112,7 @@ export interface ForgeAppMainArgs {
   setRightRailPinned: ReturnType<typeof useAppShellState>["setRightRailPinned"];
   setRightRailPopoverOpen: ReturnType<typeof useAppShellState>["setRightRailPopoverOpen"];
   setThreadFindQuery: ReturnType<typeof useThreadFind>["setThreadFindQuery"];
-  showLiveTurnDiffPortal: boolean;
+  showLiveTurnFixedContent: boolean;
   showRightRail: boolean;
   showRightRailPopover: boolean;
   sidebarOpen: boolean;
@@ -162,6 +163,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     editLastUserTurn,
     filePreviewPanelLayout,
     fileReference,
+    fixedContent,
     footer,
     forkActiveThreadFromTurn,
     formatUiMessage,
@@ -207,7 +209,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     setRightRailPinned,
     setRightRailPopoverOpen,
     setThreadFindQuery,
-    showLiveTurnDiffPortal,
+    showLiveTurnFixedContent,
     showRightRail,
     showRightRailPopover,
     sidebarOpen,
@@ -297,7 +299,8 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
           initialOffset={initialThreadScrollOffset}
           onScroll={rememberThreadScrollOffset}
           inlineEndInset={threadInlineEndInset}
-          contentVersion={`${conversation.units.length}:${activeThreadRunning}:${activePendingRequests.length}:${activeQueuedFollowUps.length}:${showLiveTurnDiffPortal ? activeDiff.length : 0}`}
+          contentVersion={`${conversation.units.length}:${activeThreadRunning}:${activePendingRequests.length}:${activeQueuedFollowUps.length}:${showLiveTurnFixedContent}:${activeDiff.length}`}
+          fixedContent={fixedContent}
           footer={footer}
         >
           <section className="hc-conversation" data-thread-find-target="conversation">

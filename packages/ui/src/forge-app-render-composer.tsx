@@ -8,15 +8,19 @@ import { ComposerExternalFooter, ComposerSettingsChips } from "./components/comp
 import { ComposerQuotaBanner } from "./components/composer-quota-banner";
 import { ComposerStatusPanel } from "./components/composer-status-panel";
 import { HooksReviewBanner } from "./components/hooks-review-banner";
-import { LiveTurnDiffPortal } from "./components/live-turn-diff-portal";
 import { PendingRequestStack } from "./components/pending-request-stack";
 import { QueuedFollowUpStack } from "./components/queued-follow-up-stack";
 import { StatusTextPanel } from "./components/status-text-panel";
-import { ThreadGoalBanner, ThreadGoalReplaceConfirm, ThreadGoalResumeConfirm } from "./components/thread-goal-banner";
+import {
+  PausedQueueSubmitConfirm,
+  ThreadGoalBanner,
+  ThreadGoalReplaceConfirm,
+  ThreadGoalResumeConfirm,
+} from "./components/thread-goal-banner";
 import type { useHooksReview } from "./hooks/use-hooks-review";
 import type { useThreadGoalActions } from "./hooks/use-thread-goal-actions";
 import type { useModelPickerViewModel } from "./hooks/use-model-picker-view-model";
-import type { useTurnSubmission } from "./hooks/use-turn-submission";
+import type { PausedQueueSubmitDecision, useTurnSubmission } from "./hooks/use-turn-submission";
 import { threadGitBranch } from "./state/app-shell-helpers";
 import type { CodexUiState, PendingServerRequest } from "./state/codex-reducer";
 import type { ComposerAttachment, ComposerMode, SettingsPanelId } from "./state/composer-workflow";
@@ -30,14 +34,13 @@ import type { ComposerWorkMode } from "./state/worktrees";
  * produced element tree byte-identical to the previous inline JSX.
  */
 export interface ForgeAppComposerRegionArgs {
-  activeDiff: string;
   activeModelSupportsImageInput: boolean;
   activePendingRequestActors: Record<string, string>;
   activePendingRequests: PendingServerRequest[];
   activeQueuedFollowUps: ComponentProps<typeof QueuedFollowUpStack>["messages"];
+  activeQueuedFollowUpsInterrupted: boolean;
   activeThread: Thread | null;
   activeThreadDisplayModelSelection: ReturnType<typeof useModelPickerViewModel>["activeThreadDisplayModelSelection"];
-  activeThreadRunning: boolean;
   activeThreadRuntime: CodexUiState["threadsRuntime"][string];
   backgroundSubagentsStopAllPending: boolean;
   backgroundSubagentStopThreadIds: readonly string[];
@@ -67,13 +70,16 @@ export interface ForgeAppComposerRegionArgs {
   interruptActiveTurn: () => Promise<void>;
   loadSettingsPanel: (panel: SettingsPanelId) => Promise<void>;
   onboardingEmptyStateVisible: boolean;
-  openActiveDiffPanel: (filePath?: string) => void;
   openBackgroundAgentThread: ComponentProps<typeof BackgroundSubagentsStack>["onOpenThread"];
   openExistingWorkspaceFolder: () => Promise<void>;
+  pausedQueueSubmitPrompt: { queuedMessageCount: number } | null;
   pendingGoalReplace: string | null;
+  pauseActiveQueuedFollowUps: () => void;
   pursueComposerGoal: () => void;
   reorderQueuedFollowUp: ComponentProps<typeof QueuedFollowUpStack>["onReorder"];
+  resolvePausedQueueSubmitPrompt: (decision: PausedQueueSubmitDecision) => void;
   respondToRequest: ComponentProps<typeof PendingRequestStack>["onRespond"];
+  resumeInterruptedQueuedFollowUps: () => void;
   resumeGoalPrompt: { threadId: string; objective: string; status: ThreadGoalStatus } | null;
   reviewHooks: ComponentProps<typeof HooksReviewBanner>["onReview"];
   selectComposerPlan: () => void;
@@ -90,7 +96,6 @@ export interface ForgeAppComposerRegionArgs {
   setPendingGoalReplace: Dispatch<SetStateAction<string | null>>;
   setResumeGoalPrompt: Dispatch<SetStateAction<{ threadId: string; objective: string; status: ThreadGoalStatus } | null>>;
   showHooksReviewBanner: boolean;
-  showLiveTurnDiffPortal: boolean;
   state: CodexUiState;
   stopBackgroundSubagents: ComponentProps<typeof BackgroundSubagentsStack>["onStopAll"];
   searchComposerMentions: ComponentProps<typeof Composer>["onMentionSearch"];
@@ -106,14 +111,13 @@ export interface ForgeAppComposerRegionArgs {
 
 export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): ReactNode {
   const {
-    activeDiff,
     activeModelSupportsImageInput,
     activePendingRequestActors,
     activePendingRequests,
     activeQueuedFollowUps,
+    activeQueuedFollowUpsInterrupted,
     activeThread,
     activeThreadDisplayModelSelection,
-    activeThreadRunning,
     activeThreadRuntime,
     backgroundSubagentsStopAllPending,
     backgroundSubagentStopThreadIds,
@@ -143,13 +147,16 @@ export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): 
     interruptActiveTurn,
     loadSettingsPanel,
     onboardingEmptyStateVisible,
-    openActiveDiffPanel,
     openBackgroundAgentThread,
     openExistingWorkspaceFolder,
+    pausedQueueSubmitPrompt,
     pendingGoalReplace,
+    pauseActiveQueuedFollowUps,
     pursueComposerGoal,
     reorderQueuedFollowUp,
+    resolvePausedQueueSubmitPrompt,
     respondToRequest,
+    resumeInterruptedQueuedFollowUps,
     resumeGoalPrompt,
     reviewHooks,
     selectComposerPlan,
@@ -166,7 +173,6 @@ export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): 
     setPendingGoalReplace,
     setResumeGoalPrompt,
     showHooksReviewBanner,
-    showLiveTurnDiffPortal,
     state,
     stopBackgroundSubagents,
     searchComposerMentions,
@@ -203,21 +209,17 @@ export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): 
                  * `/status` panel is composer-local chrome rather than part of
                  * this above-composer stack.
                  */}
-                <LiveTurnDiffPortal
-                  diff={activeDiff}
-                  isThreadRunning={activeThreadRunning}
-                  hasBlockingRequest={activePendingRequests.length > 0}
-                  onOpenDiff={openActiveDiffPanel}
-                />
-                <AboveComposerPanelContainer hasAboveComposerPortalContent={showLiveTurnDiffPortal}>
+                <AboveComposerPanelContainer hasAboveComposerPortalContent={false}>
                   <QueuedFollowUpStack
                     messages={activeQueuedFollowUps}
+                    isInterrupted={activeQueuedFollowUpsInterrupted}
                     isQueueingEnabled={followUpQueueingEnabled}
                     onSendNow={sendQueuedFollowUpNow}
                     onEdit={editQueuedFollowUp}
                     onDelete={deleteQueuedFollowUp}
                     onQueueingChange={setFollowUpQueueingEnabled}
                     onReorder={reorderQueuedFollowUp}
+                    onResumeInterruptedQueue={resumeInterruptedQueuedFollowUps}
                   />
                   <ThreadGoalBanner
                     goal={activeThreadRuntime.threadGoal}
@@ -236,6 +238,14 @@ export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): 
                         void editActiveThreadGoal(objective);
                       }}
                       onCancel={() => setPendingGoalReplace(null)}
+                    />
+                  )}
+                  {pausedQueueSubmitPrompt !== null && (
+                    <PausedQueueSubmitConfirm
+                      queuedMessageCount={pausedQueueSubmitPrompt.queuedMessageCount}
+                      onClearQueue={() => resolvePausedQueueSubmitPrompt("clearQueue")}
+                      onSendMessage={() => resolvePausedQueueSubmitPrompt("sendMessage")}
+                      onCancel={() => resolvePausedQueueSubmitPrompt("cancel")}
                     />
                   )}
                   {resumeGoalPrompt && (
@@ -344,7 +354,10 @@ export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): 
                 ) : null}
                 submitState={composerSubmitState}
                 onSend={() => void sendTurn()}
-                onInterrupt={() => void interruptActiveTurn()}
+                onInterrupt={() => {
+                  pauseActiveQueuedFollowUps();
+                  void interruptActiveTurn();
+                }}
                 onSlashCommand={executeSlashCommand}
                 footerSettings={(
                   <ComposerSettingsChips

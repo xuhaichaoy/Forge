@@ -2,10 +2,11 @@ import type { Thread } from "@forge/codex-protocol";
 import { isProjectlessThreadCwd } from "./thread-workflow";
 
 /**
- * Codex Desktop's `local-environments-*.js` keys per-thread sort time
- * by `(updatedAt ?? createdAt) * 1000`, then sorts descending. Empty groups
- * collapse and never appear in the rail. We mirror that here at the data
- * layer so the sidebar component stays a dumb renderer.
+ * Codex Desktop computes a per-row `recencyAt` for sidebar ordering
+ * (`app-main-*.js::ET/wT/xT`) and keeps the visible sort menu at
+ * `Updated`/`Created`. Local Codex now exposes the same protocol field as
+ * `Thread.recencyAt`; the updated sort path therefore prefers recency time and
+ * falls back to updated/created for older payloads.
  */
 
 export type SidebarSortKey = "updated_at" | "created_at";
@@ -106,9 +107,9 @@ export interface SidebarThreadStatusState {
 
 /**
  * Convert the live thread set into the ordered list the sidebar renders.
- * Sort is `updated_at desc` by default (Codex Desktop's `getThreadAt`),
- * with `created_at` available as a secondary mode for parity. Sub-agent
- * threads are filtered out unless the gate is open or explicitly disabled.
+ * Sort is Desktop's updated/recency path by default, with `created_at`
+ * available as a secondary mode for parity. Sub-agent threads are filtered out
+ * unless the gate is open or explicitly disabled.
  */
 export function projectSidebarThreads(
   threads: Thread[],
@@ -143,7 +144,7 @@ export function splitSidebarThreadsByPinned(
 export function threadSortAt(thread: Thread, sortKey: SidebarSortKey): number {
   const seconds = sortKey === "created_at"
     ? threadCreatedSeconds(thread)
-    : threadUpdatedSeconds(thread);
+    : threadRecencySeconds(thread);
   return seconds * 1000;
 }
 
@@ -386,7 +387,9 @@ function threadBelongsToWorkspace(thread: Thread, workspaceRoot: string): boolea
   return cwd.startsWith(`${workspaceRoot}${separator}`);
 }
 
-function threadUpdatedSeconds(thread: Thread): number {
+function threadRecencySeconds(thread: Thread): number {
+  const recency = numericField(thread, "recencyAt");
+  if (recency > 0) return recency;
   const updated = numericField(thread, "updatedAt");
   if (updated > 0) return updated;
   return numericField(thread, "createdAt");
@@ -396,7 +399,7 @@ function threadCreatedSeconds(thread: Thread): number {
   return numericField(thread, "createdAt");
 }
 
-function numericField(thread: Thread, key: "createdAt" | "updatedAt"): number {
+function numericField(thread: Thread, key: "createdAt" | "updatedAt" | "recencyAt"): number {
   const value = (thread as Record<string, unknown>)[key];
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }

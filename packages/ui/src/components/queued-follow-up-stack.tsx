@@ -7,22 +7,26 @@ import { useForgeIntl } from "./i18n-provider";
 
 export interface QueuedFollowUpStackProps {
   messages: QueuedFollowUp[];
+  isInterrupted: boolean;
   isQueueingEnabled: boolean;
   onSendNow: (message: QueuedFollowUp) => void;
   onEdit: (message: QueuedFollowUp) => void;
   onDelete: (message: QueuedFollowUp) => void;
   onQueueingChange: (enabled: boolean) => void;
   onReorder: (activeId: string, overId: string) => void;
+  onResumeInterruptedQueue: () => void;
 }
 
 export function QueuedFollowUpStack({
   messages,
+  isInterrupted,
   isQueueingEnabled,
   onSendNow,
   onEdit,
   onDelete,
   onQueueingChange,
   onReorder,
+  onResumeInterruptedQueue,
 }: QueuedFollowUpStackProps) {
   const { formatMessage } = useForgeIntl();
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -64,11 +68,29 @@ export function QueuedFollowUpStack({
   const editLabel = formatMessage({ id: "composer.queuedMessage.edit", defaultMessage: "Edit message" });
   const turnOnLabel = formatMessage({ id: "composer.queuedMessage.turnOn", defaultMessage: "Turn on queueing" });
   const turnOffLabel = formatMessage({ id: "composer.queuedMessage.turnOff", defaultMessage: "Turn off queueing" });
+  const interruptedQueueLabel = formatMessage({
+    id: "composer.queuedMessage.interruptedQueue",
+    defaultMessage: "Queue paused because you interrupted",
+  });
+  const resumeInterruptedQueueLabel = formatMessage({
+    id: "composer.queuedMessage.resumeInterruptedQueue",
+    defaultMessage: "Resume",
+  });
 
   return (
     <section className="hc-queued-followups" aria-label="Queued follow-ups">
+      {isInterrupted && (
+        <div className="hc-queued-followup-interrupted" role="status">
+          <TriangleAlert size={14} />
+          <span>{interruptedQueueLabel}</span>
+          <button type="button" onClick={onResumeInterruptedQueue}>
+            {resumeInterruptedQueueLabel}
+          </button>
+        </div>
+      )}
       {messages.map((message) => {
-        const isPaused = message.status === "paused";
+        const pausedReason = message.pausedReason ?? message.error;
+        const isPaused = message.status === "paused" || Boolean(message.pausedReason);
         return (
           <article
             className={`hc-queued-followup-row ${openMenuId === message.id ? "is-menu-open" : ""}`}
@@ -100,12 +122,11 @@ export function QueuedFollowUpStack({
             </span>
             <div className="hc-queued-followup-main">
               {isPaused && (
-                <span className="hc-queued-followup-warning" title={pausedTooltip}>
+                <span className="hc-queued-followup-warning" title={pausedReason ?? pausedTooltip}>
                   <TriangleAlert size={14} />
                 </span>
               )}
               <span className="hc-queued-followup-text">{queuedFollowUpSummary(message)}</span>
-              {message.attachments.length > 0 && <small>{message.attachments.length} context</small>}
             </div>
             {message.error && <div className="hc-queued-followup-error">{message.error}</div>}
             <div className="hc-queued-followup-actions">

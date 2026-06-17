@@ -2,9 +2,8 @@ import { projectConversation, type AccumulatedThreadItem as ThreadItem } from ".
 import { artifactsFromText } from "../src/state/rail-projection";
 
 export default function runRenderGroupsRightRailTests(): void {
-  usesLatestTodoListPlanForProgress();
-  usesReducerPlanFactsForProgress();
-  filtersMalformedProgressPlanEntriesWithoutInventingFacts();
+  rendersOrphanTodoListPlansInlineWithoutRightRailProgress();
+  ignoresMalformedTodoListPlansForRightRailProgress();
   dedupesArtifactsAcrossFileChangesAndAssistantText();
   extractsMarkdownLinksWithoutLookbehindSyntax();
   ignoresPunctuationOnlyFileArtifacts();
@@ -21,7 +20,7 @@ export default function runRenderGroupsRightRailTests(): void {
   ordersMcpSourcesNewestFirstAndUsesPluginDisplayNames();
 }
 
-function usesLatestTodoListPlanForProgress(): void {
+function rendersOrphanTodoListPlansInlineWithoutRightRailProgress(): void {
   const projection = projectConversation([
     {
       type: "todo-list",
@@ -42,18 +41,14 @@ function usesLatestTodoListPlanForProgress(): void {
   ]);
 
   assertDeepEqual(
-    projection.progress.map((entry) => entry.title),
-    ["Add right rail tests", "Report documented gaps"],
-    "progress should use only the latest todo-list plan",
+    projection.units.map((unit) => unit.kind === "threadItem" ? unit.item.id : unit.key),
+    ["todo-old", "todo-new"],
+    "orphan todo-list items should keep the legacy inline transcript path",
   );
-  assertDeepEqual(
-    projection.progress.map((entry) => entry.status),
-    ["in_progress", "pending"],
-    "progress should preserve latest todo-list statuses",
-  );
+  assertDeepEqual(projection.progress, [], "todo-list items should not populate right-rail Progress");
 }
 
-function filtersMalformedProgressPlanEntriesWithoutInventingFacts(): void {
+function ignoresMalformedTodoListPlansForRightRailProgress(): void {
   const projection = projectConversation([
     {
       type: "todo-list",
@@ -67,35 +62,8 @@ function filtersMalformedProgressPlanEntriesWithoutInventingFacts(): void {
     } as ThreadItem,
   ]);
 
-  assertDeepEqual(
-    projection.progress.map((entry) => [entry.id, entry.title, entry.status ?? null]),
-    [
-      ["todo:todo-malformed:1", "Keep source-backed plan title", null],
-      ["todo:todo-malformed:3", "Preserve supplied status", "completed"],
-    ],
-    "progress should skip untitled plan rows and should not synthesize a fallback status",
-  );
-}
-
-function usesReducerPlanFactsForProgress(): void {
-  const projection = projectConversation([], {
-    progressPlan: {
-      id: "turn-plan:latest",
-      plan: [
-        { step: "Read Desktop bundle", status: "completed" },
-        { step: "Move plan out of ThreadItem", status: "inProgress" },
-      ],
-    },
-  });
-
-  assertDeepEqual(
-    projection.progress.map((entry) => ({ id: entry.id, title: entry.title, status: entry.status })),
-    [
-      { id: "turn-plan:latest:0", title: "Read Desktop bundle", status: "completed" },
-      { id: "turn-plan:latest:1", title: "Move plan out of ThreadItem", status: "inProgress" },
-    ],
-    "explicit plan facts should drive Progress without synthetic ThreadItems",
-  );
+  assertEqual(projection.units.length, 1, "malformed todo-list data should still stay with the inline item renderer");
+  assertDeepEqual(projection.progress, [], "malformed todo-list data should not create right-rail Progress entries");
 }
 
 function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {
@@ -706,5 +674,11 @@ function assertDeepEqual(actual: unknown, expected: unknown, message: string): v
   const expectedJson = JSON.stringify(expected);
   if (actualJson !== expectedJson) {
     throw new Error(`${message}: expected ${expectedJson}, got ${actualJson}`);
+  }
+}
+
+function assertEqual<T>(actual: T, expected: T, message: string): void {
+  if (actual !== expected) {
+    throw new Error(`${message}: expected ${String(expected)}, got ${String(actual)}`);
   }
 }

@@ -1,9 +1,12 @@
 import {
+  INTERRUPTED_STEER_PAUSED_REASON,
   createQueuedFollowUp,
   isQueuedFollowUpDuplicate,
+  pauseQueuedFollowUpsWithReason,
   queuedFollowUpSummary,
   reorderQueuedFollowUps,
   removeQueuedFollowUp,
+  resumeQueuedFollowUpsWithReason,
   updateQueuedFollowUpStatus,
 } from "../src/state/queued-followups";
 
@@ -13,6 +16,7 @@ export default function runQueuedFollowUpsTests(): void {
   reordersQueuedFollowUps();
   summarizesTextAndAttachmentOnlyMessages();
   detectsDuplicateFollowUpsByCanonicalKey();
+  pausesAndResumesOnlyInterruptedQueuedFollowUps();
 }
 
 function detectsDuplicateFollowUpsByCanonicalKey(): void {
@@ -49,6 +53,62 @@ function createsStableQueuedFollowUpRecords(): void {
       status: "queued",
     },
     "queued follow-up should keep message facts and initial status",
+  );
+}
+
+function pausesAndResumesOnlyInterruptedQueuedFollowUps(): void {
+  const queue = [
+    createQueuedFollowUp({ id: "a", now: 1, text: "A", attachments: [], cwd: "" }),
+    updateQueuedFollowUpStatus(
+      [createQueuedFollowUp({ id: "b", now: 2, text: "B", attachments: [], cwd: "" })],
+      "b",
+      "paused",
+      "Runtime is offline",
+    )[0]!,
+  ];
+
+  const paused = pauseQueuedFollowUpsWithReason(queue, INTERRUPTED_STEER_PAUSED_REASON);
+  assertDeepEqual(
+    paused.map((message) => ({
+      id: message.id,
+      status: message.status,
+      error: message.error,
+      pausedReason: message.pausedReason,
+    })),
+    [
+      {
+        id: "a",
+        status: "queued",
+        pausedReason: INTERRUPTED_STEER_PAUSED_REASON,
+      },
+      {
+        id: "b",
+        status: "paused",
+        error: "Runtime is offline",
+      },
+    ],
+    "interrupted pause should tag only queued messages and preserve real paused errors",
+  );
+
+  assertDeepEqual(
+    resumeQueuedFollowUpsWithReason(paused, INTERRUPTED_STEER_PAUSED_REASON).map((message) => ({
+      id: message.id,
+      status: message.status,
+      error: message.error,
+      pausedReason: message.pausedReason,
+    })),
+    [
+      {
+        id: "a",
+        status: "queued",
+      },
+      {
+        id: "b",
+        status: "paused",
+        error: "Runtime is offline",
+      },
+    ],
+    "resume should clear only the interrupted paused reason",
   );
 }
 
@@ -116,6 +176,23 @@ function summarizesTextAndAttachmentOnlyMessages(): void {
     queuedFollowUpSummary({ text: "", attachments: [{ type: "filePath", path: "README.md" }] }),
     "1 attachment",
     "summary should fall back to attachment count",
+  );
+  assertEqual(
+    queuedFollowUpSummary({ text: "", attachments: [{ type: "plainText", text: "  pasted\ncontext  " }] }),
+    "pasted context",
+    "summary should use pasted text attachment previews",
+  );
+  assertEqual(
+    queuedFollowUpSummary({
+      text: "",
+      attachments: [
+        { type: "plainText", text: "" },
+        { type: "plainText", text: "second" },
+        { type: "plainText", text: "third" },
+      ],
+    }),
+    "Pasted text (+2 more pasted text attachments)",
+    "summary should include remaining pasted text attachment count",
   );
 }
 

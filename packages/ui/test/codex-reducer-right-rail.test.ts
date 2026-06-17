@@ -10,7 +10,7 @@ import { projectConversation } from "../src/state/render-groups";
 import { projectRightRailSections } from "../src/state/right-rail";
 
 export default function runCodexReducerRightRailTests(): void {
-  storesLatestTurnPlanAsProjectionFact();
+  storesTurnPlanUpdatesAsTodoListItems();
   projectsBranchDetailsAfterFirstTurnMetadataRefresh();
   preservesArtifactFilePathFactsFromItemNotifications();
   storesTurnDiffsAndClearsThemWhenThreadsAreRemoved();
@@ -19,8 +19,23 @@ export default function runCodexReducerRightRailTests(): void {
   ignoresTokenUsageNotificationsMissingThreadId();
 }
 
-function storesLatestTurnPlanAsProjectionFact(): void {
+function storesTurnPlanUpdatesAsTodoListItems(): void {
   let state = stateWithThread("thread-plan");
+
+  state = reduceNotification(state, {
+    method: "item/completed",
+    params: {
+      threadId: "thread-plan",
+      turnId: "turn-1",
+      completedAtMs: 1,
+      item: {
+        id: "user-1",
+        type: "userMessage",
+        clientId: null,
+        content: [{ type: "text", text: "Add plan tracking" }],
+      } as unknown as ThreadItem,
+    },
+  });
 
   state = reduceNotification(state, {
     method: "turn/plan/updated",
@@ -50,10 +65,35 @@ function storesLatestTurnPlanAsProjectionFact(): void {
 
   const planRuntime = selectThreadRuntime(state, "thread-plan");
   const items = planRuntime.items;
-  assertEqual(
-    items.some((item) => item.type === "todo-list"),
-    false,
-    "turn/plan/updated should not add synthetic todo-list items to server item facts",
+  const todoItems = items.filter((item) => item.type === "todo-list");
+  assertDeepEqual(
+    todoItems.map((item) => ({
+      id: item.id,
+      turnId: (item as Record<string, unknown>)._turnId,
+      explanation: (item as Record<string, unknown>).explanation,
+      plan: (item as Record<string, unknown>).plan,
+    })),
+    [
+      {
+        id: "turn-plan:thread-plan:turn-1:1",
+        turnId: "turn-1",
+        explanation: null,
+        plan: [
+          { step: "Read reducer", status: "completed" },
+          { step: "Add initial assertion", status: "inProgress" },
+        ],
+      },
+      {
+        id: "turn-plan:thread-plan:turn-1:2",
+        turnId: "turn-1",
+        explanation: "latest plan wins",
+        plan: [
+          { step: "Write right rail reducer tests", status: "inProgress" },
+          { step: "Hand production gaps to main thread", status: "pending" },
+        ],
+      },
+    ],
+    "turn/plan/updated should append Desktop todo-list turn items",
   );
   assertDeepEqual(
     planRuntime.turnPlan?.plan,
@@ -61,17 +101,21 @@ function storesLatestTurnPlanAsProjectionFact(): void {
       { step: "Write right rail reducer tests", status: "inProgress" },
       { step: "Hand production gaps to main thread", status: "pending" },
     ],
-    "turn/plan/updated should store the latest plan as projection facts",
+    "turn/plan/updated should keep the latest plan in the compatibility cache",
   );
 
-  const projection = projectConversation(items, { progressPlan: planRuntime.turnPlan });
+  const projection = projectConversation(items);
+  assertEqual(projection.units.length, 1, "turn todo-list projection should keep only the real user message row");
+  assertEqual(projection.units[0]?.kind, "message", "user message should remain after hoisting todo-list items");
+  assertEqual(
+    projection.units.some((unit) => "item" in unit && (unit.item as Record<string, unknown>).type === "todo-list"),
+    false,
+    "turn todo-list projection should not render todo-list as a normal transcript item",
+  );
   assertDeepEqual(
-    projection.progress.map((entry) => ({ title: entry.title, status: entry.status })),
-    [
-      { title: "Write right rail reducer tests", status: "inProgress" },
-      { title: "Hand production gaps to main thread", status: "pending" },
-    ],
-    "progress should read the latest turn plan from reducer-managed projection facts",
+    projection.progress,
+    [],
+    "todo-list plan facts should not create a right-rail Progress section in current Desktop parity",
   );
 }
 
@@ -457,6 +501,7 @@ function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
     name: null,
     turns: [],
     ...overrides,
+    recencyAt: overrides.recencyAt ?? null,
   };
 }
 
