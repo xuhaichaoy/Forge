@@ -61,8 +61,8 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
               `Xf` returns null ONLY when `count===0` — it does NOT gate on expanded state, so
               the badge stays visible whenever count>0 (expanded AND collapsed). Forge
               previously hid it on expand. Per-section: only artifacts / side-chats /
-              background-subagents / background-tasks / tool-sources pass a `titleSuffix`;
-              automation, browser-tabs, environment (branchDetails) and progress pass NONE, so
+              background-subagents / background-tasks / browser-tabs / tool-sources pass a
+              `titleSuffix`; automation and environment (branchDetails) pass NONE, so
               they render no count badge even when count>0 (see sectionHasCountBadge). */}
           <span className="hc-rail-section-title">{title}</span>
           {count > 0 && sectionHasCountBadge(id) && <span className="hc-rail-section-count">{count}</span>}

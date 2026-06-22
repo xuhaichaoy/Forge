@@ -18,7 +18,7 @@ import type {
 import type { TurnEnvironmentParams } from "@forge/codex-protocol/generated/v2/TurnEnvironmentParams";
 import type { HostStatus } from "../lib/tauri-host";
 import type { AccountState } from "./account-state";
-import type { ComposerMode } from "./composer-workflow";
+import type { ComposerAttachment, ComposerMode } from "./composer-workflow";
 import type { McpServerStartupStatus } from "./mcp-skills-management";
 import type { AccumulatedThreadItem } from "./render-group-types";
 import type {
@@ -92,6 +92,26 @@ export interface TerminalTurnSnapshot {
   status: "completed" | "failed" | "interrupted";
 }
 
+export interface PendingSteerCompareKey {
+  imageCount: number;
+  rawText: string;
+}
+
+export interface PendingSteerRuntime {
+  attachments: ComposerAttachment[];
+  clientUserMessageId: string;
+  compareKey: PendingSteerCompareKey;
+  context?: unknown;
+  cwd: string;
+  createdAt: number;
+  id: string;
+  mode?: ComposerMode;
+  optimisticLocalId: string;
+  responsesapiClientMetadata?: unknown;
+  text: string;
+  turnId: string;
+}
+
 export interface ThreadRuntimeSlice {
   activeTurnId: string | null;
   items: AccumulatedThreadItem[];
@@ -120,6 +140,7 @@ export interface ThreadRuntimeSlice {
   hookRunsByTurn?: Record<string, unknown[]>;
   terminalTurnIds: string[];
   latestTerminalTurn?: TerminalTurnSnapshot | null;
+  pendingSteers?: PendingSteerRuntime[];
   // codex: local-conversation-thread-*.js — populated by the
   // `thread/tokenUsage/updated` notification; absent until the server emits
   // the first counter for this thread. Optional so older fixtures that do
@@ -186,7 +207,7 @@ export type CodexUiAction =
   | { type: "invalidateAuth" }
   | { type: "hostStatus"; status: HostStatus }
   | { type: "setThreads"; threads: Thread[] }
-  | { type: "upsertThread"; thread: Thread; select?: boolean }
+  | { type: "upsertThread"; thread: Thread; select?: boolean; replaceSnapshot?: boolean }
   | { type: "renameThread"; threadId: string; name: string }
   | { type: "setActiveThread"; threadId: string | null }
   | { type: "removeThread"; threadId: string }
@@ -212,6 +233,8 @@ export type CodexUiAction =
     }
   | { type: "bindOptimisticTurn"; threadId: string; localTurnId: string; turnId: string }
   | { type: "dropOptimisticUserMessage"; threadId: string; localId: string }
+  | { type: "registerPendingSteer"; threadId: string; pending: PendingSteerRuntime }
+  | { type: "dropPendingSteer"; threadId: string; clientUserMessageId: string }
   // codex: electron-menu-shortcuts-*.js#navigateBack/Forward —
   // dispatched by the ported menu commands (CmdOrCtrl+[ / CmdOrCtrl+]).
   | { type: "navigateBackInHistory" }

@@ -180,6 +180,7 @@ export interface EnsureThreadReadyForTurnInput {
   context?: ThreadContextDefaults | null;
   threadCreationOptions?: ThreadCreationOptions;
   readRolloutText?: WorkspaceDeveloperInstructionReader;
+  select?: boolean;
 }
 
 export interface ReadyThreadForTurn {
@@ -215,6 +216,7 @@ export async function ensureThreadReadyForTurn({
   context,
   threadCreationOptions,
   readRolloutText,
+  select = true,
 }: EnsureThreadReadyForTurnInput): Promise<ReadyThreadForTurn> {
   if (!activeThreadId) {
     return {
@@ -245,8 +247,8 @@ export async function ensureThreadReadyForTurn({
     assertThreadProviderSwitchApplied(activeThreadId, result, context);
     // The resume snapshot is plain text only — replay persisted tool calls
     // before it lands, or the worked-for/Explored cards vanish from history.
-    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select: true });
-    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
+    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select });
+    if (select) dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     return {
       threadId: result.thread.id,
       source: "resumed",
@@ -257,8 +259,8 @@ export async function ensureThreadReadyForTurn({
     await unsubscribeThread(client, activeThreadId);
     const result = await resumeThread(client, activeThreadId, workspace, context);
     assertThreadProviderSwitchApplied(activeThreadId, result, context);
-    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select: true });
-    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
+    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select });
+    if (select) dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     return {
       threadId: result.thread.id,
       source: "resumed",

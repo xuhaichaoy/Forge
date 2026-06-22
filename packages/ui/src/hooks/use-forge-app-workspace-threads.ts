@@ -29,6 +29,11 @@ import { useBackgroundAgentPanel } from "./use-background-agent-panel";
 import { useThreadActions } from "./use-thread-actions";
 import type { useAppShellState } from "./use-app-shell-state";
 
+interface ThreadsRuntimeRefState {
+  runtime: CodexUiState["threadsRuntime"];
+  autoHydratedActiveThreadIds: Set<string>;
+}
+
 /*
  * Mechanical extraction of a CONTIGUOUS hook cluster from ForgeAppBody
  * (thread actions + workbench thread create/select + workspace root
@@ -98,10 +103,20 @@ export function useForgeAppWorkspaceThreads(args: ForgeAppWorkspaceThreadsArgs) 
    * stuck on slower machines. Subscribed threads stay fresh via
    * notifications; unloaded threads still take the full read path.
    */
-  const threadsRuntimeRef = useRef(state.threadsRuntime);
-  threadsRuntimeRef.current = state.threadsRuntime;
+  const threadsRuntimeRef = useRef<ThreadsRuntimeRefState>({
+    runtime: state.threadsRuntime,
+    autoHydratedActiveThreadIds: new Set<string>(),
+  });
+  const maybeLegacyThreadsRuntimeRef = threadsRuntimeRef.current as unknown as Partial<ThreadsRuntimeRefState>;
+  if (!(maybeLegacyThreadsRuntimeRef.autoHydratedActiveThreadIds instanceof Set)) {
+    threadsRuntimeRef.current = {
+      runtime: threadsRuntimeRef.current as unknown as CodexUiState["threadsRuntime"],
+      autoHydratedActiveThreadIds: new Set<string>(),
+    };
+  }
+  threadsRuntimeRef.current.runtime = state.threadsRuntime;
   const hasLoadedThreadContent = useCallback((threadId: string) => {
-    const runtime = threadsRuntimeRef.current[threadId];
+    const runtime = threadsRuntimeRef.current.runtime[threadId];
     // Items alone don't prove the transcript is complete: resume snapshots
     // are plain text until persisted tool calls are replayed. Without the
     // hydration check, a snapshot that landed before the host was ready
@@ -133,6 +148,21 @@ export function useForgeAppWorkspaceThreads(args: ForgeAppWorkspaceThreadsArgs) 
     threadContextDefaults: effectiveThreadContextDefaults,
     workspace,
   });
+  useEffect(() => {
+    const { autoHydratedActiveThreadIds } = threadsRuntimeRef.current;
+    if (!state.connected) {
+      autoHydratedActiveThreadIds.clear();
+      return;
+    }
+    if (!activeThread) return;
+    if (hasLoadedThreadContent(activeThread.id)) {
+      autoHydratedActiveThreadIds.delete(activeThread.id);
+      return;
+    }
+    if (autoHydratedActiveThreadIds.has(activeThread.id)) return;
+    autoHydratedActiveThreadIds.add(activeThread.id);
+    void selectThread(activeThread);
+  }, [activeThread, hasLoadedThreadContent, selectThread, state.connected]);
   const createWorkbenchThread = useCallback(async () => {
     openWorkbenchTab();
     await createThread();

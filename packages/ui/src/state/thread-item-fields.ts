@@ -1,7 +1,7 @@
 import { formatUnknown, stringField } from "../lib/format";
 import { formatMessage } from "./i18n";
 
-import type { AssistantMessagePhase, ItemRecord, RailEntry, ThreadItem } from "./render-group-types";
+import type { AssistantMessagePhase, ItemRecord, ThreadItem } from "./render-group-types";
 
 export function itemText(item: ThreadItem): string {
   const record = item as ItemRecord;
@@ -377,9 +377,9 @@ function shellArgText(value: unknown): string {
 }
 
 /*
- * codex plan/status step states — the same wire steps feed the right-rail
- * progress section and the standalone todo-list item renderer; keep one
- * normalization so the two surfaces can't drift.
+ * codex plan/status step states feed the standalone todo-list renderer and
+ * fixed in-progress plan summary; keep one normalization so those surfaces
+ * can't drift.
  */
 export function normalizePlanStepStatus(status: string | undefined): "completed" | "inProgress" | "pending" {
   if (status === "completed" || status === "complete" || status === "done") return "completed";
@@ -454,18 +454,6 @@ export function statusText(item: ThreadItem): string {
   if (isItemInProgress(item)) return "inProgress";
   return "completed";
 }
-export function coalesceProgress(entries: RailEntry[]): RailEntry[] {
-  const seen = new Set<string>();
-  const result: RailEntry[] = [];
-  for (const entry of entries) {
-    const key = `${entry.title}:${entry.meta ?? ""}:${entry.status ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(entry);
-  }
-  return result.slice(-12);
-}
-
 export function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => typeof item === "string" ? item : formatUnknown(item));

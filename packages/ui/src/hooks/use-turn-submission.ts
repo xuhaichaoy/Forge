@@ -1,18 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { CollaborationModeMask, Thread, ThreadGoalSetResponse, UserInput } from "@forge/codex-protocol";
 import { CodexJsonRpcClient } from "../lib/codex-json-rpc-client";
 import { useForgeIntl } from "../components/i18n-provider";
 import { useServices } from "../components/services-context";
 import { formatError } from "../lib/format";
-import { createProjectlessThreadCwd, isTauriRuntime, readImageDataUrl } from "../lib/tauri-host";
+import {
+  acquireQueuedFollowUpSendLock,
+  createProjectlessThreadCwd,
+  isTauriRuntime,
+  listenGlobalStateChanges,
+  readGlobalState,
+  readImageDataUrl,
+  releaseQueuedFollowUpSendLock,
+  writeQueuedFollowUpsForThread,
+} from "../lib/tauri-host";
 import {
   CROSS_ACCOUNT_PROVIDER_SWITCH_MESSAGE,
   PROVIDER_SWITCH_FAILED_MESSAGE,
   isCrossAccountProviderSwitch,
 } from "../model/model-provider-switch";
 import type { ThreadContextDefaults } from "../state/codex-reducer";
-import type { TerminalTurnSnapshot } from "../state/codex-ui-types";
+import type { PendingSteerRuntime, TerminalTurnSnapshot, ThreadRuntimeSlice } from "../state/codex-ui-types";
 // Module-level i18n singleton — these provider-switch errors are built in
 // module-scope helpers that cannot reach the useForgeIntl() hook formatter
 // (aliased: the hook body destructures its own `formatMessage`).
@@ -27,20 +36,27 @@ import {
 } from "../state/composer-workflow";
 import {
   INTERRUPTED_STEER_PAUSED_REASON,
+  QUEUED_FOLLOW_UPS_GLOBAL_STATE_KEY,
   createQueuedFollowUp,
   isQueuedFollowUpDuplicate,
+  normalizeQueuedFollowUpsByThread,
   pauseQueuedFollowUpsWithReason,
   reorderQueuedFollowUps,
   removeQueuedFollowUp,
   resumeQueuedFollowUpsWithReason,
   updateQueuedFollowUpStatus,
+  updateQueuedFollowUpsByThread,
   type QueuedFollowUp,
+  type QueuedFollowUpsByThread,
 } from "../state/queued-followups";
 import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
   composerModeRequiresUnavailablePlanMode,
   interruptedTerminalTurnKey,
-  selectNextQueuedFollowUp,
+  pendingSteerCompareKeyFromUserInput,
+  pendingSteerRestorePausedReason,
+  runtimeHasAcceptedSteer,
+  selectNextQueuedFollowUpDrainCandidate,
   shouldResetCreatedThreadComposerMode,
   shouldPauseQueuedFollowUpsForInterruptedTerminalTurn,
   shouldPromptPausedQueueSubmit,
@@ -66,13 +82,13 @@ import {
   resumeThread,
   resumeSelectedThreadAndStartTurn,
   startTurn,
-  steerTurn,
   dispatchThreadContextDefaultsFromRuntimeResponse,
   withWorkspaceDeveloperInstructions,
   type OptimisticUserMessageHandle,
   type ThreadWorkflowDispatch,
   type TurnStartOptions,
 } from "../state/thread-workflow";
+import { isThreadStatusInProgress } from "../state/thread-item-fields";
 
 export type PausedQueueSubmitDecision = "clearQueue" | "sendMessage" | "cancel";
 
@@ -104,7 +120,8 @@ export interface UseTurnSubmissionInput {
   setComposerAttachments: Dispatch<SetStateAction<ComposerAttachment[]>>;
   setInput: Dispatch<SetStateAction<string>>;
   threadContextDefaults: ThreadContextDefaults | null;
-  threadIds: string[];
+  threads: Thread[];
+  threadsRuntime: Record<string, ThreadRuntimeSlice>;
   workspace: string;
 }
 
@@ -119,6 +136,12 @@ export interface UseTurnSubmissionResult {
   sendQueuedFollowUpNow: (message: QueuedFollowUp) => void;
   sendTurn: (options?: ComposerSendOptions) => Promise<void>;
   startingConversation: boolean;
+}
+
+interface PendingQueuedFollowUpTransform {
+  threadId: string;
+  previousQueue: QueuedFollowUp[];
+  transform: (state: QueuedFollowUpsByThread) => QueuedFollowUpsByThread;
 }
 
 class CrossAccountProviderSwitchError extends Error {
@@ -188,18 +211,25 @@ export function useTurnSubmission({
   setComposerAttachments,
   setInput,
   threadContextDefaults,
-  threadIds,
+  threads,
+  threadsRuntime,
   workspace,
 }: UseTurnSubmissionInput): UseTurnSubmissionResult {
   const { client, dispatch } = useServices();
   const { formatMessage } = useForgeIntl();
-  const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<Record<string, QueuedFollowUp[]>>({});
+  const hostQueuedFollowUpsEnabled = isTauriRuntime();
+  const [queuedFollowUpsByThread, setQueuedFollowUpsByThread] = useState<QueuedFollowUpsByThread>({});
   const [interruptedQueueThreadIds, setInterruptedQueueThreadIds] = useState<Set<string>>(() => new Set());
   const [startingConversation, setStartingConversation] = useState(false);
   const sendingQueuedFollowUpId = useRef<string | null>(null);
   const handledInterruptedTerminalTurnKeysRef = useRef<Set<string>>(new Set());
+  const queuedFollowUpsLoadedRef = useRef(!hostQueuedFollowUpsEnabled);
+  const queuedFollowUpsSnapshotRef = useRef<QueuedFollowUpsByThread>({});
+  const queuedFollowUpsEventBeforeLoadRef = useRef(false);
+  const pendingQueuedFollowUpTransformsRef = useRef<PendingQueuedFollowUpTransform[]>([]);
   const latestInputRef = useRef(input);
   const latestComposerAttachmentsRef = useRef(composerAttachments);
+  const threadsById = useMemo(() => new Map(threads.map((thread) => [thread.id, thread])), [threads]);
   const activeQueuedFollowUps = activeThreadId ? queuedFollowUpsByThread[activeThreadId] ?? [] : [];
   const activeQueuePausedByTerminalTurn = shouldPauseQueuedFollowUpsForInterruptedTerminalTurn({
     activeThreadId,
@@ -212,7 +242,6 @@ export function useTurnSubmission({
       && activeQueuedFollowUps.length > 0
       && (interruptedQueueThreadIds.has(activeThreadId) || activeQueuePausedByTerminalTurn),
   );
-  const activeThreadNeedsResume = isThreadStatusNotLoaded(activeThread?.status);
 
   useEffect(() => {
     latestInputRef.current = input;
@@ -221,6 +250,92 @@ export function useTurnSubmission({
   useEffect(() => {
     latestComposerAttachmentsRef.current = composerAttachments;
   }, [composerAttachments]);
+
+  const persistQueuedFollowUpsForThread = useCallback((
+    threadId: string,
+    previousQueue: QueuedFollowUp[],
+    nextQueue: QueuedFollowUp[],
+  ) => {
+    if (!hostQueuedFollowUpsEnabled) return;
+    void writeQueuedFollowUpsForThread({
+      threadId,
+      previousIds: previousQueue.map((message) => message.id),
+      queue: nextQueue,
+    }).catch((error) => {
+      dispatch({
+        type: "log",
+        text: `Failed to save queued follow-ups for ${threadId}: ${formatError(error)}`,
+        level: "warn",
+      });
+    });
+  }, [dispatch, hostQueuedFollowUpsEnabled]);
+
+  useEffect(() => {
+    if (!hostQueuedFollowUpsEnabled) return undefined;
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void readGlobalState(QUEUED_FOLLOW_UPS_GLOBAL_STATE_KEY)
+      .then((value) => {
+        if (cancelled) return;
+        const normalized = normalizeQueuedFollowUpsByThread(value);
+        const pendingTransforms = pendingQueuedFollowUpTransformsRef.current;
+        const base = queuedFollowUpsEventBeforeLoadRef.current
+          ? queuedFollowUpsBaseBeforePendingTransforms(queuedFollowUpsSnapshotRef.current, pendingTransforms)
+          : normalized;
+        const next = pendingTransforms.reduce((state, pending) => pending.transform(state), base);
+        pendingQueuedFollowUpTransformsRef.current = [];
+        queuedFollowUpsEventBeforeLoadRef.current = false;
+        queuedFollowUpsLoadedRef.current = true;
+        queuedFollowUpsSnapshotRef.current = next;
+        setQueuedFollowUpsByThread(next);
+        persistPendingQueuedFollowUpTransforms(base, next, pendingTransforms, persistQueuedFollowUpsForThread);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const pendingTransforms = pendingQueuedFollowUpTransformsRef.current;
+        pendingQueuedFollowUpTransformsRef.current = [];
+        queuedFollowUpsEventBeforeLoadRef.current = false;
+        queuedFollowUpsLoadedRef.current = true;
+        const base = queuedFollowUpsBaseBeforePendingTransforms(
+          queuedFollowUpsSnapshotRef.current,
+          pendingTransforms,
+        );
+        const next = pendingTransforms.reduce((state, pending) => pending.transform(state), base);
+        queuedFollowUpsSnapshotRef.current = next;
+        setQueuedFollowUpsByThread(next);
+        persistPendingQueuedFollowUpTransforms(base, next, pendingTransforms, persistQueuedFollowUpsForThread);
+        dispatch({
+          type: "log",
+          text: `Failed to read queued follow-ups: ${formatError(error)}`,
+          level: "warn",
+        });
+      });
+    void listenGlobalStateChanges((event) => {
+      if (event.key !== QUEUED_FOLLOW_UPS_GLOBAL_STATE_KEY) return;
+      const normalized = normalizeQueuedFollowUpsByThread(event.value);
+      if (!queuedFollowUpsLoadedRef.current) queuedFollowUpsEventBeforeLoadRef.current = true;
+      queuedFollowUpsSnapshotRef.current = normalized;
+      setQueuedFollowUpsByThread(normalized);
+    })
+      .then((stopListening) => {
+        if (cancelled) {
+          stopListening();
+          return;
+        }
+        unlisten = stopListening;
+      })
+      .catch((error) => {
+        dispatch({
+          type: "log",
+          text: `Failed to watch queued follow-ups: ${formatError(error)}`,
+          level: "warn",
+        });
+      });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [dispatch, hostQueuedFollowUpsEnabled, persistQueuedFollowUpsForThread]);
 
   const ensureThreadReadyForSubmission = useCallback(async (
     input: Parameters<typeof ensureThreadReadyForTurn>[0],
@@ -245,10 +360,10 @@ export function useTurnSubmission({
         const result = await resumeThread(input.client, error.threadId, input.workspace, input.context);
         assertThreadProviderSwitchApplied(error.threadId, result, input.context);
         await assertActualThreadProviderForSubmission(input.client, result.thread.id, input.context);
-        input.dispatch({ type: "upsertThread", thread: result.thread, select: true });
+        input.dispatch({ type: "upsertThread", thread: result.thread, select: input.select ?? true });
         // Guarded shared helper: a resume response missing all context fields
         // yields null, which must NOT wipe the global defaults.
-        dispatchThreadContextDefaultsFromRuntimeResponse(input.dispatch, result, input.context);
+        if (input.select ?? true) dispatchThreadContextDefaultsFromRuntimeResponse(input.dispatch, result, input.context);
         return {
           threadId: result.thread.id,
           source: "resumed" as const,
@@ -266,31 +381,87 @@ export function useTurnSubmission({
     threadId: string,
     updater: (queue: QueuedFollowUp[]) => QueuedFollowUp[],
   ) => {
-    setQueuedFollowUpsByThread((current) => {
-      const nextQueue = updater(current[threadId] ?? []);
-      if (nextQueue.length === 0) {
-        const { [threadId]: _removed, ...rest } = current;
-        return rest;
+    const transform = (state: QueuedFollowUpsByThread) => updateQueuedFollowUpsByThread(state, threadId, updater);
+    if (hostQueuedFollowUpsEnabled) {
+      const base = queuedFollowUpsSnapshotRef.current;
+      const previousQueue = base[threadId] ?? [];
+      const next = transform(base);
+      const nextQueue = next[threadId] ?? [];
+      queuedFollowUpsSnapshotRef.current = next;
+      if (!queuedFollowUpsLoadedRef.current) {
+        pendingQueuedFollowUpTransformsRef.current = [
+          ...pendingQueuedFollowUpTransformsRef.current,
+          { threadId, previousQueue, transform },
+        ];
+      } else {
+        persistQueuedFollowUpsForThread(threadId, previousQueue, nextQueue);
       }
-      return { ...current, [threadId]: nextQueue };
-    });
-  }, []);
+      setQueuedFollowUpsByThread(next);
+      return;
+    }
+    setQueuedFollowUpsByThread((current) => transform(current));
+  }, [hostQueuedFollowUpsEnabled, persistQueuedFollowUpsForThread]);
 
   useEffect(() => {
-    const threadIdSet = new Set(threadIds);
-    setQueuedFollowUpsByThread((current) => {
-      let changed = false;
-      const next: Record<string, QueuedFollowUp[]> = {};
-      for (const [threadId, queue] of Object.entries(current)) {
-        if (threadIdSet.has(threadId)) {
-          next[threadId] = queue;
-        } else {
-          changed = true;
+    for (const [threadId, runtime] of Object.entries(threadsRuntime)) {
+      const pendingSteers = runtime.pendingSteers ?? [];
+      if (pendingSteers.length === 0) continue;
+      for (const pending of pendingSteers) {
+        if (runtimeHasAcceptedSteer(runtime, pending.clientUserMessageId, pending.compareKey, pending.turnId)) {
+          dispatch({
+            type: "dropPendingSteer",
+            threadId,
+            clientUserMessageId: pending.clientUserMessageId,
+          });
+          continue;
+        }
+        const pausedReason = pendingSteerRestorePausedReason({
+          clientUserMessageId: pending.clientUserMessageId,
+          compareKey: pending.compareKey,
+          runtime,
+          turnId: pending.turnId,
+        });
+        if (!pausedReason) continue;
+        dispatch({
+          type: "dropOptimisticUserMessage",
+          threadId,
+          localId: pending.optimisticLocalId,
+        });
+        dispatch({
+          type: "dropPendingSteer",
+          threadId,
+          clientUserMessageId: pending.clientUserMessageId,
+        });
+        const restored = {
+          ...createQueuedFollowUp({
+            text: pending.text,
+            attachments: pending.attachments,
+            cwd: pending.cwd,
+            ...(pending.context !== undefined ? { context: pending.context } : {}),
+            createdAt: pending.createdAt,
+            id: pending.id,
+            ...(pending.mode ? { mode: pending.mode } : {}),
+            ...(pending.responsesapiClientMetadata === undefined
+              ? {}
+              : { responsesapiClientMetadata: pending.responsesapiClientMetadata }),
+          }),
+          pausedReason,
+        };
+        updateQueuedFollowUps(threadId, (queue) => {
+          if (queue.some((message) => message.id === restored.id)) return queue;
+          return [restored, ...queue];
+        });
+        if (pausedReason === INTERRUPTED_STEER_PAUSED_REASON) {
+          setInterruptedQueueThreadIds((current) => {
+            if (current.has(threadId)) return current;
+            const next = new Set(current);
+            next.add(threadId);
+            return next;
+          });
         }
       }
-      return changed ? next : current;
-    });
-  }, [threadIds]);
+    }
+  }, [dispatch, threadsRuntime, updateQueuedFollowUps]);
 
   useEffect(() => {
     setInterruptedQueueThreadIds((current) => {
@@ -355,8 +526,20 @@ export function useTurnSubmission({
     // in-flight send before its turn/start lands.
     if (sendingQueuedFollowUpId.current !== null) return;
     sendingQueuedFollowUpId.current = message.id;
-    updateQueuedFollowUps(threadId, (queue) => updateQueuedFollowUpStatus(queue, message.id, "sending"));
+    const hostLock = hostQueuedFollowUpsEnabled
+      ? {
+          conversationId: threadId,
+          messageId: message.id,
+          lockId: createQueuedFollowUpSendLockId(),
+        }
+      : null;
+    let hostLockAcquired = false;
+    let sent = false;
     try {
+      if (hostLock) {
+        hostLockAcquired = await acquireQueuedFollowUpSendLock(hostLock);
+        if (!hostLockAcquired) return;
+      }
       if (!(await ensureConnected())) {
         updateQueuedFollowUps(threadId, (queue) =>
           updateQueuedFollowUpStatus(queue, message.id, "paused", "Runtime is offline"),
@@ -369,6 +552,7 @@ export function useTurnSubmission({
         dispatch({ type: "log", text: reason, level: "warn" });
         return;
       }
+      const messageContext = queuedFollowUpContext(message, threadContextDefaults);
       const sendAttachments = await attachmentsWithDataImagePreviews(message.attachments);
       const content = buildUserInputFromComposer(message.text, sendAttachments);
       if (content.length === 0) {
@@ -379,12 +563,31 @@ export function useTurnSubmission({
         ? activeTurnId
         : null;
       if (steerTurnId) {
-        await steerTurnWithOptimistic({ client, content, dispatch, threadId, turnId: steerTurnId });
+        await steerTurnWithOptimistic({
+          client,
+          content,
+          dispatch,
+          restore: {
+            text: message.text,
+            attachments: message.attachments,
+            ...(message.context !== undefined ? { context: message.context } : {}),
+            cwd: message.cwd,
+            createdAt: message.createdAt,
+            id: message.id,
+            ...(message.mode ? { mode: message.mode } : {}),
+            ...(message.responsesapiClientMetadata === undefined
+              ? {}
+              : { responsesapiClientMetadata: message.responsesapiClientMetadata }),
+          },
+          threadId,
+          turnId: steerTurnId,
+        });
+        sent = true;
       } else {
         let optimistic: OptimisticUserMessageHandle | null = null;
         const messageMode = message.mode ?? "default";
         const modes = await collaborationModesForComposerMode(messageMode);
-        const turnStartOptions = turnStartOptionsFromComposerMode(messageMode, modes, threadContextDefaults);
+        const turnStartOptions = turnStartOptionsFromComposerMode(messageMode, modes, messageContext);
         if (composerModeRequiresUnavailablePlanMode(messageMode, turnStartOptions)) {
           updateQueuedFollowUps(threadId, (queue) =>
             updateQueuedFollowUpStatus(queue, message.id, "paused", PLAN_MODE_UNAVAILABLE_MESSAGE),
@@ -393,20 +596,24 @@ export function useTurnSubmission({
           return;
         }
         try {
+          const shouldSelectTargetThread = threadId === activeThreadId;
+          const targetThread = shouldSelectTargetThread ? activeThread : threadsById.get(threadId) ?? null;
           const readyThread = await ensureThreadReadyForSubmission({
             client,
-            activeThread: threadId === activeThreadId ? activeThread : null,
+            activeThread: targetThread,
             activeThreadId: threadId,
             input: content,
             workspace: message.cwd,
             dispatch,
-            context: threadContextDefaults,
+            context: messageContext,
+            select: shouldSelectTargetThread,
           });
           const targetThreadId = readyThread.threadId;
           if (!targetThreadId) throw new Error("No active Codex thread");
           optimistic = dispatchOptimisticUserMessage(dispatch, targetThreadId, content);
-          await startTurn(client, targetThreadId, content, message.cwd, threadContextDefaults, turnStartOptions);
+          await startTurn(client, targetThreadId, content, message.cwd, messageContext, turnStartOptions);
           rememberLatestCollaborationMode(targetThreadId, turnStartOptions);
+          sent = true;
         } catch (error) {
           if (!isThreadNotFound(error) && !isThreadNeedsResume(error)) {
             dropOptimisticUserMessage(dispatch, optimistic);
@@ -418,13 +625,15 @@ export function useTurnSubmission({
             content,
             message.cwd,
             dispatch,
-            threadContextDefaults,
+            messageContext,
             turnStartOptions,
+            { select: threadId === activeThreadId },
           ))) {
             dropOptimisticUserMessage(dispatch, optimistic);
             throw error;
           }
           rememberLatestCollaborationMode(threadId, turnStartOptions);
+          sent = true;
         }
       }
       updateQueuedFollowUps(threadId, (queue) => removeQueuedFollowUp(queue, message.id));
@@ -438,6 +647,17 @@ export function useTurnSubmission({
         level: isCrossAccountProviderSwitchError(error) ? "warn" : "error",
       });
     } finally {
+      if (hostLock && hostLockAcquired) {
+        try {
+          await releaseQueuedFollowUpSendLock({ ...hostLock, sent });
+        } catch (error) {
+          dispatch({
+            type: "log",
+            text: `Failed to release queued follow-up send lock: ${formatError(error)}`,
+            level: "warn",
+          });
+        }
+      }
       sendingQueuedFollowUpId.current = null;
     }
   }, [
@@ -451,7 +671,9 @@ export function useTurnSubmission({
     dispatch,
     ensureConnected,
     ensureThreadReadyForSubmission,
+    hostQueuedFollowUpsEnabled,
     rememberLatestCollaborationMode,
+    threadsById,
     threadContextDefaults,
     updateQueuedFollowUps,
   ]);
@@ -635,7 +857,8 @@ export function useTurnSubmission({
         const queued = createQueuedFollowUp({
           text: draftInput,
           attachments: sendAttachments,
-          cwd: workspace,
+          cwd: turnWorkspace,
+          ...(turnContext !== undefined ? { context: turnContext } : {}),
           mode: draftMode,
         });
         updateQueuedFollowUps(threadId, (queue) => [...queue, queued]);
@@ -647,7 +870,20 @@ export function useTurnSubmission({
       let optimistic: OptimisticUserMessageHandle | null = null;
       try {
         if (activeTurnId && activeThreadRunning) {
-          await steerTurnWithOptimistic({ client, content, dispatch, threadId, turnId: activeTurnId });
+          await steerTurnWithOptimistic({
+            client,
+            content,
+            dispatch,
+            restore: {
+              text: draftInput,
+              attachments: sendAttachments,
+              ...(turnContext !== undefined ? { context: turnContext } : {}),
+              cwd: turnWorkspace,
+              ...(draftMode ? { mode: draftMode } : {}),
+            },
+            threadId,
+            turnId: activeTurnId,
+          });
         } else {
           optimistic = dispatchOptimisticUserMessage(dispatch, threadId, content);
           await startTurn(client, threadId, content, turnWorkspace, turnContext, turnStartOptions);
@@ -783,24 +1019,37 @@ export function useTurnSubmission({
   ]);
 
   useEffect(() => {
-    if (!activeThreadId) return;
-    const nextQueuedFollowUp = selectNextQueuedFollowUp({
-      activeThreadNeedsResume,
-      activeThreadRunning,
-      pendingRequestCount: activePendingRequestCount,
-      queueInterrupted: activeQueuedFollowUpsInterrupted,
-      queue: queuedFollowUpsByThread[activeThreadId] ?? [],
+    const drainThreads = Object.entries(queuedFollowUpsByThread).flatMap(([threadId, queue]) => {
+      const isActiveThread = threadId === activeThreadId;
+      const thread = isActiveThread ? activeThread : threadsById.get(threadId) ?? null;
+      if (!thread) return [];
+      const runtime = threadsRuntime[threadId] ?? null;
+      const threadRunning = isActiveThread
+        ? activeThreadRunning
+        : Boolean(runtime?.activeTurnId) || isThreadStatusInProgress(thread.status);
+      const pendingRequestCount = isActiveThread ? activePendingRequestCount : 1;
+      return [{
+        threadId,
+        activeThreadNeedsResume: isThreadStatusNotLoaded(thread.status),
+        activeThreadRunning: threadRunning,
+        pendingRequestCount,
+        queueInterrupted: isActiveThread ? activeQueuedFollowUpsInterrupted : true,
+        queue,
+      }];
     });
-    if (!nextQueuedFollowUp) return;
-    void sendQueuedFollowUp(activeThreadId, nextQueuedFollowUp);
+    const candidate = selectNextQueuedFollowUpDrainCandidate(drainThreads);
+    if (!candidate) return;
+    void sendQueuedFollowUp(candidate.threadId, candidate.message);
   }, [
     activePendingRequestCount,
-    activeThreadId,
-    activeThreadNeedsResume,
-    activeThreadRunning,
     activeQueuedFollowUpsInterrupted,
+    activeThread,
+    activeThreadId,
+    activeThreadRunning,
     queuedFollowUpsByThread,
     sendQueuedFollowUp,
+    threadsById,
+    threadsRuntime,
   ]);
 
   const sendQueuedFollowUpNow = useCallback((message: QueuedFollowUp) => {
@@ -844,6 +1093,52 @@ export function useTurnSubmission({
     sendTurn,
     startingConversation,
   };
+}
+
+function createQueuedFollowUpSendLockId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `queued-follow-up-lock-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function persistPendingQueuedFollowUpTransforms(
+  previous: QueuedFollowUpsByThread,
+  next: QueuedFollowUpsByThread,
+  pendingTransforms: PendingQueuedFollowUpTransform[],
+  persist: (threadId: string, previousQueue: QueuedFollowUp[], nextQueue: QueuedFollowUp[]) => void,
+): void {
+  if (pendingTransforms.length === 0) return;
+  const threadIds = Array.from(new Set(pendingTransforms.map((pending) => pending.threadId)));
+  for (const threadId of threadIds) {
+    persist(threadId, previous[threadId] ?? [], next[threadId] ?? []);
+  }
+}
+
+function queuedFollowUpsBaseBeforePendingTransforms(
+  snapshot: QueuedFollowUpsByThread,
+  pendingTransforms: PendingQueuedFollowUpTransform[],
+): QueuedFollowUpsByThread {
+  if (pendingTransforms.length === 0) return snapshot;
+  const base = { ...snapshot };
+  const restoredThreadIds = new Set<string>();
+  for (const pending of pendingTransforms) {
+    if (restoredThreadIds.has(pending.threadId)) continue;
+    restoredThreadIds.add(pending.threadId);
+    if (pending.previousQueue.length === 0) {
+      delete base[pending.threadId];
+    } else {
+      base[pending.threadId] = pending.previousQueue;
+    }
+  }
+  return base;
+}
+
+function queuedFollowUpContext(
+  message: QueuedFollowUp,
+  fallback: ThreadContextDefaults | null,
+): ThreadContextDefaults | null {
+  return message.context === undefined ? fallback : (message.context as ThreadContextDefaults | null);
 }
 
 export async function attachmentsWithDataImagePreviews(
@@ -913,13 +1208,44 @@ async function steerTurnWithOptimistic(input: {
   client: CodexJsonRpcClient;
   content: UserInput[];
   dispatch: ThreadWorkflowDispatch;
+  restore: {
+    attachments: ComposerAttachment[];
+    context?: unknown;
+    cwd: string;
+    createdAt?: number;
+    id?: string;
+    mode?: ComposerMode;
+    responsesapiClientMetadata?: unknown;
+    text: string;
+  };
   threadId: string;
   turnId: string;
 }): Promise<void> {
   const optimistic = dispatchOptimisticUserMessage(input.dispatch, input.threadId, input.content, input.turnId);
+  const clientUserMessageId = optimistic.localId;
+  const pending: PendingSteerRuntime = {
+    ...input.restore,
+    clientUserMessageId,
+    compareKey: pendingSteerCompareKeyFromUserInput(input.content),
+    createdAt: input.restore.createdAt ?? Date.now(),
+    id: input.restore.id ?? clientUserMessageId,
+    optimisticLocalId: optimistic.localId,
+    turnId: input.turnId,
+  };
+  input.dispatch({ type: "registerPendingSteer", threadId: input.threadId, pending });
   try {
-    await steerTurn(input.client, input.threadId, input.content, input.turnId);
+    await input.client.request("turn/steer", {
+      threadId: input.threadId,
+      clientUserMessageId,
+      input: input.content,
+      expectedTurnId: input.turnId,
+    }, null);
   } catch (error) {
+    input.dispatch({
+      type: "dropPendingSteer",
+      threadId: input.threadId,
+      clientUserMessageId,
+    });
     dropOptimisticUserMessage(input.dispatch, optimistic);
     throw error;
   }

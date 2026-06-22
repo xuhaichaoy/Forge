@@ -64,6 +64,7 @@ import { useForgeAppModelContext } from "./hooks/use-forge-app-model-context";
 import { useForgeAppWorkspaceThreads } from "./hooks/use-forge-app-workspace-threads";
 import { useForgeAppRailPanels } from "./hooks/use-forge-app-rail-panels";
 import { useForgeAppSidePanelHost } from "./hooks/use-forge-app-side-panel-host";
+import { useFollowUpQueueMode } from "./hooks/use-follow-up-queue-mode";
 import { useForgeAppShellCommands } from "./hooks/use-forge-app-shell-commands";
 import { useForgeAppThreadCommands } from "./hooks/use-forge-app-thread-commands";
 import { useForgeAppPreviewWiring } from "./hooks/use-forge-app-preview-wiring";
@@ -228,7 +229,6 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   ), []);
   const [input, setInput] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
-  const [followUpQueueingEnabled, setFollowUpQueueingEnabled] = useState(true);
   const [collaborationModes, setCollaborationModes] = useState<CollaborationModeMask[]>([]);
   const [workspace, setWorkspace] = useState("");
   const [composerWorkMode, setComposerWorkModeState] = useState<ComposerWorkMode>(() =>
@@ -563,7 +563,6 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   const activeThread = state.threads.find((thread) => thread.id === state.activeThreadId) ?? null;
   const activeThreadScrollKey = state.activeThreadId ?? "new-thread";
   const initialThreadScrollOffset = threadScrollOffsetsRef.current.get(activeThreadScrollKey) ?? 0;
-  const threadIds = useMemo(() => state.threads.map((thread) => thread.id), [state.threads]);
   const activeTurnId = activeThreadRuntime.activeTurnId;
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- selectItemsByThread 只读 state.threadsRuntime；故意以该精确切片为失效键，避免无关 state 变化重建 items 映射
   const itemsByThread = useMemo(() => selectItemsByThread(state), [state.threadsRuntime]);
@@ -799,6 +798,12 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     setPersonalProviderConfigured, setReconnectAttempt, setWorkspace, setWorkspaceDeveloperInstructions,
     state, workspace,
   });
+  const { followUpQueueingEnabled, setFollowUpQueueingEnabled } = useFollowUpQueueMode({
+    client,
+    connected: state.connected,
+    dispatch,
+    ensureConnected,
+  });
 
   const {
     activeModelSupportedEfforts,
@@ -1022,7 +1027,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     composerSubmitState, createWorkbenchThread, dispatch, effectiveThreadContextDefaults, ensureConnected,
     includeImageDynamicTool, input, onboardingSnapshot, openExistingWorkspaceFolder,
     restartRuntimeForProviderSwitch, setActiveComposerMode, setBackgroundTerminalCleanupPending,
-    setComposerAttachments, setComposerGoalMode, setInput, setOnboardingSnapshot, state, threadIds,
+    setComposerAttachments, setComposerGoalMode, setInput, setOnboardingSnapshot, state,
     workspace,
   });
 

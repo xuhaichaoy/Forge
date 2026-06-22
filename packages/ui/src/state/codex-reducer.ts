@@ -12,8 +12,10 @@ import {
   appendReasoningText,
   applyBindOptimisticTurn,
   applyCommandExecutionTerminalInteraction,
+  applyDropPendingSteer,
   applyDropOptimisticUserMessage,
   applyOptimisticUserMessage,
+  applyRegisterPendingSteer,
   handleAutoApprovalReviewNotification,
   handleItemLifecycleNotification,
   handleModelReroutedNotification,
@@ -109,7 +111,9 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
         activeThreadId: nextActiveThreadId(state.activeThreadId, action.threads),
       });
     case "upsertThread":
-      return upsertThreadState(state, action.thread, action.select === true);
+      return upsertThreadState(state, action.thread, action.select === true, {
+        replaceSnapshot: action.replaceSnapshot === true,
+      });
     case "renameThread":
       // Narrow patch on purpose: callers hold a render-time thread snapshot,
       // and merging that whole object back would roll back concurrent updates.
@@ -253,6 +257,10 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       return applyBindOptimisticTurn(state, action);
     case "dropOptimisticUserMessage":
       return applyDropOptimisticUserMessage(state, action);
+    case "registerPendingSteer":
+      return applyRegisterPendingSteer(state, action);
+    case "dropPendingSteer":
+      return applyDropPendingSteer(state, action);
     default:
       return state;
   }

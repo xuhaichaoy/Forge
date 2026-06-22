@@ -13,10 +13,7 @@ import {
   isBackgroundTerminalEntry,
   isGeneratedImageArtifact,
 } from "./right-rail-entry-icons";
-import {
-  RailEntryCard,
-  RailSummaryRow,
-} from "./right-rail-entry-rows";
+import { RailSummaryRow } from "./right-rail-entry-rows";
 
 export { SourcesIconRow } from "./right-rail-entry-rows";
 
@@ -85,25 +82,10 @@ export function RailList({
               : <Square size={12} />}
           </button>
         ) : undefined;
-        // CODEX-REF: local-conversation-thread-CEeZyOcp.js — every rail row EXCEPT the
-        // plan/progress step list is a single-line `summary-panel-row` (wc): `h-7
-        // items-center px-0 py-1`, label `text-base` (14px). Only the progress section
-        // renders the multi-line `line-clamp-3` step card. Route progress → RailEntryCard
-        // (card) and every other section → RailSummaryRow (single-line wc parity). This
-        // collapses the prior multi-line `hc-rail-card` rendering of automation / outputs /
-        // side-chats / subagents / terminals onto Codex's uniform single-line row model.
-        if (sectionId === "progress") {
-          return (
-            <RailEntryCard
-              entry={entry}
-              key={entry.id}
-              sectionId={sectionId}
-              displayTitle={displayTitle}
-              canOpen={canOpenEntry}
-              onOpen={onOpenEntry}
-            />
-          );
-        }
+        // CODEX-REF: local-conversation-thread-CRsAC226.pretty.js — current
+        // Desktop mounts summary-panel rows for automation/environment/outputs/
+        // side chats/subagents/tasks/browser/sources. There is no Progress
+        // section in the current rail sequence.
         return (
           <RailSummaryRow
             entry={entry}
@@ -131,5 +113,5 @@ export function RailList({
 }
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
-  return sectionId === "progress" || sectionId === "artifacts" || sectionId === "sources";
+  return sectionId === "artifacts" || sectionId === "sources";
 }

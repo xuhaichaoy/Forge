@@ -46,6 +46,7 @@ const EMPTY_THREAD_RUNTIME: ThreadRuntimeSlice = Object.freeze({
   threadGoalTurnId: null,
   hookRunsByTurn: {},
   terminalTurnIds: [],
+  pendingSteers: [],
   // codex: composer-*.js `/status` panel — null until the first
   // `thread/tokenUsage/updated` notification lands.
   tokenUsage: null,
@@ -140,6 +141,7 @@ export function normalizeThreadRuntime(
     threadGoalTurnId,
     hookRunsByTurn,
     terminalTurnIds,
+    pendingSteers: runtime?.pendingSteers ?? [],
     latestTerminalTurn: runtime?.latestTerminalTurn ?? null,
     // codex: local-conversation-thread-*.js — preserve the latest
     // token-usage snapshot across patch cycles; the reducer rewrites it only

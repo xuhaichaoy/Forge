@@ -541,7 +541,6 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   demoteNonFinalUnknownAssistantPhases(projectedUnits);
   return {
     units: projectedUnits,
-    progress: [],
     artifacts: Array.from(artifacts.values()),
     backgroundAgents: projectBackgroundAgentRailEntries(items),
     backgroundTerminals: projectBackgroundTerminalRailEntries(items),

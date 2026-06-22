@@ -1,8 +1,11 @@
 import { Edit3, GripVertical, ListPlus, MoreHorizontal, Send, Trash2, TriangleAlert } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useDismissibleLayer } from "../hooks/use-dismissible-layer";
-import type { QueuedFollowUp } from "../state/queued-followups";
-import { queuedFollowUpSummary } from "../state/queued-followups";
+import {
+  INTERRUPTED_STEER_PAUSED_REASON,
+  queuedFollowUpSummary,
+  type QueuedFollowUp,
+} from "../state/queued-followups";
 import { useForgeIntl } from "./i18n-provider";
 
 export interface QueuedFollowUpStackProps {
@@ -91,6 +94,7 @@ export function QueuedFollowUpStack({
       {messages.map((message) => {
         const pausedReason = message.pausedReason ?? message.error;
         const isPaused = message.status === "paused" || Boolean(message.pausedReason);
+        const showPausedWarning = isPaused && !(isInterrupted && message.pausedReason === INTERRUPTED_STEER_PAUSED_REASON);
         return (
           <article
             className={`hc-queued-followup-row ${openMenuId === message.id ? "is-menu-open" : ""}`}
@@ -121,7 +125,7 @@ export function QueuedFollowUpStack({
               <GripVertical size={13} />
             </span>
             <div className="hc-queued-followup-main">
-              {isPaused && (
+              {showPausedWarning && (
                 <span className="hc-queued-followup-warning" title={pausedReason ?? pausedTooltip}>
                   <TriangleAlert size={14} />
                 </span>

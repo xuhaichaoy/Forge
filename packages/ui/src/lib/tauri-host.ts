@@ -10,6 +10,7 @@ import { formatError } from "./format";
 const APP_SERVER_EVENT_NAME = "forge://app-server-event";
 const NATIVE_SHELL_EVENT_NAME = "forge://native-shell-event";
 const BROWSER_RUNTIME_EVENT_NAME = "forge://browser-runtime-event";
+const GLOBAL_STATE_CHANGED_EVENT_NAME = "forge://global-state-changed";
 
 export interface HostStatus {
   running: boolean;
@@ -205,6 +206,11 @@ export interface NativeShellAction {
   url?: string | null;
 }
 
+export interface GlobalStateChangedEvent {
+  key: string;
+  value: unknown;
+}
+
 /*
  * Structured error contract for every fallible host command. The Rust side
  * rejects with `{ code, message }`, where `code` is a stable spelling from
@@ -312,6 +318,50 @@ export function createPendingWorktree(
   request: CreatePendingWorktreeRequest,
 ): Promise<PendingWorktree> {
   return invokeHost("host_create_pending_worktree", { request });
+}
+
+export async function readGlobalState(key: string): Promise<unknown> {
+  const response = await invokeHost<{ value: unknown }>("host_read_global_state", { key });
+  return response.value;
+}
+
+export async function writeGlobalState(key: string, value: unknown): Promise<boolean> {
+  const response = await invokeHost<{ success: boolean }>("host_write_global_state", { key, value });
+  return response.success;
+}
+
+export async function writeQueuedFollowUpsForThread(input: {
+  threadId: string;
+  previousIds: string[];
+  queue: unknown[];
+}): Promise<boolean> {
+  const response = await invokeHost<{ success: boolean }>("host_write_queued_follow_ups_for_thread", input);
+  return response.success;
+}
+
+export async function acquireQueuedFollowUpSendLock(input: {
+  conversationId: string;
+  messageId: string;
+  lockId: string;
+}): Promise<boolean> {
+  const response = await invokeHost<{ acquired: boolean }>("host_acquire_queued_follow_up_send_lock", input);
+  return response.acquired;
+}
+
+export async function releaseQueuedFollowUpSendLock(input: {
+  conversationId: string;
+  messageId: string;
+  lockId: string;
+  sent: boolean;
+}): Promise<boolean> {
+  const response = await invokeHost<{ released: boolean }>("host_release_queued_follow_up_send_lock", input);
+  return response.released;
+}
+
+export function listenGlobalStateChanges(
+  handler: (event: GlobalStateChangedEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<GlobalStateChangedEvent>(GLOBAL_STATE_CHANGED_EVENT_NAME, (event) => handler(event.payload));
 }
 
 export interface ProjectlessThreadCwd {

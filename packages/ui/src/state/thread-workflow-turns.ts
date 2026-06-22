@@ -115,12 +115,17 @@ export async function resumeSelectedThreadAndStartTurn(
   dispatch: ThreadWorkflowDispatch,
   context?: ThreadContextDefaults | null,
   options?: TurnStartOptions | null,
+  resumeOptions: { select?: boolean } = {},
 ): Promise<boolean> {
   try {
     await readThreadResumeMetadata(client, threadId);
     const result = await resumeThread(client, threadId, workspace, context);
-    dispatch({ type: "upsertThread", thread: await hydrateThreadToolHistory(result.thread, dispatch), select: true });
-    dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
+    dispatch({
+      type: "upsertThread",
+      thread: await hydrateThreadToolHistory(result.thread, dispatch),
+      select: resumeOptions.select ?? true,
+    });
+    if (resumeOptions.select ?? true) dispatchThreadContextDefaultsFromRuntimeResponse(dispatch, result, context);
     await startTurn(client, result.thread.id, input, workspace, context, options);
     return true;
   } catch (error) {

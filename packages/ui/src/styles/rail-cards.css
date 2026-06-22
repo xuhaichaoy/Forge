@@ -131,22 +131,6 @@
   line-height: 1.45;
 }
 
-.hc-rail-card-title-progress {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  white-space: normal;
-  color: #6f716b;
-  /* codex: progress step text is `text-base leading-normal` = 14px / line-height 1.5. */
-  font-size: calc(14px * var(--hc-ui-font-scale, 1));
-  font-weight: 400;
-  line-height: 1.5;
-}
-
-.hc-rail-card[data-progress-status="completed"] .hc-rail-card-icon {
-  color: #8a8c86;
-}
-
 .hc-rail-card-meta {
   overflow: hidden;
   display: -webkit-box;
@@ -584,14 +568,6 @@
 
 .hc-app[data-theme="dark"] .hc-rail-card-title {
   color: var(--hc-text-primary-soft);
-}
-
-.hc-app[data-theme="dark"] .hc-rail-card-title-progress {
-  color: var(--hc-text-secondary);
-}
-
-.hc-app[data-theme="dark"] .hc-rail-card[data-progress-status="completed"] .hc-rail-card-icon {
-  color: var(--hc-text-secondary);
 }
 
 .hc-app[data-theme="dark"] .hc-rail-card-meta {

@@ -365,6 +365,7 @@ export function upsertThreadState(
   state: CodexUiState,
   thread: Thread,
   select: boolean,
+  options: { replaceSnapshot?: boolean } = {},
 ): CodexUiState {
   const snapshotItems = collectThreadItems(thread);
   const runtime = selectThreadRuntime(state, thread.id);
@@ -376,12 +377,20 @@ export function upsertThreadState(
   const nextActiveTurnId = activeTurns[thread.id] ?? (staleActiveSnapshot ? null : runtime.activeTurnId);
   const hasLiveTurn = Boolean(nextActiveTurnId);
   const hasSnapshotItems = snapshotItems.length > 0;
-  const shouldMergeSnapshot = hasLiveTurn || snapshotTouchesTurnIds(snapshotItems, terminalTurnIds);
+  const shouldReplaceSnapshot = options.replaceSnapshot === true;
+  const shouldUseSnapshotItems = hasSnapshotItems || shouldReplaceSnapshot;
+  const shouldMergeSnapshot = !shouldReplaceSnapshot
+    && (hasLiveTurn || snapshotTouchesTurnIds(snapshotItems, terminalTurnIds));
   const baseTurnOrder = thread.turns
-    ? turnOrderFromThread(thread, runtime.turnOrder)
+    ? turnOrderFromThread(thread, shouldReplaceSnapshot ? [] : runtime.turnOrder)
     : runtime.turnOrder;
-  const nextItems = hasSnapshotItems
-    ? shouldMergeSnapshot
+  const nextTurnOrder = shouldReplaceSnapshot
+    ? turnOrderWithLiveTurn(baseTurnOrder ?? [], nextActiveTurnId)
+    : baseTurnOrder;
+  const nextItems = shouldUseSnapshotItems
+    ? shouldReplaceSnapshot
+      ? replaceThreadSnapshotItemsPreservingLiveTurn(currentItems, snapshotItems, nextActiveTurnId)
+      : shouldMergeSnapshot
       ? mergeLiveThreadSnapshotItems(
           currentItems,
           snapshotItems,
@@ -389,14 +398,14 @@ export function upsertThreadState(
         )
       : snapshotItems
     : undefined;
-  const optimisticTurnState = hasSnapshotItems
+  const optimisticTurnState = shouldUseSnapshotItems
     ? pruneUnusedOptimisticTurnState(
-        baseTurnOrder ?? [],
+        nextTurnOrder ?? [],
         runtime.pendingOptimisticTurns,
         nextItems ?? [],
       )
     : {
-        turnOrder: baseTurnOrder ?? [],
+        turnOrder: nextTurnOrder ?? [],
         pending: runtime.pendingOptimisticTurns,
       };
   const nextThreads = upsertThread(state.threads, threadWithNonRegressingStatus(
@@ -410,17 +419,33 @@ export function upsertThreadState(
     [thread.id]: normalizeThreadRuntime({
       ...runtime,
       activeTurnId: nextActiveTurnId ?? null,
-      turnOrder: baseTurnOrder ? optimisticTurnState.turnOrder : runtime.turnOrder,
-      pendingOptimisticTurns: hasSnapshotItems ? optimisticTurnState.pending : runtime.pendingOptimisticTurns,
-      items: hasSnapshotItems ? nextItems ?? [] : runtime.items,
+      turnOrder: nextTurnOrder ? optimisticTurnState.turnOrder : runtime.turnOrder,
+      pendingOptimisticTurns: shouldUseSnapshotItems ? optimisticTurnState.pending : runtime.pendingOptimisticTurns,
+      items: shouldUseSnapshotItems ? nextItems ?? [] : runtime.items,
     }),
   }, nextThreads);
   return withActiveComposerMode({
     ...state,
     threads: nextThreads,
-    activeThreadId: select ? thread.id : state.activeThreadId ?? thread.id,
+    activeThreadId: select ? thread.id : state.activeThreadId,
     threadsRuntime: nextThreadsRuntime,
   });
+}
+
+function turnOrderWithLiveTurn(order: string[], liveTurnId: string | null): string[] {
+  if (!liveTurnId || order.includes(liveTurnId)) return order;
+  return [...order, liveTurnId];
+}
+
+function replaceThreadSnapshotItemsPreservingLiveTurn(
+  currentItems: AccumulatedThreadItem[],
+  snapshotItems: AccumulatedThreadItem[],
+  liveTurnId: string | null,
+): AccumulatedThreadItem[] {
+  if (!liveTurnId) return snapshotItems;
+  if (snapshotItems.some((item) => turnIdOf(item) === liveTurnId)) return snapshotItems;
+  const liveItems = currentItems.filter((item) => turnIdOf(item) === liveTurnId);
+  return liveItems.length > 0 ? [...snapshotItems, ...liveItems] : snapshotItems;
 }
 
 function activeTurnsFromThread(thread: Thread, terminalTurnIds: Set<string> = new Set()): Record<string, string> {

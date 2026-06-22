@@ -153,7 +153,7 @@ function buildsPaginatedThreadListParams(): void {
       archived: false,
       limit: 100,
       modelProviders: [],
-      sortKey: "recency_at",
+      sortKey: "updated_at",
       sortDirection: "desc",
     },
     "first thread list page should request recent non-archived history across provider overrides",
@@ -165,7 +165,7 @@ function buildsPaginatedThreadListParams(): void {
       cursor: "cursor-2",
       limit: 100,
       modelProviders: [],
-      sortKey: "recency_at",
+      sortKey: "updated_at",
       sortDirection: "desc",
     },
     "subsequent thread list pages should pass the opaque cursor",
@@ -1086,6 +1086,33 @@ async function buildsReadyThreadRequestsForTurns(): Promise<void> {
     "notLoaded historical thread should resume before starting a turn",
   );
 
+  const backgroundResumeThread = threadFixture({
+    id: "background-thread",
+    status: { type: "idle" },
+    modelProvider: "team_model_gateway",
+  });
+  const backgroundResume = createClientRecorder({ thread: backgroundResumeThread });
+  const backgroundResumeActions: unknown[] = [];
+  await ensureThreadReadyForTurn({
+    client: backgroundResume.client,
+    activeThread: threadFixture({ id: "background-thread", status: { type: "notLoaded" } }),
+    activeThreadId: "background-thread",
+    workspace: "/workspace/background",
+    dispatch: (action: unknown) => {
+      backgroundResumeActions.push(action);
+    },
+    context: {
+      model: "gpt-5.2",
+      modelProvider: "team_model_gateway",
+    },
+    select: false,
+  });
+  assertDeepEqual(
+    backgroundResumeActions,
+    [{ type: "upsertThread", thread: backgroundResumeThread, select: false }],
+    "background resume should not update current thread context defaults when select is false",
+  );
+
   const imageInput: UserInput[] = [{ type: "text", text: "please generate an image of a glass city", text_elements: [] }];
   const imageFallbackThread = threadFixture({ id: "image-thread", cwd: "/workspace/project", gitInfo: null });
   const imageFallbackHydrated = threadFixture({ id: "image-thread", cwd: "/workspace/project" });
@@ -1552,6 +1579,52 @@ async function resumesSelectedHistoricalThreadBeforeRetryingTurn(): Promise<void
     "missing selected thread should stop at metadata read",
   );
   assertEqual(missingActions.length, 0, "missing selected thread should not dispatch a fake resumed thread");
+
+  const backgroundInput: UserInput[] = [{ type: "text", text: "send from queue", text_elements: [] }];
+  const backgroundResumedThread = threadFixture({
+    id: "thread-background",
+    status: { type: "idle" },
+    modelProvider: "team_model_gateway",
+  });
+  const backgroundSent = createClientSequenceRecorder([
+    { thread: threadFixture({ id: "thread-background", status: { type: "notLoaded" } }) },
+    { thread: backgroundResumedThread },
+    { turn: { id: "turn-background" } },
+  ]);
+  const backgroundActions: unknown[] = [];
+  const backgroundRecovered = await resumeSelectedThreadAndStartTurn(
+    backgroundSent.client,
+    "thread-background",
+    backgroundInput,
+    "/workspace/background",
+    (action: unknown) => {
+      backgroundActions.push(action);
+    },
+    {
+      model: "gpt-5.2",
+      modelProvider: "team_model_gateway",
+    },
+    undefined,
+    { select: false },
+  );
+  assertEqual(backgroundRecovered, true, "background historical thread recovery should still send");
+  assertRequest(
+    backgroundSent.requests,
+    2,
+    "turn/start",
+    {
+      threadId: "thread-background",
+      input: backgroundInput,
+      cwd: "/workspace/background",
+      model: "gpt-5.2",
+    },
+    "background historical thread recovery should retry turn/start with the queued message context",
+  );
+  assertDeepEqual(
+    backgroundActions,
+    [{ type: "upsertThread", thread: backgroundResumedThread, select: false }],
+    "background historical thread recovery should not update current thread context defaults",
+  );
 }
 
 async function refreshesThreadMetadataWithoutChangingSelection(): Promise<void> {

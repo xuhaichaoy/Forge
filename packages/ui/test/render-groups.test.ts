@@ -2760,7 +2760,6 @@ function hoistsTodoListOutOfLocalTurnTranscriptWithoutRightRailProgress(): void 
   assertEqual(projection.units.length, 2, "local-turn todo-list should not add a normal transcript row");
   assertEqual(projection.units[0]?.kind, "message", "user message should remain in the main conversation");
   assertEqual(projection.units[1]?.kind, "message", "assistant message should remain after the hoisted todo-list");
-  assertDeepEqual(projection.progress, [], "todo-list should not drive a right-rail Progress section");
 }
 
 function rendersProposedPlanAsInlineCardOnly(): void {
@@ -2783,7 +2782,6 @@ function rendersProposedPlanAsInlineCardOnly(): void {
   if (projection.units[1]?.kind === "threadItem") {
     assertEqual(projection.units[1].key, "item:proposed-plan:plan-1", "proposed-plan card key");
   }
-  assertDeepEqual(projection.progress, [], "proposed-plan should not drive right-rail Progress");
 }
 
 function keepsBlockingRequestsOutOfTranscriptButSuppressesThinking(): void {
@@ -3900,7 +3898,6 @@ function returnsEmptyProjectionForEmptyItems(): void {
   const projection = projectConversation([]);
 
   assertEqual(projection.units.length, 0, "empty items should produce no render units");
-  assertEqual(projection.progress.length, 0, "empty items should produce no progress entries");
   assertEqual(projection.artifacts.length, 0, "empty items should produce no artifacts");
   assertEqual(projection.backgroundAgents.length, 0, "empty items should produce no background agents");
   assertEqual(projection.sources.length, 0, "empty items should produce no sources");

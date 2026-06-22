@@ -56,7 +56,7 @@ export function buildThreadListParams(cursor: string | null = null): Record<stri
     cursor,
     limit: THREAD_LIST_PAGE_SIZE,
     modelProviders: [],
-    sortKey: "recency_at",
+    sortKey: "updated_at",
     sortDirection: "desc",
   });
 }

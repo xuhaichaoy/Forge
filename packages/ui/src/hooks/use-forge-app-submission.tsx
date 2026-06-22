@@ -65,7 +65,6 @@ export interface ForgeAppSubmissionArgs {
   setInput: Dispatch<SetStateAction<string>>;
   setOnboardingSnapshot: Dispatch<SetStateAction<ReturnType<typeof loadOnboardingSnapshot>>>;
   state: CodexUiState;
-  threadIds: string[];
   workspace: string;
 }
 
@@ -101,7 +100,6 @@ export function useForgeAppSubmission(args: ForgeAppSubmissionArgs) {
     setInput,
     setOnboardingSnapshot,
     state,
-    threadIds,
     workspace,
   } = args;
   const cleanBackgroundTerminals = useCallback(async () => {
@@ -218,7 +216,8 @@ export function useForgeAppSubmission(args: ForgeAppSubmissionArgs) {
     setComposerAttachments,
     setInput,
     threadContextDefaults: effectiveThreadContextDefaults,
-    threadIds,
+    threads: state.threads,
+    threadsRuntime: state.threadsRuntime,
     workspace,
   });
 

@@ -14,6 +14,7 @@ mod codex_bundle;
 mod command_error;
 mod document_preview;
 mod git_host;
+mod global_state;
 mod image_generation;
 mod local_files;
 mod native_shell;
@@ -29,6 +30,7 @@ const APP_SERVER_EVENT_NAME: &str = "forge://app-server-event";
 struct AppState {
     host: AppServerHost,
     browser_runtime: Mutex<BrowserRuntimeStore>,
+    global_state: Mutex<global_state::GlobalStateStore>,
     browser_extension_backend_validated: AtomicBool,
 }
 
@@ -37,6 +39,7 @@ impl Default for AppState {
         Self {
             host: AppServerHost::new(),
             browser_runtime: Mutex::new(BrowserRuntimeStore::default()),
+            global_state: Mutex::new(global_state::GlobalStateStore::default()),
             browser_extension_backend_validated: AtomicBool::new(false),
         }
     }
@@ -187,6 +190,11 @@ fn main() {
             app_server::host_read_computer_use_readiness,
             app_server::host_repair_computer_use_bundle,
             app_server::host_open_computer_use_setup,
+            global_state::host_read_global_state,
+            global_state::host_write_global_state,
+            global_state::host_write_queued_follow_ups_for_thread,
+            global_state::host_acquire_queued_follow_up_send_lock,
+            global_state::host_release_queued_follow_up_send_lock,
             browser_runtime::host_browser_runtime_status,
             browser_runtime::host_open_browser_tab,
             local_files::host_open_file_reference,

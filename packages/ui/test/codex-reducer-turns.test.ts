@@ -29,9 +29,11 @@ export default function runCodexReducerTurnsTests(): void {
   repositionsExplicitWorkedForItemsFromThreadSnapshots();
   startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage();
   upsertsExistingThreadWithoutMovingItToTheTop();
+  upsertThreadSelectFalsePreservesEmptyActiveThread();
   renameThreadPatchesNameWithoutTouchingOtherState();
   streamingDeltaFastPathMatchesFullProjection();
   upsertingRunningThreadSnapshotPreservesStreamingItems();
+  editRollbackSnapshotReplacesRemovedTurnsButPreservesLiveRestart();
   appendsStreamingDeltasToAgentReasoningAndCommandItems();
   commandExecutionTerminalInteractionParsesStdinIntoCommandActions();
   turnScopesDeltaCreatedAssistantAndReasoningItems();
@@ -85,6 +87,7 @@ export default function runCodexReducerTurnsTests(): void {
   lateInProgressThreadSnapshotDoesNotReactivateCompletedTurn();
   lateInProgressThreadSnapshotDoesNotReactivateCancelledTurn();
   redispatchingTheSameOptimisticUserMessageIsIdempotent();
+  registersAndDropsPendingSteersInThreadRuntime();
   setActiveThreadPushesThreadHistoryStack();
   navigateBackAndForwardInHistoryMovesCursorWithoutPushing();
   navigateBackAtHeadIsNoOpAndForwardBranchIsTruncatedOnNewSwitch();
@@ -425,6 +428,25 @@ function upsertsExistingThreadWithoutMovingItToTheTop(): void {
     "selecting an existing thread should not reorder the sidebar list",
   );
   assertEqual(next.activeThreadId, "thread-selected", "upsertThread should still select the requested thread");
+}
+
+function upsertThreadSelectFalsePreservesEmptyActiveThread(): void {
+  const next = codexUiReducer(initialCodexUiState, {
+    type: "upsertThread",
+    thread: threadWithTurns("thread-background", []),
+    select: false,
+  });
+
+  assertEqual(
+    next.activeThreadId,
+    null,
+    "upsertThread select:false should not implicitly select a background thread",
+  );
+  assertDeepEqual(
+    next.threads.map((thread) => thread.id),
+    ["thread-background"],
+    "upsertThread select:false should still cache the background thread",
+  );
 }
 
 function renameThreadPatchesNameWithoutTouchingOtherState(): void {
@@ -922,6 +944,68 @@ function startsTurnByMergingInitialItemsWithoutOverwritingExistingUserMessage():
     runtime(next, "thread-1").activeTurnId,
     "turn-1",
     "turn/started should set the active turn id",
+  );
+}
+
+function editRollbackSnapshotReplacesRemovedTurnsButPreservesLiveRestart(): void {
+  const initialThread = threadWithTurns("thread-1", [
+    {
+      id: "turn-1",
+      status: "completed",
+      items: [userMessage("user-1", "Hello"), agentMessage("agent-1", "Hi.")],
+    },
+    {
+      id: "turn-2",
+      status: "completed",
+      items: [userMessage("user-2", "Old edit target"), agentMessage("agent-2", "Old answer.")],
+    },
+  ]);
+  let state = codexUiReducer(
+    {
+      ...initialCodexUiState,
+      threads: [initialThread],
+      activeThreadId: "thread-1",
+    },
+    { type: "upsertThread", thread: initialThread, select: true },
+  );
+
+  state = reduceNotification(state, {
+    method: "turn/started",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-3",
+        threadId: "thread-1",
+        status: "inProgress",
+        items: [userMessage("user-3", "Edited prompt")],
+        startedAt: 3,
+      },
+    },
+  });
+
+  const rolledBackThread = threadWithTurns("thread-1", [
+    {
+      id: "turn-1",
+      status: "completed",
+      items: [userMessage("user-1", "Hello"), agentMessage("agent-1", "Hi.")],
+    },
+  ]);
+  const next = codexUiReducer(state, {
+    type: "upsertThread",
+    thread: rolledBackThread,
+    select: true,
+    replaceSnapshot: true,
+  });
+
+  assertDeepEqual(
+    items(next, "thread-1").map((item) => item.id),
+    ["user-1", "agent-1", "user-3"],
+    "edit rollback snapshot should drop the removed old turn while preserving the live restarted turn",
+  );
+  assertDeepEqual(
+    runtime(next, "thread-1").turnOrder,
+    ["turn-1", "turn-3"],
+    "edit rollback snapshot should rebuild turn order from the rollback snapshot plus the live restarted turn",
   );
 }
 
@@ -3137,6 +3221,54 @@ function redispatchingTheSameOptimisticUserMessageIsIdempotent(): void {
     ids,
     ["optimistic-user:once"],
     "redispatching the same content while a placeholder is still pending must be a no-op so quick double-clicks cannot multiply user bubbles",
+  );
+}
+
+function registersAndDropsPendingSteersInThreadRuntime(): void {
+  const pending = {
+    attachments: [],
+    clientUserMessageId: "client-1",
+    compareKey: { rawText: "continue", imageCount: 0 },
+    cwd: "/tmp/project",
+    createdAt: 10,
+    id: "queued-1",
+    optimisticLocalId: "optimistic-user:1",
+    text: "continue",
+    turnId: "turn-1",
+  };
+
+  let state = codexUiReducer(initialCodexUiState, {
+    type: "registerPendingSteer",
+    threadId: "thread-1",
+    pending,
+  });
+  assertDeepEqual(
+    runtime(state, "thread-1").pendingSteers,
+    [pending],
+    "registerPendingSteer should persist the pending steer in thread runtime",
+  );
+
+  const replacement = { ...pending, id: "queued-2", text: "continue updated" };
+  state = codexUiReducer(state, {
+    type: "registerPendingSteer",
+    threadId: "thread-1",
+    pending: replacement,
+  });
+  assertDeepEqual(
+    runtime(state, "thread-1").pendingSteers,
+    [replacement],
+    "registerPendingSteer should replace an existing pending steer with the same client id",
+  );
+
+  state = codexUiReducer(state, {
+    type: "dropPendingSteer",
+    threadId: "thread-1",
+    clientUserMessageId: "client-1",
+  });
+  assertDeepEqual(
+    runtime(state, "thread-1").pendingSteers,
+    [],
+    "dropPendingSteer should remove the pending steer from thread runtime",
   );
 }
 

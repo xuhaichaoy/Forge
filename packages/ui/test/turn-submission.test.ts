@@ -1,6 +1,11 @@
+import type { UserInput } from "@forge/codex-protocol";
 import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
   composerModeRequiresUnavailablePlanMode,
+  pendingSteerCompareKeyFromUserInput,
+  pendingSteerRestorePausedReason,
+  runtimeHasAcceptedSteer,
+  selectNextQueuedFollowUpDrainCandidate,
   selectNextQueuedFollowUp,
   shouldPauseQueuedFollowUpsForInterruptedTerminalTurn,
   shouldPromptPausedQueueSubmit,
@@ -14,6 +19,8 @@ export default function runTurnSubmissionTests(): void {
   detectsQueuedFollowUpSubmissions();
   detectsQueuedFollowUpSteering();
   selectsNextQueuedFollowUp();
+  selectsNextQueuedFollowUpDrainCandidate();
+  detectsPendingSteerRestoreReason();
   detectsInterruptedTerminalQueuePause();
   detectsPausedQueueSubmitPromptGate();
   projectsTurnStartOptionsFromComposerMode();
@@ -99,25 +106,43 @@ function detectsQueuedFollowUpSteering(): void {
 
 function selectsNextQueuedFollowUp(): void {
   const paused = queuedFollowUp("paused", "paused");
-  const sending = queuedFollowUp("sending", "sending");
+  const pausedReason = { ...queuedFollowUp("queued", "paused-reason"), pausedReason: "Interrupted before the steer was accepted." };
   const queued = queuedFollowUp("queued", "queued");
+  assertDeepEqual(
+    selectNextQueuedFollowUp({
+      activeThreadRunning: false,
+      pendingRequestCount: 0,
+      queue: [pausedReason, queued],
+    }),
+    null,
+    "auto drain should not skip a queue-head follow-up paused by reason",
+  );
   assertDeepEqual(
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
       queue: [paused, queued],
     }),
-    queued,
-    "auto drain should skip paused queued follow-ups",
+    null,
+    "auto drain should not skip a paused queue-head follow-up",
   );
   assertDeepEqual(
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
-      queue: [paused, sending, queued],
+      queue: [queuedFollowUp("sending", "sending"), queued],
     }),
     null,
-    "auto drain should wait while another follow-up is sending (double-send guard)",
+    "auto drain should not send a legacy sending queue-head item",
+  );
+  assertDeepEqual(
+    selectNextQueuedFollowUp({
+      activeThreadRunning: false,
+      pendingRequestCount: 0,
+      queue: [queued, queuedFollowUp("sending", "legacy-sending")],
+    }),
+    queued,
+    "auto drain should not use persisted sending items as the double-send guard",
   );
   assertDeepEqual(
     selectNextQueuedFollowUp({
@@ -135,8 +160,8 @@ function selectsNextQueuedFollowUp(): void {
       pendingRequestCount: 0,
       queue: [queued],
     }),
-    null,
-    "auto drain should wait while the active thread needs reconnect resume",
+    queued,
+    "auto drain should select a queued follow-up whose thread needs resume",
   );
   assertDeepEqual(
     selectNextQueuedFollowUp({
@@ -156,6 +181,135 @@ function selectsNextQueuedFollowUp(): void {
     }),
     null,
     "auto drain should wait while the queue is paused after an interruption",
+  );
+}
+
+function selectsNextQueuedFollowUpDrainCandidate(): void {
+  const firstThreadQueued = queuedFollowUp("queued", "first");
+  const secondThreadQueued = queuedFollowUp("queued", "second");
+  const candidate = selectNextQueuedFollowUpDrainCandidate([
+    {
+      threadId: "thread-running",
+      activeThreadRunning: true,
+      pendingRequestCount: 0,
+      queue: [firstThreadQueued],
+    },
+    {
+      threadId: "thread-pending",
+      activeThreadRunning: false,
+      pendingRequestCount: 1,
+      queue: [firstThreadQueued],
+    },
+    {
+      threadId: "thread-ready",
+      activeThreadRunning: false,
+      activeThreadNeedsResume: true,
+      pendingRequestCount: 0,
+      queue: [secondThreadQueued],
+    },
+  ]);
+
+  assertDeepEqual(
+    candidate,
+    { threadId: "thread-ready", message: secondThreadQueued },
+    "global drain should pick the first thread whose queue can send",
+  );
+}
+
+function detectsPendingSteerRestoreReason(): void {
+  const content: UserInput[] = [{ type: "text", text: "continue", text_elements: [] }];
+  const compareKey = pendingSteerCompareKeyFromUserInput(content);
+  assertEqual(
+    runtimeHasAcceptedSteer({
+      items: [{ type: "userMessage", id: "server-user", clientId: "client-1", content }],
+    }, "client-1"),
+    true,
+    "matching clientUserMessageId should accept the pending steer",
+  );
+  assertEqual(
+    runtimeHasAcceptedSteer({
+      items: [{ type: "userMessage", id: "server-user", clientId: null, content, _turnId: "turn-1" }],
+    }, "client-1", compareKey, "turn-1"),
+    true,
+    "same-turn confirmed user content should accept the pending steer by Desktop compareKey fallback",
+  );
+  assertEqual(
+    runtimeHasAcceptedSteer({
+      items: [{
+        type: "userMessage",
+        id: "optimistic-user",
+        content,
+        _localId: "optimistic-user:client-1",
+        _turnId: "turn-1",
+      }],
+    }, "client-1", compareKey, "turn-1"),
+    false,
+    "same-turn optimistic user content must not accept its own pending steer by compareKey",
+  );
+  assertEqual(
+    runtimeHasAcceptedSteer({
+      items: [{ type: "userMessage", id: "server-user", clientId: null, content, _turnId: "turn-2" }],
+    }, "client-1", compareKey, "turn-1"),
+    false,
+    "different-turn confirmed user content should not accept the pending steer by compareKey",
+  );
+  assertEqual(
+    pendingSteerRestorePausedReason({
+      clientUserMessageId: "client-1",
+      compareKey,
+      turnId: "turn-1",
+      runtime: {
+        items: [],
+        latestTerminalTurn: { turnId: "turn-1", status: "interrupted" },
+      },
+    }),
+    "Interrupted before the steer was accepted.",
+    "interrupted terminal turn should restore the pending steer with Desktop's interrupted reason",
+  );
+  assertEqual(
+    pendingSteerRestorePausedReason({
+      clientUserMessageId: "client-1",
+      compareKey,
+      turnId: "turn-1",
+      runtime: {
+        items: [],
+        latestTerminalTurn: { turnId: "turn-1", status: "completed" },
+      },
+    }),
+    "Run ended before the steer was accepted.",
+    "non-interrupted terminal turn should restore the pending steer with Desktop's run-ended reason",
+  );
+  assertEqual(
+    pendingSteerRestorePausedReason({
+      clientUserMessageId: "client-1",
+      compareKey,
+      turnId: "turn-1",
+      runtime: {
+        items: [{
+          type: "userMessage",
+          id: "optimistic-user",
+          content,
+          _localId: "optimistic-user:client-1",
+          _turnId: "turn-1",
+        }],
+        latestTerminalTurn: { turnId: "turn-1", status: "interrupted" },
+      },
+    }),
+    "Interrupted before the steer was accepted.",
+    "optimistic self-match should still restore the pending steer after interruption",
+  );
+  assertEqual(
+    pendingSteerRestorePausedReason({
+      clientUserMessageId: "client-1",
+      compareKey,
+      turnId: "turn-1",
+      runtime: {
+        items: [{ type: "userMessage", id: "server-user", clientId: null, content, _turnId: "turn-1" }],
+        latestTerminalTurn: { turnId: "turn-1", status: "interrupted" },
+      },
+    }),
+    null,
+    "accepted steer should not be restored after terminal turn",
   );
 }
 

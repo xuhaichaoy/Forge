@@ -45,7 +45,6 @@ function rendersOrphanTodoListPlansInlineWithoutRightRailProgress(): void {
     ["todo-old", "todo-new"],
     "orphan todo-list items should keep the legacy inline transcript path",
   );
-  assertDeepEqual(projection.progress, [], "todo-list items should not populate right-rail Progress");
 }
 
 function ignoresMalformedTodoListPlansForRightRailProgress(): void {
@@ -63,7 +62,6 @@ function ignoresMalformedTodoListPlansForRightRailProgress(): void {
   ]);
 
   assertEqual(projection.units.length, 1, "malformed todo-list data should still stay with the inline item renderer");
-  assertDeepEqual(projection.progress, [], "malformed todo-list data should not create right-rail Progress entries");
 }
 
 function dedupesArtifactsAcrossFileChangesAndAssistantText(): void {

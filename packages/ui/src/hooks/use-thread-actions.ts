@@ -15,10 +15,19 @@ import {
   hydrateThreadResolvedModelFromRollout,
   isThreadNotFound,
   isThreadNotMaterialized,
+  isThreadStatusNotLoaded,
   readThreadForDisplay,
   renameThread as renameThreadWorkflow,
   resumeThreadWithMetadataRead,
 } from "../state/thread-workflow";
+
+export function shouldResumeSelectedThreadAfterDisplayRead(thread: Thread | null | undefined): boolean {
+  // This is not a generic "empty history" fallback: app-server explicitly
+  // returns empty turns for metadata-only reads. It only mirrors Desktop's
+  // selected-conversation resume path for not-yet-initialized historical
+  // threads, where an empty notLoaded snapshot still needs thread/resume.
+  return Boolean(thread && isThreadStatusNotLoaded(thread.status) && thread.turns.length === 0);
+}
 
 export function useThreadActions({
   activeThread,
@@ -82,9 +91,14 @@ export function useThreadActions({
       return;
     }
     try {
-      const displayThread = await readThreadForDisplay(client, thread, dispatch);
+      let displayThread = await readThreadForDisplay(client, thread, dispatch);
       if (threadSelectionRequestId.current !== requestId) return;
-      if (displayThread) {
+      if (shouldResumeSelectedThreadAfterDisplayRead(displayThread ?? thread) && !hasLoadedThreadContent?.(thread.id)) {
+        const result = await resumeThreadWithMetadataRead(client, thread.id, workspace, threadContextDefaults, dispatch);
+        if (threadSelectionRequestId.current !== requestId) return;
+        displayThread = result.thread;
+        dispatch({ type: "upsertThread", thread: result.thread, select: true });
+      } else if (displayThread) {
         dispatch({ type: "upsertThread", thread: displayThread, select: true });
       }
       if (!rolloutModelHydratedThreadIds.current.has(thread.id)) {
@@ -104,7 +118,7 @@ export function useThreadActions({
         dispatch({ type: "log", text: formatError(error), level: "error" });
       }
     }
-  }, [client, dispatch, hasLoadedThreadContent]);
+  }, [client, dispatch, hasLoadedThreadContent, threadContextDefaults, workspace]);
 
   const resumeSelectedThread = useCallback(async (thread: Thread) => {
     try {
@@ -240,7 +254,7 @@ export function useThreadActions({
         workspace,
         threadContextDefaults,
         (thread) => {
-          dispatch({ type: "upsertThread", thread, select: true });
+          dispatch({ type: "upsertThread", thread, select: true, replaceSnapshot: true });
         },
         rolloutPath,
       );

@@ -1,13 +1,16 @@
 import {
   INTERRUPTED_STEER_PAUSED_REASON,
+  QUEUED_FOLLOW_UPS_GLOBAL_STATE_KEY,
   createQueuedFollowUp,
   isQueuedFollowUpDuplicate,
+  normalizeQueuedFollowUpsByThread,
   pauseQueuedFollowUpsWithReason,
   queuedFollowUpSummary,
   reorderQueuedFollowUps,
   removeQueuedFollowUp,
   resumeQueuedFollowUpsWithReason,
   updateQueuedFollowUpStatus,
+  updateQueuedFollowUpsByThread,
 } from "../src/state/queued-followups";
 
 export default function runQueuedFollowUpsTests(): void {
@@ -17,6 +20,8 @@ export default function runQueuedFollowUpsTests(): void {
   summarizesTextAndAttachmentOnlyMessages();
   detectsDuplicateFollowUpsByCanonicalKey();
   pausesAndResumesOnlyInterruptedQueuedFollowUps();
+  normalizesQueuedFollowUpsFromGlobalState();
+  removesEmptyThreadQueuesFromGlobalStateMap();
 }
 
 function detectsDuplicateFollowUpsByCanonicalKey(): void {
@@ -53,6 +58,104 @@ function createsStableQueuedFollowUpRecords(): void {
       status: "queued",
     },
     "queued follow-up should keep message facts and initial status",
+  );
+
+  assertDeepEqual(
+    createQueuedFollowUp({
+      id: "queued-context",
+      now: 43,
+      text: "Follow up with model",
+      attachments: [],
+      cwd: "/workspace",
+      context: { model: "gpt-5.2", modelProvider: "team_model_gateway" },
+    }),
+    {
+      id: "queued-context",
+      text: "Follow up with model",
+      context: { model: "gpt-5.2", modelProvider: "team_model_gateway" },
+      attachments: [],
+      cwd: "/workspace",
+      createdAt: 43,
+      status: "queued",
+    },
+    "queued follow-up should persist the context captured when it was queued",
+  );
+}
+
+function normalizesQueuedFollowUpsFromGlobalState(): void {
+  assertEqual(
+    QUEUED_FOLLOW_UPS_GLOBAL_STATE_KEY,
+    "queued-follow-ups",
+    "global-state key should match Codex Desktop host key",
+  );
+  const normalized = normalizeQueuedFollowUpsByThread({
+    "thread-1": [
+      {
+        id: "q1",
+        context: {
+          prompt: "Follow up",
+          commentAttachments: [],
+          responsesapiClientMetadata: { source: "desktop" },
+        },
+        attachments: [
+          { type: "plainText", text: "context" },
+          { type: "filePath", path: "src/main.ts" },
+          { type: "bad", text: "drop" },
+        ],
+        cwd: "/workspace",
+        mode: "plan",
+        createdAt: 123,
+        status: "paused",
+        error: "offline",
+        pausedReason: "Interrupted before the steer was accepted.",
+        responsesapiClientMetadata: { source: "desktop" },
+      },
+      { id: "bad", text: "missing date", attachments: [], cwd: "/workspace" },
+    ],
+    "thread-2": [],
+    broken: "not a queue",
+  });
+  assertDeepEqual(
+    normalized,
+    {
+      "thread-1": [
+        {
+          id: "q1",
+          text: "Follow up",
+          context: {
+            prompt: "Follow up",
+            commentAttachments: [],
+            responsesapiClientMetadata: { source: "desktop" },
+          },
+          attachments: [
+            { type: "plainText", text: "context" },
+            { type: "filePath", path: "src/main.ts" },
+          ],
+          cwd: "/workspace",
+          mode: "plan",
+          createdAt: 123,
+          status: "paused",
+          error: "offline",
+          pausedReason: "Interrupted before the steer was accepted.",
+          responsesapiClientMetadata: { source: "desktop" },
+        },
+      ],
+    },
+    "global-state normalization should preserve valid queued messages and drop invalid entries",
+  );
+}
+
+function removesEmptyThreadQueuesFromGlobalStateMap(): void {
+  const current = {
+    "thread-1": [createQueuedFollowUp({ id: "q1", now: 1, text: "A", attachments: [], cwd: "" })],
+    "thread-2": [createQueuedFollowUp({ id: "q2", now: 2, text: "B", attachments: [], cwd: "" })],
+  };
+  assertDeepEqual(
+    updateQueuedFollowUpsByThread(current, "thread-1", () => []),
+    {
+      "thread-2": [createQueuedFollowUp({ id: "q2", now: 2, text: "B", attachments: [], cwd: "" })],
+    },
+    "empty queues should delete the conversation key from the global map",
   );
 }
 

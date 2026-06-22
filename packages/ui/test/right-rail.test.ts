@@ -51,7 +51,6 @@ function keepsCodexDesktopSectionOrder(): void {
   const sections = projectRightRailSections({
     // Current Desktop no longer has a Summary Rail Progress section; legacy
     // progress input is intentionally ignored.
-    progress: [railEntry("progress-1", "Read guide", "completed", "Plan")],
     // CODEX-REF: pe:automation — Codex 仅渲染 single automation。Legacy
     // `automations` multi-list 已删除以严格对齐 Codex。
     automation: { id: "auto-1", name: "Weekly digest", rruleSummary: "every Monday at 9am" },
@@ -88,11 +87,6 @@ function keepsCodexDesktopSectionOrder(): void {
       "Sources",
     ],
     "right rail section order should match Codex Desktop",
-  );
-  assertEqual(
-    sections.find((section) => section.id === "progress"),
-    undefined,
-    "legacy progress input should not mount a Summary Rail Progress section",
   );
   assertEqual(
     sectionById(sections, "backgroundSubagents").count,
@@ -139,7 +133,6 @@ function keepsCodexDesktopSectionOrder(): void {
 
 function hidesEmptySections(): void {
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: {
       entries: [],
     },
@@ -164,7 +157,6 @@ function hidesEmptySections(): void {
 
 function keepsPopulatedBranchDetails(): void {
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
@@ -191,7 +183,6 @@ function keepsPopulatedBranchDetails(): void {
 
 function usesDesktopBackgroundTaskTitles(): void {
   const onlyAgents = projectRightRailSections({
-    progress: [],
     branchDetails: { entries: [] },
     artifacts: [],
     backgroundAgents: [railEntry("agent-1", "Explorer", "active", "Uses gpt-5")],
@@ -199,7 +190,6 @@ function usesDesktopBackgroundTaskTitles(): void {
     sources: [],
   });
   const onlyTerminals = projectRightRailSections({
-    progress: [],
     branchDetails: { entries: [] },
     artifacts: [],
     backgroundAgents: [],
@@ -207,7 +197,6 @@ function usesDesktopBackgroundTaskTitles(): void {
     sources: [],
   });
   const mixed = projectRightRailSections({
-    progress: [],
     branchDetails: { entries: [] },
     artifacts: [],
     backgroundAgents: [railEntry("agent-1", "Explorer", "active", "Uses gpt-5")],
@@ -259,7 +248,6 @@ function clipsRailEntriesByDefaultAndExpandsAllEntries(): void {
 
 function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
@@ -287,7 +275,6 @@ function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
 
 function hidesOutputsForGitProjectArtifactsLikeCodexDesktop(): void {
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
@@ -316,7 +303,6 @@ function hidesOutputsForGitProjectArtifactsLikeCodexDesktop(): void {
 
 function rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction(): void {
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: {
       entries: [],
     },
@@ -365,7 +351,6 @@ function preservesSectionCountsAndEntryMeta(): void {
   ];
 
   const sections = projectRightRailSections({
-    progress: [railEntry("progress-1", "Wire projection", "inProgress", "latest todo-list")],
     branchDetails: {
       entries: [railEntry("branch-1", "Branch", "available", "main")],
     },
@@ -377,12 +362,6 @@ function preservesSectionCountsAndEntryMeta(): void {
   const branchDetails = sectionById(sections, "branchDetails");
   const artifactsSection = sectionById(sections, "artifacts");
   const sourcesSection = sectionById(sections, "sources");
-
-  assertEqual(
-    sections.find((section) => section.id === "progress"),
-    undefined,
-    "progress input should not produce a right-rail section in current Desktop parity",
-  );
 
   assertEqual(branchDetails.count, 1, "branch details count should match source entries");
   assertEqual(branchDetails.entries[0]?.status, "available", "branch details status should be preserved");
@@ -409,7 +388,6 @@ function preservesSectionCountsAndEntryMeta(): void {
 
 function projectsBranchDiffAction(): void {
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
@@ -483,7 +461,6 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
     },
   });
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails,
     artifacts: [],
     sources: [],
@@ -580,7 +557,6 @@ function rendersAutomationNextRunAndRruleFallbackLikeCodex(): void {
     status?: string | null;
   }) => sectionById(
     projectRightRailSections({
-      progress: [],
       automation,
       branchDetails: { entries: [] },
       artifacts: [],
@@ -701,7 +677,6 @@ function makeEntries(count: number, prefix: string) {
 function sectionById(
   sections: ReturnType<typeof projectRightRailSections>,
   id:
-    | "progress"
     | "automation"
     | "automations"
     | "branchDetails"

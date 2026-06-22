@@ -71,14 +71,8 @@ export function collectRailEntries(
   sources: Map<string, RailEntry>,
   fileCandidates?: ArtifactFileCandidateIndex,
   appRegistry?: AppRegistryEntry[] | null,
-): RailEntry[] | null {
+): void {
   const record = item as ItemRecord;
-  const plan = itemType(item) === "todo-list" && Array.isArray(record.plan) ? record.plan : null;
-  let progress: RailEntry[] | null = null;
-  if (plan) {
-    progress = progressEntriesFromPlan(plan, `todo:${item.id}`);
-  }
-
   const projectItemArtifacts = shouldProjectArtifactsFromItem(item);
 
   if (projectItemArtifacts) {
@@ -134,7 +128,6 @@ export function collectRailEntries(
     });
   }
 
-  return progress;
 }
 
 export type ArtifactFileCandidateIndex = Map<string, RailEntry>;
@@ -175,19 +168,6 @@ export function resolveFileArtifactCandidate(
   return entry;
 }
 
-export function progressEntriesFromPlan(plan: unknown[], idPrefix: string): RailEntry[] {
-  return plan.flatMap((raw, index) => {
-    const entry = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-    const title = stringField(entry, "step") || stringField(entry, "title") || stringField(entry, "text");
-    if (!title) return [];
-    const status = stringField(entry, "status");
-    return [{
-      id: `${idPrefix}:${index}`,
-      title,
-      ...(status ? { status } : {}),
-    }];
-  });
-}
 function imageArtifactEntryFromSource(source: string, status: string): RailEntry {
   const localPath = filePathFromFileUrl(source) || (source.startsWith("/") ? source : "");
   if (localPath) return fileArtifactEntryFromPath(localPath, status);

@@ -9,7 +9,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **HiCodex** (18673 symbols, 40001 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Forge** (19273 symbols, 41273 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -32,10 +32,10 @@ This project is indexed by GitNexus as **HiCodex** (18673 symbols, 40001 relatio
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/HiCodex/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/HiCodex/clusters` | All functional areas |
-| `gitnexus://repo/HiCodex/processes` | All execution flows |
-| `gitnexus://repo/HiCodex/process/{name}` | Step-by-step execution trace |
+| `gitnexus://repo/Forge/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Forge/clusters` | All functional areas |
+| `gitnexus://repo/Forge/processes` | All execution flows |
+| `gitnexus://repo/Forge/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

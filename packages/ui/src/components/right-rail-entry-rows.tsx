@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { RailEntry } from "../state/render-groups";
 import type { RightRailSection as RightRailSectionViewModel } from "../state/right-rail";
-import { normalizePlanStepStatus } from "../state/thread-item-fields";
 import { useForgeIntl } from "./i18n-provider";
 import {
   isBackgroundAgentEntry,
@@ -12,7 +11,7 @@ import { SummaryPanelRow } from "./summary-panel-row";
 
 /*
  * CODEX-REF: local-conversation-thread-CEeZyOcp.js — single-line rail row (wc /
- * summary-panel-row) used by every non-progress section.
+ * summary-panel-row) used by mounted summary-panel sections.
  */
 export function RailSummaryRow({
   entry,
@@ -137,75 +136,6 @@ export function RailSummaryRow({
       trailing={trailingAction}
       title={tooltip}
     />
-  );
-}
-
-// CODEX-REF: local-conversation-thread-CEeZyOcp.js — progress-step card (the only
-// multi-line rail row). Single-line sections route through RailSummaryRow instead.
-export function RailEntryCard({
-  entry,
-  sectionId,
-  displayTitle,
-  canOpen,
-  onOpen,
-}: {
-  entry: RailEntry;
-  sectionId: RightRailSectionViewModel["id"];
-  displayTitle?: string;
-  canOpen?: (entry: RailEntry) => boolean;
-  onOpen?: (entry: RailEntry) => void;
-}) {
-  const progressStatus = sectionId === "progress" ? normalizePlanStepStatus(entry.status) : undefined;
-  if (canOpen?.(entry) && onOpen) {
-    return (
-      <button
-        className="hc-rail-card hc-rail-card-button"
-        data-progress-status={progressStatus}
-        type="button"
-        onClick={() => onOpen(entry)}
-      >
-        <RailEntryContent
-          entry={entry}
-          sectionId={sectionId}
-          displayTitle={displayTitle}
-        />
-      </button>
-    );
-  }
-
-  return (
-    <div className="hc-rail-card" data-progress-status={progressStatus}>
-      <RailEntryContent
-        entry={entry}
-        sectionId={sectionId}
-        displayTitle={displayTitle}
-      />
-    </div>
-  );
-}
-
-function RailEntryContent({
-  entry,
-  sectionId,
-  displayTitle,
-}: {
-  entry: RailEntry;
-  sectionId: RightRailSectionViewModel["id"];
-  displayTitle?: string;
-}) {
-  const title = displayTitle ?? entry.title;
-  const tooltip = entry.meta ?? title;
-  return (
-    <div className="hc-rail-card-main">
-      <span className="hc-rail-card-icon" aria-hidden="true">
-        {railEntryIcon(entry, sectionId)}
-      </span>
-      <div className="hc-rail-card-copy">
-        <div className="hc-rail-card-title-row">
-          <div className="hc-rail-card-title hc-rail-card-title-progress" title={tooltip}>{title}</div>
-        </div>
-      </div>
-    </div>
   );
 }
 

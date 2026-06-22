@@ -1,6 +1,4 @@
 import {
-  CheckCircle2,
-  Circle,
   Clock,
   GitBranch,
   Globe,
@@ -18,7 +16,6 @@ import type { RightRailSection as RightRailSectionViewModel } from "../state/rig
 import { normalizePlanStepStatus } from "../state/thread-item-fields";
 
 export function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
-  if (sectionId === "progress") return progressEntryIcon(entry.status);
   if (sectionId === "automation") return <Clock size={16} />;
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
   if (sectionId === "sideChats") {
@@ -85,13 +82,6 @@ function SourceLogo({
       }}
     />
   );
-}
-
-function progressEntryIcon(status: string | undefined): ReactNode {
-  const normalized = normalizePlanStepStatus(status);
-  if (normalized === "completed") return <CheckCircle2 size={18} />;
-  if (normalized === "inProgress") return <LoaderCircle className="hc-rail-progress-spinner" size={18} />;
-  return <Circle size={18} />;
 }
 
 export function isBackgroundTerminalEntry(entry: RailEntry): boolean {

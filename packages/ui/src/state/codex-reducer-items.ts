@@ -187,6 +187,36 @@ export function applyDropOptimisticUserMessage(
   });
 }
 
+export function applyRegisterPendingSteer(
+  state: CodexUiState,
+  action: Extract<CodexUiAction, { type: "registerPendingSteer" }>,
+): CodexUiState {
+  const { threadId, pending } = action;
+  if (!threadId || !pending.clientUserMessageId || !pending.turnId) return state;
+  const runtime = selectThreadRuntime(state, threadId);
+  return threadRuntimePatch(state, threadId, {
+    pendingSteers: [
+      ...((runtime.pendingSteers ?? []).filter(
+        (existing) => existing.clientUserMessageId !== pending.clientUserMessageId,
+      )),
+      pending,
+    ],
+  });
+}
+
+export function applyDropPendingSteer(
+  state: CodexUiState,
+  action: Extract<CodexUiAction, { type: "dropPendingSteer" }>,
+): CodexUiState {
+  const { threadId, clientUserMessageId } = action;
+  if (!threadId || !clientUserMessageId) return state;
+  const runtime = selectThreadRuntime(state, threadId);
+  const pendingSteers = runtime.pendingSteers ?? [];
+  const next = pendingSteers.filter((pending) => pending.clientUserMessageId !== clientUserMessageId);
+  if (next.length === pendingSteers.length) return state;
+  return threadRuntimePatch(state, threadId, { pendingSteers: next });
+}
+
 // --- item-domain notification handlers ---------------------------------------
 
 // Handles the 9-method item-lifecycle fall-through group. Reads `message.method`

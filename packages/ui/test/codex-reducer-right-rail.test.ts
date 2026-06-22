@@ -112,11 +112,6 @@ function storesTurnPlanUpdatesAsTodoListItems(): void {
     false,
     "turn todo-list projection should not render todo-list as a normal transcript item",
   );
-  assertDeepEqual(
-    projection.progress,
-    [],
-    "todo-list plan facts should not create a right-rail Progress section in current Desktop parity",
-  );
 }
 
 function preservesArtifactFilePathFactsFromItemNotifications(): void {
@@ -194,7 +189,6 @@ function projectsBranchDetailsAfterFirstTurnMetadataRefresh(): void {
   const activeThread = state.threads.find((thread) => thread.id === state.activeThreadId) ?? null;
   const branchDetails = projectBranchDetails({ thread: activeThread });
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails,
     artifacts: [],
     sources: [],
@@ -395,7 +389,6 @@ function projectsThreadTokenUsageIntoStatusFooter(): void {
   );
 
   const sections = projectRightRailSections({
-    progress: [],
     branchDetails: { entries: [] },
     artifacts: [],
     sources: [],

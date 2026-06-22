@@ -1138,7 +1138,6 @@ export const FORGE_MESSAGES: Record<ForgeLocale, Record<string, string>> = {
     "settings.nav.heading.integrations": "集成",
     "settings.nav.heading.coding": "编码",
     "settings.nav.heading.archived": "已归档",
-    "codex.localConversation.progressSidebar.title": "进度",
     "codex.localConversation.heartbeatAutomation.title": "自动化",
     "codex.localConversation.heartbeatAutomation.nextRun": "下次运行：{nextRunLabel}",
     "codex.localConversation.generatedImage": "已生成图像 {imageNumber}",

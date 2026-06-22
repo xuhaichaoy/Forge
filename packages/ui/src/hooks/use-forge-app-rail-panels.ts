@@ -178,7 +178,6 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
   const { browserRailInputs, refreshBrowserRuntime, setBrowserRuntimeSnapshot } = useBrowserRuntime();
   const rightRailSections = useMemo(
     () => projectRightRailSections({
-      progress: conversation.progress,
       /*
        * CODEX-REF: local-conversation-thread-*.js — single-row
        * `automation` section (Vl sectionKey="automation"). Codex bundle 无

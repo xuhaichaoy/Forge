@@ -318,7 +318,6 @@ export type AssistantMessagePhase = "commentary" | "final_answer" | "unknown";
 
 export interface ConversationProjection {
   units: ConversationRenderUnit[];
-  progress: RailEntry[];
   artifacts: RailEntry[];
   backgroundAgents: RailEntry[];
   backgroundTerminals: RailEntry[];

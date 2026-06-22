@@ -23,7 +23,6 @@ export type RightRailSectionId =
    * automation 渲染分支。Forge 之前的 legacy `"automations"` (multi list) 没有
    * Codex 出处，删除以严格对齐。
    */
-  | "progress"
   | "automation"
   | "branchDetails"
   | "artifacts"
@@ -84,10 +83,6 @@ export interface RightRailBrowserInput {
 }
 
 export interface RightRailProjectionInput {
-  // Compatibility field retained for older callers. Current Codex Desktop no
-  // longer mounts a Summary Rail Progress section; local-turn todo-list items are
-  // hoisted into fixed in-progress content instead of a normal rail row.
-  progress: RailEntry[];
   // codex: local-conversation-thread-*.js automation — new per-conversation
   // automation summary (distinct from the legacy `automations` RailEntry list).
   automation?: RightRailAutomationInput;
@@ -207,10 +202,9 @@ export function rightRailReservedInlineEndPx(
 // stable ids; Forge previously hardcoded the English titles. Route them through
 // formatMessage so non-English locales localize (en-US is unchanged via defaultMessage).
 function railSectionTitle(
-  id: "progress" | "automations" | "environment" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
+  id: "automations" | "environment" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
 ): string {
   switch (id) {
-    case "progress": return formatMessage({ id: "codex.localConversation.progressSidebar.title", defaultMessage: "Progress" });
     case "automations": return formatMessage({ id: "codex.localConversation.heartbeatAutomation.title", defaultMessage: "Automations" });
     case "environment": return formatMessage({ id: "codex.localConversation.environmentSummary.title", defaultMessage: "Environment" });
     case "outputs": return formatMessage({ id: "codex.localConversation.outputs.title", defaultMessage: "Outputs" });

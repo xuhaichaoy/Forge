@@ -2,8 +2,12 @@ import type { CollaborationModeMask } from "@forge/codex-protocol";
 import type { ThreadContextDefaults } from "./codex-reducer";
 import { collaborationModeFromComposerMode } from "./collaboration-modes";
 import type { ComposerMode, ComposerSubmitState } from "./composer-workflow";
-import type { TerminalTurnSnapshot } from "./codex-ui-types";
-import type { QueuedFollowUp } from "./queued-followups";
+import type { PendingSteerCompareKey, TerminalTurnSnapshot, ThreadRuntimeSlice } from "./codex-ui-types";
+import {
+  INTERRUPTED_STEER_PAUSED_REASON,
+  RUN_ENDED_STEER_PAUSED_REASON,
+  type QueuedFollowUp,
+} from "./queued-followups";
 import type { TurnStartOptions } from "./thread-workflow";
 
 export const PLAN_MODE_UNAVAILABLE_MESSAGE =
@@ -59,16 +63,36 @@ export function selectNextQueuedFollowUp(input: {
 }): QueuedFollowUp | null {
   if (
     input.activeThreadRunning
-    || input.activeThreadNeedsResume
     || input.pendingRequestCount > 0
     || input.queueInterrupted
   ) {
     return null;
   }
-  // A follow-up flips to "sending" before its turn/start round-trips, so the
-  // thread still reads as idle here. Draining past it would double-send.
-  if (input.queue.some((message) => message.status === "sending")) return null;
-  return input.queue.find((message) => message.status === "queued") ?? null;
+  // Desktop's host drain resumes conversations before turn/start. A notLoaded
+  // thread is therefore still eligible here; the send path owns resume.
+  void input.activeThreadNeedsResume;
+  const firstMessage = input.queue[0] ?? null;
+  if (!firstMessage || firstMessage.status !== "queued" || firstMessage.pausedReason) return null;
+  return firstMessage;
+}
+
+export interface QueuedFollowUpDrainThreadState {
+  threadId: string;
+  activeThreadNeedsResume?: boolean;
+  activeThreadRunning: boolean;
+  pendingRequestCount: number;
+  queueInterrupted?: boolean;
+  queue: QueuedFollowUp[];
+}
+
+export function selectNextQueuedFollowUpDrainCandidate(
+  threads: QueuedFollowUpDrainThreadState[],
+): { threadId: string; message: QueuedFollowUp } | null {
+  for (const thread of threads) {
+    const message = selectNextQueuedFollowUp(thread);
+    if (message) return { threadId: thread.threadId, message };
+  }
+  return null;
 }
 
 export function interruptedTerminalTurnKey(
@@ -91,6 +115,69 @@ export function shouldPauseQueuedFollowUpsForInterruptedTerminalTurn(input: {
       && input.queuedFollowUpCount > 0
       && !input.handledInterruptedTerminalTurnKeys.has(key),
   );
+}
+
+export function pendingSteerRestorePausedReason(input: {
+  clientUserMessageId: string;
+  compareKey?: PendingSteerCompareKey | null;
+  runtime: Pick<ThreadRuntimeSlice, "items" | "latestTerminalTurn"> | null | undefined;
+  turnId: string;
+}): string | null {
+  if (!input.runtime) return null;
+  if (runtimeHasAcceptedSteer(input.runtime, input.clientUserMessageId, input.compareKey, input.turnId)) return null;
+  const terminalTurn = input.runtime.latestTerminalTurn ?? null;
+  if (terminalTurn?.turnId !== input.turnId) return null;
+  return terminalTurn.status === "interrupted" ? INTERRUPTED_STEER_PAUSED_REASON : RUN_ENDED_STEER_PAUSED_REASON;
+}
+
+export function runtimeHasAcceptedSteer(
+  runtime: Pick<ThreadRuntimeSlice, "items">,
+  clientUserMessageId: string,
+  compareKey?: PendingSteerCompareKey | null,
+  turnId?: string | null,
+): boolean {
+  return runtime.items.some((item) => {
+    const record = item as Record<string, unknown>;
+    if (record.type !== "userMessage") return false;
+    if (typeof record._localId === "string" && record._localId.length > 0) return false;
+    if (record.clientId === clientUserMessageId) return true;
+    if (!compareKey) return false;
+    const itemTurnId = typeof record._turnId === "string" ? record._turnId : null;
+    if (turnId && itemTurnId && itemTurnId !== turnId) return false;
+    return pendingSteerCompareKeysEqual(compareKey, pendingSteerCompareKeyFromUserInput(record.content));
+  });
+}
+
+export function pendingSteerCompareKeyFromUserInput(input: unknown): PendingSteerCompareKey {
+  const parts = Array.isArray(input) ? input : typeof input === "string" ? [{ type: "text", text: input }] : [];
+  const rawTextParts: string[] = [];
+  let imageCount = 0;
+  for (const part of parts) {
+    if (typeof part === "string") {
+      rawTextParts.push(part);
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    const record = part as Record<string, unknown>;
+    if (record.type === "text" || typeof record.text === "string") {
+      if (typeof record.text === "string") rawTextParts.push(record.text);
+      continue;
+    }
+    if (record.type === "image" || record.type === "localImage") {
+      imageCount += 1;
+    }
+  }
+  return {
+    rawText: rawTextParts.join("\n").replace(/\r\n?/g, "\n").trim(),
+    imageCount,
+  };
+}
+
+function pendingSteerCompareKeysEqual(
+  left: PendingSteerCompareKey,
+  right: PendingSteerCompareKey,
+): boolean {
+  return left.rawText === right.rawText && left.imageCount === right.imageCount;
 }
 
 export function turnStartOptionsFromComposerMode(
