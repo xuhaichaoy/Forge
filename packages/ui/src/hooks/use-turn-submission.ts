@@ -51,6 +51,7 @@ import {
 } from "../state/queued-followups";
 import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
+  completedTurnAllowsQueuedFollowUpAutoDrain,
   composerModeRequiresUnavailablePlanMode,
   interruptedTerminalTurnKey,
   pendingSteerCompareKeyFromUserInput,
@@ -1033,6 +1034,7 @@ export function useTurnSubmission({
         activeThreadNeedsResume: isThreadStatusNotLoaded(thread.status),
         activeThreadRunning: threadRunning,
         pendingRequestCount,
+        previousCompletedTurnAllowsAutoDrain: completedTurnAllowsQueuedFollowUpAutoDrain(runtime),
         queueInterrupted: isActiveThread ? activeQueuedFollowUpsInterrupted : true,
         queue,
       }];

@@ -277,9 +277,11 @@ function normalizeImageDetail(value: unknown): ImageDetail | undefined {
     : undefined;
 }
 
-export function queuedFollowUpSummary(message: Pick<QueuedFollowUp, "text" | "attachments">): string {
+export function queuedFollowUpSummary(message: Pick<QueuedFollowUp, "text" | "attachments" | "context">): string {
   const text = summarizeQueuedFollowUpText(message.text);
   if (text) return text;
+  const contextSummary = queuedFollowUpContextSummary(message.context);
+  if (contextSummary) return contextSummary;
   const pastedTextAttachments = message.attachments.filter((attachment) => attachment.type === "plainText");
   if (pastedTextAttachments.length > 0) {
     const preview = summarizeQueuedFollowUpText(pastedTextAttachments[0]?.text ?? "") || "Pasted text";
@@ -290,6 +292,73 @@ export function queuedFollowUpSummary(message: Pick<QueuedFollowUp, "text" | "at
   return message.attachments.length === 1
     ? "1 attachment"
     : `${message.attachments.length} attachments`;
+}
+
+function queuedFollowUpContextSummary(context: unknown): string {
+  if (!isRecord(context)) return "";
+  const pastedTextAttachments = readArrayField(context, "pastedTextAttachments");
+  const generatedPastedCount = readArrayField(context, "generatedPastedTextAttachmentPaths").length;
+  const pastedTextCount = pastedTextAttachments.length || generatedPastedCount;
+  if (pastedTextCount > 0) {
+    const firstPreview = readPastedTextPreview(pastedTextAttachments[0]);
+    const preview = summarizeQueuedFollowUpText(firstPreview ?? "") || "Pasted text";
+    const remaining = pastedTextCount - 1;
+    return remaining === 0
+      ? preview
+      : `${preview} (+${remaining} more pasted text attachment${remaining === 1 ? "" : "s"})`;
+  }
+
+  const commentSummary = queuedFollowUpCommentAttachmentSummary(readArrayField(context, "commentAttachments"));
+  if (commentSummary) return commentSummary;
+
+  const selectedTextCount = readArrayField(context, "selectedTextAttachments").length;
+  if (selectedTextCount > 0) return `${selectedTextCount} selection${selectedTextCount === 1 ? "" : "s"}`;
+  return "";
+}
+
+function readPastedTextPreview(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  return readString(value.preview)
+    ?? readString(value.text)
+    ?? readString(value.content);
+}
+
+function queuedFollowUpCommentAttachmentSummary(commentAttachments: unknown[]): string {
+  let annotationCount = 0;
+  let commentCount = 0;
+  for (const attachment of commentAttachments) {
+    const kind = commentAttachmentSummaryKind(attachment);
+    if (kind === "annotation") annotationCount += 1;
+    if (kind === "comment") commentCount += 1;
+  }
+  if (annotationCount > 0 && commentCount > 0) {
+    return `${formatCommentAttachmentCount(annotationCount, "annotation")}, ${formatCommentAttachmentCount(commentCount, "comment")}`;
+  }
+  if (annotationCount > 0) return formatCommentAttachmentCount(annotationCount, "annotation");
+  if (commentCount > 0) return formatCommentAttachmentCount(commentCount, "comment");
+  return "";
+}
+
+function commentAttachmentSummaryKind(value: unknown): "annotation" | "comment" | null {
+  if (!isRecord(value)) return null;
+  if (value.localBrowserDesignChange != null) return "annotation";
+  if (
+    value.browserTabId != null
+    || value.localBrowserAttachedImages != null
+    || value.localBrowserScreenshot != null
+    || value.annotation != null
+    || value.annotations != null
+  ) return "annotation";
+  return "comment";
+}
+
+function formatCommentAttachmentCount(count: number, kind: "annotation" | "comment"): string {
+  return `${count} ${kind}${count === 1 ? "" : "s"}`;
+}
+
+function readArrayField(record: Record<string, unknown>, key: string): unknown[] {
+  const value = record[key];
+  return Array.isArray(value) ? value : [];
 }
 
 function summarizeQueuedFollowUpText(value: string): string {

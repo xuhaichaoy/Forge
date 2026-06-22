@@ -1236,6 +1236,7 @@ function projectsDesktopLifecycleEventsSemantically(): void {
       type: "system-error",
       id: "system-error-1",
       content: "Sandbox failed",
+      errorInfo: "usageLimitExceeded",
       raw_detail: "Sandbox profile denied /tmp/hicodex-write.",
     } as unknown as ThreadItem,
     {
@@ -1319,6 +1320,7 @@ function projectsDesktopLifecycleEventsSemantically(): void {
   assertEqual(systemError.tone, "error", "system errors should carry error tone");
   assertEqual(systemError.format, "system-error", "system errors should use Desktop's plain system-error row");
   assertEqual(systemError.text, "Sandbox failed", "system error content");
+  assertEqual(systemError.item.errorInfo, "usageLimitExceeded", "system-error projection should preserve errorInfo for UI-specific branches");
   assertEqual(systemError.details ?? "", "", "system errors should not expose raw details in the transcript row");
 
   const context = eventByKey(projection, "context-1");

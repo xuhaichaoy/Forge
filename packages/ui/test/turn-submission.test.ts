@@ -1,6 +1,7 @@
 import type { UserInput } from "@forge/codex-protocol";
 import {
   PLAN_MODE_UNAVAILABLE_MESSAGE,
+  completedTurnAllowsQueuedFollowUpAutoDrain,
   composerModeRequiresUnavailablePlanMode,
   pendingSteerCompareKeyFromUserInput,
   pendingSteerRestorePausedReason,
@@ -18,6 +19,7 @@ import {
 export default function runTurnSubmissionTests(): void {
   detectsQueuedFollowUpSubmissions();
   detectsQueuedFollowUpSteering();
+  detectsCompletedTurnAutoDrainGate();
   selectsNextQueuedFollowUp();
   selectsNextQueuedFollowUpDrainCandidate();
   detectsPendingSteerRestoreReason();
@@ -112,6 +114,7 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [pausedReason, queued],
     }),
     null,
@@ -121,6 +124,7 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [paused, queued],
     }),
     null,
@@ -130,6 +134,7 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [queuedFollowUp("sending", "sending"), queued],
     }),
     null,
@@ -139,6 +144,7 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [queued, queuedFollowUp("sending", "legacy-sending")],
     }),
     queued,
@@ -148,6 +154,7 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: true,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [queued],
     }),
     null,
@@ -158,6 +165,7 @@ function selectsNextQueuedFollowUp(): void {
       activeThreadRunning: false,
       activeThreadNeedsResume: true,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [queued],
     }),
     queued,
@@ -167,6 +175,7 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 1,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [queued],
     }),
     null,
@@ -176,11 +185,22 @@ function selectsNextQueuedFollowUp(): void {
     selectNextQueuedFollowUp({
       activeThreadRunning: false,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queueInterrupted: true,
       queue: [queued],
     }),
     null,
     "auto drain should wait while the queue is paused after an interruption",
+  );
+  assertDeepEqual(
+    selectNextQueuedFollowUp({
+      activeThreadRunning: false,
+      pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: false,
+      queue: [queued],
+    }),
+    null,
+    "auto drain should wait until the previous completed turn has assistant output or a manual compaction",
   );
 }
 
@@ -192,12 +212,21 @@ function selectsNextQueuedFollowUpDrainCandidate(): void {
       threadId: "thread-running",
       activeThreadRunning: true,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [firstThreadQueued],
     },
     {
       threadId: "thread-pending",
       activeThreadRunning: false,
       pendingRequestCount: 1,
+      previousCompletedTurnAllowsAutoDrain: true,
+      queue: [firstThreadQueued],
+    },
+    {
+      threadId: "thread-without-terminal-output",
+      activeThreadRunning: false,
+      pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: false,
       queue: [firstThreadQueued],
     },
     {
@@ -205,6 +234,7 @@ function selectsNextQueuedFollowUpDrainCandidate(): void {
       activeThreadRunning: false,
       activeThreadNeedsResume: true,
       pendingRequestCount: 0,
+      previousCompletedTurnAllowsAutoDrain: true,
       queue: [secondThreadQueued],
     },
   ]);
@@ -213,6 +243,60 @@ function selectsNextQueuedFollowUpDrainCandidate(): void {
     candidate,
     { threadId: "thread-ready", message: secondThreadQueued },
     "global drain should pick the first thread whose queue can send",
+  );
+}
+
+function detectsCompletedTurnAutoDrainGate(): void {
+  assertEqual(
+    completedTurnAllowsQueuedFollowUpAutoDrain({
+      latestTerminalTurn: { turnId: "turn-1", status: "completed" },
+      items: [
+        { type: "userMessage", id: "user-1", _turnId: "turn-1" },
+        { type: "agentMessage", id: "agent-1", _turnId: "turn-1" },
+      ],
+    }),
+    true,
+    "completed turn with an agentMessage should allow queued follow-up auto drain",
+  );
+  assertEqual(
+    completedTurnAllowsQueuedFollowUpAutoDrain({
+      latestTerminalTurn: { turnId: "turn-1", status: "completed" },
+      items: [
+        { type: "contextCompaction", id: "compact-1", source: "manual", _turnId: "turn-1" },
+      ],
+    }),
+    true,
+    "completed turn with manual context compaction should allow queued follow-up auto drain",
+  );
+  assertEqual(
+    completedTurnAllowsQueuedFollowUpAutoDrain({
+      latestTerminalTurn: { turnId: "turn-1", status: "completed" },
+      items: [
+        { type: "contextCompaction", id: "compact-1", source: "automatic", _turnId: "turn-1" },
+      ],
+    }),
+    false,
+    "automatic context compaction alone must not auto drain queued follow-ups",
+  );
+  assertEqual(
+    completedTurnAllowsQueuedFollowUpAutoDrain({
+      latestTerminalTurn: { turnId: "turn-1", status: "failed" },
+      items: [
+        { type: "agentMessage", id: "agent-1", _turnId: "turn-1" },
+      ],
+    }),
+    false,
+    "non-completed terminal turns must not auto drain queued follow-ups",
+  );
+  assertEqual(
+    completedTurnAllowsQueuedFollowUpAutoDrain({
+      latestTerminalTurn: { turnId: "turn-2", status: "completed" },
+      items: [
+        { type: "agentMessage", id: "agent-1", _turnId: "turn-1" },
+      ],
+    }),
+    false,
+    "agent output from an older turn must not satisfy the latest completed-turn gate",
   );
 }
 

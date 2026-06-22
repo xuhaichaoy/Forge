@@ -58,12 +58,14 @@ export function selectNextQueuedFollowUp(input: {
   activeThreadNeedsResume?: boolean;
   activeThreadRunning: boolean;
   pendingRequestCount: number;
+  previousCompletedTurnAllowsAutoDrain: boolean;
   queueInterrupted?: boolean;
   queue: QueuedFollowUp[];
 }): QueuedFollowUp | null {
   if (
     input.activeThreadRunning
     || input.pendingRequestCount > 0
+    || !input.previousCompletedTurnAllowsAutoDrain
     || input.queueInterrupted
   ) {
     return null;
@@ -81,6 +83,7 @@ export interface QueuedFollowUpDrainThreadState {
   activeThreadNeedsResume?: boolean;
   activeThreadRunning: boolean;
   pendingRequestCount: number;
+  previousCompletedTurnAllowsAutoDrain: boolean;
   queueInterrupted?: boolean;
   queue: QueuedFollowUp[];
 }
@@ -93,6 +96,20 @@ export function selectNextQueuedFollowUpDrainCandidate(
     if (message) return { threadId: thread.threadId, message };
   }
   return null;
+}
+
+export function completedTurnAllowsQueuedFollowUpAutoDrain(
+  runtime: Pick<ThreadRuntimeSlice, "items" | "latestTerminalTurn"> | null | undefined,
+): boolean {
+  if (!runtime) return false;
+  const terminalTurn = runtime?.latestTerminalTurn ?? null;
+  if (terminalTurn?.status !== "completed" || !terminalTurn.turnId) return false;
+  return runtime.items.some((item) => {
+    const record = item as Record<string, unknown>;
+    if (record._turnId !== terminalTurn.turnId) return false;
+    if (record.type === "agentMessage") return true;
+    return record.type === "contextCompaction" && record.source === "manual";
+  });
 }
 
 export function interruptedTerminalTurnKey(

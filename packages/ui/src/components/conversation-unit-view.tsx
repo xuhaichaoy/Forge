@@ -67,7 +67,6 @@ export function ConversationUnitView({
         onOpenAssistantArtifact={onOpenAssistantArtifact}
         onRevealAssistantEndResource={onRevealAssistantEndResource}
         onForkTurn={onForkTurn}
-        threadId={threadId}
         onOpenThreadId={onOpenThreadId}
         onOpenFileReference={onOpenFileReference}
         onOpenAutomation={onOpenAutomation}
@@ -109,7 +108,6 @@ export function ConversationUnitView({
       <GeneratedImageGalleryOutput
         unit={unit}
         onForkTurn={onForkTurn}
-        threadId={threadId}
       />
     );
   }
@@ -150,7 +148,6 @@ function GeneratedImageGalleryOutput({
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>;
   onForkTurn?: (turnId: string) => void;
-  threadId?: string | null;
 }) {
   const { formatMessage } = useForgeIntl();
   const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);

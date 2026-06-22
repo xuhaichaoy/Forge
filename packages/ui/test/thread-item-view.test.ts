@@ -254,9 +254,21 @@ function rendersProposedPlanSummaryCard(): void {
   assertStringIncludes(completeHtml, "<h3 class=\"hc-plan-summary-title\">Plan</h3>", "completed proposed plan title");
   assertStringIncludes(completeHtml, "Download plan", "completed proposed plan should expose PLAN.md download");
   assertStringIncludes(completeHtml, "aria-label=\"Copy\"", "completed proposed plan should expose the shared copy-button (copyButton.copyAriaLabel \"Copy\")");
-  assertStringNotIncludes(completeHtml, "Good response", "turn rating thumbs are removed from all model replies, including the plan card");
+  assertStringNotIncludes(completeHtml, "Good response", "completed plan card should not expose turn rating thumbs");
+  assertStringNotIncludes(completeHtml, "Bad response", "completed plan card should not expose turn rating thumbs");
   assertStringNotIncludes(completeHtml, "<span>Open</span>", "the no-op Open button is removed from the plan card");
   assertStringIncludes(completeHtml, "<h2", "proposed-plan markdown should render as markdown");
+
+  const missingThreadHtml = renderToStaticMarkup(createElement(ThreadItemView, {
+    unit: {
+      kind: "threadItem",
+      key: "item:proposed-plan:plan-1",
+      item: completeItem,
+      hasArtifacts: true,
+      turnId: "turn-plan-1",
+    } as never,
+  }));
+  assertStringNotIncludes(missingThreadHtml, "Good response", "completed proposed plan should not expose turn rating thumbs");
 
   const writingItem = {
     type: "proposed-plan",
@@ -272,6 +284,7 @@ function rendersProposedPlanSummaryCard(): void {
     } as never,
   }));
   assertStringIncludes(writingHtml, "Writing plan", "incomplete proposed plan title");
+  assertStringNotIncludes(writingHtml, "Good response", "incomplete proposed plan should not expose turn rating thumbs");
   assertStringIncludes(writingHtml, "hc-plan-summary-body is-collapsed", "incomplete proposed plan should start collapsed");
   assertStringIncludes(writingHtml, "Expand plan", "collapsed proposed plan should expose an expand affordance");
 }

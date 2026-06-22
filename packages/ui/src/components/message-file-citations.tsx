@@ -49,7 +49,7 @@ export function MemoryCitationView({
                 onClick={() => onOpenFileReference?.(fileReference)}
               >
                 <span className="hc-memory-citation-main">
-                  <span className="hc-memory-citation-path" title={entry.path}>
+                  <span className="hc-memory-citation-path" title={displayPath}>
                     {displayPath}
                   </span>
                   <span className="hc-memory-citation-lines">{lineLabel}</span>
@@ -95,7 +95,62 @@ function memoryCitationLineLabel(
 }
 
 function displayCitationPath(path: string): string {
-  return path.trim();
+  return normalizeDesktopPathDisplay(path.trim());
+}
+
+function displayFileCitationPath(path: string): string {
+  const normalized = displayCitationPath(path).replace(/[\\/]+$/, "");
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? normalized;
+}
+
+function normalizeDesktopPathDisplay(path: string): string {
+  const withoutLongUncPrefix = path.replace(/^\\\\\?\\UNC\\/i, "\\\\");
+  const withoutLongDrivePrefix = withoutLongUncPrefix.replace(/^\\\\\?\\([a-zA-Z]:[\\/].*)$/, "$1");
+  return withoutLongDrivePrefix.replace(/\\/g, "/");
+}
+
+function fileCitationLineLabel(
+  entry: Pick<FileReference, "lineStart" | "lineEnd">,
+  formatMessage: FormatMessage,
+): string | null {
+  if (entry.lineEnd !== entry.lineStart) {
+    return formatMessage(
+      {
+        id: "markdown.fileCitation.linesLabel",
+        defaultMessage: "lines {line}-{endLine}",
+        description: "Line range label shown inside a file citation chip",
+      },
+      { line: entry.lineStart, endLine: entry.lineEnd },
+    );
+  }
+  if (entry.lineStart === 1) return null;
+  return formatMessage(
+    {
+      id: "markdown.fileCitation.lineLabel",
+      defaultMessage: "line {line}",
+      description: "Single line label shown inside a file citation chip",
+    },
+    { line: entry.lineStart },
+  );
+}
+
+function fileCitationDisplayLabel(
+  entry: Pick<FileReference, "path" | "lineStart" | "lineEnd">,
+  formatMessage: FormatMessage,
+): string {
+  const fileName = displayFileCitationPath(entry.path);
+  const lineLabel = fileCitationLineLabel(entry, formatMessage);
+  if (!lineLabel) return fileName;
+  const lineLabelDisplay = formatMessage(
+    {
+      id: "markdown.fileCitation.lineLabelDisplay",
+      defaultMessage: "({lineLabel})",
+      description: "Location label shown inside parentheses in a file citation chip",
+    },
+    { lineLabel },
+  );
+  return `${fileName} ${lineLabelDisplay}`;
 }
 
 function citationHref(entry: Pick<FileReference, "path" | "lineStart">): string {
@@ -154,13 +209,15 @@ export function FileCitationAnchor({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const { formatMessage } = useForgeIntl();
   const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions, formatMessage });
+  const fullPath = displayCitationPath(displayPath);
+  const label = fileCitationDisplayLabel({ ...entry, path: displayPath }, formatMessage);
 
   // Projectless conversation: the citation is a knowledge-base / tool source, not
   // a local file - render plain, non-clickable provenance instead of a dead link.
   if (delink) {
     return (
-      <span className="hc-file-citation-plain">
-        {displayCitationPath(displayPath)} {memoryCitationLineLabel(entry)}
+      <span className="hc-file-citation-plain" title={fullPath}>
+        {label}
       </span>
     );
   }
@@ -170,13 +227,14 @@ export function FileCitationAnchor({
       <a
         className="hc-file-citation-marker"
         href={citationHref(entry)}
+        title={fullPath}
         onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference, onOpenFileReferenceExternal)}
         onContextMenu={(event) => {
           event.preventDefault();
           setMenu({ x: event.clientX, y: event.clientY });
         }}
       >
-        {displayCitationPath(displayPath)} {memoryCitationLineLabel(entry)}
+        {label}
       </a>
       {menu != null && <ContextMenu items={items} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
     </>

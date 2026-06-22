@@ -297,6 +297,57 @@ function summarizesTextAndAttachmentOnlyMessages(): void {
     "Pasted text (+2 more pasted text attachments)",
     "summary should include remaining pasted text attachment count",
   );
+  assertEqual(
+    queuedFollowUpSummary({
+      text: "",
+      attachments: [],
+      context: {
+        pastedTextAttachments: [
+          { preview: "  context pasted\ntext  " },
+          { preview: "second" },
+        ],
+      },
+    }),
+    "context pasted text (+1 more pasted text attachment)",
+    "summary should use Desktop queued context pasted-text previews before local attachment fallback",
+  );
+  assertEqual(
+    queuedFollowUpSummary({
+      text: "",
+      attachments: [],
+      context: {
+        generatedPastedTextAttachmentPaths: ["a.txt", "b.txt", "c.txt"],
+      },
+    }),
+    "Pasted text (+2 more pasted text attachments)",
+    "summary should mirror Desktop generated pasted-text fallback when only generated paths are present",
+  );
+  assertEqual(
+    queuedFollowUpSummary({
+      text: "",
+      attachments: [],
+      context: {
+        commentAttachments: [
+          { browserTabId: "tab-1" },
+          { localBrowserDesignChange: { description: "make it blue" } },
+          { path: "src/main.ts", line: 12 },
+        ],
+      },
+    }),
+    "2 annotations, 1 comment",
+    "summary should mirror Desktop comment attachment mixed labels",
+  );
+  assertEqual(
+    queuedFollowUpSummary({
+      text: "",
+      attachments: [],
+      context: {
+        selectedTextAttachments: [{ text: "one" }, { text: "two" }],
+      },
+    }),
+    "2 selections",
+    "summary should mirror Desktop selected text attachment count",
+  );
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

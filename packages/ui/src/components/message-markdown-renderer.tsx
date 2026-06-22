@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, type Ref } from "react";
 import type { CitationDirective } from "../state/automation-citations";
 import {
   createMarkdownWordSegmenter,
@@ -39,6 +39,7 @@ export {
 } from "./message-markdown-copy";
 
 export function Markdownish({
+  copyRootRef,
   fadeType = "none",
   text,
   mediaSources,
@@ -47,6 +48,7 @@ export function Markdownish({
   onOpenFileReferenceExternal,
   trailingAutomationCitations,
 }: {
+  copyRootRef?: Ref<HTMLDivElement>;
   fadeType?: MarkdownFadeType;
   text: string;
   mediaSources?: Map<string, string>;
@@ -68,6 +70,10 @@ export function Markdownish({
   const segmenter = useRef<MarkdownWordSegmenter | null>(createMarkdownWordSegmenter());
   const previousFadeSegmentCount = useRef(0);
   const markdownRootRef = useRef<HTMLDivElement | null>(null);
+  const setMarkdownRootRef = useCallback((element: HTMLDivElement | null) => {
+    markdownRootRef.current = element;
+    assignRef(copyRootRef, element);
+  }, [copyRootRef]);
   const fadeEnabled = fadeType === "indexed";
   const fadeSegmentCount = fadeEnabled ? markdownIndexedFadeSegmentCount(blocks, segmenter.current, references) : 0;
   const fadeContext = fadeEnabled
@@ -99,7 +105,7 @@ export function Markdownish({
     <div
       className={`hc-markdown${fadeEnabled ? " is-indexed-fade" : ""}`}
       data-markdown-fade={fadeEnabled ? "indexed" : undefined}
-      ref={markdownRootRef}
+      ref={setMarkdownRootRef}
     >
       {blocks.length === 0
         ? <p>{"\u00a0"}</p>
@@ -123,6 +129,15 @@ export function Markdownish({
           })}
     </div>
   );
+}
+
+function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
+  if (!ref) return;
+  if (typeof ref === "function") {
+    ref(value);
+    return;
+  }
+  (ref as { current: T | null }).current = value;
 }
 
 export function markdownAllowsTrailingAutomationInline(text: string): boolean {

@@ -12,7 +12,6 @@ type ThreadItemUnit = Extract<ConversationRenderUnit, { kind: "threadItem" }>;
 export function PlanSummaryCard({
   unit,
 }: {
-  threadId?: string | null;
   unit: ThreadItemUnit;
 }) {
   const content = planSummaryContent(unit.item);

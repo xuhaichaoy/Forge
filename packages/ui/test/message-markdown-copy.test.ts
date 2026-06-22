@@ -1,9 +1,15 @@
-import { desktopAssistantCopyText, mathCopyReplacementText } from "../src/components/message-markdown-copy";
+import {
+  desktopAssistantCopyText,
+  markdownRichCopyPayloadFromElement,
+  mathCopyReplacementText,
+} from "../src/components/message-markdown-copy";
+import { setupDomTestEnv } from "./dom-test-env";
 
 export default function runMessageMarkdownCopyTests(): void {
   inlineMathCopiesAsRenderedUnicode();
   displayMathCopiesAsTexBlock();
   citationCopyKeepsExistingBehavior();
+  richPayloadKeepsRenderedHtmlAndDesktopPlainText();
 }
 
 function inlineMathCopiesAsRenderedUnicode(): void {
@@ -46,6 +52,29 @@ function citationCopyKeepsExistingBehavior(): void {
     "see /Users/me/app.ts:12-15",
     "file citations with an L-less range end should rewrite, not stay raw",
   );
+}
+
+function richPayloadKeepsRenderedHtmlAndDesktopPlainText(): void {
+  const env = setupDomTestEnv();
+  try {
+    const root = env.document.createElement("div");
+    root.innerHTML = [
+      "<p>Done <strong>bold</strong>.</p>",
+      '<div class="hc-code-actions"><button>Copy code</button></div>',
+    ].join("");
+    const payload = markdownRichCopyPayloadFromElement(root, "  Done **bold**.  ");
+    assertEqual(payload?.plainText, "Done **bold**.", "assistant rich copy should keep the Desktop plain-text payload");
+    assertIncludes(payload?.htmlText ?? "", "<strong>bold</strong>", "assistant rich copy should include rendered HTML");
+    assertEqual(payload?.htmlText.includes("Copy code"), false, "assistant rich copy should strip copy-only controls from HTML");
+  } finally {
+    env.teardown();
+  }
+}
+
+function assertIncludes(actual: string, expected: string, message: string): void {
+  if (!actual.includes(expected)) {
+    throw new Error(`${message}: expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+  }
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

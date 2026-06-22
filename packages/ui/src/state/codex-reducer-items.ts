@@ -194,6 +194,7 @@ export function applyRegisterPendingSteer(
   const { threadId, pending } = action;
   if (!threadId || !pending.clientUserMessageId || !pending.turnId) return state;
   const runtime = selectThreadRuntime(state, threadId);
+  const items = markOptimisticSteerPending(runtime.items, pending.optimisticLocalId);
   return threadRuntimePatch(state, threadId, {
     pendingSteers: [
       ...((runtime.pendingSteers ?? []).filter(
@@ -201,7 +202,23 @@ export function applyRegisterPendingSteer(
       )),
       pending,
     ],
+    items,
   });
+}
+
+function markOptimisticSteerPending(
+  items: AccumulatedThreadItem[],
+  optimisticLocalId: string,
+): AccumulatedThreadItem[] {
+  let changed = false;
+  const next = items.map((item) => {
+    if (localIdOf(item) !== optimisticLocalId) return item;
+    const record = item as Record<string, unknown>;
+    if (record.steeringStatus === "pending") return item;
+    changed = true;
+    return { ...item, steeringStatus: "pending" };
+  });
+  return changed ? next : items;
 }
 
 export function applyDropPendingSteer(
@@ -365,11 +382,37 @@ function reconcileUserMessage(
     _localId: undefined,
   };
   delete (replacement as Record<string, unknown>)._localId;
-  const next = current.map((item) => (item === optimistic ? replacement : item));
+  const replacementIndex = current.indexOf(optimistic);
+  const replaced = current.slice();
+  replaced[replacementIndex] = replacement;
+  const next = insertAcceptedSteerDivider(replaced, replacementIndex, replacement);
   return threadRuntimePatch(state, threadId, {
     turnOrder: turnId ? order : runtime.turnOrder,
     items: next,
   });
+}
+
+function insertAcceptedSteerDivider(
+  items: AccumulatedThreadItem[],
+  userIndex: number,
+  userItem: AccumulatedThreadItem,
+): AccumulatedThreadItem[] {
+  const record = userItem as Record<string, unknown>;
+  if (record.steeringStatus !== "accepted") return items;
+  const id = typeof record.id === "string" && record.id.length > 0 ? `steered:${record.id}` : "";
+  if (!id || items.some((item) => item.id === id)) return items;
+  const turnId = turnIdOf(userItem);
+  const divider = {
+    id,
+    type: "steered",
+    completed: true,
+    ...(turnId ? { _turnId: turnId } : {}),
+  } as AccumulatedThreadItem;
+  return [
+    ...items.slice(0, userIndex + 1),
+    divider,
+    ...items.slice(userIndex + 1),
+  ];
 }
 
 function itemWithLifecycleTiming(item: ThreadItem, params: Record<string, unknown>): ThreadItem {

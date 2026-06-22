@@ -21,6 +21,30 @@ export function streamErrorItem(
   };
 }
 
+export function systemErrorItem(
+  turnId: string,
+  error: Record<string, unknown> | null | undefined,
+  fallbackText: string,
+): AccumulatedThreadItem {
+  const rawDetail = stringField(error, "additionalDetails");
+  const errorInfo = errorInfoField(error);
+  return {
+    id: turnId ? `system-error:${turnId}` : `system-error:${fallbackText}`,
+    type: "system-error",
+    content: turnErrorMessage(error) || fallbackText,
+    ...(errorInfo !== undefined ? { errorInfo } : {}),
+    ...(rawDetail ? { raw_detail: rawDetail } : {}),
+    completed: true,
+    ...(turnId ? { _turnId: turnId } : {}),
+  } as AccumulatedThreadItem;
+}
+
+function errorInfoField(error: Record<string, unknown> | null | undefined): unknown {
+  if (!error) return undefined;
+  const value = error.errorInfo ?? error.codexErrorInfo;
+  return value == null ? undefined : value;
+}
+
 const RECONNECTING_MESSAGE_PATTERN = /^Reconnecting(?:\.\.\.)?\s+(\d+)\/(\d+)$/;
 
 export function reconnectStreamErrorItem(

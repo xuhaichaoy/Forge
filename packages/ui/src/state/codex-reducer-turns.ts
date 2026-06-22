@@ -34,7 +34,7 @@ import {
 import type { CodexUiState } from "./codex-ui-types";
 import type { AccumulatedThreadItem } from "./render-group-types";
 import { mergeAccumulatedItem, mergeItemsInIncomingOrder } from "./thread-item-merge";
-import { streamErrorItem, turnErrorMessage } from "./thread-stream-error";
+import { systemErrorItem, turnErrorMessage } from "./thread-stream-error";
 import {
   completedTokenSpeedPatch,
   liveTokenSpeedRuntimePatch,
@@ -413,12 +413,12 @@ export function finishTurn(
   const order = ensureTurnInOrder(runtime.turnOrder, turnId || null);
   const terminalSegment = errorText
     ? mergeItems(
-        // Tell worked-for synthesis the stream-error item is incoming —
+        // Tell worked-for synthesis the system-error item is incoming —
         // satisfies the agent-activity gate (Codex aligns by mounting the
-        // worked-for header for failed turns since stream-error renders
+        // worked-for header for failed turns since system-error renders
         // inside `vt`).
         turnItemsWithWorkedFor(turn, { hasExtraActivity: true }),
-        [streamErrorItem(turnId, turnError, errorText)],
+        [systemErrorItem(turnId, turnError, errorText)],
         order,
       )
     : turnItemsWithWorkedFor(turn);

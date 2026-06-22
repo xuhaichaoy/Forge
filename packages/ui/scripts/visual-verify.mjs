@@ -78,7 +78,6 @@ output — muted/secondary on a muted surface</pre><button class="hc-exec-shell-
   <div class="hc-rail-sources-icons"><span class="hc-rail-source-icon" title="example.com">◐</span><span class="hc-rail-source-icon" title="docs.site">◑</span><span class="hc-rail-source-icon" title="web">◒</span></div>
   <div class="hc-tool-block" style="margin-top:12px;padding:10px;">Non-activity tool block</div>
   <div class="hc-tool-raw-output-dialog" style="margin-top:12px;padding:12px;"><header><h2>Raw output dialog</h2></header><pre>dialog body</pre></div>
-  <label style="display:block;margin-top:12px;">Feedback:<textarea class="hc-turn-feedback-textarea" style="width:100%;min-height:48px;">feedback text</textarea></label>
   <div style="margin-top:12px;display:flex;gap:8px;">
     <button class="hc-button">Secondary button</button>
     <button class="hc-button hc-button-primary">Primary button</button>

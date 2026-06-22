@@ -267,8 +267,21 @@ export function userMessageWithPreservedLocalInputs<T extends AccumulatedThreadI
     (confirmed as Record<string, unknown>).content,
     (optimistic as Record<string, unknown>).content,
   );
-  if (mergedContent === (confirmed as Record<string, unknown>).content) return confirmed;
-  return { ...(confirmed as object), content: mergedContent } as T;
+  const withContent = mergedContent === (confirmed as Record<string, unknown>).content
+    ? confirmed
+    : { ...(confirmed as object), content: mergedContent } as T;
+  return userMessageWithPreservedSteeringStatus(withContent, optimistic);
+}
+
+function userMessageWithPreservedSteeringStatus<T extends AccumulatedThreadItem | ThreadItem>(
+  confirmed: T,
+  optimistic: AccumulatedThreadItem | ThreadItem,
+): T {
+  const confirmedStatus = (confirmed as Record<string, unknown>).steeringStatus;
+  if (typeof confirmedStatus === "string" && confirmedStatus.length > 0) return confirmed;
+  const optimisticStatus = (optimistic as Record<string, unknown>).steeringStatus;
+  if (typeof optimisticStatus !== "string" || optimisticStatus.length === 0) return confirmed;
+  return { ...(confirmed as object), steeringStatus: "accepted" } as unknown as T;
 }
 
 function userInputContentWithPreservedLocalInputs(confirmedContent: unknown, optimisticContent: unknown): unknown {

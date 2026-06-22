@@ -342,7 +342,12 @@ export function parseFileCitationMarker(
 }
 
 function normalizeFileCitationPath(value: string): string {
-  return value.trim().replace(/^F:/, "").trim();
+  const normalized = value.trim().replace(/^F:/, "").trim();
+  try {
+    return decodeURI(normalized);
+  } catch {
+    return normalized;
+  }
 }
 
 export function findMarkdownAutolinkStart(text: string, index: number): number {

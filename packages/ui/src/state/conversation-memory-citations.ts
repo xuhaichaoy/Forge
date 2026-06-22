@@ -39,10 +39,17 @@ function positiveInteger(value: unknown): number | null {
 }
 
 function resolveMemoryCitationPath(path: string, memoryCitationRoot?: string | null): string {
-  const normalizedPath = path.trim();
-  const normalizedRoot = memoryCitationRoot?.trim().replace(/[\\/]+$/, "") ?? "";
+  const normalizedPath = normalizeMemoryCitationPath(path);
+  const normalizedRoot = normalizeMemoryCitationPath(memoryCitationRoot ?? "").replace(/[\\/]+$/, "");
   if (!normalizedRoot || isAbsoluteFilePath(normalizedPath)) return normalizedPath;
   return `${normalizedRoot}/${normalizedPath.replace(/^[\\/]+/, "")}`;
+}
+
+function normalizeMemoryCitationPath(path: string): string {
+  const trimmed = path.trim();
+  const withoutLongUncPrefix = trimmed.replace(/^\\\\\?\\UNC\\/i, "\\\\");
+  const withoutLongDrivePrefix = withoutLongUncPrefix.replace(/^\\\\\?\\([a-zA-Z]:[\\/].*)$/, "$1");
+  return withoutLongDrivePrefix.replace(/\\/g, "/");
 }
 
 function isAbsoluteFilePath(path: string): boolean {

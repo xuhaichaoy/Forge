@@ -8,6 +8,10 @@ import type { MouseEvent, ReactNode } from "react";
 // codex copy-button-*.js wraps the action button in <Tooltip tooltipContent={...}/>.
 import { Tooltip } from "./tooltip";
 import { useForgeIntl } from "./i18n-provider";
+import {
+  writeMarkdownClipboard,
+  type MarkdownRichCopyPayload,
+} from "./message-markdown-copy";
 
 /*
  * CODEX-REF: copy-button-*.js — Codex Desktop's copy affordance.
@@ -46,12 +50,14 @@ const COPIED_RESET_TIMEOUT_MS = 1500;
  */
 export function MessageActionRow({
   children,
+  copyRichPayload,
   copyText,
   hasActionChildren = false,
   persistent = false,
   sentAtMs = null,
 }: {
   children?: ReactNode;
+  copyRichPayload?: (() => MarkdownRichCopyPayload | null) | null;
   copyText: string;
   hasActionChildren?: boolean;
   persistent?: boolean;
@@ -68,7 +74,11 @@ export function MessageActionRow({
   const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (trimmedCopyText.length === 0) return;
-    await navigator.clipboard.writeText(trimmedCopyText);
+    const copiedToClipboard = await writeMarkdownClipboard(
+      copyRichPayload?.() ?? trimmedCopyText,
+      event.currentTarget,
+    );
+    if (!copiedToClipboard) return;
     setCopied(true);
     window.setTimeout(() => setCopied(false), COPIED_RESET_TIMEOUT_MS);
   };

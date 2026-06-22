@@ -3,9 +3,10 @@
  *
  * Codex Desktop renders this as an `aria-live="polite"` text block
  * (`max-h-30dvh overflow-y-auto`) inside the seventh slot of the
- * above-composer portal stack. It is used for steered-message echo, generic
- * tool/sandbox notices, and other transient turn-status text that should be
- * announced to screen readers without stealing focus.
+ * above-composer portal stack. In the inspected Desktop build, its text is
+ * fed by realtime composer ephemeral transcript state
+ * (`onRealtimeComposerTextChange`), so ordinary queue/latest-turn status
+ * should not be routed here.
  *
  * Gating in Codex: the panel renders only when its resolved text flag is
  * truthy. Forge mirrors that: returns `null` when the resolved text is empty.

@@ -274,11 +274,11 @@ export function renderForgeAppComposerRegion(args: ForgeAppComposerRegionArgs): 
                   />
                   {/*
                    * codex: composer-*.js — StatusTextPanel (above-composer
-                   * slot 7). Aria-live polite text used by Codex for steered-message
-                   * echo / generic transient turn-status notices. Forge currently
-                   * has no equivalent data source wired (no steer feature, no
-                   * sandbox banner), so `text` stays undefined and the panel renders
-                   * nothing. Slot is in place for future wiring.
+                   * slot 7). The inspected Desktop build feeds this from
+                   * realtime composer ephemeral transcript state via
+                   * `onRealtimeComposerTextChange`; Forge has no equivalent
+                   * realtime composer text source wired, so `text` stays
+                   * undefined and the panel renders nothing.
                    */}
                   <StatusTextPanel text={undefined} />
                   {/*

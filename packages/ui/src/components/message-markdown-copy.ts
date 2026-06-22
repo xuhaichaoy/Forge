@@ -44,11 +44,70 @@ export interface MarkdownRichCopyPayload {
   plainText: string;
 }
 
+type ClipboardWriteItem = Record<string, Blob | string>;
+
 const KATEX_SELECTOR = ".katex";
 const KATEX_MATHML_SELECTOR = ".katex-mathml";
 const KATEX_HTML_SELECTOR = ".katex-mathml + .katex-html";
 const KATEX_DISPLAY_SELECTOR = ".katex-display";
 const KATEX_TEX_ANNOTATION_SELECTOR = "annotation[encoding=\"application/x-tex\"]";
+const MARKDOWN_COPY_EXCLUDE_SELECTOR = [
+  '[data-markdown-copy="exclude"]',
+  ".hc-code-actions",
+  ".hc-copy-toast",
+  ".hc-code-snippet > figcaption",
+  '[role="tooltip"]',
+].join(",");
+
+export function markdownRichCopyPayloadFromElement(
+  root: HTMLElement,
+  plainText: string,
+): MarkdownRichCopyPayload | null {
+  const trimmedPlainText = plainText.trim();
+  if (trimmedPlainText.length === 0) return null;
+  const range = root.ownerDocument.createRange();
+  range.selectNodeContents(root);
+  const fragment = range.cloneContents();
+  range.detach();
+  removeMarkdownCopyExclusions(fragment);
+  normalizeKatexCopyFragment(fragment);
+  const htmlText = Array.from(fragment.childNodes).map(markdownCopyHtml).join("").trim();
+  return htmlText.length > 0 ? { htmlText, plainText: trimmedPlainText } : null;
+}
+
+export async function writeMarkdownClipboard(
+  content: string | MarkdownRichCopyPayload,
+  sourceTarget?: EventTarget | null,
+): Promise<boolean> {
+  const clipboardContext = clipboardContextForTarget(sourceTarget);
+  if (!clipboardContext) return false;
+  const { clipboard, ClipboardItemCtor, BlobCtor } = clipboardContext;
+  if (
+    typeof content !== "string"
+    && ClipboardItemCtor
+    && BlobCtor
+    && canWriteRichClipboard(clipboard, ClipboardItemCtor)
+  ) {
+    const itemData: ClipboardWriteItem = {
+      "text/html": content.htmlText,
+      "text/plain": content.plainText,
+    };
+    const clipboardItem = new ClipboardItemCtor(
+      Object.fromEntries(
+        Object.entries(itemData).map(([type, value]) => [
+          type,
+          typeof value === "string" ? new BlobCtor([value], { type }) : value,
+        ]),
+      ) as unknown as Record<string, ClipboardItemData>,
+    );
+    await clipboard.write([clipboardItem]);
+    return true;
+  }
+  const text = typeof content === "string" ? content : content.plainText;
+  if (text.trim().length === 0 || typeof clipboard.writeText !== "function") return false;
+  await clipboard.writeText(text);
+  return true;
+}
 
 export function selectedMarkdownRichCopyPayload(
   root: HTMLElement,
@@ -62,10 +121,33 @@ export function selectedMarkdownRichCopyPayload(
   const hasMath = fragment.querySelector(KATEX_MATHML_SELECTOR) !== null;
   const hasButtons = replaceCopyButtonsWithText(fragment);
   if (!hasMath && !hasButtons) return null;
+  removeMarkdownCopyExclusions(fragment);
   normalizeKatexCopyFragment(fragment);
   const htmlText = Array.from(fragment.childNodes).map(markdownCopyHtml).join("");
   const plainText = Array.from(fragment.childNodes).map(markdownCopyPlainText).join("").trim();
   return plainText.length > 0 ? { htmlText, plainText } : null;
+}
+
+interface ClipboardContext {
+  clipboard: Clipboard;
+  ClipboardItemCtor: typeof ClipboardItem | null;
+  BlobCtor: typeof Blob | null;
+}
+
+function clipboardContextForTarget(sourceTarget?: EventTarget | null): ClipboardContext | null {
+  const ownerWindow = typeof Element !== "undefined" && sourceTarget instanceof Element
+    ? sourceTarget.ownerDocument.defaultView as (Window & typeof globalThis) | null
+    : null;
+  const clipboard = ownerWindow?.navigator?.clipboard ?? (typeof navigator !== "undefined" ? navigator.clipboard : null);
+  if (!clipboard) return null;
+  const ClipboardItemCtor = ownerWindow?.ClipboardItem
+    ?? (typeof ClipboardItem !== "undefined" ? ClipboardItem : null);
+  const BlobCtor = ownerWindow?.Blob ?? (typeof Blob !== "undefined" ? Blob : null);
+  return { clipboard, ClipboardItemCtor, BlobCtor };
+}
+
+function canWriteRichClipboard(clipboard: Clipboard, ClipboardItemCtor: typeof ClipboardItem): boolean {
+  return typeof clipboard.write === "function" && "supports" in ClipboardItemCtor;
 }
 
 function rangeInsideElement(range: Range, element: HTMLElement): boolean {
@@ -93,6 +175,12 @@ function replaceCopyButtonsWithText(fragment: DocumentFragment): boolean {
     replaced = true;
   }
   return replaced;
+}
+
+function removeMarkdownCopyExclusions(fragment: DocumentFragment): void {
+  for (const element of Array.from(fragment.querySelectorAll(MARKDOWN_COPY_EXCLUDE_SELECTOR))) {
+    element.remove();
+  }
 }
 
 function normalizeKatexCopyFragment(fragment: DocumentFragment): void {

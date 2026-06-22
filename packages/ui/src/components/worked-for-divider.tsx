@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import type { ConversationRenderUnit } from "../state/render-groups";
 import { formatDuration } from "../state/thread-item-fields";
+import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 
 type WorkedForUnit = Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
+type FormatMessage = ForgeIntlContextValue["formatMessage"];
 
 /**
  * Codex Desktop's in-progress worked-for divider (`Ah` at
@@ -15,6 +17,7 @@ type WorkedForUnit = Extract<ConversationRenderUnit, { kind: "toolActivity" }>;
  * framer-motion dep, so we fade in via plain CSS.
  */
 export function WorkedForDivider({ unit }: { unit: WorkedForUnit }) {
+  const { formatMessage } = useForgeIntl();
   const item = workedForItem(unit);
   const status = typeof item?.status === "string" ? item.status : "";
   const startedAtMs = readNumber(item, "startedAtMs");
@@ -27,7 +30,7 @@ export function WorkedForDivider({ unit }: { unit: WorkedForUnit }) {
     return () => window.clearInterval(timer);
   }, [completedAtMs, startedAtMs, status]);
 
-  const label = workedForLabel({ status, startedAtMs, completedAtMs, now });
+  const label = workedForLabel({ status, startedAtMs, completedAtMs, now, formatMessage });
 
   return (
     <div
@@ -64,19 +67,37 @@ function workedForLabel({
   status,
   startedAtMs,
   completedAtMs,
+  formatMessage,
   now,
 }: {
   status: string;
   startedAtMs: number | null;
   completedAtMs: number | null;
+  formatMessage: FormatMessage;
   now: number;
 }): string {
   if (startedAtMs === null) {
-    return status === "working" ? "Working" : "Worked";
+    return status === "working"
+      ? formatMessage({ id: "localConversation.working", defaultMessage: "Working" })
+      : workedLabelWithoutDuration(formatMessage);
   }
   const elapsedMs = Math.max((completedAtMs ?? now) - startedAtMs, 0);
   if (status === "working") {
-    return elapsedMs >= 1_000 ? `Working for ${formatDuration(elapsedMs)}` : "Working";
+    return elapsedMs >= 1_000
+      ? formatMessage(
+          { id: "localConversation.workingFor", defaultMessage: "Working for {time}" },
+          { time: formatDuration(elapsedMs) },
+        )
+      : formatMessage({ id: "localConversation.working", defaultMessage: "Working" });
   }
-  return elapsedMs >= 1_000 ? `Worked for ${formatDuration(elapsedMs)}` : "Worked";
+  return elapsedMs >= 1_000
+    ? formatMessage(
+        { id: "localConversation.workedFor", defaultMessage: "Worked for {time}" },
+        { time: formatDuration(elapsedMs) },
+      )
+    : workedLabelWithoutDuration(formatMessage);
+}
+
+function workedLabelWithoutDuration(formatMessage: FormatMessage): string {
+  return formatMessage({ id: "hc.toolActivity.worked", defaultMessage: "Worked" });
 }

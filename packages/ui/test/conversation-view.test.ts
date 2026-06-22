@@ -66,15 +66,19 @@ export default function runConversationViewTests(): void {
   parsesMathBlocksAndInlineMathLikeDesktopMarkdown();
   parsesDetailsBlocksLikeDesktopMarkdown();
   parsesFileCitationMarkers();
+  decodesFileCitationMarkerPathsLikeDesktop();
+  rendersInlineFileCitationChipsLikeDesktop();
   parsesPipeTablesLikeAssistantMarkdown();
   parsesGfmTaskListRuleAndImageBlocks();
   groupsConsecutiveMarkdownImagesLikeDesktopMediaGrid();
   normalizesMemoryCitationEntries();
   resolvesMemoryCitationFilesFromCodexMemoriesRoot();
+  normalizesMemoryCitationPathsLikeDesktop();
   rendersMemoryCitationsBeforeArtifactExtrasLikeDesktop();
   rendersPluralMemoryCitationSummaryLikeDesktop();
   localizesMemoryCitationLabelsLikeDesktop();
   preservesFullMemoryCitationPathLikeDesktop();
+  rendersNormalizedMemoryCitationPathsLikeDesktop();
   rendersMemoryCitationSourcesAsButtonsLikeDesktop();
   rendersMemoryCitationsOnCommentaryAssistantRowsLikeDesktop();
   localizesReviewCommentLabelsLikeDesktop();
@@ -293,7 +297,7 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
   assertEqual(
     html.includes("Artifacts available"),
     false,
-    "Desktop's tool-outputs action row receives hasArtifacts for turn rating, not a standalone artifacts status",
+    "generated-image output should not render a standalone artifacts status",
   );
   assertEqual(
     html.includes("Fork from this point"),
@@ -303,7 +307,7 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
   assertEqual(
     html.includes("Good response"),
     false,
-    "turn rating thumbs are removed from all model replies, including generated-image output",
+    "completed standalone generated-image output should not expose turn-rating thumbs",
   );
 }
 
@@ -833,6 +837,42 @@ function parsesFileCitationMarkers(): void {
   );
 }
 
+function decodesFileCitationMarkerPathsLikeDesktop(): void {
+  assertDeepEqual(
+    parseMarkdownInline("See \u3010F:packages/ui/src/My%20File.ts\u2020L2\u3011."),
+    [
+      { kind: "text", text: "See " },
+      { kind: "fileCitation", path: "packages/ui/src/My File.ts", lineStart: 2, lineEnd: 2 },
+      { kind: "text", text: "." },
+    ],
+    "file citation marker paths should be URI-decoded like Codex Desktop",
+  );
+}
+
+function rendersInlineFileCitationChipsLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-file-citations",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "See \u3010/Users/me/project/src/app.ts\u2020L3-L5\u3011 and \u3010README.md\u2020L1\u3011.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-file-citations",
+        text: "See \u3010/Users/me/project/src/app.ts\u2020L3-L5\u3011 and \u3010README.md\u2020L1\u3011.",
+        phase: "final_answer",
+        memoryCitation: null,
+      },
+    },
+  }));
+
+  assertEqual(html.includes("app.ts (lines 3-5)"), true, "file citation chips should show basename plus parenthesized range");
+  assertEqual(html.includes("title=\"/Users/me/project/src/app.ts\""), true, "file citation chips should keep the full path in tooltip");
+  assertEqual(html.includes(">README.md</a>"), true, "single line-1 file citation should omit the line label");
+  assertEqual(html.includes("README.md line 1"), false, "line-1 file citations should not render a bare line label");
+}
+
 function parsesPipeTablesLikeAssistantMarkdown(): void {
   const blocks = parseMarkdownBlocks([
     "| File | Status |",
@@ -993,6 +1033,25 @@ function resolvesMemoryCitationFilesFromCodexMemoriesRoot(): void {
   );
 }
 
+function normalizesMemoryCitationPathsLikeDesktop(): void {
+  assertDeepEqual(
+    memoryCitationFileReference(
+      { path: "\\\\?\\UNC\\server\\share\\MEMORY.md", lineStart: 2, lineEnd: 2, note: "" },
+      "/Users/me/.codex/memories",
+    ),
+    { path: "//server/share/MEMORY.md", lineStart: 2, lineEnd: 2 },
+    "memory citations should strip Windows UNC long-path prefixes and normalize slashes",
+  );
+  assertDeepEqual(
+    memoryCitationFileReference(
+      { path: "\\\\?\\C:\\Users\\me\\MEMORY.md", lineStart: 4, lineEnd: 6, note: "" },
+      "/Users/me/.codex/memories",
+    ),
+    { path: "C:/Users/me/MEMORY.md", lineStart: 4, lineEnd: 6 },
+    "memory citations should strip Windows drive long-path prefixes and normalize slashes",
+  );
+}
+
 function rendersMemoryCitationsBeforeArtifactExtrasLikeDesktop(): void {
   const html = renderToStaticMarkup(createElement(ConversationUnitView, {
     unit: {
@@ -1135,6 +1194,40 @@ function preservesFullMemoryCitationPathLikeDesktop(): void {
     html.includes("...citation-path"),
     false,
     "memory citation path should not be string-shortened before render",
+  );
+}
+
+function rendersNormalizedMemoryCitationPathsLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-with-windows-memory-citation",
+      role: "assistant",
+      assistantPhase: "final_answer",
+      text: "Done.",
+      item: {
+        type: "agentMessage",
+        id: "assistant-windows-memory-citation",
+        text: "Done.",
+        phase: "final_answer",
+        memoryCitation: {
+          entries: [
+            { path: "rollout_summaries\\windows-path.jsonl", lineStart: 2, lineEnd: 2, note: "" },
+          ],
+        },
+      },
+    },
+  }));
+
+  assertEqual(
+    html.includes("rollout_summaries/windows-path.jsonl"),
+    true,
+    "memory citation source paths should render with normalized slashes",
+  );
+  assertEqual(
+    html.includes("rollout_summaries\\windows-path.jsonl"),
+    false,
+    "memory citation source paths should not render raw backslashes",
   );
 }
 
@@ -2011,6 +2104,24 @@ function rendersErrorEventsAsDesktopLightweightRows(): void {
   assertEqual(systemHtml.includes("Sandbox raw detail"), false, "system-error should not render raw detail text");
   assertEqual(systemHtml.includes("hc-tool-label"), false, "system-error should not render the generic tool-card label");
   assertEqual(systemHtml.includes("<pre>"), false, "system-error should not render a generic event body");
+
+  const usageHtml = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "event",
+      key: "system-error-usage",
+      item: { id: "system-error-usage", type: "system-error", errorInfo: "usageLimitExceeded" },
+      label: "System error",
+      text: "Try again tomorrow.",
+      details: "Usage raw detail",
+      tone: "error",
+      format: "system-error",
+    },
+  }));
+
+  assertEqual(usageHtml.includes("You&#x27;ve reached your Codex usage limit."), true, "usage-limit system-error should show the quota title");
+  assertEqual(usageHtml.includes("Try again tomorrow."), true, "usage-limit system-error should keep the server detail text visible");
+  assertEqual(usageHtml.includes('data-error-info="usageLimitExceeded"'), true, "usage-limit system-error should expose the errorInfo marker");
+  assertEqual(usageHtml.includes("Usage raw detail"), false, "usage-limit system-error should not render raw detail text");
 }
 
 function keepsActiveWebSearchSummarySingleLineLikeDesktop(): void {

@@ -94,6 +94,7 @@ const AGENT_ACTIVITY_ITEM_TYPES: ReadonlySet<string> = new Set([
   "dynamic-tool-call",
   "multi-agent-action",
   "automatic-approval-review",
+  "reasoning",
   "stream-error",
   "system-error",
   "context-compaction",

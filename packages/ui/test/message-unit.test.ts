@@ -23,7 +23,6 @@ import {
   DESKTOP_MARKDOWN_CODE_BLOCK_ROOT_MARGIN,
   MARKDOWN_IMAGE_PREVIEW_DIALOG_CLASS,
   MARKDOWN_IMAGE_PREVIEW_TRIGGER_ATTRIBUTE,
-  assistantAutoReviewSummary,
   assistantCompletedThreadGoal,
   assistantHookStatsSummary,
   desktopAssistantCopyText,
@@ -56,12 +55,13 @@ export default function runMessageUnitTests(): void {
   parsesInlineMarkdownImagesBeforeLinks();
   rejectsUnsafeMarkdownLinks();
   parsesAssistantPromptLinksLikeDesktop();
-  summarizesAssistantAutoReviewStats();
   // codex: local-conversation-thread-CecHj6JI.js#uh — coverage for the new
   // assistant action row slots (hookStats `zs`, completedThreadGoal `dh`).
-  // Note: sentAtMs trailing slot 已删除（Codex 对齐 — action row 无 timestamp）。
+  // sentAtMs remains a trailing Desktop action-row slot and is tested below.
   omitsAssistantTurnRatingThumbs();
+  ignoresUnsupportedAssistantAutoReviewStats();
   hidesUserEditAffordanceUnlessMostRecentTurn();
+  doesNotRenderRealtimeVoiceStatusForTextSteerUserMessages();
   rendersThreadGoalUserStatusLikeCodexDesktop();
   rendersHookUserStatusLikeCodexDesktop();
   rendersAssistantTimestampFromCompletedAtMs();
@@ -530,42 +530,6 @@ function parsesAssistantPromptLinksLikeDesktop(): void {
   );
 }
 
-function summarizesAssistantAutoReviewStats(): void {
-  assertDeepEqual(
-    assistantAutoReviewSummary({
-      autoReviewStats: {
-        status: "completed",
-        riskLevel: "low",
-        issueCount: 2,
-        accepted: 1,
-        rejected: 1,
-        durationMs: 1530,
-        perCommandHistory: [
-          { decision: "accepted", command: "npm test" },
-          { decision: "rejected", command: "rm -rf /tmp/build" },
-        ],
-      },
-    }),
-    {
-      label: "2 review notes",
-      title: "Auto-review notes",
-      rows: [
-        { label: "Status", value: "completed" },
-        { label: "Risk", value: "low" },
-        { label: "Findings", value: "2" },
-        { label: "Accepted", value: "1" },
-        { label: "Rejected", value: "1" },
-        { label: "Duration", value: "1.5 s" },
-      ],
-      commands: [
-        "accepted: npm test",
-        "rejected: rm -rf /tmp/build",
-      ],
-    },
-    "assistant auto-review stats should expose popover-ready detail rows",
-  );
-}
-
 function parsesStandaloneImagesWithSpacesInTargets(): void {
   assertDeepEqual(
     parseMarkdownBlocks("![UA-image1](UA-image1-销售跟客户成功的 KPI 视角差异.png)").map((block) =>
@@ -960,7 +924,6 @@ function parsesKatexBlockAndInlineMathLikeDesktop(): void {
 
 function omitsAssistantTurnRatingThumbs(): void {
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
-    threadId: "thread-rating",
     onForkTurn: () => undefined,
     unit: {
       kind: "message",
@@ -969,20 +932,45 @@ function omitsAssistantTurnRatingThumbs(): void {
       item: {
         id: "assistant-rating",
         type: "agentMessage",
-        _turnId: "turn-rating",
+        _turnId: "turn-actions",
         completed: true,
         text: "Sample reply.",
         completedAtMs: 1716557400000,
       },
       text: "Sample reply.",
-      hasArtifacts: true,
       assistantPhase: "final_answer",
     },
   }));
 
-  assertEqual(html.includes("Good response"), false, "thumbs-up rating must not render — turn rating removed from all model replies");
-  assertEqual(html.includes("Bad response"), false, "thumbs-down rating must not render — turn rating removed from all model replies");
+  assertEqual(html.includes("Good response"), false, "thumbs-up rating should not render in the assistant action row");
+  assertEqual(html.includes("Bad response"), false, "thumbs-down rating should not render in the assistant action row");
   assertEqual(html.includes("Fork from this point"), true, "the fork action still renders in the assistant action row");
+}
+
+function ignoresUnsupportedAssistantAutoReviewStats(): void {
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-auto-review-row",
+      role: "assistant",
+      item: {
+        id: "assistant-auto-review-row",
+        type: "agentMessage",
+        _turnId: "turn-auto-review-row",
+        completed: true,
+        text: "Sample reply.",
+        autoReviewStats: {
+          status: "completed",
+          issueCount: 2,
+        },
+      },
+      text: "Sample reply.",
+      assistantPhase: "final_answer",
+    },
+  }));
+
+  assertEqual(html.includes("Auto-review notes"), false, "assistant action row should not render unsupported auto-review stats");
+  assertEqual(html.includes("review notes"), false, "assistant action row should not render Forge-only review-note chips");
 }
 
 // codex: local-conversation-thread-Kn0WAsVa.js — the user-message edit
@@ -1028,6 +1016,39 @@ function hidesUserEditAffordanceUnlessMostRecentTurn(): void {
     recentTurnHtml.includes("Edit message"),
     true,
     "the most recent user turn should expose the Desktop edit affordance when a submit callback and turn id are available",
+  );
+}
+
+function doesNotRenderRealtimeVoiceStatusForTextSteerUserMessages(): void {
+  const renderSteering = (steeringStatus?: string) => renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: `user-steer-${steeringStatus ?? "none"}`,
+      role: "user",
+      item: {
+        id: `user-steer-${steeringStatus ?? "none"}`,
+        type: "userMessage",
+        _turnId: "turn-steer-status",
+        ...(steeringStatus ? { steeringStatus } : {}),
+      },
+      text: "Adjust course.",
+    },
+  }));
+
+  assertEqual(
+    renderSteering("pending").includes("Steering via realtime voice"),
+    false,
+    "text steer user messages should not render Desktop's realtime voice delegation label",
+  );
+  assertEqual(
+    renderSteering("accepted").includes("Steered via realtime voice"),
+    false,
+    "accepted text steer user messages should rely on the steered divider, not the realtime voice label",
+  );
+  assertEqual(
+    renderSteering().includes("Steered via realtime voice"),
+    false,
+    "ordinary user messages should not render a realtime voice label",
   );
 }
 

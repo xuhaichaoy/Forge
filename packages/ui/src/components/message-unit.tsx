@@ -21,11 +21,9 @@ type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
 
 export type { FileReference } from "./file-reference-types";
 export {
-  assistantAutoReviewSummary,
   assistantCompletedThreadGoal,
   assistantHookStatsSummary,
 } from "./assistant-message-actions";
-export type { AssistantAutoReviewSummary } from "./assistant-message-actions";
 export {
   assistantArtifactMediaSources,
   assistantResourceCardEntriesForMessage,
@@ -92,7 +90,6 @@ export { shouldRenderUserMessageActionStrip } from "./message-user-message";
 
 function MessageUnitViewInner({
   unit,
-  threadId = null,
   isMostRecentTurn = false,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
@@ -109,7 +106,6 @@ function MessageUnitViewInner({
   memoryCitationRoot,
 }: {
   unit: MessageRenderUnit;
-  threadId?: string | null;
   isMostRecentTurn?: boolean;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
@@ -165,7 +161,6 @@ function MessageUnitViewInner({
         : (
             <AssistantMessageUnit
               unit={unit}
-              threadId={threadId}
               onOpenAssistantArtifact={onOpenAssistantArtifact}
               onRevealAssistantEndResource={onRevealAssistantEndResource}
               onForkTurn={onForkTurn}
@@ -202,7 +197,6 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (prev.unit === next.unit) {
     return (
       prev.isMostRecentTurn === next.isMostRecentTurn
-      && prev.threadId === next.threadId
       && prev.onEditLastUserMessage === next.onEditLastUserMessage
       && prev.onOpenAssistantArtifact === next.onOpenAssistantArtifact
       && prev.onRevealAssistantEndResource === next.onRevealAssistantEndResource
@@ -218,7 +212,6 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
     );
   }
   if (prev.isMostRecentTurn !== next.isMostRecentTurn) return false;
-  if (prev.threadId !== next.threadId) return false;
   if (prev.onEditLastUserMessage !== next.onEditLastUserMessage) return false;
   if (prev.onOpenAssistantArtifact !== next.onOpenAssistantArtifact) return false;
   if (prev.onRevealAssistantEndResource !== next.onRevealAssistantEndResource) return false;

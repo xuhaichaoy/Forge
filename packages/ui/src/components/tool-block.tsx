@@ -225,10 +225,32 @@ export function ToolBlock({
     );
   }
   if (format === "system-error") {
+    const errorInfo = systemErrorInfo(item);
+    if (errorInfo === "usageLimitExceeded") {
+      const usageLimitTitle = formatMessage({
+        id: "codex.upsellBanner.general.headline.noReset",
+        defaultMessage: "You've reached your Codex usage limit.",
+      });
+      const detail = (value || label).trim();
+      return (
+        <article
+          className="hc-error-event hc-system-error-event"
+          data-content-search-unit-key={contentSearchUnitKey}
+          data-error-info={errorInfo}
+          data-item-ids={itemIds}
+        >
+          <div className="hc-error-event-text">{usageLimitTitle}</div>
+          {detail && detail !== usageLimitTitle && (
+            <div className="hc-error-event-text">{detail}</div>
+          )}
+        </article>
+      );
+    }
     return (
       <article
         className="hc-error-event hc-system-error-event"
         data-content-search-unit-key={contentSearchUnitKey}
+        data-error-info={errorInfo}
         data-item-ids={itemIds}
       >
         <div className="hc-error-event-text">{value || label}</div>
@@ -254,4 +276,11 @@ export function ToolBlock({
         : <pre>{value || "..."}</pre>}
     </article>
   );
+}
+
+function systemErrorInfo(
+  item: Extract<ConversationRenderUnit, { kind: "event" }>["item"] | undefined,
+): string | undefined {
+  const value = item?.errorInfo ?? item?.codexErrorInfo;
+  return typeof value === "string" ? value : undefined;
 }

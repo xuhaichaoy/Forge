@@ -1244,120 +1244,6 @@ button.hc-user-attachment-pill:hover {
   white-space: nowrap;
 }
 
-.hc-turn-rating-controls {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.hc-turn-rating-button svg.is-down {
-  transform: rotate(180deg);
-}
-
-.hc-turn-rating-button[aria-pressed="true"] {
-  color: #27313d;
-  background: rgba(39, 49, 61, 0.08);
-}
-
-/*
- * CODEX-REF: feedback-form-dialog-BZv3Fod0.js — turn feedback is a CENTERED
- * GLOBAL MODAL, not an inline anchored popover. The dialog box reuses the
- * shared `hc-thread-dialog-panel` chrome (settings-command.css) inside the
- * shared centered `hc-settings-backdrop` overlay; only the feedback-specific
- * internals (pill radiogroup + textarea + legal notice) are styled here.
- */
-.hc-turn-feedback-dialog {
-  width: min(520px, calc(100vw - 32px));
-}
-
-.hc-turn-feedback-body {
-  gap: 12px;
-}
-
-/* CODEX-REF: feedback-form-dialog-BZv3Fod0.js — `role=radiogroup` with
-   className `flex flex-wrap gap-2`; pills are `rounded-full border px-3 py-1`. */
-.hc-turn-feedback-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.hc-turn-feedback-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border: 1px solid var(--hc-border-default, rgba(39, 49, 61, 0.16));
-  border-radius: 9999px;
-  padding: 4px 12px;
-  background: transparent;
-  color: var(--hc-text-primary, #27313d);
-  font: inherit;
-  font-size: calc(13px * var(--hc-ui-font-scale, 1));
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.hc-turn-feedback-pill:hover {
-  background: rgba(39, 49, 61, 0.06);
-}
-
-/* CODEX-REF: feedback-form-dialog-BZv3Fod0.js — selected pill flips to
-   `bg-token-foreground text-token-dropdown-background` (inverted fill). */
-.hc-turn-feedback-pill[data-checked="true"] {
-  border-color: #27313d;
-  background: #27313d;
-  color: #faf9f5;
-}
-
-.hc-turn-feedback-pill[data-checked="true"]:hover {
-  background: #1f2933;
-}
-
-/* Beat `.hc-thread-dialog-body span` (settings-command.css) so the pill label
-   inherits the pill's foreground (dark / inverted-when-checked) at pill size,
-   instead of the muted dialog-span gray. */
-.hc-turn-feedback-pill span {
-  color: inherit;
-  font-size: calc(13px * var(--hc-ui-font-scale, 1));
-  line-height: 1.2;
-}
-
-.hc-turn-feedback-pill-icon {
-  flex: 0 0 auto;
-}
-
-.hc-turn-feedback-textarea {
-  width: 100%;
-  min-height: 120px;
-  max-height: 260px;
-  resize: vertical;
-  border: 1px solid rgba(39, 49, 61, 0.14);
-  border-radius: 12px;
-  padding: 9px 12px;
-  background: #fff;
-  color: #27313d;
-  font: inherit;
-  line-height: 1.45;
-}
-
-.hc-turn-feedback-textarea:focus {
-  border-color: #9fb29f;
-  outline: none;
-}
-
-.hc-turn-rating-legal {
-  color: var(--hc-text-secondary, #6f716b);
-  font-size: calc(12px * var(--hc-ui-font-scale, 1));
-  line-height: 1.45;
-}
-
-.hc-turn-rating-legal a {
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 .hc-message-action-status.meta {
   color: #6f716b;
 }
@@ -1747,21 +1633,6 @@ button.hc-user-attachment-pill:hover {
   color: var(--hc-text-primary);
 }
 
-.hc-app[data-theme="dark"] .hc-turn-rating-button[aria-pressed="true"] {
-  background: var(--hc-surface-hover);
-  color: var(--hc-text-primary);
-}
-
-/*
- * The turn feedback form is now a centered modal rendered with the shared
- * `hc-thread-dialog-panel` chrome (light-surface in every theme, matching the
- * sibling thread-action / fork-from-older-turn dialogs, which carry no
- * data-theme="dark" overrides). The feedback internals therefore keep their
- * light-surface colors here too, so no dark-theme override block is needed for
- * the dialog (the former `.hc-turn-rating-popover` dark rules targeted the
- * removed inline popover and have been dropped).
- */
-
 /* codex: local-conversation-thread-*.js — `<div className="mt-3 flex
  * flex-wrap gap-1.5">{citations.map(...)}</div>`. The row sits just below
  * the markdown body; chips are pill-shaped with a faint border and reuse
@@ -1941,17 +1812,6 @@ button.hc-automation-citation-chip {
 .hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle:hover,
 .hc-app[data-theme="dark"] .hc-assistant-review-comments-toggle:focus-visible {
   background: var(--hc-surface-hover);
-}
-
-.hc-app[data-theme="dark"] .hc-turn-rating-button[aria-pressed="true"] {
-  color: var(--hc-text-primary);
-}
-
-.hc-app[data-theme="dark"] .hc-turn-feedback-textarea {
-  /* bg was hardcoded #fff — without this the (now light) text sat on white. */
-  background: var(--hc-surface-main);
-  border-color: var(--hc-border-default);
-  color: var(--hc-text-primary);
 }
 
 .hc-app[data-theme="dark"] .hc-message-goal-chip {

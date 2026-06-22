@@ -61,8 +61,10 @@ export default function runCodexReducerTurnsTests(): void {
   turnDiffCarriesPatchBatchesAndTracksCommandCwd();
   prefersLiveTurnDiffNotificationOverPatchRebuild();
   synthesizesWorkedForWhenTurnCompletedArrivesWithEmptyItems();
+  synthesizesWorkedForForReasoningOnlyTurns();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails();
-  turnsFailedTurnErrorsIntoStreamErrorItems();
+  turnsFailedTurnErrorsIntoSystemErrorItems();
+  terminalErrorNotificationAndFailedTurnSnapshotDedupeSystemErrorItem();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsInterrupted();
   clearsActiveTurnAndUpdatesThreadStatusWhenTurnIsCancelled();
   keepsLateUserMessageInsideItsOriginatingTurnSegment();
@@ -87,6 +89,7 @@ export default function runCodexReducerTurnsTests(): void {
   lateInProgressThreadSnapshotDoesNotReactivateCompletedTurn();
   lateInProgressThreadSnapshotDoesNotReactivateCancelledTurn();
   redispatchingTheSameOptimisticUserMessageIsIdempotent();
+  optimisticSteerMessageGetsPendingThenAcceptedStatus();
   registersAndDropsPendingSteersInThreadRuntime();
   setActiveThreadPushesThreadHistoryStack();
   navigateBackAndForwardInHistoryMovesCursorWithoutPushing();
@@ -1467,7 +1470,7 @@ function surfacesTerminalErrorNotificationsInTheTranscript(): void {
       willRetry: false,
       error: {
         message: "Prompt too long: 38658 tokens exceeds max context window of 32768 tokens",
-        codexErrorInfo: null,
+        codexErrorInfo: "contextWindowExceeded",
         additionalDetails: "Start a shorter thread.",
       },
     },
@@ -1479,14 +1482,17 @@ function surfacesTerminalErrorNotificationsInTheTranscript(): void {
     "terminal error notifications should put the thread into systemError",
   );
   assertEqual(
-    eventContent(next, "thread-1", "stream-error:turn-1"),
+    eventContent(next, "thread-1", "system-error:turn-1"),
     "Prompt too long: 38658 tokens exceeds max context window of 32768 tokens",
-    "terminal error notifications should add a stream-error item to the transcript",
+    "terminal error notifications should add a system-error item to the transcript",
   );
+  const systemError = itemById(next, "thread-1", "system-error:turn-1") as Record<string, unknown>;
+  assertEqual(systemError.type, "system-error", "fatal non-retry errors should project as system-error items");
+  assertEqual(systemError.errorInfo, "contextWindowExceeded", "system-error items should preserve codexErrorInfo");
   assertEqual(
-    eventAdditionalDetails(next, "thread-1", "stream-error:turn-1"),
+    systemError.raw_detail,
     "Start a shorter thread.",
-    "stream-error items should preserve additional details",
+    "system-error items should preserve additional details as raw detail",
   );
 }
 
@@ -1789,7 +1795,49 @@ function clearsActiveTurnAndUpdatesThreadStatusWhenTurnFails(): void {
   assertTerminalTurnStatus("turn/failed", "failed", "idle");
 }
 
-function turnsFailedTurnErrorsIntoStreamErrorItems(): void {
+function turnsFailedTurnErrorsIntoSystemErrorItems(): void {
+  for (const method of ["turn/completed", "turn/failed"] as const) {
+    const state = {
+      ...initialCodexUiState,
+      threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
+      activeThreadId: "thread-1",
+      threadsRuntime: {
+        "thread-1": runtimeSlice({ activeTurnId: "turn-1" }),
+      },
+    };
+
+    const next = reduceNotification(state, {
+      method,
+      params: {
+        threadId: "thread-1",
+        turn: {
+          id: "turn-1",
+          threadId: "thread-1",
+          status: "failed",
+          items: [],
+          error: {
+            message: "HTTP 400",
+            codexErrorInfo: "usageLimitExceeded",
+            additionalDetails: "Try again tomorrow.",
+          },
+        },
+      },
+    });
+
+    assertEqual(runtime(next, "thread-1").activeTurnId, null, `${method} error turn should clear active turn`);
+    assertEqual(threadStatus(next, "thread-1"), "systemError", `${method} error turn should mark systemError`);
+    assertEqual(
+      eventContent(next, "thread-1", "system-error:turn-1"),
+      "HTTP 400",
+      `${method} error should be projected as a system-error item`,
+    );
+    const systemError = itemById(next, "thread-1", "system-error:turn-1") as Record<string, unknown>;
+    assertEqual(systemError.errorInfo, "usageLimitExceeded", `${method} should preserve codexErrorInfo`);
+    assertEqual(systemError.raw_detail, "Try again tomorrow.", `${method} should preserve raw error detail`);
+  }
+}
+
+function terminalErrorNotificationAndFailedTurnSnapshotDedupeSystemErrorItem(): void {
   const state = {
     ...initialCodexUiState,
     threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
@@ -1799,8 +1847,21 @@ function turnsFailedTurnErrorsIntoStreamErrorItems(): void {
     },
   };
 
-  const next = reduceNotification(state, {
-    method: "turn/completed",
+  const errored = reduceNotification(state, {
+    method: "error",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      willRetry: false,
+      error: {
+        message: "HTTP 400",
+        codexErrorInfo: "usageLimitExceeded",
+        additionalDetails: "Try again tomorrow.",
+      },
+    },
+  });
+  const failed = reduceNotification(errored, {
+    method: "turn/failed",
     params: {
       threadId: "thread-1",
       turn: {
@@ -1810,19 +1871,20 @@ function turnsFailedTurnErrorsIntoStreamErrorItems(): void {
         items: [],
         error: {
           message: "HTTP 400",
-          codexErrorInfo: null,
-          additionalDetails: null,
+          codexErrorInfo: "usageLimitExceeded",
+          additionalDetails: "Try again tomorrow.",
         },
       },
     },
   });
 
-  assertEqual(runtime(next, "thread-1").activeTurnId, null, "failed error turn should clear active turn");
-  assertEqual(threadStatus(next, "thread-1"), "systemError", "failed turn error should mark systemError");
+  const systemErrors = items(failed, "thread-1").filter((item) => item.id === "system-error:turn-1");
+  assertEqual(systemErrors.length, 1, "fatal error notification plus turn/failed snapshot should keep one system-error item");
+  assertEqual(systemErrors[0]?.errorInfo, "usageLimitExceeded", "deduped system-error should keep errorInfo");
   assertEqual(
-    eventContent(next, "thread-1", "stream-error:turn-1"),
+    eventContent(failed, "thread-1", "system-error:turn-1"),
     "HTTP 400",
-    "failed turn error should be projected as a stream-error item",
+    "deduped system-error should keep the failed turn message",
   );
 }
 
@@ -1897,9 +1959,9 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
   // so within each turn it sits after the error item. The regression we are
   // fixing is that user-N must NOT spill out of its turn segment into the
   // global tail. The worked-for divider IS synthesized for these failed turns:
-  // Codex's agent body (`vt`) includes the stream-error row, so the divider
+  // Codex's agent body (`vt`) includes the system-error row, so the divider
   // mounts (same rationale as finishTurn's error-path `hasExtraActivity`), and
-  // the post-merge synthesis sees the runtime stream-error item even though the
+  // the post-merge synthesis sees the runtime system-error item even though the
   // `turn/failed` payload's own items array is empty (`itemsView: "notLoaded"`
   // on the wire).
   // (worked-for sits at the segment head here because the user message only
@@ -1910,13 +1972,13 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
     ids,
     [
       "worked-for:turn-1",
-      "stream-error:turn-1",
+      "system-error:turn-1",
       "user-1",
       "worked-for:turn-2",
-      "stream-error:turn-2",
+      "system-error:turn-2",
       "user-2",
       "worked-for:turn-3",
-      "stream-error:turn-3",
+      "system-error:turn-3",
       "user-3",
     ],
     "each turn's items must stay grouped together so a late item/completed userMessage cannot sink to the bottom of the transcript",
@@ -1924,7 +1986,7 @@ function keepsLateUserMessageInsideItsOriginatingTurnSegment(): void {
 
   for (const suffix of ["1", "2", "3"]) {
     const indexBetweenTurns = ids.indexOf(`user-${suffix}`);
-    const nextTurnHead = ids.indexOf(`stream-error:turn-${Number(suffix) + 1}`);
+    const nextTurnHead = ids.indexOf(`system-error:turn-${Number(suffix) + 1}`);
     if (nextTurnHead >= 0) {
       if (!(indexBetweenTurns < nextTurnHead)) {
         throw new Error(`user-${suffix} must appear before turn-${Number(suffix) + 1} starts`);
@@ -1998,8 +2060,8 @@ function optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted(): v
   });
   assertDeepEqual(
     items(errored, "thread-1").map((item) => item.id),
-    ["optimistic-user:abc", "stream-error:turn-1"],
-    "stream-error should land after the optimistic user message in the same turn segment",
+    ["optimistic-user:abc", "system-error:turn-1"],
+    "system-error should land after the optimistic user message in the same turn segment",
   );
 
   const completed = reduceNotification(errored, {
@@ -2013,7 +2075,7 @@ function optimisticUserMessageStaysAboveErrorAndIsReconciledByItemCompleted(): v
   const finalIds = items(completed, "thread-1").map((item) => item.id);
   assertDeepEqual(
     finalIds,
-    ["real-user-1", "stream-error:turn-1"],
+    ["real-user-1", "system-error:turn-1"],
     "item/completed userMessage should replace the optimistic placeholder by content match",
   );
   const reconciledItem = items(completed, "thread-1")[0] as Record<string, unknown> | undefined;
@@ -2167,8 +2229,8 @@ function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
   }
 
   const ids = items(state, "thread-1").map((item) => item.id);
-  // The post-merge worked-for synthesis sees the runtime stream-error rows
-  // (Codex's agent body `vt` includes stream errors, so the divider mounts for
+  // The post-merge worked-for synthesis sees the runtime system-error rows
+  // (Codex's agent body `vt` includes system errors, so the divider mounts for
   // failed turns) and lands between the user bubble and the activity — exactly
   // Codex's divider placement.
   assertDeepEqual(
@@ -2176,13 +2238,13 @@ function optimisticUserMessageWithThreeFailingTurnsKeepsExpectedOrder(): void {
     [
       "real-user-1",
       "worked-for:turn-1",
-      "stream-error:turn-1",
+      "system-error:turn-1",
       "real-user-2",
       "worked-for:turn-2",
-      "stream-error:turn-2",
+      "system-error:turn-2",
       "real-user-3",
       "worked-for:turn-3",
-      "stream-error:turn-3",
+      "system-error:turn-3",
     ],
     "with optimistic insert each user bubble must lead its turn segment, matching Codex Desktop",
   );
@@ -3224,6 +3286,63 @@ function redispatchingTheSameOptimisticUserMessageIsIdempotent(): void {
   );
 }
 
+function optimisticSteerMessageGetsPendingThenAcceptedStatus(): void {
+  const content = [textInput("continue")];
+  let state: CodexUiState = {
+    ...initialCodexUiState,
+    threads: [threadWithTurns("thread-1", [{ id: "turn-1", status: "inProgress", items: [] }])],
+    activeThreadId: "thread-1",
+  };
+  state = codexUiReducer(state, {
+    type: "optimisticUserMessage",
+    threadId: "thread-1",
+    localTurnId: "turn-1",
+    localId: "optimistic-user:steer",
+    content,
+  });
+  state = codexUiReducer(state, {
+    type: "registerPendingSteer",
+    threadId: "thread-1",
+    pending: {
+      attachments: [],
+      clientUserMessageId: "optimistic-user:steer",
+      compareKey: { rawText: "continue", imageCount: 0 },
+      cwd: "/tmp/project",
+      createdAt: 10,
+      id: "queued-steer",
+      optimisticLocalId: "optimistic-user:steer",
+      text: "continue",
+      turnId: "turn-1",
+    },
+  });
+
+  assertEqual(
+    (itemById(state, "thread-1", "optimistic-user:steer") as Record<string, unknown>).steeringStatus,
+    "pending",
+    "registerPendingSteer should mark the optimistic steer as pending so collapsed turns keep it visible",
+  );
+
+  state = reduceNotification(state, {
+    method: "item/completed",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      item: userMessage("real-user-steer", "continue"),
+    },
+  });
+
+  const accepted = itemById(state, "thread-1", "real-user-steer") as Record<string, unknown>;
+  assertEqual(
+    accepted.steeringStatus,
+    "accepted",
+    "server-confirmed steer userMessage should inherit accepted steering status from the optimistic message",
+  );
+  assertEqual(accepted._localId, undefined, "accepted steer should clear the optimistic local marker");
+  const steered = itemById(state, "thread-1", "steered:real-user-steer") as Record<string, unknown>;
+  assertEqual(steered.type, "steered", "accepted steer should synthesize Codex's steered divider item");
+  assertEqual(steered._turnId, "turn-1", "steered divider should stay in the accepted steer turn");
+}
+
 function registersAndDropsPendingSteersInThreadRuntime(): void {
   const pending = {
     attachments: [],
@@ -3897,6 +4016,67 @@ function synthesizesWorkedForWhenTurnCompletedArrivesWithEmptyItems(): void {
     items(textCompleted, "thread-1").some((item) => item.type === "worked-for"),
     false,
     "a pure-text turn must not synthesize worked-for even with payload timing",
+  );
+}
+
+function synthesizesWorkedForForReasoningOnlyTurns(): void {
+  const completed = reduceNotification(initialCodexUiState, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-1",
+      turn: {
+        id: "turn-1",
+        threadId: "thread-1",
+        status: "completed",
+        items: [
+          userMessage("user-1", "Think through this"),
+          {
+            type: "reasoning",
+            id: "reasoning-1",
+            summary: ["Checking constraints"],
+            content: ["Read reducer state"],
+            startedAtMs: 2_000,
+            completedAtMs: 6_000,
+          } as unknown as ThreadItem,
+          agentMessage("agent-1", "Done."),
+        ],
+        startedAt: 1,
+        completedAt: 7,
+        durationMs: 6_000,
+      },
+    },
+  });
+
+  assertDeepEqual(
+    items(completed, "thread-1").map((item) => item.id),
+    ["user-1", "worked-for:turn-1", "reasoning-1", "agent-1"],
+    "reasoning-only agent activity should still synthesize the worked-for divider",
+  );
+  const workedFor = itemById(completed, "thread-1", "worked-for:turn-1") as Record<string, unknown>;
+  assertEqual(workedFor.durationMs, 4_000, "reasoning work span should drive worked-for duration");
+
+  const textCompleted = reduceNotification(initialCodexUiState, {
+    method: "turn/completed",
+    params: {
+      threadId: "thread-2",
+      turn: {
+        id: "turn-2",
+        threadId: "thread-2",
+        status: "completed",
+        items: [
+          userMessage("user-2", "Hello"),
+          agentMessage("agent-2", "Hi"),
+        ],
+        startedAt: 1,
+        completedAt: 2,
+        durationMs: 1_000,
+      },
+    },
+  });
+  assertEqual(
+    items(textCompleted, "thread-2").some((item) => item.type === "worked-for"),
+    false,
+    "pure user/assistant text turns should remain without worked-for",
   );
 }
 

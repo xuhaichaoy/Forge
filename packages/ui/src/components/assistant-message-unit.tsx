@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import {
   automationCitationsFromItems,
@@ -21,7 +21,10 @@ import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
 import { useForgeIntl } from "./i18n-provider";
 import { MemoryCitationView } from "./message-file-citations";
-import { desktopAssistantCopyText } from "./message-markdown-copy";
+import {
+  desktopAssistantCopyText,
+  markdownRichCopyPayloadFromElement,
+} from "./message-markdown-copy";
 import {
   Markdownish,
   markdownAllowsTrailingAutomationInline,
@@ -35,7 +38,6 @@ type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
 
 export function AssistantMessageUnit({
   unit,
-  threadId,
   onOpenAssistantArtifact,
   onRevealAssistantEndResource,
   onForkTurn,
@@ -49,7 +51,6 @@ export function AssistantMessageUnit({
   memoryCitationRoot,
 }: {
   unit: MessageRenderUnit;
-  threadId?: string | null;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onRevealAssistantEndResource?: (entry: RailEntry) => void;
   onForkTurn?: (turnId: string) => void;
@@ -63,6 +64,7 @@ export function AssistantMessageUnit({
   memoryCitationRoot?: string | null;
 }) {
   const { formatMessage } = useForgeIntl();
+  const assistantMarkdownRootRef = useRef<HTMLDivElement | null>(null);
   const assistantPhase = unit.assistantPhase ?? "unknown";
   const streaming = unit.isStreaming === true;
   const renderPlaceholder = unit.renderPlaceholder === true;
@@ -125,6 +127,13 @@ export function AssistantMessageUnit({
     () => (!streaming ? desktopAssistantCopyText(unit.text) : ""),
     [streaming, unit.text],
   );
+  const assistantCopyRichPayload = useCallback(
+    () => {
+      const root = assistantMarkdownRootRef.current;
+      return root ? markdownRichCopyPayloadFromElement(root, assistantCopyText) : null;
+    },
+    [assistantCopyText],
+  );
   const canInlineAutomationCitations = assistantCitations.trailingCitations.length > 0
     && markdownAllowsTrailingAutomationInline(assistantMarkdownText);
   const automationCitationChips = [
@@ -144,6 +153,7 @@ export function AssistantMessageUnit({
   return (
     <>
       <Markdownish
+        copyRootRef={assistantMarkdownRootRef}
         text={assistantMarkdownText}
         fadeType={streaming ? "indexed" : "none"}
         mediaSources={assistantMediaSources}
@@ -181,12 +191,10 @@ export function AssistantMessageUnit({
       />
       {showAssistantChrome && (
         <AssistantMessageActions
+          copyRichPayload={assistantCopyRichPayload}
           copyText={assistantCopyText}
-          hasArtifacts={unit.hasArtifacts === true}
           item={unit.item}
           onFork={onFork}
-          threadId={threadId}
-          turnId={turnId}
         />
       )}
     </>

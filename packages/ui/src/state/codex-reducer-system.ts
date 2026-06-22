@@ -20,7 +20,7 @@ import {
   hookLogText,
   hookRunStatus,
 } from "./notification-log-format";
-import { reconnectStreamErrorItem, streamErrorItem, turnErrorMessage } from "./thread-stream-error";
+import { reconnectStreamErrorItem, systemErrorItem, turnErrorMessage } from "./thread-stream-error";
 
 // --- server-request notification handlers ------------------------------------
 
@@ -73,12 +73,9 @@ export function applyErrorNotification(state: CodexUiState, params: Record<strin
    * entirely (log-only early return), so reconnect attempts were invisible in
    * the transcript — fixed here.
    *
-   * Codex renders a FATAL error as a `system-error` block (vs `stream-error`).
-   * Forge keeps fatal errors on `stream-error` for now: the fatal `error`
-   * notification and the `turn/failed` path both surface the same error and
-   * unify on `stream-error:${turnId}` (one row); reclassifying to system-error
-   * would also require reclassifying the turn/failed path, which this audit did
-   * not verify against the bundle. Tracked as a follow-up.
+   * Codex renders a FATAL non-retry `error` notification as a `system-error`
+   * block. Failed turn snapshots use the same `system-error` row so terminal
+   * error notifications and `turn/failed` payloads converge on one item id.
    */
   if (willRetry) {
     return {
@@ -104,7 +101,7 @@ export function applyErrorNotification(state: CodexUiState, params: Record<strin
       [threadId]: normalizeThreadRuntime({
         ...runtime,
         turnOrder: order,
-        items: mergeItems(runtime.items, [streamErrorItem(turnId, error, text)], order),
+        items: mergeItems(runtime.items, [systemErrorItem(turnId, error, text)], order),
       }),
     },
   };
