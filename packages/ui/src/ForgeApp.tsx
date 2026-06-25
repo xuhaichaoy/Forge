@@ -32,6 +32,7 @@ import {
 import { RemoteTaskView } from "./components/remote-task-view";
 import { CodexJsonRpcClient, type RpcDebugEvent } from "./lib/codex-json-rpc-client";
 import { formatError } from "./lib/format";
+import { flushAppSettingsPersist } from "./lib/app-settings";
 import {
   clearTeamServiceAuthSession,
   readTeamServiceAuthSession,
@@ -39,6 +40,7 @@ import {
 import {
   isTauriRuntime,
   readCodexAuthSummary,
+  restartAppServerIfRunning,
   type CodexAuthSummary,
 } from "./lib/tauri-host";
 import { useAppUpdater } from "./hooks/use-app-updater";
@@ -264,7 +266,16 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   const signOutTeamServiceAccount = useCallback(() => {
     clearTeamServiceAuthSession();
     setTeamServiceAuthSession(null);
-    if (typeof window !== "undefined") window.location.reload();
+    void (async () => {
+      try {
+        await flushAppSettingsPersist();
+        await restartAppServerIfRunning();
+      } catch (error) {
+        console.warn("failed to refresh Codex runtime after team service sign-out", error);
+      } finally {
+        if (typeof window !== "undefined") window.location.reload();
+      }
+    })();
   }, []);
   const {
     sidebarPreferences,

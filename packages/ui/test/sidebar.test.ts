@@ -14,6 +14,8 @@ import type { I18nMessageDescriptor, I18nValues } from "../src/state/i18n";
 export default function runSidebarComponentTests(): void {
   clampsThreadContextMenuIntoViewport();
   rendersSidebarNavItemAccelerator();
+  rendersThreadListLoadingStateInsteadOfEmptyState();
+  rendersConnectingStateInsteadOfEmptyThreadState();
   rendersSidebarUpdateBadgeStates();
   rendersUsageAlertWhenQuotaIsLow();
   rendersProjectSectionMenus();
@@ -36,6 +38,48 @@ function clampsThreadContextMenuIntoViewport(): void {
 
   assertEqual(topLeft.left, 8, "context menu should keep a left margin");
   assertEqual(topLeft.top, 8, "context menu should keep a top margin");
+}
+
+function rendersThreadListLoadingStateInsteadOfEmptyState(): void {
+  const html = renderToStaticMarkup(createElement(Sidebar, {
+    threads: [],
+    threadsLoading: true,
+    activeThreadId: null,
+    connected: true,
+    connecting: false,
+    onConnect: () => undefined,
+    onCreateThread: () => undefined,
+    onOpenSearch: () => undefined,
+    onSelectThread: () => undefined,
+    onForkThread: () => undefined,
+    onRenameThread: () => undefined,
+    onArchiveThread: () => undefined,
+    onOpenSettings: () => undefined,
+  }));
+
+  assertIncludes(html, "Loading chats", "empty sidebar should show the loading state while thread/list is in flight");
+  assertNotIncludes(html, "No chats", "empty sidebar should not show the final empty state while loading threads");
+}
+
+function rendersConnectingStateInsteadOfEmptyThreadState(): void {
+  const html = renderToStaticMarkup(createElement(Sidebar, {
+    threads: [],
+    threadsLoading: false,
+    activeThreadId: null,
+    connected: false,
+    connecting: true,
+    onConnect: () => undefined,
+    onCreateThread: () => undefined,
+    onOpenSearch: () => undefined,
+    onSelectThread: () => undefined,
+    onForkThread: () => undefined,
+    onRenameThread: () => undefined,
+    onArchiveThread: () => undefined,
+    onOpenSettings: () => undefined,
+  }));
+
+  assertIncludes(html, "Loading chats", "empty sidebar should show loading while app-server is connecting");
+  assertNotIncludes(html, "No chats", "empty sidebar should not show final empty state while app-server is connecting");
 }
 
 function rendersSidebarNavItemAccelerator(): void {
@@ -206,5 +250,11 @@ function assertEqual(actual: unknown, expected: unknown, message: string): void 
 function assertIncludes(actual: string, expected: string, message: string): void {
   if (!actual.includes(expected)) {
     throw new Error(`${message}: expected ${JSON.stringify(actual)} to include ${JSON.stringify(expected)}`);
+  }
+}
+
+function assertNotIncludes(actual: string, expected: string, message: string): void {
+  if (actual.includes(expected)) {
+    throw new Error(`${message}: expected ${JSON.stringify(actual)} not to include ${JSON.stringify(expected)}`);
   }
 }

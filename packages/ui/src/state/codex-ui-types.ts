@@ -174,6 +174,7 @@ export interface CodexUiState {
   connecting: boolean;
   hostStatus: HostStatus | null;
   threads: Thread[];
+  threadsLoading: boolean;
   activeThreadId: string | null;
   threadsRuntime: Record<string, ThreadRuntimeSlice>;
   terminalInputBuffers?: Record<string, string>;
@@ -206,6 +207,7 @@ export type CodexUiAction =
   | { type: "setAccount"; account: AccountState }
   | { type: "invalidateAuth" }
   | { type: "hostStatus"; status: HostStatus }
+  | { type: "setThreadsLoading"; value: boolean }
   | { type: "setThreads"; threads: Thread[] }
   | { type: "upsertThread"; thread: Thread; select?: boolean; replaceSnapshot?: boolean }
   | { type: "renameThread"; threadId: string; name: string }

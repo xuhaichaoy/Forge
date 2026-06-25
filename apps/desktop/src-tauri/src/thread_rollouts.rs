@@ -34,10 +34,7 @@ pub(crate) fn host_find_rollout_for_thread(
         Some(home) => Path::new(home).join("sessions"),
         None => match env::var_os("HOME") {
             Some(home) => {
-                // The "HiCodex" directory segment is a deliberate legacy value
-                // (matches forge-host's default_codex_home) so existing
-                // installs keep their sessions across the Forge rebrand.
-                Path::new(&home).join("Library/Application Support/HiCodex/codex-home/sessions")
+                Path::new(&home).join("Library/Application Support/Forge/codex-home/sessions")
             }
             None => return Ok(None),
         },

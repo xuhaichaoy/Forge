@@ -118,6 +118,7 @@ export function UserMessageUnit({
         copyText={unit.copyText ?? unit.text}
         meta={userMessageMetaChips(unit.item)}
         onEdit={onEdit ? () => setEditing(true) : undefined}
+        sentAtMs={messageSentAtMs(unit.item)}
       />
     </>
   );
@@ -221,17 +222,29 @@ function UserMessageActions({
   copyText,
   meta,
   onEdit,
+  sentAtMs,
 }: {
   copyText: string;
   meta: UserMessageMetaChip[];
   onEdit?: () => void;
+  sentAtMs?: number | null;
 }) {
   const { formatMessage } = useForgeIntl();
   const hasActionChildren = Boolean(onEdit);
   const shouldRenderActionRow = shouldRenderMessageActionRow({ copyText, hasActionChildren });
+  const copyMessageLabel = formatMessage({
+    id: "codex.userMessage.copyAriaLabel",
+    defaultMessage: "Copy message",
+    description: "Aria label for the button that copies the user's message",
+  });
   const actionRow = shouldRenderActionRow
     ? (
-        <MessageActionRow copyText={copyText} hasActionChildren={hasActionChildren}>
+        <MessageActionRow
+          copyText={copyText}
+          copyTextLabel={copyMessageLabel}
+          hasActionChildren={hasActionChildren}
+          sentAtMs={sentAtMs}
+        >
           {onEdit && (
             <IconActionButton ariaLabel={formatMessage({ id: "codex.userMessage.editAriaLabel", defaultMessage: "Edit message" })} title={formatMessage({ id: "codex.userMessage.editTooltip", defaultMessage: "Edit" })} onClick={onEdit}>
               {/* Forge divergence: 12px (Codex action icon-xs = 16px), per product preference */}
@@ -253,6 +266,20 @@ function UserMessageActions({
       {actionRow}
     </div>
   );
+}
+
+function messageSentAtMs(item: Record<string, unknown>): number | null {
+  const candidates: unknown[] = [
+    item.sentAtMs,
+    item.startedAtMs,
+    item.createdAtMs,
+    item.createdAt,
+    item.completedAtMs,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  }
+  return null;
 }
 
 export function shouldRenderUserMessageActionStrip({

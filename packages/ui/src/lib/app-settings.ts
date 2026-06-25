@@ -8,7 +8,7 @@ import { isTauriRuntime, readAppSettingsFile, writeAppSettingsFile } from "./tau
  * (com.hicodex.desktop → com.forge.desktop) or a webview data-container
  * change silently wipes every setting: team service address, auth session,
  * model selection, appearance, locale. codex-home survives those events, so
- * the whole namespace is mirrored into hicodex-app-settings.json there:
+ * the whole namespace is mirrored into forge-app-settings.json there:
  *
  *   - startup: hydrate keys that are MISSING from localStorage from disk
  *     (localStorage wins when both exist — it is the live copy);
@@ -115,6 +115,21 @@ export function scheduleAppSettingsPersist(
     persistTimer = null;
     persistAppSettingsNow(storage);
   }, PERSIST_DEBOUNCE_MS);
+}
+
+export async function flushAppSettingsPersist(
+  storage: Storage | null = browserStorage(),
+): Promise<void> {
+  if (!storage || !isTauriRuntime()) return;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  const payload: AppSettingsFilePayload = {
+    version: APP_SETTINGS_VERSION,
+    values: collectNamespaceSnapshot(storage),
+  };
+  await writeAppSettingsFile(JSON.stringify(payload, null, 2));
 }
 
 export function setDesktopAppSettingValue(

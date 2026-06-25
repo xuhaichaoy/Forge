@@ -11,7 +11,9 @@ import {
   teamServiceAuthErrorMessage,
   type TeamServiceAuthSession,
 } from "../lib/team-service-auth";
+import { flushAppSettingsPersist } from "../lib/app-settings";
 import { subscribeTeamServiceUnauthorized } from "../lib/team-service-session";
+import { restartAppServerIfRunning } from "../lib/tauri-host";
 import {
   loadUiThemeMode,
   nextToggleThemeMode,
@@ -92,6 +94,7 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
       .catch((requestError: unknown) => {
         if (cancelled) return;
         clearTeamServiceAuthSession();
+        void refreshTeamServiceRuntimeSession();
         setSession(null);
         // Empty string = "session check failed without lib-provided copy"; the
         // render path resolves it to the localized session-expired fallback.
@@ -120,6 +123,7 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
       // latest `session` in this mount-only effect's closure.
       if (!readTeamServiceAuthSession()?.token) return;
       clearTeamServiceAuthSession();
+      void refreshTeamServiceRuntimeSession();
       setSession(null);
       setChecking(false);
       setError("");
@@ -145,6 +149,7 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
         loginId: nextLoginId,
         password: nextPassword,
       });
+      await refreshTeamServiceRuntimeSession();
       setSession(next);
       setBaseUrl(next.baseUrl);
     } catch (requestError) {
@@ -343,6 +348,15 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
       </section>
     </main>
   );
+}
+
+async function refreshTeamServiceRuntimeSession(): Promise<void> {
+  try {
+    await flushAppSettingsPersist();
+    await restartAppServerIfRunning();
+  } catch (error) {
+    console.warn("failed to refresh Codex runtime after team service auth change", error);
+  }
 }
 
 function DingTalkIcon() {

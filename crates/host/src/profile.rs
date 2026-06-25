@@ -7,6 +7,22 @@ use std::path::Path;
 use crate::{default_codex_cli_home, openai_bundled_marketplace_path};
 
 const OPENAI_BUNDLED_BROWSER_PLUGIN_ID: &str = "browser@openai-bundled";
+pub(crate) const YUXI_MCP_TOKEN_ENV_VAR: &str = "YUXI_MCP_TOKEN";
+const YUXI_MCP_SERVER_TABLE: &str = "mcp_servers.yuxi";
+const YUXI_MCP_TOOL_NAMES: &[&str] = &[
+    "kb_list",
+    "kb_search",
+    "kb_info",
+    "file_chunks",
+    "entity_list",
+    "entity_get",
+    "entity_related",
+    "analyze_file",
+    "file_info",
+    "graph_subgraph",
+    "assess_clarification",
+    "recommend_candidates",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +34,12 @@ pub struct LocalModelCatalogConfig {
     pub context_window: Option<u64>,
     pub auto_compact_token_limit: Option<u64>,
     pub input_modalities: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct YuxiMcpConnection {
+    pub base_url: String,
+    pub token: Option<String>,
 }
 
 const FORGE_PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
@@ -103,6 +125,193 @@ enabled = true
         return;
     }
     append_toml_blocks(config, &additions.join("\n"));
+}
+
+pub(crate) fn sync_yuxi_mcp_config(
+    codex_home: &Path,
+    connection: &YuxiMcpConnection,
+) -> Result<(), std::io::Error> {
+    let Some(url) = yuxi_mcp_url(&connection.base_url) else {
+        return Ok(());
+    };
+    let config_path = codex_home.join("config.toml");
+    if !config_path.is_file() {
+        return Ok(());
+    }
+    let config = fs::read_to_string(&config_path)?;
+    let next_config = ensure_yuxi_mcp_config_toml(&config, &url);
+    if next_config != config {
+        fs::write(&config_path, next_config)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn disable_yuxi_mcp_config(codex_home: &Path) -> Result<(), std::io::Error> {
+    let config_path = codex_home.join("config.toml");
+    if !config_path.is_file() {
+        return Ok(());
+    }
+    let config = fs::read_to_string(&config_path)?;
+    let next_config = disable_existing_yuxi_mcp_server_toml(&config);
+    if next_config != config {
+        fs::write(&config_path, next_config)?;
+    }
+    Ok(())
+}
+
+fn yuxi_mcp_url(base_url: &str) -> Option<String> {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format!("{trimmed}/mcp/"))
+}
+
+fn ensure_yuxi_mcp_config_toml(config: &str, url: &str) -> String {
+    if !has_toml_table(config, YUXI_MCP_SERVER_TABLE) {
+        let mut next = config.to_string();
+        append_toml_blocks(&mut next, &default_yuxi_mcp_server_toml(url));
+        return next;
+    }
+    update_existing_yuxi_mcp_server_toml(config, url)
+}
+
+fn update_existing_yuxi_mcp_server_toml(config: &str, url: &str) -> String {
+    let lines = config.lines().collect::<Vec<_>>();
+    let expected_table = format!("[{YUXI_MCP_SERVER_TABLE}]");
+    let Some(start) = lines.iter().position(|line| line.trim() == expected_table) else {
+        return config.to_string();
+    };
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| {
+            if is_toml_table_header(line.trim()) {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(lines.len());
+
+    let mut next = Vec::with_capacity(lines.len() + 2);
+    next.extend(lines[..=start].iter().map(|line| (*line).to_string()));
+
+    let body = &lines[start + 1..end];
+    let enabled_line_index = body
+        .iter()
+        .position(|line| is_direct_toml_key(line, "enabled"));
+    let mut wrote_connection_keys = false;
+    if enabled_line_index.is_none() {
+        next.push("enabled = true".to_string());
+        push_yuxi_mcp_connection_keys(&mut next, url);
+        wrote_connection_keys = true;
+    }
+
+    for (index, line) in body.iter().enumerate() {
+        if is_direct_toml_key(line, "url") || is_direct_toml_key(line, "bearer_token_env_var") {
+            continue;
+        }
+        if is_direct_toml_key(line, "enabled") {
+            next.push("enabled = true".to_string());
+        } else {
+            next.push((*line).to_string());
+        }
+        if Some(index) == enabled_line_index {
+            push_yuxi_mcp_connection_keys(&mut next, url);
+            wrote_connection_keys = true;
+        }
+    }
+    if !wrote_connection_keys {
+        push_yuxi_mcp_connection_keys(&mut next, url);
+    }
+
+    next.extend(lines[end..].iter().map(|line| (*line).to_string()));
+    let mut joined = next.join("\n");
+    if config.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
+fn disable_existing_yuxi_mcp_server_toml(config: &str) -> String {
+    let lines = config.lines().collect::<Vec<_>>();
+    let expected_table = format!("[{YUXI_MCP_SERVER_TABLE}]");
+    let Some(start) = lines.iter().position(|line| line.trim() == expected_table) else {
+        return config.to_string();
+    };
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| {
+            if is_toml_table_header(line.trim()) {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(lines.len());
+
+    let mut next = Vec::with_capacity(lines.len() + 1);
+    next.extend(lines[..=start].iter().map(|line| (*line).to_string()));
+
+    let body = &lines[start + 1..end];
+    let mut wrote_enabled = false;
+    if body.iter().all(|line| !is_direct_toml_key(line, "enabled")) {
+        next.push("enabled = false".to_string());
+        wrote_enabled = true;
+    }
+
+    for line in body {
+        if is_direct_toml_key(line, "enabled") {
+            next.push("enabled = false".to_string());
+            wrote_enabled = true;
+        } else {
+            next.push((*line).to_string());
+        }
+    }
+    if !wrote_enabled {
+        next.push("enabled = false".to_string());
+    }
+
+    next.extend(lines[end..].iter().map(|line| (*line).to_string()));
+    let mut joined = next.join("\n");
+    if config.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
+fn push_yuxi_mcp_connection_keys(lines: &mut Vec<String>, url: &str) {
+    lines.push(format!("url = {}", toml_string(url)));
+    lines.push(format!(
+        "bearer_token_env_var = {}",
+        toml_string(YUXI_MCP_TOKEN_ENV_VAR)
+    ));
+}
+
+fn default_yuxi_mcp_server_toml(url: &str) -> String {
+    let mut config = format!(
+        r#"[{YUXI_MCP_SERVER_TABLE}]
+enabled = true
+url = {}
+bearer_token_env_var = {}
+tool_timeout_sec = 30
+"#,
+        toml_string(url),
+        toml_string(YUXI_MCP_TOKEN_ENV_VAR),
+    );
+    for tool in YUXI_MCP_TOOL_NAMES {
+        config.push_str(&format!(
+            r#"
+[mcp_servers.yuxi.tools.{tool}]
+approval_mode = "approve"
+"#
+        ));
+    }
+    config
 }
 
 fn ensure_local_model_catalog_messages(models_path: &Path) -> Result<(), std::io::Error> {
@@ -253,6 +462,20 @@ fn append_toml_blocks(config: &mut String, addition: &str) {
     }
     config.push_str(addition.trim_end());
     config.push('\n');
+}
+
+fn is_toml_table_header(trimmed: &str) -> bool {
+    trimmed.starts_with('[') && trimmed.ends_with(']')
+}
+
+fn is_direct_toml_key(line: &str, key: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.starts_with('#') {
+        return false;
+    }
+    trimmed
+        .split_once('=')
+        .is_some_and(|(name, _value)| name.trim() == key)
 }
 
 fn default_openai_http_provider_toml() -> &'static str {
@@ -668,6 +891,112 @@ enabled = false
         let config = default_config_toml_with_api_key(models_path, Some("local-dev-token"));
 
         assert!(config.contains("experimental_bearer_token = \"local-dev-token\""));
+    }
+
+    #[test]
+    fn sync_yuxi_mcp_config_adds_default_http_mcp_server() {
+        let dir = unique_test_dir("forge-host-yuxi-mcp-add-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("config.toml"), "model = \"gpt-5.5\"\n").unwrap();
+
+        sync_yuxi_mcp_config(
+            &dir,
+            &YuxiMcpConnection {
+                base_url: " http://127.0.0.1:5050/// ".to_string(),
+                token: Some("product-token".to_string()),
+            },
+        )
+        .unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert!(config.contains("[mcp_servers.yuxi]"));
+        assert!(config.contains("enabled = true"));
+        assert!(config.contains("url = \"http://127.0.0.1:5050/mcp/\""));
+        assert!(config.contains("bearer_token_env_var = \"YUXI_MCP_TOKEN\""));
+        assert!(config.contains("[mcp_servers.yuxi.tools.kb_search]"));
+        assert!(config.contains("approval_mode = \"approve\""));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sync_yuxi_mcp_config_reenables_existing_server_without_overwriting_user_settings() {
+        let dir = unique_test_dir("forge-host-yuxi-mcp-update-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("config.toml"),
+            r#"model = "gpt-5.5"
+
+[mcp_servers.yuxi]
+enabled = false
+url = "http://old.example.test/mcp"
+bearer_token_env_var = "OLD_TOKEN"
+tool_timeout_sec = 99
+
+[mcp_servers.yuxi.tools.kb_search]
+approval_mode = "never"
+"#,
+        )
+        .unwrap();
+
+        sync_yuxi_mcp_config(
+            &dir,
+            &YuxiMcpConnection {
+                base_url: "https://team.example.test/".to_string(),
+                token: Some("team-token".to_string()),
+            },
+        )
+        .unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert!(config.contains("[mcp_servers.yuxi]"));
+        assert!(config.contains("enabled = true"));
+        assert!(!config.contains("enabled = false"));
+        assert!(config.contains("url = \"https://team.example.test/mcp/\""));
+        assert!(config.contains("bearer_token_env_var = \"YUXI_MCP_TOKEN\""));
+        assert!(config.contains("tool_timeout_sec = 99"));
+        assert!(config.contains("[mcp_servers.yuxi.tools.kb_search]"));
+        assert!(config.contains("approval_mode = \"never\""));
+        assert!(!config.contains("http://old.example.test/mcp"));
+        assert!(!config.contains("OLD_TOKEN"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn disable_yuxi_mcp_config_marks_existing_server_disabled() {
+        let dir = unique_test_dir("forge-host-yuxi-mcp-disable-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("config.toml"),
+            r#"model = "gpt-5.5"
+
+[mcp_servers.yuxi]
+enabled = true
+url = "https://team.example.test/mcp/"
+bearer_token_env_var = "YUXI_MCP_TOKEN"
+tool_timeout_sec = 99
+
+[mcp_servers.yuxi.tools.kb_search]
+approval_mode = "approve"
+"#,
+        )
+        .unwrap();
+
+        disable_yuxi_mcp_config(&dir).unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert!(config.contains("[mcp_servers.yuxi]"));
+        assert!(config.contains("enabled = false"));
+        assert!(config.contains("url = \"https://team.example.test/mcp/\""));
+        assert!(config.contains("[mcp_servers.yuxi.tools.kb_search]"));
+        assert!(config.contains("approval_mode = \"approve\""));
+        assert!(!config.contains("enabled = true"));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

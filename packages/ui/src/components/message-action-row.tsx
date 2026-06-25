@@ -50,6 +50,9 @@ const COPIED_RESET_TIMEOUT_MS = 1500;
  */
 export function MessageActionRow({
   children,
+  copiedResetTimeoutMs = COPIED_RESET_TIMEOUT_MS,
+  copiedText,
+  copyTextLabel,
   copyRichPayload,
   copyText,
   hasActionChildren = false,
@@ -57,6 +60,9 @@ export function MessageActionRow({
   sentAtMs = null,
 }: {
   children?: ReactNode;
+  copiedResetTimeoutMs?: number;
+  copiedText?: string;
+  copyTextLabel?: string;
   copyRichPayload?: (() => MarkdownRichCopyPayload | null) | null;
   copyText: string;
   hasActionChildren?: boolean;
@@ -68,8 +74,8 @@ export function MessageActionRow({
   const { formatMessage } = useForgeIntl();
   // codex copy-button-*.js — aria-label/tooltip swap localized via copyButton.*.
   const copyLabel = copied
-    ? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
-    : formatMessage({ id: "copyButton.copyAriaLabel", defaultMessage: "Copy" });
+    ? copiedText ?? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
+    : copyTextLabel ?? formatMessage({ id: "copyButton.copyAriaLabel", defaultMessage: "Copy" });
   if (!shouldRenderMessageActionRow({ copyText, hasActionChildren })) return null;
   const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -80,7 +86,7 @@ export function MessageActionRow({
     );
     if (!copiedToClipboard) return;
     setCopied(true);
-    window.setTimeout(() => setCopied(false), COPIED_RESET_TIMEOUT_MS);
+    window.setTimeout(() => setCopied(false), copiedResetTimeoutMs);
   };
   return (
     <>
@@ -146,7 +152,7 @@ export function IconActionButton({
   );
 }
 
-function CopyFeedbackToast() {
+export function CopyFeedbackToast() {
   const { formatMessage } = useForgeIntl();
   /*
    * `.hc-copy-toast` uses `position: fixed`, but the conversation scroll

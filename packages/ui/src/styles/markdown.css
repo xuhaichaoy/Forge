@@ -457,6 +457,18 @@
   color: var(--hc-text-primary);
 }
 
+.hc-app[data-theme="dark"] .hc-markdown-table-copy button {
+  border-color: var(--hc-border-default);
+  background: rgba(33, 38, 45, 0.94);
+  color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-markdown-table-copy button:hover,
+.hc-app[data-theme="dark"] .hc-markdown-table-copy button:focus-visible {
+  background: var(--hc-surface-hover);
+  color: var(--hc-text-primary);
+}
+
 .hc-app[data-theme="dark"] .hc-mermaid-fallback-code {
   border-color: var(--hc-border-default);
   background: var(--hc-surface-main);
@@ -645,6 +657,7 @@
  * still scroll horizontally inside the 56rem envelope.
  */
 .hc-markdown-table-wrap {
+  position: relative;
   width: min(100%, var(--markdown-wide-block-max-width, 56rem));
   max-width: var(--markdown-wide-block-max-width, 56rem);
   margin: 16px auto;
@@ -654,6 +667,45 @@
   );
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+.hc-markdown-table-inner {
+  min-width: 100%;
+}
+
+.hc-markdown-table-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.hc-markdown-table-wrap:hover .hc-markdown-table-copy,
+.hc-markdown-table-wrap:focus-within .hc-markdown-table-copy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hc-markdown-table-copy button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--hc-border-subtle);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #70757c;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.08);
+}
+
+.hc-markdown-table-copy button:hover,
+.hc-markdown-table-copy button:focus-visible {
+  background: #fff;
+  color: #22262b;
 }
 
 /* codex: --markdown-wide-block-max-width 56rem — code blocks (.hc-code-snippet

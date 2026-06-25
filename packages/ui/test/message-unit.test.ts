@@ -64,7 +64,8 @@ export default function runMessageUnitTests(): void {
   doesNotRenderRealtimeVoiceStatusForTextSteerUserMessages();
   rendersThreadGoalUserStatusLikeCodexDesktop();
   rendersHookUserStatusLikeCodexDesktop();
-  rendersAssistantTimestampFromCompletedAtMs();
+  rendersAssistantTimestampFromLifecycleFallback();
+  rendersUserTimestampFromLifecycleFallback();
   summarizesAssistantHookStatsLikeCodexDesktop();
   rendersCompletedThreadGoalChipLikeCodexDesktop();
   parsesStandaloneImagesWithSpacesInTargets();
@@ -1115,11 +1116,33 @@ function rendersHookUserStatusLikeCodexDesktop(): void {
 }
 
 // Codex Desktop's assistant message action row renders a per-message timestamp
-// as its trailing hover/focus affordance (re-verified vs Codex Desktop
-// v26.519.81530). The earlier "no timestamp" removal was a misread of the
-// action row; the timestamp is restored, derived from the item's
-// completedAtMs / startedAtMs and revealed alongside the other action buttons.
-function rendersAssistantTimestampFromCompletedAtMs(): void {
+// as its trailing hover/focus affordance. Forge prefers `sentAtMs` when present,
+// but app-server lifecycle notifications currently provide `completedAtMs` /
+// `startedAtMs`, so those remain necessary runtime fallbacks.
+function rendersAssistantTimestampFromLifecycleFallback(): void {
+  const completedOnlyHtml = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "assistant-completed-only-timestamp",
+      role: "assistant",
+      item: {
+        id: "assistant-completed-only-timestamp",
+        type: "agentMessage",
+        _turnId: "turn-completed-only-timestamp",
+        completed: true,
+        text: "Sample reply.",
+        completedAtMs: 1716557400000,
+      },
+      text: "Sample reply.",
+      assistantPhase: "final_answer",
+    },
+  }));
+  assertEqual(
+    completedOnlyHtml.includes("hc-message-time"),
+    true,
+    "assistant action row should fall back to completedAtMs when sentAtMs is absent",
+  );
+
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
     unit: {
       kind: "message",
@@ -1131,7 +1154,7 @@ function rendersAssistantTimestampFromCompletedAtMs(): void {
         _turnId: "turn-timestamp",
         completed: true,
         text: "Sample reply.",
-        completedAtMs: 1716557400000,
+        sentAtMs: 1716557400000,
       },
       text: "Sample reply.",
       assistantPhase: "final_answer",
@@ -1141,7 +1164,42 @@ function rendersAssistantTimestampFromCompletedAtMs(): void {
   assertEqual(
     html.includes("hc-message-time"),
     true,
-    "assistant action row should render a trailing timestamp span derived from completedAtMs",
+    "assistant action row should render a trailing timestamp span derived from sentAtMs",
+  );
+}
+
+function rendersUserTimestampFromLifecycleFallback(): void {
+  const startedAtMs = Date.UTC(2024, 4, 24, 10, 30);
+  const completedAtMs = Date.UTC(2024, 4, 25, 11, 45);
+  const html = renderToStaticMarkup(createElement(MessageUnitView, {
+    unit: {
+      kind: "message",
+      key: "user-timestamp",
+      role: "user",
+      item: {
+        id: "user-timestamp",
+        type: "userMessage",
+        completedAtMs,
+        startedAtMs,
+      },
+      text: "Sample prompt.",
+    },
+  }));
+
+  assertEqual(
+    html.includes("hc-message-time"),
+    true,
+    "user action row should fall back to startedAtMs when sentAtMs is absent",
+  );
+  assertEqual(
+    html.includes(formatOlderMessageTimestamp(startedAtMs)),
+    true,
+    "user action row should prefer startedAtMs over completedAtMs",
+  );
+  assertEqual(
+    html.includes(formatOlderMessageTimestamp(completedAtMs)),
+    false,
+    "user action row should not show completedAtMs when startedAtMs is present",
   );
 }
 
@@ -1233,6 +1291,15 @@ function renderAssistantMarkdown(text: string): string {
       assistantPhase: "final_answer",
     },
   }));
+}
+
+function formatOlderMessageTimestamp(sentAtMs: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(sentAtMs));
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

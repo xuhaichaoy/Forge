@@ -15,6 +15,7 @@ export const initialCodexUiState: CodexUiState = {
   connecting: false,
   hostStatus: null,
   threads: [],
+  threadsLoading: false,
   activeThreadId: null,
   threadsRuntime: {},
   terminalInputBuffers: {},

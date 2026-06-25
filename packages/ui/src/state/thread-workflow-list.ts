@@ -18,6 +18,7 @@ export async function refreshThreads(
   client: CodexJsonRpcClient,
   dispatch: ThreadWorkflowDispatch,
 ) {
+  dispatch({ type: "setThreadsLoading", value: true });
   try {
     let cursor: string | null = null;
     let pageCount = 0;
@@ -40,6 +41,7 @@ export async function refreshThreads(
       });
     }
   } catch (error) {
+    dispatch({ type: "setThreadsLoading", value: false });
     dispatch({ type: "log", text: formatError(error), level: "error" });
   }
 }

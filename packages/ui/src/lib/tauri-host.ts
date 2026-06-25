@@ -296,6 +296,23 @@ export async function stopAppServer(): Promise<HostStatus> {
   return status;
 }
 
+export async function restartAppServerIfRunning(): Promise<HostStatus> {
+  if (!isTauriRuntime()) {
+    return {
+      running: false,
+      codexHome: "",
+    };
+  }
+  let status: HostStatus;
+  try {
+    status = await invoke<HostStatus>("host_restart_app_server_if_running");
+  } catch (error) {
+    throw toHostCommandError(error);
+  }
+  recordHostStatusOnboardingSignal(status);
+  return status;
+}
+
 export async function getHostStatus(): Promise<HostStatus> {
   const status = await invoke<HostStatus>("host_status");
   recordHostStatusOnboardingSignal(status);
@@ -692,7 +709,7 @@ export function readTextFile(path: string, maxBytes?: number): Promise<string> {
 }
 
 /*
- * Webview-independent settings persistence (hicodex-app-settings.json in
+ * Webview-independent settings persistence (forge-app-settings.json in
  * codex-home). WKWebView localStorage is keyed by the app bundle identifier,
  * so rebrands/reinstalls can wipe it; codex-home survives them.
  */

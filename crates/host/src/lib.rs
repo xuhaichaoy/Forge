@@ -111,17 +111,14 @@ fn user_home_dir() -> Option<PathBuf> {
 
 fn default_codex_home() -> PathBuf {
     let home = user_home_dir().unwrap_or_else(|| Path::new(".").to_path_buf());
-    // The "HiCodex" / ".hicodex" directory segments are deliberate legacy
-    // values: existing installs keep their codex-home (auth, config, sessions)
-    // across the Forge rebrand. Do not rename these path segments.
     if cfg!(target_os = "macos") {
         return home
             .join("Library")
             .join("Application Support")
-            .join("HiCodex")
+            .join("Forge")
             .join("codex-home");
     }
-    home.join(".hicodex").join("codex-home")
+    home.join(".forge").join("codex-home")
 }
 
 pub(crate) fn default_codex_cli_home() -> PathBuf {
@@ -167,8 +164,7 @@ mod tests {
     #[test]
     fn default_home_is_namespaced() {
         let home = default_codex_home().to_string_lossy().to_string();
-        // Deliberate legacy directory segments (pre-rebrand); see default_codex_home.
-        assert!(home.contains("HiCodex") || home.contains(".hicodex"));
+        assert!(home.contains("Forge") || home.contains(".forge"));
         assert!(home.ends_with("codex-home"));
     }
 

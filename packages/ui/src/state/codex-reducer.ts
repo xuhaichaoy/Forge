@@ -103,10 +103,13 @@ export function codexUiReducer(state: CodexUiState, action: CodexUiAction): Code
       // after a transport closure (that starved the backoff reconnect loop
       // forever); it may only downgrade when the process is gone.
       return { ...state, hostStatus: action.status, connected: state.connected && action.status.running };
+    case "setThreadsLoading":
+      return state.threadsLoading === action.value ? state : { ...state, threadsLoading: action.value };
     case "setThreads":
       return withActiveComposerMode({
         ...state,
         threads: action.threads,
+        threadsLoading: false,
         threadsRuntime: enrichMultiAgentReceiverThreadsInRuntimes(state.threadsRuntime, action.threads),
         activeThreadId: nextActiveThreadId(state.activeThreadId, action.threads),
       });

@@ -38,6 +38,7 @@ export { sidebarContextMenuPosition } from "./sidebar-thread-row";
 
 export interface SidebarProps {
   threads: Thread[];
+  threadsLoading?: boolean;
   activeThreadId: string | null;
   // codex sidebar-thread-section `ht` — the active thread's linked-worktree status;
   // swaps the fork label to "Fork into same worktree" (forking reuses the worktree).
@@ -99,6 +100,7 @@ export interface SidebarProps {
 
 export function Sidebar({
   threads,
+  threadsLoading = false,
   activeThreadId,
   activeThreadIsWorktree = false,
   connected,
@@ -194,6 +196,7 @@ export function Sidebar({
   const showProjectSection = projectGroups.length > 0 || Boolean(onUseExistingFolder);
   const usageAlert = accountView?.usageAlert ?? null;
   const showUsageAlert = usageAlert != null && !dismissedUsageAlertKeys.has(usageAlert.dismissalKey);
+  const effectiveThreadsLoading = threadsLoading || connecting;
 
   const useExistingFolder = () => {
     closeSectionMenu();
@@ -261,7 +264,11 @@ export function Sidebar({
           }</span>
         </button>
         {!collapsed && group.threads.length === 0 && (
-          <div className="hc-empty-group">{formatMessage({ id: "hc.sidebar.noChats", defaultMessage: "No chats" })}</div>
+          <div className="hc-empty-group">
+            {effectiveThreadsLoading
+              ? formatMessage({ id: "hc.sidebar.loadingChats", defaultMessage: "Loading chats…" })
+              : formatMessage({ id: "hc.sidebar.noChats", defaultMessage: "No chats" })}
+          </div>
         )}
         {!collapsed && renderThreadRows(group.threads)}
       </div>
@@ -331,7 +338,14 @@ export function Sidebar({
           </div>
         )}
         {pinnedThreads.length === 0 && projectGroups.length === 0 && chatsThreads.length === 0 && (
-          <div className="hc-empty-panel">{formatMessage({ id: "sidebarElectron.noRecentChats", defaultMessage: "No chats" })}</div>
+          <div className="hc-empty-panel">
+            {effectiveThreadsLoading && <Loader2 className="hc-spin" size={14} aria-hidden />}
+            <span>
+              {effectiveThreadsLoading
+                ? formatMessage({ id: "hc.sidebar.loadingChats", defaultMessage: "Loading chats…" })
+                : formatMessage({ id: "sidebarElectron.noRecentChats", defaultMessage: "No chats" })}
+            </span>
+          </div>
         )}
         {showProjectSection && (
           <SidebarProjectSection

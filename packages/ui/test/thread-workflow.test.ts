@@ -24,6 +24,7 @@ import {
   readWorkspaceDeveloperInstructions,
   readThread,
   readThreadForDisplay,
+  refreshThreads,
   refreshThreadMetadata,
   renameThread,
   resumeSelectedThreadAndStartTurn,
@@ -125,6 +126,7 @@ export default async function runThreadWorkflowTests(): Promise<void> {
   detectsProjectlessWorkspace();
   buildsProjectlessThreadInstructions();
   buildsPaginatedThreadListParams();
+  await refreshesThreadListAfterAllPagesToAvoidSelectionChurn();
   buildsStartThreadRequestsWithoutHardcodedWorkspace();
   buildsThreadLifecycleRequests();
   await readsThreadDisplayMetadataBeforeHydratingTurns();
@@ -177,6 +179,29 @@ function buildsPaginatedThreadListParams(): void {
     ).map((thread) => [thread.id, thread.preview]),
     [["thread-1", "first"], ["thread-2", "second"], ["thread-3", "third"]],
     "thread list pages should preserve server order and skip duplicate ids",
+  );
+}
+
+async function refreshesThreadListAfterAllPagesToAvoidSelectionChurn(): Promise<void> {
+  const { client } = createClientSequenceRecorder([
+    { data: [threadFixture({ id: "recent-thread" })], nextCursor: "page-2" },
+    { data: [threadFixture({ id: "older-thread" })], nextCursor: null },
+  ]);
+  const actions: Array<{ type: string; threads?: Thread[]; value?: boolean }> = [];
+
+  await refreshThreads(client, (action) => {
+    actions.push(action as { type: string; threads?: Thread[]; value?: boolean });
+  });
+
+  assertDeepEqual(
+    actions.map((action) => action.type),
+    ["setThreadsLoading", "setThreads"],
+    "thread list refresh should not dispatch partial pages that can evict the active thread",
+  );
+  assertDeepEqual(
+    actions[1]?.threads?.map((thread) => thread.id),
+    ["recent-thread", "older-thread"],
+    "thread list refresh should dispatch the merged server order after all pages finish",
   );
 }
 

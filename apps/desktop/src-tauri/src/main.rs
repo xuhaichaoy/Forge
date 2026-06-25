@@ -180,6 +180,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_server::host_start_app_server,
             app_server::host_stop_app_server,
+            app_server::host_restart_app_server_if_running,
             app_server::host_status,
             app_server::host_send_raw,
             app_server::host_read_app_settings,

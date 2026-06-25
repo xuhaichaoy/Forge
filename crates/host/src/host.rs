@@ -17,7 +17,10 @@ use crate::computer_use::{
     ComputerUseRepairResult,
 };
 use crate::installation::{read_or_init_installation_state_at, HostInstallationState};
-use crate::profile::{ensure_default_forge_profile, model_catalog_json, LocalModelCatalogConfig};
+use crate::profile::{
+    disable_yuxi_mcp_config, ensure_default_forge_profile, model_catalog_json,
+    sync_yuxi_mcp_config, LocalModelCatalogConfig, YuxiMcpConnection, YUXI_MCP_TOKEN_ENV_VAR,
+};
 use crate::thread_history::{read_thread_tool_history, ThreadToolHistory};
 use crate::{default_codex_cli_home, has_codex_profile, resolve_codex_home, HostError};
 
@@ -26,10 +29,11 @@ const INSTALLED_CODEX_BIN: &str = "/Applications/Codex.app/Contents/Resources/co
 // localStorage is keyed by the app bundle identifier, so a rebrand or webview
 // data-container change wipes it. codex-home survives those, making it the
 // durable home for connection/auth/model-selection settings.
-// The "hicodex-" filename (like the desktop.hicodex.* key prefix) is a
-// deliberate legacy value kept across the Forge rebrand — renaming it would
-// orphan existing users' settings.
-const APP_SETTINGS_FILENAME: &str = "hicodex-app-settings.json";
+const APP_SETTINGS_FILENAME: &str = "forge-app-settings.json";
+/// Legacy filename from before the Forge rebrand; still read as a fallback.
+const LEGACY_APP_SETTINGS_FILENAME: &str = "hicodex-app-settings.json";
+const APP_SETTINGS_TEAM_SERVICE_AUTH_KEY: &str = "desktop.hicodex.teamService.auth";
+const APP_SETTINGS_YUXI_CONNECTION_KEY: &str = "desktop.hicodex.yuxi.connection";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -102,6 +106,7 @@ struct HostInner {
     process: Option<AppServerProcess>,
     codex_bin: Option<String>,
     codex_home: Option<String>,
+    codex_source_dir: Option<String>,
     installation_codex_home: Option<String>,
     installation_id: Option<String>,
     first_launch: Option<bool>,
@@ -155,6 +160,29 @@ impl AppServerHost {
             inner.last_error = Some(error.to_string());
             return Err(HostError::Start(error.to_string()));
         }
+        let yuxi_mcp_settings = match read_yuxi_mcp_settings_from_app_settings(&codex_home) {
+            Ok(settings) => settings,
+            Err(error) => {
+                let _ = self.events_tx.send(AppServerEvent::Error {
+                    message: format!("failed to read Yuxi MCP connection settings: {error}"),
+                });
+                YuxiMcpAppSettings::default()
+            }
+        };
+        let yuxi_mcp_connection = yuxi_mcp_settings.connection.as_ref();
+        if let Some(connection) = yuxi_mcp_connection {
+            if let Err(error) = sync_yuxi_mcp_config(&codex_home, connection) {
+                let _ = self.events_tx.send(AppServerEvent::Error {
+                    message: format!("failed to sync Yuxi MCP config: {error}"),
+                });
+            }
+        } else if yuxi_mcp_settings.has_yuxi_settings {
+            if let Err(error) = disable_yuxi_mcp_config(&codex_home) {
+                let _ = self.events_tx.send(AppServerEvent::Error {
+                    message: format!("failed to disable Yuxi MCP config: {error}"),
+                });
+            }
+        }
         if !has_codex_profile(&codex_home) {
             let _ = self.events_tx.send(AppServerEvent::Lifecycle {
                 kind: LifecycleKind::ConfigMissing,
@@ -184,11 +212,21 @@ impl AppServerHost {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        if let Some(cwd) = config
+        if let Some(token) = yuxi_mcp_connection
+            .as_ref()
+            .and_then(|connection| connection.token.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            command.env(YUXI_MCP_TOKEN_ENV_VAR, token);
+        }
+
+        let codex_source_dir = config
             .codex_source_dir
             .as_deref()
             .filter(|value| !value.is_empty())
-        {
+            .map(ToString::to_string);
+        if let Some(cwd) = codex_source_dir.as_deref() {
             command.current_dir(cwd);
         }
 
@@ -211,6 +249,7 @@ impl AppServerHost {
 
         inner.codex_bin = Some(codex_bin.to_string_lossy().to_string());
         inner.codex_home = Some(codex_home.to_string_lossy().to_string());
+        inner.codex_source_dir = codex_source_dir;
         store_installation_state(&mut inner, &codex_home, installation_state);
         inner.last_error = None;
         inner.process = Some(AppServerProcess { child, stdin });
@@ -220,6 +259,24 @@ impl AppServerHost {
         });
 
         Ok(status_from_inner(&inner))
+    }
+
+    pub fn restart_if_running(&self) -> Result<HostStatus, HostError> {
+        let config = {
+            let mut inner = self.inner.lock().expect("host mutex poisoned");
+            refresh_running_state(&mut inner, &self.events_tx);
+            if inner.process.is_none() {
+                return Ok(status_from_inner(&inner));
+            }
+            AppServerStartConfig {
+                codex_bin: inner.codex_bin.clone(),
+                codex_home: inner.codex_home.clone(),
+                codex_source_dir: inner.codex_source_dir.clone(),
+            }
+        };
+
+        self.stop()?;
+        self.start(config)
     }
 
     pub fn stop(&self) -> Result<HostStatus, HostError> {
@@ -306,11 +363,9 @@ impl AppServerHost {
 
     pub fn read_app_settings(&self, codex_home: Option<String>) -> Result<String, HostError> {
         let codex_home = resolve_codex_home(codex_home.as_deref());
-        let path = codex_home.join(APP_SETTINGS_FILENAME);
-        if !path.is_file() {
-            return Ok(String::new());
-        }
-        fs::read_to_string(&path).map_err(|error| HostError::Profile(error.to_string()))
+        read_app_settings_file(&codex_home)
+            .map(|value| value.unwrap_or_default())
+            .map_err(|error| HostError::Profile(error.to_string()))
     }
 
     pub fn write_app_settings(
@@ -322,9 +377,30 @@ impl AppServerHost {
         fs::create_dir_all(&codex_home).map_err(|error| HostError::Profile(error.to_string()))?;
         let path = codex_home.join(APP_SETTINGS_FILENAME);
         let tmp_path = codex_home.join(format!("{APP_SETTINGS_FILENAME}.tmp"));
-        fs::write(&tmp_path, settings_json)
+        fs::write(&tmp_path, settings_json.as_bytes())
             .map_err(|error| HostError::Profile(error.to_string()))?;
-        fs::rename(&tmp_path, &path).map_err(|error| HostError::Profile(error.to_string()))
+        fs::rename(&tmp_path, &path).map_err(|error| HostError::Profile(error.to_string()))?;
+        let yuxi_mcp_settings = parse_yuxi_mcp_settings_from_app_settings(&settings_json);
+        if let Some(connection) = yuxi_mcp_settings.connection {
+            if let Err(error) = ensure_default_forge_profile(&codex_home)
+                .and_then(|_| sync_yuxi_mcp_config(&codex_home, &connection))
+            {
+                let _ = self.events_tx.send(AppServerEvent::Error {
+                    message: format!("failed to sync Yuxi MCP config from app settings: {error}"),
+                });
+            }
+        } else if yuxi_mcp_settings.has_yuxi_settings {
+            if let Err(error) = ensure_default_forge_profile(&codex_home)
+                .and_then(|_| disable_yuxi_mcp_config(&codex_home))
+            {
+                let _ = self.events_tx.send(AppServerEvent::Error {
+                    message: format!(
+                        "failed to disable Yuxi MCP config from app settings: {error}"
+                    ),
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn read_codex_auth_summary(
@@ -643,6 +719,103 @@ fn write_file_atomically(path: &Path, contents: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+fn read_yuxi_mcp_settings_from_app_settings(
+    codex_home: &Path,
+) -> Result<YuxiMcpAppSettings, std::io::Error> {
+    let Some(raw) = read_app_settings_file(codex_home)? else {
+        return Ok(YuxiMcpAppSettings::default());
+    };
+    Ok(parse_yuxi_mcp_settings_from_app_settings(&raw))
+}
+
+fn read_app_settings_file(codex_home: &Path) -> Result<Option<String>, std::io::Error> {
+    for filename in [APP_SETTINGS_FILENAME, LEGACY_APP_SETTINGS_FILENAME] {
+        let path = codex_home.join(filename);
+        if path.is_file() {
+            return fs::read_to_string(path).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn parse_yuxi_mcp_settings_from_app_settings(raw: &str) -> YuxiMcpAppSettings {
+    let Ok(parsed) = serde_json::from_str::<Value>(raw) else {
+        return YuxiMcpAppSettings::default();
+    };
+    let Some(values) = parsed.get("values").and_then(Value::as_object) else {
+        return YuxiMcpAppSettings::default();
+    };
+    let team_auth_raw = values
+        .get(APP_SETTINGS_TEAM_SERVICE_AUTH_KEY)
+        .and_then(Value::as_str);
+    let yuxi_connection_raw = values
+        .get(APP_SETTINGS_YUXI_CONNECTION_KEY)
+        .and_then(Value::as_str);
+    let team_auth = team_auth_raw.and_then(parse_yuxi_mcp_connection_value);
+    let yuxi_connection = yuxi_connection_raw.and_then(parse_yuxi_mcp_connection_value);
+
+    let base_url = team_auth
+        .as_ref()
+        .and_then(|connection| connection.base_url.clone())
+        .or_else(|| {
+            yuxi_connection
+                .as_ref()
+                .and_then(|connection| connection.base_url.clone())
+        });
+    let token = team_auth
+        .and_then(|connection| connection.token)
+        .or_else(|| yuxi_connection.and_then(|connection| connection.token));
+    let connection = match (base_url, token) {
+        (Some(base_url), Some(token)) => Some(YuxiMcpConnection {
+            base_url,
+            token: Some(token),
+        }),
+        _ => None,
+    };
+    YuxiMcpAppSettings {
+        connection,
+        has_yuxi_settings: team_auth_raw.is_some() || yuxi_connection_raw.is_some(),
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct YuxiMcpAppSettings {
+    connection: Option<YuxiMcpConnection>,
+    has_yuxi_settings: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PartialYuxiMcpConnection {
+    base_url: Option<String>,
+    token: Option<String>,
+}
+
+fn parse_yuxi_mcp_connection_value(raw: &str) -> Option<PartialYuxiMcpConnection> {
+    let parsed = serde_json::from_str::<Value>(raw).ok()?;
+    let base_url = parsed
+        .get("baseUrl")
+        .and_then(Value::as_str)
+        .and_then(normalize_non_empty_base_url);
+    let token = parsed
+        .get("token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string);
+    if base_url.is_none() && token.is_none() {
+        return None;
+    }
+    Some(PartialYuxiMcpConnection { base_url, token })
+}
+
+fn normalize_non_empty_base_url(value: &str) -> Option<String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -690,6 +863,220 @@ mod tests {
                 serde_json::json!(expected)
             );
         }
+    }
+
+    #[test]
+    fn app_settings_yuxi_mcp_connection_prefers_current_team_auth_session() {
+        let raw = serde_json::json!({
+            "version": 1,
+            "values": {
+                APP_SETTINGS_YUXI_CONNECTION_KEY: r#"{"baseUrl":"http://legacy.example.test","token":"legacy-token"}"#,
+                APP_SETTINGS_TEAM_SERVICE_AUTH_KEY: r#"{"baseUrl":" https://team.example.test/// ","token":" team-token ","user":null}"#,
+            },
+        })
+        .to_string();
+
+        let connection = parse_yuxi_mcp_settings_from_app_settings(&raw)
+            .connection
+            .unwrap();
+
+        assert_eq!(connection.base_url, "https://team.example.test");
+        assert_eq!(connection.token.as_deref(), Some("team-token"));
+    }
+
+    #[test]
+    fn app_settings_yuxi_mcp_connection_falls_back_to_legacy_connection() {
+        let raw = serde_json::json!({
+            "version": 1,
+            "values": {
+                APP_SETTINGS_YUXI_CONNECTION_KEY: r#"{"baseUrl":"http://127.0.0.1:5050/","token":" product-token "}"#,
+            },
+        })
+        .to_string();
+
+        let connection = parse_yuxi_mcp_settings_from_app_settings(&raw)
+            .connection
+            .unwrap();
+
+        assert_eq!(connection.base_url, "http://127.0.0.1:5050");
+        assert_eq!(connection.token.as_deref(), Some("product-token"));
+    }
+
+    #[test]
+    fn app_settings_yuxi_mcp_connection_requires_token() {
+        let raw = serde_json::json!({
+            "version": 1,
+            "values": {
+                APP_SETTINGS_YUXI_CONNECTION_KEY: r#"{"baseUrl":"http://127.0.0.1:5050/","token":"   "}"#,
+            },
+        })
+        .to_string();
+
+        let settings = parse_yuxi_mcp_settings_from_app_settings(&raw);
+
+        assert!(settings.has_yuxi_settings);
+        assert!(settings.connection.is_none());
+    }
+
+    #[test]
+    fn read_app_settings_falls_back_to_legacy_filename() {
+        let dir = env::temp_dir().join(format!(
+            "forge-host-app-settings-legacy-read-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let settings = serde_json::json!({
+            "version": 1,
+            "values": {
+                "desktop.hicodex.example": "ok",
+            },
+        })
+        .to_string();
+        fs::write(dir.join(LEGACY_APP_SETTINGS_FILENAME), settings.as_bytes()).unwrap();
+
+        let host = AppServerHost::new();
+        let read = host
+            .read_app_settings(Some(dir.to_string_lossy().to_string()))
+            .unwrap();
+
+        assert_eq!(read, settings);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn startup_yuxi_mcp_connection_falls_back_to_legacy_app_settings_filename() {
+        let dir = env::temp_dir().join(format!(
+            "forge-host-app-settings-legacy-yuxi-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let settings = serde_json::json!({
+            "version": 1,
+            "values": {
+                APP_SETTINGS_TEAM_SERVICE_AUTH_KEY: r#"{"baseUrl":"http://team.example.test:5050","token":"team-token","user":null}"#,
+            },
+        })
+        .to_string();
+        fs::write(dir.join(LEGACY_APP_SETTINGS_FILENAME), settings.as_bytes()).unwrap();
+
+        let connection = read_yuxi_mcp_settings_from_app_settings(&dir)
+            .unwrap()
+            .connection
+            .unwrap();
+
+        assert_eq!(connection.base_url, "http://team.example.test:5050");
+        assert_eq!(connection.token.as_deref(), Some("team-token"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_app_settings_uses_forge_filename() {
+        let dir = env::temp_dir().join(format!(
+            "forge-host-app-settings-current-write-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        let settings = serde_json::json!({
+            "version": 1,
+            "values": {
+                "desktop.hicodex.example": "ok",
+            },
+        })
+        .to_string();
+
+        let host = AppServerHost::new();
+        host.write_app_settings(Some(dir.to_string_lossy().to_string()), settings.clone())
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.join(APP_SETTINGS_FILENAME)).unwrap(),
+            settings
+        );
+        assert!(!dir.join(LEGACY_APP_SETTINGS_FILENAME).exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_app_settings_syncs_yuxi_mcp_config() {
+        let dir = env::temp_dir().join(format!(
+            "forge-host-app-settings-yuxi-mcp-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+
+        let host = AppServerHost::new();
+        let settings = serde_json::json!({
+            "version": 1,
+            "values": {
+                APP_SETTINGS_TEAM_SERVICE_AUTH_KEY: r#"{"baseUrl":"http://team.example.test:5050","token":"team-token","user":null}"#,
+            },
+        })
+        .to_string();
+
+        host.write_app_settings(Some(dir.to_string_lossy().to_string()), settings)
+            .unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert!(config.contains("[mcp_servers.yuxi]"));
+        assert!(config.contains("url = \"http://team.example.test:5050/mcp/\""));
+        assert!(config.contains("bearer_token_env_var = \"YUXI_MCP_TOKEN\""));
+        assert!(config.contains("[mcp_servers.yuxi.tools.kb_search]"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_app_settings_disables_yuxi_mcp_config_without_token() {
+        let dir = env::temp_dir().join(format!(
+            "forge-host-app-settings-yuxi-mcp-signout-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("config.toml"),
+            r#"model = "gpt-5.5"
+
+[mcp_servers.yuxi]
+enabled = true
+url = "http://team.example.test:5050/mcp/"
+bearer_token_env_var = "YUXI_MCP_TOKEN"
+
+[mcp_servers.yuxi.tools.kb_search]
+approval_mode = "approve"
+"#,
+        )
+        .unwrap();
+
+        let host = AppServerHost::new();
+        let settings = serde_json::json!({
+            "version": 1,
+            "values": {
+                APP_SETTINGS_YUXI_CONNECTION_KEY: r#"{"baseUrl":"http://team.example.test:5050","token":""}"#,
+            },
+        })
+        .to_string();
+
+        host.write_app_settings(Some(dir.to_string_lossy().to_string()), settings)
+            .unwrap();
+
+        let config = fs::read_to_string(dir.join("config.toml")).unwrap();
+        assert!(config.contains("[mcp_servers.yuxi]"));
+        assert!(config.contains("enabled = false"));
+        assert!(config.contains("url = \"http://team.example.test:5050/mcp/\""));
+        assert!(config.contains("[mcp_servers.yuxi.tools.kb_search]"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn restart_if_running_is_noop_when_stopped() {
+        let host = AppServerHost::new();
+        let status = host.restart_if_running().unwrap();
+
+        assert!(!status.running);
     }
 
     #[test]

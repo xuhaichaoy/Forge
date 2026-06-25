@@ -24,6 +24,16 @@ pub(crate) fn host_stop_app_server(
     state.host.stop().map_err(HostCommandError::from)
 }
 
+#[tauri::command(async)]
+pub(crate) fn host_restart_app_server_if_running(
+    state: State<'_, AppState>,
+) -> Result<HostStatus, HostCommandError> {
+    state
+        .host
+        .restart_if_running()
+        .map_err(HostCommandError::from)
+}
+
 // Deliberately sync (main thread): fast in-memory status snapshot (Mutex read +
 // non-blocking child try_wait). The installation-state refresh inside is
 // memoized per codex_home, so steady-state polling does no filesystem I/O.

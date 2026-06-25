@@ -115,6 +115,7 @@ export function renderForgeAppSidebar(args: ForgeAppSidebarArgs): ReactNode {
   return (
         <Sidebar
           threads={projectSidebarThreads(state.threads, { sortKey: sidebarPreferences.sortKey })}
+          threadsLoading={state.threadsLoading || state.connecting}
           activeThreadId={state.activeThreadId}
           // codex sidebar-thread-section ht — swaps the active thread's fork label.
           activeThreadIsWorktree={worktreeHostGitStatus?.isWorktree ?? false}
