@@ -116,6 +116,21 @@ function hidesTimestampOnlyActionRows(): void {
     "message actions should not render when only a timestamp is available",
   );
   assertEqual(
+    shouldRenderMessageActionRow({ copyText: "", hasActionChildren: false, sentAtMs: 1716557400000 }),
+    false,
+    "timestamp data alone should not render an action row unless Desktop explicitly requests it",
+  );
+  assertEqual(
+    shouldRenderMessageActionRow({
+      copyText: "",
+      hasActionChildren: false,
+      sentAtMs: 1716557400000,
+      showTimestampWithoutActions: true,
+    }),
+    true,
+    "Desktop's showTimestampWithoutActions path should render timestamp-only rows for artifact turns",
+  );
+  assertEqual(
     shouldRenderMessageActionRow({ copyText: "   ", hasActionChildren: false }),
     false,
     "whitespace-only copy text should not render a Desktop action row",

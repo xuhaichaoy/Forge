@@ -221,6 +221,20 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
   // 把外层 projectConversation 的 options 在 pushConversationItem 闭包外别名，
   // 避免 inner 同名 options 参数 shadow 它。appRegistry 用于 Sources logo 查询。
   const projectionOptions = options;
+  const collectItemRailEntries = (item: ThreadItem, cwd?: string | null) => {
+    collectRailEntries(
+      item,
+      artifacts,
+      sources,
+      fileCandidates,
+      projectionOptions.appRegistry,
+      {
+        cwd: cwd ?? projectionOptions.cwd ?? null,
+        projectlessOutputDirectory: projectionOptions.projectlessOutputDirectory ?? null,
+        includeGeneratedImageArtifacts: projectionOptions.includeGeneratedImageArtifacts === true,
+      },
+    );
+  };
   const pushConversationItem = (
     item: ThreadItem,
     options: {
@@ -253,7 +267,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
      * imageView/imageGeneration 保留 Forge 既有路径（event-projection 处理）。
      */
     if (itemType(item) === "plan") {
-      collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
+      collectItemRailEntries(item);
       flushActivity();
       units.push(threadItemRenderUnit(item));
       return;
@@ -267,7 +281,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
     if (isBlockingOutOfBandItem(item, blockedMcpServers)) {
       return;
     }
-    collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
+    collectItemRailEntries(item);
     if (isUserMessage(item)) {
       flushActivity();
       units.push({
@@ -437,7 +451,7 @@ export function projectConversation(rawItems: ThreadItem[], options: Conversatio
       nonImageOutputs,
     } = projectGeneratedImageToolOutputs(split.toolOutputItems);
     for (const item of generatedImages) {
-      collectRailEntries(item, artifacts, sources, fileCandidates, projectionOptions.appRegistry);
+      collectItemRailEntries(item, segmentCwd(segment));
     }
     const visibleGeneratedImages = visibleGeneratedImagesForEndResources(generatedImages, endResources);
     const turnHasArtifacts = endResources.length > 0 || visibleGeneratedImages.length > 0 || pendingGeneratedImage;
@@ -840,6 +854,7 @@ function shouldSkipConversationItem(item: ThreadItem): boolean {
   const type = itemType(item);
   if (type === "hook") return true;
   if (type === "plan-implementation") return true;
+  if (type === "sleep") return true;
   if (type === "permission-request") return true;
   if (type === "userInput" || type === "user-input") return true;
   if (type === "model-rerouted") return !isHighRiskCyberActivityModelReroute(item);
@@ -893,9 +908,17 @@ function hasBlockingRequest(split: DesktopTurnSplit): boolean {
 
 function orderedSourcesLikeDesktop(sources: Map<string, RailEntry>): RailEntry[] {
   const entries = Array.from(sources.values());
-  const toolSources = entries.filter((entry) => entry.id !== "webSearch").reverse();
+  // CODEX-REF: local-conversation-thread-Bf38rCmF.pretty.js Z_/ky —
+  // Sources render tool entries first, followed by URL-level web page sources.
+  // The generic "Web search" fallback is used only when no URL source exists.
+  const toolSources = entries.filter((entry) => !isWebSearchSource(entry)).reverse();
+  const webPages = entries.filter((entry) => entry.id.startsWith("web-page:")).reverse();
   const webSearch = entries.find((entry) => entry.id === "webSearch");
-  return webSearch ? [...toolSources, webSearch] : toolSources;
+  return [...toolSources, ...(webPages.length > 0 ? webPages : webSearch ? [webSearch] : [])];
+}
+
+function isWebSearchSource(entry: RailEntry): boolean {
+  return entry.id === "webSearch" || entry.id.startsWith("web-page:");
 }
 
 function desktopThinkingPlaceholderItem(segment: ThreadItem[], split: DesktopTurnSplit): ThreadItem {

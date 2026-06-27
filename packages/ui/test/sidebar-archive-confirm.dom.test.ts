@@ -28,6 +28,7 @@ const THREAD_TITLES = ["Thread A", "Thread B", "Thread C"] as const;
 function makeThread(id: string, name: string): Thread {
   return {
     id,
+    extra: null,
     sessionId: id,
     forkedFromId: null,
     parentThreadId: null,

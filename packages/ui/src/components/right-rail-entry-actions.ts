@@ -5,6 +5,7 @@ export interface RailEntryOpenHandlers {
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
+  onOpenPlan?: (entry: RailEntry) => void;
   onOpenThreadId?: OpenThreadHandler;
 }
 
@@ -20,6 +21,8 @@ export function isRailEntryActionAvailable(entry: RailEntry, handlers: RailEntry
       return false;
     case "diff":
       return Boolean(handlers.onOpenDiff);
+    case "plan":
+      return Boolean(handlers.onOpenPlan);
     case "thread":
       return Boolean(handlers.onOpenThreadId);
   }
@@ -39,6 +42,9 @@ export function openRailEntry(entry: RailEntry, handlers: RailEntryOpenHandlers)
       return;
     case "diff":
       handlers.onOpenDiff?.();
+      return;
+    case "plan":
+      handlers.onOpenPlan?.(entry);
       return;
     case "thread":
       handlers.onOpenThreadId?.(action.threadId, {

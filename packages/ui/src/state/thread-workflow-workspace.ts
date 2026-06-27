@@ -120,6 +120,12 @@ export function isProjectlessThreadCwd(cwd: string | null | undefined): boolean 
   return PROJECTLESS_THREAD_CWD_RE.test(trimmed);
 }
 
+export function projectlessOutputDirectoryForCwd(cwd: string | null | undefined): string | null {
+  const trimmed = (cwd?.trim() ?? "").replace(/[\\/]+$/g, "");
+  if (!isProjectlessThreadCwd(trimmed)) return null;
+  return `${trimmed}/outputs`;
+}
+
 /**
  * A thread is "projectless" (codex) when no project/workspace has been selected.
  * codex's composer predicate (`projectless-thread-*.js`: `n(e)=e.length===0||e.length===1&&e[0]==='~'`)

@@ -269,6 +269,14 @@ export type RailEntryAction =
   | { kind: "url"; url: string }
   | { kind: "source"; itemId: string }
   | { kind: "diff" }
+  | {
+      kind: "plan";
+      threadId: string;
+      turnId: string | null;
+      key: string;
+      title: string;
+      content: string;
+    }
   | { kind: "thread"; threadId: string; displayName?: string | null; model?: string | null; role?: string | null };
 
 export type UserMessageContentPart =
@@ -329,6 +337,14 @@ export interface ConversationProjectionOptions {
   conversationDetailLevel?: ConversationDetailLevel;
   mcpServerStatuses?: unknown;
   parentThreadAttachmentSourceConversationId?: string | null;
+  /**
+   * Current turn/thread cwd used by artifact projection. Codex Desktop evaluates
+   * generated-image and end-resource paths against the turn cwd plus the
+   * projectless output directory when the conversation has no real project.
+   */
+  cwd?: string | null;
+  projectlessOutputDirectory?: string | null;
+  includeGeneratedImageArtifacts?: boolean;
   /**
    * App registry data (from `app/list` RPC). Used to look up logoUrl/logoUrlDark
    * for MCP tool sources. Matching mirrors Codex Desktop's server/tool/function

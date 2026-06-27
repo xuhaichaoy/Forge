@@ -39,6 +39,8 @@ export default function runRightRailTests(): void {
   hidesOutputsForGitProjectArtifactsLikeCodexDesktop();
   rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction();
   preservesSectionCountsAndEntryMeta();
+  rendersSourceIconsAsButtonsOnlyWhenOpenable();
+  rendersPlanRowsAsButtonsOnlyWhenOpenable();
   projectsBranchDiffAction();
   projectsDesktopGitSurfaceWithoutExtraStatusRows();
   loadsAndPersistsRightRailPinnedPreference();
@@ -61,6 +63,13 @@ function keepsCodexDesktopSectionOrder(): void {
     sideChats: [railEntry("side-chat:side-1", "Side chat", "idle", "Uses gpt-5.2")],
     backgroundAgents: [railEntry("agent-1", "Explorer (explorer)", "active", "Uses gpt-5.4")],
     backgroundTerminals: [railEntry("terminal-1", "npm run dev", "running", "/workspace/project")],
+    plan: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      explanation: "# Investigate rail parity",
+      plan: [{ step: "Compare Desktop rail", status: "completed" }],
+      updatedAt: 0,
+    },
     // codex: browserUseSummaries — Browser section maps every displayable tab.
     browserTabs: [
       { title: "Codex docs", displayUrl: "platform.openai.com", isActive: true, tabId: "tab-1" },
@@ -70,7 +79,7 @@ function keepsCodexDesktopSectionOrder(): void {
   });
 
   // CODEX-REF: local-conversation-thread-CRsAC226.pretty.js (26.611.61049)
-  // rail children [automation, environment, outputs, side-chats, subagents,
+  // rail children [automation, environment, plan, outputs, side-chats, subagents,
   // tasks, browser, sources]. Environment/Outputs are mutually exclusive on
   // git-kind, so a non-git rail reads Automations, Outputs, … Codex 仅 single
   // automation；subagents/tasks 拆成两个独立 section。No Progress child is
@@ -79,6 +88,7 @@ function keepsCodexDesktopSectionOrder(): void {
     sections.map((section) => section.title),
     [
       "Automations",
+      "Plan",
       "Outputs",
       "Side chats",
       "Subagents",
@@ -112,6 +122,19 @@ function keepsCodexDesktopSectionOrder(): void {
   // payload; Browser maps every structured summary into a row.
   assertEqual(sectionById(sections, "automation").count, 1, "automation section should be single-entry");
   assertEqual(sectionById(sections, "automation").entries[0]?.title, "Weekly digest", "automation entry uses provided name");
+  const planEntry = sectionById(sections, "plan").entries[0];
+  assertEqual(sectionById(sections, "plan").count, 1, "plan section should be single-entry");
+  assertEqual(
+    planEntry?.title,
+    "Investigate rail parity",
+    "plan section should use the markdown heading when one is available",
+  );
+  assertEqual(planEntry?.action?.kind, "plan", "plan rail row should expose a Plan side-panel action");
+  assertStringIncludes(
+    planEntry?.action?.kind === "plan" ? planEntry.action.content : "",
+    "- Compare Desktop rail (completed)",
+    "plan side-panel action should carry markdown plan content",
+  );
   assertEqual(sectionById(sections, "browser").count, 2, "browser section count should match tab summaries");
   assertEqual(sectionById(sections, "browser").entries[0]?.title, "Codex docs", "browser entry uses tab title");
   assertEqual(
@@ -179,6 +202,13 @@ function keepsPopulatedBranchDetails(): void {
   assertEqual(sections[0]?.allEntries[0]?.id, "changes", "Git section should start with the Desktop Changes entry");
   assertEqual(sections[1]?.id, "sources", "Sources section should follow Git like Codex Desktop");
   assertEqual(sections[1]?.allEntries.length, 0, "Sources section should expose zero entries for the empty state");
+
+  const html = renderToStaticMarkup(createElement(RightRail, { sections }));
+  assertStringIncludes(
+    html,
+    "aria-label=\"Choose environment\"",
+    "Environment section should expose Desktop's header selector action",
+  );
 }
 
 function usesDesktopBackgroundTaskTitles(): void {
@@ -386,6 +416,83 @@ function preservesSectionCountsAndEntryMeta(): void {
   assertEqual(sourcesSection.entries[1]?.meta, "Web search", "source meta should be preserved");
 }
 
+function rendersSourceIconsAsButtonsOnlyWhenOpenable(): void {
+  const openableSource = {
+    ...railEntry("source-page", "Documentation page", "completed", "Web page"),
+    action: { kind: "url" as const, url: "https://example.com/docs" },
+  };
+  const staticSource = railEntry("source-tool", "Local tool", "completed", "MCP tool");
+  const sections = projectRightRailSections({
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    sources: [openableSource, staticSource],
+  });
+
+  const interactiveHtml = renderToStaticMarkup(createElement(RightRail, {
+    sections,
+    onOpenUrl: () => {},
+  }));
+  assertStringIncludes(
+    interactiveHtml,
+    "hc-rail-source-icon-button",
+    "openable Sources entries should render the Desktop button variant",
+  );
+  assertStringIncludes(
+    interactiveHtml,
+    "aria-label=\"Documentation page\"",
+    "openable Sources entries should keep the source label as aria-label",
+  );
+  assertStringIncludes(
+    interactiveHtml,
+    "role=\"img\"",
+    "non-openable Sources entries should remain static role=img icons",
+  );
+
+  const staticHtml = renderToStaticMarkup(createElement(RightRail, { sections }));
+  assertStringExcludes(
+    staticHtml,
+    "hc-rail-source-icon-button",
+    "Sources entries without an open handler should not expose a fake click target",
+  );
+}
+
+function rendersPlanRowsAsButtonsOnlyWhenOpenable(): void {
+  const sections = projectRightRailSections({
+    branchDetails: {
+      entries: [],
+    },
+    artifacts: [],
+    plan: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      explanation: "# Investigate rail parity",
+      plan: [{ step: "Open plan tab", status: "in_progress" }],
+      updatedAt: 0,
+    },
+    sources: [],
+  });
+
+  const interactiveHtml = renderToStaticMarkup(createElement(RightRail, {
+    sections,
+    onOpenPlan: () => {},
+  }));
+  assertStringIncludes(
+    interactiveHtml,
+    "hc-summary-panel-row-interactive",
+    "Plan entries should render the button row variant when a side-panel opener exists",
+  );
+  assertStringIncludes(interactiveHtml, "<button", "openable Plan entries should render as a real button");
+
+  const staticHtml = renderToStaticMarkup(createElement(RightRail, { sections }));
+  assertStringExcludes(
+    staticHtml,
+    "hc-summary-panel-row-interactive",
+    "Plan entries without an open handler should not expose a fake click target",
+  );
+}
+
 function projectsBranchDiffAction(): void {
   const sections = projectRightRailSections({
     branchDetails: {
@@ -424,6 +531,7 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
   const branchDetails = projectBranchDetails({
     thread: {
       id: "thread-git-status",
+      extra: null,
       sessionId: "thread-git-status",
       forkedFromId: null,
       parentThreadId: null,
@@ -680,6 +788,7 @@ function sectionById(
     | "automation"
     | "automations"
     | "branchDetails"
+    | "plan"
     | "artifacts"
     | "sideChats"
     | "backgroundSubagents"

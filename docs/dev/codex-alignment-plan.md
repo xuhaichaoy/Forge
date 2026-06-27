@@ -1,6 +1,6 @@
 # Codex Alignment — Plan Summary Card
 
-Alignment reference for the proposed-plan UI surfaces (inline `Writing plan` / `Plan` card plus the standalone plan detail page). Use this when changing `packages/ui/src/components/plan-summary-card.tsx` or any code that consumes `plan` ThreadItems.
+Alignment reference for the proposed-plan UI surfaces (inline `Writing plan` / `Plan` card plus the right-rail Plan side-panel tab). Use this when changing `packages/ui/src/components/plan-summary-card.tsx`, `packages/ui/src/state/right-rail.ts`, or any code that consumes `plan` ThreadItems.
 
 Linked: [dispatcher](./codex-alignment-dispatcher.md), [reasoning](./codex-alignment-reasoning.md), [gap matrix](./codex-alignment-gap-matrix.md).
 
@@ -26,7 +26,8 @@ There is no structured todo state. The plan is one markdown blob; the model writ
 - Markdown rendered via the shared markdown pipeline (`markdown-*` chunks).
 - Header actions: a Download button (generates a `Blob` and triggers download with constant filename `PLAN.md`) and a Copy button.
 - Collapsible: `aria-expanded={expanded}`; chevron icon rotates 180deg when expanded.
-- Detail page entry: an "Open" action dispatches a `show-plan-summary` message with `{ planContent, conversationId }` payload to open the plan in a separate window.
+- Inline card detail entry: an "Open" action dispatches a `show-plan-summary` message with `{ planContent, conversationId }` payload to open the plan in a separate window.
+- Right-rail Plan row: separate from the inline card button; it opens the app-shell right side-panel as a Plan tab using the current plan markdown.
 
 ## 3. i18n strings (10 keys, durable)
 
@@ -43,20 +44,20 @@ There is no structured todo state. The plan is one markdown blob; the model writ
 | `localConversation.planSummary.openInNewWindow` | `Open` | detail button label |
 | `localConversation.planSummary.openInNewWindow.tooltip` | `Open in new window` | detail button tooltip |
 
-## 4. Open button is a stub in Codex itself
+## 4. Inline Open button is a stub in Codex itself
 
 The `dispatchMessage("show-plan-summary", ...)` handler in Codex's Electron main process is a noop `case "show-plan-summary": break;`. The button exists but does not open a window in the shipped build.
 
 Forge implementation rule: render the Open button with the matching aria-label/tooltip (`Open` / `Open in new window`) and wire `onClick` to a noop, matching Codex behavior. A real multi-window implementation would require a new Tauri `WebviewWindowBuilder` entry; treat that as future work, not parity.
 
-## 5. Todo summary i18n
+This does not apply to the current right-rail Plan row. The Desktop rail row opens the app-shell right side panel with the Plan tab content, so Forge wires that row to the side-panel tab host.
 
-The Progress section in the right rail surfaces task completion. Codex uses:
+## 5. Right-rail Plan behavior
 
-- `{completed} out of {total} tasks completed`
-- Step indices rendered as `{index}.` (1-based).
-
-Forge right-rail Progress projection follows the same shape.
+- Current Desktop does not mount a right-rail Progress section.
+- The right rail order is Automations, Environment, Plan, Outputs, Side chats, Subagents, Tasks, Browser, Sources.
+- The Plan rail row label uses the extracted markdown heading when present and falls back to `codex.localConversation.plan.title`.
+- Clicking the Plan rail row opens a right side-panel Plan tab. The tab title is localized `Plan`; the content is the plan markdown.
 
 ## 6. Related Codex bundle areas
 

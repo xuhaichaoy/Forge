@@ -84,6 +84,36 @@
   background: var(--hc-surface-panel, #fffdfa);
 }
 
+.hc-plan-tab {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--hc-surface-panel, #fffdfa);
+}
+
+.hc-plan-tab__inner {
+  width: min(100%, 720px);
+  margin: 0 auto;
+  padding: 24px 28px 40px;
+}
+
+.hc-plan-tab__title {
+  margin: 0 0 18px;
+  color: var(--hc-text-primary, #22262b);
+  font-size: calc(18px * var(--hc-ui-font-scale, 1));
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.hc-plan-tab__content {
+  color: var(--hc-text-primary, #22262b);
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  line-height: 1.55;
+}
+
 .hc-side-panel-host__error {
   margin: 12px;
   padding: 10px 12px;

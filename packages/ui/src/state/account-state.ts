@@ -208,6 +208,7 @@ export async function refreshAccountState(
     : ok<GetAccountRateLimitsResponse>({
         rateLimits: previous.rateLimits ?? emptyRateLimitSnapshot(),
         rateLimitsByLimitId: previous.rateLimitsByLimitId,
+        rateLimitResetCredits: null,
       });
 
   const account = accountResult.ok ? accountResult.value.account : previous.account;
@@ -523,7 +524,7 @@ function projectAccountIdentity(account: Account | null): {
   }
   switch (account.type) {
     case "chatgpt": {
-      const email = account.email.trim();
+      const email = (account.email ?? "").trim();
       const localPart = email.split("@")[0]?.trim();
       return {
         displayName: localPart || email || "ChatGPT account",

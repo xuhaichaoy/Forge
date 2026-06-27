@@ -84,6 +84,7 @@ export type { ReadWorkspaceDeveloperInstructionsOptions } from "./thread-workflo
 export {
   isProjectlessThreadCwd,
   isProjectlessWorkspace,
+  projectlessOutputDirectoryForCwd,
   projectlessThreadInstructions,
   readWorkspaceDeveloperInstructions,
   withWorkspaceDeveloperInstructions,

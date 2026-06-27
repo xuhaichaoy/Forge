@@ -79,6 +79,7 @@ export default function runRenderGroupsTests(): void {
   keepsLiveCodexAppThreadReadsGroupedLikeCodexDesktop();
   groupsCompletedAutoReviewWithAdjacentActivityLikeCodexDesktop();
   dropsHookThreadItemsLikeCodexDesktop();
+  dropsSleepThreadItemsLikeCodexDesktop();
   rendersHookPromptAsFeedbackUserMessageLikeCodexDesktop();
   summarizesPatchChangeKinds();
   showsActivePatchDiffStatsLikeCodexDesktop();
@@ -3421,6 +3422,18 @@ function dropsHookThreadItemsLikeCodexDesktop(): void {
   if (unit?.kind === "threadItem") {
     assertEqual(unit.item.id, "command-1", "hook rows should not displace the command item");
   }
+}
+
+function dropsSleepThreadItemsLikeCodexDesktop(): void {
+  const projection = projectConversation([
+    {
+      type: "sleep",
+      id: "sleep-1",
+      durationMs: 1_000,
+    } as unknown as ThreadItem,
+  ]);
+
+  assertEqual(projection.units.length, 0, "sleep ThreadItems should stay out of transcript projection");
 }
 
 function rendersHookPromptAsFeedbackUserMessageLikeCodexDesktop(): void {

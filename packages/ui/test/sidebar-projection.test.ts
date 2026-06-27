@@ -44,6 +44,7 @@ export default function runSidebarProjectionTests(): void {
 function makeThread(overrides: Partial<Thread> & Record<string, unknown>): Thread {
   return {
     id: overrides.id ?? "thread-x",
+    extra: (overrides.extra as Thread["extra"] | undefined) ?? null,
     sessionId: String(overrides.sessionId ?? overrides.id ?? "thread-x"),
     forkedFromId: null,
     parentThreadId: null,

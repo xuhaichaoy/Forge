@@ -1,4 +1,5 @@
 import type { BranchDetailsViewModel } from "./branch-details";
+import type { TurnPlanSnapshot } from "./codex-ui-types";
 import { FORGE_DESKTOP_CONFIG_KEYS, readMigratedStorageValue } from "./forge-desktop-namespace";
 import { formatMessage } from "./i18n";
 import type { RailEntry } from "./render-groups";
@@ -25,6 +26,7 @@ export type RightRailSectionId =
    */
   | "automation"
   | "branchDetails"
+  | "plan"
   | "artifacts"
   | "sideChats"
   /*
@@ -92,6 +94,7 @@ export interface RightRailProjectionInput {
    * 数据流入；保留 `automation` 单条字段。
    */
   branchDetails: BranchDetailsViewModel | BranchDetailsEntryInput;
+  plan?: TurnPlanSnapshot | null;
   artifacts: RailEntry[];
   showOutputs?: boolean;
   sideChats?: RailEntry[];
@@ -202,11 +205,12 @@ export function rightRailReservedInlineEndPx(
 // stable ids; Forge previously hardcoded the English titles. Route them through
 // formatMessage so non-English locales localize (en-US is unchanged via defaultMessage).
 function railSectionTitle(
-  id: "automations" | "environment" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
+  id: "automations" | "environment" | "plan" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
 ): string {
   switch (id) {
     case "automations": return formatMessage({ id: "codex.localConversation.heartbeatAutomation.title", defaultMessage: "Automations" });
     case "environment": return formatMessage({ id: "codex.localConversation.environmentSummary.title", defaultMessage: "Environment" });
+    case "plan": return formatMessage({ id: "codex.localConversation.plan.title", defaultMessage: "Plan" });
     case "outputs": return formatMessage({ id: "codex.localConversation.outputs.title", defaultMessage: "Outputs" });
     case "sideChats": return formatMessage({ id: "codex.localConversation.sideChats.title", defaultMessage: "Side chats" });
     case "subagents": return formatMessage({ id: "codex.localConversation.backgroundTasks.title.subagents", defaultMessage: "Subagents" });
@@ -265,6 +269,25 @@ export function projectRightRailSections(input: RightRailProjectionInput): Right
       remainingCount: 0,
       canToggle: false,
       ...(branchDetails ? { branchDetails } : {}),
+    });
+  }
+
+  // CODEX-REF: local-conversation-thread-Bf38rCmF.pretty.js:9515-9539 —
+  // Desktop now mounts sectionKey "plan" after Environment and before Outputs
+  // when a plan payload exists. The row has a List icon, no count suffix, and
+  // falls back to the localized "Plan" title when the plan payload has no
+  // extracted title.
+  const planTitle = railSectionTitle("plan");
+  const planEntry = input.plan ? planRailEntry(input.plan, planTitle) : null;
+  if (planEntry) {
+    sections.push({
+      id: "plan",
+      title: planTitle,
+      count: 1,
+      entries: [planEntry],
+      allEntries: [planEntry],
+      remainingCount: 0,
+      canToggle: false,
     });
   }
 
@@ -420,6 +443,68 @@ function branchChangesMeta(details: BranchDetailsViewModel): string {
     return `${changedFiles} changed file${changedFiles === 1 ? "" : "s"}`;
   }
   return "Review changed files";
+}
+
+function planRailEntry(plan: TurnPlanSnapshot, fallbackTitle: string): RailEntry | null {
+  const hasSteps = plan.plan.length > 0;
+  const explanation = plan.explanation?.trim() ?? "";
+  if (!hasSteps && !explanation) return null;
+  const key = `plan:${plan.threadId}:${plan.turnId ?? "unknown"}`;
+  const content = planRailContent(plan);
+  return {
+    id: key,
+    title: firstMarkdownHeading(explanation) ?? fallbackTitle,
+    action: {
+      kind: "plan",
+      threadId: plan.threadId,
+      turnId: plan.turnId,
+      key,
+      title: fallbackTitle,
+      content,
+    },
+  };
+}
+
+function planRailContent(plan: TurnPlanSnapshot): string {
+  const explanation = plan.explanation?.trim() ?? "";
+  const steps = plan.plan
+    .map((step, index) => planStepMarkdown(step, index))
+    .filter((step) => step.length > 0);
+  if (explanation && steps.length > 0) return `${explanation}\n\n${steps.join("\n")}`;
+  if (explanation) return explanation;
+  return steps.join("\n");
+}
+
+function planStepMarkdown(step: unknown, index: number): string {
+  const text = planStepText(step, index);
+  if (!text) return "";
+  const status = planStepStatus(step);
+  return status ? `- ${text} (${status})` : `- ${text}`;
+}
+
+function planStepText(step: unknown, index: number): string {
+  if (typeof step === "string") return step.trim();
+  if (step && typeof step === "object") {
+    const record = step as Record<string, unknown>;
+    const value = record.step ?? record.text ?? record.title;
+    if (typeof value === "string") return value.trim();
+  }
+  return `Step ${index + 1}`;
+}
+
+function planStepStatus(step: unknown): string | null {
+  if (!step || typeof step !== "object") return null;
+  const status = (step as Record<string, unknown>).status;
+  return typeof status === "string" && status.trim() ? status.trim() : null;
+}
+
+function firstMarkdownHeading(text: string): string | null {
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line.trim());
+    const title = match?.[2]?.trim();
+    if (title) return title;
+  }
+  return null;
 }
 
 function rightRailSideSpace(contentWidthPx: number): number {

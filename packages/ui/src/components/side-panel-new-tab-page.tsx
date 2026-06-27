@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import type { RailEntry } from "../state/render-groups";
 import {
   SIDE_PANEL_TAB_GRID_MAX_CELL_PX,
   computeSidePanelTabGrid,
 } from "../state/side-panel-tab-grid";
+import { railEntryIcon } from "./right-rail-entry-icons";
 import { SidePanelTabActionCard, type SidePanelTabActionCardProps } from "./side-panel-tab-action-card";
 import { useForgeIntl } from "./i18n-provider";
 
@@ -31,11 +33,9 @@ import { useForgeIntl } from "./i18n-provider";
  * Empty state (Codex line 911-918):
  *   "No tabs are available for this thread" inside a bordered card.
  *
- * `Suggested` artifacts section (Codex line 924-967) is NOT ported here yet —
- * the data source on the Forge side is `Ue` (`conversation.artifacts`?) and
- * the artifact row component is `ut` / `dt`, neither of which has a Forge
- * equivalent. Leaving a `suggestedSlot` prop hook so a future PR can drop in
- * artifact rows without rewriting this file.
+ * `Suggested` artifacts section (current Codex `thread-app-shell-chrome-*.js`
+ * around `outputArtifacts`) is supplied through `suggestedSlot` so the page
+ * can keep the Desktop action-grid geometry while callers own artifact data.
  *
  * `target='bottom'` (Codex line 503 `f = d === void 0 ? 'right' : d`) lifts
  * into `requireBalancedRows: target !== 'bottom'` (Codex line 885).
@@ -127,6 +127,7 @@ export function SidePanelNewTabPage({
   const gridStyle: CSSProperties | undefined = gridTemplateColumns != null
     ? { gridTemplateColumns }
     : undefined;
+  const hasSuggestedSlot = suggestedSlot != null;
 
   return (
     <div className="hc-side-panel-new-tab">
@@ -149,7 +150,7 @@ export function SidePanelNewTabPage({
               />
             ))}
           </div>
-        ) : (
+        ) : hasSuggestedSlot ? null : (
           <div className="hc-side-panel-new-tab__empty">{resolvedEmptyStateLabel}</div>
         )}
         {suggestedSlot != null && (
@@ -160,5 +161,37 @@ export function SidePanelNewTabPage({
         )}
       </div>
     </div>
+  );
+}
+
+export function SidePanelSuggestedArtifacts({
+  artifacts,
+  onOpenArtifact,
+}: {
+  readonly artifacts: readonly RailEntry[];
+  readonly onOpenArtifact: (entry: RailEntry) => void;
+}) {
+  if (artifacts.length === 0) return null;
+  return (
+    <ul className="hc-side-panel-new-tab__suggested-list">
+      {artifacts.map((entry) => {
+        const tooltip = entry.meta ?? entry.title;
+        return (
+          <li key={entry.id} className="hc-side-panel-new-tab__suggested-item">
+            <button
+              type="button"
+              className="hc-side-panel-new-tab__suggested-button"
+              title={tooltip}
+              onClick={() => onOpenArtifact(entry)}
+            >
+              <span className="hc-side-panel-new-tab__suggested-icon" aria-hidden="true">
+                {railEntryIcon(entry, "artifacts")}
+              </span>
+              <span className="hc-side-panel-new-tab__suggested-title">{entry.title}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }

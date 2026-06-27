@@ -8,7 +8,11 @@ import { ConversationView } from "./components/conversation-view";
 import { FilePreviewPanel } from "./components/file-preview-panel";
 import { RightRail } from "./components/right-rail";
 import { SidePanelHost } from "./components/side-panel-host";
-import { SidePanelNewTabPage, type SidePanelNewTabAction } from "./components/side-panel-new-tab-page";
+import {
+  SidePanelNewTabPage,
+  SidePanelSuggestedArtifacts,
+  type SidePanelNewTabAction,
+} from "./components/side-panel-new-tab-page";
 import { ThreadFindBar } from "./components/thread-find-bar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
 import type { useArtifactPreviewActions } from "./hooks/use-artifact-preview-actions";
@@ -87,6 +91,7 @@ export interface ForgeAppMainArgs {
   openBrowserSurface: (tabId?: string | null) => void;
   openFileReferenceExternal: ComponentProps<typeof FilePreviewPanel>["onOpenFileReferenceExternal"];
   openRailArtifactFileExternal: ComponentProps<typeof FilePreviewPanel>["onOpenArtifactFileExternal"];
+  openRailPlan: ComponentProps<typeof RightRail>["onOpenPlan"];
   openRailUrl: ComponentProps<typeof FilePreviewPanel>["onOpenUrl"];
   openRemoteTask: ComponentProps<typeof ConversationView>["onOpenRemoteTask"];
   patchActionInFlight: ComponentProps<typeof ConversationView>["patchActionInFlight"];
@@ -184,6 +189,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     openBrowserSurface,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
+    openRailPlan,
     openRailUrl,
     openRemoteTask,
     patchActionInFlight,
@@ -377,6 +383,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
             isPinned={showRightRail ? rightRailPinned : true}
             onOpenArtifactPreview={previewRailArtifact}
             onOpenFileReference={previewRailFileReferenceAndOpenRail}
+            onOpenPlan={openRailPlan}
             onOpenUrl={openRailUrl}
             onOpenDiff={openActiveDiffPanel}
             onOpenThreadId={openBackgroundAgentThread}
@@ -431,7 +438,17 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
               ),
               onResetWidth: filePreviewPanelLayout.resetWidth,
             }}
-            emptyState={<SidePanelNewTabPage actions={sidePanelNewTabActions} />}
+            emptyState={(
+              <SidePanelNewTabPage
+                actions={sidePanelNewTabActions}
+                suggestedSlot={conversation.artifacts.length > 0 && openAssistantArtifactInSidePanel ? (
+                  <SidePanelSuggestedArtifacts
+                    artifacts={conversation.artifacts}
+                    onOpenArtifact={openAssistantArtifactInSidePanel}
+                  />
+                ) : null}
+              />
+            )}
             afterTabsStickySlot={
               <>
                 {/*

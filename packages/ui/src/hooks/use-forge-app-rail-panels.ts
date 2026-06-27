@@ -43,6 +43,7 @@ import {
   threadTitle,
   type ThreadWorkflowDispatch,
 } from "../state/thread-workflow";
+import type { TurnPlanSnapshot } from "../state/codex-ui-types";
 import type { PendingWorktree } from "../state/worktrees";
 import type { ComposerWorkMode } from "../state/worktrees";
 import { useBrowserRuntime } from "./use-browser-runtime";
@@ -95,6 +96,7 @@ export interface ForgeAppRailPanelsArgs {
   mainWidth: number;
   notificationPreferences: ReturnType<typeof useUiPreferences>["notificationPreferences"];
   openWorkbenchTab: ReturnType<typeof useAppShellState>["openWorkbenchTab"];
+  plan: TurnPlanSnapshot | null;
   pendingWorktree: PendingWorktree | null;
   pinnedThreadIds: ReturnType<typeof useThreadPins>["pinnedThreadIds"];
   rightRailPinned: boolean;
@@ -144,6 +146,7 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
     mainWidth,
     notificationPreferences,
     openWorkbenchTab,
+    plan,
     pendingWorktree,
     pinnedThreadIds,
     rightRailPinned,
@@ -186,6 +189,7 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
        */
       ...(activeThreadAutomation ? { automation: activeThreadAutomation } : {}),
       branchDetails,
+      plan,
       artifacts: conversation.artifacts,
       showOutputs: !branchDetails.hasData,
       sideChats: sideChatRailEntries,
@@ -199,6 +203,7 @@ export function useForgeAppRailPanels(args: ForgeAppRailPanelsArgs) {
       branchDetails,
       browserRailInputs,
       conversation,
+      plan,
       sideChatRailEntries,
     ],
   );

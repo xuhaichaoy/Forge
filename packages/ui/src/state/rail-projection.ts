@@ -3,6 +3,7 @@ import { stringField } from "../lib/format";
 import { forgeImageToolOutputUrl } from "./image-generation-tool";
 import type {
   AppRegistryEntry,
+  ConversationProjectionOptions,
   ItemRecord,
   RailEntry,
   RailEntryReference,
@@ -71,9 +72,12 @@ export function collectRailEntries(
   sources: Map<string, RailEntry>,
   fileCandidates?: ArtifactFileCandidateIndex,
   appRegistry?: AppRegistryEntry[] | null,
+  context?: Pick<ConversationProjectionOptions, "cwd" | "projectlessOutputDirectory" | "includeGeneratedImageArtifacts">,
 ): void {
   const record = item as ItemRecord;
-  const projectItemArtifacts = shouldProjectArtifactsFromItem(item);
+  const itemKind = itemType(item);
+  const isGeneratedImageItem = itemKind === "generated-image" || itemKind === "imageGeneration";
+  const projectItemArtifacts = shouldProjectArtifactsFromItem(item) && !isGeneratedImageItem;
 
   if (projectItemArtifacts) {
     for (const path of filePathsFromItem(item)) {
@@ -89,14 +93,14 @@ export function collectRailEntries(
     }
   }
 
-  if (itemType(item) === "generated-image" || itemType(item) === "imageGeneration") {
+  if (isGeneratedImageItem) {
     const imageSrc = stringField(record, "src")
       || stringField(record, "url")
       || stringField(record, "path")
       || stringField(record, "savedPath")
       || imageResultDataUrl(record);
-    if (imageSrc) {
-      setArtifact(artifacts, imageArtifactEntryFromSource(imageSrc, statusText(item)));
+    if (imageSrc && shouldProjectGeneratedImageArtifact(imageSrc, context)) {
+      setArtifact(artifacts, imageArtifactEntryFromSource(resolveGeneratedImageArtifactSource(imageSrc, context?.cwd), statusText(item)));
     }
   }
 
@@ -122,10 +126,20 @@ export function collectRailEntries(
   }
 
   if (itemType(item) === "web-search") {
-    setSource(sources, "webSearch", {
-      id: "webSearch",
-      title: "Web search",
-    });
+    // CODEX-REF: local-conversation-thread-Bf38rCmF.pretty.js Ay/ky —
+    // webSearch openPage/findInPage actions with safe http(s) URLs become
+    // URL-level Sources. If web searches happened but no page URL is
+    // extractable, Desktop falls back to one generic "Web search" source.
+    const pageSource = webSourceEntryFromAction(record.action);
+    if (pageSource) {
+      sources.delete("webSearch");
+      setSource(sources, pageSource.id, pageSource);
+    } else if (!hasWebPageSource(sources)) {
+      setSource(sources, "webSearch", {
+        id: "webSearch",
+        title: "Web search",
+      });
+    }
   }
 
 }
@@ -180,6 +194,69 @@ function imageArtifactEntryFromSource(source: string, status: string): RailEntry
   };
 }
 
+function shouldProjectGeneratedImageArtifact(
+  source: string,
+  context?: Pick<ConversationProjectionOptions, "cwd" | "projectlessOutputDirectory" | "includeGeneratedImageArtifacts">,
+): boolean {
+  const projectlessOutputDirectory = context?.projectlessOutputDirectory?.trim() ?? "";
+  if (!projectlessOutputDirectory) return true;
+  if (context?.includeGeneratedImageArtifacts === true) return true;
+  return isWithinProjectlessOutputDirectory({
+    cwd: context?.cwd ?? null,
+    projectlessOutputDirectory,
+    resourcePath: source,
+  });
+}
+
+function resolveGeneratedImageArtifactSource(source: string, cwd?: string | null): string {
+  const trimmed = source.trim();
+  if (!trimmed) return source;
+  if (/^(?:data|blob|https?|file):/i.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("/")) return trimmed;
+  const base = (cwd?.trim() ?? "").replace(/[\\/]+$/g, "");
+  return base ? `${base}/${trimmed}` : trimmed;
+}
+
+function isWithinProjectlessOutputDirectory({
+  cwd,
+  projectlessOutputDirectory,
+  resourcePath,
+}: {
+  cwd?: string | null;
+  projectlessOutputDirectory: string;
+  resourcePath: string;
+}): boolean {
+  const root = normalizeResourcePath(cwd, projectlessOutputDirectory).replace(/\/+$/g, "");
+  if (!root) return false;
+  const target = normalizeResourcePath(cwd, resourcePath);
+  return target === root || target.startsWith(`${root}/`);
+}
+
+function normalizeResourcePath(cwd: string | null | undefined, value: string): string {
+  const localPath = filePathFromFileUrl(value) || value.trim();
+  if (!localPath) return "";
+  const slashPath = localPath.replace(/\\/g, "/");
+  const base = (cwd?.trim() ?? "").replace(/[\\/]+$/g, "");
+  const combined = slashPath.startsWith("/")
+    ? slashPath
+    : `${base}/${slashPath}`;
+  return normalizePosixPath(combined.replace(/\\/g, "/"));
+}
+
+function normalizePosixPath(value: string): string {
+  const absolute = value.startsWith("/");
+  const parts: string[] = [];
+  for (const part of value.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return `${absolute ? "/" : ""}${parts.join("/")}`;
+}
+
 function filePathFromFileUrl(value: string): string {
   if (!/^file:/i.test(value)) return "";
   try {
@@ -205,6 +282,35 @@ function imageArtifactTitle(value: string): string {
     const filename = value.split(/[/?#]/).filter(Boolean).pop();
     return filename || "Generated image";
   }
+}
+
+function webSourceEntryFromAction(action: unknown): RailEntry | null {
+  if (!action || typeof action !== "object") return null;
+  const record = action as Record<string, unknown>;
+  const type = stringField(record, "type");
+  if (type !== "openPage" && type !== "findInPage") return null;
+  const url = webSourceUrl(stringField(record, "url"));
+  if (!url) return null;
+  return {
+    id: `web-page:${url.href}`,
+    title: `${url.host.replace(/^www\./u, "")}${url.pathname}`,
+    action: { kind: "url", url: url.href },
+  };
+}
+
+function webSourceUrl(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (url.username || url.password) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function hasWebPageSource(sources: Map<string, RailEntry>): boolean {
+  return Array.from(sources.keys()).some((key) => key.startsWith("web-page:"));
 }
 
 type ArtifactTextSource = "assistant" | "generic" | "output";

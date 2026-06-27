@@ -26,14 +26,22 @@
 }
 
 /*
- * CODEX-REF: local-conversation-thread-CEeZyOcp.js (Nf) — Sources renders a clickable
- * `<button>` variant (with `hover:bg-token-list-hover-background hover:text-token-foreground`)
- * ONLY when the source has `mcpAppId` + an `onOpen` handler; otherwise it is a static
- * `role="img"` span with NO hover affordance. Forge has no source-open data flow, so all
- * sources render the static span variant — which must therefore carry no hover background
- * (the prior `:hover` rule implied a non-existent click target). When source-open lands,
- * add a `.hc-rail-source-icon` button variant that restores the hover bg/fg.
+ * CODEX-REF: local-conversation-thread-Bf38rCmF.js (Z_/Q_) — Sources renders a
+ * clickable `<button>` variant with hover bg/fg only when the source has an
+ * open action. Static `role="img"` spans carry no hover affordance.
  */
+.hc-rail-source-icon-button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hc-rail-source-icon-button:hover,
+.hc-rail-source-icon-button:focus-visible {
+  background: var(--hc-surface-hover, rgba(34, 38, 43, 0.08));
+  color: var(--hc-text-primary, #f3f3f1);
+}
 
 .hc-rail-source-icon svg,
 .hc-rail-source-icon img {

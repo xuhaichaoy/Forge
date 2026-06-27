@@ -58,6 +58,7 @@ export function MessageActionRow({
   hasActionChildren = false,
   persistent = false,
   sentAtMs = null,
+  showTimestampWithoutActions = false,
 }: {
   children?: ReactNode;
   copiedResetTimeoutMs?: number;
@@ -68,6 +69,7 @@ export function MessageActionRow({
   hasActionChildren?: boolean;
   persistent?: boolean;
   sentAtMs?: number | null;
+  showTimestampWithoutActions?: boolean;
 }) {
   const trimmedCopyText = copyText.trim();
   const [copied, setCopied] = useState(false);
@@ -76,7 +78,7 @@ export function MessageActionRow({
   const copyLabel = copied
     ? copiedText ?? formatMessage({ id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" })
     : copyTextLabel ?? formatMessage({ id: "copyButton.copyAriaLabel", defaultMessage: "Copy" });
-  if (!shouldRenderMessageActionRow({ copyText, hasActionChildren })) return null;
+  if (!shouldRenderMessageActionRow({ copyText, hasActionChildren, sentAtMs, showTimestampWithoutActions })) return null;
   const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     if (trimmedCopyText.length === 0) return;
@@ -118,11 +120,15 @@ export function MessageActionRow({
 export function shouldRenderMessageActionRow({
   copyText,
   hasActionChildren = false,
+  sentAtMs = null,
+  showTimestampWithoutActions = false,
 }: {
   copyText: string;
   hasActionChildren?: boolean;
+  sentAtMs?: number | null;
+  showTimestampWithoutActions?: boolean;
 }): boolean {
-  return copyText.trim().length > 0 || hasActionChildren;
+  return copyText.trim().length > 0 || hasActionChildren || (showTimestampWithoutActions && sentAtMs !== null);
 }
 
 export function IconActionButton({

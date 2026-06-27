@@ -1,6 +1,6 @@
 import {
   List,
-  Settings,
+  Plus,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { shouldOpenArtifactPreview } from "../state/artifact-preview";
@@ -49,6 +49,7 @@ export interface RightRailProps {
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
+  onOpenPlan?: (entry: RailEntry) => void;
   onOpenThreadId?: OpenThreadHandler;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
@@ -68,6 +69,7 @@ export function RightRail({
   onOpenFileReference,
   onOpenUrl,
   onOpenDiff,
+  onOpenPlan,
   onOpenThreadId,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
@@ -83,6 +85,7 @@ export function RightRail({
       onOpenFileReference,
       onOpenUrl,
       onOpenDiff,
+      onOpenPlan,
       onOpenThreadId,
     });
   const openEntry = (entry: RailEntry) => {
@@ -90,6 +93,7 @@ export function RightRail({
       onOpenFileReference,
       onOpenUrl,
       onOpenDiff,
+      onOpenPlan,
       onOpenThreadId,
     });
   };
@@ -157,10 +161,10 @@ export function RightRail({
           /*
            * CODEX-REF: local-conversation-thread-*.js —
            * Environment section 的 header `after` slot 总是渲染
-           * Choose environment 按钮(path B disabled state:settings-cog icon
-           * 7x7 px,tooltip "Choose environment",disabled when canChangeEnvironment
-           * 为假)。Forge 没有 environments 数据流,此处仅纯 UI 占位符严格对齐
-           * Codex 容器 className(7x7、rounded-sm、bg-transparent、tertiary)。
+           * Choose environment 按钮(path B disabled state:Plus icon in the
+           * current Desktop screenshot/bundle, tooltip "Choose environment",
+           * disabled when canChangeEnvironment 为假)。Forge 没有 environments
+           * 数据流,此处仅纯 UI 占位符严格对齐 Codex 容器 className。
            * WorktreeMenuTrigger 已 deprecate(onOpenWorktreeMenu 无调用方,dead prop)。
            */
           /*
@@ -180,12 +184,13 @@ export function RightRail({
             ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
             : section.id === "sources"
               /* CODEX-REF: local-conversation-thread-*.js — Codex renders Sources as a
-               * wrapping row of icon-only favicon buttons (name in tooltip), with a
-               * `py-1 text-base text-token-description-foreground` "No sources yet" row
-               * when the tool-source list is empty rather than hiding the section. */
+               * wrapping row of icon-only favicon buttons when the source can open, or
+               * static icon spans otherwise (name in tooltip), with a `py-1 text-base
+               * text-token-description-foreground` "No sources yet" row when the
+               * tool-source list is empty rather than hiding the section. */
               ? (section.allEntries.length === 0
                   ? <div className="hc-rail-empty-state">{formatMessage({ id: "codex.localConversation.sources.empty", defaultMessage: "No sources yet" })}</div>
-                  : <SourcesIconRow entries={section.allEntries} />)
+                  : <SourcesIconRow entries={section.allEntries} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />)
             : section.id === "artifacts" && section.allEntries.length === 0
               /* CODEX-REF: local-conversation-thread-*.js —
                * Codex Desktop's artifact list body renders a
@@ -241,15 +246,15 @@ export function RightRail({
  *   `flex h-7 w-7 shrink-0 cursor-interaction items-center justify-center
  *    rounded-sm border-0 bg-transparent p-0 text-token-text-tertiary
  *    hover:bg-token-list-hover-background data-[state=open]:bg-token-list-hover-background`
- * path B(无 environment selected,canChangeEnvironment 假)只渲染 settings-cog
+ * path B(无 environment selected,canChangeEnvironment 假)只渲染 plus
  * icon (`icon-sm`) + tooltip + disabled。Forge 没 environments 数据流,
  * 此处 disabled 占位严格对齐 Codex path B 视觉。
  */
 function EnvironmentSelectorPlaceholder(): ReactNode {
   const { formatMessage } = useForgeIntl();
-  // CODEX-REF: local-conversation-thread-CEeZyOcp.js — the Choose environment
+  // CODEX-REF: local-conversation-thread-Bf38rCmF.pretty.js — the Choose environment
   // trigger uses i18n id `threadPage.runAction.environmentSelector.label`
-  // (defaultMessage "Choose environment") and renders its cog at `icon-xs` (16px),
+  // (defaultMessage "Choose environment") and renders its plus glyph at icon-sm,
   // not `composer.environmentSelector.title`/14px. Aligned id + size here.
   const chooseEnvironmentLabel = formatMessage({
     id: "threadPage.runAction.environmentSelector.label",
@@ -263,7 +268,7 @@ function EnvironmentSelectorPlaceholder(): ReactNode {
       title={chooseEnvironmentLabel}
       type="button"
     >
-      <Settings size={16} aria-hidden="true" />
+      <Plus size={16} aria-hidden="true" />
     </button>
   );
 }

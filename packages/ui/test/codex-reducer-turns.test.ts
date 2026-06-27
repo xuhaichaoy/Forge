@@ -3509,6 +3509,7 @@ function threadWithTurns(
   const fullTurns = turns.map((turn) => turnFixture(turn));
   return {
     id,
+    extra: null,
     sessionId: id,
     forkedFromId: null,
     parentThreadId: null,

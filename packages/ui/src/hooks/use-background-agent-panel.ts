@@ -21,6 +21,7 @@ import {
   dropOptimisticUserMessage,
   interruptThreadTurn,
   isThreadNotFound,
+  projectlessOutputDirectoryForCwd,
   refreshThreadMetadata,
   sendPanelThreadMessage,
   threadStatusLabel,
@@ -88,12 +89,16 @@ export function useBackgroundAgentPanel({
   const backgroundAgentRunning = Boolean(backgroundAgentRuntime?.activeTurnId)
     || isThreadStatusInProgress(backgroundAgentThread?.status);
   const backgroundAgentCanInterrupt = Boolean(backgroundAgentPanel && backgroundAgentActiveTurnId && !backgroundAgentPanel.loading);
+  const backgroundProjectlessOutputDirectory = projectlessOutputDirectoryForCwd(backgroundAgentThread?.cwd ?? null);
   const backgroundAgentConversation = useMemo(
     () => projectConversation(backgroundAgentItems, {
+      cwd: backgroundAgentThread?.cwd ?? null,
+      projectlessOutputDirectory: backgroundProjectlessOutputDirectory,
+      includeGeneratedImageArtifacts: false,
       isThreadRunning: backgroundAgentRunning,
       parentThreadAttachmentSourceConversationId: backgroundAgentThread?.forkedFromId ?? null,
     }),
-    [backgroundAgentItems, backgroundAgentRunning, backgroundAgentThread?.forkedFromId],
+    [backgroundAgentItems, backgroundAgentRunning, backgroundAgentThread?.cwd, backgroundAgentThread?.forkedFromId, backgroundProjectlessOutputDirectory],
   );
   const backgroundAgentTitle = backgroundAgentThread
     ? backgroundAgentPanel?.displayName

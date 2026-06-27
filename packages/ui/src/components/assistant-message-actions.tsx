@@ -22,11 +22,13 @@ export interface AssistantCompletedGoalSummary {
 export function AssistantMessageActions({
   copyRichPayload,
   copyText,
+  hasArtifacts = false,
   item,
   onFork,
 }: {
   copyRichPayload?: (() => MarkdownRichCopyPayload | null) | null;
   copyText: string;
+  hasArtifacts?: boolean;
   item: Record<string, unknown>;
   onFork?: () => void;
 }) {
@@ -42,6 +44,7 @@ export function AssistantMessageActions({
       copyText={copyText}
       hasActionChildren={hasActionChildren}
       sentAtMs={messageSentAtMs(item)}
+      showTimestampWithoutActions={hasArtifacts}
     >
       {onFork && (
         <IconActionButton ariaLabel={formatMessage({ id: "assistantMessageContent.forkAriaLabel", defaultMessage: "Fork from this point" })} title={formatMessage({ id: "assistantMessageContent.forkTooltip", defaultMessage: "Fork" })} onClick={onFork}>

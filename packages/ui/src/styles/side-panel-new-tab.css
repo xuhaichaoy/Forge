@@ -72,6 +72,94 @@
   color: var(--hc-text-secondary, #6f716b);
 }
 
+.hc-side-panel-new-tab__suggested-list {
+  /* codex `mr`: mx-auto flex w-full max-w-xl flex-col px-panel */
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+
+.hc-side-panel-new-tab__suggested-item {
+  /* codex `hr`: relative flex w-full + divider, last divider hidden */
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.hc-side-panel-new-tab__suggested-item::after {
+  content: "";
+  position: absolute;
+  inset-inline: 12px;
+  bottom: 0;
+  height: 1px;
+  background: var(--hc-border-subtle, rgba(29, 31, 28, 0.05));
+}
+
+.hc-side-panel-new-tab__suggested-item:last-child::after {
+  display: none;
+}
+
+.hc-side-panel-new-tab__suggested-button {
+  /* codex `hr`: cursor-interaction relative min-h-10 w-full rounded-md px-2.5 py-2 text-left */
+  position: relative;
+  display: flex;
+  min-height: 40px;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: var(--hc-radius-md, 6px);
+  background: transparent;
+  padding: 8px 10px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hc-side-panel-new-tab__suggested-button:hover {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
+}
+
+.hc-side-panel-new-tab__suggested-button:focus-visible {
+  outline: 2px solid var(--hc-border-strong, #8a877d);
+  outline-offset: 2px;
+}
+
+.hc-side-panel-new-tab__suggested-icon {
+  /* codex: icon-xs flex shrink-0 items-center justify-center text-token-text-secondary */
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-side-panel-new-tab__suggested-icon .hc-rail-card-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.hc-side-panel-new-tab__suggested-title {
+  min-width: 0;
+  flex: 1 1 0%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  font-weight: 400;
+  color: var(--hc-text-primary, #1d1f1c);
+}
+
 /* ---------------------------------------------------------- action card */
 
 .hc-side-panel-action-card {

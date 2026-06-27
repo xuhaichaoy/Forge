@@ -170,6 +170,7 @@ import {
 import { appendRpcDebugEvent } from "./state/rpc-debug";
 import {
   isProjectlessWorkspace,
+  projectlessOutputDirectoryForCwd,
 } from "./state/thread-workflow";
 import { renderForgeAppComposerRegion } from "./forge-app-render-composer";
 import { renderForgeAppMain } from "./forge-app-render-main";
@@ -579,6 +580,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   const itemsByThread = useMemo(() => selectItemsByThread(state), [state.threadsRuntime]);
   const activeThreadRunning = Boolean(activeTurnId) || isThreadStatusInProgress(activeThread?.status);
   const worktreeStatusCwd = activeThread?.cwd?.trim() || workspace.trim();
+  const activeProjectlessOutputDirectory = projectlessOutputDirectoryForCwd(activeThread?.cwd ?? null);
   // Turn-diff Undo / Reapply (state + re-entrancy lock + handler) lives in
   // useTurnPatchAction; ConversationView gets onPatchAction, the failure dialog reads patchFailure.
   const { handlePatchAction, patchActionState, patchActionInFlight, patchFailure, setPatchFailure } =
@@ -592,11 +594,14 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   const conversation = useMemo(
     () => projectConversation(activeItems, {
       appRegistry,
+      cwd: activeThread?.cwd ?? null,
+      projectlessOutputDirectory: activeProjectlessOutputDirectory,
+      includeGeneratedImageArtifacts: false,
       isThreadRunning: activeThreadRunning,
       mcpServerStatuses,
       parentThreadAttachmentSourceConversationId: activeThread?.forkedFromId ?? null,
     }),
-    [activeItems, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
+    [activeItems, activeProjectlessOutputDirectory, activeThread?.cwd, activeThread?.forkedFromId, activeThreadRunning, appRegistry, mcpServerStatuses],
   );
   const backgroundPendingThreadIds = useMemo(
     () => conversation.backgroundAgents
@@ -953,7 +958,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     composerWorkMode,
     conversation, dispatch, effectiveThreadContextDefaults, ensureConnected, fileSearchControllerRef,
     formatUiMessage, hasFilePreviewSelection, includeImageDynamicTool, input, mainWidth,
-    notificationPreferences, openWorkbenchTab, pendingWorktree, pinnedThreadIds, rightRailPinned,
+    notificationPreferences, openWorkbenchTab, plan: activeFixedPlan, pendingWorktree, pinnedThreadIds, rightRailPinned,
     rightRailPopoverOpen, selectWorkbenchThread, setActiveRemoteTaskId, setActiveSettingsPanel,
     setCommandPanel, setRightRailPopoverOpen, setSettingsPanelState, sidebarPreferences,
     sideChatRailEntries, state, uiAppearance, uiLocale, uiThemeSnapshot, workspace,
@@ -996,6 +1001,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     openAssistantArtifactInSidePanel,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
+    openRailPlan,
     openRailUrl,
     previewConversationFileReferenceAndOpenRail,
     previewPathContext,
@@ -1167,7 +1173,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
         interruptBackgroundAgentPanelTurn, mainLayoutStyle, mainRef, memoryCitationRoot, openActiveDiffPanel,
         openAssistantArtifactInSidePanel, openAutomationFromConversation, openAutomationsPanel,
         openBackgroundAgentThread, openBrowserSurface, openFileReferenceExternal,
-        openRailArtifactFileExternal, openRailUrl, openRemoteTask, patchActionInFlight, patchActionState,
+        openRailArtifactFileExternal, openRailPlan, openRailUrl, openRemoteTask, patchActionInFlight, patchActionState,
         previewConversationFileReferenceAndOpenRail, previewPathContext, previewRailArtifact,
         previewRailFileReferenceAndOpenRail, readMcpResource, refreshAutomationsPanel,
         rememberThreadScrollOffset, revealAssistantEndResource, rightRailMode, rightRailPinned,

@@ -1,11 +1,12 @@
 import type { MutableRefObject } from "react";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Thread } from "@forge/codex-protocol";
-import { FileText, FolderOpen, Globe } from "lucide-react";
+import { FileText, FolderOpen, Globe, List } from "lucide-react";
 import { ArtifactPreviewPanel } from "../components/artifact-preview-panel";
 import { FileReferencePreviewTab } from "../components/file-preview-panel";
 import { FilesTabContent } from "../components/files-tab-content";
 import { HtmlPreviewTabContent } from "../components/html-preview-tab";
+import { PlanTabContent } from "../components/plan-tab-content";
 import type { SidePanelNewTabAction } from "../components/side-panel-new-tab-page";
 import { patchFailurePathForOpen } from "../lib/format";
 import { isTauriRuntime } from "../lib/tauri-host";
@@ -308,6 +309,22 @@ export function useForgeAppPreviewWiring(args: ForgeAppPreviewWiringArgs) {
   const previewRailFileReferenceAndOpenRail = useCallback((reference: RailEntryReference) => {
     openFileReferenceSidePanelTab(reference, { isPreview: true });
   }, [openFileReferenceSidePanelTab]);
+  const openRailPlan = useCallback((entry: RailEntry) => {
+    const action = entry.action;
+    if (action?.kind !== "plan") return;
+    const tabTitle = action.title || "Plan";
+    sidePanel.controller.openTab({
+      id: action.key,
+      Component: PlanTabContent,
+      title: tabTitle,
+      tooltip: entry.title,
+      icon: <List size={14} aria-hidden="true" />,
+      props: {
+        title: tabTitle,
+        content: action.content,
+      },
+    });
+  }, [sidePanel.controller]);
   const openAssistantArtifactInSidePanel = useCallback((entry: RailEntry) => {
     /*
      * codex: local-conversation-thread-*.js `LD` card click — a website
@@ -457,6 +474,7 @@ export function useForgeAppPreviewWiring(args: ForgeAppPreviewWiringArgs) {
     openAssistantArtifactInSidePanel,
     openFileReferenceExternal,
     openRailArtifactFileExternal,
+    openRailPlan,
     openRailUrl,
     previewConversationFileReferenceAndOpenRail,
     previewPathContext,

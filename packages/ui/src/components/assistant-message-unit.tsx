@@ -193,6 +193,7 @@ export function AssistantMessageUnit({
         <AssistantMessageActions
           copyRichPayload={assistantCopyRichPayload}
           copyText={assistantCopyText}
+          hasArtifacts={unit.hasArtifacts === true}
           item={unit.item}
           onFork={onFork}
         />

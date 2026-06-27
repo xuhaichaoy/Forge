@@ -206,6 +206,7 @@ function mountUseThreadActions(
 function threadFixture(overrides: Partial<Thread> = {}): Thread {
   return {
     id: "thread-actions",
+    extra: null,
     sessionId: "thread-actions",
     forkedFromId: null,
     parentThreadId: null,

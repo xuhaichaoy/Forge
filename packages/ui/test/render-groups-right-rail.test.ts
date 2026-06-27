@@ -16,7 +16,10 @@ export default function runRenderGroupsRightRailTests(): void {
   doesNotPromoteCommandOutputPathsIntoArtifacts();
   resolvesBareImageLinksAgainstCommandOutputPaths();
   projectsGeneratedImageSourcesIntoArtifacts();
+  gatesProjectlessGeneratedImageArtifactsByOutputDirectory();
   excludesNodeReplSourcesButKeepsMcpAndWebSearchSources();
+  projectsWebPageSourcesFromOpenPageAndFindInPage();
+  fallsBackToGenericWebSearchForNonPageWebSources();
   ordersMcpSourcesNewestFirstAndUsesPluginDisplayNames();
 }
 
@@ -560,6 +563,75 @@ function projectsGeneratedImageSourcesIntoArtifacts(): void {
   );
 }
 
+function gatesProjectlessGeneratedImageArtifactsByOutputDirectory(): void {
+  const cwd = "/Users/me/Documents/Codex/2026-06-26/new-chat";
+  const outputDirectory = `${cwd}/outputs`;
+  const gated = projectConversation([
+    {
+      type: "imageGeneration",
+      id: "work-image",
+      status: "completed",
+      revisedPrompt: null,
+      savedPath: `${cwd}/work/tmp.png`,
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "output-image",
+      status: "completed",
+      revisedPrompt: null,
+      savedPath: `${cwd}/outputs/final.png`,
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "relative-output-image",
+      status: "completed",
+      revisedPrompt: null,
+      savedPath: "outputs/relative.png",
+    } as unknown as ThreadItem,
+    {
+      type: "imageGeneration",
+      id: "file-url-output-image",
+      status: "completed",
+      revisedPrompt: null,
+      savedPath: `file://${cwd}/outputs/file-url.png`,
+    } as unknown as ThreadItem,
+  ], {
+    cwd,
+    projectlessOutputDirectory: outputDirectory,
+    includeGeneratedImageArtifacts: false,
+  });
+
+  assertDeepEqual(
+    gated.artifacts.map((entry) => entry.meta),
+    [
+      `${cwd}/outputs/final.png`,
+      `${cwd}/outputs/relative.png`,
+      `${cwd}/outputs/file-url.png`,
+    ],
+    "projectless generated image artifacts should be limited to output directory when inclusion is disabled",
+  );
+
+  const included = projectConversation([
+    {
+      type: "imageGeneration",
+      id: "work-image",
+      status: "completed",
+      revisedPrompt: null,
+      savedPath: `${cwd}/work/tmp.png`,
+    } as unknown as ThreadItem,
+  ], {
+    cwd,
+    projectlessOutputDirectory: outputDirectory,
+    includeGeneratedImageArtifacts: true,
+  });
+
+  assertDeepEqual(
+    included.artifacts.map((entry) => entry.meta),
+    [`${cwd}/work/tmp.png`],
+    "projectless generated image inclusion should bypass the output-directory gate",
+  );
+}
+
 function excludesNodeReplSourcesButKeepsMcpAndWebSearchSources(): void {
   const projection = projectConversation([
     {
@@ -613,6 +685,92 @@ function excludesNodeReplSourcesButKeepsMcpAndWebSearchSources(): void {
       { id: "webSearch", title: "Web search", meta: null, status: null, action: null },
     ],
     "sources should exclude node_repl and dedupe MCP/web sources like Codex Desktop",
+  );
+}
+
+function projectsWebPageSourcesFromOpenPageAndFindInPage(): void {
+  const projection = projectConversation([
+    {
+      type: "webSearch",
+      id: "web-page-old",
+      query: "Codex Desktop sources",
+      action: { type: "openPage", url: "https://www.example.com/docs" },
+      status: "completed",
+    } as ThreadItem,
+    {
+      type: "webSearch",
+      id: "web-page-duplicate",
+      query: "Find Codex",
+      action: { type: "findInPage", pattern: "Codex", url: "https://www.example.com/docs" },
+      status: "completed",
+    } as ThreadItem,
+    {
+      type: "webSearch",
+      id: "web-page-new",
+      query: "Forge release notes",
+      action: { type: "openPage", url: "https://platform.openai.com/docs" },
+      status: "completed",
+    } as ThreadItem,
+  ]);
+
+  assertDeepEqual(
+    projection.sources.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      action: entry.action ?? null,
+    })),
+    [
+      {
+        id: "web-page:https://platform.openai.com/docs",
+        title: "platform.openai.com/docs",
+        action: { kind: "url", url: "https://platform.openai.com/docs" },
+      },
+      {
+        id: "web-page:https://www.example.com/docs",
+        title: "example.com/docs",
+        action: { kind: "url", url: "https://www.example.com/docs" },
+      },
+    ],
+    "webSearch openPage/findInPage actions should project newest-first URL-level Sources and dedupe by URL",
+  );
+}
+
+function fallsBackToGenericWebSearchForNonPageWebSources(): void {
+  const invalidUrlProjection = projectConversation([
+    {
+      type: "webSearch",
+      id: "web-page-credentials",
+      query: "private docs",
+      action: { type: "openPage", url: "https://user:pass@example.com/private" },
+      status: "completed",
+    } as ThreadItem,
+    {
+      type: "webSearch",
+      id: "web-page-file",
+      query: "local file",
+      action: { type: "openPage", url: "file:///tmp/report.html" },
+      status: "completed",
+    } as ThreadItem,
+  ]);
+  assertDeepEqual(
+    invalidUrlProjection.sources.map((entry) => ({ id: entry.id, title: entry.title, action: entry.action ?? null })),
+    [{ id: "webSearch", title: "Web search", action: null }],
+    "credentialed and non-http webSearch actions should keep Desktop's generic Web search fallback",
+  );
+
+  const searchOnlyProjection = projectConversation([
+    {
+      type: "webSearch",
+      id: "web-search-plain",
+      query: "Codex Desktop right rail sources",
+      action: { type: "search", query: "Codex Desktop right rail sources" },
+      status: "completed",
+    } as ThreadItem,
+  ]);
+  assertDeepEqual(
+    searchOnlyProjection.sources.map((entry) => ({ id: entry.id, title: entry.title, action: entry.action ?? null })),
+    [{ id: "webSearch", title: "Web search", action: null }],
+    "search-only webSearch items should keep Desktop's generic Web search fallback",
   );
 }
 

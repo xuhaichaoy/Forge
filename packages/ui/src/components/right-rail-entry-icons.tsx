@@ -3,6 +3,7 @@ import {
   GitBranch,
   Globe,
   ImageIcon,
+  ListChecks,
   LoaderCircle,
   MessageSquareText,
   Network,
@@ -18,6 +19,7 @@ import { normalizePlanStepStatus } from "../state/thread-item-fields";
 export function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewModel["id"]): ReactNode {
   if (sectionId === "automation") return <Clock size={16} />;
   if (sectionId === "branchDetails") return <GitBranch size={14} />;
+  if (sectionId === "plan") return <ListChecks size={16} />;
   if (sectionId === "sideChats") {
     return normalizePlanStepStatus(entry.status) === "inProgress"
       ? <LoaderCircle className="hc-rail-progress-spinner" size={18} />
@@ -31,7 +33,7 @@ export function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewM
       : <Globe size={16} />;
   }
   if (sectionId === "sources") {
-    if (entry.id === "webSearch") return <Globe size={14} />;
+    if (isWebSourceEntry(entry)) return <Globe size={14} />;
     if (entry.logoUrl || entry.logoUrlDark) {
       return <SourceLogo logoUrl={entry.logoUrl} logoUrlDark={entry.logoUrlDark} alt={entry.title} />;
     }
@@ -45,11 +47,15 @@ export function railEntryIcon(entry: RailEntry, sectionId: RightRailSectionViewM
 }
 
 export function sourceEntryLogo(entry: RailEntry): ReactNode {
-  if (entry.id === "webSearch") return <Globe size={16} />;
+  if (isWebSourceEntry(entry)) return <Globe size={16} />;
   if (entry.logoUrl || entry.logoUrlDark) {
     return <SourceLogo logoUrl={entry.logoUrl} logoUrlDark={entry.logoUrlDark} alt={entry.title} />;
   }
   return <Network size={16} />;
+}
+
+function isWebSourceEntry(entry: RailEntry): boolean {
+  return entry.id === "webSearch" || entry.id.startsWith("web-page:");
 }
 
 function SourceLogo({

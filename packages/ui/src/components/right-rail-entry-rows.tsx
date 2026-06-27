@@ -162,20 +162,44 @@ function RailDiffStats({ stats }: { stats: NonNullable<RailEntry["diffStats"]> }
  * codex Sources section (local-conversation-thread-*.js `Nf`): each source renders
  * as an icon-only `size-6` row with the source name in tooltip + aria-label.
  */
-export function SourcesIconRow({ entries }: { entries: readonly RailEntry[] }): ReactNode {
+export function SourcesIconRow({
+  entries,
+  canOpenEntry,
+  onOpenEntry,
+}: {
+  entries: readonly RailEntry[];
+  canOpenEntry?: (entry: RailEntry) => boolean;
+  onOpenEntry?: (entry: RailEntry) => void;
+}): ReactNode {
   return (
     <div className="hc-rail-sources-icons">
-      {entries.map((entry) => (
-        <span
-          key={entry.id}
-          role="img"
-          className="hc-rail-source-icon"
-          aria-label={entry.title ?? undefined}
-          title={entry.title ?? undefined}
-        >
-          {sourceEntryLogo(entry)}
-        </span>
-      ))}
+      {entries.map((entry) => {
+        const label = entry.title || undefined;
+        const canOpen = Boolean(canOpenEntry?.(entry) && onOpenEntry);
+        const icon = sourceEntryLogo(entry);
+        return canOpen ? (
+          <button
+            key={entry.id}
+            type="button"
+            className="hc-rail-source-icon hc-rail-source-icon-button"
+            aria-label={label}
+            title={label}
+            onClick={() => onOpenEntry?.(entry)}
+          >
+            {icon}
+          </button>
+        ) : (
+          <span
+            key={entry.id}
+            role="img"
+            className="hc-rail-source-icon"
+            aria-label={label}
+            title={label}
+          >
+            {icon}
+          </span>
+        );
+      })}
     </div>
   );
 }

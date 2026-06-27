@@ -83,8 +83,8 @@ export function RailList({
           </button>
         ) : undefined;
         // CODEX-REF: local-conversation-thread-CRsAC226.pretty.js — current
-        // Desktop mounts summary-panel rows for automation/environment/outputs/
-        // side chats/subagents/tasks/browser/sources. There is no Progress
+        // Desktop mounts summary-panel rows for automation/environment/plan/
+        // outputs/side chats/subagents/tasks/browser/sources. There is no Progress
         // section in the current rail sequence.
         return (
           <RailSummaryRow

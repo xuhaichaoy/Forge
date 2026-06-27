@@ -82,6 +82,7 @@ function mountSidebarThreadMenu(): { env: DomTestEnv; root: Root; cleanup: () =>
 function threadFixture(): Thread {
   return {
     id: "thread-menu",
+    extra: null,
     sessionId: "thread-menu",
     forkedFromId: null,
     parentThreadId: null,

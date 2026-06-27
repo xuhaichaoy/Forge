@@ -160,6 +160,7 @@ function mountSidebarThreadRow(options: MountOptions): MountedSidebarThreadRow {
 function threadFixture(): Thread {
   return {
     id: "thread-row",
+    extra: null,
     sessionId: "thread-row",
     forkedFromId: null,
     parentThreadId: null,

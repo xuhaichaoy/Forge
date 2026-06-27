@@ -135,6 +135,7 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
   const { id, ...rest } = overrides;
   return {
     id,
+    extra: null,
     sessionId: id,
     forkedFromId: null,
     parentThreadId: null,

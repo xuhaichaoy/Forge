@@ -21,7 +21,7 @@ export interface RailSectionProps {
  * side-chats, background-subagents (Subagents), background-tasks (Tasks), tool-sources
  * (Sources) AND browser-tabs all DO (browser-tabs builds `titleSuffix:(0,Q.jsx)(vp,{count:
  * p.length})` at :5890, vp returns null only when count===0); automation, environment
- * (branchDetails) and progress do NOT. (An earlier Forge note wrongly excluded browser.)
+ * (branchDetails), plan, and progress do NOT. (An earlier Forge note wrongly excluded browser.)
  */
 function sectionHasCountBadge(sectionId: RightRailSectionViewModel["id"]): boolean {
   return (
@@ -62,7 +62,7 @@ export function RailSection({ count, defaultCollapsed = false, id, summary, titl
               the badge stays visible whenever count>0 (expanded AND collapsed). Forge
               previously hid it on expand. Per-section: only artifacts / side-chats /
               background-subagents / background-tasks / browser-tabs / tool-sources pass a
-              `titleSuffix`; automation and environment (branchDetails) pass NONE, so
+              `titleSuffix`; automation, environment (branchDetails), and plan pass NONE, so
               they render no count badge even when count>0 (see sectionHasCountBadge). */}
           <span className="hc-rail-section-title">{title}</span>
           {count > 0 && sectionHasCountBadge(id) && <span className="hc-rail-section-count">{count}</span>}

@@ -474,6 +474,7 @@ function stateWithThread(...threadIds: string[]): CodexUiState {
 function threadFixture(id: string, overrides: Partial<Thread> = {}): Thread {
   return {
     id,
+    extra: null,
     sessionId: id,
     forkedFromId: null,
     parentThreadId: null,
