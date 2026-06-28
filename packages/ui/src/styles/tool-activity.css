@@ -981,6 +981,110 @@ button.hc-error-event-summary:hover {
   flex-shrink: 0;
 }
 
+/* Completed single-file diff hover preview ------------------------------- */
+
+.hc-turn-diff-preview-trigger {
+  display: block;
+  max-width: 100%;
+}
+
+.hc-turn-diff-preview-positioner {
+  position: fixed;
+  z-index: 90;
+  max-height: min(24rem, calc(100vh - 16px));
+  pointer-events: auto;
+}
+
+.hc-turn-diff-preview-surface {
+  display: flex;
+  max-height: min(24rem, calc(100vh - 16px));
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d8d4cc;
+  border-radius: 8px;
+  background: #fffdfa;
+  color: #27313d;
+  box-shadow: 0 18px 48px rgba(24, 24, 22, 0.24);
+  cursor: pointer;
+}
+
+.hc-turn-diff-preview-surface:focus-visible {
+  outline: 1px solid rgba(78, 111, 255, 0.7);
+  outline-offset: -1px;
+}
+
+.hc-turn-diff-preview-header {
+  display: flex;
+  width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #ddd9ce;
+  background: #fffdfa;
+  padding: 4px 16px;
+  color: #27313d;
+  font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  line-height: 1.45;
+  text-align: left;
+}
+
+.hc-turn-diff-preview-path {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-turn-diff-preview-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  background: #fbfaf7;
+  contain: layout paint;
+}
+
+.hc-turn-diff-preview-snippet {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.hc-turn-diff-preview-snippet pre {
+  max-height: none;
+  border-radius: 0;
+  background: transparent;
+  contain: content;
+}
+
+.hc-turn-diff-preview-code-container {
+  margin: 0;
+}
+
+.hc-turn-diff-preview-code {
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 1.45;
+}
+
+.hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-preview-surface {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #202020;
+  color: #f1f1ee;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-preview-header {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+  background: #202020;
+  color: #f1f1ee;
+}
+
+.hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-preview-body {
+  background: #1b1b1b;
+}
+
 /* File rows with inline disclosure ----------------------------------------- */
 
 .hc-turn-diff-file {

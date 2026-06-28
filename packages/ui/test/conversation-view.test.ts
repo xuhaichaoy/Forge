@@ -260,6 +260,11 @@ function projectsTurnDiffSummaryLikeCodexDesktop(): void {
     onOpenDiff: () => undefined,
   }));
   assertEqual(singleFileHtml.includes("Edited fallback.ts"), true, "single-file turn diff title should use Desktop filename label");
+  assertEqual(
+    singleFileHtml.includes("hc-turn-diff-preview-trigger"),
+    true,
+    "single-file renderable turn diff should expose Desktop's hover preview trigger",
+  );
   assertEqual(singleFileHtml.includes("Details"), true, "single-file turn diff detail row should use Desktop Details label");
   assertEqual(
     singleFileHtml.includes("<span class=\"hc-turn-diff-file-path\">src/fallback.ts</span>"),

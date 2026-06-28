@@ -1,10 +1,15 @@
 import { ArrowRight, FileText } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { CodeSnippet } from "./code-snippet";
 import { useForgeIntl } from "./i18n-provider";
 import { TurnDiffFilesSection, TurnDiffStats } from "./turn-diff-files-section";
 import {
   formatTurnDiffFileCount,
   formatTurnDiffFilesChanged,
+  splitDiffByFile,
   turnDiffViewModel,
+  type TurnDiffFileViewModel,
 } from "./turn-diff-view-model";
 
 /**
@@ -19,6 +24,9 @@ import {
  */
 export type PatchAction = "undo" | "reapply";
 export type PatchActionState = { action: PatchAction; diff: string } | null;
+
+const TURN_DIFF_PREVIEW_DELAY_MS = 800;
+const TURN_DIFF_INLINE_RENDER_CUTOFF = 5000;
 
 export function TurnDiffBlock({
   contentSearchUnitKey,
@@ -119,9 +127,10 @@ export function TurnDiffBlock({
     );
   }
 
-  const handleHeaderReview = () => onOpenDiff?.();
+  const handleHeaderReview = () => onOpenDiff?.(singleFileName ?? undefined);
+  const preview = turnDiffPreviewData(model.files, value);
 
-  return (
+  const card = (
     <article
       className="hc-tool-block hc-turn-diff"
       data-content-search-unit-key={contentSearchUnitKey}
@@ -240,5 +249,174 @@ export function TurnDiffBlock({
         value={value}
       />
     </article>
+  );
+
+  return preview && onOpenDiff ? (
+    <TurnDiffPreviewTooltip
+      preview={preview}
+      onOpen={() => onOpenDiff(preview.path)}
+    >
+      {card}
+    </TurnDiffPreviewTooltip>
+  ) : card;
+}
+
+interface TurnDiffPreviewData {
+  diff: string;
+  linesAdded: number;
+  linesRemoved: number;
+  path: string;
+}
+
+function turnDiffPreviewData(files: TurnDiffFileViewModel[], diff: string): TurnDiffPreviewData | null {
+  if (files.length !== 1) return null;
+  const file = files[0];
+  if (!file || isTurnDiffFileTooLargeToRender(file)) return null;
+  const fileDiff = splitDiffByFile(diff).get(file.path) ?? diff;
+  if (!fileDiff.trim()) return null;
+  return {
+    diff: fileDiff,
+    linesAdded: file.linesAdded,
+    linesRemoved: file.linesRemoved,
+    path: file.path,
+  };
+}
+
+function isTurnDiffFileTooLargeToRender(file: TurnDiffFileViewModel): boolean {
+  return Math.max(file.renderedLineEstimate, file.linesAdded + file.linesRemoved) > TURN_DIFF_INLINE_RENDER_CUTOFF;
+}
+
+function TurnDiffPreviewTooltip({
+  children,
+  onOpen,
+  preview,
+}: {
+  children: ReactNode;
+  onOpen: () => void;
+  preview: TurnDiffPreviewData;
+}) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light" | null>(null);
+  const triggerRef = useRef<HTMLDivElement | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const openTimerRef = useRef<number | undefined>(undefined);
+  const closeTimerRef = useRef<number | undefined>(undefined);
+
+  const clearTimers = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.clearTimeout(openTimerRef.current);
+    window.clearTimeout(closeTimerRef.current);
+  }, []);
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    const previewElement = previewRef.current;
+    if (!trigger || !previewElement || typeof window === "undefined") return;
+    const triggerRect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const availableWidth = Math.max(0, viewportWidth - 16);
+    const desktopMaxWidth = Math.max(0, Math.min(triggerRect.width - 64, availableWidth));
+    const width = desktopMaxWidth > 0 ? desktopMaxWidth : Math.min(triggerRect.width, availableWidth);
+    const previewRect = previewElement.getBoundingClientRect();
+    let top = triggerRect.top - previewRect.height;
+    if (top < 8) top = Math.min(triggerRect.bottom, Math.max(8, viewportHeight - previewRect.height - 8));
+    const centeredLeft = triggerRect.left + triggerRect.width / 2 - width / 2;
+    const left = Math.max(8, Math.min(centeredLeft, viewportWidth - width - 8));
+    setPosition({ left, top, width });
+  }, []);
+
+  const scheduleOpen = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.clearTimeout(closeTimerRef.current);
+    window.clearTimeout(openTimerRef.current);
+    const app = triggerRef.current?.closest<HTMLElement>(".hc-app[data-theme]");
+    const appTheme = app?.dataset.theme === "dark" ? "dark" : app?.dataset.theme === "light" ? "light" : null;
+    setTheme(appTheme);
+    openTimerRef.current = window.setTimeout(() => setOpen(true), TURN_DIFF_PREVIEW_DELAY_MS);
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.clearTimeout(openTimerRef.current);
+    window.clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false);
+      setPosition(null);
+    }, 80);
+  }, []);
+
+  useEffect(() => () => clearTimers(), [clearTimers]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePosition();
+    if (typeof window === "undefined") return;
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, preview.diff, updatePosition]);
+
+  const handlePreviewKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onOpen();
+  };
+
+  return (
+    <div
+      ref={triggerRef}
+      className="hc-turn-diff-preview-trigger"
+      onFocus={scheduleOpen}
+      onBlur={scheduleClose}
+      onMouseEnter={scheduleOpen}
+      onMouseLeave={scheduleClose}
+    >
+      {children}
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          ref={previewRef}
+          className="hc-turn-diff-preview-positioner"
+          data-theme={theme ?? undefined}
+          onMouseEnter={scheduleOpen}
+          onMouseLeave={scheduleClose}
+          style={{
+            left: position?.left ?? -9999,
+            top: position?.top ?? -9999,
+            visibility: position == null ? "hidden" : undefined,
+            width: position?.width ?? undefined,
+          }}
+        >
+          <div
+            className="hc-turn-diff-preview-surface"
+            role="button"
+            tabIndex={0}
+            onClick={onOpen}
+            onKeyDown={handlePreviewKeyDown}
+          >
+            <div className="hc-turn-diff-preview-header">
+              <span className="hc-turn-diff-preview-path">{preview.path}</span>
+              <TurnDiffStats added={preview.linesAdded} removed={preview.linesRemoved} />
+            </div>
+            <div className="hc-turn-diff-preview-body" data-testid="diff-preview-scroll">
+              <CodeSnippet
+                language="diff"
+                text={preview.diff}
+                showActionBar={false}
+                wrapMode="off"
+                wrapperClassName="hc-turn-diff-preview-snippet"
+                codeContainerClassName="hc-turn-diff-preview-code-container"
+                codeClassName="hc-turn-diff-preview-code"
+              />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   );
 }
