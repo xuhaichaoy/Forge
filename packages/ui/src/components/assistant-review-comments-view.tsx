@@ -94,6 +94,14 @@ function AssistantReviewCommentRow({
 }) {
   const location = reviewCommentLocation(comment);
   const tooltipBody = comment.body.trim();
+  const openReference = onOpenFileReference
+    ? () => onOpenFileReference(reviewCommentFileReference(comment))
+    : undefined;
+  const openLabel = formatMessage({
+    id: "localConversation.reviewComments.openComment",
+    defaultMessage: "View {title} in {location}",
+    description: "Accessible label for opening one model-authored code review comment from a conversation turn",
+  }, { title: comment.title, location });
   const content = (
     <span className="hc-assistant-review-comment-row-content">
       <span className="hc-assistant-review-comment-priority-slot">
@@ -114,29 +122,41 @@ function AssistantReviewCommentRow({
   ) : (
     <button
       type="button"
-      aria-label={formatMessage({
-        id: "localConversation.reviewComments.openComment",
-        defaultMessage: "View {title} in {location}",
-        description: "Accessible label for opening one model-authored code review comment from a conversation turn",
-      }, { title: comment.title, location })}
+      aria-label={openLabel}
       className="hc-assistant-review-comment-row"
       data-index={index}
-      onClick={() => onOpenFileReference(reviewCommentFileReference(comment))}
+      onClick={openReference}
     >
       {content}
     </button>
   );
   if (!tooltipBody) return row;
+  const tooltipOpenRowContent = (
+    <>
+      {comment.priority ? (
+        <span className="hc-assistant-review-comment-priority">{comment.priority}</span>
+      ) : null}
+      <span className="hc-assistant-review-comment-tooltip-location" dir="ltr">{location}</span>
+    </>
+  );
   return (
     <div className="hc-assistant-review-comment-tooltip-wrap">
       {row}
       <div className="hc-assistant-review-comment-tooltip" role="tooltip">
-        <div className="hc-assistant-review-comment-tooltip-open-row">
-          {comment.priority ? (
-            <span className="hc-assistant-review-comment-priority">{comment.priority}</span>
-          ) : null}
-          <span className="hc-assistant-review-comment-tooltip-location" dir="ltr">{location}</span>
-        </div>
+        {openReference ? (
+          <button
+            type="button"
+            aria-label={openLabel}
+            className="hc-assistant-review-comment-tooltip-open-row"
+            onClick={openReference}
+          >
+            {tooltipOpenRowContent}
+          </button>
+        ) : (
+          <div className="hc-assistant-review-comment-tooltip-open-row">
+            {tooltipOpenRowContent}
+          </div>
+        )}
         <div className="hc-assistant-review-comment-tooltip-body">
           <div className="hc-assistant-review-comment-tooltip-title">{comment.title}</div>
           <div className="hc-assistant-review-comment-tooltip-copy">{tooltipBody}</div>

@@ -384,7 +384,11 @@ export function ThreadScrollLayout({
 
   return (
     <ThreadScrollControllerContext.Provider value={controller}>
-      <div className="hc-thread-scroll-shell" style={shellStyle}>
+      <div className="hc-thread-scroll-shell" data-thread-scroll-shell="true" style={shellStyle}>
+        <div
+          className="hc-thread-user-message-navigation-portal"
+          data-thread-user-message-navigation-portal="true"
+        />
         <div
           className="hc-thread-scroll-container"
           data-thread-scroll-container="true"

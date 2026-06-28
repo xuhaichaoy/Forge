@@ -32,10 +32,12 @@ import {
 export type ScrollToUnitKeyRef = MutableRefObject<((unitKey: string) => boolean) | null>;
 
 export function VirtualizedTurnList({
+  additionalScrollToUnitKeyRef,
   groups,
   renderGroup,
   scrollToUnitKeyRef,
 }: {
+  additionalScrollToUnitKeyRef?: ScrollToUnitKeyRef;
   groups: ReturnType<typeof groupUnitsByTurn>;
   renderGroup: (group: ReturnType<typeof groupUnitsByTurn>[number], index: number) => ReactNode;
   scrollToUnitKeyRef?: ScrollToUnitKeyRef;
@@ -208,15 +210,21 @@ export function VirtualizedTurnList({
   }, [scrollController, turnKeys]);
 
   useEffect(() => {
-    if (!scrollToUnitKeyRef) return;
-    scrollToUnitKeyRef.current = (unitKey: string) => {
+    const refs = [scrollToUnitKeyRef, additionalScrollToUnitKeyRef].filter(
+      (ref): ref is ScrollToUnitKeyRef => ref != null,
+    );
+    if (refs.length === 0) return;
+    const scrollToUnitKey = (unitKey: string) => {
       const index = groupIndexByUnitKey.get(unitKey);
       return index == null ? false : scrollToTurnIndex(index);
     };
+    for (const ref of refs) ref.current = scrollToUnitKey;
     return () => {
-      scrollToUnitKeyRef.current = null;
+      for (const ref of refs) {
+        if (ref.current === scrollToUnitKey) ref.current = null;
+      }
     };
-  }, [groupIndexByUnitKey, scrollToTurnIndex, scrollToUnitKeyRef]);
+  }, [additionalScrollToUnitKeyRef, groupIndexByUnitKey, scrollToTurnIndex, scrollToUnitKeyRef]);
 
   return (
     <div className="hc-turn-list" ref={listRef}>

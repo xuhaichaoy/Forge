@@ -24,6 +24,7 @@ import type {
   UserMarkdownRenderer,
 } from "./user-message-types";
 import type { OpenThreadHandler } from "./open-thread";
+import { userMessageCommentAttachmentPreviews } from "../state/user-message-comment-attachments";
 
 export function UserMessageUnit({
   unit,
@@ -90,6 +91,12 @@ export function UserMessageUnit({
     );
   }
 
+  const commentAttachments = userMessageCommentAttachmentPreviews(unit.item);
+  const meta = userMessageMetaChips(unit.item).filter((chip) => {
+    if (chip.id !== "codex.userMessage.commentCount") return true;
+    return commentAttachments.length === 0;
+  });
+
   return (
     <>
       {unit.parentThreadAttachment && (
@@ -99,6 +106,7 @@ export function UserMessageUnit({
         />
       )}
       <UserMessageAttachmentStrip
+        commentAttachments={commentAttachments}
         unit={unit}
         onOpenFileReference={onOpenFileReference}
       />
@@ -116,7 +124,7 @@ export function UserMessageUnit({
       )}
       <UserMessageActions
         copyText={unit.copyText ?? unit.text}
-        meta={userMessageMetaChips(unit.item)}
+        meta={meta}
         onEdit={onEdit ? () => setEditing(true) : undefined}
         sentAtMs={messageSentAtMs(unit.item)}
       />
@@ -165,11 +173,12 @@ function UserMessageBubble({
 }) {
   const { formatMessage } = useForgeIntl();
   if (!onBeginEdit) {
-    return <div className="hc-user-message-bubble">{children}</div>;
+    return <div className="hc-user-message-bubble" data-user-message-bubble="true">{children}</div>;
   }
   return (
     <div
       className="hc-user-message-bubble is-editable"
+      data-user-message-bubble="true"
       role="button"
       tabIndex={0}
       aria-label={formatMessage({
@@ -258,11 +267,13 @@ function UserMessageActions({
   if (meta.length === 0) return actionRow;
   return (
     <div className="hc-user-message-action-strip">
-      {meta.map((chip) => (
-        <span className="hc-message-action-status meta" key={chip.id}>
-          {formatMessage({ id: chip.id, defaultMessage: chip.defaultMessage }, chip.values)}
-        </span>
-      ))}
+      {meta.map((chip) => {
+        return (
+          <span className="hc-message-action-status meta" key={chip.id}>
+            {formatMessage({ id: chip.id, defaultMessage: chip.defaultMessage }, chip.values)}
+          </span>
+        );
+      })}
       {actionRow}
     </div>
   );

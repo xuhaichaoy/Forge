@@ -386,12 +386,29 @@ button.hc-assistant-review-comment-row:focus-visible,
 
 .hc-assistant-review-comment-tooltip-open-row {
   display: flex;
+  width: 100%;
   min-height: 36px;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid rgba(34, 38, 43, 0.10);
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
   padding: 4px 16px;
   background: rgba(34, 38, 43, 0.025);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.hc-assistant-review-comment-tooltip-open-row {
+  cursor: pointer;
+}
+
+button.hc-assistant-review-comment-tooltip-open-row:hover,
+button.hc-assistant-review-comment-tooltip-open-row:focus-visible {
+  background: rgba(34, 38, 43, 0.045);
+  outline: none;
 }
 
 .hc-assistant-review-comment-tooltip-location {
@@ -918,12 +935,13 @@ button.hc-parent-thread-attachment:hover {
 .hc-user-attachment-pill {
   max-width: 18rem;
   border-color: rgba(34, 38, 43, 0.12);
-  border-radius: 8px;
-  background: rgba(255, 253, 250, 0.82);
+  border-radius: 999px;
+  background: rgba(255, 253, 250, 0.90);
   color: #4d514a;
+  font: inherit;
   font-size: calc(13px * var(--hc-ui-font-scale, 1));
   line-height: 20px;
-  padding: 5px 8px;
+  padding: 5px 9px;
 }
 
 .hc-user-message-attachments .hc-user-attachment-pill {
@@ -1145,6 +1163,10 @@ button.hc-user-attachment-pill:hover {
   opacity: 0; /* Codex: revealed via opacity utilities with no transition (instant) */
 }
 
+.hc-message.assistant > .hc-message-actions {
+  transform: translateX(-8px); /* codex assistant action row: electron:-translate-x-2 */
+}
+
 .hc-message-action-status {
   display: inline-flex;
   height: 20px;
@@ -1172,14 +1194,7 @@ button.hc-user-attachment-pill:hover {
 }
 
 .hc-auto-review-trigger {
-  width: auto;
-  max-width: 160px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
   cursor: pointer;
-  padding: 0 3px;
 }
 
 .hc-auto-review-popover {
@@ -1271,6 +1286,248 @@ button.hc-user-attachment-pill:hover {
   margin: 0;
 }
 
+.hc-user-comment-attachment-chip {
+  appearance: none;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(34, 38, 43, 0.12);
+  cursor: pointer;
+  font: inherit;
+  outline: none;
+  text-align: left;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.hc-user-comment-attachment-chip:hover,
+.hc-user-comment-attachment-chip:focus-visible,
+.hc-user-comment-attachment-chip[aria-expanded="true"] {
+  border-color: rgba(34, 38, 43, 0.20);
+  background: rgba(34, 38, 43, 0.06);
+  color: #22262b;
+}
+
+.hc-user-comment-attachment-chip svg {
+  flex: 0 0 auto;
+}
+
+.hc-user-comment-attachment-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-user-comment-attachment-chip:focus-visible {
+  box-shadow: 0 0 0 2px var(--hc-focus-ring, rgba(72, 111, 138, 0.28));
+}
+
+.hc-user-comment-attachment-popover {
+  position: fixed;
+  z-index: var(--hc-z-popover);
+  display: flex;
+  width: min(384px, calc(100vw - 16px));
+  max-height: min(20rem, calc(100vh - 16px));
+  flex-direction: column;
+  overflow: auto;
+  border: 1px solid var(--hc-border-default, #d6d2c6);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--hc-surface-panel, #fffdfa) 96%, transparent);
+  box-shadow: 0 16px 44px rgba(24, 28, 31, 0.18);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--hc-text-primary, #22262b);
+}
+
+.hc-user-comment-attachment-row {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.hc-user-comment-attachment-row[data-has-preview="true"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.hc-user-comment-attachment-row:not([data-has-preview="true"]) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hc-user-comment-attachment-row + .hc-user-comment-attachment-row {
+  border-top: 1px solid var(--hc-border-default, #d6d2c6);
+}
+
+.hc-user-comment-attachment-main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hc-user-comment-attachment-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--hc-text-secondary, #6f716b);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+}
+
+.hc-user-comment-attachment-source {
+  appearance: none;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--hc-link, #3f7088);
+  font: inherit;
+  font-weight: 500;
+  padding: 0;
+  text-align: left;
+}
+
+.hc-user-comment-attachment-source-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.hc-user-comment-attachment-source:not(.is-static) {
+  cursor: pointer;
+}
+
+.hc-user-comment-attachment-source:not(.is-static):hover {
+  color: var(--hc-link-hover, #2d5a72);
+  text-decoration: underline;
+}
+
+.hc-user-comment-attachment-source:focus-visible {
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--hc-focus-ring, rgba(72, 111, 138, 0.28));
+  outline: none;
+}
+
+.hc-user-comment-attachment-source span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-user-comment-attachment-side {
+  font-weight: 600;
+  color: var(--hc-text-primary, #22262b);
+}
+
+.hc-user-comment-attachment-range {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--hc-text-primary, #22262b);
+  word-break: break-word;
+}
+
+.hc-user-comment-attachment-browser-element {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--hc-text-secondary, #6f716b);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+}
+
+.hc-user-comment-attachment-browser-element span {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid var(--hc-border-default, #d6d2c6);
+  border-radius: 3px;
+  background: rgba(34, 38, 43, 0.05);
+  color: var(--hc-text-secondary, #6f716b);
+  font-family: var(--hc-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
+  font-weight: 600;
+  line-height: 14px;
+  padding: 0 6px;
+}
+
+.hc-user-comment-attachment-browser-element small {
+  min-width: 0;
+  color: var(--hc-text-secondary, #6f716b);
+  font: inherit;
+  word-break: break-word;
+}
+
+.hc-user-comment-attachment-content-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--hc-text-secondary, #6f716b);
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-user-comment-attachment-body {
+  color: var(--hc-text-primary, #22262b);
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.hc-user-comment-attachment-body .hc-markdown {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.hc-user-comment-attachment-body .hc-markdown > :first-child {
+  margin-top: 0;
+}
+
+.hc-user-comment-attachment-body .hc-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.hc-user-comment-attachment-body.is-design-tweak {
+  white-space: pre-wrap;
+}
+
+.hc-user-comment-attachment-design-change {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+}
+
+.hc-user-comment-attachment-design-change .property {
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-user-comment-attachment-design-change .arrow {
+  color: var(--hc-text-secondary, #6f716b);
+}
+
+.hc-user-comment-attachment-thumb {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border: 1px solid var(--hc-border-default, #d6d2c6);
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .hc-message:hover .hc-message-actions,
 .hc-message:focus-within .hc-message-actions,
 .hc-message-actions:focus-within {
@@ -1315,13 +1572,6 @@ button.hc-user-attachment-pill:hover {
 .hc-message-actions button:hover {
   background: var(--hc-surface-hover); /* codex ghost list-hover = 5% (was 7%; A/B-pending) */
   color: #27313d;
-}
-
-.hc-message-actions .hc-auto-review-trigger {
-  display: inline-flex;
-  width: auto;
-  max-width: 160px;
-  padding: 0 3px;
 }
 
 /*
@@ -1380,48 +1630,6 @@ button.hc-user-attachment-pill:hover {
   .hc-disclosure-motion {
     transition: none;
     transform: none;
-  }
-}
-
-.hc-copy-toast {
-  pointer-events: none;
-  position: fixed;
-  top: 78px;
-  left: 50%;
-  z-index: var(--hc-z-toast);
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  border-radius: 999px;
-  background: rgba(50, 51, 49, 0.94);
-  box-shadow: 0 16px 38px rgba(24, 26, 24, 0.22);
-  color: #fffdfa;
-  padding: 0 16px 0 12px;
-  font-size: calc(14px * var(--hc-ui-font-scale, 1));
-  font-weight: 650;
-  transform: translateX(-50%);
-  animation: hc-copy-toast-in 160ms ease-out;
-}
-
-.hc-copy-toast-icon {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 999px;
-  background: #2fbf71;
-  color: #fffdfa;
-}
-
-@keyframes hc-copy-toast-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -6px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
   }
 }
 
@@ -1538,6 +1746,11 @@ button.hc-user-attachment-pill:hover {
 .hc-app[data-theme="dark"] .hc-assistant-review-comment-tooltip-open-row {
   border-bottom-color: var(--hc-border-default);
   background: var(--hc-surface-soft);
+}
+
+.hc-app[data-theme="dark"] button.hc-assistant-review-comment-tooltip-open-row:hover,
+.hc-app[data-theme="dark"] button.hc-assistant-review-comment-tooltip-open-row:focus-visible {
+  background: var(--hc-surface-hover);
 }
 
 .hc-app[data-theme="dark"] .hc-assistant-review-comment-tooltip-location,
@@ -1820,6 +2033,11 @@ button.hc-automation-citation-chip {
 
 .hc-app[data-theme="dark"] .hc-user-message-action-strip {
   color: var(--hc-text-secondary);
+}
+
+.hc-app[data-theme="dark"] .hc-user-comment-attachment-popover {
+  background: color-mix(in srgb, var(--hc-surface-secondary) 94%, transparent);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.48);
 }
 
 .hc-app[data-theme="dark"] .hc-message-time {

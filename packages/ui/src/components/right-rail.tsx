@@ -17,6 +17,7 @@ import {
   openRailEntry,
   openRailSideChatEntry,
 } from "./right-rail-entry-actions";
+import { isGeneratedImageArtifact } from "./right-rail-entry-icons";
 import { RailList, SourcesIconRow } from "./right-rail-entries";
 import { RailSection } from "./right-rail-section";
 
@@ -46,6 +47,7 @@ export interface RightRailProps {
   displayMode?: RightRailDisplayMode;
   isPinned?: boolean;
   onOpenArtifactPreview?: (entry: RailEntry) => void;
+  onOpenGeneratedImagePreview?: (entry: RailEntry, entries: readonly RailEntry[]) => boolean | void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
   onOpenDiff?: () => void;
@@ -66,6 +68,7 @@ export function RightRail({
   displayMode = "overlay",
   isPinned = true,
   onOpenArtifactPreview,
+  onOpenGeneratedImagePreview,
   onOpenFileReference,
   onOpenUrl,
   onOpenDiff,
@@ -133,8 +136,15 @@ export function RightRail({
    *     non-side-panel branch).
    */
   const canOpenArtifactEntry = (entry: RailEntry) =>
-    canOpenEntry(entry) || Boolean(onOpenArtifactPreview && shouldOpenArtifactPreview(entry));
+    canOpenEntry(entry)
+    || Boolean(onOpenGeneratedImagePreview && isGeneratedImageArtifact(entry))
+    || Boolean(onOpenArtifactPreview && shouldOpenArtifactPreview(entry));
   const openArtifactEntry = (entry: RailEntry) => {
+    if (isGeneratedImageArtifact(entry) && onOpenGeneratedImagePreview) {
+      const artifacts = sections.find((section) => section.id === "artifacts")?.allEntries ?? [entry];
+      const didOpen = onOpenGeneratedImagePreview(entry, artifacts);
+      if (didOpen !== false) return;
+    }
     if (onOpenArtifactPreview && shouldOpenArtifactPreview(entry)) {
       onOpenArtifactPreview(entry);
       return;

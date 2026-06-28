@@ -59,17 +59,12 @@ export async function forkThreadFromTurn(
   if (!sourceThread) throw new Error("Source thread not found.");
   const targetTurnIndex = sourceThread.turns.findIndex((turn) => turn.id === targetTurnId);
   if (targetTurnIndex < 0) throw new Error("Target turn not found.");
-  const rollbackTurns = sourceThread.turns.length - targetTurnIndex - 1;
-  const forkResult = await client.request<{ thread: Thread }>("thread/fork", {
+  return client.request<{ thread: Thread }>("thread/fork", {
     threadId: sourceThreadId,
+    lastTurnId: targetTurnId,
     path: null,
     persistExtendedHistory: false,
     ...buildThreadForkParams(workspace, context),
-  }, 120_000);
-  if (rollbackTurns <= 0) return forkResult;
-  return client.request<{ thread: Thread }>("thread/rollback", {
-    threadId: forkResult.thread.id,
-    numTurns: rollbackTurns,
   }, 120_000);
 }
 

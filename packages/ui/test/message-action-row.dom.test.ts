@@ -110,8 +110,8 @@ async function copiesMarkdownTablePayloadToClipboard(): Promise<void> {
     );
     assertEqual(
       mounted.env.document.querySelector<HTMLElement>(".hc-copy-toast") !== null,
-      true,
-      "table copy should render copied feedback toast",
+      false,
+      "table copy should not render Forge-only copied feedback toast",
     );
   } finally {
     mounted.cleanup();
@@ -128,7 +128,7 @@ async function clearsMarkdownTableCopiedResetOnUnmount(): Promise<void> {
     configurable: true,
     value: (handler: TimerHandler, timeout?: number, ..._args: unknown[]) => {
       timeoutRef.handler = typeof handler === "function" ? () => handler() : null;
-      assertEqual(timeout, 1_500, "table copy reset should use the Desktop copy timeout");
+      assertEqual(timeout, 2_000, "table copy reset should use the Desktop copy timeout");
       return 42;
     },
   });

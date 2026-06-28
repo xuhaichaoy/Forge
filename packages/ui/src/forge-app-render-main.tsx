@@ -5,7 +5,6 @@ import { AutomationsPreviewPanel } from "./components/automations-preview-panel"
 import { BackgroundAgentPanel } from "./components/background-agent-panel";
 import { ConversationChrome } from "./components/conversation-chrome";
 import { ConversationView } from "./components/conversation-view";
-import { FilePreviewPanel } from "./components/file-preview-panel";
 import { RightRail } from "./components/right-rail";
 import { SidePanelHost } from "./components/side-panel-host";
 import {
@@ -15,7 +14,6 @@ import {
 } from "./components/side-panel-new-tab-page";
 import { ThreadFindBar } from "./components/thread-find-bar";
 import { ThreadScrollLayout } from "./components/thread-scroll-layout";
-import type { useArtifactPreviewActions } from "./hooks/use-artifact-preview-actions";
 import type { useBackgroundAgentPanel } from "./hooks/use-background-agent-panel";
 import type { useFilePreviewPanelLayout } from "./hooks/use-file-preview-panel-layout";
 import type { useSidePanelTabHost } from "./hooks/use-side-panel-tab-host";
@@ -24,8 +22,7 @@ import type { useThreadFind } from "./hooks/use-thread-find";
 import type { useUiPreferences } from "./hooks/use-ui-preferences";
 import type { useWorktreeGitAndPrStatus } from "./hooks/use-worktree-status";
 import type { CodexUiState, PendingServerRequest } from "./state/codex-reducer";
-import type { FileReferenceSelection } from "./state/file-references";
-import type { projectConversation, RailEntry } from "./state/render-groups";
+import type { projectConversation } from "./state/render-groups";
 import { canNavigateBackInHistory, canNavigateForwardInHistory } from "./state/thread-history";
 import type { ThreadWorkflowDispatch } from "./state/thread-workflow";
 import { threadTitle } from "./state/thread-workflow";
@@ -41,12 +38,11 @@ export interface ForgeAppMainArgs {
   activeDiff: string;
   activePendingRequests: PendingServerRequest[];
   activeQueuedFollowUps: readonly unknown[];
+  activePlanSidePanelKey: ComponentProps<typeof ConversationView>["activePlanSidePanelKey"];
   activeThread: Thread | null;
   activeThreadFindMatches: readonly unknown[];
   activeThreadRunning: boolean;
   activeThreadScrollKey: string;
-  artifactPreview: RailEntry | null;
-  artifactPreviewNonce: number;
   automationsModel: ComponentProps<typeof AutomationsPreviewPanel>["model"];
   automationsPanelOpen: boolean;
   backgroundAgentCanInterrupt: ReturnType<typeof useBackgroundAgentPanel>["backgroundAgentCanInterrupt"];
@@ -69,7 +65,6 @@ export interface ForgeAppMainArgs {
   dispatch: ThreadWorkflowDispatch;
   editLastUserTurn: ComponentProps<typeof ConversationView>["onEditLastUserMessage"];
   filePreviewPanelLayout: ReturnType<typeof useFilePreviewPanelLayout>;
-  fileReference: FileReferenceSelection | null;
   fixedContent?: ReactNode;
   footer: ReactNode;
   forkActiveThreadFromTurn: ComponentProps<typeof ConversationView>["onForkTurn"];
@@ -89,15 +84,15 @@ export interface ForgeAppMainArgs {
   openAutomationsPanel: (automationId?: string | null) => void;
   openBackgroundAgentThread: ReturnType<typeof useBackgroundAgentPanel>["openBackgroundAgentThread"];
   openBrowserSurface: (tabId?: string | null) => void;
-  openFileReferenceExternal: ComponentProps<typeof FilePreviewPanel>["onOpenFileReferenceExternal"];
-  openRailArtifactFileExternal: ComponentProps<typeof FilePreviewPanel>["onOpenArtifactFileExternal"];
   openRailPlan: ComponentProps<typeof RightRail>["onOpenPlan"];
-  openRailUrl: ComponentProps<typeof FilePreviewPanel>["onOpenUrl"];
+  openPlanSummary: ComponentProps<typeof ConversationView>["onOpenPlan"];
+  openRailUrl: (url: string) => void;
   openRemoteTask: ComponentProps<typeof ConversationView>["onOpenRemoteTask"];
   patchActionInFlight: ComponentProps<typeof ConversationView>["patchActionInFlight"];
   patchActionState: ComponentProps<typeof ConversationView>["patchActionState"];
   previewConversationFileReferenceAndOpenRail: ComponentProps<typeof ConversationView>["onOpenFileReference"];
-  previewPathContext: ReturnType<typeof useArtifactPreviewActions>["previewPathContext"];
+  previewGeneratedImage: ComponentProps<typeof RightRail>["onOpenGeneratedImagePreview"];
+  previewGeneratedImageFromThreadItem: ComponentProps<typeof ConversationView>["onOpenGeneratedImagePreview"];
   previewRailArtifact: ComponentProps<typeof RightRail>["onOpenArtifactPreview"];
   previewRailFileReferenceAndOpenRail: ComponentProps<typeof RightRail>["onOpenFileReference"];
   readMcpResource: ComponentProps<typeof ConversationView>["onReadMcpResource"];
@@ -109,10 +104,8 @@ export interface ForgeAppMainArgs {
   rightRailSections: ComponentProps<typeof RightRail>["sections"];
   selectThreadById: (threadId: string) => void;
   sendBackgroundAgentPanelMessage: ReturnType<typeof useBackgroundAgentPanel>["sendBackgroundAgentPanelMessage"];
-  setArtifactPreview: (entry: RailEntry | null) => void;
   setAutomationsPanelOpen: Dispatch<SetStateAction<boolean>>;
   setBackgroundAgentMessageDraft: ReturnType<typeof useBackgroundAgentPanel>["setBackgroundAgentMessageDraft"];
-  setFileReference: Dispatch<SetStateAction<FileReferenceSelection | null>>;
   setFocusedAutomationId: Dispatch<SetStateAction<string | null>>;
   setRightRailPinned: ReturnType<typeof useAppShellState>["setRightRailPinned"];
   setRightRailPopoverOpen: ReturnType<typeof useAppShellState>["setRightRailPopoverOpen"];
@@ -139,12 +132,11 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     activeDiff,
     activePendingRequests,
     activeQueuedFollowUps,
+    activePlanSidePanelKey,
     activeThread,
     activeThreadFindMatches,
     activeThreadRunning,
     activeThreadScrollKey,
-    artifactPreview,
-    artifactPreviewNonce,
     automationsModel,
     automationsPanelOpen,
     backgroundAgentCanInterrupt,
@@ -167,7 +159,6 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     dispatch,
     editLastUserTurn,
     filePreviewPanelLayout,
-    fileReference,
     fixedContent,
     footer,
     forkActiveThreadFromTurn,
@@ -187,15 +178,15 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     openAutomationsPanel,
     openBackgroundAgentThread,
     openBrowserSurface,
-    openFileReferenceExternal,
-    openRailArtifactFileExternal,
+    openPlanSummary,
     openRailPlan,
     openRailUrl,
     openRemoteTask,
     patchActionInFlight,
     patchActionState,
     previewConversationFileReferenceAndOpenRail,
-    previewPathContext,
+    previewGeneratedImage,
+    previewGeneratedImageFromThreadItem,
     previewRailArtifact,
     previewRailFileReferenceAndOpenRail,
     readMcpResource,
@@ -207,10 +198,8 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     rightRailSections,
     selectThreadById,
     sendBackgroundAgentPanelMessage,
-    setArtifactPreview,
     setAutomationsPanelOpen,
     setBackgroundAgentMessageDraft,
-    setFileReference,
     setFocusedAutomationId,
     setRightRailPinned,
     setRightRailPopoverOpen,
@@ -313,6 +302,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
             <ConversationView
               units={conversation.units}
               scrollToUnitKeyRef={threadFindScrollToUnitRef}
+              activePlanSidePanelKey={activePlanSidePanelKey}
               emptyState={conversationEmptyState}
               threadId={state.activeThreadId}
               onEditLastUserMessage={editLastUserTurn}
@@ -322,7 +312,9 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
               onForkTurn={forkActiveThreadFromTurn}
               onOpenFileReference={previewConversationFileReferenceAndOpenRail}
               onOpenAutomation={openAutomationFromConversation}
+              onOpenGeneratedImagePreview={previewGeneratedImageFromThreadItem}
               memoryCitationRoot={memoryCitationRoot}
+              onOpenPlan={openPlanSummary}
               onOpenThreadId={openBackgroundAgentThread}
               onOpenConversationThreadId={selectThreadById}
               onOpenRemoteTask={openRemoteTask}
@@ -356,6 +348,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
             onMcpAppHostCall={handleMcpAppHostCall}
             onOpenFileReference={previewConversationFileReferenceAndOpenRail}
             onOpenAutomation={openAutomationFromConversation}
+            onOpenGeneratedImagePreview={previewGeneratedImageFromThreadItem}
             memoryCitationRoot={memoryCitationRoot}
             onOpenThreadId={openBackgroundAgentThread}
             onReadMcpResource={readMcpResource}
@@ -382,6 +375,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
             displayMode={showRightRailPopover ? "overlay" : rightRailMode}
             isPinned={showRightRail ? rightRailPinned : true}
             onOpenArtifactPreview={previewRailArtifact}
+            onOpenGeneratedImagePreview={previewGeneratedImage}
             onOpenFileReference={previewRailFileReferenceAndOpenRail}
             onOpenPlan={openRailPlan}
             onOpenUrl={openRailUrl}
@@ -516,33 +510,6 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
           />
         )}
 
-        {/*
-          * Codex Desktop opens file previews into its AppShell RightPanel
-          * (in `app-shell-*.js`), not into the summary rail.
-          * `<FilePreviewPanel>` is Forge's analogue: resizable (default
-          * 600 px / min 320 px), full-width toggle, double-click reset.
-          * Mounts only when there is an artifact / file selection.
-          */}
-        <FilePreviewPanel
-          artifactPreview={artifactPreview}
-          artifactPreviewNonce={artifactPreviewNonce}
-          fileReference={fileReference}
-          workspaceRoot={previewPathContext.workspaceRoot}
-          cwd={previewPathContext.cwd}
-          resize={{
-            widthPx: filePreviewPanelLayout.widthPx,
-            isResizing: filePreviewPanelLayout.isResizing,
-            fullWidth: filePreviewPanelLayout.fullWidth,
-            onResizeStart: filePreviewPanelLayout.startResize,
-            onResetWidth: filePreviewPanelLayout.resetWidth,
-            onToggleFullWidth: filePreviewPanelLayout.toggleFullWidth,
-          }}
-          onCloseArtifactPreview={() => setArtifactPreview(null)}
-          onCloseFileReference={() => setFileReference(null)}
-          onOpenArtifactFileExternal={openRailArtifactFileExternal}
-          onOpenFileReferenceExternal={openFileReferenceExternal}
-          onOpenUrl={openRailUrl}
-        />
       </main>
   );
 }

@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { sidePanelObscuresRightRail } from "../src/hooks/use-forge-app-side-panel-host";
 import {
   SidePanelTabHostController,
   type OpenTabOptions,
@@ -53,6 +54,7 @@ export default function runSidePanelTabHostTests(): void {
   selectActiveTabFallsBackToFirstTabWhenPanelOpen();
   selectActiveTabReactKeyFormatsKindOrTabIdWithStateKey();
   selectTabsReturnsTabIdsOrderProjectedToTabsById();
+  sidePanelObscuresRightRailForVisibleHostTabs();
 
   // controller (orchestrator + side effects)
   controllerOpenTabAutoGeneratesIdWhenAbsent();
@@ -385,6 +387,26 @@ function selectTabsReturnsTabIdsOrderProjectedToTabsById(): void {
   }
   const ids = selectTabs(state).map((t) => t.tabId);
   assertDeepEqual(ids, ["a", "b"], "tabs projection matches tabIds order");
+}
+
+function sidePanelObscuresRightRailForVisibleHostTabs(): void {
+  assertEqual(sidePanelObscuresRightRail(false, null), false, "closed side panel should not hide rail");
+  assertEqual(sidePanelObscuresRightRail(true, null), true, "open empty side panel should hide rail");
+  assertEqual(
+    sidePanelObscuresRightRail(true, { tabId: "file:local:/tmp/a.ts", kind: "workspaceFile:local" }),
+    true,
+    "workspace file tab should hide rail",
+  );
+  assertEqual(
+    sidePanelObscuresRightRail(true, { tabId: "sidechat:thread-1" }),
+    false,
+    "side chat tab should not hide rail",
+  );
+  assertEqual(
+    sidePanelObscuresRightRail(true, { tabId: "background-agent:thread-1" }),
+    false,
+    "background agent tab should not hide rail",
+  );
 }
 
 // ---------------------------------------------------------------------------

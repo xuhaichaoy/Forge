@@ -86,6 +86,7 @@ export function parseMarkdownInline(
         path: marker.path,
         lineStart: marker.lineStart,
         lineEnd: marker.lineEnd,
+        ...(marker.artifactCitation ? { artifactCitation: marker.artifactCitation } : {}),
       });
       index = marker.endIndex;
       continue;

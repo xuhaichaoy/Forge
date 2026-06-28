@@ -208,7 +208,7 @@ function railSectionTitle(
   id: "automations" | "environment" | "plan" | "outputs" | "sideChats" | "subagents" | "tasks" | "browser" | "sources",
 ): string {
   switch (id) {
-    case "automations": return formatMessage({ id: "codex.localConversation.heartbeatAutomation.title", defaultMessage: "Automations" });
+    case "automations": return formatMessage({ id: "codex.localConversation.heartbeatAutomation.title", defaultMessage: "Scheduled" });
     case "environment": return formatMessage({ id: "codex.localConversation.environmentSummary.title", defaultMessage: "Environment" });
     case "plan": return formatMessage({ id: "codex.localConversation.plan.title", defaultMessage: "Plan" });
     case "outputs": return formatMessage({ id: "codex.localConversation.outputs.title", defaultMessage: "Outputs" });

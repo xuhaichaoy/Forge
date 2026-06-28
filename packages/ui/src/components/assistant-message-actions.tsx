@@ -1,10 +1,13 @@
-import { GitFork } from "lucide-react";
+import { GitFork, Workflow } from "lucide-react";
 import { useState } from "react";
 import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
 import { IconActionButton, MessageActionRow } from "./message-action-row";
 import type { MarkdownRichCopyPayload } from "./message-markdown-copy";
+import { Tooltip } from "./tooltip";
 
 type FormatMessage = ForgeIntlContextValue["formatMessage"];
+const ASSISTANT_COPY_RESET_TIMEOUT_MS = 2000;
+const ASSISTANT_ACTION_ICON_SIZE = 16;
 
 export interface AssistantHookStatsSummary {
   label: string;
@@ -40,16 +43,17 @@ export function AssistantMessageActions({
     || Boolean(goalSummary);
   return (
     <MessageActionRow
+      copiedResetTimeoutMs={ASSISTANT_COPY_RESET_TIMEOUT_MS}
       copyRichPayload={copyRichPayload}
       copyText={copyText}
       hasActionChildren={hasActionChildren}
+      iconSize={ASSISTANT_ACTION_ICON_SIZE}
       sentAtMs={messageSentAtMs(item)}
       showTimestampWithoutActions={hasArtifacts}
     >
       {onFork && (
         <IconActionButton ariaLabel={formatMessage({ id: "assistantMessageContent.forkAriaLabel", defaultMessage: "Fork from this point" })} title={formatMessage({ id: "assistantMessageContent.forkTooltip", defaultMessage: "Fork" })} onClick={onFork}>
-          {/* Forge divergence: 12px (Codex action icon-xs = 16px), per product preference */}
-          <GitFork size={12} />
+          <GitFork size={ASSISTANT_ACTION_ICON_SIZE} />
         </IconActionButton>
       )}
       {hookStatsSummary && <AssistantHookStatsAction summary={hookStatsSummary} />}
@@ -62,15 +66,17 @@ function AssistantHookStatsAction({ summary }: { summary: AssistantHookStatsSumm
   const [open, setOpen] = useState(false);
   return (
     <span className="hc-auto-review-action">
-      <button
-        aria-expanded={open}
-        className="hc-message-action-status text hc-auto-review-trigger"
-        onClick={() => setOpen((value) => !value)}
-        title={summary.title}
-        type="button"
-      >
-        {summary.label}
-      </button>
+      <Tooltip content={summary.title}>
+        <button
+          aria-expanded={open}
+          aria-label={summary.label}
+          className="hc-auto-review-trigger"
+          onClick={() => setOpen((value) => !value)}
+          type="button"
+        >
+          <Workflow size={ASSISTANT_ACTION_ICON_SIZE} />
+        </button>
+      </Tooltip>
       {open && (
         <span className="hc-auto-review-popover" role="dialog" data-state="open" aria-label={summary.title}>
           <span className="hc-auto-review-popover-title">{summary.title}</span>
@@ -140,8 +146,11 @@ export function assistantHookStatsSummary(
     if (entries.length >= 6) break;
   }
   if (count === 0 && blocked === 0 && errorCount === 0 && entries.length === 0) return null;
-  const total = count > 0 ? count : entries.length;
-  const label = total === 1 ? "1 hook" : `${total} hooks`;
+  const label = formatMessage({
+    id: "assistantMessage.hookStats.label",
+    defaultMessage: "Hooks",
+    description: "Accessible label for hook runs",
+  });
   const rows: Array<{ label: string; value: string }> = [];
   if (count > 0) rows.push({ label: formatMessage({ id: "assistantMessage.hookStats.ranCount", defaultMessage: "Ran" }), value: String(count) });
   if (blocked > 0) rows.push({ label: formatMessage({ id: "assistantMessage.hookStats.blockedCount", defaultMessage: "Blocked" }), value: String(blocked) });
@@ -173,17 +182,8 @@ function formatGoalDuration(durationMs: number): string {
 }
 
 function messageSentAtMs(item: Record<string, unknown>): number | null {
-  const candidates: unknown[] = [
-    item.sentAtMs,
-    item.completedAtMs,
-    item.startedAtMs,
-    item.createdAtMs,
-    item.createdAt,
-  ];
-  for (const value of candidates) {
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
-  }
-  return null;
+  const value = item.sentAtMs;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function numericField(item: Record<string, unknown>, key: string): number {

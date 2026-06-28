@@ -3,7 +3,6 @@ import {
   Copy,
 } from "lucide-react";
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 // codex copy-button-*.js wraps the action button in <Tooltip tooltipContent={...}/>.
 import { Tooltip } from "./tooltip";
@@ -19,20 +18,12 @@ import {
  * Aligned with Codex:
  *   - aria-label strings ("Copy" / "Copied") match Codex's i18n
  *     `copyButton.copyAriaLabel` / `copyButton.copiedAriaLabel` defaultMessages
- *   - copied-state reset is 1500ms — Codex's copy buttons reset at 1500ms
- *     (bundle: `navigator.clipboard.writeText(...).then(()=>{setCopied(!0),
- *     setTimeout(()=>setCopied(!1),1500)})` for the user_message copy). The
- *     earlier "Codex's `2e3`" attribution was wrong: the bundle's `2e3`
- *     timeouts are non-copy (transient/toast), and no copy button uses 2e3.
+ *   - default copied-state reset is 1500ms for the user-message copy path.
+ *     Assistant/common CopyButton paths in the current Desktop bundle use
+ *     2000ms, so callers that mirror that path pass `copiedResetTimeoutMs`.
  *   - icon swap (Copy → Check) mirrors Codex's dual-state render
  *
  * Diverged from Codex (intentional, no Codex source to override):
- *   - Forge keeps the createPortal escape for the "Copied" feedback because
- *     `.hc-thread-scroll-body` has `transform: translateX(...)` which re-roots
- *     a `position: fixed` descendant to the transformed ancestor, trapping
- *     the toast behind the message bubble (regression captured in Forge
- *     screenshot 2026-05-21 "复制提示被盖住"). Codex Desktop's scroll body
- *     isn't transformed so an inline-only swap suffices there.
  *   - Forge renders an inline timestamp span; Codex's copy-button + thread-
  *     actions chunks contain no per-message timestamp affordance.
  */
@@ -56,6 +47,7 @@ export function MessageActionRow({
   copyRichPayload,
   copyText,
   hasActionChildren = false,
+  iconSize = 12,
   persistent = false,
   sentAtMs = null,
   showTimestampWithoutActions = false,
@@ -67,6 +59,7 @@ export function MessageActionRow({
   copyRichPayload?: (() => MarkdownRichCopyPayload | null) | null;
   copyText: string;
   hasActionChildren?: boolean;
+  iconSize?: number;
   persistent?: boolean;
   sentAtMs?: number | null;
   showTimestampWithoutActions?: boolean;
@@ -91,29 +84,25 @@ export function MessageActionRow({
     window.setTimeout(() => setCopied(false), copiedResetTimeoutMs);
   };
   return (
-    <>
-      <div className="hc-message-actions" data-persistent={persistent || undefined}>
-        {trimmedCopyText.length > 0 && (
-          /*
-           * CODEX-REF: copy-button-*.js — aria-label swaps between "Copy"
-           * (copyButton.copyAriaLabel) and "Copied" (copyButton.copiedAriaLabel); Codex's
-           * CopyButton wraps the button in <Tooltip tooltipContent={...}/>, so Forge now
-           * does the same via the shared Tooltip (the aria-label stays for a11y).
-           */
-          <Tooltip content={copyLabel}>
-            <button aria-label={copyLabel} type="button" onClick={handleCopy}>
-              {/* Forge divergence: action-row icons at 12px (Codex icon-xs = 16px); shrunk per product preference */}
-              {copied ? <Check size={12} /> : <Copy size={12} />}
-            </button>
-          </Tooltip>
-        )}
-        {children}
-        {sentAtMs !== null && (
-          <span className="hc-message-time">{formatMessageSentAt(sentAtMs)}</span>
-        )}
-      </div>
-      {copied && <CopyFeedbackToast />}
-    </>
+    <div className="hc-message-actions" data-persistent={persistent || undefined}>
+      {trimmedCopyText.length > 0 && (
+        /*
+         * CODEX-REF: copy-button-*.js — aria-label swaps between "Copy"
+         * (copyButton.copyAriaLabel) and "Copied" (copyButton.copiedAriaLabel); Codex's
+         * CopyButton wraps the button in <Tooltip tooltipContent={...}/>, so Forge now
+         * does the same via the shared Tooltip (the aria-label stays for a11y).
+         */
+        <Tooltip content={copyLabel}>
+          <button aria-label={copyLabel} type="button" onClick={handleCopy}>
+            {copied ? <Check size={iconSize} /> : <Copy size={iconSize} />}
+          </button>
+        </Tooltip>
+      )}
+      {children}
+      {sentAtMs !== null && (
+        <span className="hc-message-time">{formatMessageSentAt(sentAtMs)}</span>
+      )}
+    </div>
   );
 }
 
@@ -156,36 +145,6 @@ export function IconActionButton({
       </button>
     </Tooltip>
   );
-}
-
-export function CopyFeedbackToast() {
-  const { formatMessage } = useForgeIntl();
-  /*
-   * `.hc-copy-toast` uses `position: fixed`, but the conversation scroll
-   * container (`hc-thread-scroll-body` in conversation.css:46) has
-   * `transform: translateX(...)` for inline-side-panel offsets. When a fixed
-   * descendant lives under a transformed ancestor, the CSS spec re-roots its
-   * coordinate system to that ancestor instead of the viewport — so the
-   * toast ended up trapped behind the user message bubble (Forge screenshot
-   * 2026-05-21 "复制提示被盖住"). Render into `document.body` via a portal so
-   * the toast escapes any transformed scroll container and stays anchored at
-   * the top of the actual viewport.
-   *
-   * SSR / non-browser fallback: returns the bare node so React can still
-   * render to string without portal infrastructure.
-   */
-  // CODEX-REF: copy-button-*.js — the inline-swap label is just
-  // "Copied" (defaultMessage of `copyButton.copied`); Forge's toast uses
-  // the same single word so terminology stays consistent with the button
-  // aria-label swap above.
-  const toast = (
-    <div className="hc-copy-toast" role="status" aria-live="polite">
-      <span className="hc-copy-toast-icon" aria-hidden="true"><Check size={15} /></span>
-      <span>{formatMessage({ id: "copyButton.copied", defaultMessage: "Copied" })}</span>
-    </div>
-  );
-  if (typeof document === "undefined") return toast;
-  return createPortal(toast, document.body);
 }
 
 /*

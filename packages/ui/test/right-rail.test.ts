@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { RightRail } from "../src/components/right-rail";
 import { __resetSectionCollapseStateForTesting } from "../src/hooks/use-section-collapse";
 import { projectBranchDetails } from "../src/state/branch-details";
+import type { RailEntry } from "../src/state/render-groups";
 import {
   RAIL_LIST_PREVIEW_LIMIT,
   RIGHT_RAIL_PINNED_STORAGE_KEY,
@@ -37,6 +38,7 @@ export default function runRightRailTests(): void {
   clipsRailEntriesByDefaultAndExpandsAllEntries();
   hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop();
   hidesOutputsForGitProjectArtifactsLikeCodexDesktop();
+  rendersGeneratedImageArtifactsWithDesktopReverseNumbering();
   rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction();
   preservesSectionCountsAndEntryMeta();
   rendersSourceIconsAsButtonsOnlyWhenOpenable();
@@ -81,13 +83,13 @@ function keepsCodexDesktopSectionOrder(): void {
   // CODEX-REF: local-conversation-thread-CRsAC226.pretty.js (26.611.61049)
   // rail children [automation, environment, plan, outputs, side-chats, subagents,
   // tasks, browser, sources]. Environment/Outputs are mutually exclusive on
-  // git-kind, so a non-git rail reads Automations, Outputs, … Codex 仅 single
+  // git-kind, so a non-git rail reads Scheduled, Outputs, … Codex 仅 single
   // automation；subagents/tasks 拆成两个独立 section。No Progress child is
   // mounted in this bundle.
   assertDeepEqual(
     sections.map((section) => section.title),
     [
-      "Automations",
+      "Scheduled",
       "Plan",
       "Outputs",
       "Side chats",
@@ -331,6 +333,43 @@ function hidesOutputsForGitProjectArtifactsLikeCodexDesktop(): void {
   );
 }
 
+function rendersGeneratedImageArtifactsWithDesktopReverseNumbering(): void {
+  const entries: RailEntry[] = [
+    {
+      id: "image:data-1",
+      title: "Generated image",
+      meta: "data:image/png;base64,AAA",
+      status: "completed",
+      artifactKind: "generated-image",
+      action: { kind: "url" as const, url: "data:image/png;base64,AAA" },
+    },
+    {
+      id: "image:data-2",
+      title: "Generated image",
+      meta: "data:image/png;base64,BBB",
+      status: "completed",
+      artifactKind: "generated-image",
+      action: { kind: "url" as const, url: "data:image/png;base64,BBB" },
+    },
+  ];
+  const html = renderToStaticMarkup(createElement(RightRail, {
+    sections: [{
+      id: "artifacts",
+      title: "Outputs",
+      count: entries.length,
+      entries,
+      allEntries: entries,
+      remainingCount: 0,
+      canToggle: false,
+    }],
+  }));
+
+  assertStringIncludes(html, 'src="data:image/png;base64,AAA"', "data URL generated images should render as rail thumbnails");
+  const first = html.indexOf("Generated image 2");
+  const second = html.indexOf("Generated image 1");
+  assertEqual(first >= 0 && second > first, true, "generated-image artifact labels should use Desktop reverse numbering");
+}
+
 function rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction(): void {
   const sections = projectRightRailSections({
     branchDetails: {
@@ -537,6 +576,7 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
       parentThreadId: null,
       preview: "",
       ephemeral: false,
+      historyMode: "legacy",
       modelProvider: "openai",
       createdAt: 0,
       updatedAt: 0,

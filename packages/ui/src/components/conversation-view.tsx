@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import type { PatchAction, PatchActionState } from "./event-unit";
@@ -12,6 +12,11 @@ import {
 import { groupUnitsByTurn } from "../state/turn-collapse-projection";
 import { TurnCollapseFrame } from "./turn-collapse";
 import { ConversationUnitView } from "./conversation-unit-view";
+import type { OpenGeneratedImageGalleryPreview } from "./generated-image-gallery";
+import {
+  ThreadUserMessageNavigationRail,
+  threadUserMessageNavigationItems,
+} from "./thread-user-message-navigation-rail";
 
 export {
   DESKTOP_COLLAPSED_TOOL_ACTIVITY_LABEL_CLASS,
@@ -62,6 +67,11 @@ export {
   virtualTurnRange,
   virtualTurnRangeFromBottom,
 } from "./conversation-virtual-turn-list";
+export {
+  THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS,
+  ThreadUserMessageNavigationRail,
+  threadUserMessageNavigationItems,
+} from "./thread-user-message-navigation-rail";
 export { ConversationUnitView } from "./conversation-unit-view";
 
 export interface ConversationViewProps {
@@ -73,11 +83,14 @@ export interface ConversationViewProps {
    * without persisting stale expanded/collapsed choices across page reloads.
    */
   threadId?: string | null;
+  activePlanSidePanelKey?: string | null;
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onRevealAssistantEndResource?: (entry: RailEntry) => void;
+  onOpenPlan?: (entry: RailEntry) => void;
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
   onForkTurn?: (turnId: string) => void;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
@@ -111,10 +124,13 @@ export function ConversationView({
   units,
   emptyState = null,
   threadId = null,
+  activePlanSidePanelKey = null,
   onEditLastUserMessage,
   onOpenAssistantArtifact,
   onRevealAssistantEndResource,
+  onOpenPlan,
   onOpenDiff,
+  onOpenGeneratedImagePreview,
   onForkTurn,
   onOpenFileReference,
   onOpenAutomation,
@@ -130,6 +146,8 @@ export function ConversationView({
   scrollToUnitKeyRef,
 }: ConversationViewProps) {
   const groups = useMemo(() => groupUnitsByTurn(units), [units]);
+  const userMessageNavigationItems = useMemo(() => threadUserMessageNavigationItems(units), [units]);
+  const userMessageNavigationScrollToUnitRef = useRef<((unitKey: string) => boolean) | null>(null);
   const [turnCollapseState, setTurnCollapseState] = useState<Record<string, boolean>>({});
   if (units.length === 0) {
     return <>{emptyState}</>;
@@ -144,10 +162,13 @@ export function ConversationView({
       key={key}
       unit={unit}
       isMostRecentTurn={context?.isMostRecentTurn === true}
+      activePlanSidePanelKey={activePlanSidePanelKey}
       onEditLastUserMessage={onEditLastUserMessage}
       onOpenAssistantArtifact={onOpenAssistantArtifact}
       onRevealAssistantEndResource={onRevealAssistantEndResource}
+      onOpenPlan={onOpenPlan}
       onOpenDiff={onOpenDiff}
+      onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
       onForkTurn={onForkTurn}
       onOpenFileReference={onOpenFileReference}
       onOpenAutomation={onOpenAutomation}
@@ -165,37 +186,44 @@ export function ConversationView({
   );
 
   return (
-    <VirtualizedTurnList
-      groups={groups}
-      scrollToUnitKeyRef={scrollToUnitKeyRef}
-      renderGroup={(group, index) => {
-        const isMostRecentTurn = Boolean(group.turnId) && index === groups.length - 1;
-        const renderGroupUnit = (unit: ConversationRenderUnit, key: string) =>
-          renderUnit(unit, key, { isMostRecentTurn });
-        if (!group.turnId) {
+    <>
+      <ThreadUserMessageNavigationRail
+        items={userMessageNavigationItems}
+        scrollToUnitKeyRef={userMessageNavigationScrollToUnitRef}
+      />
+      <VirtualizedTurnList
+        additionalScrollToUnitKeyRef={userMessageNavigationScrollToUnitRef}
+        groups={groups}
+        scrollToUnitKeyRef={scrollToUnitKeyRef}
+        renderGroup={(group, index) => {
+          const isMostRecentTurn = Boolean(group.turnId) && index === groups.length - 1;
+          const renderGroupUnit = (unit: ConversationRenderUnit, key: string) =>
+            renderUnit(unit, key, { isMostRecentTurn });
+          if (!group.turnId) {
+            return (
+              <RenderUnitsList
+                key={`untracked:${index}`}
+                units={group.units}
+                renderUnit={renderGroupUnit}
+              />
+            );
+          }
+          const collapseKey = threadId && group.turnId ? `${threadId}:${group.turnId}` : null;
           return (
-            <RenderUnitsList
-              key={`untracked:${index}`}
+            <TurnCollapseFrame
+              key={group.turnId}
+              turnId={group.turnId}
               units={group.units}
               renderUnit={renderGroupUnit}
+              collapsedOverride={collapseKey ? turnCollapseState[collapseKey] : undefined}
+              onCollapsedChange={collapseKey ? (collapsed) => {
+                setTurnCollapseState((current) => ({ ...current, [collapseKey]: collapsed }));
+              } : undefined}
             />
           );
-        }
-        const collapseKey = threadId && group.turnId ? `${threadId}:${group.turnId}` : null;
-        return (
-          <TurnCollapseFrame
-            key={group.turnId}
-            turnId={group.turnId}
-            units={group.units}
-            renderUnit={renderGroupUnit}
-            collapsedOverride={collapseKey ? turnCollapseState[collapseKey] : undefined}
-            onCollapsedChange={collapseKey ? (collapsed) => {
-              setTurnCollapseState((current) => ({ ...current, [collapseKey]: collapsed }));
-            } : undefined}
-          />
-        );
-      }}
-    />
+        }}
+      />
+    </>
   );
 }
 

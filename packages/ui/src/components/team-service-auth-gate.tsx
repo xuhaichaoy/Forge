@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { LogIn, Moon, Server, Settings, Sun } from "lucide-react";
 import {
-  DEFAULT_TEAM_SERVICE_BASE_URL,
   TeamServiceAuthError,
   clearTeamServiceAuthSession,
   loginTeamService,
   readTeamServiceAuthSession,
+  readTeamServiceLoginBaseUrl,
   refreshTeamServiceUser,
   registerTeamService,
   teamServiceAuthErrorMessage,
@@ -56,7 +56,7 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
   const { formatMessage } = useForgeIntl();
   const [session, setSession] = useState<TeamServiceAuthSession | null>(() => readTeamServiceAuthSession());
   const [checking, setChecking] = useState(() => Boolean(readTeamServiceAuthSession()?.token));
-  const [baseUrl, setBaseUrl] = useState(() => readTeamServiceAuthSession()?.baseUrl ?? DEFAULT_TEAM_SERVICE_BASE_URL);
+  const [baseUrl, setBaseUrl] = useState(() => readTeamServiceLoginBaseUrl());
   const [serviceConfigOpen, setServiceConfigOpen] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -149,9 +149,9 @@ function TeamServiceAuthGateBody({ children }: TeamServiceAuthGateProps) {
         loginId: nextLoginId,
         password: nextPassword,
       });
+      setBaseUrl(next.baseUrl);
       await refreshTeamServiceRuntimeSession();
       setSession(next);
-      setBaseUrl(next.baseUrl);
     } catch (requestError) {
       // `|| null` keeps the original "empty copy renders nothing" semantics now
       // that the error row checks `error != null` (see session-expired fallback).

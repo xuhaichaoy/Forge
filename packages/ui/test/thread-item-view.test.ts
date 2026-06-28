@@ -259,6 +259,23 @@ function rendersProposedPlanSummaryCard(): void {
   assertStringNotIncludes(completeHtml, "<span>Open</span>", "the no-op Open button is removed from the plan card");
   assertStringIncludes(completeHtml, "<h2", "proposed-plan markdown should render as markdown");
 
+  const activePreviewHtml = renderToStaticMarkup(createElement(ThreadItemView, {
+    activePlanSidePanelKey: "plan:thread-plan:turn-plan-1",
+    onOpenPlan: () => undefined,
+    threadId: "thread-plan",
+    unit: {
+      kind: "threadItem",
+      key: "item:proposed-plan:plan-1",
+      item: completeItem,
+      hasArtifacts: true,
+      turnId: "turn-plan-1",
+    } as never,
+  }));
+  assertStringIncludes(activePreviewHtml, "is-thread-preview is-side-panel-active", "active side-panel plan card should use Desktop preview-collapsed state");
+  assertStringIncludes(activePreviewHtml, "Close plan side panel", "active side-panel plan card should expose the Desktop close label");
+  assertStringNotIncludes(activePreviewHtml, "Collapse plan summary", "thread preview plan card should hide the ordinary expand/collapse button");
+  assertStringNotIncludes(activePreviewHtml, "Expand plan</button>", "thread preview plan card should hide the collapsed fade expand button");
+
   const missingThreadHtml = renderToStaticMarkup(createElement(ThreadItemView, {
     unit: {
       kind: "threadItem",

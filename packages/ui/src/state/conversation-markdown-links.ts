@@ -11,6 +11,7 @@ import {
   minPositiveIndex,
 } from "./conversation-markdown-scan";
 import type { MarkdownImageBlock } from "./conversation-markdown-types";
+import type { FileCitationArtifactCitation } from "../components/file-reference-types";
 
 /*
  * Link-like target parsing for the conversation markdown engine: inline
@@ -25,6 +26,14 @@ export interface MarkdownReferenceDefinition {
 }
 
 export type MarkdownReferenceDefinitions = Map<string, MarkdownReferenceDefinition>;
+
+export type ParsedFileCitationMarker = {
+  path: string;
+  lineStart: number;
+  lineEnd: number;
+  artifactCitation?: FileCitationArtifactCitation | null;
+  endIndex: number;
+};
 
 export function parseMarkdownImageLine(
   line: string,
@@ -326,7 +335,7 @@ export function markdownReferenceKey(value: string): string {
 export function parseFileCitationMarker(
   text: string,
   startIndex: number,
-): { path: string; lineStart: number; lineEnd: number; endIndex: number } | null {
+): ParsedFileCitationMarker | null {
   const closeIndex = text.indexOf("\u3011", startIndex + 1);
   if (closeIndex < 0) return null;
   const content = text.slice(startIndex + 1, closeIndex);

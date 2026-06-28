@@ -4,6 +4,7 @@ import {
   clearTeamServiceAuthSession,
   normalizeTeamServiceUser,
   readTeamServiceAuthSession,
+  readTeamServiceLoginBaseUrl,
   saveTeamServiceAuthSession,
 } from "../src/lib/team-service-auth";
 import { readTeamServiceConnectionConfig } from "../src/lib/team-service-connection";
@@ -14,6 +15,7 @@ import {
 
 export default function runTeamServiceAuthTests(): void {
   usesLanTeamServiceAddressByDefault();
+  reusesConfiguredYuxiBaseUrlForUnauthenticatedLogin();
   normalizesBackendAuthUserShape();
   persistsTeamServiceSessionAndSyncsLegacyConnection();
   teamConnectionPrefersProductAuthSession();
@@ -24,6 +26,18 @@ function usesLanTeamServiceAddressByDefault(): void {
   const storage = new MemoryStorage();
   assertEqual(DEFAULT_TEAM_SERVICE_BASE_URL, "http://192.168.61.214:5050", "team auth should default to the shared Yuxi service");
   assertEqual(readYuxiConnectionConfig(storage).baseUrl, DEFAULT_TEAM_SERVICE_BASE_URL, "empty legacy connection should use the same default service");
+}
+
+function reusesConfiguredYuxiBaseUrlForUnauthenticatedLogin(): void {
+  const storage = new MemoryStorage();
+  writeYuxiConnectionConfig({ baseUrl: " http://127.0.0.1:5050/// ", token: "" }, storage);
+
+  assertEqual(readTeamServiceAuthSession(storage), null, "empty legacy token should not create an authenticated session");
+  assertEqual(
+    readTeamServiceLoginBaseUrl(storage),
+    "http://127.0.0.1:5050",
+    "login form should reuse the configured service URL even before a team auth token exists",
+  );
 }
 
 function normalizesBackendAuthUserShape(): void {

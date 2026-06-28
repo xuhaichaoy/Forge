@@ -318,8 +318,9 @@ function rendersArtifactPreviewOpenOptions(): void {
     onRevealFileReference: () => undefined,
   }));
 
+  assertIncludes(html, "Artifact viewer options", "artifact preview should expose Desktop's source-options menu");
   assertIncludes(html, "Open options", "artifact preview should expose Desktop's open-options menu");
-  assertIncludes(html, "Open in folder", "artifact preview open-options menu should reveal the file in the OS folder");
+  assertIncludes(html, "Open", "artifact preview should keep Desktop's primary Open action");
 }
 
 function assertDeepEqual(actual: unknown, expected: unknown, message: string): void {

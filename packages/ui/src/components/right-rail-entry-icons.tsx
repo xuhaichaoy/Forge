@@ -103,17 +103,15 @@ function isImageArtifactPath(value: string): boolean {
 }
 
 export function isGeneratedImageArtifact(entry: RailEntry): boolean {
-  const path = entry.reference?.path ?? entry.meta ?? entry.id;
-  const basename = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-  return /^ig_[a-f0-9]{32,}\.(?:avif|gif|jpe?g|png|webp)$/i.test(basename);
+  return entry.artifactKind === "generated-image";
 }
 
-function railEntryImageSrc(entry: RailEntry): string {
+export function railEntryImageSrc(entry: RailEntry): string {
   const action = entry.action;
-  if (action?.kind === "url" && isImageArtifactPath(urlPathname(action.url))) return action.url;
-  const imagePath = entry.reference?.path && isImageArtifactPath(entry.reference.path)
+  if (action?.kind === "url" && isRenderableImageSource(action.url)) return action.url;
+  const imagePath = entry.reference?.path && isRenderableImageSource(entry.reference.path)
     ? entry.reference.path
-    : entry.meta && isImageArtifactPath(entry.meta) ? entry.meta : "";
+    : entry.meta && isRenderableImageSource(entry.meta) ? entry.meta : "";
   if (!imagePath) return "";
   if (/^(?:data:image\/|blob:|https?:|file:)/i.test(imagePath)) return imagePath;
   if (!imagePath.startsWith("/")) return "";
@@ -122,6 +120,10 @@ function railEntryImageSrc(entry: RailEntry): string {
   } catch {
     return `file://${encodeURI(imagePath)}`;
   }
+}
+
+function isRenderableImageSource(value: string): boolean {
+  return /^(?:data:image\/|blob:)/i.test(value) || isImageArtifactPath(urlPathname(value));
 }
 
 function urlPathname(value: string): string {

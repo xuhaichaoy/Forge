@@ -869,11 +869,22 @@
   font-size: 0.92em;
   text-decoration: none;
   vertical-align: baseline;
+  cursor: pointer;
 }
 
 .hc-markdown .hc-file-citation-marker:hover {
   background: rgba(45, 85, 98, 0.13);
   text-decoration: none;
+}
+
+.hc-markdown .hc-file-citation-marker:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 2px;
+}
+
+.hc-markdown .hc-file-citation-marker-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Projectless conversations render file citations as plain, non-clickable

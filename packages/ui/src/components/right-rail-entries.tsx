@@ -43,7 +43,10 @@ export function RailList({
         remainingCount: 0,
         canToggle: false,
       };
-  let generatedImageCount = 0;
+  const generatedImageTotal = sectionId === "artifacts"
+    ? clipped.entries.filter((entry) => isGeneratedImageArtifact(entry)).length
+    : 0;
+  let generatedImageIndex = 0;
   /*
    * CODEX-REF: local-conversation-thread-*.js ({artifacts} listClassName):
    *   `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
@@ -55,11 +58,12 @@ export function RailList({
     <div className="hc-rail-list" data-section-id={sectionId}>
       {clipped.entries.map((entry) => {
         const isGeneratedImage = sectionId === "artifacts" && isGeneratedImageArtifact(entry);
-        if (isGeneratedImage) generatedImageCount += 1;
+        if (isGeneratedImage) generatedImageIndex += 1;
+        const generatedImageNumber = generatedImageTotal - generatedImageIndex + 1;
         const displayTitle = isGeneratedImage
           ? formatMessage(
               { id: "codex.localConversation.artifacts.generatedImage", defaultMessage: "Generated image {imageNumber}" },
-              { imageNumber: generatedImageCount },
+              { imageNumber: generatedImageNumber },
             )
           : undefined;
         // CODEX-REF: local-conversation-thread-CEeZyOcp.js — the background-terminal

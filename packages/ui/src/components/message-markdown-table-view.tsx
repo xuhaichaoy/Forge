@@ -8,13 +8,12 @@ import type {
 } from "../state/conversation-markdown-engine";
 import type { FileReference } from "./file-reference-types";
 import { useForgeIntl } from "./i18n-provider";
-import { CopyFeedbackToast } from "./message-action-row";
 import { writeMarkdownClipboard } from "./message-markdown-copy";
 import type { MarkdownFadeContext } from "./message-markdown-inline-renderer";
 import { renderInline } from "./message-markdown-inline-renderer";
 import { Tooltip } from "./tooltip";
 
-const TABLE_COPIED_RESET_TIMEOUT_MS = 1500;
+const TABLE_COPIED_RESET_TIMEOUT_MS = 2_000;
 
 type MarkdownTableBlock = Extract<MarkdownBlock, { kind: "table" }>;
 
@@ -111,7 +110,6 @@ export function MarkdownTableView({
             </button>
           </Tooltip>
         </div>
-        {copied && <CopyFeedbackToast />}
       </div>
     </div>
   );

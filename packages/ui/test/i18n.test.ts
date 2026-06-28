@@ -175,6 +175,7 @@ function formatsDeepSweepLocalizations(): void {
   assertEqual(z("execFooter.exitCode.unknown", "unknown"), "未知", "execFooter.exitCode.unknown zh");
 
   // Hooks summary + automation next-run + browser-use source + sidebar empty state.
+  assertEqual(z("assistantMessage.hookStats.label", "Hooks"), "钩子", "hookStats.label zh");
   assertEqual(z("assistantMessage.hookStats.title", "Hooks summary"), "钩子摘要", "hookStats.title zh");
   assertEqual(z("assistantMessage.hookStats.blockedCount", "Blocked"), "已阻止", "hookStats.blockedCount zh");
   assertEqual(
@@ -271,11 +272,13 @@ function formatsMigratedSurfaceMessages(): void {
   assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.title", defaultMessage: "Plan" }), "套餐", "plan summary title zh");
   assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.titleWriting", defaultMessage: "Writing plan" }), "编写计划", "plan summary titleWriting zh");
   assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.download", defaultMessage: "Download plan" }), "下载套餐", "plan summary download zh");
+  assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.closeSidePanel", defaultMessage: "Close plan side panel" }), "关闭计划侧边栏", "plan summary close side panel zh");
   assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.expand", defaultMessage: "Expand plan summary" }), "展开计划概要", "plan summary expand aria zh");
   assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.collapse", defaultMessage: "Collapse plan summary" }), "折叠计划概要", "plan summary collapse aria zh");
   assertEqual(formatI18nMessage(zh, { id: "localConversation.planSummary.viewPlan", defaultMessage: "Expand plan" }), "展开计划", "plan summary view plan zh");
   assertEqual(formatI18nMessage(zh, { id: "copyButton.copyAriaLabel", defaultMessage: "Copy" }), "复制", "copy button copy zh");
   assertEqual(formatI18nMessage(zh, { id: "copyButton.copiedAriaLabel", defaultMessage: "Copied" }), "已复制", "copy button copied zh");
+  assertEqual(formatI18nMessage(zh, { id: "review.fileSource.breadcrumb.ariaLabel", defaultMessage: "File path" }), "文件路径", "file source breadcrumb aria zh");
   assertEqual(formatI18nMessage(zh, { id: "composer.memoriesSlashCommand.dialogTitle", defaultMessage: "Chat memories" }), "对话记忆", "memories dialogTitle zh");
   assertEqual(formatI18nMessage(zh, { id: "composer.memoriesSlashCommand.useMemoriesLabel", defaultMessage: "Use memories" }), "使用记忆", "memories useMemoriesLabel zh");
   assertEqual(formatI18nMessage(zh, { id: "composer.memoriesSlashCommand.useMemoriesDescription", defaultMessage: "Let Codex bring existing memories into this chat’s context" }), "允许 Codex 将现有记忆带入此对话的上下文", "memories useMemoriesDescription zh");

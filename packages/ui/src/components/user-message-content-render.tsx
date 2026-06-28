@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import type { ConversationRenderUnit, UserMessageContentPart } from "../state/render-groups";
+import type { UserMessageCommentAttachmentPreview } from "../state/user-message-comment-attachments";
 import type { FileReference } from "./file-reference-types";
+import type { UserMessageMetaChip } from "./user-message-meta";
+import { UserMessageCommentAttachmentChip } from "./user-message-comment-attachments";
 import {
   UserMessageAttachmentPartView,
   UserMessageContentPartView,
@@ -27,20 +30,31 @@ export type UserMessageMarkdownRenderer = (
  */
 
 export function UserMessageAttachmentStrip({
+  commentAttachments = [],
   unit,
   onOpenFileReference,
 }: {
+  commentAttachments?: readonly UserMessageCommentAttachmentPreview[];
   unit: Extract<ConversationRenderUnit, { kind: "message" }>;
   onOpenFileReference?: (reference: FileReference) => void;
 }) {
   const attachments = userMessageAttachmentParts(unit);
-  if (attachments.length === 0) return null;
+  const commentChips = commentAttachmentChipGroups(commentAttachments);
+  if (attachments.length === 0 && commentChips.length === 0) return null;
   return (
     <div className="hc-user-message-attachments">
       {attachments.map((part, index) => (
         <UserMessageAttachmentPartView
           key={userContentPartKey(part, index)}
           part={part}
+          onOpenFileReference={onOpenFileReference}
+        />
+      ))}
+      {commentChips.map(({ attachments, chip, key }) => (
+        <UserMessageCommentAttachmentChip
+          attachments={attachments}
+          chip={chip}
+          key={key}
           onOpenFileReference={onOpenFileReference}
         />
       ))}
@@ -119,4 +133,43 @@ function userMessageInlineParts(parts: UserMessageContentPart[]): UserMessageCon
 function isUserMessageAttachmentPart(part: UserMessageContentPart): boolean {
   if (part.kind === "image") return true;
   return part.kind === "chip" && part.chipKind === "file" && part.presentation !== "inline";
+}
+
+function commentAttachmentChipGroups(
+  attachments: readonly UserMessageCommentAttachmentPreview[],
+): Array<{
+  attachments: readonly UserMessageCommentAttachmentPreview[];
+  chip: UserMessageMetaChip;
+  key: "annotation" | "comment";
+}> {
+  const annotations = attachments.filter((attachment) => attachment.kind === "annotation");
+  const comments = attachments.filter((attachment) => attachment.kind === "comment");
+  const groups: Array<{
+    attachments: readonly UserMessageCommentAttachmentPreview[];
+    chip: UserMessageMetaChip;
+    key: "annotation" | "comment";
+  }> = [];
+  if (annotations.length > 0) {
+    groups.push({
+      attachments: annotations,
+      key: "annotation",
+      chip: {
+        id: "commentAttachments.numAnnotations",
+        defaultMessage: "{count, plural, one {# annotation} other {# annotations}}",
+        values: { count: annotations.length },
+      },
+    });
+  }
+  if (comments.length > 0) {
+    groups.push({
+      attachments: comments,
+      key: "comment",
+      chip: {
+        id: "commentAttachments.numComments",
+        defaultMessage: "{count, plural, one {# comment} other {# comments}}",
+        values: { count: comments.length },
+      },
+    });
+  }
+  return groups;
 }

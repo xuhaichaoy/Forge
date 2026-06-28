@@ -64,7 +64,7 @@ export default function runMessageUnitTests(): void {
   doesNotRenderRealtimeVoiceStatusForTextSteerUserMessages();
   rendersThreadGoalUserStatusLikeCodexDesktop();
   rendersHookUserStatusLikeCodexDesktop();
-  rendersAssistantTimestampFromLifecycleFallback();
+  rendersAssistantTimestampOnlyFromSentAtMs();
   rendersUserTimestampFromLifecycleFallback();
   summarizesAssistantHookStatsLikeCodexDesktop();
   rendersCompletedThreadGoalChipLikeCodexDesktop();
@@ -1130,11 +1130,8 @@ function rendersHookUserStatusLikeCodexDesktop(): void {
   assertEqual(feedbackHtml.includes("Hook feedback"), true, "hookPrompt rows should render Desktop's hook feedback status");
 }
 
-// Codex Desktop's assistant message action row renders a per-message timestamp
-// as its trailing hover/focus affordance. Forge prefers `sentAtMs` when present,
-// but app-server lifecycle notifications currently provide `completedAtMs` /
-// `startedAtMs`, so those remain necessary runtime fallbacks.
-function rendersAssistantTimestampFromLifecycleFallback(): void {
+// Codex Desktop's assistant message action row only receives `sentAtMs`.
+function rendersAssistantTimestampOnlyFromSentAtMs(): void {
   const completedOnlyHtml = renderToStaticMarkup(createElement(MessageUnitView, {
     unit: {
       kind: "message",
@@ -1154,8 +1151,8 @@ function rendersAssistantTimestampFromLifecycleFallback(): void {
   }));
   assertEqual(
     completedOnlyHtml.includes("hc-message-time"),
-    true,
-    "assistant action row should fall back to completedAtMs when sentAtMs is absent",
+    false,
+    "assistant action row should not invent a timestamp from completedAtMs when sentAtMs is absent",
   );
 
   const html = renderToStaticMarkup(createElement(MessageUnitView, {
@@ -1236,7 +1233,7 @@ function summarizesAssistantHookStatsLikeCodexDesktop(): void {
   assertDeepEqual(
     summary,
     {
-      label: "3 hooks",
+      label: "Hooks",
       title: "Hooks summary",
       rows: [
         { label: "Ran", value: "3" },

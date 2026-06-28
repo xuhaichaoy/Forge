@@ -32,6 +32,12 @@ import { useForgeIntl } from "./i18n-provider";
  *   Codex `$C` ↔ `<ImagePreviewLightbox>` (now with prev/next nav)
  */
 
+export type OpenGeneratedImageGalleryPreview = (
+  image: ThreadItem,
+  images: readonly ThreadItem[],
+  index: number,
+) => boolean | void;
+
 function imageItemSrc(item: ThreadItem): string {
   const record = item as Record<string, unknown>;
   for (const key of ["src", "imageUrl", "path", "url", "savedPath"]) {
@@ -55,9 +61,11 @@ function imageItemId(item: ThreadItem, fallback: number): string {
 export function GeneratedImageGallery({
   images,
   hasPending,
+  onOpenGeneratedImagePreview,
 }: {
   images: ThreadItem[];
   hasPending: boolean;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [startIndex, setStartIndex] = useState(0);
@@ -119,7 +127,14 @@ export function GeneratedImageGallery({
     setAspectRatios((current) => (current[imageId] === ratio ? current : { ...current, [imageId]: ratio }));
   };
 
-  const handleOpenPreview = (imageId: string) => {
+  const handleOpenPreview = (image: ThreadItem, imageId: string, index: number) => {
+    /*
+     * codex: local-conversation-thread gallery click first calls the image
+     * side-panel opener and only falls back to `$C` lightbox when it returns
+     * false. Keep the local lightbox for contexts that do not have side-panel
+     * wiring (tests/embedded renderers/background panels).
+     */
+    if (onOpenGeneratedImagePreview?.(image, images, index) === true) return;
     setSelectedId(imageId);
   };
 
@@ -176,7 +191,7 @@ export function GeneratedImageGallery({
                   square={layout.aspectRatio === "square"}
                   hiddenInCarousel={isHidden}
                   onAspectRatioChange={(ratio) => handleAspectRatioChange(id, ratio)}
-                  onOpenPreview={() => handleOpenPreview(id)}
+                  onOpenPreview={() => handleOpenPreview(image, id, index)}
                 />
               );
             })}

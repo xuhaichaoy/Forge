@@ -1324,6 +1324,13 @@ button {
   font-size: calc(13px * var(--hc-ui-font-scale, 1));
 }
 
+.hc-file-preview-empty small {
+  display: block;
+  margin-top: 0.25rem;
+  color: #9a9c94;
+  font-size: calc(11px * var(--hc-ui-font-scale, 1));
+}
+
 .hc-file-preview-image-view {
   display: grid;
   height: 100%;

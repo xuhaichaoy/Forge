@@ -273,8 +273,7 @@ export function ImagePreviewLightbox({
 
   /*
    * The modal node renders into `document.body` via portal so it escapes
-   * any transformed scroll ancestor (mirror of the `CopyFeedbackToast` fix —
-   * see `message-action-row.tsx`). Without this, a fixed-position dialog
+   * any transformed scroll ancestor. Without this, a fixed-position dialog
    * gets re-rooted under `hc-thread-scroll-body`'s transform.
    */
   const modal = open ? renderImagePreviewModalLayer({

@@ -1,11 +1,17 @@
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
-import { GeneratedImageGallery } from "./generated-image-gallery";
+import { GeneratedImageGallery, type OpenGeneratedImageGalleryPreview } from "./generated-image-gallery";
 import { TurnDiffBlock, type PatchAction, type PatchActionState } from "./event-unit";
 
 type MessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }>;
 
-export function AssistantAfterGalleries({ units }: { units: NonNullable<MessageRenderUnit["assistantAfter"]> }) {
+export function AssistantAfterGalleries({
+  units,
+  onOpenGeneratedImagePreview,
+}: {
+  units: NonNullable<MessageRenderUnit["assistantAfter"]>;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
+}) {
   const galleries = units.filter((unit) => unit.kind === "generatedImageGallery");
   if (galleries.length === 0) return null;
   return (
@@ -15,6 +21,7 @@ export function AssistantAfterGalleries({ units }: { units: NonNullable<MessageR
           hasPending={unit.hasPending}
           images={unit.images}
           key={unit.key}
+          onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
         />
       ))}
     </>

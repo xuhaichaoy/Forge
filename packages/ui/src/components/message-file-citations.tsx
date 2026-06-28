@@ -1,6 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { useContext, useState } from "react";
-import type { MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent } from "react";
 import {
   memoryCitationEntries,
   memoryCitationFileReference,
@@ -10,8 +10,10 @@ import { ContextMenu } from "./context-menu";
 import { DelinkFileCitationsContext, FileCitationMenuContext, fileReferenceContextMenuItems } from "./file-citation-menu";
 import type { FileReference } from "./file-reference-types";
 import { useForgeIntl, type ForgeIntlContextValue } from "./i18n-provider";
+import { Tooltip } from "./tooltip";
 
 type FormatMessage = ForgeIntlContextValue["formatMessage"];
+type FileCitationEntry = FileReference & { lineEnd: number };
 
 export function MemoryCitationView({
   citation,
@@ -111,8 +113,9 @@ function normalizeDesktopPathDisplay(path: string): string {
 }
 
 function fileCitationLineLabel(
-  entry: Pick<FileReference, "lineStart" | "lineEnd">,
+  entry: Pick<FileCitationEntry, "lineStart" | "lineEnd">,
   formatMessage: FormatMessage,
+  path?: string,
 ): string | null {
   if (entry.lineEnd !== entry.lineStart) {
     return formatMessage(
@@ -124,7 +127,7 @@ function fileCitationLineLabel(
       { line: entry.lineStart, endLine: entry.lineEnd },
     );
   }
-  if (entry.lineStart === 1) return null;
+  if (entry.lineStart === 1 && !fileCitationPathLooksCodeLike(path)) return null;
   return formatMessage(
     {
       id: "markdown.fileCitation.lineLabel",
@@ -136,11 +139,12 @@ function fileCitationLineLabel(
 }
 
 function fileCitationDisplayLabel(
-  entry: Pick<FileReference, "path" | "lineStart" | "lineEnd">,
+  entry: Pick<FileCitationEntry, "path" | "lineStart" | "lineEnd" | "artifactCitation">,
   formatMessage: FormatMessage,
 ): string {
   const fileName = displayFileCitationPath(entry.path);
-  const lineLabel = fileCitationLineLabel(entry, formatMessage);
+  const lineLabel = fileCitationArtifactLocationLabel(entry.artifactCitation, formatMessage)
+    ?? fileCitationLineLabel(entry, formatMessage, entry.path);
   if (!lineLabel) return fileName;
   const lineLabelDisplay = formatMessage(
     {
@@ -153,9 +157,187 @@ function fileCitationDisplayLabel(
   return `${fileName} ${lineLabelDisplay}`;
 }
 
-function citationHref(entry: Pick<FileReference, "path" | "lineStart">): string {
-  return `${entry.path}:${entry.lineStart}`;
+function fileCitationAriaLabel(
+  entry: Pick<FileCitationEntry, "path" | "lineStart" | "lineEnd" | "artifactCitation">,
+  formatMessage: FormatMessage,
+): string {
+  const fileName = displayFileCitationPath(entry.path);
+  const lineLabel = fileCitationArtifactLocationLabel(entry.artifactCitation, formatMessage)
+    ?? fileCitationLineLabel(entry, formatMessage, entry.path);
+  const fileTypeLabel = fileCitationFallbackTypeLabel(entry, formatMessage);
+  const lineLabelDisplay = lineLabel
+    ? formatMessage(
+        {
+          id: "markdown.fileCitation.lineLabelDisplay",
+          defaultMessage: "({lineLabel})",
+          description: "Location label shown inside parentheses in a file citation chip",
+        },
+        { lineLabel },
+      )
+    : null;
+  if (fileTypeLabel && lineLabelDisplay) {
+    return formatMessage(
+      {
+        id: "markdown.fileCitation.ariaLabelWithTypeAndLine",
+        defaultMessage: "{fileName}, {fileTypeLabel} {lineLabel}",
+        description: "Accessible label for an extensionless file citation chip with location information",
+      },
+      { fileName, fileTypeLabel, lineLabel: lineLabelDisplay },
+    );
+  }
+  if (fileTypeLabel) {
+    return formatMessage(
+      {
+        id: "markdown.fileCitation.ariaLabelWithType",
+        defaultMessage: "{fileName}, {fileTypeLabel}",
+        description: "Accessible label for an extensionless file citation chip",
+      },
+      { fileName, fileTypeLabel },
+    );
+  }
+  if (lineLabelDisplay) {
+    return formatMessage(
+      {
+        id: "markdown.fileCitation.ariaLabelWithLine",
+        defaultMessage: "{fileName} {lineLabel}",
+        description: "Accessible label for a file citation chip with location information",
+      },
+      { fileName, lineLabel: lineLabelDisplay },
+    );
+  }
+  return fileName;
 }
+
+function fileCitationArtifactLocationLabel(
+  citation: FileReference["artifactCitation"] | undefined,
+  formatMessage: FormatMessage,
+): string | null {
+  const target = citation?.target;
+  if (!target) return null;
+  if (target.artifactKind === "document") {
+    return formatMessage(
+      {
+        id: "markdown.fileCitation.documentPageLabel",
+        defaultMessage: "page {pageNumber}",
+        description: "Location label for a document file citation targeting a page",
+      },
+      { pageNumber: target.pageNumber },
+    );
+  }
+  if (target.artifactKind === "presentation") {
+    const slideLabel = target.slideNumber
+      ? formatMessage(
+          {
+            id: "markdown.fileCitation.presentationSlideNumberLabel",
+            defaultMessage: "slide {slideNumber}",
+            description: "Location label for a presentation file citation targeting a slide number",
+          },
+          { slideNumber: target.slideNumber },
+        )
+      : null;
+    const label = citation.label?.trim() || null;
+    if (!target.objectId || !label) return slideLabel;
+    if (!slideLabel) return label;
+    return formatMessage(
+      {
+        id: "markdown.fileCitation.presentationObjectLabel",
+        defaultMessage: "{slideLabel}, {label}",
+        description: "Location label for a presentation file citation targeting a labeled object on a slide",
+      },
+      { label, slideLabel },
+    );
+  }
+  if (target.artifactKind === "workbook") {
+    if ("objectId" in target) {
+      const label = citation.label?.trim() || null;
+      if (!label) return null;
+      return formatMessage(
+        {
+          id: "markdown.fileCitation.workbookObjectLabel",
+          defaultMessage: "{sheet}, {label}",
+          description: "Location label for a spreadsheet file citation targeting a labeled object on a sheet",
+        },
+        { label, sheet: target.sheet },
+      );
+    }
+    return `${target.sheet}!${target.range}`;
+  }
+  return null;
+}
+
+function fileCitationFallbackTypeLabel(
+  entry: Pick<FileCitationEntry, "path" | "artifactCitation">,
+  formatMessage: FormatMessage,
+): string | null {
+  if (fileCitationPathHasExtension(entry.path)) return null;
+  const kind = entry.artifactCitation?.target.artifactKind;
+  const fallbackKind = kind === "workbook" ? "spreadsheet" : kind;
+  switch (fallbackKind) {
+    case "document":
+      return formatMessage({
+        id: "markdown.fileCitation.artifactType.document",
+        defaultMessage: "Document",
+        description: "Fallback file type label for a document file citation with no extension",
+      });
+    case "presentation":
+      return formatMessage({
+        id: "markdown.fileCitation.artifactType.presentation",
+        defaultMessage: "Presentation",
+        description: "Fallback file type label for a presentation file citation with no extension",
+      });
+    case "spreadsheet":
+      return formatMessage({
+        id: "markdown.fileCitation.artifactType.spreadsheet",
+        defaultMessage: "Spreadsheet",
+        description: "Fallback file type label for a spreadsheet file citation with no extension",
+      });
+    default:
+      return null;
+  }
+}
+
+function fileCitationPathHasExtension(path: string): boolean {
+  const fileName = displayFileCitationPath(path);
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex > 0 && dotIndex < fileName.length - 1;
+}
+
+function fileCitationPathLooksCodeLike(path: string | undefined): boolean {
+  if (!path) return false;
+  const fileName = displayFileCitationPath(path).toLowerCase();
+  const dotIndex = fileName.lastIndexOf(".");
+  const extension = dotIndex >= 0 ? fileName.slice(dotIndex + 1) : fileName;
+  return CODE_FILE_CITATION_EXTENSIONS.has(extension);
+}
+
+const CODE_FILE_CITATION_EXTENSIONS = new Set([
+  "c",
+  "cc",
+  "cpp",
+  "cs",
+  "css",
+  "go",
+  "h",
+  "hpp",
+  "html",
+  "java",
+  "js",
+  "json",
+  "jsx",
+  "kt",
+  "m",
+  "mm",
+  "php",
+  "py",
+  "rb",
+  "rs",
+  "scss",
+  "sh",
+  "sql",
+  "ts",
+  "tsx",
+  "vue",
+]);
 
 // codex: inline-mentions-CbDcUfAO.js - the Codex file element wires
 // `onClick: e => _e(fe(e))` where `fe` is `external-markdown-link`'s
@@ -167,12 +349,12 @@ function citationHref(entry: Pick<FileReference, "path" | "lineStart">): string 
 // preview), Cmd/Ctrl-click -> `onOpenFileReferenceExternal` when an
 // external opener is wired. With no external opener available the click
 // falls through to the in-app preview (never the no-op it was before).
-function fileReferenceClickIsModified(event: MouseEvent<HTMLAnchorElement>): boolean {
+function fileReferenceClickIsModified(event: Pick<MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>, "metaKey" | "ctrlKey">): boolean {
   return event.metaKey || event.ctrlKey;
 }
 
 function handleFileReferenceClick(
-  event: MouseEvent<HTMLAnchorElement>,
+  event: MouseEvent<HTMLElement>,
   reference: FileReference,
   onOpenFileReference: ((reference: FileReference) => void) | undefined,
   onOpenFileReferenceExternal?: (reference: FileReference) => void,
@@ -187,6 +369,31 @@ function handleFileReferenceClick(
   onOpenFileReference(reference);
 }
 
+function handleFileReferenceKeyDown(
+  event: KeyboardEvent<HTMLElement>,
+  reference: FileReference,
+  onOpenFileReference: ((reference: FileReference) => void) | undefined,
+  onOpenFileReferenceExternal?: (reference: FileReference) => void,
+): void {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    handleFileReferenceClick(event as unknown as MouseEvent<HTMLElement>, reference, onOpenFileReference, onOpenFileReferenceExternal);
+    return;
+  }
+  if (event.key === " ") event.preventDefault();
+}
+
+function handleFileReferenceKeyUp(
+  event: KeyboardEvent<HTMLElement>,
+  reference: FileReference,
+  onOpenFileReference: ((reference: FileReference) => void) | undefined,
+  onOpenFileReferenceExternal?: (reference: FileReference) => void,
+): void {
+  if (event.key !== " ") return;
+  event.preventDefault();
+  handleFileReferenceClick(event as unknown as MouseEvent<HTMLElement>, reference, onOpenFileReference, onOpenFileReferenceExternal);
+}
+
 // codex inline-mentions-*.js wraps each inline file-reference anchor with the shared
 // workspace-file context menu; Forge's anchor mirrors that via the shared
 // FileCitationMenuContext + items builder (see ./file-citation-menu). onClick (open)
@@ -199,7 +406,7 @@ export function FileCitationAnchor({
 }: {
   // fileCitation segments carry a definite lineEnd (needed by memoryCitationLineLabel);
   // this is assignable to FileReference for the open/reveal/copy handlers below.
-  entry: { path: string; lineStart: number; lineEnd: number };
+  entry: FileCitationEntry;
   displayPath: string;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
@@ -211,6 +418,7 @@ export function FileCitationAnchor({
   const items = fileReferenceContextMenuItems({ reference: entry, onOpenFileReference, menuActions, formatMessage });
   const fullPath = displayCitationPath(displayPath);
   const label = fileCitationDisplayLabel({ ...entry, path: displayPath }, formatMessage);
+  const ariaLabel = fileCitationAriaLabel({ ...entry, path: displayPath }, formatMessage);
 
   // Projectless conversation: the citation is a knowledge-base / tool source, not
   // a local file - render plain, non-clickable provenance instead of a dead link.
@@ -224,18 +432,24 @@ export function FileCitationAnchor({
 
   return (
     <>
-      <a
-        className="hc-file-citation-marker"
-        href={citationHref(entry)}
-        title={fullPath}
-        onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference, onOpenFileReferenceExternal)}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setMenu({ x: event.clientX, y: event.clientY });
-        }}
-      >
-        {label}
-      </a>
+      <Tooltip content={fullPath}>
+        <span
+          aria-label={ariaLabel}
+          className="hc-file-citation-marker"
+          data-file-reference
+          role="button"
+          tabIndex={0}
+          onClick={(event) => handleFileReferenceClick(event, entry, onOpenFileReference, onOpenFileReferenceExternal)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setMenu({ x: event.clientX, y: event.clientY });
+          }}
+          onKeyDown={(event) => handleFileReferenceKeyDown(event, entry, onOpenFileReference, onOpenFileReferenceExternal)}
+          onKeyUp={(event) => handleFileReferenceKeyUp(event, entry, onOpenFileReference, onOpenFileReferenceExternal)}
+        >
+          <span className="hc-file-citation-marker-label">{label}</span>
+        </span>
+      </Tooltip>
       {menu != null && <ContextMenu items={items} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
     </>
   );

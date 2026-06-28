@@ -1,4 +1,5 @@
 import type { I18nValues } from "../state/i18n";
+import { userMessageCommentAttachmentCount } from "../state/user-message-comment-attachments";
 
 export interface UserMessageMetaChip {
   id: string;
@@ -27,7 +28,7 @@ export function userMessageMetaChips(item: Record<string, unknown>): UserMessage
   if (booleanField(item, "autoResolveSync")) {
     chips.push({ id: "codex.userMessage.autoResolveSync", defaultMessage: "Auto resolve conflicts" });
   }
-  const commentCount = numericField(item, "commentCount");
+  const commentCount = numericField(item, "commentCount") || userMessageCommentAttachmentCount(item);
   if (commentCount > 0) {
     chips.push({
       id: "codex.userMessage.commentCount",

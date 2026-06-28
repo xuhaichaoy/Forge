@@ -27,7 +27,11 @@ function projectsWorkspaceFileTabsIntoWatchTargets(): void {
   assertEqual(targets[0]?.hostId, "local", "host id should come from tab props");
   assertEqual(targets[0]?.watchPath, "/repo/src/app.ts", "relative path should resolve from workspace root");
   assertEqual(targets[0]?.watchId, openFileWatchId("local", "/repo/src/app.ts"), "watch id should be stable");
-  assertDeepEqual(targets[0]?.tabIds, ["file:local:/repo/src/app.ts"], "watch target should remember tab ids");
+  assertDeepEqual(
+    targets[0]?.tabs,
+    [{ tabId: "file:local:/repo/src/app.ts", refreshMode: "auto" }],
+    "watch target should remember tab ids and refresh modes",
+  );
 }
 
 function groupsTabsThatShareAWorkspaceFile(): void {
@@ -40,15 +44,18 @@ function groupsTabsThatShareAWorkspaceFile(): void {
     {
       tabId: "artifact:source",
       kind: "workspaceFile:local",
-      props: { path: "/repo/src/app.ts", hostId: "local", refreshKey: 2 },
+      props: { path: "/repo/src/app.ts", hostId: "local", refreshKey: 2, artifactType: "pdf" },
     },
   ]);
 
   assertEqual(targets.length, 1, "same host/path should share one watch");
   assertDeepEqual(
-    targets[0]?.tabIds,
-    ["file:local:/repo/src/app.ts", "artifact:source"],
-    "shared watch should update every matching tab",
+    targets[0]?.tabs,
+    [
+      { tabId: "file:local:/repo/src/app.ts", refreshMode: "auto" },
+      { tabId: "artifact:source", refreshMode: "manual" },
+    ],
+    "shared watch should update every matching tab with its refresh mode",
   );
 }
 

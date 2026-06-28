@@ -1,5 +1,5 @@
-import { ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, MoreHorizontal, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ExternalLink, FileText, FolderOpen, ImageIcon, LinkIcon, MoreHorizontal, RefreshCw, X } from "lucide-react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   ArtifactDocumentPreviewView,
   ArtifactPdfPreviewFrame,
@@ -17,6 +17,7 @@ import {
   type MetadataPreviewState,
 } from "./artifact-preview-panel-model";
 import { ImagePreviewLightbox } from "./image-preview-lightbox";
+import { ContextMenu, type ContextMenuItem } from "./context-menu";
 import { useForgeIntl } from "./i18n-provider";
 import {
   localFileSrc,
@@ -42,12 +43,21 @@ export interface ArtifactPreviewPanelProps {
   workspaceRoot?: string | null;
   cwd?: string | null;
   refreshKey?: number | null;
+  sourceChanged?: boolean | null;
   onClose: () => void;
   onOpenFileReference?: (reference: RailEntryReference) => void;
   onOpenFileExternal?: (reference: RailEntryReference) => void;
   onRevealFileReference?: (reference: RailEntryReference) => void;
   onOpenUrl?: (url: string) => void;
+  onRefreshSource?: () => void;
 }
+
+interface ToolbarMenuAnchor {
+  x: number;
+  y: number;
+}
+
+const TOOLBAR_MENU_WIDTH_PX = 180;
 
 export function ArtifactPreviewPanel({
   entry,
@@ -55,11 +65,13 @@ export function ArtifactPreviewPanel({
   workspaceRoot,
   cwd,
   refreshKey = 0,
+  sourceChanged = false,
   onClose,
   onOpenFileReference,
   onOpenFileExternal,
   onRevealFileReference,
   onOpenUrl,
+  onRefreshSource,
 }: ArtifactPreviewPanelProps) {
   const { formatMessage } = useForgeIntl();
   const preview = useMemo(() => projectArtifactPreview(entry), [entry]);
@@ -68,6 +80,8 @@ export function ArtifactPreviewPanel({
   const [documentPreview, setDocumentPreview] = useState<DocumentPreviewState>({ status: "idle", preview: null });
   const [metadataPreview, setMetadataPreview] = useState<MetadataPreviewState>({ status: "idle", metadata: null });
   const [resolvedReferencePath, setResolvedReferencePath] = useState("");
+  const [sourceOptionsMenu, setSourceOptionsMenu] = useState<ToolbarMenuAnchor | null>(null);
+  const [openOptionsMenu, setOpenOptionsMenu] = useState<ToolbarMenuAnchor | null>(null);
   const referencePath = preview.reference?.path ?? "";
   const referencePathCandidates = useMemo(
     () => resolveFileReferencePathCandidates(referencePath, { workspaceRoot, cwd }),
@@ -243,6 +257,40 @@ export function ArtifactPreviewPanel({
     imageSrc || pdfSrc || resolvedTextPath || resolvedSpreadsheetPath || resolvedDocumentPath,
   );
   const showUnavailablePreview = !previewState && !hasInlinePreview && preview.kind !== "url";
+  const sourceOptionsLabel = formatMessage({
+    id: "artifactTab.sourceOptions",
+    defaultMessage: "Artifact viewer options",
+  });
+  const openLabel = formatMessage({ id: "artifactTab.preview.open", defaultMessage: "Open" });
+  const openOptionsLabel = formatMessage({ id: "artifactTab.preview.openOptions", defaultMessage: "Open options" });
+  const sourceOptionsItems: ContextMenuItem[] = resolvedReference && onOpenFileReference ? [
+    {
+      id: "view-source",
+      icon: <FileText size={14} />,
+      label: formatMessage({ id: "artifactTab.sourceOptions.viewSource", defaultMessage: "View source" }),
+      onSelect: () => onOpenFileReference(resolvedReference),
+    },
+  ] : [];
+  const openOptionsItems: ContextMenuItem[] = resolvedReference && onRevealFileReference ? [
+    {
+      id: "open-in-folder",
+      icon: <FolderOpen size={14} />,
+      label: formatMessage({ id: "artifactTab.preview.openInFolder", defaultMessage: "Open in folder" }),
+      onSelect: () => onRevealFileReference(resolvedReference),
+    },
+  ] : [];
+  const showSourceOptions = sourceOptionsItems.length > 0;
+  const showOpenOptions = openOptionsItems.length > 0;
+  const openToolbarMenu = (
+    event: MouseEvent<HTMLButtonElement>,
+    setMenu: (anchor: ToolbarMenuAnchor | null) => void,
+    closeOtherMenu: () => void,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    closeOtherMenu();
+    setMenu(toolbarMenuAnchor(event.currentTarget));
+  };
 
   return (
     <section className="hc-artifact-preview-panel" aria-label={formatMessage({ id: "hc.artifact.panelLabel", defaultMessage: "Artifact preview" })}>
@@ -255,53 +303,52 @@ export function ArtifactPreviewPanel({
           </div>
         </div>
         <div className="hc-artifact-preview-header-actions">
-          {resolvedReference && onOpenFileReference && (
+          {showSourceOptions && (
             <button
-              aria-label={formatMessage({ id: "artifactTab.sourceOptions.viewSource", defaultMessage: "View source" })}
+              aria-label={sourceOptionsLabel}
               className="hc-artifact-preview-icon-button"
-              title={formatMessage({ id: "artifactTab.sourceOptions.viewSource", defaultMessage: "View source" })}
+              title={sourceOptionsLabel}
               type="button"
-              onClick={() => onOpenFileReference(resolvedReference)}
+              onClick={(event) => openToolbarMenu(event, setSourceOptionsMenu, () => setOpenOptionsMenu(null))}
             >
-              <FileText size={14} />
+              <MoreHorizontal size={14} />
             </button>
           )}
           {resolvedReference && onOpenFileExternal && (
-            <button
-              aria-label={formatMessage({ id: "artifactTab.preview.open", defaultMessage: "Open" })}
-              className="hc-artifact-preview-open-button"
-              title={formatMessage({ id: "artifactTab.preview.open", defaultMessage: "Open" })}
-              type="button"
-              onClick={() => onOpenFileExternal(resolvedReference)}
-            >
-              <FolderOpen size={14} />
-              <span>{formatMessage({ id: "artifactTab.preview.open", defaultMessage: "Open" })}</span>
-            </button>
-          )}
-          {resolvedReference && onRevealFileReference && (
-            <details className="hc-artifact-preview-open-menu">
-              <summary
-                aria-label={formatMessage({ id: "artifactTab.preview.openOptions", defaultMessage: "Open options" })}
-                className="hc-artifact-preview-icon-button"
-                title={formatMessage({ id: "artifactTab.preview.openOptions", defaultMessage: "Open options" })}
+            <div className={showOpenOptions ? "hc-artifact-preview-open-split" : undefined}>
+              <button
+                aria-label={openLabel}
+                className="hc-artifact-preview-open-button"
+                title={openLabel}
+                type="button"
+                onClick={() => onOpenFileExternal(resolvedReference)}
               >
-                <MoreHorizontal size={14} />
-              </summary>
-              <div className="hc-artifact-preview-open-menu-popover" role="menu">
+                <FolderOpen size={14} />
+                <span>{openLabel}</span>
+              </button>
+              {showOpenOptions && (
                 <button
+                  aria-label={openOptionsLabel}
+                  className="hc-artifact-preview-open-options-button"
+                  title={openOptionsLabel}
                   type="button"
-                  className="hc-artifact-preview-open-menu-item"
-                  role="menuitem"
-                  onClick={(event) => {
-                    event.currentTarget.closest("details")?.removeAttribute("open");
-                    onRevealFileReference(resolvedReference);
-                  }}
+                  onClick={(event) => openToolbarMenu(event, setOpenOptionsMenu, () => setSourceOptionsMenu(null))}
                 >
-                  <FolderOpen size={14} />
-                  <span>{formatMessage({ id: "artifactTab.preview.openInFolder", defaultMessage: "Open in folder" })}</span>
+                  <ChevronDown size={14} />
                 </button>
-              </div>
-            </details>
+              )}
+            </div>
+          )}
+          {resolvedReference && !onOpenFileExternal && showOpenOptions && (
+            <button
+              aria-label={openOptionsLabel}
+              className="hc-artifact-preview-icon-button"
+              title={openOptionsLabel}
+              type="button"
+              onClick={(event) => openToolbarMenu(event, setOpenOptionsMenu, () => setSourceOptionsMenu(null))}
+            >
+              <MoreHorizontal size={14} />
+            </button>
           )}
           {preview.url && /^https?:\/\//i.test(preview.url) && onOpenUrl && (
             <button
@@ -325,6 +372,22 @@ export function ArtifactPreviewPanel({
           </button>
         </div>
       </div>
+      {sourceOptionsMenu && (
+        <ContextMenu
+          items={sourceOptionsItems}
+          x={sourceOptionsMenu.x}
+          y={sourceOptionsMenu.y}
+          onClose={() => setSourceOptionsMenu(null)}
+        />
+      )}
+      {openOptionsMenu && (
+        <ContextMenu
+          items={openOptionsItems}
+          x={openOptionsMenu.x}
+          y={openOptionsMenu.y}
+          onClose={() => setOpenOptionsMenu(null)}
+        />
+      )}
 
       <div className="hc-artifact-preview-body">
         {preview.meta && <div className="hc-artifact-preview-meta" title={preview.meta}>{preview.meta}</div>}
@@ -333,6 +396,29 @@ export function ArtifactPreviewPanel({
       </div>
 
       {previewState && <ArtifactPreviewStateView state={previewState} />}
+
+      {sourceChanged && (
+        <div className="hc-artifact-preview-refresh-prompt">
+          <button
+            aria-label={formatMessage({
+              id: "artifactTab.refreshForLatest",
+              defaultMessage: "Refresh for latest",
+              description: "Accessible label for refreshing an artifact preview after the source changed",
+            })}
+            type="button"
+            onClick={onRefreshSource}
+          >
+            <RefreshCw size={14} />
+            <span>
+              {formatMessage({
+                id: "artifactTab.refreshForLatest",
+                defaultMessage: "Refresh for latest",
+                description: "Button label for refreshing an artifact preview after the source changed",
+              })}
+            </span>
+          </button>
+        </div>
+      )}
 
       {imageSrc && (
         <ImagePreviewLightbox
@@ -374,4 +460,12 @@ function artifactIcon(kind: ReturnType<typeof projectArtifactPreview>["kind"]) {
   if (kind === "image") return <ImageIcon size={15} />;
   if (kind === "url") return <LinkIcon size={15} />;
   return <FileText size={15} />;
+}
+
+function toolbarMenuAnchor(trigger: HTMLElement): ToolbarMenuAnchor {
+  const rect = trigger.getBoundingClientRect();
+  return {
+    x: Math.max(8, rect.right - TOOLBAR_MENU_WIDTH_PX),
+    y: rect.bottom + 4,
+  };
 }

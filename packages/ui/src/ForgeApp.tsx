@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type MutableRefObject } from "react";
 import type {
   CollaborationModeMask,
   JsonRpcNotification,
+  JsonRpcRequest,
   ModelConfig,
   Thread,
 } from "@forge/codex-protocol";
@@ -81,6 +82,7 @@ import {
 import {
   codexUiReducer,
   initialCodexUiState,
+  type CodexUiAction,
   type CodexUiState,
   selectActiveThreadRuntime,
   selectItemsByThread,
@@ -360,6 +362,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   );
   const [imageGenerationDraft, setImageGenerationDraft] = useState<ImageGenerationSettings>(imageGenerationSettings);
   const [artifactPreview, setArtifactPreviewState] = useState<RailEntry | null>(null);
+  const [sidePanelObscuresRightRail, setSidePanelObscuresRightRail] = useState(false);
   /*
    * Bumped each time the artifact preview is (re-)opened so `ArtifactPreviewPanel`
    * remounts via `key={...}` even when the user clicks the same artifact entry
@@ -367,7 +370,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
    * useEffects keep their cached output (filed by the path-only dependency), so a
    * file the model just rewrote on disk still shows the original contents.
    */
-  const [artifactPreviewNonce, setArtifactPreviewNonce] = useState(0);
+  const [, setArtifactPreviewNonce] = useState(0);
   const setArtifactPreview = useCallback((entry: RailEntry | null) => {
     if (entry === null) {
       setArtifactPreviewState(null);
@@ -400,6 +403,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   const authRefreshTokenOnNextRefreshRef = useRef(false);
   const accountRefreshTokenOnNextRefreshRef = useRef(false);
   const threadScrollOffsetsRef = useRef(new Map<string, number>());
+  const closeSidePanelRef = useRef<(() => void) | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
   const mainWidth = useElementInlineSize(mainRef);
   const setAccountProjectionState = useCallback((next: AccountState) => {
@@ -794,6 +798,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     scrollToUnitKeyRef: threadFindScrollToUnitRef,
   });
   const hasFilePreviewSelection = artifactPreview !== null || fileReference !== null;
+  const hasVisibleRightPanel = hasFilePreviewSelection || sidePanelObscuresRightRail;
   /*
    * Codex Desktop opens file/artifact previews into the AppShell RightPanel
    * (`app-shell-*.js`), not into the summary rail. Drag <
@@ -803,6 +808,8 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   const closeFilePreviewPanel = useCallback(() => {
     setArtifactPreview(null);
     setFileReference(null);
+    closeSidePanelRef.current?.();
+    setSidePanelObscuresRightRail(false);
   }, [setArtifactPreview, setFileReference]);
   const {
     connect,
@@ -957,7 +964,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     closeFilePreviewPanel, commandPanel, composerAttachments, composerGoalMode, composerMode,
     composerWorkMode,
     conversation, dispatch, effectiveThreadContextDefaults, ensureConnected, fileSearchControllerRef,
-    formatUiMessage, hasFilePreviewSelection, includeImageDynamicTool, input, mainWidth,
+    formatUiMessage, hasFilePreviewSelection: hasVisibleRightPanel, includeImageDynamicTool, input, mainWidth,
     notificationPreferences, openWorkbenchTab, plan: activeFixedPlan, pendingWorktree, pinnedThreadIds, rightRailPinned,
     rightRailPopoverOpen, selectWorkbenchThread, setActiveRemoteTaskId, setActiveSettingsPanel,
     setCommandPanel, setRightRailPopoverOpen, setSettingsPanelState, sidebarPreferences,
@@ -970,8 +977,10 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     openFilesTabRef,
     sidePanel,
   } = useForgeAppSidePanelHost({
-    client, dispatch, refreshBrowserRuntime, refreshOpenFileWatchTabsRef, setBrowserRuntimeSnapshot, state,
+    client, dispatch, onRightPanelVisibilityChange: setSidePanelObscuresRightRail, refreshBrowserRuntime,
+    refreshOpenFileWatchTabsRef, setBrowserRuntimeSnapshot, state,
   });
+  closeSidePanelRef.current = () => sidePanel.setPanelOpen(false);
 
   useForgeAppShellCommands({
     FILES_TAB_ID, createWorkbenchThread, dispatch, loadSettingsPanel, openChatSearchPanel, openCommandMenu,
@@ -999,18 +1008,19 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     memoryCitationRoot,
     openActiveDiffPanel,
     openAssistantArtifactInSidePanel,
-    openFileReferenceExternal,
-    openRailArtifactFileExternal,
+    activePlanSidePanelKey,
+    openGeneratedImagePreview,
+    openGeneratedImageThreadItemPreview,
     openRailPlan,
     openRailUrl,
     previewConversationFileReferenceAndOpenRail,
-    previewPathContext,
     previewRailArtifact,
     previewRailFileReferenceAndOpenRail,
     rememberThreadScrollOffset,
     revealAssistantEndResource,
     revealFileReference,
     sidePanelNewTabActions,
+    togglePlanSummarySidePanel,
   } = useForgeAppPreviewWiring({
     FILES_TAB_ID, activeDiff, activeThread, activeThreadScrollKey, formatUiMessage,
     openArtifactPreviewTabRef, openBrowserSurface, openCommandPanel, openFilesTabRef,
@@ -1161,24 +1171,28 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
 
       {workbenchVisible ? renderForgeAppMain({
         activeDiff, activePendingRequests, activeQueuedFollowUps, activeThread, activeThreadFindMatches,
-        activeThreadRunning, activeThreadScrollKey, artifactPreview, artifactPreviewNonce, automationsModel,
+        activePlanSidePanelKey,
+        activeThreadRunning, activeThreadScrollKey, automationsModel,
         automationsPanelOpen, backgroundAgentCanInterrupt, backgroundAgentConversation,
         backgroundAgentInterrupting, backgroundAgentMessageDraft, backgroundAgentMessageError,
         backgroundAgentMessageSending, backgroundAgentPanel, backgroundAgentStatus, backgroundAgentSubtitle,
         backgroundAgentTitle, backgroundTerminalCleanupPending, cleanBackgroundTerminals,
         closeBackgroundAgentPanel, closeFilePreviewPanel, closeThreadFindBar, conversation,
-        conversationEmptyState, dispatch, editLastUserTurn, filePreviewPanelLayout, fileReference,
+        conversationEmptyState, dispatch, editLastUserTurn, filePreviewPanelLayout,
         forkActiveThreadFromTurn, formatUiMessage, goToThreadFindMatch, handleMcpAppHostCall,
-        handlePatchAction, hasFilePreviewSelection, initialThreadScrollOffset,
+        handlePatchAction, hasFilePreviewSelection: hasVisibleRightPanel, initialThreadScrollOffset,
         interruptBackgroundAgentPanelTurn, mainLayoutStyle, mainRef, memoryCitationRoot, openActiveDiffPanel,
         openAssistantArtifactInSidePanel, openAutomationFromConversation, openAutomationsPanel,
-        openBackgroundAgentThread, openBrowserSurface, openFileReferenceExternal,
-        openRailArtifactFileExternal, openRailPlan, openRailUrl, openRemoteTask, patchActionInFlight, patchActionState,
-        previewConversationFileReferenceAndOpenRail, previewPathContext, previewRailArtifact,
+        openBackgroundAgentThread, openBrowserSurface,
+        openPlanSummary: togglePlanSummarySidePanel, openRailPlan, openRailUrl, openRemoteTask, patchActionInFlight, patchActionState,
+        previewConversationFileReferenceAndOpenRail,
+        previewGeneratedImage: openGeneratedImagePreview,
+        previewGeneratedImageFromThreadItem: openGeneratedImageThreadItemPreview,
+        previewRailArtifact,
         previewRailFileReferenceAndOpenRail, readMcpResource, refreshAutomationsPanel,
         rememberThreadScrollOffset, revealAssistantEndResource, rightRailMode, rightRailPinned,
-        rightRailSections, selectThreadById, sendBackgroundAgentPanelMessage, setArtifactPreview,
-        setAutomationsPanelOpen, setBackgroundAgentMessageDraft, setFileReference, setFocusedAutomationId,
+        rightRailSections, selectThreadById, sendBackgroundAgentPanelMessage,
+        setAutomationsPanelOpen, setBackgroundAgentMessageDraft, setFocusedAutomationId,
         setRightRailPinned, setRightRailPopoverOpen, setThreadFindQuery, showLiveTurnFixedContent,
         showRightRail, showRightRailPopover, sidebarOpen, sidePanel, sidePanelNewTabActions, state,
         threadFindFocusToken, threadFindOpen, threadFindQuery, threadFindScrollToUnitRef,
@@ -1289,7 +1303,10 @@ export function ForgeApp() {
     const rpc = new CodexJsonRpcClient({
       onHostStatus: (status) => dispatch({ type: "hostStatus", status }),
       onNotification: (message) => clientCallbacksRef.current.onNotification(message),
-      onServerRequest: (request) => dispatch({ type: "serverRequest", request }),
+      onServerRequest: (request) => {
+        if (respondToBuiltinServerRequest(request, clientRef.current, dispatch)) return;
+        dispatch({ type: "serverRequest", request });
+      },
       onLog: (text, level) => dispatch({ type: "log", text, level }),
       onConnectionClosed: () => dispatch({ type: "connected", value: false }),
       onDebugEvent: (event) => clientCallbacksRef.current.onDebugEvent(event),
@@ -1313,4 +1330,19 @@ export function ForgeApp() {
       </TeamServiceAuthGate>
     </ServicesProvider>
   );
+}
+
+function respondToBuiltinServerRequest(
+  request: JsonRpcRequest,
+  client: CodexJsonRpcClient | null,
+  dispatch: Dispatch<CodexUiAction>,
+): boolean {
+  if (request.method !== "currentTime/read") return false;
+  if (!client) return false;
+  void client.respond(request.id, {
+    currentTimeAt: Math.floor(Date.now() / 1000),
+  }).catch((error) => {
+    dispatch({ type: "log", text: formatError(error), level: "error" });
+  });
+  return true;
 }

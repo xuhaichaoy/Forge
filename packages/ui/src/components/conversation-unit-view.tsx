@@ -7,7 +7,7 @@ import {
 } from "./event-unit";
 import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
-import { GeneratedImageGallery } from "./generated-image-gallery";
+import { GeneratedImageGallery, type OpenGeneratedImageGalleryPreview } from "./generated-image-gallery";
 import { AssistantEndResourceCards } from "./assistant-end-resource-cards";
 import { IconActionButton, MessageActionRow } from "./message-action-row";
 import { useForgeIntl } from "./i18n-provider";
@@ -19,6 +19,7 @@ import { DynamicToolCallGroupView, ThreadItemView } from "./thread-item-view";
 export function ConversationUnitView({
   unit,
   isMostRecentTurn = false,
+  activePlanSidePanelKey = null,
   onOpenFileReference,
   onOpenAutomation,
   memoryCitationRoot,
@@ -31,7 +32,9 @@ export function ConversationUnitView({
   onEditLastUserMessage,
   onOpenAssistantArtifact,
   onRevealAssistantEndResource,
+  onOpenPlan,
   onOpenDiff,
+  onOpenGeneratedImagePreview,
   onForkTurn,
   onPatchAction,
   patchActionState,
@@ -39,6 +42,7 @@ export function ConversationUnitView({
 }: {
   unit: ConversationRenderUnit;
   isMostRecentTurn?: boolean;
+  activePlanSidePanelKey?: string | null;
   onOpenFileReference?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
   memoryCitationRoot?: string | null;
@@ -51,8 +55,10 @@ export function ConversationUnitView({
   onEditLastUserMessage?: (turnId: string, message: string) => void | Promise<void>;
   onOpenAssistantArtifact?: (entry: RailEntry) => void;
   onRevealAssistantEndResource?: (entry: RailEntry) => void;
+  onOpenPlan?: (entry: RailEntry) => void;
   // codex: `wa(o, { path })` deep-link — when supplied, scope diff view to a single file.
   onOpenDiff?: (filePath?: string) => void;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
   onForkTurn?: (turnId: string) => void;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
@@ -71,6 +77,7 @@ export function ConversationUnitView({
         onOpenFileReference={onOpenFileReference}
         onOpenAutomation={onOpenAutomation}
         onOpenDiff={onOpenDiff}
+        onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
         onPatchAction={onPatchAction}
         patchActionState={patchActionState}
         patchActionInFlight={patchActionInFlight}
@@ -82,8 +89,10 @@ export function ConversationUnitView({
     return (
       <ThreadItemView
         unit={unit}
+        activePlanSidePanelKey={activePlanSidePanelKey}
         onMcpAppHostCall={onMcpAppHostCall}
         onReadMcpResource={onReadMcpResource}
+        onOpenPlan={onOpenPlan}
         threadId={threadId}
       />
     );
@@ -107,6 +116,7 @@ export function ConversationUnitView({
     return (
       <GeneratedImageGalleryOutput
         unit={unit}
+        onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
         onForkTurn={onForkTurn}
       />
     );
@@ -144,16 +154,22 @@ export function ConversationUnitView({
 
 function GeneratedImageGalleryOutput({
   unit,
+  onOpenGeneratedImagePreview,
   onForkTurn,
 }: {
   unit: Extract<ConversationRenderUnit, { kind: "generatedImageGallery" }>;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
   onForkTurn?: (turnId: string) => void;
 }) {
   const { formatMessage } = useForgeIntl();
   const canFork = Boolean(onForkTurn && unit.turnId && !unit.hasPending);
   return (
     <div className="hc-message assistant hc-generated-image-output" data-role="assistant">
-      <GeneratedImageGallery images={unit.images} hasPending={unit.hasPending} />
+      <GeneratedImageGallery
+        images={unit.images}
+        hasPending={unit.hasPending}
+        onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
+      />
       <MessageActionRow copyText="" hasActionChildren={canFork}>
         {canFork && unit.turnId && (
           <IconActionButton

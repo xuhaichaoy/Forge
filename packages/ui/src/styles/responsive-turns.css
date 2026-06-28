@@ -432,6 +432,7 @@
 }
 
 .hc-plan-summary-card {
+  position: relative;
   width: min(100%, 720px);
   overflow: hidden;
   /* codex plan card = markdown-surface `m` wrapper: NO border, NO shadow, rounded-lg,
@@ -439,6 +440,53 @@
   border-radius: var(--hc-radius-lg);
   corner-shape: superellipse(1.5);
   background: var(--hc-surface-hover);
+}
+
+.hc-plan-summary-card.is-thread-preview {
+  max-height: 200px;
+  cursor: default;
+  user-select: none;
+}
+
+.hc-plan-summary-card-open-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hc-plan-summary-card-close-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-tertiary);
+  cursor: pointer;
+}
+
+.hc-plan-summary-card-close-overlay:focus-visible {
+  outline: 1px solid var(--hc-focus-ring);
+  outline-offset: -1px;
+}
+
+.hc-plan-summary-card-close-overlay span {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--hc-radius-md);
+}
+
+.hc-plan-summary-card-close-overlay span:hover {
+  background: var(--hc-surface-soft);
+  color: var(--hc-text-primary);
 }
 
 .hc-plan-summary-header {
@@ -468,10 +516,16 @@
 }
 
 .hc-plan-summary-actions {
+  position: relative;
+  z-index: 20;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
+}
+
+.hc-plan-summary-actions.is-hidden {
+  display: none;
 }
 
 .hc-plan-summary-actions button {
@@ -514,11 +568,27 @@
   position: relative;
   min-width: 0;
   padding: 12px 16px; /* codex markdown surface = `px-4 py-3` = 16px inline / 12px block */
+  transition: max-height 160ms ease, opacity 160ms ease, padding 160ms ease;
 }
 
 .hc-plan-summary-body.is-collapsed {
   max-height: 320px;
   overflow: hidden;
+}
+
+.hc-plan-summary-card.is-thread-preview .hc-plan-summary-body {
+  max-height: 160px;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black calc(100% - 4rem), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 4rem), transparent);
+}
+
+.hc-plan-summary-card.is-side-panel-active .hc-plan-summary-body {
+  max-height: 0;
+  opacity: 0;
+  padding-block: 0;
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 
 .hc-plan-summary-body .hc-markdown {

@@ -50,6 +50,7 @@ function makeThread(overrides: Partial<Thread> & Record<string, unknown>): Threa
     parentThreadId: null,
     preview: "",
     ephemeral: false,
+    historyMode: "legacy",
     modelProvider: "openai",
     createdAt: overrides.createdAt ?? 0,
     updatedAt: overrides.updatedAt ?? 0,

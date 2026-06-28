@@ -100,13 +100,20 @@ export function collectRailEntries(
       || stringField(record, "savedPath")
       || imageResultDataUrl(record);
     if (imageSrc && shouldProjectGeneratedImageArtifact(imageSrc, context)) {
-      setArtifact(artifacts, imageArtifactEntryFromSource(resolveGeneratedImageArtifactSource(imageSrc, context?.cwd), statusText(item)));
+      setArtifact(
+        artifacts,
+        imageArtifactEntryFromSource(
+          resolveGeneratedImageArtifactSource(imageSrc, context?.cwd),
+          statusText(item),
+          "generated-image",
+        ),
+      );
     }
   }
 
   const forgeImageUrl = forgeImageToolOutputUrl(item);
   if (forgeImageUrl) {
-    setArtifact(artifacts, imageArtifactEntryFromSource(forgeImageUrl, statusText(item)));
+    setArtifact(artifacts, imageArtifactEntryFromSource(forgeImageUrl, statusText(item), "generated-image"));
   }
 
   if (item.type === "mcpToolCall") {
@@ -182,11 +189,16 @@ export function resolveFileArtifactCandidate(
   return entry;
 }
 
-function imageArtifactEntryFromSource(source: string, status: string): RailEntry {
+function imageArtifactEntryFromSource(
+  source: string,
+  status: string,
+  artifactKind?: RailEntry["artifactKind"],
+): RailEntry {
   const localPath = filePathFromFileUrl(source) || (source.startsWith("/") ? source : "");
-  if (localPath) return fileArtifactEntryFromPath(localPath, status);
+  if (localPath) return fileArtifactEntryFromPath(localPath, status, { artifactKind });
   return {
     id: `image:${source}`,
+    ...(artifactKind ? { artifactKind } : {}),
     title: imageArtifactTitle(source),
     meta: source,
     status,
@@ -528,6 +540,8 @@ function shouldReplaceFileArtifact(existing: RailEntry, next: RailEntry): boolea
   const existingPath = fileArtifactPath(existing);
   const nextPath = fileArtifactPath(next);
   if (!existingPath || !nextPath) return false;
+  if (next.artifactKind === "generated-image" && existing.artifactKind !== "generated-image") return true;
+  if (existing.artifactKind === "generated-image" && next.artifactKind !== "generated-image") return false;
   if (isResolvedFilePath(nextPath) && !isResolvedFilePath(existingPath)) return true;
   return false;
 }
@@ -671,10 +685,15 @@ function websiteArtifactTitle(value: string): string {
   }
 }
 
-export function fileArtifactEntryFromPath(path: string, status = "referenced"): RailEntry {
+export function fileArtifactEntryFromPath(
+  path: string,
+  status = "referenced",
+  options: { artifactKind?: RailEntry["artifactKind"] } = {},
+): RailEntry {
   const reference = fileReferenceFromPath(path);
   return {
     id: path,
+    ...(options.artifactKind ? { artifactKind: options.artifactKind } : {}),
     title: reference.path.split("/").filter(Boolean).pop() ?? reference.path,
     meta: path,
     status,

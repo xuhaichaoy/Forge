@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ConversationUnitView,
+  THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS,
   codeBlockTitle,
   formatTurnDiffFileCount,
   highlightCodeSegments,
@@ -20,6 +21,7 @@ import {
   shouldRenderSvgCodePreview,
   stripReasoningActivityHeading,
   svgCodePreviewDataUrl,
+  threadUserMessageNavigationItems,
   turnKeysForGroups,
   userImageSrc,
   virtualTurnRange,
@@ -87,6 +89,8 @@ export default function runConversationViewTests(): void {
   rendersItemAutomationCitationsAsOpenableButtonsLikeDesktop();
   rendersAutomationCitationsInFallbackRowWhenLastBlockIsNotParagraph();
   rendersParentThreadAttachmentOnUserMessagesLikeDesktop();
+  projectsUserMessageNavigationItemsLikeCodexDesktop();
+  rendersCommentAttachmentPillInUserAttachmentStripLikeDesktop();
   normalizesLocalUserImageSources();
   formatsCodeBlockTitlesLikeCodexSnippetHeaders();
   highlightsCodeBlocksWithDesktopScopes();
@@ -303,6 +307,11 @@ function rendersStandaloneGeneratedImageActionRowLikeCodexDesktop(): void {
     html.includes("Fork from this point"),
     true,
     "completed standalone generated-image output should expose the Desktop fork action",
+  );
+  assertEqual(
+    html.includes("Copy"),
+    false,
+    "completed standalone generated-image output should not expose a copy action without Desktop copyText",
   );
   assertEqual(
     html.includes("Good response"),
@@ -868,8 +877,9 @@ function rendersInlineFileCitationChipsLikeDesktop(): void {
   }));
 
   assertEqual(html.includes("app.ts (lines 3-5)"), true, "file citation chips should show basename plus parenthesized range");
-  assertEqual(html.includes("title=\"/Users/me/project/src/app.ts\""), true, "file citation chips should keep the full path in tooltip");
-  assertEqual(html.includes(">README.md</a>"), true, "single line-1 file citation should omit the line label");
+  assertEqual(html.includes("data-file-reference=\"true\""), true, "file citation chips should expose Desktop's data-file-reference marker");
+  assertEqual(html.includes("role=\"button\""), true, "file citation chips should use Desktop's button-like span");
+  assertEqual(html.includes("README.md</span>"), true, "single line-1 file citation should omit the line label");
   assertEqual(html.includes("README.md line 1"), false, "line-1 file citations should not render a bare line label");
 }
 
@@ -1345,6 +1355,11 @@ function localizesReviewCommentLabelsLikeDesktop(): void {
     "review comment rows should expose Desktop-style tooltip content",
   );
   assertEqual(
+    html.includes('class="hc-assistant-review-comment-tooltip-open-row"'),
+    true,
+    "review comment tooltip should expose Desktop's clickable open row",
+  );
+  assertEqual(
     html.includes("Handle the missing value."),
     true,
     "review comment tooltip should render the model-authored body text",
@@ -1548,6 +1563,116 @@ function rendersParentThreadAttachmentOnUserMessagesLikeDesktop(): void {
   assertEqual(html.includes("hc-parent-thread-attachment"), true, "parent thread attachment should render as a user attachment chip");
   assertEqual(html.includes("Parent chat"), true, "parent thread attachment should show Desktop's label");
   assertEqual(html.includes("Continue from parent"), true, "user message text should still render");
+}
+
+function projectsUserMessageNavigationItemsLikeCodexDesktop(): void {
+  const userOnlyUnits = Array.from({ length: THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS }, (_, index) => ({
+    kind: "message" as const,
+    key: `user-navigation-${index + 1}`,
+    role: "user" as const,
+    item: { id: `user-navigation-${index + 1}`, type: "userMessage", content: `Question ${index + 1}` },
+    text: `Question ${index + 1}`,
+  }));
+  const units = [
+    userOnlyUnits[0]!,
+    {
+      kind: "message" as const,
+      key: "assistant-navigation-1",
+      role: "assistant" as const,
+      item: { id: "assistant-navigation-1", type: "assistantMessage", content: "**Answer 1** with *details*" },
+      text: "::code-comment hidden\n\n**Answer 1** with *details*",
+      artifacts: [
+        {
+          id: "artifact-report",
+          title: "report.md",
+          reference: { path: "/workspace/report.md", lineStart: 12 },
+        },
+      ],
+      assistantAfter: [
+        {
+          kind: "assistantEndResources" as const,
+          key: "assistant-navigation-resources-1",
+          cwd: "/workspace",
+          turnId: "turn-1",
+          resources: [
+            { type: "website" as const, target: "https://example.com/article" },
+          ],
+        },
+      ],
+    },
+    ...userOnlyUnits.slice(1),
+  ];
+  const shortItems = threadUserMessageNavigationItems(
+    userOnlyUnits.slice(0, THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS - 1),
+  );
+  const items = threadUserMessageNavigationItems(units);
+
+  assertEqual(
+    shortItems.length,
+    THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS - 1,
+    "user-message navigation projection should expose every user message to the threshold gate",
+  );
+  assertEqual(
+    items.length,
+    THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS,
+    "user-message navigation projection should expose every eligible user message",
+  );
+  assertEqual(
+    items[0]?.label,
+    "Question 1",
+    "user-message navigation tooltip title should use the user message text",
+  );
+  assertEqual(
+    items[0]?.response,
+    "Answer 1 with details",
+    "user-message navigation tooltip response should use Desktop's directive-stripped markdown plain text",
+  );
+  assertDeepEqual(
+    items[0]?.outputs.map((output) => ({ type: output.type, label: output.label })),
+    [
+      { type: "file", label: "report.md" },
+      { type: "website", label: "example.com" },
+    ],
+    "user-message navigation tooltip should collect Desktop-style turn outputs",
+  );
+}
+
+function rendersCommentAttachmentPillInUserAttachmentStripLikeDesktop(): void {
+  const html = renderToStaticMarkup(createElement(ConversationUnitView, {
+    unit: {
+      kind: "message",
+      key: "user-comment-attachment",
+      role: "user",
+      item: {
+        id: "user-comment-attachment",
+        type: "userMessage",
+        content: [{ type: "text", text: "Please check this diff" }],
+        commentAttachments: [{
+          origin: "diff",
+          path: "/workspace/src/app.ts",
+          lineStart: 3,
+          lineEnd: 5,
+          side: "right",
+          body: "Please align this source hover card.",
+        }, {
+          origin: "artifact_annotation",
+          artifactAnnotationFilePath: "/workspace/report.md",
+          path: "/workspace/report.md",
+          lineStart: 7,
+          lineEnd: 7,
+          body: "Please inspect this annotation.",
+        }],
+      },
+      text: "Please check this diff",
+    },
+  }));
+
+  assertEqual(html.includes("hc-user-comment-attachment-chip hc-user-attachment-pill"), true, "comment attachments should render in the user attachment strip");
+  assertEqual(countOccurrences(html, "hc-user-comment-attachment-chip hc-user-attachment-pill"), 2, "Desktop renders annotations and comments as separate attachment pills");
+  assertEqual(html.includes("1 annotation"), true, "annotation attachment pill should show the Desktop count label");
+  assertEqual(html.includes("1 comment"), true, "comment attachment pill should show the Desktop count label");
+  assertEqual(html.includes("1 annotation, 1 comment"), false, "mixed comment attachment summary should not collapse Desktop's separate pills");
+  assertEqual(html.includes("hc-message-action-status meta\">2 comments"), false, "comment attachment payload should not also render as a lower meta chip");
 }
 
 function normalizesLocalUserImageSources(): void {
@@ -2599,6 +2724,10 @@ function toolActivity(
       },
     },
   };
+}
+
+function countOccurrences(value: string, needle: string): number {
+  return value.split(needle).length - 1;
 }
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {

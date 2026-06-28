@@ -3,6 +3,7 @@ import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import { AssistantMessageUnit } from "./assistant-message-unit";
 import type { FileReference } from "./file-reference-types";
 import type { PatchAction, PatchActionState } from "./event-unit";
+import type { OpenGeneratedImageGalleryPreview } from "./generated-image-gallery";
 import { Markdownish } from "./message-markdown-renderer";
 import { UserMessageUnit } from "./message-user-message";
 import {
@@ -100,6 +101,7 @@ function MessageUnitViewInner({
   onOpenFileReferenceExternal,
   onOpenAutomation,
   onOpenDiff,
+  onOpenGeneratedImagePreview,
   onPatchAction,
   patchActionState,
   patchActionInFlight,
@@ -116,6 +118,7 @@ function MessageUnitViewInner({
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
   onOpenDiff?: (filePath?: string) => void;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
   patchActionInFlight?: boolean;
@@ -168,6 +171,7 @@ function MessageUnitViewInner({
               onOpenFileReferenceExternal={onOpenFileReferenceExternal}
               onOpenAutomation={onOpenAutomation}
               onOpenDiff={onOpenDiff}
+              onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
               onPatchAction={onPatchAction}
               patchActionState={patchActionState}
               patchActionInFlight={patchActionInFlight}
@@ -205,6 +209,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
       && prev.onOpenFileReference === next.onOpenFileReference
       && prev.onOpenAutomation === next.onOpenAutomation
       && prev.onOpenDiff === next.onOpenDiff
+      && prev.onOpenGeneratedImagePreview === next.onOpenGeneratedImagePreview
       && prev.onPatchAction === next.onPatchAction
       && prev.patchActionState === next.patchActionState
       && prev.patchActionInFlight === next.patchActionInFlight
@@ -220,6 +225,7 @@ export const MessageUnitView = memo(MessageUnitViewInner, (prev, next) => {
   if (prev.onOpenFileReference !== next.onOpenFileReference) return false;
   if (prev.onOpenAutomation !== next.onOpenAutomation) return false;
   if (prev.onOpenDiff !== next.onOpenDiff) return false;
+  if (prev.onOpenGeneratedImagePreview !== next.onOpenGeneratedImagePreview) return false;
   if (prev.onPatchAction !== next.onPatchAction) return false;
   if (prev.patchActionState !== next.patchActionState) return false;
   if (prev.patchActionInFlight !== next.patchActionInFlight) return false;

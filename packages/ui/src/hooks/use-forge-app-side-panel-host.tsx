@@ -11,6 +11,7 @@ import {
   type OpenFileWatchTarget,
 } from "../state/open-file-watches";
 import { TAB_KINDS } from "../state/side-panel-tab-host";
+import type { SidePanelTab } from "../state/side-panel-tab-host";
 import type { ThreadWorkflowDispatch } from "../state/thread-workflow";
 import type { useBrowserRuntime } from "./use-browser-runtime";
 import { useSidePanelTabHost } from "./use-side-panel-tab-host";
@@ -29,13 +30,29 @@ export interface ForgeAppSidePanelHostArgs {
   refreshBrowserRuntime: ReturnType<typeof useBrowserRuntime>["refreshBrowserRuntime"];
   refreshOpenFileWatchTabsRef: { current: ((watchId: string) => void) | null };
   setBrowserRuntimeSnapshot: ReturnType<typeof useBrowserRuntime>["setBrowserRuntimeSnapshot"];
+  onRightPanelVisibilityChange?: (visible: boolean) => void;
   state: CodexUiState;
+}
+
+export function sidePanelObscuresRightRail(
+  panelOpen: boolean,
+  activeTab: Pick<SidePanelTab, "kind" | "tabId"> | null,
+): boolean {
+  if (!panelOpen) return false;
+  if (!activeTab) return true;
+  const key = activeTab.kind ?? activeTab.tabId;
+  return !(
+    key.startsWith("sidechat:")
+    || key.startsWith("side-chat:")
+    || key.startsWith("background-agent:")
+  );
 }
 
 export function useForgeAppSidePanelHost(args: ForgeAppSidePanelHostArgs) {
   const {
     client,
     dispatch,
+    onRightPanelVisibilityChange,
     refreshBrowserRuntime,
     refreshOpenFileWatchTabsRef,
     setBrowserRuntimeSnapshot,
@@ -55,6 +72,15 @@ export function useForgeAppSidePanelHost(args: ForgeAppSidePanelHostArgs) {
    * host/protocol-backed implementations.
    */
   const sidePanel = useSidePanelTabHost({ panelId: "right" });
+  const rightPanelVisible = sidePanelObscuresRightRail(sidePanel.panelOpen, sidePanel.activeTab);
+  useEffect(() => {
+    onRightPanelVisibilityChange?.(rightPanelVisible);
+  }, [onRightPanelVisibilityChange, rightPanelVisible]);
+  useEffect(() => {
+    return () => {
+      onRightPanelVisibilityChange?.(false);
+    };
+  }, [onRightPanelVisibilityChange]);
   /*
    * Stable tabId for the Files tab. Codex auto-generates `component:${UUID}`
    * for tabs without explicit id (app-shell-tab-controller-*.js),
@@ -104,9 +130,19 @@ export function useForgeAppSidePanelHost(args: ForgeAppSidePanelHostArgs) {
       const target = openFileWatchTargetsRef.current.get(watchId);
       if (!target) return;
       const snapshot = sidePanel.controller.getSnapshot();
-      for (const tabId of target.tabIds) {
+      for (const watchTab of target.tabs) {
+        const tabId = watchTab.tabId;
         const tab = snapshot.tabsById[tabId];
         if (!tab) continue;
+        if (watchTab.refreshMode === "manual") {
+          sidePanel.controller.updateTab(tabId, {
+            props: {
+              ...tab.props,
+              sourceChanged: true,
+            },
+          });
+          continue;
+        }
         sidePanel.controller.updateTab(tabId, {
           props: {
             ...tab.props,

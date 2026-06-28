@@ -19,6 +19,7 @@ import { AssistantAfterReviewComments } from "./assistant-review-comments-view";
 import { AutomationCitationChipRow } from "./automation-citation";
 import type { PatchAction, PatchActionState } from "./event-unit";
 import type { FileReference } from "./file-reference-types";
+import type { OpenGeneratedImageGalleryPreview } from "./generated-image-gallery";
 import { useForgeIntl } from "./i18n-provider";
 import { MemoryCitationView } from "./message-file-citations";
 import {
@@ -45,6 +46,7 @@ export function AssistantMessageUnit({
   onOpenFileReferenceExternal,
   onOpenAutomation,
   onOpenDiff,
+  onOpenGeneratedImagePreview,
   onPatchAction,
   patchActionState,
   patchActionInFlight,
@@ -58,6 +60,7 @@ export function AssistantMessageUnit({
   onOpenFileReferenceExternal?: (reference: FileReference) => void;
   onOpenAutomation?: (automationId: string) => void;
   onOpenDiff?: (filePath?: string) => void;
+  onOpenGeneratedImagePreview?: OpenGeneratedImageGalleryPreview;
   onPatchAction?: (action: PatchAction, diff: string) => void;
   patchActionState?: PatchActionState;
   patchActionInFlight?: boolean;
@@ -169,7 +172,10 @@ export function AssistantMessageUnit({
         onOpen={onAutomationCitationOpen}
       />
       {citation}
-      <AssistantAfterGalleries units={unit.assistantAfter ?? []} />
+      <AssistantAfterGalleries
+        units={unit.assistantAfter ?? []}
+        onOpenGeneratedImagePreview={onOpenGeneratedImagePreview}
+      />
       <AssistantAfterEndResources
         units={unit.assistantAfter ?? []}
         onOpenArtifact={onOpenAssistantArtifact}

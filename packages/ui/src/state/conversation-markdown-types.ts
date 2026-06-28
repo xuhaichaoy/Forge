@@ -7,6 +7,7 @@
  * working unchanged. ./conversation-markdown-prompt-links is itself a leaf
  * (zero imports), so depending on it here cannot re-close the cycle.
  */
+import type { FileCitationArtifactCitation } from "../components/file-reference-types";
 import type { MarkdownPromptLinkSegment } from "./conversation-markdown-prompt-links";
 
 export type MarkdownBlock =
@@ -54,7 +55,13 @@ export type MarkdownInlineSegment =
   | { kind: "image"; alt: string; src: string; title: string | null }
   | { kind: "link"; text: string; href: string; title?: string | null }
   | MarkdownPromptLinkSegment
-  | { kind: "fileCitation"; path: string; lineStart: number; lineEnd: number }
+  | {
+    kind: "fileCitation";
+    path: string;
+    lineStart: number;
+    lineEnd: number;
+    artifactCitation?: FileCitationArtifactCitation | null;
+  }
   | { kind: "math"; text: string }
   | { kind: "strong"; text: string }
   | { kind: "em"; text: string }

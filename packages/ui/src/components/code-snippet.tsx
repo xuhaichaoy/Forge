@@ -146,66 +146,63 @@ export function CodeSnippet({
   };
 
   return (
-    <>
-      <figure className={`hc-code-snippet ${wrapped ? "is-wrapped" : ""} ${isDiff ? "is-diff" : ""} ${shouldPreviewSvg ? "is-svg-preview" : ""} ${isMermaid ? "is-mermaid-preview" : ""} ${wrapperClassName}`}>
-        {showActionBar && (
-          <figcaption>
-            <span>{title}</span>
-            {/*
-             * Codex Desktop i18n (code-snippet-*.js + copy-button-*.js):
-             *   codeSnippet.wrap.disable  = "Disable word wrap"
-             *   codeSnippet.wrap.enable   = "Enable word wrap"
-             *   copyButton.copyCode       = "Copy code"
-             * (Upstream default `CopyButton.copyTooltip` = "Copy" is overridden to
-             *  "Copy code" inside the code-snippet chunk.)
-             */}
-            <div className="hc-code-actions">
-              {showWrapToggle && (
-                <button
-                  aria-label={wrapLabel}
-                  aria-pressed={wrapped}
-                  title={wrapLabel}
-                  type="button"
-                  onClick={() => setUserWrapped((value) => !value)}
-                >
-                  <WrapText size={13} />
-                </button>
-              )}
-              <button aria-label={copyCodeLabel} title={copyCodeLabel} type="button" onClick={handleCopy}>
-                {copied ? <Check size={13} /> : <Copy size={13} />}
+    <figure className={`hc-code-snippet ${wrapped ? "is-wrapped" : ""} ${isDiff ? "is-diff" : ""} ${shouldPreviewSvg ? "is-svg-preview" : ""} ${isMermaid ? "is-mermaid-preview" : ""} ${wrapperClassName}`}>
+      {showActionBar && (
+        <figcaption>
+          <span>{title}</span>
+          {/*
+           * Codex Desktop i18n (code-snippet-*.js + copy-button-*.js):
+           *   codeSnippet.wrap.disable  = "Disable word wrap"
+           *   codeSnippet.wrap.enable   = "Enable word wrap"
+           *   copyButton.copyCode       = "Copy code"
+           * (Upstream default `CopyButton.copyTooltip` = "Copy" is overridden to
+           *  "Copy code" inside the code-snippet chunk.)
+           */}
+          <div className="hc-code-actions">
+            {showWrapToggle && (
+              <button
+                aria-label={wrapLabel}
+                aria-pressed={wrapped}
+                title={wrapLabel}
+                type="button"
+                onClick={() => setUserWrapped((value) => !value)}
+              >
+                <WrapText size={13} />
               </button>
-            </div>
-          </figcaption>
-        )}
-        {isMermaid ? (
-          <div className="hc-code-diagram-body">
-            <MermaidDiagram
-              code={text}
-              fallback={shouldPreviewMermaid
-                ? <MermaidFlowchartPreview model={mermaidPreview} />
-                : (
-                    <pre className="hc-mermaid-fallback-code">
-                      <code data-language="mermaid">{text}</code>
-                    </pre>
-                  )}
-            />
-          </div>
-        ) : (
-          <pre className={codeContainerClassName}>
-            {shouldPreviewSvg ? (
-              <img
-                alt={`${title} preview`}
-                className="hc-code-svg-preview"
-                src={svgCodePreviewDataUrl(text)}
-              />
-            ) : (
-              <code className={codeClassName} data-language={normalizedLanguage || undefined}>{renderCodeText(text, isDiff, normalizedLanguage, asyncHighlightSegments)}</code>
             )}
-          </pre>
-        )}
-      </figure>
-      {copied && <CopyFeedbackToast />}
-    </>
+            <button aria-label={copyCodeLabel} title={copyCodeLabel} type="button" onClick={handleCopy}>
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+            </button>
+          </div>
+        </figcaption>
+      )}
+      {isMermaid ? (
+        <div className="hc-code-diagram-body">
+          <MermaidDiagram
+            code={text}
+            fallback={shouldPreviewMermaid
+              ? <MermaidFlowchartPreview model={mermaidPreview} />
+              : (
+                  <pre className="hc-mermaid-fallback-code">
+                    <code data-language="mermaid">{text}</code>
+                  </pre>
+                )}
+          />
+        </div>
+      ) : (
+        <pre className={codeContainerClassName}>
+          {shouldPreviewSvg ? (
+            <img
+              alt={`${title} preview`}
+              className="hc-code-svg-preview"
+              src={svgCodePreviewDataUrl(text)}
+            />
+          ) : (
+            <code className={codeClassName} data-language={normalizedLanguage || undefined}>{renderCodeText(text, isDiff, normalizedLanguage, asyncHighlightSegments)}</code>
+          )}
+        </pre>
+      )}
+    </figure>
   );
 }
 
@@ -240,13 +237,4 @@ function selectedTextWithin(container: Element | null, selection: Selection | nu
   const anchorInside = selection.anchorNode ? container.contains(selection.anchorNode) : false;
   const focusInside = selection.focusNode ? container.contains(selection.focusNode) : false;
   return anchorInside || focusInside ? selection.toString() : "";
-}
-
-function CopyFeedbackToast() {
-  return (
-    <div className="hc-copy-toast" role="status" aria-live="polite">
-      <span className="hc-copy-toast-icon" aria-hidden="true"><Check size={15} /></span>
-      <span>Copied to clipboard</span>
-    </div>
-  );
 }

@@ -1,4 +1,5 @@
 import { itemType } from "../state/thread-item-fields";
+import type { RailEntry } from "../state/render-groups";
 import { DynamicToolCallThreadItemView } from "./thread-item-dynamic-tool-call";
 import { ExecThreadItemView } from "./thread-item-exec";
 import { McpToolCallThreadItemView } from "./thread-item-mcp-tool-call";
@@ -20,13 +21,17 @@ export { todoListSummaryLabel } from "./thread-item-todo";
 export { autoReviewBody, autoReviewTitle } from "./thread-item-review";
 
 export function ThreadItemView({
+  onOpenPlan,
   onMcpAppHostCall,
   onReadMcpResource,
+  activePlanSidePanelKey = null,
   threadId = null,
   unit,
 }: {
+  onOpenPlan?: (entry: RailEntry) => void;
   onMcpAppHostCall?: McpAppHostCallHandler;
   onReadMcpResource?: ReadMcpResourceHandler;
+  activePlanSidePanelKey?: string | null;
   threadId?: string | null;
   unit: ThreadItemUnit;
 }) {
@@ -45,7 +50,7 @@ export function ThreadItemView({
   if (type === "mcp-server-elicitation") return <McpServerElicitationThreadItemView unit={unit} />;
   if (type === "todo-list") return <TodoListThreadItemView unit={unit} />;
   if (type === "proposed-plan") {
-    return <PlanSummaryCard unit={unit} />;
+    return <PlanSummaryCard unit={unit} activePlanSidePanelKey={activePlanSidePanelKey} threadId={threadId} onOpenPlan={onOpenPlan} />;
   }
   /*
    * Plan ThreadItem 独立渲染。
@@ -57,7 +62,7 @@ export function ThreadItemView({
    * 不渲染为 standalone row：hook 由 user-message hookStats 字段承担，reasoning 仅
    * thinking-placeholder 渲染，其他由 event-projection 处理为 markdown event 或丢弃。
    */
-  if (type === "plan") return <PlanSummaryCard unit={unit} />;
+  if (type === "plan") return <PlanSummaryCard unit={unit} activePlanSidePanelKey={activePlanSidePanelKey} threadId={threadId} onOpenPlan={onOpenPlan} />;
   if (type === "automatic-approval-review") return <AutoReviewThreadItemView unit={unit} />;
   return <DynamicToolCallThreadItemView unit={unit} />;
 }

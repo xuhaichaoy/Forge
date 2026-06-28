@@ -12,13 +12,20 @@ export interface OpenFileWatchTarget {
   readonly watchId: string;
   readonly hostId: string;
   readonly watchPath: string;
-  readonly tabIds: readonly string[];
+  readonly tabs: readonly OpenFileWatchTargetTab[];
 }
+
+export interface OpenFileWatchTargetTab {
+  readonly tabId: string;
+  readonly refreshMode: OpenFileWatchRefreshMode;
+}
+
+export type OpenFileWatchRefreshMode = "auto" | "manual";
 
 export function openFileWatchTargetsFromSidePanelTabs(
   tabs: readonly OpenFileWatchTabInput[],
 ): OpenFileWatchTarget[] {
-  const byWatchId = new Map<string, { hostId: string; watchPath: string; tabIds: string[] }>();
+  const byWatchId = new Map<string, { hostId: string; watchPath: string; tabs: OpenFileWatchTargetTab[] }>();
 
   for (const tab of tabs) {
     const kindHostId = hostIdFromWorkspaceFileKind(tab.kind);
@@ -35,19 +42,23 @@ export function openFileWatchTargetsFromSidePanelTabs(
 
     const hostId = stringProp(tab.props.hostId) || kindHostId;
     const watchId = openFileWatchId(hostId, watchPath);
+    const watchTab = {
+      tabId: tab.tabId,
+      refreshMode: openFileWatchRefreshMode(tab.props.artifactType),
+    };
     const current = byWatchId.get(watchId);
     if (current) {
-      current.tabIds.push(tab.tabId);
+      current.tabs.push(watchTab);
       continue;
     }
-    byWatchId.set(watchId, { hostId, watchPath, tabIds: [tab.tabId] });
+    byWatchId.set(watchId, { hostId, watchPath, tabs: [watchTab] });
   }
 
   return [...byWatchId.entries()].map(([watchId, target]) => ({
     watchId,
     hostId: target.hostId,
     watchPath: target.watchPath,
-    tabIds: target.tabIds,
+    tabs: target.tabs,
   }));
 }
 
@@ -74,6 +85,18 @@ function stringProp(value: unknown): string | null {
 
 function isAbsoluteOpenFileWatchPath(path: string): boolean {
   return path.startsWith("/");
+}
+
+function openFileWatchRefreshMode(artifactType: unknown): OpenFileWatchRefreshMode {
+  return isManualRefreshArtifactType(artifactType) ? "manual" : "auto";
+}
+
+function isManualRefreshArtifactType(value: unknown): boolean {
+  return value === "document"
+    || value === "presentation"
+    || value === "slides"
+    || value === "spreadsheet"
+    || value === "pdf";
 }
 
 function hashOpenFileWatchKey(value: string): string {

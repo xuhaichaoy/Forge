@@ -237,6 +237,7 @@ export type ToolActivityGroupType =
 export interface RailEntry {
   id: string;
   title: string;
+  artifactKind?: "generated-image";
   meta?: string;
   status?: string;
   details?: string[];

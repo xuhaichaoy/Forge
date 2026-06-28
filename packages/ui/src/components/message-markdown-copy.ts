@@ -54,7 +54,6 @@ const KATEX_TEX_ANNOTATION_SELECTOR = "annotation[encoding=\"application/x-tex\"
 const MARKDOWN_COPY_EXCLUDE_SELECTOR = [
   '[data-markdown-copy="exclude"]',
   ".hc-code-actions",
-  ".hc-copy-toast",
   ".hc-code-snippet > figcaption",
   '[role="tooltip"]',
 ].join(",");

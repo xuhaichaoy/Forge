@@ -34,6 +34,7 @@ function makeThread(id: string, name: string): Thread {
     parentThreadId: null,
     preview: "",
     ephemeral: false,
+    historyMode: "legacy",
     modelProvider: "openai",
     createdAt: 0,
     updatedAt: 0,

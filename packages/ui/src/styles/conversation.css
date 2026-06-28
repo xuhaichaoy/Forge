@@ -31,6 +31,14 @@
   container-type: inline-size;
 }
 
+.hc-thread-user-message-navigation-portal {
+  pointer-events: none;
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  overflow: visible;
+}
+
 /*
  * Short threads should not show a scrollbar (WebView2 otherwise invents a
  * phantom scroll range). FAIL-OPEN gate: scrolling is only suppressed when
@@ -849,6 +857,7 @@
 }
 
 .hc-conversation {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -857,6 +866,223 @@
   overflow: visible;
   padding: 16px 0 18px;
   font-size: var(--codex-chat-font-size);
+}
+
+.hc-thread-user-message-navigation {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 20;
+  top: 50%;
+  left: 12px;
+  display: flex;
+  transform: translateY(-50%);
+}
+
+.hc-thread-user-message-navigation-list {
+  --edge-fade-distance: 2.5rem;
+  display: flex;
+  max-height: min(70vh, 40rem);
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--edge-fade-distance),
+    #000 calc(100% - var(--edge-fade-distance)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--edge-fade-distance),
+    #000 calc(100% - var(--edge-fade-distance)),
+    transparent 100%
+  );
+}
+
+.hc-thread-user-message-navigation-list::-webkit-scrollbar {
+  display: none;
+}
+
+.hc-thread-user-message-navigation-row {
+  appearance: none;
+  position: relative;
+  display: flex;
+  width: 36px;
+  height: 10px;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-tertiary, var(--hc-text-secondary, #6f716b));
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+}
+
+.hc-thread-user-message-navigation-marker-wrap {
+  display: flex;
+  width: 30px;
+  height: 2px;
+  align-items: center;
+}
+
+.hc-thread-user-message-navigation-marker {
+  --marker-progress: 0;
+  display: block;
+  width: 26px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.4;
+  transform: scaleX(calc(0.2308 + 0.7692 * var(--marker-progress)));
+  transform-origin: left center;
+  transition: transform 160ms linear(0, 0.398 10%, 0.682 20%, 0.843 30%, 0.925 40%, 0.972 50%, 1.004 60%, 1.008 70%, 1.003 80%, 1),
+    background-color 120ms ease, opacity 120ms ease;
+}
+
+.hc-thread-user-message-navigation-row:focus-visible .hc-thread-user-message-navigation-marker,
+.hc-thread-user-message-navigation-row[data-scrub-target="true"] .hc-thread-user-message-navigation-marker {
+  --marker-progress: 1;
+  background: var(--hc-text-primary, #22262b);
+  opacity: 1;
+}
+
+.hc-thread-user-message-navigation-row[aria-current="true"] .hc-thread-user-message-navigation-marker {
+  background: var(--hc-text-primary, #22262b);
+  opacity: 0.6;
+}
+
+.hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row[data-scrub-target="true"]) .hc-thread-user-message-navigation-marker,
+.hc-thread-user-message-navigation-row[data-scrub-target="true"] + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
+  --marker-progress: 0.7;
+}
+
+.hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row[data-scrub-target="true"]) .hc-thread-user-message-navigation-marker,
+.hc-thread-user-message-navigation-row[data-scrub-target="true"] + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
+  --marker-progress: 0.4;
+}
+
+.hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row[data-scrub-target="true"]) .hc-thread-user-message-navigation-marker,
+.hc-thread-user-message-navigation-row[data-scrub-target="true"] + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
+  --marker-progress: 0.2;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .hc-thread-user-message-navigation-list:hover .hc-thread-user-message-navigation-row[aria-current="true"]:not(:hover):not(:focus-visible) .hc-thread-user-message-navigation-marker {
+    background: var(--hc-text-tertiary, var(--hc-text-secondary, #6f716b));
+    opacity: 0.4;
+  }
+
+  .hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row:hover) .hc-thread-user-message-navigation-marker,
+  .hc-thread-user-message-navigation-row:hover + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
+    --marker-progress: 0.7;
+  }
+
+  .hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row:hover) .hc-thread-user-message-navigation-marker,
+  .hc-thread-user-message-navigation-row:hover + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
+    --marker-progress: 0.4;
+  }
+
+  .hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row:hover) .hc-thread-user-message-navigation-marker,
+  .hc-thread-user-message-navigation-row:hover + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
+    --marker-progress: 0.2;
+  }
+
+  .hc-thread-user-message-navigation-row:hover .hc-thread-user-message-navigation-marker {
+    --marker-progress: 1;
+    background: var(--hc-text-primary, #22262b);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-thread-user-message-navigation-marker {
+    transition-duration: 0s;
+  }
+}
+
+.hc-thread-user-message-navigation-tooltip {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  width: 20rem;
+  max-width: calc(100vw - 1rem);
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.5px solid var(--hc-border-default, rgba(34, 38, 43, 0.08));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--vscode-dropdown-background, var(--hc-surface-panel, #fffdfa)) 95%, transparent);
+  box-shadow: 0 18px 52px rgba(24, 28, 31, 0.24);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--hc-text-primary, #22262b);
+  font-size: calc(14px * var(--hc-ui-font-scale, 1));
+  line-height: 20px;
+  padding: 8px;
+  pointer-events: none;
+  text-align: left;
+}
+
+.hc-thread-user-message-navigation-tooltip-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.hc-thread-user-message-navigation-tooltip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-thread-user-message-navigation-tooltip-response {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: var(--hc-text-tertiary, var(--hc-text-secondary, #6f716b));
+}
+
+.hc-thread-user-message-navigation-tooltip-outputs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--hc-text-tertiary, var(--hc-text-secondary, #6f716b));
+}
+
+.hc-thread-user-message-navigation-output {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.hc-thread-user-message-navigation-output-icon {
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.hc-thread-user-message-navigation-output-label {
+  max-width: 9rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-thread-user-message-navigation-output-more {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
 }
 
 .hc-turn-list {

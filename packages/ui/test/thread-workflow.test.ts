@@ -263,6 +263,7 @@ function threadFixture(overrides: Partial<Thread> & { id: string }): Thread {
     parentThreadId: null,
     preview: "",
     ephemeral: false,
+    historyMode: "legacy",
     modelProvider: "openai",
     createdAt: 0,
     updatedAt: 0,
@@ -1693,8 +1694,7 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
       turnFixture("turn-3"),
     ],
   });
-  const forkedThread = threadFixture({ id: "forked-thread", turns: sourceThread.turns });
-  const rolledBackThread = threadFixture({
+  const forkedThread = threadFixture({
     id: "forked-thread",
     turns: [
       turnFixture("turn-1"),
@@ -1704,7 +1704,6 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
   const forked = createClientSequenceRecorder([
     { thread: sourceThread },
     { thread: forkedThread },
-    { thread: rolledBackThread },
   ]);
 
   const result = await forkThreadFromTurn(forked.client, "source-thread", "turn-2", " /workspace ", {
@@ -1712,7 +1711,7 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
     environments: [{ environmentId: "remote", cwd: "/workspace" }],
   });
 
-  assertEqual(result.thread, rolledBackThread, "fork from turn should return the rolled back fork");
+  assertEqual(result.thread, forkedThread, "fork from turn should return the truncated fork");
   assertRequest(
     forked.requests,
     0,
@@ -1726,21 +1725,16 @@ async function forksThreadFromTurnUsingDesktopSequence(): Promise<void> {
     "thread/fork",
     {
       threadId: "source-thread",
+      lastTurnId: "turn-2",
       path: null,
       persistExtendedHistory: false,
       cwd: "/workspace",
       model: "gpt-5.2",
       threadSource: "user",
     },
-    "fork from turn should fork the complete source thread first",
+    "fork from turn should ask app-server to copy history through the target turn",
   );
-  assertRequest(
-    forked.requests,
-    2,
-    "thread/rollback",
-    { threadId: "forked-thread", numTurns: 1 },
-    "fork from turn should roll back later turns on the fork",
-  );
+  assertEqual(forked.requests.length, 2, "fork from turn should not call deprecated thread/rollback");
 }
 
 async function forksThreadIntoWorktreeByCreatingWorktreeThenForkingIntoIt(): Promise<void> {

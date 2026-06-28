@@ -120,7 +120,12 @@ export function renderInline(
       );
     }
     if (segment.kind === "fileCitation") {
-      const entry = { path: segment.path, lineStart: segment.lineStart, lineEnd: segment.lineEnd };
+      const entry = {
+        path: segment.path,
+        lineStart: segment.lineStart,
+        lineEnd: segment.lineEnd,
+        ...(segment.artifactCitation ? { artifactCitation: segment.artifactCitation } : {}),
+      };
       return (
         <FileCitationAnchor
           key={index}

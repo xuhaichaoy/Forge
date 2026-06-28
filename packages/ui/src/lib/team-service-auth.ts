@@ -10,6 +10,7 @@ import {
 
 export const DEFAULT_TEAM_SERVICE_BASE_URL = DEFAULT_YUXI_BASE_URL;
 export const TEAM_SERVICE_AUTH_STORAGE_KEY = FORGE_DESKTOP_CONFIG_KEYS.teamServiceAuth;
+const TEAM_SERVICE_AUTH_REQUEST_TIMEOUT_MS = 10_000;
 
 export interface TeamServiceUser {
   id: number | string | null;
@@ -83,6 +84,10 @@ const TEAM_SERVICE_AUTH_COPY = {
     id: "hc.teamAuth.error.missingAccessToken",
     defaultMessage: "Signed in, but the server didn't return an access token. Check the server's auth endpoint.",
   },
+  requestTimedOut: {
+    id: "hc.teamAuth.error.requestTimedOut",
+    defaultMessage: "Authentication service timed out. Check the Service URL and try again.",
+  },
   signInFailed: {
     id: "hc.teamAuth.error.signInFailed",
     defaultMessage: "Sign-in failed. Please try again later.",
@@ -128,6 +133,14 @@ export function readTeamServiceAuthSession(
     token: legacyToken,
     user: null,
   };
+}
+
+export function readTeamServiceLoginBaseUrl(
+  storage: Pick<Storage, "getItem"> | null | undefined = browserStorage(),
+): string {
+  return readTeamServiceAuthSession(storage)?.baseUrl
+    ?? readYuxiConnectionConfig(storage).baseUrl
+    ?? DEFAULT_TEAM_SERVICE_BASE_URL;
 }
 
 export function saveTeamServiceAuthSession(
@@ -178,7 +191,7 @@ export async function loginTeamService(payload: TeamServiceLoginPayload): Promis
   body.set("username", username);
   body.set("password", payload.password);
 
-  const response = await fetch(`${baseUrl}/api/auth/token`, {
+  const response = await fetchTeamServiceAuth(`${baseUrl}/api/auth/token`, {
     method: "POST",
     body,
   });
@@ -197,7 +210,7 @@ export async function registerTeamService(payload: TeamServiceRegisterPayload): 
     throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.registerMissingCredentials);
   }
 
-  const response = await fetch(`${baseUrl}/api/auth/register`, {
+  const response = await fetchTeamServiceAuth(`${baseUrl}/api/auth/register`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -222,7 +235,7 @@ export async function refreshTeamServiceUser(session: TeamServiceAuthSession): P
   if (!normalized) {
     throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.invalidSession);
   }
-  const response = await fetch(`${normalized.baseUrl}/api/auth/me`, {
+  const response = await fetchTeamServiceAuth(`${normalized.baseUrl}/api/auth/me`, {
     headers: {
       Authorization: `Bearer ${normalized.token}`,
     },
@@ -337,6 +350,27 @@ async function readResponseBody(response: Response): Promise<unknown> {
     return text || null;
   } catch {
     return null;
+  }
+}
+
+async function fetchTeamServiceAuth(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  if (typeof AbortController === "undefined") {
+    return fetch(input, init);
+  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TEAM_SERVICE_AUTH_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new TeamServiceAuthError(TEAM_SERVICE_AUTH_COPY.requestTimedOut, null, error);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

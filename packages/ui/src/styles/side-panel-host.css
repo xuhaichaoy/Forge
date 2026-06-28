@@ -84,6 +84,94 @@
   background: var(--hc-surface-panel, #fffdfa);
 }
 
+.hc-file-preview-tab-header {
+  display: flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--hc-border-subtle, rgba(29, 31, 28, 0.08));
+  padding: 6px 8px 6px 12px;
+  background: var(--hc-surface-panel, #fffdfa);
+}
+
+.hc-file-preview-tab-breadcrumb {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0;
+  overflow-x: auto;
+  color: var(--hc-text-secondary, #6f716b);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  line-height: 1.35;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+
+.hc-file-preview-tab-breadcrumb::-webkit-scrollbar {
+  display: none;
+}
+
+.hc-file-preview-tab-breadcrumb-part {
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hc-file-preview-tab-breadcrumb-part:not(:last-child)::after {
+  content: "/";
+  padding: 0 6px;
+  color: var(--hc-text-tertiary, #8b8d86);
+}
+
+.hc-file-preview-tab-breadcrumb-part.is-root:not(:last-child)::after {
+  content: "";
+  padding: 0;
+}
+
+.hc-file-preview-tab-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+.hc-file-preview-refresh-prompt {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  border-bottom: 1px solid var(--hc-border-subtle, rgba(29, 31, 28, 0.08));
+  background: color-mix(in srgb, var(--hc-surface-panel, #fffdfa) 92%, var(--hc-text-primary, #22262b) 8%);
+}
+
+.hc-file-preview-refresh-prompt button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--hc-text-primary, #22262b);
+  cursor: pointer;
+  font: inherit;
+  font-size: calc(12px * var(--hc-ui-font-scale, 1));
+  font-weight: 600;
+  padding: 4px 10px;
+}
+
+.hc-file-preview-refresh-prompt button:hover,
+.hc-file-preview-refresh-prompt button:focus-visible {
+  background: var(--hc-surface-list-hover, rgba(34, 38, 43, 0.06));
+  outline: none;
+}
+
 .hc-plan-tab {
   display: flex;
   flex: 1 1 auto;
