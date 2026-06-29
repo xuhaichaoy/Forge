@@ -9,6 +9,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ThreadScrollLayout } from "../src/components/thread-scroll-layout";
 import {
+  type ScrollToUnitKeyRef,
   VirtualizedTurnList,
   turnKeysForGroups,
   virtualTurnRangeFromBottom,
@@ -278,6 +279,99 @@ export function virtualTurnWindowRealignsOnNextCommitAfterSilentScrollHeightChan
   }
 }
 
+/*
+ * Incident ④: a programmatic jump to the oldest/top turn can briefly write a
+ * reverse scrollTop that WebKit has not applied yet. The verify-after-commit
+ * guard must not treat that transient old scrollTop as user position and
+ * snap the virtual window back to the previous location.
+ */
+export function virtualUnitJumpKeepsTargetWindowUntilReverseScrollSettles(): void {
+  const env = setupDomTestEnv();
+  const TURN_COUNT = 30;
+  const ESTIMATED_TOTAL = TURN_COUNT * 280 + (TURN_COUNT - 1) * 12;
+  const groups = buildEventTurnGroups(TURN_COUNT);
+  const turnKeys = turnKeysForGroups(groups);
+  const scrollToUnitKeyRef: ScrollToUnitKeyRef = { current: null };
+  const renderTree = () => createElement(VirtualizedTurnList, {
+    groups,
+    renderGroup: (group, index) => createElement("div", { className: "dom-test-turn-body" }, group.turnId ?? String(index)),
+    scrollToUnitKeyRef,
+  });
+
+  const scrollHost = env.document.createElement("div");
+  scrollHost.className = "hc-thread-scroll-container";
+  env.document.body.appendChild(scrollHost);
+  stubElementGeometry(scrollHost, {
+    scrollHeight: ESTIMATED_TOTAL,
+    clientHeight: VIEWPORT_HEIGHT,
+    scrollTop: 0,
+  });
+  let scrollTop = 0;
+  let allowScrollWrites = false;
+  Object.defineProperty(scrollHost, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      if (allowScrollWrites) scrollTop = value;
+    },
+  });
+  const restoreComputedStyle = installReverseThreadScrollStyle(scrollHost);
+
+  const root = createRoot(scrollHost);
+  try {
+    act(() => {
+      root.render(renderTree());
+    });
+    const bottomRange = virtualTurnRangeFromBottom({
+      turnKeys,
+      heights: new Map<string, number>(),
+      distanceFromBottom: 0,
+      viewportHeight: VIEWPORT_HEIGHT,
+    });
+    assertDeepEqual(
+      renderedTurnKeys(scrollHost),
+      turnKeys.slice(bottomRange.startIndex, bottomRange.endIndex),
+      "precondition: reverse scroll bottom renders the newest turns",
+    );
+
+    const targetDistance = ESTIMATED_TOTAL - VIEWPORT_HEIGHT;
+    const targetRange = virtualTurnRangeFromBottom({
+      turnKeys,
+      heights: new Map<string, number>(),
+      distanceFromBottom: targetDistance,
+      viewportHeight: VIEWPORT_HEIGHT,
+    });
+    act(() => {
+      assertEqual(scrollToUnitKeyRef.current?.("unit-0"), true, "unit jump precondition: first unit key is registered");
+    });
+    assertEqual(scrollTop, 0, "fixture precondition: first reverse scroll write is still pending");
+    assertDeepEqual(
+      renderedTurnKeys(scrollHost),
+      turnKeys.slice(targetRange.startIndex, targetRange.endIndex),
+      "programmatic jump should render the target top window even before reverse scrollTop settles",
+    );
+
+    act(() => {
+      env.flushFrames(1);
+    });
+    assertDeepEqual(
+      renderedTurnKeys(scrollHost),
+      turnKeys.slice(targetRange.startIndex, targetRange.endIndex),
+      "verify-after-commit must not snap the target window back while the jump is pending",
+    );
+
+    allowScrollWrites = true;
+    act(() => {
+      env.flushFrames(1);
+    });
+    assertEqual(scrollTop, -targetDistance, "settle loop should re-issue the reverse scrollTop until it is applied");
+  } finally {
+    restoreComputedStyle();
+    act(() => root.unmount());
+    env.teardown();
+  }
+}
+
 function buildEventTurnGroups(count: number): TurnGroup[] {
   const groups: TurnGroup[] = [];
   for (let index = 0; index < count; index += 1) {
@@ -293,6 +387,17 @@ function buildEventTurnGroups(count: number): TurnGroup[] {
     });
   }
   return groups;
+}
+
+function installReverseThreadScrollStyle(scrollHost: HTMLElement): () => void {
+  const previousGetComputedStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = ((element: Element) => {
+    if (element === scrollHost) return { flexDirection: "column-reverse" } as CSSStyleDeclaration;
+    return previousGetComputedStyle(element);
+  }) as typeof getComputedStyle;
+  return () => {
+    globalThis.getComputedStyle = previousGetComputedStyle;
+  };
 }
 
 function renderedTurnKeys(scope: HTMLElement): string[] {

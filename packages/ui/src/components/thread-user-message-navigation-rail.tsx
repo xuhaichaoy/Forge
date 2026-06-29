@@ -16,6 +16,7 @@ import {
   parseMarkdownBlocks,
   parseMarkdownInline,
 } from "../state/conversation-markdown-engine";
+import { threadScrollDistanceFromBottom } from "../state/thread-scroll";
 import type {
   MarkdownBlock,
   MarkdownInlineSegment,
@@ -25,6 +26,8 @@ import type {
 export const THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS = 4;
 const THREAD_USER_MESSAGE_NAVIGATION_MAX_OUTPUTS = 2;
 const THREAD_USER_MESSAGE_NAVIGATION_PREVIEW_CACHE_LIMIT = 160;
+const THREAD_USER_MESSAGE_NAVIGATION_REVEAL_STALLED_FRAMES = 8;
+const THREAD_USER_MESSAGE_NAVIGATION_REVEAL_TOP_INSET_PX = 16;
 const CONTENT_SEARCH_UNIT_SELECTOR = "[data-content-search-unit-key]";
 const DESKTOP_NAVIGATION_DIRECTIVE_LINE_PATTERN = /^::[a-zA-Z0-9-]+.*$/gm;
 const navigationPreviewTextCache = new Map<string, string>();
@@ -109,6 +112,7 @@ export function ThreadUserMessageNavigationRail({
   const scrollController = useThreadScrollController();
   const railRef = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const revealFrameRef = useRef<number | null>(null);
   const tooltipId = useId();
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
   const [tooltipTarget, setTooltipTarget] = useState<{
@@ -150,6 +154,14 @@ export function ThreadUserMessageNavigationRail({
     setActiveId,
   });
 
+  const cancelPendingReveal = useCallback(() => {
+    if (revealFrameRef.current === null) return;
+    window.cancelAnimationFrame(revealFrameRef.current);
+    revealFrameRef.current = null;
+  }, []);
+
+  useEffect(() => cancelPendingReveal, [cancelPendingReveal]);
+
   const updateTooltipPosition = useCallback(() => {
     const target = tooltipTarget?.button;
     const tooltip = tooltipRef.current;
@@ -183,14 +195,32 @@ export function ThreadUserMessageNavigationRail({
   if (items.length < THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS || !portalElement) return null;
 
   const revealItem = (item: ThreadUserMessageNavigationItem) => {
+    cancelPendingReveal();
+    setActiveId(item.id);
+    let lastObservedDistanceFromBottom: number | null = null;
+    let stalledFrames = 0;
+    const selector = `[data-content-search-unit-key="${cssEscape(item.id)}"]`;
+    const revealMountedTarget = () => {
+      revealFrameRef.current = null;
+      const target = scrollController?.getScrollElement()?.querySelector<HTMLElement>(selector);
+      if (target) {
+        scrollNavigationTargetIntoView(scrollController, target);
+        highlightUserMessageTarget(target);
+        return;
+      }
+      const scrollElement = scrollController?.getScrollElement();
+      const distance = scrollElement ? threadScrollDistanceFromBottom(scrollElement) : null;
+      stalledFrames = distance != null
+        && lastObservedDistanceFromBottom != null
+        && Math.abs(distance - lastObservedDistanceFromBottom) <= 1
+        ? stalledFrames + 1
+        : 0;
+      lastObservedDistanceFromBottom = distance;
+      if (stalledFrames >= THREAD_USER_MESSAGE_NAVIGATION_REVEAL_STALLED_FRAMES) return;
+      revealFrameRef.current = window.requestAnimationFrame(revealMountedTarget);
+    };
     scrollToUnitKeyRef.current?.(item.id);
-    window.requestAnimationFrame(() => {
-      const target = scrollController?.getScrollElement()?.querySelector<HTMLElement>(
-        `[data-content-search-unit-key="${cssEscape(item.id)}"]`,
-      );
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
-      highlightUserMessageTarget(target);
-    });
+    revealFrameRef.current = window.requestAnimationFrame(revealMountedTarget);
   };
 
   const rail = (
@@ -259,6 +289,23 @@ export function ThreadUserMessageNavigationRail({
     </>
   );
   return createPortal(rail, portalElement);
+}
+
+function scrollNavigationTargetIntoView(
+  scrollController: ReturnType<typeof useThreadScrollController>,
+  target: HTMLElement,
+): void {
+  const scrollElement = scrollController?.getScrollElement();
+  if (!scrollController || !scrollElement) {
+    target.scrollIntoView({ block: "start" });
+    return;
+  }
+  const targetRect = target.getBoundingClientRect();
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const targetTopInViewport = targetRect.top - scrollRect.top;
+  const currentDistance = threadScrollDistanceFromBottom(scrollElement);
+  const targetDistance = currentDistance - targetTopInViewport + THREAD_USER_MESSAGE_NAVIGATION_REVEAL_TOP_INSET_PX;
+  scrollController.scrollToDistanceFromBottomPx(Math.max(0, targetDistance), "instant");
 }
 
 function ThreadUserMessageNavigationTooltipPreview({ item }: { item: ThreadUserMessageNavigationItem }) {

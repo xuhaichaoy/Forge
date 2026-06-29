@@ -31,6 +31,8 @@ import {
 
 export type ScrollToUnitKeyRef = MutableRefObject<((unitKey: string) => boolean) | null>;
 
+const VIRTUAL_TURN_PROGRAMMATIC_JUMP_STALLED_FRAMES = 4;
+
 export function VirtualizedTurnList({
   additionalScrollToUnitKeyRef,
   groups,
@@ -45,12 +47,27 @@ export function VirtualizedTurnList({
   const scrollController = useThreadScrollController();
   const listRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  const programmaticJumpFrameRef = useRef<number | null>(null);
+  const programmaticJumpRef = useRef<{
+    distanceFromBottom: number;
+    lastObservedDistanceFromBottom: number | null;
+    stalledFrames: number;
+    viewportHeight: number;
+  } | null>(null);
   const rowObserversRef = useRef(new Map<string, ResizeObserver>());
   const rowHeightsRef = useRef(new Map<string, number>());
   const [scrollState, setScrollState] = useState({ distanceFromBottom: 0, viewportHeight: 900 });
   const [heightVersion, setHeightVersion] = useState(0);
   const count = groups.length;
   const turnKeys = useMemo(() => turnKeysForGroups(groups), [groups]);
+
+  const cancelProgrammaticJump = useCallback(() => {
+    if (programmaticJumpFrameRef.current !== null) {
+      window.cancelAnimationFrame(programmaticJumpFrameRef.current);
+      programmaticJumpFrameRef.current = null;
+    }
+    programmaticJumpRef.current = null;
+  }, []);
 
   useLayoutEffect(() => {
     const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
@@ -111,9 +128,10 @@ export function VirtualizedTurnList({
   }, [turnKeys]);
 
   useEffect(() => () => {
+    cancelProgrammaticJump();
     for (const observer of rowObserversRef.current.values()) observer.disconnect();
     rowObserversRef.current.clear();
-  }, []);
+  }, [cancelProgrammaticJump]);
 
   const observeRow = useCallback((turnKey: string, index: number, element: HTMLDivElement | null) => {
     rowObserversRef.current.get(turnKey)?.disconnect();
@@ -155,6 +173,21 @@ export function VirtualizedTurnList({
   useLayoutEffect(() => {
     const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
     if (!scrollElement) return;
+    const pendingJump = programmaticJumpRef.current;
+    if (pendingJump) {
+      const real = threadScrollDistanceFromBottom(scrollElement);
+      if (Math.abs(real - pendingJump.distanceFromBottom) <= 1) {
+        programmaticJumpRef.current = null;
+      } else {
+        setScrollState((current) => (
+          Math.abs(current.distanceFromBottom - pendingJump.distanceFromBottom) <= 1
+            && current.viewportHeight === pendingJump.viewportHeight
+            ? current
+            : { distanceFromBottom: pendingJump.distanceFromBottom, viewportHeight: pendingJump.viewportHeight }
+        ));
+        return;
+      }
+    }
     const real = threadScrollDistanceFromBottom(scrollElement);
     if (Math.abs(real - scrollState.distanceFromBottom) <= 1) return;
     stickToBottomRef.current = real <= DESKTOP_STICKY_BOTTOM_THRESHOLD_PX;
@@ -200,14 +233,58 @@ export function VirtualizedTurnList({
     const centered = totalHeight - (top + height / 2) - viewportHeight / 2;
     const distance = Math.min(maxDistance, Math.max(0, centered));
     stickToBottomRef.current = distance <= DESKTOP_STICKY_BOTTOM_THRESHOLD_PX;
+    cancelProgrammaticJump();
+    programmaticJumpRef.current = {
+      distanceFromBottom: distance,
+      lastObservedDistanceFromBottom: null,
+      stalledFrames: 0,
+      viewportHeight,
+    };
+    const settleProgrammaticJump = () => {
+      programmaticJumpFrameRef.current = null;
+      const pendingJump = programmaticJumpRef.current;
+      const liveScrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
+      if (!pendingJump || !liveScrollElement) {
+        programmaticJumpRef.current = null;
+        return;
+      }
+      if (scrollController) {
+        scrollController.scrollToDistanceFromBottomPx(pendingJump.distanceFromBottom, "instant");
+      } else {
+        setThreadScrollDistanceFromBottom(liveScrollElement, pendingJump.distanceFromBottom);
+      }
+      const real = threadScrollDistanceFromBottom(liveScrollElement);
+      if (Math.abs(real - pendingJump.distanceFromBottom) <= 1) {
+        programmaticJumpRef.current = null;
+        return;
+      }
+      pendingJump.stalledFrames = pendingJump.lastObservedDistanceFromBottom != null
+        && Math.abs(real - pendingJump.lastObservedDistanceFromBottom) <= 1
+        ? pendingJump.stalledFrames + 1
+        : 0;
+      pendingJump.lastObservedDistanceFromBottom = real;
+      if (pendingJump.stalledFrames >= VIRTUAL_TURN_PROGRAMMATIC_JUMP_STALLED_FRAMES) {
+        programmaticJumpRef.current = null;
+        setScrollState({ distanceFromBottom: real, viewportHeight: liveScrollElement.clientHeight || pendingJump.viewportHeight });
+        return;
+      }
+      setScrollState((current) => (
+        Math.abs(current.distanceFromBottom - pendingJump.distanceFromBottom) <= 1
+          && current.viewportHeight === pendingJump.viewportHeight
+          ? current
+          : { distanceFromBottom: pendingJump.distanceFromBottom, viewportHeight: pendingJump.viewportHeight }
+      ));
+      programmaticJumpFrameRef.current = window.requestAnimationFrame(settleProgrammaticJump);
+    };
     if (scrollController) {
       scrollController.scrollToDistanceFromBottomPx(distance, "instant");
-      return true;
+    } else if (scrollElement) {
+      setThreadScrollDistanceFromBottom(scrollElement, distance);
     }
-    if (!scrollElement) return false;
-    setThreadScrollDistanceFromBottom(scrollElement, distance);
+    setScrollState({ distanceFromBottom: distance, viewportHeight });
+    programmaticJumpFrameRef.current = window.requestAnimationFrame(settleProgrammaticJump);
     return true;
-  }, [scrollController, turnKeys]);
+  }, [cancelProgrammaticJump, scrollController, turnKeys]);
 
   useEffect(() => {
     const refs = [scrollToUnitKeyRef, additionalScrollToUnitKeyRef].filter(

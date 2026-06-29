@@ -7,13 +7,20 @@ import {
 import { ForgeIntlProvider } from "../src/components/i18n-provider";
 import { ThreadScrollLayout } from "../src/components/thread-scroll-layout";
 import type { ConversationRenderUnit } from "../src/state/render-groups";
-import { setupDomTestEnv, type DomTestEnv } from "./dom-test-env";
+import { setupDomTestEnv, stubElementGeometry, type DomTestEnv } from "./dom-test-env";
+
+interface ScrollToCall {
+  top: number;
+  behavior: string;
+}
 
 export default async function runThreadUserMessageNavigationRailDomTests(): Promise<void> {
   await hidesRailBeforeDesktopThreshold();
   await skipsVisibilityObserverBeforeDesktopThreshold();
   await ignoresStreamingDomMutationsWithoutNavigationTargets();
   await portalsRailIntoThreadScrollShellOverlay();
+  await retriesRevealUntilVirtualizedTargetMounts();
+  await alignsRevealUsingThreadScrollController();
   await rendersDesktopTooltipPreviewFromResponseAndOutputs();
 }
 
@@ -105,6 +112,92 @@ async function portalsRailIntoThreadScrollShellOverlay(): Promise<void> {
       "navigation rail should render one marker per user message",
     );
   } finally {
+    mounted.cleanup();
+  }
+}
+
+async function retriesRevealUntilVirtualizedTargetMounts(): Promise<void> {
+  const mounted = await mountConversationWithThreadScroll(THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS);
+  const scrollContainer = mounted.scrollContainer();
+  const scrollToCalls = installReverseThreadScrollGeometry(mounted.env, scrollContainer);
+  const restoreComputedStyle = installReverseThreadScrollStyle(scrollContainer);
+  try {
+    const firstRow = mounted.railRows()[0];
+    if (!firstRow) throw new Error("expected a first user-message navigation row");
+    const targetSelector = '[data-content-search-unit-key="user-navigation-1"]';
+    const firstUnit = scrollContainer.querySelector<HTMLElement>(targetSelector);
+    if (!firstUnit) throw new Error("expected a mounted first user-message unit");
+    let allowTargetLookup = false;
+    stubElementRect(mounted.env, scrollContainer, { top: 0, height: 500 });
+    stubElementRect(mounted.env, firstUnit, { top: -700, height: 80 });
+    const originalQuerySelector = scrollContainer.querySelector.bind(scrollContainer);
+    Object.defineProperty(scrollContainer, "querySelector", {
+      configurable: true,
+      value: ((selectors: string) => {
+        if (selectors === targetSelector && !allowTargetLookup) return null;
+        return originalQuerySelector(selectors);
+      }) as HTMLElement["querySelector"],
+    });
+
+    dispatchMouse(mounted.env, firstRow, "click");
+    await act(async () => {
+      mounted.env.flushFrames(1);
+      await Promise.resolve();
+    });
+    assertEqual(
+      scrollToCalls.length,
+      1,
+      "first reveal frame should tolerate a virtualized user message that has not mounted yet",
+    );
+
+    allowTargetLookup = true;
+    await act(async () => {
+      mounted.env.flushFrames(1);
+      await Promise.resolve();
+    });
+    assertEqual(
+      scrollToCalls.at(-1)?.top,
+      -1_372,
+      "rail reveal should retry until the virtualized user message mounts and can be aligned",
+    );
+    assertEqual(firstRow.getAttribute("aria-current"), "true", "clicked marker should become active immediately");
+  } finally {
+    restoreComputedStyle();
+    mounted.cleanup();
+  }
+}
+
+async function alignsRevealUsingThreadScrollController(): Promise<void> {
+  const mounted = await mountConversationWithThreadScroll(THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS);
+  const scrollContainer = mounted.scrollContainer();
+  const scrollToCalls = installReverseThreadScrollGeometry(mounted.env, scrollContainer);
+  const restoreComputedStyle = installReverseThreadScrollStyle(scrollContainer);
+  try {
+    const firstRow = mounted.railRows()[0];
+    if (!firstRow) throw new Error("expected a first user-message navigation row");
+    const firstUnit = scrollContainer.querySelector<HTMLElement>('[data-content-search-unit-key="user-navigation-1"]');
+    if (!firstUnit) throw new Error("expected a mounted first user-message unit");
+    let scrollIntoViewCalls = 0;
+    firstUnit.scrollIntoView = () => {
+      scrollIntoViewCalls += 1;
+    };
+    stubElementRect(mounted.env, scrollContainer, { top: 0, height: 500 });
+    stubElementRect(mounted.env, firstUnit, { top: -700, height: 80 });
+
+    dispatchMouse(mounted.env, firstRow, "click");
+    await act(async () => {
+      mounted.env.flushFrames(1);
+      await Promise.resolve();
+    });
+
+    assertEqual(scrollIntoViewCalls, 0, "rail reveal should not depend on native scrollIntoView in reverse thread scrolling");
+    assertEqual(
+      scrollToCalls.at(-1)?.top,
+      -1_372,
+      "rail reveal should align the mounted user message through the thread scroll controller distance model",
+    );
+  } finally {
+    restoreComputedStyle();
     mounted.cleanup();
   }
 }
@@ -251,6 +344,54 @@ function dispatchMouse(env: DomTestEnv, target: Element, type: string): void {
       cancelable: true,
       relatedTarget: null,
     }));
+  });
+}
+
+function installReverseThreadScrollGeometry(
+  env: DomTestEnv,
+  scrollContainer: HTMLElement,
+): ScrollToCall[] {
+  const geometry = stubElementGeometry(scrollContainer, {
+    clientHeight: 500,
+    offsetHeight: 500,
+    scrollHeight: 2_200,
+    scrollTop: -300,
+  });
+  const scrollToCalls: ScrollToCall[] = [];
+  Object.defineProperty(scrollContainer, "scrollTo", {
+    configurable: true,
+    writable: true,
+    value: (options: { top?: number; behavior?: string } = {}) => {
+      const top = options.top ?? 0;
+      geometry.scrollTop = top;
+      scrollToCalls.push({ top, behavior: options.behavior ?? "auto" });
+      scrollContainer.dispatchEvent(new env.window.Event("scroll"));
+    },
+  });
+  return scrollToCalls;
+}
+
+function installReverseThreadScrollStyle(scrollContainer: HTMLElement): () => void {
+  const previousGetComputedStyle = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = ((element: Element) => {
+    if (element === scrollContainer) {
+      return { flexDirection: "column-reverse" } as CSSStyleDeclaration;
+    }
+    return previousGetComputedStyle(element);
+  }) as typeof getComputedStyle;
+  return () => {
+    globalThis.getComputedStyle = previousGetComputedStyle;
+  };
+}
+
+function stubElementRect(
+  env: DomTestEnv,
+  element: HTMLElement,
+  rect: { top: number; height: number },
+): void {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => new env.window.DOMRect(0, rect.top, 500, rect.height),
   });
 }
 
