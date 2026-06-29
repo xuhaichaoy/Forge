@@ -185,6 +185,8 @@ function keepsPopulatedBranchDetails(): void {
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
+      cwd: null,
+      currentBranch: null,
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
       ],
@@ -283,6 +285,8 @@ function hidesOutputsWhenGitSummaryIsShowingLikeCodexDesktop(): void {
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
+      cwd: null,
+      currentBranch: null,
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
       ],
@@ -310,6 +314,8 @@ function hidesOutputsForGitProjectArtifactsLikeCodexDesktop(): void {
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
+      cwd: null,
+      currentBranch: null,
       rows: [
         { id: "branch", label: "Branch", value: "codex/right-rail" },
       ],
@@ -537,6 +543,8 @@ function projectsBranchDiffAction(): void {
     branchDetails: {
       title: "Environment",
       emptyText: "empty",
+      cwd: null,
+      currentBranch: null,
       rows: [],
       hasData: true,
       gitStatus: null,
@@ -623,7 +631,7 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
   assertEqual(entryById(branchDetailsSection.allEntries, "changes").meta, "3 changed files", "Changes should carry diff summary");
   assertEqual(entryById(branchDetailsSection.allEntries, "local").meta, undefined, "Local row exposes no subtitle (matches Codex; no cwd)");
   assertEqual(entryById(branchDetailsSection.allEntries, "branch").meta, "main", "Branch row should expose branch name");
-  assertEqual(entryById(branchDetailsSection.allEntries, "commit").meta, "Commit", "Commit row should be an action label, not a SHA");
+  assertEqual(entryById(branchDetailsSection.allEntries, "commit").meta, "Commit or push", "Commit row should be an action label, not a SHA");
   assertEqual(
     entryById(branchDetailsSection.allEntries, "github").meta,
     "GitHub CLI unavailable",
@@ -632,6 +640,8 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
 
   const html = renderToStaticMarkup(createElement(RightRail, { sections }));
   assertStringIncludes(html, "Changes", "Git card should render the Changes row");
+  assertStringIncludes(html, "main", "Git card should render the branch picker row");
+  assertStringIncludes(html, "Commit or push", "Git card should render the commit or push row");
   assertStringIncludes(html, "GitHub CLI unavailable", "Git card should render gh status");
   assertStringExcludes(html, "Ahead / behind", "Git card should not render ahead/behind rows");
   assertStringExcludes(html, "Changed files", "Git card should not render changed-files rows");

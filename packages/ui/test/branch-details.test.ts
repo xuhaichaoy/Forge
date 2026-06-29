@@ -30,9 +30,11 @@ function projectsDesktopGitRowsFromThreadCwdGitInfoAndStatus() {
   });
 
   assertEqual(view.hasData, true, "thread data should mark Git details as populated");
+  assertEqual(view.cwd, TEST_WORKSPACE, "thread cwd should be exposed for the Environment branch picker");
+  assertEqual(view.currentBranch, "codex/branch-details-tests", "current branch should be exposed for the Environment branch picker");
   assertRow(view.rows, "local", "Local", "");
   assertRow(view.rows, "branch", "Branch", "codex/branch-details-tests");
-  assertRow(view.rows, "commit", "Commit", "Commit");
+  assertRow(view.rows, "commit", "Commit or push", "Commit or push");
   assertMissingRow(view.rows, "cwd", "Working directory should not be rendered in the Desktop Git surface");
   assertMissingRow(view.rows, "origin", "origin URL should not be rendered in the Desktop Git surface");
   assertMissingRow(view.rows, "status", "thread status should not be rendered in the Desktop Git surface");

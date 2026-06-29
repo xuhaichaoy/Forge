@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ConversationRenderUnit, RailEntry } from "../state/render-groups";
 import type { PatchAction, PatchActionState } from "./event-unit";
@@ -146,7 +146,11 @@ export function ConversationView({
   scrollToUnitKeyRef,
 }: ConversationViewProps) {
   const groups = useMemo(() => groupUnitsByTurn(units), [units]);
-  const userMessageNavigationItems = useMemo(() => threadUserMessageNavigationItems(units), [units]);
+  const deferredNavigationUnits = useDeferredValue(units);
+  const userMessageNavigationItems = useMemo(
+    () => threadUserMessageNavigationItems(deferredNavigationUnits),
+    [deferredNavigationUnits],
+  );
   const userMessageNavigationScrollToUnitRef = useRef<((unitKey: string) => boolean) | null>(null);
   const [turnCollapseState, setTurnCollapseState] = useState<Record<string, boolean>>({});
   if (units.length === 0) {

@@ -996,15 +996,19 @@ button.hc-error-event-summary:hover {
 }
 
 .hc-turn-diff-preview-surface {
+  --hc-turn-diff-preview-surface: var(--color-token-dropdown-background, #fffdfa);
+  --hc-turn-diff-preview-foreground: var(--color-token-foreground, #27313d);
+  --hc-turn-diff-preview-border: var(--color-token-border, #d8d4cc);
+  --hc-turn-diff-preview-body: var(--color-token-main-surface-primary, #fbfaf7);
   display: flex;
   max-height: min(24rem, calc(100vh - 16px));
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid #d8d4cc;
+  border: 1px solid var(--hc-turn-diff-preview-border);
   border-radius: 8px;
-  background: #fffdfa;
-  color: #27313d;
+  background: var(--hc-turn-diff-preview-surface);
+  color: var(--hc-turn-diff-preview-foreground);
   box-shadow: 0 18px 48px rgba(24, 24, 22, 0.24);
   cursor: pointer;
 }
@@ -1020,11 +1024,12 @@ button.hc-error-event-summary:hover {
   flex: 0 0 auto;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #ddd9ce;
-  background: #fffdfa;
+  border-bottom: 1px solid var(--hc-turn-diff-preview-border);
+  background: var(--hc-turn-diff-preview-surface);
   padding: 4px 16px;
-  color: #27313d;
+  color: var(--hc-turn-diff-preview-foreground);
   font-size: calc(13px * var(--hc-ui-font-scale, 1));
+  height: 36px;
   line-height: 1.45;
   text-align: left;
 }
@@ -1041,48 +1046,155 @@ button.hc-error-event-summary:hover {
   min-height: 0;
   flex: 1 1 auto;
   overflow-y: auto;
-  background: #fbfaf7;
+  background: var(--hc-turn-diff-preview-body);
   contain: layout paint;
 }
 
-.hc-turn-diff-preview-snippet {
+.hc-turn-diff-simple-preview {
+  --diffs-font-fallback: "SF Mono", Monaco, Consolas, "Ubuntu Mono", "Liberation Mono", "Courier New", monospace;
+  --diffs-added-light: #0dbe4e;
+  --diffs-added-dark: #5ecc71;
+  --diffs-deleted-light: #ff2e3f;
+  --diffs-deleted-dark: #ff6762;
+  --diffs-mixer: #000;
+  --diffs-bg: var(--hc-turn-diff-preview-body);
+  --diffs-fg: var(--hc-turn-diff-preview-foreground);
+  --diffs-fg-number: color-mix(in lab, var(--diffs-fg) 65%, var(--diffs-bg));
+  --diffs-addition-base: var(--diffs-added-light);
+  --diffs-deletion-base: var(--diffs-deleted-light);
+  --diffs-bg-context: color-mix(in lab, var(--diffs-bg) 98.5%, var(--diffs-mixer));
+  --diffs-bg-separator: color-mix(in lab, var(--diffs-bg) 96%, var(--diffs-fg));
+  --diffs-bg-addition: color-mix(in lab, var(--diffs-bg) 88%, var(--diffs-addition-base));
+  --diffs-bg-deletion: color-mix(in lab, var(--diffs-bg) 88%, var(--diffs-deletion-base));
+  --diffs-addition-number: color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-addition-base));
+  --diffs-deletion-number: color-mix(in lab, var(--diffs-bg) 91%, var(--diffs-deletion-base));
+  display: block;
   margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.hc-turn-diff-preview-snippet pre {
-  max-height: none;
-  border-radius: 0;
-  background: transparent;
-  contain: content;
-}
-
-.hc-turn-diff-preview-code-container {
-  margin: 0;
-}
-
-.hc-turn-diff-preview-code {
+  overflow: clip;
+  background: var(--diffs-bg);
+  color: var(--diffs-fg);
+  font-family: var(--diffs-font-fallback);
   font-size: calc(12px * var(--hc-ui-font-scale, 1));
-  line-height: 1.45;
+  line-height: 20px;
+  font-feature-settings: var(--diffs-font-features);
+}
+
+.hc-turn-diff-simple-preview-code {
+  display: grid;
+  grid-template-columns: minmax(min-content, max-content) minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  contain: content;
+  background: var(--diffs-bg);
+}
+
+.hc-turn-diff-simple-row {
+  display: contents;
+}
+
+.hc-turn-diff-simple-number,
+.hc-turn-diff-simple-line {
+  min-height: 20px;
+  background: var(--diffs-line-bg, var(--diffs-bg));
+  color: var(--diffs-fg);
+  white-space: pre;
+}
+
+.hc-turn-diff-simple-number {
+  box-sizing: content-box;
+  min-width: 3ch;
+  padding-right: 1ch;
+  padding-left: 2ch;
+  color: var(--diffs-fg-number);
+  text-align: right;
+  user-select: none;
+}
+
+.hc-turn-diff-simple-line {
+  min-width: 0;
+  overflow: hidden;
+  padding-right: 1ch;
+  text-overflow: clip;
+}
+
+.hc-turn-diff-simple-marker {
+  display: inline-block;
+  width: 1ch;
+  user-select: none;
+}
+
+.hc-turn-diff-simple-line[data-line-type="context"],
+.hc-turn-diff-simple-number[data-line-type="context"] {
+  --diffs-line-bg: var(--diffs-bg-context);
+}
+
+.hc-turn-diff-simple-line[data-line-type="context"] .hc-turn-diff-simple-marker {
+  color: transparent;
+}
+
+.hc-turn-diff-simple-line[data-line-type="change-addition"] {
+  --diffs-line-bg: var(--diffs-bg-addition);
+}
+
+.hc-turn-diff-simple-number[data-line-type="change-addition"] {
+  --diffs-line-bg: var(--diffs-addition-number);
+  color: var(--diffs-addition-base);
+}
+
+.hc-turn-diff-simple-line[data-line-type="change-addition"] .hc-turn-diff-simple-marker {
+  color: var(--diffs-addition-base);
+}
+
+.hc-turn-diff-simple-line[data-line-type="change-deletion"] {
+  --diffs-line-bg: var(--diffs-bg-deletion);
+}
+
+.hc-turn-diff-simple-number[data-line-type="change-deletion"] {
+  --diffs-line-bg: var(--diffs-deletion-number);
+  color: var(--diffs-deletion-base);
+}
+
+.hc-turn-diff-simple-line[data-line-type="change-deletion"] .hc-turn-diff-simple-marker {
+  color: var(--diffs-deletion-base);
+}
+
+.hc-turn-diff-simple-number[data-separator],
+.hc-turn-diff-simple-line[data-separator] {
+  min-height: 20px;
+  background: transparent;
+}
+
+.hc-turn-diff-simple-line[data-separator]::after {
+  display: block;
+  align-self: center;
+  margin: 9px 1ch 0;
+  border-top: 1px solid color-mix(in srgb, var(--diffs-fg) 18%, transparent);
+  content: "";
+}
+
+.hc-turn-diff-simple-line[data-no-newline] {
+  color: var(--diffs-fg-number);
+  font-style: italic;
 }
 
 .hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-preview-surface {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: #202020;
-  color: #f1f1ee;
+  --hc-turn-diff-preview-surface: var(--color-token-dropdown-background, #202020);
+  --hc-turn-diff-preview-foreground: var(--color-token-foreground, #f1f1ee);
+  --hc-turn-diff-preview-border: var(--color-token-border, rgba(255, 255, 255, 0.12));
+  --hc-turn-diff-preview-body: var(--color-token-main-surface-primary, #1b1b1b);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
 }
 
-.hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-preview-header {
-  border-bottom-color: rgba(255, 255, 255, 0.12);
-  background: #202020;
-  color: #f1f1ee;
-}
-
-.hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-preview-body {
-  background: #1b1b1b;
+.hc-turn-diff-preview-positioner[data-theme="dark"] .hc-turn-diff-simple-preview {
+  --diffs-mixer: #fff;
+  --diffs-addition-base: var(--diffs-added-dark);
+  --diffs-deletion-base: var(--diffs-deleted-dark);
+  --diffs-bg-context: color-mix(in lab, var(--diffs-bg) 92.5%, var(--diffs-mixer));
+  --diffs-bg-separator: color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-mixer));
+  --diffs-bg-addition: color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-addition-base));
+  --diffs-bg-deletion: color-mix(in lab, var(--diffs-bg) 80%, var(--diffs-deletion-base));
+  --diffs-addition-number: color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-addition-base));
+  --diffs-deletion-number: color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-deletion-base));
 }
 
 /* File rows with inline disclosure ----------------------------------------- */

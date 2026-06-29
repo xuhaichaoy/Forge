@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type MutableRefObject } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch, type MutableRefObject } from "react";
 import type {
   CollaborationModeMask,
   JsonRpcNotification,
@@ -229,6 +229,8 @@ function activeTurnPlanFromTodoListItems(
  */
 function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: ForgeAppBodyProps) {
   const { client, dispatch } = useServices();
+  const deferredNotificationFrameRef = useRef<number | null>(null);
+  const deferredNotificationsRef = useRef<JsonRpcNotification[]>([]);
   const buildInfo = useMemo(() => resolveForgeBuildInfo(
     (import.meta as unknown as { env?: Record<string, unknown> }).env,
   ), []);
@@ -419,10 +421,43 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     () => projectAccountViewModel(state.account, codexAuthSummary, formatUiMessage),
     [state.account, codexAuthSummary, formatUiMessage],
   );
+  const flushDeferredNotifications = useCallback((priority: "transition" | "sync" = "transition") => {
+    if (deferredNotificationFrameRef.current !== null) {
+      window.cancelAnimationFrame(deferredNotificationFrameRef.current);
+      deferredNotificationFrameRef.current = null;
+    }
+    const queued = deferredNotificationsRef.current;
+    if (queued.length === 0) return;
+    deferredNotificationsRef.current = [];
+    const applyQueued = () => {
+      for (const message of queued) dispatch({ type: "notification", message });
+    };
+    if (priority === "transition") startTransition(applyQueued);
+    else applyQueued();
+  }, [dispatch]);
+  const scheduleDeferredNotification = useCallback((message: JsonRpcNotification) => {
+    deferredNotificationsRef.current.push(message);
+    if (deferredNotificationFrameRef.current !== null) return;
+    deferredNotificationFrameRef.current = window.requestAnimationFrame(() => {
+      deferredNotificationFrameRef.current = null;
+      flushDeferredNotifications();
+    });
+  }, [flushDeferredNotifications]);
+  useEffect(() => () => {
+    if (deferredNotificationFrameRef.current !== null) {
+      window.cancelAnimationFrame(deferredNotificationFrameRef.current);
+      deferredNotificationFrameRef.current = null;
+    }
+    deferredNotificationsRef.current = [];
+  }, []);
   clientCallbacksRef.current = {
     onNotification: (message: JsonRpcNotification) => {
       fileSearchControllerRef.current?.handleNotification(message);
-      dispatch({ type: "notification", message });
+      if (isDeferredStreamNotification(message)) scheduleDeferredNotification(message);
+      else {
+        flushDeferredNotifications("sync");
+        dispatch({ type: "notification", message });
+      }
       if (message.method === "fs/changed") {
         const watchId = watchIdFromFsChangedNotification(message.params);
         if (watchId) refreshOpenFileWatchTabsRef.current?.(watchId);
@@ -1280,6 +1315,21 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     </DelinkFileCitationsContext.Provider>
     </FileCitationMenuContext.Provider>
   );
+}
+
+function isDeferredStreamNotification(message: JsonRpcNotification): boolean {
+  switch (message.method) {
+    case "item/agentMessage/delta":
+    case "item/plan/delta":
+    case "item/reasoning/textDelta":
+    case "item/reasoning/summaryTextDelta":
+    case "item/commandExecution/outputDelta":
+    case "item/fileChange/patchUpdated":
+    case "turn/diff/updated":
+      return true;
+    default:
+      return false;
+  }
 }
 
 export function ForgeApp() {

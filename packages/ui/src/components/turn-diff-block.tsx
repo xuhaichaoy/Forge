@@ -1,9 +1,9 @@
 import { ArrowRight, FileText } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CodeSnippet } from "./code-snippet";
 import { useForgeIntl } from "./i18n-provider";
 import { TurnDiffFilesSection, TurnDiffStats } from "./turn-diff-files-section";
+import { TurnDiffSimplePreview } from "./turn-diff-simple-preview";
 import {
   formatTurnDiffFileCount,
   formatTurnDiffFilesChanged,
@@ -26,7 +26,9 @@ export type PatchAction = "undo" | "reapply";
 export type PatchActionState = { action: PatchAction; diff: string } | null;
 
 const TURN_DIFF_PREVIEW_DELAY_MS = 800;
+const TURN_DIFF_PREVIEW_SKIP_DELAY_WINDOW_MS = 300;
 const TURN_DIFF_INLINE_RENDER_CUTOFF = 5000;
+let lastTurnDiffPreviewOpenAt = 0;
 
 export function TurnDiffBlock({
   contentSearchUnitKey,
@@ -334,7 +336,24 @@ function TurnDiffPreviewTooltip({
     const app = triggerRef.current?.closest<HTMLElement>(".hc-app[data-theme]");
     const appTheme = app?.dataset.theme === "dark" ? "dark" : app?.dataset.theme === "light" ? "light" : null;
     setTheme(appTheme);
-    openTimerRef.current = window.setTimeout(() => setOpen(true), TURN_DIFF_PREVIEW_DELAY_MS);
+    const now = Date.now();
+    const delay = now - lastTurnDiffPreviewOpenAt < TURN_DIFF_PREVIEW_SKIP_DELAY_WINDOW_MS
+      ? 0
+      : TURN_DIFF_PREVIEW_DELAY_MS;
+    if (delay === 0) {
+      lastTurnDiffPreviewOpenAt = now;
+      setOpen(true);
+      return;
+    }
+    openTimerRef.current = window.setTimeout(() => {
+      lastTurnDiffPreviewOpenAt = Date.now();
+      setOpen(true);
+    }, delay);
+  }, []);
+
+  const cancelClose = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.clearTimeout(closeTimerRef.current);
   }, []);
 
   const scheduleClose = useCallback(() => {
@@ -346,6 +365,12 @@ function TurnDiffPreviewTooltip({
       setPosition(null);
     }, 80);
   }, []);
+
+  const handleTriggerBlur = (event: FocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && previewRef.current?.contains(nextTarget)) return;
+    scheduleClose();
+  };
 
   useEffect(() => () => clearTimers(), [clearTimers]);
 
@@ -372,9 +397,9 @@ function TurnDiffPreviewTooltip({
       ref={triggerRef}
       className="hc-turn-diff-preview-trigger"
       onFocus={scheduleOpen}
-      onBlur={scheduleClose}
-      onMouseEnter={scheduleOpen}
-      onMouseLeave={scheduleClose}
+      onBlur={handleTriggerBlur}
+      onPointerEnter={scheduleOpen}
+      onPointerLeave={scheduleClose}
     >
       {children}
       {open && typeof document !== "undefined" && createPortal(
@@ -382,8 +407,8 @@ function TurnDiffPreviewTooltip({
           ref={previewRef}
           className="hc-turn-diff-preview-positioner"
           data-theme={theme ?? undefined}
-          onMouseEnter={scheduleOpen}
-          onMouseLeave={scheduleClose}
+          onPointerEnter={cancelClose}
+          onPointerLeave={scheduleClose}
           style={{
             left: position?.left ?? -9999,
             top: position?.top ?? -9999,
@@ -403,15 +428,7 @@ function TurnDiffPreviewTooltip({
               <TurnDiffStats added={preview.linesAdded} removed={preview.linesRemoved} />
             </div>
             <div className="hc-turn-diff-preview-body" data-testid="diff-preview-scroll">
-              <CodeSnippet
-                language="diff"
-                text={preview.diff}
-                showActionBar={false}
-                wrapMode="off"
-                wrapperClassName="hc-turn-diff-preview-snippet"
-                codeContainerClassName="hc-turn-diff-preview-code-container"
-                codeClassName="hc-turn-diff-preview-code"
-              />
+              <TurnDiffSimplePreview diff={preview.diff} />
             </div>
           </div>
         </div>,

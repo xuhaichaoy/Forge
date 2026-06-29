@@ -11,7 +11,10 @@ import {
   minPositiveIndex,
 } from "./conversation-markdown-scan";
 import type { MarkdownImageBlock } from "./conversation-markdown-types";
-import type { FileCitationArtifactCitation } from "../components/file-reference-types";
+import type {
+  FileCitationArtifactCitation,
+  FileCitationArtifactTarget,
+} from "../components/file-reference-types";
 
 /*
  * Link-like target parsing for the conversation markdown engine: inline
@@ -335,6 +338,7 @@ export function markdownReferenceKey(value: string): string {
 export function parseFileCitationMarker(
   text: string,
   startIndex: number,
+  attributes?: Record<string, unknown> | null,
 ): ParsedFileCitationMarker | null {
   const closeIndex = text.indexOf("\u3011", startIndex + 1);
   if (closeIndex < 0) return null;
@@ -347,7 +351,14 @@ export function parseFileCitationMarker(
   if (!path || !Number.isInteger(lineStart) || lineStart <= 0 || !Number.isInteger(lineEnd) || lineEnd <= 0) {
     return null;
   }
-  return { path, lineStart, lineEnd: Math.max(lineStart, lineEnd), endIndex: closeIndex + 1 };
+  const artifactCitation = fileCitationArtifactCitationFromAttributes(attributes);
+  return {
+    path,
+    lineStart,
+    lineEnd: Math.max(lineStart, lineEnd),
+    ...(artifactCitation ? { artifactCitation } : {}),
+    endIndex: closeIndex + 1,
+  };
 }
 
 function normalizeFileCitationPath(value: string): string {
@@ -357,6 +368,84 @@ function normalizeFileCitationPath(value: string): string {
   } catch {
     return normalized;
   }
+}
+
+export function fileCitationArtifactCitationFromAttributes(
+  attributes: Record<string, unknown> | null | undefined,
+): FileCitationArtifactCitation | null {
+  if (!attributes) return null;
+  const target = fileCitationArtifactTargetFromAttributes(attributes);
+  if (!target) return null;
+  const label = nonEmptyAttributeString(attributes, "label");
+  return {
+    ...(label ? { label } : {}),
+    target,
+  };
+}
+
+function fileCitationArtifactTargetFromAttributes(
+  attributes: Record<string, unknown>,
+): FileCitationArtifactTarget | null {
+  const kind = nonEmptyAttributeString(attributes, "artifact_kind") ?? nonEmptyAttributeString(attributes, "artifactKind");
+  if (kind === "document") {
+    const pageNumber = positiveIntegerAttribute(attributes, "page_number") ?? positiveIntegerAttribute(attributes, "pageNumber");
+    return pageNumber ? { artifactKind: "document", pageNumber } : null;
+  }
+  if (kind === "presentation") {
+    const objectId = nonEmptyAttributeString(attributes, "object_id") ?? nonEmptyAttributeString(attributes, "objectId");
+    const slideId = nonEmptyAttributeString(attributes, "slide_id") ?? nonEmptyAttributeString(attributes, "slideId");
+    const slideNumber = positiveIntegerAttribute(attributes, "slide_number") ?? positiveIntegerAttribute(attributes, "slideNumber");
+    if (!slideId && !slideNumber) return null;
+    return {
+      artifactKind: "presentation",
+      ...(objectId ? { objectId } : {}),
+      ...(slideId ? { slideId } : {}),
+      ...(slideNumber ? { slideNumber } : {}),
+    };
+  }
+  if (kind === "workbook") {
+    const sheet = nonEmptyAttributeString(attributes, "sheet");
+    if (!sheet) return null;
+    const objectId = nonEmptyAttributeString(attributes, "object_id") ?? nonEmptyAttributeString(attributes, "objectId");
+    if (objectId) {
+      const objectKind = workbookObjectKindAttribute(attributes);
+      return {
+        artifactKind: "workbook",
+        sheet,
+        objectId,
+        ...(objectKind ? { objectKind } : {}),
+      };
+    }
+    const range = nonEmptyAttributeString(attributes, "range");
+    return range ? { artifactKind: "workbook", sheet, range } : null;
+  }
+  return null;
+}
+
+function workbookObjectKindAttribute(
+  attributes: Record<string, unknown>,
+): "chart" | "image" | "shape" | "table" | null {
+  const value = nonEmptyAttributeString(attributes, "object_kind") ?? nonEmptyAttributeString(attributes, "objectKind");
+  return value === "chart" || value === "image" || value === "shape" || value === "table" ? value : null;
+}
+
+function nonEmptyAttributeString(
+  attributes: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = attributes[key];
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function positiveIntegerAttribute(
+  attributes: Record<string, unknown>,
+  key: string,
+): number | null {
+  const raw = attributes[key];
+  const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw.trim()) : NaN;
+  return Number.isInteger(value) && value > 0 ? value : null;
 }
 
 export function findMarkdownAutolinkStart(text: string, index: number): number {

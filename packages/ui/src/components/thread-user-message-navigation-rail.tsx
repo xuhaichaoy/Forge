@@ -24,7 +24,10 @@ import type {
 
 export const THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS = 4;
 const THREAD_USER_MESSAGE_NAVIGATION_MAX_OUTPUTS = 2;
+const THREAD_USER_MESSAGE_NAVIGATION_PREVIEW_CACHE_LIMIT = 160;
+const CONTENT_SEARCH_UNIT_SELECTOR = "[data-content-search-unit-key]";
 const DESKTOP_NAVIGATION_DIRECTIVE_LINE_PATTERN = /^::[a-zA-Z0-9-]+.*$/gm;
+const navigationPreviewTextCache = new Map<string, string>();
 type UserMessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }> & { role: "user" };
 type AssistantMessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }> & { role: "assistant" };
 
@@ -338,7 +341,7 @@ function useVisibleUserMessageMarker({
     });
     const observeTargets = () => {
       const liveTargets = new Set<Element>();
-      for (const target of scrollElement.querySelectorAll<HTMLElement>("[data-content-search-unit-key]")) {
+      for (const target of scrollElement.querySelectorAll<HTMLElement>(CONTENT_SEARCH_UNIT_SELECTOR)) {
         const id = target.dataset.contentSearchUnitKey;
         if (!id || !idSet.has(id)) continue;
         liveTargets.add(target);
@@ -363,7 +366,7 @@ function useVisibleUserMessageMarker({
       });
     };
     const mutationObserver = new MutationObserver((records) => {
-      if (records.some((record) => record.addedNodes.length > 0 || record.removedNodes.length > 0)) {
+      if (records.some(mutationRecordTouchesContentSearchTarget)) {
         scheduleObserveTargets();
       }
     });
@@ -408,7 +411,40 @@ function normalizedNavigationPreviewText(value: string): string {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   if (!cleaned) return "";
-  return normalizedNavigationText(markdownBlocksToPlainText(parseMarkdownBlocks(cleaned)));
+  const cached = navigationPreviewTextCache.get(cleaned);
+  if (cached !== undefined) return cached;
+  const preview = normalizedNavigationText(markdownBlocksToPlainText(parseMarkdownBlocks(cleaned)));
+  rememberNavigationPreviewText(cleaned, preview);
+  return preview;
+}
+
+function rememberNavigationPreviewText(source: string, preview: string): void {
+  if (navigationPreviewTextCache.size >= THREAD_USER_MESSAGE_NAVIGATION_PREVIEW_CACHE_LIMIT) {
+    const oldestKey = navigationPreviewTextCache.keys().next().value;
+    if (oldestKey !== undefined) navigationPreviewTextCache.delete(oldestKey);
+  }
+  navigationPreviewTextCache.set(source, preview);
+}
+
+function mutationRecordTouchesContentSearchTarget(record: MutationRecord): boolean {
+  return nodesContainContentSearchTarget(record.addedNodes) || nodesContainContentSearchTarget(record.removedNodes);
+}
+
+function nodesContainContentSearchTarget(nodes: NodeList): boolean {
+  for (let index = 0; index < nodes.length; index += 1) {
+    if (nodeContainsContentSearchTarget(nodes[index])) return true;
+  }
+  return false;
+}
+
+function nodeContainsContentSearchTarget(node: Node | undefined): boolean {
+  if (node instanceof Element) {
+    return node.matches(CONTENT_SEARCH_UNIT_SELECTOR) || node.querySelector(CONTENT_SEARCH_UNIT_SELECTOR) !== null;
+  }
+  if (node instanceof DocumentFragment) {
+    return node.querySelector(CONTENT_SEARCH_UNIT_SELECTOR) !== null;
+  }
+  return false;
 }
 
 function markdownBlocksToPlainText(blocks: readonly MarkdownBlock[]): string {

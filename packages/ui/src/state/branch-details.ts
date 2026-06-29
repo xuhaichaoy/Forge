@@ -4,6 +4,8 @@ import { formatMessage } from "./i18n";
 export interface BranchDetailsViewModel {
   title: string;
   emptyText: string;
+  cwd: string | null;
+  currentBranch: string | null;
   rows: BranchDetailsRow[];
   diff: BranchDetailsDiff | null;
   gitStatus: BranchDetailsGitStatus | null;
@@ -116,6 +118,7 @@ export type BranchDetailsGitChangedFileInput =
 
 export function projectBranchDetails(input: BranchDetailsProjectionInput): BranchDetailsViewModel {
   const thread = input.thread ?? null;
+  const cwd = typeof thread?.cwd === "string" && thread.cwd.trim() ? thread.cwd.trim() : null;
   const rows: BranchDetailsRow[] = [];
   const gitInfo = objectRecord(thread?.gitInfo);
   const mergedDiffInput = mergeDiffInputs(input.diff ?? null, diffInputFromGitStatus(input.gitStatus ?? null));
@@ -134,7 +137,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   // on `shouldShowThreadContext && cwd`, which produced empty Git surfaces on
   // perfectly normal sessions whose runtime had not yet emitted Git data. Codex
   // shows Local as the second of its five canonical Git rows in every snapshot.
-  const hasLocalContext = Boolean(thread?.cwd) || shouldShowThreadContext;
+  const hasLocalContext = Boolean(cwd) || shouldShowThreadContext;
   if (hasLocalContext) {
     // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Sf→Zc) — the Environment
     // second row is the worktree/composer-mode trigger (composerMode defaults to
@@ -171,7 +174,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
     });
   }
   if (hasCommitAction) {
-    const commitLabel = formatMessage({ id: "hc.branchDetails.row.commit", defaultMessage: "Commit" });
+    const commitLabel = formatMessage({ id: "codex.command.git.commit", defaultMessage: "Commit or push" });
     rows.push({
       id: "commit",
       label: commitLabel,
@@ -223,6 +226,8 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
       id: "hc.branchDetails.emptyText",
       defaultMessage: "Environment details will appear when the app server provides thread Git or diff data.",
     }),
+    cwd,
+    currentBranch: branch ?? null,
     rows,
     diff,
     gitStatus,

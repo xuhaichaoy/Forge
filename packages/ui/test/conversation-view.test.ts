@@ -35,6 +35,10 @@ import {
 } from "../src/components/conversation-view";
 import { GeneratedImageGallery } from "../src/components/generated-image-gallery";
 import { ForgeIntlProvider } from "../src/components/i18n-provider";
+import {
+  fileCitationArtifactCitationFromAttributes,
+  parseFileCitationMarker,
+} from "../src/state/conversation-markdown-links";
 import { formatMessage, setActiveI18nLocale, FORGE_DEFAULT_LOCALE } from "../src/state/i18n";
 
 // Mirror event-unit's worked-for aggregate render: leading descriptor for the
@@ -69,6 +73,7 @@ export default function runConversationViewTests(): void {
   parsesDetailsBlocksLikeDesktopMarkdown();
   parsesFileCitationMarkers();
   decodesFileCitationMarkerPathsLikeDesktop();
+  parsesFileCitationArtifactAttributesLikeDesktop();
   rendersInlineFileCitationChipsLikeDesktop();
   parsesPipeTablesLikeAssistantMarkdown();
   parsesGfmTaskListRuleAndImageBlocks();
@@ -860,6 +865,44 @@ function decodesFileCitationMarkerPathsLikeDesktop(): void {
       { kind: "text", text: "." },
     ],
     "file citation marker paths should be URI-decoded like Codex Desktop",
+  );
+}
+
+function parsesFileCitationArtifactAttributesLikeDesktop(): void {
+  const documentMarker = parseFileCitationMarker(
+    "\u3010F:/workspace/report\u2020L1\u3011",
+    0,
+    { artifact_kind: "document", page_number: "7" },
+  );
+  assertDeepEqual(
+    documentMarker?.artifactCitation,
+    { target: { artifactKind: "document", pageNumber: 7 } },
+    "Desktop document citation attributes should become artifactCitation metadata",
+  );
+
+  assertDeepEqual(
+    fileCitationArtifactCitationFromAttributes({
+      artifact_kind: "presentation",
+      label: "Revenue chart",
+      object_id: "chart-1",
+      slide_id: "slide-3",
+      slide_number: "3",
+    }),
+    {
+      label: "Revenue chart",
+      target: { artifactKind: "presentation", objectId: "chart-1", slideId: "slide-3", slideNumber: 3 },
+    },
+    "Desktop presentation citation attributes should preserve slide/object labels",
+  );
+
+  assertDeepEqual(
+    fileCitationArtifactCitationFromAttributes({
+      artifact_kind: "workbook",
+      range: "A1:B4",
+      sheet: "Forecast",
+    }),
+    { target: { artifactKind: "workbook", sheet: "Forecast", range: "A1:B4" } },
+    "Desktop workbook range attributes should preserve sheet and range",
   );
 }
 

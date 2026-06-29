@@ -12,6 +12,7 @@ import { setupDomTestEnv, type DomTestEnv } from "./dom-test-env";
 export default async function runThreadUserMessageNavigationRailDomTests(): Promise<void> {
   await hidesRailBeforeDesktopThreshold();
   await skipsVisibilityObserverBeforeDesktopThreshold();
+  await ignoresStreamingDomMutationsWithoutNavigationTargets();
   await portalsRailIntoThreadScrollShellOverlay();
   await rendersDesktopTooltipPreviewFromResponseAndOutputs();
 }
@@ -30,26 +31,9 @@ async function hidesRailBeforeDesktopThreshold(): Promise<void> {
 }
 
 async function skipsVisibilityObserverBeforeDesktopThreshold(): Promise<void> {
-  const previousIntersectionObserver = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
   let constructed = 0;
-  class TestIntersectionObserver {
-    readonly root = null;
-    readonly rootMargin = "";
-    readonly thresholds: ReadonlyArray<number> = [];
-    constructor() {
-      constructed += 1;
-    }
-    disconnect(): void {}
-    observe(): void {}
-    takeRecords(): IntersectionObserverEntry[] {
-      return [];
-    }
-    unobserve(): void {}
-  }
-  Object.defineProperty(globalThis, "IntersectionObserver", {
-    configurable: true,
-    writable: true,
-    value: TestIntersectionObserver as unknown as typeof IntersectionObserver,
+  const restoreIntersectionObserver = installTestIntersectionObserver(() => {
+    constructed += 1;
   });
   let mounted: MountedThreadConversation | null = null;
   try {
@@ -61,11 +45,42 @@ async function skipsVisibilityObserverBeforeDesktopThreshold(): Promise<void> {
     );
   } finally {
     mounted?.cleanup();
-    if (previousIntersectionObserver) {
-      Object.defineProperty(globalThis, "IntersectionObserver", previousIntersectionObserver);
-    } else {
-      delete (globalThis as Record<string, unknown>).IntersectionObserver;
-    }
+    restoreIntersectionObserver();
+  }
+}
+
+async function ignoresStreamingDomMutationsWithoutNavigationTargets(): Promise<void> {
+  const restoreIntersectionObserver = installTestIntersectionObserver();
+  const mounted = await mountConversationWithThreadScroll(THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS);
+  try {
+    const scrollContainer = mounted.scrollContainer();
+    const originalQuerySelectorAll = scrollContainer.querySelectorAll.bind(scrollContainer);
+    let targetScans = 0;
+    Object.defineProperty(scrollContainer, "querySelectorAll", {
+      configurable: true,
+      value: ((selectors: string) => {
+        if (selectors === "[data-content-search-unit-key]") targetScans += 1;
+        return originalQuerySelectorAll(selectors);
+      }) as HTMLElement["querySelectorAll"],
+    });
+    const firstUnit = scrollContainer.querySelector<HTMLElement>("[data-content-search-unit-key]");
+    if (!firstUnit) throw new Error("expected a mounted content-search unit");
+    act(() => {
+      firstUnit.appendChild(mounted.env.document.createTextNode(" streaming output chunk"));
+    });
+    await act(async () => {
+      await Promise.resolve();
+      mounted.env.flushFrames(2);
+      await Promise.resolve();
+    });
+    assertEqual(
+      targetScans,
+      0,
+      "streaming text mutations inside an existing message should not rescan rail visibility targets",
+    );
+  } finally {
+    mounted.cleanup();
+    restoreIntersectionObserver();
   }
 }
 
@@ -237,6 +252,36 @@ function dispatchMouse(env: DomTestEnv, target: Element, type: string): void {
       relatedTarget: null,
     }));
   });
+}
+
+function installTestIntersectionObserver(onConstruct?: () => void): () => void {
+  const previousIntersectionObserver = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
+  class TestIntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "";
+    readonly thresholds: ReadonlyArray<number> = [];
+    constructor() {
+      onConstruct?.();
+    }
+    disconnect(): void {}
+    observe(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    unobserve(): void {}
+  }
+  Object.defineProperty(globalThis, "IntersectionObserver", {
+    configurable: true,
+    writable: true,
+    value: TestIntersectionObserver as unknown as typeof IntersectionObserver,
+  });
+  return () => {
+    if (previousIntersectionObserver) {
+      Object.defineProperty(globalThis, "IntersectionObserver", previousIntersectionObserver);
+    } else {
+      delete (globalThis as Record<string, unknown>).IntersectionObserver;
+    }
+  };
 }
 
 function assertEqual(actual: unknown, expected: unknown, message: string): void {

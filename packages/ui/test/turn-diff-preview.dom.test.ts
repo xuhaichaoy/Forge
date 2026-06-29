@@ -28,7 +28,7 @@ async function hoverShowsSingleFileDiffPreviewAndOpensScopedReview(): Promise<vo
     },
   });
   try {
-    dispatchMouse(mounted.env, mounted.trigger(), "mouseover");
+    dispatchPointer(mounted.env, mounted.trigger(), "pointerover");
     await act(async () => {
       await Promise.resolve();
     });
@@ -39,7 +39,15 @@ async function hoverShowsSingleFileDiffPreviewAndOpensScopedReview(): Promise<vo
     assertIncludes(text, "src/app.ts", "preview should show the changed file path");
     assertIncludes(text, "-old", "preview should show removed diff lines");
     assertIncludes(text, "+new", "preview should show added diff lines");
+    assertEqual(text.includes("diff --git"), false, "preview should render parsed diff lines, not raw diff metadata");
+    assertEqual(text.includes("+++ b/src/app.ts"), false, "preview should hide unified diff file headers");
     assertEqual(preview.style.width, "576px", "preview width should follow Desktop's trigger width minus 64px");
+    if (!preview.querySelector("[data-line-type='change-deletion']")) {
+      throw new Error("preview should expose Desktop-style deletion line metadata");
+    }
+    if (!preview.querySelector("[data-line-type='change-addition']")) {
+      throw new Error("preview should expose Desktop-style addition line metadata");
+    }
 
     const surface = preview.querySelector<HTMLElement>(".hc-turn-diff-preview-surface");
     if (!surface) throw new Error("turn diff preview surface should render");
@@ -141,6 +149,15 @@ function dispatchMouse(env: DomTestEnv, target: HTMLElement, type: string, init:
       bubbles: true,
       cancelable: true,
       ...init,
+    }));
+  });
+}
+
+function dispatchPointer(env: DomTestEnv, target: HTMLElement, type: string): void {
+  act(() => {
+    target.dispatchEvent(new env.window.MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
     }));
   });
 }
