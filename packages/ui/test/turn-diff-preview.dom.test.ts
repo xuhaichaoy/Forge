@@ -7,7 +7,8 @@ import { setupDomTestEnv, type DomTestEnv } from "./dom-test-env";
 
 export default async function runTurnDiffPreviewDomTests(): Promise<void> {
   await hoverShowsSingleFileDiffPreviewAndOpensScopedReview();
-  await multiFileDiffDoesNotRenderHoverPreviewTrigger();
+  await multiFileDiffRendersPerFileHoverPreviewOnly();
+  await multiFileTooLargeRowsDoNotRenderHoverPreview();
 }
 
 async function hoverShowsSingleFileDiffPreviewAndOpensScopedReview(): Promise<void> {
@@ -62,13 +63,78 @@ async function hoverShowsSingleFileDiffPreviewAndOpensScopedReview(): Promise<vo
   }
 }
 
-async function multiFileDiffDoesNotRenderHoverPreviewTrigger(): Promise<void> {
-  const mounted = mountTurnDiff(multiFileDiff(), () => undefined);
+async function multiFileDiffRendersPerFileHoverPreviewOnly(): Promise<void> {
+  const opened: Array<string | undefined> = [];
+  const mounted = mountTurnDiff(multiFileDiff(), (path) => opened.push(path));
+  const originalSetTimeout = mounted.env.window.setTimeout;
+  Object.defineProperty(mounted.env.window, "innerHeight", { configurable: true, value: 700 });
+  Object.defineProperty(mounted.env.window, "innerWidth", { configurable: true, value: 900 });
+  Object.defineProperty(mounted.env.window, "setTimeout", {
+    configurable: true,
+    value: (handler: TimerHandler, _timeout?: number, ..._args: unknown[]) => {
+      if (typeof handler === "function") handler();
+      return 1;
+    },
+  });
   try {
     assertEqual(
-      mounted.env.document.querySelector(".hc-turn-diff-preview-trigger"),
+      mounted.env.document.querySelectorAll(".hc-turn-diff-preview-trigger").length,
+      2,
+      "Desktop wraps each renderable multi-file row in a hover preview trigger, not the whole card",
+    );
+    const firstFileRow = mounted.env.document.querySelector<HTMLButtonElement>(".hc-turn-diff-file-row");
+    if (!firstFileRow) throw new Error("multi-file turn diff should render flat file rows");
+    const firstTrigger = firstFileRow.closest<HTMLElement>(".hc-turn-diff-preview-trigger");
+    if (!firstTrigger) throw new Error("renderable multi-file row should be wrapped in a preview trigger");
+    Object.defineProperty(firstTrigger, "getBoundingClientRect", {
+      configurable: true,
+      value: () => domRect({ top: 420, left: 120, width: 640, height: 36 }),
+    });
+    assertEqual(
+      firstFileRow.hasAttribute("aria-expanded"),
+      false,
+      "Desktop file rows do not expose an inline expansion state",
+    );
+    dispatchMouse(mounted.env, firstFileRow, "click");
+    assertEqual(opened[0], "src/app.ts", "clicking a changed-file row should open Review scoped to that file");
+    assertEqual(
+      mounted.env.document.querySelector(".hc-turn-diff-file-inline"),
       null,
-      "Desktop only wraps single-file renderable turn diffs in the hover preview trigger",
+      "clicking a changed-file row should not expand an inline CodeSnippet inside the turn card",
+    );
+
+    dispatchPointer(mounted.env, firstTrigger, "pointerover");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const preview = mounted.env.document.querySelector<HTMLElement>(".hc-turn-diff-preview-positioner");
+    if (!preview) throw new Error("renderable multi-file row hover should render a preview portal");
+    const text = preview.textContent ?? "";
+    assertIncludes(text, "src/app.ts", "row preview should show the hovered file path");
+    assertIncludes(text, "-old", "row preview should show only the hovered file diff deletion");
+    assertIncludes(text, "+new", "row preview should show only the hovered file diff addition");
+    assertEqual(text.includes("src/other.ts"), false, "row preview should not include sibling file headers");
+  } finally {
+    Object.defineProperty(mounted.env.window, "setTimeout", {
+      configurable: true,
+      value: originalSetTimeout,
+    });
+    mounted.cleanup();
+  }
+}
+
+async function multiFileTooLargeRowsDoNotRenderHoverPreview(): Promise<void> {
+  const mounted = mountTurnDiff(multiFileDiffWithLargeFile(), () => undefined);
+  try {
+    assertEqual(
+      mounted.env.document.querySelectorAll(".hc-turn-diff-preview-trigger").length,
+      1,
+      "Desktop skips the hover preview wrapper for multi-file rows that are too large to render inline",
+    );
+    assertIncludes(
+      mounted.env.document.body.textContent ?? "",
+      "Too large to render inline",
+      "large multi-file rows should keep Desktop's too-large label",
     );
   } finally {
     mounted.cleanup();
@@ -140,6 +206,18 @@ function multiFileDiff(): string {
     "@@ -1 +1 @@",
     "-before",
     "+after",
+  ].join("\n");
+}
+
+function multiFileDiffWithLargeFile(): string {
+  return [
+    singleFileDiff(),
+    "diff --git a/src/large.ts b/src/large.ts",
+    "index 555..666 100644",
+    "--- a/src/large.ts",
+    "+++ b/src/large.ts",
+    "@@ -1,5001 +1,5001 @@",
+    ...Array.from({ length: 5001 }, (_, index) => ` line ${index}`),
   ].join("\n");
 }
 

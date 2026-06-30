@@ -47,7 +47,7 @@ import { threadTitle } from "../state/thread-workflow";
 import { useArtifactPreviewActions } from "./use-artifact-preview-actions";
 import type { useCommandPanelFileSearch } from "./use-command-panel-file-search";
 import type { useSidePanelTabHost } from "./use-side-panel-tab-host";
-import type { useUiPreferences } from "./use-ui-preferences";
+import type { UiMessageFormatter } from "./use-ui-preferences";
 
 const LOCAL_SIDE_PANEL_HOST_ID = "local";
 export const PLAN_SIDE_PANEL_TAB_ID = "plan";
@@ -65,7 +65,7 @@ export interface ForgeAppPreviewWiringArgs {
   activeDiff: string;
   activeThread: Thread | null;
   activeThreadScrollKey: string;
-  formatUiMessage: ReturnType<typeof useUiPreferences>["formatUiMessage"];
+  formatUiMessage: UiMessageFormatter;
   openArtifactPreviewTabRef: MutableRefObject<((entry: RailEntry) => void) | null>;
   openBrowserSurface: (tabId?: string | null) => void;
   openCommandPanel: (panel: CommandPanelKind, options?: CommandPanelOptions) => void;
@@ -412,15 +412,12 @@ export function useForgeAppPreviewWiring(args: ForgeAppPreviewWiringArgs) {
   }, [sidePanel.controller]);
   const openGeneratedImagePreview = useCallback((entry: RailEntry, entries: readonly RailEntry[] = [entry]) => {
     if (entry.artifactKind !== "generated-image") return false;
-    const imageEntries = entries.filter((candidate) => candidate.artifactKind === "generated-image");
-    const sourceEntries = imageEntries.some((candidate) => candidate.id === entry.id) ? imageEntries : [entry, ...imageEntries];
-    const imageCount = sourceEntries.length;
-    const images = sourceEntries
-      .map((candidate, index) =>
-        generatedImagePreviewItemFromRailEntry(candidate, imageCount - index, activeThread, formatUiMessage)
-      )
-      .filter((image): image is GeneratedImagePreviewItem => image !== null);
-    const initialImage = images.find((image) => image.id === entry.id) ?? null;
+    const { images, initialImage } = generatedImagePreviewItemsFromRailEntries(
+      entry,
+      entries,
+      activeThread,
+      formatUiMessage,
+    );
     if (!initialImage) return false;
     openGeneratedImagePreviewTab(images, initialImage);
     return true;
@@ -622,11 +619,45 @@ function artifactPreviewKindFromCitation(reference: FileReference): ArtifactPrev
   return null;
 }
 
+export function generatedImagePreviewItemsFromRailEntries(
+  entry: RailEntry,
+  entries: readonly RailEntry[] = [entry],
+  activeThread: Thread | null,
+  formatUiMessage: UiMessageFormatter,
+): { images: GeneratedImagePreviewItem[]; initialImage: GeneratedImagePreviewItem | null } {
+  if (entry.artifactKind !== "generated-image") return { images: [], initialImage: null };
+  const imageEntries = entries.filter((candidate) => candidate.artifactKind === "generated-image");
+  const sourceEntries = imageEntries.some((candidate) => candidate.id === entry.id)
+    ? imageEntries
+    : [entry, ...imageEntries];
+  const imageCount = sourceEntries.length;
+  const imageNumberByEntryId = new Map<string, number>();
+  sourceEntries.forEach((candidate, index) => {
+    imageNumberByEntryId.set(candidate.id, imageCount - index);
+  });
+  const images = sourceEntries
+    .slice()
+    .reverse()
+    .map((candidate) =>
+      generatedImagePreviewItemFromRailEntry(
+        candidate,
+        imageNumberByEntryId.get(candidate.id) ?? 1,
+        activeThread,
+        formatUiMessage,
+      )
+    )
+    .filter((image): image is GeneratedImagePreviewItem => image !== null);
+  return {
+    images,
+    initialImage: images.find((image) => image.id === entry.id) ?? null,
+  };
+}
+
 function generatedImagePreviewItemFromRailEntry(
   entry: RailEntry,
   imageNumber: number,
   activeThread: Thread | null,
-  formatUiMessage: ReturnType<typeof useUiPreferences>["formatUiMessage"],
+  formatUiMessage: UiMessageFormatter,
 ): GeneratedImagePreviewItem | null {
   const src = railEntryImageSrc(entry);
   if (!src) return null;
@@ -663,7 +694,7 @@ function generatedImagePreviewItemFromThreadItem(
   item: ThreadItem,
   index: number,
   activeThread: Thread | null,
-  formatUiMessage: ReturnType<typeof useUiPreferences>["formatUiMessage"],
+  formatUiMessage: UiMessageFormatter,
 ): GeneratedImagePreviewItem | null {
   const src = generatedImageThreadItemSrc(item);
   if (!src) return null;

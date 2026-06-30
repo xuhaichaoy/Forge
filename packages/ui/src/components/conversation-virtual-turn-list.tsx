@@ -9,6 +9,7 @@ import {
 import type { MutableRefObject, ReactNode } from "react";
 import {
   useThreadScrollController,
+  type ThreadScrollBehavior,
 } from "./thread-scroll-layout";
 import {
   setThreadScrollDistanceFromBottom,
@@ -29,9 +30,39 @@ import {
   type VirtualTurnRange,
 } from "../state/conversation-virtual-turns";
 
-export type ScrollToUnitKeyRef = MutableRefObject<((unitKey: string) => boolean) | null>;
+export type ScrollToUnitKeyAlignment = "center" | "start";
 
-const VIRTUAL_TURN_PROGRAMMATIC_JUMP_STALLED_FRAMES = 4;
+export interface ScrollToUnitKeyOptions {
+  align?: ScrollToUnitKeyAlignment;
+  behavior?: ThreadScrollBehavior;
+  locateTarget?: (scrollElement: HTMLElement, turnElement: HTMLElement) => HTMLElement | null;
+  onTargetMounted?: (target: HTMLElement) => void;
+}
+
+export type ScrollToUnitKey = (unitKey: string, options?: ScrollToUnitKeyOptions) => boolean;
+export type ScrollToUnitKeyRef = MutableRefObject<ScrollToUnitKey | null>;
+
+const VIRTUAL_TURN_PROGRAMMATIC_JUMP_DIRECT_WRITE_AFTER_STALLED_FRAMES = 3;
+const VIRTUAL_TURN_PROGRAMMATIC_JUMP_PROGRESS_EPSILON_PX = 1;
+
+interface ProgrammaticJumpTarget {
+  align: ScrollToUnitKeyAlignment;
+  aligned: boolean;
+  behavior: ThreadScrollBehavior;
+  locateTarget: (scrollElement: HTMLElement, turnElement: HTMLElement) => HTMLElement | null;
+  onTargetMounted?: (target: HTMLElement) => void;
+  turnKey: string;
+}
+
+interface ProgrammaticJumpState {
+  distanceFromBottom: number;
+  lastDistanceGap: number | null;
+  lastObservedDistanceFromBottom: number | null;
+  lastRequestedDistanceFromBottom: number | null;
+  stalledFrames: number;
+  target: ProgrammaticJumpTarget | null;
+  viewportHeight: number;
+}
 
 export function VirtualizedTurnList({
   additionalScrollToUnitKeyRef,
@@ -48,12 +79,7 @@ export function VirtualizedTurnList({
   const listRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const programmaticJumpFrameRef = useRef<number | null>(null);
-  const programmaticJumpRef = useRef<{
-    distanceFromBottom: number;
-    lastObservedDistanceFromBottom: number | null;
-    stalledFrames: number;
-    viewportHeight: number;
-  } | null>(null);
+  const programmaticJumpRef = useRef<ProgrammaticJumpState | null>(null);
   const rowObserversRef = useRef(new Map<string, ResizeObserver>());
   const rowHeightsRef = useRef(new Map<string, number>());
   const [scrollState, setScrollState] = useState({ distanceFromBottom: 0, viewportHeight: 900 });
@@ -176,6 +202,23 @@ export function VirtualizedTurnList({
     const pendingJump = programmaticJumpRef.current;
     if (pendingJump) {
       const real = threadScrollDistanceFromBottom(scrollElement);
+      if (pendingJump.target && !pendingJump.target.aligned) {
+        if (Math.abs(real - pendingJump.distanceFromBottom) > 1) {
+          setScrollState((current) => (
+            Math.abs(current.distanceFromBottom - pendingJump.distanceFromBottom) <= 1
+              && current.viewportHeight === pendingJump.viewportHeight
+              ? current
+              : { distanceFromBottom: pendingJump.distanceFromBottom, viewportHeight: pendingJump.viewportHeight }
+          ));
+        }
+        /*
+         * Locator-based jumps are two-stage: first mount the estimated turn
+         * window, then let the locator effect compute the concrete in-turn
+         * alignment. Do not clear the jump merely because the first stage has
+         * reached its estimated distance.
+         */
+        return;
+      }
       if (Math.abs(real - pendingJump.distanceFromBottom) <= 1) {
         programmaticJumpRef.current = null;
       } else {
@@ -217,7 +260,65 @@ export function VirtualizedTurnList({
     return map;
   }, [groups]);
 
-  const scrollToTurnIndex = useCallback((index: number): boolean => {
+  const scrollToDistance = useCallback((
+    scrollElement: HTMLElement,
+    distance: number,
+    behavior: ThreadScrollBehavior = "instant",
+  ) => {
+    if (scrollController) {
+      scrollController.scrollToDistanceFromBottomPx(distance, behavior);
+    } else {
+      setThreadScrollDistanceFromBottom(scrollElement, distance);
+    }
+  }, [scrollController]);
+
+  const alignPendingTargetIfReady = useCallback((
+    scrollElement: HTMLElement,
+    pendingJump: NonNullable<typeof programmaticJumpRef.current>,
+  ): boolean => {
+    const pendingTarget = pendingJump.target;
+    if (!pendingTarget || pendingTarget.aligned) return false;
+    const turnElement = scrollElement.querySelector<HTMLElement>(
+      `[data-turn-key="${cssEscape(pendingTarget.turnKey)}"]`,
+    );
+    if (!turnElement) return false;
+    if (Math.abs(threadScrollDistanceFromBottom(scrollElement) - pendingJump.distanceFromBottom) > 1) {
+      requestProgrammaticJumpDistanceIfNeeded(scrollElement, pendingJump, scrollToDistance);
+      setScrollState((current) => (
+        Math.abs(current.distanceFromBottom - pendingJump.distanceFromBottom) <= 1
+          && current.viewportHeight === pendingJump.viewportHeight
+          ? current
+          : { distanceFromBottom: pendingJump.distanceFromBottom, viewportHeight: pendingJump.viewportHeight }
+      ));
+      return false;
+    }
+    const targetElement = pendingTarget.locateTarget(scrollElement, turnElement) ?? turnElement;
+    const distance = scrollDistanceForTargetAlignment(scrollElement, targetElement, pendingTarget.align);
+    pendingTarget.aligned = true;
+    pendingJump.distanceFromBottom = distance;
+    pendingJump.lastDistanceGap = null;
+    pendingJump.lastObservedDistanceFromBottom = null;
+    pendingJump.lastRequestedDistanceFromBottom = distance;
+    pendingJump.stalledFrames = 0;
+    pendingJump.viewportHeight = scrollElement.clientHeight || pendingJump.viewportHeight;
+    stickToBottomRef.current = distance <= DESKTOP_STICKY_BOTTOM_THRESHOLD_PX;
+    scrollToDistance(scrollElement, distance, pendingTarget.behavior);
+    setScrollState({ distanceFromBottom: distance, viewportHeight: pendingJump.viewportHeight });
+    pendingTarget.onTargetMounted?.(targetElement);
+    return true;
+  }, [scrollToDistance]);
+
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs after every commit while a locator-based jump is pending; the target may appear after virtualization remounts the row.
+  useLayoutEffect(() => {
+    const pendingJump = programmaticJumpRef.current;
+    const pendingTarget = pendingJump?.target;
+    if (!pendingJump || !pendingTarget || pendingTarget.aligned) return;
+    const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
+    if (!scrollElement) return;
+    alignPendingTargetIfReady(scrollElement, pendingJump);
+  });
+
+  const scrollToTurnIndex = useCallback((index: number, options?: ScrollToUnitKeyOptions): boolean => {
     if (index < 0 || index >= turnKeys.length) return false;
     const scrollElement = scrollController?.getScrollElement() ?? conversationScrollElement(listRef.current);
     const viewportHeight = Math.max(1, scrollElement?.clientHeight || 900);
@@ -228,7 +329,7 @@ export function VirtualizedTurnList({
     const top = offsets[index] ?? 0;
     const height = turnHeightByKey(heights, turnKeys[index], DESKTOP_TURN_ESTIMATED_HEIGHT_PX);
     // Aim the turn's center at the viewport center; unmeasured rows use the
-    // estimate, so the caller fine-tunes with scrollIntoView once mounted.
+    // estimate, so locator-based callers can fine-tune after the row mounts.
     const maxDistance = Math.max(0, totalHeight - viewportHeight);
     const centered = totalHeight - (top + height / 2) - viewportHeight / 2;
     const distance = Math.min(maxDistance, Math.max(0, centered));
@@ -236,8 +337,20 @@ export function VirtualizedTurnList({
     cancelProgrammaticJump();
     programmaticJumpRef.current = {
       distanceFromBottom: distance,
+      lastDistanceGap: null,
       lastObservedDistanceFromBottom: null,
+      lastRequestedDistanceFromBottom: null,
       stalledFrames: 0,
+      target: options?.locateTarget
+        ? {
+            align: options.align ?? "center",
+            aligned: false,
+            behavior: options.behavior ?? "instant",
+            locateTarget: options.locateTarget,
+            onTargetMounted: options.onTargetMounted,
+            turnKey: turnKeys[index] ?? turnKeyForGroup(groups[index]!, index),
+          }
+        : null,
       viewportHeight,
     };
     const settleProgrammaticJump = () => {
@@ -248,25 +361,33 @@ export function VirtualizedTurnList({
         programmaticJumpRef.current = null;
         return;
       }
-      if (scrollController) {
-        scrollController.scrollToDistanceFromBottomPx(pendingJump.distanceFromBottom, "instant");
-      } else {
-        setThreadScrollDistanceFromBottom(liveScrollElement, pendingJump.distanceFromBottom);
-      }
+      requestProgrammaticJumpDistanceIfNeeded(liveScrollElement, pendingJump, scrollToDistance);
       const real = threadScrollDistanceFromBottom(liveScrollElement);
+      if (pendingJump.target && !pendingJump.target.aligned) {
+        alignPendingTargetIfReady(liveScrollElement, pendingJump);
+        const nextReal = threadScrollDistanceFromBottom(liveScrollElement);
+        noteProgrammaticJumpProgress(pendingJump, nextReal);
+        forceProgrammaticJumpIfStalled(liveScrollElement, pendingJump);
+        setScrollState((current) => (
+          Math.abs(current.distanceFromBottom - pendingJump.distanceFromBottom) <= 1
+            && current.viewportHeight === pendingJump.viewportHeight
+            ? current
+            : { distanceFromBottom: pendingJump.distanceFromBottom, viewportHeight: pendingJump.viewportHeight }
+        ));
+        programmaticJumpFrameRef.current = window.requestAnimationFrame(settleProgrammaticJump);
+        return;
+      }
       if (Math.abs(real - pendingJump.distanceFromBottom) <= 1) {
         programmaticJumpRef.current = null;
         return;
       }
-      pendingJump.stalledFrames = pendingJump.lastObservedDistanceFromBottom != null
-        && Math.abs(real - pendingJump.lastObservedDistanceFromBottom) <= 1
-        ? pendingJump.stalledFrames + 1
-        : 0;
-      pendingJump.lastObservedDistanceFromBottom = real;
-      if (pendingJump.stalledFrames >= VIRTUAL_TURN_PROGRAMMATIC_JUMP_STALLED_FRAMES) {
-        programmaticJumpRef.current = null;
-        setScrollState({ distanceFromBottom: real, viewportHeight: liveScrollElement.clientHeight || pendingJump.viewportHeight });
-        return;
+      noteProgrammaticJumpProgress(pendingJump, real);
+      if (forceProgrammaticJumpIfStalled(liveScrollElement, pendingJump)) {
+        const forcedReal = threadScrollDistanceFromBottom(liveScrollElement);
+        if (Math.abs(forcedReal - pendingJump.distanceFromBottom) <= 1) {
+          programmaticJumpRef.current = null;
+          return;
+        }
       }
       setScrollState((current) => (
         Math.abs(current.distanceFromBottom - pendingJump.distanceFromBottom) <= 1
@@ -276,24 +397,20 @@ export function VirtualizedTurnList({
       ));
       programmaticJumpFrameRef.current = window.requestAnimationFrame(settleProgrammaticJump);
     };
-    if (scrollController) {
-      scrollController.scrollToDistanceFromBottomPx(distance, "instant");
-    } else if (scrollElement) {
-      setThreadScrollDistanceFromBottom(scrollElement, distance);
-    }
+    if (scrollElement) scrollToDistance(scrollElement, distance, "instant");
     setScrollState({ distanceFromBottom: distance, viewportHeight });
     programmaticJumpFrameRef.current = window.requestAnimationFrame(settleProgrammaticJump);
     return true;
-  }, [cancelProgrammaticJump, scrollController, turnKeys]);
+  }, [alignPendingTargetIfReady, cancelProgrammaticJump, groups, scrollController, scrollToDistance, turnKeys]);
 
   useEffect(() => {
     const refs = [scrollToUnitKeyRef, additionalScrollToUnitKeyRef].filter(
       (ref): ref is ScrollToUnitKeyRef => ref != null,
     );
     if (refs.length === 0) return;
-    const scrollToUnitKey = (unitKey: string) => {
+    const scrollToUnitKey: ScrollToUnitKey = (unitKey, options) => {
       const index = groupIndexByUnitKey.get(unitKey);
-      return index == null ? false : scrollToTurnIndex(index);
+      return index == null ? false : scrollToTurnIndex(index, options);
     };
     for (const ref of refs) ref.current = scrollToUnitKey;
     return () => {
@@ -336,6 +453,81 @@ function conversationScrollElement(element: HTMLElement | null): HTMLElement | n
   return element.closest<HTMLElement>(".hc-thread-scroll-container")
     ?? element.closest<HTMLElement>(".hc-conversation")
     ?? element.parentElement;
+}
+
+function noteProgrammaticJumpProgress(
+  pendingJump: ProgrammaticJumpState,
+  realDistanceFromBottom: number,
+): void {
+  const gap = Math.abs(realDistanceFromBottom - pendingJump.distanceFromBottom);
+  const requestedDistanceChanged = pendingJump.lastRequestedDistanceFromBottom == null
+    || Math.abs(pendingJump.distanceFromBottom - pendingJump.lastRequestedDistanceFromBottom)
+      > VIRTUAL_TURN_PROGRAMMATIC_JUMP_PROGRESS_EPSILON_PX;
+  const progressed = requestedDistanceChanged
+    || pendingJump.lastObservedDistanceFromBottom == null
+    || pendingJump.lastDistanceGap == null
+    || Math.abs(realDistanceFromBottom - pendingJump.lastObservedDistanceFromBottom)
+      > VIRTUAL_TURN_PROGRAMMATIC_JUMP_PROGRESS_EPSILON_PX
+    || gap < pendingJump.lastDistanceGap - VIRTUAL_TURN_PROGRAMMATIC_JUMP_PROGRESS_EPSILON_PX;
+  pendingJump.stalledFrames = progressed ? 0 : pendingJump.stalledFrames + 1;
+  pendingJump.lastObservedDistanceFromBottom = realDistanceFromBottom;
+  pendingJump.lastDistanceGap = gap;
+  pendingJump.lastRequestedDistanceFromBottom = pendingJump.distanceFromBottom;
+}
+
+function forceProgrammaticJumpIfStalled(
+  scrollElement: HTMLElement,
+  pendingJump: ProgrammaticJumpState,
+): boolean {
+  if (pendingJump.stalledFrames < VIRTUAL_TURN_PROGRAMMATIC_JUMP_DIRECT_WRITE_AFTER_STALLED_FRAMES) return false;
+  pendingJump.stalledFrames = 0;
+  /*
+   * This is not a total settle cap. The jump stays pending; after a few
+   * completely static frames we bypass the scroll controller's listener loop
+   * once and keep observing until the real distance/target alignment lands.
+   */
+  setThreadScrollDistanceFromBottom(scrollElement, pendingJump.distanceFromBottom);
+  return true;
+}
+
+function requestProgrammaticJumpDistanceIfNeeded(
+  scrollElement: HTMLElement,
+  pendingJump: ProgrammaticJumpState,
+  scrollToDistance: (
+    scrollElement: HTMLElement,
+    distance: number,
+    behavior?: ThreadScrollBehavior,
+  ) => void,
+): void {
+  if (
+    pendingJump.lastRequestedDistanceFromBottom != null
+    && Math.abs(pendingJump.distanceFromBottom - pendingJump.lastRequestedDistanceFromBottom)
+      <= VIRTUAL_TURN_PROGRAMMATIC_JUMP_PROGRESS_EPSILON_PX
+  ) {
+    return;
+  }
+  scrollToDistance(scrollElement, pendingJump.distanceFromBottom, "instant");
+}
+
+function scrollDistanceForTargetAlignment(
+  scrollElement: HTMLElement,
+  targetElement: HTMLElement,
+  align: ScrollToUnitKeyAlignment,
+): number {
+  const scrollRect = scrollElement.getBoundingClientRect();
+  const targetRect = targetElement.getBoundingClientRect();
+  const currentDistance = threadScrollDistanceFromBottom(scrollElement);
+  const targetTopInViewport = targetRect.top - scrollRect.top;
+  if (align === "start") {
+    return Math.max(0, currentDistance - targetTopInViewport);
+  }
+  const targetCenterInViewport = targetTopInViewport + targetRect.height / 2;
+  return Math.max(0, currentDistance - targetCenterInViewport + scrollElement.clientHeight / 2);
+}
+
+function cssEscape(value: string): string {
+  if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);
+  return value.replace(/"/g, "\\\"");
 }
 
 export {

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { MutableRefObject, ReactNode } from "react";
+import type { MutableRefObject, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AppWindow, GitCommitHorizontal, GitPullRequest, Globe, ImageIcon, MessageSquareText } from "lucide-react";
 import type { ScrollToUnitKeyRef } from "./conversation-virtual-turn-list";
 import { useForgeIntl } from "./i18n-provider";
-import { useThreadScrollController } from "./thread-scroll-layout";
+import { useThreadScrollController, type ThreadScrollBehavior } from "./thread-scroll-layout";
 import { fileIconFor } from "../lib/file-icon";
+import { threadScrollDistanceFromBottom } from "../state/thread-scroll";
 import type {
   AssistantAfterRenderUnit,
   AssistantEndResource,
@@ -16,7 +17,6 @@ import {
   parseMarkdownBlocks,
   parseMarkdownInline,
 } from "../state/conversation-markdown-engine";
-import { threadScrollDistanceFromBottom } from "../state/thread-scroll";
 import type {
   MarkdownBlock,
   MarkdownInlineSegment,
@@ -26,13 +26,19 @@ import type {
 export const THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS = 4;
 const THREAD_USER_MESSAGE_NAVIGATION_MAX_OUTPUTS = 2;
 const THREAD_USER_MESSAGE_NAVIGATION_PREVIEW_CACHE_LIMIT = 160;
-const THREAD_USER_MESSAGE_NAVIGATION_REVEAL_STALLED_FRAMES = 8;
-const THREAD_USER_MESSAGE_NAVIGATION_REVEAL_TOP_INSET_PX = 16;
+const THREAD_USER_MESSAGE_NAVIGATION_LEFT_SPACE_PX = 12;
+const THREAD_USER_MESSAGE_NAVIGATION_WIDTH_PX = 36;
 const CONTENT_SEARCH_UNIT_SELECTOR = "[data-content-search-unit-key]";
+const CONTENT_SEARCH_OBSERVER_ROW_SELECTOR = "[data-turn-key], [data-content-search-turn-key]";
 const DESKTOP_NAVIGATION_DIRECTIVE_LINE_PATTERN = /^::[a-zA-Z0-9-]+.*$/gm;
 const navigationPreviewTextCache = new Map<string, string>();
 type UserMessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }> & { role: "user" };
 type AssistantMessageRenderUnit = Extract<ConversationRenderUnit, { kind: "message" }> & { role: "assistant" };
+type ScrubState = {
+  itemId: string;
+  pointerCaptureTarget: HTMLElement;
+  pointerId: number;
+};
 
 export interface ThreadUserMessageNavigationItem {
   id: string;
@@ -111,8 +117,9 @@ export function ThreadUserMessageNavigationRail({
   const { formatMessage } = useForgeIntl();
   const scrollController = useThreadScrollController();
   const railRef = useRef<HTMLDivElement | null>(null);
+  const scrubClickGuardRef = useRef(false);
+  const scrubRef = useRef<ScrubState | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
-  const revealFrameRef = useRef<number | null>(null);
   const tooltipId = useId();
   const [portalElement, setPortalElement] = useState<HTMLElement | null>(null);
   const [tooltipTarget, setTooltipTarget] = useState<{
@@ -121,7 +128,9 @@ export function ThreadUserMessageNavigationRail({
   } | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
   const lastId = items.at(-1)?.id ?? null;
-  const [activeId, setActiveId] = useState<string | null>(lastId);
+  const [activeIds, setActiveIds] = useState<Set<string>>(() => new Set(lastId ? [lastId] : []));
+  const [hasRailSideSpace, setHasRailSideSpace] = useState(true);
+  const [scrubTargetId, setScrubTargetId] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     let frame: number | null = null;
@@ -144,23 +153,60 @@ export function ThreadUserMessageNavigationRail({
   }, [scrollController]);
 
   useEffect(() => {
-    setActiveId((current) => current && items.some((item) => item.id === current) ? current : lastId);
+    const itemIds = new Set(items.map((item) => item.id));
+    setActiveIds((current) => {
+      const next = new Set(Array.from(current).filter((id) => itemIds.has(id)));
+      if (next.size === 0 && lastId) next.add(lastId);
+      return areStringSetsEqual(current, next) ? current : next;
+    });
   }, [items, lastId]);
 
+  useLayoutEffect(() => {
+    const scrollElement = scrollController?.getScrollElement();
+    const portalTarget = scrollElement?.querySelector<HTMLElement>("[data-mcp-app-portal-target='true']") ?? null;
+    if (!scrollElement || !portalTarget) {
+      return;
+    }
+    if (typeof ResizeObserver === "undefined") {
+      setHasRailSideSpace(true);
+      return;
+    }
+    const measure = () => {
+      const scrollRect = scrollElement.getBoundingClientRect();
+      const targetRect = portalTarget.getBoundingClientRect();
+      const hasMeasurableLayout = scrollRect.width > 0 || scrollElement.offsetWidth > 0 || targetRect.width > 0;
+      if (!hasMeasurableLayout) {
+        setHasRailSideSpace(true);
+        return;
+      }
+      const scale = scrollElement.offsetWidth > 0 ? scrollRect.width / scrollElement.offsetWidth : 1;
+      const leftSpace = (targetRect.left - scrollRect.left) / (scale > 0 ? scale : 1);
+      setHasRailSideSpace(leftSpace >= THREAD_USER_MESSAGE_NAVIGATION_LEFT_SPACE_PX + THREAD_USER_MESSAGE_NAVIGATION_WIDTH_PX);
+    };
+    const resizeObserver = new ResizeObserver(measure);
+    resizeObserver.observe(scrollElement);
+    resizeObserver.observe(portalTarget);
+    const mutationObserver = new MutationObserver(measure);
+    mutationObserver.observe(scrollElement.firstElementChild ?? scrollElement, {
+      attributes: true,
+      attributeFilter: ["style"],
+    });
+    window.addEventListener("resize", measure);
+    measure();
+    return () => {
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [portalElement, scrollController]);
+
   useVisibleUserMessageMarker({
-    activeIdRef: useLatestRef(activeId),
+    activeIdsRef: useLatestRef(activeIds),
+    enabled: portalElement != null && hasRailSideSpace,
     items,
     scrollController,
-    setActiveId,
+    setActiveIds,
   });
-
-  const cancelPendingReveal = useCallback(() => {
-    if (revealFrameRef.current === null) return;
-    window.cancelAnimationFrame(revealFrameRef.current);
-    revealFrameRef.current = null;
-  }, []);
-
-  useEffect(() => cancelPendingReveal, [cancelPendingReveal]);
 
   const updateTooltipPosition = useCallback(() => {
     const target = tooltipTarget?.button;
@@ -192,36 +238,86 @@ export function ThreadUserMessageNavigationRail({
     };
   }, [tooltipTarget, updateTooltipPosition]);
 
-  if (items.length < THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS || !portalElement) return null;
-
-  const revealItem = (item: ThreadUserMessageNavigationItem) => {
-    cancelPendingReveal();
-    setActiveId(item.id);
-    let lastObservedDistanceFromBottom: number | null = null;
-    let stalledFrames = 0;
+  const revealItem = (item: ThreadUserMessageNavigationItem, behavior: ThreadScrollBehavior = "smooth") => {
+    setActiveIds(singletonIdSet(item.id));
     const selector = `[data-content-search-unit-key="${cssEscape(item.id)}"]`;
-    const revealMountedTarget = () => {
-      revealFrameRef.current = null;
-      const target = scrollController?.getScrollElement()?.querySelector<HTMLElement>(selector);
-      if (target) {
-        scrollNavigationTargetIntoView(scrollController, target);
+    const mountedTarget = scrollController?.getScrollElement()?.querySelector<HTMLElement>(selector);
+    if (mountedTarget) {
+      scrollNavigationTargetIntoView(scrollController, mountedTarget, behavior);
+      highlightUserMessageTarget(mountedTarget);
+      return;
+    }
+    scrollToUnitKeyRef.current?.(item.id, {
+      align: "start",
+      behavior,
+      locateTarget: (scrollElement, turnElement) =>
+        turnElement.querySelector<HTMLElement>(selector)
+        ?? scrollElement.querySelector<HTMLElement>(selector),
+      onTargetMounted: (target) => {
         highlightUserMessageTarget(target);
-        return;
-      }
-      const scrollElement = scrollController?.getScrollElement();
-      const distance = scrollElement ? threadScrollDistanceFromBottom(scrollElement) : null;
-      stalledFrames = distance != null
-        && lastObservedDistanceFromBottom != null
-        && Math.abs(distance - lastObservedDistanceFromBottom) <= 1
-        ? stalledFrames + 1
-        : 0;
-      lastObservedDistanceFromBottom = distance;
-      if (stalledFrames >= THREAD_USER_MESSAGE_NAVIGATION_REVEAL_STALLED_FRAMES) return;
-      revealFrameRef.current = window.requestAnimationFrame(revealMountedTarget);
-    };
-    scrollToUnitKeyRef.current?.(item.id);
-    revealFrameRef.current = window.requestAnimationFrame(revealMountedTarget);
+      },
+    });
   };
+
+  const finishScrub = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const scrub = scrubRef.current;
+    if (!scrub || scrub.pointerId !== event.pointerId) return;
+    scrubRef.current = null;
+    setScrubTargetId(null);
+    const target = scrub.pointerCaptureTarget;
+    if (target.hasPointerCapture?.(event.pointerId)) {
+      target.releasePointerCapture?.(event.pointerId);
+    }
+    window.setTimeout(() => {
+      scrubClickGuardRef.current = false;
+    }, 0);
+  };
+
+  const beginScrub = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const hit = navigationHitTarget(items, event.currentTarget, event.target instanceof Element ? event.target : null);
+    if (!hit) return;
+    scrubClickGuardRef.current = false;
+    scrubRef.current = {
+      itemId: hit.item.id,
+      pointerCaptureTarget: hit.button,
+      pointerId: event.pointerId,
+    };
+    setScrubTargetId(hit.item.id);
+    setTooltipTarget(hit);
+    hit.button.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveScrub = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const scrub = scrubRef.current;
+    if (!scrub) {
+      const hit = navigationHitTarget(items, event.currentTarget, event.target instanceof Element ? event.target : null);
+      if (hit) setTooltipTarget((current) => current?.item.id === hit.item.id ? current : hit);
+      return;
+    }
+    if (scrub.pointerId !== event.pointerId) return;
+    if (event.buttons % 2 === 0) {
+      finishScrub(event);
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const hit = navigationHitTarget(
+      items,
+      event.currentTarget,
+      document.elementFromPoint(
+        rect.left + rect.width / 2,
+        Math.max(rect.top, Math.min(event.clientY, rect.bottom - 1)),
+      ),
+    );
+    if (!hit || hit.item.id === scrub.itemId) return;
+    scrubRef.current = { ...scrub, itemId: hit.item.id };
+    scrubClickGuardRef.current = true;
+    setScrubTargetId(hit.item.id);
+    setTooltipTarget(hit);
+    revealItem(hit.item, "instant");
+  };
+
+  if (items.length < THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS || !portalElement || !hasRailSideSpace) return null;
 
   const rail = (
     <>
@@ -237,11 +333,19 @@ export function ThreadUserMessageNavigationRail({
       >
         <div
           className="hc-thread-user-message-navigation-list"
+          data-scrubbing={scrubTargetId != null ? "true" : undefined}
           data-thread-user-message-navigation-rail-list="true"
-          onPointerLeave={() => setTooltipTarget(null)}
+          onLostPointerCapture={finishScrub}
+          onPointerCancelCapture={finishScrub}
+          onPointerDownCapture={beginScrub}
+          onPointerLeave={() => {
+            if (!scrubRef.current) setTooltipTarget(null);
+          }}
+          onPointerMove={moveScrub}
+          onPointerUpCapture={finishScrub}
         >
           {items.map((item, index) => {
-            const isActive = activeId === item.id;
+            const isActive = activeIds.has(item.id);
             const isHovered = tooltipTarget?.item.id === item.id;
             return (
               <button
@@ -254,11 +358,18 @@ export function ThreadUserMessageNavigationRail({
                 }, { position: index + 1 })}
                 className="hc-thread-user-message-navigation-row"
                 data-thread-user-message-navigation-item-id={item.id}
-                data-scrub-target={isHovered ? "true" : undefined}
+                data-scrub-target={isHovered || scrubTargetId === item.id ? "true" : undefined}
                 key={item.id}
                 type="button"
                 onBlur={() => setTooltipTarget((current) => current?.item.id === item.id ? null : current)}
-                onClick={() => revealItem(item)}
+                onClick={(event) => {
+                  if (scrubClickGuardRef.current) {
+                    scrubClickGuardRef.current = false;
+                    return;
+                  }
+                  setTooltipTarget({ item, button: event.currentTarget });
+                  revealItem(item);
+                }}
                 onFocus={(event) => setTooltipTarget({ item, button: event.currentTarget })}
                 onMouseEnter={(event) => setTooltipTarget({ item, button: event.currentTarget })}
               >
@@ -291,21 +402,32 @@ export function ThreadUserMessageNavigationRail({
   return createPortal(rail, portalElement);
 }
 
+function navigationHitTarget(
+  items: readonly ThreadUserMessageNavigationItem[],
+  scope: HTMLElement,
+  target: Element | null,
+): { button: HTMLButtonElement; item: ThreadUserMessageNavigationItem } | null {
+  const button = target?.closest<HTMLButtonElement>("[data-thread-user-message-navigation-item-id]");
+  if (!button || !scope.contains(button)) return null;
+  const item = items.find((candidate) => candidate.id === button.dataset.threadUserMessageNavigationItemId);
+  return item ? { button, item } : null;
+}
+
 function scrollNavigationTargetIntoView(
   scrollController: ReturnType<typeof useThreadScrollController>,
   target: HTMLElement,
+  behavior: ThreadScrollBehavior,
 ): void {
   const scrollElement = scrollController?.getScrollElement();
   if (!scrollController || !scrollElement) {
-    target.scrollIntoView({ block: "start" });
+    target.scrollIntoView({ behavior: behavior === "instant" ? "auto" : behavior, block: "start" });
     return;
   }
   const targetRect = target.getBoundingClientRect();
   const scrollRect = scrollElement.getBoundingClientRect();
   const targetTopInViewport = targetRect.top - scrollRect.top;
   const currentDistance = threadScrollDistanceFromBottom(scrollElement);
-  const targetDistance = currentDistance - targetTopInViewport + THREAD_USER_MESSAGE_NAVIGATION_REVEAL_TOP_INSET_PX;
-  scrollController.scrollToDistanceFromBottomPx(Math.max(0, targetDistance), "instant");
+  scrollController.scrollToDistanceFromBottomPx(Math.max(0, currentDistance - targetTopInViewport), behavior);
 }
 
 function ThreadUserMessageNavigationTooltipPreview({ item }: { item: ThreadUserMessageNavigationItem }) {
@@ -354,18 +476,21 @@ function ThreadUserMessageNavigationOutputPill({ output }: { output: ThreadUserM
 }
 
 function useVisibleUserMessageMarker({
-  activeIdRef,
+  activeIdsRef,
+  enabled,
   items,
   scrollController,
-  setActiveId,
+  setActiveIds,
 }: {
-  activeIdRef: MutableRefObject<string | null>;
+  activeIdsRef: MutableRefObject<ReadonlySet<string>>;
+  enabled: boolean;
   items: readonly ThreadUserMessageNavigationItem[];
   scrollController: ReturnType<typeof useThreadScrollController>;
-  setActiveId: (id: string | null) => void;
+  setActiveIds: (ids: Set<string>) => void;
 }) {
   const itemIds = useMemo(() => items.map((item) => item.id).join("\0"), [items]);
   useEffect(() => {
+    if (!enabled) return;
     const ids = itemIds.length === 0 ? [] : itemIds.split("\0");
     if (ids.length < THREAD_USER_MESSAGE_NAVIGATION_MIN_ITEMS) return;
     const scrollElement = scrollController?.getScrollElement();
@@ -373,6 +498,16 @@ function useVisibleUserMessageMarker({
     const idSet = new Set(ids);
     const visible = new Set<string>();
     const targetIds = new Map<Element, string>();
+    const applyVisibleIds = () => {
+      const firstVisibleIndex = ids.findIndex((id) => visible.has(id));
+      if (firstVisibleIndex === -1) return;
+      let lastVisibleIndex = ids.length - 1;
+      while (lastVisibleIndex > firstVisibleIndex && !visible.has(ids[lastVisibleIndex]!)) {
+        lastVisibleIndex -= 1;
+      }
+      const next = new Set(ids.slice(firstVisibleIndex, lastVisibleIndex + 1));
+      if (!areStringSetsEqual(activeIdsRef.current, next)) setActiveIds(next);
+    };
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const id = targetIds.get(entry.target);
@@ -380,21 +515,22 @@ function useVisibleUserMessageMarker({
         if (entry.isIntersecting) visible.add(id);
         else visible.delete(id);
       }
-      const next = ids.find((id) => visible.has(id)) ?? ids.at(-1) ?? null;
-      if (next !== activeIdRef.current) setActiveId(next);
+      applyVisibleIds();
     }, {
       root: scrollElement,
       rootMargin: "-16px 0px 0px 0px",
     });
     const observeTargets = () => {
       const liveTargets = new Set<Element>();
+      const claimedRows = new Set<Element>();
       for (const target of scrollElement.querySelectorAll<HTMLElement>(CONTENT_SEARCH_UNIT_SELECTOR)) {
         const id = target.dataset.contentSearchUnitKey;
         if (!id || !idSet.has(id)) continue;
-        liveTargets.add(target);
-        if (targetIds.has(target)) continue;
-        targetIds.set(target, id);
-        observer.observe(target);
+        const observeTarget = navigationMarkerObserverTarget(target, claimedRows);
+        liveTargets.add(observeTarget);
+        if (targetIds.has(observeTarget)) continue;
+        targetIds.set(observeTarget, id);
+        observer.observe(observeTarget);
       }
       for (const target of Array.from(targetIds.keys())) {
         if (liveTargets.has(target)) continue;
@@ -403,6 +539,7 @@ function useVisibleUserMessageMarker({
         targetIds.delete(target);
         observer.unobserve(target);
       }
+      applyVisibleIds();
     };
     let observeFrame: number | null = null;
     const scheduleObserveTargets = () => {
@@ -417,14 +554,25 @@ function useVisibleUserMessageMarker({
         scheduleObserveTargets();
       }
     });
-    mutationObserver.observe(scrollElement, { childList: true, subtree: true });
+    const observerRoot = scrollElement.querySelector<HTMLElement>(".hc-turn-list") ?? scrollElement;
+    mutationObserver.observe(observerRoot, {
+      childList: true,
+      subtree: observerRoot === scrollElement,
+    });
     observeTargets();
     return () => {
       if (observeFrame !== null) cancelAnimationFrame(observeFrame);
       observer.disconnect();
       mutationObserver.disconnect();
     };
-  }, [activeIdRef, itemIds, scrollController, setActiveId]);
+  }, [activeIdsRef, enabled, itemIds, scrollController, setActiveIds]);
+}
+
+function navigationMarkerObserverTarget(target: HTMLElement, claimedRows: Set<Element>): Element {
+  const row = target.closest(CONTENT_SEARCH_OBSERVER_ROW_SELECTOR);
+  if (!row || claimedRows.has(row)) return target;
+  claimedRows.add(row);
+  return row;
 }
 
 function navigationLabel(
@@ -678,6 +826,18 @@ function webLabel(value: string): string {
 function clamp(value: number, min: number, max: number): number {
   if (max < min) return min;
   return Math.min(max, Math.max(min, value));
+}
+
+function singletonIdSet(id: string): Set<string> {
+  return new Set([id]);
+}
+
+function areStringSetsEqual(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const value of left) {
+    if (!right.has(value)) return false;
+  }
+  return true;
 }
 
 function useLatestRef<T>(value: T): MutableRefObject<T> {

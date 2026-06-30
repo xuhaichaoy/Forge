@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 
+import type { ScrollToUnitKey } from "../components/conversation-virtual-turn-list";
 import type { CommandPanelState } from "../state/command-panel";
 import type { SettingsPanelId } from "../state/composer-workflow";
 import type { ConversationRenderUnit } from "../state/render-groups";
@@ -37,7 +38,7 @@ export function useThreadFind({
   setActiveSettingsPanel: Dispatch<SetStateAction<SettingsPanelId | null>>;
   activeThreadScrollKey: string;
   conversationUnits: ConversationRenderUnit[];
-  scrollToUnitKeyRef?: RefObject<((unitKey: string) => boolean) | null>;
+  scrollToUnitKeyRef?: RefObject<ScrollToUnitKey | null>;
 }): {
   threadFindOpen: boolean;
   threadFindQuery: string;

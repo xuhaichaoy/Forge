@@ -955,6 +955,15 @@
   opacity: 0.6;
 }
 
+.hc-thread-user-message-navigation-list[data-scrubbing="true"] .hc-thread-user-message-navigation-marker {
+  transition-duration: 0s;
+}
+
+.hc-thread-user-message-navigation-list[data-scrubbing="true"] .hc-thread-user-message-navigation-row[aria-current="true"]:not([data-scrub-target="true"]) .hc-thread-user-message-navigation-marker {
+  background: var(--hc-text-tertiary, var(--hc-text-secondary, #6f716b));
+  opacity: 0.4;
+}
+
 .hc-thread-user-message-navigation-row:has(+ .hc-thread-user-message-navigation-row[data-scrub-target="true"]) .hc-thread-user-message-navigation-marker,
 .hc-thread-user-message-navigation-row[data-scrub-target="true"] + .hc-thread-user-message-navigation-row .hc-thread-user-message-navigation-marker {
   --marker-progress: 0.7;

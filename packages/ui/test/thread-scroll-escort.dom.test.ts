@@ -362,9 +362,195 @@ export function virtualUnitJumpKeepsTargetWindowUntilReverseScrollSettles(): voi
 
     allowScrollWrites = true;
     act(() => {
+      env.flushFrames(3);
+    });
+    assertEqual(scrollTop, -targetDistance, "settle loop should force the reverse scrollTop after stalled frames");
+  } finally {
+    restoreComputedStyle();
+    act(() => root.unmount());
+    env.teardown();
+  }
+}
+
+/*
+ * Incident ⑤: locator-based jumps (prompt rail / find-in-thread) must not
+ * compute final target alignment against the OLD reverse scrollTop. The
+ * virtual list first renders the target turn window, then waits until that
+ * estimated scroll distance is actually applied before aligning the concrete
+ * content-search unit.
+ */
+export function virtualUnitLocatorJumpWaitsForEstimatedScrollBeforeFinalAlignment(): void {
+  const env = setupDomTestEnv();
+  const TURN_COUNT = 30;
+  const ESTIMATED_TOTAL = TURN_COUNT * 280 + (TURN_COUNT - 1) * 12;
+  const groups = buildEventTurnGroups(TURN_COUNT);
+  const scrollToUnitKeyRef: ScrollToUnitKeyRef = { current: null };
+  const alignedTargets: string[] = [];
+  const renderTree = () => createElement(VirtualizedTurnList, {
+    groups,
+    renderGroup: (group, index) => {
+      const unit = group.units[0];
+      return createElement("div", {
+        "data-content-search-unit-key": unit?.key,
+        className: "dom-test-turn-body",
+      }, group.turnId ?? String(index));
+    },
+    scrollToUnitKeyRef,
+  });
+
+  const scrollHost = env.document.createElement("div");
+  scrollHost.className = "hc-thread-scroll-container";
+  env.document.body.appendChild(scrollHost);
+  stubElementGeometry(scrollHost, {
+    scrollHeight: ESTIMATED_TOTAL,
+    clientHeight: VIEWPORT_HEIGHT,
+    scrollTop: 0,
+  });
+  let scrollTop = 0;
+  let allowScrollWrites = false;
+  Object.defineProperty(scrollHost, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      if (allowScrollWrites) scrollTop = value;
+    },
+  });
+  const restoreComputedStyle = installReverseThreadScrollStyle(scrollHost);
+  const root = createRoot(scrollHost);
+  try {
+    act(() => {
+      root.render(renderTree());
+    });
+    act(() => {
+      assertEqual(
+        scrollToUnitKeyRef.current?.("unit-0", {
+          align: "start",
+          locateTarget: (_scrollElement, turnElement) =>
+            turnElement.querySelector<HTMLElement>('[data-content-search-unit-key="unit-0"]'),
+          onTargetMounted: (target) => alignedTargets.push(target.dataset.contentSearchUnitKey ?? ""),
+        }),
+        true,
+        "unit jump precondition: first unit key is registered",
+      );
+    });
+    assertDeepEqual(
+      alignedTargets,
+      [],
+      "locator jump must not align the concrete target while the estimated reverse scrollTop is still unapplied",
+    );
+
+    allowScrollWrites = true;
+    act(() => {
       env.flushFrames(1);
     });
-    assertEqual(scrollTop, -targetDistance, "settle loop should re-issue the reverse scrollTop until it is applied");
+    assertDeepEqual(
+      alignedTargets,
+      ["unit-0"],
+      "locator jump should align the concrete target once the estimated target window scroll has landed",
+    );
+  } finally {
+    restoreComputedStyle();
+    act(() => root.unmount());
+    env.teardown();
+  }
+}
+
+/*
+ * Incident ⑥: the top/oldest rail target can mount, compute its final
+ * alignment, and then have WebKit delay that final reverse scrollTop write
+ * for longer than the old fixed settle cap. The settle loop must keep the
+ * target jump pending and force a direct scrollTop write when the controller
+ * stalls, so the target can land once the write starts applying instead of
+ * clearing the jump and snapping back to the previous viewport.
+ */
+export function virtualUnitLocatorJumpKeepsTryingWhenFinalAlignmentWriteStalls(): void {
+  const env = setupDomTestEnv();
+  const TURN_COUNT = 30;
+  const ESTIMATED_TOTAL = TURN_COUNT * 280 + (TURN_COUNT - 1) * 12;
+  const TARGET_DISTANCE = ESTIMATED_TOTAL - VIEWPORT_HEIGHT;
+  const TARGET_TOP = 96;
+  const FINAL_DISTANCE = TARGET_DISTANCE - TARGET_TOP;
+  const groups = buildEventTurnGroups(TURN_COUNT);
+  const scrollToUnitKeyRef: ScrollToUnitKeyRef = { current: null };
+  const renderTree = () => createElement(VirtualizedTurnList, {
+    groups,
+    renderGroup: (group, index) => {
+      const unit = group.units[0];
+      return createElement("div", {
+        "data-content-search-unit-key": unit?.key,
+        className: "dom-test-turn-body",
+      }, group.turnId ?? String(index));
+    },
+    scrollToUnitKeyRef,
+  });
+
+  const scrollHost = env.document.createElement("div");
+  scrollHost.className = "hc-thread-scroll-container";
+  env.document.body.appendChild(scrollHost);
+  stubElementGeometry(scrollHost, {
+    scrollHeight: ESTIMATED_TOTAL,
+    clientHeight: VIEWPORT_HEIGHT,
+    scrollTop: 0,
+  });
+  Object.defineProperty(scrollHost, "getBoundingClientRect", {
+    configurable: true,
+    value: () => domRect(0, VIEWPORT_HEIGHT),
+  });
+  let scrollTop = 0;
+  let finalWritesAllowed = false;
+  Object.defineProperty(scrollHost, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      const distance = value === 0 ? 0 : -value;
+      if (Math.abs(distance - TARGET_DISTANCE) <= 1 || finalWritesAllowed) scrollTop = value;
+    },
+  });
+  const restoreComputedStyle = installReverseThreadScrollStyle(scrollHost);
+  const root = createRoot(scrollHost);
+  try {
+    act(() => {
+      root.render(renderTree());
+    });
+    act(() => {
+      assertEqual(
+        scrollToUnitKeyRef.current?.("unit-0", {
+          align: "start",
+          locateTarget: (_scrollElement, turnElement) => {
+            const target = turnElement.querySelector<HTMLElement>('[data-content-search-unit-key="unit-0"]');
+            if (target) {
+              Object.defineProperty(target, "getBoundingClientRect", {
+                configurable: true,
+                value: () => domRect(TARGET_TOP, 40),
+              });
+            }
+            return target;
+          },
+        }),
+        true,
+        "unit jump precondition: first unit key is registered",
+      );
+    });
+    assertEqual(scrollTop, -TARGET_DISTANCE, "precondition: estimated top-window scroll should apply first");
+
+    act(() => {
+      env.flushFrames(35);
+    });
+    assertEqual(
+      scrollTop,
+      -TARGET_DISTANCE,
+      "fixture precondition: final alignment writes are still being ignored past the old fixed settle cap",
+    );
+
+    finalWritesAllowed = true;
+    act(() => {
+      env.flushFrames(3);
+    });
+    assertEqual(
+      scrollTop,
+      -FINAL_DISTANCE,
+      "settle loop should keep the rail jump alive until the final target alignment write lands",
+    );
   } finally {
     restoreComputedStyle();
     act(() => root.unmount());
@@ -398,6 +584,20 @@ function installReverseThreadScrollStyle(scrollHost: HTMLElement): () => void {
   return () => {
     globalThis.getComputedStyle = previousGetComputedStyle;
   };
+}
+
+function domRect(top: number, height: number): DOMRect {
+  return {
+    bottom: top + height,
+    height,
+    left: 0,
+    right: 100,
+    top,
+    width: 100,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
 }
 
 function renderedTurnKeys(scope: HTMLElement): string[] {

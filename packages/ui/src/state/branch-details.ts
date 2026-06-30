@@ -17,6 +17,7 @@ export interface BranchDetailsRow {
   id: string;
   label: string;
   value: string;
+  mode?: "local" | "worktree";
   status?: string;
   details?: string[];
   /*
@@ -121,6 +122,7 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   const cwd = typeof thread?.cwd === "string" && thread.cwd.trim() ? thread.cwd.trim() : null;
   const rows: BranchDetailsRow[] = [];
   const gitInfo = objectRecord(thread?.gitInfo);
+  const statusRecord = objectRecord(input.gitStatus ?? null);
   const mergedDiffInput = mergeDiffInputs(input.diff ?? null, diffInputFromGitStatus(input.gitStatus ?? null));
   const diff = projectDiff(mergedDiffInput);
   const diffText = typeof mergedDiffInput?.diff === "string" ? mergedDiffInput.diff : "";
@@ -139,30 +141,34 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   // shows Local as the second of its five canonical Git rows in every snapshot.
   const hasLocalContext = Boolean(cwd) || shouldShowThreadContext;
   if (hasLocalContext) {
+    const isWorktree = firstDefined(
+      booleanField(statusRecord, "isWorktree"),
+      booleanField(gitInfo, "isWorktree"),
+    ) === true;
     // CODEX-REF: local-conversation-thread-CEeZyOcp.js (Sf→Zc) — the Environment
-    // second row is the worktree/composer-mode trigger (composerMode defaults to
-    // `local`, triggerVariant `summary-panel`). Codex labels it with the SHORT
-    // execution-mode name `composer.mode.local.short` ("Local") and a chevron —
-    // there is NO "Work locally" subtitle here ("Work locally" lives only on the
-    // composer's full `composer.mode.workLocally` description line, not this rail
-    // row). Forge previously invented `value: "Work locally"`; the row now
-    // carries only the short mode label so the rendered trigger matches Codex's
-    // "Local + chevron" trigger. (Forge has no worktree-handoff data flow, so
-    // the mode cannot switch to Cloud/Worktree yet; the static `local` label is
-    // the correct floor.)
+    // second row is the worktree/composer-mode trigger. The host git status
+    // already tells us whether the cwd is a linked worktree, so the rail can use
+    // the same short-mode label pair Desktop uses: Local vs Worktree.
     rows.push({
       id: "local",
-      // codex composer.mode.local.short — Codex labels the Environment second row
-      // with the SHORT execution-mode name "Local".
-      label: formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" }),
+      label: isWorktree
+        ? formatMessage({ id: "composer.mode.worktreeSegment", defaultMessage: "Worktree" })
+        : formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" }),
+      mode: isWorktree ? "worktree" : "local",
       value: "",
     });
   }
 
-  const statusRecord = objectRecord(input.gitStatus ?? null);
+  /*
+   * Codex Desktop derives the Environment branch label from the live current
+   * branch query / git status first; the stored thread branch is used only to
+   * detect mismatch. Keep Forge on the live host value when available so a
+   * right-rail checkout immediately reflects the repository state after the
+   * host status refresh.
+   */
   const branch = firstDefined(
-    nonEmptyStringField(gitInfo, "branch"),
     nonEmptyStringField(statusRecord, "branch"),
+    nonEmptyStringField(gitInfo, "branch"),
   );
   const hasCommitAction = Boolean(branch || gitStatus?.hasDiff || diff?.hasDiff);
 
@@ -182,25 +188,23 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
     });
   }
   // codex: local-conversation-thread-*.js — Environment-section PR widget (row 4);
-  // when the gh CLI returns an active PR for the current branch, surface it between
-  // the Commit row and the GitHub status row. Click opens the PR URL.
+  // when the gh CLI returns an active PR for the current branch, surface that row
+  // instead of a separate GitHub PR-status row. Click opens the PR URL.
   const pullRequest = input.pullRequest ?? null;
-  if (pullRequest && pullRequest.number > 0) {
+  const hasPullRequestRow = Boolean(pullRequest && pullRequest.number > 0);
+  if (pullRequest && hasPullRequestRow) {
     rows.push({
       id: "pull-request",
       label: formatMessage({ id: "hc.branchDetails.row.pullRequest", defaultMessage: "Pull request" }),
-      value: `${pullRequest.title} #${pullRequest.number}`,
-      status: pullRequestStatusFromPr(pullRequest),
+      value: pullRequestTitle(pullRequest),
       actionUrl: pullRequest.url,
     });
   }
 
-  // CODEX-REF: local-conversation-thread-*.js — Codex Desktop ALWAYS renders the
-  // GitHub status row in the Git summary section,
+  // CODEX-REF: local-conversation-thread-*.js — absent an active PR summary row,
+  // Codex Desktop renders the GitHub status row in the Git summary section,
   // falling back to "GitHub CLI unavailable" when no `ghStatus` payload is around.
-  // We mirror that by emitting the row whenever the Git panel is rendered at all
-  // (i.e. there is real Git context), even when no GitHub probe has come back yet.
-  if (shouldShowThreadContext || hasExplicitGithubStatus) {
+  if ((shouldShowThreadContext || hasExplicitGithubStatus) && !hasPullRequestRow) {
     rows.push({
       id: "github",
       label: "GitHub",
@@ -236,17 +240,9 @@ export function projectBranchDetails(input: BranchDetailsProjectionInput): Branc
   };
 }
 
-/*
- * codex: local-conversation-thread-*.js — Environment-section PR status badge
- * (row 4); maps the gh CLI `state` / `isDraft` pair to a short status token
- * reused by the rail row's right-side chip ("Draft" / "Merged" / "Closed" / "Open").
- */
-function pullRequestStatusFromPr(pr: BranchDetailsPullRequest): string {
-  if (pr.isDraft) return "Draft";
-  const normalized = pr.state.toUpperCase();
-  if (normalized === "MERGED") return "Merged";
-  if (normalized === "CLOSED") return "Closed";
-  return "Open";
+function pullRequestTitle(pr: BranchDetailsPullRequest): string {
+  const title = pr.title.trim();
+  return title || `PR #${pr.number}`;
 }
 
 function explicitGithubStatusProvided(input: BranchDetailsGitStatusInput | null): boolean {

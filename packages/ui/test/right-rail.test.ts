@@ -45,6 +45,7 @@ export default function runRightRailTests(): void {
   rendersPlanRowsAsButtonsOnlyWhenOpenable();
   projectsBranchDiffAction();
   projectsDesktopGitSurfaceWithoutExtraStatusRows();
+  rendersPullRequestRowInDesktopGitSurface();
   loadsAndPersistsRightRailPinnedPreference();
   computesDesktopRightRailDisplayModeAndContentShift();
   hidesRightRailWhileDesktopModeIsOverlay();
@@ -371,9 +372,13 @@ function rendersGeneratedImageArtifactsWithDesktopReverseNumbering(): void {
   }));
 
   assertStringIncludes(html, 'src="data:image/png;base64,AAA"', "data URL generated images should render as rail thumbnails");
-  const first = html.indexOf("Generated image 2");
-  const second = html.indexOf("Generated image 1");
-  assertEqual(first >= 0 && second > first, true, "generated-image artifact labels should use Desktop reverse numbering");
+  assertStringIncludes(html, 'src="data:image/png;base64,BBB"', "second data URL generated image should render as a rail thumbnail");
+  const latestImageSrc = html.indexOf('src="data:image/png;base64,BBB"');
+  const olderImageSrc = html.indexOf('src="data:image/png;base64,AAA"');
+  assertEqual(latestImageSrc >= 0 && olderImageSrc > latestImageSrc, true, "artifact rows should render in Desktop reverse order");
+  const latestLabel = html.indexOf("Generated image 1");
+  const olderLabel = html.indexOf("Generated image 2");
+  assertEqual(latestLabel >= 0 && olderLabel > latestLabel, true, "generated-image labels should be numbered from the latest rendered image");
 }
 
 function rendersRunningSideChatSpinnerAndBackgroundTerminalStopAction(): void {
@@ -646,6 +651,69 @@ function projectsDesktopGitSurfaceWithoutExtraStatusRows(): void {
   assertStringExcludes(html, "Ahead / behind", "Git card should not render ahead/behind rows");
   assertStringExcludes(html, "Changed files", "Git card should not render changed-files rows");
   assertStringExcludes(html, "abcdef123456", "Git card should not render commit hashes");
+}
+
+function rendersPullRequestRowInDesktopGitSurface(): void {
+  const branchDetails = projectBranchDetails({
+    thread: {
+      id: "thread-pr-status",
+      extra: null,
+      sessionId: "thread-pr-status",
+      forkedFromId: null,
+      parentThreadId: null,
+      preview: "",
+      ephemeral: false,
+      historyMode: "legacy",
+      modelProvider: "openai",
+      createdAt: 0,
+      updatedAt: 0,
+      recencyAt: null,
+      status: { type: "idle" },
+      path: null,
+      cwd: "/workspace/project",
+      cliVersion: "test",
+      source: "appServer",
+      threadSource: null,
+      agentNickname: null,
+      agentRole: null,
+      gitInfo: {
+        branch: "feature/pr-row",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:forge/Forge.git",
+      },
+      name: null,
+      turns: [],
+    },
+    pullRequest: {
+      number: 42,
+      title: "Align right rail",
+      url: "https://github.com/example/forge/pull/42",
+      isDraft: false,
+      state: "OPEN",
+    },
+  });
+  const sections = projectRightRailSections({
+    branchDetails,
+    artifacts: [],
+    sources: [],
+  });
+
+  const branchDetailsSection = sectionById(sections, "branchDetails");
+  const pullRequest = entryById(branchDetailsSection.allEntries, "pull-request");
+  assertDeepEqual(
+    pullRequest.action,
+    { kind: "url", url: "https://github.com/example/forge/pull/42" },
+    "PR row should lift the GitHub URL into the right-rail url action",
+  );
+
+  const html = renderToStaticMarkup(createElement(RightRail, {
+    sections,
+    onOpenUrl: () => {},
+  }));
+  assertStringIncludes(html, "Align right rail", "Environment card should render the PR row label");
+  assertEqual(html.includes("Align right rail #42"), false, "PR row with a title should not append the number");
+  assertStringExcludes(html, "hc-pr-status-badge", "Environment card should not render a separate PR state badge");
+  assertStringExcludes(html, "PR #42", "Environment card should not render a duplicate GitHub PR status row");
 }
 
 function loadsAndPersistsRightRailPinnedPreference(): void {

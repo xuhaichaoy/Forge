@@ -21,6 +21,7 @@ export default function runRenderGroupsRightRailTests(): void {
   projectsWebPageSourcesFromOpenPageAndFindInPage();
   fallsBackToGenericWebSearchForNonPageWebSources();
   ordersMcpSourcesNewestFirstAndUsesPluginDisplayNames();
+  preservesExplicitMcpAppIdsOnToolSources();
 }
 
 function rendersOrphanTodoListPlansInlineWithoutRightRailProgress(): void {
@@ -822,6 +823,54 @@ function ordersMcpSourcesNewestFirstAndUsesPluginDisplayNames(): void {
       { id: "app:gmail", title: "Gmail" },
     ],
     "MCP sources should match Desktop newest-first ordering and prefer pluginDisplayNames for titles",
+  );
+}
+
+function preservesExplicitMcpAppIdsOnToolSources(): void {
+  const projection = projectConversation([
+    {
+      type: "mcpToolCall",
+      id: "gmail-old",
+      server: "gmail",
+      tool: "send_email",
+      mcpAppId: "mcp-app:gmail-old",
+      status: "completed",
+      arguments: {},
+      result: { ok: true },
+      error: null,
+    } as ThreadItem,
+    {
+      type: "mcpToolCall",
+      id: "gmail-new",
+      server: "gmail",
+      tool: "send_email",
+      status: "completed",
+      arguments: {},
+      result: { ok: true },
+      error: null,
+    } as ThreadItem,
+  ], {
+    appRegistry: [
+      {
+        id: "app:gmail",
+        name: "Google Workspace",
+        pluginDisplayNames: ["Gmail"],
+        logoUrl: "https://example.com/gmail-light.png",
+        logoUrlDark: "https://example.com/gmail-dark.png",
+      },
+    ],
+  });
+
+  assertDeepEqual(
+    projection.sources.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      mcpAppId: entry.mcpAppId ?? null,
+    })),
+    [
+      { id: "app:gmail", title: "Gmail", mcpAppId: "mcp-app:gmail-old" },
+    ],
+    "MCP Sources should preserve explicit Desktop mcpAppId instead of conflating it with app registry id",
   );
 }
 

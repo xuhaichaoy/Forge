@@ -251,6 +251,12 @@ export interface RailEntry {
    */
   logoUrl?: string | null;
   logoUrlDark?: string | null;
+  /**
+   * Codex Desktop Sources tool rows keep a separate `mcpAppId` for the app-tab
+   * open action. It is not the same as the app registry/source id, so projection
+   * must only preserve it when app-server data explicitly provides it.
+   */
+  mcpAppId?: string | null;
 }
 
 export interface RailDiffStats {

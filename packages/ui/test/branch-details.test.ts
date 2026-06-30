@@ -7,6 +7,8 @@ export default function runBranchDetailsTests() {
   projectsDesktopGitRowsFromThreadCwdGitInfoAndStatus();
   ignoresPlainThreadContextWithoutGitOrDiffData();
   keepsExplicitGitStatusFactsWithoutRenderingExtraRows();
+  prefersLiveHostBranchOverStoredThreadBranch();
+  usesHostWorktreeModeForEnvironmentRow();
   treatsCleanGitStatusAsData();
   readsStatusFieldsFromThreadGitInfoExtension();
   countsChangedFilesFromDiffText();
@@ -87,6 +89,55 @@ function keepsExplicitGitStatusFactsWithoutRenderingExtraRows() {
   assertMissingRow(view.rows, "upstream", "upstream should remain a fact but not a visible Git row");
   assertMissingRow(view.rows, "aheadBehind", "ahead/behind should remain facts but not visible Git rows");
   assertMissingRow(view.rows, "changedFiles", "changed files should be represented by the Changes entry only");
+}
+
+function prefersLiveHostBranchOverStoredThreadBranch() {
+  const view = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-live-host-branch",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "stored/thread-branch",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:forge/Forge.git",
+      },
+    }),
+    gitStatus: {
+      branch: "live/host-branch",
+      upstream: "origin/live/host-branch",
+      ahead: 0,
+      behind: 0,
+      changedFiles: 0,
+      hasDiff: false,
+    },
+  });
+
+  assertEqual(view.currentBranch, "live/host-branch", "Environment should use the live host branch when it differs from the stored thread branch");
+  assertRow(view.rows, "branch", "Branch", "live/host-branch");
+}
+
+function usesHostWorktreeModeForEnvironmentRow() {
+  const view = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-linked-worktree",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/worktree",
+        originUrl: "git@example.com:forge/Forge.git",
+        sha: "abcdef1234567890",
+      },
+    }),
+    gitStatus: {
+      branch: "feature/worktree",
+      changedFiles: 0,
+      hasDiff: false,
+      isWorktree: true,
+    },
+  });
+
+  const localRow = view.rows.find((row) => row.id === "local");
+  assertEqual(localRow?.label, "Worktree", "Environment mode row should use the host worktree label for linked worktrees");
+  assertEqual(localRow?.mode, "worktree", "Environment mode row should keep the worktree mode for the renderer icon");
 }
 
 function treatsCleanGitStatusAsData() {
@@ -217,7 +268,7 @@ function dedupesFilesAndPreservesKind() {
 }
 
 function projectsGithubCliStatusRows() {
-  const view = projectBranchDetails({
+  const unavailable = projectBranchDetails({
     thread: threadFixture({
       id: "thread-gh-status",
       cwd: TEST_WORKSPACE,
@@ -234,9 +285,158 @@ function projectsGithubCliStatusRows() {
     },
   });
 
-  assertEqual(view.githubStatus?.label, "GitHub CLI unavailable", "gh status should mirror Desktop unavailable copy");
-  const github = assertRow(view.rows, "github", "GitHub", "GitHub CLI unavailable");
+  assertEqual(unavailable.githubStatus?.label, "GitHub CLI unavailable", "gh status should mirror Desktop unavailable copy");
+  const github = assertRow(unavailable.rows, "github", "GitHub", "GitHub CLI unavailable");
   assertEqual(github.status, "unavailable", "gh unavailable status should be kept for the right rail");
+
+  const signedOut = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-gh-signed-out",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/gh-status",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:forge/Forge.git",
+      },
+    }),
+    gitStatus: {
+      ghStatus: {
+        isAuthenticated: false,
+        isInstalled: true,
+      },
+    },
+  });
+  assertRow(signedOut.rows, "github", "GitHub", "GitHub CLI not authenticated");
+
+  const loading = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-gh-loading",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/gh-status",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:forge/Forge.git",
+      },
+    }),
+    gitStatus: {
+      ghStatus: {
+        isLoading: true,
+      },
+    },
+  });
+  assertRow(loading.rows, "github", "GitHub", "Checking pull request");
+
+  const createPullRequest = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-gh-create-pr",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/gh-status",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:forge/Forge.git",
+      },
+    }),
+    gitStatus: {
+      ghStatus: {
+        isAuthenticated: true,
+        isInstalled: true,
+      },
+    },
+  });
+  assertRow(createPullRequest.rows, "github", "GitHub", "Create pull request");
+
+  const existingPullRequest = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-gh-existing-pr",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/gh-status",
+        sha: "abcdef1234567890",
+        originUrl: "git@example.com:forge/Forge.git",
+      },
+    }),
+    gitStatus: {
+      ghStatus: {
+        isAuthenticated: true,
+        isInstalled: true,
+        pullRequestStatus: { number: 42 },
+      },
+    },
+  });
+  assertRow(existingPullRequest.rows, "github", "GitHub", "PR #42");
+
+  const pullRequest = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-pr-row",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/pr-row",
+        originUrl: "git@example.com:forge/Forge.git",
+        sha: "abcdef1234567890",
+      },
+    }),
+    pullRequest: {
+      number: 42,
+      title: "Align right rail",
+      url: "https://github.com/example/forge/pull/42",
+      isDraft: false,
+      state: "OPEN",
+    },
+  });
+  assertRow(pullRequest.rows, "pull-request", "Pull request", "Align right rail");
+  assertMissingRow(pullRequest.rows, "github", "active PR should replace the duplicate GitHub status row");
+
+  const pullRequestWithGithubStatus = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-pr-row-gh-status",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/pr-row-gh-status",
+        originUrl: "git@example.com:forge/Forge.git",
+        sha: "abcdef1234567890",
+      },
+    }),
+    gitStatus: {
+      ghStatus: {
+        isAuthenticated: true,
+        isInstalled: true,
+        pullRequestStatus: { number: 42 },
+      },
+    },
+    pullRequest: {
+      number: 42,
+      title: "Align right rail",
+      url: "https://github.com/example/forge/pull/42",
+      isDraft: false,
+      state: "OPEN",
+    },
+  });
+  assertRow(pullRequestWithGithubStatus.rows, "pull-request", "Pull request", "Align right rail");
+  assertMissingRow(
+    pullRequestWithGithubStatus.rows,
+    "github",
+    "active PR row should replace the separate GitHub PR status row",
+  );
+
+  const fallbackPullRequest = projectBranchDetails({
+    thread: threadFixture({
+      id: "thread-pr-row-fallback",
+      cwd: TEST_WORKSPACE,
+      gitInfo: {
+        branch: "feature/pr-row-fallback",
+        originUrl: "git@example.com:forge/Forge.git",
+        sha: "abcdef1234567890",
+      },
+    }),
+    pullRequest: {
+      number: 43,
+      title: " ",
+      url: "https://github.com/example/forge/pull/43",
+      isDraft: false,
+      state: "OPEN",
+    },
+  });
+  assertRow(fallbackPullRequest.rows, "pull-request", "Pull request", "PR #43");
 }
 
 function returnsEmptyStateWithoutData() {

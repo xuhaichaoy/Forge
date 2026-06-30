@@ -8,7 +8,7 @@ import {
 } from "../state/file-references";
 import type { RailEntry, RailEntryReference } from "../state/render-groups";
 import { formatError } from "../lib/format";
-import { openFileReference, readTextFile, revealPath } from "../lib/tauri-host";
+import { openExternalUrl, openFileReference, readTextFile, revealPath } from "../lib/tauri-host";
 
 export interface ArtifactPreviewPathContext {
   cwd: string;
@@ -93,10 +93,9 @@ export function useArtifactPreviewActions({
       dispatch({ type: "log", text: `Cannot open URL: ${url}`, level: "warn" });
       return;
     }
-    const opened = globalThis.open?.(normalized, "_blank", "noopener,noreferrer");
-    if (!opened) {
-      dispatch({ type: "log", text: `URL ready to open: ${normalized}`, level: "info" });
-    }
+    void openExternalUrl(normalized).catch((error) => {
+      dispatch({ type: "log", text: formatError(error), level: "warn" });
+    });
   }, [dispatch]);
 
   // NOTE: the artifact-open ROUTING (preview vs file-ref vs url) lives in

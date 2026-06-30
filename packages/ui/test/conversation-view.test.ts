@@ -270,16 +270,15 @@ function projectsTurnDiffSummaryLikeCodexDesktop(): void {
     true,
     "single-file renderable turn diff should expose Desktop's hover preview trigger",
   );
-  assertEqual(singleFileHtml.includes("Details"), true, "single-file turn diff detail row should use Desktop Details label");
   assertEqual(
-    singleFileHtml.includes("<span class=\"hc-turn-diff-file-path\">src/fallback.ts</span>"),
+    singleFileHtml.includes("hc-turn-diff-files"),
     false,
-    "single-file turn diff detail row should not repeat the file path",
+    "single-file turn diff should not render Desktop's multi-file file-list section",
   );
   assertEqual(
     (singleFileHtml.match(/hc-turn-diff-stats/g) ?? []).length,
     1,
-    "single-file turn diff should only render header +/- stats, not duplicate them in the Details row",
+    "single-file turn diff should only render header +/- stats",
   );
 }
 

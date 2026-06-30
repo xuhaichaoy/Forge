@@ -4,6 +4,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   Github,
+  GitPullRequest,
   Laptop,
   Plus,
   Search,
@@ -34,10 +35,12 @@ export function BranchDetailsCard({
   details,
   canOpenEntry,
   onOpenEntry,
+  onBranchSwitched,
 }: {
   details: BranchDetailsViewModel;
   canOpenEntry: (entry: RailEntry) => boolean;
   onOpenEntry: (entry: RailEntry) => void;
+  onBranchSwitched?: (branchName: string) => void;
 }) {
   const { formatMessage } = useForgeIntl();
   if (!details.hasData) {
@@ -51,8 +54,18 @@ export function BranchDetailsCard({
   const localRow = details.rows.find((row) => row.id === "local");
   const branchRow = details.rows.find((row) => row.id === "branch");
   const commitRow = details.rows.find((row) => row.id === "commit");
+  const pullRequestRow = details.rows.find((row) => row.id === "pull-request");
   const githubRow = details.rows.find((row) => row.id === "github");
   const githubLabel = githubRow?.value ?? details.githubStatus?.label ?? formatMessage({ id: "codex.localConversation.gitSummary.githubCliUnavailable", defaultMessage: "GitHub CLI unavailable" });
+  const pullRequestEntry: RailEntry | null = pullRequestRow?.actionUrl
+    ? {
+        id: pullRequestRow.id,
+        title: pullRequestRow.label,
+        meta: pullRequestRow.value,
+        status: pullRequestRow.status ?? "available",
+        action: { kind: "url", url: pullRequestRow.actionUrl },
+      }
+    : null;
 
   const changesEntry: RailEntry = {
     id: "changes",
@@ -95,20 +108,14 @@ export function BranchDetailsCard({
         onClick={canOpenChanges ? () => onOpenEntry(changesEntry) : undefined}
         title={changesEntry.meta}
       />
-      {/* CODEX-REF: local-conversation-thread-CEeZyOcp.js (Sf→Zc) — worktree/execution
-          -mode trigger row. Codex renders the macbook glyph (lucide `Laptop`) at
-          `icon-sm` (app-main `.icon-sm{18px}`) for the local execution mode (cloud→Cloud,
-          worktree→GitBranch) and labels the trigger with the SHORT mode name
-          `composer.mode.local.short` ("Local") + a chevron. BranchDetailsViewModel does
-          NOT expose the execution mode (the `local` row carries only id/label), so Forge
-          always renders Laptop + the static "Local" short label and cannot mode-swap yet.
-          The label is routed through the Codex `composer.mode.local.short` id so it is
-          i18n-backed (no invented "Work locally" subtitle — see branch-details.ts). */}
+      {/* CODEX-REF: local-conversation-thread-*.js Environment work mode row —
+          local mode uses the laptop glyph, linked worktrees use the branch glyph,
+          and both labels are the short composer mode names. */}
       {localRow ? (
         <SummaryPanelRow
-          icon={<Laptop size={18} />}
-          label={formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" })}
-          title={formatMessage({ id: "composer.mode.local.short", defaultMessage: "Local" })}
+          icon={localRow.mode === "worktree" ? <GitBranch size={18} /> : <Laptop size={18} />}
+          label={localRow.label}
+          title={localRow.label}
           trailing={<ChevronDown size={12} />}
         />
       ) : null}
@@ -116,6 +123,7 @@ export function BranchDetailsCard({
         <RightRailBranchPickerRow
           cwd={details.cwd}
           currentBranch={details.currentBranch ?? branchRow.value}
+          onBranchSwitched={onBranchSwitched}
         />
       ) : null}
       {commitRow ? (
@@ -125,12 +133,21 @@ export function BranchDetailsCard({
           title={formatMessage({ id: "codex.commandDescription.git.commit", defaultMessage: "Open commit or push options" })}
         />
       ) : null}
-      {/* CODEX-REF: local-conversation-thread-*.js — GitHub status row */}
-      <SummaryPanelRow
-        icon={<Github size={14} />}
-        label={githubLabel}
-        title={githubLabel}
-      />
+      {pullRequestRow ? (
+        <SummaryPanelRow
+          icon={<GitPullRequest size={18} />}
+          label={pullRequestRow.value}
+          title={pullRequestRow.actionUrl ?? pullRequestRow.value}
+          onClick={pullRequestEntry && canOpenEntry(pullRequestEntry) ? () => onOpenEntry(pullRequestEntry) : undefined}
+        />
+      ) : null}
+      {!pullRequestRow ? (
+        <SummaryPanelRow
+          icon={<Github size={14} />}
+          label={githubLabel}
+          title={githubLabel}
+        />
+      ) : null}
     </div>
   );
 }
@@ -138,9 +155,11 @@ export function BranchDetailsCard({
 function RightRailBranchPickerRow({
   cwd,
   currentBranch,
+  onBranchSwitched,
 }: {
   cwd: string | null;
   currentBranch: string | null;
+  onBranchSwitched?: (branchName: string) => void;
 }) {
   const { formatMessage } = useForgeIntl();
   const [open, setOpen] = useState(false);
@@ -175,6 +194,7 @@ function RightRailBranchPickerRow({
   } = useComposerBranchSwitcherWorkflow({
     cwd,
     currentBranch,
+    onBranchSwitched,
     open,
     setOpen,
   });

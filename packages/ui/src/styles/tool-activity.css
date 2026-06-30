@@ -981,7 +981,7 @@ button.hc-error-event-summary:hover {
   flex-shrink: 0;
 }
 
-/* Completed single-file diff hover preview ------------------------------- */
+/* Completed diff hover preview ------------------------------------------ */
 
 .hc-turn-diff-preview-trigger {
   display: block;
@@ -1197,13 +1197,9 @@ button.hc-error-event-summary:hover {
   --diffs-deletion-number: color-mix(in lab, var(--diffs-bg) 85%, var(--diffs-deletion-base));
 }
 
-/* File rows with inline disclosure ----------------------------------------- */
+/* Completed multi-file diff rows ------------------------------------------ */
 
 .hc-turn-diff-file {
-  /* Reset the row's flex-row → make it a stack so the inline disclosure lives below. */
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
   padding: 0;
 }
 
@@ -1240,16 +1236,6 @@ button.hc-error-event-summary:hover {
   cursor: default;
 }
 
-.hc-turn-diff-file-row > svg:first-child {
-  flex: 0 0 auto;
-  color: #8a8d86;
-  transition: transform 160ms ease;
-}
-
-.hc-turn-diff-file-row > svg:first-child.is-open {
-  transform: rotate(90deg);
-}
-
 .hc-turn-diff-file-path {
   min-width: 0;
   flex: 1 1 auto;
@@ -1263,38 +1249,6 @@ button.hc-error-event-summary:hover {
   font-size: calc(11px * var(--hc-ui-font-scale, 1));
   color: #8a8d86;
   font-style: italic;
-}
-
-.hc-turn-diff-file-review {
-  /* codex: per-file `color="ghost"` Review button */
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: calc(12px * var(--hc-ui-font-scale, 1));
-  color: #4f5855;
-  cursor: pointer;
-  user-select: none;
-}
-
-.hc-turn-diff-file-review:hover,
-.hc-turn-diff-file-review:focus-visible {
-  background: rgba(34, 38, 43, 0.08);
-  color: #27313d;
-  outline: none;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.hc-turn-diff-file-inline {
-  border-top: 1px solid #e7e3da;
-  background: #faf9f5;
-}
-
-.hc-turn-diff-file-inline .hc-code-snippet {
-  margin: 0;
-  border: 0;
-  border-radius: 0;
 }
 
 /* "Show N more files" / "Collapse files" footer ---------------------------- */
@@ -2839,11 +2793,6 @@ button.hc-tool-summary:hover svg:last-child,
 .hc-app[data-theme="dark"] .hc-turn-diff-file + .hc-turn-diff-file {
   border-top-color: var(--hc-border-default);
 }
-.hc-app[data-theme="dark"] .hc-turn-diff-file-inline {
-  border-top-color: var(--hc-border-default);
-  background: var(--hc-surface-soft);
-}
-
 /* Dark: more containers that hardcoded a light bg (#fffdfa/#fff) with no dark
    override — same white-card class as the diff card, found by the screenshot pass. */
 .hc-app[data-theme="dark"] .hc-tool-block:not(.activity) {
@@ -2858,22 +2807,8 @@ button.hc-tool-summary:hover svg:last-child,
   color: var(--hc-text-primary);
 }
 
-.hc-app[data-theme="dark"] .hc-turn-diff-file-row > svg:first-child {
-  color: var(--hc-text-secondary);
-}
-
 .hc-app[data-theme="dark"] .hc-turn-diff-file-too-large {
   color: var(--hc-text-secondary);
-}
-
-.hc-app[data-theme="dark"] .hc-turn-diff-file-review {
-  color: var(--hc-text-primary);
-}
-
-.hc-app[data-theme="dark"] .hc-turn-diff-file-review:hover,
-.hc-app[data-theme="dark"] .hc-turn-diff-file-review:focus-visible {
-  background-color: var(--hc-surface-hover);
-  color: var(--hc-text-primary);
 }
 
 .hc-app[data-theme="dark"] .hc-turn-diff-expand-files {

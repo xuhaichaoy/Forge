@@ -84,6 +84,7 @@ export interface ForgeAppMainArgs {
   openAutomationsPanel: (automationId?: string | null) => void;
   openBackgroundAgentThread: ReturnType<typeof useBackgroundAgentPanel>["openBackgroundAgentThread"];
   openBrowserSurface: (tabId?: string | null) => void;
+  onBranchSwitched?: ComponentProps<typeof RightRail>["onBranchSwitched"];
   openRailPlan: ComponentProps<typeof RightRail>["onOpenPlan"];
   openPlanSummary: ComponentProps<typeof ConversationView>["onOpenPlan"];
   openRailUrl: (url: string) => void;
@@ -178,6 +179,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
     openAutomationsPanel,
     openBackgroundAgentThread,
     openBrowserSurface,
+    onBranchSwitched,
     openPlanSummary,
     openRailPlan,
     openRailUrl,
@@ -381,6 +383,7 @@ export function renderForgeAppMain(args: ForgeAppMainArgs): ReactNode {
             onOpenUrl={openRailUrl}
             onOpenDiff={openActiveDiffPanel}
             onOpenThreadId={openBackgroundAgentThread}
+            onBranchSwitched={onBranchSwitched}
             onCleanBackgroundTerminals={conversation.backgroundTerminals.length > 0
               ? () => void cleanBackgroundTerminals()
               : undefined}

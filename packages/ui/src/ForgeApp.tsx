@@ -114,7 +114,7 @@ import {
   mergeBackgroundSubagentStopThreadIds,
 } from "./state/background-subagents-stop";
 import { resolveForgeBuildInfo } from "./state/build-info";
-import { projectBranchDetails } from "./state/branch-details";
+import { projectBranchDetails, type BranchDetailsGitStatusInput } from "./state/branch-details";
 import {
   type FileReferenceSelection,
 } from "./state/file-references";
@@ -624,7 +624,12 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
   // useTurnPatchAction; ConversationView gets onPatchAction, the failure dialog reads patchFailure.
   const { handlePatchAction, patchActionState, patchActionInFlight, patchFailure, setPatchFailure } =
     useTurnPatchAction({ worktreeStatusCwd });
-  const { worktreeHostGitStatus, pullRequestStatus } = useWorktreeGitAndPrStatus({ worktreeStatusCwd });
+  const {
+    refreshWorktreeGitStatus,
+    worktreeGithubStatus,
+    worktreeHostGitStatus,
+    pullRequestStatus,
+  } = useWorktreeGitAndPrStatus({ worktreeStatusCwd });
   const activeProgressPlan = activeThreadRuntime.turnPlan;
   const activeFixedPlan = useMemo(
     () => activeTurnPlanFromTodoListItems(activeItems, state.activeThreadId, activeTurnId) ?? activeProgressPlan,
@@ -788,11 +793,15 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
     plan: activeFixedPlan,
     turnId: activeThreadRuntime.turnDiffTurnId,
   });
-  const branchDetails = useMemo(
-    () => projectBranchDetails({
+  const branchDetails = useMemo(() => {
+    const gitStatus: BranchDetailsGitStatusInput | null = worktreeHostGitStatus || worktreeGithubStatus
+      ? { ...(worktreeHostGitStatus ?? undefined) }
+      : null;
+    if (gitStatus && worktreeGithubStatus) gitStatus.ghStatus = worktreeGithubStatus;
+    return projectBranchDetails({
       thread: activeThread,
       diff: activeDiff ? { diff: activeDiff } : null,
-      gitStatus: worktreeHostGitStatus,
+      gitStatus,
       // codex: local-conversation-thread-*.js row 4 PR widget input.
       pullRequest: pullRequestStatus
         ? {
@@ -803,9 +812,8 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
             state: pullRequestStatus.state,
           }
         : null,
-    }),
-    [activeDiff, activeThread, pullRequestStatus, worktreeHostGitStatus],
-  );
+    });
+  }, [activeDiff, activeThread, pullRequestStatus, worktreeGithubStatus, worktreeHostGitStatus]);
   const composerWorkModeOptions = useMemo(
     () => projectWorktreeModeOptions({
       hostGitStatus: worktreeHostGitStatus,
@@ -1219,6 +1227,7 @@ function ForgeAppBody({ state, clientCallbacksRef, fileSearchControllerRef }: Fo
         interruptBackgroundAgentPanelTurn, mainLayoutStyle, mainRef, memoryCitationRoot, openActiveDiffPanel,
         openAssistantArtifactInSidePanel, openAutomationFromConversation, openAutomationsPanel,
         openBackgroundAgentThread, openBrowserSurface,
+        onBranchSwitched: refreshWorktreeGitStatus,
         openPlanSummary: togglePlanSummarySidePanel, openRailPlan, openRailUrl, openRemoteTask, patchActionInFlight, patchActionState,
         previewConversationFileReferenceAndOpenRail,
         previewGeneratedImage: openGeneratedImagePreview,

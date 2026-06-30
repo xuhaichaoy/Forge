@@ -6,12 +6,16 @@ import {
   generatedImagePreviewKeyboardOffset,
 } from "../src/components/generated-image-preview-tab";
 import { ForgeIntlProvider } from "../src/components/i18n-provider";
+import { generatedImagePreviewItemsFromRailEntries } from "../src/hooks/use-forge-app-preview-wiring";
+import type { UiMessageFormatter } from "../src/hooks/use-ui-preferences";
+import type { RailEntry } from "../src/state/render-groups";
 
 export default function runGeneratedImagePreviewTabTests(): void {
   usesDesktopImageSidePanelPreviewTabId();
   rendersDesktopDownloadNameFromAltInsteadOfTabTitle();
   fallsBackToDecodedSourceFilenameForDownloadName();
   rendersDesktopThumbnailRailForMultipleImages();
+  projectsRailGeneratedImagesInDesktopPreviewOrder();
   mapsDesktopThumbnailArrowKeys();
 }
 
@@ -72,6 +76,38 @@ function rendersDesktopThumbnailRailForMultipleImages(): void {
   assertIncludes(html, "two-thumb.png", "thumbnail rail should use the preview source when available");
 }
 
+function projectsRailGeneratedImagesInDesktopPreviewOrder(): void {
+  const entries: RailEntry[] = [
+    {
+      id: "image:data-1",
+      title: "Generated image",
+      meta: "data:image/png;base64,AAA",
+      status: "completed",
+      artifactKind: "generated-image",
+      action: { kind: "url", url: "data:image/png;base64,AAA" },
+    },
+    {
+      id: "image:data-2",
+      title: "Generated image",
+      meta: "data:image/png;base64,BBB",
+      status: "completed",
+      artifactKind: "generated-image",
+      action: { kind: "url", url: "data:image/png;base64,BBB" },
+    },
+  ];
+
+  const { images, initialImage } = generatedImagePreviewItemsFromRailEntries(
+    entries[1],
+    entries,
+    null,
+    formatTestUiMessage,
+  );
+
+  assertEqual(images.map((image) => image.id).join(","), "image:data-2,image:data-1", "preview rail should match Desktop reverse order");
+  assertEqual(images.map((image) => image.alt).join(","), "Generated image 1,Generated image 2", "preview labels should keep Desktop latest-first numbering");
+  assertEqual(initialImage?.id ?? null, "image:data-2", "clicked generated image should stay active after preview reorder");
+}
+
 function mapsDesktopThumbnailArrowKeys(): void {
   assertEqual(generatedImagePreviewKeyboardOffset("ArrowUp"), -1, "ArrowUp should move to previous image");
   assertEqual(generatedImagePreviewKeyboardOffset("ArrowLeft"), -1, "ArrowLeft should move to previous image");
@@ -92,6 +128,12 @@ function renderGeneratedImagePreview(
     },
   ));
 }
+
+const formatTestUiMessage: UiMessageFormatter = (descriptor, values) => {
+  const replacements = (values ?? {}) as Record<string, unknown>;
+  const message = descriptor.defaultMessage ?? descriptor.id;
+  return message.replace(/\{([^}]+)\}/g, (_match, key: string) => String(replacements[key] ?? ""));
+};
 
 function assertIncludes(value: string, needle: string, message: string): void {
   if (!value.includes(needle)) {

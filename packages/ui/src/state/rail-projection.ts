@@ -123,11 +123,13 @@ export function collectRailEntries(
       const tool = mcpToolName(item);
       const appSource = lookupAppSource(server, tool, appRegistry);
       const sourceKey = appSource?.id || sourceId;
+      const mcpAppId = mcpToolCallMcpAppId(record);
       setSource(sources, sourceKey, {
         id: sourceKey,
         title: appSource ? appSourceDisplayTitle(appSource) : mcpSourceTitle(server),
         logoUrl: appSource?.logoUrl ?? null,
         logoUrlDark: appSource?.logoUrlDark ?? null,
+        ...(mcpAppId ? { mcpAppId } : {}),
       });
     }
   }
@@ -428,8 +430,14 @@ export function setArtifact(artifacts: Map<string, RailEntry>, entry: RailEntry)
 }
 
 function setSource(sources: Map<string, RailEntry>, key: string, entry: RailEntry): void {
+  const existing = sources.get(key);
+  const mcpAppId = entry.mcpAppId ?? existing?.mcpAppId;
   sources.delete(key);
-  sources.set(key, entry);
+  sources.set(key, mcpAppId ? { ...entry, mcpAppId } : entry);
+}
+
+function mcpToolCallMcpAppId(record: ItemRecord): string {
+  return stringField(record, "mcpAppId");
 }
 
 function appSourceDisplayTitle(app: AppRegistryEntry): string {

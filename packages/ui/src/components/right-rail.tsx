@@ -53,6 +53,7 @@ export interface RightRailProps {
   onOpenDiff?: () => void;
   onOpenPlan?: (entry: RailEntry) => void;
   onOpenThreadId?: OpenThreadHandler;
+  onBranchSwitched?: (branchName: string) => void;
   onCleanBackgroundTerminals?: () => void;
   backgroundTerminalCleanupPending?: boolean;
   // codex: local-conversation-thread-*.js — automation panel CTA;
@@ -74,6 +75,7 @@ export function RightRail({
   onOpenDiff,
   onOpenPlan,
   onOpenThreadId,
+  onBranchSwitched,
   onCleanBackgroundTerminals,
   backgroundTerminalCleanupPending = false,
   // codex: local-conversation-thread-*.js —
@@ -191,7 +193,14 @@ export function RightRail({
               : undefined}
         >
           {section.id === "branchDetails" && section.branchDetails
-            ? <BranchDetailsCard details={section.branchDetails} canOpenEntry={canOpenEntry} onOpenEntry={openEntry} />
+            ? (
+                <BranchDetailsCard
+                  details={section.branchDetails}
+                  canOpenEntry={canOpenEntry}
+                  onOpenEntry={openEntry}
+                  onBranchSwitched={onBranchSwitched}
+                />
+              )
             : section.id === "sources"
               /* CODEX-REF: local-conversation-thread-*.js — Codex renders Sources as a
                * wrapping row of icon-only favicon buttons when the source can open, or

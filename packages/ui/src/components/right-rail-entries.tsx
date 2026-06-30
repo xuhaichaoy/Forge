@@ -36,17 +36,15 @@ export function RailList({
 }: RailListProps) {
   const { formatMessage } = useForgeIntl();
   const [expanded, setExpanded] = useState(false);
+  const orderedEntries = sectionId === "artifacts" ? entries.slice().reverse() : entries;
   const clipped = shouldClipRailList(sectionId)
-    ? clipRailEntries(entries, expanded)
+    ? clipRailEntries(orderedEntries, expanded)
     : {
-        entries,
+        entries: orderedEntries,
         remainingCount: 0,
         canToggle: false,
       };
-  const generatedImageTotal = sectionId === "artifacts"
-    ? clipped.entries.filter((entry) => isGeneratedImageArtifact(entry)).length
-    : 0;
-  let generatedImageIndex = 0;
+  const generatedImageNumbers = sectionId === "artifacts" ? generatedImageNumbersByEntryId(entries) : new Map<string, number>();
   /*
    * CODEX-REF: local-conversation-thread-*.js ({artifacts} listClassName):
    *   `-mx-2 flex max-h-[28rem] flex-col gap-px overflow-y-auto px-2`
@@ -58,12 +56,11 @@ export function RailList({
     <div className="hc-rail-list" data-section-id={sectionId}>
       {clipped.entries.map((entry) => {
         const isGeneratedImage = sectionId === "artifacts" && isGeneratedImageArtifact(entry);
-        if (isGeneratedImage) generatedImageIndex += 1;
-        const generatedImageNumber = generatedImageTotal - generatedImageIndex + 1;
+        const generatedImageNumber = generatedImageNumbers.get(entry.id);
         const displayTitle = isGeneratedImage
           ? formatMessage(
               { id: "codex.localConversation.artifacts.generatedImage", defaultMessage: "Generated image {imageNumber}" },
-              { imageNumber: generatedImageNumber },
+              { imageNumber: generatedImageNumber ?? 1 },
             )
           : undefined;
         // CODEX-REF: local-conversation-thread-CEeZyOcp.js — the background-terminal
@@ -118,4 +115,14 @@ export function RailList({
 
 function shouldClipRailList(sectionId: RightRailSectionViewModel["id"]): boolean {
   return sectionId === "artifacts" || sectionId === "sources";
+}
+
+function generatedImageNumbersByEntryId(entries: readonly RailEntry[]): Map<string, number> {
+  const generatedEntries = entries.filter((entry) => isGeneratedImageArtifact(entry));
+  const total = generatedEntries.length;
+  const numbers = new Map<string, number>();
+  generatedEntries.forEach((entry, index) => {
+    numbers.set(entry.id, total - index);
+  });
+  return numbers;
 }
