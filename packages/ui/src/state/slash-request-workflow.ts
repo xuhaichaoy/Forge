@@ -300,7 +300,7 @@ export async function runSlashRequestWorkflow(
       }
       case "loginChatgpt": {
         // Codex protocol `account/login/start` (v2 LoginAccountParams.ts):
-        //   { type: "chatgpt" } → backend returns { loginId, authUrl }
+        //   { type: "chatgpt", codexStreamlinedLogin: true } → backend returns { loginId, authUrl }
         // We open the authUrl in the system browser via Tauri's openExternalUrl.
         // Backend asynchronously receives the OAuth callback and dispatches an
         // `account/login/completed` notification (codex-reducer.ts handles it
@@ -311,7 +311,7 @@ export async function runSlashRequestWorkflow(
             type: string;
             loginId?: string;
             authUrl?: string;
-          }>("account/login/start", { type: "chatgpt" }, 120_000);
+          }>("account/login/start", { type: "chatgpt", codexStreamlinedLogin: true }, 120_000);
           if (result?.type !== "chatgpt" || !result.authUrl) {
             dispatch({
               type: "log",

@@ -5,6 +5,7 @@ import type { RateLimitSnapshot } from "@forge/codex-protocol/generated/v2/RateL
 
 export default async function runSlashRequestWorkflowTests(): Promise<void> {
   await resumesAndForksThreadsWithContextDefaults();
+  await startsChatgptLoginWithStreamlinedSuccessPage();
   await listsAppsThroughDesktopPagingLoader();
   await listsCollaborationModesThroughAppServer();
   await listsExperimentalFeaturesForActiveThread();
@@ -81,6 +82,46 @@ async function resumesAndForksThreadsWithContextDefaults(): Promise<void> {
       },
     ],
     "slash resume/fork should reuse ThreadContextDefaults instead of bare thread requests",
+  );
+}
+
+async function startsChatgptLoginWithStreamlinedSuccessPage(): Promise<void> {
+  const workflow = createWorkflowRecorder([{
+    type: "chatgpt",
+    loginId: "login-1",
+    authUrl: "https://auth.openai.com/oauth/authorize?client_id=codex",
+  }]);
+  const openedUrls: string[] = [];
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = {
+    open: (href: string) => {
+      openedUrls.push(href);
+      return {};
+    },
+  };
+  try {
+    await runSlashRequestWorkflow("loginChatgpt", undefined, workflow.context);
+  } finally {
+    if (previousWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      (globalThis as { window?: unknown }).window = previousWindow;
+    }
+  }
+
+  assertDeepEqual(
+    workflow.requests,
+    [{
+      method: "account/login/start",
+      params: { type: "chatgpt", codexStreamlinedLogin: true },
+      timeoutMs: 120_000,
+    }],
+    "ChatGPT login should request Codex's streamlined success page instead of the legacy ChatGPT setup redirect",
+  );
+  assertDeepEqual(
+    openedUrls,
+    ["https://auth.openai.com/oauth/authorize?client_id=codex"],
+    "ChatGPT login should open the authUrl returned by app-server",
   );
 }
 

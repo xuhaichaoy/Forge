@@ -482,15 +482,20 @@ fn open_external_url(url: &str) -> std::io::Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        new_command("cmd")
-            .args(["/C", "start", "", url])
-            .spawn()
-            .map(|_| ())
+        // Do not use `cmd /C start`: OAuth URLs contain `&`, which cmd treats
+        // as a command separator and passes to the browser truncated.
+        let (program, args) = windows_external_url_command(url);
+        new_command(program).args(args).spawn().map(|_| ())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         new_command("xdg-open").arg(url).spawn().map(|_| ())
     }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_external_url_command(url: &str) -> (&'static str, [&str; 2]) {
+    ("rundll32", ["url.dll,FileProtocolHandler", url])
 }
 
 #[cfg(target_os = "macos")]
@@ -509,4 +514,17 @@ pub(crate) fn open_macos_system_settings_url(_url: &str) -> Result<(), HostComma
     Err(HostCommandError::unsupported(
         "Computer Use permission setup is only available on macOS.",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_external_url_opening_does_not_route_through_cmd() {
+        let url = "https://auth.openai.com/oauth/authorize?client_id=codex&redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&state=abc";
+        let (program, args) = super::windows_external_url_command(url);
+
+        assert_eq!(program, "rundll32");
+        assert_eq!(args, ["url.dll,FileProtocolHandler", url]);
+    }
 }
